@@ -141,7 +141,6 @@ import { meModelProvidersListRoutes } from "./routes/me-model-providers-list";
 import { meModelProvidersResetSubscriptionRoutes } from "./routes/me-model-providers-reset-subscription";
 import { meModelProvidersUpsertRoutes } from "./routes/me-model-providers-upsert";
 import { modelCatalogRoutes } from "./routes/model-catalog";
-import { modelProvidersRoutes } from "./routes/model-providers";
 import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference";
 import { officialWorkflowRoutes } from "./routes/official-workflows";
 import { onboardingCompleteRoutes } from "./routes/onboarding-complete";
@@ -368,7 +367,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...browserUserActionRoutes,
   ...modelCatalogRoutes,
   ...runModelsRoutes,
-  ...modelProvidersRoutes,
   ...meModelProvidersDeleteRoutes,
   ...meModelProviderAccountRoutes,
   ...meModelProvidersListRoutes,

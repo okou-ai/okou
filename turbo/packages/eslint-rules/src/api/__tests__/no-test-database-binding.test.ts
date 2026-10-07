@@ -6,7 +6,7 @@ RuleTester.afterAll = afterAll;
 RuleTester.describe = describe;
 RuleTester.it = it;
 const tester = new RuleTester();
-const suite = "src/signals/routes/__tests__/model-providers.test.ts";
+const suite = "src/signals/routes/__tests__/test-runtime-state.test.ts";
 
 tester.run("no-test-database-binding", noTestDatabaseBinding, {
   valid: [
@@ -30,20 +30,6 @@ tester.run("no-test-database-binding", noTestDatabaseBinding, {
     },
   ],
   invalid: [
-    ...[
-      "chat-callbacks-cooldown.test.ts",
-      "chat-events-provider-cooldown.test.ts",
-      "workflow-queue-cooldown.test.ts",
-    ].map((file) => {
-      return {
-        code: `const owned = ["src/signals/routes/__tests__/${file}"]; defineConfig({test: {include: owned, fileParallelism: false}});`,
-        errors: [{ messageId: "serialization" as const }],
-      };
-    }),
-    {
-      code: 'const catalog = ["src/signals/routes/__tests__/test-runtime-state.test.ts"]; defineConfig({test: {include: catalog, fileParallelism: false}});',
-      errors: [{ messageId: "serialization" }],
-    },
     {
       code: 'import { PGlite } from "@electric-sql/pglite";',
       errors: [{ messageId: "harnessOnly" }],

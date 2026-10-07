@@ -217,7 +217,7 @@ export const listMcpModels$ = command(
           id: runModel.model,
           name: runModel.modelLabel,
           selectable: true,
-          availability: runModel.memberEffective?.availability ?? "available",
+          availability: runModel.memberEffective.availability,
           reason: null,
         };
       },

@@ -156,7 +156,6 @@ export function memberAccountSourceFromSnapshot(
     credentials: rows.flatMap((row) => {
       return row.secret ? [{ kind: "encrypted" as const, ...row.secret }] : [];
     }),
-    accountIdentity: first.account.externalAccountId,
   };
 }
 
@@ -195,12 +194,10 @@ export function managedSourceFromSnapshot(
     configuration: {
       providerType: "built-in",
       authMethod: null,
-      managedVendor: key.vendor,
     },
     credentials: [
       { kind: "managed-key", name, modelKeyId: key.id, apiKey: key.apiKey },
     ],
-    accountIdentity: null,
   };
 }
 

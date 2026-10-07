@@ -15,13 +15,6 @@ describe("Auto and personal-subscription Pi execution", () => {
       codexServiceTier: undefined,
     } as const;
     expect(isPiExecutionRoute(args)).toBe(true);
-    expect(args.catalogModel?.builtIn).toStrictEqual([
-      {
-        concreteProviderType: "openrouter-codex",
-        upstreamModel: "@preset/okou-1-0",
-        serviceTiers: [],
-      },
-    ]);
     expect(piRouteCatalogIdentities(args)).toStrictEqual([
       { provider: "openrouter", model: "okou-1.0" },
     ]);
@@ -51,19 +44,16 @@ describe("Auto and personal-subscription Pi execution", () => {
     ).toBe(false);
   });
 
-  it.each(["fast", "ultrafast"] as const)(
-    "does not carry %s on the fixed Auto route",
-    (tier) => {
-      expect(
-        isPiExecutionRoute({
-          catalogModel: piCatalogModel(null, "okou-1.0"),
-          modelProviderType: "built-in",
-          runtimeProviderType: "openrouter-codex",
-          codexServiceTier: tier,
-        }),
-      ).toBe(false);
-    },
-  );
+  it("does not carry fast on the fixed Auto route", () => {
+    expect(
+      isPiExecutionRoute({
+        catalogModel: piCatalogModel(null, "okou-1.0"),
+        modelProviderType: "built-in",
+        runtimeProviderType: "openrouter-codex",
+        codexServiceTier: "fast",
+      }),
+    ).toBe(false);
+  });
 
   it("refuses a mismatched concrete provider and unknown models", () => {
     expect(

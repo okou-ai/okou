@@ -11,6 +11,7 @@ import {
 } from "./chat-model-panel-test-helpers.ts";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { mockSubscriptionRunModel } from "../../../mocks/handlers/api-run-models.ts";
 import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import {
   context,
@@ -23,26 +24,13 @@ import { fillComposer } from "./chat-test-helpers.ts";
 const ACCOUNT_ID = "34240000-0000-4000-a000-000000000002";
 
 function runModel(
-  availability: NonNullable<
-    AvailableRunModel["memberEffective"]
-  >["availability"],
+  availability: AvailableRunModel["memberEffective"]["availability"],
 ): AvailableRunModel {
-  return {
-    model: "gpt-5.6-sol",
+  return mockSubscriptionRunModel("gpt-5.6-sol", {
     modelLabel: "GPT 5.6 Sol",
-    defaultProviderType: "codex-oauth-token",
-    runtimeProviderType: "codex-oauth-token",
-    credentialScope: "member",
-    modelProviderId: null,
-    routeStatus: "valid",
-    memberEffective: {
-      providerType: "codex-oauth-token",
-      runtimeProviderType: "codex-oauth-token",
-      credentialScope: "member",
-      availability,
-      accountSelection: "capture_required",
-    },
-  };
+    providerType: "codex-oauth-token",
+    availability,
+  });
 }
 
 test.each([
@@ -54,24 +42,11 @@ test.each([
     const user = userEvent.setup({ delay: null });
     installRunChat({ selectedModel: "gpt-5.6-sol" });
     context.mocks.data.availableRunModels([
-      {
-        ...runModel("available"),
-        defaultProviderType: "codex-oauth-token",
-        routeStatus: "valid",
-      },
-      {
-        ...runModel("available"),
-        model: "claude-sonnet-5",
+      runModel("available"),
+      mockSubscriptionRunModel("claude-sonnet-5", {
         modelLabel: "Claude Sonnet 5",
-        runtimeProviderType: "claude-code-oauth-token",
-        memberEffective: {
-          providerType: "claude-code-oauth-token",
-          runtimeProviderType: "claude-code-oauth-token",
-          credentialScope: "member",
-          availability: "available",
-          accountSelection: "capture_required",
-        },
-      },
+        providerType: "claude-code-oauth-token",
+      }),
     ]);
     await setupPage({
       context,
@@ -102,13 +77,7 @@ test("Uses the effective subscription for reasoning and Fast guidance", async ()
     codexServiceTier: "fast",
     modelSettings: { "gpt-5.6-sol": { effort: "max" } },
   });
-  context.mocks.data.availableRunModels([
-    {
-      ...runModel("available"),
-      defaultProviderType: "codex-oauth-token",
-      routeStatus: "valid",
-    },
-  ]);
+  context.mocks.data.availableRunModels([runModel("available")]);
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
@@ -195,15 +164,7 @@ test("Refreshes the account target on explicit reconnect after a remote account 
     );
     return respond(200, {
       defaultModel: "okou-1.0",
-      models: [
-        {
-          ...currentModel,
-          defaultProviderType: "codex-oauth-token",
-          runtimeProviderType: "codex-oauth-token",
-          credentialScope: "member",
-          memberEffective: switched ? currentModel.memberEffective : undefined,
-        },
-      ],
+      models: [currentModel],
     });
   });
   context.mocks.api(personalModelProvidersMainContract.list, ({ respond }) => {

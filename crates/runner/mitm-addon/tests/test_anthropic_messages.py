@@ -8,24 +8,6 @@ from usage import (
     create_anthropic_messages_sse_usage_extractor,
     create_model_json_response_inspector,
 )
-from usage.model_http import ModelHttpFailureEvidence
-
-
-class _RecordingFailureObserver:
-    def __init__(self) -> None:
-        self.observed: list[ModelHttpFailureEvidence] = []
-
-    def needs_sse_event(self, event_name: str | None) -> bool:
-        return True
-
-    def observe(self, evidence: ModelHttpFailureEvidence) -> None:
-        self.observed.append(evidence)
-
-    def observe_json(self, evidence: ModelHttpFailureEvidence) -> None:
-        raise AssertionError(f"unexpected JSON evidence: {evidence}")
-
-    def finish(self) -> None:
-        return None
 
 
 def _create_parser_with_parse_errors():
@@ -39,11 +21,7 @@ def _create_parser_with_parse_errors():
 
 
 def _anthropic_json_inspector():
-    return create_model_json_response_inspector(
-        "anthropic_messages",
-        include_usage=True,
-        include_failure=False,
-    )
+    return create_model_json_response_inspector("anthropic_messages")
 
 
 def _inspect_anthropic_json(body: bytes) -> tuple[dict | None, str | None]:
@@ -155,31 +133,6 @@ class TestAnthropicSseUsageExtractor:
         assert usage["model"] == "claude-sonnet-4-6"
         assert usage["tokens.input"] == 21
         assert usage["tokens.output"] == 1
-
-    def test_discarded_failure_event_emits_invalid_evidence_and_recovers(self):
-        failure_observer = _RecordingFailureObserver()
-        parse, usage = create_anthropic_messages_sse_usage_extractor(
-            failure_observer=failure_observer
-        )
-
-        parse(
-            b"event: error\n"
-            b'data: {"type":"error","error":{\n' + b"x" * 4097 + b"\n\n"
-            b"event: error\n"
-            b'data: {"type":"error","error":{"type":"api_error"}}\n\n'
-        )
-
-        assert usage == {}
-        assert failure_observer.observed == [
-            ModelHttpFailureEvidence(event_name="error"),
-            ModelHttpFailureEvidence(
-                event_name="error",
-                payload_type="error",
-                failure_codes=("api_error",),
-                has_error=True,
-                is_valid=True,
-            ),
-        ]
 
     def test_finish_flushes_message_start_without_blank_line(self):
         parse, usage = create_anthropic_messages_sse_usage_extractor()

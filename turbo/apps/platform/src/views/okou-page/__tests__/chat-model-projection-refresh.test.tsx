@@ -38,11 +38,7 @@ function runModelFixture(
   return {
     model: MODEL,
     modelLabel: "GPT 5.6 Sol",
-    defaultProviderType: "codex-oauth-token",
-    runtimeProviderType: "codex-oauth-token",
-    credentialScope: "member",
     modelProviderId: null,
-    routeStatus: "valid",
     memberEffective: {
       providerType: "codex-oauth-token",
       runtimeProviderType: "codex-oauth-token",

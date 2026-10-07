@@ -64,7 +64,7 @@ export interface ThreadMeta {
   readonly muted: boolean;
   readonly selectedModel: string | null;
   readonly modelSettings: ModelSettings;
-  readonly serviceTier: "priority" | "ultrafast" | null;
+  readonly serviceTier: "priority" | null;
   readonly computerUseHostId: string | null;
   readonly cloudBrowserEnabled: boolean;
 }

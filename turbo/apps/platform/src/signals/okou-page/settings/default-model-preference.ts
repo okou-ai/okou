@@ -27,12 +27,7 @@ export const updateDefaultModelPreference$ = command(
       updateUserModelPreference$,
       {
         selectedModel: selection?.selectedModel ?? null,
-        serviceTier:
-          selection?.codexServiceTier === "fast"
-            ? "priority"
-            : selection?.codexServiceTier === "ultrafast"
-              ? "ultrafast"
-              : null,
+        serviceTier: selection?.codexServiceTier === "fast" ? "priority" : null,
         ...(selectedModel &&
         selectedEffort !== undefined &&
         selectedEffort !== storedEffort

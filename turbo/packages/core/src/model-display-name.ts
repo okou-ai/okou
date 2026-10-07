@@ -88,9 +88,5 @@ export function getRunModelDisplayName(
   codexServiceTier: CodexServiceTier | null | undefined,
 ): string {
   const modelName = getModelDisplayName(model);
-  return codexServiceTier === "fast"
-    ? `${modelName} Fast`
-    : codexServiceTier === "ultrafast"
-      ? `${modelName} Ultrafast`
-      : modelName;
+  return codexServiceTier === "fast" ? `${modelName} Fast` : modelName;
 }

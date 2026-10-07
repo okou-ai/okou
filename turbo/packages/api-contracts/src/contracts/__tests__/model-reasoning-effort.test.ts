@@ -26,7 +26,6 @@ const CLAUDE_EFFORTS = [
   "max",
   "ultracode",
 ] as const;
-const DEEPSEEK_EFFORTS = ["low", "high", "xhigh", "max"] as const;
 
 describe("chat reasoning effort capabilities", () => {
   it("keeps each model's override independent", () => {
@@ -127,24 +126,6 @@ describe("route effort preferences", () => {
       piExecution: true,
       runtimeProviderType: "claude-code-oauth-token",
       expected: "high",
-    },
-    {
-      model: "deepseek-v4-flash",
-      effort: "low",
-      efforts: DEEPSEEK_EFFORTS,
-      defaultEffort: "high",
-      piExecution: true,
-      runtimeProviderType: "openrouter-codex",
-      expected: "high",
-    },
-    {
-      model: "deepseek-v4-flash",
-      effort: "xhigh",
-      efforts: DEEPSEEK_EFFORTS,
-      defaultEffort: "high",
-      piExecution: true,
-      runtimeProviderType: "openrouter-codex",
-      expected: "xhigh",
     },
   ] as const)(
     "resolves $model $effort on $runtimeProviderType",

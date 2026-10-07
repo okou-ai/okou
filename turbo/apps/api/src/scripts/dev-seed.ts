@@ -184,21 +184,6 @@ function withFastPricing(
   ];
 }
 
-function withUltrafastPricing(
-  rows: readonly UsagePricingRow[],
-): readonly UsagePricingRow[] {
-  return [
-    ...rows,
-    ...rows
-      .filter(([category]) => {
-        return !category.endsWith(".fast");
-      })
-      .map(([category, unitPrice, unitSize]) => {
-        return [`${category}.ultrafast`, unitPrice * 6, unitSize] as const;
-      }),
-  ];
-}
-
 const GPT_5_6_SOL_USAGE_PRICING = withFastPricing(
   withLongContextPricing(GPT_5_6_SOL_PRICING, 2, 1.5),
 );
@@ -482,9 +467,7 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   ...usageGroup(
     "model",
     "gpt-6-astra",
-    withUltrafastPricing(
-      withFastPricing(withLongContextPricing(GPT_6_ASTRA_PRICING, 2, 1.5)),
-    ),
+    withFastPricing(withLongContextPricing(GPT_6_ASTRA_PRICING, 2, 1.5)),
   ),
   // https://developers.openai.com/api/docs/models/gpt-6.1-sol
   ...usageGroup(

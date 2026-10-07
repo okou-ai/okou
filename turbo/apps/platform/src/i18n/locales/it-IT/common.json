@@ -4957,10 +4957,7 @@
         "models": "Modelli",
         "noConfiguredModels": "Nessun modello configurato",
         "pro": "Pro",
-        "standard": "Norma",
-        "ultrafast": "Ultraveloce",
-        "ultrafastImpact": "Velocità dei token fino a 8× · Prezzo dei token API OpenAI 6×",
-        "ultrafastMode": "Modalità ultraveloce"
+        "standard": "Norma"
       },
       "reset": {
         "confirmDescription": "Usa un ripristino Codex per reimpostare le finestre di utilizzo correnti. Te ne restano {{remaining}}.",
@@ -5091,26 +5088,6 @@
         "sectionTitle": "Chat"
       },
       "debug": {
-        "builtInModelCooldown": {
-          "cancelAction": "Annulla cooldown",
-          "cancelDescription": "L'annullamento di questo cooldown globale rende immediatamente disponibile la route per tutti i workspace.",
-          "cancelling": "Annullamento...",
-          "cancelTitle": "Annullare il cooldown globale?",
-          "cancelWarning": "Un errore successivo idoneo può riportare questa route in cooldown.",
-          "description": "Esamina le route dei modelli integrati temporaneamente escluse dalla selezione di fallback.",
-          "empty": "Al momento nessuna route di modello integrato è in cooldown globale.",
-          "globalActive": "cooldown globali attivi",
-          "globalExplanation": "I cooldown sono uno stato operativo globale e influiscono su tutti i workspace che utilizzano modelli integrati.",
-          "keepCooldown": "Mantieni cooldown",
-          "loading": "Caricamento della diagnostica dei cooldown dei modelli integrati...",
-          "providerType": "Tipo di provider",
-          "refresh": "Aggiorna",
-          "selectedModel": "Modello selezionato",
-          "title": "Fallback dei modelli integrati",
-          "unavailable": "La diagnostica dei cooldown dei modelli integrati non è disponibile.",
-          "unavailableUntil": "Non disponibile fino a",
-          "upstreamModel": "Modello upstream"
-        },
         "capture": {
           "disabled": "Disabilitato",
           "enabled_one": "Abilitato per la prossima esecuzione {{count}}",

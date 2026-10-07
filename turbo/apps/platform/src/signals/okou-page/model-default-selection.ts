@@ -1,7 +1,4 @@
-import {
-  getMemberRunModelRoute,
-  isMemberRunModelConfigurable,
-} from "@okouai/api-contracts/contracts/member-run-model";
+import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
 import type {
   AvailableRunModel,
   AvailableRunModelsResponse,
@@ -11,15 +8,12 @@ import { command } from "ccstate";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import type { ModelCatalog } from "../external/model-catalog.ts";
 import { availableRunModels$ } from "../external/run-models.ts";
-import {
-  memberRunModelAllowedForPlan,
-  modelPlanCapabilities$,
-} from "./model-plan-capabilities.ts";
+import { memberRunModelAllowedForPlan } from "./model-plan-capabilities.ts";
 import { withChatModelSettings } from "./model-reasoning-effort.ts";
 
 interface UserModelDefaultSource {
   selectedModel: string | null;
-  serviceTier?: "priority" | "ultrafast" | null;
+  serviceTier?: "priority" | null;
   modelSettings?: ModelSettings;
 }
 
@@ -42,69 +36,34 @@ function createModelFirstSelection(
   };
 }
 
-/** Whether the model's selected route offers a catalog service tier. */
+/** Whether the selected subscription model offers the service tier. */
 export function isServiceTierAvailableForSelection(params: {
   readonly models: AvailableRunModelsResponse | null | undefined;
-  readonly catalog: ModelCatalog | null | undefined;
   readonly selectedModel: string | null | undefined;
-  readonly tier: "priority" | "ultrafast";
+  readonly tier: "priority";
 }): boolean {
-  const { catalog, selectedModel } = params;
-  if (!catalog || !selectedModel) {
-    return false;
-  }
   const runModel = params.models?.models.find((candidate) => {
-    return candidate.model === selectedModel;
+    return candidate.model === params.selectedModel;
   });
-  if (runModel === undefined) {
-    return false;
-  }
-  if (runModel.subscriptionOptions && params.tier === "priority") {
-    return runModel.subscriptionOptions.serviceTier === "priority";
-  }
-  const providerType = getMemberRunModelRoute(runModel).providerType;
-  if (
-    !catalog.supportsServiceTier(selectedModel, params.tier, { providerType })
-  ) {
-    return false;
-  }
   // Availability can change without changing this model's Fast capability.
   // Preserve the saved choice through reconnect and plan restrictions; send
   // readiness and admission own whether it can run now.
-  return true;
+  return runModel?.subscriptionOptions?.serviceTier === params.tier;
 }
 
 /** Whether a configurable runModel row offers the Fast (priority) toggle. */
 export function isRunModelFastModeAvailable(
   runModel: AvailableRunModel | undefined,
-  catalog: ModelCatalog | null | undefined,
-): boolean {
-  if (!runModel || !catalog || !isMemberRunModelConfigurable(runModel)) {
-    return false;
-  }
-  if (runModel.subscriptionOptions) {
-    return runModel.subscriptionOptions.serviceTier === "priority";
-  }
-  return catalog.supportsServiceTier(runModel.model, "priority", {
-    providerType: getMemberRunModelRoute(runModel).providerType,
-  });
-}
-
-/** Whether a runModel row's route offers the Ultrafast service tier. */
-export function isRunModelUltrafastAvailable(
-  runModel: AvailableRunModel,
-  catalog: ModelCatalog | null | undefined,
 ): boolean {
   return (
-    catalog?.supportsServiceTier(runModel.model, "ultrafast", {
-      providerType: getMemberRunModelRoute(runModel).providerType,
-    }) ?? false
+    !!runModel &&
+    isMemberRunModelConfigurable(runModel) &&
+    runModel.subscriptionOptions?.serviceTier === "priority"
   );
 }
 
 export function isCodexFastModeAvailableForSelection(params: {
   readonly models: AvailableRunModelsResponse | null | undefined;
-  readonly catalog: ModelCatalog | null | undefined;
   readonly selectedModel: string | null | undefined;
 }): boolean {
   return isServiceTierAvailableForSelection({ ...params, tier: "priority" });
@@ -124,7 +83,7 @@ function hasUsableModelRoute(
     return (
       runModel.model === model &&
       (isMemberRunModelConfigurable(runModel) ||
-        getMemberRunModelRoute(runModel).availability === "plan_restricted")
+        runModel.memberEffective.availability === "plan_restricted")
     );
   });
 }
@@ -169,21 +128,9 @@ export function resolveModelFirstStoredUserSelection(params: {
     return null;
   }
   if (
-    params.userPreference?.serviceTier === "ultrafast" &&
-    isServiceTierAvailableForSelection({
-      models: params.models,
-      catalog: params.catalog,
-      selectedModel: userSelection.selectedModel,
-      tier: "ultrafast",
-    })
-  ) {
-    return { ...userSelection, codexServiceTier: "ultrafast" };
-  }
-  if (
     params.userPreference?.serviceTier === "priority" &&
     isCodexFastModeAvailableForSelection({
       models: params.models,
-      catalog: params.catalog,
       selectedModel: userSelection.selectedModel,
     })
   ) {
@@ -205,10 +152,7 @@ export const resolveExplicitModelSelection$ = command(
     },
     signal: AbortSignal,
   ): Promise<ExplicitModelSelectionResult> => {
-    const [models, modelCapabilities] = await Promise.all([
-      get(availableRunModels$),
-      get(modelPlanCapabilities$),
-    ]);
+    const models = await get(availableRunModels$);
     signal.throwIfAborted();
     const selectedModel = params.selection?.selectedModel;
     const selectedRunModel = models.models.find((runModel) => {
@@ -216,7 +160,7 @@ export const resolveExplicitModelSelection$ = command(
     });
     if (
       selectedRunModel !== undefined &&
-      !memberRunModelAllowedForPlan(selectedRunModel, modelCapabilities)
+      !memberRunModelAllowedForPlan(selectedRunModel)
     ) {
       return { kind: "compare-plans" };
     }

@@ -11,7 +11,6 @@ import {
 import { pageSignal$ } from "../../../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../../../signals/utils.ts";
 import { BuildInfoBlock } from "../build-info-block.tsx";
-import { BuiltInModelCooldownDiagnosticsBlock } from "../built-in-model-cooldown-diagnostics-block.tsx";
 import { ConnectionDiagnosticsBlock } from "../connection-diagnostics-block.tsx";
 import { ConnectorCatalogDiagnosticsBlock } from "../connector-catalog-diagnostics-block.tsx";
 import { IndexedDbDiagnosticsBlock } from "../indexeddb-diagnostics-block.tsx";
@@ -87,7 +86,6 @@ export function DebugSection() {
       <WorkerConnectionDiagnosticsBlock />
       <IndexedDbDiagnosticsBlock />
       <ConnectorCatalogDiagnosticsBlock />
-      <BuiltInModelCooldownDiagnosticsBlock />
       <CaptureNetworkBodiesBlock />
     </div>
   );

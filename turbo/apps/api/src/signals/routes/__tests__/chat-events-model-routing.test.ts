@@ -14,7 +14,6 @@ import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
-import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
@@ -873,7 +872,7 @@ describe("CHAT-02: model-first routing", () => {
         orgId: requireOrgId(actor),
         openrouterPreset,
       });
-      await seedBuiltInModelCandidateKeys(context, model);
+      await seedBuiltInModelKey(model);
       await preparePiResourceHandoff(actor, agentId);
       await chat.updateUserModelPreference(actor, null);
 
@@ -906,7 +905,7 @@ describe("CHAT-02: model-first routing", () => {
   it("isolates org presets and restores the catalog route when cleared", async () => {
     const first = await entitledChatActor();
     const second = await entitledChatActor();
-    await seedBuiltInModelCandidateKeys(context, "okou-1.0");
+    await seedBuiltInModelKey("okou-1.0");
     await preparePiResourceHandoff(first.actor, first.agentId);
     await preparePiResourceHandoff(second.actor, second.agentId);
     await setOrgOpenrouterPresetFixture({
@@ -956,7 +955,7 @@ describe("CHAT-02: model-first routing", () => {
     "rejects invalid operator preset %s without substituting Auto's default",
     async (openrouterPreset) => {
       const { actor, agentId } = await entitledChatActor();
-      await seedBuiltInModelCandidateKeys(context, "okou-1.0");
+      await seedBuiltInModelKey("okou-1.0");
       await setOrgOpenrouterPresetFixture({
         orgId: requireOrgId(actor),
         openrouterPreset,
@@ -975,7 +974,7 @@ describe("CHAT-02: model-first routing", () => {
 
   it("launches a free-plan okou-1.0 run on its Built-in route", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    await seedBuiltInModelCandidateKeys(context, "okou-1.0");
+    await seedBuiltInModelKey("okou-1.0");
     await preparePiResourceHandoff(actor, agentId);
     await upsertOrgPlanEntitlementFixture({
       orgId: requireOrgId(actor),

@@ -81,9 +81,10 @@ export const chatThreadEvents = pgTable(
     reasoningEffort: varchar("reasoning_effort", {
       length: 20,
     }).$type<ReasoningEffort | "default">(),
+    // Immutable history can still hold the retired `ultrafast` tier.
     serviceTier: varchar("service_tier", {
       length: 20,
-    }).$type<ChatThreadServiceTier>(),
+    }).$type<ChatThreadServiceTier | "ultrafast">(),
     computerUseHostId: uuid("computer_use_host_id"),
     cloudBrowserEnabled: boolean("cloud_browser_enabled")
       .default(false)

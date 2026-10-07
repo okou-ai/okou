@@ -139,32 +139,7 @@ def test_extracts_usage_from_wrapped_response_failed_event():
     }
 
 
-def test_shared_inspection_returns_failure_only_evidence():
-    body = (
-        b'{"type":"response.failed","response":{"id":"failure-only",'
-        b'"error":{"code":"service_unavailable"}}}'
-    )
-    event = inspect_openai_responses_event_json(body)
-
-    inspection = openai_responses.inspect_openai_responses_server_event(
-        event,
-        include_lifecycle=False,
-        include_usage=False,
-        include_failure=True,
-    )
-
-    assert inspection.lifecycle is None
-    assert inspection.usage is None
-    assert inspection.usage_error is None
-    assert inspection.failure == openai_responses.OpenAIResponsesServerFailureEvidence(
-        event_type="response.failed",
-        response_id="failure-only",
-        failure_codes=("service_unavailable",),
-        is_valid=True,
-    )
-
-
-def test_unusable_failure_code_does_not_discard_shared_usage():
+def test_oversized_unselected_error_code_does_not_discard_usage():
     body = json.dumps(
         {
             "type": "response.failed",
@@ -181,8 +156,6 @@ def test_unusable_failure_code_does_not_discard_shared_usage():
     inspection = openai_responses.inspect_openai_responses_server_event(
         event,
         include_lifecycle=True,
-        include_usage=True,
-        include_failure=True,
     )
 
     assert inspection.usage == {
@@ -192,15 +165,9 @@ def test_unusable_failure_code_does_not_discard_shared_usage():
         "tokens.output": 3,
     }
     assert inspection.usage_error is None
-    assert inspection.failure == openai_responses.OpenAIResponsesServerFailureEvidence(
-        event_type="response.failed",
-        response_id="mixed-evidence",
-        failure_codes=(),
-        is_valid=True,
-    )
 
 
-def test_invalid_usage_quantity_does_not_discard_shared_failure_evidence():
+def test_invalid_usage_quantity_reports_usage_error():
     body = json.dumps(
         {
             "type": "response.failed",
@@ -220,18 +187,10 @@ def test_invalid_usage_quantity_does_not_discard_shared_failure_evidence():
     inspection = openai_responses.inspect_openai_responses_server_event(
         event,
         include_lifecycle=True,
-        include_usage=True,
-        include_failure=True,
     )
 
     assert inspection.usage is None
     assert inspection.usage_error == "integer value limit exceeded"
-    assert inspection.failure == openai_responses.OpenAIResponsesServerFailureEvidence(
-        event_type="response.failed",
-        response_id="usage-overflow",
-        failure_codes=("service_unavailable",),
-        is_valid=True,
-    )
 
 
 def test_extracts_usage_from_flat_response_completed_event():

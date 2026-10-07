@@ -5,7 +5,13 @@ import { reasoningEffortSchema } from "./model-reasoning-effort";
 export const chatInputModelSelectionSchema = z
   .object({
     selectedModel: z.string().min(1),
-    codexServiceTier: z.enum(["fast", "ultrafast"]).nullable(),
+    // Stored inputs can predate Ultrafast retirement; they run on Standard.
+    codexServiceTier: z
+      .enum(["fast", "ultrafast"])
+      .nullable()
+      .transform((tier) => {
+        return tier === "fast" ? tier : null;
+      }),
     reasoningEffort: reasoningEffortSchema.nullable(),
   })
   .strict();

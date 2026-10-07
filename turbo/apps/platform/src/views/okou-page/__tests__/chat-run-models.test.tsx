@@ -5,22 +5,21 @@ import {
 } from "@okouai/api-contracts/contracts/billing";
 import { chatThreadModelSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE } from "@okouai/api-contracts/contracts/errors";
-import type {
-  AvailableRunModel,
-  ModelProviderResponse,
-} from "@okouai/api-contracts/contracts/model-providers";
+import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import type { KnownRunFailureReason } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { mockCatalogDisplayName } from "../../../mocks/handlers/api-model-catalog.ts";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../lib/time.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
-import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
+import {
+  buildRunModel,
+  composerModelTrigger,
+} from "./chat-composer-test-helpers.ts";
 import { openModelPanel } from "./chat-model-panel-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import { setupPage } from "./chat-lifecycle-test-helpers.ts";
@@ -47,8 +46,7 @@ const PROVIDER_ID = "e0000000-0000-4000-a000-000000000301";
 
 function configureCodexSubscriptionPolicies(models: readonly string[]): void {
   configureRunModels(models, {
-    credentialScope: "member",
-    defaultProviderType: "codex-oauth-token",
+    providerType: "codex-oauth-token",
     modelProviderId: PROVIDER_ID,
   });
 }
@@ -76,27 +74,12 @@ function recoveryCard(): Promise<HTMLElement> {
 function configureRunModels(
   models: readonly string[],
   options: {
-    readonly credentialScope?: "member" | "org";
-    readonly defaultProviderType?: "built-in" | "codex-oauth-token";
+    readonly providerType?: "codex-oauth-token";
     readonly modelProviderId?: string | null;
   } = {},
 ): void {
-  const routes: AvailableRunModel[] = models.map((model) => {
-    return {
-      model,
-      modelLabel: mockCatalogDisplayName(model),
-      defaultProviderType:
-        options.defaultProviderType ??
-        (model === "okou-1.0"
-          ? "built-in"
-          : model.startsWith("claude-")
-            ? "claude-code-oauth-token"
-            : "codex-oauth-token"),
-      credentialScope:
-        options.credentialScope ?? (model === "okou-1.0" ? "org" : "member"),
-      modelProviderId: options.modelProviderId ?? null,
-      routeStatus: "valid",
-    };
+  const routes = models.map((model) => {
+    return buildRunModel({ model, ...options });
   });
   context.mocks.data.availableRunModels(routes);
 }

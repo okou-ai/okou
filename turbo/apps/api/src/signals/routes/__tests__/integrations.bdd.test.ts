@@ -37,7 +37,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
+import { seedBuiltInModelKey } from "./helpers/runtime-state";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 /*
@@ -3829,7 +3829,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
     await chat.updateThreadModelSelection(actor, chatThreadId, null);
     await integrations.updateUserModelPreference(actor, "gpt-6-astra");
-    await seedBuiltInModelCandidateKeys(context, SEEDED_SYSTEM_DEFAULT_MODEL);
+    await seedBuiltInModelKey(context, SEEDED_SYSTEM_DEFAULT_MODEL);
     expect(
       (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
     ).toBeNull();

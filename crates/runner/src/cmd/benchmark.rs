@@ -202,7 +202,6 @@ pub async fn run_benchmark(
             client_session_id: uuid::Uuid::new_v4().to_string(),
             client_version: env!("CARGO_PKG_VERSION"),
             system_ca_bundle: crate::deps::SYSTEM_CA_BUNDLE,
-            runner_token: None,
         },
         crate::ADDON_FILES,
     )
@@ -827,7 +826,6 @@ mod tests {
                     client_session_id: "benchmark-lifecycle-test".to_string(),
                     client_version: env!("CARGO_PKG_VERSION"),
                     system_ca_bundle: crate::deps::SYSTEM_CA_BUNDLE,
-                    runner_token: None,
                 },
                 crate::ADDON_FILES,
             )

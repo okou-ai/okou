@@ -1,4 +1,6 @@
+import { sql } from "drizzle-orm";
 import {
+  check,
   pgTable,
   text,
   boolean,
@@ -83,6 +85,12 @@ export const orgMembersMetadata = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => {
-    return [primaryKey({ columns: [table.orgId, table.userId] })];
+    return [
+      primaryKey({ columns: [table.orgId, table.userId] }),
+      check(
+        "chk_org_members_metadata_service_tier",
+        sql`${table.serviceTier} IS NULL OR ${table.serviceTier} = 'priority'`,
+      ),
+    ];
   },
 );

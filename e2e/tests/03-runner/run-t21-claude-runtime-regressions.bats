@@ -26,8 +26,8 @@ teardown() {
         .defaultModel == "okou-1.0" and
         any(.models[]?;
             .model == "claude-sonnet-5-5" and
-            .defaultProviderType == "claude-code-oauth-token" and
-            .credentialScope == "member"
+            .memberEffective.providerType == "claude-code-oauth-token" and
+            .memberEffective.credentialScope == "member"
         )
     ' <<<"$output"
     assert_success

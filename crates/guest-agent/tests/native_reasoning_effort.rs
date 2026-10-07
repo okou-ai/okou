@@ -91,7 +91,7 @@ async fn selected_effort_reaches_new_and_resumed_native_runs() -> TestResult {
         (
             "claude-code",
             &claude_mock,
-            "anthropic/claude-fable-5.1",
+            "claude-fable-5-1",
             Some("low"),
             Some("low"),
         ),
@@ -105,7 +105,7 @@ async fn selected_effort_reaches_new_and_resumed_native_runs() -> TestResult {
         (
             "claude-code",
             &claude_mock,
-            "anthropic/claude-opus-5.5",
+            "claude-opus-5-5",
             Some("extra"),
             Some("xhigh"),
         ),
@@ -126,21 +126,14 @@ async fn selected_effort_reaches_new_and_resumed_native_runs() -> TestResult {
         (
             "claude-code",
             &claude_mock,
-            "claude-opus-4-8",
-            Some("high"),
-            Some("high"),
-        ),
-        (
-            "claude-code",
-            &claude_mock,
-            "anthropic/claude-sonnet-5",
+            "claude-sonnet-5",
             Some("extra"),
             Some("xhigh"),
         ),
         (
             "claude-code",
             &claude_mock,
-            "claude-sonnet-4.6",
+            "claude-sonnet-5-5",
             Some("max"),
             Some("max"),
         ),
@@ -153,7 +146,13 @@ async fn selected_effort_reaches_new_and_resumed_native_runs() -> TestResult {
             Some("ultracode"),
             Some("ultracode"),
         ),
-        ("claude-code", &claude_mock, "fable", None, Some("max")),
+        (
+            "claude-code",
+            &claude_mock,
+            "claude-fable-5-1",
+            None,
+            Some("max"),
+        ),
         ("claude-code", &claude_mock, "claude-sonnet-5", None, None),
     ] {
         for resume in [false, true] {

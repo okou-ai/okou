@@ -326,12 +326,8 @@ final class WorkspaceStoreTests: XCTestCase {
           body: """
             {"selectedModel":null,"serviceTier":null,"modelSettings":{},"selectedImageModel":null,"updatedAt":null}
             """)
-      case "/api/run-models":
-        return ChatHTTPResponse(
-          body: """
-            {"defaultModel":"okou-1.0","models":[{"model":"okou-1.0","routeStatus":"valid"}]}
-            """)
-      case "/api/model-catalog": return modelCatalogResponse(systemDefaultModel: "okou-1.0")
+      case "/api/run-models": return runModelsResponse()
+      case "/api/model-catalog": return modelCatalogResponse()
       case "/api/chat-threads":
         guard request.httpMethod == "POST" else { throw URLError(.unsupportedURL) }
         createStarted.fulfill()

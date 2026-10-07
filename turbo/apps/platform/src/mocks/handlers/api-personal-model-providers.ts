@@ -5,7 +5,6 @@ import {
   personalModelProvidersMainContract,
   personalSubscriptionsContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { nowDate } from "../../lib/time.ts";
 import { mockApi } from "../msw-contract.ts";
 
 // Mock personal model providers data — empty by default
@@ -59,56 +58,6 @@ export const apiPersonalModelProvidersHandlers = [
   mockApi(personalModelProvidersMainContract.list, ({ respond }) => {
     return respond(200, { modelProviders: mockPersonalModelProviders });
   }),
-
-  // POST /api/me/model-providers - Create or update a personal model provider
-  mockApi(personalModelProvidersMainContract.upsert, ({ body, respond }) => {
-    const now = nowDate().toISOString();
-    const existing = mockPersonalModelProviders.find((p) => {
-      return p.type === body.type;
-    });
-    const created = !existing;
-
-    const provider: ModelProviderResponse = {
-      id: existing?.id ?? crypto.randomUUID(),
-      type: body.type,
-      framework: "claude-code",
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-      needsReconnect: false,
-      lastRefreshErrorCode: null,
-    };
-
-    if (existing) {
-      mockPersonalModelProviders = mockPersonalModelProviders.map((p) => {
-        return p.type === body.type ? provider : p;
-      });
-    } else {
-      mockPersonalModelProviders.push(provider);
-    }
-
-    return respond(created ? 201 : 200, { provider, created });
-  }),
-
-  // DELETE /api/me/model-providers/:type - Delete a personal model provider
-  mockApi(
-    personalModelProvidersByTypeContract.delete,
-    ({ params, respond }) => {
-      const existing = mockPersonalModelProviders.find((p) => {
-        return p.type === params.type;
-      });
-
-      if (!existing) {
-        return respond(404, {
-          error: { message: "Model provider not found", code: "NOT_FOUND" },
-        });
-      }
-
-      mockPersonalModelProviders = mockPersonalModelProviders.filter((p) => {
-        return p.type !== params.type;
-      });
-      return respond(204);
-    },
-  ),
 
   // POST /api/me/model-providers/:type/subscription-reset - Reset Codex usage
   mockApi(

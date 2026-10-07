@@ -108,7 +108,7 @@ interface ThreadListItem {
   pinnedAt?: string | null;
   renamedAt?: string | null;
   selectedModel?: string | null;
-  serviceTier?: "priority" | "ultrafast" | null;
+  serviceTier?: "priority" | null;
   modelSettings?: ModelSettings;
   computerUseHostId?: string | null;
   cloudBrowserEnabled?: boolean;

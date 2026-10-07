@@ -212,8 +212,10 @@ describe("default Agent bootstrap", () => {
     expect(policies.body.models).toStrictEqual([
       expect.objectContaining({
         model: SEEDED_SYSTEM_DEFAULT_MODEL,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
+        memberEffective: expect.objectContaining({
+          providerType: "built-in",
+          credentialScope: "org",
+        }),
       }),
     ]);
 

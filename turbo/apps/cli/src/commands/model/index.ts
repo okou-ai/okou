@@ -84,7 +84,7 @@ const selectCommand = new Command()
       });
       if (!selected || !isMemberRunModelConfigurable(selected)) {
         throw new Error(
-          `Model is unavailable: ${model}. Run okou model ls and connect or reconnect your subscription in Settings / Models.`,
+          `Model is unavailable: ${model}. Run okou model ls and connect or reconnect your subscription in Settings > Models.`,
         );
       }
       const serviceTier = await resolveServiceTier(selected, options.priority);

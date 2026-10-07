@@ -1,6 +1,6 @@
 import type {
   ModelProviderResponse,
-  ModelProviderType,
+  PersonalSubscriptionProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   Badge,
@@ -85,16 +85,12 @@ function PersonalModelsHeading() {
   );
 }
 
-const PERSONAL_ACCOUNT_PROVIDER_TYPES = [
-  "claude-code-oauth-token",
-  "codex-oauth-token",
-] as const satisfies readonly ModelProviderType[];
-
-type PersonalAccountProviderType =
-  (typeof PERSONAL_ACCOUNT_PROVIDER_TYPES)[number];
+/** Display order of the personal subscription account groups. */
+const PERSONAL_ACCOUNT_PROVIDER_TYPES: readonly PersonalSubscriptionProviderType[] =
+  ["claude-code-oauth-token", "codex-oauth-token"];
 
 type PersonalProviderAccountGroup = {
-  readonly type: PersonalAccountProviderType;
+  readonly type: PersonalSubscriptionProviderType;
   readonly title: string;
   readonly accounts: readonly ModelProviderResponse[];
 };
@@ -135,7 +131,7 @@ function OAuthAccountGroupsSection() {
     });
 
   const openAccountAuth = (
-    type: PersonalAccountProviderType,
+    type: PersonalSubscriptionProviderType,
     modelProviderId?: string,
   ) => {
     const args = modelProviderId
@@ -244,7 +240,7 @@ function ConnectPersonalAccountAction({
   readonly group: PersonalProviderAccountGroup;
   readonly actionPending: boolean;
   readonly isLoading: boolean;
-  readonly onAdd: (type: PersonalAccountProviderType) => void;
+  readonly onAdd: (type: PersonalSubscriptionProviderType) => void;
 }) {
   const { t } = useTranslation();
 
@@ -280,12 +276,12 @@ function PersonalProviderAccountsTable({
 }: {
   readonly showReconnectAction: boolean;
   readonly accountGroups: readonly PersonalProviderAccountGroup[];
-  readonly onConnect: (type: PersonalAccountProviderType) => void;
+  readonly onConnect: (type: PersonalSubscriptionProviderType) => void;
   readonly actionPending: boolean;
   readonly isLoading: boolean;
   readonly onActivate: (id: string) => void;
   readonly onReconnect: (
-    type: PersonalAccountProviderType,
+    type: PersonalSubscriptionProviderType,
     modelProviderId: string,
   ) => void;
   readonly onDisconnect: (
@@ -329,12 +325,12 @@ function PersonalProviderAccountTable({
 }: {
   readonly showReconnectAction: boolean;
   readonly group: PersonalProviderAccountGroup;
-  readonly onConnect: (type: PersonalAccountProviderType) => void;
+  readonly onConnect: (type: PersonalSubscriptionProviderType) => void;
   readonly actionPending: boolean;
   readonly isLoading: boolean;
   readonly onActivate: (id: string) => void;
   readonly onReconnect: (
-    type: PersonalAccountProviderType,
+    type: PersonalSubscriptionProviderType,
     modelProviderId: string,
   ) => void;
   readonly onDisconnect: (

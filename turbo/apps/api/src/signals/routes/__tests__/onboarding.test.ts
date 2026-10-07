@@ -98,7 +98,6 @@ async function statusAs(actor: OrgActor) {
 async function completeAs(
   actor: OrgActor,
   request: {
-    readonly query?: { readonly modelProvider: "codex" | "claudeCode" };
     readonly body?: {
       readonly timezone?: string;
       readonly industry?: "marketing";
@@ -109,7 +108,6 @@ async function completeAs(
   const response = await accept(
     onboardingCompleteClient().complete({
       headers: authHeaders(),
-      ...(request.query ? { query: request.query } : {}),
       body: request.body ?? {},
     }),
     [200],
@@ -172,7 +170,6 @@ describe("member source-first onboarding", () => {
     });
 
     const completed = await completeAs(member, {
-      query: { modelProvider: "codex" },
       body: { timezone: "Asia/Shanghai", industry: "marketing" },
     });
 
@@ -295,36 +292,6 @@ describe("POST /api/onboarding/complete", () => {
     ).toStrictEqual([SEEDED_SYSTEM_DEFAULT_MODEL]);
     // A new organization starts in Auto.
     expect(policies.body.defaultModel).toBe("okou-1.0");
-  });
-
-  it("lists only the system default model for a new organization after a subscription choice", async () => {
-    const actor = orgActor();
-    mockDefaultAgentStorage();
-    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
-    await accept(
-      onboardingStatusClient().getStatus({ headers: authHeaders() }),
-      [200],
-    );
-    await accept(
-      onboardingCompleteClient().complete({
-        headers: authHeaders(),
-        query: { modelProvider: "codex" },
-        body: {},
-      }),
-      [200],
-    );
-    const response = await accept(
-      runModelsClient().list({ headers: authHeaders() }),
-      [200],
-    );
-    expect(response.body.defaultModel).toBe("okou-1.0");
-    expect(response.body.models).toStrictEqual([
-      expect.objectContaining({
-        model: SEEDED_SYSTEM_DEFAULT_MODEL,
-        defaultProviderType: "built-in",
-        credentialScope: "org",
-      }),
-    ]);
   });
 
   it("completes an admin's onboarding with the field the source-first flow answered", async () => {

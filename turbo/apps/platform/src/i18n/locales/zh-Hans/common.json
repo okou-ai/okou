@@ -4872,10 +4872,7 @@
         "models": "模型",
         "noConfiguredModels": "没有已配置的模型",
         "pro": "Pro",
-        "standard": "标准",
-        "ultrafast": "极速",
-        "ultrafastImpact": "Token 生成速度最高 8 倍 · OpenAI API Token 价格 6 倍",
-        "ultrafastMode": "极速模式"
+        "standard": "标准"
       },
       "reset": {
         "confirmDescription": "消耗一次Codex重置额度，重置当前的用量周期。你还有{{remaining}}。",
@@ -5003,26 +5000,6 @@
         "sectionTitle": "聊天"
       },
       "debug": {
-        "builtInModelCooldown": {
-          "cancelAction": "取消冷却",
-          "cancelDescription": "取消这个全局冷却后，该线路会立即对所有工作区重新可用。",
-          "cancelling": "正在取消…",
-          "cancelTitle": "取消全局冷却？",
-          "cancelWarning": "之后若再出现符合条件的失败，该线路会重新进入冷却。",
-          "description": "查看暂时被排除在备用选择之外的内置模型线路。",
-          "empty": "当前没有处于全局冷却的内置模型线路。",
-          "globalActive": "个全局生效的冷却",
-          "globalExplanation": "冷却是全局运行状态，会影响所有使用内置模型的工作区。",
-          "keepCooldown": "保持冷却",
-          "loading": "正在加载内置模型冷却诊断…",
-          "providerType": "服务商类型",
-          "refresh": "刷新",
-          "selectedModel": "所选模型",
-          "title": "内置模型备用线路",
-          "unavailable": "内置模型冷却诊断不可用。",
-          "unavailableUntil": "不可用至",
-          "upstreamModel": "上游模型"
-        },
         "capture": {
           "disabled": "已关闭",
           "enabled_one": "已对接下来{{count}}次运行启用",

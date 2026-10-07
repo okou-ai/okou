@@ -1,9 +1,4 @@
-import {
-  getFrameworkForType,
-  isBuiltInModelProviderType,
-  MODEL_PROVIDER_TYPES,
-  type ModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import {
   AUTO_RUN_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS,
   AUTO_RUN_MODEL,
@@ -11,7 +6,6 @@ import {
   AUTO_RUN_PROVIDER,
   AUTO_RUN_UPSTREAM_MODEL,
 } from "@okouai/core/auto-run-model";
-import type { SupportedFramework } from "@okouai/core/frameworks";
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { command, computed, type Computed } from "ccstate";
@@ -522,25 +516,3 @@ export const loadModelCatalog$ = command(
     return validateModelCatalog(models, routes);
   },
 );
-
-export function frameworkForProviderSelection(
-  catalog: ModelCatalog,
-  providerType: ModelProviderType,
-  selectedModel: string | null | undefined,
-): SupportedFramework | null {
-  if (!isBuiltInModelProviderType(providerType)) {
-    return getFrameworkForType(providerType);
-  }
-  // The Built-in framework follows the Auto route's concrete provider protocol.
-  const concrete = catalogAutoRoute(
-    catalog,
-    selectedModel ?? catalog.systemDefaultModel,
-  )?.concreteProviderType;
-  return concrete !== undefined && isModelProviderType(concrete)
-    ? getFrameworkForType(concrete)
-    : null;
-}
-
-function isModelProviderType(type: string): type is ModelProviderType {
-  return Object.hasOwn(MODEL_PROVIDER_TYPES, type);
-}

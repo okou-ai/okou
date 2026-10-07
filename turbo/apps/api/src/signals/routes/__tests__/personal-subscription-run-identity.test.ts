@@ -1109,9 +1109,10 @@ describe("personal priority connection boundaries", () => {
       expect(
         availableModel(await misc.listRunModels(f.actor), f.model),
       ).toMatchObject({
-        defaultProviderType: type,
-        credentialScope: "member",
-        routeStatus: "valid",
+        memberEffective: expect.objectContaining({
+          providerType: type,
+          credentialScope: "member",
+        }),
       });
       const runId = await f.start();
       const claim = await f.claim(runId);
@@ -1148,8 +1149,6 @@ describe("member-effective model contract", () => {
       availableModel(memberModels, "okou-1.0"),
     );
     expect(availableModel(ownerModels, f.model)).toMatchObject({
-      defaultProviderType: f.type,
-      credentialScope: "member",
       memberEffective: {
         providerType: f.type,
         credentialScope: "member",
@@ -1160,8 +1159,10 @@ describe("member-effective model contract", () => {
     await connect(member, "codex-oauth-token", "other-member");
     const connected = await misc.listRunModels(member);
     expect(availableModel(connected, "gpt-6-astra")).toMatchObject({
-      credentialScope: "member",
-      defaultProviderType: "codex-oauth-token",
+      memberEffective: {
+        providerType: "codex-oauth-token",
+        credentialScope: "member",
+      },
     });
     expect(availableModel(connected, f.model)).toBeUndefined();
     const ownerAfter = await misc.listRunModels(f.actor);

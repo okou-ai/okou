@@ -58,8 +58,8 @@ export const runModelCatalog = pgTable(
       .notNull()
       .default(false),
     /**
-     * The family of Pi route rules that admits the model
-     * (`claude-native`, `gpt-codex` or `deepseek`). NULL means the model is
+     * The family of Pi route rules that admits the model (only
+     * `gpt-codex` remains). NULL means the model is
      * not Pi-eligible and runs on its vendor harness; a new model stays off
      * Pi until an operator sets it.
      */
@@ -92,7 +92,7 @@ export const runModelCatalog = pgTable(
       ),
       check(
         "chk_run_model_catalog_pi_route_class",
-        sql`${table.piRouteClass} IS NULL OR ${table.piRouteClass} IN ('claude-native', 'gpt-codex', 'deepseek')`,
+        sql`${table.piRouteClass} IS NULL OR ${table.piRouteClass} = 'gpt-codex'`,
       ),
     ];
   },

@@ -422,7 +422,7 @@ export interface CreateQueuedChatRunInput {
   readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
   readonly cliAgentType: string | null;
   readonly piExecution: boolean;
-  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
+  readonly codexServiceTier: "fast" | undefined;
   readonly reasoningEffort?: ReasoningEffort | null;
   readonly computerUseHostGrant: {
     readonly hostId: string;
@@ -2276,7 +2276,7 @@ export interface QueuedMessageModelRoute {
   /** The selected model's catalog projection from the pick's snapshot. */
   readonly piCatalogModel: PiCatalogModel | null;
   readonly cliAgentType: string | null;
-  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
+  readonly codexServiceTier: "fast" | undefined;
   readonly reasoningEffort?: ReasoningEffort | null;
 }
 

@@ -137,38 +137,6 @@ export function isCatalogFastServiceTierSupported(
   });
 }
 
-/** Whether any enabled route of the model offers Ultrafast. */
-export function catalogModelOffersUltrafast(
-  catalog: ModelCatalog,
-  model: string | null | undefined,
-): boolean {
-  return capabilityRoutes(catalog, model, null).some((route) => {
-    return route.serviceTiers.includes("ultrafast");
-  });
-}
-
-/**
- * Ultrafast is offered only by the exact selected route; it never falls back
- * to another route of the model.
- */
-export function isCatalogUltrafastServiceTierSupported(
-  catalog: ModelCatalog,
-  model: string | null | undefined,
-  providerType: string | null | undefined,
-): boolean {
-  if (!model || !providerType) {
-    return false;
-  }
-  return catalog.routes.some((route) => {
-    return (
-      route.enabled &&
-      route.model === model &&
-      route.providerType === providerType &&
-      route.serviceTiers.includes("ultrafast")
-    );
-  });
-}
-
 /**
  * The catalog model a selected ID names: the catalog model itself, or the one
  * catalog model whose route `upstream_model` it is (a provider-prefixed ID

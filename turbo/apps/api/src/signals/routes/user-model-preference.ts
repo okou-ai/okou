@@ -1,7 +1,4 @@
-import {
-  getMemberRunModelRoute,
-  isMemberRunModelConfigurable,
-} from "@okouai/api-contracts/contracts/member-run-model";
+import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { UserPreferenceChangedPayload } from "@okouai/api-contracts/contracts/realtime";
@@ -27,7 +24,6 @@ import { listAvailableRunModels$ } from "../services/run-models.service";
 import {
   isCatalogFastServiceTierSupported,
   isCatalogRouteEffortSupported,
-  isCatalogUltrafastServiceTierSupported,
 } from "../services/model-route-capabilities.service";
 import {
   updateUserModelPreference$,
@@ -40,7 +36,7 @@ function configuredRunModelProviderType(
   runModel: AvailableRunModel | undefined,
 ): string | null {
   return runModel && isMemberRunModelConfigurable(runModel)
-    ? getMemberRunModelRoute(runModel).providerType
+    ? runModel.memberEffective.providerType
     : null;
 }
 
@@ -67,27 +63,6 @@ function validateModelSettingsPatch(args: {
     return badRequestMessage(
       "Reasoning effort is not supported by the selected model",
     );
-  }
-  return undefined;
-}
-
-function validateUltrafastServiceTier(args: {
-  readonly catalog: ModelCatalog;
-  readonly requested: boolean;
-  readonly configuredRunModel: AvailableRunModel | undefined;
-}): ReturnType<typeof badRequestMessage> | undefined {
-  if (!args.requested) {
-    return undefined;
-  }
-  if (
-    !args.configuredRunModel ||
-    !isCatalogUltrafastServiceTierSupported(
-      args.catalog,
-      args.configuredRunModel.model,
-      configuredRunModelProviderType(args.configuredRunModel),
-    )
-  ) {
-    return badRequestMessage("Ultrafast is unavailable for this model route");
   }
   return undefined;
 }
@@ -256,17 +231,11 @@ const updateUserModelPreferenceInner$ = command(
       return modelSettingsError;
     }
 
-    const serviceTierError =
-      validateUltrafastServiceTier({
-        catalog,
-        requested: data.serviceTier === "ultrafast",
-        configuredRunModel,
-      }) ??
-      validatePriorityServiceTier({
-        catalog,
-        requested: data.serviceTier === "priority",
-        configuredRunModel,
-      });
+    const serviceTierError = validatePriorityServiceTier({
+      catalog,
+      requested: data.serviceTier === "priority",
+      configuredRunModel,
+    });
     if (serviceTierError) {
       return serviceTierError;
     }

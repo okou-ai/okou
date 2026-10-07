@@ -30,16 +30,20 @@ Returns the authenticated member's available choices:
     {
       "model": "okou-1.0",
       "modelLabel": "Auto",
-      "defaultProviderType": "built-in",
-      "runtimeProviderType": "openrouter-codex",
-      "credentialScope": "org",
-      "modelProviderId": null
+      "modelProviderId": null,
+      "memberEffective": {
+        "providerType": "built-in",
+        "runtimeProviderType": "openrouter-codex",
+        "credentialScope": "org",
+        "availability": "available",
+        "accountSelection": "not_applicable"
+      }
     }
   ]
 }
 ```
 
-The example omits route-status and member-capability fields; the route contract
+The example omits subscription option fields; the route contract
 in `turbo/packages/api-contracts/src/contracts/run-models.ts` and its response
 schema `availableRunModelsResponseSchema` (defined in
 `turbo/packages/api-contracts/src/contracts/model-providers.ts`) are
@@ -74,8 +78,10 @@ operator error rather than silently inventing a route.
   model fails closed with an explicit error; it never silently becomes Auto.
   Catalog resolution follows `replaced_by` chains and reports unknown models
   instead of substituting the system default.
-- Built-in key availability and cooldowns still apply to the fixed OpenRouter
-  route. Failure is not permission to choose another platform model/vendor.
+- Built-in key availability still applies to the fixed OpenRouter route. A
+  provider failure fails that run; there is no route cooldown, and the next
+  request tries the route again. Failure is not permission to choose another
+  platform model/vendor.
 
 ## Billing and history
 

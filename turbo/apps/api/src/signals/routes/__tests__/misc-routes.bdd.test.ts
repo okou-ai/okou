@@ -304,8 +304,10 @@ describe("MISC-04: available run models, personal subscriptions, and logs", () =
         }),
       ).toStrictEqual(["okou-1.0"]);
       expect(available.models[0]).toMatchObject({
-        defaultProviderType: "built-in",
-        credentialScope: "org",
+        memberEffective: expect.objectContaining({
+          providerType: "built-in",
+          credentialScope: "org",
+        }),
         modelProviderId: null,
       });
     }
@@ -363,8 +365,10 @@ describe("MISC-04: available run models, personal subscriptions, and logs", () =
     expect(connectedModels.models).toContainEqual(
       expect.objectContaining({
         model: "claude-sonnet-5-5",
-        defaultProviderType: "claude-code-oauth-token",
-        credentialScope: "member",
+        memberEffective: expect.objectContaining({
+          providerType: "claude-code-oauth-token",
+          credentialScope: "member",
+        }),
       }),
     );
 

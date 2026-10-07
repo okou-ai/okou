@@ -29,7 +29,6 @@ const MITMDUMP_LOG_RECORD_MAX_BYTES: usize = 64 * 1024;
 /// installed/replaced mitmdump binary is still observed as writable.
 const TEXT_BUSY_SPAWN_RETRY_DELAY: Duration = Duration::from_millis(20);
 const TEXT_BUSY_SPAWN_MAX_RETRIES: usize = 5;
-const RUNNER_TOKEN_ENV: &str = "OKOU_MITM_RUNNER_TOKEN";
 
 #[derive(Debug)]
 enum MitmdumpStartupFailure {
@@ -218,8 +217,6 @@ pub struct ProxyConfig {
     pub client_version: &'static str,
     /// System trust bundle used by mitmdump.
     pub system_ca_bundle: &'static str,
-    /// Runner credential available to the host addon for platform API requests.
-    pub runner_token: Option<String>,
 }
 
 /// Manages the mitmdump process lifecycle and proxy registry.
@@ -547,7 +544,6 @@ impl MitmProxy {
                     client_session_id: "runner-session-test".to_string(),
                     client_version: "test-runner-version",
                     system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
-                    runner_token: None,
                 },
                 runtime: None,
                 child: None,
@@ -708,11 +704,6 @@ async fn spawn_mitmdump(
         ));
     if let Some(url) = &config.api_url {
         cmd.arg("--set").arg(format!("okou_api_url={url}"));
-    }
-    if let Some(token) = &config.runner_token {
-        cmd.env(RUNNER_TOKEN_ENV, token);
-    } else {
-        cmd.env_remove(RUNNER_TOKEN_ENV);
     }
     cmd.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
@@ -1138,8 +1129,7 @@ mod tests {
             r#"#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$@" > "$0.args"
-printf '%s\n%s\n%s\n' "$TMPDIR" "$OKOU_MITMDUMP_RUNTIME_DIR" \
-  "${OKOU_MITM_RUNNER_TOKEN-}" > "$0.env"
+printf '%s\n%s\n' "$TMPDIR" "$OKOU_MITMDUMP_RUNTIME_DIR" > "$0.env"
 cp -f "/proc/$$/environ" "$0.environ"
 port=""
 control_dir=""
@@ -1187,18 +1177,6 @@ PY
         let mut perms = std::fs::metadata(path).unwrap().permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(path, perms).unwrap();
-    }
-
-    #[test]
-    fn embedded_addon_reads_runner_token_environment() {
-        let source = ADDON_FILES
-            .iter()
-            .find_map(|(name, content)| {
-                (name == "model_provider_failure.py").then_some(content.as_str())
-            })
-            .expect("model-provider failure addon source should be embedded");
-
-        assert!(source.contains(&format!("RUNNER_AUTH_ENV = \"{RUNNER_TOKEN_ENV}\"")));
     }
 
     fn write_forking_ready_mitmdump(path: &Path) {
@@ -1569,7 +1547,6 @@ exit 42
             client_session_id: "runner-session-test".to_string(),
             client_version: "test-runner-version",
             system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
-            runner_token: None,
         }
     }
 
@@ -1718,7 +1695,6 @@ exit 42
             client_session_id: "runner-session-test".to_string(),
             client_version: "test-runner-version",
             system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
-            runner_token: None,
         };
 
         let result = MitmProxy::new(config, ADDON_FILES.as_slice()).await;
@@ -1755,7 +1731,6 @@ exit 42
             client_session_id: "runner-session-test".to_string(),
             client_version: "test-runner-version",
             system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
-            runner_token: None,
         };
 
         let (_proxy, _crash_rx) = MitmProxy::new(config, ADDON_FILES.as_slice())
@@ -1932,7 +1907,6 @@ exit 42
             client_session_id: "runner-session-test".to_string(),
             client_version: "test-runner-version",
             system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
-            runner_token: Some("runner-token".to_string()),
         };
         let (crash_tx, _crash_rx) = mpsc::channel(1);
         let stopping = Arc::new(AtomicBool::new(false));
@@ -1955,9 +1929,8 @@ exit 42
         let args = std::fs::read_to_string(fake_mitmdump.with_extension("args")).unwrap();
         let environment = std::fs::read_to_string(fake_mitmdump.with_extension("env")).unwrap();
         let environment: Vec<&str> = environment.lines().collect();
-        assert_eq!(environment.len(), 3);
+        assert_eq!(environment.len(), 2);
         assert_eq!(environment[0], environment[1]);
-        assert_eq!(environment[2], "runner-token");
         let launched_environ = std::fs::read(fake_mitmdump.with_extension("environ")).unwrap();
         let tmpdir = launched_environ
             .split(|byte| *byte == 0)
@@ -2054,7 +2027,6 @@ exit 42
             client_session_id: "runner-session-test".to_string(),
             client_version: "test-runner-version",
             system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
-            runner_token: None,
         };
         let (crash_tx, _crash_rx) = mpsc::channel(1);
         let stopping = Arc::new(AtomicBool::new(false));
@@ -2107,7 +2079,6 @@ exit 42
             client_session_id: "runner-session-test".to_string(),
             client_version: "test-runner-version",
             system_ca_bundle: "/etc/ssl/certs/ca-certificates.crt",
-            runner_token: None,
         };
         let (crash_tx, _crash_rx) = mpsc::channel(1);
         let stopping = Arc::new(AtomicBool::new(false));

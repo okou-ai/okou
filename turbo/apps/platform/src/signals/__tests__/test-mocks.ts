@@ -49,10 +49,6 @@ import {
   setMockGithubIntegration,
 } from "../../mocks/handlers/api-integrations-github.ts";
 import { setMockTelegramIntegration } from "../../mocks/handlers/api-integrations-telegram.ts";
-import {
-  setMockModelCatalogRestrictedPlanAccess,
-  setMockModelCatalogSystemDefault,
-} from "../../mocks/handlers/api-model-catalog.ts";
 import { setMockOnboardingStatus } from "../../mocks/handlers/api-onboarding.ts";
 import { setMockOrgMembers } from "../../mocks/handlers/api-org-members.ts";
 import { setMockOrg } from "../../mocks/handlers/api-org.ts";
@@ -392,16 +388,6 @@ export function createTestMocks(getSignal: () => AbortSignal) {
         ...args: Parameters<typeof setMockAvailableRunModels>
       ) => {
         setMockAvailableRunModels(...args);
-      },
-      modelCatalogSystemDefault: (
-        ...args: Parameters<typeof setMockModelCatalogSystemDefault>
-      ) => {
-        setMockModelCatalogSystemDefault(...args);
-      },
-      modelCatalogRestrictedPlanAccess: (
-        ...args: Parameters<typeof setMockModelCatalogRestrictedPlanAccess>
-      ) => {
-        setMockModelCatalogRestrictedPlanAccess(...args);
       },
       personalModelProviders: (
         ...args: Parameters<typeof setMockPersonalModelProviders>

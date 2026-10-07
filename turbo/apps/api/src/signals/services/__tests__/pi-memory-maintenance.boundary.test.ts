@@ -49,7 +49,6 @@ import {
 } from "../../routes/__tests__/helpers/feature-switches";
 import {
   resolveBuiltInModelRouteFixture,
-  seedBuiltInModelCandidateKeys,
   seedBuiltInModelKey,
 } from "../../routes/__tests__/helpers/runtime-state";
 import { configureNativeCliArtifact } from "../../routes/__tests__/helpers/chat-events-fixture";
@@ -59,8 +58,10 @@ import {
 } from "../pi-memory-phase2-job.service";
 import { createPiMemoryPhase2Worker } from "../pi-memory-phase2-worker.service";
 import { createModelSourceSnapshot } from "../execution-model-source.service";
-import { modelCatalog$ } from "../model-catalog.service";
-import { prepareManagedModelEnvironment } from "../model-provider.service";
+import {
+  preparePiMemoryBuiltinEnvironment,
+  resolvePiMemoryBuiltinRoute,
+} from "../pi-memory-builtin-config";
 import {
   PI_MEMORY_PHASE2_BUILT_IN_MODEL,
   PI_MEMORY_PHASE2_USAGE_DRAIN_MS,
@@ -1078,27 +1079,17 @@ describe("maintenance routing admission and captured authority", () => {
     ).resolves.toStrictEqual([]);
   });
 
-  it("keeps catalog permission checks for a captured route", async () => {
-    // All-candidate fixtures intentionally retain direct keys for captured
-    // history. Their existence must not make them eligible for new work.
-    await seedBuiltInModelCandidateKeys(
-      context,
-      PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-    );
-    const current = await resolveBuiltInModelRouteFixture(
-      context,
-      PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-    );
-    if (!current) {
-      throw new Error("Missing current OpenRouter route");
+  it("keeps memory binding checks for a captured route", async () => {
+    // Memory maintenance resolves its independent binding, not Auto.
+    await seedBuiltInModelKey(context, PI_MEMORY_PHASE2_BUILT_IN_MODEL);
+    const route = await resolvePiMemoryBuiltinRoute(db(), context.signal);
+    if (!route) {
+      throw new Error("Missing current OpenRouter memory route");
     }
-    expect(current.provider_type).toBe("openrouter-codex");
-    const route = {
+    expect(route).toMatchObject({
       selectedModel: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-      providerType: "openrouter-codex" as const,
-      upstreamModel: current.upstream_model,
-      modelKeyId: current.model_key_id,
-    };
+      providerType: "openrouter-codex",
+    });
     const orgId = `boundary-captured-org-${randomUUID()}`;
     const userId = `boundary-captured-user-${randomUUID()}`;
     const store = createStore();
@@ -1112,40 +1103,26 @@ describe("maintenance routing admission and captured authority", () => {
     if (!source) {
       throw new Error("Missing captured managed credential source");
     }
-    const request = {
-      catalog: await store.get(modelCatalog$),
-      // The provider adapter is Codex/Responses; maintenance materializes
-      // its prepared environment into a Pi Guest configuration afterwards.
-      framework: "codex" as const,
-      selectedModelOverride: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-      builtInModelRuntimeRoute: route,
-    };
-    const permitted = await prepareManagedModelEnvironment(source, request);
+    const permitted = preparePiMemoryBuiltinEnvironment(source, route);
     expect(permitted).toMatchObject({
       selectedModel: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
       upstreamModel: route.upstreamModel,
     });
-    // A valid managed key cannot authorize an upstream absent from the
-    // captured catalog. Reject instead of silently selecting another route.
-    await expect(
-      prepareManagedModelEnvironment(source, {
-        ...request,
-        builtInModelRuntimeRoute: {
-          ...route,
-          upstreamModel: `unpermitted/${randomUUID()}`,
-        },
+    // A valid managed key cannot authorize an upstream outside the fixed
+    // memory binding. Reject instead of silently selecting another route.
+    expect(
+      preparePiMemoryBuiltinEnvironment(source, {
+        ...route,
+        upstreamModel: `unpermitted/${randomUUID()}`,
       }),
-    ).resolves.toBeNull();
+    ).toBeNull();
     // A permitted route cannot borrow another managed key's source identity.
-    await expect(
-      prepareManagedModelEnvironment(source, {
-        ...request,
-        builtInModelRuntimeRoute: {
-          ...route,
-          modelKeyId: randomUUID(),
-        },
+    expect(
+      preparePiMemoryBuiltinEnvironment(source, {
+        ...route,
+        modelKeyId: randomUUID(),
       }),
-    ).resolves.toBeNull();
+    ).toBeNull();
   });
 });
 

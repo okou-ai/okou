@@ -2,7 +2,6 @@ import {
   modelCatalogContract,
   type ModelCatalogResponse,
 } from "@okouai/api-contracts/contracts/model-catalog";
-import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import {
   AUTO_RUN_MODEL,
   AUTO_RUN_PROVIDER,
@@ -146,9 +145,7 @@ const PI_ROUTE_CLASS_BY_MODEL: Readonly<Record<string, "gpt-codex">> = {
 /** The seeded catalog's system default. */
 export const MOCK_SYSTEM_DEFAULT_MODEL = "okou-1.0";
 
-export function createMockModelCatalog(
-  systemDefaultModel = MOCK_SYSTEM_DEFAULT_MODEL,
-): ModelCatalogResponse {
+export function createMockModelCatalog(): ModelCatalogResponse {
   const models: MockCatalogModel[] = MODEL_ROWS.map(
     ([model, displayName, sortOrder, replacedBy]) => {
       return {
@@ -163,7 +160,7 @@ export function createMockModelCatalog(
     },
   );
   return {
-    systemDefaultModel,
+    systemDefaultModel: MOCK_SYSTEM_DEFAULT_MODEL,
     models,
     routes: [
       AUTO_ROUTE,
@@ -174,7 +171,7 @@ export function createMockModelCatalog(
   };
 }
 
-let mockModelCatalog: ModelCatalogResponse = createMockModelCatalog();
+const mockModelCatalog: ModelCatalogResponse = createMockModelCatalog();
 
 export function getMockModelCatalog(): ModelCatalogResponse {
   return mockModelCatalog;
@@ -193,35 +190,6 @@ export function mockCatalogHasModel(model: string | null | undefined) {
   return mockModelCatalog.models.some((entry) => {
     return entry.model === model;
   });
-}
-
-export function mockCatalogBuiltInProvider(
-  model: string,
-): AvailableRunModel["runtimeProviderType"] {
-  return (mockModelCatalog.routes.find((route) => {
-    return route.model === model && route.providerType === "built-in";
-  })?.concreteProviderType ?? null) as AvailableRunModel["runtimeProviderType"];
-}
-
-export function setMockModelCatalogSystemDefault(model: string): void {
-  mockModelCatalog = createMockModelCatalog(model);
-}
-
-/** Operators change a model's plan runModel for restricted plans. */
-export function setMockModelCatalogRestrictedPlanAccess(
-  model: string,
-  access: Pick<MockCatalogModel, "builtInOnRestrictedPlans">,
-): void {
-  mockModelCatalog = {
-    ...mockModelCatalog,
-    models: mockModelCatalog.models.map((entry) => {
-      return entry.model === model ? { ...entry, ...access } : entry;
-    }),
-  };
-}
-
-export function resetMockModelCatalog(): void {
-  mockModelCatalog = createMockModelCatalog();
 }
 
 export const apiModelCatalogHandlers = [

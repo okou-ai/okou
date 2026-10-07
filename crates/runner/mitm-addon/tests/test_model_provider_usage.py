@@ -153,44 +153,12 @@ class TestReportModelProviderUsage:
         }
 
     @pytest.mark.parametrize(
-        ("input_tokens", "suffix"),
-        [(271_998, ".ultrafast"), (272_001, ".long_context.ultrafast")],
-    )
-    def test_astra_ultrafast_uses_distinct_billable_categories(
-        self, tmp_path, real_flow, usage_webhook_api, input_tokens, suffix
-    ):
-        flow = make_model_provider_usage_reporting_flow(
-            real_flow,
-            tmp_path,
-            host="openrouter.ai",
-            original_url="https://openrouter.ai/api/v1/responses",
-            firewall_name="model-provider:openrouter-codex",
-            model_usage_provider="gpt-6-astra",
-            usage={
-                "service_tier": "ultrafast",
-                "tokens.input": input_tokens,
-                "tokens.output": 7,
-                "tokens.cache_read": 2,
-            },
-        )
-        flow.metadata[metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS] = 272_001
-        with usage_webhook_api() as webhook:
-            usage.report_model_provider_usage(flow, "run-astra-ultrafast")
-            usage.flush_usage_events(trigger="test")
-        assert {event["category"]: event["quantity"] for event in webhook.usage_events()} == {
-            f"tokens.input{suffix}": input_tokens,
-            f"tokens.output{suffix}": 7,
-            f"tokens.cache_read{suffix}": 2,
-        }
-
-    @pytest.mark.parametrize(
         ("service_tier", "input_tokens", "expected_suffix"),
         [
             (None, 400_000, ""),
             ("priority", 400_000, ".fast"),
             (None, 400_001, ".long_context"),
             ("priority", 400_001, ".long_context.fast"),
-            ("ultrafast", 400_001, ".long_context.ultrafast"),
         ],
     )
     def test_unmapped_provider_uses_captured_route_threshold(

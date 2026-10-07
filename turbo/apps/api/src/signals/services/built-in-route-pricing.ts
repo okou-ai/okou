@@ -1,22 +1,13 @@
-import { usagePricing } from "@okouai/db/schema/usage-pricing";
-import { and, eq } from "drizzle-orm";
-
 import {
   resolveUsagePricingProvider,
   type UsagePricingResolution,
 } from "../context/usage-pricing-resolution";
-import { computed } from "ccstate";
-import { db$ } from "../external/db";
 import {
-  catalogAutoRoute,
   type CatalogRoute,
   type ModelCatalog,
   catalogBuiltInRoute,
 } from "./model-catalog.service";
-import {
-  isBuiltInModelProviderType,
-  normalizeRunModelId,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type {
   ResolvedModelProviderEnvironment,
@@ -34,7 +25,7 @@ const MODEL_TOKEN_CATEGORIES = [
 ] as const;
 
 /** The run's requested Codex service tier (`agent_runs.codex_service_tier`). */
-type RunServiceTier = "fast" | "ultrafast" | null | undefined;
+type RunServiceTier = "fast" | null | undefined;
 
 function usagePricingKey(
   kind: string,
@@ -83,8 +74,8 @@ export function usagePricingByKey<
  * addon's category scheme): the four token categories, their `.long_context`
  * variants when the route has a long-context threshold (the route's own
  * `long_context_min_total_input_tokens`, exactly the value the API captures
- * for the Runner), and the requested service tier's `.fast` / `.ultrafast`
- * suffix variants. Standard-tier categories stay included for a tiered run
+ * for the Runner), and the requested service tier's `.fast` suffix
+ * variants. Standard-tier categories stay included for a tiered run
  * because the provider may serve a request at the standard tier.
  */
 function builtInRouteBillableCategories(
@@ -121,53 +112,14 @@ export interface BuiltInRoutePricing {
   readonly serviceTier: RunServiceTier;
 }
 
-interface BuiltInRoutePricingInput {
-  readonly catalog: ModelCatalog;
-  readonly model: string;
-  readonly serviceTier: RunServiceTier;
-  readonly resolution: UsagePricingResolution;
-}
-
 export function builtInRoutePricingFromSnapshot(
-  args: Pick<BuiltInRoutePricingInput, "resolution" | "serviceTier">,
+  args: {
+    readonly resolution: UsagePricingResolution;
+    readonly serviceTier: RunServiceTier;
+  },
   byKey: ReadonlyMap<string, unknown>,
 ): BuiltInRoutePricing {
   return { byKey, resolution: args.resolution, serviceTier: args.serviceTier };
-}
-
-export function builtInRoutePricing(args: BuiltInRoutePricingInput) {
-  return computed(async (get): Promise<BuiltInRoutePricing> => {
-    const db = get(db$);
-    const route = catalogAutoRoute(args.catalog, args.model);
-    const rows =
-      route?.pricingKind && route.pricingProvider
-        ? await db
-            .select({
-              kind: usagePricing.kind,
-              provider: usagePricing.provider,
-              category: usagePricing.category,
-            })
-            .from(usagePricing)
-            .where(
-              and(
-                eq(usagePricing.kind, route.pricingKind),
-                eq(
-                  usagePricing.provider,
-                  resolveUsagePricingProvider(
-                    args.resolution,
-                    route.pricingKind,
-                    route.pricingProvider,
-                  ),
-                ),
-              ),
-            )
-        : [];
-    return {
-      byKey: usagePricingByKey(rows),
-      resolution: args.resolution,
-      serviceTier: args.serviceTier,
-    };
-  });
 }
 
 /**
@@ -326,31 +278,6 @@ export function runRoutePricingFromSnapshot(
     : null;
 }
 
-export function runRoutePricing(args: {
-  readonly catalog: ModelCatalog;
-  readonly modelProvider: ResolvedModelProviderEnvironment | null;
-  readonly serviceTier: CodexServiceTier | undefined;
-  readonly resolution: UsagePricingResolution;
-}) {
-  return computed(async (get): Promise<BuiltInRoutePricing | null> => {
-    const selectedModel = args.modelProvider?.selectedModel;
-    if (
-      !selectedModel ||
-      !isBuiltInModelProviderType(args.modelProvider?.type)
-    ) {
-      return null;
-    }
-    return await get(
-      builtInRoutePricing({
-        catalog: args.catalog,
-        model: normalizeRunModelId(selectedModel),
-        serviceTier: args.serviceTier,
-        resolution: args.resolution,
-      }),
-    );
-  });
-}
-
 /**
  * Final new-run admission: every usage category the assigned Built-in route
  * can report for this run's service tier must resolve to a `usage_pricing`
@@ -410,7 +337,7 @@ function builtInRouteForContext(
   }
   return catalogBuiltInRoute(
     catalog,
-    normalizeRunModelId(modelProvider.selectedModel),
+    modelProvider.selectedModel,
     concreteProviderType,
   );
 }
@@ -427,6 +354,6 @@ function catalogModelUsageProvider(
   if (!modelProvider?.selectedModel) {
     return undefined;
   }
-  const model = normalizeRunModelId(modelProvider.selectedModel);
+  const model = modelProvider.selectedModel;
   return catalog.byModel.has(model) ? model : undefined;
 }

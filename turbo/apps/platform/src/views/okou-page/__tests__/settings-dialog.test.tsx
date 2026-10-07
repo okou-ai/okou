@@ -2,7 +2,6 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import { modelProviderCooldownDiagnosticsContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import {
   type UserLocale,
   type UserPreferencesResponse,
@@ -114,22 +113,6 @@ function connectorCatalogDisclosure(region: HTMLElement): {
   }
   if (!(details instanceof HTMLDetailsElement)) {
     throw new Error("Connector catalog disclosure not found");
-  }
-  return { details, summary };
-}
-
-function builtInModelCooldownDisclosure(region: HTMLElement): {
-  readonly details: HTMLDetailsElement;
-  readonly summary: HTMLElement;
-} {
-  const title = within(region).getByText("Built-in model fallback");
-  const summary = title.closest("summary");
-  const details = summary?.closest("details");
-  if (!(summary instanceof HTMLElement)) {
-    throw new Error("Built-in model cooldown summary not found");
-  }
-  if (!(details instanceof HTMLDetailsElement)) {
-    throw new Error("Built-in model cooldown disclosure not found");
   }
   return { details, summary };
 }
@@ -364,91 +347,6 @@ test("Route members away from administrator-only workspace settings", async () =
   expect(screen.getByText("Theme")).toBeInTheDocument();
 });
 
-test("Inspect built-in model cooldown diagnostics", async () => {
-  const releaseRefresh = context.mocks.deferred<void>();
-  const refreshStarted = context.mocks.deferred<void>();
-  let initialResponseServed = false;
-  context.mocks.api(
-    modelProviderCooldownDiagnosticsContract.get,
-    async ({ respond }) => {
-      if (initialResponseServed) {
-        refreshStarted.resolve();
-        await releaseRefresh.promise;
-        return respond(200, {
-          activeCooldowns: [],
-        });
-      }
-      initialResponseServed = true;
-      return respond(200, {
-        activeCooldowns: [
-          {
-            selectedModel: "gpt-5.6-luna",
-            providerType: "openrouter-codex",
-            upstreamModel: "gpt-5.6-luna-2026-08-01",
-            unavailableUntil: "2026-08-23T04:05:00.000Z",
-          },
-        ],
-      });
-    },
-  );
-
-  await openDialog("admin", "debug");
-
-  const diagnostics = await screen.findByRole("region", {
-    name: "Built-in model fallback",
-  });
-  const { details, summary } = builtInModelCooldownDisclosure(diagnostics);
-  expect(details.open).toBeFalsy();
-  expect(summary).toHaveTextContent("global active cooldowns: 1");
-  expect(
-    within(diagnostics).queryByText("gpt-5.6-luna-2026-08-01"),
-  ).not.toBeVisible();
-
-  click(summary);
-  expect(details.open).toBeTruthy();
-  expect(within(diagnostics).getByText("gpt-5.6-luna")).toBeInTheDocument();
-  expect(within(diagnostics).getByText("openrouter-codex")).toBeInTheDocument();
-  expect(
-    within(diagnostics).getByText("gpt-5.6-luna-2026-08-01"),
-  ).toBeInTheDocument();
-  expect(
-    within(diagnostics).getByText("2026-08-23T04:05:00.000Z"),
-  ).toHaveAttribute("datetime", "2026-08-23T04:05:00.000Z");
-  expect(
-    queryAllByRoleFast("button", diagnostics).some((button) => {
-      return button.textContent?.trim() === "Cancel cooldown";
-    }),
-  ).toBeFalsy();
-
-  const refreshButton = queryAllByRoleFast("button", diagnostics).find(
-    (button) => {
-      return button.textContent?.trim() === "Refresh";
-    },
-  );
-  if (!refreshButton) {
-    throw new Error("Built-in model cooldown refresh button not found");
-  }
-  click(refreshButton);
-  await refreshStarted.promise;
-  expect(refreshButton).toBeDisabled();
-  expect(details.open).toBeTruthy();
-  expect(
-    within(diagnostics).getByText("gpt-5.6-luna-2026-08-01"),
-  ).toBeInTheDocument();
-
-  releaseRefresh.resolve();
-  await waitFor(() => {
-    expect(summary).toHaveTextContent("global active cooldowns: 0");
-    expect(refreshButton).toBeEnabled();
-  });
-  expect(details.open).toBeTruthy();
-  expect(
-    within(diagnostics).getByText(
-      "No built-in model routes are currently in global cooldown.",
-    ),
-  ).toBeInTheDocument();
-});
-
 async function setupSnapshotMeasurement() {
   const agentId = crypto.randomUUID();
   const snapshotRequested = context.mocks.deferred<void>();
@@ -530,99 +428,6 @@ test("Measure the threads inside a singleton snapshot on demand", async () => {
   expect(values[0]).toHaveTextContent("3");
   expect(values[1]).toHaveTextContent(/^[1-9][\d.]*KB$/u);
   expect(values[2]).toHaveTextContent(/^[\d,.]+ ms$/u);
-});
-
-test("Cancel a global built-in model cooldown as staff", async () => {
-  const releaseCancellation = context.mocks.deferred<void>();
-  const cancellationStarted = context.mocks.deferred<void>();
-  let cooldownActive = true;
-  let cancellationBody: {
-    readonly selectedModel: string;
-    readonly providerType: string;
-    readonly upstreamModel: string;
-  } | null = null;
-  context.mocks.api(
-    modelProviderCooldownDiagnosticsContract.get,
-    ({ respond }) => {
-      return respond(200, {
-        canCancelCooldowns: true,
-        activeCooldowns: cooldownActive
-          ? [
-              {
-                selectedModel: "gpt-5.6-luna",
-                providerType: "openrouter-codex",
-                upstreamModel: "gpt-5.6-luna-2026-08-01",
-                unavailableUntil: "2026-08-23T04:05:00.000Z",
-              },
-            ]
-          : [],
-      });
-    },
-  );
-  context.mocks.api(
-    modelProviderCooldownDiagnosticsContract.cancel,
-    async ({ body, respond }) => {
-      cancellationBody = body;
-      cancellationStarted.resolve();
-      await releaseCancellation.promise;
-      cooldownActive = false;
-      return respond(204);
-    },
-  );
-
-  await openDialog("admin", "debug");
-
-  const diagnostics = await screen.findByRole("region", {
-    name: "Built-in model fallback",
-  });
-  const { details, summary } = builtInModelCooldownDisclosure(diagnostics);
-  click(summary);
-  expect(details.open).toBeTruthy();
-
-  click(buttonWithText(diagnostics, "Cancel cooldown"));
-  const confirmation = await screen.findByRole("dialog", {
-    name: "Cancel global cooldown?",
-  });
-  expect(cancellationBody).toBeNull();
-  expect(within(confirmation).getByText("gpt-5.6-luna")).toBeVisible();
-  expect(within(confirmation).getByText("openrouter-codex")).toBeVisible();
-  expect(
-    within(confirmation).getByText("gpt-5.6-luna-2026-08-01"),
-  ).toBeVisible();
-  expect(
-    within(confirmation).getByText(
-      "Cancelling this global cooldown makes the route immediately eligible for every workspace.",
-    ),
-  ).toBeVisible();
-  expect(
-    within(confirmation).getByText(
-      "A later qualifying failure can place this route back in cooldown.",
-    ),
-  ).toBeVisible();
-
-  click(buttonWithText(confirmation, "Cancel cooldown"));
-  await cancellationStarted.promise;
-  expect(buttonWithText(confirmation, "Cancelling...")).toBeDisabled();
-  expect(buttonWithText(confirmation, "Keep cooldown")).toBeDisabled();
-  expect(cancellationBody).toStrictEqual({
-    selectedModel: "gpt-5.6-luna",
-    providerType: "openrouter-codex",
-    upstreamModel: "gpt-5.6-luna-2026-08-01",
-  });
-
-  releaseCancellation.resolve();
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Cancel global cooldown?" }),
-    ).not.toBeInTheDocument();
-    expect(summary).toHaveTextContent("global active cooldowns: 0");
-  });
-  expect(details.open).toBeTruthy();
-  expect(
-    within(diagnostics).getByText(
-      "No built-in model routes are currently in global cooldown.",
-    ),
-  ).toBeInTheDocument();
 });
 
 test("Inspect connector catalog diagnostics", async () => {

@@ -102,10 +102,9 @@ func chatRequestBody(_ request: URLRequest) -> Data {
 }
 
 /// `/api/model-catalog` fixture with one retired model.
-func modelCatalogResponse(systemDefaultModel: String) -> ChatHTTPResponse {
+func modelCatalogResponse() -> ChatHTTPResponse {
   let entries: [(model: String, displayName: String, replacedBy: String?)] = [
     ("okou-1.0", "Auto", nil),
-    ("claude-sonnet-5", "Claude Sonnet 5", nil),
     ("gpt-5.6-sol", "GPT-5.6 Sol", nil),
     ("claude-opus-5-5", "Claude Opus 5.5", nil),
     ("claude-opus-4-8", "Claude Opus 4.8", "claude-opus-5-5"),
@@ -120,6 +119,35 @@ func modelCatalogResponse(systemDefaultModel: String) -> ChatHTTPResponse {
   }
   return ChatHTTPResponse(
     body:
-      "{\"systemDefaultModel\":\"\(systemDefaultModel)\",\"models\":[\(models.joined(separator: ","))],\"routes\":[]}"
+      "{\"systemDefaultModel\":\"okou-1.0\",\"models\":[\(models.joined(separator: ","))],\"routes\":[]}"
+  )
+}
+
+/// A connected personal-subscription row in a `/api/run-models` response.
+struct SubscriptionRunModel {
+  let model: String
+  let providerType: String
+  var serviceTier: String?
+}
+
+/// `/api/run-models` fixture: Auto plus the member's connected subscription rows.
+func runModelsResponse(_ subscriptions: [SubscriptionRunModel] = []) -> ChatHTTPResponse {
+  let auto = """
+    {"model":"okou-1.0","modelLabel":"Auto","modelProviderId":null,\
+    "memberEffective":{"providerType":"built-in","runtimeProviderType":"openrouter-codex",\
+    "credentialScope":"org","availability":"available","accountSelection":"not_applicable"}}
+    """
+  let rows = subscriptions.map { row -> String in
+    let tier = row.serviceTier.map { "\"\($0)\"" } ?? "null"
+    return """
+      {"model":"\(row.model)","modelLabel":"\(row.model)","modelProviderId":null,\
+      "memberEffective":{"providerType":"\(row.providerType)","runtimeProviderType":"\(row.providerType)",\
+      "credentialScope":"member","availability":"available","accountSelection":"capture_required"},\
+      "subscriptionOptions":{"efforts":["low","medium","high"],"serviceTier":\(tier)}}
+      """
+  }
+  return ChatHTTPResponse(
+    body:
+      "{\"defaultModel\":\"okou-1.0\",\"models\":[\(([auto] + rows).joined(separator: ","))]}"
   )
 }

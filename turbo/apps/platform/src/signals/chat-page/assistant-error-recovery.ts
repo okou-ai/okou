@@ -3,11 +3,12 @@ import {
   getCodexChatGptAccountUnsupportedModel,
   isAgentExecutionTimeoutRunError,
 } from "@okouai/api-contracts/contracts/errors";
-import { getMemberRunModelRoute } from "@okouai/api-contracts/contracts/member-run-model";
 import type { ModelProviderFramework } from "@okouai/api-contracts/contracts/model-provider-types";
 import {
   getFrameworkForType,
+  isPersonalSubscriptionProviderType,
   type ModelProviderResponse,
+  type PersonalSubscriptionProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import {
@@ -54,10 +55,6 @@ type SubscriptionResetWindow = Exclude<
   AssistantErrorRecoveryWindow,
   "model" | "unknown"
 >;
-
-type PersonalSubscriptionProviderType =
-  | "codex-oauth-token"
-  | "claude-code-oauth-token";
 
 /**
  * The personal subscription the thread's current model routes through. The
@@ -490,12 +487,6 @@ function latestKnownResetAt(
   return latest?.value ?? null;
 }
 
-function isPersonalSubscriptionProviderType(
-  type: string,
-): type is PersonalSubscriptionProviderType {
-  return type === "codex-oauth-token" || type === "claude-code-oauth-token";
-}
-
 function createCurrentPersonalSubscriptionComputed(
   selectedModel$: Computed<string | null>,
 ): Computed<Promise<CurrentPersonalSubscription | null>> {
@@ -511,7 +502,7 @@ function createCurrentPersonalSubscriptionComputed(
     if (!runModel) {
       return null;
     }
-    const route = getMemberRunModelRoute(runModel);
+    const route = runModel.memberEffective;
     if (!isPersonalSubscriptionProviderType(route.providerType)) {
       return null;
     }

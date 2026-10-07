@@ -8419,10 +8419,8 @@ function ComposerModelScopeCard({
 
 function runServiceTier(
   selection: ModelProviderSelection | null | undefined,
-): "priority" | "ultrafast" | null {
-  return selection?.codexServiceTier === "fast"
-    ? "priority"
-    : (selection?.codexServiceTier ?? null);
+): "priority" | null {
+  return selection?.codexServiceTier === "fast" ? "priority" : null;
 }
 
 function ComposerTemporaryModelNotice({
@@ -8469,9 +8467,7 @@ function ComposerTemporaryModelNotice({
   const runSpeedLabel = t(($) => {
     return selectionServiceTier === "priority"
       ? $.settings.models.picker.fast
-      : selectionServiceTier === "ultrafast"
-        ? $.settings.models.picker.ultrafastMode
-        : $.settings.models.picker.standard;
+      : $.settings.models.picker.standard;
   });
   const scopedModelLabel = [
     modelName,

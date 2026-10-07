@@ -36,8 +36,8 @@ teardown_file() {
         .defaultModel == "okou-1.0" and
         any(.models[]?;
             .model == $model and
-            .defaultProviderType == "codex-oauth-token" and
-            .credentialScope == "member"
+            .memberEffective.providerType == "codex-oauth-token" and
+            .memberEffective.credentialScope == "member"
         )
     ' <<<"$output"
     assert_success

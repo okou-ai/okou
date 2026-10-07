@@ -1,3 +1,4 @@
+import { reconcileBillingOrganizationsForTest } from "../../../../test-fixtures/billing-workers";
 import { mockClerkUsers } from "./clerk-users";
 import { mockClaudeCodeTokenEndpoint } from "./api-bdd-auth-device";
 import { randomUUID } from "node:crypto";
@@ -29,7 +30,6 @@ import {
   cronProcessUsageEventsContract,
   cronTelegramCleanupContract,
 } from "@okouai/api-contracts/contracts/cron";
-import { testBillingReconciliationStateContract } from "@okouai/api-contracts/contracts/test-billing-reconciliation-state";
 import {
   runnersCancellationContract,
   runnersConnectorRuntimeSyncContract,
@@ -51,15 +51,11 @@ import {
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 
 import { createAppWithRoutes } from "../../../../app-factory-core";
-import {
-  setupAppWithRoutes,
-  setupRawAppRequestWithRoutes,
-} from "../../../../__tests__/test-app";
+import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { apiTestS3PresignedUrl } from "../../../../__tests__/mocks";
 import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { now, withNowScopeForTest } from "../../../../lib/time";
-import { createDeferredPromise } from "../../../utils";
 import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 import type { SystemSkillStorageResolution } from "../../../context/system-skill-storage-resolution";
 import { listAgentRunsFixture } from "../../../../test-fixtures/agent-runs";
@@ -82,7 +78,6 @@ import { meModelProvidersUpsertRoutes } from "../../me-model-providers-upsert";
 import { runDetailRoutes } from "../../run-detail";
 import { runsCancelRoutes } from "../../runs-cancel";
 import { runsRoutes } from "../../runs";
-import { testBillingReconciliationStateRoutes } from "../../test-billing-reconciliation-state";
 import { userPermissionGrantsRoutes } from "../../user-permission-grants";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
@@ -698,49 +693,6 @@ export function createRunsApi(
       return response.body;
     },
 
-    async startRunnerModelProviderFailureWithDelayedBody(
-      runId: string,
-      body: RunnerModelProviderFailureRequest,
-    ) {
-      const bodyRequested = createDeferredPromise<void>(context.signal);
-      const bodyReleased = createDeferredPromise<void>(context.signal);
-      const encodedBody = new TextEncoder().encode(JSON.stringify(body));
-      const requestBody = new ReadableStream<Uint8Array>(
-        {
-          async pull(controller) {
-            if (!bodyRequested.settled()) {
-              bodyRequested.resolve(undefined);
-            }
-            await bodyReleased.promise;
-            controller.enqueue(encodedBody);
-            controller.close();
-          },
-        },
-        { highWaterMark: 0 },
-      );
-      const response = setupRawAppRequestWithRoutes({
-        context,
-        routes: runRoutes,
-      })(`/api/runners/runs/${runId}/model-provider-failures`, {
-        method: "POST",
-        headers: {
-          authorization: OFFICIAL_RUNNER_AUTHORIZATION,
-          "content-type": "application/json",
-        },
-        body: requestBody,
-        duplex: "half",
-      } as RequestInit & { readonly duplex: "half" });
-      await bodyRequested.promise;
-      return {
-        releaseBody: () => {
-          if (!bodyReleased.settled()) {
-            bodyReleased.resolve(undefined);
-          }
-        },
-        response,
-      };
-    },
-
     async requestRunnerModelProviderFailureAs(
       authorization: string | undefined,
       runId: string,
@@ -752,22 +704,6 @@ export function createRunsApi(
           headers: authorization === undefined ? {} : { authorization },
           params: { runId },
           body,
-        }),
-        statuses,
-      );
-    },
-
-    async requestRawRunnerModelProviderFailure(
-      validAuth: boolean,
-      runId: string,
-      statuses: readonly (200 | 400 | 401 | 403 | 500)[],
-      body: unknown,
-    ) {
-      return await accept(
-        runApp(context)(runnersModelProviderFailuresContract).report({
-          headers: runnerHeaders(validAuth),
-          params: { runId },
-          body: body as RunnerModelProviderFailureRequest,
         }),
         statuses,
       );
@@ -1487,15 +1423,9 @@ export function createRunsApi(
     },
 
     async reconcileBillingOrganizations(orgIds: readonly string[]) {
-      const client = setupAppWithRoutes({
-        context,
-        routes: testBillingReconciliationStateRoutes,
-      })(testBillingReconciliationStateContract);
-      return await accept(
-        client.reconcile({
-          body: { orgIds: [...orgIds] },
-        }),
-        [200],
+      return await reconcileBillingOrganizationsForTest(
+        { orgIds: [...orgIds] },
+        context.signal,
       );
     },
   };

@@ -31,6 +31,10 @@ export const chatThreads = pgTable(
       unique("uq_chat_threads_id_user").on(table.id, table.userId),
       uniqueIndex("chat_threads_agent_session_unique").on(table.agentSessionId),
       check(
+        "chk_chat_threads_codex_service_tier",
+        sql`${table.codexServiceTier} IS NULL OR ${table.codexServiceTier} = 'fast'`,
+      ),
+      check(
         "chat_threads_computer_access_check",
         sql`NOT (${table.cloudBrowserEnabled} AND ${table.computerUseHostId} IS NOT NULL)`,
       ),

@@ -41,7 +41,6 @@ describe("modelProviderAuthSessions schema", () => {
     expect(modelProviderAuthSessions.connectorType.name).toBe("connector_type");
     expect(modelProviderAuthSessions.source.name).toBe("source");
     expect(modelProviderAuthSessions.status.name).toBe("status");
-    expect(modelProviderAuthSessions.sandboxId.name).toBe("sandbox_id");
     expect(modelProviderAuthSessions.approvalUrl.name).toBe("approval_url");
     expect(modelProviderAuthSessions.verificationCode.name).toBe(
       "verification_code",
@@ -62,7 +61,6 @@ describe("modelProviderAuthSessions schema", () => {
       expect.arrayContaining([
         "idx_model_provider_auth_sessions_owner_status",
         "idx_model_provider_auth_sessions_expiration",
-        "idx_model_provider_auth_sessions_sandbox",
       ]),
     );
   });

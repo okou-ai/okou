@@ -3,7 +3,6 @@ import {
   getModelProviderEnvBindings,
   getFrameworkForType,
   getModelProviderPresentationLabel,
-  getBuiltInRouteProviderVendor,
   getCatalogRunModelRouteAccess,
   normalizeRunModelId,
   getSecretNameForType,
@@ -100,41 +99,12 @@ describe("model-first canonical catalog", () => {
     ).toBe("allowed");
   });
 
-  it("lists every Built-in route provider vendor", () => {
-    expect(getBuiltInRouteProviderVendor("openrouter-codex")).toBe(
-      "openrouter",
-    );
-    expect(getBuiltInRouteProviderVendor("codex-oauth-token")).toBeUndefined();
-  });
-
   it("recognizes only own Okou model IDs", () => {
     expect(isOkouRunModel("okou-1.0")).toBeTruthy();
     expect(isOkouRunModel("okou-1-0")).toBeFalsy();
     expect(isOkouRunModel("toString")).toBeFalsy();
     expect(isOkouRunModel("__proto__")).toBeFalsy();
   });
-
-  it.each([
-    ["deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash"],
-    ["deepseek-v4-flash", "deepseek/deepseek-v4-flash"],
-  ] as const)(
-    "projects Codex metadata for OpenRouter %s",
-    (model, upstreamModel) => {
-      const catalog = getModelProviderCodexCatalogForModel(
-        model,
-        upstreamModel,
-        "openrouter-codex",
-      );
-      expect(catalog?.models).toEqual([
-        expect.objectContaining({
-          slug: upstreamModel,
-          apply_patch_tool_type: null,
-          input_modalities:
-            model === "deepseek-v4.1-flash" ? ["text", "image"] : ["text"],
-        }),
-      ]);
-    },
-  );
 
   it.each([
     {
@@ -155,11 +125,7 @@ describe("model-first canonical catalog", () => {
       sourceModelId,
       reasoningEffort,
     }) => {
-      const catalog = getModelProviderCodexCatalogForModel(
-        model,
-        preset,
-        "openrouter-codex",
-      );
+      const catalog = getModelProviderCodexCatalogForModel(model, preset);
 
       expect(catalog?.models).toHaveLength(1);
       expect(catalog?.models).toEqual([
@@ -561,10 +527,14 @@ describe("built-in provider discriminator contract", () => {
     id: "22222222-2222-4222-8222-222222222222",
     model: "okou-1.0",
     modelLabel: "Auto",
-    defaultProviderType: "built-in",
-    credentialScope: "org",
     modelProviderId: null,
-    routeStatus: "valid",
+    memberEffective: {
+      providerType: "built-in",
+      runtimeProviderType: "openrouter-codex",
+      credentialScope: "org",
+      availability: "available",
+      accountSelection: "not_applicable",
+    },
     createdAt: "2026-08-26T00:00:00.000Z",
     updatedAt: "2026-08-26T00:00:00.000Z",
   } as const;
@@ -579,13 +549,14 @@ describe("built-in provider discriminator contract", () => {
       "built-in",
     );
     expect(
-      availableRunModelSchema.parse(availableModelResponse).defaultProviderType,
+      availableRunModelSchema.parse(availableModelResponse).memberEffective
+        .providerType,
     ).toBe("built-in");
   });
 
   it("exposes built-in exactly once without a firewall", () => {
     expect(MODEL_PROVIDER_TYPES).toHaveProperty("built-in");
-    expect(getFrameworkForType("built-in")).toBe("claude-code");
+    expect(getFrameworkForType("built-in")).toBe("codex");
     expect(getModelProviderPresentationLabel("built-in")).toBe(
       "Built-in model",
     );

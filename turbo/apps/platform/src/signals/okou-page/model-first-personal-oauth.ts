@@ -1,11 +1,9 @@
+import { isMemberRunModelAvailable } from "@okouai/api-contracts/contracts/member-run-model";
 import {
-  getMemberRunModelRoute,
-  isMemberRunModelAvailable,
-} from "@okouai/api-contracts/contracts/member-run-model";
-import type {
-  AvailableRunModelsResponse,
-  ModelProviderResponse,
-  ModelProviderType,
+  isPersonalSubscriptionProviderType,
+  type AvailableRunModelsResponse,
+  type ModelProviderResponse,
+  type PersonalSubscriptionProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { command, computed, state } from "ccstate";
 import {
@@ -13,29 +11,22 @@ import {
   reloadPersonalModelProviders$,
 } from "../external/personal-model-providers.ts";
 import { availableRunModels$ } from "../external/run-models.ts";
-import {
-  memberRunModelAllowedForPlan,
-  modelPlanCapabilities$,
-} from "./model-plan-capabilities.ts";
-
-type PersonalOauthProviderType =
-  | "claude-code-oauth-token"
-  | "codex-oauth-token";
+import { memberRunModelAllowedForPlan } from "./model-plan-capabilities.ts";
 
 type PersonalModelProviderStatus =
   | {
       status: "connected";
-      providerType: PersonalOauthProviderType;
+      providerType: PersonalSubscriptionProviderType;
       modelLabel: string;
     }
   | {
       status: "missing";
-      providerType: PersonalOauthProviderType;
+      providerType: PersonalSubscriptionProviderType;
       modelLabel: string;
     }
   | {
       status: "needs_reconnect";
-      providerType: PersonalOauthProviderType;
+      providerType: PersonalSubscriptionProviderType;
       modelLabel: string;
       credentialId: string;
     };
@@ -53,20 +44,14 @@ export const reloadPersonalModelProvider$ = command(({ set }) => {
   });
 });
 
-function isPersonalOauthProviderType(
-  type: ModelProviderType,
-): type is PersonalOauthProviderType {
-  return type === "claude-code-oauth-token" || type === "codex-oauth-token";
-}
-
 function personalStatusForRunModel(
   runModel: AvailableRunModelsResponse["models"][number],
   personalProviders: readonly ModelProviderResponse[],
 ): PersonalModelProviderStatus | null {
-  const route = getMemberRunModelRoute(runModel);
+  const route = runModel.memberEffective;
   if (
     route.availability === "plan_restricted" ||
-    !isPersonalOauthProviderType(route.providerType)
+    !isPersonalSubscriptionProviderType(route.providerType)
   ) {
     return null;
   }
@@ -121,28 +106,15 @@ export const selectedModelAvailable$ = command(
     selectedModel: string,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const [models, modelCapabilities] = await Promise.all([
-      get(availableRunModels$),
-      get(modelPlanCapabilities$),
-    ]);
+    const models = await get(availableRunModels$);
     signal.throwIfAborted();
     const runModel = models.models.find((candidate) => {
       return candidate.model === selectedModel;
     });
-    if (runModel === undefined || !isMemberRunModelAvailable(runModel)) {
-      return false;
-    }
-    if (!memberRunModelAllowedForPlan(runModel, modelCapabilities)) {
-      return false;
-    }
-    if (runModel.memberEffective) {
-      return true;
-    }
-    if (!isPersonalOauthProviderType(runModel.defaultProviderType)) {
-      return true;
-    }
-    const status = (await get(personalModelProvider$))[selectedModel];
-    signal.throwIfAborted();
-    return status?.status === "connected";
+    return (
+      runModel !== undefined &&
+      isMemberRunModelAvailable(runModel) &&
+      memberRunModelAllowedForPlan(runModel)
+    );
   },
 );

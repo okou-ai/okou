@@ -85,16 +85,6 @@ function label(route: AdmittedRoute, identity: PiRuntimeIdentity): string {
   ].join(" | ");
 }
 
-function seededBuiltInProviderTypes(selectedModel: string): readonly string[] {
-  const model = piCatalogModel(SEEDED_MODEL_CATALOG, selectedModel);
-  if (!model) {
-    throw new Error(`Seeded catalog has no row for ${selectedModel}`);
-  }
-  return model.builtIn.map((route) => {
-    return route.concreteProviderType;
-  });
-}
-
 /**
  * Routes admitted by catalog eligibility and route rules, enumerated before the
  * capability gate. Enumerating after it would let a dropped capability entry
@@ -111,7 +101,7 @@ function admittedRoutes(): readonly AdmittedRoute[] {
     for (const modelProviderType of providers) {
       const runtimes =
         modelProviderType === "built-in"
-          ? ["built-in", ...seededBuiltInProviderTypes(selectedModel)]
+          ? ["built-in", "openrouter-codex"]
           : [modelProviderType];
       for (const runtimeProviderType of runtimes) {
         for (const codexServiceTier of [undefined, "fast"] as const) {

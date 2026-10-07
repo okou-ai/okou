@@ -60,6 +60,7 @@ readonly RETIRED_MODEL_CONFIGURATION_COLUMNS_DROP_PATH=turbo/packages/db/src/mig
 readonly CHAT_THREAD_PROVIDER_PIN_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1332_drop_chat_thread_provider_pin_columns.sql
 readonly DEAD_MODEL_PROVIDER_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1333_drop_dead_model_provider_columns.sql
 readonly CONNECTOR_CATALOG_RELEASE_2_PATH=turbo/packages/db/src/migrations/1334_connector_catalog_release_2_contraction.sql
+readonly MODEL_ROUTE_STATE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1338_retire_model_route_state.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -311,6 +312,21 @@ if [[ ! "$connector_catalog_release_2_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$connector_catalog_release_2_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the connector catalog Release 2 contraction: ${connector_catalog_release_2_commit}."
+fi
+
+# Migration 1338 drops built_in_model_candidate_cooldown, the frozen OAuth
+# copies on model_providers and model_provider_auth_sessions.sandbox_id, and
+# tightens the service tier and Pi route class checks. Every earlier API reads
+# the cooldown table while resolving the Auto route and selects every column of
+# both provider tables, so it cannot serve after 1338. This floor descends from
+# the 1334 floor.
+model_route_state_retirement_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$MODEL_ROUTE_STATE_RETIREMENT_PATH" | sed -n '1p')
+if [[ ! "$model_route_state_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged model route state retirement on main."
+fi
+if ! git merge-base --is-ancestor "$model_route_state_retirement_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the model route state retirement: ${model_route_state_retirement_commit}."
 fi
 
 # Chat Event V8 removes eight event types and two context types. Earlier APIs

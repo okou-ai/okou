@@ -54,7 +54,7 @@ export type ModelSettingsPatch = z.infer<typeof modelSettingsPatchSchema>;
 
 /**
  * Protocol narrowing of a route's catalog efforts for one execution: Pi and
- * non-Pi runtimes and DeepSeek's concrete providers accept different subsets.
+ * non-Pi runtimes accept different subsets.
  */
 export function narrowRouteReasoningEfforts(args: {
   readonly model: string | null | undefined;
@@ -62,17 +62,7 @@ export function narrowRouteReasoningEfforts(args: {
   readonly piExecution: boolean;
   readonly runtimeProviderType: string | null | undefined;
 }): readonly ReasoningEffort[] {
-  const choices = args.efforts;
-  if (args.model === "deepseek-v4-flash" || args.model === "deepseek-v4-pro") {
-    if (!args.piExecution) return [];
-    if (args.runtimeProviderType === "openrouter-codex") {
-      return choices.filter((effort) => {
-        return effort === "high" || effort === "xhigh";
-      });
-    }
-    return [];
-  }
-  return choices.filter((effort) => {
+  return args.efforts.filter((effort) => {
     return effort !== "ultracode" && (!args.piExecution || effort !== "ultra");
   });
 }

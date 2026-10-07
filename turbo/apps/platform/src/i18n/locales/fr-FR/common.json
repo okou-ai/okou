@@ -4957,10 +4957,7 @@
         "models": "Modèles",
         "noConfiguredModels": "Aucun modèle configuré",
         "pro": "Pro",
-        "standard": "Standard",
-        "ultrafast": "Ultrarapide",
-        "ultrafastImpact": "Jusqu’à 8× plus rapide pour les tokens · 6× le prix des tokens API OpenAI",
-        "ultrafastMode": "Mode ultrarapide"
+        "standard": "Standard"
       },
       "reset": {
         "confirmDescription": "Utilisez une réinitialisation de Codex pour remettre à zéro vos fenêtres d'utilisation actuelles. Il vous en reste {{remaining}}.",
@@ -5091,26 +5088,6 @@
         "sectionTitle": "Chat"
       },
       "debug": {
-        "builtInModelCooldown": {
-          "cancelAction": "Annuler le délai d'attente",
-          "cancelDescription": "L'annulation de ce délai d'attente global rend immédiatement la route disponible pour tous les espaces de travail.",
-          "cancelling": "Annulation...",
-          "cancelTitle": "Annuler le délai d'attente global ?",
-          "cancelWarning": "Un échec ultérieur répondant aux critères peut remettre cette route en délai d'attente.",
-          "description": "Inspectez les routes de modèles intégrés temporairement exclues de la sélection de secours.",
-          "empty": "Aucune route de modèle intégré n'est actuellement soumise à un délai d'attente global.",
-          "globalActive": "délais d'attente globaux actifs",
-          "globalExplanation": "Les délais d'attente constituent un état opérationnel global et affectent tous les espaces de travail qui utilisent des modèles intégrés.",
-          "keepCooldown": "Conserver le délai d'attente",
-          "loading": "Chargement du diagnostic des délais d'attente des modèles intégrés...",
-          "providerType": "Type de fournisseur",
-          "refresh": "Actualiser",
-          "selectedModel": "Modèle sélectionné",
-          "title": "Secours des modèles intégrés",
-          "unavailable": "Le diagnostic des délais d'attente des modèles intégrés n'est pas disponible.",
-          "unavailableUntil": "Indisponible jusqu'au",
-          "upstreamModel": "Modèle en amont"
-        },
         "capture": {
           "disabled": "Désactivé",
           "enabled_one": "Activé pour la prochaine exécution de {{count}}",

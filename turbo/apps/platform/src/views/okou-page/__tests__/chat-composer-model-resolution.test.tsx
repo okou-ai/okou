@@ -2,10 +2,7 @@ import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-pr
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import {
-  MOCK_SYSTEM_DEFAULT_MODEL,
-  mockCatalogDisplayName,
-} from "../../../mocks/handlers/api-model-catalog.ts";
+import { MOCK_SYSTEM_DEFAULT_MODEL } from "../../../mocks/handlers/api-model-catalog.ts";
 import {
   closeModelPanel,
   findModelOption,
@@ -16,7 +13,10 @@ import {
 import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
-import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
+import {
+  buildRunModel,
+  composerModelTrigger,
+} from "./chat-composer-test-helpers.ts";
 import {
   context,
   installRunChat,
@@ -28,24 +28,10 @@ import {
 const FIXTURE_DATE = "2026-08-12T09:00:00.000Z";
 
 function runModelFixture(model: string, index: number): AvailableRunModel {
-  const providerType =
-    model === "okou-1.0"
-      ? "built-in"
-      : model.startsWith("claude-")
-        ? "claude-code-oauth-token"
-        : "codex-oauth-token";
-  const credentialScope = model === "okou-1.0" ? "org" : "member";
-  return {
+  return buildRunModel({
     model,
-    modelLabel: mockCatalogDisplayName(model),
-    defaultProviderType: providerType,
-    credentialScope,
-    modelProviderId:
-      credentialScope === "member"
-        ? `e4000000-0000-4000-a000-${String(index).padStart(12, "0")}`
-        : null,
-    routeStatus: "valid",
-  };
+    modelProviderId: `e4000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
+  });
 }
 
 function configureRunModels(models: readonly string[]): void {

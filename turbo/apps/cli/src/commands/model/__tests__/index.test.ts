@@ -11,19 +11,26 @@ const available: AvailableRunModelsResponse = {
     {
       model: "okou-1.0",
       modelLabel: "Auto",
-      defaultProviderType: "built-in",
-      runtimeProviderType: "openrouter-codex",
-      credentialScope: "org",
       modelProviderId: null,
-      routeStatus: "valid",
+      memberEffective: {
+        providerType: "built-in",
+        runtimeProviderType: "openrouter-codex",
+        credentialScope: "org",
+        availability: "available",
+        accountSelection: "not_applicable",
+      },
     },
     {
       model: "gpt-6-sol",
       modelLabel: "GPT 6 Sol",
-      defaultProviderType: "codex-oauth-token",
-      credentialScope: "member",
       modelProviderId: "00000000-0000-4000-8000-000000000102",
-      routeStatus: "valid",
+      memberEffective: {
+        providerType: "codex-oauth-token",
+        runtimeProviderType: "codex-oauth-token",
+        credentialScope: "member",
+        availability: "available",
+        accountSelection: "capture_required",
+      },
       subscriptionOptions: {
         efforts: ["medium", "high"],
         serviceTier: "priority",
@@ -32,10 +39,14 @@ const available: AvailableRunModelsResponse = {
     {
       model: "gpt-6-sol-mini",
       modelLabel: "GPT 6 Sol Mini",
-      defaultProviderType: "codex-oauth-token",
-      credentialScope: "member",
       modelProviderId: "00000000-0000-4000-8000-000000000102",
-      routeStatus: "valid",
+      memberEffective: {
+        providerType: "codex-oauth-token",
+        runtimeProviderType: "codex-oauth-token",
+        credentialScope: "member",
+        availability: "available",
+        accountSelection: "capture_required",
+      },
       subscriptionOptions: {
         efforts: ["medium", "high"],
         serviceTier: "priority",
@@ -44,10 +55,14 @@ const available: AvailableRunModelsResponse = {
     {
       model: "claude-sonnet-5",
       modelLabel: "Claude Sonnet 5",
-      defaultProviderType: "claude-code-oauth-token",
-      credentialScope: "member",
       modelProviderId: "00000000-0000-4000-8000-000000000103",
-      routeStatus: "valid",
+      memberEffective: {
+        providerType: "claude-code-oauth-token",
+        runtimeProviderType: "claude-code-oauth-token",
+        credentialScope: "member",
+        availability: "available",
+        accountSelection: "capture_required",
+      },
     },
   ],
 };

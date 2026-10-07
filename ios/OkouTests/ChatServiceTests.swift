@@ -66,11 +66,10 @@ final class ChatServiceTests: XCTestCase {
             "{\"selectedModel\":\"gpt-5.6-sol\",\"serviceTier\":null,\"modelSettings\":{\"gpt-5.6-sol\":{\"effort\":\"high\"}},\"selectedImageModel\":null,\"updatedAt\":null}"
         )
       case "/api/run-models":
-        return ChatHTTPResponse(
-          body:
-            "{\"defaultModel\":\"okou-1.0\",\"models\":[{\"model\":\"okou-1.0\",\"routeStatus\":\"valid\"},{\"model\":\"gpt-5.6-sol\",\"routeStatus\":\"valid\",\"defaultProviderType\":\"codex-oauth-token\"}]}"
-        )
-      case "/api/model-catalog": return modelCatalogResponse(systemDefaultModel: "okou-1.0")
+        return runModelsResponse([
+          SubscriptionRunModel(model: "gpt-5.6-sol", providerType: "codex-oauth-token")
+        ])
+      case "/api/model-catalog": return modelCatalogResponse()
       case "/api/chat-threads":
         let body = try JSONDecoder().decode(CreatedRequest.self, from: chatRequestBody(request))
         createdRequests.withLock { $0.append(body) }
@@ -111,12 +110,10 @@ final class ChatServiceTests: XCTestCase {
             "{\"selectedModel\":null,\"serviceTier\":null,\"modelSettings\":{},\"selectedImageModel\":null,\"updatedAt\":null}"
         )
       case "/api/run-models":
-        return ChatHTTPResponse(
-          body:
-            "{\"defaultModel\":\"okou-1.0\",\"models\":[{\"model\":\"okou-1.0\",\"routeStatus\":\"valid\"},{\"model\":\"claude-sonnet-5\",\"routeStatus\":\"valid\"}]}"
-        )
-      case "/api/model-catalog":
-        return modelCatalogResponse(systemDefaultModel: "claude-sonnet-5")
+        return runModelsResponse([
+          SubscriptionRunModel(model: "gpt-5.6-sol", providerType: "codex-oauth-token")
+        ])
+      case "/api/model-catalog": return modelCatalogResponse()
       case "/api/chat-threads":
         let body = try JSONDecoder().decode(CreatedRequest.self, from: chatRequestBody(request))
         createdModels.withLock { $0.append(body.model) }
@@ -154,13 +151,10 @@ final class ChatServiceTests: XCTestCase {
             "selectedImageModel":null,"updatedAt":null}
             """)
       case "/api/run-models":
-        return ChatHTTPResponse(
-          body: """
-            {"defaultModel":"okou-1.0",\
-            "models":[{"model":"okou-1.0","routeStatus":"valid"},\
-            {"model":"claude-opus-5-5","routeStatus":"valid","defaultProviderType":"claude-code-oauth-token"}]}
-            """)
-      case "/api/model-catalog": return modelCatalogResponse(systemDefaultModel: "okou-1.0")
+        return runModelsResponse([
+          SubscriptionRunModel(model: "claude-opus-5-5", providerType: "claude-code-oauth-token")
+        ])
+      case "/api/model-catalog": return modelCatalogResponse()
       case "/api/chat-threads":
         let body = try JSONDecoder().decode(CreatedRequest.self, from: chatRequestBody(request))
         createdRequests.withLock { $0.append(body) }
@@ -198,12 +192,9 @@ final class ChatServiceTests: XCTestCase {
             body: """
               {"selectedModel":"\(savedModel)","serviceTier":"priority","modelSettings":{}}
               """)
-        case "/api/run-models":
-          return ChatHTTPResponse(
-            body: """
-              {"defaultModel":"okou-1.0","models":[{"model":"okou-1.0","routeStatus":"valid"}]}
-              """)
-        case "/api/model-catalog": return modelCatalogResponse(systemDefaultModel: "okou-1.0")
+        // gpt-5.6-sol is in the catalog but the member has no connected subscription row.
+        case "/api/run-models": return runModelsResponse()
+        case "/api/model-catalog": return modelCatalogResponse()
         case "/api/chat-threads":
           let body = try JSONDecoder().decode(CreatedRequest.self, from: chatRequestBody(request))
           createdRequests.withLock { $0.append(body) }
@@ -871,7 +862,7 @@ private struct CapturedControl: Decodable, Sendable {
 private func sampleThread() -> ChatThread {
   ChatThread(
     id: fixtureThread, agentID: fixtureAgent, title: "Existing chat",
-    selectedModel: "claude-sonnet-5",
+    selectedModel: "claude-opus-5-5",
     createdAt: Date(timeIntervalSince1970: 0), updatedAt: Date(timeIntervalSince1970: 0),
     sortAt: Date(timeIntervalSince1970: 0),
     pinnedAt: nil, pinOrder: nil, indicator: nil)
@@ -915,5 +906,5 @@ private func userPayload(_ text: String) -> String {
 }
 
 private func metadataJSON(browser: Bool) -> String {
-  "{\"id\":\"\(fixtureThread)\",\"agentId\":\"\(fixtureAgent)\",\"title\":\"Existing chat\",\"selectedModel\":\"claude-sonnet-5\",\"modelSettings\":{},\"serviceTier\":null,\"pinnedAt\":null,\"computerUseHostId\":null,\"cloudBrowserEnabled\":\(browser),\"selectedImageModel\":null}"
+  "{\"id\":\"\(fixtureThread)\",\"agentId\":\"\(fixtureAgent)\",\"title\":\"Existing chat\",\"selectedModel\":\"claude-opus-5-5\",\"modelSettings\":{},\"serviceTier\":null,\"pinnedAt\":null,\"computerUseHostId\":null,\"cloudBrowserEnabled\":\(browser),\"selectedImageModel\":null}"
 }

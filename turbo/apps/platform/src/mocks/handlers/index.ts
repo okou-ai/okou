@@ -49,10 +49,7 @@ import {
 } from "./api-integrations-telegram.ts";
 import { appLogsHandlers } from "./api-logs.ts";
 import { apiMarketingEventsHandlers } from "./api-marketing-events.ts";
-import {
-  apiModelCatalogHandlers,
-  resetMockModelCatalog,
-} from "./api-model-catalog.ts";
+import { apiModelCatalogHandlers } from "./api-model-catalog.ts";
 import {
   apiMorningBriefPreferenceHandlers,
   resetMockMorningBriefPreference,
@@ -165,7 +162,6 @@ export function resetAllMockHandlers(): void {
   resetMockMorningBriefPreference();
   resetMockEmailSubscription();
   resetMockUserModelPreference();
-  resetMockModelCatalog();
   resetMockAvailableRunModels();
   resetMockPersonalModelProviders();
   resetMockPresentationTemplates();

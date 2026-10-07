@@ -29,18 +29,19 @@ const AVAILABLE_MODELS_RESPONSE = {
     {
       model: "claude-sonnet-5",
       modelLabel: "Claude Sonnet 5",
-      defaultProviderType: "claude-code-oauth-token",
-      credentialScope: "member",
       modelProviderId: null,
-      routeStatus: "valid",
+      memberEffective: {
+        providerType: "claude-code-oauth-token",
+        runtimeProviderType: "claude-code-oauth-token",
+        credentialScope: "member",
+        availability: "available",
+        accountSelection: "capture_required",
+      },
     },
     {
       model: "gpt-5.6-luna",
       modelLabel: "GPT 5.6 Luna",
-      defaultProviderType: "codex-oauth-token",
-      credentialScope: "member",
       modelProviderId: null,
-      routeStatus: "valid",
       memberEffective: {
         providerType: "codex-oauth-token",
         runtimeProviderType: "codex-oauth-token",
@@ -52,10 +53,14 @@ const AVAILABLE_MODELS_RESPONSE = {
     {
       model: "okou-1.0",
       modelLabel: "Auto",
-      defaultProviderType: "built-in",
-      credentialScope: "org",
       modelProviderId: null,
-      routeStatus: "valid",
+      memberEffective: {
+        providerType: "built-in",
+        runtimeProviderType: "openrouter-codex",
+        credentialScope: "org",
+        availability: "available",
+        accountSelection: "not_applicable",
+      },
     },
   ],
 };
@@ -419,10 +424,14 @@ describe("okou chat model command", () => {
             {
               model,
               modelLabel: "Acme Nova",
-              defaultProviderType: "codex-oauth-token",
-              credentialScope: "member",
               modelProviderId: null,
-              routeStatus: "valid",
+              memberEffective: {
+                providerType: "codex-oauth-token",
+                runtimeProviderType: "codex-oauth-token",
+                credentialScope: "member",
+                availability: "available",
+                accountSelection: "capture_required",
+              },
             },
           ],
         });
@@ -485,7 +494,6 @@ describe("okou chat model command", () => {
           models: [
             {
               ...AVAILABLE_MODELS_RESPONSE.models[1],
-              routeStatus: "valid",
               memberEffective: {
                 providerType: "codex-oauth-token",
                 runtimeProviderType: "codex-oauth-token",

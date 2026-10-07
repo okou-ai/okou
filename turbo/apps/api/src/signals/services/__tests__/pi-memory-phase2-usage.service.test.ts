@@ -39,7 +39,7 @@ import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
 } from "../../routes/__tests__/helpers/feature-switches";
-import { seedBuiltInModelCandidateKeys } from "../../routes/__tests__/helpers/runtime-state";
+import { seedBuiltInModelKey } from "../../routes/__tests__/helpers/runtime-state";
 import { configureNativeCliArtifact } from "../../routes/__tests__/helpers/chat-events-fixture";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
 import { piMemoryPhase2MaintenanceCallbackPayloadSchema } from "../pi-memory-phase2-maintenance.service";
@@ -86,10 +86,7 @@ async function dispatchMaintenance(type?: "codex-oauth-token") {
   });
   await seedOrgMetadata({ orgId: scope.orgId, tier: "pro", credits: 100_000 });
   if (!type) {
-    await seedBuiltInModelCandidateKeys(
-      context,
-      PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-    );
+    await seedBuiltInModelKey(context, PI_MEMORY_PHASE2_BUILT_IN_MODEL);
   }
   // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
   configureNativeCliArtifact();
@@ -251,7 +248,7 @@ async function launchPublicMaintenance(
       miscApi: fixture.misc,
     });
   } else {
-    await seedBuiltInModelCandidateKeys(
+    await seedBuiltInModelKey(
       context,
       PI_MEMORY_PHASE2_BUILT_IN_MODEL,
       fixture.registerCleanup,

@@ -59,7 +59,7 @@ curl -fsS "${headers[@]}" -X POST -d "$payload" \
 curl -fsS "${headers[@]}" "${api_url}/api/run-models" | jq -e '
     .defaultModel == "okou-1.0" and
     any(.models[]; .model == "claude-sonnet-5-5" and
-        .defaultProviderType == "claude-code-oauth-token" and .credentialScope == "member") and
+        .memberEffective.providerType == "claude-code-oauth-token" and .memberEffective.credentialScope == "member") and
     any(.models[]; .model == "gpt-6-astra" and
-        .defaultProviderType == "codex-oauth-token" and .credentialScope == "member")
+        .memberEffective.providerType == "codex-oauth-token" and .memberEffective.credentialScope == "member")
 ' >/dev/null

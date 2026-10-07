@@ -34,11 +34,7 @@ export const listAvailableRunModels$ = command(
     const auto: AvailableRunModel = {
       model: AUTO_RUN_MODEL,
       modelLabel: "Auto",
-      defaultProviderType: "built-in",
-      runtimeProviderType: AUTO_RUN_PROVIDER,
-      credentialScope: "org",
       modelProviderId: null,
-      routeStatus: "valid",
       memberEffective: {
         providerType: "built-in",
         runtimeProviderType: AUTO_RUN_PROVIDER,
@@ -55,11 +51,7 @@ export const listAvailableRunModels$ = command(
           return {
             model: entry.model,
             modelLabel: entry.displayName,
-            defaultProviderType: entry.providerType,
-            runtimeProviderType: entry.providerType,
-            credentialScope: "member",
             modelProviderId: entry.providerId,
-            routeStatus: "valid",
             subscriptionOptions: {
               efforts: [...entry.efforts],
               serviceTier: entry.serviceTier === "priority" ? "priority" : null,

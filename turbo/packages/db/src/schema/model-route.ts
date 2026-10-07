@@ -95,7 +95,7 @@ export const modelRoutes = pgTable(
       check("chk_model_routes_priority", sql`${table.priority} >= 0`),
       check(
         "chk_model_routes_service_tiers",
-        sql`${table.serviceTiers} <@ ARRAY['priority', 'ultrafast']::text[] AND (${table.defaultServiceTier} IS NULL OR ${table.defaultServiceTier} = ANY(${table.serviceTiers}))`,
+        sql`${table.serviceTiers} <@ ARRAY['priority']::text[] AND (${table.defaultServiceTier} IS NULL OR ${table.defaultServiceTier} = ANY(${table.serviceTiers}))`,
       ),
       check(
         "chk_model_routes_efforts",

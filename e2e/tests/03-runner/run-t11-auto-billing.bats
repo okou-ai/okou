@@ -40,8 +40,8 @@ teardown() {
         (.models | length == 1) and
         any(.models[]?;
             .model == "okou-1.0" and
-            .defaultProviderType == "built-in" and
-            .credentialScope == "org" and
+            .memberEffective.providerType == "built-in" and
+            .memberEffective.credentialScope == "org" and
             .modelProviderId == null
         )
     ' <<<"$output"

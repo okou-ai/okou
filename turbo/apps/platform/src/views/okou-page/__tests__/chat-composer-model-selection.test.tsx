@@ -2,10 +2,9 @@ import {
   chatThreadsContract,
   type ChatThreadEvent,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  isBuiltInModelProviderType,
-  type AvailableRunModel,
-  type ModelProviderType,
+import type {
+  AvailableRunModel,
+  ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   userModelPreferenceContract,
@@ -15,10 +14,7 @@ import {
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import {
-  mockCatalogBuiltInProvider,
-  mockCatalogDisplayName,
-} from "../../../mocks/handlers/api-model-catalog.ts";
+import { mockCatalogDisplayName } from "../../../mocks/handlers/api-model-catalog.ts";
 import {
   closeModelPanel,
   modelOption,
@@ -44,44 +40,24 @@ import {
 } from "./chat-run-test-fixtures.ts";
 
 import { changeChatThreadList } from "../../../mocks/mock-helpers.ts";
-import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
+import {
+  buildRunModel,
+  composerModelTrigger,
+} from "./chat-composer-test-helpers.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
 
 const FIXTURE_DATE = "2026-08-12T09:00:00.000Z";
 
-interface RunModelOptions {
-  readonly providerType?: ModelProviderType;
-}
-
 function runModelFixture(
   model: string,
   index: number,
-  options: RunModelOptions = {},
+  options: { readonly providerType?: ModelProviderType } = {},
 ): AvailableRunModel {
-  const providerType =
-    options.providerType ??
-    (model === "okou-1.0"
-      ? "built-in"
-      : model.startsWith("claude-")
-        ? "claude-code-oauth-token"
-        : "codex-oauth-token");
-  const credentialScope = isBuiltInModelProviderType(providerType)
-    ? "org"
-    : "member";
-  return {
+  return buildRunModel({
     model,
-    modelLabel: mockCatalogDisplayName(model),
-    defaultProviderType: providerType,
-    ...(isBuiltInModelProviderType(providerType)
-      ? { runtimeProviderType: mockCatalogBuiltInProvider(model) }
-      : {}),
-    credentialScope,
-    modelProviderId:
-      credentialScope === "member"
-        ? `e2000000-0000-4000-a000-${String(index).padStart(12, "0")}`
-        : null,
-    routeStatus: "valid",
-  };
+    ...options,
+    modelProviderId: `e2000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
+  });
 }
 
 function configureRunModels(models: readonly string[]): void {

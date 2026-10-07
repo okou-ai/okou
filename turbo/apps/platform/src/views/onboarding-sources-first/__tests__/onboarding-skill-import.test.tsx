@@ -445,15 +445,13 @@ test("The skills step names Claude Code when it was selected", async () => {
   expect(sessions.providers).toStrictEqual(["claudeCode"]);
 });
 
-test("Finishing onboarding sends the selected Codex model preference after a full flow", async () => {
+test("Finishing onboarding sends the industry after a full Codex flow", async () => {
   mockAgentWorkflows();
   mockChatLifecycle(context);
-  let sentProvider: string | undefined;
   let sentIndustry: string | undefined;
   context.mocks.api(
     onboardingCompleteContract.complete,
-    ({ query, body, respond }) => {
-      sentProvider = query?.modelProvider;
+    ({ body, respond }) => {
       sentIndustry = body.industry;
       context.mocks.data.onboardingStatus({
         needsOnboarding: false,
@@ -477,9 +475,8 @@ test("Finishing onboarding sends the selected Codex model preference after a ful
   ).resolves.toBeInTheDocument();
   click(getButtonByName("Start with Okou"));
   await waitFor(() => {
-    expect(sentProvider).toBe("codex");
+    expect(sentIndustry).toBe("marketing");
   });
-  expect(sentIndustry).toBe("marketing");
 });
 
 test("A resumed skills step without a work positioning continues to Slack", async () => {

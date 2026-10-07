@@ -34,8 +34,10 @@ describe("available run models", () => {
       expect.objectContaining({
         model: "okou-1.0",
         modelLabel: "Auto",
-        runtimeProviderType: "openrouter-codex",
-        credentialScope: "org",
+        memberEffective: expect.objectContaining({
+          runtimeProviderType: "openrouter-codex",
+          credentialScope: "org",
+        }),
         modelProviderId: null,
       }),
     ]);
@@ -55,8 +57,10 @@ describe("available run models", () => {
     const response = await accept(list(), [200]);
     expect(response.body.models).toContainEqual(
       expect.objectContaining({
-        defaultProviderType: "claude-code-oauth-token",
-        credentialScope: "member",
+        memberEffective: expect.objectContaining({
+          providerType: "claude-code-oauth-token",
+          credentialScope: "member",
+        }),
         subscriptionOptions: expect.objectContaining({
           efforts: expect.any(Array),
         }),

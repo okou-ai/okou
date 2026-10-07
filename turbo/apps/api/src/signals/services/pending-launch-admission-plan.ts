@@ -352,9 +352,7 @@ function advanceQueueHead(
     throw new Error("Queue-first claim requires a run model pin");
   }
   const serviceTier = args.createArgs.codexServiceTier
-    ? args.createArgs.codexServiceTier === "fast"
-      ? ("priority" as const)
-      : ("ultrafast" as const)
+    ? ("priority" as const)
     : undefined;
   return {
     ...facts,

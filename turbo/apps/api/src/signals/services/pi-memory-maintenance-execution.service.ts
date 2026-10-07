@@ -1,8 +1,10 @@
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
 import {
+  getFrameworkForType,
   getModelProviderFirewall,
   isBuiltInModelProviderType,
   modelProviderTypeSchema,
+  type ModelProviderFramework,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   DEFAULT_PROFILE,
@@ -41,7 +43,7 @@ import { randomUUID } from "node:crypto";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { safeSync, settle } from "../utils";
 import { activatePendingRun$ } from "./agent-run-activation.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
@@ -58,7 +60,6 @@ import {
 } from "./api-dispatch-timing.service";
 import {
   prepareModelUsageContext,
-  runRoutePricing,
   type BuiltInRoutePricing,
 } from "./built-in-route-pricing";
 import {
@@ -78,7 +79,6 @@ import {
   type PreparedExecutionStorageMount,
 } from "./execution-storage.service";
 import {
-  frameworkForProviderSelection,
   loadModelCatalog$,
   modelCatalogForOrg,
   type ModelCatalog,
@@ -273,9 +273,7 @@ interface MaintenanceAdmission {
   readonly credential: PiMaintenanceCredential;
   readonly catalog: ModelCatalog;
   readonly selectedModel: string;
-  readonly framework: NonNullable<
-    ReturnType<typeof frameworkForProviderSelection>
-  >;
+  readonly framework: ModelProviderFramework;
 }
 
 /** Pi-owned admission: feature, current credential, credits and quota. */
@@ -346,15 +344,9 @@ const admitMaintenance$ = command(
       credential.pin.modelProvider,
     ).data;
     const framework =
-      credential.pin.modelProvider === "built-in"
-        ? ("codex" as const)
-        : selectedModel && modelProviderType
-          ? frameworkForProviderSelection(
-              catalog,
-              modelProviderType,
-              selectedModel,
-            )
-          : null;
+      selectedModel && modelProviderType
+        ? getFrameworkForType(modelProviderType)
+        : null;
     if (!selectedModel || !framework) {
       throw new PiMaintenanceDispositionError("model_route_unavailable");
     }
@@ -513,17 +505,13 @@ const DEFAULT_FIREWALL_SECRET_PLACEHOLDER =
 function maintenanceModelPermissionManifest(
   modelProvider: ResolvedModelProviderEnvironment,
 ): PermissionManifest | undefined {
-  const firewall =
-    modelProvider.firewall ??
-    getModelProviderFirewall(modelProvider.concreteType ?? modelProvider.type);
+  const firewall = getModelProviderFirewall(
+    modelProvider.concreteType ?? modelProvider.type,
+  );
   if (!firewall) {
     return undefined;
   }
   const entry = ((): ExecutionFirewallEntry => {
-    // A name-only entry would lose the endpoint selected for this run.
-    if (modelProvider.firewall !== undefined) {
-      return { kind: "inline", firewall: runtimeFirewall(firewall) };
-    }
     const usesBaseUrlVars = firewall.apis.some((api) => {
       return [...api.base.matchAll(FIREWALL_BASE_URL_VAR_PATTERN)].length > 0;
     });
@@ -564,8 +552,6 @@ function maintenanceModelPermissionManifest(
 
 /** Model firewall/permission manifest and usage pricing for the run. */
 async function prepareMaintenanceUsage(args: {
-  readonly db: ReadonlyDb;
-  readonly resolution: Parameters<typeof runRoutePricing>[0]["resolution"];
   readonly catalog: MaintenanceAdmission["catalog"];
   readonly modelProvider: ResolvedModelProviderEnvironment;
   readonly timing: ApiDispatchTimingCollector;
@@ -927,8 +913,6 @@ function createMaintenanceModelReads(
   const usage$ = computed(async (get) => {
     const { modelProvider } = await get(model$);
     return await prepareMaintenanceUsage({
-      db: get(db$),
-      resolution: get(usagePricingResolution$),
       catalog: admitted.catalog,
       modelProvider,
       timing,
@@ -939,14 +923,7 @@ function createMaintenanceModelReads(
               admitted.catalog,
               get(usagePricingResolution$),
             )
-          : await get(
-              runRoutePricing({
-                catalog: admitted.catalog,
-                modelProvider,
-                serviceTier: undefined,
-                resolution: get(usagePricingResolution$),
-              }),
-            ),
+          : null,
     });
   });
   // For a built-in model, the Stripe entitlement read for the allowance window

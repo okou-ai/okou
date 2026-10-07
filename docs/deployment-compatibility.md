@@ -1,5 +1,139 @@
 # Deployment Compatibility
 
+## Frozen model provider state dropped (2026-10-07)
+
+Owner decision (Ethan, 2026-10-07): data no live reader uses is removed.
+Custom migration `1337_retire_unused_model_route_data` clears
+`run_model_catalog.pi_route_class` values other than `gpt-codex`, resets the
+already-rejected `chat_threads.selected_model = 'deepseek/deepseek-v4-pro'`
+pins to NULL (unpinned, which resolves to Auto). The retired-vendor
+`built_in_model_keys` rows are deleted by main's
+`1335_clear_unselectable_thread_models_and_unused_model_keys`; the owner revokes
+those keys upstream outside this change.
+
+Generated migration `1338_retire_model_route_state` narrows
+`chk_run_model_catalog_pi_route_class` to NULL or `gpt-codex` (the table has a
+handful of rows, so the check is added and validated directly), drops
+`model_provider_auth_sessions.sandbox_id` with its partial index, and drops the
+frozen OAuth copies on `model_providers`: `token_expires_at`,
+`needs_reconnect`, `last_refresh_error_code`, `workspace_name`, `plan_type`,
+`subscription_reset_period` and `subscription_next_reset_at`. The live values
+are on `model_provider_accounts`, which every current reader already uses. The
+new API selects explicit `model_providers` columns, and the Pi memory phase 2
+credential gate uses the account's `needs_reconnect` only.
+
+Database ordering: migrations run before API promotion. An API built before
+1338 selects every `model_providers` column when listing, connecting,
+activating or deleting personal subscription accounts, and every
+`model_provider_auth_sessions` column in the Claude Code and Codex device
+authorization flows, so those paths receive `42703` until it drains. This drop
+is **not rolling-compatible**. A new API against the old schema is compatible
+because it never names the dropped columns. An API built before 1337 that is
+still draining is unaffected by the data changes: the cleared pins were
+already rejected.
+
+**Accepted rollout interruption (1338, model provider columns):** Ethan
+explicitly accepted (2026-10-07) a brief unavailability during deployment while
+the outgoing API drains, so personal subscription account and device
+authorization reads from a pre-1338 API may receive `42703` in that window. No
+preparatory release or old-column compatibility branch is required. Acceptance
+of that risk is not an instruction to deploy.
+
+Rollback floor: the rollback resolver resolves the first-parent `main` commit
+that added `1338_retire_model_route_state.sql` and rejects earlier
+targets before artifact or host access. Recovering below it requires a reviewed
+forward migration that recreates the columns before an older API serves. This
+does not claim production activation.
+
+## Ultrafast service tier retired (2026-10-07)
+
+Ultrafast is retired across the App, API, contracts, runner and proxy pricing.
+Migration `1336_retire_ultrafast_data` clears stored Ultrafast selections:
+`chat_threads.codex_service_tier`, `org_members_metadata.service_tier`, and the
+`model_routes.service_tiers` / `default_service_tier` values. Migration
+`1338_retire_model_route_state` then limits route tiers to `priority`
+and adds `chk_chat_threads_codex_service_tier` (NULL or `fast`) and
+`chk_org_members_metadata_service_tier` (NULL or `priority`). The two new checks
+are added `NOT VALID` and validated in a separate statement after 1338 repeats
+the Ultrafast cleanup, so a value written by a draining pre-1338 API cannot fail
+validation. 1338 runs in one transaction, so the lock taken by `ADD CONSTRAINT`
+is held through the `VALIDATE` scan, bounded by the migration statement
+timeout.
+
+New requests that send `ultrafast` are rejected with 400. Immutable history
+(thread events, snapshots, client caches and queued chat input model
+selections) still reads a stored Ultrafast value as Standard (null) instead of
+failing; `agent_runs.codex_service_tier` and usage `.ultrafast` categories stay
+readable for historical runs and billing. An API built before 1338 that is
+still draining can only fail when it writes `ultrafast`, which the current
+catalog no longer offers. Rolling back below this change restores no Ultrafast
+offering because 1336 removed it from the catalog data.
+
+## Built-in model candidate cooldown removed (2026-10-07)
+
+Owner decision (Ethan, 2026-10-07): Auto has one platform route, so a provider
+failure fails that run and the next request tries the route again. The API no
+longer reads or writes a route cooldown when resolving Auto for new runs, queued
+claims or Pi memory maintenance. The staff cooldown diagnostics endpoints
+(`GET`/`DELETE /api/model-providers/cooldown-diagnostics`), their Settings
+debug block, and the test-runtime cooldown actions are removed. Generated
+migration `1338_retire_model_route_state` drops
+`built_in_model_candidate_cooldown`; its rows were transient deadlines with no
+history value, so nothing is converted or archived.
+
+Runner: the mitm addon no longer observes or reports model provider failures,
+and the Runner no longer passes `OKOU_MITM_RUNNER_TOKEN` to mitmdump. Runners
+released before this change still `POST
+/api/runners/runs/:runId/model-provider-failures` best-effort. The endpoint and
+its contract stay: it authenticates the caller and returns
+`{ "outcome": "ignored" }` without reading the run or the body, so old Runners
+see the same success shape they already accept. Remove the endpoint, its
+contract and generated Rust bindings once production Runners no longer send
+these reports (no Runner after this change calls it).
+
+App: a stale App build that opens Settings debug as staff receives `404` from
+the removed diagnostics endpoint inside that debug-only block; no user flow
+depends on it.
+
+Database ordering: migrations run before API promotion. Every API built before
+1338 queries the table while resolving the Auto route for run claims and Pi
+memory maintenance, and writes it from runner failure reports, so it receives
+`42P01` on those paths until it drains. This drop is not rolling-compatible.
+A new API against the old schema is compatible because it never names the
+table.
+
+**Accepted rollout interruption (1338, cooldown table):** Ethan explicitly accepted
+(2026-10-07) a brief unavailability during deployment while the outgoing API
+drains, so Auto run claims, Pi memory maintenance and runner failure reports
+handled by a pre-1338 API may receive `42P01` in that window. No preparatory
+release or old-table compatibility branch is required. Prefer the same rollout
+as 1332/1333 or low traffic. Acceptance of that risk is not an instruction to
+deploy.
+
+Rollback floor: the rollback resolver resolves the first-parent `main` commit
+that added `1338_retire_model_route_state.sql` and rejects earlier
+targets before artifact or host access. Recovering below it requires a reviewed
+forward migration that recreates the table before an older API serves. This
+does not claim production activation.
+
+## OpenRouter US routing removed (2026-10-07)
+
+Platform OpenRouter traffic always uses the global `https://openrouter.ai/api/v1`
+endpoint. The US model allowlist, the `https://us.openrouter.ai` origin, the
+routing context on `getModelProviderPiEndpoint` / `getModelProviderFirewall`,
+and the inline per-run model-provider firewall that carried a US base URL are
+deleted. Managed Auto and Pi memory runs now use the built-in
+`openrouter-codex` firewall by name, as member-owned and non-allowlisted
+built-in runs already did.
+
+Readers of captured US endpoints are removed too. A queued or active Pi run
+whose captured `OPENAI_BASE_URL` is the US endpoint would no longer match the
+global Pi endpoint and would fail Pi model configuration. Production showed no
+Built-in US-routed run since 2026-10-04 and no in-flight run carrying a US
+endpoint, so no drain gate or migration is required. Runner, guest, and mitm
+code never special-cased the US origin; old Runners receive the same built-in
+firewall name they already resolve. No persisted schema changes.
+
 ## Unselectable chat thread models and unused built-in keys cleared
 
 Data-only migration `1335_clear_unselectable_thread_models_and_unused_model_keys`
@@ -1149,6 +1283,9 @@ sweep. No grace period or complete orphan-GC guarantee is introduced here. The
 details canonical election, empty-parent recovery and bounded cleanup.
 
 ## Astra Ultrafast temporarily disabled (2026-09-30)
+
+> Superseded: Ultrafast was retired on 2026-10-07 (see "Ultrafast service tier
+> retired"); this section is a historical record and is not a re-enablement path.
 
 Ultrafast is no longer advertised in model run options. Both model pickers hide
 its entry. The API rejects new Ultrafast thread selections, member preferences,
@@ -4728,8 +4865,8 @@ The API and commit-addressed CLI now pin Pi 0.87.1. Its native catalog contains
 `claude-opus-5-5`, `gpt-6-sol`, and `gpt-6-luna`, so the Pi admission table can
 route those models through Pi when their existing product policy allows it.
 This change does not make a model newly addable to an
-organization. GPT-6 Sol and Luna continue to use the global OpenRouter endpoint
-because neither is in the US endpoint allowlist.
+organization. GPT-6 Sol and Luna continue to use the global OpenRouter
+endpoint.
 
 New Pi starts require the matching commit-addressed CLI artifact. Older CLI
 artifacts pinned to Pi 0.86.1 cannot resolve these three catalog models. Queued

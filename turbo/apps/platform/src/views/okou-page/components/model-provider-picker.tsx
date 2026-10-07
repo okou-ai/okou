@@ -1,8 +1,5 @@
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  getMemberRunModelRoute,
-  isMemberRunModelConfigurable,
-} from "@okouai/api-contracts/contracts/member-run-model";
+import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
 import {
   getModelProviderPresentationLabel,
   type AvailableRunModel,
@@ -33,7 +30,6 @@ import {
 import { Check, Cpu, Zap } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { i18n } from "../../../i18n/index.ts";
 import {
   modelCatalog$,
   type ModelCatalog,
@@ -41,16 +37,9 @@ import {
 import { availableRunModels$ } from "../../../signals/external/run-models";
 import {
   isRunModelFastModeAvailable,
-  isRunModelUltrafastAvailable,
   resolveExplicitModelSelection$,
 } from "../../../signals/okou-page/model-default-selection";
-import {
-  DEFAULT_MODEL_PLAN_CAPABILITIES,
-  memberRunModelAllowedForPlan,
-  modelAllowedForPlan,
-  modelPlanCapabilities$,
-  type ModelPlanCapabilities,
-} from "../../../signals/okou-page/model-plan-capabilities";
+import { memberRunModelAllowedForPlan } from "../../../signals/okou-page/model-plan-capabilities";
 import {
   openSettingsBillingPlans$,
   setSettingsDialogOpen$,
@@ -96,8 +85,6 @@ interface ModelProviderPickerProps {
 const INHERIT_SENTINEL = "__inherit_default__";
 const CODEX_FAST_OPTION_PREFIX = "__codex_fast_option__:";
 const CODEX_FAST_SELECTED_PREFIX = "__codex_fast_selected__:";
-const CODEX_ULTRAFAST_OPTION_PREFIX = "__codex_ultrafast_option__:";
-const CODEX_ULTRAFAST_SELECTED_PREFIX = "__codex_ultrafast_selected__:";
 
 // Select uses the selected item's offsetHeight as the scroll-button
 // step. Keep hidden selected items measurable so native hover scrolling works.
@@ -223,7 +210,6 @@ function catalogDisplayName(
 function selectionAllowedValue(
   value: ModelProviderSelection | null,
   models: AvailableRunModel[],
-  modelCapabilities: ModelPlanCapabilities,
   catalog: ModelCatalog | null | undefined,
 ): ModelProviderSelection | null {
   if (!value || !catalog?.isActive(value.selectedModel)) {
@@ -232,10 +218,9 @@ function selectionAllowedValue(
   const runModel = models.find((candidate) => {
     return candidate.model === value.selectedModel;
   });
-  const allowed = runModel
-    ? memberRunModelAllowedForPlan(runModel, modelCapabilities)
-    : modelAllowedForPlan(value.selectedModel, modelCapabilities);
-  return allowed ? value : null;
+  return runModel === undefined || memberRunModelAllowedForPlan(runModel)
+    ? value
+    : null;
 }
 
 function selectionLabel({
@@ -262,11 +247,6 @@ function selectionLabel({
     return placeholder;
   }
   const modelLabel = catalogDisplayName(catalog, selection.selectedModel);
-  if (selection.codexServiceTier === "ultrafast") {
-    return `${modelLabel} ${i18n.t(($) => {
-      return $.settings.models.picker.ultrafast;
-    })}`;
-  }
   return !fastShownByCaller && selection.codexServiceTier === "fast"
     ? `${modelLabel} ${fastLabel}`
     : modelLabel;
@@ -359,13 +339,6 @@ function modelFirstSelectionFromRaw(
   if (raw === INHERIT_SENTINEL) {
     return null;
   }
-  if (raw.startsWith(CODEX_ULTRAFAST_OPTION_PREFIX)) {
-    const selectedModel = raw.slice(CODEX_ULTRAFAST_OPTION_PREFIX.length);
-    return catalog?.isActive(selectedModel) &&
-      catalog.supportsServiceTier(selectedModel, "ultrafast")
-      ? { selectedModel, codexServiceTier: "ultrafast" }
-      : null;
-  }
   if (raw.startsWith(CODEX_FAST_OPTION_PREFIX)) {
     const selectedModel = raw.slice(CODEX_FAST_OPTION_PREFIX.length);
     if (
@@ -390,11 +363,9 @@ function modelFirstSelectValue(
   if (!selection) {
     return INHERIT_SENTINEL;
   }
-  return selection.codexServiceTier === "ultrafast"
-    ? `${CODEX_ULTRAFAST_SELECTED_PREFIX}${selection.selectedModel}`
-    : selection.codexServiceTier === "fast"
-      ? `${CODEX_FAST_SELECTED_PREFIX}${selection.selectedModel}`
-      : selection.selectedModel;
+  return selection.codexServiceTier === "fast"
+    ? `${CODEX_FAST_SELECTED_PREFIX}${selection.selectedModel}`
+    : selection.selectedModel;
 }
 
 function codexFastOptionValue(model: string): string {
@@ -406,20 +377,6 @@ function modelFirstSelectionFromInteraction(
   currentSelection: ModelProviderSelection | null,
   catalog: ModelCatalog | null | undefined,
 ): ModelProviderSelection | null | undefined {
-  if (currentSelection?.codexServiceTier === "ultrafast") {
-    if (
-      raw === modelFirstSelectValue(currentSelection) ||
-      raw === currentSelection.selectedModel
-    ) {
-      return undefined;
-    }
-    if (
-      raw ===
-      `${CODEX_ULTRAFAST_OPTION_PREFIX}${currentSelection.selectedModel}`
-    ) {
-      return { selectedModel: currentSelection.selectedModel };
-    }
-  }
   // Fast uses a hidden selected-value marker, distinct from its toggle option.
   // Replaying that value must not parse it as the inherit-default sentinel.
   if (currentSelection?.codexServiceTier === "fast") {
@@ -438,27 +395,23 @@ function modelFirstSelectionFromInteraction(
 
 function isHiddenModelFirstSelectValue(value: string): boolean {
   return (
-    value === INHERIT_SENTINEL ||
-    value.startsWith(CODEX_FAST_SELECTED_PREFIX) ||
-    value.startsWith(CODEX_ULTRAFAST_SELECTED_PREFIX)
+    value === INHERIT_SENTINEL || value.startsWith(CODEX_FAST_SELECTED_PREFIX)
   );
 }
 
 export function ModelFirstRunModelRowContent({
   runModel,
-  modelCapabilities,
   selected = false,
   showSelectedIndicator = false,
 }: {
   runModel: AvailableRunModel;
-  modelCapabilities: ModelPlanCapabilities;
   selected?: boolean;
   showSelectedIndicator?: boolean;
 }) {
   const catalog = useLastResolved(modelCatalog$);
   const iconType = getModelFirstIconType(runModel.model, catalog);
-  const route = getMemberRunModelRoute(runModel);
-  const restricted = !memberRunModelAllowedForPlan(runModel, modelCapabilities);
+  const route = runModel.memberEffective;
+  const restricted = !memberRunModelAllowedForPlan(runModel);
   return (
     <span className="flex w-full min-w-0 items-center gap-2">
       {iconType && <ProviderIcon type={iconType} size={16} />}
@@ -480,16 +433,14 @@ export function ModelFirstRunModelRowContent({
 
 function ModelFirstRunModelRow({
   runModel,
-  modelCapabilities,
   selection,
 }: {
   runModel: AvailableRunModel;
-  modelCapabilities: ModelPlanCapabilities;
   selection: ModelProviderSelection | null;
 }) {
   const { t } = useTranslation();
   const catalog = useLastResolved(modelCatalog$);
-  const fastAvailable = isRunModelFastModeAvailable(runModel, catalog);
+  const fastAvailable = isRunModelFastModeAvailable(runModel);
   if (fastAvailable) {
     const modelLabel = catalogDisplayName(catalog, runModel.model);
     const selected = selection?.selectedModel === runModel.model;
@@ -497,92 +448,65 @@ function ModelFirstRunModelRow({
     const fastLabel = t(($) => {
       return $.settings.models.picker.fast;
     });
-    const ultrafastAvailable = isRunModelUltrafastAvailable(runModel, catalog);
     return (
-      <>
-        <div
-          className={cn(
-            "relative flex overflow-hidden rounded-lg transition-colors hover:bg-state-hover has-[[data-highlighted]]:bg-state-hover",
-            selected &&
-              "bg-state-selected hover:bg-state-selected-hover has-[[data-highlighted]]:bg-state-selected-hover",
-          )}
-        >
-          <SelectItem
-            value={runModel.model}
-            aria-label={modelLabel}
-            // Two fixed columns sit at this row's right edge: the checkmark's
-            // (`pr-8`, shared with every other row) and the fast toggle's, which
-            // `pr-16` reserves immediately left of it. Both are reserved whether
-            // or not the row is selected -- shifting the content only when
-            // selected is what used to push the checkmark off its column.
-            className="min-w-0 flex-1 rounded-lg pr-16 hover:bg-transparent data-highlighted:bg-transparent"
-          >
-            <ModelFirstRunModelRowContent
-              runModel={runModel}
-              modelCapabilities={modelCapabilities}
-              selected={selected}
-              showSelectedIndicator={fastSelected}
-            />
-          </SelectItem>
-          <TooltipProvider delay={800} timeout={0}>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <SelectItem
-                    value={codexFastOptionValue(runModel.model)}
-                    aria-label={`${modelLabel} ${fastLabel}`}
-                    className={cn(
-                      // `right-8` parks the toggle in its own column beside the
-                      // checkmark's rather than on top of it, so it keeps a full
-                      // 32x32 hit area without ever displacing the check.
-                      "group/fast-option absolute inset-y-0 right-8 w-8 justify-center rounded-lg px-0 text-muted-foreground hover:bg-transparent data-highlighted:bg-transparent",
-                      fastSelected &&
-                        "text-amber-600 hover:text-amber-700 dark:text-amber-300 dark:hover:text-amber-200",
-                    )}
-                  >
-                    <Zap
-                      size={18}
-                      fill={fastSelected ? "currentColor" : "none"}
-                      className={cn(
-                        fastSelected
-                          ? "group-hover/fast-option:fill-none group-data-[highlighted]/fast-option:fill-none"
-                          : "group-hover/fast-option:fill-current group-data-[highlighted]/fast-option:fill-current",
-                      )}
-                      aria-hidden="true"
-                    />
-                  </SelectItem>
-                }
-              />
-              <TooltipContent side="top" className="text-xs">
-                {fastLabel} · <ModelFastImpact runModel={runModel} />
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
-        {ultrafastAvailable && (
-          <SelectItem
-            value={`${CODEX_ULTRAFAST_OPTION_PREFIX}${runModel.model}`}
-            aria-label={`${modelLabel} ${t(($) => {
-              return $.settings.models.picker.ultrafast;
-            })}`}
-            className="rounded-lg"
-          >
-            <Zap size={16} aria-hidden="true" />
-            <span className="ml-2">
-              {t(($) => {
-                return $.settings.models.picker.ultrafastMode;
-              })}{" "}
-              ·{" "}
-              {t(($) => {
-                return $.settings.models.picker.ultrafastImpact;
-              })}
-            </span>
-            {selected && selection?.codexServiceTier === "ultrafast" && (
-              <Check size={15} className="ml-auto" aria-hidden="true" />
-            )}
-          </SelectItem>
+      <div
+        className={cn(
+          "relative flex overflow-hidden rounded-lg transition-colors hover:bg-state-hover has-[[data-highlighted]]:bg-state-hover",
+          selected &&
+            "bg-state-selected hover:bg-state-selected-hover has-[[data-highlighted]]:bg-state-selected-hover",
         )}
-      </>
+      >
+        <SelectItem
+          value={runModel.model}
+          aria-label={modelLabel}
+          // Two fixed columns sit at this row's right edge: the checkmark's
+          // (`pr-8`, shared with every other row) and the fast toggle's, which
+          // `pr-16` reserves immediately left of it. Both are reserved whether
+          // or not the row is selected -- shifting the content only when
+          // selected is what used to push the checkmark off its column.
+          className="min-w-0 flex-1 rounded-lg pr-16 hover:bg-transparent data-highlighted:bg-transparent"
+        >
+          <ModelFirstRunModelRowContent
+            runModel={runModel}
+            selected={selected}
+            showSelectedIndicator={fastSelected}
+          />
+        </SelectItem>
+        <TooltipProvider delay={800} timeout={0}>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <SelectItem
+                  value={codexFastOptionValue(runModel.model)}
+                  aria-label={`${modelLabel} ${fastLabel}`}
+                  className={cn(
+                    // `right-8` parks the toggle in its own column beside the
+                    // checkmark's rather than on top of it, so it keeps a full
+                    // 32x32 hit area without ever displacing the check.
+                    "group/fast-option absolute inset-y-0 right-8 w-8 justify-center rounded-lg px-0 text-muted-foreground hover:bg-transparent data-highlighted:bg-transparent",
+                    fastSelected &&
+                      "text-amber-600 hover:text-amber-700 dark:text-amber-300 dark:hover:text-amber-200",
+                  )}
+                >
+                  <Zap
+                    size={18}
+                    fill={fastSelected ? "currentColor" : "none"}
+                    className={cn(
+                      fastSelected
+                        ? "group-hover/fast-option:fill-none group-data-[highlighted]/fast-option:fill-none"
+                        : "group-hover/fast-option:fill-current group-data-[highlighted]/fast-option:fill-current",
+                    )}
+                    aria-hidden="true"
+                  />
+                </SelectItem>
+              }
+            />
+            <TooltipContent side="top" className="text-xs">
+              {fastLabel} · <ModelFastImpact runModel={runModel} />
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
     );
   }
   return (
@@ -591,10 +515,7 @@ function ModelFirstRunModelRow({
       value={runModel.model}
       disabled={!isMemberRunModelConfigurable(runModel)}
     >
-      <ModelFirstRunModelRowContent
-        runModel={runModel}
-        modelCapabilities={modelCapabilities}
-      />
+      <ModelFirstRunModelRowContent runModel={runModel} />
     </SelectItem>
   );
 }
@@ -602,14 +523,12 @@ function ModelFirstRunModelRow({
 function ModelFirstRunModelItems({
   models,
   selection,
-  modelCapabilities,
   placeholder,
   showInheritOption,
   showSeparator = true,
 }: {
   models: AvailableRunModel[];
   selection: ModelProviderSelection | null;
-  modelCapabilities: ModelPlanCapabilities;
   placeholder: string;
   showInheritOption: boolean;
   showSeparator?: boolean;
@@ -658,7 +577,6 @@ function ModelFirstRunModelItems({
               <ModelFirstRunModelRow
                 key={runModel.model}
                 runModel={runModel}
-                modelCapabilities={modelCapabilities}
                 selection={selection}
               />
             );
@@ -674,7 +592,6 @@ interface ModelFirstModelPickerContentBaseProps {
   placeholder: string;
   models: AvailableRunModel[];
   selection: ModelProviderSelection | null;
-  modelCapabilities: ModelPlanCapabilities;
   fastLabel: string;
   showInheritOption: boolean;
 }
@@ -684,7 +601,6 @@ function ModelFirstModelPickerContentLayout({
   placeholder,
   models,
   selection,
-  modelCapabilities,
   fastLabel,
   showInheritOption,
 }: ModelFirstModelPickerContentBaseProps) {
@@ -710,7 +626,6 @@ function ModelFirstModelPickerContentLayout({
       <ModelFirstRunModelItems
         models={models}
         selection={selection}
-        modelCapabilities={modelCapabilities}
         placeholder={placeholder}
         showInheritOption={showInheritOption}
         showSeparator={showInheritOption}
@@ -734,34 +649,23 @@ export function resolveModelFirstModelPickerState({
   value,
   modelsResponse,
   catalog,
-  modelCapabilities,
   placeholder,
   fastLabel,
 }: {
   value: ModelProviderSelection | null;
   modelsResponse: AvailableRunModelsResponse | null | undefined;
   catalog: ModelCatalog | null | undefined;
-  modelCapabilities: ModelPlanCapabilities;
   placeholder: string;
   fastLabel: string;
 }): ModelFirstModelPickerState {
   const models = (modelsResponse?.models ?? [])
     .filter((runModel) => {
-      return (
-        (runModel.model === modelsResponse?.defaultModel ||
-          getMemberRunModelRoute(runModel).credentialScope === "member") &&
-        (catalog?.isActive(runModel.model) ?? false)
-      );
+      return catalog?.isActive(runModel.model) ?? false;
     })
     .sort((left, right) => {
       return catalog ? catalog.compare(left.model, right.model) : 0;
     });
-  const selection = selectionAllowedValue(
-    value,
-    models,
-    modelCapabilities,
-    catalog,
-  );
+  const selection = selectionAllowedValue(value, models, catalog);
   return {
     models,
     selection,
@@ -903,8 +807,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
   const catalog = useLastResolved(modelCatalog$);
   const loading =
     modelsLoadable.state === "loading" || catalogLoadable.state === "loading";
-  const modelCapabilities =
-    useLastResolved(modelPlanCapabilities$) ?? DEFAULT_MODEL_PLAN_CAPABILITIES;
   if (modelsResponse === undefined || catalog === undefined) {
     return (
       <ModelFirstModelPickerMessageContent
@@ -927,7 +829,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
     value,
     modelsResponse,
     catalog,
-    modelCapabilities: DEFAULT_MODEL_PLAN_CAPABILITIES,
     placeholder,
     fastLabel,
   });
@@ -937,7 +838,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
       placeholder={placeholder}
       models={state.models}
       selection={state.selection}
-      modelCapabilities={modelCapabilities}
       fastLabel={fastLabel}
       showInheritOption={showInheritOption}
     />

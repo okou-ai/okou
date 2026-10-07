@@ -222,7 +222,6 @@ function resolveNewThreadModelSelection(
     return modelSelection.codexServiceTier === "fast" &&
       !isCodexFastModeAvailableForSelection({
         models: args.models,
-        catalog: args.catalog,
         selectedModel: modelSelection.selectedModel,
       })
       ? { ...modelSelection, codexServiceTier: undefined }
@@ -329,7 +328,7 @@ const mintOptimisticThreadWithEvent$ = command(
       readonly eventId: string;
       readonly agentId: string;
       readonly selectedModel: string | null;
-      readonly serviceTier: "priority" | "ultrafast" | null;
+      readonly serviceTier: "priority" | null;
       readonly modelSettings: ModelSettings;
       readonly computerUseHostId: string | null;
       readonly cloudBrowserEnabled: boolean;

@@ -9,8 +9,7 @@ idempotency keys preserved.
 
 Extractor metadata uses only the base categories in ``MODEL_USAGE_CATEGORIES``.
 Billing tier selection may remap those keys to reporter-owned
-``.long_context``, ``.fast``, and ``.ultrafast`` categories when building billable usage
-events.
+``.long_context`` and ``.fast`` categories when building billable usage events.
 
 Run contexts set ``flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER]`` to the
 usage provider (the Built-in route's ``usage_pricing`` provider) the proxy
@@ -60,7 +59,7 @@ from ..underbilling import log_usage_underbilling
 
 MODEL_USAGE_KIND = "model"
 type _ModelUsageTier = Literal["base", "long_context"]
-type _ModelServiceTier = Literal["standard", "fast", "ultrafast"]
+type _ModelServiceTier = Literal["standard", "fast"]
 type _ModelUsageTransport = Literal["http", "websocket"]
 type _ModelUsageBufferMode = Literal["aggregate", "source"]
 _MODEL_USAGE_TIER_BASE: _ModelUsageTier = "base"
@@ -70,7 +69,6 @@ _MODEL_USAGE_CATEGORY_OUTPUT_LONG_CONTEXT = "tokens.output.long_context"
 _MODEL_USAGE_CATEGORY_CACHE_READ_LONG_CONTEXT = "tokens.cache_read.long_context"
 _MODEL_USAGE_CATEGORY_CACHE_CREATION_LONG_CONTEXT = "tokens.cache_creation.long_context"
 _MODEL_USAGE_FAST_CATEGORY_SUFFIX = ".fast"
-_MODEL_USAGE_ULTRAFAST_CATEGORY_SUFFIX = ".ultrafast"
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,8 +110,6 @@ def _billable_model_usage_category(
     )
     if service_tier == "fast":
         return f"{billable_category}{_MODEL_USAGE_FAST_CATEGORY_SUFFIX}"
-    if service_tier == "ultrafast":
-        return f"{billable_category}{_MODEL_USAGE_ULTRAFAST_CATEGORY_SUFFIX}"
     return billable_category
 
 
@@ -122,7 +118,7 @@ _MODEL_INPUT_PARTITION_CATEGORIES = frozenset(
     _billable_model_usage_category(category, billing_tier, service_tier)
     for category in _MODEL_INPUT_PARTITION_BASE_CATEGORIES
     for billing_tier in (_MODEL_USAGE_TIER_BASE, _MODEL_USAGE_TIER_LONG_CONTEXT)
-    for service_tier in ("standard", "fast", "ultrafast")
+    for service_tier in ("standard", "fast")
 )
 
 
@@ -659,7 +655,7 @@ def _recover_source_model_usage_pricing(
         ): (billing_tier, service_tier)
         for category in MODEL_USAGE_CATEGORIES
         for billing_tier in (_MODEL_USAGE_TIER_BASE, _MODEL_USAGE_TIER_LONG_CONTEXT)
-        for service_tier in ("standard", "fast", "ultrafast")
+        for service_tier in ("standard", "fast")
     }
     seen_keys = seen_source_idempotency_keys(pricing_by_source_key)
     if not seen_keys:
@@ -718,8 +714,6 @@ def _observed_model_service_tier(usage: dict) -> _ModelServiceTier | None:
     tier = usage.get("service_tier")
     if not isinstance(tier, str) or not tier:
         return None
-    if tier == "ultrafast":
-        return "ultrafast"
     return "fast" if tier in ("fast", "priority") else "standard"
 
 

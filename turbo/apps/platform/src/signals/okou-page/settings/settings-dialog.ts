@@ -5,7 +5,6 @@ import { searchParams$, updateSearchParams$ } from "../../route.ts";
 import { reloadIndexedDbDiagnosticsFromWorker$ } from "../../shared-database.ts";
 import { resetSignal } from "../../utils.ts";
 import { usagePackManagementAsync$ } from "../billing.ts";
-import { reloadBuiltInModelCooldownDiagnostics$ } from "./built-in-model-cooldown-diagnostics.ts";
 import { reloadConnectorCatalogDiagnostics$ } from "./connector-catalog-diagnostics.ts";
 import { retryEmailSubscription$ } from "./email-subscription.ts";
 import {
@@ -108,7 +107,6 @@ export const setSettingsActiveSection$ = command(
   ({ get, set }, section: SettingsSection) => {
     if (section === "debug" && get(internalActiveSection$) !== "debug") {
       set(reloadConnectorCatalogDiagnostics$);
-      set(reloadBuiltInModelCooldownDiagnostics$);
       set(reloadIndexedDbDiagnosticsFromWorker$);
     }
     set(internalActiveSection$, section);
@@ -273,7 +271,6 @@ export const setSettingsDialogOpen$ = command(
     set(setBillingPlansStandalone$, get(billingSubPage$));
     if (get(internalActiveSection$) === "debug") {
       set(reloadConnectorCatalogDiagnostics$);
-      set(reloadBuiltInModelCooldownDiagnostics$);
       set(reloadIndexedDbDiagnosticsFromWorker$);
     }
     set(internalSettingsDialogOpen$, true);

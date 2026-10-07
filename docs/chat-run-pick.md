@@ -506,8 +506,8 @@ boundary; Thread retains deferred firewall alias metadata, conditional Pi
 credential capture, source IDs and Codex protocol assembly. The built-in path
 reads nonsecret exact-key facts; an effect resolves that same key, and the
 converter checks source/route/vendor/key binding without I/O. No ciphertext is
-fabricated and no default key is selected. Thread retains its private
-US-routing, firewall and Codex projection from those already-resolved values.
+fabricated and no default key is selected. Thread retains its firewall and
+Codex projection from those already-resolved values.
 
 ## Selected connector source migration (in progress)
 

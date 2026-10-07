@@ -1,4 +1,4 @@
-//! Agent runs use managed search unless the API enables the framework's built-in web search.
+//! Agent runs use managed search unless the API explicitly opts into built-in web search.
 
 mod common;
 

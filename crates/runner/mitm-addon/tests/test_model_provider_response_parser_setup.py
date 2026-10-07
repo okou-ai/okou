@@ -22,11 +22,7 @@ class TestModelJsonResponseInspectorProtocolDispatch:
         unsupported_protocol = cast(usage.ModelUsageProtocol, "unsupported")
 
         with pytest.raises(AssertionError, match="Expected code to be unreachable"):
-            usage.create_model_json_response_inspector(
-                unsupported_protocol,
-                include_usage=True,
-                include_failure=False,
-            )
+            usage.create_model_json_response_inspector(unsupported_protocol)
 
 
 class TestResponseHeadersModelJsonParser:

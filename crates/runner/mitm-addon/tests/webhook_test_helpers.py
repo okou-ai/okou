@@ -6,8 +6,6 @@ from concurrent.futures import Future
 
 import flow_metadata_keys as metadata_keys
 import platform_api
-import runner_flush_lifecycle
-from tests.pending_helpers import delivery_exchange
 
 SENSITIVE_WEBHOOK_URL = (
     "https://user:pass@api.okou.ai/api/webhooks/agent/usage-event?token=secret#frag"
@@ -23,26 +21,6 @@ class QueuedUsageExecutor:
         future: Future = Future()
         self.submissions.append((fn, args, kwargs))
         return future
-
-    def run_next(self) -> None:
-        delivery, args, kwargs = self.submissions.pop(0)
-        assert callable(delivery)
-        delivery(*args, **kwargs)
-
-    def run_last(self) -> None:
-        delivery, args, kwargs = self.submissions.pop()
-        assert callable(delivery)
-        delivery(*args, **kwargs)
-
-    def run_all(self) -> None:
-        while self.submissions:
-            self.run_next()
-
-
-def request_runner_usage_flush() -> None:
-    reply = delivery_exchange("delivery.flush")
-    assert reply["type"] == "result"
-    runner_flush_lifecycle.wait_for_runner_usage_flush_worker_to_stop_for_tests()
 
 
 def assert_body_free_webhook_entry(

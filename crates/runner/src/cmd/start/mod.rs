@@ -800,7 +800,6 @@ async fn run_start_with_home(
             client_session_id: runner_client_session_id,
             client_version: env!("CARGO_PKG_VERSION"),
             system_ca_bundle: deps::SYSTEM_CA_BUNDLE,
-            runner_token: local_group_dir.is_none().then(|| server.token.clone()),
         },
         crate::ADDON_FILES,
     )

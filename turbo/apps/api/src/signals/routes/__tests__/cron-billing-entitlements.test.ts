@@ -1,3 +1,4 @@
+import { reconcileBillingOrganizationsForTest } from "../../../test-fixtures/billing-workers";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -311,17 +312,15 @@ describe("billing entitlement reconciliation", () => {
     const sentinelBefore = await readState(sentinelMarker);
     expect(statuses(sentinelBefore)).toStrictEqual(INITIAL_STATUSES);
 
-    const response = await accept(
-      apiClient().reconcile({
-        body: {
-          orgIds: selectedFixtures.map((fixture) => {
-            return fixture.orgId;
-          }),
-        },
-      }),
-      [200],
+    const response = await reconcileBillingOrganizationsForTest(
+      {
+        orgIds: selectedFixtures.map((fixture) => {
+          return fixture.orgId;
+        }),
+      },
+      context.signal,
     );
-    expect(response.body).toStrictEqual({ success: true, downgraded: 2 });
+    expect(response).toStrictEqual({ downgraded: 2 });
 
     const selected = await readState(selectedMarker);
     expect(statuses(selected)).toStrictEqual(RECONCILED_STATUSES);
@@ -372,11 +371,11 @@ describe("billing entitlement reconciliation", () => {
       },
     });
 
-    const response = await accept(
-      apiClient().reconcile({ body: { orgIds: [allowance.orgId] } }),
-      [200],
+    const response = await reconcileBillingOrganizationsForTest(
+      { orgIds: [allowance.orgId] },
+      context.signal,
     );
-    expect(response.body).toStrictEqual({ success: true, downgraded: 0 });
+    expect(response).toStrictEqual({ downgraded: 0 });
 
     const candidate = (await readState(marker)).find((row) => {
       return row.kind === "usage-allowance";
@@ -431,17 +430,15 @@ describe("billing entitlement reconciliation", () => {
       },
     );
 
-    const response = await accept(
-      apiClient().reconcile({
-        body: {
-          orgIds: selected.map((fixture) => {
-            return fixture.orgId;
-          }),
-        },
-      }),
-      [200],
+    const response = await reconcileBillingOrganizationsForTest(
+      {
+        orgIds: selected.map((fixture) => {
+          return fixture.orgId;
+        }),
+      },
+      context.signal,
     );
-    expect(response.body).toStrictEqual({ success: true, downgraded: 1 });
+    expect(response).toStrictEqual({ downgraded: 1 });
 
     const reconciled = await readState(marker);
     expect(
@@ -519,11 +516,11 @@ describe("billing entitlement reconciliation", () => {
         subscription,
       );
 
-      const response = await accept(
-        apiClient().reconcile({ body: { orgIds: [plan.orgId] } }),
-        [200],
+      const response = await reconcileBillingOrganizationsForTest(
+        { orgIds: [plan.orgId] },
+        context.signal,
       );
-      expect(response.body).toStrictEqual({ success: true, downgraded: 0 });
+      expect(response).toStrictEqual({ downgraded: 0 });
 
       const reconciled = (await readState(marker)).find((candidate) => {
         return candidate.kind === "plan-subscription";
@@ -586,11 +583,11 @@ describe("billing entitlement reconciliation", () => {
     });
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(subscription);
 
-    const response = await accept(
-      apiClient().reconcile({ body: { orgIds: [usagePack.orgId] } }),
-      [200],
+    const response = await reconcileBillingOrganizationsForTest(
+      { orgIds: [usagePack.orgId] },
+      context.signal,
     );
-    expect(response.body).toStrictEqual({ success: true, downgraded: 0 });
+    expect(response).toStrictEqual({ downgraded: 0 });
 
     const reconciled = (await readState(marker)).find((candidate) => {
       return candidate.kind === "usage-pack-subscription";
@@ -676,19 +673,13 @@ describe("billing entitlement reconciliation", () => {
       metadata: { orgId: projectionPlan.orgId },
     });
 
-    const response = await accept(
-      apiClient().reconcile({
-        body: {
-          orgIds: [
-            retrievalPlan.orgId,
-            projectionPlan.orgId,
-            canceledPlan.orgId,
-          ],
-        },
-      }),
-      [200],
+    const response = await reconcileBillingOrganizationsForTest(
+      {
+        orgIds: [retrievalPlan.orgId, projectionPlan.orgId, canceledPlan.orgId],
+      },
+      context.signal,
     );
-    expect(response.body).toStrictEqual({ success: true, downgraded: 1 });
+    expect(response).toStrictEqual({ downgraded: 1 });
 
     await expect(readState(retrievalMarker)).resolves.toContainEqual({
       kind: "plan-subscription",
@@ -724,12 +715,12 @@ describe("billing entitlement reconciliation", () => {
     });
     const atom = seededFixture(await seedState(marker), "atom-grant");
 
-    const response = await accept(
-      apiClient().reconcile({ body: { orgIds: [atom.orgId] } }),
-      [200],
+    const response = await reconcileBillingOrganizationsForTest(
+      { orgIds: [atom.orgId] },
+      context.signal,
     );
 
-    expect(response.body).toStrictEqual({ success: true, downgraded: 1 });
+    expect(response).toStrictEqual({ downgraded: 1 });
     await expect(readState(marker)).resolves.toContainEqual({
       kind: "atom-grant",
       orgId: atom.orgId,
@@ -768,16 +759,14 @@ describe("billing entitlement reconciliation", () => {
     });
 
     for (let replay = 0; replay < 2; replay += 1) {
-      const response = await accept(
-        apiClient().reconcile({
-          body: {
-            orgIds: [atom.orgId],
-            replayUndeliveredPaidInvoices: true,
-          },
-        }),
-        [200],
+      const response = await reconcileBillingOrganizationsForTest(
+        {
+          orgIds: [atom.orgId],
+          replayUndeliveredPaidInvoices: true,
+        },
+        context.signal,
       );
-      expect(response.body).toStrictEqual({ success: true, downgraded: 0 });
+      expect(response).toStrictEqual({ downgraded: 0 });
     }
     expect(context.mocks.stripe.events.list).toHaveBeenCalledWith({
       delivery_success: false,
@@ -839,17 +828,15 @@ describe("billing entitlement reconciliation", () => {
       has_more: false,
     });
 
-    const response = await accept(
-      apiClient().reconcile({
-        body: {
-          orgIds: [plan.orgId, atom.orgId],
-          replayUndeliveredPaidInvoices: true,
-        },
-      }),
-      [200],
+    const response = await reconcileBillingOrganizationsForTest(
+      {
+        orgIds: [plan.orgId, atom.orgId],
+        replayUndeliveredPaidInvoices: true,
+      },
+      context.signal,
     );
 
-    expect(response.body).toStrictEqual({ success: true, downgraded: 0 });
+    expect(response).toStrictEqual({ downgraded: 0 });
     await expect(readState(marker)).resolves.toContainEqual({
       kind: "plan-subscription",
       orgId: plan.orgId,
@@ -909,17 +896,15 @@ describe("billing entitlement reconciliation", () => {
       has_more: false,
     });
 
-    const response = await accept(
-      apiClient().reconcile({
-        body: {
-          orgIds: [atom.orgId],
-          replayUndeliveredPaidInvoices: true,
-        },
-      }),
-      [200],
+    const response = await reconcileBillingOrganizationsForTest(
+      {
+        orgIds: [atom.orgId],
+        replayUndeliveredPaidInvoices: true,
+      },
+      context.signal,
     );
 
-    expect(response.body).toStrictEqual({ success: true, downgraded: 0 });
+    expect(response).toStrictEqual({ downgraded: 0 });
     await expect(readState(marker)).resolves.toStrictEqual(before);
   });
 
@@ -980,16 +965,14 @@ describe("billing entitlement reconciliation", () => {
     });
 
     for (let replay = 0; replay < 2; replay += 1) {
-      const response = await accept(
-        apiClient().reconcile({
-          body: {
-            orgIds: [promo.orgId],
-            replayUndeliveredPaidCheckouts: true,
-          },
-        }),
-        [200],
+      const response = await reconcileBillingOrganizationsForTest(
+        {
+          orgIds: [promo.orgId],
+          replayUndeliveredPaidCheckouts: true,
+        },
+        context.signal,
       );
-      expect(response.body).toStrictEqual({ success: true, downgraded: 0 });
+      expect(response).toStrictEqual({ downgraded: 0 });
     }
     expect(context.mocks.stripe.events.list).toHaveBeenCalledWith({
       delivery_success: false,

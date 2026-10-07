@@ -274,7 +274,7 @@ stops automatic requests because execution is unknown.
 After control stops, `done()` closes delivery admission and joins the actual
 flush worker before shutting down the usage executor. It then retries retained
 billing and diagnostics synchronously under their existing retry/idempotency
-owners. The separate model-failure reporter keeps its bounded shutdown window.
+owners.
 Runner's existing outer SIGTERM/SIGKILL process stop remains the ultimate bound
 for a stuck kernel/network call; no caller deadline safely cancels that call.
 
@@ -469,30 +469,9 @@ the threshold. The API captures this value from the assigned catalog route:
 | `0`              | Single-tier pricing.                    |
 
 See [deployment requirements](deployment-compatibility.md#long-context-threshold-in-the-runner-payload-2026-10-01).
-The `.fast` and `.ultrafast` suffixes follow the observed service tier.
+The `.fast` suffix follows the observed service tier; `.ultrafast` is retired and
+remains only in historical usage categories.
 See [model catalog](model-catalog.md#billing-and-history).
-
-## Model-provider failure reporting shutdown
-
-Failure reports are best-effort diagnostics with four reporter-owned daemon
-workers and at most 16 admitted reports. Shutdown closes admission, cancels
-queued reports, and gives running deliveries one shared 10-second drain window.
-Unlike standard thread-pool workers, these workers are not registered for an
-interpreter-exit join. A stalled DNS lookup or network operation can therefore
-leave a report undelivered without keeping the process alive after the drain.
-
-Running calls are not forcibly interrupted: if the process remains alive, they
-retain their worker and admission slot until completion. Normal completion and
-queued cancellation keep the same callback-owned cleanup. All workers start
-before any report payload is admitted, and failed startup joins the empty
-candidate workers. Usage webhook and SigV4 workers retain their independent
-joined-shutdown contracts.
-
-`test_model_provider_failure_shutdown.py` exercises the real addon response and
-shutdown hooks in a fresh interpreter. It requires successful process exit
-while DNS remains blocked, with the production drain budget unchanged. Old
-runners retain their previous shutdown behavior until updated; no reporting
-API or persisted format changes.
 
 ## Managed credential method boundary
 
@@ -692,8 +671,8 @@ model responses and registered connector response parsers therefore use the
 existing empty 502 response and discard upstream body bytes. The fixed
 `content encoding header inspection limit exceeded` diagnostic contains no raw
 header data. Upstream errors, non-billable flows, and bodyless responses retain
-their existing pass-through policy; status-level provider failure reports remain
-available. Accepted and pass-through responses preserve wire headers and bytes.
+their existing pass-through policy. Accepted and pass-through responses
+preserve wire headers and bytes.
 
 Direct terminal JSON decoding returns an error for exhaustion, strict capture
 decoders hide the body, and best-effort capture decompression retains wire bytes

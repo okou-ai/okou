@@ -12,7 +12,6 @@ import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { checkBillableOperationCredits$ } from "../services/billable-operation-admission.service";
 import { createUsagePackCreditGrant } from "../services/usage-pack-credit.service";
-import { processOrgUsageEvents$ } from "../services/credit-usage.service";
 import { checkOrgCreditsForRunAdmission$ } from "../services/run-admission.service";
 import { modelCatalog$ } from "../services/model-catalog.service";
 import {
@@ -21,30 +20,11 @@ import {
 } from "./test-endpoint-helpers";
 import { writeOrgMetadataWithDefaultPlanEntitlement } from "../services/org-plan-entitlements.service";
 
-const body$ = bodyResultOf(testUsageSettlementContract.process);
 const setupBody$ = bodyResultOf(testUsageSettlementContract.setup);
 const cleanupBody$ = bodyResultOf(testUsageSettlementContract.cleanup);
 const createGrantBody$ = bodyResultOf(testUsageSettlementContract.createGrant);
 const stateBody$ = bodyResultOf(testUsageSettlementContract.state);
 const admissionBody$ = bodyResultOf(testUsageSettlementContract.admission);
-
-const processUsageSettlement$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    if (!isTestEndpointAllowed(get(request$))) {
-      return testEndpointNotFoundResponse();
-    }
-
-    const bodyResult = await get(body$);
-    signal.throwIfAborted();
-    if (!bodyResult.ok) {
-      return bodyResult.response;
-    }
-
-    await set(processOrgUsageEvents$, bodyResult.data.org_id, signal);
-    signal.throwIfAborted();
-    return { status: 200 as const, body: { ok: true as const } };
-  },
-);
 
 const setupUsageSettlement$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -242,10 +222,6 @@ const checkUsageSettlementAdmission$ = command(
 );
 
 export const testUsageSettlementRoutes: readonly RouteEntry[] = [
-  {
-    route: testUsageSettlementContract.process,
-    handler: processUsageSettlement$,
-  },
   {
     route: testUsageSettlementContract.setup,
     handler: setupUsageSettlement$,

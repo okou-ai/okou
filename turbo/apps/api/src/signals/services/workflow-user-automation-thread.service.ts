@@ -238,12 +238,7 @@ async function createAutomationChatThread(
     modelSettings: args.preparation.modelSettings,
     cloudBrowserEnabled: args.preparation.cloudBrowserEnabled,
     selectedModel: pin.selectedModel,
-    codexServiceTier:
-      pin.serviceTier === "priority"
-        ? "fast"
-        : pin.serviceTier === "ultrafast"
-          ? "ultrafast"
-          : null,
+    codexServiceTier: pin.serviceTier === "priority" ? "fast" : null,
     lastMessageAt: args.currentTime,
     createdAt: args.currentTime,
     updatedAt: args.currentTime,
@@ -361,12 +356,7 @@ export function preparedWorkflowThreadValues(
     agentId: args.agentId,
     title: preparation.title,
     selectedModel: pin.selectedModel,
-    codexServiceTier:
-      pin.serviceTier === "priority"
-        ? ("fast" as const)
-        : pin.serviceTier === "ultrafast"
-          ? ("ultrafast" as const)
-          : null,
+    codexServiceTier: pin.serviceTier === "priority" ? ("fast" as const) : null,
     modelSettings: preparation.modelSettings,
     cloudBrowserEnabled: preparation.cloudBrowserEnabled,
     lastMessageAt: args.currentTime,

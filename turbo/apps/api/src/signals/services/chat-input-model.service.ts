@@ -3,7 +3,10 @@ import {
   type ChatInputModelSelection,
 } from "@okouai/api-contracts/contracts/chat-input-model";
 import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
-import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  MODEL_FIRST_SELECTION_PROVIDER_ID,
+  type CodexServiceTier,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import {
   modelSettingsSchema,
   type ModelSettings,
@@ -17,7 +20,6 @@ import { db$ } from "../external/db";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import {
   autoModelPin,
-  MODEL_FIRST_SELECTION_PROVIDER_ID,
   resolveModelSelectionPin$,
   isReplacedModelSelection,
   type ModelSelectionBootstrap,

@@ -66,11 +66,10 @@ export const completeOnboarding$ = command(
     const timezone =
       new Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
     // The industry answer can be absent after a resumed run or a prompt
-    // handoff, while the model choice still applies.
-    const { industry, provider } = get(sourcesFirstDraft$);
+    // handoff.
+    const { industry } = get(sourcesFirstDraft$);
     await accept(
       onboardingClient.complete({
-        query: provider === null ? {} : { modelProvider: provider },
         body: industry === null ? { timezone } : { timezone, industry },
         fetchOptions: { signal },
       }),

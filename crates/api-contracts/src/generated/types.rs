@@ -478,7 +478,7 @@ pub mod runners {
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(tag = "dialect", rename_all_fields = "camelCase")]
         pub enum PiModelConfigV3 {
-            /// Public Responses route with optional priority or Astra Ultrafast tier.
+            /// Public Responses route with optional priority tier.
             #[serde(rename = "openai-responses")]
             OpenaiResponses {
                 /// Pi model configuration generation.

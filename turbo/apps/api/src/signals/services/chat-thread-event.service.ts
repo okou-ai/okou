@@ -186,7 +186,7 @@ type ChatThreadEventRow = {
   readonly selectedModel: string | null;
   readonly modelSettings: ModelSettings | null;
   readonly modelSettingsPatch: ModelSettingsPatch | null;
-  readonly serviceTier: ChatThreadServiceTier | null;
+  readonly serviceTier: ChatThreadServiceTier | "ultrafast" | null;
   readonly computerUseHostId: string | null;
   readonly cloudBrowserEnabled: boolean;
   readonly createdAt: Date;
@@ -233,11 +233,7 @@ const pageChatThreadEventSelection = Object.freeze({
 export function chatThreadServiceTierFromCodex(
   codexServiceTier: CodexServiceTier | null,
 ): ChatThreadServiceTier | null {
-  return codexServiceTier === "fast"
-    ? "priority"
-    : codexServiceTier === "ultrafast"
-      ? "ultrafast"
-      : null;
+  return codexServiceTier === "fast" ? "priority" : null;
 }
 
 function hasCanonicalAgentReference(
@@ -272,7 +268,8 @@ function toApiChatThreadEvent(
             row.modelSettingsPatch,
           ),
         }),
-    serviceTier: row.serviceTier,
+    // A stored retired Ultrafast tier reads as Standard.
+    serviceTier: row.serviceTier === "priority" ? "priority" : null,
     computerUseHostId: row.computerUseHostId,
     cloudBrowserEnabled: row.cloudBrowserEnabled,
     createdAt: row.createdAt.toISOString(),

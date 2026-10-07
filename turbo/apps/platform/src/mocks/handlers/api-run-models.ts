@@ -1,7 +1,9 @@
 import type {
   AvailableRunModel,
   AvailableRunModelsResponse,
+  ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
+import { reasoningEffortSchema } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { mockApi } from "../msw-contract.ts";
 import { getMockModelCatalog } from "./api-model-catalog.ts";
@@ -17,18 +19,76 @@ export function setMockAvailableRunModels(models: AvailableRunModel[]): void {
   mockAvailableRunModels = models;
 }
 
+type MockRunModelAvailability =
+  AvailableRunModel["memberEffective"]["availability"];
+
+/** Auto, exactly as the API lists it. */
+export function mockAutoRunModel(): AvailableRunModel {
+  return {
+    model: getMockModelCatalog().systemDefaultModel,
+    modelLabel: "Auto",
+    modelProviderId: null,
+    memberEffective: {
+      providerType: "built-in",
+      runtimeProviderType: "openrouter-codex",
+      credentialScope: "org",
+      availability: "available",
+      accountSelection: "not_applicable",
+    },
+  };
+}
+
+/**
+ * A personal subscription row as the API projects it, with options taken from
+ * the mock catalog's subscription route.
+ */
+export function mockSubscriptionRunModel(
+  model: string,
+  options: {
+    readonly modelLabel?: string;
+    readonly providerType?: ModelProviderType;
+    readonly modelProviderId?: string | null;
+    readonly availability?: MockRunModelAvailability;
+  } = {},
+): AvailableRunModel {
+  const catalog = getMockModelCatalog();
+  const providerType =
+    options.providerType ??
+    (model.startsWith("claude-")
+      ? "claude-code-oauth-token"
+      : "codex-oauth-token");
+  const route = catalog.routes.find((candidate) => {
+    return candidate.model === model && candidate.providerType === providerType;
+  });
+  return {
+    model,
+    modelLabel:
+      options.modelLabel ??
+      catalog.models.find((entry) => {
+        return entry.model === model;
+      })?.displayName ??
+      model,
+    modelProviderId: options.modelProviderId ?? null,
+    subscriptionOptions: {
+      efforts: (route?.efforts ?? []).flatMap((effort) => {
+        const parsed = reasoningEffortSchema.safeParse(effort);
+        return parsed.success ? [parsed.data] : [];
+      }),
+      serviceTier: route?.serviceTiers.includes("priority") ? "priority" : null,
+    },
+    memberEffective: {
+      providerType,
+      runtimeProviderType: providerType,
+      credentialScope: "member",
+      availability: options.availability ?? "available",
+      accountSelection: "capture_required",
+    },
+  };
+}
+
 function response(): AvailableRunModelsResponse {
   const catalog = getMockModelCatalog();
   const defaultModel = catalog.systemDefaultModel;
-  const auto: AvailableRunModel = {
-    model: defaultModel,
-    modelLabel: "Auto",
-    defaultProviderType: "built-in",
-    runtimeProviderType: "openrouter-codex",
-    credentialScope: "org",
-    modelProviderId: null,
-    routeStatus: "valid",
-  };
   const personal = getMockPersonalModelProviders();
   const models: AvailableRunModel[] = catalog.models.flatMap((entry) => {
     if (entry.replacedBy !== null || entry.model === defaultModel) {
@@ -48,30 +108,20 @@ function response(): AvailableRunModelsResponse {
       return [];
     }
     return [
-      {
-        model: entry.model,
+      mockSubscriptionRunModel(entry.model, {
         modelLabel: entry.displayName,
-        defaultProviderType: account.type,
-        runtimeProviderType: account.type,
-        credentialScope: "member",
+        providerType: account.type,
         modelProviderId: account.id,
-        routeStatus: "valid",
-        memberEffective: {
-          providerType: account.type,
-          runtimeProviderType: account.type,
-          credentialScope: "member",
-          availability: account.needsReconnect
-            ? "reconnect_required"
-            : "available",
-          accountSelection: "capture_required",
-        },
-      },
+        availability: account.needsReconnect
+          ? "reconnect_required"
+          : "available",
+      }),
     ];
   });
   return {
     defaultModel,
     models: [
-      auto,
+      mockAutoRunModel(),
       ...(mockAvailableRunModels ?? models).filter(
         (entry) => entry.model !== defaultModel,
       ),

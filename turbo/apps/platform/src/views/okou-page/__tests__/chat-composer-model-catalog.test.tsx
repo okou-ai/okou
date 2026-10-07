@@ -1,4 +1,3 @@
-import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
@@ -7,7 +6,10 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
+import {
+  buildRunModel,
+  composerModelTrigger,
+} from "./chat-composer-test-helpers.ts";
 import {
   findModelOption,
   openModelPanel,
@@ -22,27 +24,11 @@ import {
 
 const FIXTURE_DATE = "2026-09-30T09:00:00.000Z";
 
-function personalRunModel(model: string): AvailableRunModel {
-  return {
-    model,
-    modelLabel: model,
-    defaultProviderType:
-      model === "okou-1.0"
-        ? "built-in"
-        : model.startsWith("claude-")
-          ? "claude-code-oauth-token"
-          : "codex-oauth-token",
-    credentialScope: model === "okou-1.0" ? "org" : "member",
-    modelProviderId: null,
-    routeStatus: "valid",
-  };
-}
-
 function configureRunModels(models: readonly string[]): void {
   installConnectedPersonalSubscriptions(context);
   context.mocks.data.availableRunModels(
     models.map((model) => {
-      return personalRunModel(model);
+      return buildRunModel({ model });
     }),
   );
 }
@@ -113,14 +99,4 @@ test("Resolve a member preference of a retired model to its replacement", async 
   await readyComposer();
 
   await expect(composerModelTrigger("GPT 6 Luna")).resolves.toBeVisible();
-});
-
-test("Default a new chat to the catalog system default", async () => {
-  context.mocks.data.modelCatalogSystemDefault("claude-sonnet-5");
-  configureRunModels(["okou-1.0", "claude-sonnet-5", "gpt-6-luna"]);
-
-  await setupPage({ context, path: NEW_CHAT_PATH });
-  await readyComposer();
-
-  await expect(composerModelTrigger("Claude Sonnet 5")).resolves.toBeVisible();
 });

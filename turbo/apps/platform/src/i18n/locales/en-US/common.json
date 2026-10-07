@@ -4884,10 +4884,7 @@
         "models": "Models",
         "noConfiguredModels": "No configured models",
         "pro": "Pro",
-        "standard": "Standard",
-        "ultrafast": "Ultrafast",
-        "ultrafastImpact": "Up to 8× token speed · 6× OpenAI API token price",
-        "ultrafastMode": "Ultrafast mode"
+        "standard": "Standard"
       },
       "reset": {
         "confirmDescription": "Use one Codex reset to reset your current usage windows. You have {{remaining}}.",
@@ -5016,26 +5013,6 @@
         "sectionTitle": "Chat"
       },
       "debug": {
-        "builtInModelCooldown": {
-          "cancelAction": "Cancel cooldown",
-          "cancelDescription": "Cancelling this global cooldown makes the route immediately eligible for every workspace.",
-          "cancelling": "Cancelling...",
-          "cancelTitle": "Cancel global cooldown?",
-          "cancelWarning": "A later qualifying failure can place this route back in cooldown.",
-          "description": "Inspect the built-in model routes temporarily excluded from fallback selection.",
-          "empty": "No built-in model routes are currently in global cooldown.",
-          "globalActive": "global active cooldowns",
-          "globalExplanation": "Cooldowns are global operational state and affect every workspace using built-in models.",
-          "keepCooldown": "Keep cooldown",
-          "loading": "Loading built-in model cooldown diagnostics...",
-          "providerType": "Provider type",
-          "refresh": "Refresh",
-          "selectedModel": "Selected model",
-          "title": "Built-in model fallback",
-          "unavailable": "Built-in model cooldown diagnostics are unavailable.",
-          "unavailableUntil": "Unavailable until",
-          "upstreamModel": "Upstream model"
-        },
         "capture": {
           "disabled": "Disabled",
           "enabled_one": "Enabled for the next {{count}} run",

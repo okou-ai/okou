@@ -106,7 +106,6 @@ import {
   transitionAgentRunsToTerminal,
   type ReleasedRunSlot,
 } from "../services/agent-run-terminal-transition.service";
-import { reportBuiltInModelProviderFailure$ } from "../services/built-in-model-provider-failure.service";
 import { notifyRunningChatRunOfPendingInput$ } from "../services/chat-thread-queue-drain.service";
 import { loadConnectorRuntimeSnapshot } from "../services/connector-catalog-runtime.service";
 import { loadConnectorRunnerFirewallCatalog } from "../services/connector-runner-firewall-catalog.service";
@@ -854,9 +853,6 @@ const pollInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const claimBody$ = bodyResultOf(runnersJobClaimContract.claim);
-const modelProviderFailureBody$ = bodyResultOf(
-  runnersModelProviderFailuresContract.report,
-);
 const connectorRuntimeSyncBody$ = bodyResultOf(
   runnersConnectorRuntimeSyncContract.sync,
 );
@@ -2779,56 +2775,16 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
 });
 
+// Built-in model cooldown is retired. Runners released before its removal still
+// report model provider failures; authenticate and ignore them until they drain.
 const modelProviderFailureInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const receivedAt = nowDate();
     const auth = await set(runnerAuth$, get(authorization$), signal);
     signal.throwIfAborted();
     if (!auth) {
       return unauthorizedAuthenticationRequired;
     }
-    if (auth.type !== "official-runner") {
-      return forbidden(
-        "Only official runners can report model provider failures",
-      );
-    }
-
-    const body = await get(modelProviderFailureBody$);
-    signal.throwIfAborted();
-    if (!body.ok) {
-      return body.response;
-    }
-
-    const runId = get(
-      pathParamsOf(runnersModelProviderFailuresContract.report),
-    ).runId;
-    const transition = await set(reportBuiltInModelProviderFailure$, {
-      runId,
-      receivedAt,
-      ...body.data,
-    });
-    signal.throwIfAborted();
-    if (transition.outcome === "recorded" && transition.cooldown) {
-      const cooldown = transition.cooldown;
-      const logLevels = {
-        authentication: "warn",
-        billing: "warn",
-        rate_limit: "info",
-        provider_unavailable: "info",
-        timeout: "info",
-        connection: "info",
-      } as const satisfies Record<typeof cooldown.failureKind, "info" | "warn">;
-      L[logLevels[cooldown.failureKind]](
-        "Built-in model provider failure report recorded",
-        {
-          type: "built_in_model_provider_cooldown",
-          runId,
-          ...cooldown,
-          unavailableUntil: cooldown.unavailableUntil.toISOString(),
-        },
-      );
-    }
-    return { status: 200 as const, body: { outcome: transition.outcome } };
+    return { status: 200 as const, body: { outcome: "ignored" as const } };
   },
 );
 

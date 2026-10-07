@@ -13,7 +13,7 @@ import { setModelPiRouteClassFixture } from "../../../test-fixtures/model-catalo
 import { flushWaitUntilForTest } from "../../context/wait-until";
 
 import { chatEventDisplayText } from "./helpers/chat-event";
-import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
+import { seedBuiltInModelKey } from "./helpers/runtime-state";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -62,7 +62,10 @@ async function configureResponsesWithOwnedRuns(args: {
 }> {
   const model = args.selectedModel;
 
-  await seedBuiltInModelCandidateKeys(context, model);
+  // Personal Codex subscription models carry their own account credentials.
+  if (model === "okou-1.0") {
+    await seedBuiltInModelKey(context, model);
+  }
   const owned = new Map<
     string,
     {
@@ -204,8 +207,6 @@ describe("CHAT-02: model-first routing", () => {
 
     const { claim } = await claimChatRun(runnerGroup, run.runId);
     expect(claim.cliAgentType).toBe("pi");
-    // The okou-1.0 preset is not on the US allowlist, so it stays on the
-    // global OpenRouter endpoint.
     expect(claim.piModelConfig).toMatchObject({
       provider: "openrouter",
       baseUrl: "https://openrouter.ai/api/v1",

@@ -75,7 +75,6 @@ async function selectCurrentCredential(
       id: modelProviders.id,
       type: modelProviders.type,
       userId: modelProviders.userId,
-      needsReconnect: modelProviders.needsReconnect,
     })
     .from(modelProviders)
     .where(
@@ -88,7 +87,8 @@ async function selectCurrentCredential(
     .orderBy(asc(modelProviders.type), asc(modelProviders.id));
   for (const provider of providers) {
     if (provider.type === "codex-oauth-token") {
-      if (provider.userId !== claim.userId || provider.needsReconnect) {
+      // Reconnect state lives on the account row, checked below.
+      if (provider.userId !== claim.userId) {
         continue;
       }
       const [account] = await db

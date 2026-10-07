@@ -7,11 +7,11 @@ import {
   type CodexDeviceAuthScope,
 } from "@okouai/api-contracts/contracts/codex-device-auth";
 import type {
-  AvailableRunModel,
   ModelProviderResponse,
   ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -22,6 +22,10 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import {
+  mockAutoRunModel,
+  mockSubscriptionRunModel,
+} from "../../../mocks/handlers/api-run-models.ts";
 import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import {
   context,
@@ -47,34 +51,39 @@ type PersonalProviderType = Extract<
   "claude-code-oauth-token" | "codex-oauth-token"
 >;
 
-function runModel(args: {
-  readonly model: string;
-  readonly modelLabel: string;
-  readonly providerType: PersonalProviderType;
-  readonly modelProviderId: string | null;
-}): AvailableRunModel {
-  return {
-    model: args.model,
-    modelLabel: args.modelLabel,
-    defaultProviderType: args.providerType,
-    credentialScope: "member",
-    modelProviderId: args.modelProviderId,
-    routeStatus: "valid",
-  };
-}
-
+/**
+ * The API projects a personal model's availability from the member's current
+ * accounts: a usable active account makes it available, otherwise the member
+ * must reconnect.
+ */
 function configurePersonalRoute(args: {
   readonly model: string;
   readonly modelLabel: string;
   readonly providerType: PersonalProviderType;
   readonly modelProviderId?: string | null;
+  readonly providers: () => readonly ModelProviderResponse[];
 }): void {
-  context.mocks.data.availableRunModels([
-    runModel({
-      ...args,
-      modelProviderId: args.modelProviderId ?? null,
-    }),
-  ]);
+  context.mocks.api(runModelsMainContract.list, ({ respond }) => {
+    const usable = args.providers().some((candidate) => {
+      return (
+        candidate.type === args.providerType &&
+        candidate.isActive !== false &&
+        !candidate.needsReconnect
+      );
+    });
+    return respond(200, {
+      defaultModel: "okou-1.0",
+      models: [
+        mockAutoRunModel(),
+        mockSubscriptionRunModel(args.model, {
+          modelLabel: args.modelLabel,
+          providerType: args.providerType,
+          modelProviderId: args.modelProviderId ?? null,
+          availability: usable ? "available" : "reconnect_required",
+        }),
+      ],
+    });
+  });
 }
 
 function provider(args: {
@@ -108,6 +117,7 @@ function provider(args: {
 function installPersonalProviders(
   initialProviders: readonly ModelProviderResponse[],
 ): {
+  readonly current: () => readonly ModelProviderResponse[];
   readonly replace: (providers: readonly ModelProviderResponse[]) => void;
 } {
   let providers = [...initialProviders];
@@ -115,6 +125,9 @@ function installPersonalProviders(
     return respond(200, { modelProviders: providers });
   });
   return {
+    current: () => {
+      return providers;
+    },
     replace: (nextProviders) => {
       providers = [...nextProviders];
     },
@@ -151,6 +164,7 @@ test("Connect Codex before sending with a personal route", async () => {
     model: "gpt-5.6-luna",
     modelLabel: "GPT 5.6 Luna",
     providerType: "codex-oauth-token",
+    providers: personalProviders.current,
   });
   context.mocks.api(codexDeviceAuthContract.start, ({ respond }) => {
     return respond(200, {
@@ -237,6 +251,7 @@ test("Complete Claude Code login from a blocked message", async () => {
     model: "claude-opus-5-5",
     modelLabel: "Claude Opus 5.5",
     providerType: "claude-code-oauth-token",
+    providers: personalProviders.current,
   });
   context.mocks.api(claudeCodeDeviceAuthContract.start, ({ respond }) => {
     return respond(200, {
@@ -301,13 +316,17 @@ test("Reconnect the personal provider used by the selected model", async () => {
     isActive: false,
     modelProviderId: CODEX_ROUTE_ID,
   });
-  installPersonalProviders([inactiveProvider, activeProvider]);
+  const personalProviders = installPersonalProviders([
+    inactiveProvider,
+    activeProvider,
+  ]);
   installRunChat({ selectedModel: "gpt-5.6-sol" });
   configurePersonalRoute({
     model: "gpt-5.6-sol",
     modelLabel: "GPT 5.6 Sol",
     providerType: "codex-oauth-token",
     modelProviderId: CODEX_ROUTE_ID,
+    providers: personalProviders.current,
   });
   context.mocks.api(codexDeviceAuthContract.start, ({ body, respond }) => {
     startBody = body;
@@ -367,13 +386,17 @@ test("Reconnect Claude Code for an existing chat", async () => {
     isActive: false,
     modelProviderId: CLAUDE_ROUTE_ID,
   });
-  installPersonalProviders([inactiveProvider, activeProvider]);
+  const personalProviders = installPersonalProviders([
+    inactiveProvider,
+    activeProvider,
+  ]);
   installRunChat({ selectedModel: "claude-opus-5-5" });
   configurePersonalRoute({
     model: "claude-opus-5-5",
     modelLabel: "Claude Opus 5.5",
     providerType: "claude-code-oauth-token",
     modelProviderId: CLAUDE_ROUTE_ID,
+    providers: personalProviders.current,
   });
   context.mocks.api(claudeCodeDeviceAuthContract.start, ({ body, respond }) => {
     startBody = body;

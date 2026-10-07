@@ -2,10 +2,7 @@ import {
   getSecretsForAuthMethod,
   MODEL_PROVIDER_TYPES,
 } from "@okouai/api-contracts/contracts/model-providers";
-import {
-  AUTO_RUN_KEY_VENDOR,
-  AUTO_RUN_PROVIDER,
-} from "@okouai/core/auto-run-model";
+import { AUTO_RUN_PROVIDER } from "@okouai/core/auto-run-model";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
 export type ModelCredentialValues = Readonly<Record<string, string>>;
 export type ModelRuntimeSelection =
@@ -119,10 +116,8 @@ function compileManagedRuntime(input: ModelRuntimeInput): CompiledModelRuntime {
   ) {
     throw new Error("Managed model source and route identity mismatch");
   }
-  if (
-    selection.providerType !== AUTO_RUN_PROVIDER ||
-    source.configuration.managedVendor !== AUTO_RUN_KEY_VENDOR
-  ) {
+  // The managed source loader admits only the Auto key vendor.
+  if (selection.providerType !== AUTO_RUN_PROVIDER) {
     throw new Error(
       "Managed model vendor does not match its selected provider",
     );

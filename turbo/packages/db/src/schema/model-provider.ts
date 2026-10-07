@@ -3,7 +3,6 @@ import {
   uuid,
   text,
   varchar,
-  boolean,
   timestamp,
   uniqueIndex,
   index,
@@ -11,8 +10,9 @@ import {
 
 /**
  * Model Providers table
- * A member's personal subscription provider (Claude Code or Codex) and its
- * OAuth state. Credentials live on `model_provider_accounts`.
+ * A member's logical personal subscription provider (Claude Code or Codex).
+ * OAuth state, account metadata and credentials live on
+ * `model_provider_accounts`.
  */
 export const modelProviders = pgTable(
   "model_providers",
@@ -21,23 +21,6 @@ export const modelProviders = pgTable(
     type: varchar("type", { length: 50 }).notNull(),
     userId: text("user_id").notNull(),
     orgId: text("org_id").notNull(),
-    // OAuth token state (mirrors `connectors`). Set/cleared by the firewall
-    // refresh pipeline.
-    // null tokenExpiresAt = unknown; refreshable providers auto-refresh on next use.
-    tokenExpiresAt: timestamp("token_expires_at"),
-    needsReconnect: boolean("needs_reconnect").notNull().default(false),
-    // Captures ChatgptRefreshError.code (or equivalent) on refresh failure;
-    // null on success. Wave 3 stale-UX renders this.
-    lastRefreshErrorCode: varchar("last_refresh_error_code", { length: 64 }),
-    // Subscription account metadata captured at connect time; null when the
-    // upstream does not report it. Plan type is unconstrained varchar so upstream
-    // providers adding a new tier doesn't break inserts.
-    workspaceName: varchar("workspace_name", { length: 255 }),
-    planType: varchar("plan_type", { length: 32 }),
-    subscriptionResetPeriod: varchar("subscription_reset_period", {
-      length: 64,
-    }),
-    subscriptionNextResetAt: timestamp("subscription_next_reset_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

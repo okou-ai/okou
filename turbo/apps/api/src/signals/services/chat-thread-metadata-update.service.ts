@@ -9,9 +9,10 @@ import {
   type ModelSettingsPatch,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import type {
-  ChatThreadServiceTier,
-  CodexServiceTier,
+import {
+  MODEL_FIRST_SELECTION_PROVIDER_ID,
+  type ChatThreadServiceTier,
+  type CodexServiceTier,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
@@ -28,7 +29,6 @@ import {
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
 import {
-  MODEL_FIRST_SELECTION_PROVIDER_ID,
   resolveModelSelectionPin$,
   validateCodexServiceTier,
   type ModelFirstPin,
@@ -404,7 +404,7 @@ const titleMetadataStateSchema = z.object({
   title: z.string().nullable(),
   titleTruncated: z.boolean(),
   selectedModel: z.string().nullable(),
-  codexServiceTier: z.enum(["fast", "ultrafast"]).nullable(),
+  codexServiceTier: z.enum(["fast"]).nullable(),
   updatedAt: pgTimestampWithoutTimezoneToDateSchema,
 });
 

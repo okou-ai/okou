@@ -114,8 +114,7 @@ function configureModelRoute(): void {
     buildRunModel({
       model: "claude-sonnet-5",
       modelLabel: "Claude Sonnet 5",
-      defaultProviderType: "claude-code-oauth-token",
-      credentialScope: "member",
+      providerType: "claude-code-oauth-token",
       modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
     }),
   ]);
