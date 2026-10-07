@@ -1897,7 +1897,7 @@
         "personalAccountDisconnected": "Personal subscription disconnected",
         "providerBalanceDescription": "Check your subscription account's usage or credit balance, then try again.",
         "providerBalanceTitle": "Your subscription account needs more credit",
-        "providerConnectionDescription": "Open Model Providers to reconnect or update your account, then try again.",
+        "providerConnectionDescription": "Open Settings > Models to reconnect or update your account, then try again.",
         "providerQueueTimeoutTitle": "The model didn't start in time",
         "providerRateLimitedTitle": "Too many model requests right now",
         "providerServerErrorTitle": "The model provider had a temporary error",
@@ -2231,7 +2231,7 @@
       "loading": "Loading subscription…",
       "noCredit": "No reset credits are available.",
       "nothingToReset": "There is no exhausted usage window to reset.",
-      "reconnect": "Reconnect this subscription in Personal Models.",
+      "reconnect": "Reconnect this subscription in Settings > Models.",
       "reset": "Usage reset successfully.",
       "resetting": "Resetting…",
       "title": "Reset card",
@@ -4600,7 +4600,6 @@
       "features": {
         "creditsPerMonth": "{{credits}} credits / month",
         "emailSupport": "Email support",
-        "ownKeys": "Bring your own LLM keys",
         "payAsYouGo": "Pay as you go after that",
         "prioritySupport": "Priority support",
         "unlimitedAgents": "Unlimited total agents"
@@ -4613,14 +4612,14 @@
   "runErrors": {
     "actions": {
       "addCredits": "Add credits",
-      "openModelProviders": "Open Model Providers",
+      "openModelSettings": "Open model settings",
       "reconnectClaude": "Reconnect Claude Code"
     },
     "askAdmin": "Ask a workspace admin to add credits or upgrade the workspace plan.",
-    "claudeReconnect": "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.",
-    "claudeTerms": "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Model Providers, accept the updated terms and policy, then retry.",
+    "claudeReconnect": "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.",
+    "claudeTerms": "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Settings > Models, accept the updated terms and policy, then retry.",
     "codexOverloaded": "Selected model is at capacity. Please try a different model.",
-    "codexReconnect": "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.",
+    "codexReconnect": "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Settings > Models, then retry.",
     "contentPolicyRejected": "The model provider rejected this request under its content safety policy. Retrying the same input will fail again. Try rephrasing the request, starting a new conversation, or switching to a different model.",
     "executionTimeout": "This run reached its execution time limit.",
     "failed": "Run failed",

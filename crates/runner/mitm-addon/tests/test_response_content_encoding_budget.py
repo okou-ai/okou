@@ -94,7 +94,7 @@ def _model_flow(real_flow, tmp_path, fields) -> http.HTTPFlow:
         proxy_log_path=tmp_path / "proxy.jsonl",
     )
     flow.request.method = "POST"
-    flow.request.path = "/v1/responses"
+    flow.request.path = "/api/v1/responses"
     flow.response = http.Response.make(200)
     flow.response.headers = http.Headers(fields)
     flow.metadata[metadata_keys.RESPONSE_ENCODING_NEGOTIATION] = "already_stream_decodable"

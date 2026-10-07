@@ -2406,46 +2406,39 @@ test("makes exactly one quota GET and no reset-credit request for a real native 
   });
 });
 
-test.each([
-  {
-    type: "codex-oauth-token",
-    url: "https://chatgpt.com/backend-api/codex/responses",
-    model: "gpt-6-luna",
-  },
-] as const)(
-  "admits $type with unknown vendor quota independently of an empty wallet",
-  async ({ url, model }) => {
-    const job = await createPhase2WorkerFixture("unknown-api-key-quota");
-    const provider = await createPhase2CodexProvider(testContext(), job.scope);
-    await insertPhase2Candidates(
-      job.scope,
-      [{ piSessionId: randomUUID(), sourceCompletedAt: nowDate() }],
-      provider.binding,
-    );
-    await seedOrgMetadata({ orgId: job.scope.orgId, tier: "pro", credits: 0 });
-    await seedMemoryQuotaCase(job.scope, nowDate(), "pool-zero");
-    let quotaReads = 0;
-    server.use(
-      http.get("https://chatgpt.com/backend-api/wham/usage", () => {
-        quotaReads++;
-        return HttpResponse.json(
-          { error: "quota temporarily unavailable" },
-          { status: 503 },
-        );
-      }),
-    );
-    const result = await job.work(nowDate());
-    expect(result.outcome).toBe("dispatched");
-    if (result.outcome !== "dispatched") {
-      throw new Error("Expected admitted subscription maintenance");
-    }
-    const runtime = await executePhase2Runtime(testContext(), result.runId);
-    expect(runtime.requests).toHaveLength(3);
-    expect(runtime.requests[0]?.body).toMatchObject({ model });
-    expect(runtime.requests[0]?.url).toBe(url);
-    expect(quotaReads).toBe(1);
-  },
-);
+test("admits codex-oauth-token with unknown subscription quota independently of an empty wallet", async () => {
+  const job = await createPhase2WorkerFixture("unknown-subscription-quota");
+  const provider = await createPhase2CodexProvider(testContext(), job.scope);
+  await insertPhase2Candidates(
+    job.scope,
+    [{ piSessionId: randomUUID(), sourceCompletedAt: nowDate() }],
+    provider.binding,
+  );
+  await seedOrgMetadata({ orgId: job.scope.orgId, tier: "pro", credits: 0 });
+  await seedMemoryQuotaCase(job.scope, nowDate(), "pool-zero");
+  let quotaReads = 0;
+  server.use(
+    http.get("https://chatgpt.com/backend-api/wham/usage", () => {
+      quotaReads++;
+      return HttpResponse.json(
+        { error: "quota temporarily unavailable" },
+        { status: 503 },
+      );
+    }),
+  );
+  const result = await job.work(nowDate());
+  expect(result.outcome).toBe("dispatched");
+  if (result.outcome !== "dispatched") {
+    throw new Error("Expected admitted subscription maintenance");
+  }
+  const runtime = await executePhase2Runtime(testContext(), result.runId);
+  expect(runtime.requests).toHaveLength(3);
+  expect(runtime.requests[0]?.body).toMatchObject({ model: "gpt-6-luna" });
+  expect(runtime.requests[0]?.url).toBe(
+    "https://chatgpt.com/backend-api/codex/responses",
+  );
+  expect(quotaReads).toBe(1);
+});
 
 test("reports a run committed before an abort on the next pass, never as stale", async () => {
   const fixture = createPublicPiMemorySource(publicScopeContext);

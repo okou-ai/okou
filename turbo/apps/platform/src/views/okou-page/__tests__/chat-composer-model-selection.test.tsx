@@ -47,17 +47,16 @@ import { changeChatThreadList } from "../../../mocks/mock-helpers.ts";
 import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
 
-const POLICY_DATE = "2026-08-12T09:00:00.000Z";
+const FIXTURE_DATE = "2026-08-12T09:00:00.000Z";
 
-interface PolicyOptions {
+interface RunModelOptions {
   readonly providerType?: ModelProviderType;
-  readonly credentialScope?: "member" | "org";
 }
 
 function runModelFixture(
   model: string,
   index: number,
-  options: PolicyOptions = {},
+  options: RunModelOptions = {},
 ): AvailableRunModel {
   const providerType =
     options.providerType ??
@@ -66,8 +65,9 @@ function runModelFixture(
       : model.startsWith("claude-")
         ? "claude-code-oauth-token"
         : "codex-oauth-token");
-  const credentialScope =
-    options.credentialScope ?? (model === "okou-1.0" ? "org" : "member");
+  const credentialScope = isBuiltInModelProviderType(providerType)
+    ? "org"
+    : "member";
   return {
     model,
     modelLabel: mockCatalogDisplayName(model),
@@ -102,7 +102,7 @@ function preference(
     serviceTier,
     modelSettings: {},
     selectedImageModel: null,
-    updatedAt: POLICY_DATE,
+    updatedAt: FIXTURE_DATE,
   };
 }
 
@@ -549,7 +549,7 @@ test("Follow model-scoped effort changes made in another session", async () => {
       },
       serviceTier: null,
       computerUseHostId: null,
-      createdAt: POLICY_DATE,
+      createdAt: FIXTURE_DATE,
     });
     changeChatThreadList();
     await waitFor(() => {

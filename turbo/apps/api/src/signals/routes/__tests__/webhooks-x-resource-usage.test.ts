@@ -625,7 +625,7 @@ describe("X daily resource usage webhook", () => {
     const owner = await createRun();
     const survivor = await createRun();
     // The threaded run must stay active until cancelled, so it uses Fable,
-    // which model policy keeps on the native Runner instead of Pi.
+    // whose personal subscription route runs on the native Runner, not Pi.
     await runs.ensurePersonalSubscriptionModel(owner.actor, {
       model: "claude-fable-5-1",
     });

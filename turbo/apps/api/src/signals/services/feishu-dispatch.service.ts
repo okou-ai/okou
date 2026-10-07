@@ -629,10 +629,7 @@ const feishuModelPickerState$ = command(
     signal.throwIfAborted();
     return {
       options: runModels.models
-        .flatMap((runModel) => {
-          if (runModel.routeStatus !== "valid") {
-            return [];
-          }
+        .map((runModel) => {
           return {
             model: runModel.model,
             label: runModel.modelLabel,

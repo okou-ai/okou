@@ -20,7 +20,6 @@ from mitmproxy import http
 from wsproto.utilities import generate_accept_token
 
 import body_decoding
-import claude_output_timing
 import flow_metadata
 import flow_metadata_keys as metadata_keys
 import http_header_syntax
@@ -55,7 +54,6 @@ _MODEL_SSE_PARSE_ERROR_DIAGNOSTIC_LIMIT = 4
 
 _ResponseChunkParser = Callable[[bytes], None]
 _SseUsageParseErrorLogger = Callable[[str, str], None]
-_AnthropicLifecycleObserver = Callable[[str, str | None], None]
 
 
 class _ResponseStreamSetup(NamedTuple):
@@ -140,22 +138,6 @@ def _make_model_sse_parse_error_logger(
     return log_parse_error
 
 
-def _anthropic_lifecycle_observer(
-    flow: http.HTTPFlow,
-) -> _AnthropicLifecycleObserver | None:
-    if flow_metadata.cli_agent_type(flow.metadata) != "claude-code":
-        return None
-
-    def observe(event_type: str, content_block_type: str | None) -> None:
-        claude_output_timing.observe_lifecycle_event(
-            flow,
-            event_type,
-            content_block_type,
-        )
-
-    return observe
-
-
 def _log_response_encoding_fail_closed(
     flow: http.HTTPFlow,
     response: http.Response,
@@ -212,7 +194,6 @@ def _configure_response_inspection_stream(
         return _ResponseStreamSetup(None, False)
     if model_protocol is not None:
         if http_response_classification.has_event_stream_media_type(response):
-            lifecycle_observer: _AnthropicLifecycleObserver | None = None
             openai_recoverable_usage: dict = {}
             observed_terminal = False
 
@@ -266,16 +247,12 @@ def _configure_response_inspection_stream(
                     flow,
                     usage_protocol=usage_protocol,
                 )
-                lifecycle_observer = (
-                    _anthropic_lifecycle_observer(flow) if is_billable_model_provider else None
-                )
 
                 def observe_anthropic_event(event: str) -> None:
                     observe_usage(usage_dict, event == "message_stop")
 
                 parser_fn, usage_dict = usage.create_anthropic_messages_sse_usage_extractor(
                     on_parse_error=log_parse_error,
-                    on_lifecycle_event=lifecycle_observer,
                     on_accounting_event=(observe_anthropic_event if extract_model_usage else None),
                     include_usage=extract_model_usage,
                     failure_observer=failure_observer,
@@ -310,19 +287,15 @@ def _configure_response_inspection_stream(
                     elif extract_model_usage:
                         run_usage.observe(flow, usage_dict)
                         log_parse_error("compressed_body", decode_error)
-                        incomplete_body = decode_error == body_decoding.INCOMPLETE_COMPRESSED_BODY
-                        if usage_protocol == _OPENAI_RESPONSES_SSE_PROTOCOL and incomplete_body:
-                            usage_dict.clear()
+                        usage_dict.clear()
+                        if (
+                            usage_protocol == _OPENAI_RESPONSES_SSE_PROTOCOL
+                            and decode_error == body_decoding.INCOMPLETE_COMPRESSED_BODY
+                        ):
                             usage.merge_openai_responses_usage_result(
                                 usage_dict,
                                 openai_recoverable_usage,
                             )
-                        elif not (
-                            usage_protocol == _ANTHROPIC_MESSAGES_SSE_PROTOCOL and incomplete_body
-                        ):
-                            usage_dict.clear()
-                    if lifecycle_observer is not None:
-                        claude_output_timing.retry_pending(flow)
                     if not observed_terminal:
                         run_usage.mark(flow, "interrupted")
                     finished = True

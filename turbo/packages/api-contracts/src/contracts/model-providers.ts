@@ -75,7 +75,6 @@ export const modelProviderCodexRuntimeConfigSchema = z.object({
   name: z.string().min(1),
   baseUrl: z.url(),
   envKey: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
-  httpHeaders: z.record(z.string(), z.string()).optional(),
   requiresOpenaiAuth: z.boolean().optional(),
   wireApi: z.literal("responses"),
   supportsWebsockets: z.boolean(),
@@ -490,16 +489,16 @@ export type ModelProviderListResponse = z.infer<
 >;
 
 /**
- * Create/update model provider request
+ * Connect or update a personal subscription.
  *
- * Legacy providers use `secret` (single string)
- * Multi-auth providers use `authMethod` + `secrets` (map)
+ * Claude Code sends its OAuth token as `secret`. Codex sends
+ * `authMethod: "auth_json"` with `secrets.CODEX_AUTH_JSON`.
  */
 export const upsertModelProviderRequestSchema = z.object({
-  type: modelProviderTypeSchema,
-  secret: z.string().min(1).optional(), // Legacy single secret
-  authMethod: z.string().optional(), // For multi-auth providers
-  secrets: z.record(z.string(), z.string()).optional(), // For multi-auth providers
+  type: z.enum(["claude-code-oauth-token", "codex-oauth-token"]),
+  secret: z.string().min(1).optional(),
+  authMethod: z.string().optional(),
+  secrets: z.record(z.string(), z.string()).optional(),
 });
 
 export type UpsertModelProviderRequest = z.infer<
@@ -528,7 +527,8 @@ export const availableRunModelSchema = z.object({
   model: runModelIdSchema,
   modelLabel: z.string(),
   defaultProviderType: modelProviderTypeSchema,
-  // Concrete built-in provider; other policies use defaultProviderType.
+  // Concrete provider that serves the run; for the built-in route this is the
+  // platform provider behind it.
   runtimeProviderType: modelProviderTypeSchema.nullable().optional(),
   credentialScope: modelProviderCredentialScopeSchema,
   modelProviderId: z.uuid().nullable(),

@@ -1,7 +1,5 @@
 """Tests for usage pending counters."""
 
-import pytest
-
 import flow_metadata_keys as metadata_keys
 import usage
 from tests.pending_helpers import assert_pending
@@ -58,9 +56,7 @@ class TestUsagePendingCounter:
             usage.increment_in_flight_flows()
             usage.decrement_in_flight_flows()
             pending_report = usage.counters.admit_pending_report()
-            buffered_report = usage.admit_buffered_report()
             pending_report.release()
-            buffered_report.release()
 
         assert mock_log.error.call_count == 0
         assert_pending(control_root, flows=0, buffered=0, reports=0)
@@ -74,34 +70,13 @@ class TestUsagePendingCounter:
         usage.counters.set_buffered_usage_events(0)
         assert_pending(control_root, flows=0, buffered=0, reports=0)
 
-    def test_buffered_report_lease_composes_with_usage_events(self, tmp_path):
-        control_root = tmp_path / "delivery-control"
-        usage.counters.set_buffered_usage_events(2)
-        lease = usage.admit_buffered_report()
-
-        assert_pending(
-            control_root,
-            flows=0,
-            buffered=3,
-            reports=0,
-        )
-
-        lease.release()
-
-        assert_pending(
-            control_root,
-            flows=0,
-            buffered=2,
-            reports=0,
-        )
-
     def test_buffered_usage_blocks_pending_until_flush(self, tmp_path, real_flow, mitm_ctx):
         control_root = tmp_path / "delivery-control"
         enqueue = RecordingEnqueue(return_value=True)
         usage.reset_usage_buffer_for_tests(enqueue_webhook=enqueue)
 
-        flow = real_flow(with_response=False, host="api.anthropic.com")
-        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:anthropic-api-key"
+        flow = real_flow(with_response=False, host="openrouter.ai")
+        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:openrouter-codex"
         flow.metadata[metadata_keys.FIREWALL_BILLABLE] = True
         flow.metadata[metadata_keys.SANDBOX_AUTH_KEY] = "tok"
         flow.metadata[metadata_keys.SANDBOX_PROXY_LOG_PATH] = str(tmp_path / "proxy.jsonl")
@@ -151,53 +126,23 @@ class TestUsagePendingCounter:
         assert_counter_underflow_log(mock_log.error.call_args, "flows")
         assert mock_log.warn.call_count == 0
 
-    @pytest.mark.parametrize(
-        (
-            "admit_report",
-            "counter",
-            "admitted_buffered",
-            "admitted_reports",
-            "remaining_buffered",
-            "remaining_reports",
-        ),
-        [
-            (usage.counters.admit_pending_report, "reports", 0, 2, 0, 1),
-            (usage.admit_buffered_report, "buffered_reports", 2, 0, 1, 0),
-        ],
-    )
     def test_report_lease_double_release_logs_without_decrementing_other_reports(
         self,
         tmp_path,
-        admit_report,
-        counter,
-        admitted_buffered,
-        admitted_reports,
-        remaining_buffered,
-        remaining_reports,
         mitm_ctx,
     ):
         control_root = tmp_path / "delivery-control"
-        first = admit_report()
-        second = admit_report()
-        assert_pending(
-            control_root,
-            flows=0,
-            buffered=admitted_buffered,
-            reports=admitted_reports,
-        )
+        first = usage.counters.admit_pending_report()
+        second = usage.counters.admit_pending_report()
+        assert_pending(control_root, flows=0, buffered=0, reports=2)
 
         with mitm_ctx() as mock_log:
             first.release()
             first.release()
 
-        assert_pending(
-            control_root,
-            flows=0,
-            buffered=remaining_buffered,
-            reports=remaining_reports,
-        )
+        assert_pending(control_root, flows=0, buffered=0, reports=1)
         assert mock_log.error.call_count == 1
-        assert_counter_underflow_log(mock_log.error.call_args, counter)
+        assert_counter_underflow_log(mock_log.error.call_args, "reports")
 
         second.release()
         assert_pending(control_root, flows=0, buffered=0, reports=0)

@@ -124,7 +124,7 @@ describe("CHAT-02: run-level model overrides", () => {
       model: "claude-opus-5-5",
     });
 
-    const firstPrompt = "first turn on the default opus policy";
+    const firstPrompt = "first turn on the selected opus model";
     const first = await sendChatRun(actor, {
       agentId,
       prompt: firstPrompt,

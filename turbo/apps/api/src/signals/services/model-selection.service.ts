@@ -8,7 +8,7 @@ import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { command } from "ccstate";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { badRequestMessage } from "../../lib/error";
 import { db$ } from "../external/db";
 import { memberModelRouteContextFromAccounts } from "./effective-model-route.service";
@@ -143,10 +143,6 @@ const modelRoutingFacts$ = command(
               and(
                 eq(modelProviderAccounts.orgId, params.orgId),
                 eq(modelProviderAccounts.userId, params.userId),
-                inArray(modelProviderAccounts.type, [
-                  "claude-code-oauth-token",
-                  "codex-oauth-token",
-                ]),
                 isNull(modelProviderAccounts.disconnectedAt),
               ),
             ),

@@ -4426,7 +4426,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         configureProvider: configureClaudeCodeSubscriptionProvider,
       }),
     ).resolves.toBe(
-      "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
+      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
     );
     await expect(
       failAndReadError({
@@ -4437,7 +4437,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         configureProvider: configureClaudeCodeSubscriptionProvider,
       }),
     ).resolves.toBe(
-      "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
+      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
     );
     await expect(
       failAndReadError({
@@ -4447,7 +4447,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         configureProvider: configureClaudeCodeSubscriptionProvider,
       }),
     ).resolves.toBe(
-      "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
+      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
     );
     await expect(
       failAndReadError({
@@ -4456,7 +4456,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         selectedModel: "claude-fable-5-1",
       }),
     ).resolves.toBe(
-      "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
+      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
     );
     await expect(
       failAndReadError({
@@ -4466,7 +4466,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         configureProvider: configureClaudeCodeSubscriptionProvider,
       }),
     ).resolves.toBe(
-      "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
+      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
     );
     await expect(
       failAndReadError({
@@ -4477,7 +4477,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         configureProvider: configureClaudeCodeSubscriptionProvider,
       }),
     ).resolves.toBe(
-      "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
+      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
     );
     await expect(
       failAndReadError({
@@ -4486,7 +4486,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         selectedModel: "claude-fable-5-1",
       }),
     ).resolves.toBe(
-      "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
+      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
     );
     for (const errorMessage of [
       "Failed to authenticate. API Error: 4010 OAuth access token is invalid.",
@@ -4508,7 +4508,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         orgRole: "admin",
       }),
     ).resolves.toBe(
-      "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
+      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
     );
     await expect(
       failAndReadError({
@@ -4516,7 +4516,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         orgRole: "member",
       }),
     ).resolves.toBe(
-      "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
+      "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.\n\nReconnect Claude Code: https://app.okou.ai/?settings=model",
     );
   }, 90_000);
 });
@@ -5394,8 +5394,8 @@ describe("CHAT-02: auto-send across a model switch", () => {
     const fixture = await entitledChatActor();
     const { actor, agentId, runnerGroup } = fixture;
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    // Opus stays on the native Claude Code Runner only through the
-    // subscription credential; on an API key it would run through Pi.
+    // Opus runs on the native Claude Code Runner through the personal Claude
+    // subscription.
     await configureClaudeCodeSubscriptionProvider(fixture);
 
     const titlePrompts: string[] = [];
@@ -5490,8 +5490,8 @@ describe("CHAT-02: auto-send across a model switch", () => {
     const fixture = await entitledChatActor();
     const { actor, agentId, runnerGroup } = fixture;
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    // Opus stays on the native Claude Code Runner only through the
-    // subscription credential; on an API key it would run through Pi.
+    // Opus runs on the native Claude Code Runner through the personal Claude
+    // subscription.
     await configureClaudeCodeSubscriptionProvider(fixture);
 
     const first = await startChatRun(actor, {

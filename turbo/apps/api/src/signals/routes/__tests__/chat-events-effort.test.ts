@@ -23,34 +23,31 @@ const {
 } = createChatEventsFixture(context);
 
 describe("CHAT effort: thread configuration", () => {
-  it.each(["gpt-6-luna"] as const)(
-    "dispatches %s with xhigh as the default Pi effort",
-    async (model) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
+  it("dispatches gpt-6-luna with xhigh as the default Pi effort", async () => {
+    const model = "gpt-6-luna";
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
 
-      await configureSubscriptionPiModel(actor, {}, model);
-      const thread = await chat.createThread(actor, {
-        agentId,
-        model,
-      });
-      mockPiCheckpointObjectStore();
-      const sent = await sendChatRun(actor, {
-        agentId,
-        threadId: thread.id,
-        prompt: "/unknown-command use the Luna default",
-      });
-      await flushWaitUntilForTest();
-      const claimed = await claimChatRun(runnerGroup, sent.runId);
-      expect(claimed.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
-        "xhigh",
-      );
-      expect(claimed.claim.piModelConfig).toMatchObject({
-        thinkingLevel: "xhigh",
-      });
-      await cancelChatRun(actor, sent.runId, claimed.sandboxHeaders);
-    },
-    90_000,
-  );
+    await configureSubscriptionPiModel(actor, {}, model);
+    const thread = await chat.createThread(actor, {
+      agentId,
+      model,
+    });
+    mockPiCheckpointObjectStore();
+    const sent = await sendChatRun(actor, {
+      agentId,
+      threadId: thread.id,
+      prompt: "/unknown-command use the Luna default",
+    });
+    await flushWaitUntilForTest();
+    const claimed = await claimChatRun(runnerGroup, sent.runId);
+    expect(claimed.claim.platformEnvironment.OKOU_REASONING_EFFORT).toBe(
+      "xhigh",
+    );
+    expect(claimed.claim.piModelConfig).toMatchObject({
+      thinkingLevel: "xhigh",
+    });
+    await cancelChatRun(actor, sent.runId, claimed.sandboxHeaders);
+  }, 90_000);
   it("applies requested and saved native effort through the existing claim protocol", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
 

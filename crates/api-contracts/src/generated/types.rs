@@ -22,9 +22,6 @@ pub mod runners {
             pub base_url: String,
             /// Environment variable containing the provider credential.
             pub env_key: String,
-            /// Optional static HTTP headers for provider requests.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub http_headers: Option<std::collections::BTreeMap<String, String>>,
             /// Optional override for Codex's built-in OpenAI authentication requirement.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub requires_openai_auth: Option<bool>,

@@ -1211,10 +1211,7 @@ const handleModelCommand$ = command(
     );
     signal.throwIfAborted();
 
-    const options = runModels.models.flatMap((runModel) => {
-      if (runModel.routeStatus !== "valid") {
-        return [];
-      }
+    const options = runModels.models.map((runModel) => {
       return {
         model: runModel.model,
         label: runModel.modelLabel,

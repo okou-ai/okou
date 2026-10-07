@@ -1930,7 +1930,7 @@
         "personalAccountDisconnected": "Assinatura pessoal desconectada",
         "providerBalanceDescription": "Verifique o uso ou o saldo de créditos da sua conta de assinatura e tente novamente.",
         "providerBalanceTitle": "Sua conta de assinatura precisa de mais crédito",
-        "providerConnectionDescription": "Abra Provedores de modelos para reconectar ou atualizar sua conta e tente novamente.",
+        "providerConnectionDescription": "Abra Configurações > Modelos para reconectar ou atualizar sua conta e tente novamente.",
         "providerQueueTimeoutTitle": "O modelo não iniciou a tempo",
         "providerRateLimitedTitle": "Há solicitações demais ao modelo no momento",
         "providerServerErrorTitle": "O provedor de modelos teve um erro temporário",
@@ -2279,7 +2279,7 @@
       "loading": "Carregando assinatura…",
       "noCredit": "Não há créditos de redefinição disponíveis.",
       "nothingToReset": "Não há janela de uso esgotada para redefinir.",
-      "reconnect": "Reconecte esta assinatura em Modelos pessoais.",
+      "reconnect": "Reconecte esta assinatura em Configurações > Modelos.",
       "reset": "Uso redefinido com sucesso.",
       "resetting": "Redefinindo…",
       "title": "Reset card",
@@ -4672,7 +4672,6 @@
       "features": {
         "creditsPerMonth": "{{credits}} créditos por mês",
         "emailSupport": "Suporte por e-mail",
-        "ownKeys": "Use suas próprias chaves de provedor de modelo",
         "payAsYouGo": "Créditos pagos conforme o uso",
         "prioritySupport": "Suporte prioritário",
         "unlimitedAgents": "Agentes ilimitados"
@@ -4685,14 +4684,14 @@
   "runErrors": {
     "actions": {
       "addCredits": "Adicionar créditos",
-      "openModelProviders": "Abrir provedores de modelos",
+      "openModelSettings": "Abrir configurações de modelos",
       "reconnectClaude": "Reconectar o Claude Code"
     },
     "askAdmin": "Peça a um administrador do espaço de trabalho para adicionar créditos ou fazer upgrade do plano.",
-    "claudeReconnect": "A autenticação da assinatura do Claude Code falhou. Reconecte o Claude Code em Provedores de modelos e tente novamente.",
-    "claudeTerms": "O Claude Code exige a aceitação dos Termos de Uso e da Política de Privacidade atualizados. Entre em https://claude.ai com a conta Claude conectada em Provedores de modelos, aceite as atualizações e tente novamente.",
+    "claudeReconnect": "A autenticação da assinatura do Claude Code falhou. Reconecte o Claude Code em Configurações > Modelos e tente novamente.",
+    "claudeTerms": "O Claude Code exige a aceitação dos Termos de Uso e da Política de Privacidade atualizados. Entre em https://claude.ai com a conta Claude conectada em Configurações > Modelos, aceite as atualizações e tente novamente.",
     "codexOverloaded": "O modelo selecionado atingiu a capacidade. Tente outro modelo.",
-    "codexReconnect": "A sessão do ChatGPT precisa ser reconectada. Reconecte o ChatGPT (Codex) em Provedores de modelos e tente novamente.",
+    "codexReconnect": "A sessão do ChatGPT precisa ser reconectada. Reconecte o ChatGPT (Codex) em Configurações > Modelos e tente novamente.",
     "contentPolicyRejected": "O provedor do modelo rejeitou esta solicitação devido à sua política de segurança de conteúdo. Tentar novamente com a mesma entrada falhará. Reformule a solicitação, inicie uma nova conversa ou mude de modelo.",
     "executionTimeout": "Esta execução atingiu o limite de tempo.",
     "failed": "Falha na execução",

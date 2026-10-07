@@ -51,7 +51,7 @@ const reads = createRunReadsApi(context);
 const support = createAuthDeviceSupportApi(context);
 const firewall = createFirewallApi(context);
 
-/** The configured policy, not the fixed default every workspace keeps. */
+/** A listed personal subscription model, not the fixed Auto every workspace keeps. */
 function availableModel(
   response: { readonly models: readonly AvailableRunModel[] },
   model: string,

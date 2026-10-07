@@ -84,9 +84,7 @@ function printSubscription(account: ModelProviderResponse) {
     );
   }
   if (account.needsReconnect) {
-    console.log(
-      "  Reconnect this subscription in Preferences / Personal Models.",
-    );
+    console.log("  Reconnect this subscription in Settings > Models.");
   }
 }
 
@@ -127,7 +125,7 @@ const listCommand = new Command("list")
       console.log(
         subscriptions.length
           ? "Use `okou subscription show <id>`, `reset-link <id>`, or `switch <id>`."
-          : "Connect a subscription in Preferences / Personal Models.",
+          : "Connect a subscription in Settings > Models.",
       );
     }),
   );

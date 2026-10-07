@@ -727,8 +727,8 @@ interface ModelFirstModelPickerState {
 }
 
 /**
- * Pickers offer only active catalog models (`replacedBy === null`) that the
- * organization routes, in catalog `sortOrder`.
+ * Pickers offer Auto plus the active catalog models (`replacedBy === null`)
+ * routed through the member's personal subscriptions, in catalog `sortOrder`.
  */
 export function resolveModelFirstModelPickerState({
   value,

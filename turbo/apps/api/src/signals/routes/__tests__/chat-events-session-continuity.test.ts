@@ -39,9 +39,8 @@ const {
   cancelChatRun,
 } = createChatEventsFixture(context);
 
-// Session continuity is observed through the native Runner claim protocol.
-// The fixture's default Sonnet policy is Pi-eligible, so select the Fable
-// native route instead.
+// Session continuity is observed through the native Runner claim protocol,
+// so select Fable's native personal-subscription route.
 async function entitledNativeChatActor(): Promise<
   Awaited<ReturnType<typeof entitledChatActor>>
 > {
@@ -529,7 +528,7 @@ describe("CHAT-02: run-level model overrides", () => {
     const second = await sendChatRun(actor, {
       agentId,
       threadId: first.threadId,
-      prompt: "follow up after the provider policy reroute",
+      prompt: "follow up after reconnecting the Claude subscription",
     });
     const secondClaim = await claimChatRun(runnerGroup, second.runId);
     const environment = claimEnvironment(secondClaim.claim);

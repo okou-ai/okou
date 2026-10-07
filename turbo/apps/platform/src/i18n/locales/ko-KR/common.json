@@ -1890,7 +1890,7 @@
         "personalAccountDisconnected": "개인 구독 연결이 끊어졌습니다",
         "providerBalanceDescription": "구독 계정의 사용량 또는 크레딧 잔액을 확인한 후 다시 시도하세요.",
         "providerBalanceTitle": "구독 계정에 크레딧이 더 필요합니다",
-        "providerConnectionDescription": "'모델 제공업체'에서 계정을 다시 연결하거나 업데이트한 다음 다시 시도하세요.",
+        "providerConnectionDescription": "'설정 > 모델'에서 계정을 다시 연결하거나 업데이트한 다음 다시 시도하세요.",
         "providerQueueTimeoutTitle": "모델이 제때 시작되지 않았습니다",
         "providerRateLimitedTitle": "지금은 모델 요청이 너무 많습니다",
         "providerServerErrorTitle": "모델 제공자에 일시적인 오류가 발생했습니다",
@@ -2220,7 +2220,7 @@
       "loading": "구독 불러오는 중…",
       "noCredit": "사용 가능한 초기화 크레딧이 없습니다.",
       "nothingToReset": "초기화할 소진된 사용 구간이 없습니다.",
-      "reconnect": "개인 모델에서 이 구독을 다시 연결하세요.",
+      "reconnect": "설정 > 모델에서 이 구독을 다시 연결하세요.",
       "reset": "사용량이 초기화되었습니다.",
       "resetting": "초기화 중…",
       "title": "Reset card",
@@ -4588,7 +4588,6 @@
       "features": {
         "creditsPerMonth": "월 {{credits}} 크레딧",
         "emailSupport": "이메일 지원",
-        "ownKeys": "직접 LLM 키 사용",
         "payAsYouGo": "이후 사용량 기반 결제",
         "prioritySupport": "우선 지원",
         "unlimitedAgents": "무제한 에이전트"
@@ -4601,14 +4600,14 @@
   "runErrors": {
     "actions": {
       "addCredits": "크레딧 추가",
-      "openModelProviders": "모델 제공업체 열기",
+      "openModelSettings": "모델 설정 열기",
       "reconnectClaude": "Claude Code 다시 연결"
     },
     "askAdmin": "워크스페이스 관리자에게 크레딧 추가 또는 요금제 업그레이드를 요청하세요.",
-    "claudeReconnect": "Claude Code 구독 인증에 실패했습니다. 모델 제공업체에서 Claude Code를 다시 연결한 후 다시 시도하세요.",
-    "claudeTerms": "Claude Code를 사용하려면 업데이트된 이용약관 및 개인정보 처리방침에 동의해야 합니다. 모델 제공업체에 연결된 Claude 계정으로 https://claude.ai 에 로그인하고 업데이트된 내용에 동의한 후 다시 시도하세요.",
+    "claudeReconnect": "Claude Code 구독 인증에 실패했습니다. 설정 > 모델에서 Claude Code를 다시 연결한 후 다시 시도하세요.",
+    "claudeTerms": "Claude Code를 사용하려면 업데이트된 이용약관 및 개인정보 처리방침에 동의해야 합니다. 설정 > 모델에 연결된 Claude 계정으로 https://claude.ai 에 로그인하고 업데이트된 내용에 동의한 후 다시 시도하세요.",
     "codexOverloaded": "선택한 모델이 처리 한도에 도달했습니다. 다른 모델을 사용해 보세요.",
-    "codexReconnect": "ChatGPT 세션을 다시 연결해야 합니다. 모델 제공업체에서 ChatGPT (Codex)를 다시 연결한 후 다시 시도하세요.",
+    "codexReconnect": "ChatGPT 세션을 다시 연결해야 합니다. 설정 > 모델에서 ChatGPT (Codex)를 다시 연결한 후 다시 시도하세요.",
     "contentPolicyRejected": "모델 제공업체가 콘텐츠 안전 정책에 따라 이 요청을 거부했습니다. 동일한 입력으로 재시도하면 다시 실패합니다. 요청을 바꾸거나 새 대화를 시작하거나 다른 모델로 전환하세요.",
     "executionTimeout": "이 실행이 시간 제한에 도달했습니다.",
     "failed": "실행 실패",

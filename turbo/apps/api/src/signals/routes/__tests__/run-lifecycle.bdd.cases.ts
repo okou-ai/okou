@@ -5307,7 +5307,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, scheduled.runId, [200]);
       });
 
-      it("runs thread-pinned member-scope providers and mounts codex workflows", async () => {
+      it("runs a sent Codex model on the personal subscription and mounts codex workflows", async () => {
         const api = createRunsApi(context);
         const bdd = createBddApi(context);
         const chat = createChatFilesBddApi(context);
@@ -5327,9 +5327,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           [200, 201],
         );
 
-        // A member-scoped policy routes the gpt-6-astra model (native Codex
-        // Runner; Pi-eligible GPT models would launch Pi instead) through the
-        // personal provider; the org default stays on the anthropic provider.
+        // The member's selected model stays on their Claude subscription; the
+        // send's gpt-6-astra (native Codex Runner; Pi-eligible GPT models would
+        // launch Pi instead) runs on the personal Codex subscription.
         await api.ensurePersonalSubscriptionModel(actor);
         await api.updateUserModelPreference(actor, "claude-fable-5-1");
 
@@ -5354,7 +5354,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const sent = await chat.sendAndLaunch(actor, {
           agentId: agent.agentId,
           threadId: thread.id,
-          prompt: "run on the pinned member provider",
+          prompt: "run on the personal Codex subscription",
           model: "gpt-6-astra",
         });
 

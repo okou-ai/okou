@@ -66,7 +66,6 @@ function personalStatusForRunModel(
   const route = getMemberRunModelRoute(runModel);
   if (
     route.availability === "plan_restricted" ||
-    route.credentialScope !== "member" ||
     !isPersonalOauthProviderType(route.providerType)
   ) {
     return null;
@@ -139,10 +138,7 @@ export const selectedModelAvailable$ = command(
     if (runModel.memberEffective) {
       return true;
     }
-    if (
-      runModel.credentialScope !== "member" ||
-      !isPersonalOauthProviderType(runModel.defaultProviderType)
-    ) {
+    if (!isPersonalOauthProviderType(runModel.defaultProviderType)) {
       return true;
     }
     const status = (await get(personalModelProvider$))[selectedModel];

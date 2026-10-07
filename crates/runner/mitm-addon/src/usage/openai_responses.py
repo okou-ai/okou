@@ -11,7 +11,7 @@ model-provider usage billing:
   ``inspect_openai_responses_client_event_json``,
   ``inspect_openai_responses_event_json``, and
   ``inspect_openai_responses_server_event``, consumed by ``mitm_addon.py`` and
-  ``model_websocket_usage.py`` for client request intent, event-type timing,
+  ``model_websocket_usage.py`` for client request intent,
   shared server failure evidence, lifecycle correlation, and usage received
   over upgrades.
   ``extract_openai_responses_usage_from_event`` retains the usage-only facade.
@@ -87,7 +87,6 @@ OPENAI_RESPONSES_WEBSOCKET_WORK_LIMIT_ERROR = "work_limit_exceeded"
 class OpenAIResponsesClientEvent:
     """Bounded observations from one client-originated Responses frame."""
 
-    event_type: str | None
     is_prewarm: bool
     request_kind: _OpenAIResponsesClientRequestKind = "unknown"
     work_limit_exceeded: bool = False
@@ -227,8 +226,7 @@ _UNAVAILABLE_FAILURE_EVIDENCE = OpenAIResponsesServerFailureEvidence(None, None,
 
 
 def inspect_openai_responses_client_event_json(body: bytes) -> OpenAIResponsesClientEvent:
-    """Inspect client event timing and exact non-generating request intent."""
-    observed_event_type = _inspect_openai_responses_event_type_json(body)
+    """Inspect exact non-generating request intent."""
     extractor = JsonSelectiveExtractor(
         scalar_fields=_RESPONSES_CLIENT_SCALAR_FIELDS,
         scalar_consistency_paths={("type",), ("generate",)},
@@ -238,7 +236,6 @@ def inspect_openai_responses_client_event_json(body: bytes) -> OpenAIResponsesCl
     result = extractor.finish()
     if not result.complete:
         return OpenAIResponsesClientEvent(
-            observed_event_type,
             False,
             "unknown",
             result.error == JSON_WORK_LIMIT_EXCEEDED,
@@ -248,14 +245,13 @@ def inspect_openai_responses_client_event_json(body: bytes) -> OpenAIResponsesCl
     generate_is_consistent = extractor.selected_scalar_values_are_consistent(("generate",))
     event_type = result.values.get(("type",))
     if not type_is_consistent or not isinstance(event_type, str):
-        return OpenAIResponsesClientEvent(observed_event_type, False, "unknown")
+        return OpenAIResponsesClientEvent(False, "unknown")
     if event_type != openai_responses_events.CLIENT_CREATE_EVENT:
-        return OpenAIResponsesClientEvent(observed_event_type, False, "unknown")
+        return OpenAIResponsesClientEvent(False, "unknown")
     if not generate_is_consistent:
-        return OpenAIResponsesClientEvent(observed_event_type, False, "unknown")
+        return OpenAIResponsesClientEvent(False, "unknown")
 
     return OpenAIResponsesClientEvent(
-        observed_event_type,
         result.values.get(("generate",)) is False,
         "create",
     )
@@ -276,11 +272,6 @@ def inspect_openai_responses_event_json(body: bytes) -> OpenAIResponsesEvent:
         _body=body,
         _classification=_classify_responses_event_type_result(result),
     )
-
-
-def _inspect_openai_responses_event_type_json(body: bytes) -> str | None:
-    """Probe one Responses frame for its top-level ``type`` without retaining it."""
-    return _observed_responses_event_type(_probe_responses_event_type(body))
 
 
 def _lifecycle_from_extraction(

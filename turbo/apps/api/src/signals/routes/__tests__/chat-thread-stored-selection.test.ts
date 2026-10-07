@@ -22,11 +22,11 @@ const wf = createWorkflowsBddApi(context);
 const { chat, entitledNativeChatActor } = createChatEventsFixture(context);
 
 /**
- * A stored selection left behind by the retired organization Custom mode: it
- * is neither Auto nor one of the member's available personal subscription
- * models. Only legacy data can hold it, so tests stage it on the thread row.
+ * An unknown stored selection: it is neither Auto nor one of the member's
+ * available personal subscription models. The API never writes such a value,
+ * so tests stage it directly on the thread row.
  */
-const RETIRED_CUSTOM_SELECTION = "acme-gateway/retired-custom-model";
+const UNKNOWN_STORED_SELECTION = "unknown-stored-model";
 
 const WEBHOOK_ROUTES = Object.freeze([
   ...webhooksWorkflowAutomationsRoutes,
@@ -103,7 +103,7 @@ describe("thread stored selection that is neither Auto nor an available subscrip
     });
     await stageLegacyChatThreadSelectedModelFixture({
       threadId: thread.id,
-      model: RETIRED_CUSTOM_SELECTION,
+      model: UNKNOWN_STORED_SELECTION,
     });
     const before = await chat.listThreadEvents(actor, thread.id);
 
@@ -113,7 +113,7 @@ describe("thread stored selection that is neither Auto nor an available subscrip
       {
         agentId,
         threadId: thread.id,
-        prompt: "continue the retired Custom thread",
+        prompt: "continue with an unknown stored selection",
         clientEventId,
       },
       [400],
@@ -157,7 +157,7 @@ describe("thread stored selection that is neither Auto nor an available subscrip
     const webhook = await createWebhookAutomation(workflowId);
     await stageLegacyChatThreadSelectedModelFixture({
       threadId: webhook.threadId,
-      model: RETIRED_CUSTOM_SELECTION,
+      model: UNKNOWN_STORED_SELECTION,
     });
 
     // The delivery itself succeeds; the stored selection is enqueued unchanged.

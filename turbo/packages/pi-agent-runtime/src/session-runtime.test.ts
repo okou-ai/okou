@@ -346,7 +346,6 @@ interface CapturedProviderRequest {
   readonly url: string | undefined;
   readonly body: unknown;
   readonly authorization: string | undefined;
-  readonly apiKey: string | undefined;
   readonly userAgent: string | undefined;
   readonly accountId: string | undefined;
 }
@@ -374,7 +373,6 @@ async function startResponsesProvider(
         url: request.url,
         body: JSON.parse(body.toString("utf8")) as unknown,
         authorization: request.headers.authorization,
-        apiKey: request.headers["x-api-key"] as string | undefined,
         userAgent: request.headers["user-agent"],
         accountId: request.headers["chatgpt-account-id"] as string | undefined,
       });
@@ -854,7 +852,6 @@ describe("official Pi AgentSession runtime", () => {
           expect(request).toMatchObject({
             url: "/v1/responses",
             authorization: "Bearer opaque-openrouter-credential",
-            apiKey: undefined,
             body: { model: model.model, service_tier: "priority" },
           });
         }

@@ -1,7 +1,3 @@
-import {
-  modelCatalog$,
-  type ModelCatalog,
-} from "../services/model-catalog.service";
 import { randomUUID } from "node:crypto";
 import { command, computed } from "ccstate";
 import {
@@ -42,7 +38,7 @@ import {
   isPreviewEndpointAllowed,
   previewEndpointNotFoundResponse,
 } from "./preview-endpoint-access";
-import { loadSystemDefaultBuiltInVendor } from "../services/model-route-capabilities.service";
+import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { orgPlanEntitlementValues } from "../services/org-plan-entitlements.service";
 import { orgCreditExpirationSql } from "../services/org-credit-expiration";
@@ -273,39 +269,13 @@ const seedDefaultAgent$ = command(
   },
 );
 
-async function seedBuiltInModelKeys(
-  catalogSnapshot: ModelCatalog,
-  db: Db,
-  agentId: string,
-): Promise<void> {
-  await acquireBuiltInModelKeyFixture(
-    db,
-    agentId,
-    builtInModelKeyRows(
-      agentId,
-      await loadSystemDefaultBuiltInVendor(catalogSnapshot),
-    ),
-  );
-}
-
-function builtInModelKeyRows(agentId: string, defaultVendor: string) {
-  return [
+async function seedBuiltInModelKeys(db: Db, agentId: string): Promise<void> {
+  await acquireBuiltInModelKeyFixture(db, agentId, [
     {
-      vendor: defaultVendor,
+      vendor: AUTO_RUN_KEY_VENDOR,
       apiKey: `built-in-key-default-${agentId}`,
-      label: agentId,
     },
-    {
-      vendor: "anthropic",
-      apiKey: `built-in-key-anthropic-${agentId}`,
-      label: agentId,
-    },
-    {
-      vendor: "moonshot",
-      apiKey: `built-in-key-moonshot-${agentId}`,
-      label: agentId,
-    },
-  ];
+  ]);
 }
 
 async function deleteBuiltInModelKeysForSeededDefaultAgent(
@@ -861,11 +831,7 @@ const postSlackState$ = command(async ({ get, set }, signal: AbortSignal) => {
     : undefined;
   signal.throwIfAborted();
   if (defaultAgent) {
-    await seedBuiltInModelKeys(
-      await get(modelCatalog$),
-      db,
-      defaultAgent.agentId,
-    );
+    await seedBuiltInModelKeys(db, defaultAgent.agentId);
     signal.throwIfAborted();
   }
   await seedPostSlackUserData(db, body, actor);

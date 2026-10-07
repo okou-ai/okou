@@ -112,6 +112,14 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-unselectable-thread-model-cleanup.ts` protects migration
+  `1335_clear_unselectable_thread_models_and_unused_model_keys`: unresolvable
+  thread selections return to Auto with ordered `model_selection_updated` and
+  `service_tier_updated` events, resolvable selections and agentless streams
+  are respected, only the OpenRouter built-in key remains, and a rerun is a
+  no-op. Retire it once the migration has shipped and the journal squash line
+  passes it.
+
 - `scripts/test-file-run-provenance.ts` protects migration
   `1323_detach_file_run_provenance`: unreconciled thread/org associations reject
   the contraction, existing files keep their identities and owners, Run and

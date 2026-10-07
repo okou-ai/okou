@@ -1,18 +1,10 @@
-import {
-  getCatalogRunModelRouteAccess,
-  isBuiltInModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
+import { getCatalogRunModelRouteAccess } from "@okouai/api-contracts/contracts/model-providers";
 import {
   reasoningEffortSchema,
   type ModelSettings,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
-import {
-  catalogAutoRoute,
-  type CatalogRoute,
-  type ModelCatalog,
-} from "./model-catalog.service";
+import type { CatalogRoute, ModelCatalog } from "./model-catalog.service";
 
 /**
  * Product capabilities of a model come from its catalog routes
@@ -20,11 +12,6 @@ import {
  * from its catalog row. Protocol narrowing per execution (Pi, concrete
  * provider) is applied on top of these by the runtime.
  */
-
-/** Every Built-in provider type selects the catalog's `built-in` routes. */
-function catalogProviderType(providerType: string): string {
-  return isBuiltInModelProviderType(providerType) ? "built-in" : providerType;
-}
 
 function enabledRoutes(
   catalog: ModelCatalog,
@@ -59,9 +46,8 @@ function capabilityRoutes(
   if (!providerType) {
     return routes;
   }
-  const selected = catalogProviderType(providerType);
   return routes.filter((route) => {
-    return route.providerType === selected;
+    return route.providerType === providerType;
   });
 }
 
@@ -173,12 +159,11 @@ export function isCatalogUltrafastServiceTierSupported(
   if (!model || !providerType) {
     return false;
   }
-  const selected = catalogProviderType(providerType);
   return catalog.routes.some((route) => {
     return (
       route.enabled &&
       route.model === model &&
-      route.providerType === selected &&
+      route.providerType === providerType &&
       route.serviceTiers.includes("ultrafast")
     );
   });
@@ -232,14 +217,4 @@ export function catalogRunModelRouteAccess(
     providerType,
     restrictedBuiltInModels,
   );
-}
-
-/** Key-pool vendor that serves the system default (Auto) Built-in route. */
-export function loadSystemDefaultBuiltInVendor(catalog: ModelCatalog): string {
-  if (!catalogAutoRoute(catalog, catalog.systemDefaultModel)) {
-    throw new Error(
-      `Model "${catalog.systemDefaultModel}" has no executable Built-in route`,
-    );
-  }
-  return AUTO_RUN_KEY_VENDOR;
 }

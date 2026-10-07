@@ -1,4 +1,4 @@
-//! Agent runs use managed search unless an API-resolved BYOK fallback is enabled.
+//! Agent runs use managed search unless the API enables the framework's built-in web search.
 
 mod common;
 

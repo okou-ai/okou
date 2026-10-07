@@ -37,8 +37,8 @@ def test_response_releases_streaming_state(tmp_path, real_flow, mitm_ctx):
         host="api.anthropic.com",
         port=443,
     )
-    flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:anthropic-api-key"
-    flow.metadata[metadata_keys.FIREWALL_BILLABLE] = True
+    flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:claude-code-oauth-token"
+    flow.metadata[metadata_keys.FIREWALL_BILLABLE] = False
     flow.response = tutils.tresp(
         status_code=200,
         headers=header_map({"content-type": "application/json"}),
@@ -118,8 +118,8 @@ def test_response_does_not_clear_replaced_request_stream_callback(real_flow):
 
 def test_response_without_run_id_releases_sse_streaming_state(real_flow):
     """Early-returning SSE flows should not retain parser closures."""
-    flow = real_flow(with_response=False, host="api.openai.com")
-    flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:openai-api-key"
+    flow = real_flow(with_response=False, host="openrouter.ai")
+    flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:openrouter-codex"
     flow.metadata[metadata_keys.CLI_AGENT_TYPE] = "codex"
     flow.metadata[metadata_keys.FIREWALL_BILLABLE] = True
     flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER] = "gpt-5.5"
@@ -188,8 +188,8 @@ def test_response_does_not_clear_replaced_stream_callback(tmp_path, real_flow, m
         host="api.anthropic.com",
         port=443,
     )
-    flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:anthropic-api-key"
-    flow.metadata[metadata_keys.FIREWALL_BILLABLE] = True
+    flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:claude-code-oauth-token"
+    flow.metadata[metadata_keys.FIREWALL_BILLABLE] = False
     flow.response = tutils.tresp(
         status_code=200,
         headers=header_map({"content-type": "application/json"}),

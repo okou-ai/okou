@@ -1890,7 +1890,7 @@
         "personalAccountDisconnected": "個人訂閱已中斷",
         "providerBalanceDescription": "請檢查訂閱帳號的用量或額度餘額，然後重試。",
         "providerBalanceTitle": "你的訂閱帳號需要更多額度",
-        "providerConnectionDescription": "到「模型服務商」中重新連線或更新帳戶，然後再試。",
+        "providerConnectionDescription": "到「設定 > 模型」中重新連線或更新帳戶，然後再試。",
         "providerQueueTimeoutTitle": "模型等待啟動的時間過長",
         "providerRateLimitedTitle": "目前模型請求過多",
         "providerServerErrorTitle": "模型服務商暫時出錯",
@@ -2220,7 +2220,7 @@
       "loading": "正在讀取訂閱…",
       "noCredit": "沒有可用的重設次數。",
       "nothingToReset": "沒有需要重設的已耗盡用量時段。",
-      "reconnect": "請在個人模型設定中重新連接此訂閱。",
+      "reconnect": "請在「設定 > 模型」中重新連線此訂閱。",
       "reset": "用量已成功重設。",
       "resetting": "正在重設…",
       "title": "Reset card",
@@ -4588,7 +4588,6 @@
       "features": {
         "creditsPerMonth": "每月{{credits}}積分",
         "emailSupport": "郵件支援",
-        "ownKeys": "使用自己的大模型金鑰",
         "payAsYouGo": "超出後按量付費",
         "prioritySupport": "優先支援",
         "unlimitedAgents": "智能體總數不限"
@@ -4601,14 +4600,14 @@
   "runErrors": {
     "actions": {
       "addCredits": "充值積分",
-      "openModelProviders": "開啟模型服務商",
+      "openModelSettings": "開啟模型設定",
       "reconnectClaude": "重新連線Claude Code"
     },
     "askAdmin": "請聯絡工作區管理員充值積分或升級工作區套餐。",
-    "claudeReconnect": "Claude Code訂閱驗證失敗。請在「模型服務商」中重新連線Claude Code，然後重試。",
-    "claudeTerms": "Claude Code需要你接受更新後的消費者條款和隱私政策。請用「模型服務商」中已連線的Claude帳號登入https://claude.ai，接受更新後的條款和政策，然後重試。",
+    "claudeReconnect": "Claude Code 訂閱驗證失敗。請在「設定 > 模型」中重新連線 Claude Code，然後重試。",
+    "claudeTerms": "Claude Code 需要你接受更新後的消費者條款和隱私政策。請用「設定 > 模型」中已連線的 Claude 帳號登入 https://claude.ai，接受更新後的條款和政策，然後重試。",
     "codexOverloaded": "所選模型已滿負荷，請換一個模型試試。",
-    "codexReconnect": "ChatGPT會話需要重新連線。請在「模型服務商」中重新連線ChatGPT (Codex)，然後重試。",
+    "codexReconnect": "ChatGPT 會話需要重新連線。請在「設定 > 模型」中重新連線 ChatGPT (Codex)，然後重試。",
     "contentPolicyRejected": "模型服務商依據內容安全政策拒絕了這次請求。用相同內容重試仍會失敗。可以換一種說法、開啟新對話，或改用其他模型。",
     "executionTimeout": "本次執行已達到執行時長上限。",
     "failed": "執行失敗",

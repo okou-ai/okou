@@ -195,61 +195,58 @@ describe("POST /api/test/runtime-state/action", () => {
     await expect(second.release()).resolves.toBeUndefined();
   });
 
-  it.each(["okou-1.0"] as const)(
-    "serves built-in %s on OpenRouter and recovers after its cooldown",
-    async () => {
-      const selectedModel = SEEDED_SYSTEM_DEFAULT_MODEL;
-      await seedBuiltInModelCandidateKeys(context, selectedModel);
-      const startedAt = Date.UTC(2026, 7, 23, 0, 0, 0);
-      const cooldownUntil = new Date(startedAt + 5 * 60 * 1000);
-      const fixture = await withMockNowForTest(startedAt - 60_000, async () => {
-        return await createPublicModelFailureFixture(context, [selectedModel]);
+  it("serves built-in okou-1.0 on OpenRouter and recovers after its cooldown", async () => {
+    const selectedModel = SEEDED_SYSTEM_DEFAULT_MODEL;
+    await seedBuiltInModelCandidateKeys(context, selectedModel);
+    const startedAt = Date.UTC(2026, 7, 23, 0, 0, 0);
+    const cooldownUntil = new Date(startedAt + 5 * 60 * 1000);
+    const fixture = await withMockNowForTest(startedAt - 60_000, async () => {
+      return await createPublicModelFailureFixture(context, [selectedModel]);
+    });
+    const claimed = await withMockNowForTest(startedAt, async () => {
+      return await fixture.claim(selectedModel);
+    });
+    const route = claimed.log;
+    expect(route.modelRuntimeProvider).toBe("openrouter-codex");
+    const expectedUpstreamModel = "@preset/okou-1-0";
+    expect(route.modelRuntimeModel).toBe(expectedUpstreamModel);
+    const { actor, agentId, runId } = claimed;
+    const detail = await reads.requestReadLogById(actor, runId, [200]);
+    expect(detail.body).toMatchObject({
+      modelProvider: "built-in",
+      selectedModel,
+      modelRuntimeProvider: route.modelRuntimeProvider,
+      modelRuntimeModel: expectedUpstreamModel,
+    });
+    await withMockNowForTest(startedAt, async () => {
+      await expect(
+        runs.reportRunnerModelProviderFailure(runId, {
+          failureKind: "rate_limit",
+        }),
+      ).resolves.toStrictEqual({ outcome: "recorded" });
+    });
+    const unavailable = await withMockNowForTest(startedAt, async () => {
+      return await sendRejectedByUnavailableModel(actor, {
+        agentId,
+        prompt: "reject while the built-in OpenRouter route is cooling down",
+        model: selectedModel,
       });
-      const claimed = await withMockNowForTest(startedAt, async () => {
-        return await fixture.claim(selectedModel);
-      });
-      const route = claimed.log;
-      expect(route.modelRuntimeProvider).toBe("openrouter-codex");
-      const expectedUpstreamModel = "@preset/okou-1-0";
-      expect(route.modelRuntimeModel).toBe(expectedUpstreamModel);
-      const { actor, agentId, runId } = claimed;
-      const detail = await reads.requestReadLogById(actor, runId, [200]);
-      expect(detail.body).toMatchObject({
-        modelProvider: "built-in",
-        selectedModel,
-        modelRuntimeProvider: route.modelRuntimeProvider,
-        modelRuntimeModel: expectedUpstreamModel,
-      });
-      await withMockNowForTest(startedAt, async () => {
-        await expect(
-          runs.reportRunnerModelProviderFailure(runId, {
-            failureKind: "rate_limit",
-          }),
-        ).resolves.toStrictEqual({ outcome: "recorded" });
-      });
-      const unavailable = await withMockNowForTest(startedAt, async () => {
-        return await sendRejectedByUnavailableModel(actor, {
-          agentId,
-          prompt: "reject while the built-in OpenRouter route is cooling down",
-          model: selectedModel,
-        });
-      });
-      expect(unavailable.rejected).toMatchObject({
-        error: "model_provider_unavailable",
-      });
-      expect(unavailable.guidance).toMatchObject({
-        error: "model_provider_unavailable",
-      });
-      await withMockNowForTest(cooldownUntil.getTime(), async () => {
-        await expect(
-          fixture.readAdmission(selectedModel),
-        ).resolves.toMatchObject({
+    });
+    expect(unavailable.rejected).toMatchObject({
+      error: "model_provider_unavailable",
+    });
+    expect(unavailable.guidance).toMatchObject({
+      error: "model_provider_unavailable",
+    });
+    await withMockNowForTest(cooldownUntil.getTime(), async () => {
+      await expect(fixture.readAdmission(selectedModel)).resolves.toMatchObject(
+        {
           modelRuntimeProvider: route.modelRuntimeProvider,
           modelRuntimeModel: expectedUpstreamModel,
-        });
-      });
-    },
-  );
+        },
+      );
+    });
+  });
 
   it("reads and deletes a built-in candidate cooldown", async () => {
     const selectedModel = SEEDED_SYSTEM_DEFAULT_MODEL;

@@ -29,14 +29,14 @@ def _shutdown_with_stalled_dns(status: Connection) -> None:
             bearer_credential="synthetic-nonsecret",
         )
         flow = tflow.tflow(resp=True)
-        flow.request = http.Request.make("POST", "https://api.openai.com/v1/chat/completions")
+        flow.request = http.Request.make("POST", "https://openrouter.ai/api/v1/chat/completions")
         flow.response = http.Response.make(503, b"")
         flow.metadata.update(
             {
                 metadata_keys.SANDBOX_RUN_ID: "run-shutdown-regression",
                 metadata_keys.SANDBOX_PROXY_LOG_PATH: "",
                 metadata_keys.ORIGINAL_URL: flow.request.url,
-                metadata_keys.FIREWALL_NAME: "model-provider:openai-api-key",
+                metadata_keys.FIREWALL_NAME: "model-provider:openrouter-codex",
                 metadata_keys.FIREWALL_BILLABLE: True,
                 metadata_keys.FIREWALL_ACTION: "ALLOW",
             }

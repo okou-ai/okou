@@ -276,19 +276,16 @@ describe("CHAT-02: model-first routing", () => {
     await cancelChatRun(actor, picked.runId);
   }, 90_000);
 
-  it.each(["gpt-6-luna"])(
-    "rejects personal model %s without the caller's subscription",
-    async (model) => {
-      const { actor, agentId } = await entitledChatActor();
-      const response = await chat.requestCreateThread(
-        actor,
-        { agentId, model },
-        [400],
-      );
-      expect(response.status).toBe(400);
-      expectApiError(response.body);
-    },
-  );
+  it("rejects personal model gpt-6-luna without the caller's subscription", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    const response = await chat.requestCreateThread(
+      actor,
+      { agentId, model: "gpt-6-luna" },
+      [400],
+    );
+    expect(response.status).toBe(400);
+    expectApiError(response.body);
+  });
 
   it("exposes the owner's run trace URL after tracing is disabled", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();

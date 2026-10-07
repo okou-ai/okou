@@ -35,9 +35,9 @@ def _openai_responses_sse_flow(
     flow = model_provider_sse_flow(
         tmp_path,
         real_flow,
-        host="api.openai.com",
-        original_url="https://api.openai.com/v1/responses",
-        firewall_name="model-provider:openai-api-key",
+        host="openrouter.ai",
+        original_url="https://openrouter.ai/api/v1/responses",
+        firewall_name="model-provider:openrouter-codex",
         cli_agent_type="codex",
         model_usage_provider=model_usage_provider,
     )

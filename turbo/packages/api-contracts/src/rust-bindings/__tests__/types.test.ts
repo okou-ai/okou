@@ -419,9 +419,6 @@ describe("Rust type bindings", () => {
     expect(firstRender).toContain(
       "pub enum PiModelConfigV2CredentialBinding {",
     );
-    expect(firstRender).toContain(
-      "pub http_headers: Option<std::collections::BTreeMap<String, String>>",
-    );
     expect(firstRender).toContain("pub requires_openai_auth: Option<bool>,");
     expect(firstRender).toContain(
       "pub model_catalog: Option<serde_json::Value>,",
@@ -510,9 +507,6 @@ describe("Rust type bindings", () => {
           "supportsWebsockets",
         ],
         properties: {
-          httpHeaders: {
-            additionalProperties: { type: "string" },
-          },
           requiresOpenaiAuth: { type: "boolean" },
           modelCatalog: {
             additionalProperties: {},

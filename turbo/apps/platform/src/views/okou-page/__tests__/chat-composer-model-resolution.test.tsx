@@ -1,7 +1,4 @@
-import type {
-  AvailableRunModel,
-  ModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
+import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -28,27 +25,16 @@ import {
   RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
 
-const POLICY_DATE = "2026-08-12T09:00:00.000Z";
+const FIXTURE_DATE = "2026-08-12T09:00:00.000Z";
 
-interface PolicyOptions {
-  readonly providerType?: ModelProviderType;
-  readonly credentialScope?: "member" | "org";
-}
-
-function runModelFixture(
-  model: string,
-  index: number,
-  options: PolicyOptions = {},
-): AvailableRunModel {
+function runModelFixture(model: string, index: number): AvailableRunModel {
   const providerType =
-    options.providerType ??
-    (model === "okou-1.0"
+    model === "okou-1.0"
       ? "built-in"
       : model.startsWith("claude-")
         ? "claude-code-oauth-token"
-        : "codex-oauth-token");
-  const credentialScope =
-    options.credentialScope ?? (model === "okou-1.0" ? "org" : "member");
+        : "codex-oauth-token";
+  const credentialScope = model === "okou-1.0" ? "org" : "member";
   return {
     model,
     modelLabel: mockCatalogDisplayName(model),
@@ -80,7 +66,7 @@ function preference(
     serviceTier,
     modelSettings: {},
     selectedImageModel: null,
-    updatedAt: POLICY_DATE,
+    updatedAt: FIXTURE_DATE,
   });
 }
 
@@ -144,10 +130,7 @@ test("Show Auto when an existing thread's model is no longer selectable", async 
   context.mocks.data.availableRunModels([
     runModelFixture("okou-1.0", 1),
     {
-      ...runModelFixture("gpt-6-sol", 2, {
-        providerType: "codex-oauth-token",
-        credentialScope: "member",
-      }),
+      ...runModelFixture("gpt-6-sol", 2),
       subscriptionOptions: { efforts: ["low", "high"], serviceTier: null },
     },
   ]);

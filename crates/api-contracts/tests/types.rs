@@ -128,14 +128,10 @@ fn generated_model_provider_failure_request_requires_connection_source() {
 #[test]
 fn generated_codex_runtime_config_round_trips_full_wire_shape() {
     let config = CodexRuntimeConfig {
-        provider_id: "gateway".to_string(),
-        name: "Gateway".to_string(),
-        base_url: "https://gateway.example.test/v1".to_string(),
+        provider_id: "openrouter-codex".to_string(),
+        name: "OpenRouter".to_string(),
+        base_url: "https://openrouter.ai/api/v1".to_string(),
         env_key: "OPENAI_API_KEY".to_string(),
-        http_headers: Some(BTreeMap::from([(
-            "x-api-key".to_string(),
-            "__VM0_OPENAI_API_KEY_PLACEHOLDER__".to_string(),
-        )])),
         requires_openai_auth: Some(false),
         wire_api: "responses".to_string(),
         supports_websockets: false,
@@ -151,13 +147,10 @@ fn generated_codex_runtime_config_round_trips_full_wire_shape() {
     assert_eq!(
         value,
         json!({
-            "providerId": "gateway",
-            "name": "Gateway",
-            "baseUrl": "https://gateway.example.test/v1",
+            "providerId": "openrouter-codex",
+            "name": "OpenRouter",
+            "baseUrl": "https://openrouter.ai/api/v1",
             "envKey": "OPENAI_API_KEY",
-            "httpHeaders": {
-                "x-api-key": "__VM0_OPENAI_API_KEY_PLACEHOLDER__",
-            },
             "requiresOpenaiAuth": false,
             "wireApi": "responses",
             "supportsWebsockets": false,
@@ -189,7 +182,6 @@ fn generated_codex_runtime_config_omits_absent_options_and_accepts_legacy_null()
         name: "OpenRouter".to_string(),
         base_url: "https://openrouter.ai/api/v1".to_string(),
         env_key: "OPENAI_API_KEY".to_string(),
-        http_headers: None,
         requires_openai_auth: None,
         wire_api: "responses".to_string(),
         supports_websockets: false,

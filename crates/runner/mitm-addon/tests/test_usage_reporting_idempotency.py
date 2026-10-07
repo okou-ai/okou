@@ -28,9 +28,9 @@ class TestUsageReportingIdempotency:
         flow = make_model_provider_flow(
             real_flow,
             tmp_path,
-            host="api.openai.com",
-            original_url="https://api.openai.com/v1/responses",
-            firewall_name="model-provider:openai-api-key",
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
             cli_agent_type="codex",
         )
         flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE] = {
@@ -63,9 +63,9 @@ class TestUsageReportingIdempotency:
         flow = make_model_provider_flow(
             real_flow,
             tmp_path,
-            host="api.openai.com",
-            original_url="https://api.openai.com/v1/responses",
-            firewall_name="model-provider:openai-api-key",
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
             cli_agent_type="codex",
         )
         flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE] = {
@@ -96,9 +96,9 @@ class TestUsageReportingIdempotency:
         flow = make_model_provider_flow(
             real_flow,
             tmp_path,
-            host="api.anthropic.com",
-            original_url="https://api.anthropic.com/v1/messages",
-            firewall_name="model-provider:anthropic-api-key",
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
             run_id="run-fallback",
             network_log_path=log_path,
             model_usage_provider="claude-sonnet-4-6",
@@ -133,9 +133,9 @@ class TestUsageReportingIdempotency:
         flow = make_model_provider_flow(
             real_flow,
             tmp_path,
-            host="api.anthropic.com",
-            original_url="https://api.anthropic.com/v1/messages",
-            firewall_name="model-provider:anthropic-api-key",
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
             run_id="run-preserved",
             network_log_path=log_path,
             model_usage_provider="claude-sonnet-4-6",
@@ -143,7 +143,7 @@ class TestUsageReportingIdempotency:
         flow.id = "flow-should-not-win"
         flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE] = {
             "model": "claude-sonnet-4-6",
-            "message_id": "msg_real_anthropic_id",
+            "message_id": "resp_real_provider_id",
             "tokens.input": 10,
         }
         flow.response = tutils.tresp(

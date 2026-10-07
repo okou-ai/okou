@@ -79,8 +79,8 @@ def assert_client_headers(request, *, session_id: str = "runner-session-test") -
 
 
 def model_usage_flow(real_flow, tmp_path):
-    flow = real_flow(with_response=False, host="api.anthropic.com")
-    flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:anthropic-api-key"
+    flow = real_flow(with_response=False, host="openrouter.ai")
+    flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:openrouter-codex"
     flow.metadata[metadata_keys.FIREWALL_BILLABLE] = True
     flow.metadata[metadata_keys.SANDBOX_AUTH_KEY] = "tok"
     flow.metadata[metadata_keys.SANDBOX_PROXY_LOG_PATH] = str(tmp_path / "proxy.jsonl")

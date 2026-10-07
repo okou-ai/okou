@@ -173,7 +173,7 @@ function authHeaders(actor: ApiTestUser) {
 }
 
 // Official workflow Runs complete through the native Runner claim protocol,
-// so fixtures use Fable, which model policy keeps off Pi.
+// so fixtures select Fable, whose personal subscription route never uses Pi.
 async function selectPersonalDefaultModel(actor: ApiTestUser): Promise<void> {
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",

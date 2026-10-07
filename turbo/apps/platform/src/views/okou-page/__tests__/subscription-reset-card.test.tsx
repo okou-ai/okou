@@ -310,7 +310,7 @@ test.each([
   {
     name: "reconnect",
     overrides: { needsReconnect: true },
-    notice: "Reconnect this subscription in Personal Models.",
+    notice: "Reconnect this subscription in Settings > Models.",
     hasButton: true,
   },
 ])(

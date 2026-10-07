@@ -140,9 +140,9 @@ export function createWorkflowsBddApi(context: TestContext) {
 
     /**
      * Production Given for a workflow-owning org: billing entitlement through
-     * the Stripe invoice webhook (which also completes onboarding) and an org
-     * default model policy through the model-provider routes. The optional
-     * timezone flows through the public user-preferences route.
+     * the Stripe invoice webhook (which also completes onboarding), a connected
+     * personal Claude subscription, and the owner's selected model. The
+     * optional timezone flows through the public user-preferences route.
      */
     async setupWorkflowOrg(
       options: {

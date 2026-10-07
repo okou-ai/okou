@@ -806,10 +806,7 @@ const teamsModelPickerState$ = command(
     return {
       enabled: true,
       options: runModels.models
-        .flatMap((runModel) => {
-          if (runModel.routeStatus !== "valid") {
-            return [];
-          }
+        .map((runModel) => {
           return {
             model: runModel.model,
             label: runModel.modelLabel,

@@ -505,7 +505,7 @@ describe("chat agent bootstrap prefetch", () => {
     await cancelChatRun(actor, next.runId, nextClaim.sandboxHeaders);
   });
 
-  it("keeps the captured model policy when it changes during attachment resolution", async () => {
+  it("keeps the captured model selection when the member preference changes during attachment resolution", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     const fileId = randomUUID();
     const filename = "model-snapshot.txt";
@@ -536,7 +536,7 @@ describe("chat agent bootstrap prefetch", () => {
     const sending = sendChatRun(actor, {
       agentId,
       model: "claude-fable-5-1",
-      prompt: "use the captured model policy",
+      prompt: "use the captured model selection",
       userMessage: {
         version: 1,
         parts: [
@@ -546,7 +546,7 @@ describe("chat agent bootstrap prefetch", () => {
             filenameSnapshot: filename,
             contentType: "text/plain",
           },
-          { type: "text", text: "use the captured model policy" },
+          { type: "text", text: "use the captured model selection" },
         ],
       },
     });

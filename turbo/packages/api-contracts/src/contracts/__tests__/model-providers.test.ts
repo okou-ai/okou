@@ -28,16 +28,12 @@ import {
 describe("model-first canonical catalog", () => {
   it("exposes canonical model provider env placeholders", () => {
     expect(Object.keys(MODEL_PROVIDER_ENV_PLACEHOLDERS).sort()).toEqual([
-      "ANTHROPIC_API_KEY",
       "CHATGPT_ACCESS_TOKEN",
       "CHATGPT_ACCOUNT_ID",
       "CHATGPT_REFRESH_TOKEN",
       "CLAUDE_CODE_OAUTH_TOKEN",
       "OPENAI_API_KEY",
     ]);
-    expect(MODEL_PROVIDER_ENV_PLACEHOLDERS.ANTHROPIC_API_KEY).toMatch(
-      /^sk-ant-api03-/,
-    );
     expect(MODEL_PROVIDER_ENV_PLACEHOLDERS.CLAUDE_CODE_OAUTH_TOKEN).toMatch(
       /^sk-ant-oat01-/,
     );
@@ -561,7 +557,7 @@ describe("built-in provider discriminator contract", () => {
     needsReconnect: false,
     lastRefreshErrorCode: null,
   } as const;
-  const policyResponse = {
+  const availableModelResponse = {
     id: "22222222-2222-4222-8222-222222222222",
     model: "okou-1.0",
     modelLabel: "Auto",
@@ -583,7 +579,7 @@ describe("built-in provider discriminator contract", () => {
       "built-in",
     );
     expect(
-      availableRunModelSchema.parse(policyResponse).defaultProviderType,
+      availableRunModelSchema.parse(availableModelResponse).defaultProviderType,
     ).toBe("built-in");
   });
 

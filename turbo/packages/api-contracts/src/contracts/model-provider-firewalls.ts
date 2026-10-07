@@ -23,7 +23,7 @@ export interface ModelProviderPiEndpoint {
 }
 
 type FirewallSupportedProvider = Exclude<ModelProviderType, "built-in">;
-type LegacySingleSecretProvider = Exclude<
+type SingleSecretFirewallProvider = Exclude<
   FirewallSupportedProvider,
   "codex-oauth-token"
 >;
@@ -45,13 +45,10 @@ interface SingleSecretFirewallProviderConfig {
 }
 
 export const MODEL_PROVIDER_ENV_PLACEHOLDERS = {
-  // Placeholder: sk-ant-api03-{93 word/hyphen chars}AA (108 chars total)
-  // Source: Semgrep regex \Bsk-ant-api03-[\w\-]{93}AA\B
-  //   https://semgrep.dev/blog/2025/secrets-story-and-prefixed-secrets/
-  ANTHROPIC_API_KEY:
-    "sk-ant-api03-CoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCofAA",
   // Placeholder: sk-ant-oat01-{93 word/hyphen chars}AA (108 chars total)
-  // Source: same structure as API key; prefix from claude setup-token output
+  // Source: Anthropic key shape (Semgrep regex \Bsk-ant-api03-[\w\-]{93}AA\B)
+  //   with the prefix from claude setup-token output
+  //   https://semgrep.dev/blog/2025/secrets-story-and-prefixed-secrets/
   //   https://github.com/anthropics/claude-code/issues/18340
   //   Example: sk-ant-oat01-xxxxx...xxxxx (1-year OAuth token)
   CLAUDE_CODE_OAUTH_TOKEN:
@@ -69,7 +66,7 @@ export const MODEL_PROVIDER_ENV_PLACEHOLDERS = {
 } as const;
 
 const MODEL_PROVIDER_FIREWALL_PROVIDER_CONFIGS: Record<
-  LegacySingleSecretProvider,
+  SingleSecretFirewallProvider,
   SingleSecretFirewallProviderConfig
 > = {
   "claude-code-oauth-token": {
@@ -86,7 +83,7 @@ const MODEL_PROVIDER_FIREWALL_PROVIDER_CONFIGS: Record<
 
 const ANTHROPIC_API_BASE = "https://api.anthropic.com";
 
-function getFirewallBaseUrl(type: LegacySingleSecretProvider): string {
+function getFirewallBaseUrl(type: SingleSecretFirewallProvider): string {
   const config = MODEL_PROVIDER_FIREWALL_PROVIDER_CONFIGS[type];
   if (config.framework === "codex") {
     const endpoint = getModelProviderPiEndpoint(type, "openai-responses");
@@ -99,7 +96,7 @@ function getFirewallBaseUrl(type: LegacySingleSecretProvider): string {
 }
 
 function mpFirewall(
-  type: LegacySingleSecretProvider,
+  type: SingleSecretFirewallProvider,
   authHeader: { name: string; valuePrefix?: string },
   placeholderValue: string,
 ): ExpandedFirewallConfig {

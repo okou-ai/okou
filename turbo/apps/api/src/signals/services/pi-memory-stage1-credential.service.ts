@@ -250,7 +250,6 @@ async function builtinCredential(
       apiKey,
       model: route.upstreamModel,
       baseUrl: getOpenRouterBaseUrl("responses", {
-        credentialOwner: "builtin",
         model: route.upstreamModel,
       }),
       dialect: "openai-responses",

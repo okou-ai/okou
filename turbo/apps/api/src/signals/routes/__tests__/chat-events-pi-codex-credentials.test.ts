@@ -162,12 +162,12 @@ describe("ChatGPT auth.json credentials at launch", () => {
     ["gpt-6-luna", 0],
     ["gpt-6-astra", 1],
   ] as const)(
-    "launches %s with %i stored-secret decrypts beside an org Anthropic key",
+    "launches %s with %i stored-secret decrypts beside a connected Claude subscription",
     async (selectedModel, decrypts) => {
       const f = await memberAuthJsonFixture(`ws_acct_${randomUUID()}`);
       await api.updateUserModelPreference(f.actor, selectedModel);
       // Only native Codex workspace routing reads the plain account id; the
-      // org's Anthropic key is never decrypted for this source.
+      // member's Claude subscription token is never decrypted for this source.
       const kms = useSecretKmsProbe();
       const run = await sendChatRun(f.actor, {
         agentId: f.agentId,

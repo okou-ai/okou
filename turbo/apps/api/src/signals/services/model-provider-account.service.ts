@@ -192,7 +192,6 @@ export async function listPersonalModelProviderAccounts(args: {
       and(
         eq(modelProviderAccounts.orgId, args.orgId),
         eq(modelProviderAccounts.userId, args.userId),
-        inArray(modelProviderAccounts.type, [CODEX_TYPE, CLAUDE_CODE_TYPE]),
         isNull(modelProviderAccounts.disconnectedAt),
       ),
     )

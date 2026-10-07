@@ -146,20 +146,6 @@ pub(super) fn startup_config_overrides(
             config.supports_websockets
         ),
     ];
-    if let Some(headers) = &config.http_headers {
-        let entries = headers
-            .iter()
-            .map(|(name, value)| {
-                format!(
-                    "{}={}",
-                    quote_toml_basic_string(name),
-                    quote_toml_basic_string(value)
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(",");
-        overrides.push(format!("{provider_prefix}.http_headers={{{entries}}}"));
-    }
     if let Some(requires_openai_auth) = config.requires_openai_auth {
         overrides.push(format!(
             "{provider_prefix}.requires_openai_auth={requires_openai_auth}"
@@ -196,8 +182,6 @@ fn quote_toml_basic_string(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-
     use super::*;
     use serde_json::json;
 
@@ -230,7 +214,6 @@ mod tests {
             name: "OpenRouter (Codex)".to_string(),
             base_url: "https://openrouter.ai/api/v1".to_string(),
             env_key: "OPENAI_API_KEY".to_string(),
-            http_headers: None,
             requires_openai_auth: None,
             wire_api: "responses".to_string(),
             supports_websockets: false,
@@ -267,16 +250,12 @@ mod tests {
     }
 
     #[test]
-    fn startup_config_overrides_support_custom_headers_without_openai_auth() {
+    fn startup_config_overrides_disable_openai_auth_when_requested() {
         let config = CodexRuntimeConfig {
-            provider_id: "gateway".to_string(),
-            name: "Gateway".to_string(),
-            base_url: "https://gateway.example.test/v1".to_string(),
+            provider_id: "openrouter-codex".to_string(),
+            name: "OpenRouter (Codex)".to_string(),
+            base_url: "https://openrouter.ai/api/v1".to_string(),
             env_key: "OPENAI_API_KEY".to_string(),
-            http_headers: Some(BTreeMap::from([(
-                "x-api-key".to_string(),
-                "__VM0_OPENAI_API_KEY_PLACEHOLDER__".to_string(),
-            )])),
             requires_openai_auth: Some(false),
             wire_api: "responses".to_string(),
             supports_websockets: false,
@@ -285,11 +264,10 @@ mod tests {
 
         let overrides = startup_config_overrides(Some(&config), Path::new("/tmp/codex-home"));
 
-        assert!(overrides.contains(
-            &r#"model_providers.gateway.http_headers={"x-api-key"="__VM0_OPENAI_API_KEY_PLACEHOLDER__"}"#.to_string()
-        ));
         assert!(
-            overrides.contains(&"model_providers.gateway.requires_openai_auth=false".to_string())
+            overrides.contains(
+                &"model_providers.openrouter-codex.requires_openai_auth=false".to_string()
+            )
         );
     }
 
@@ -334,7 +312,6 @@ mod tests {
             name: "Provider".to_string(),
             base_url: "https://example.test/v1".to_string(),
             env_key: "OPENAI_API_KEY".to_string(),
-            http_headers: None,
             requires_openai_auth: None,
             wire_api: "responses".to_string(),
             supports_websockets: false,
@@ -361,7 +338,6 @@ mod tests {
             name: "OpenRouter (Codex)".to_string(),
             base_url: "https://openrouter.ai/api/v1".to_string(),
             env_key: "OPENAI_API_KEY".to_string(),
-            http_headers: None,
             requires_openai_auth: None,
             wire_api: "responses".to_string(),
             supports_websockets: false,
@@ -400,7 +376,6 @@ mod tests {
             name: "OpenRouter (Codex)".to_string(),
             base_url: "https://openrouter.ai/api/v1".to_string(),
             env_key: "OPENAI_API_KEY".to_string(),
-            http_headers: None,
             requires_openai_auth: None,
             wire_api: "responses".to_string(),
             supports_websockets: false,

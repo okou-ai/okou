@@ -33,16 +33,13 @@ export interface EncryptedModelCredential {
   readonly name: string;
   readonly encryptedValue: string;
 }
-export interface RegisteredProviderConfiguration {
-  readonly kind: "registered-provider";
+export interface ModelSourceConfiguration {
   readonly providerType: string;
   readonly authMethod: string | null;
   readonly managedVendor?: string;
 }
-export type ModelSourceConfiguration = RegisteredProviderConfiguration;
 export interface ModelSourceSnapshot {
   readonly identity: ModelSourceIdentity;
-  readonly credentialOwner: "builtin" | "member";
   readonly configuration: ModelSourceConfiguration;
   readonly credentials: readonly ModelSourceCredential[];
   readonly accountIdentity: string | null;
@@ -118,9 +115,7 @@ export function createModelSourceSnapshot(
       }
       return {
         identity: source,
-        credentialOwner: "member",
         configuration: {
-          kind: "registered-provider",
           providerType: first.account.type,
           authMethod: first.account.authMethod,
         },

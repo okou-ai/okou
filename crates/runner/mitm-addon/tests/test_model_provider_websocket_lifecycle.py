@@ -32,7 +32,7 @@ _WEBSOCKET_ACCEPT = b"s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
 
 
 def _write_openai_model_websocket_registry(tmp_path: Path) -> Path:
-    firewall_name = "model-provider:openai-api-key"
+    firewall_name = "model-provider:openrouter-codex"
     return _write_registry(
         tmp_path,
         sandbox_info=_single_firewall_sandbox(
@@ -41,9 +41,9 @@ def _write_openai_model_websocket_registry(tmp_path: Path) -> Path:
             sandbox_marker="tok-xyz",
             firewall_name=firewall_name,
             api_entry={
-                "base": "https://api.openai.com",
+                "base": "https://openrouter.ai",
                 "auth": {"headers": {"Authorization": "Bearer token"}},
-                "permissions": [{"name": "responses", "rules": ["GET /v1/responses"]}],
+                "permissions": [{"name": "responses", "rules": ["GET /api/v1/responses"]}],
             },
             network_policy={
                 "allow": ["responses"],
@@ -193,8 +193,8 @@ class TestModelProviderWebSocketLifecycle:
         flow = real_flow(
             with_response=False,
             client_ip="10.200.0.5",
-            host="api.openai.com",
-            path="/v1/responses",
+            host="openrouter.ai",
+            path="/api/v1/responses",
             method="GET",
         )
 

@@ -568,97 +568,84 @@ describe("Pi memory Phase 2 proxy billing", () => {
     },
   );
 
-  it.each([
-    {
-      type: "codex-oauth-token" as const,
-      scope: "member" as const,
-      url: "https://chatgpt.com/backend-api/codex/responses",
-      model: PI_MEMORY_PHASE2_PERSONAL_MODEL,
-    },
-  ])(
-    "executes exact $type/$scope HTTP and drops replayed model usage",
-    async ({ type, scope, url, model }) => {
-      const fixture = createPublicPiMemorySource(context, {
-        cashCredits: 100_000,
-        sources: ["first complete evidence", "second complete evidence"],
+  it("executes exact codex-oauth-token/member HTTP and drops replayed model usage", async () => {
+    const fixture = createPublicPiMemorySource(context, {
+      cashCredits: 100_000,
+      sources: ["first complete evidence", "second complete evidence"],
+    });
+    await fixture.run(async () => {
+      const run = await launchPublicMaintenance(fixture, {
+        type: "codex-oauth-token",
+        credentialScope: "member",
       });
-      await fixture.run(async () => {
-        const run = await launchPublicMaintenance(fixture, {
-          type,
-          credentialScope: scope,
-        });
-        expect(run.run.source).toMatchObject({
-          providerType: type,
-          model: PI_MEMORY_PHASE2_PERSONAL_MODEL,
-          credentialScope: scope,
-        });
-        expect(run.execution.piSessionId).toBe(run.runId);
-        // Original exact financial admission bit has no public response field.
-        await expect(
-          db()
-            .select({ creditAdmitted: agentRuns.creditAdmitted })
-            .from(agentRuns)
-            .where(eq(agentRuns.id, run.runId)),
-        ).resolves.toStrictEqual([{ creditAdmitted: false }]);
-        const actual = await executePhase2Runtime(context, run.runId, {
-          execution: run.execution,
-          registerCleanup: fixture.registerCleanup,
-        });
-        expect(
-          actual.execution.piLaunchConfig?.maintenance?.selected,
-        ).toHaveLength(2);
-        expect(actual.execution.connectorRuntimeTargets).toStrictEqual([]);
-        expect(actual.execution.secretValues).not.toContain(
-          actual.execution.sandboxToken,
+      expect(run.run.source).toMatchObject({
+        providerType: "codex-oauth-token",
+        model: PI_MEMORY_PHASE2_PERSONAL_MODEL,
+        credentialScope: "member",
+      });
+      expect(run.execution.piSessionId).toBe(run.runId);
+      // Original exact financial admission bit has no public response field.
+      await expect(
+        db()
+          .select({ creditAdmitted: agentRuns.creditAdmitted })
+          .from(agentRuns)
+          .where(eq(agentRuns.id, run.runId)),
+      ).resolves.toStrictEqual([{ creditAdmitted: false }]);
+      const actual = await executePhase2Runtime(context, run.runId, {
+        execution: run.execution,
+        registerCleanup: fixture.registerCleanup,
+      });
+      expect(
+        actual.execution.piLaunchConfig?.maintenance?.selected,
+      ).toHaveLength(2);
+      expect(actual.execution.connectorRuntimeTargets).toStrictEqual([]);
+      expect(actual.execution.secretValues).not.toContain(
+        actual.execution.sandboxToken,
+      );
+      expect(actual.requests).toHaveLength(3);
+      for (const request of actual.requests) {
+        expect(request.url).toBe(
+          "https://chatgpt.com/backend-api/codex/responses",
         );
-        expect(actual.requests).toHaveLength(3);
-        for (const request of actual.requests) {
-          expect(request.url).toBe(url);
-          expect(request.body).toMatchObject({
-            model,
-            reasoning: { effort: "medium" },
-          });
-          expect(request.body).not.toHaveProperty("text.format");
-          expect(request.body).not.toHaveProperty("service_tier");
-          expect(request.headers.get("authorization")).toBe(
-            `Bearer ${run.provider?.key}`,
-          );
-          if (type === "codex-oauth-token") {
-            expect(request.headers.get("chatgpt-account-id")).toBe(
-              run.provider?.account,
-            );
-          }
-        }
-        await Promise.all([run.proxy(), run.proxy()]);
-        await run.proxy();
-        await expect(run.ledger()).resolves.toStrictEqual([]);
-      });
-    },
-  );
+        expect(request.body).toMatchObject({
+          model: PI_MEMORY_PHASE2_PERSONAL_MODEL,
+          reasoning: { effort: "medium" },
+        });
+        expect(request.body).not.toHaveProperty("text.format");
+        expect(request.body).not.toHaveProperty("service_tier");
+        expect(request.headers.get("authorization")).toBe(
+          `Bearer ${run.provider?.key}`,
+        );
+        expect(request.headers.get("chatgpt-account-id")).toBe(
+          run.provider?.account,
+        );
+      }
+      await Promise.all([run.proxy(), run.proxy()]);
+      await run.proxy();
+      await expect(run.ledger()).resolves.toStrictEqual([]);
+    });
+  });
 
-  it.each(["codex-oauth-token"] as const)(
-    "drops %s usage after a real provider failure",
-    async (type) => {
-      const fixture = createPublicPiMemorySource(context, {
-        cashCredits: 100_000,
-        sources: ["first complete evidence", "second complete evidence"],
+  it("drops codex-oauth-token usage after a real provider failure", async () => {
+    const fixture = createPublicPiMemorySource(context, {
+      cashCredits: 100_000,
+      sources: ["first complete evidence", "second complete evidence"],
+    });
+    await fixture.run(async () => {
+      const run = await launchPublicMaintenance(fixture, {
+        type: "codex-oauth-token",
+        credentialScope: "member",
       });
-      await fixture.run(async () => {
-        const run = await launchPublicMaintenance(fixture, {
-          type,
-          credentialScope: "member",
-        });
-        const actual = await executePhase2Runtime(context, run.runId, {
-          failure: true,
-          execution: run.execution,
-          registerCleanup: fixture.registerCleanup,
-        });
-        expect(actual.requests).toHaveLength(1);
-        await run.proxy();
-        await expect(run.ledger()).resolves.toStrictEqual([]);
+      const actual = await executePhase2Runtime(context, run.runId, {
+        failure: true,
+        execution: run.execution,
+        registerCleanup: fixture.registerCleanup,
       });
-    },
-  );
+      expect(actual.requests).toHaveLength(1);
+      await run.proxy();
+      await expect(run.ledger()).resolves.toStrictEqual([]);
+    });
+  });
 });
 
 test("retains the committed Codex account and uses the current account for a new retry", async () => {

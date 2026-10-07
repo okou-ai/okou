@@ -178,15 +178,15 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
   },
   provider_insufficient_credits: {
     title: "Your subscription account needs more credit",
-    action: "Open Model Providers",
+    action: "Open model settings",
   },
   invalid_api_key: {
     title: "Your subscription sign-in needs updating",
-    action: "Open Model Providers",
+    action: "Open model settings",
   },
   invalid_credentials: {
     title: "Your model connection needs attention",
-    action: "Open Model Providers",
+    action: "Open model settings",
   },
   terms_acceptance_required: {
     title: "Claude terms need acceptance",
@@ -241,7 +241,7 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
   },
   reconnect_required: {
     title: "Reconnect your model account",
-    action: "Open Model Providers",
+    action: "Open model settings",
   },
   unsupported_model: {
     title: "Selected model isn't available",
@@ -622,7 +622,7 @@ test.each([
     "provider_insufficient_credits",
     "Your connected subscription account has insufficient balance.",
     "Your subscription account needs more credit",
-    "Open Model Providers",
+    "Open model settings",
   ],
 ] as const)(
   "A structured provider failure (%s) shows concise inline recovery",

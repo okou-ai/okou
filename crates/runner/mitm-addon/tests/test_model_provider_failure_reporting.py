@@ -48,15 +48,15 @@ def _make_flow(
     real_flow,
     proxy_log_path: Path,
     *,
-    firewall_name: str = "model-provider:openai-api-key",
-    request_path: str = "/v1/chat/completions",
+    firewall_name: str = "model-provider:openrouter-codex",
+    request_path: str = "/api/v1/chat/completions",
     request_method: str = "POST",
     response_status: int = 200,
     response_body: bytes | None = None,
     response_headers: http.Headers | None = None,
 ):
     flow = real_flow(
-        host="api.openai.com",
+        host="openrouter.ai",
         path=request_path,
         method=request_method,
         response_status=response_status,
@@ -67,7 +67,7 @@ def _make_flow(
         {
             metadata_keys.SANDBOX_RUN_ID: "run-model-failure",
             metadata_keys.SANDBOX_PROXY_LOG_PATH: str(proxy_log_path),
-            metadata_keys.ORIGINAL_URL: f"https://api.openai.com{request_path}",
+            metadata_keys.ORIGINAL_URL: f"https://openrouter.ai{request_path}",
             metadata_keys.FIREWALL_NAME: firewall_name,
             metadata_keys.FIREWALL_BILLABLE: True,
             metadata_keys.FIREWALL_ACTION: "ALLOW",
@@ -188,7 +188,7 @@ def _assert_report_omission_entry(
         "reason": reason,
         "run_id": "run-model-failure",
         "flow_id": flow_id,
-        "firewall_name": "model-provider:openai-api-key",
+        "firewall_name": "model-provider:openrouter-codex",
         "failure_kind": failure_kind,
         **details,
     }
@@ -1182,7 +1182,7 @@ def test_bodyless_response_skips_usage_and_failure_observers(
     flow = _make_flow(
         real_flow,
         tmp_path / "proxy.jsonl",
-        request_path="/v1/responses",
+        request_path="/api/v1/responses",
         request_method=request_method,
         response_status=response_status,
         response_body=body,
@@ -1261,7 +1261,7 @@ def test_media_type_classification_is_shared_by_usage_and_failure_observers(
     flow = _make_flow(
         real_flow,
         tmp_path / "proxy.jsonl",
-        request_path="/v1/responses",
+        request_path="/api/v1/responses",
         response_body=body,
         response_headers=http.Headers((b"Content-Type", value) for value in content_types),
     )
@@ -1324,7 +1324,7 @@ def test_combined_sse_response_uses_one_decoder_and_one_dense_event_parse(
     flow = _make_flow(
         real_flow,
         tmp_path / "proxy.jsonl",
-        request_path="/v1/responses",
+        request_path="/api/v1/responses",
         response_body=body,
         response_headers=header_map(headers),
     )
@@ -1384,7 +1384,7 @@ def test_combined_json_response_uses_one_decoder_and_one_parse(
     flow = _make_flow(
         real_flow,
         tmp_path / "proxy.jsonl",
-        request_path="/v1/responses",
+        request_path="/api/v1/responses",
         response_body=wire_body,
         response_headers=header_map(response_headers),
     )
@@ -1453,7 +1453,7 @@ def test_failure_only_zstd_json_response_uses_bounded_buffer(
     flow = _make_flow(
         real_flow,
         tmp_path / "proxy.jsonl",
-        request_path="/v1/responses",
+        request_path="/api/v1/responses",
         response_body=wire_body,
         response_headers=header_map(
             {"content-type": "application/json", "content-encoding": "zstd"}
@@ -1493,7 +1493,7 @@ def test_truncated_zstd_json_buffer_does_not_report_failure(
     flow = _make_flow(
         real_flow,
         tmp_path / "proxy.jsonl",
-        request_path="/v1/responses",
+        request_path="/api/v1/responses",
         response_body=wire_body,
         response_headers=header_map(
             {"content-type": "application/json", "content-encoding": "zstd"}
@@ -1520,8 +1520,8 @@ def test_combined_sse_known_ordinary_deltas_skip_full_json_parse(
 ):
     cases = (
         (
-            "model-provider:openai-api-key",
-            "/v1/responses",
+            "model-provider:openrouter-codex",
+            "/api/v1/responses",
             b"event: response.output_text.delta\n"
             b'data: {"type":"response.output_text.delta","delta":"hello"}\n\n',
             openai_responses,
@@ -1573,7 +1573,7 @@ def test_combined_sse_work_limit_does_not_retry_full_parse(
     flow = _make_flow(
         real_flow,
         proxy_log_path,
-        request_path="/v1/responses",
+        request_path="/api/v1/responses",
         response_body=body,
         response_headers=header_map({"content-type": "text/event-stream"}),
     )
@@ -1627,7 +1627,7 @@ def test_combined_sse_failure_field_overflow_preserves_usage_and_fails_closed(
     flow = _make_flow(
         real_flow,
         tmp_path / "proxy.jsonl",
-        request_path="/v1/responses",
+        request_path="/api/v1/responses",
         response_body=body,
         response_headers=header_map({"content-type": "text/event-stream"}),
     )
@@ -1667,7 +1667,7 @@ def test_combined_sse_overlapping_escaped_field_keeps_failure_byte_limit(
     flow = _make_flow(
         real_flow,
         tmp_path / "proxy.jsonl",
-        request_path="/v1/responses",
+        request_path="/api/v1/responses",
         response_body=body,
         response_headers=header_map({"content-type": "text/event-stream"}),
     )
@@ -1693,44 +1693,38 @@ def test_combined_sse_overlapping_escaped_field_keeps_failure_byte_limit(
     ("firewall_name", "request_path", "body", "expected_kind"),
     [
         (
-            "model-provider:openai-api-key",
-            "/v1/chat/completions",
+            "model-provider:openrouter-codex",
+            "/api/v1/chat/completions",
             b'{"error":{"code":"invalid_api_key"}}',
             "authentication",
         ),
         (
-            "model-provider:openai-api-key",
-            "/v1/chat/completions",
+            "model-provider:openrouter-codex",
+            "/api/v1/chat/completions",
             b'{"error":{"code":"insufficient_quota"}}',
             "billing",
         ),
         (
-            "model-provider:openai-api-key",
-            "/v1/chat/completions",
+            "model-provider:openrouter-codex",
+            "/api/v1/chat/completions",
             b'{"error":{"code":"rate_limit_error"}}',
             "rate_limit",
         ),
         (
-            "model-provider:openai-api-key",
-            "/v1/chat/completions",
+            "model-provider:openrouter-codex",
+            "/api/v1/chat/completions",
             b'{"error":{"code":"timeout_error"}}',
             "timeout",
         ),
         (
-            "model-provider:openai-api-key",
-            "/v1/chat/completions",
+            "model-provider:openrouter-codex",
+            "/api/v1/chat/completions",
             b'{"error":{"code":"connection_error"}}',
             "connection",
         ),
         (
-            "model-provider:openai-api-key",
-            "/v1/responses",
-            b'{"status":"failed","error":{"code":"server_error"}}',
-            "provider_unavailable",
-        ),
-        (
-            "model-provider:deepseek",
-            "/responses",
+            "model-provider:openrouter-codex",
+            "/api/v1/responses",
             b'{"status":"failed","error":{"code":"server_error"}}',
             "provider_unavailable",
         ),
@@ -1766,7 +1760,7 @@ def test_protocol_json_failures_are_reported(
     ("request_path", "response_status"),
     [
         ("/v1/models", 429),
-        ("/v1/chat/completions", 403),
+        ("/api/v1/chat/completions", 403),
     ],
 )
 def test_ineligible_http_response_is_not_reported(
@@ -1875,16 +1869,16 @@ def test_overlapping_inference_flows_report_independent_failures(
             "authentication",
         ),
         (
-            "model-provider:openai-api-key",
-            "/v1/responses",
+            "model-provider:openrouter-codex",
+            "/api/v1/responses",
             b"event: error\n"
             b'data: {"type":"error","code":"server_error",'
             b'"message":"provider failed","param":null}\n\n',
             "provider_unavailable",
         ),
         (
-            "model-provider:openai-api-key",
-            "/v1/responses",
+            "model-provider:openrouter-codex",
+            "/api/v1/responses",
             b"event: response.failed\n"
             b'data: {"type":"response.failed","response":{'
             b'"error":{"code":"connection"}}}\n\n',
@@ -1957,7 +1951,7 @@ def test_responses_sse_capture_keeps_framing_identity_across_prefix_bound(
     flow = _make_flow(
         real_flow,
         tmp_path / "proxy.jsonl",
-        request_path="/v1/responses",
+        request_path="/api/v1/responses",
         response_body=body,
         response_headers=header_map({"content-type": "text/event-stream"}),
     )
@@ -1994,7 +1988,7 @@ def test_conflicting_sse_event_type_is_not_reported(
     flow = _make_flow(
         real_flow,
         tmp_path / "proxy.jsonl",
-        request_path="/v1/responses",
+        request_path="/api/v1/responses",
         response_body=body,
         response_headers=header_map({"content-type": "text/event-stream"}),
     )
@@ -2059,7 +2053,7 @@ def test_sse_failure_is_reported_before_response_hook(
     flow = _make_flow(
         real_flow,
         tmp_path / "proxy.jsonl",
-        request_path="/v1/responses",
+        request_path="/api/v1/responses",
         response_body=body,
         response_headers=header_map({"content-type": "text/event-stream"}),
     )
@@ -2091,7 +2085,7 @@ def test_discarded_sse_failure_settles_unknown_before_later_failure(
     flow = _make_flow(
         real_flow,
         tmp_path / "proxy.jsonl",
-        request_path="/v1/responses",
+        request_path="/api/v1/responses",
         response_body=body,
         response_headers=header_map({"content-type": "text/event-stream"}),
     )
@@ -2119,7 +2113,7 @@ def test_json_failure_is_reported_at_stream_end_before_response_hook(
     flow = _make_flow(
         real_flow,
         tmp_path / "proxy.jsonl",
-        request_path="/v1/responses",
+        request_path="/api/v1/responses",
         response_body=body,
     )
     model_provider_failure.admit_flow(flow)
@@ -2261,7 +2255,7 @@ def test_trailing_sse_failure_is_settled_once_during_response_interruption(
     flow = _make_flow(
         real_flow,
         tmp_path / "proxy.jsonl",
-        request_path="/v1/responses",
+        request_path="/api/v1/responses",
         response_body=body,
         response_headers=header_map({"content-type": "text/event-stream"}),
     )
@@ -2677,7 +2671,7 @@ def test_websocket_ambiguous_lifecycle_is_suppressed_once(
     assert entry["reason"] == reason
     assert entry["run_id"] == "run-abc-123"
     assert entry["flow_id"] == flow.id
-    assert entry["firewall_name"] == "model-provider:openai-api-key"
+    assert entry["firewall_name"] == "model-provider:openrouter-codex"
     assert "failure-sensitive-marker" not in json.dumps(entry)
 
 

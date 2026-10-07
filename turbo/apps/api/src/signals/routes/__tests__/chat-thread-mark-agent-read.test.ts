@@ -119,8 +119,8 @@ function prepareChatRuntime(): void {
  * Appends one terminal Run event to a caller thread the way a user does: a
  * chat send launches a Run, which the caller then cancels. Without
  * `threadId` the send creates a new thread. The Run must still be active when
- * it is cancelled, so the org's Fable policy keeps it queued for the native
- * Runner instead of Pi.
+ * it is cancelled, so the caller selects Fable, whose personal Claude
+ * subscription route keeps it queued for the native Runner instead of Pi.
  */
 async function appendCancelledRun(args: {
   readonly actor: ApiTestUser;

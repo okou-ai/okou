@@ -1,5 +1,5 @@
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { ReadonlyDb } from "../external/db";
 import {
   isCatalogModelRunnable,
@@ -51,7 +51,6 @@ async function loadPersonalModelRouteSubscriptions(
       and(
         eq(modelProviderAccounts.orgId, orgId),
         eq(modelProviderAccounts.userId, userId),
-        inArray(modelProviderAccounts.type, [...PERSONAL_TYPES]),
         isNull(modelProviderAccounts.disconnectedAt),
       ),
     );
@@ -81,21 +80,12 @@ export function isMemberSubscriptionRoute(args: {
   readonly member: MemberModelRouteContext;
   readonly model: string | null | undefined;
   readonly providerType: string | null | undefined;
-  /** The route's credential scope when the caller knows it. */
-  readonly credentialScope?: string | null;
 }): boolean {
   const { model } = args;
   const type = PERSONAL_TYPES.find((candidate) => {
     return candidate === args.providerType;
   });
-  if (
-    !model ||
-    !type ||
-    (args.credentialScope !== undefined &&
-      args.credentialScope !== null &&
-      args.credentialScope !== "member") ||
-    !isCatalogModelRunnable(args.catalog, model)
-  ) {
+  if (!model || !type || !isCatalogModelRunnable(args.catalog, model)) {
     return false;
   }
   return (
