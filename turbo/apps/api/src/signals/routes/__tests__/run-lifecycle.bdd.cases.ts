@@ -13030,7 +13030,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const { actor, agentId, runnerGroup } = await entitledRunActor();
           const run = await chat.sendAndLaunch(actor, {
             agentId,
-            model: selectedModel,
+            // Auto is the null selection; its runs report the Auto run model.
+            model: modelProvider === "built-in" ? null : selectedModel,
             prompt: `fail ${modelProvider} with ${args.failureReason}`,
           });
           await api.heartbeatRunner(runnerGroup);

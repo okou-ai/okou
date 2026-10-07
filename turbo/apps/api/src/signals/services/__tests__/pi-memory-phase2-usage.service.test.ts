@@ -1,5 +1,4 @@
 import { cleanupSandboxFixturesForTest } from "../../../test-fixtures/sandbox-cleanup-worker";
-import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import { settleIncludingAbort } from "../../utils";
 import { createChatFilesBddApi } from "../../routes/__tests__/helpers/api-bdd-chat-files";
 import { createWebhookCallbackApi } from "../../routes/__tests__/helpers/api-bdd-webhooks";
@@ -519,7 +518,7 @@ describe("Pi memory Phase 2 proxy billing", () => {
               await threads.createThread(fixture.actor, {
                 agentId: run.scope.sourceAgentId,
                 clientThreadId: threadId,
-                model: AUTO_RUN_MODEL,
+                model: null,
               });
               await db()
                 .update(agentRuns)
