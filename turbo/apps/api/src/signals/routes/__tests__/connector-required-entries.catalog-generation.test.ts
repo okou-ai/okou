@@ -4,7 +4,7 @@ import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connec
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
 import type { ConnectorCatalogArtifact } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -20,10 +20,6 @@ import {
 import { createPublicConnectorCatalog } from "./helpers/public-connector-catalog";
 
 const context = testContext();
-
-beforeEach(async () => {
-  await setupApp({ context, routes: connectorCatalogRoutes, isolatePg: true });
-});
 
 const {
   connectors,
@@ -49,7 +45,9 @@ function withoutConnector(connectorSlug: string): ConnectorCatalogArtifact {
 
 describe("required connector catalog entries", () => {
   it("launches without an enabled connector that has no entry at the captured hash", async () => {
-    const publisher = createPublicConnectorCatalog(context);
+    const publisher = createPublicConnectorCatalog(context, {
+      isolatePg: true,
+    });
     await publisher.publish(API_TEST_CONNECTOR_CATALOG_ARTIFACT);
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     const connection = await connectors.connectManualGrant(
@@ -88,7 +86,9 @@ describe("required connector catalog entries", () => {
   });
 
   it("fails the Run MCP list for an admitted account while optional reads omit the slug", async () => {
-    const publisher = createPublicConnectorCatalog(context);
+    const publisher = createPublicConnectorCatalog(context, {
+      isolatePg: true,
+    });
     await publisher.publish(API_TEST_CONNECTOR_CATALOG_ARTIFACT);
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     const connection = await connectors.connectManualGrant(

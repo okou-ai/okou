@@ -4,7 +4,6 @@ import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { btree_gin } from "@electric-sql/pglite/contrib/btree_gin";
 import { drizzle, type PgliteDatabase } from "drizzle-orm/pglite";
-import type { Logger } from "drizzle-orm/logger";
 import { singleton } from "../lib/singleton";
 import { settleIncludingAbort } from "../signals/utils";
 
@@ -70,7 +69,7 @@ export async function createPgliteSnapshot(
       );
       for (const name of files) {
         const original = await readFile(new URL(name, directory), "utf8");
-        // Match the existing immutable-catalog harness: these two unsupported
+        // These two unsupported
         // extension declarations have no dependent table/constraint behavior.
         let sql = original;
         if (name === "1078_baseline.sql") {
@@ -150,9 +149,7 @@ function snapshotImage(path: string): Promise<Blob> {
 }
 
 export interface PgliteTestDatabase {
-  readonly engine: PGlite;
   readonly database: PgliteDatabase;
-  readonly setLogger: (logger: Logger) => void;
   readonly close: () => Promise<void>;
 }
 
@@ -165,14 +162,7 @@ export async function createPgliteDatabase(
     loadDataDir: await snapshotImage(snapshotPath),
     parsers: driverParsers,
   });
-  let logger: Logger | undefined;
-  const database = drizzle(engine, {
-    logger: {
-      logQuery(query, parameters) {
-        logger?.logQuery(query, parameters);
-      },
-    },
-  });
+  const database = drizzle(engine);
   const ready = await settleIncludingAbort(async () => {
     await engine.waitReady;
     // Session settings are not carried by dumpDataDir/loadDataDir. Keep UTC
@@ -185,11 +175,7 @@ export async function createPgliteDatabase(
     });
   }
   return {
-    engine,
     database,
-    setLogger(next) {
-      logger = next;
-    },
     close: async () => {
       await engine.close();
     },

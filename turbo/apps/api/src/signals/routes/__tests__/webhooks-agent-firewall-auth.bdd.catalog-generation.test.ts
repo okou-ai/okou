@@ -1,9 +1,8 @@
-import { beforeEach, afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 
 import { testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
@@ -30,10 +29,6 @@ import {
  */
 
 const context = testContext();
-
-beforeEach(async () => {
-  await setupApp({ context, routes: [], isolatePg: true });
-});
 
 const publicConnections = createPublicFirewallConnections(context);
 
@@ -85,7 +80,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
   it("does not call the provider for a known storage version mismatch", async () => {
     const fw = createFirewallApi(context);
     const connectors = createConnectorBddApi(context);
-    const catalog = createPublicConnectorCatalog(context);
+    const catalog = createPublicConnectorCatalog(context, { isolatePg: true });
     const versionTwo = catalogWithAuthMethod(
       { connectorSlug: "test-oauth", authMethodId: "oauth" },
       (method) => {

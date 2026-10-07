@@ -212,10 +212,10 @@ back to shared PostgreSQL. The same binding covers direct fixture writes,
 services, HTTP requests, and their asynchronous background work.
 
 When every case in a file or group requires isolation, its `beforeEach` may
-await `setupApp({ context, routes, isolatePg: true })`. Helper-driven suites may
-use an empty route slice for this initialization and let their API helpers mount
-the routes they need. Each case still receives a separate engine; do not create
-one database for the whole file. Keep `testContext()` at module scope.
+use `setupApp({ context, routes, isolatePg: true })` in its real API fixture or
+`beforeEach`, and use the returned client for that action. Do not initialize
+isolation through an unused client with an empty route slice. Each case receives
+a separate engine; keep `testContext()` at module or describe scope.
 
 `src/__tests__/global-setup.ts` seeds the shared PostgreSQL pricing and complete
 fixed connector catalog once per run. It also migrates and seeds one PGlite,
@@ -233,20 +233,21 @@ isolate that pointer. Catalog-generation and publisher cases therefore use
 Users, organizations, accounts, credential storage, and encrypted values still
 use explicit case ownership.
 
-`connector-catalog-immutable.test.ts` uses the same setup and seeded snapshot.
-Its existing mechanism-specific fixtures remove the seeded publication in that
-case's database when testing missing-current or missing-entry behavior, and
-attach their query logger to the owned engine. It has no private database mock,
-engine construction, or lifecycle project. Ordinary integration cases continue
-to assert production API responses rather than engine internals.
+Catalog tests assert API-visible publication, discovery, account, and runner
+compatibility behavior. They do not assert SQL counts or text, attach engine
+loggers, or corrupt database entries and constraints to test infrastructure
+failure recovery.
 
-Foreground work is aborted before API-based cleanup, which has its own live
-case-owned signal. Final teardown aborts both signals, drains detached/native
-work, and closes the isolated engine, including when setup fails. The closed
-case binding remains attached to late asynchronous work: a late database access
-throws instead of falling back to shared PostgreSQL. Services, routes, fixture
-writers, and SQL remain real; only the centralized database transport is bound
-to the selected case database.
+Cases in one file execute serially. `setupApp` selects the current case's database
+without an async-local scope or a database `aroundEach` wrapper. `testContext`
+registers final disposal before user cleanup callbacks. Foreground work is
+aborted before API-based cleanup, which receives a live signal. Final disposal
+runs after those callbacks, aborts cleanup work, drains tracked detached and
+`waitUntil` work, and closes the isolated engine, including initialization that
+was still pending when a case failed. Background work must remain tracked and
+finish within its case; database selection does not identify untracked work
+that leaks into a later case. Services, routes, fixture writers, and SQL remain
+real; only the centralized database transport selects the current database.
 
 `api/no-test-database-binding` confines PGlite engine imports and construction to
 `src/test-fixtures/pglite-database.ts`. Case-local database mocks and service
@@ -265,10 +266,7 @@ to construct an API scenario. Exercise requests and assert their responses and
 subsequent user-visible state; do not redirect outside queries into an active
 transaction or increase timeouts to make an incompatible test pass.
 
-Compaction behavior tests retain
-`testContext({ dbFixtures: [usageEventCompactionDbFixture] })`. This fixture
-awaits the owned work; it does not install a lock namespace. Drive the real
-compaction worker through `compactUsageForTest(orgId, signal)` with an explicit
+Drive the real compaction worker through `compactUsageForTest(orgId, signal)` with an explicit
 test-owned organization. Never substitute a successful global sweep over
 another test's rows or add lock-waiter observations or pause points. X-resource
 retention tests use the resource-ID-scoped test route to construct historical rows and a

@@ -1,6 +1,4 @@
-import { beforeEach } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import {
@@ -11,10 +9,6 @@ import {
 
 const context = testContext();
 
-beforeEach(async () => {
-  await setupApp({ context, routes: [], isolatePg: true });
-});
-
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
 
@@ -24,7 +18,7 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
     if (actor.orgId === null) {
       throw new Error("Expected test actor organization");
     }
-    const catalog = createPublicConnectorCatalog(context);
+    const catalog = createPublicConnectorCatalog(context, { isolatePg: true });
     const available = catalogWithAuthMethod(
       { connectorSlug: "openai", authMethodId: "api-token" },
       (method) => {

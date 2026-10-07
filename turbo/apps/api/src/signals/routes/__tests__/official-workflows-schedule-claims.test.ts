@@ -161,15 +161,20 @@ async function syncDeployedCatalog() {
   })();
 }
 
-function stateClient() {
-  return setupApp({
+async function stateClient() {
+  const app = await setupApp({
     context,
     routes: testOfficialWorkflowCatalogStateRoutes,
-  })(testOfficialWorkflowCatalogStateContract);
+    isolatePg: true,
+  });
+  return app(testOfficialWorkflowCatalogStateContract);
 }
 
 async function cleanupCatalog() {
-  await accept(stateClient().action({ body: { action: "cleanup" } }), [200]);
+  await accept(
+    (await stateClient()).action({ body: { action: "cleanup" } }),
+    [200],
+  );
 }
 
 function morningBriefPreferenceClient() {
@@ -407,7 +412,6 @@ async function listMorningBriefInstallations(actor: ApiTestUser) {
 }
 
 beforeEach(async () => {
-  await setupApp({ context, routes: [], isolatePg: true });
   mockEnv("CRON_SECRET", CRON_SECRET);
   await cleanupCatalog();
 });

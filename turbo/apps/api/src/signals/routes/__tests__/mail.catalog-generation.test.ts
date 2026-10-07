@@ -1,6 +1,6 @@
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import { HttpResponse, http } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -21,10 +21,6 @@ import { createRouteMocks } from "./helpers/route-test";
 import { mailRoutes } from "../mail";
 
 const context = testContext();
-
-beforeEach(async () => {
-  await setupApp({ context, routes: mailRoutes, isolatePg: true });
-});
 
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
@@ -91,7 +87,7 @@ describe("POST /api/mail/drafts/link", () => {
   // test-state boundary.
 
   it("does not refresh a known mismatched Gmail storage version", async () => {
-    const catalog = createPublicConnectorCatalog(context);
+    const catalog = createPublicConnectorCatalog(context, { isolatePg: true });
     const versionTwo = catalogWithAuthMethod(
       { connectorSlug: "gmail", authMethodId: "oauth" },
       (method) => {

@@ -3,7 +3,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import {
   getSecretKmsClient,
@@ -63,10 +62,6 @@ async function configureResponsesWithOwnedRuns(args: {
 }> {
   const model = args.selectedModel;
 
-  // Personal Codex subscription models carry their own account credentials.
-  if (model === "okou-1.0") {
-    await seedBuiltInModelKey(context, model);
-  }
   const owned = new Map<
     string,
     {
@@ -187,6 +182,7 @@ async function configureResponsesWithOwnedRuns(args: {
 describe("CHAT-02: model-first routing", () => {
   it("runs built-in okou-1.0 OpenRouter Responses", async () => {
     const selectedModel = "okou-1.0";
+    await seedBuiltInModelKey(context, selectedModel);
     configureNativeCliArtifact();
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const { model, sendChatRun, claimChatRun, cancelChatRun } =
@@ -218,7 +214,9 @@ describe("CHAT-02: model-first routing", () => {
   }, 90_000);
 
   it("launches a model on the runtime its catalog Pi route class selects", async () => {
-    await setupApp({ context, routes: [], isolatePg: true });
+    await seedBuiltInModelKey(context, "okou-1.0", undefined, {
+      isolatePg: true,
+    });
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const { model, sendChatRun, claimChatRun, cancelChatRun } =
       await configureResponsesWithOwnedRuns({
@@ -257,6 +255,7 @@ describe("CHAT-02: model-first routing", () => {
   });
 
   it("transfers pre-migration OpenRouter Chat JSONL by reference", async () => {
+    await seedBuiltInModelKey(context, "okou-1.0");
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const usagePricingResolution = await createGptUsagePricingResolution();
     const { model, sendChatRun, claimChatRun, cancelChatRun } =

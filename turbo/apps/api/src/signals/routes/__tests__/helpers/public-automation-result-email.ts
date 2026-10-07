@@ -3,7 +3,6 @@ import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { cronOfficialWorkflowCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import { OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import { officialWorkflowsContract } from "@okouai/api-contracts/contracts/official-workflows";
-import { testOfficialWorkflowCatalogStateContract } from "@okouai/api-contracts/contracts/test-official-workflow-catalog-state";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createHash, randomUUID } from "node:crypto";
@@ -11,14 +10,12 @@ import { expect, onTestFinished } from "vitest";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
-import { installApiTestConnectorCatalog } from "../../../../test-fixtures/connector-catalog";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import {
   createCronOfficialWorkflowCatalogRoutes,
   cronOfficialWorkflowCatalogRoutes,
 } from "../../cron-official-workflow-catalog";
 import { officialWorkflowRoutes } from "../../official-workflows";
-import { testOfficialWorkflowCatalogStateRoutes } from "../../test-official-workflow-catalog-state";
 import { workflowAutomationsRoutes } from "../../workflow-automations";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createRunsApi } from "./api-bdd-runs";
@@ -284,12 +281,46 @@ export function createPublicAutomationResultEmailApi(context: TestContext) {
       readonly resultEmail?: boolean;
     } = {},
   ) {
+    const definitionName = options.morningBrief
+      ? "morning-brief"
+      : `api-test-result-email-${randomUUID().slice(0, 8)}`;
+    const blueprintKey = options.morningBrief ? "daily-delivery" : "result";
+    const routes = options.morningBrief
+      ? cronOfficialWorkflowCatalogRoutes
+      : createCronOfficialWorkflowCatalogRoutes({
+          schemaVersion: OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
+          definitions: [
+            {
+              name: definitionName,
+              lifecycle: "active",
+              workflow: {
+                displayName: "Official result email",
+                description: "Public result delivery",
+                instruction: "Return the result.",
+                files: [],
+              },
+              blueprints: [
+                {
+                  key: blueprintKey,
+                  parameters: [],
+                  desiredState: {
+                    kind: "schedule",
+                    schedule: { type: "loop", intervalSeconds: 3600 },
+                    autonomyBudget: options.budget ?? 3,
+                  },
+                  runtime: { resultEmail: options.resultEmail ?? true },
+                },
+              ],
+              presentation: { category: "productivity" },
+            },
+          ],
+        });
+    const app = await setupApp({ context, routes, isolatePg: true });
     mockEnv("CRON_SECRET", "public-result-email-cron");
     mockEnv(
       "R2_USER_STORAGES_BUCKET_NAME",
       `public-result-email-${randomUUID()}`,
     );
-    await installApiTestConnectorCatalog({ ifAbsent: true });
     installDurableUserExportStorage(context, { prefixes: [""] });
     const storage = context.mocks.s3.send.getMockImplementation();
     const signedUrl = context.mocks.s3.getSignedUrl.getMockImplementation();
@@ -297,14 +328,6 @@ export function createPublicAutomationResultEmailApi(context: TestContext) {
     const cleanupState: {
       owner?: { actor: ApiTestUser; agentId: string };
     } = {};
-    async function cleanupCatalog() {
-      await accept(
-        setupApp({ context, routes: testOfficialWorkflowCatalogStateRoutes })(
-          testOfficialWorkflowCatalogStateContract,
-        ).action({ body: { action: "cleanup" } }),
-        [200],
-      );
-    }
     onTestFinished(async () => {
       mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
       if (storage) {
@@ -318,10 +341,7 @@ export function createPublicAutomationResultEmailApi(context: TestContext) {
         await cleanup(actor);
         await createBddApi(context).deleteAgent(actor, agentId);
       }
-      await cleanupCatalog();
     });
-    // The calling case owns an isolated database for this operator fixture.
-    await cleanupCatalog();
     if (options.morningBrief) {
       // The deployed release retires connector-doctor. Establish its accepted
       // predecessor through the same producer as syncDeployedCatalog's fixture.
@@ -371,42 +391,8 @@ export function createPublicAutomationResultEmailApi(context: TestContext) {
         diagnostics: [],
       });
     }
-    const definitionName = options.morningBrief
-      ? "morning-brief"
-      : `api-test-result-email-${randomUUID().slice(0, 8)}`;
-    const blueprintKey = options.morningBrief ? "daily-delivery" : "result";
-    const routes = options.morningBrief
-      ? cronOfficialWorkflowCatalogRoutes
-      : createCronOfficialWorkflowCatalogRoutes({
-          schemaVersion: OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
-          definitions: [
-            {
-              name: definitionName,
-              lifecycle: "active",
-              workflow: {
-                displayName: "Official result email",
-                description: "Public result delivery",
-                instruction: "Return the result.",
-                files: [],
-              },
-              blueprints: [
-                {
-                  key: blueprintKey,
-                  parameters: [],
-                  desiredState: {
-                    kind: "schedule",
-                    schedule: { type: "loop", intervalSeconds: 3600 },
-                    autonomyBudget: options.budget ?? 3,
-                  },
-                  runtime: { resultEmail: options.resultEmail ?? true },
-                },
-              ],
-              presentation: { category: "productivity" },
-            },
-          ],
-        });
     const synced = await accept(
-      setupApp({ context, routes })(cronOfficialWorkflowCatalogContract).sync({
+      app(cronOfficialWorkflowCatalogContract).sync({
         headers: { authorization: "Bearer public-result-email-cron" },
       }),
       [200],

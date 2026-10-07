@@ -31,7 +31,6 @@ import {
 } from "vitest";
 
 import { createApp } from "../../../app-factory";
-import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
@@ -1314,16 +1313,13 @@ function cronHeaders(secret = CRON_SECRET): { readonly authorization: string } {
   return { authorization: `Bearer ${secret}` };
 }
 
-function cronClient() {
-  return setupApp({ context, routes: cronConnectorCatalogRoutes })(
-    cronConnectorCatalogContract,
-  );
-}
-
-function diagnosticsClient() {
-  return setupApp({ context, routes: connectorCatalogRoutes })(
-    connectorCatalogContract,
-  );
+async function cronClient() {
+  const app = await setupApp({
+    context,
+    routes: cronConnectorCatalogRoutes,
+    isolatePg: true,
+  });
+  return app(cronConnectorCatalogContract);
 }
 
 function runnerFirewallClient() {
@@ -1339,17 +1335,22 @@ interface VolumeStorageState {
   readonly head_version_id: string | null;
 }
 
-function systemStorageStateClient() {
-  return setupAppWithRoutes({
+async function systemStorageStateClient() {
+  const app = await setupApp({
     context,
     routes: testSystemStoragePresignedUrlCacheStateRoutes,
-  })(testSystemStoragePresignedUrlCacheStateContract);
+    isolatePg: true,
+  });
+  return app(testSystemStoragePresignedUrlCacheStateContract);
 }
 
 async function systemStorageStateAction(
   body: TestSystemStoragePresignedUrlCacheStateActionBody,
 ) {
-  return await accept(systemStorageStateClient().action({ body }), [200]);
+  return await accept(
+    (await systemStorageStateClient()).action({ body }),
+    [200],
+  );
 }
 
 async function readVolumeStorageState(args: {
@@ -1426,7 +1427,10 @@ async function seedOwnedVolumeStorageVersion(args: {
 }
 
 async function syncCatalog() {
-  return await accept(cronClient().sync({ headers: cronHeaders() }), [200]);
+  return await accept(
+    (await cronClient()).sync({ headers: cronHeaders() }),
+    [200],
+  );
 }
 
 async function enableDiagnosticsFeatureSwitch(): Promise<void> {
@@ -1471,9 +1475,14 @@ function servingRelease(release: ReleaseFixture) {
 }
 
 async function readStatus() {
+  const app = await setupApp({
+    context,
+    routes: connectorCatalogRoutes,
+    isolatePg: true,
+  });
   await enableDiagnosticsFeatureSwitch();
   return await accept(
-    diagnosticsClient().diagnostics({
+    app(connectorCatalogContract).diagnostics({
       headers: { authorization: "Bearer clerk-session" },
     }),
     [200],
@@ -1506,12 +1515,7 @@ function expectRejectedRetainingServingPointer(
   }
 }
 
-beforeEach(async () => {
-  await setupApp({
-    context,
-    routes: cronConnectorCatalogRoutes,
-    isolatePg: true,
-  });
+beforeEach(() => {
   mockEnv("CRON_SECRET", CRON_SECRET);
   mockNow(new Date(FIRST_SYNC_TIME));
 });
@@ -1523,7 +1527,7 @@ afterEach(() => {
 describe("connector catalog cron authentication and initial state", () => {
   it("rejects missing and invalid cron credentials", async () => {
     const response = await accept(
-      cronClient().sync({ headers: cronHeaders("wrong-secret") }),
+      (await cronClient()).sync({ headers: cronHeaders("wrong-secret") }),
       [401],
     );
     expect(response.body).toStrictEqual({

@@ -6,7 +6,7 @@ import { connectorAccountsContract } from "@okouai/api-contracts/contracts/conne
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
 import type { ExecutionContext } from "@okouai/api-contracts/contracts/runners";
 import type { ExecutionFirewallEntry } from "@okouai/connectors/firewall-types";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { mockEnv } from "../../../lib/env";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -36,10 +36,6 @@ import { createRouteMocks } from "./helpers/route-test";
  */
 
 const context = testContext();
-
-beforeEach(async () => {
-  await setupApp({ context, routes: builtinConnectorsRoutes, isolatePg: true });
-});
 
 async function connectAutomaticRuntime(args: {
   readonly actor: ApiTestUser;
@@ -156,6 +152,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     "admits the exact builtin Automatic %s account and injects auth outside the sandbox",
     async (resolution) => {
       const catalog = createPublicAutomaticCatalog(context, {
+        isolatePg: true,
         firewallAuth: resolution,
       });
       await catalog.run(async () => {
@@ -315,6 +312,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     "keeps catalog auth when reconnecting builtin Automatic to %s",
     async (authMode) => {
       const catalog = createPublicAutomaticCatalog(context, {
+        isolatePg: true,
         slug: "manual-mcp",
         additionalNoAuthMethodId: "public-connect",
       });

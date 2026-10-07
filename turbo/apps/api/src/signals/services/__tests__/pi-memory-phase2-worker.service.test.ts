@@ -280,11 +280,11 @@ async function enablePiMemoryForScope(scope: {
   readonly userId: string;
 }): Promise<void> {
   const actor = { orgId: scope.orgId, userId: scope.userId };
-  await updateFeatureSwitchesForUser(testContext(), actor, {
+  await updateFeatureSwitchesForUser(publicScopeContext, actor, {
     [FeatureSwitchKey.PiMemory]: true,
   });
   onTestFinished(async () => {
-    await deleteFeatureSwitchesForUser(testContext(), actor);
+    await deleteFeatureSwitchesForUser(publicScopeContext, actor);
   });
 }
 
@@ -620,7 +620,7 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
       await deleteRunSessionsForScope(scope);
       await db().delete(agents).where(eq(agents.id, agentId));
     });
-    await seedBuiltInModelKey(testContext(), "deepseek-v4.1-flash");
+    await seedBuiltInModelKey(publicScopeContext, "deepseek-v4.1-flash");
     // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
     configureNativeCliArtifact();
     const sessionId = randomUUID();
@@ -640,7 +640,7 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
       return await store.set(
         createPiMemoryPhase2Worker(scope).execute$,
         now,
-        testContext().signal,
+        publicScopeContext.signal,
       );
     });
 
@@ -670,12 +670,12 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
       orgRole: "org:admin" as const,
       email: `${scope.userId}@example.test`,
     };
-    const chatApi = createChatFilesBddApi(testContext());
+    const chatApi = createChatFilesBddApi(publicScopeContext);
     const threadEventsBefore = await chatApi.listThreadEvents(
       owner,
       sourceThreadId,
     );
-    await createWebhookCallbackApi(testContext()).requestAgentEvents(
+    await createWebhookCallbackApi(publicScopeContext).requestAgentEvents(
       {
         runId: result.runId,
         events: [
@@ -690,7 +690,7 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
         ],
       },
       {
-        authorization: `Bearer ${createRunsApi(testContext()).sandboxTokenForRun(owner, result.runId)}`,
+        authorization: `Bearer ${createRunsApi(publicScopeContext).sandboxTokenForRun(owner, result.runId)}`,
       },
       [200],
     );
@@ -811,7 +811,7 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
             validatedVersionId: invalidVersionId,
           },
         },
-        testContext().signal,
+        publicScopeContext.signal,
       );
     });
     expect(rejected.status).toBe(404);
@@ -830,7 +830,7 @@ describe("Pi memory Phase 2 sandbox dispatcher", () => {
     const recovered = await store.set(
       createPiMemoryPhase2Worker(scope).execute$,
       afterOriginalLease,
-      testContext().signal,
+      publicScopeContext.signal,
     );
     expect(recovered).toStrictEqual({
       outcome: "dispatched",
@@ -1184,7 +1184,7 @@ async function createPhase2WorkerFixture(label: string, emptyBase = true) {
   const scope = await createPhase2TestScope(label, { emptyBase });
   await enablePiMemoryForScope(scope);
   await seedOrgMetadata({ orgId: scope.orgId, tier: "pro", credits: 100_000 });
-  await seedBuiltInModelKey(testContext(), "deepseek-v4.1-flash");
+  await seedBuiltInModelKey(publicScopeContext, "deepseek-v4.1-flash");
   // V4.1 Flash dispatch requires the commit-addressed CLI reader artifact.
   configureNativeCliArtifact();
   await insertPendingPhase2Job(scope, {
@@ -1199,7 +1199,7 @@ async function createPhase2WorkerFixture(label: string, emptyBase = true) {
     scope,
     async work(
       at = new Date("2026-09-05T02:00:00Z"),
-      signal = testContext().signal,
+      signal = publicScopeContext.signal,
     ) {
       const { execute$ } = createPiMemoryPhase2Worker(scope);
       return await withMockNowForTest(at, async () => {
@@ -1270,7 +1270,7 @@ function onMemoryArchivePresign(
   fault: () => Promise<void> | void,
 ) {
   const archiveKey = `${job.scope.baseVersion.s3Key}/archive.tar.gz`;
-  testContext().mocks.s3.getSignedUrl.mockImplementation(
+  publicScopeContext.mocks.s3.getSignedUrl.mockImplementation(
     async (_client: unknown, command: unknown) => {
       const url = apiTestS3PresignedUrl(command);
       if (new URL(url).searchParams.get("object")?.endsWith(`/${archiveKey}`)) {
@@ -1343,7 +1343,7 @@ describe("Phase 2 current credential admission", () => {
       expect.hasAssertions();
       const job = await createPhase2WorkerFixture(`mixed-${kind}`);
       const provider = await createPhase2CodexProvider(
-        testContext(),
+        publicScopeContext,
         job.scope,
       );
       const second =
@@ -1575,7 +1575,7 @@ describe("Phase 2 current credential admission", () => {
     async (fault) => {
       const job = await createPhase2WorkerFixture(`race-${fault}`, false);
       const provider = await createPhase2CodexProvider(
-        testContext(),
+        publicScopeContext,
         job.scope,
       );
       const sourceIds = [randomUUID(), randomUUID()].sort();
@@ -1589,7 +1589,7 @@ describe("Phase 2 current credential admission", () => {
       const activatePreparedAccount =
         fault === "active-account"
           ? await preparePhase2CodexActivation(
-              testContext(),
+              publicScopeContext,
               job.scope,
               provider.binding.modelProviderId,
             )
@@ -1607,14 +1607,14 @@ describe("Phase 2 current credential admission", () => {
             await setPhase2StorageHead(job.scope, version);
             expectedHead = version.versionId;
           } else if (fault === "switch") {
-            await updateFeatureSwitchesForUser(testContext(), job.scope, {
+            await updateFeatureSwitchesForUser(publicScopeContext, job.scope, {
               [FeatureSwitchKey.PiMemory]: false,
             });
           } else if (fault === "active-account") {
             await activatePreparedAccount?.();
           } else {
             await disconnectPhase2Codex(
-              testContext(),
+              publicScopeContext,
               job.scope,
               provider.binding.modelProviderId,
             );
@@ -2039,7 +2039,7 @@ describe("Phase 2 built-in reserves with positive cash", () => {
       scenario === "unpaid-outside-grace"
     ) {
       // Quota permits stale metadata; canonical launch still reconciles it.
-      testContext().mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+      publicScopeContext.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
         status: "canceled",
         items: { data: [] },
       });
@@ -2079,7 +2079,7 @@ test.each(["uncreated-windows", "entitlement-stale", "no-grants"] as const)(
       db(),
       job.scope,
       at,
-      testContext().signal,
+      publicScopeContext.signal,
     );
     expect(result).toMatchObject({
       decision: "unknown",
@@ -2100,7 +2100,7 @@ test.each(["uncreated-windows", "entitlement-stale", "no-grants"] as const)(
       .where(eq(orgUsageAllowanceWindows.orgId, job.scope.orgId));
     expect(windows).toHaveLength(scenario === "entitlement-stale" ? 1 : 0);
     expect(
-      testContext().mocks.stripe.subscriptions.retrieve,
+      publicScopeContext.mocks.stripe.subscriptions.retrieve,
     ).not.toHaveBeenCalled();
   },
 );
@@ -2164,7 +2164,7 @@ test.each([
       checkPiMemoryQuota(
         quotaDb,
         { ...owner, stage: "phase2", source: { providerClass: "builtin" } },
-        testContext().signal,
+        publicScopeContext.signal,
       ),
     ).rejects.toMatchObject({ errorClass: "quota_unavailable" });
     if (fault === "db-failure") {
@@ -2401,14 +2401,17 @@ test("makes exactly one quota GET and no reset-credit request for a real native 
     expect(reads).toBe(1);
     expect(resetRequests).toBe(0);
     expect(
-      testContext().mocks.stripe.subscriptions.retrieve,
+      publicScopeContext.mocks.stripe.subscriptions.retrieve,
     ).toHaveBeenCalledTimes(stripeRetrieves);
   });
 });
 
 test("admits codex-oauth-token with unknown subscription quota independently of an empty wallet", async () => {
   const job = await createPhase2WorkerFixture("unknown-subscription-quota");
-  const provider = await createPhase2CodexProvider(testContext(), job.scope);
+  const provider = await createPhase2CodexProvider(
+    publicScopeContext,
+    job.scope,
+  );
   await insertPhase2Candidates(
     job.scope,
     [{ piSessionId: randomUUID(), sourceCompletedAt: nowDate() }],
@@ -2431,7 +2434,7 @@ test("admits codex-oauth-token with unknown subscription quota independently of 
   if (result.outcome !== "dispatched") {
     throw new Error("Expected admitted subscription maintenance");
   }
-  const runtime = await executePhase2Runtime(testContext(), result.runId);
+  const runtime = await executePhase2Runtime(publicScopeContext, result.runId);
   expect(runtime.requests).toHaveLength(3);
   expect(runtime.requests[0]?.body).toMatchObject({ model: "gpt-6-luna" });
   expect(runtime.requests[0]?.url).toBe(

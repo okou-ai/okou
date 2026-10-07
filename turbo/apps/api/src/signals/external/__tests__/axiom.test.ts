@@ -12,7 +12,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { usageEventCompactionDbFixture } from "../../../test-fixtures/db-fixture";
 import { compactUsageForTest } from "../../../test-fixtures/usage-compaction-worker";
 import {
   deleteUsagePricingRows,
@@ -269,138 +268,136 @@ describe("shared SDK ingestion", () => {
     onTestFinished(async () => {
       await store.set(deleteUsageStateFixture$, fixture, context.signal);
     });
-    await usageEventCompactionDbFixture(randomUUID(), async () => {
-      const empty = await compact();
-      expect(empty).toMatchObject({
-        selectedGrains: 0,
-        rawRowsDeleted: 0,
-        reconciled: true,
-      });
-      expect(Object.keys(empty)).not.toContain("maxGrainSourceRows");
-      expectGrainMax(0);
+    const empty = await compact();
+    expect(empty).toMatchObject({
+      selectedGrains: 0,
+      rawRowsDeleted: 0,
+      reconciled: true,
+    });
+    expect(Object.keys(empty)).not.toContain("maxGrainSourceRows");
+    expectGrainMax(0);
 
-      for (const [category, count] of [
-        ["large", 501],
-        ["smaller", 3],
-      ] as const) {
-        await store.set(
-          insertUsageEvent$,
-          {
-            ...fixture,
-            category,
-            count,
-            status: "processed",
-            processedAt: new Date(
-              category === "large"
-                ? "2026-08-01T00:15:00.000Z"
-                : "2026-08-01T01:15:00.000Z",
-            ),
-          },
-          context.signal,
-        );
-      }
-      const large = await compact();
-      expect(large).toMatchObject({
-        seededRawRows: 500,
-        selectedGrains: 1,
-        rawRowsDeleted: 500,
-        hasMore: true,
-        reconciled: true,
-      });
-      expectGrainMax(500);
-
-      const remaining = await compact();
-      expect(remaining).toMatchObject({
-        selectedGrains: 2,
-        rawRowsDeleted: 4,
-        reconciled: true,
-      });
-      expectGrainMax(3);
-
-      for (const [category, count] of [
-        ["two", 2],
-        ["three", 3],
-      ] as const) {
-        await store.set(
-          insertUsageEvent$,
-          {
-            ...fixture,
-            category,
-            count,
-            status: "processed",
-            processedAt: new Date("2026-08-01T00:15:00.000Z"),
-          },
-          context.signal,
-        );
-      }
-      const multiple = await compact();
-      expect(multiple).toMatchObject({
-        selectedGrains: 2,
-        rawRowsDeleted: 5,
-        quantity: "5",
-        reconciled: true,
-      });
-      expectGrainMax(3);
-
-      for (const quantity of [2, 3]) {
-        await store.set(
-          insertUsageEvent$,
-          {
-            ...fixture,
-            category: "old-hourly",
-            status: "processed",
-            quantity,
-            processedAt: new Date("2026-08-01T00:15:00.000Z"),
-          },
-          context.signal,
-        );
-      }
+    for (const [category, count] of [
+      ["large", 501],
+      ["smaller", 3],
+    ] as const) {
       await store.set(
-        materializeHourlyUsage$,
-        { ...fixture, runId: null },
+        insertUsageEvent$,
+        {
+          ...fixture,
+          category,
+          count,
+          status: "processed",
+          processedAt: new Date(
+            category === "large"
+              ? "2026-08-01T00:15:00.000Z"
+              : "2026-08-01T01:15:00.000Z",
+          ),
+        },
         context.signal,
       );
+    }
+    const large = await compact();
+    expect(large).toMatchObject({
+      seededRawRows: 500,
+      selectedGrains: 1,
+      rawRowsDeleted: 500,
+      hasMore: true,
+      reconciled: true,
+    });
+    expectGrainMax(500);
+
+    const remaining = await compact();
+    expect(remaining).toMatchObject({
+      selectedGrains: 2,
+      rawRowsDeleted: 4,
+      reconciled: true,
+    });
+    expectGrainMax(3);
+
+    for (const [category, count] of [
+      ["two", 2],
+      ["three", 3],
+    ] as const) {
+      await store.set(
+        insertUsageEvent$,
+        {
+          ...fixture,
+          category,
+          count,
+          status: "processed",
+          processedAt: new Date("2026-08-01T00:15:00.000Z"),
+        },
+        context.signal,
+      );
+    }
+    const multiple = await compact();
+    expect(multiple).toMatchObject({
+      selectedGrains: 2,
+      rawRowsDeleted: 5,
+      quantity: "5",
+      reconciled: true,
+    });
+    expectGrainMax(3);
+
+    for (const quantity of [2, 3]) {
       await store.set(
         insertUsageEvent$,
         {
           ...fixture,
           category: "old-hourly",
           status: "processed",
+          quantity,
           processedAt: new Date("2026-08-01T00:15:00.000Z"),
         },
         context.signal,
       );
-      const windowedId = await store.set(
-        insertUsageEvent$,
-        {
-          ...fixture,
-          category: "windowed",
-          status: "processed",
-          processedAt: new Date("2026-08-01T00:15:00.000Z"),
-        },
-        context.signal,
-      );
-      await store.set(
-        attachUsageAllowance$,
-        {
-          orgId: fixture.orgId,
-          runId: null,
-          usageEventId: windowedId,
-          unitsApplied: 5,
-          consumedUnits: 5,
-        },
-        context.signal,
-      );
-      const reconsolidated = await compact();
-      expect(reconsolidated).toMatchObject({
-        rawRowsDeleted: 2,
-        hourlyRowsDeleted: 0,
-        selectedGrains: 2,
-        allowanceUnits: "5",
-        reconciled: true,
-      });
-      expectGrainMax(1);
+    }
+    await store.set(
+      materializeHourlyUsage$,
+      { ...fixture, runId: null },
+      context.signal,
+    );
+    await store.set(
+      insertUsageEvent$,
+      {
+        ...fixture,
+        category: "old-hourly",
+        status: "processed",
+        processedAt: new Date("2026-08-01T00:15:00.000Z"),
+      },
+      context.signal,
+    );
+    const windowedId = await store.set(
+      insertUsageEvent$,
+      {
+        ...fixture,
+        category: "windowed",
+        status: "processed",
+        processedAt: new Date("2026-08-01T00:15:00.000Z"),
+      },
+      context.signal,
+    );
+    await store.set(
+      attachUsageAllowance$,
+      {
+        orgId: fixture.orgId,
+        runId: null,
+        usageEventId: windowedId,
+        unitsApplied: 5,
+        consumedUnits: 5,
+      },
+      context.signal,
+    );
+    const reconsolidated = await compact();
+    expect(reconsolidated).toMatchObject({
+      rawRowsDeleted: 2,
+      hourlyRowsDeleted: 0,
+      selectedGrains: 2,
+      allowanceUnits: "5",
+      reconciled: true,
     });
+    expectGrainMax(1);
   });
 
   it("emits settlement timing only for committed nonempty work", async () => {

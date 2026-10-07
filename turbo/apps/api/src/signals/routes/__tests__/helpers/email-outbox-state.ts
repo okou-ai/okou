@@ -6,7 +6,7 @@ import {
   type TestOfficialAutomationResultEmailClaim,
 } from "@okouai/api-contracts/contracts/test-email-outbox-state";
 
-import { setupAppWithRoutes } from "../../../../__tests__/test-app";
+import { setupApp } from "../../../../__tests__/test-helpers";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { testEmailOutboxStateRoutes } from "../../test-email-outbox-state";
 
@@ -41,26 +41,29 @@ interface EmailOutboxSourceState {
   readonly claim: TestOfficialAutomationResultEmailClaim | null;
 }
 
-function stateClient(context: TestContext) {
-  return setupAppWithRoutes({
-    context,
-    routes: testEmailOutboxStateRoutes,
-  })(testEmailOutboxStateContract);
-}
-
-async function postAction(
+export function createEmailOutboxStateApi(
   context: TestContext,
-  body: TestEmailOutboxStateActionBody,
-): Promise<TestEmailOutboxStateActionResponse> {
-  const response = await accept(stateClient(context).action({ body }), [200]);
-  return response.body;
-}
+  options: { readonly isolatePg?: boolean } = {},
+) {
+  async function postAction(
+    body: TestEmailOutboxStateActionBody,
+  ): Promise<TestEmailOutboxStateActionResponse> {
+    const app = await setupApp({
+      context,
+      routes: testEmailOutboxStateRoutes,
+      isolatePg: options.isolatePg,
+    });
+    const response = await accept(
+      app(testEmailOutboxStateContract).action({ body }),
+      [200],
+    );
+    return response.body;
+  }
 
-export function createEmailOutboxStateApi(context: TestContext) {
   async function findItems(
     options: FindEmailOutboxItemsOptions,
   ): Promise<readonly TestEmailOutboxStateItem[]> {
-    const response = await postAction(context, {
+    const response = await postAction({
       action: "find-item",
       to_address: options.toAddress,
       subject: options.subject,
@@ -75,7 +78,7 @@ export function createEmailOutboxStateApi(context: TestContext) {
     async seedItem(
       options: SeedEmailOutboxItemOptions,
     ): Promise<TestEmailOutboxStateItem> {
-      const response = await postAction(context, {
+      const response = await postAction({
         action: "seed-item",
         ...(options.template ? { template: options.template } : {}),
         to_address: options.toAddress,
@@ -96,7 +99,7 @@ export function createEmailOutboxStateApi(context: TestContext) {
     async findSourceState(
       options: FindEmailOutboxSourceItemsOptions,
     ): Promise<EmailOutboxSourceState> {
-      const response = await postAction(context, {
+      const response = await postAction({
         action: "find-source",
         source_run_id: options.sourceRunId,
         source_workflow_automation_id: options.sourceWorkflowAutomationId,
@@ -124,7 +127,7 @@ export function createEmailOutboxStateApi(context: TestContext) {
     },
 
     async readItem(itemId: string): Promise<TestEmailOutboxStateItem | null> {
-      const response = await postAction(context, {
+      const response = await postAction({
         action: "read-items",
         item_ids: [itemId],
       });
@@ -135,7 +138,7 @@ export function createEmailOutboxStateApi(context: TestContext) {
     },
 
     async deleteItems(itemIds: readonly string[]): Promise<number> {
-      const response = await postAction(context, {
+      const response = await postAction({
         action: "delete-items",
         item_ids: [...itemIds],
       });

@@ -9,12 +9,6 @@ export const testRuntimeStateErrorSchema = z.object({
   error: z.string(),
 });
 
-const builtInModelRuntimeRouteSchema = z.object({
-  provider_type: z.string(),
-  upstream_model: z.string(),
-  model_key_id: z.uuid(),
-});
-
 export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("seed-built-in-default-model-key"),
@@ -28,10 +22,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("delete-built-in-model-key"),
     fixture_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("resolve-built-in-model-route"),
-    selected_model: z.string(),
   }),
   z.object({
     action: z.literal("set-run-autonomy-budget"),
@@ -169,7 +159,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
   ok: z.literal(true),
   processed: z.int().nonnegative().optional(),
   selected_model: z.string().optional(),
-  built_in_model_route: builtInModelRuntimeRouteSchema.nullable().optional(),
   autonomy_budget: z.int().min(0).max(32).nullable().optional(),
   failure_reason: runFailureReasonTokenSchema.nullable().optional(),
   wss_target: z

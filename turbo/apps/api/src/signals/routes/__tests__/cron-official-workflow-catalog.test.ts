@@ -211,15 +211,17 @@ async function syncCatalogUnauthorized(candidate: unknown) {
   );
 }
 
-function stateClient() {
-  return setupApp({
+async function stateClient() {
+  const app = await setupApp({
     context,
     routes: testOfficialWorkflowCatalogStateRoutes,
-  })(testOfficialWorkflowCatalogStateContract);
+    isolatePg: true,
+  });
+  return app(testOfficialWorkflowCatalogStateContract);
 }
 
 async function stateAction(body: TestOfficialWorkflowCatalogStateActionBody) {
-  return await accept(stateClient().action({ body }), [200]);
+  return await accept((await stateClient()).action({ body }), [200]);
 }
 
 async function readState(definitionName?: string, revision?: string) {
@@ -338,7 +340,6 @@ function installVolumeS3Fixture() {
 }
 
 beforeEach(async () => {
-  await setupApp({ context, routes: [], isolatePg: true });
   mockEnv("CRON_SECRET", CRON_SECRET);
   mockEnv(
     "R2_USER_STORAGES_BUCKET_NAME",

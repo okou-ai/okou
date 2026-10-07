@@ -11,8 +11,7 @@ import { expectApiError } from "./helpers/api-bdd";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
-// This file runs against its own migrated database: the real cron is global.
-// Business state is created and observed only through production HTTP routes.
+// The real cron scans the whole database, so each case owns an isolated copy.
 const context = testContext();
 const {
   api,
@@ -27,17 +26,23 @@ const {
 const STEER_AT_MS = 115 * 60 * 1000;
 const CRON_SECRET = "test-run-time-budget-steer-secret";
 
-async function requestBudgetSweep() {
-  mockEnv("CRON_SECRET", CRON_SECRET);
-  return await accept(
-    setupApp({ context, routes: cronSteerRunTimeBudgetRoutes })(
-      cronSteerRunTimeBudgetContract,
-    ).steer({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
-    [200],
-  );
-}
-
 async function startRunAtBudgetBoundary() {
+  const app = await setupApp({
+    context,
+    routes: cronSteerRunTimeBudgetRoutes,
+    isolatePg: true,
+  });
+  const client = app(cronSteerRunTimeBudgetContract);
+  async function requestBudgetSweep() {
+    mockEnv("CRON_SECRET", CRON_SECRET);
+    return await accept(
+      client.steer({
+        headers: { authorization: `Bearer ${CRON_SECRET}` },
+      }),
+      [200],
+    );
+  }
+
   const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
   chatCallbacks.failIfChatCallbackRouteIsFetched();
   const active = await sendChatRun(actor, {
@@ -76,13 +81,29 @@ async function startRunAtBudgetBoundary() {
   await expect(
     api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
   ).resolves.toStrictEqual({ input: { eventId: budget.id, prompt } });
-  return { actor, agentId, runnerGroup, active, claimed, budget, prompt };
+  return {
+    actor,
+    agentId,
+    runnerGroup,
+    active,
+    claimed,
+    budget,
+    prompt,
+    requestBudgetSweep,
+  };
 }
 
 describe("run-targeted time budget steering through HTTP", () => {
   it("consumes the warning once, retains its run identity, and survives a later prompt anchor", async () => {
-    const { actor, agentId, active, claimed, budget, prompt } =
-      await startRunAtBudgetBoundary();
+    const {
+      actor,
+      agentId,
+      active,
+      claimed,
+      budget,
+      prompt,
+      requestBudgetSweep,
+    } = await startRunAtBudgetBoundary();
     const token = claimed.claim.sandboxToken;
     const laterPromptId = randomUUID();
     await chat.requestSendEvent(

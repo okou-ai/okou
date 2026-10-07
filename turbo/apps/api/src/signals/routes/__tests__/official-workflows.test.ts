@@ -1073,16 +1073,18 @@ async function syncDeployedCatalog() {
   })();
 }
 
-function stateClient() {
-  return setupApp({
+async function stateClient() {
+  const app = await setupApp({
     context,
     routes: testOfficialWorkflowCatalogStateRoutes,
-  })(testOfficialWorkflowCatalogStateContract);
+    isolatePg: true,
+  });
+  return app(testOfficialWorkflowCatalogStateContract);
 }
 
 async function runOfficialWorkflowReconciliationWorker() {
   const response = await accept(
-    stateClient().action({
+    (await stateClient()).action({
       body: { action: "run-reconciliation-worker" },
     }),
     [200],
@@ -1100,7 +1102,7 @@ async function readOfficialWorkflowReconciliationState(args: {
   readonly workflowId?: string;
 }) {
   return await accept(
-    stateClient().action({
+    (await stateClient()).action({
       body: { action: "read", ...args },
     }),
     [200],
@@ -1111,7 +1113,7 @@ async function simulateOfficialWorkflowReconciliationWorkerCrash(
   definitionName: string,
 ): Promise<void> {
   await accept(
-    stateClient().action({
+    (await stateClient()).action({
       body: {
         action: "simulate-reconciliation-worker-crash",
         definitionName,
@@ -1123,7 +1125,7 @@ async function simulateOfficialWorkflowReconciliationWorkerCrash(
 
 async function pauseNextStructureTransitionPromotion(): Promise<void> {
   await accept(
-    stateClient().action({
+    (await stateClient()).action({
       body: { action: "pause-next-structure-transition-promotion" },
     }),
     [200],
@@ -1132,7 +1134,7 @@ async function pauseNextStructureTransitionPromotion(): Promise<void> {
 
 async function waitForStructureTransitionPromotionPause(): Promise<void> {
   await accept(
-    stateClient().action({
+    (await stateClient()).action({
       body: { action: "wait-for-structure-transition-promotion-pause" },
     }),
     [200],
@@ -1141,7 +1143,7 @@ async function waitForStructureTransitionPromotionPause(): Promise<void> {
 
 async function resumeStructureTransitionPromotion(): Promise<void> {
   await accept(
-    stateClient().action({
+    (await stateClient()).action({
       body: { action: "resume-structure-transition-promotion" },
     }),
     [200],
@@ -1152,7 +1154,7 @@ async function makeOfficialWorkflowReconciliationWorkDue(
   definitionName: string,
 ): Promise<void> {
   await accept(
-    stateClient().action({
+    (await stateClient()).action({
       body: { action: "make-reconciliation-work-due", definitionName },
     }),
     [200],
@@ -1160,7 +1162,10 @@ async function makeOfficialWorkflowReconciliationWorkDue(
 }
 
 async function cleanupCatalog() {
-  await accept(stateClient().action({ body: { action: "cleanup" } }), [200]);
+  await accept(
+    (await stateClient()).action({ body: { action: "cleanup" } }),
+    [200],
+  );
 }
 
 function officialClient() {
@@ -1324,7 +1329,7 @@ async function runDueOfficialWorkflowReconciliationRetry() {
 
 async function readAcceptedDefinitionFixture(definitionName: string) {
   const response = await accept(
-    stateClient().action({ body: { action: "read", definitionName } }),
+    (await stateClient()).action({ body: { action: "read", definitionName } }),
     [200],
   );
   if (!response.body.definition || !response.body.storage) {
@@ -2054,7 +2059,6 @@ async function installStaleAdmissionScenario() {
 }
 
 beforeEach(async () => {
-  await setupApp({ context, routes: [], isolatePg: true });
   mockEnv("CRON_SECRET", CRON_SECRET);
   await cleanupCatalog();
 });

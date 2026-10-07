@@ -37,12 +37,3 @@ function stubTestDatabaseUrl(): void {
 }
 
 stubTestDatabaseUrl();
-
-// Preserve the host's existing filesystem/runtime environment when launching a
-// test-owned real Guest. Never inherit the active sandbox's control endpoints.
-export function guestBoundaryEnvironment(): Pick<
-  NodeJS.ProcessEnv,
-  "HOME" | "PATH"
-> {
-  return { HOME: process.env.HOME, PATH: process.env.PATH };
-}

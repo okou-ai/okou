@@ -1,6 +1,5 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
 import { apiTestConnectorCatalogWithUnavailableAuthMethods } from "../../../test-fixtures/connector-catalog";
 import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/connector-catalog-artifact";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
@@ -11,10 +10,6 @@ import {
 import { createPublicConnectorCatalog } from "./helpers/public-connector-catalog";
 
 const context = testContext();
-
-beforeEach(async () => {
-  await setupApp({ context, routes: [], isolatePg: true });
-});
 
 const connectorsApi = createConnectorBddApi(context);
 
@@ -34,7 +29,9 @@ async function publishWithUnavailableMethod(
 
 describe("CONN-02: OAuth device authorization", () => {
   it("returns 403 when the selected device-auth runtime method is unavailable", async () => {
-    const publisher = createPublicConnectorCatalog(context);
+    const publisher = createPublicConnectorCatalog(context, {
+      isolatePg: true,
+    });
     await publishWithUnavailableMethod(publisher, "test-oauth-device", "oauth");
     const actor = createBddApi(context).user();
 
@@ -54,7 +51,9 @@ describe("CONN-02: OAuth device authorization", () => {
   });
 
   it("returns 403 when a device-auth runtime becomes unavailable before polling", async () => {
-    const publisher = createPublicConnectorCatalog(context);
+    const publisher = createPublicConnectorCatalog(context, {
+      isolatePg: true,
+    });
     await publisher.publish(API_TEST_CONNECTOR_CATALOG_ARTIFACT);
     mockTestOAuthDeviceConnectorProvider({ deviceCode: "pending" });
     const actor = createBddApi(context).user();
@@ -83,7 +82,9 @@ describe("CONN-02: OAuth device authorization", () => {
 
 describe("CONN-02: external-code authorization", () => {
   it("returns 403 when the external-code runtime method is unavailable", async () => {
-    const publisher = createPublicConnectorCatalog(context);
+    const publisher = createPublicConnectorCatalog(context, {
+      isolatePg: true,
+    });
     await publishWithUnavailableMethod(publisher, "aws", "cli");
     const actor = createBddApi(context).user();
 
@@ -102,7 +103,9 @@ describe("CONN-02: external-code authorization", () => {
   });
 
   it("returns 403 when an external-code runtime becomes unavailable before completion", async () => {
-    const publisher = createPublicConnectorCatalog(context);
+    const publisher = createPublicConnectorCatalog(context, {
+      isolatePg: true,
+    });
     await publisher.publish(API_TEST_CONNECTOR_CATALOG_ARTIFACT);
     const actor = createBddApi(context).user();
     const session = await connectorsApi.startExternalCode(actor, "aws", "cli");

@@ -789,10 +789,6 @@ describe("Official Automation result email callbacks", () => {
   );
 
   describe("with a published Official catalog", () => {
-    beforeEach(async () => {
-      await setupApp({ context, routes: [], isolatePg: true });
-    });
-
     it("links Morning Brief management to Preferences without changing account unsubscribe", async () => {
       const scenario = await publicResults.setupOfficial({
         morningBrief: true,

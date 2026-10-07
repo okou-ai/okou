@@ -1,14 +1,8 @@
 import {
-  AUTO_RUN_KEY_VENDOR,
   AUTO_RUN_MODEL,
   AUTO_RUN_PROVIDER,
   isAutoRunPreset,
 } from "@okouai/core/auto-run-model";
-import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
-
-import { eq } from "drizzle-orm";
-
-import type { ReadonlyDb } from "../external/db";
 import {
   builtInRoutePricingRejectionMessage,
   unpricedBuiltInRouteCategories,
@@ -74,41 +68,6 @@ export function isBuiltInModelRuntimeRoutePermitted(
     route.providerType === AUTO_RUN_PROVIDER &&
     isAutoRunPreset(route.upstreamModel)
   );
-}
-
-async function loadBuiltInModelKeyId(
-  db: ReadonlyDb,
-): Promise<string | undefined> {
-  const [row] = await db
-    .select({ id: builtInModelKeys.id })
-    .from(builtInModelKeys)
-    .where(eq(builtInModelKeys.vendor, AUTO_RUN_KEY_VENDOR))
-    .limit(1);
-  return row?.id;
-}
-
-/** Resolves the Auto route when its key exists. */
-export async function resolveBuiltInModelRuntimeRoute(
-  catalog: ModelCatalog,
-  db: ReadonlyDb,
-  selectedModel: string,
-): Promise<BuiltInModelRuntimeRoute | null> {
-  const upstreamModel = catalogBuiltInModelRouteUpstream(
-    catalog,
-    selectedModel,
-  );
-  if (upstreamModel === null) {
-    return null;
-  }
-  const modelKeyId = await loadBuiltInModelKeyId(db);
-  if (modelKeyId === undefined) {
-    return null;
-  }
-  return builtInModelRuntimeRouteFromSnapshot({
-    catalog,
-    selectedModel,
-    modelKeyId,
-  });
 }
 
 /** Chooses the Auto route from one batched key snapshot. */

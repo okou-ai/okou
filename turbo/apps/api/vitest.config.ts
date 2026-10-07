@@ -14,12 +14,7 @@ export default defineConfig({
       "./src/__tests__/setup.ts",
     ],
     sequence: { setupFiles: "list" },
-    exclude: [
-      "node_modules/**",
-      "dist/**",
-      "**/__benches__/**",
-      "**/*.boundary.test.ts",
-    ],
+    exclude: ["node_modules/**", "dist/**", "**/__benches__/**"],
     benchmark: {
       include: ["src/**/__benches__/**/*.bench.ts"],
       retainSamples: true,

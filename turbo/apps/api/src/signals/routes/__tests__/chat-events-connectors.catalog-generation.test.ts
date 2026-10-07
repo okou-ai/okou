@@ -1,5 +1,5 @@
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/connector-catalog-artifact";
@@ -8,10 +8,6 @@ import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createPublicConnectorCatalog } from "./helpers/public-connector-catalog";
 
 const context = testContext();
-
-beforeEach(async () => {
-  await setupApp({ context, routes: chatThreadRoutes, isolatePg: true });
-});
 
 const {
   chat,
@@ -30,7 +26,9 @@ function selectionsClient() {
 
 describe("thread connector selection across catalog generations", () => {
   it("starts the run when the runtime catalog no longer contains the selected built-in", async () => {
-    const publisher = createPublicConnectorCatalog(context);
+    const publisher = createPublicConnectorCatalog(context, {
+      isolatePg: true,
+    });
     await publisher.publish(API_TEST_CONNECTOR_CATALOG_ARTIFACT);
     const { actor, agentId } = await entitledNativeChatActor();
     const connection = await connectors.connectManualGrant(

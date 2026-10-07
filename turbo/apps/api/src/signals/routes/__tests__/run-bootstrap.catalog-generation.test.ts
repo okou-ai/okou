@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { apiTestConnectorCatalogWithUnavailableAuthMethods } from "../../../test-fixtures/connector-catalog";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
@@ -11,10 +10,6 @@ import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createPublicConnectorCatalog } from "./helpers/public-connector-catalog";
 
 const context = testContext();
-
-beforeEach(async () => {
-  await setupApp({ context, routes: [], isolatePg: true });
-});
 
 const {
   connectors,
@@ -28,7 +23,9 @@ const {
 describe("Run connector catalog selection", () => {
   it("omits filtered auth from scoped runtime claims after identity rotation", async () => {
     mockOptionalEnv("CAL_COM_OAUTH_CLIENT_ID", undefined);
-    const publisher = createPublicConnectorCatalog(context);
+    const publisher = createPublicConnectorCatalog(context, {
+      isolatePg: true,
+    });
     await publisher.publish(API_TEST_CONNECTOR_CATALOG_ARTIFACT);
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     const api = createRunsApi(context);
@@ -76,7 +73,9 @@ describe("Run connector catalog selection", () => {
   });
 
   it("keeps a prepared run's connector entries across catalog rotation", async () => {
-    const publisher = createPublicConnectorCatalog(context);
+    const publisher = createPublicConnectorCatalog(context, {
+      isolatePg: true,
+    });
     const first = {
       ...API_TEST_CONNECTOR_CATALOG_ARTIFACT,
       catalogVersion: `bootstrap-old-${randomUUID()}`,

@@ -3,7 +3,7 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { runnersBuiltinFirewallsResolveContract } from "@okouai/api-contracts/contracts/runners";
-import { beforeEach, expect, test } from "vitest";
+import { expect, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -21,14 +21,6 @@ import { runnersRoutes } from "../runners";
 
 const context = testContext();
 
-beforeEach(async () => {
-  await setupApp({
-    context,
-    routes: cronConnectorCatalogRoutes,
-    isolatePg: true,
-  });
-});
-
 const mocks = createRouteMocks(context);
 const OFFICIAL_RUNNER_AUTHORIZATION =
   "Bearer vm0_official_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
@@ -37,14 +29,17 @@ const OFFICIAL_RUNNER_AUTHORIZATION =
 // matching the ~4,600-entry official publication size.
 const MULTI_BATCH_EXTRA_COUNT = 250;
 
-function seedClient() {
-  return setupApp({ context, routes: cronConnectorCatalogRoutes })(
-    cronConnectorCatalogContract,
-  );
+async function seedClient() {
+  const app = await setupApp({
+    context,
+    routes: cronConnectorCatalogRoutes,
+    isolatePg: true,
+  });
+  return app(cronConnectorCatalogContract);
 }
 
-function seed() {
-  return seedClient().seedPreview({
+async function seed() {
+  return (await seedClient()).seedPreview({
     headers: { authorization: `Bearer ${env("CRON_SECRET")}` },
   });
 }
@@ -214,7 +209,7 @@ test.each(["production", "development"] as const)(
 test("preview seed requires the cron secret", async () => {
   mockEnv("ENV", "preview");
   const response = await accept(
-    seedClient().seedPreview({
+    (await seedClient()).seedPreview({
       headers: { authorization: "Bearer wrong-secret" },
     }),
     [401],

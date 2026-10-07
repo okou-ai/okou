@@ -270,10 +270,13 @@ function serveObjects(objects: ReadonlyMap<string, Buffer>): void {
   });
 }
 
-function cronClient() {
-  return setupApp({ context, routes: cronConnectorCatalogRoutes })(
-    cronConnectorCatalogContract,
-  );
+async function cronClient() {
+  const app = await setupApp({
+    context,
+    routes: cronConnectorCatalogRoutes,
+    isolatePg: true,
+  });
+  return app(cronConnectorCatalogContract);
 }
 
 function catalogClient() {
@@ -283,19 +286,17 @@ function catalogClient() {
 }
 
 async function sync() {
-  return await accept(cronClient().sync({ headers: cronHeaders }), [200]);
+  return await accept(
+    (await cronClient()).sync({ headers: cronHeaders }),
+    [200],
+  );
 }
 
 async function publicCatalog() {
   return await accept(catalogClient().list({ headers: sessionHeaders }), [200]);
 }
 
-beforeEach(async () => {
-  await setupApp({
-    context,
-    routes: cronConnectorCatalogRoutes,
-    isolatePg: true,
-  });
+beforeEach(() => {
   mockEnv("CRON_SECRET", CRON_SECRET);
   mockEnv("R2_USER_STORAGES_BUCKET_NAME", `catalog-v4-${randomUUID()}`);
   mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
@@ -531,9 +532,12 @@ describe("connector catalog v4 preparation", () => {
           return connector.slug;
         }),
       ).toStrictEqual(["catalog-service"]);
-      const features = setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      );
+      const featuresApp = await setupApp({
+        context,
+        routes: featureSwitchesRoutes,
+        isolatePg: true,
+      });
+      const features = featuresApp(featureSwitchesContract);
       await accept(
         features.update({
           headers: sessionHeaders,
@@ -564,9 +568,12 @@ describe("connector catalog v4 preparation", () => {
   );
 
   it("reports strict storage readiness through staff diagnostics around a rejected-source sync", async () => {
-    const features = setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    );
+    const featuresApp = await setupApp({
+      context,
+      routes: featureSwitchesRoutes,
+      isolatePg: true,
+    });
+    const features = featuresApp(featureSwitchesContract);
     await accept(
       features.update({
         headers: sessionHeaders,
@@ -608,9 +615,12 @@ describe("connector catalog v4 preparation", () => {
   it("keeps staff and cron storage readiness healthy across owned secret and variable account creation and deletion", async () => {
     const actor = bdd.user();
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const features = setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    );
+    const featuresApp = await setupApp({
+      context,
+      routes: featureSwitchesRoutes,
+      isolatePg: true,
+    });
+    const features = featuresApp(featureSwitchesContract);
     await accept(
       features.update({
         headers: sessionHeaders,
@@ -711,9 +721,12 @@ describe("connector catalog v4 preparation", () => {
   });
 
   it("keeps staff diagnostics on the current pointer across a rejected sync", async () => {
-    const features = setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    );
+    const featuresApp = await setupApp({
+      context,
+      routes: featureSwitchesRoutes,
+      isolatePg: true,
+    });
+    const features = featuresApp(featureSwitchesContract);
     await accept(
       features.update({
         headers: sessionHeaders,
@@ -758,9 +771,12 @@ describe("connector catalog v4 preparation", () => {
   });
 
   it("evaluates staff filtering on demand for the current capability and accepted v4 catalog identity", async () => {
-    const features = setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    );
+    const featuresApp = await setupApp({
+      context,
+      routes: featureSwitchesRoutes,
+      isolatePg: true,
+    });
+    const features = featuresApp(featureSwitchesContract);
     await accept(
       features.update({
         headers: sessionHeaders,

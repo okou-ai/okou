@@ -1,11 +1,6 @@
-import { aroundEach, inject, vi } from "vitest";
+import { inject, vi } from "vitest";
 import { API_DATABASE_SNAPSHOT } from "./database-snapshot";
-import {
-  configureCaseDatabase,
-  withCaseDatabase,
-} from "../test-fixtures/case-database";
-import { clearAllDetached } from "../signals/utils";
-import { flushWaitUntilForTest } from "../signals/context/wait-until";
+import { configureCaseDatabase } from "../test-fixtures/case-database";
 
 // One transport binding for the entire API project. Production SQL and services
 // are unchanged; setupApp selects the database owned by the current case.
@@ -27,10 +22,3 @@ vi.mock("../lib/db", async (importOriginal) => {
 });
 
 configureCaseDatabase(inject(API_DATABASE_SNAPSHOT));
-
-aroundEach(async (runTest) => {
-  await withCaseDatabase(runTest, async () => {
-    await clearAllDetached();
-    await flushWaitUntilForTest();
-  });
-});

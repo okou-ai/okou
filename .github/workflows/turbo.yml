@@ -935,25 +935,6 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres@postgres:5432/postgres
         run: pnpm --filter @okouai/db db:migrate
-      - name: Test run-time budget steering in an isolated database
-        if: matrix.shard == 1
-        working-directory: turbo
-        env:
-          DATABASE_URL: postgresql://postgres@postgres:5432/api_budget_steer
-        run: |
-          pnpm --filter @okouai/db exec node --input-type=module <<'NODE'
-          import postgres from "postgres";
-          const databaseUrl = new URL(process.env.DATABASE_URL);
-          databaseUrl.pathname = "/postgres";
-          const admin = postgres(databaseUrl.toString());
-          try {
-            await admin`CREATE DATABASE api_budget_steer`;
-          } finally {
-            await admin.end();
-          }
-          NODE
-          pnpm --filter @okouai/db db:migrate
-          pnpm --filter api exec vitest run --config vitest.run-time-budget.config.ts
       - name: Test API
         working-directory: turbo
         env:

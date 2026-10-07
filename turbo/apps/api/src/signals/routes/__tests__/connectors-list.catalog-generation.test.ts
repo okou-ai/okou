@@ -5,7 +5,7 @@ import {
   builtinConnectorManualGrantContract,
   builtinConnectorsMainContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import { beforeEach, afterEach } from "vitest";
+import { afterEach } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -21,10 +21,6 @@ import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
 
 const context = testContext();
-
-beforeEach(async () => {
-  await setupApp({ context, routes: builtinConnectorsRoutes, isolatePg: true });
-});
 
 const mocks = createRouteMocks(context);
 
@@ -115,7 +111,7 @@ describe("GET /api/connectors", () => {
     const fixture = seedAuthenticatedFixture();
     const actor = createBddApi(context).user(fixture);
     const connectors = createConnectorBddApi(context);
-    const catalog = createPublicConnectorCatalog(context);
+    const catalog = createPublicConnectorCatalog(context, { isolatePg: true });
     const available = catalogWithAuthMethod(
       { connectorSlug: "openai", authMethodId: "api-token" },
       (method) => {

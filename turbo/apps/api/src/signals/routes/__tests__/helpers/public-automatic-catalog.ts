@@ -23,7 +23,7 @@ import { createRouteMocks } from "./route-test";
 /** Own both accepted catalog generations and their real account/Run consumers. */
 export function createPublicAutomaticCatalog(
   context: TestContext,
-  options: AutomaticMcpCatalogOptions = {},
+  options: AutomaticMcpCatalogOptions & { readonly isolatePg?: boolean } = {},
 ) {
   const bdd = createBddApi(context);
   const actor = bdd.user();
@@ -62,6 +62,7 @@ export function createPublicAutomaticCatalog(
   });
   const publisher = createPublicConnectorCatalog(context, {
     cleanupOwnership: "caller",
+    isolatePg: options.isolatePg,
   });
   const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");

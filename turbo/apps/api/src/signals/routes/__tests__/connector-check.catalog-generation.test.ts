@@ -45,8 +45,7 @@ async function checkWithSession(
   );
 }
 
-beforeEach(async () => {
-  await setupApp({ context, routes: TEST_APP_ROUTES, isolatePg: true });
+beforeEach(() => {
   context.mocks.clerk.authenticateRequest.mockResolvedValue({
     isAuthenticated: false,
   });
@@ -56,7 +55,7 @@ beforeEach(async () => {
 describe("POST /api/connectors/diagnostics/check", () => {
   it("ignores stale stored connectors that are absent from the catalog", async () => {
     const actor = bdd.user();
-    const catalog = createPublicConnectorCatalog(context);
+    const catalog = createPublicConnectorCatalog(context, { isolatePg: true });
     const available = catalogWithManualConnector({
       connectorSlug: "removed-connector",
       authMethodId: "api",
