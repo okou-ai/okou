@@ -10,14 +10,16 @@ import {
 } from "./auth.ts";
 import { hash, pathname, pushState, replaceState, search } from "./location.ts";
 import { setPageSignal$ } from "./page-signal.ts";
-import { setNextPageTransition$ } from "./react-router.ts";
 import { rootSignal$ } from "./root-signal.ts";
 import { bridgeConnected$ } from "./shared-database-bridge-state.ts";
 import { detach, onDomEventFn, Reason, resetSignal } from "./utils.ts";
 import { logger } from "./log.ts";
 import { capturePageView, markBootstrapRouteSetup$ } from "../lib/posthog.ts";
 import { pwaNavigationEnabled$ } from "./okou-page/pwa-navigation.ts";
-import { pwaPageTransitionDirection } from "./okou-page/pwa-page-transition.ts";
+import {
+  pwaPageTransitionDirection,
+  type PwaPageTransitionDirection,
+} from "./okou-page/pwa-page-transition.ts";
 
 const L = logger("Route");
 
@@ -176,23 +178,69 @@ const navigateToDefaultWhenInvalid$ = command(({ get, set }) => {
   }
 });
 
-// Must run before the route state moves, while it still describes the page on
+// Read before the route state moves, while it still describes the page on
 // screen.
-const prepareNextPageTransition$ = command(
-  ({ get, set }, pathname: string, searchParams: URLSearchParams) => {
-    const enabled =
-      get(pwaNavigationEnabled$) &&
-      "startViewTransition" in document &&
-      CSS.supports("selector(:active-view-transition-type(a))");
-    set(
-      setNextPageTransition$,
-      enabled
-        ? pwaPageTransitionDirection(
-            { pathname: get(pathname$), searchParams: get(searchParams$) },
-            { pathname, searchParams },
-          )
-        : "none",
+const pageTransitionDirectionTo$ = command(
+  (
+    { get },
+    pathname: string,
+    searchParams: URLSearchParams,
+  ): PwaPageTransitionDirection => {
+    if (
+      !get(pwaNavigationEnabled$) ||
+      !("startViewTransition" in document) ||
+      !CSS.supports("selector(:active-view-transition-type(a))")
+    ) {
+      return "none";
+    }
+    return pwaPageTransitionDirection(
+      { pathname: get(pathname$), searchParams: get(searchParams$) },
+      { pathname, searchParams },
     );
+  },
+);
+
+type RouteMove =
+  | { readonly kind: "push" | "replace"; readonly path: string }
+  | { readonly kind: "pop"; readonly historyState: unknown };
+
+const moveRouteState$ = command(({ set }, move: RouteMove) => {
+  if (move.kind === "pop") {
+    set(internalHistoryState$, move.historyState);
+  } else {
+    if (move.kind === "replace") {
+      replaceState({}, "", move.path);
+    } else {
+      pushState({}, "", move.path);
+    }
+    set(internalHistoryState$, {});
+  }
+  set(reloadPathname$, (x) => {
+    return x + 1;
+  });
+});
+
+// The browser captures the page on screen, then the update moves the route.
+// The incoming page is a live layer, so it renders inside the slide as the
+// next route's setup runs.
+const moveRoute$ = command(
+  async (
+    { set },
+    direction: PwaPageTransitionDirection,
+    move: RouteMove,
+    signal: AbortSignal,
+  ) => {
+    if (direction === "none") {
+      set(moveRouteState$, move);
+      return;
+    }
+    await document.startViewTransition({
+      update: () => {
+        set(moveRouteState$, move);
+      },
+      types: [direction],
+    }).updateCallbackDone;
+    signal.throwIfAborted();
   },
 );
 
@@ -204,15 +252,19 @@ export const initRoutes$ = command(
     window.addEventListener(
       "popstate",
       onDomEventFn(async (event: PopStateEvent) => {
-        set(
-          prepareNextPageTransition$,
+        // The browser has already moved to the destination, while the route
+        // state still describes the page on screen.
+        const direction = set(
+          pageTransitionDirectionTo$,
           pathname(),
           new URLSearchParams(search()),
         );
-        set(internalHistoryState$, event.state);
-        set(reloadPathname$, (x) => {
-          return x + 1;
-        });
+        await set(
+          moveRoute$,
+          direction,
+          { kind: "pop", historyState: event.state },
+          signal,
+        );
         set(navigateToDefaultWhenInvalid$);
         await set(loadRoute$, signal);
       }),
@@ -249,20 +301,17 @@ const navigate$ = command(
       "navigating to",
       isDesktopAuthFlow(new URL(newPath, location.origin)) ? pathname : newPath,
     );
-    set(
-      prepareNextPageTransition$,
+    const direction = set(
+      pageTransitionDirectionTo$,
       pathname,
       options.searchParams ?? new URLSearchParams(),
     );
-    if (options.replace) {
-      replaceState({}, "", newPath);
-    } else {
-      pushState({}, "", newPath);
-    }
-    set(internalHistoryState$, {});
-    set(reloadPathname$, (x) => {
-      return x + 1;
-    });
+    await set(
+      moveRoute$,
+      direction,
+      { kind: options.replace ? "replace" : "push", path: newPath },
+      signal,
+    );
     // Use rootSignal$ (not the caller's route signal) so the new route gets
     // a fresh, non-aborted signal.  resetRouteSignal$ inside loadRoute$ will
     // abort the previous route's controller, which would poison any signal
