@@ -384,19 +384,16 @@ describe("release-please API deployment graph", () => {
     expect(reconcileBlock).toContain("::warning::");
     expect(reconcileBlock).toContain("the scheduled cron will retry");
     expect(reconcileBlock).toContain("--max-time 120");
-    expect(reconcileBlock).toContain("hasActive: (.active != null)");
-    expect(reconcileBlock).toContain("failureCode,");
-    expect(reconcileBlock).toContain("entryCount: .pointer.entryCount");
-    expect(reconcileBlock).toContain("stale: .filtering.stale");
+    // The response is only the attempt report; older APIs' extra
+    // diagnostics fields are neither summarized nor checked.
+    expect(reconcileBlock).toContain("jq -c '{outcome, failureCode}'");
     expect(reconcileBlock).toContain(
-      "filteredAuthMethodCount: (.filtering.filteredAuthMethods | length)",
+      '.outcome == "accepted" or .outcome == "unchanged"',
     );
-    expect(reconcileBlock).not.toContain("capabilityDigest:");
-    expect(reconcileBlock).not.toContain("catalogVersion:");
-    expect(reconcileBlock).not.toContain("catalogDigest:");
-    expect(reconcileBlock).toContain('.state == "current"');
-    expect(reconcileBlock).toContain(".active != null");
-    expect(reconcileBlock).toContain(".filtering.stale == false");
+    expect(reconcileBlock).not.toContain(".state");
+    expect(reconcileBlock).not.toContain(".active");
+    expect(reconcileBlock).not.toContain(".pointer");
+    expect(reconcileBlock).not.toContain(".filtering");
   });
 
   it("keeps Vercel setup enabled for other deployment callers", () => {

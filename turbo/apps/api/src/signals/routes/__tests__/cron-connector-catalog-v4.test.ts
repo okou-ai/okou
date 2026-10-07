@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockEnv } from "../../../lib/env";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { builtinConnectorsRoutes } from "../connectors";
@@ -490,23 +490,18 @@ describe("connector catalog v4 preparation", () => {
   it("serves v4 HTTP and generic Automatic MCP methods through normal sync", async () => {
     const candidate = release({ label: "Accepted v4", mcpSlug: "notes-mcp" });
     serveObjects(candidate.objects);
-    expect((await sync()).body).toMatchObject({
+    // The response is only the attempt report.
+    expect((await sync()).body).toStrictEqual({
       outcome: "accepted",
-      schemaVersion: 4,
-      state: "current",
-      active: { catalogDigest: candidate.pointer.catalogDigest },
-      filtering: {
-        stale: false,
-        filteredAuthMethods: [],
-      },
+      failureCode: null,
     });
     expect((await publicCatalog()).body.connectors).toMatchObject([
       { slug: "catalog-service", label: "Accepted v4" },
       { slug: "notes-mcp", authMethods: [{ grantKind: "automatic" }] },
     ]);
-    expect((await sync()).body).toMatchObject({
+    expect((await sync()).body).toStrictEqual({
       outcome: "unchanged",
-      schemaVersion: 4,
+      failureCode: null,
     });
   });
 
@@ -517,10 +512,7 @@ describe("connector catalog v4 preparation", () => {
     "uses the %s auth-method switch for discovery while accepting its catalog",
     async (_label, connectorSlug, featureSwitch) => {
       serveObjects(release({ mcpSlug: connectorSlug }).objects);
-      expect((await sync()).body).toMatchObject({
-        outcome: "accepted",
-        filtering: { filteredAuthMethods: [] },
-      });
+      expect((await sync()).body).toMatchObject({ outcome: "accepted" });
       expect(
         (await publicCatalog()).body.connectors.map((connector) => {
           return connector.slug;
@@ -558,229 +550,32 @@ describe("connector catalog v4 preparation", () => {
     },
   );
 
-  it("reports strict storage readiness in the cron sync response around a rejected-source sync", async () => {
-    const healthy = {
-      missingConnectorVersions: 0,
-      unownedConnectorSecrets: 0,
-      unownedConnectorVariables: 0,
-      unresolvedBridgeCredentials: 0,
-    };
-    serveObjects(new Map());
-    const rejected = await sync();
-    expect(rejected.body).toMatchObject({
-      outcome: "rejected",
-      failureCode: "source-unavailable",
-    });
-    expect(rejected.body.credentialStorage).toStrictEqual(healthy);
-    expect(rejected.body).not.toHaveProperty("sourceId");
-
-    // The rejected attempt persists nothing that changes readiness.
-    const repeated = await sync();
-    expect(repeated.body.outcome).toBe("rejected");
-    expect(repeated.body.credentialStorage).toStrictEqual(healthy);
-  });
-
-  it("keeps cron storage readiness healthy across owned secret and variable account creation and deletion", async () => {
-    const actor = bdd.user();
-    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const slug = `readiness-${randomUUID()}`;
-    const descriptor = httpConnector(slug, "Owned credentials");
-    const candidate = release({
-      mutate(catalog) {
-        catalog.connectors = [
-          {
-            ...descriptor,
-            authMethods: descriptor.authMethods.map((method) => {
-              return {
-                ...method,
-                storage: { ...method.storage, variables: ["FIXTURE_REGION"] },
-                grant: {
-                  ...method.grant,
-                  fields: [
-                    ...method.grant.fields,
-                    {
-                      privateName: "FIXTURE_REGION",
-                      publicId: "region",
-                      label: "Region",
-                      required: true,
-                      placeholder: null,
-                      storage: "variable",
-                    },
-                  ],
-                },
-                access: {
-                  ...method.access,
-                  envBindings: {
-                    ...method.access.envBindings,
-                    FIXTURE_REGION: "$vars.FIXTURE_REGION",
-                  },
-                },
-              };
-            }),
-          },
-        ];
-      },
-    });
-    serveObjects(candidate.objects);
-    const healthy = {
-      missingConnectorVersions: 0,
-      unownedConnectorSecrets: 0,
-      unownedConnectorVariables: 0,
-      unresolvedBridgeCredentials: 0,
-    };
-    const accepted = await sync();
-    expect(accepted.body.outcome).toBe("accepted");
-    expect(accepted.body.credentialStorage).toStrictEqual(healthy);
-    const connected = await connectorsApi.connectManualGrant(
-      actor,
-      slug,
-      "api-token",
-      { credential: "readiness-token", region: "readiness-region" },
-    );
-    const outcome = await settle(
-      (async () => {
-        await expect(
-          connectorsApi.listBuiltinConnectorAccounts(actor, slug),
-        ).resolves.toContainEqual(
-          expect.objectContaining({ id: connected.id }),
-        );
-        const connectedSync = await sync();
-        expect(connectedSync.body.credentialStorage).toStrictEqual(healthy);
-        expect(JSON.stringify(connectedSync.body)).not.toContain(
-          "readiness-token",
-        );
-        expect(JSON.stringify(connectedSync.body)).not.toContain(
-          "readiness-region",
-        );
-      })(),
-    );
-    await connectorsApi.deleteBuiltinConnectorAccount(
-      actor,
-      slug,
-      connected.id,
-    );
-    if (!outcome.ok) {
-      throw outcome.error;
-    }
-    await expect(
-      connectorsApi.listBuiltinConnectorAccounts(actor, slug),
-    ).resolves.toStrictEqual([]);
-    expect((await sync()).body.credentialStorage).toStrictEqual(healthy);
-  });
-
-  it("keeps the cron sync response on the current pointer across a rejected sync", async () => {
+  it("keeps serving the current pointer across a rejected-source sync", async () => {
     const serving = release({ label: "Serving" });
     serveObjects(serving.objects);
-    const before = await sync();
-    expect(before.body).toMatchObject({
+    expect((await sync()).body).toStrictEqual({
       outcome: "accepted",
-      schemaVersion: 4,
-      state: "current",
-      active: { catalogDigest: serving.pointer.catalogDigest },
-      pointer: { hash: serving.pointer.catalogDigest },
+      failureCode: null,
     });
-    expect(before.body).not.toHaveProperty("lastAttempt");
+    expect((await publicCatalog()).body.connectors).toMatchObject([
+      { label: "Serving" },
+    ]);
 
     serveObjects(new Map());
-    const rejected = await sync();
-    // The rejected attempt reports the retained pointer as stale.
-    expect(rejected.body).toStrictEqual({
-      ...before.body,
+    expect((await sync()).body).toStrictEqual({
       outcome: "rejected",
       failureCode: "source-unavailable",
-      state: "stale",
-      filtering: {
-        ...before.body.filtering,
-        evaluatedAt: rejected.body.filtering.evaluatedAt,
-      },
     });
-    expect(rejected.body).not.toHaveProperty("sourceId");
-    expect(rejected.body).not.toHaveProperty("catalog");
-    expect(rejected.body).not.toHaveProperty("lastAttempt");
+    expect((await publicCatalog()).body.connectors).toMatchObject([
+      { label: "Serving" },
+    ]);
 
     // Nothing about the rejection was persisted: the next sync of the serving
-    // pointer is unchanged and current.
+    // pointer is unchanged.
     serveObjects(serving.objects);
-    const after = await sync();
-    expect(after.body).toStrictEqual({
-      ...before.body,
+    expect((await sync()).body).toStrictEqual({
       outcome: "unchanged",
-      filtering: {
-        ...before.body.filtering,
-        evaluatedAt: after.body.filtering.evaluatedAt,
-      },
-    });
-  });
-
-  it("evaluates cron sync filtering on demand for the current capability and accepted v4 catalog identity", async () => {
-    mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", undefined);
-    const initial = release({ mcpSlug: "notes-mcp" });
-    serveObjects(initial.objects);
-    const accepted = await sync();
-    expect(accepted.body).toMatchObject({
-      outcome: "accepted",
-      active: {
-        catalogDigest: initial.pointer.catalogDigest,
-      },
-      pointer: { hash: initial.pointer.catalogDigest },
-      filtering: { stale: false, filteredAuthMethods: [] },
-    });
-    expect(accepted.body.filtering.evaluatedAt).not.toBeNull();
-
-    // A capability change is visible on the next unchanged sync, which
-    // accepts no new catalog.
-    mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", "catalog-capability-client-id");
-    const configured = await sync();
-    expect(configured.body.outcome).toBe("unchanged");
-    expect(configured.body.filtering).toMatchObject({
-      capabilityDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
-      stale: false,
-      filteredAuthMethods: [],
-    });
-    expect(configured.body.filtering.evaluatedAt).not.toBeNull();
-    expect(configured.body.filtering.capabilityDigest).not.toBe(
-      accepted.body.filtering.capabilityDigest,
-    );
-    expect(configured.body.active).toStrictEqual(accepted.body.active);
-
-    mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", undefined);
-    const restored = await sync();
-    expect(restored.body.outcome).toBe("unchanged");
-    expect(restored.body.filtering).toStrictEqual({
-      ...accepted.body.filtering,
-      evaluatedAt: expect.any(String),
-    });
-
-    mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", "catalog-capability-client-id");
-    const replacement = release({
-      version: `${CATALOG_VERSION}.capability-next`,
-      label: "Replacement v4",
-      mcpSlug: "notes-mcp",
-    });
-    serveObjects(replacement.objects);
-    const replaced = await sync();
-    expect(replaced.body).toMatchObject({
-      outcome: "accepted",
-      active: {
-        catalogDigest: replacement.pointer.catalogDigest,
-      },
-      pointer: { hash: replacement.pointer.catalogDigest },
-      filtering: {
-        capabilityDigest: configured.body.filtering.capabilityDigest,
-        stale: false,
-        filteredAuthMethods: [],
-      },
-    });
-    mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", undefined);
-    const current = await sync();
-    expect(current.body.outcome).toBe("unchanged");
-    expect(current.body.active).toStrictEqual({
-      catalogDigest: replacement.pointer.catalogDigest,
-    });
-    expect(current.body.pointer).toStrictEqual(replaced.body.pointer);
-    expect(current.body.filtering).toStrictEqual({
-      ...accepted.body.filtering,
-      evaluatedAt: expect.any(String),
+      failureCode: null,
     });
   });
 
@@ -805,13 +600,9 @@ describe("connector catalog v4 preparation", () => {
     });
     serveObjects(invalid.objects);
 
-    expect((await sync()).body).toMatchObject({
+    expect((await sync()).body).toStrictEqual({
       outcome: "rejected",
-      schemaVersion: 4,
       failureCode: "invalid-artifact",
-      state: "stale",
-      active: { catalogDigest: accepted.pointer.catalogDigest },
-      pointer: { hash: accepted.pointer.catalogDigest },
     });
     expect((await publicCatalog()).body.connectors).toMatchObject([
       { label: "Last accepted" },
@@ -819,7 +610,7 @@ describe("connector catalog v4 preparation", () => {
   });
 
   it("rejects a pointer outside the canonical v4 release namespace", async () => {
-    const candidate = release({});
+    const candidate = release({ label: "Outside namespace" });
     const objects = new Map(candidate.objects);
     objects.set(
       "connectors/v4/active.json",
@@ -830,15 +621,13 @@ describe("connector catalog v4 preparation", () => {
     );
     serveObjects(objects);
 
-    const rejected = await sync();
-    expect(rejected.body).toMatchObject({
+    expect((await sync()).body).toStrictEqual({
       outcome: "rejected",
       failureCode: "invalid-pointer",
-      schemaVersion: 4,
     });
-    expect(rejected.body.pointer?.hash).not.toBe(
-      candidate.pointer.catalogDigest,
-    );
+    // The rejected candidate never serves.
+    const listed = await catalogClient().list({ headers: sessionHeaders });
+    expect(JSON.stringify(listed.body)).not.toContain("Outside namespace");
   });
 
   it("treats a pointer to the serving digest as unchanged without downloading its catalog", async () => {
@@ -864,12 +653,9 @@ describe("connector catalog v4 preparation", () => {
       ]),
     );
     context.mocks.s3.send.mockClear();
-    expect((await sync()).body).toMatchObject({
+    expect((await sync()).body).toStrictEqual({
       outcome: "unchanged",
       failureCode: null,
-      state: "current",
-      active: { catalogDigest: accepted.pointer.catalogDigest },
-      pointer: { hash: accepted.pointer.catalogDigest },
     });
     expect(
       context.mocks.s3.send.mock.calls.map(([command]) => {
@@ -889,12 +675,7 @@ describe("connector catalog v4 preparation", () => {
     // Storage contains only the pointer and catalog. Both descriptors declare
     // skill:none, so accepting this release requires no skill resource fetch.
     serveObjects(candidate.objects);
-    expect((await sync()).body).toMatchObject({
-      outcome: "accepted",
-      filtering: {
-        filteredAuthMethods: [],
-      },
-    });
+    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
     expect((await publicCatalog()).body.connectors).toMatchObject([
       { slug: "http-service-mcp", authMethods: [{ grantKind: "manual" }] },
       { slug: "spoken-notes", authMethods: [{ grantKind: "automatic" }] },
