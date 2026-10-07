@@ -411,6 +411,21 @@ assert_cli_digest_fails() {
 plain_arm_digest=$(digest_value "$repo" aarch64-unknown-linux-musl)
 embedded_arm_digest=$(cli_digest_value)
 embedded_x86_digest=$(cli_digest_value x86_64-unknown-linux-musl)
+# Pin the hash-input contract, not the parser: package identity contributes its
+# actual SHA once, while fixed/derived manifest package fields are validation-only.
+cli_package_sha256=$(sha256sum "$cli_package" | awk '{print $1}')
+cli_compilation_identity=$(jq -cS '{versions, sessionConstruction}' "$cli_manifest")
+for target in aarch64-unknown-linux-musl x86_64-unknown-linux-musl; do
+  expected_cli_digest=$(
+    {
+      printf '%s\0%s\0' "$RUNNER_BINARY_INPUT_SCHEMA_VERSION" "$target"
+      "${repo}/.github/scripts/runner-binary-build/context.sh" inventory "$repo" HEAD
+      printf 'bundled-cli\0%s\0%s\0' "$cli_package_sha256" "$cli_compilation_identity"
+    } | sha256sum | awk '{print $1}'
+  )
+  [ "$(cli_digest_value "$target")" = "$expected_cli_digest" ] \
+    || fail "CLI package hash inputs must contain only actual SHA and independent identity: ${target}"
+done
 [ "$plain_arm_digest" != "$embedded_arm_digest" ] \
   || fail "bundled and unbundled Runner inputs must have different cache digests"
 [ "$embedded_arm_digest" != "$embedded_x86_digest" ] \
@@ -487,6 +502,11 @@ printf 'wrong sibling identity\n' > "$(dirname "$cli_package")/manifest.json"
 [ "$(cli_digest_value)" = "$changed_cli_digest" ] \
   || fail "a sibling manifest must not affect the explicit input digest"
 for mutation in \
+  'del(.version)' \
+  'del(.package)' \
+  'del(.package.path)' \
+  'del(.package.sha256)' \
+  'del(.package.size)' \
   '.version = 2' \
   '.version = true' \
   '.package.size = false' \

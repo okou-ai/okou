@@ -98,17 +98,15 @@ try:
         raw = file.read(16 * 1024 + 1)
     if len(raw) > 16 * 1024:
         raise ValueError("oversized manifest")
-    identity = fields(json.loads(
+    manifest = fields(json.loads(
         raw.decode("utf-8"), object_pairs_hook=JsonObject,
         parse_int=JsonInteger, parse_constant=invalid_constant
     ), ("version", "package", "versions", "sessionConstruction"))
-    package = identity["package"] = fields(identity["package"], ("path", "sha256", "size"))
-    versions = identity["versions"] = fields(
-        identity["versions"], ("cli", "piAgentRuntime", "piSdk")
-    )
-    session = identity["sessionConstruction"] = fields(identity["sessionConstruction"], ("digest",))
+    package = fields(manifest["package"], ("path", "sha256", "size"))
+    versions = fields(manifest["versions"], ("cli", "piAgentRuntime", "piSdk"))
+    session = fields(manifest["sessionConstruction"], ("digest",))
     if (
-        not isinstance(identity["version"], JsonInteger) or identity["version"].token != "1"
+        not isinstance(manifest["version"], JsonInteger) or manifest["version"].token != "1"
         or package["path"] != "package.tgz" or package["sha256"] != sys.argv[2]
         or not isinstance(package["size"], JsonInteger) or package["size"].token != sys.argv[3]
         or not release_version(versions["cli"])
@@ -121,13 +119,12 @@ try:
     sdk = versions["piSdk"].split("+okou.")
     if len(sdk) != 2 or not release_version(sdk[0]) or re.fullmatch(r"[0-9a-f]{12}", sdk[1]) is None:
         raise ValueError("invalid Pi SDK identity")
-    # Convert only the validated bounded fields; ignored integers may exceed
-    # Python's configurable int conversion limit without affecting compilation.
-    identity["version"] = 1
-    package["size"] = int(sys.argv[3])
 except (OSError, ValueError, KeyError, RecursionError):
     sys.exit(1)
 
+# Schema/path are fixed and package SHA/size are bound to the actual bytes.
+# Keep their validation above, but hash only the independent compiled identity.
+identity = {"versions": versions, "sessionConstruction": session}
 print(json.dumps(identity, sort_keys=True, separators=(",", ":")))
 PY
   ); then
@@ -140,8 +137,8 @@ binary_input_digest=$(
     printf '%s\0%s\0' "$RUNNER_BINARY_INPUT_SCHEMA_VERSION" "$target"
     "${SCRIPT_DIR}/context.sh" inventory "$REPO_ROOT" "$revision" || exit 1
     if [ -n "$cli_package" ]; then
-      # Only package bytes and CliManifest fields consumed by Runner compilation
-      # affect the binary; commit provenance and JSON serialization do not.
+      # Package identity contributes only its actual SHA; independent version
+      # and session constants remain hashed alongside it.
       printf 'bundled-cli\0%s\0%s\0' "$cli_sha256" "$cli_identity"
     else
       printf 'local-build-without-cli\0'
