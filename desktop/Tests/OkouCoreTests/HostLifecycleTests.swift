@@ -42,11 +42,18 @@ private final class URLProtocolFixture: URLProtocol, @unchecked Sendable {
   }
 }
 
-private final class PendingClaim: @unchecked Sendable {
+private final class PendingResponse: @unchecked Sendable {
   private let lock = NSLock()
   private var connection: URLProtocolFixture?
   func hold(_ value: URLProtocolFixture) { lock.withLock { connection = value } }
   func reply(_ value: JSONValue) { lock.withLock { connection }!.reply(value) }
+}
+
+private final class CompletionFlag: @unchecked Sendable {
+  private let lock = NSLock()
+  private var completed = false
+  func finish() { lock.withLock { completed = true } }
+  var value: Bool { lock.withLock { completed } }
 }
 
 private final class StateTransitions: @unchecked Sendable {
@@ -58,6 +65,62 @@ private final class StateTransitions: @unchecked Sendable {
 }
 
 final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
+  func testStopWaitsForDelayedRegistrationAndRetiresItsHostToken() async throws {
+    let received = expectation(description: "Server received registration")
+    let stopping = expectation(description: "Admission is closed")
+    let retired = expectation(description: "Late registration token is retired")
+    let returned = expectation(description: "Stop returned after cleanup")
+    let pending = PendingResponse()
+    let finished = CompletionFlag()
+    let transitions = StateTransitions()
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [URLProtocolFixture.self]
+    let session = URLSession(configuration: configuration)
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/hosts/start") {
+        pending.hold(connection)
+        received.fulfill()
+      } else if path.hasSuffix("/stop") {
+        XCTAssertFalse(finished.value)
+        XCTAssertEqual(
+          connection.request.value(forHTTPHeaderField: "Authorization"), "Bearer late-host-token")
+        retired.fulfill()
+        connection.reply(.object([:]))
+      } else {
+        XCTFail("A stopped registration must not begin polling or heartbeats: \(path)")
+        connection.reply(.object([:]))
+      }
+    }
+    let runtime = HostRuntime(
+      api: APIClient(
+        baseURL: URL(string: "https://api.example.test")!, version: "0.49.72", session: session),
+      executor: CommandExecutor(
+        helper: NativeProcess(executable: URL(fileURLWithPath: "/nonexistent/helper"))),
+      installationId: UUID().uuidString, hostName: "Test Mac", version: "0.49.72",
+      tokenProvider: { "clerk-session" },
+      onChange: { state in
+        if state.status == "stopping" { transitions.notify("stopping", expectation: stopping) }
+      })
+    let starting = Task { await runtime.start() }
+    await fulfillment(of: [received], timeout: 3)
+    let drain = Task {
+      await runtime.stop()
+      finished.finish()
+      returned.fulfill()
+    }
+    await fulfillment(of: [stopping], timeout: 3)
+    // Keep the server response pending long enough to observe an early return.
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertFalse(finished.value)
+    pending.reply(
+      .object(["hostToken": .string("late-host-token"), "hostId": .string("late-host")]))
+    await fulfillment(of: [retired, returned], timeout: 3, enforceOrder: true)
+    await starting.value
+    await drain.value
+  }
+
   func testAPIBoundsAnUnfinishedClaimRequest() async throws {
     let began = expectation(description: "Server received a claim")
     URLProtocolFixture.boundary.set { _ in began.fulfill() }
@@ -172,7 +235,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     let stopping = expectation(description: "UI reports admission closed")
     let complete = expectation(description: "Late claim was completed")
     let stopped = expectation(description: "Host stopped after completion")
-    let claim = PendingClaim()
+    let claim = PendingResponse()
     let installation = UUID().uuidString.lowercased()
     URLProtocolFixture.boundary.set { connection in
       let path = connection.request.url!.path

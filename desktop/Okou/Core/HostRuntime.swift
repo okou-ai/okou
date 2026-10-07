@@ -42,6 +42,7 @@ public actor HostRuntime {
   private var heartbeatTask: Task<Void, Never>?
   private var pollTask: Task<Void, Never>?
   private var stopTask: Task<Void, Never>?
+  private var registrationTask: (generation: Int, task: Task<Void, Error>)?
   private var state = RuntimeState()
   private var permissions: JSONValue = .object([
     "accessibility": .bool(false), "screenRecording": .bool(false),
@@ -85,48 +86,13 @@ public actor HostRuntime {
       do {
         let token = try await tokenProvider()
         guard running, current == generation else { return }
-        let response = try await api.request(
-          "api/computer-use/hosts/start", token: token, body: body())
-        guard running, current == generation else {
-          if let lateToken = response.body["hostToken"].string {
-            _ = try? await api.request(
-              "api/computer-use/host/stop", token: lateToken, body: .object([:]), timeout: 5)
-          }
-          return
+        let registering = Task { try await self.register(token: token, generation: current) }
+        registrationTask = (current, registering)
+        do { try await registering.value } catch {
+          if registrationTask?.generation == current { registrationTask = nil }
+          throw error
         }
-        guard (200..<300).contains(response.status) else {
-          if [401, 403, 409, 426].contains(response.status) {
-            running = false
-            state.status = response.status == 403 ? "disabled" : "error"
-            state.lastError =
-              response.status == 409
-              ? "Computer Use is already active in another Desktop session."
-              : response.status == 426
-                ? "This version of Okou must be updated."
-                : response.status == 401
-                  ? "Sign in and select a workspace before going online."
-                  : "Computer Use is disabled for this account."
-            await publish()
-            return
-          }
-          throw DesktopFailure(
-            "network_error", "Unable to register Computer Use host (HTTP \(response.status))")
-        }
-        guard let token = response.body["hostToken"].string, let id = response.body["hostId"].string
-        else {
-          throw DesktopFailure(
-            "invalid_response", "Host registration response is missing its identity")
-        }
-        hostToken = token
-        state.hostId = id
-        state.status = "online"
-        state.lastHeartbeat = Date()
-        state.lastError = nil
-        state.recoveryAttempt = 0
-        state.retryAt = nil
-        await publish()
-        heartbeatTask = Task { await self.heartbeatLoop(generation: current, token: token) }
-        pollTask = Task { await self.commandLoop(generation: current, token: token) }
+        if registrationTask?.generation == current { registrationTask = nil }
         return
       } catch is CancellationError { return } catch {
         guard running, current == generation else { return }
@@ -135,6 +101,51 @@ public actor HostRuntime {
         try? await Task.sleep(for: .seconds(delay(attempt)))
       }
     }
+  }
+  private func register(token: String, generation current: Int) async throws {
+    let response = try await api.request(
+      "api/computer-use/hosts/start", token: token, body: body())
+    guard running, current == generation else {
+      if let lateToken = response.body["hostToken"].string {
+        _ = try? await api.request(
+          "api/computer-use/host/stop", token: lateToken, body: .object([:]), timeout: 5)
+      }
+      return
+    }
+    guard (200..<300).contains(response.status) else {
+      if [401, 403, 409, 426].contains(response.status) {
+        running = false
+        state.status = response.status == 403 ? "disabled" : "error"
+        state.lastError =
+          response.status == 409
+          ? "Computer Use is already active in another Desktop session."
+          : response.status == 426
+            ? "This version of Okou must be updated."
+            : response.status == 401
+              ? "Sign in and select a workspace before going online."
+              : "Computer Use is disabled for this account."
+        await publish()
+        return
+      }
+      throw DesktopFailure(
+        "network_error", "Unable to register Computer Use host (HTTP \(response.status))")
+    }
+    guard let token = response.body["hostToken"].string, let id = response.body["hostId"].string
+    else {
+      throw DesktopFailure(
+        "invalid_response", "Host registration response is missing its identity")
+    }
+    hostToken = token
+    state.hostId = id
+    state.status = "online"
+    state.lastHeartbeat = Date()
+    state.lastError = nil
+    state.recoveryAttempt = 0
+    state.retryAt = nil
+    await publish()
+    guard running, acceptingCommands, generation == current else { return }
+    heartbeatTask = Task { await self.heartbeatLoop(generation: current, token: token) }
+    pollTask = Task { await self.commandLoop(generation: current, token: token) }
   }
   public func stop() async {
     if let stopTask {
@@ -156,6 +167,9 @@ public actor HostRuntime {
       running = false
       generation += 1
     }
+    // A delayed registration owns its late-token cleanup. Wait for that
+    // request before allowing application termination to discard its result.
+    _ = try? await registrationTask?.task.value
     // Let an already claimed command finish and report before stopping its
     // host. A stopped generation cannot claim or dispatch another action.
     let draining = pollTask
