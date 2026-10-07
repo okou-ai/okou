@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.220.16](https://github.com/okou-ai/okou/compare/runner-rs-v0.220.15...runner-rs-v0.220.16) (2026-10-07)
+
+
+### Refactoring
+
+* remove remaining model provider residue ([#37870](https://github.com/okou-ai/okou/issues/37870)) ([a93133b](https://github.com/okou-ai/okou/commit/a93133b0493858a39924a1206ff5a5677e43cad6))
+* remove retired per-agent ssh access traces ([#37876](https://github.com/okou-ai/okou/issues/37876)) ([dc33264](https://github.com/okou-ai/okou/commit/dc332649051e79460f1075a294ba8d3707f8504f))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.220.15](https://github.com/okou-ai/okou/compare/runner-rs-v0.220.14...runner-rs-v0.220.15) (2026-10-07)
 
 ### Release Dependencies

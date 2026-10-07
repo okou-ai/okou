@@ -1,5 +1,23 @@
 # Changelog
 
+## [9.378.18](https://github.com/okou-ai/okou/compare/cli-v9.378.17...cli-v9.378.18) (2026-10-07)
+
+
+### Refactoring
+
+* remove remaining model provider residue ([#37870](https://github.com/okou-ai/okou/issues/37870)) ([a93133b](https://github.com/okou-ai/okou/commit/a93133b0493858a39924a1206ff5a5677e43cad6))
+* remove retired per-agent ssh access traces ([#37876](https://github.com/okou-ai/okou/issues/37876)) ([dc33264](https://github.com/okou-ai/okou/commit/dc332649051e79460f1075a294ba8d3707f8504f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.537.11
+    * @okouai/connectors bumped to 3.16.3
+    * @okouai/core bumped to 8.734.4
+    * @okouai/pi-agent-runtime bumped to 1.46.18
+
 ## [9.378.17](https://github.com/okou-ai/okou/compare/cli-v9.378.16...cli-v9.378.17) (2026-10-07)
 
 
