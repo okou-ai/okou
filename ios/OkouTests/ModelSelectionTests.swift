@@ -21,7 +21,10 @@ final class ModelSelectionTests: XCTestCase {
   }
 
   func testSubscriptionPriorityUsesItsOwnCapability() throws {
-    let offered = try decodeModel(availability: "reconnect_required", subscriptionTier: #""priority""#)
+    let offered = try decodeModel(
+      availability: "reconnect_required",
+      subscriptionTier: #""priority""#
+    )
     let absent = try decodeModel(availability: "available", subscriptionTier: "null")
     XCTAssertTrue(offered.supportsServiceTier("priority"))
     XCTAssertFalse(offered.supportsServiceTier("unsupported"))
