@@ -18,7 +18,11 @@ The App identifies the actual carrier in the SSH list and latest-settings
 conflict review. It does not open the legacy Direct/Cloudflare editor for a
 Tailscale host. Explicit host-key reset and deletion retain their confirmation,
 current-generation conflict review and explicit-retry behavior; merely reading
-a host does not change its carrier, login, pin or permissions.
+a host does not change its carrier, login, pin or permissions. If a generation
+conflict reveals that a host changed from Direct/Cloudflare to Tailscale while
+its legacy editor was already open, the App keeps that edit blocked and asks
+the user to cancel. It never accepts the newer generation to resend the old
+carrier draft. Explicit reset/delete conflict review remains supported.
 
 An SSH-backed VNC host distinguishes retained Tailscale from retained Cloudflare
 and continues to react to SSH metadata refresh. While Tailscale setup is not

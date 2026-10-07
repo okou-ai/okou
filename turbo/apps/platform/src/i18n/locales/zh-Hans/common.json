@@ -5417,6 +5417,7 @@
     "summary_one": "已配置{{count}}台主机",
     "summary_other": "已配置{{count}}台主机",
     "tailscale": {
+      "editUnavailable": "此主机现已使用 Tailscale。此处尚未提供 Tailscale 编辑和重新绑定功能。请取消此次编辑以保留已保存的传输方式。",
       "needsRebind": "此主机需要新的 Tailscale 配置。此处尚未提供 Tailscale 设置和重新绑定功能。"
     },
     "unavailable": "该账号无法使用SSH访问。",

@@ -5417,6 +5417,7 @@
     "summary_one": "{{count}} 台のホストを設定済み",
     "summary_other": "{{count}} 台のホストを設定済み",
     "tailscale": {
+      "editUnavailable": "このホストは現在 Tailscale を使用しています。ここでは Tailscale の編集と再紐付けはまだ利用できません。保存された接続方式を維持するには、この編集をキャンセルしてください。",
       "needsRebind": "このホストには新しい Tailscale 設定が必要です。Tailscale のセットアップと再紐付けは、ここではまだ利用できません。"
     },
     "unavailable": "このアカウントでは SSH アクセスを利用できません。",

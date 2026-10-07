@@ -532,6 +532,11 @@ function SshConflictReview() {
   }
   const current = review.state === "hasData" ? review.data : null;
   const hostConflict = conflict === SSH_ERROR_CODES.GENERATION_CONFLICT;
+  const editingTailscale =
+    current?.kind === "edit" &&
+    current.connection !== null &&
+    "transport" in current.connection &&
+    current.connection.transport.type === "tailscale";
   return (
     <div className="grid gap-3 rounded-lg border p-4 text-sm">
       <p role="alert">
@@ -584,17 +589,20 @@ function SshConflictReview() {
               </p>
             </div>
           )}
-          <p>
+          <p role={editingTailscale ? "alert" : undefined}>
             {t(($) => {
-              return $.ssh.cloudflare.reviewHelp;
+              return editingTailscale
+                ? $.ssh.tailscale.editUnavailable
+                : $.ssh.cloudflare.reviewHelp;
             })}
           </p>
           <Button
             type="button"
             variant="outline"
             disabled={
-              current.kind === "delete-credential" &&
-              (current.credential?.hosts.length ?? 0) > 0
+              editingTailscale ||
+              (current.kind === "delete-credential" &&
+                (current.credential?.hosts.length ?? 0) > 0)
             }
             onClick={() => {
               return detach(acceptReview(current, signal), Reason.DomCallback);

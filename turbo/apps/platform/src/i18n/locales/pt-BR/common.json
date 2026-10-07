@@ -5513,6 +5513,7 @@
     "summary_many": "{{count}} hosts configurados",
     "summary_other": "{{count}} hosts configurados",
     "tailscale": {
+      "editUnavailable": "Este host agora usa Tailscale. A edição e a revinculação do Tailscale ainda não estão disponíveis aqui. Cancele esta edição para manter o transporte salvo.",
       "needsRebind": "Este host precisa de uma nova configuração do Tailscale. A configuração e a revinculação do Tailscale ainda não estão disponíveis aqui."
     },
     "unavailable": "O acesso SSH não está disponível para esta conta.",

@@ -5433,6 +5433,7 @@
     "summary_one": "{{count}} host configured",
     "summary_other": "{{count}} hosts configured",
     "tailscale": {
+      "editUnavailable": "This host now uses Tailscale. Tailscale editing and rebinding are not available here yet. Cancel this edit to keep its saved transport.",
       "needsRebind": "This host needs a new Tailscale configuration. Tailscale setup and rebinding are not available here yet."
     },
     "unavailable": "SSH access is not available for this account.",

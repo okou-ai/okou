@@ -5417,6 +5417,7 @@
     "summary_one": "호스트 {{count}}개 구성됨",
     "summary_other": "호스트 {{count}}개 구성됨",
     "tailscale": {
+      "editUnavailable": "이 호스트는 이제 Tailscale을 사용합니다. 여기서는 아직 Tailscale 편집 및 재연결을 사용할 수 없습니다. 저장된 연결 방식을 유지하려면 이 편집을 취소하세요.",
       "needsRebind": "이 호스트에는 새 Tailscale 구성이 필요합니다. 여기서는 아직 Tailscale 설정 및 재바인딩을 지원하지 않습니다."
     },
     "unavailable": "이 계정에서는 SSH 접근을 사용할 수 없습니다.",

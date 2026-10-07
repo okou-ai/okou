@@ -5417,6 +5417,7 @@
     "summary_one": "{{count}} host dikonfigurasi",
     "summary_other": "{{count}} host dikonfigurasi",
     "tailscale": {
+      "editUnavailable": "Host ini kini menggunakan Tailscale. Pengeditan dan pengikatan ulang Tailscale belum tersedia di sini. Batalkan pengeditan ini untuk mempertahankan transport yang tersimpan.",
       "needsRebind": "Host ini memerlukan konfigurasi Tailscale baru. Penyiapan dan pengikatan ulang Tailscale belum tersedia di sini."
     },
     "unavailable": "Akses SSH tidak tersedia untuk akun ini.",

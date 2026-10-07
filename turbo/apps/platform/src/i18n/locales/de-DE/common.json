@@ -5441,6 +5441,7 @@
     "summary_one": "{{count}} Host konfiguriert",
     "summary_other": "{{count}} Hosts konfiguriert",
     "tailscale": {
+      "editUnavailable": "Dieser Host verwendet jetzt Tailscale. Das Bearbeiten und erneute Zuordnen von Tailscale ist hier noch nicht verfügbar. Brich diese Bearbeitung ab, um die gespeicherte Verbindungsart beizubehalten.",
       "needsRebind": "Dieser Host benötigt eine neue Tailscale-Konfiguration. Die Einrichtung und erneute Zuordnung von Tailscale sind hier noch nicht verfügbar."
     },
     "unavailable": "SSH-Zugriff ist für dieses Konto nicht verfügbar.",

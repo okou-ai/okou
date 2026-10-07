@@ -425,6 +425,115 @@ async function page(path = "/connectors?scope=remote-control&type=ssh") {
   });
 }
 
+test.each([
+  { initialCarrier: "Direct", binding: "bound" },
+  { initialCarrier: "Direct", binding: "retained" },
+  { initialCarrier: "Cloudflare", binding: "bound" },
+  { initialCarrier: "Cloudflare", binding: "retained" },
+] as const)(
+  "A $initialCarrier edit cannot accept a $binding Tailscale conflict into the legacy editor",
+  async ({ initialCarrier, binding }) => {
+    const accessId = "e0000000-0000-4000-8000-000000000001";
+    const initial: SshConnectionResponse =
+      initialCarrier === "Direct"
+        ? base
+        : {
+            ...base,
+            port: 443,
+            transport: { type: "cloudflare_access", configId: accessId },
+          };
+    let current: SshConnectionResponse = initial;
+    context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
+      return respond(200, {
+        configs: [
+          {
+            id: accessId,
+            name: "Deployment gateway",
+            scope: "personal",
+            revision: 1,
+            generation: 1,
+            sshHosts: [{ id: base.id, displayName: base.displayName }],
+            createdAt: base.createdAt,
+            updatedAt: base.updatedAt,
+          },
+        ],
+      });
+    });
+    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+      return respond(200, { connections: [current] });
+    });
+    const requests: unknown[] = [];
+    context.mocks.api(sshConnectionsContract.update, ({ body, respond }) => {
+      requests.push(body);
+      // A later capable API may change the saved carrier from another client.
+      current = {
+        ...base,
+        host: "100.80.10.20",
+        generation: 2,
+        learnedHostKey: {
+          algorithm: "ssh-ed25519",
+          fingerprint: "SHA256:retained",
+        },
+        transport:
+          binding === "bound"
+            ? {
+                type: "tailscale",
+                configId: "f0000000-0000-4000-8000-000000000001",
+              }
+            : { type: "tailscale", needsRebind: true },
+      };
+      return respond(409, {
+        error: { code: "SSH_GENERATION_CONFLICT", message: "changed" },
+      });
+    });
+    await page();
+    await screen.findByText(
+      `${initial.username}@${initial.host}:${initial.port}`,
+    );
+    click(getAction("button", "Edit host"));
+    const dialog = await screen.findByRole("dialog");
+    await fill(within(dialog).getByLabelText("Display name"), "Unsaved draft");
+    await waitFor(() => {
+      expect(getAction("button", "Save", dialog)).toBeEnabled();
+    });
+    click(getAction("button", "Save", dialog));
+    await within(dialog).findByText("Latest saved settings");
+    await within(dialog).findByText("Tailscale");
+    expect(
+      within(dialog).getByText(
+        "This host now uses Tailscale. Tailscale editing and rebinding are not available here yet. Cancel this edit to keep its saved transport.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      getAction("button", "Keep my changes with this version", dialog),
+    ).toBeDisabled();
+    expect(getAction("button", "Save", dialog)).toBeDisabled();
+    expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+      "Unsaved draft",
+    );
+    expect(screen.getByText("SHA256:retained")).toBeInTheDocument();
+    expect(requests).toStrictEqual([
+      {
+        expectedGeneration: 1,
+        displayName: "Unsaved draft",
+        host: initial.host,
+        port: initial.port,
+        credential: { id: credential.id },
+        transport:
+          initialCarrier === "Direct"
+            ? { type: "direct" }
+            : { type: "cloudflare_access", configId: accessId },
+      },
+    ]);
+    click(getAction("button", "Cancel", dialog));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(getAction("button", "Edit host")).toBeDisabled();
+    expect(screen.getByText("SHA256:retained")).toBeInTheDocument();
+  },
+);
+
 test("Bound Tailscale hosts stay distinguishable and cannot enter the legacy carrier editor", async () => {
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return respond(200, {

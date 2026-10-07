@@ -642,7 +642,11 @@ export const acceptSshConflictReview$ = command(
       reviewed.identity !== current.identity ||
       reviewed.kind !== current.kind ||
       reviewed.credential?.id !== current.credential?.id ||
-      reviewed.connection?.id !== current.connection?.id
+      reviewed.connection?.id !== current.connection?.id ||
+      (current.kind === "edit" &&
+        reviewed.connection !== null &&
+        "transport" in reviewed.connection &&
+        reviewed.connection.transport.type === "tailscale")
     ) {
       return;
     }
