@@ -4,7 +4,6 @@ import {
 } from "../signals/services/chat-event-append.service";
 import { randomUUID } from "node:crypto";
 import type { ChatEventPayload } from "@okouai/db/jsonb-contracts/chat-event";
-import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { pgTextDecoder } from "../lib/db-structured-result";
 import { billingRunAttributionWrite } from "../signals/services/managed-usage-attribution";
@@ -12,15 +11,13 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { and, count, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
-import { Pool } from "pg";
-import { closeDbPool, db } from "../lib/db";
+import { db } from "../lib/db";
 import { parseRawRows } from "../lib/db-raw-rows";
 import type { Tx } from "../lib/db-types";
 import { nowDate } from "../lib/time";
@@ -49,7 +46,6 @@ import { createDeferredPromise, settleIncludingAbort } from "../signals/utils";
 
 const databasePidRowSchema = z.object({ pid: z.int() });
 const waiterCountRowSchema = z.object({ waiterCount: z.int() });
-const blockedByPidRowSchema = z.object({ blocked: z.boolean() });
 const blockedQueryRowSchema = z.object({ query: z.string() });
 
 type ChatThreadBlockedStatementKind =
@@ -133,47 +129,6 @@ export async function findPendingChatEventByPromptFixture(args: {
   });
 }
 
-/** Inserts a pending Slack event, then removes the context its claim requires. */
-export async function insertQueuedSlackMissingContextFixture(args: {
-  readonly threadId: string;
-  readonly content: string;
-}): Promise<string> {
-  return await db().transaction(async (tx) => {
-    const event =
-      parseRawRows(
-        chatEventCommandResultSchema,
-        await tx.execute(
-          chatEventInsertSql({
-            chatThreadId: args.threadId,
-            eventType: "input.prompt",
-            userMessage: createUserMessageDocument({ text: args.content }),
-            runId: null,
-            slackContext: {
-              channelId: "C_MONITOR_FAILURE",
-              messageTs: "1.000001",
-              botUserId: "U_MONITOR_FAILURE_BOT",
-              conversationContext: "",
-              messageText: args.content,
-              messageFiles: [],
-              messageAssets: [],
-              mentionDisplayNames: {},
-              senderDisplayName: "Queue Monitor Fixture",
-              senderUserId: "U_MONITOR_FAILURE",
-              channelType: "channel",
-              threadTs: "1.000001",
-              routeThreadTs: null,
-            },
-          }),
-        ),
-      )[0] ?? null;
-    if (!event) {
-      throw new Error("Failed to insert queued Slack fixture");
-    }
-    await tx.delete(chatSlackContext).where(eq(chatSlackContext.id, event.id));
-    return event.id;
-  });
-}
-
 export async function replayPendingChatInputQueueEventFixture(args: {
   readonly eventId: string;
   readonly replacementId: string;
@@ -224,88 +179,6 @@ export async function replayPendingChatInputQueueEventFixture(args: {
 }
 
 /**
- * Move one exact automation event into historical state without waiting for real
- * time to pass. A string preserves PostgreSQL precision beyond JavaScript
- * milliseconds. Product APIs cannot construct an already-stale queue item.
- */
-export async function setWorkflowQueueEventCreatedAtFixture(args: {
-  readonly eventId: string;
-  readonly createdAt: Date | string;
-}): Promise<void> {
-  const createdAt =
-    typeof args.createdAt === "string"
-      ? sql`CAST(${args.createdAt} AS timestamp)`
-      : args.createdAt;
-  const updated = await db().transaction(async (tx) => {
-    await tx.execute(sql`SET LOCAL session_replication_role = replica`);
-    return await tx
-      .update(chatEvents)
-      .set({ createdAt })
-      .where(
-        and(
-          eq(chatEvents.id, args.eventId),
-          eq(chatEvents.eventType, "input.automation"),
-        ),
-      )
-      .returning({ id: chatEvents.id });
-  });
-  if (updated.length !== 1) {
-    throw new Error("Expected one workflow queue event to become historical");
-  }
-}
-
-/**
- * Move one exact queued web message into historical state without waiting for
- * real time to pass. Product APIs cannot construct an already-stale queue item.
- */
-export async function setQueuedUserMessageCreatedAtFixture(args: {
-  readonly eventId: string;
-  readonly createdAt: Date;
-}): Promise<void> {
-  const updated = await db().transaction(async (tx) => {
-    await tx.execute(sql`SET LOCAL session_replication_role = replica`);
-    return await tx
-      .update(chatEvents)
-      .set({ createdAt: args.createdAt })
-      .where(
-        and(
-          eq(chatEvents.id, args.eventId),
-          eq(chatEvents.eventType, "input.prompt"),
-          isNull(chatEvents.runId),
-        ),
-      )
-      .returning({ id: chatEvents.id });
-  });
-  if (updated.length !== 1) {
-    throw new Error("Expected one queued user message to become historical");
-  }
-}
-
-/**
- * Complete one claimed run without dispatching its terminal callbacks. This
- * reproduces the missed-callback state that the stale queue sweep recovers.
- */
-export async function completeRunWithoutCallbacksFixture(args: {
-  readonly runId: string;
-}): Promise<void> {
-  const completedAt = nowDate();
-  await db().transaction(async (tx) => {
-    const updated = await tx
-      .update(agentRuns)
-      .set({ status: "completed", completedAt })
-      .where(and(eq(agentRuns.id, args.runId), eq(agentRuns.status, "running")))
-      .returning({ id: agentRuns.id });
-    if (updated.length !== 1) {
-      throw new Error("Expected one running run to complete without callbacks");
-    }
-    // Completion releases the thread's active run row with the transition.
-    await tx
-      .delete(activeAgentRuns)
-      .where(eq(activeAgentRuns.runId, args.runId));
-  });
-}
-
-/**
  * Mark one claimed run timed out without completing its terminal side effects.
  * This isolates the interval where cleanup has recorded uncertainty but the
  * Runner has not yet reported process exit and teardown through `/complete`.
@@ -325,80 +198,6 @@ export async function timeoutRunWithoutCallbacksFixture(args: {
   if (updated.length !== 1) {
     throw new Error("Expected one running run to time out without callbacks");
   }
-}
-
-/**
- * Product APIs cannot pause a completed SQL response or physically remove an
- * event at that boundary. Preserve the real selected rows, delete only the
- * owned event before returning them, and leave other threads' queries alone.
- */
-export async function withChatEventDeletedAfterReadFixture<T>(args: {
-  readonly threadId: string;
-  readonly eventId: string;
-  readonly whileResponseHeld: () => Promise<void>;
-  readonly work: () => Promise<T>;
-}): Promise<T> {
-  await closeDbPool();
-  const original = Pool.prototype.query;
-  let held = false;
-  Pool.prototype.query = new Proxy(original, {
-    apply(target, receiver: unknown, queryArgs: unknown[]): unknown {
-      const result: unknown = Reflect.apply(target, receiver, queryArgs);
-      const query = z.object({ text: z.string() }).safeParse(queryArgs[0]);
-      const values = z.array(z.unknown()).safeParse(queryArgs[1]);
-      if (
-        held ||
-        !(result instanceof Promise) ||
-        !query.success ||
-        !values.success ||
-        !isSharedThreadHotSnapshotRead(
-          normalizeBlockedQuery(query.data.text),
-        ) ||
-        !values.data.includes(args.threadId) ||
-        !values.data.includes(args.eventId)
-      ) {
-        return result;
-      }
-      held = true;
-      return (async () => {
-        const response: unknown = await result;
-        z.object({ rows: z.array(z.unknown()).length(1) }).parse(response);
-        await args.whileResponseHeld();
-        const deleted = await db()
-          .delete(chatEvents)
-          .where(
-            and(
-              eq(chatEvents.chatThreadId, args.threadId),
-              eq(chatEvents.id, args.eventId),
-            ),
-          )
-          .returning({ id: chatEvents.id });
-        if (deleted.length !== 1) {
-          throw new Error("Expected one chat event to be physically deleted");
-        }
-        return response;
-      })();
-    },
-  });
-  const run = async () => {
-    const result = await args.work();
-    if (!held) {
-      throw new Error("Expected the selected hot chat-event response barrier");
-    }
-    return result;
-  };
-  const [result] = await Promise.allSettled([run()]);
-  // Instrumentation binds the pool query method. Close the instrumented pool
-  // before restoring the prototype so the next request cannot reuse the hold.
-  const [closed] = await Promise.allSettled([closeDbPool()]);
-  Pool.prototype.query = original;
-  if (result.status === "rejected") {
-    throw result.reason;
-  }
-  if (closed.status === "rejected") {
-    throw closed.reason;
-  }
-  return result.value;
 }
 
 async function transitiveBlockedWaiterCount(
@@ -428,14 +227,6 @@ async function transitiveBlockedWaiterCount(
 
 function normalizeBlockedQuery(query: string): string {
   return query.toLowerCase().replaceAll(/\s+/g, " ").trim();
-}
-
-function isSharedThreadHotSnapshotRead(query: string): boolean {
-  return (
-    query.startsWith("select ") &&
-    query.includes(' from "chat_events" ') &&
-    query.endsWith('order by "chat_events"."seq_id" asc')
-  );
 }
 
 async function firstDirectBlockedStatementKind(
@@ -594,139 +385,6 @@ export async function holdChatThreadRowLockFixture(args: {
     },
     firstBlockedStatementKind: async () => {
       return await firstDirectBlockedStatementKind(holderPid);
-    },
-  };
-}
-
-/**
- * Deletes one test-owned thread and pauses before commit. Product APIs cannot
- * pause after DELETE has locked the parent but before the transaction commits,
- * so this fixture exposes that exact projection/deletion concurrency boundary.
- */
-export async function holdChatThreadDeleteTransactionFixture(args: {
-  readonly threadId: string;
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly release: () => void;
-  readonly done: Promise<void>;
-  readonly firstBlockedStatementKind: () => Promise<ChatThreadBlockedStatementKind | null>;
-}> {
-  const started = createDeferredPromise<number>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
-  const done = db().transaction(async (tx) => {
-    const deleted = await tx
-      .delete(chatThreads)
-      .where(eq(chatThreads.id, args.threadId))
-      .returning({ id: chatThreads.id });
-    if (deleted.length !== 1) {
-      throw new Error("Expected one chat thread to delete");
-    }
-    const pidRows = parseRawRows(
-      databasePidRowSchema,
-      await tx.execute(sql`
-        SELECT pg_backend_pid() AS "pid"
-      `),
-    );
-    const holderPid = pidRows[0]?.pid;
-    if (!holderPid) {
-      throw new Error("Expected the chat thread delete holder pid");
-    }
-    started.resolve(holderPid);
-    await released.promise;
-  });
-  const holderPid = await started.promise;
-
-  return {
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-    done,
-    firstBlockedStatementKind: async () => {
-      return await firstDirectBlockedStatementKind(holderPid);
-    },
-  };
-}
-
-async function pidIsDirectlyBlockedBy(
-  waiterPid: number,
-  holderPid: number,
-): Promise<boolean> {
-  const rows = parseRawRows(
-    blockedByPidRowSchema,
-    await db().execute(sql`
-      SELECT ${holderPid} = ANY(pg_blocking_pids(${waiterPid})) AS "blocked"
-    `),
-  );
-  return rows[0]?.blocked ?? false;
-}
-
-/**
- * Inserts one event through the production sequence writer, then holds its
- * transaction open. No product endpoint can pause between INSERT and COMMIT,
- * so this fixture is the narrow timing boundary for sequence serialization.
- */
-export async function holdChatEventInsertTransactionFixture(args: {
-  readonly threadId: string;
-  readonly content: string;
-  readonly signal: AbortSignal;
-}): Promise<{
-  readonly event: { readonly id: string; readonly seqId: number };
-  readonly release: () => void;
-  readonly done: Promise<void>;
-  readonly blockedWaiterCount: () => Promise<number>;
-  readonly blocks: (waiterPid: number) => Promise<boolean>;
-}> {
-  const started = createDeferredPromise<{
-    readonly pid: number;
-    readonly event: { readonly id: string; readonly seqId: number };
-  }>(args.signal);
-  const released = createDeferredPromise<void>(args.signal);
-  const done = db().transaction(async (tx) => {
-    const pidRows = parseRawRows(
-      databasePidRowSchema,
-      await tx.execute(sql`
-        SELECT pg_backend_pid() AS "pid"
-      `),
-    );
-    const holderPid = pidRows[0]?.pid;
-    if (!holderPid) {
-      throw new Error("Expected the chat-message insert holder pid");
-    }
-    const event =
-      parseRawRows(
-        chatEventCommandResultSchema,
-        await tx.execute(
-          chatEventInsertSql({
-            chatThreadId: args.threadId,
-            eventType: "output.message",
-            content: args.content,
-            runId: null,
-          }),
-        ),
-      )[0] ?? null;
-    if (!event) {
-      throw new Error("Expected the held chat-message insert");
-    }
-    started.resolve({ pid: holderPid, event });
-    await released.promise;
-  });
-  const { pid, event } = await started.promise;
-
-  return {
-    event,
-    release: () => {
-      if (!released.settled()) {
-        released.resolve(undefined);
-      }
-    },
-    done,
-    blockedWaiterCount: async () => {
-      return await transitiveBlockedWaiterCount(pid);
-    },
-    blocks: async (waiterPid) => {
-      return await pidIsDirectlyBlockedBy(waiterPid, pid);
     },
   };
 }

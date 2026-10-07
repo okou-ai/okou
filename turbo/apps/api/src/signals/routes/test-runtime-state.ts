@@ -1,17 +1,14 @@
-import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { command } from "ccstate";
 import {
   testRuntimeStateContract,
   type TestRuntimeStateActionBody,
 } from "@okouai/api-contracts/contracts/test-runtime-state";
-import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { runnerWssTickets } from "@okouai/db/schema/runner-wss-ticket";
 
 import { workflowAutomations } from "@okouai/db/schema/workflow";
-import { and, count, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
 import { bodyResultOf } from "../context/request";
 import { request$ } from "../context/hono";
@@ -535,153 +532,6 @@ type CompatibilityFixtureAction =
   | PreviousApiRunnerJobContextProfileAction
   | PreviousApiWorkflowAutomationEventConnectorAction;
 
-type ChatEventFixtureAction = Extract<
-  TestRuntimeStateActionBody,
-  {
-    action:
-      | "reserve-chat-event-sequence-gap"
-      | "read-chat-event-snapshot-head"
-      | "update-chat-event-snapshot-head";
-  }
->;
-
-function isChatEventFixtureAction(
-  body: TestRuntimeStateActionBody,
-): body is ChatEventFixtureAction {
-  return (
-    body.action === "reserve-chat-event-sequence-gap" ||
-    body.action === "read-chat-event-snapshot-head" ||
-    body.action === "update-chat-event-snapshot-head"
-  );
-}
-
-async function updateChatEventSnapshotHeadFixture(
-  db: Db,
-  body: Extract<
-    TestRuntimeStateActionBody,
-    { action: "update-chat-event-snapshot-head" }
-  >,
-  signal: AbortSignal,
-) {
-  const [pointer] = await db
-    .select({ id: chatEventSnapshots.id })
-    .from(chatEventSnapshots)
-    .where(
-      and(
-        eq(chatEventSnapshots.chatThreadId, body.thread_id),
-        eq(
-          chatEventSnapshots.archiveSchemaVersion,
-          CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-        ),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!pointer) {
-    throw new Error("update-chat-event-snapshot-head missing pointer");
-  }
-  const updated = await db
-    .update(chatEventSnapshots)
-    .set({
-      ...(body.last_seq_id === 0
-        ? { terminalEventId: null, terminalSeqId: 0 }
-        : {}),
-      ...(body.object_key === undefined ? {} : { objectKey: body.object_key }),
-      ...(body.last_seq_id === undefined
-        ? {}
-        : { lastSeqId: body.last_seq_id }),
-      ...(body.last_event_id === undefined
-        ? {}
-        : { lastEventId: body.last_event_id }),
-    })
-    .where(eq(chatEventSnapshots.id, pointer.id))
-    .returning({ id: chatEventSnapshots.id });
-  signal.throwIfAborted();
-  if (updated.length === 0) {
-    throw new Error("update-chat-event-snapshot-head missing pointer");
-  }
-  return { status: 200 as const, body: { ok: true as const } };
-}
-
-async function chatEventFixtureActionResponse(
-  db: Db,
-  body: ChatEventFixtureAction,
-  signal: AbortSignal,
-) {
-  if (body.action === "reserve-chat-event-sequence-gap") {
-    // Reserved positions can remain unused after intentional conflicts.
-    await db
-      .insert(chatEventSequences)
-      .values({ chatThreadId: body.thread_id, lastSeqId: body.count })
-      .onConflictDoUpdate({
-        target: chatEventSequences.chatThreadId,
-        set: {
-          lastSeqId: sql`${chatEventSequences.lastSeqId} + ${body.count}`,
-        },
-      });
-    signal.throwIfAborted();
-    return { status: 200 as const, body: { ok: true as const } };
-  }
-  if (body.action === "update-chat-event-snapshot-head") {
-    return await updateChatEventSnapshotHeadFixture(db, body, signal);
-  }
-  const [[head], [snapshotCount]] = await Promise.all([
-    db
-      .select({
-        archiveSchemaVersion: chatEventSnapshots.archiveSchemaVersion,
-        lastEventId: chatEventSnapshots.lastEventId,
-        lastSeqId: chatEventSnapshots.lastSeqId,
-        terminalEventId: chatEventSnapshots.terminalEventId,
-        terminalSeqId: chatEventSnapshots.terminalSeqId,
-        objectKey: chatEventSnapshots.objectKey,
-      })
-      .from(chatEventSnapshots)
-      .where(
-        and(
-          eq(chatEventSnapshots.chatThreadId, body.thread_id),
-          eq(
-            chatEventSnapshots.archiveSchemaVersion,
-            CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-          ),
-        ),
-      )
-      .limit(1),
-    db
-      .select({ value: count() })
-      .from(chatEventSnapshots)
-      .where(
-        and(
-          eq(chatEventSnapshots.chatThreadId, body.thread_id),
-          eq(
-            chatEventSnapshots.archiveSchemaVersion,
-            CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-          ),
-        ),
-      ),
-  ]);
-  signal.throwIfAborted();
-  if (!snapshotCount) {
-    throw new Error("read-chat-event-snapshot-head missing snapshot count");
-  }
-  return {
-    status: 200 as const,
-    body: {
-      ok: true as const,
-      chat_event_snapshot_head: head
-        ? {
-            archive_schema_version: head.archiveSchemaVersion,
-            last_event_id: head.lastEventId,
-            last_seq_id: head.lastSeqId,
-            terminal_event_id: head.terminalEventId,
-            terminal_seq_id: head.terminalSeqId,
-            object_key: head.objectKey,
-            snapshot_count: snapshotCount.value,
-          }
-        : null,
-    },
-  };
-}
-
 function isCompatibilityFixtureAction(
   body: TestRuntimeStateActionBody,
 ): body is CompatibilityFixtureAction {
@@ -947,9 +797,6 @@ const postRuntimeStateAction$ = command(
           ),
         },
       };
-    }
-    if (isChatEventFixtureAction(body)) {
-      return await chatEventFixtureActionResponse(db, body, signal);
     }
     if (isRunSummaryFixtureAction(body)) {
       return await set(runSummaryFixtureActionResponse$, body, signal);

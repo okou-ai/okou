@@ -1476,7 +1476,6 @@ describe("workflows", () => {
     await publicResults.complete(actor, sourceRun.runId, runnerGroup, {
       output: "Ordinary source result",
     });
-    await publicResults.drain(sourceRun.runId, automation.body.id);
     expect(context.mocks.resend.send).not.toHaveBeenCalled();
     const copied = await accept(
       detailClient().copy({
@@ -1529,7 +1528,6 @@ describe("workflows", () => {
     await publicResults.complete(actor, copiedRun.runId, runnerGroup, {
       output: "Ordinary copied result",
     });
-    await publicResults.drain(copiedRun.runId, copiedSchedule.id);
     expect(context.mocks.resend.send).not.toHaveBeenCalled();
   });
 

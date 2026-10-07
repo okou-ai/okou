@@ -1,4 +1,3 @@
-import { cleanupSandboxFixturesForTest } from "../../../test-fixtures/sandbox-cleanup-worker";
 import { http, HttpResponse } from "msw";
 import { createStore } from "ccstate";
 import {
@@ -14,7 +13,6 @@ import {
   CHAT_RUN_USAGE_LIMIT_MESSAGE,
 } from "@okouai/api-contracts/contracts/errors";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
-import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import {
   ILLUSTRATION_TEMPLATE_ITEMS,
   PRESENTATION_TEMPLATE_PICKER_ITEMS,
@@ -28,10 +26,6 @@ import { server } from "../../../mocks/server";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { setRunModelRuntimeRouteFixture } from "../../../test-fixtures/agent-runs";
-import { insertQueuedSlackMissingContextFixture } from "../../../test-fixtures/chat-events";
-
-import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -48,20 +42,6 @@ import { chatEventDisplayText } from "./helpers/chat-event";
 import { seedAgentRunCallback$ } from "./helpers/agent-run-callback";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedBuiltInModelKey } from "./helpers/runtime-state";
-
-/**
- * CHAT-02 / HOOK-01: signed chat run callbacks through real dispatch.
- *
- * Terminal callbacks in this file originate from the real internal dispatcher
- * (sandbox complete/cancel webhooks and the sandbox heartbeat route), so normal
- * app-internal dispatch does not depend on an HTTP self-call.
- */
-
-// The stale release also waits for the active row's last heartbeat, which the
-// runner claim stamps from the database clock. Move app time past the grace
-// plus a margin for the real time the test spends before and after the claim.
-const ACTIVE_ROW_RELEASE_AFTER_MS =
-  CANCELLATION_RECOVERY_STALE_AFTER_MS + 60_000;
 const context = testContext();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
@@ -384,22 +364,6 @@ async function expectCancellationRecoveryPending(
       return detail.cancellationRecoveryPending;
     })(),
   ).resolves.toBe(expected);
-}
-
-async function reconcileCancellationRecoveryFixtures(
-  chatThreadId: string,
-  ...additionalChatThreadIds: string[]
-): Promise<void> {
-  await cleanupSandboxFixturesForTest(
-    {
-      scope: {
-        chatThreadIds: [chatThreadId, ...additionalChatThreadIds],
-        runIds: [],
-        exportJobIds: [],
-      },
-    },
-    context.signal,
-  );
 }
 
 async function waitForRunContext(actor: ApiTestUser, runId: string) {
@@ -2379,131 +2343,6 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
     await waitForRunStatus(actor, replacementRunId, "cancelled");
     await flushWaitUntilForTest();
   }, 90_000);
-
-  it("releases a lost recovery completion through the recovery-aware stale sweep", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const startedAt = now();
-    mockNow(startedAt);
-    onTestFinished(() => {
-      clearMockNow();
-    });
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    const run = await startChatRun(actor, {
-      agentId,
-      prompt: "cancel without a recovery completion",
-    });
-    await claimChatRun(runnerGroup, run.runId);
-    const queuedEventId = await queueChatEvent(actor, {
-      agentId,
-      threadId: run.threadId,
-      prompt: "continue after the recovery barrier expires",
-    });
-
-    await api.requestCancelRun(actor, run.runId, [200]);
-    await flushWaitUntilForTest();
-    await expectCancellationRecoveryPending(actor, run.threadId, true);
-    const whileFresh = await chat.listThreadEvents(actor, run.threadId);
-    expect(
-      lifecycleMarkers(whileFresh.events, run.runId, "cancelled"),
-    ).toHaveLength(1);
-    expect(
-      userMessages(whileFresh.events).filter((event) => {
-        return (
-          event.revokesEventId === queuedEventId && event.runId !== undefined
-        );
-      }),
-    ).toHaveLength(0);
-
-    mockNow(startedAt + CANCELLATION_RECOVERY_STALE_AFTER_MS - 1);
-    await reconcileCancellationRecoveryFixtures(run.threadId);
-    const beforeExpiry = await chat.listThreadEvents(actor, run.threadId);
-    expect(
-      userMessages(beforeExpiry.events).filter((event) => {
-        return (
-          event.revokesEventId === queuedEventId && event.runId !== undefined
-        );
-      }),
-    ).toHaveLength(0);
-    await expectCancellationRecoveryPending(actor, run.threadId, true);
-
-    context.mocks.ably.publish.mockClear();
-    mockNow(startedAt + ACTIVE_ROW_RELEASE_AFTER_MS);
-    await reconcileCancellationRecoveryFixtures(run.threadId);
-    const replacementRunId = await waitForQueuedEventReplacement(
-      actor,
-      run.threadId,
-      queuedEventId,
-    );
-    await expectCancellationRecoveryPending(actor, run.threadId, false);
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      `chatThreadDetailChanged:${run.threadId}`,
-      null,
-    );
-
-    await api.requestCancelRun(actor, replacementRunId, [200]);
-    await waitForRunStatus(actor, replacementRunId, "cancelled");
-    await flushWaitUntilForTest();
-  }, 90_000);
-
-  it("continues the recovery stale sweep after one thread drain fails", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const startedAt = now();
-    mockNow(startedAt);
-    onTestFinished(() => {
-      clearMockNow();
-    });
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    const poisonedRun = await startChatRun(actor, {
-      agentId,
-      prompt: "cancel before a poisoned recovery drain",
-    });
-    const healthyRun = await startChatRun(actor, {
-      agentId,
-      prompt: "cancel before a healthy recovery drain",
-    });
-    await claimChatRun(runnerGroup, poisonedRun.runId);
-    await claimChatRun(runnerGroup, healthyRun.runId);
-    const poisonedEventId = await insertQueuedSlackMissingContextFixture({
-      threadId: poisonedRun.threadId,
-      content: "fail this expired recovery drain",
-    });
-    const healthyEventId = await queueChatEvent(actor, {
-      agentId,
-      threadId: healthyRun.threadId,
-      prompt: "continue despite the other drain failure",
-    });
-
-    await api.requestCancelRun(actor, poisonedRun.runId, [200]);
-    await api.requestCancelRun(actor, healthyRun.runId, [200]);
-    await flushWaitUntilForTest();
-    mockNow(startedAt + ACTIVE_ROW_RELEASE_AFTER_MS);
-    await reconcileCancellationRecoveryFixtures(
-      poisonedRun.threadId,
-      healthyRun.threadId,
-    );
-
-    const replacementRunId = await waitForQueuedEventReplacement(
-      actor,
-      healthyRun.threadId,
-      healthyEventId,
-    );
-    const poisonedThread = await chat.listThreadEvents(
-      actor,
-      poisonedRun.threadId,
-    );
-    expect(
-      userMessages(poisonedThread.events).filter((event) => {
-        return (
-          event.revokesEventId === poisonedEventId && event.runId !== undefined
-        );
-      }),
-    ).toHaveLength(0);
-
-    await api.requestCancelRun(actor, replacementRunId, [200]);
-    await waitForRunStatus(actor, replacementRunId, "cancelled");
-    await flushWaitUntilForTest();
-  }, 90_000);
 });
 
 describe("CHAT-02: chat output extraction and terminal callbacks", () => {
@@ -3342,160 +3181,6 @@ describe("CHAT-02: chat output extraction and terminal callbacks", () => {
     await expect(
       readThreadTitleFromEvents(actor, first.threadId),
     ).resolves.toBe(beforeTitle);
-  }, 90_000);
-});
-
-describe("CHAT-02: drain-time admission failure", () => {
-  it("terminalizes a queued Web message when credits are lost before drain", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped Web chat actor");
-    }
-    const startedAt = now();
-    mockNow(startedAt);
-    onTestFinished(() => {
-      clearMockNow();
-    });
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    const anchor = await startChatRun(actor, {
-      agentId,
-      prompt: "finish after queued Web credit loss",
-    });
-    const anchorHeaders = await claimChatRun(runnerGroup, anchor.runId);
-    const queuedEventId = randomUUID();
-    const queuedPrompt = "reject this queued Web message after credit loss";
-    const queued = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: anchor.threadId,
-        prompt: queuedPrompt,
-        clientEventId: queuedEventId,
-      },
-      [201],
-    );
-    if ("error" in queued.body) {
-      throw new Error(queued.body.error.message);
-    }
-    expect(queued.body.runId).toBeNull();
-
-    await seedOrgMetadata({
-      orgId: actor.orgId,
-      tier: "pro",
-      credits: 0,
-    });
-    await upsertOrgPlanEntitlementFixture({
-      orgId: actor.orgId,
-      status: "suspended",
-      canBuyCredits: true,
-    });
-    context.mocks.ably.publish.mockClear();
-    context.mocks.ably.publish.mockRejectedValue(
-      new Error("Injected queued Web admission realtime failure"),
-    );
-
-    await completeChatRunOk(anchor.runId, anchorHeaders);
-    await flushWaitUntilForTest();
-    context.mocks.ably.publish.mockResolvedValue(undefined);
-    const terminal = await waitForThreadMessages(
-      actor,
-      anchor.threadId,
-      (events) => {
-        return (
-          userMessages(events).some((event) => {
-            return (
-              event.eventType === "input.rejected" &&
-              event.revokesEventId === queuedEventId &&
-              event.error === "insufficient_credits"
-            );
-          }) &&
-          assistantMessages(events).some((event) => {
-            return (
-              event.eventType === "output.error" &&
-              event.error === "insufficient_credits"
-            );
-          })
-        );
-      },
-    );
-    const original = userMessages(terminal.events).find((event) => {
-      return event.id === queuedEventId;
-    });
-    expect(original).toMatchObject({
-      eventType: "input.prompt",
-    });
-    expect(original ? chatEventDisplayText(original) : null).toBe(queuedPrompt);
-    const replacements = userMessages(terminal.events).filter((event) => {
-      return event.revokesEventId === queuedEventId;
-    });
-    expect(replacements).toStrictEqual([
-      expect.objectContaining({
-        eventType: "input.rejected",
-        error: "insufficient_credits",
-      }),
-    ]);
-    const errors = assistantMessages(terminal.events).filter((event) => {
-      return (
-        event.eventType === "output.error" &&
-        event.error === "insufficient_credits"
-      );
-    });
-    expect(errors).toHaveLength(1);
-    expect(errors[0]?.content).toContain(
-      "Buy more credits or adjust auto-recharge: https://app.okou.ai/?settings=usage",
-    );
-    expect(
-      (await api.listAgentRuns(actor, { limit: 20 })).runs.filter((run) => {
-        return run.prompt === queuedPrompt;
-      }),
-    ).toHaveLength(0);
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      `chatThreadMessageCreated:${anchor.threadId}`,
-      null,
-    );
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "threadListChanged",
-      null,
-    );
-    mockNow(startedAt + CANCELLATION_RECOVERY_STALE_AFTER_MS + 1);
-    await reconcileCancellationRecoveryFixtures(anchor.threadId);
-    const retried = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: anchor.threadId,
-        prompt: queuedPrompt,
-        clientEventId: queuedEventId,
-      },
-      [201],
-    );
-    if ("error" in retried.body) {
-      throw new Error(retried.body.error.message);
-    }
-    expect(retried.body.runId).toBeNull();
-    await flushWaitUntilForTest();
-
-    const afterRecovery = await chat.listThreadEvents(actor, anchor.threadId);
-    expect(
-      userMessages(afterRecovery.events).filter((event) => {
-        return event.revokesEventId === queuedEventId;
-      }),
-    ).toHaveLength(1);
-    expect(
-      assistantMessages(afterRecovery.events).filter((event) => {
-        return (
-          event.eventType === "output.error" &&
-          event.error === "insufficient_credits"
-        );
-      }),
-    ).toHaveLength(1);
-    expect(
-      (await api.listAgentRuns(actor, { limit: 20 })).runs.filter((run) => {
-        return run.prompt === queuedPrompt;
-      }),
-    ).toHaveLength(0);
   }, 90_000);
 });
 

@@ -1,17 +1,14 @@
 import { randomUUID } from "node:crypto";
 
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { clearMockNow, mockNow, now } from "../../../lib/time";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
+import { now } from "../../../lib/time";
 import {
   createBddApi,
   expectApiError,
   type ApiTestUser,
 } from "./helpers/api-bdd";
-import { createEmailApi } from "./helpers/api-bdd-email";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 
 /**
@@ -33,18 +30,6 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
  */
 
 const context = testContext();
-
-function resendSendCallsTo(recipient: string): number {
-  return context.mocks.resend.send.mock.calls.filter((call) => {
-    const [payload] = call;
-    return (
-      typeof payload === "object" &&
-      payload !== null &&
-      "to" in payload &&
-      payload.to === recipient
-    );
-  }).length;
-}
 
 async function createAgentForNoCreditAdmission(actor: ApiTestUser): Promise<{
   readonly agentId: string;
@@ -368,113 +353,5 @@ describe("SCHED-02: cron routes", () => {
         return response.status === 401;
       }),
     ).toBeTruthy();
-  });
-});
-
-describe("SCHED-02 and OPS-01: email outbox drain cron", () => {
-  it("drains a data-export email once at its UTC retry boundary", async () => {
-    const email = createEmailApi(context);
-    const actor = createBddApi(context).user();
-    const baseTime = now();
-    mockNow(baseTime);
-    onTestFinished(() => {
-      clearMockNow();
-    });
-
-    const { to, subject } = await email.enqueueDataExportEmail(actor);
-    const item = await email.findEmailOutboxItem({ to, subject });
-    expect(resendSendCallsTo(to)).toBe(0);
-
-    context.mocks.resend.send.mockResolvedValue({
-      data: null,
-      error: { message: "data export drain down" },
-    });
-    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-    const failedDrain = await email.drainEmailOutboxItems([item.id]);
-    expect(failedDrain).toBe(1);
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-    expect(resendSendCallsTo(to)).toBe(1);
-
-    context.mocks.resend.send.mockReset();
-    context.mocks.resend.send.mockResolvedValue({
-      data: { id: "resend-bdd-1" },
-    });
-
-    const beforeRetry = await email.drainEmailOutboxItems([item.id]);
-    expect(beforeRetry).toBe(0);
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(0);
-    expect(resendSendCallsTo(to)).toBe(0);
-
-    mockNow(baseTime + 1000);
-    const drain = await email.drainEmailOutboxItems([item.id]);
-    expect(drain).toBe(1);
-    expect(context.mocks.resend.send).toHaveBeenCalledWith(
-      expect.objectContaining({
-        from: "Okou <okou@mail.example.com>",
-        to,
-        subject,
-        html: expect.stringContaining("Your data export is ready"),
-      }),
-      // The retry replays the request the first attempt committed.
-      { idempotencyKey: `okou-email-outbox/v1/${item.id}` },
-    );
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-    expect(resendSendCallsTo(to)).toBe(1);
-
-    const second = await email.drainEmailOutboxItems([item.id]);
-    expect(second).toBe(0);
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-    expect(resendSendCallsTo(to)).toBe(1);
-  });
-
-  it("skips an outbox row locked by the inline drain", async () => {
-    const email = createEmailApi(context);
-    const actor = createBddApi(context).user();
-    const { to, subject } = await email.enqueueDataExportEmail(actor);
-    const item = await email.findEmailOutboxItem({ to, subject });
-    const sendStarted = createDeferredPromise<void>(context.signal);
-    const releaseSend = createDeferredPromise<void>(context.signal);
-    onTestFinished(async () => {
-      if (!releaseSend.settled()) {
-        releaseSend.resolve(undefined);
-      }
-      await flushWaitUntilForTest();
-    });
-
-    context.mocks.resend.send.mockReset();
-    context.mocks.resend.send.mockImplementation(async (payload) => {
-      if (
-        typeof payload === "object" &&
-        payload !== null &&
-        "to" in payload &&
-        payload.to === to
-      ) {
-        sendStarted.resolve(undefined);
-        await releaseSend.promise;
-      }
-      return { data: { id: "resend-bdd-locked" }, error: null };
-    });
-    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-
-    const firstDrain = email.drainEmailOutboxItems([item.id]);
-    await sendStarted.promise;
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-    expect(resendSendCallsTo(to)).toBe(1);
-
-    const concurrentDrain = await email.drainEmailOutboxItems([item.id]);
-    expect(concurrentDrain).toBe(0);
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-    expect(resendSendCallsTo(to)).toBe(1);
-
-    releaseSend.resolve(undefined);
-    await expect(firstDrain).resolves.toBe(1);
-    await flushWaitUntilForTest();
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-    expect(resendSendCallsTo(to)).toBe(1);
-
-    const afterRelease = await email.drainEmailOutboxItems([item.id]);
-    expect(afterRelease).toBe(0);
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-    expect(resendSendCallsTo(to)).toBe(1);
   });
 });

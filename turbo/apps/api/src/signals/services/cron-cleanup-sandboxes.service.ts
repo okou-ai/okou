@@ -5,7 +5,6 @@ import { agents } from "@okouai/db/schema/agent";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { exportJobs } from "@okouai/db/schema/export-job";
-import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { command } from "ccstate";
 import {
@@ -41,10 +40,7 @@ import {
 import { drainStaleCanonicalDiscordIngress$ } from "./canonical-discord-ingress-processor.service";
 import { drainStaleCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-processor.service";
 import { drainStaleCanonicalSlackIngress$ } from "./canonical-slack-ingress-processor.service";
-import {
-  pickAllQueuedOrgs$,
-  pickEnqueuedChatThread$,
-} from "./chat-thread-queue-drain.service";
+import { pickAllQueuedOrgs$ } from "./chat-thread-queue-drain.service";
 import { retryPendingFeishuConnectWelcomes$ } from "./feishu-welcome.service";
 import { cleanupExpiredPiLaunchArtifacts$ } from "./pi-launch-artifacts-cleanup.service";
 import { releaseStaleTerminalActiveAgentRuns$ } from "./run-activity.service";
@@ -84,15 +80,6 @@ interface CleanupSandboxesResult {
   readonly exportJobsStuck: number;
   readonly threadlessRuns: ThreadlessRunCleanupResult;
 }
-
-type CleanupSandboxesScope =
-  | { readonly kind: "global" }
-  | {
-      readonly kind: "fixtures";
-      readonly chatThreadIds: readonly string[];
-      readonly runIds: readonly string[];
-      readonly exportJobIds: readonly string[];
-    };
 
 interface StaleRun {
   readonly launchSnapshot: AgentRunLaunchSnapshot | null;
@@ -620,47 +607,9 @@ const cleanupGlobalMaintenance$ = command(
   },
 );
 
-const cleanupFixtureMaintenance$ = command(
-  async (
-    { set },
-    scope: Extract<CleanupSandboxesScope, { kind: "fixtures" }>,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    await set(
-      releaseStaleTerminalActiveAgentRuns$,
-      { runIds: scope.runIds, chatThreadIds: scope.chatThreadIds },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (scope.chatThreadIds.length === 0) {
-      return;
-    }
-    // Mirror the global queue pass without visiting another test's threads.
-    // Each explicitly scoped thread gets one pick after stale slots release;
-    // the normal conditional claim still owns lease and active-run admission.
-    const queuedThreads = await set(writeDb$)
-      .select({
-        orgId: queuedChatThreads.orgId,
-        chatThreadId: queuedChatThreads.chatThreadId,
-      })
-      .from(queuedChatThreads)
-      .where(inArray(queuedChatThreads.chatThreadId, [...scope.chatThreadIds]));
-    signal.throwIfAborted();
-    for (const thread of queuedThreads) {
-      await set(pickEnqueuedChatThread$, thread, signal);
-      signal.throwIfAborted();
-    }
-  },
-);
-
 export const cleanupSandboxes$ = command(
-  async (
-    { set },
-    scope: CleanupSandboxesScope,
-    signal: AbortSignal,
-  ): Promise<CleanupSandboxesResult> => {
+  async ({ set }, signal: AbortSignal): Promise<CleanupSandboxesResult> => {
     const db = set(writeDb$);
-    const runIds = scope.kind === "global" ? null : scope.runIds;
     const currentTime = now();
     const cutoffs = {
       running: new Date(currentTime - HEARTBEAT_TIMEOUT_MS),
@@ -691,12 +640,7 @@ export const cleanupSandboxes$ = command(
       .innerJoin(agentRuns, eq(agentRuns.id, activeAgentRuns.runId))
       .leftJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
       .leftJoin(agents, eq(agentSessions.agentId, agents.id))
-      .where(
-        and(
-          inArray(agentRuns.status, ["pending", "running"]),
-          runIds === null ? undefined : inArray(agentRuns.id, runIds),
-        ),
-      );
+      .where(and(inArray(agentRuns.status, ["pending", "running"])));
     signal.throwIfAborted();
 
     const expiredRuns = staleRuns.filter((run) => {
@@ -706,18 +650,14 @@ export const cleanupSandboxes$ = command(
     // Run before expired-run timeouts so an active threadless run always
     // takes the hard-cancel path and can never become terminal and be deleted
     // within the same maintenance pass.
-    const threadlessRuns = await set(cleanupThreadlessRuns$, runIds, signal);
+    const threadlessRuns = await set(cleanupThreadlessRuns$, null, signal);
     signal.throwIfAborted();
 
-    await cleanupExpiredRunnerJobs(db, runIds, signal);
+    await cleanupExpiredRunnerJobs(db, null, signal);
     signal.throwIfAborted();
-    await cleanupConnectorDiagnosticRegistrations(db, runIds, signal);
+    await cleanupConnectorDiagnosticRegistrations(db, null, signal);
     signal.throwIfAborted();
-    if (scope.kind === "global") {
-      await set(cleanupGlobalMaintenance$, signal);
-    } else {
-      await set(cleanupFixtureMaintenance$, scope, signal);
-    }
+    await set(cleanupGlobalMaintenance$, signal);
     signal.throwIfAborted();
 
     L.debug("Run timeout candidates", { count: expiredRuns.length });
@@ -734,7 +674,7 @@ export const cleanupSandboxes$ = command(
     const { exportJobsCleaned, exportJobsStuck } = await set(
       cleanupExportJobs$,
       db,
-      scope.kind === "global" ? null : scope.exportJobIds,
+      null,
       signal,
     );
 

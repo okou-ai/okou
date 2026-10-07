@@ -1,4 +1,3 @@
-import { cleanupSandboxFixturesForTest } from "../../../test-fixtures/sandbox-cleanup-worker";
 import { createHash, randomUUID } from "node:crypto";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
@@ -10,11 +9,6 @@ import { createApp } from "../../../app-factory";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { mockNow, now, withNowScopeForTest } from "../../../lib/time";
-import {
-  completeRunWithoutCallbacksFixture,
-  setQueuedUserMessageCreatedAtFixture,
-  setWorkflowQueueEventCreatedAtFixture,
-} from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { clearAllDetached } from "../../utils";
 import { chatEventsRoutes } from "../chat-events";
@@ -418,145 +412,7 @@ async function runAutomationNow(automationId: string) {
   return response;
 }
 
-async function releaseStaleRunAndPickWorkflowQueue(args: {
-  readonly actor: ApiTestUser;
-  readonly customerId: string;
-  readonly threadId: string;
-  readonly runIds: readonly string[];
-}): Promise<void> {
-  // The scoped fixture releases only this test's terminal slot. The Stripe
-  // webhook then exercises the production organization pick used by cron.
-  await cleanupSandboxFixturesForTest(
-    {
-      scope: {
-        chatThreadIds: [args.threadId],
-        runIds: [...args.runIds],
-        exportJobIds: [],
-      },
-    },
-    context.signal,
-  );
-  await refreshConcurrencyEntitlement(
-    args.actor,
-    args.customerId,
-    context.signal,
-  );
-}
-
 describe("workflow queue", () => {
-  describe("a stale automation event with a missed terminal callback", () => {
-    async function prepareStaleEvent() {
-      mockNow(Date.UTC(2020, 0, 1));
-      const scenario = await setup();
-      const automation = await createWebhookAutomation(scenario);
-      const firstRunId = await expectAcceptedRunId(
-        await postWorkflowWebhook(automation, "first"),
-        automation.threadId,
-      );
-      expectAccepted(
-        await postWorkflowWebhook(automation, "stale pending event"),
-      );
-      const event = (await pendingAutomationEvents(automation.threadId))[0];
-      if (!event) {
-        throw new Error("Expected a pending automation event");
-      }
-      await setWorkflowQueueEventCreatedAtFixture({
-        eventId: event.id,
-        createdAt: new Date("2019-12-31T23:54:00.000Z"),
-      });
-
-      await runsApi.heartbeatRunner(scenario.runnerGroup);
-      await runsApi.claimRunnerJob(firstRunId);
-      await completeRunWithoutCallbacksFixture({ runId: firstRunId });
-      return { scenario, automation, firstRunId };
-    }
-
-    let prepared: Awaited<ReturnType<typeof prepareStaleEvent>>;
-    beforeEach(async () => {
-      prepared = await prepareStaleEvent();
-    });
-
-    it("picks a stale automation event after releasing its missed terminal slot", async () => {
-      const { scenario, automation, firstRunId } = prepared;
-
-      await releaseStaleRunAndPickWorkflowQueue({
-        actor: scenario.actor,
-        customerId: scenario.customerId,
-        threadId: automation.threadId,
-        runIds: [firstRunId],
-      });
-
-      await expect(
-        pendingAutomationEvents(automation.threadId),
-      ).resolves.toHaveLength(0);
-      await expect(workflowRunIds(automation.threadId)).resolves.toHaveLength(
-        2,
-      );
-    });
-  });
-
-  it("picks a stale user message after releasing its missed terminal slot", async () => {
-    mockNow(Date.UTC(2020, 0, 1));
-    const scenario = await setup();
-    const automation = await createWebhookAutomation(scenario);
-    const firstRunId = await expectAcceptedRunId(
-      await postWorkflowWebhook(automation, "first"),
-      automation.threadId,
-    );
-    const messageId = randomUUID();
-    const queued = await accept(
-      chatEventsClient().send({
-        headers: authHeaders(),
-        body: {
-          agentId: scenario.agentId,
-          threadId: automation.threadId,
-          prompt: "stale user message",
-          hasTextContent: true,
-          userMessage: {
-            version: 1,
-            parts: [{ type: "text", text: "stale user message" }],
-          },
-          clientEventId: messageId,
-        },
-      }),
-      [201],
-    );
-    await flushWaitUntilForTest();
-    expect(queued.body.runId).toBeNull();
-    await setQueuedUserMessageCreatedAtFixture({
-      eventId: messageId,
-      createdAt: new Date("2019-12-31T23:54:00.000Z"),
-    });
-
-    await runsApi.heartbeatRunner(scenario.runnerGroup);
-    await runsApi.claimRunnerJob(firstRunId);
-    await completeRunWithoutCallbacksFixture({ runId: firstRunId });
-
-    await releaseStaleRunAndPickWorkflowQueue({
-      actor: scenario.actor,
-      customerId: scenario.customerId,
-      threadId: automation.threadId,
-      runIds: [firstRunId],
-    });
-
-    const messages = await wf.readThreadEvents(automation.threadId);
-    expect(messages).toContainEqual(
-      expect.objectContaining({
-        content: null,
-        revokesEventId: messageId,
-        runId: expect.any(String),
-      }),
-    );
-    expect(
-      messages.some((message) => {
-        return (
-          message.revokesEventId === messageId &&
-          chatEventDisplayText(message) === "stale user message"
-        );
-      }),
-    ).toBeTruthy();
-  });
-
   it("queues concurrent webhook events and drains each exactly once", async () => {
     const scenario = await setup();
     const automation = await createWebhookAutomation(scenario);

@@ -65,11 +65,6 @@ interface SyncSkillsResult {
   readonly total: number;
 }
 
-interface SyncSkillsScope {
-  readonly skillNamePrefix: string | null;
-  readonly requiredSkillNames: readonly string[];
-}
-
 interface ExtractedFile {
   readonly path: string;
   readonly content: Buffer;
@@ -864,17 +859,13 @@ function validateSeedSkills(
   }
 }
 
-export const syncSkillsForScope$ = command(
-  async (
-    { get, set },
-    scope: SyncSkillsScope,
-    signal: AbortSignal,
-  ): Promise<SyncSkillsResult> => {
+export const syncSkills$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<SyncSkillsResult> => {
     const db = set(writeDb$);
     const headSha = await fetchHeadCommitSha(signal);
     signal.throwIfAborted();
 
-    const urlPrefix = `${OFFICIAL_SKILL_URL_ROOT}${scope.skillNamePrefix ?? ""}`;
+    const urlPrefix = OFFICIAL_SKILL_URL_ROOT;
     // commitSha is a batch completion marker. A failed or interrupted attempt
     // leaves the set incomplete so the next cron run downloads the same commit
     // and retries its missing work.
@@ -900,14 +891,7 @@ export const syncSkillsForScope$ = command(
       };
     }
 
-    const extractedSkills = (await downloadAndExtractSkills(signal)).filter(
-      (skill) => {
-        return (
-          scope.skillNamePrefix === null ||
-          skill.skillName.startsWith(scope.skillNamePrefix)
-        );
-      },
-    );
+    const extractedSkills = await downloadAndExtractSkills(signal);
     signal.throwIfAborted();
 
     let synced = 0;
@@ -952,7 +936,7 @@ export const syncSkillsForScope$ = command(
       removeOrphanedSkills(db, extractedSkills, urlPrefix, signal),
     );
     signal.throwIfAborted();
-    validateSeedSkills(extractedSkills, scope.requiredSkillNames);
+    validateSeedSkills(extractedSkills, SEED_SKILLS);
 
     if (failed === 0) {
       // Advance the marker only after every extracted skill completed. Updating
@@ -981,15 +965,5 @@ export const syncSkillsForScope$ = command(
       removed,
       total: extractedSkills.length,
     };
-  },
-);
-
-export const syncSkills$ = command(
-  async ({ set }, signal: AbortSignal): Promise<SyncSkillsResult> => {
-    return await set(
-      syncSkillsForScope$,
-      { skillNamePrefix: null, requiredSkillNames: SEED_SKILLS },
-      signal,
-    );
   },
 );

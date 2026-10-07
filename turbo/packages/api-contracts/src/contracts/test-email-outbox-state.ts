@@ -29,48 +29,13 @@ export const testEmailOutboxStateItemSchema = z.object({
   has_provider_request: z.boolean(),
 });
 
-export const testOfficialAutomationResultEmailClaimSchema = z.object({
-  source_run_id: z.string().uuid(),
-  source_workflow_automation_id: z.string().uuid(),
-  email_outbox_id: z.string().uuid(),
-});
-
 export const testEmailOutboxStateActionBodySchema = z.discriminatedUnion(
   "action",
   [
     z.object({
-      action: z.literal("seed-item"),
-      template: z
-        .enum(["data-export-ready", "morning-brief-result"])
-        .optional(),
-      to_address: z.string().min(1),
-      subject: z.string().min(1),
-      status: z.enum(["pending", "sending", "failed"]),
-      provider_idempotency_key: z.string().max(256).optional(),
-      provider_request: z
-        .object({
-          from: z.string(),
-          to: z.string(),
-          subject: z.string(),
-          html: z.string(),
-          text: z.string().optional(),
-        })
-        .optional(),
-      created_at: z.iso.datetime(),
-    }),
-    z.object({
       action: z.literal("find-item"),
       to_address: z.string().min(1),
       subject: z.string().min(1),
-    }),
-    z.object({
-      action: z.literal("find-source"),
-      source_run_id: z.string().uuid(),
-      source_workflow_automation_id: z.string().uuid(),
-    }),
-    z.object({
-      action: z.literal("read-items"),
-      item_ids: emailOutboxItemIdListSchema,
     }),
     z.object({
       action: z.literal("delete-items"),
@@ -83,20 +48,7 @@ export const testEmailOutboxStateActionResponseSchema = z.discriminatedUnion(
   "action",
   [
     z.object({
-      action: z.literal("seed-item"),
-      item: testEmailOutboxStateItemSchema,
-    }),
-    z.object({
       action: z.literal("find-item"),
-      items: z.array(testEmailOutboxStateItemSchema),
-    }),
-    z.object({
-      action: z.literal("find-source"),
-      items: z.array(testEmailOutboxStateItemSchema),
-      claim: testOfficialAutomationResultEmailClaimSchema.nullable(),
-    }),
-    z.object({
-      action: z.literal("read-items"),
       items: z.array(testEmailOutboxStateItemSchema),
     }),
     z.object({
@@ -121,9 +73,6 @@ export const testEmailOutboxStateContract = c.router({
 
 export type TestEmailOutboxStateItem = z.infer<
   typeof testEmailOutboxStateItemSchema
->;
-export type TestOfficialAutomationResultEmailClaim = z.infer<
-  typeof testOfficialAutomationResultEmailClaimSchema
 >;
 export type TestEmailOutboxStateActionBody = z.infer<
   typeof testEmailOutboxStateActionBodySchema

@@ -23,7 +23,7 @@ import { setupRawAppRequestWithRoutes } from "../../../__tests__/test-app";
 import { chatEventsRoutes } from "../chat-events";
 
 import { createRouteMocks } from "./helpers/route-test";
-import { now, withMockNowForTest } from "../../../lib/time";
+import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -40,10 +40,7 @@ import {
   mockCodexDeviceAuthProvider,
   createAuthDeviceApiActions,
 } from "./helpers/api-bdd-auth-device";
-import {
-  cleanupTimedOutRun,
-  type TestTerminalRunStatus,
-} from "./helpers/api-bdd-run-timeout";
+import type { TestTerminalRunStatus } from "./helpers/api-bdd-run-timeout";
 type SubscriptionType = "claude-code-oauth-token" | "codex-oauth-token";
 const context = testContext();
 const runs = createRunsApi(context);
@@ -261,19 +258,10 @@ async function finish(
   actor: ApiTestUser,
   runId: string,
   claim: Claim,
-  status: TestTerminalRunStatus,
+  status: Exclude<TestTerminalRunStatus, "timeout">,
 ) {
   if (status === "cancelled") {
     await runs.requestCancelRun(actor, runId, [200]);
-  } else if (status === "timeout") {
-    // Infrastructure exception: runtime timeout has no caller endpoint. The
-    // scheduler observes elapsed time; its scoped fixture keeps other runs live.
-    await withMockNowForTest(now() + 25 * 60 * 60 * 1000, async () => {
-      await cleanupTimedOutRun(context, {
-        runId,
-        chatThreadId: randomUUID(),
-      });
-    });
   } else {
     await createWebhookCallbackApi(context).requestAgentComplete(
       {
@@ -934,7 +922,6 @@ describe("personal subscription run identity", () => {
     "completed",
     "failed",
     "cancelled",
-    "timeout",
   ] as const satisfies readonly TestTerminalRunStatus[])(
     "cleans up only after the final %s transition",
     async (status) => {

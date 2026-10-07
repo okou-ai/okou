@@ -81,14 +81,6 @@ interface SearchProjectionWriteStats {
   readonly deletedDocs: number;
 }
 
-interface ChatEventSearchProjectionOptions {
-  readonly chatThreadIds?: readonly string[];
-}
-
-interface ChatEventSearchTestProjectionOptions {
-  readonly chatThreadIds: readonly string[];
-}
-
 type SearchableRole = "user" | "assistant";
 interface CanonicalSearchMessageInsert {
   readonly chatThreadId: string;
@@ -454,38 +446,18 @@ async function projectThread(
   });
 }
 
-function projectionThreadScope(chatThreadIds: readonly string[] | undefined) {
-  return chatThreadIds === undefined
-    ? undefined
-    : inArray(chatThreads.id, [...chatThreadIds]);
-}
-
-function projectionWatermarkScope(
-  chatThreadIds: readonly string[] | undefined,
-) {
-  return chatThreadIds === undefined
-    ? undefined
-    : inArray(chatEventSearchMessageWatermarks.chatThreadId, [
-        ...chatThreadIds,
-      ]);
-}
-
 /**
  * Removes a bounded set of derived rows whose canonical thread is gone.
  * A projector racing this cleanup can recreate an orphan after the selection;
  * the next cron tick will select it again.
  */
-async function cleanupOrphanedSearchProjection(
-  db: Db,
-  options: ChatEventSearchProjectionOptions,
-): Promise<number> {
+async function cleanupOrphanedSearchProjection(db: Db): Promise<number> {
   return await db.transaction(async (tx) => {
     const orphanedWatermarks = await tx
       .select({ chatThreadId: chatEventSearchMessageWatermarks.chatThreadId })
       .from(chatEventSearchMessageWatermarks)
       .where(
         and(
-          projectionWatermarkScope(options.chatThreadIds),
           notExists(
             tx
               .select({ id: chatThreads.id })
@@ -528,9 +500,7 @@ async function cleanupOrphanedSearchProjection(
 
 async function loadCandidateThreads(
   db: Pick<Db, "select">,
-  options: ChatEventSearchProjectionOptions,
 ): Promise<readonly CandidateThread[]> {
-  const threadScope = projectionThreadScope(options.chatThreadIds);
   return await db
     .select({
       chatThreadId: chatThreads.id,
@@ -550,7 +520,6 @@ async function loadCandidateThreads(
     )
     .where(
       and(
-        threadScope,
         gt(
           chatEventSequences.lastSeqId,
           sql`COALESCE(${chatEventSearchMessageWatermarks.indexedSeqId}, 0)`,
@@ -563,12 +532,8 @@ async function loadCandidateThreads(
 
 async function projectionConvergence(
   db: Pick<Db, "select">,
-  options: ChatEventSearchProjectionOptions,
 ): Promise<ChatEventSearchProjectionConvergence> {
-  const eligibleScope = and(
-    projectionThreadScope(options.chatThreadIds),
-    gt(chatEventSequences.lastSeqId, 0),
-  );
+  const eligibleScope = gt(chatEventSequences.lastSeqId, 0);
   const [stats] = await db
     .select({
       eligibleThreads: count(),
@@ -600,12 +565,11 @@ async function projectionConvergence(
 
 async function projectChatEventSearch(
   db: Db,
-  options: ChatEventSearchProjectionOptions,
   signal: AbortSignal,
 ): Promise<ChatEventSearchProjectionStats> {
-  const orphanedThreads = await cleanupOrphanedSearchProjection(db, options);
+  const orphanedThreads = await cleanupOrphanedSearchProjection(db);
   signal.throwIfAborted();
-  const candidateThreads = await loadCandidateThreads(db, options);
+  const candidateThreads = await loadCandidateThreads(db);
   signal.throwIfAborted();
 
   let threads = 0;
@@ -619,7 +583,7 @@ async function projectChatEventSearch(
     indexedEvents += stats.indexedEvents;
     deletedDocs += stats.deletedDocs;
   }
-  const convergence = await projectionConvergence(db, options);
+  const convergence = await projectionConvergence(db);
   signal.throwIfAborted();
   return {
     threads,
@@ -636,21 +600,6 @@ export const projectChatEventSearch$ = command(
     signal: AbortSignal,
   ): Promise<ChatEventSearchProjectionStats> => {
     const db = set(writeDb$);
-    return await projectChatEventSearch(db, {}, signal);
-  },
-);
-
-export const projectChatEventSearchTestScope$ = command(
-  async (
-    { set },
-    options: ChatEventSearchTestProjectionOptions,
-    signal: AbortSignal,
-  ): Promise<ChatEventSearchProjectionStats> => {
-    const db = set(writeDb$);
-    return await projectChatEventSearch(
-      db,
-      { chatThreadIds: options.chatThreadIds },
-      signal,
-    );
+    return await projectChatEventSearch(db, signal);
   },
 );

@@ -89,22 +89,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     pi_model_config: z.record(z.string(), z.unknown()),
   }),
   z.object({
-    action: z.literal("read-chat-event-snapshot-head"),
-    thread_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("reserve-chat-event-sequence-gap"),
-    thread_id: z.uuid(),
-    count: z.int().positive(),
-  }),
-  z.object({
-    action: z.literal("update-chat-event-snapshot-head"),
-    thread_id: z.uuid(),
-    object_key: z.string().optional(),
-    last_seq_id: z.int().nonnegative().optional(),
-    last_event_id: z.uuid().optional(),
-  }),
-  z.object({
     action: z.literal("clear-run-api-start"),
     run_id: z.uuid(),
   }),
@@ -186,18 +170,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
     .object({
       run_id: z.uuid(),
       autonomy_budget: z.int().min(0).max(32),
-    })
-    .nullable()
-    .optional(),
-  chat_event_snapshot_head: z
-    .object({
-      archive_schema_version: z.int().positive(),
-      last_event_id: z.uuid(),
-      last_seq_id: z.int().nonnegative(),
-      terminal_event_id: z.uuid().nullable(),
-      terminal_seq_id: z.int().nonnegative().nullable(),
-      object_key: z.string(),
-      snapshot_count: z.int().positive(),
     })
     .nullable()
     .optional(),

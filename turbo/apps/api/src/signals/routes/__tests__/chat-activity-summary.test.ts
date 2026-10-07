@@ -1,10 +1,8 @@
-import { cleanupSandboxFixturesForTest } from "../../../test-fixtures/sandbox-cleanup-worker";
 import {
   mockGoogleText,
   VERTEX_TEXT_URL,
   vertexTextRequest,
 } from "./helpers/google-text";
-import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { createRouteMocks } from "./helpers/route-test";
 import { randomUUID } from "node:crypto";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
@@ -14,7 +12,6 @@ import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
-import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { advanceRunActivityClockFixture } from "../../../test-fixtures/run-activity";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -228,13 +225,6 @@ function brokenBody(error: Error) {
         controller.error(error);
       },
     }),
-  );
-}
-// Runs the production sandbox cleanup sweep scoped to one run.
-async function sweepRun(runId: string) {
-  await cleanupSandboxFixturesForTest(
-    { scope: { runIds: [runId], chatThreadIds: [], exportJobIds: [] } },
-    context.signal,
   );
 }
 describe("thread activity summary", () => {
@@ -990,30 +980,6 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(2);
   });
 
-  it("keeps a heartbeating cancelled run's compute through the recovery grace", async () => {
-    const f = await fixture();
-    const cancelledAt = now();
-    mockNow(cancelledAt);
-    await runs.requestCancelRun(f.actor, f.run.runId, [200]);
-    const heartbeatAt = cancelledAt + 30_000;
-    mockNow(heartbeatAt);
-    // A cancelled run's sandbox still heartbeats: the route records it before
-    // answering 404 for the no longer active public run.
-    await webhooks.requestAgentHeartbeat(
-      { runId: f.run.runId },
-      f.headers,
-      [404],
-    );
-    // The cancellation is older than the grace, but the runner's latest
-    // heartbeat is not, so the sweep keeps the run's compute slot.
-    mockNow(cancelledAt + CANCELLATION_RECOVERY_STALE_AFTER_MS + 1);
-    await sweepRun(f.run.runId);
-    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(1);
-    mockNow(heartbeatAt + CANCELLATION_RECOVERY_STALE_AFTER_MS + 1);
-    await sweepRun(f.run.runId);
-    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
-  });
-
   it("keeps a cancelled running run's compute until its runner reports completion", async () => {
     const f = await fixture();
     expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(1);
@@ -1033,17 +999,6 @@ describe("thread activity summary", () => {
       [200],
     );
     await flushWaitUntilForTest();
-    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
-  });
-
-  it("releases a silent terminal run's compute after the recovery grace", async () => {
-    const f = await fixture();
-    await runs.requestCancelRun(f.actor, f.run.runId, [200]);
-    await sweepRun(f.run.runId);
-    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(1);
-    // The run's completion and last heartbeat are both older than the grace.
-    mockNow(now() + CANCELLATION_RECOVERY_STALE_AFTER_MS + 1);
-    await sweepRun(f.run.runId);
     expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
   });
 });

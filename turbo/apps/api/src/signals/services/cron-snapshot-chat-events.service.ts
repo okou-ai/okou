@@ -86,14 +86,6 @@ interface ChatEventSnapshotStats {
   readonly r2GcSubpartitionedShards: number;
 }
 
-type ChatEventSnapshotScope =
-  | { readonly kind: "global" }
-  | {
-      readonly kind: "fixtures";
-      readonly chatThreadIds: readonly string[];
-      readonly r2ObjectKeys: readonly string[];
-    };
-
 interface SnapshotCandidate {
   readonly chatThreadId: string;
   readonly indexedSeqId: number;
@@ -1042,7 +1034,6 @@ interface R2GcStats {
 
 interface R2GcOptions {
   readonly deleteQuota: number;
-  readonly ownedObjectKeys: ReadonlySet<string> | null;
 }
 
 function chatEventSnapshotGcPrefixes(now: Date): readonly string[] {
@@ -1100,9 +1091,8 @@ const collectR2SnapshotGarbage$ = command(
     let shardsScanned = 0;
     let subpartitionedShards = 0;
     let remainingDeleteQuota = options.deleteQuota;
-    const ownedObjectKeys = options.ownedObjectKeys;
 
-    if (remainingDeleteQuota === 0 || ownedObjectKeys?.size === 0) {
+    if (remainingDeleteQuota === 0) {
       return {
         scanned,
         measured,
@@ -1122,14 +1112,8 @@ const collectR2SnapshotGarbage$ = command(
         subpartitionedShards += 1;
       }
       for (const objects of pages) {
-        const scopedObjects =
-          ownedObjectKeys === null
-            ? objects
-            : objects.filter((object) => {
-                return ownedObjectKeys.has(object.key);
-              });
-        scanned += scopedObjects.length;
-        const oldObjects = scopedObjects.filter((object) => {
+        scanned += objects.length;
+        const oldObjects = objects.filter((object) => {
           return object.lastModified < olderThan;
         });
         if (oldObjects.length === 0) {
@@ -1638,29 +1622,12 @@ async function finalizeGlobalSnapshotScanState(
  * pointer CAS, so a lost race can only leave a collectable orphan object.
  */
 export const snapshotChatEvents$ = command(
-  async (
-    { set },
-    scope: ChatEventSnapshotScope,
-    signal: AbortSignal,
-  ): Promise<ChatEventSnapshotStats> => {
+  async ({ set }, signal: AbortSignal): Promise<ChatEventSnapshotStats> => {
     const db = set(writeDb$);
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    const ownedObjectKeys =
-      scope.kind === "global" ? null : new Set(scope.r2ObjectKeys);
-    const globalCandidatePage =
-      scope.kind === "global"
-        ? await loadGlobalSnapshotCandidatePage(db)
-        : null;
-    const candidates =
-      globalCandidatePage?.candidates ??
-      (await loadSnapshotCandidates(
-        db,
-        scope.kind === "fixtures" ? scope.chatThreadIds : null,
-        null,
-        null,
-        chatEventSnapshotThreadBatchSize(),
-      ));
+    const globalCandidatePage = await loadGlobalSnapshotCandidatePage(db);
     signal.throwIfAborted();
+    const candidates = globalCandidatePage.candidates;
 
     const candidateAgeMs = oldestCandidateAgeMs(candidates);
     const processed = await processSnapshotCandidates(
@@ -1684,21 +1651,17 @@ export const snapshotChatEvents$ = command(
         bucket,
         options: {
           deleteQuota: SNAPSHOT_GC_DELETE_QUOTA,
-          ownedObjectKeys,
         },
       },
       signal,
     );
     signal.throwIfAborted();
-    const scanCursorAdvanced =
-      globalCandidatePage === null
-        ? false
-        : await finalizeGlobalSnapshotScanState(
-            db,
-            globalCandidatePage,
-            processed.attemptedCandidates,
-            signal,
-          );
+    const scanCursorAdvanced = await finalizeGlobalSnapshotScanState(
+      db,
+      globalCandidatePage,
+      processed.attemptedCandidates,
+      signal,
+    );
     return {
       ...outcomeStats,
       selectedCandidates: candidates.length,
@@ -1706,7 +1669,7 @@ export const snapshotChatEvents$ = command(
       deferredCandidates: processed.deferredCandidates,
       oldestCandidateAgeMs: candidateAgeMs,
       scanCursorAdvanced,
-      scanWrapped: globalCandidatePage?.wrapped ?? false,
+      scanWrapped: globalCandidatePage.wrapped,
       r2ObjectsScanned: r2Gc.scanned,
       r2ObjectsMeasured: r2Gc.measured,
       r2ObjectsDeleted: r2Gc.deleted,

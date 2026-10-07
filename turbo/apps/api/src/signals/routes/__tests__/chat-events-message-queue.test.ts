@@ -1,16 +1,9 @@
-import { cleanupSandboxFixturesForTest } from "../../../test-fixtures/sandbox-cleanup-worker";
-import {
-  ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES,
-  CANCELLATION_RECOVERY_STALE_AFTER_MS,
-  STEERED_INPUT_RUN_NOT_RUNNING_ERROR_CODE,
-} from "@okouai/api-contracts/contracts/runners";
+import { ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
 import { randomUUID } from "node:crypto";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import { clearMockNow, mockNow, now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError } from "./helpers/api-bdd";
-import { cleanupTimedOutRun } from "./helpers/api-bdd-run-timeout";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import {
   createChatEventsFixture,
@@ -40,54 +33,6 @@ const RUN_TIME_BUDGET_MESSAGE = `This runner has a hard maximum runtime of 2 hou
 A normal completion provides a reliable handoff for the next run. The handoff includes completed work, current state, verification performed, remaining work, and blockers.
 
 Use the remaining time to leave the task in a resumable state and finish this turn normally.`;
-
-/** Run the queue repair sweep over one owned thread. */
-async function sweepOwnedThreadQueue(chatThreadId: string): Promise<void> {
-  await cleanupSandboxFixturesForTest(
-    {
-      scope: {
-        chatThreadIds: [chatThreadId],
-        runIds: [],
-        exportJobIds: [],
-      },
-    },
-    context.signal,
-  );
-  await flushWaitUntilForTest();
-}
-
-/** Cancel a claimed run and queue a prompt behind its recovery barrier. */
-async function queueBehindCancellationRecovery(label: string) {
-  const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-  const active = await sendChatRun(actor, {
-    agentId,
-    prompt: `${label} cancelled run`,
-  });
-  await claimChatRun(runnerGroup, active.runId);
-  await api.requestCancelRun(actor, active.runId, [200]);
-  await waitForRunStatus(actor, active.runId, "cancelled");
-  const queuedEventId = randomUUID();
-  const queued = await chat.requestSendEvent(
-    actor,
-    {
-      agentId,
-      threadId: active.threadId,
-      prompt: `${label} queued prompt`,
-      clientEventId: queuedEventId,
-    },
-    [201],
-  );
-  if (queued.status !== 201) {
-    throw new Error("Expected the prompt to queue behind cancellation");
-  }
-  expect(queued.body.runId).toBeNull();
-  return {
-    actor,
-    threadId: active.threadId,
-    runId: active.runId,
-    queuedEventId,
-  };
-}
 
 /** Steer one owned run without scanning rows owned by other test files. */
 async function steerOwnedRunAtElapsedTime(
@@ -302,7 +247,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
     await completeChatRunOk(active.runId, claimed.sandboxHeaders);
     await flushWaitUntilForTest();
     await waitForRunStatus(actor, active.runId, "completed");
-    await sweepOwnedThreadQueue(active.threadId);
     // A repeated declaration after completion stays idempotent.
     await expect(
       api.declareSteeredInput(
@@ -422,189 +366,6 @@ describe("CHAT-02: queueing and recalling messages", () => {
       [201],
     );
     await cancelChatRun(actor, promoted.runId, successorClaim.sandboxHeaders);
-  }, 90_000);
-
-  it("redrives a queue once its cancellation recovery barrier expires", async () => {
-    const queued = await queueBehindCancellationRecovery("recent expiry");
-
-    mockNow(now() + CANCELLATION_RECOVERY_STALE_AFTER_MS + 1);
-    onTestFinished(() => {
-      clearMockNow();
-    });
-    await sweepOwnedThreadQueue(queued.threadId);
-    clearMockNow();
-
-    const messages = await waitForThreadMessages(
-      queued.actor,
-      queued.threadId,
-      (items) => {
-        return userMessages(items).some((message) => {
-          return (
-            message.revokesEventId === queued.queuedEventId &&
-            typeof message.runId === "string" &&
-            message.runId !== queued.runId
-          );
-        });
-      },
-    );
-    const successor = userMessages(messages.events).find((message) => {
-      return message.revokesEventId === queued.queuedEventId;
-    })?.runId;
-    if (!successor) {
-      throw new Error("Expected the queued prompt to start a run");
-    }
-    expect(successor).not.toBe(queued.runId);
-    await cancelChatRun(queued.actor, successor);
-  }, 90_000);
-
-  it("releases timed-out steerable input when stopping the Runner fails", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped chat actor");
-    }
-
-    const active = await sendChatRun(actor, {
-      agentId,
-      prompt: "time out with an uncertain delivery",
-    });
-    const claimed = await claimChatRun(runnerGroup, active.runId);
-    const heldEventId = randomUUID();
-    await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: active.threadId,
-        prompt: "release only after teardown completion",
-        clientEventId: heldEventId,
-      },
-      [201],
-    );
-    await expect(
-      api.nextSteerableInput(claimed.claim.sandboxToken, active.runId),
-    ).resolves.toStrictEqual({
-      input: {
-        eventId: heldEventId,
-        prompt: "release only after teardown completion",
-      },
-    });
-    await flushWaitUntilForTest();
-    context.mocks.ably.publish.mockClear();
-    context.mocks.ably.publish.mockRejectedValueOnce(
-      new DOMException("timeout cancel unavailable", "AbortError"),
-    );
-    mockNow(now() + 3 * 60 * 1000);
-    onTestFinished(() => {
-      clearMockNow();
-    });
-    const cleanup = await cleanupTimedOutRun(context, {
-      runId: active.runId,
-      chatThreadId: active.threadId,
-    });
-    expect(cleanup).toMatchObject({ cleaned: 1, errors: 0 });
-    await waitForRunStatus(actor, active.runId, "timeout");
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith("cancel", {
-      runId: active.runId,
-      mode: "hard",
-    });
-    const late = await api.requestDeclareSteeredInputAs(
-      `Bearer ${claimed.claim.sandboxToken}`,
-      active.runId,
-      heldEventId,
-      [409],
-    );
-    expect(late.body.error.code).toBe(STEERED_INPUT_RUN_NOT_RUNNING_ERROR_CODE);
-
-    const messages = await waitForThreadMessages(
-      actor,
-      active.threadId,
-      (items) => {
-        return userMessages(items).some((message) => {
-          return (
-            message.revokesEventId === heldEventId &&
-            typeof message.runId === "string" &&
-            message.runId !== active.runId
-          );
-        });
-      },
-    );
-    const successor = userMessages(messages.events).find((message) => {
-      return message.revokesEventId === heldEventId;
-    })?.runId;
-    if (!successor) {
-      throw new Error("Expected timed-out delivery input to be released");
-    }
-
-    const laterEventId = randomUUID();
-    const later = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: active.threadId,
-        prompt: "wait behind the timeout successor",
-        clientEventId: laterEventId,
-      },
-      [201],
-    );
-    if (later.status !== 201) {
-      throw new Error("Expected post-timeout input to remain queued");
-    }
-    expect(later.body.runId).toBeNull();
-    expect(
-      userMessages(
-        (await chat.listThreadEvents(actor, active.threadId)).events,
-      ).filter((message) => {
-        return message.revokesEventId === laterEventId;
-      }),
-    ).toHaveLength(0);
-    const successorClaim = await claimChatRun(runnerGroup, successor);
-    await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: active.threadId,
-        revokesEventId: laterEventId,
-      },
-      [201],
-    );
-    await cancelChatRun(actor, successor, successorClaim.sandboxHeaders);
-  }, 90_000);
-
-  it("expires an unconsumed time budget input after a heartbeat timeout", async () => {
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped chat actor");
-    }
-
-    const active = await sendChatRun(actor, {
-      agentId,
-      prompt: "time out before the budget warning is consumed",
-    });
-    await claimChatRun(runnerGroup, active.runId);
-    await expect(
-      steerOwnedRunAtElapsedTime(active.runId, RUN_TIME_BUDGET_STEER_AT_MS),
-    ).resolves.toStrictEqual({ scanned: 1, steered: 1 });
-
-    mockNow(now() + 3 * 60 * 1000);
-    onTestFinished(() => {
-      clearMockNow();
-    });
-    const cleanup = await cleanupTimedOutRun(context, {
-      runId: active.runId,
-      chatThreadId: active.threadId,
-    });
-    expect(cleanup).toMatchObject({ cleaned: 1, errors: 0 });
-    await waitForRunStatus(actor, active.runId, "timeout");
-
-    const events = await chat.listThreadEvents(actor, active.threadId);
-    expect(
-      events.events.filter((event) => {
-        return (
-          event.eventType === "control.revoke" && event.runId === active.runId
-        );
-      }),
-    ).toHaveLength(1);
   }, 90_000);
 
   it("applies the control payload limit without consuming an oversized prompt", async () => {

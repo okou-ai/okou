@@ -56,13 +56,6 @@ export interface ChatEventRetentionStats {
   readonly durationMs: number;
 }
 
-type ChatEventRetentionScope =
-  | { readonly kind: "global" }
-  | {
-      readonly kind: "fixtures";
-      readonly chatThreadIds: readonly string[];
-    };
-
 type SkipReason =
   | "snapshot"
   | "search_watermark"
@@ -100,17 +93,10 @@ async function loadRetentionCutoff(db: Pick<Db, "execute">): Promise<Date> {
   return cutoff;
 }
 
-function scopeKey(scope: ChatEventRetentionScope): string {
-  return scope.kind === "global"
-    ? "global"
-    : `fixtures:${[...scope.chatThreadIds].sort().join(",")}`;
-}
-
 async function scanPage(
   db: Db,
   args: {
     readonly cutoff: string;
-    readonly scope: ChatEventRetentionScope;
     readonly after?: { readonly createdAt: string; readonly id: string };
   },
 ): Promise<readonly ScannedEvent[]> {
@@ -128,9 +114,6 @@ async function scanPage(
     .where(
       and(
         lt(chatEvents.createdAt, sql`${args.cutoff}::timestamp`),
-        args.scope.kind === "global"
-          ? undefined
-          : inArray(chatEvents.chatThreadId, args.scope.chatThreadIds),
         args.after === undefined
           ? undefined
           : sql`(${chatEvents.createdAt}, ${chatEvents.id}) > (${args.after.createdAt}::timestamp, ${args.after.id}::uuid)`,
@@ -338,12 +321,11 @@ async function saveCursor(
 
 async function retainChatEventPage(
   db: Db,
-  scope: ChatEventRetentionScope,
   signal: AbortSignal,
 ): Promise<Omit<ChatEventRetentionStats, "durationMs">> {
   const cutoffDate = await loadRetentionCutoff(db);
   const cutoff = timestampWithoutTimeZone(cutoffDate);
-  const key = scopeKey(scope);
+  const key = "global";
   const [cursor] = await db
     .select()
     .from(chatEventRetentionCursors)
@@ -357,7 +339,6 @@ async function retainChatEventPage(
       CHAT_EVENT_RETENTION_SWEEP_RESTART_MS;
   const events = await scanPage(db, {
     cutoff,
-    scope,
     after: sweepRestarted
       ? undefined
       : { createdAt: cursor.lastCreatedAt, id: cursor.lastEventId },
@@ -406,13 +387,9 @@ async function retainChatEventPage(
 }
 
 export const retainChatEvents$ = command(
-  async (
-    { set },
-    scope: ChatEventRetentionScope,
-    signal: AbortSignal,
-  ): Promise<ChatEventRetentionStats> => {
+  async ({ set }, signal: AbortSignal): Promise<ChatEventRetentionStats> => {
     const startedAt = performance.now();
-    const result = await retainChatEventPage(set(writeDb$), scope, signal);
+    const result = await retainChatEventPage(set(writeDb$), signal);
     return {
       ...result,
       durationMs: Math.round(performance.now() - startedAt),

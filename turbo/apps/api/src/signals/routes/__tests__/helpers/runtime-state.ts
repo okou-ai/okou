@@ -334,52 +334,6 @@ export async function stageOfficialWorkflowAutomationFixture(
   });
 }
 
-export async function updateChatEventSnapshotHead(
-  context: TestContext,
-  threadId: string,
-  ...[objectKey, lastSeqId, lastEventId]: [
-    objectKey?: string,
-    lastSeqId?: number,
-    lastEventId?: string,
-  ]
-): Promise<void> {
-  await postAction(context, {
-    action: "update-chat-event-snapshot-head",
-    thread_id: threadId,
-    ...(objectKey === undefined ? {} : { object_key: objectKey }),
-    ...(lastSeqId === undefined ? {} : { last_seq_id: lastSeqId }),
-    ...(lastEventId === undefined ? {} : { last_event_id: lastEventId }),
-  });
-}
-
-export async function reserveChatEventSequenceGap(
-  context: TestContext,
-  threadId: string,
-  count: number,
-): Promise<void> {
-  await postAction(context, {
-    action: "reserve-chat-event-sequence-gap",
-    thread_id: threadId,
-    count,
-  });
-}
-
-export async function readChatEventSnapshotHead(
-  context: TestContext,
-  threadId: string,
-): Promise<
-  NonNullable<TestRuntimeStateActionResponse["chat_event_snapshot_head"]>
-> {
-  const response = await postAction(context, {
-    action: "read-chat-event-snapshot-head",
-    thread_id: threadId,
-  });
-  if (!response.chat_event_snapshot_head) {
-    throw new Error("readChatEventSnapshotHead missing snapshot head");
-  }
-  return response.chat_event_snapshot_head;
-}
-
 export async function clearRunApiStart(
   context: TestContext,
   runId: string,

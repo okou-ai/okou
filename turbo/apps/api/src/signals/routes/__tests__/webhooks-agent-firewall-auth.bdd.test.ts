@@ -1,4 +1,3 @@
-import { cleanupSandboxFixturesForTest } from "../../../test-fixtures/sandbox-cleanup-worker";
 import { randomUUID } from "node:crypto";
 import { completePublicCodexHistory } from "./helpers/public-pi-history";
 
@@ -16,7 +15,7 @@ import {
   type SecretKmsDataKey,
   type SecretKmsGenerateDataKeyRequest,
 } from "../../../lib/secret-kms-client";
-import { mockNow, now } from "../../../lib/time";
+import { now } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { testContext } from "../../../__tests__/test-context";
@@ -85,7 +84,6 @@ const TERMINAL_RUN_STATUSES = [
   "completed",
   "failed",
   "cancelled",
-  "timeout",
 ] as const satisfies readonly TestTerminalRunStatus[];
 
 async function firewallRun(existingActor?: ApiTestUser): Promise<{
@@ -189,18 +187,6 @@ async function connectPublicTestOAuth(
     code: "initial-code",
     state,
   });
-}
-
-async function expirePublicFirewallRun(actor: ApiTestUser, runId: string) {
-  mockNow(now() + 6 * 60_000);
-  const result = await cleanupSandboxFixturesForTest(
-    { scope: { runIds: [runId], chatThreadIds: [], exportJobIds: [] } },
-    context.signal,
-  );
-  expect(result).toMatchObject({ cleaned: 1, errors: 0 });
-  expect((await createRunsApi(context).readRun(actor, runId)).status).toBe(
-    "timeout",
-  );
 }
 
 async function exactSecretConnectorSources(
@@ -2463,9 +2449,7 @@ describe("FW-5: timeout closes firewall credential authority", () => {
             });
           });
 
-          if (status === "timeout") {
-            await expirePublicFirewallRun(actor, runId);
-          } else if (status === "cancelled") {
+          if (status === "cancelled") {
             await createRunsApi(context).requestCancelRun(actor, runId, [200]);
           } else if (status === "failed") {
             await createWebhookCallbackApi(context).requestAgentComplete(
@@ -2508,145 +2492,6 @@ describe("FW-5: timeout closes firewall credential authority", () => {
       );
     },
   );
-
-  it("withholds static connector credentials when timeout wins during resolution", async () => {
-    await withPublicFirewallRun(
-      async (headers, fixture, _subscription, run) => {
-        const fw = createFirewallApi(context);
-        const actor = fixture.actor;
-        const { runId } = run;
-        await connectPublicTestOAuth(fixture, {
-          accessToken: "current-access",
-          refreshToken: "refresh-1",
-          expiresIn: 3600,
-        });
-        const sources = await exactSecretConnectorSources(actor, {
-          TEST_OAUTH_TOKEN: "test-oauth",
-        });
-        const originalKms = getSecretKmsClient();
-        const decryptGate = gateFirstStoredSecretDecrypt();
-        const pending = fw.requestFirewallAuth(
-          headers,
-          {
-            encryptedSecrets: fw.encryptedSecretsBody({}),
-            authHeaders: {
-              Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-            },
-            ...sources,
-          },
-          [403],
-        );
-        const outcome = await settleIncludingAbort(
-          (async () => {
-            await decryptGate.started;
-            await expirePublicFirewallRun(actor, runId);
-            decryptGate.release();
-
-            const denied = await pending;
-            if (denied.status !== 403) {
-              throw new Error(
-                "Expected final firewall admission to be forbidden",
-              );
-            }
-            expect(denied.body.error.code).toBe("FORBIDDEN");
-          })(),
-        );
-        decryptGate.release();
-        await Promise.allSettled([pending]);
-        setSecretKmsClientForTests(originalKms);
-        if (!outcome.ok) {
-          throw outcome.error;
-        }
-      },
-    );
-  });
-
-  it("preserves shared refresh state while withholding it from the timed-out run", async () => {
-    await withPublicFirewallRun(
-      async (headers, fixture, _subscription, run) => {
-        const fw = createFirewallApi(context);
-        const actor = fixture.actor;
-        const { runId } = run;
-        await connectPublicTestOAuth(fixture, {
-          accessToken: "stale-access",
-          refreshToken: "refresh-1",
-          expiresIn: -60,
-        });
-        const refreshStarted = createDeferredPromise<void>(context.signal);
-        const releaseRefresh = createDeferredPromise<void>(context.signal);
-
-        let refreshRequests = 0;
-        fw.mockTestOauthTokenRefresh(async () => {
-          refreshRequests += 1;
-          refreshStarted.resolve(undefined);
-          await releaseRefresh.promise;
-          return fw.oauthTokenResponse({
-            accessToken: "shared-fresh-access",
-            refreshToken: "shared-refresh-2",
-            expiresIn: 3600,
-          });
-        });
-        const sources = await exactSecretConnectorSources(actor, {
-          TEST_OAUTH_TOKEN: "test-oauth",
-        });
-        const body = {
-          encryptedSecrets: fw.encryptedSecretsBody({
-            TEST_OAUTH_TOKEN: "stale-access",
-          }),
-          authHeaders: {
-            Authorization: `Bearer ${secretTemplate("TEST_OAUTH_TOKEN")}`,
-          },
-          ...sources,
-        };
-
-        const pending = fw.requestFirewallAuth(headers, body, [403]);
-        const outcome = await settleIncludingAbort(
-          (async () => {
-            await refreshStarted.promise;
-            await expirePublicFirewallRun(actor, runId);
-            releaseRefresh.resolve(undefined);
-            const denied = await pending;
-            if (denied.status !== 403) {
-              throw new Error(
-                "Expected refreshed credential response to be forbidden",
-              );
-            }
-            expect(denied.body.error.code).toBe("FORBIDDEN");
-
-            const activeRun = await createRunsApi(context).createThreadRun(
-              actor,
-              {
-                agentId: run.agentId,
-                prompt: "resolve shared refreshed credentials",
-              },
-            );
-            fixture.registerRun(activeRun.runId);
-            const served = await fw.requestFirewallAuth(
-              fw.sandboxHeaders(actor, activeRun.runId),
-              body,
-              [200],
-            );
-            if (served.status !== 200) {
-              throw new Error(
-                "Expected refreshed shared state to remain usable",
-              );
-            }
-            expect(served.body.headers.Authorization).toBe(
-              "Bearer shared-fresh-access",
-            );
-            expect(refreshRequests).toBe(1);
-          })(),
-        );
-        if (!releaseRefresh.settled()) {
-          releaseRefresh.resolve(undefined);
-        }
-        await Promise.allSettled([pending]);
-        if (!outcome.ok) {
-          throw outcome.error;
-        }
-      },
-    );
-  });
 });
 
 describe("FW-6: manual-grant api-token refresh without a provider client", () => {

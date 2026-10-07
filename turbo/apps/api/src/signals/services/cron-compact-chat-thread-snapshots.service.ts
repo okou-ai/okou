@@ -19,7 +19,6 @@ import {
   lte,
   or,
   sql,
-  type SQL,
   type SQLWrapper,
 } from "drizzle-orm";
 import {
@@ -52,16 +51,6 @@ interface SnapshotCompactionStats {
   readonly eventsApplied: number;
   readonly eventsPruned: number;
 }
-
-type SnapshotCompactionScope =
-  | { readonly kind: "global" }
-  | {
-      readonly kind: "fixtures";
-      readonly scopes: readonly {
-        readonly userId: string;
-        readonly orgId: string;
-      }[];
-    };
 
 type SnapshotRootDb = Pick<
   Db,
@@ -241,7 +230,6 @@ async function toCandidate(
  */
 async function findSnapshotCandidates(
   db: SnapshotRootDb,
-  scope: SnapshotCompactionScope,
   limit: number,
 ): Promise<readonly SnapshotCandidate[]> {
   const candidates: SnapshotCandidate[] = [];
@@ -257,7 +245,6 @@ async function findSnapshotCandidates(
         .from(chatThreadEventSequences)
         .where(
           and(
-            scopeSequencePredicate(scope),
             after === null
               ? undefined
               : or(
@@ -296,25 +283,6 @@ async function findSnapshotCandidates(
     after = last;
   }
   return candidates;
-}
-
-function scopeSequencePredicate(
-  scope: SnapshotCompactionScope,
-): SQL | undefined {
-  if (scope.kind === "global") {
-    return undefined;
-  }
-  if (scope.scopes.length === 0) {
-    return sql`false`;
-  }
-  return or(
-    ...scope.scopes.map((owned) => {
-      return and(
-        eq(chatThreadEventSequences.userId, owned.userId),
-        eq(chatThreadEventSequences.orgId, owned.orgId),
-      );
-    }),
-  );
 }
 
 /** A timestamp rendered exactly as `jsonb_build_object` renders it. */
@@ -598,7 +566,6 @@ async function collectChatThreadSnapshotGarbage(
  */
 async function pruneCompactedEvents(
   db: SnapshotRootDb,
-  scope: SnapshotCompactionScope,
   limit: number,
 ): Promise<number> {
   const cutoff = new Date(nowDate().getTime() - CHAT_THREAD_EVENT_RETENTION_MS);
@@ -632,18 +599,6 @@ async function pruneCompactedEvents(
               ),
             ),
         ),
-        scope.kind === "global"
-          ? undefined
-          : scope.scopes.length === 0
-            ? sql`false`
-            : or(
-                ...scope.scopes.map((owned) => {
-                  return and(
-                    eq(chatThreadEvents.userId, owned.userId),
-                    eq(chatThreadEvents.orgId, owned.orgId),
-                  );
-                }),
-              ),
       ),
     )
     .orderBy(asc(chatThreadEvents.createdAt), asc(chatThreadEvents.id))
@@ -669,15 +624,13 @@ async function pruneCompactedEvents(
   return deleted.length;
 }
 
-export async function compactChatThreadSnapshotsForScope(
+async function compactChatThreadSnapshots(
   db: Db,
-  scope: SnapshotCompactionScope,
   storage: SnapshotStorage,
   signal?: AbortSignal,
 ): Promise<SnapshotCompactionStats> {
   const candidates = await findSnapshotCandidates(
     db,
-    scope,
     chatThreadSnapshotBatchSize(),
   );
   const published = await mapConcurrent(
@@ -707,13 +660,10 @@ export async function compactChatThreadSnapshotsForScope(
   signal?.throwIfAborted();
   const eventsPruned = await pruneCompactedEvents(
     db,
-    scope,
     chatThreadEventPruneBatchSize(),
   );
 
-  if (scope.kind === "global") {
-    await collectChatThreadSnapshotGarbage(db, storage, signal);
-  }
+  await collectChatThreadSnapshotGarbage(db, storage, signal);
 
   return { scopes, eventsApplied, eventsPruned };
 }
@@ -721,13 +671,11 @@ export async function compactChatThreadSnapshotsForScope(
 export const compactChatThreadSnapshots$ = command(
   async (
     { get, set },
-    scope: SnapshotCompactionScope,
     signal: AbortSignal,
   ): Promise<SnapshotCompactionStats> => {
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    return await compactChatThreadSnapshotsForScope(
+    return await compactChatThreadSnapshots(
       set(writeDb$),
-      scope,
       {
         upload: async (objectKey, body) => {
           await get(

@@ -234,7 +234,7 @@ with the model-route and connector-catalog read hooks.
 
 Tests build scenarios through public APIs, run callbacks, `mockNow`, and test
 environment configuration. A scenario that can only be reached through a hook
-is deleted. The exception is a declared historical persisted-state case. See
+is deleted, including fabricated historical state. See
 [Testing](./testing.md) and
 [external behavior testing](./testing/testing-external-behavior.md).
 

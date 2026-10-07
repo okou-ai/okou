@@ -1,33 +1,17 @@
-import { drainEmailOutboxItemsForTest } from "../../../../test-fixtures/email-outbox-workers";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
-import { cronOfficialWorkflowCatalogContract } from "@okouai/api-contracts/contracts/cron";
-import { OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import { officialWorkflowsContract } from "@okouai/api-contracts/contracts/official-workflows";
-import { testOfficialWorkflowCatalogStateContract } from "@okouai/api-contracts/contracts/test-official-workflow-catalog-state";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createHash, randomUUID } from "node:crypto";
 import { expect, onTestFinished } from "vitest";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
-import { installApiTestConnectorCatalog } from "../../../../test-fixtures/connector-catalog";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
-import {
-  createCronOfficialWorkflowCatalogRoutes,
-  cronOfficialWorkflowCatalogRoutes,
-} from "../../cron-official-workflow-catalog";
-import { officialWorkflowRoutes } from "../../official-workflows";
-import { testOfficialWorkflowCatalogStateRoutes } from "../../test-official-workflow-catalog-state";
 import { workflowAutomationsRoutes } from "../../workflow-automations";
-import { createBddApi, type ApiTestUser } from "./api-bdd";
+import type { ApiTestUser } from "./api-bdd";
 import { createRunsApi } from "./api-bdd-runs";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./api-bdd-workflows";
 import { mockClerkUsers } from "./clerk-users";
-import { installDurableUserExportStorage } from "./durable-user-export-storage";
-import { createEmailOutboxStateApi } from "./email-outbox-state";
-import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { createRouteMocks } from "./route-test";
 
 interface OwnedRun {
@@ -44,7 +28,6 @@ export function createPublicAutomationResultEmailApi(context: TestContext) {
   const runs = createRunsApi(context);
   const workflows = createWorkflowsBddApi(context);
   const webhooks = createWebhookCallbackApi(context);
-  const outbox = createEmailOutboxStateApi(context);
   const mocks = createRouteMocks(context);
   const owned = new Map<string, OwnedRun>();
 
@@ -261,209 +244,11 @@ export function createPublicAutomationResultEmailApi(context: TestContext) {
     }
   }
 
-  async function drain(runId: string, automationId: string): Promise<number> {
-    // Approved lookup supplies every owned ID solely to the actual worker.
-    const { items } = await outbox.findSourceState({
-      sourceRunId: runId,
-      sourceWorkflowAutomationId: automationId,
-    });
-    return items.length === 0
-      ? 0
-      : await drainEmailOutboxItemsForTest(
-          items.map((item) => {
-            return item.id;
-          }),
-          context.signal,
-        );
-  }
-
-  async function setupOfficial(
-    options: {
-      readonly morningBrief?: boolean;
-      readonly budget?: number;
-      readonly resultEmail?: boolean;
-    } = {},
-  ) {
-    mockEnv("CRON_SECRET", "public-result-email-cron");
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      `public-result-email-${randomUUID()}`,
-    );
-    await installApiTestConnectorCatalog();
-    installDurableUserExportStorage(context, { prefixes: [""] });
-    const storage = context.mocks.s3.send.getMockImplementation();
-    const signedUrl = context.mocks.s3.getSignedUrl.getMockImplementation();
-    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    const cleanupState: {
-      owner?: { actor: ApiTestUser; agentId: string };
-    } = {};
-    async function cleanupCatalog() {
-      await accept(
-        setupApp({ context, routes: testOfficialWorkflowCatalogStateRoutes })(
-          testOfficialWorkflowCatalogStateContract,
-        ).action({ body: { action: "cleanup" } }),
-        [200],
-      );
-    }
-    onTestFinished(async () => {
-      mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
-      if (storage) {
-        context.mocks.s3.send.mockImplementation(storage);
-      }
-      if (signedUrl) {
-        context.mocks.s3.getSignedUrl.mockImplementation(signedUrl);
-      }
-      if (cleanupState.owner) {
-        const { actor, agentId } = cleanupState.owner;
-        await cleanup(actor);
-        await createBddApi(context).deleteAgent(actor, agentId);
-      }
-      await cleanupCatalog();
-    });
-    // The existing api-catalog project serializes this singleton operator fixture.
-    await cleanupCatalog();
-    if (options.morningBrief) {
-      // The deployed release retires connector-doctor. Establish its accepted
-      // predecessor through the same producer as syncDeployedCatalog's fixture.
-      const previous = await accept(
-        setupApp({
-          context,
-          routes: createCronOfficialWorkflowCatalogRoutes({
-            schemaVersion: OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
-            definitions: [
-              {
-                name: "connector-doctor",
-                lifecycle: "active",
-                workflow: {
-                  displayName: "Display connector-doctor",
-                  description: "Description for connector-doctor",
-                  instruction: "Execute only the accepted Definition content.",
-                  files: [
-                    { path: "references/context.md", content: "accepted\n" },
-                  ],
-                },
-                blueprints: [
-                  {
-                    key: "weekly-check",
-                    parameters: [],
-                    desiredState: {
-                      kind: "schedule",
-                      schedule: { type: "cron", cronExpression: "0 9 * * 1" },
-                    },
-                    runtime: { resultEmail: false },
-                  },
-                ],
-                presentation: {
-                  category: "productivity",
-                  order: 1,
-                  marketingCopy: "Official catalog entry.",
-                },
-              },
-            ],
-          }),
-        })(cronOfficialWorkflowCatalogContract).sync({
-          headers: { authorization: "Bearer public-result-email-cron" },
-        }),
-        [200],
-      );
-      expect(previous.body).toMatchObject({
-        outcome: "accepted",
-        diagnostics: [],
-      });
-    }
-    const definitionName = options.morningBrief
-      ? "morning-brief"
-      : `api-test-result-email-${randomUUID().slice(0, 8)}`;
-    const blueprintKey = options.morningBrief ? "daily-delivery" : "result";
-    const routes = options.morningBrief
-      ? cronOfficialWorkflowCatalogRoutes
-      : createCronOfficialWorkflowCatalogRoutes({
-          schemaVersion: OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION,
-          definitions: [
-            {
-              name: definitionName,
-              lifecycle: "active",
-              workflow: {
-                displayName: "Official result email",
-                description: "Public result delivery",
-                instruction: "Return the result.",
-                files: [],
-              },
-              blueprints: [
-                {
-                  key: blueprintKey,
-                  parameters: [],
-                  desiredState: {
-                    kind: "schedule",
-                    schedule: { type: "loop", intervalSeconds: 3600 },
-                    autonomyBudget: options.budget ?? 3,
-                  },
-                  runtime: { resultEmail: options.resultEmail ?? true },
-                },
-              ],
-              presentation: { category: "productivity" },
-            },
-          ],
-        });
-    const synced = await accept(
-      setupApp({ context, routes })(cronOfficialWorkflowCatalogContract).sync({
-        headers: { authorization: "Bearer public-result-email-cron" },
-      }),
-      [200],
-    );
-    expect(synced.body).toMatchObject({ outcome: "accepted", diagnostics: [] });
-    const { actor } = await workflows.setupWorkflowOrg({
-      timezone: "Asia/Shanghai",
-      tier: "team",
-      model: "claude-fable-5-1",
-    });
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped actor");
-    }
-    const { agentId } = await workflows.createAgent(actor);
-    cleanupState.owner = { actor, agentId };
-    await updateFeatureSwitchesForUser(
-      context,
-      { orgId: actor.orgId, userId: actor.userId },
-      { [FeatureSwitchKey.OfficialWorkflows]: true },
-    );
-    // Agent creation may install its own broad S3 mock. Restore this source's store.
-    if (storage) {
-      context.mocks.s3.send.mockImplementation(storage);
-    }
-    const installed = await accept(
-      setupApp({ context, routes: officialWorkflowRoutes })(
-        officialWorkflowsContract,
-      ).install({
-        headers: headers(actor),
-        params: { definitionName },
-        body: { agentId, blueprints: [{ blueprintKey, bindings: [] }] },
-      }),
-      [201],
-    );
-    const automation = installed.body.workflow.automations[0];
-    if (!automation) {
-      throw new Error("Expected the real installed Automation");
-    }
-    const runnerGroup = runs.configureRunnerGroup();
-    runs.acceptTelemetryIngest();
-    configureDelivery(actor);
-    return {
-      actor,
-      agentId,
-      workflowId: installed.body.workflow.id,
-      automationId: automation.id,
-      runnerGroup,
-    };
-  }
-
   return {
     cleanup,
     configureDelivery,
     track,
     start,
     complete,
-    drain,
-    setupOfficial,
   };
 }
