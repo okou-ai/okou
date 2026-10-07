@@ -3,7 +3,6 @@ import {
   modelSettingsSchema,
   type ModelSettings,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import type { ModelProviderCredentialScope } from "@okouai/api-contracts/contracts/model-providers";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { and, eq, sql, type SQL } from "drizzle-orm";
@@ -19,9 +18,6 @@ interface NewChatThreadArgs {
   readonly agentId: string;
   readonly id?: string;
   readonly title?: string | null;
-  readonly modelProviderId?: string | null;
-  readonly modelProviderType?: string | null;
-  readonly modelProviderCredentialScope?: ModelProviderCredentialScope | null;
   readonly selectedModel: string | null;
   readonly modelSettings?: ModelSettings;
   readonly codexServiceTier: CodexServiceTier | null;

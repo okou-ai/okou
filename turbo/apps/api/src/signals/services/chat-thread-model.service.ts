@@ -9,17 +9,9 @@ import {
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
 export function chatThreadModelPinColumns(pin: ModelFirstPin): {
-  readonly modelProviderId: null;
-  readonly modelProviderType: null;
-  readonly modelProviderCredentialScope: null;
   readonly selectedModel: string | null;
 } {
-  return {
-    modelProviderId: null,
-    modelProviderType: null,
-    modelProviderCredentialScope: null,
-    selectedModel: pin.selectedModel,
-  };
+  return { selectedModel: pin.selectedModel };
 }
 
 export const resolveRequiredDefaultChatThreadModelPin$ = command(

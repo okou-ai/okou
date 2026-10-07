@@ -37,8 +37,6 @@ test("VNC is available in the Remote control connection list", async () => {
   });
   expect(queryFastControl("button", "Manage VNC access")).toBeNull();
   await screen.findByRole("heading", { name: "VNC" });
-  expect(queryFastControl("link", "Manage VNC")).toBeNull();
-  expect(queryFastControl("link", "Manage SSH hosts")).toBeNull();
 });
 
 test("Feature-off VNC makes no requests in Remote control", async () => {

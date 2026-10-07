@@ -896,7 +896,6 @@ function categoryFilterSections(
 interface ConnectorsBrowseModel {
   /** Whether the catalog response has arrived; an empty list is not an answer. */
   readonly ready: boolean;
-  readonly connectionFilter: ConnectorsConnectionFilter;
   readonly showShelves: boolean;
   /**
    * The chosen category's connectors, or null when no category is open. The
@@ -915,9 +914,9 @@ interface ConnectorsBrowseModel {
 
 /**
  * Splits what the page shows into "what you have" and "what you could add".
- * Shelves are built from the unconnected half only, and stand down entirely
- * once a keyword, a category or a status is chosen: that is already a filter,
- * and a shelf on top of it would hide most of what was just asked for.
+ * Shelves stand down entirely once a keyword or a category is chosen: that is
+ * already a filter, and a shelf on top of it would hide most of what was just
+ * asked for.
  */
 function buildConnectorsBrowseModel({
   catalogItems,
@@ -927,7 +926,6 @@ function buildConnectorsBrowseModel({
   headLabel,
   search,
   categoryFilter,
-  connectionFilter,
   ready,
 }: {
   readonly catalogItems: readonly PlatformConnectorCatalogStatusItem[];
@@ -937,13 +935,9 @@ function buildConnectorsBrowseModel({
   readonly headLabel: string;
   readonly search: string;
   readonly categoryFilter: string | null;
-  readonly connectionFilter: ConnectorsConnectionFilter;
   readonly ready: boolean;
 }): ConnectorsBrowseModel {
-  const filtered =
-    search.trim().length > 0 ||
-    categoryFilter !== null ||
-    connectionFilter.kind !== "all";
+  const filtered = search.trim().length > 0 || categoryFilter !== null;
   const sectionsOf = (
     items: readonly PlatformConnectorCatalogStatusItem[],
   ): ConnectorCategorySection<PlatformConnectorCatalogStatusItem>[] => {
@@ -977,7 +971,6 @@ function buildConnectorsBrowseModel({
   const chipSections = categoryFilterSections(categoryMetadata);
   return {
     ready,
-    connectionFilter,
     // Shelves need something to shelve: a catalog too small for any category to
     // fill one falls through to the plain list.
     showShelves: ready && !filtered && layout.shelves.length > 0,
@@ -1528,7 +1521,6 @@ export function ConnectorsPage() {
     }),
     search,
     categoryFilter,
-    connectionFilter,
     ready: filteredCatalogItemsLoadable.state === "hasData",
   });
 

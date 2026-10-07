@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.5.0...runner-executor-v0.5.1) (2026-10-07)
+
+
+### Refactoring
+
+* remove all remaining custom model mode awareness ([#37856](https://github.com/okou-ai/okou/issues/37856)) ([f383835](https://github.com/okou-ai/okou/commit/f3838353ba0455ec7d57dfa2d0974e34a44796ff))
+
 ## [0.5.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.4.10...runner-executor-v0.5.0) (2026-10-04)
 
 

@@ -1,5 +1,32 @@
 # Changelog
 
+## [9.378.17](https://github.com/okou-ai/okou/compare/cli-v9.378.16...cli-v9.378.17) (2026-10-07)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.537.10
+    * @okouai/core bumped to 8.734.3
+    * @okouai/pi-agent-runtime bumped to 1.46.17
+
+## [9.378.16](https://github.com/okou-ai/okou/compare/cli-v9.378.15...cli-v9.378.16) (2026-10-07)
+
+
+### Refactoring
+
+* remove all remaining custom model mode awareness ([#37856](https://github.com/okou-ai/okou/issues/37856)) ([f383835](https://github.com/okou-ai/okou/commit/f3838353ba0455ec7d57dfa2d0974e34a44796ff))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.537.9
+    * @okouai/core bumped to 8.734.2
+    * @okouai/pi-agent-runtime bumped to 1.46.16
+
 ## [9.378.15](https://github.com/okou-ai/okou/compare/cli-v9.378.14...cli-v9.378.15) (2026-10-07)
 
 

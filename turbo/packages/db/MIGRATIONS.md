@@ -266,6 +266,12 @@ contraction, it requires an explicitly owner-accepted interruption under the
 [deployment compatibility](../../../docs/deployment-compatibility.md) rules;
 this document does not record such an acceptance.
 
+Migration `1332_drop_chat_thread_provider_pin_columns` then drops the legacy
+`chat_threads.model_provider_id`, `model_provider_type` and
+`model_provider_credential_scope` pin columns; threads persist only
+`selected_model`. It has the same rollout constraint and its own rollback
+floor keyed to the commit that added 1332.
+
 `scripts/test-retired-model-route-cleanup.ts` replays the preceding migrations
 and protects exact retained rows, future/disabled subscriptions, NULL-marker
 retirement, schema/binding rejection with no journal advance, non-empty

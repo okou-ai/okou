@@ -12,6 +12,42 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1001.1](https://github.com/okou-ai/okou/compare/app-v0.1001.0...app-v0.1001.1) (2026-10-07)
+
+
+### Refactoring
+
+* clean up released switch leftovers and drop legacy chat thread provider pins ([#37851](https://github.com/okou-ai/okou/issues/37851)) ([066e9c3](https://github.com/okou-ai/okou/commit/066e9c32c2bbd5e3d48783fb0028f8dcfbaeaf06))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.537.10
+    * @okouai/core bumped to 8.734.3
+
+## [0.1001.0](https://github.com/okou-ai/okou/compare/app-v0.1000.1...app-v0.1001.0) (2026-10-07)
+
+
+### Features
+
+* **platform:** slide pwa pages between tab roots and nested pages ([#37853](https://github.com/okou-ai/okou/issues/37853)) ([1d3fcca](https://github.com/okou-ai/okou/commit/1d3fccac2606c5a226b35b38a158b3c25b6da28a))
+
+
+### Refactoring
+
+* **platform:** remove page clearing and the react app skeleton ([#37857](https://github.com/okou-ai/okou/issues/37857)) ([7fbda7d](https://github.com/okou-ai/okou/commit/7fbda7de74bad50dad377ffe0d048c41fadc8a2f))
+* remove all remaining custom model mode awareness ([#37856](https://github.com/okou-ai/okou/issues/37856)) ([f383835](https://github.com/okou-ai/okou/commit/f3838353ba0455ec7d57dfa2d0974e34a44796ff))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.537.9
+    * @okouai/core bumped to 8.734.2
+
 ## [0.1000.1](https://github.com/okou-ai/okou/compare/app-v0.1000.0...app-v0.1000.1) (2026-10-07)
 
 

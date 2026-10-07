@@ -239,9 +239,6 @@ async function createAutomationChatThread(
     title: args.title,
     modelSettings: args.preparation.modelSettings,
     cloudBrowserEnabled: args.preparation.cloudBrowserEnabled,
-    modelProviderId: pinColumns.modelProviderId,
-    modelProviderType: pinColumns.modelProviderType,
-    modelProviderCredentialScope: pinColumns.modelProviderCredentialScope,
     selectedModel: pinColumns.selectedModel,
     codexServiceTier:
       pin.serviceTier === "priority"

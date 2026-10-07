@@ -230,7 +230,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.Banking]: {
-    maintainer: "linghan@okou.ai",
+    maintainer: "yuma@okou.ai",
     description:
       "Enable the managed banking gateway and banking:read OKOU_TOKEN capability for Finicity-backed accounts, balances, and transactions.",
     enabled: false,
@@ -336,25 +336,25 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.AgentResponsibilitySetup]: {
-    maintainer: "linghan@okou.ai",
+    maintainer: "yuma@okou.ai",
     description:
       "Require a responsibility when creating an Agent, then pin it and open a setup thread asking it to adopt that responsibility.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.LarkIntegration]: {
-    maintainer: "linghan@okou.ai",
+    maintainer: "yuma@okou.ai",
     description: "Enable Lark bot setup, account connections, and messaging.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.DiscordIntegration]: {
-    maintainer: "linghan@okou.ai",
+    maintainer: "yuma@okou.ai",
     description: "Enable the verified Discord guild and bot DM integration.",
     enabled: false,
   },
   [FeatureSwitchKey.FeishuIntegration]: {
-    maintainer: "linghan@okou.ai",
+    maintainer: "yuma@okou.ai",
     description:
       "Show the Feishu direct-message integration and Works page entry point.",
     enabled: false,

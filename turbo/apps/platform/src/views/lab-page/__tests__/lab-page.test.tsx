@@ -1,4 +1,5 @@
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { getFeatureSwitchMetadata } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -74,29 +75,32 @@ test("Lab groups active feature switches", async () => {
 
   await screen.findByRole("heading", { name: "Lab" });
 
-  // Released switches are removed once rolled out, so that group may be empty
-  // and is then not rendered at all.
-  const released = screen
-    .queryByRole("heading", { name: "Released" })
-    ?.closest("section");
-  const beta = featureSwitchGroup("Beta");
-  const alpha = featureSwitchGroup("Alpha");
-  const internal = featureSwitchGroup("Internal");
-  const featureRows = [released, beta, alpha, internal].flatMap((group) => {
-    return group ? Array.from(group.querySelectorAll("li")) : [];
-  });
-
-  expect(featureRows).toHaveLength(Object.values(FeatureSwitchKey).length);
-  expect(screen.getAllByRole("switch")).toHaveLength(featureRows.length);
-  expect(within(alpha).getByText(FeatureSwitchKey.Banking)).toBeVisible();
+  // Every switch is listed once, in the group named for its rollout stage.
+  const metadata = getFeatureSwitchMetadata();
+  const stageGroups = {
+    released: "Released",
+    beta: "Beta",
+    alpha: "Alpha",
+    internal: "Internal",
+  } as const;
+  const keys = Object.values(FeatureSwitchKey);
+  for (const key of keys) {
+    const group = featureSwitchGroup(stageGroups[metadata[key].rolloutStage]);
+    expect(within(group).getByText(key)).toBeInTheDocument();
+  }
+  expect(screen.getAllByRole("switch")).toHaveLength(keys.length);
   expect(
-    within(beta).getByText(FeatureSwitchKey.CustomTemplates),
+    within(featureSwitchGroup("Alpha")).getByText(FeatureSwitchKey.Banking),
   ).toBeVisible();
   expect(
-    within(alpha).getByText(FeatureSwitchKey.AhrefsConnector),
+    within(featureSwitchGroup("Beta")).getByText(
+      FeatureSwitchKey.CustomTemplates,
+    ),
   ).toBeVisible();
   expect(
-    within(internal).getByText(FeatureSwitchKey.TestOauthConnector),
+    within(featureSwitchGroup("Internal")).getByText(
+      FeatureSwitchKey.TestOauthConnector,
+    ),
   ).toBeVisible();
   expect(buttonNamed("Reset all")).toBeEnabled();
 });

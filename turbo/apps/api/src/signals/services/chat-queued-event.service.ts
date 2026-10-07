@@ -1,5 +1,4 @@
 import type { ChatEventType } from "@okouai/api-contracts/contracts/chat-events";
-import type { ModelProviderCredentialScope } from "@okouai/api-contracts/contracts/model-providers";
 import {
   chatEvents,
   type ChatEventUserMessage,
@@ -64,9 +63,6 @@ export interface QueuedUserMessage {
   readonly createdAt: Date;
   readonly userMessage: ChatEventUserMessage;
   readonly requiredOfficialWorkflowIds?: readonly string[];
-  readonly modelProviderId: string | null;
-  readonly modelProviderType: string | null;
-  readonly modelProviderCredentialScope: ModelProviderCredentialScope | null;
   readonly selectedModel: string | null;
   readonly contextType: QueuedUserMessageContextType;
   readonly contextId: string | null;

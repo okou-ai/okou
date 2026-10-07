@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.220.15](https://github.com/okou-ai/okou/compare/runner-rs-v0.220.14...runner-rs-v0.220.15) (2026-10-07)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.220.14](https://github.com/okou-ai/okou/compare/runner-rs-v0.220.13...runner-rs-v0.220.14) (2026-10-07)
+
+
+### Refactoring
+
+* remove all remaining custom model mode awareness ([#37856](https://github.com/okou-ai/okou/issues/37856)) ([f383835](https://github.com/okou-ai/okou/commit/f3838353ba0455ec7d57dfa2d0974e34a44796ff))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.220.13](https://github.com/okou-ai/okou/compare/runner-rs-v0.220.12...runner-rs-v0.220.13) (2026-10-07)
 
 ### Release Dependencies

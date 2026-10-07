@@ -8311,8 +8311,8 @@ interface ComposerModelPickerControlsProps {
 
 /**
  * The composer chooses only the chat model and how it runs. Images follow the
- * member's settings, so the panel offers no media model. The panel carries
- * effort and Fast itself, so no effort chip sits beside it.
+ * member's settings, so the panel offers no media model. Effort and Fast live
+ * in the same panel.
  */
 function ComposerModelPickerControls({
   signals,
@@ -8522,8 +8522,7 @@ function ComposerTemporaryModelNoticeSlot({
 }: {
   signals: ComposerSignals;
 }) {
-  const enabled = useGet(signals.model.temporaryModelNoticeEnabled$);
-  if (!enabled) {
+  if (!signals.model.temporaryModelNoticeEnabled) {
     return withChatScrollLayout(null);
   }
   return withChatScrollLayout(

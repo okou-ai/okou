@@ -52,7 +52,7 @@ describe("Pi installed-CLI requirement", () => {
 describe("runner claim installed versions", () => {
   it("is an optional top-level claim body field", () => {
     const body = runnersJobClaimContract.claim.body;
-    const capabilities = { piModelConfigGenerations: [1, 2, 3, 4] };
+    const capabilities = { piModelConfigGenerations: [1, 2, 3] };
     expect(body.safeParse({ capabilities }).success).toBe(true);
     const parsed = body.parse({
       capabilities,

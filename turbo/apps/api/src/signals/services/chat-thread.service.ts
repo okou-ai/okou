@@ -15,11 +15,6 @@ import {
 import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import {
-  modelProviderCredentialScopeSchema,
-  modelProviderTypeSchema,
-  type ModelProviderCredentialScope,
-} from "@okouai/api-contracts/contracts/model-providers";
-import {
   type HostedArtifactKind,
   hostedArtifactKindSchema,
 } from "@okouai/api-contracts/contracts/host";
@@ -101,9 +96,6 @@ type ChatThreadRow = {
   readonly id: string;
   readonly title: string | null;
   readonly agentId: string;
-  readonly modelProviderId: string | null;
-  readonly modelProviderType: string | null;
-  readonly modelProviderCredentialScope: ModelProviderCredentialScope | null;
   readonly codexServiceTier: CodexServiceTier | null;
   readonly computerUseHostId: string | null;
   readonly cloudBrowserEnabled: boolean;
@@ -184,9 +176,6 @@ function ownedChatThread(
         agentId: agents.id,
         computerUseHostId: chatThreads.computerUseHostId,
         cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-        modelProviderId: chatThreads.modelProviderId,
-        modelProviderType: chatThreads.modelProviderType,
-        modelProviderCredentialScope: chatThreads.modelProviderCredentialScope,
         codexServiceTier: chatThreads.codexServiceTier,
         orgId: agents.orgId,
         lastReadAt: chatThreads.lastReadAt,
@@ -211,11 +200,6 @@ function ownedChatThread(
       agentId: thread.agentId,
       computerUseHostId: thread.computerUseHostId,
       cloudBrowserEnabled: thread.cloudBrowserEnabled,
-      modelProviderId: thread.modelProviderId,
-      modelProviderType: thread.modelProviderType,
-      modelProviderCredentialScope: modelProviderCredentialScopeSchema
-        .nullable()
-        .parse(thread.modelProviderCredentialScope),
       codexServiceTier: thread.codexServiceTier ?? null,
       orgId: thread.orgId ?? null,
       lastReadAt: thread.lastReadAt,
@@ -734,9 +718,6 @@ interface CreateChatThreadArgs {
   readonly title: string | undefined;
   readonly clientThreadId: string | undefined;
   readonly eventId: string | undefined;
-  readonly modelProviderId: string | null;
-  readonly modelProviderType: string | null;
-  readonly modelProviderCredentialScope: ModelProviderCredentialScope | null;
   readonly selectedModel: string | null;
   readonly modelSettings?: ModelSettings;
   readonly cloudBrowserEnabled?: boolean;
@@ -763,12 +744,6 @@ function ordinaryChatThreadInsertPlan(args: CreateChatThreadArgs) {
     // replay below returns the existing row without writing this value, so a
     // client id that already names an unknown or excluded thread keeps it.
     lastReadAt: sql`NOW()`,
-    modelProviderId: args.modelProviderId,
-    modelProviderType:
-      args.modelProviderType === null
-        ? null
-        : modelProviderTypeSchema.parse(args.modelProviderType),
-    modelProviderCredentialScope: args.modelProviderCredentialScope,
     selectedModel: args.selectedModel,
     modelSettings: args.modelSettings,
     cloudBrowserEnabled: args.cloudBrowserEnabled,

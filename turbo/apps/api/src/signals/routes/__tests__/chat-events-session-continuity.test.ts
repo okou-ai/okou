@@ -510,7 +510,6 @@ describe("CHAT-02: run-level model overrides", () => {
     );
     const pinned = await chat.readThread(actor, first.threadId);
     expect(pinned).not.toHaveProperty("selectedModel");
-    expect(pinned).not.toHaveProperty("modelProviderId");
     await expectThreadCreatedModelEvent(
       actor,
       first.threadId,
@@ -546,7 +545,6 @@ describe("CHAT-02: run-level model overrides", () => {
     );
     const after = await chat.readThread(actor, first.threadId);
     expect(after).not.toHaveProperty("selectedModel");
-    expect(after).not.toHaveProperty("modelProviderId");
     await expectThreadCreatedModelEvent(
       actor,
       first.threadId,

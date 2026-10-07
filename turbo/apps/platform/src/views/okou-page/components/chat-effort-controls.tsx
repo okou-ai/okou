@@ -133,9 +133,6 @@ export function ChatEffortSettings({
     return effort === value;
   });
   return (
-    // The gap between the rows is not uniform, so each row below the header
-    // carries its own spacing rather than the column setting one for all of
-    // them.
     <div className="flex flex-col px-2 py-3">
       {index !== -1 ? (
         <>

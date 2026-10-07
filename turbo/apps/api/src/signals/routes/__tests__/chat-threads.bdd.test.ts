@@ -2267,9 +2267,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     await chat.updateThreadModelSelection(actor, run.threadId, null);
     detail = await chat.readThread(actor, run.threadId);
     expect(detail).not.toHaveProperty("selectedModel");
-    expect(detail).not.toHaveProperty("modelProviderId");
-    expect(detail).not.toHaveProperty("modelProviderType");
-    expect(detail).not.toHaveProperty("modelProviderCredentialScope");
 
     await cancelChatRun(actor, run.runId);
     await expect(chat.listActiveChatThreadIds(actor)).resolves.not.toContain(

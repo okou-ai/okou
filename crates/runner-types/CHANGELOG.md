@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/okou-ai/okou/compare/runner-types-v0.4.2...runner-types-v0.4.3) (2026-10-07)
+
+
+### Refactoring
+
+* remove all remaining custom model mode awareness ([#37856](https://github.com/okou-ai/okou/issues/37856)) ([f383835](https://github.com/okou-ai/okou/commit/f3838353ba0455ec7d57dfa2d0974e34a44796ff))
+
 ## [0.4.2](https://github.com/okou-ai/okou/compare/runner-types-v0.4.1...runner-types-v0.4.2) (2026-10-02)
 
 ## [0.4.1](https://github.com/okou-ai/okou/compare/runner-types-v0.4.0...runner-types-v0.4.1) (2026-10-01)

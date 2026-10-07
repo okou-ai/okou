@@ -23,13 +23,6 @@ import {
 import { useConnectorAccountLabel } from "./use-connector-account-label.ts";
 import { MercuryDisclosure } from "./mercury-disclosure.tsx";
 
-type CatalogConnectorCardProps = {
-  readonly variant: "catalog";
-  readonly connector: PlatformConnectorCatalogStatusItem;
-  readonly busy: boolean;
-  readonly connect: ConnectorConnectHandlers;
-};
-
 export type ConnectorAccountSummaryStatus = "loading" | "unavailable" | "ready";
 export type ConnectorAccountDisplaySummary =
   | ConnectorAccountSummary
@@ -103,7 +96,6 @@ type DirectoryConnectorCardProps = {
 };
 
 type ConnectorCardProps =
-  | CatalogConnectorCardProps
   | DirectoryConnectorCardProps
   | AccountsConnectorCardProps
   | ActionConnectorCardProps
@@ -118,70 +110,6 @@ function runConnect(
     return;
   }
   launchConnectorConnect({ connector, ...connect });
-}
-
-function CatalogConnectorCard({
-  connector,
-  busy,
-  connect,
-}: CatalogConnectorCardProps) {
-  const { t } = useTranslation();
-  const handleConnect = () => {
-    runConnect(connector, connect, busy);
-  };
-
-  return (
-    <button
-      type="button"
-      disabled={busy}
-      aria-label={t(
-        ($) => {
-          return $.connectors.card.connectAria;
-        },
-        { connector: connector.label },
-      )}
-      data-slot="connector-card"
-      className={cn(
-        surfaceVariants({ interactive: !busy }),
-        "overflow-hidden text-left",
-        busy && "cursor-default",
-      )}
-      onClick={handleConnect}
-    >
-      <span className="flex items-center gap-2.5 px-5 pb-1 pt-4">
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-          <ConnectorIcon icon={connector.icon} size={20} />
-        </span>
-        <span
-          data-testid="connector-card-label"
-          className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
-        >
-          {connector.label}
-        </span>
-        <span
-          className={cn(
-            "flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground",
-            !busy && "border border-border/60",
-          )}
-          aria-hidden="true"
-        >
-          {busy ? (
-            <Loader2 size={16} className="animate-spin" />
-          ) : (
-            <Plus size={14} />
-          )}
-        </span>
-      </span>
-      <span className="block px-5 pb-4 pt-1">
-        <span
-          data-testid="connector-help-text"
-          className="line-clamp-2 text-xs text-muted-foreground"
-        >
-          {connector.description}
-        </span>
-      </span>
-    </button>
-  );
 }
 
 /**
@@ -684,9 +612,6 @@ function PermissionConnectorCard({
 }
 
 export function ConnectorCard(props: ConnectorCardProps) {
-  if (props.variant === "catalog") {
-    return <CatalogConnectorCard {...props} />;
-  }
   if (props.variant === "directory") {
     return <DirectoryConnectorCard {...props} />;
   }

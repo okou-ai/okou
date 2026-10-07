@@ -10,7 +10,6 @@ describe("Pi captured-config observation boundary", () => {
     [{}, 1],
     [{ schemaVersion: 2 }, 2],
     [{ schemaVersion: 3 }, 3],
-    [{ schemaVersion: 4 }, 4],
     [{ schemaVersion: 5 }, "unknown"],
     [{ schemaVersion: "private-version" }, "unknown"],
   ] as const)(

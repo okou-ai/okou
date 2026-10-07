@@ -57,6 +57,7 @@ readonly VIDEO_MODEL_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1283_dro
 readonly IMAGE_MODEL_THREAD_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1287_drop_image_model_thread_columns.sql
 readonly VIDEO_ENTITLEMENT_DROP_PATH=turbo/packages/db/src/migrations/1315_drop_retired_video_entitlement.sql
 readonly RETIRED_MODEL_CONFIGURATION_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1330_drop_retired_model_configuration_columns.sql
+readonly CHAT_THREAD_PROVIDER_PIN_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1332_drop_chat_thread_provider_pin_columns.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -267,6 +268,19 @@ if [[ ! "$retired_model_configuration_columns_drop_commit" =~ ^[0-9a-f]{40}$ ]];
 fi
 if ! git merge-base --is-ancestor "$retired_model_configuration_columns_drop_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the retired model configuration column drop: ${retired_model_configuration_columns_drop_commit}."
+fi
+
+# Migration 1332 drops the legacy chat_threads provider pin columns
+# (model_provider_id, model_provider_type, model_provider_credential_scope).
+# Every earlier API still declares them, so its chat thread inserts and bare
+# selects name the dropped columns.
+chat_thread_provider_pin_columns_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$CHAT_THREAD_PROVIDER_PIN_COLUMNS_DROP_PATH" | sed -n '1p')
+if [[ ! "$chat_thread_provider_pin_columns_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged chat thread provider pin column drop on main."
+fi
+if ! git merge-base --is-ancestor "$chat_thread_provider_pin_columns_drop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the chat thread provider pin column drop: ${chat_thread_provider_pin_columns_drop_commit}."
 fi
 
 # Chat Event V8 removes eight event types and two context types. Earlier APIs

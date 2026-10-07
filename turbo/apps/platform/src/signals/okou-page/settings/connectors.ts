@@ -478,7 +478,7 @@ export const connectorsConnectionFilter$ = computed(
   (get): ConnectorsConnectionFilter => {
     // The directory browses a catalog, and category is the only dimension that
     // organises it. The scope you already own is organised by who uses those
-    // connectors instead, so that is the one place this control still applies.
+    // connectors instead, so that is the one place this control applies.
     if (get(connectorsScope$) !== "connected") {
       return { kind: "all" };
     }

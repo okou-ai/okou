@@ -126,7 +126,7 @@ test("Remote control distinguishes unavailable SSH diagnostics from failed hosts
 });
 
 test.each([2])(
-  "SSH with %i hosts is in Remote control instead of the catalog",
+  "Remote control counts %i configured SSH hosts",
   async (configuredCount) => {
     mockCatalog();
     mockPublicConnectorStatus(
@@ -162,9 +162,7 @@ test.each([2])(
     });
     await setupPage({ context, path: "/connectors" });
     await screen.findByTestId("connector-shelf-communication-collaboration");
-    expect(screen.queryByRole("heading", { name: "Remote access" })).toBeNull();
     expect(screen.queryByText("Acme Search")).toBeNull();
-    expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
     click(getConnectorAction("button", "Filter connectors"));
     const menu = await screen.findByRole("menu");
     const communication = queryAllByRoleFast("menuitem", menu).find((item) => {
@@ -175,10 +173,9 @@ test.each([2])(
     }
     click(communication);
     // Inside a category the page renders that category's connectors alone --
-    // the breadcrumb and the filter already name it, so the grouped headings
-    // are gone.
+    // the breadcrumb and the filter already name it, so there are no grouped
+    // headings.
     await screen.findByTestId("connector-category-grid");
-    expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
     click(screen.getByTestId("connectors-scope-remote-control"));
     await waitFor(() => {
       return getConnectorAction("button", "Add host");
@@ -190,7 +187,6 @@ test.each([2])(
     );
     click(screen.getByTestId("connectors-scope-discover"));
     await screen.findByTestId("connector-shelf-communication-collaboration");
-    expect(queryConnectorAction("link", "Manage SSH hosts")).toBeNull();
   },
 );
 

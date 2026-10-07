@@ -33,6 +33,8 @@ private func handle(_ request: Request) async {
                 backing: .buffered,
                 defer: false
             )
+            // ARC owns this window; close must not release it a second time.
+            window.isReleasedWhenClosed = false
             window.title = "Okou Sign In"
             window.center()
             window.makeKeyAndOrderFront(nil)
