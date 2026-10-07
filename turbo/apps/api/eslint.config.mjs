@@ -729,14 +729,11 @@ export default [
       // Storage publication guard, notification, and concurrency contracts.
       "src/signals/services/__tests__/pi-memory-phase2-job.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-selection.service.test.ts",
-      "src/signals/services/__tests__/pi-memory-phase2-usage.service.test.ts",
-      "src/signals/services/__tests__/pi-memory-phase2-worker.service.test.ts",
       // The post-commit presigned URL cache write is log-only. Every value an
       // endpoint can produce fits the cache columns, so only the command's
       // data parameter can carry a row PostgreSQL rejects.
       "src/signals/services/__tests__/execution-storage.service.test.ts",
       // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
-      "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
       // The Morning Brief source budget is a deployed 20-second constant, not
       // a request input, and shortening it through the preview endpoint would
       // ship a debug parameter. This suite drives the route's own admission
@@ -913,14 +910,11 @@ export default [
       // matrices covered by these focused tests.
       "src/signals/services/__tests__/pi-memory-phase2-job.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-selection.service.test.ts",
-      "src/signals/services/__tests__/pi-memory-phase2-usage.service.test.ts",
-      "src/signals/services/__tests__/pi-memory-phase2-worker.service.test.ts",
       // The post-commit presigned URL cache write is log-only. Every value an
       // endpoint can produce fits the cache columns, so only the command's
       // data parameter can carry a row PostgreSQL rejects.
       "src/signals/services/__tests__/execution-storage.service.test.ts",
       // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
-      "src/signals/services/__tests__/pi-memory-maintenance.boundary.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-job.test-fixture.ts",
       // Bounded job ownership needs row locks, expired leases, handler-version

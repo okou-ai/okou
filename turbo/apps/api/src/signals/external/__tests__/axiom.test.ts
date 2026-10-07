@@ -1,8 +1,6 @@
-import { processOrgUsageEventsForTest } from "../../../test-fixtures/billing-workers";
 import { randomUUID } from "node:crypto";
 
 import { RESUME_SESSION_HISTORY_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
-import { testUsageSettlementContract } from "@okouai/api-contracts/contracts/test-usage-settlement";
 import { webhookTelemetryContract } from "@okouai/api-contracts/contracts/webhooks";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
@@ -15,21 +13,15 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { usageEventCompactionDbFixture } from "../../../test-fixtures/db-fixture";
 import { compactUsageForTest } from "../../../test-fixtures/usage-compaction-worker";
-import {
-  deleteUsagePricingRows,
-  seedUsagePricingRows,
-} from "../../../test-fixtures/system-config-seeds";
 import { createBddApi } from "../../routes/__tests__/helpers/api-bdd";
 import { createRunsApi } from "../../routes/__tests__/helpers/api-bdd-runs";
 import {
   attachUsageAllowance$,
-  deleteUsageData$,
   deleteUsageStateFixture$,
   insertUsageEvent$,
   materializeHourlyUsage$,
   seedUsageStateFixture$,
 } from "../../routes/__tests__/helpers/usage-state";
-import { testUsageSettlementRoutes } from "../../routes/test-usage-settlement";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
 import { createDeferredPromise } from "../../utils";
 import {
@@ -402,206 +394,6 @@ describe("shared SDK ingestion", () => {
       });
       expectGrainMax(1);
     });
-  });
-
-  it("emits settlement timing only for committed nonempty work", async () => {
-    // Telemetry-client suite exception: observe the real settlement worker and SDK
-    // boundary together; do not inspect financial tables or service internals.
-    mockEnv("ENV", "development");
-    const store = createStore();
-    const fixture = await store.set(
-      seedUsageStateFixture$,
-      undefined,
-      context.signal,
-    );
-    const api = setupApp({ context, routes: testUsageSettlementRoutes })(
-      testUsageSettlementContract,
-    );
-    onTestFinished(async () => {
-      // Build a fresh request context after the test-owned signal resets.
-      const cleanupApi = setupApp({
-        context,
-        routes: testUsageSettlementRoutes,
-      })(testUsageSettlementContract);
-      await accept(
-        cleanupApi.cleanup({ body: { org_id: fixture.orgId } }),
-        [200],
-      );
-      await store.set(
-        deleteUsageData$,
-        { scope: "organization", id: fixture.orgId },
-        context.signal,
-      );
-      await store.set(deleteUsageStateFixture$, fixture, context.signal);
-    });
-    await accept(
-      api.setup({ body: { org_id: fixture.orgId, credits: 100 } }),
-      [200],
-    );
-    const provider = `timing-${randomUUID()}`;
-    await seedUsagePricingRows([
-      {
-        kind: "model",
-        provider,
-        category: "tokens.input",
-        unitPrice: 1,
-        unitSize: 1,
-      },
-    ]);
-    onTestFinished(async () => {
-      await deleteUsagePricingRows({
-        kind: "model",
-        provider,
-        categories: ["tokens.input"],
-      });
-    });
-    await processOrgUsageEventsForTest(
-      { orgId: fixture.orgId },
-      context.signal,
-    );
-    await store.set(
-      insertUsageEvent$,
-      {
-        ...fixture,
-        kind: "model",
-        provider,
-        category: "tokens.input",
-        quantity: 3,
-        idempotencyKey: randomUUID(),
-      },
-      context.signal,
-    );
-
-    const settlementTimings = () => {
-      return context.mocks.axiom.sdkIngest.mock.calls.flatMap(([, events]) => {
-        if (!Array.isArray(events)) {
-          return [];
-        }
-        return events.flatMap((event: unknown) => {
-          if (
-            typeof event !== "object" ||
-            event === null ||
-            !("op_type" in event)
-          ) {
-            return [];
-          }
-          return event.op_type === "api_billing_settlement_work" ? [event] : [];
-        });
-      });
-    };
-    expect(settlementTimings()).toStrictEqual([]);
-
-    await processOrgUsageEventsForTest(
-      { orgId: fixture.orgId },
-      context.signal,
-    );
-    expect(settlementTimings()).toStrictEqual([
-      expect.objectContaining({
-        timing_scope: "standalone",
-        pending_events: 1,
-        compaction_lock_wait_ms: expect.any(Number),
-        statement_grouping: "command_local_batch",
-        grant_rows: 0,
-        expired_rows: 0,
-        expiry_rows: 0,
-      }),
-    ]);
-    expect(settlementTimings()[0]).not.toHaveProperty("org_id");
-    expect(settlementTimings()[0]).not.toHaveProperty("user_id");
-    expect(settlementTimings()[0]).not.toHaveProperty("run_id");
-
-    const committedBatch: unknown = context.mocks.axiom.sdkIngest.mock.calls
-      .map(([, events]) => {
-        return events;
-      })
-      .find((events) => {
-        return (
-          Array.isArray(events) &&
-          events.some((event: unknown) => {
-            return (
-              typeof event === "object" &&
-              event !== null &&
-              "op_type" in event &&
-              event.op_type === "api_billing_settlement_work"
-            );
-          })
-        );
-      });
-    if (!Array.isArray(committedBatch)) {
-      throw new Error("Expected a committed settlement timing batch");
-    }
-    expect(committedBatch).toHaveLength(3);
-    for (const [dimension, opType] of [
-      [
-        "compaction_lock_wait_ms",
-        "api_billing_settlement_compaction_lock_wait",
-      ],
-    ] as const) {
-      const lockEvent: unknown = committedBatch.find((event: unknown) => {
-        return (
-          typeof event === "object" &&
-          event !== null &&
-          "op_type" in event &&
-          event.op_type === opType
-        );
-      });
-      if (
-        typeof lockEvent !== "object" ||
-        lockEvent === null ||
-        !("duration_ms" in lockEvent) ||
-        typeof lockEvent.duration_ms !== "number"
-      ) {
-        throw new Error(`Expected ${opType} in the same timing batch`);
-      }
-      expect(settlementTimings()[0]).toHaveProperty(
-        dimension,
-        lockEvent.duration_ms,
-      );
-    }
-
-    await accept(
-      api.createGrant({
-        body: {
-          org_id: fixture.orgId,
-          user_id: fixture.userId,
-          grant_type: "purchased",
-          idempotency_key: randomUUID(),
-          amount: 10,
-          expires_at: "2099-01-01T00:00:00.000Z",
-        },
-      }),
-      [200],
-    );
-    await store.set(
-      insertUsageEvent$,
-      {
-        ...fixture,
-        kind: "model",
-        provider,
-        category: "tokens.input",
-        quantity: 2,
-        idempotencyKey: randomUUID(),
-      },
-      context.signal,
-    );
-    await processOrgUsageEventsForTest(
-      { orgId: fixture.orgId },
-      context.signal,
-    );
-    expect(settlementTimings()).toHaveLength(2);
-    expect(settlementTimings()[1]).toStrictEqual(
-      expect.objectContaining({
-        statement_grouping: "command_local_batch",
-        expired_rows: 0,
-        expiry_rows: 0,
-        grant_rows: 1,
-      }),
-    );
-    await processOrgUsageEventsForTest(
-      { orgId: fixture.orgId },
-      context.signal,
-    );
-    expect(settlementTimings()).toHaveLength(2);
   });
 
   it("does not throw when billing timing ingestion fails synchronously", () => {

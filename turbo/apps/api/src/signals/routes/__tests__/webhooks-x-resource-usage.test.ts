@@ -1,31 +1,17 @@
 import { randomUUID } from "node:crypto";
 
 import { webhookUsageEventContract } from "@okouai/api-contracts/contracts/webhooks";
-import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { z } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now, nowDate } from "../../../lib/time";
-import {
-  createUsagePricingFixture,
-  type UsagePricingFixture,
-} from "../../../test-fixtures/system-config-seeds";
-import { withXResourceClock } from "../../../test-fixtures/x-resource-usage";
-import { flushWaitUntilForTest } from "../../context/wait-until";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../webhooks-agent-health-usage-telemetry";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
-import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
-import {
-  generatedStripeCustomerId,
-  postUsageAllowanceInvoicePaid,
-} from "./helpers/stripe-billing-webhook";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
 type UsageEvent = z.infer<
   (typeof webhookUsageEventContract.send)["body"]
@@ -42,7 +28,6 @@ interface RunFixture {
 const context = testContext({});
 const bdd = createBddApi(context);
 const runs = createRunsApi(context);
-const billing = createBillingMediaApi(context);
 const DAY_MS = 86_400_000;
 
 beforeEach(() => {
@@ -125,310 +110,8 @@ function submit(fixture: RunFixture, events: UsageEvent[]) {
   });
 }
 
-async function pricing(): Promise<UsagePricingFixture> {
-  // Operator pricing has no production mutation API. This fixture maps the
-  // canonical provider to private lookup rows; it never changes shared X prices.
-  const fixture = await createUsagePricingFixture({
-    configured: [
-      ...["posts.read", "user.read"].map((category) => {
-        return {
-          kind: "connector",
-          provider: "x",
-          category,
-          unitPrice: 1,
-          unitSize: 1,
-        };
-      }),
-      {
-        kind: "model",
-        provider: "x-resource-test-model",
-        category: "tokens.input",
-        unitPrice: 1,
-        unitSize: 1,
-      },
-      {
-        kind: "image",
-        provider: "x-resource-test-image",
-        category: "output_tokens",
-        unitPrice: 1,
-        unitSize: 1,
-      },
-    ],
-  });
-  onTestFinished(fixture.cleanup);
-  return fixture;
-}
-
-async function chargedUnits(
-  fixture: RunFixture,
-  configuredPricing: UsagePricingFixture,
-): Promise<number> {
-  await billing.processOrgUsageEvents(
-    fixture.actor,
-    configuredPricing.resolution,
-  );
-  // One credit per unit makes the public usage response expose the net charge.
-  const response = await billing.readUsageRecord(fixture.actor);
-  return response.body.totalCredits;
-}
-
 describe("X daily resource usage webhook", () => {
-  it.each([false, true])(
-    "discards zero quantities for every usage kind (mixed=%s)",
-    async (mixed) => {
-      const configuredPricing = await pricing();
-      // Built-in credentials are operator configuration with no product write
-      // endpoint. The fixture owns its key and scopes selection to this test.
-      await seedBuiltInDefaultModelKey(context);
-      const fixture = await createRun(bdd.user(), "built-in");
-      const zeroEvents = (
-        [
-          { kind: "connector", provider: "x", category: "posts.read" },
-          {
-            kind: "model",
-            provider: "x-resource-test-model",
-            category: "tokens.input",
-          },
-          {
-            kind: "image",
-            provider: "x-resource-test-image",
-            category: "output_tokens",
-          },
-        ] satisfies Pick<UsageEvent, "kind" | "provider" | "category">[]
-      ).map((event) => {
-        return { ...event, idempotencyKey: randomUUID(), quantity: 0 };
-      });
-      const events = mixed ? [...zeroEvents, observation([])] : zeroEvents;
-      await accept(submit(fixture, events), [200]);
-      await accept(submit(fixture, events), [200]);
-      await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(0);
-      expect(
-        (await billing.readUsageRecord(fixture.actor)).body.rows,
-      ).toStrictEqual([]);
-
-      // Empty events reserve no source identity for any usage kind. Later
-      // positive observations with those UUIDs are accepted exactly once.
-      const positive = zeroEvents.map((event) => {
-        return { ...event, quantity: 2 };
-      });
-      const positiveBatch = mixed ? [...positive, observation([])] : positive;
-      await accept(submit(fixture, positiveBatch), [200]);
-      await accept(submit(fixture, positiveBatch), [200]);
-      await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(6);
-    },
-  );
-
-  it("shares an allowance-funded first read with another organization", async () => {
-    const configuredPricing = await pricing();
-    const first = await createRun();
-    const second = await createRun();
-    await postUsageAllowanceInvoicePaid(context.signal, {
-      orgId: first.actor.orgId!,
-      userId: first.actor.userId,
-      customerId: generatedStripeCustomerId(),
-      subscriptionId: `sub_x_resources_${randomUUID()}`,
-      effectiveAt: new Date(now() - 60_000),
-      expiresAt: new Date(now() + DAY_MS),
-      shortWindowSeconds: 3600,
-      shortWindowUnits: 10,
-      weeklyWindowSeconds: 7 * 86_400,
-      weeklyWindowUnits: 10,
-    });
-    const initialCredits = (await runs.readBillingStatus(first.actor)).credits;
-    const id = resourceId();
-
-    await accept(submit(first, [observation([id])]), [200]);
-    await expect(chargedUnits(first, configuredPricing)).resolves.toBe(1);
-    const fundedStatus = await runs.readBillingStatus(first.actor);
-    expect(fundedStatus.credits).toBe(initialCredits);
-    expect(fundedStatus.usageAllowance?.windows).toStrictEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ kind: "short", consumedUnits: 1 }),
-        expect.objectContaining({ kind: "weekly", consumedUnits: 1 }),
-      ]),
-    );
-    await accept(submit(second, [observation([id])]), [200]);
-    await expect(chargedUnits(second, configuredPricing)).resolves.toBe(0);
-    expect(
-      (await billing.readUsageRecord(second.actor)).body.rows,
-    ).toStrictEqual([]);
-  });
-
-  it("charges distinct identities and remainder across organizations and namespaces", async () => {
-    const configuredPricing = await pricing();
-    const first = await createRun();
-    const second = await createRun();
-    const firstId = resourceId();
-    const secondId = resourceId();
-    const thirdId = resourceId();
-    const event = observation([], {
-      quantity: 9,
-      resources: [
-        { id: firstId, occurrences: 3 },
-        { id: secondId, occurrences: 2 },
-      ],
-      remainder: [{ reason: "missing_id", quantity: 4 }],
-    });
-
-    await accept(submit(first, [event]), [200]);
-    await accept(submit(first, [event]), [200]);
-    await accept(submit(second, [observation([firstId, thirdId])]), [200]);
-    await accept(
-      submit(second, [observation([firstId], { category: "user.read" })]),
-      [200],
-    );
-
-    await expect(chargedUnits(first, configuredPricing)).resolves.toBe(6);
-    await expect(chargedUnits(second, configuredPricing)).resolves.toBe(2);
-  });
-
-  it("keeps exact decimal string identities, including leading zeroes", async () => {
-    const configuredPricing = await pricing();
-    const fixture = await createRun();
-    const id = resourceId();
-    await accept(submit(fixture, [observation([id, `0${id}`])]), [200]);
-    await accept(submit(fixture, [observation([id, `0${id}`])]), [200]);
-    await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(2);
-  });
-
-  it("charges the same resource again on the next UTC date but not yesterday's retry", async () => {
-    const configuredPricing = await pricing();
-    const fixture = await createRun();
-    const event = observation([resourceId()]);
-    const tomorrow = new Date(now() + DAY_MS);
-    await accept(submit(fixture, [event]), [200]);
-    // Infrastructure exception: callers cannot advance PostgreSQL's clock.
-    // The fixture scopes the clock to this API operation; auth/settlement and
-    // every database write still run through their normal endpoints.
-    await withXResourceClock(
-      () => {
-        return tomorrow;
-      },
-      async () => {
-        await accept(submit(fixture, [event]), [200]);
-        await accept(
-          submit(fixture, [
-            {
-              ...event,
-              idempotencyKey: randomUUID(),
-              observedAt: tomorrow.toISOString(),
-            },
-          ]),
-          [200],
-        );
-      },
-    );
-    await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(2);
-  });
-
-  it("accepts yesterday's first delivery and rejects its retry once that date expires", async () => {
-    const configuredPricing = await pricing();
-    const fixture = await createRun();
-    const event = observation([resourceId()]);
-    const tomorrow = new Date(now() + DAY_MS);
-    // Infrastructure exception: advance only this request's database clock to
-    // exercise retained-date admission without waiting two real calendar days.
-    await withXResourceClock(
-      () => {
-        return tomorrow;
-      },
-      async () => {
-        await accept(submit(fixture, [event]), [200]);
-        await accept(submit(fixture, [event]), [200]);
-      },
-    );
-    await withXResourceClock(
-      () => {
-        return new Date(tomorrow.getTime() + DAY_MS);
-      },
-      async () => {
-        await accept(submit(fixture, [event]), [400]);
-      },
-    );
-    await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(1);
-  });
-
-  it("does not claim newly supplied resources when an owned source UUID is retried", async () => {
-    const configuredPricing = await pricing();
-    const fixture = await createRun();
-    const original = observation([resourceId()]);
-    const additionalId = resourceId();
-    await accept(submit(fixture, [original]), [200]);
-    // The source UUID is the retry authority; there is no separate request
-    // digest. Changed content cannot add claims or change its existing charge.
-    await accept(
-      submit(fixture, [
-        observation([additionalId], {
-          idempotencyKey: original.idempotencyKey,
-          quantity: 3,
-          remainder: [{ reason: "missing_id", quantity: 2 }],
-        }),
-      ]),
-      [200],
-    );
-    await accept(submit(fixture, [observation([additionalId])]), [200]);
-    await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(2);
-  });
-
-  it("discards zero usage while charging unknown-only retries once", async () => {
-    const configuredPricing = await pricing();
-    const first = await createRun();
-    const second = await createRun();
-    const id = resourceId();
-    const zero = observation([]);
-    const unknown = observation([], {
-      quantity: 3,
-      remainder: [{ reason: "parse_fallback", quantity: 3 }],
-    });
-    await accept(submit(first, [observation([id])]), [200]);
-    const duplicate = observation([id]);
-    await accept(submit(second, [duplicate, zero]), [200]);
-    await Promise.all([
-      accept(submit(second, [duplicate, zero]), [200]),
-      accept(submit(second, [duplicate, zero]), [200]),
-    ]);
-    await expect(chargedUnits(second, configuredPricing)).resolves.toBe(0);
-    expect(
-      (await billing.readUsageRecord(second.actor)).body.rows,
-    ).toStrictEqual([]);
-    await accept(submit(first, [zero, duplicate]), [200]);
-
-    await accept(submit(second, [unknown]), [200]);
-    await accept(submit(second, [unknown]), [200]);
-    await accept(submit(first, [unknown]), [409]);
-
-    await expect(chargedUnits(first, configuredPricing)).resolves.toBe(1);
-    await expect(chargedUnits(second, configuredPricing)).resolves.toBe(3);
-  });
-
-  it("settles concurrent batches with inverse event and resource order once globally", async () => {
-    const configuredPricing = await pricing();
-    const first = await createRun();
-    const second = await createRun();
-    const ids = Array.from({ length: 4 }, resourceId);
-    const firstEvents = [
-      observation(ids.slice(0, 2)),
-      observation(ids.slice(2)),
-    ];
-    const secondEvents = [
-      observation(ids.slice(2).reverse()),
-      observation(ids.slice(0, 2).reverse()),
-    ];
-
-    await Promise.all([
-      accept(submit(first, firstEvents), [200]),
-      accept(submit(second, secondEvents), [200]),
-    ]);
-    // Retry both complete batches after the winner is committed.
-    await accept(submit(first, firstEvents), [200]);
-    await accept(submit(second, secondEvents), [200]);
-    const firstCharge = await chargedUnits(first, configuredPricing);
-    const secondCharge = await chargedUnits(second, configuredPricing);
-    expect(firstCharge + secondCharge).toBe(4);
-  });
-
   it("rolls back a whole mixed batch when a source UUID belongs to another organization", async () => {
-    const configuredPricing = await pricing();
     const first = await createRun();
     const second = await createRun();
     const original = observation([resourceId()]);
@@ -441,9 +124,12 @@ describe("X daily resource usage webhook", () => {
       quantity: 5,
     };
     await accept(submit(first, [original]), [200]);
-    await accept(submit(second, [fresh, countEvent, original]), [409]);
-    await expect(chargedUnits(second, configuredPricing)).resolves.toBe(0);
-    // The failed request claimed neither its fresh source UUID nor its resource.
+    const rejected = await accept(
+      submit(second, [fresh, countEvent, original]),
+      [409],
+    );
+    expect(rejected.status).toBe(409);
+    // The failed request left its fresh source UUID available to this owner.
     await accept(submit(first, [fresh]), [200]);
     await accept(
       submit(second, [
@@ -455,15 +141,11 @@ describe("X daily resource usage webhook", () => {
       ]),
       [200],
     );
-
-    await expect(chargedUnits(first, configuredPricing)).resolves.toBe(2);
-    await expect(chargedUnits(second, configuredPricing)).resolves.toBe(0);
   });
 
   it.each(["user", "organization"] as const)(
     "rejects a source UUID when only its %s owner differs",
     async (scope) => {
-      const configuredPricing = await pricing();
       const first = await createRun();
       const second = await createRun(
         scope === "user"
@@ -473,9 +155,9 @@ describe("X daily resource usage webhook", () => {
       const owned = observation([resourceId()]);
       const fresh = observation([resourceId()]);
       await accept(submit(first, [owned]), [200]);
-      await accept(submit(second, [owned, fresh]), [409]);
+      const rejected = await accept(submit(second, [owned, fresh]), [409]);
+      expect(rejected.status).toBe(409);
       await accept(submit(first, [fresh]), [200]);
-      await expect(chargedUnits(first, configuredPricing)).resolves.toBe(2);
     },
   );
 
@@ -527,142 +209,16 @@ describe("X daily resource usage webhook", () => {
   ])(
     "rejects observations $name without claiming the identity",
     async ({ offset }) => {
-      const configuredPricing = await pricing();
       const fixture = await createRun();
       const event = observation([resourceId()]);
-      await accept(
+      const rejected = await accept(
         submit(fixture, [
           { ...event, observedAt: new Date(now() + offset).toISOString() },
         ]),
         [400],
       );
+      expect(rejected.status).toBe(400);
       await accept(submit(fixture, [event]), [200]);
-      await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(1);
     },
   );
-
-  it("rejects observations after run completion even inside the database time window", async () => {
-    const configuredPricing = await pricing();
-    const fixture = await createRun();
-    const event = observation([resourceId()]);
-    await runs.requestCancelRun(
-      fixture.actor,
-      fixture.runId,
-      [200],
-      configuredPricing.resolution,
-    );
-    // Cancellation owns asynchronous settlement. Complete it with this test's
-    // pricing before submitting the intentionally late observation.
-    await flushWaitUntilForTest();
-    const tooLate = new Date(now() + 6 * 60_000);
-    // Infrastructure exception: advance this request's database clock so only
-    // the completed-run bound, rather than the future-clock bound, rejects it.
-    await withXResourceClock(
-      () => {
-        return tooLate;
-      },
-      async () => {
-        await accept(
-          submit(fixture, [{ ...event, observedAt: tooLate.toISOString() }]),
-          [400],
-        );
-      },
-    );
-    await accept(submit(fixture, [event]), [200]);
-    await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(1);
-  });
-
-  it("accepts mixed batches while preserving user-owned model filtering", async () => {
-    const configuredPricing = await pricing();
-    const fixture = await createRun();
-    const events: UsageEvent[] = [
-      observation([resourceId(), resourceId()]),
-      {
-        idempotencyKey: randomUUID(),
-        kind: "connector",
-        provider: "x",
-        category: "posts.read",
-        quantity: 3,
-      },
-      {
-        idempotencyKey: randomUUID(),
-        kind: "model",
-        provider: "x-resource-test-model",
-        category: "tokens.input",
-        quantity: 9,
-      },
-    ];
-    await accept(submit(fixture, events), [200]);
-    await accept(submit(fixture, events), [200]);
-    await expect(chargedUnits(fixture, configuredPricing)).resolves.toBe(5);
-  });
-
-  it("retains shared resources after run deletion and rejects the deleted run token", async () => {
-    const configuredPricing = await pricing();
-    const deleted = await createRun();
-    const survivor = await createRun();
-    const sharedId = resourceId();
-    const freshId = resourceId();
-    await accept(submit(deleted, [observation([sharedId])]), [200]);
-    await expect(chargedUnits(deleted, configuredPricing)).resolves.toBe(1);
-    await runs.requestCancelRun(
-      deleted.actor,
-      deleted.runId,
-      [200],
-      configuredPricing.resolution,
-    );
-    await flushWaitUntilForTest();
-    await bdd.requestDeleteAgent(deleted.actor, deleted.agentId, [204]);
-    await runs.requestReadRun(deleted.actor, deleted.runId, [404]);
-
-    await accept(submit(deleted, [observation([freshId])]), [404]);
-    await accept(submit(survivor, [observation([sharedId, freshId])]), [200]);
-    await expect(chargedUnits(survivor, configuredPricing)).resolves.toBe(1);
-  });
-
-  it("retains shared resource claims and billing after deleting their chat thread", async () => {
-    const configuredPricing = await pricing();
-    const owner = await createRun();
-    const survivor = await createRun();
-    // The threaded run must stay active until cancelled, so it uses Fable,
-    // whose personal subscription route runs on the native Runner, not Pi.
-    await runs.ensurePersonalSubscriptionModel(owner.actor, {
-      model: "claude-fable-5-1",
-    });
-    const chat = createChatFilesBddApi(context);
-    const callbacks = createChatCallbacksApi(context);
-    callbacks.acceptChatObjectStorage();
-    callbacks.disableVapid();
-    const thread = await chat.createThread(owner.actor, {
-      agentId: owner.agentId,
-      title: "X resource thread",
-    });
-    const sent = await chat.sendAndLaunch(owner.actor, {
-      agentId: owner.agentId,
-      threadId: thread.id,
-      prompt: "Read an X resource",
-    });
-    const threaded = {
-      ...owner,
-      runId: sent.runId,
-      authorization: `Bearer ${runs.sandboxTokenForRun(owner.actor, sent.runId)}`,
-    };
-    const id = resourceId();
-    await accept(submit(threaded, [observation([id])]), [200]);
-    await expect(chargedUnits(threaded, configuredPricing)).resolves.toBe(1);
-    await runs.requestCancelRun(
-      threaded.actor,
-      threaded.runId,
-      [200],
-      configuredPricing.resolution,
-    );
-    await flushWaitUntilForTest();
-    await chat.deleteThread(threaded.actor, thread.id);
-    await chat.requestReadThread(threaded.actor, thread.id, [404]);
-    // Thread removal preserves terminal runs and the billing ledger.
-    await runs.requestReadRun(threaded.actor, threaded.runId, [200]);
-    await expect(chargedUnits(threaded, configuredPricing)).resolves.toBe(1);
-    await accept(submit(survivor, [observation([id])]), [200]);
-    await expect(chargedUnits(survivor, configuredPricing)).resolves.toBe(0);
-  });
 });

@@ -1,35 +1,31 @@
-import { reconcileBillingOrganizationsForTest } from "../../../../test-fixtures/billing-workers";
-import { mockClerkUsers } from "./clerk-users";
-import { mockClaudeCodeTokenEndpoint } from "./api-bdd-auth-device";
 import { randomUUID } from "node:crypto";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
+import { mockClaudeCodeTokenEndpoint } from "./api-bdd-auth-device";
 import { createChatFilesBddApi } from "./api-bdd-chat-files";
+import { mockClerkUsers } from "./clerk-users";
 
-import type StripeSDK from "stripe";
-import type { z } from "zod";
+import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
+import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import {
   cliAuthApproveContract,
   cliAuthDeviceContract,
   cliAuthTokenContract,
 } from "@okouai/api-contracts/contracts/cli-auth";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import { webhookStripeContract } from "@okouai/api-contracts/contracts/webhooks";
-import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
-import {
-  userPermissionGrantsContract,
-  type ApplyUserPermissionGrant,
-  type ApplyUserPermissionGrantsRequest,
-  type UserPermissionGrantResponse,
-} from "@okouai/api-contracts/contracts/user-permission-grants";
-import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
-import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
-import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
-import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
-import type { UpsertModelProviderRequest } from "@okouai/api-contracts/contracts/model-providers";
 import {
   cronProcessUsageEventsContract,
   cronTelegramCleanupContract,
 } from "@okouai/api-contracts/contracts/cron";
+import type { UpsertModelProviderRequest } from "@okouai/api-contracts/contracts/model-providers";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
+import {
+  runContextContract,
+  runRunnerContract,
+  runsByIdContract,
+  runsCancelContract,
+  runsQueueContract,
+} from "@okouai/api-contracts/contracts/run-routes";
 import {
   runnersCancellationContract,
   runnersConnectorRuntimeSyncContract,
@@ -41,44 +37,47 @@ import {
   type CanonicalStorageManifest,
   type StorageManifest,
 } from "@okouai/api-contracts/contracts/runners";
-import {
-  runsCancelContract,
-  runContextContract,
-  runRunnerContract,
-  runsByIdContract,
-  runsQueueContract,
-} from "@okouai/api-contracts/contracts/run-routes";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
+import {
+  userPermissionGrantsContract,
+  type ApplyUserPermissionGrant,
+  type ApplyUserPermissionGrantsRequest,
+  type UserPermissionGrantResponse,
+} from "@okouai/api-contracts/contracts/user-permission-grants";
+import { webhookStripeContract } from "@okouai/api-contracts/contracts/webhooks";
+import type StripeSDK from "stripe";
+import type { z } from "zod";
 
-import { createAppWithRoutes } from "../../../../app-factory-core";
+import { apiTestS3PresignedUrl } from "../../../../__tests__/mocks";
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
-import { apiTestS3PresignedUrl } from "../../../../__tests__/mocks";
+import { createAppWithRoutes } from "../../../../app-factory-core";
 import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { now, withNowScopeForTest } from "../../../../lib/time";
-import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
-import type { SystemSkillStorageResolution } from "../../../context/system-skill-storage-resolution";
 import { listAgentRunsFixture } from "../../../../test-fixtures/agent-runs";
 import {
   generateSandboxToken,
   signSandboxJwtForTests,
 } from "../../../auth/tokens";
+import type { SystemSkillStorageResolution } from "../../../context/system-skill-storage-resolution";
+import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 import { mockStripeClient } from "../../../external/stripe-client";
+import { agentsRoutes } from "../../agents";
+import { billingStatusRoutes } from "../../billing-status";
 import { cliAuthRoutes } from "../../cli-auth";
 import { cronProcessUsageEventsRoutes } from "../../cron-process-usage-events";
 import { cronTelegramCleanupRoutes } from "../../cron-telegram-cleanup";
-import { runnersRoutes } from "../../runners";
-import { runnerCancellationRoutes } from "../../runner-cancellation";
-import { webhooksStripeRoutes } from "../../webhooks-stripe";
-import { agentsRoutes } from "../../agents";
-import { billingStatusRoutes } from "../../billing-status";
-import { runModelsRoutes } from "../../run-models";
-import { userModelPreferenceRoutes } from "../../user-model-preference";
 import { meModelProvidersUpsertRoutes } from "../../me-model-providers-upsert";
 import { runDetailRoutes } from "../../run-detail";
-import { runsCancelRoutes } from "../../runs-cancel";
+import { runModelsRoutes } from "../../run-models";
+import { runnerCancellationRoutes } from "../../runner-cancellation";
+import { runnersRoutes } from "../../runners";
 import { runsRoutes } from "../../runs";
+import { runsCancelRoutes } from "../../runs-cancel";
+import { userModelPreferenceRoutes } from "../../user-model-preference";
 import { userPermissionGrantsRoutes } from "../../user-permission-grants";
+import { webhooksStripeRoutes } from "../../webhooks-stripe";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
 
@@ -1425,13 +1424,6 @@ export function createRunsApi(
         processUsageEvents,
         telegramCleanup,
       };
-    },
-
-    async reconcileBillingOrganizations(orgIds: readonly string[]) {
-      return await reconcileBillingOrganizationsForTest(
-        { orgIds: [...orgIds] },
-        context.signal,
-      );
     },
   };
 }

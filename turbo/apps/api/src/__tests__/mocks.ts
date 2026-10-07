@@ -1,15 +1,15 @@
-import { Buffer } from "node:buffer";
-import type StripeSDK from "stripe";
 import type {
-  BatchPublishSpec,
-  BatchResult,
-  BatchPublishSuccessResult,
   BatchPublishFailureResult,
+  BatchPublishSpec,
+  BatchPublishSuccessResult,
+  BatchResult,
   ClientOptions,
 } from "ably";
-import type { LookupFunction } from "node:net";
 import { computed } from "ccstate";
 import { ws } from "msw";
+import { Buffer } from "node:buffer";
+import type { LookupFunction } from "node:net";
+import type StripeSDK from "stripe";
 import { vi, type Mock } from "vitest";
 import { z } from "zod";
 
@@ -1613,13 +1613,4 @@ export function resetApiTestMocks(): void {
   apiTestMocks.sentry.httpIntegration.mockReset();
   apiTestMocks.sentry.init.mockReset();
   apiTestMocks.sentry.nativeNodeFetchIntegration.mockReset();
-}
-
-/** Exercise the cost observation's best-effort boundary without exposing logs. */
-export function mockStage1CostLogFailure(): void {
-  apiTestMocks.axiomLogging.info.mockImplementation((message: unknown) => {
-    if (message === "Pi memory Stage 1 cost observed") {
-      throw new Error("Controlled cost transport failure");
-    }
-  });
 }

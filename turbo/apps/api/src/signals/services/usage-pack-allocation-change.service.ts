@@ -59,7 +59,6 @@ import {
 import { settle } from "../utils";
 import { createUsagePackCreditGrant } from "./usage-pack-credit.service";
 import { prepareUsagePackMemberCreditRefunds } from "./usage-pack-credit-refund.service";
-import type { BillingReconciliationScope } from "./billing-reconciliation-scope";
 import { completeBillingOperationInvoice } from "./billing-operation-invoice.service";
 import {
   setStripeSubscriptionPaymentMethod,
@@ -2168,7 +2167,6 @@ export const syncUsagePackSubscriptionConfiguration$ = command(
 export const syncUsagePackSubscriptionConfigurations$ = command(
   async (
     { set },
-    scope: BillingReconciliationScope | undefined,
     signal: AbortSignal,
   ): Promise<{ readonly updated: number; readonly failed: number }> => {
     const db = set(writeDb$);
@@ -2187,9 +2185,7 @@ export const syncUsagePackSubscriptionConfigurations$ = command(
             notInArray(usagePackSubscriptions.subscriptionStatus, [
               ...TERMINAL_SUBSCRIPTION_STATUSES,
             ]),
-            scope
-              ? inArray(usagePackSubscriptions.orgId, [...scope.orgIds])
-              : sql`(hashtext(${usagePackSubscriptions.id}::text) & 2147483647) % ${USAGE_PACK_CONFIGURATION_SWEEP_BUCKETS} = ${bucket}`,
+            sql`(hashtext(${usagePackSubscriptions.id}::text) & 2147483647) % ${USAGE_PACK_CONFIGURATION_SWEEP_BUCKETS} = ${bucket}`,
             after ? gt(usagePackSubscriptions.id, after) : undefined,
           ),
         )
@@ -4513,7 +4509,6 @@ async function usagePackChangeCandidateSubscriptionIds(
   db: Pick<Db, "select">,
   at: Date,
   staleBefore: Date,
-  scope: BillingReconciliationScope | undefined,
 ): Promise<readonly string[]> {
   const rows = await db
     .select({
@@ -4523,9 +4518,6 @@ async function usagePackChangeCandidateSubscriptionIds(
     .from(usagePackAllocationChanges)
     .where(
       and(
-        scope
-          ? inArray(usagePackAllocationChanges.orgId, [...scope.orgIds])
-          : undefined,
         or(
           and(
             inArray(usagePackAllocationChanges.status, [
@@ -4640,7 +4632,6 @@ async function reconcileUsagePackAllocationChangeCandidate(
 
 export async function reconcileUsagePackAllocationChanges(
   db: Db,
-  scope: BillingReconciliationScope | undefined,
   signal: AbortSignal,
 ): Promise<{
   readonly reconciled: number;
@@ -4660,9 +4651,6 @@ export async function reconcileUsagePackAllocationChanges(
     })
     .where(
       and(
-        scope
-          ? inArray(usagePackAllocationChanges.orgId, [...scope.orgIds])
-          : undefined,
         eq(usagePackAllocationChanges.status, "previewed"),
         lte(usagePackAllocationChanges.previewExpiresAt, at),
       ),
@@ -4674,7 +4662,6 @@ export async function reconcileUsagePackAllocationChanges(
     db,
     at,
     staleBefore,
-    scope,
   );
   signal.throwIfAborted();
   const orgIds = new Set<string>();

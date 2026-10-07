@@ -1,12 +1,10 @@
 /**
- * In-process test fixture for the global `usage_pricing` table.
+ * Legacy in-process fixture for the operator-managed `usage_pricing` table.
  *
- * Usage pricing is operator-managed global configuration with no product API
- * (rows are written by ops tooling/migrations in production), so tests cannot
- * construct pricing state through any product endpoint. New route tests use
- * `createUsagePricingFixture` to own unique lookup providers. Raw mutation
- * helpers are reserved for rows whose provider is already proven UUID-, run-,
- * or fixture-owned; they must never target canonical operator identities.
+ * There is no user API for constructing these rows. A scenario that requires
+ * chosen pricing or an exact balance from this fixture cannot be preserved by
+ * replacing a test endpoint with this helper. Prefer independently public
+ * behavior; delete private-only scenarios as their callers are corrected.
  */
 import { randomUUID } from "node:crypto";
 

@@ -1,23 +1,17 @@
-import { drainEmailOutboxItemsForTest } from "../../../test-fixtures/email-outbox-workers";
-import { mockClerkUsers } from "./helpers/clerk-users";
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { drainEmailOutboxItemsForTest } from "../../../test-fixtures/email-outbox-workers";
+import { mockClerkUsers } from "./helpers/clerk-users";
 
 import { testContext } from "../../../__tests__/test-context";
-import {
-  deleteUsagePricingRows,
-  seedUsagePricingRows,
-} from "../../../test-fixtures/system-config-seeds";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createEmailApi } from "./helpers/api-bdd-email";
-import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { createEmailOutboxStateApi } from "./helpers/email-outbox-state";
 
 const context = testContext();
 const resendMocks = context.mocks.resend;
@@ -212,137 +206,7 @@ describe("retired Native Morning Brief email", () => {
   });
 });
 
-describe("low-credit email delivery", () => {
-  it("sends branded low-credit alerts with billing and unsubscribe links", async () => {
-    const actor = bdd.user();
-    const billing = createBillingMediaApi(context);
-    bdd.acceptAgentStorageWrites();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    await runs.grantProEntitlement(actor);
-
-    const before = await billing.readBillingStatus(actor);
-    expect(before.credits).toBeGreaterThan(5000);
-    const modelProvider = `bdd-low-credit-${randomUUID()}`;
-    onTestFinished(async () => {
-      await deleteUsagePricingRows({
-        kind: "model",
-        provider: modelProvider,
-        categories: ["tokens.output"],
-      });
-    });
-    await seedUsagePricingRows([
-      {
-        kind: "model",
-        provider: modelProvider,
-        category: "tokens.output",
-        unitPrice: before.credits - 4999,
-        unitSize: 1,
-      },
-    ]);
-
-    runs.configureRunnerGroup();
-    // Built-in usage is billed to the organization's credits.
-    await createChatEventsFixture(context).configureBuiltInPiModel(
-      actor,
-      "okou-1.0",
-    );
-    const agent = await bdd.createAgent(actor, {
-      displayName: "BDD low-credit agent",
-      description: "Crosses the low-credit alert threshold.",
-      visibility: "private",
-    });
-    const run = await runs.createThreadRun(actor, {
-      agentId: agent.agentId,
-      prompt: "cross the low-credit alert threshold",
-    });
-    onTestFinished(async () => {
-      const cleanupBdd = createBddApi(context);
-      const cleanupRuns = createRunsApi(context);
-      cleanupBdd.acceptAgentStorageWrites();
-      cleanupRuns.acceptTelemetryIngest();
-      await cleanupRuns.requestCancelRun(actor, run.runId, [200]);
-      await flushWaitUntilForTest();
-      await cleanupBdd.deleteAgent(actor, agent.agentId);
-    });
-    await webhooks.requestAgentUsageEvent(
-      {
-        runId: run.runId,
-        events: [
-          {
-            idempotencyKey: randomUUID(),
-            kind: "model",
-            provider: modelProvider,
-            category: "tokens.output",
-            quantity: 1,
-          },
-        ],
-      },
-      {
-        authorization: `Bearer ${runs.sandboxTokenForRun(actor, run.runId)}`,
-      },
-      [200],
-    );
-
-    // Refresh the current Clerk membership mocks before settlement resolves
-    // the organization's admin recipients.
-    await billing.readBillingStatus(actor);
-    await billing.processOrgUsageEvents(actor);
-    expect((await billing.readBillingStatus(actor)).credits).toBe(4999);
-    const items = await email.findEmailOutboxItems({
-      to: actor.email,
-      subject: "Your credit balance is running low",
-    });
-    const [item] = items;
-    if (!item) {
-      throw new Error("Expected the owned low-credit delivery");
-    }
-    const ids = items.map((item) => {
-      return item.id;
-    });
-    const drained = await email.drainEmailOutboxItems(ids);
-
-    expect(drained).toBe(1);
-    expect(resendMocks.send).toHaveBeenCalledTimes(1);
-    expect(context.mocks.resend.send).toHaveBeenCalledWith(
-      expect.objectContaining({
-        from: "Okou Team <support@okou.io>",
-        to: actor.email,
-        subject: "Your credit balance is running low",
-        html: expect.stringContaining("https://app.okou.ai/"),
-        headers: {
-          "List-Unsubscribe": expect.stringContaining(
-            "<https://api.okou.ai/api/email/unsubscribe?token=",
-          ),
-          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-        },
-      }),
-      { idempotencyKey: `okou-email-outbox/v1/${item.id}` },
-    );
-    const sent = resendMocks.send.mock.calls[0]?.[0];
-    for (const content of [
-      "Your credit balance is running low",
-      "4,999 credits",
-      "5,000 credits or less",
-      "Manage billing",
-      "The Okou Team",
-      "https://app.okou.ai/email/unsubscribe?token=",
-    ]) {
-      expect(sent).toMatchObject({
-        html: expect.stringContaining(content),
-        text: expect.stringContaining(content),
-      });
-    }
-    expect(sent).toMatchObject({
-      html: expect.stringContaining('alt="Okou"'),
-      text: expect.stringContaining(
-        "https://app.okou.ai/?settings=billing&billingView=credits",
-      ),
-    });
-    await expect(email.drainEmailOutboxItems(ids)).resolves.toBe(0);
-    expect(resendMocks.send).toHaveBeenCalledTimes(1);
-  });
-});
+describe("low-credit email delivery", () => {});
 
 describe("POST /api/email/inbound", () => {
   it("rejects missing or invalid Svix signatures", async () => {

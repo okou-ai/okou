@@ -87,7 +87,6 @@ import {
   handleUsagePackSubscriptionChangeInvoicePaid,
   reconcileUsagePackSubscriptionChanges,
 } from "./usage-pack-plan-change.service";
-import type { BillingReconciliationScope } from "./billing-reconciliation-scope";
 import { completeBillingOperationInvoiceWithInvoice } from "./billing-operation-invoice.service";
 import {
   publishUsagePackPendingSnapshotCount,
@@ -4354,7 +4353,6 @@ const reconcileUsagePackSubscriptionCandidate$ = command(
 export const reconcileUsagePackSubscriptions$ = command(
   async (
     { set },
-    scope: BillingReconciliationScope | undefined,
     signal: AbortSignal,
   ): Promise<
     ReconcileUsagePackSubscriptionResult & {
@@ -4366,12 +4364,10 @@ export const reconcileUsagePackSubscriptions$ = command(
 
     const subscriptionChanges = await reconcileUsagePackSubscriptionChanges(
       db,
-      scope,
       signal,
     );
     const allocationChanges = await reconcileUsagePackAllocationChanges(
       db,
-      scope,
       signal,
     );
 
@@ -4390,9 +4386,6 @@ export const reconcileUsagePackSubscriptions$ = command(
       .from(usagePackSubscriptions)
       .where(
         and(
-          scope
-            ? inArray(usagePackSubscriptions.orgId, [...scope.orgIds])
-            : undefined,
           or(
             and(
               isNull(usagePackSubscriptions.stripeSubscriptionId),

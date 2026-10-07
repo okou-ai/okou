@@ -33,7 +33,6 @@ import {
   type StripeSubscriptionListStatus,
 } from "../external/stripe-client";
 import { settle } from "../utils";
-import type { BillingReconciliationScope } from "./billing-reconciliation-scope";
 import {
   CONCURRENCY_SUBSCRIPTION_PAYMENT_FAILED_STATUSES,
   isConcurrencyPriceId,
@@ -263,7 +262,6 @@ function stripeSubscriptionLooksBillingRelated(
 async function listStripeSubscriptionPages(
   stripe: ReturnType<typeof getStripeClient>,
   params: {
-    readonly customer?: string;
     readonly status: StripeSubscriptionListStatus;
   },
   signal: AbortSignal,
@@ -278,57 +276,21 @@ async function listStripeSubscriptionPages(
   );
 }
 
-async function loadScopedStripeCustomerIds(
-  db: Db,
-  scope: BillingReconciliationScope | undefined,
-): Promise<readonly string[]> {
-  if (!scope) {
-    return [];
-  }
-  const rows = await db
-    .select({ stripeCustomerId: orgMetadata.stripeCustomerId })
-    .from(orgMetadata)
-    .where(
-      and(
-        inArray(orgMetadata.orgId, [...scope.orgIds]),
-        isNotNull(orgMetadata.stripeCustomerId),
-      ),
-    );
-  return [
-    ...new Set(
-      rows.flatMap((row) => {
-        return row.stripeCustomerId ? [row.stripeCustomerId] : [];
-      }),
-    ),
-  ];
-}
-
 async function loadKnownStripeSubscriptionIds(
   db: Db,
-  scope: BillingReconciliationScope | undefined,
 ): Promise<readonly string[]> {
   const [planRows, concurrencyRows, allowanceRows, usagePackRows] =
     await Promise.all([
       db
         .select({ subscriptionId: orgMetadata.stripeSubscriptionId })
         .from(orgMetadata)
-        .where(
-          and(
-            scope ? inArray(orgMetadata.orgId, [...scope.orgIds]) : undefined,
-            isNotNull(orgMetadata.stripeSubscriptionId),
-          ),
-        ),
+        .where(isNotNull(orgMetadata.stripeSubscriptionId)),
       db
         .select({
           subscriptionId: orgConcurrencySubscriptions.stripeSubscriptionId,
           status: orgConcurrencySubscriptions.subscriptionStatus,
         })
-        .from(orgConcurrencySubscriptions)
-        .where(
-          scope
-            ? inArray(orgConcurrencySubscriptions.orgId, [...scope.orgIds])
-            : undefined,
-        ),
+        .from(orgConcurrencySubscriptions),
       db
         .select({
           subscriptionId: orgUsageAllowanceEntitlements.stripeSubscriptionId,
@@ -337,9 +299,6 @@ async function loadKnownStripeSubscriptionIds(
         .from(orgUsageAllowanceEntitlements)
         .where(
           and(
-            scope
-              ? inArray(orgUsageAllowanceEntitlements.orgId, [...scope.orgIds])
-              : undefined,
             isNotNull(orgUsageAllowanceEntitlements.stripeSubscriptionId),
             notInArray(orgUsageAllowanceEntitlements.status, [
               ...TERMINAL_LOCAL_SUBSCRIPTION_STATUSES,
@@ -354,9 +313,6 @@ async function loadKnownStripeSubscriptionIds(
         .from(usagePackSubscriptions)
         .where(
           and(
-            scope
-              ? inArray(usagePackSubscriptions.orgId, [...scope.orgIds])
-              : undefined,
             isNotNull(usagePackSubscriptions.stripeSubscriptionId),
             notInArray(usagePackSubscriptions.subscriptionStatus, [
               ...TERMINAL_LOCAL_SUBSCRIPTION_STATUSES,
@@ -388,48 +344,30 @@ async function loadKnownStripeSubscriptionIds(
 async function discoverStripeSubscriptions(
   db: Db,
   stripe: ReturnType<typeof getStripeClient>,
-  scope: BillingReconciliationScope | undefined,
   signal: AbortSignal,
 ): Promise<StripeSubscriptionDiscovery> {
   const discovered = new Map<string, StripeSubscription>();
-  const scopedCustomerIds = await loadScopedStripeCustomerIds(db, scope);
   signal.throwIfAborted();
-  const listedSubscriptions = scope
-    ? (
-        await Promise.all(
-          scopedCustomerIds.map(async (customerId) => {
-            return await listStripeSubscriptionPages(
-              stripe,
-              { customer: customerId, status: "all" },
-              signal,
-            );
-          }),
-        )
-      ).flat()
-    : (
-        await Promise.all(
-          DISCOVERABLE_STRIPE_SUBSCRIPTION_STATUSES.map(async (status) => {
-            return await listStripeSubscriptionPages(
-              stripe,
-              { status },
-              signal,
-            );
-          }),
-        )
-      ).flat();
+  const listedSubscriptions = (
+    await Promise.all(
+      DISCOVERABLE_STRIPE_SUBSCRIPTION_STATUSES.map(async (status) => {
+        return await listStripeSubscriptionPages(stripe, { status }, signal);
+      }),
+    )
+  ).flat();
   signal.throwIfAborted();
 
   for (const subscription of listedSubscriptions) {
     if (
       stripeSubscriptionIsDiscoverable(subscription) &&
       isCurrentStripePreviewMetadata(subscription.metadata) &&
-      (scope || stripeSubscriptionLooksBillingRelated(subscription))
+      stripeSubscriptionLooksBillingRelated(subscription)
     ) {
       discovered.set(subscription.id, subscription);
     }
   }
 
-  const knownSubscriptionIds = await loadKnownStripeSubscriptionIds(db, scope);
+  const knownSubscriptionIds = await loadKnownStripeSubscriptionIds(db);
   signal.throwIfAborted();
   const missingSubscriptionIds: string[] = [];
   const failedSubscriptionIds: string[] = [];
@@ -482,17 +420,11 @@ function collectStripeSubscriptionSnapshot(
 const reconcileStripeSubscriptionSnapshots$ = command(
   async (
     { set },
-    scope: BillingReconciliationScope | undefined,
     signal: AbortSignal,
   ): Promise<StripeSubscriptionSweepResult> => {
     const db = set(writeDb$);
     const stripe = getStripeClient();
-    const discovery = await discoverStripeSubscriptions(
-      db,
-      stripe,
-      scope,
-      signal,
-    );
+    const discovery = await discoverStripeSubscriptions(db, stripe, signal);
     const changedOrgIds = new Set<string>();
     const downgraded: DowngradedSubscription[] = [];
     let paidInvoices = 0;
@@ -1471,7 +1403,6 @@ async function loadReconcileCandidateRows(
   db: Db,
   now: Date,
   staleBefore: Date,
-  scope: BillingReconciliationScope | undefined,
 ): Promise<ReconcileCandidateRows> {
   const [
     candidates,
@@ -1487,7 +1418,6 @@ async function loadReconcileCandidateRows(
       .from(orgMetadata)
       .where(
         and(
-          scope ? inArray(orgMetadata.orgId, [...scope.orgIds]) : undefined,
           inArray(orgMetadata.tier, PAID_TIERS),
           isNotNull(orgMetadata.stripeSubscriptionId),
           inArray(orgMetadata.subscriptionStatus, [
@@ -1506,7 +1436,6 @@ async function loadReconcileCandidateRows(
       .from(orgMetadata)
       .where(
         and(
-          scope ? inArray(orgMetadata.orgId, [...scope.orgIds]) : undefined,
           inArray(orgMetadata.tier, PAID_TIERS),
           isNull(orgMetadata.stripeSubscriptionId),
           eq(orgMetadata.subscriptionStatus, ATOM_GRANT_SUBSCRIPTION_STATUS),
@@ -1530,9 +1459,6 @@ async function loadReconcileCandidateRows(
       .from(orgConcurrencySubscriptions)
       .where(
         and(
-          scope
-            ? inArray(orgConcurrencySubscriptions.orgId, [...scope.orgIds])
-            : undefined,
           or(
             and(
               inArray(orgConcurrencySubscriptions.subscriptionStatus, [
@@ -1552,9 +1478,7 @@ async function loadReconcileCandidateRows(
               // Provider observations can arrive out of order during overlap
               // with old webhook writers. Repair each live identity daily;
               // this never creates an invoice, payment or credit grant.
-              scope
-                ? undefined
-                : sql`(hashtext(${orgConcurrencySubscriptions.stripeSubscriptionId}) & 2147483647) % 24 = ${now.getUTCHours()}`,
+              sql`(hashtext(${orgConcurrencySubscriptions.stripeSubscriptionId}) & 2147483647) % 24 = ${now.getUTCHours()}`,
             ),
           ),
         ),
@@ -1568,9 +1492,6 @@ async function loadReconcileCandidateRows(
       .from(orgUsageAllowanceEntitlements)
       .where(
         and(
-          scope
-            ? inArray(orgUsageAllowanceEntitlements.orgId, [...scope.orgIds])
-            : undefined,
           isNotNull(orgUsageAllowanceEntitlements.stripeSubscriptionId),
           inArray(orgUsageAllowanceEntitlements.status, [
             ...USAGE_ALLOWANCE_RECONCILE_STATUSES,
@@ -1679,19 +1600,14 @@ async function reconcileCandidateRows(
  * configuration sweep then converges Stripe from those records by identity.
  */
 const reconcileUsagePackInvitationsAndConfiguration$ = command(
-  async (
-    { set },
-    scope: BillingReconciliationScope | undefined,
-    signal: AbortSignal,
-  ): Promise<number> => {
+  async ({ set }, signal: AbortSignal): Promise<number> => {
     const invitations = await set(
       reconcileUsagePackInvitationPurchases$,
-      scope,
       signal,
     );
     signal.throwIfAborted();
     const configuration = await settle(
-      set(syncUsagePackSubscriptionConfigurations$, scope, signal),
+      set(syncUsagePackSubscriptionConfigurations$, signal),
       signal,
     );
     if (!configuration.ok) {
@@ -1708,10 +1624,9 @@ const reconcileUsagePackInvitationsAndConfiguration$ = command(
   },
 );
 
-const reconcileBillingEntitlementsForScope$ = command(
+export const reconcileBillingEntitlements$ = command(
   async (
     { set },
-    scope: BillingReconciliationScope | undefined,
     signal: AbortSignal,
   ): Promise<{ readonly downgraded: number }> => {
     const db = set(writeDb$);
@@ -1721,39 +1636,34 @@ const reconcileBillingEntitlementsForScope$ = command(
       now.getTime() - PAYMENT_FAILURE_DOWNGRADE_GRACE_MS,
     );
 
-    if (!scope) {
-      const checkoutReplay = await settle(
-        set(reconcileUndeliveredStripePaidCheckoutSessions$, signal),
-        signal,
-      );
-      if (!checkoutReplay.ok) {
-        L.warn("undelivered Stripe paid Checkout sweep failed", {
-          error: checkoutReplay.error,
-        });
-      }
-      signal.throwIfAborted();
-
-      const replay = await settle(
-        set(reconcileUndeliveredStripePaidInvoices$, signal),
-        signal,
-      );
-      if (!replay.ok) {
-        L.warn("undelivered Stripe paid invoice sweep failed", {
-          error: replay.error,
-        });
-      }
+    const checkoutReplay = await settle(
+      set(reconcileUndeliveredStripePaidCheckoutSessions$, signal),
+      signal,
+    );
+    if (!checkoutReplay.ok) {
+      L.warn("undelivered Stripe paid Checkout sweep failed", {
+        error: checkoutReplay.error,
+      });
+    }
+    signal.throwIfAborted();
+    const replay = await settle(
+      set(reconcileUndeliveredStripePaidInvoices$, signal),
+      signal,
+    );
+    if (!replay.ok) {
+      L.warn("undelivered Stripe paid invoice sweep failed", {
+        error: replay.error,
+      });
     }
     signal.throwIfAborted();
 
     const usagePackMigrationReconciliation = await set(
       reconcileUsagePackSubscriptionMigrations$,
-      scope,
       signal,
     );
     signal.throwIfAborted();
     const usagePackReconciliation = await set(
       reconcileUsagePackSubscriptions$,
-      scope,
       signal,
     );
     signal.throwIfAborted();
@@ -1770,17 +1680,15 @@ const reconcileBillingEntitlementsForScope$ = command(
         });
       }
     }
-    await reconcileUsagePackCreditRefunds(db, scope, signal);
+    await reconcileUsagePackCreditRefunds(db, signal);
     signal.throwIfAborted();
 
     const invitationPurchasesReconciled = await set(
       reconcileUsagePackInvitationsAndConfiguration$,
-      scope,
       signal,
     );
     const stripeSubscriptionSweep = await set(
       reconcileStripeSubscriptionSnapshots$,
-      scope,
       signal,
     );
     signal.throwIfAborted();
@@ -1789,7 +1697,6 @@ const reconcileBillingEntitlementsForScope$ = command(
       db,
       now,
       staleBefore,
-      scope,
     );
     signal.throwIfAborted();
 
@@ -1843,17 +1750,5 @@ const reconcileBillingEntitlementsForScope$ = command(
       });
     }
     return { downgraded: downgraded.length };
-  },
-);
-
-export const reconcileBillingEntitlements$ = command(
-  async ({ set }, signal: AbortSignal) => {
-    return await set(reconcileBillingEntitlementsForScope$, undefined, signal);
-  },
-);
-
-export const reconcileBillingEntitlementsForOrganizations$ = command(
-  async ({ set }, orgIds: readonly string[], signal: AbortSignal) => {
-    return await set(reconcileBillingEntitlementsForScope$, { orgIds }, signal);
   },
 );

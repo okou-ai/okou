@@ -49,7 +49,6 @@ import {
   type StripeSubscriptionUpdateItemParam,
 } from "../external/stripe-client";
 import { pgTextDecoder } from "../../lib/db-structured-result";
-import type { BillingReconciliationScope } from "./billing-reconciliation-scope";
 import {
   handleUsagePackInvoicePaid$,
   handleUsagePackSubscriptionUpdated,
@@ -3201,7 +3200,6 @@ export const handleUsagePackMigrationSubscriptionUpdated$ = command(
 export const reconcileUsagePackSubscriptionMigrations$ = command(
   async (
     { set },
-    scope: BillingReconciliationScope | undefined,
     signal: AbortSignal,
   ): Promise<{
     readonly reconciled: number;
@@ -3219,9 +3217,6 @@ export const reconcileUsagePackSubscriptionMigrations$ = command(
       })
       .where(
         and(
-          scope
-            ? inArray(usagePackSubscriptionMigrations.orgId, [...scope.orgIds])
-            : undefined,
           eq(usagePackSubscriptionMigrations.status, "previewed"),
           lte(usagePackSubscriptionMigrations.previewExpiresAt, at),
         ),
@@ -3233,9 +3228,6 @@ export const reconcileUsagePackSubscriptionMigrations$ = command(
       .from(usagePackSubscriptionMigrations)
       .where(
         and(
-          scope
-            ? inArray(usagePackSubscriptionMigrations.orgId, [...scope.orgIds])
-            : undefined,
           or(
             and(
               inArray(usagePackSubscriptionMigrations.status, [

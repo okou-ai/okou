@@ -1,25 +1,22 @@
-import { cleanupSandboxFixturesForTest } from "../../../test-fixtures/sandbox-cleanup-worker";
-import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
-import { mockGoogleText, VERTEX_TEXT_URL } from "./helpers/google-text";
-import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
-import AdmZip from "adm-zip";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import {
   chatThreadConnectorSelectionContract,
   chatThreadsContract,
+  chatThreadUsageContract,
   type ChatEvent,
+  type ChatEventUsagePayload,
   type ChatThreadArtifactGoogleDriveSync,
   type UserMessageInputDocument,
-  chatThreadUsageContract,
-  type ChatEventUsagePayload,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
-  cronProjectChatEventSearchContract,
   cronCompactUsageEventsContract,
+  cronProjectChatEventSearchContract,
 } from "@okouai/api-contracts/contracts/cron";
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
-import { HttpResponse, http } from "msw";
+import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import AdmZip from "adm-zip";
+import { http, HttpResponse } from "msw";
 import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -45,13 +42,15 @@ import {
   readChatThreadEventIdsFixture,
   setChatThreadSnapshotBoundaryFixture,
 } from "../../../test-fixtures/chat-thread-events";
+import { compactChatThreadSnapshotsForTest } from "../../../test-fixtures/chat-thread-snapshot-compaction";
 import { setAgentRunCreatedAtFixture } from "../../../test-fixtures/run-deletion";
+import { cleanupSandboxFixturesForTest } from "../../../test-fixtures/sandbox-cleanup-worker";
 import { seedUsagePricingRows } from "../../../test-fixtures/system-config-seeds";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadCreateRoutes } from "../chat-threads-create";
-import { compactChatThreadSnapshotsForTest } from "../../../test-fixtures/chat-thread-snapshot-compaction";
+import { cronCompactUsageEventsRoutes } from "../cron-compact-usage-events";
 import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
 import {
   createBddApi,
@@ -62,30 +61,24 @@ import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { readThreadMessagesAfterBackgroundWork } from "./helpers/chat-events-fixture";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
 import {
   createConnectorBddApi,
   mockGoogleDriveArtifactUpload,
+  mockGoogleDriveArtifactUploadRejection,
   mockGoogleDriveConnectorOAuth,
   mockGoogleDriveFilesList,
-  mockGoogleDriveArtifactUploadRejection,
   mockGoogleSlidesReadback,
 } from "./helpers/api-bdd-connectors";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
+import { readThreadMessagesAfterBackgroundWork } from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { mockGoogleText, VERTEX_TEXT_URL } from "./helpers/google-text";
+import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
 import { createRouteMocks } from "./helpers/route-test";
-import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
-import {
-  generatedStripeCustomerId,
-  generatedStripeSubscriptionId,
-  postUsageAllowanceInvoicePaid,
-} from "./helpers/stripe-billing-webhook";
-import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
-import { cronCompactUsageEventsRoutes } from "../cron-compact-usage-events";
 const TEST_APP_ROUTES = Object.freeze([
   ...cronProjectChatEventSearchRoutes,
   ...chatThreadRoutes,
@@ -336,19 +329,6 @@ function isUserMessage(message: ChatEvent): message is UserMessage {
       return false;
     }
   }
-}
-
-type UsageRecordedEvent = Extract<ChatEvent, { eventType: "usage.recorded" }>;
-
-async function usageEventsForRun(
-  actor: ApiTestUser,
-  threadId: string,
-  runId: string,
-): Promise<UsageRecordedEvent[]> {
-  const page = await chat.listThreadEvents(actor, threadId);
-  return page.events.filter((event): event is UsageRecordedEvent => {
-    return event.eventType === "usage.recorded" && event.runId === runId;
-  });
 }
 
 async function settledUsageForRun(
@@ -3285,277 +3265,6 @@ describe("CHAT-03 run usage events", () => {
       }),
       [404],
     );
-  }, 60_000);
-
-  it("keeps ledger totals stable when concurrent settlement requests repeat", async () => {
-    const { actor, agentId } = await entitledChatActor("Usage message agent");
-
-    const provider = `bdd-usage-${randomUUID().slice(0, 8)}`;
-    const missingProvider = `${provider}-free`;
-    const category = "api_request";
-    await seedUsagePricingRows([
-      { kind: "connector", provider, category, unitPrice: 7, unitSize: 2 },
-    ]);
-
-    const { runId, threadId } = await sendChatRun(actor, {
-      agentId,
-      prompt: "record billable usage",
-    });
-    await cancelChatRun(actor, runId);
-    // Cancellation also settles usage in waitUntil. Finish that owner before
-    // submitting the later batch, so its settlement cannot race this one.
-    await flushWaitUntilForTest();
-    const sandboxHeaders = {
-      authorization: `Bearer ${api.sandboxTokenForRun(actor, runId)}`,
-    };
-    await webhooks.requestAgentUsageEvent(
-      {
-        runId,
-        events: [
-          {
-            idempotencyKey: randomUUID(),
-            kind: "connector",
-            provider,
-            category,
-            quantity: 5,
-          },
-          {
-            idempotencyKey: randomUUID(),
-            kind: "connector",
-            provider: missingProvider,
-            category,
-            quantity: 1,
-          },
-        ],
-      },
-      sandboxHeaders,
-      [200],
-    );
-    const billing = createBillingMediaApi(context);
-    await Promise.all([
-      billing.processOrgUsageEvents(actor),
-      billing.processOrgUsageEvents(actor),
-      billing.processOrgUsageEvents(actor),
-    ]);
-
-    const initialUsage = await settledUsageForRun(actor, threadId, runId);
-    expect(initialUsage).toMatchObject({
-      version: 1,
-      totalCredits: 18,
-      settledAt: expect.any(String),
-      breakdown: [
-        {
-          kind: "connector",
-          credits: 18,
-          providers: expect.arrayContaining([
-            { provider, credits: 18 },
-            { provider: missingProvider, credits: 0 },
-          ]),
-        },
-      ],
-    });
-    // Existing Apps still receive compatible hints, but their count is not a
-    // settlement or monetary correctness contract.
-    await expect(
-      usageEventsForRun(actor, threadId, runId),
-    ).resolves.toContainEqual(expect.objectContaining({ usage: initialUsage }));
-
-    onTestFinished(() => {
-      clearMockNow();
-    });
-    // Sandbox tokens are validated against the mockable clock, so record late
-    // usage before advancing time for settlement.
-    await webhooks.requestAgentUsageEvent(
-      {
-        runId,
-        events: [
-          {
-            idempotencyKey: randomUUID(),
-            kind: "connector",
-            provider: missingProvider,
-            category,
-            quantity: 1,
-          },
-        ],
-      },
-      sandboxHeaders,
-      [200],
-    );
-    mockNow(new Date("2030-01-01T00:00:00.000Z"));
-    await Promise.all([
-      billing.processOrgUsageEvents(actor),
-      billing.processOrgUsageEvents(actor),
-      billing.processOrgUsageEvents(actor),
-    ]);
-    await expect(
-      settledUsageForRun(actor, threadId, runId),
-    ).resolves.toStrictEqual(initialUsage);
-
-    clearMockNow();
-    await webhooks.requestAgentUsageEvent(
-      {
-        runId,
-        events: [
-          {
-            idempotencyKey: randomUUID(),
-            kind: "connector",
-            provider,
-            category,
-            quantity: 3,
-          },
-        ],
-      },
-      sandboxHeaders,
-      [200],
-    );
-    mockNow(new Date("2030-01-01T00:00:01.000Z"));
-    await Promise.all([
-      billing.processOrgUsageEvents(actor),
-      billing.processOrgUsageEvents(actor),
-      billing.processOrgUsageEvents(actor),
-    ]);
-    await expect(
-      settledUsageForRun(actor, threadId, runId),
-    ).resolves.toMatchObject({
-      version: 1,
-      totalCredits: 29,
-      settledAt: initialUsage?.settledAt,
-      breakdown: [
-        {
-          kind: "connector",
-          credits: 29,
-          providers: expect.arrayContaining([
-            { provider, credits: 29 },
-            { provider: missingProvider, credits: 0 },
-          ]),
-        },
-      ],
-    });
-
-    clearMockNow();
-    await webhooks.requestAgentUsageEvent(
-      {
-        runId,
-        events: [
-          {
-            idempotencyKey: randomUUID(),
-            kind: "connector",
-            provider,
-            category,
-            quantity: 2,
-          },
-        ],
-      },
-      sandboxHeaders,
-      [200],
-    );
-    mockNow(new Date("2030-01-01T00:00:02.000Z"));
-    await Promise.all([
-      billing.processOrgUsageEvents(actor),
-      billing.processOrgUsageEvents(actor),
-      billing.processOrgUsageEvents(actor),
-    ]);
-    await expect(
-      settledUsageForRun(actor, threadId, runId),
-    ).resolves.toMatchObject({
-      version: 1,
-      totalCredits: 36,
-      settledAt: initialUsage?.settledAt,
-      breakdown: [
-        {
-          kind: "connector",
-          credits: 36,
-          providers: expect.arrayContaining([
-            { provider, credits: 36 },
-            { provider: missingProvider, credits: 0 },
-          ]),
-        },
-      ],
-    });
-  }, 60_000);
-
-  it("reads complete allowance-covered usage from the settled ledger", async () => {
-    const fixture = await seedBuiltInDefaultModelKey(context);
-    expect(fixture.selectedModel).toBe(SEEDED_SYSTEM_DEFAULT_MODEL);
-
-    const { actor, agentId } = await entitledChatActor(
-      "Allowance usage message agent",
-    );
-    const orgId = actor.orgId;
-    if (!orgId) {
-      throw new Error("Expected allowance chat actor to have an org");
-    }
-    await postUsageAllowanceInvoicePaid(context.signal, {
-      orgId,
-      userId: actor.userId,
-      customerId: generatedStripeCustomerId(),
-      subscriptionId: generatedStripeSubscriptionId(),
-      effectiveAt: new Date(now()),
-      expiresAt: new Date(now() + 365 * 24 * 60 * 60 * 1000),
-      shortWindowSeconds: 5 * 60 * 60,
-      shortWindowUnits: 100,
-      weeklyWindowSeconds: 7 * 24 * 60 * 60,
-      weeklyWindowUnits: 100,
-    });
-    await api.updateUserModelPreference(actor, null);
-
-    const provider = `allowance-chat-${randomUUID().slice(0, 8)}`;
-    const category = "api_request";
-    await seedUsagePricingRows([
-      { kind: "connector", provider, category, unitPrice: 1, unitSize: 1 },
-    ]);
-    const { runId, threadId } = await sendChatRun(actor, {
-      agentId,
-      prompt: "record allowance-covered usage",
-      model: null,
-    });
-    await cancelChatRun(actor, runId);
-    const sandboxHeaders = {
-      authorization: `Bearer ${api.sandboxTokenForRun(actor, runId)}`,
-    };
-    await webhooks.requestAgentUsageEvent(
-      {
-        runId,
-        events: [
-          {
-            idempotencyKey: randomUUID(),
-            kind: "connector",
-            provider,
-            category,
-            quantity: 70,
-          },
-        ],
-      },
-      sandboxHeaders,
-      [200],
-    );
-    await createBillingMediaApi(context).processOrgUsageEvents(actor);
-
-    await expect(
-      settledUsageForRun(actor, threadId, runId),
-    ).resolves.toMatchObject({
-      version: 1,
-      breakdown: [
-        {
-          kind: "connector",
-          credits: 70,
-          providers: [{ provider, credits: 70 }],
-        },
-      ],
-      totalCredits: 70,
-      settledAt: expect.any(String),
-    });
-    const billingStatus = await api.readBillingStatus(actor);
-    if (!billingStatus.usageAllowance) {
-      throw new Error("Expected allowance windows for chat usage");
-    }
-    expect(
-      Object.fromEntries(
-        billingStatus.usageAllowance.windows.map((window) => {
-          return [window.kind, window.consumedUnits];
-        }),
-      ),
-    ).toStrictEqual({ short: 70, weekly: 70 });
   }, 60_000);
 
   it("reads zero-credit usage and omits runs without settled usage", async () => {

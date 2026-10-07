@@ -1,8 +1,6 @@
-import { processOrgUsageEventsForTest } from "../../../../test-fixtures/billing-workers";
-import { mockClerkUsers } from "./clerk-users";
 import { randomUUID } from "node:crypto";
+import { mockClerkUsers } from "./clerk-users";
 
-import type StripeSDK from "stripe";
 import { bankingContract } from "@okouai/api-contracts/contracts/banking";
 import {
   billingAutoRechargeContract,
@@ -37,18 +35,15 @@ import {
 } from "@okouai/api-contracts/contracts/usage-record";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
+import type StripeSDK from "stripe";
 
-import { mockEnv } from "../../../../lib/env";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
-import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
+import { mockEnv } from "../../../../lib/env";
 import {
   mockListStripeInvoices,
   mockStripeClient,
 } from "../../../external/stripe-client";
-import type { ApiTestUser } from "./api-bdd";
-import { mockGoogleMapsGrounding } from "./google-maps-grounding";
-import { createRouteMocks } from "./route-test";
 import { bankingRoutes } from "../../banking";
 import { billingAutoRechargeRoutes } from "../../billing-auto-recharge";
 import { billingCheckoutRoutes } from "../../billing-checkout";
@@ -68,6 +63,9 @@ import { usageMembersRoutes } from "../../usage-members";
 import { usageRecordRoutes } from "../../usage-record";
 import { userModelPreferenceRoutes } from "../../user-model-preference";
 import { voiceIoQuotaRoutes } from "../../voice-io-quota";
+import type { ApiTestUser } from "./api-bdd";
+import { mockGoogleMapsGrounding } from "./google-maps-grounding";
+import { createRouteMocks } from "./route-test";
 
 type ClerkOrgRole = "org:admin" | "org:member";
 
@@ -503,19 +501,6 @@ export function createBillingMediaApi(context: TestContext) {
           },
         }),
         [200],
-      );
-    },
-
-    async processOrgUsageEvents(
-      actor: ApiTestUser,
-      usagePricingResolution?: UsagePricingResolution,
-    ) {
-      if (!actor.orgId) {
-        throw new Error("Cannot process usage without an organization");
-      }
-      return await processOrgUsageEventsForTest(
-        { orgId: actor.orgId, usagePricingResolution },
-        context.signal,
       );
     },
 

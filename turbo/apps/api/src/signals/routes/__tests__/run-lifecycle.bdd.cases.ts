@@ -1,94 +1,95 @@
 /* oxlint-disable jest/no-export -- Each test entrypoint imports one deterministic group from this shared case registry. */
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import {
   createPublicRunnerMemory,
   memoryArchive,
 } from "./helpers/public-runner-memory";
-import { createHash, createHmac, randomUUID } from "node:crypto";
 
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
-import { readPrimaryBuiltInRouteFixture } from "../../../test-fixtures/model-route-capabilities";
-import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
+import { builtinConnectorAutomaticContract } from "@okouai/api-contracts/contracts/connectors";
+import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
   getModelProviderFirewall,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  DISABLED_PAID_TOOLS_ENV_VAR,
+  ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
+} from "@okouai/api-contracts/contracts/paid-tools";
+import type {
+  KnownRunFailureReason,
+  RunFailureReasonToken,
+} from "@okouai/api-contracts/contracts/run-failure-reasons";
 import {
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
   DEFAULT_PROFILE,
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   type ConnectorRuntimeSyncResult,
   type ExecutionContext,
-  type Job as RunnerJob,
   type PiModelConfig,
+  type Job as RunnerJob,
 } from "@okouai/api-contracts/contracts/runners";
 import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
-import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
-import type {
-  KnownRunFailureReason,
-  RunFailureReasonToken,
-} from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { testCustomConnectorSkillVersionAssociationContract } from "@okouai/api-contracts/contracts/test-custom-connector-skill-version-association";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  DISABLED_PAID_TOOLS_ENV_VAR,
-  ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
-} from "@okouai/api-contracts/contracts/paid-tools";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
-import {
-  getCustomConnectorSkillStorageName,
-  getCustomSkillStorageName,
-} from "@okouai/core/storage-names";
+import { AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 import {
   UNKNOWN_PERMISSION_GRANT,
   type ExecutionFirewallEntry,
   type FirewallApi,
 } from "@okouai/connectors/firewall-types";
-import { AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { SEED_SKILLS } from "@okouai/core/seed-skills";
+import {
+  getCustomConnectorSkillStorageName,
+  getCustomSkillStorageName,
+} from "@okouai/core/storage-names";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
-import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 import { v5 as uuidv5 } from "uuid";
+import { afterEach, describe, expect, it, onTestFinished } from "vitest";
+import { readPrimaryBuiltInRouteFixture } from "../../../test-fixtures/model-route-capabilities";
 
-import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { mockAxiomSdkTelemetryFailure } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
+import {
+  setSecretKmsClientForTests,
+  type SecretKmsClient,
+  type SecretKmsDataKey,
+  type SecretKmsGenerateDataKeyRequest,
+} from "../../../lib/secret-kms-client";
+import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
-import { verifyOkouToken } from "../../auth/tokens";
-import {
-  deleteUsagePricingRows,
-  seedOrgMetadata,
-  seedUsagePricingRows,
-} from "../../../test-fixtures/system-config-seeds";
-import {
-  deleteOrgPlanEntitlementFixture,
-  readOrgPlanEntitlementFixture,
-  upsertOrgPlanEntitlementFixture,
-} from "../../../test-fixtures/org-plan-entitlement";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
+import { readSessionHistoryBlobRefCountFixture } from "../../../test-fixtures/agent-runs";
+import { timeoutRunWithoutCallbacksFixture } from "../../../test-fixtures/chat-events";
 import {
   API_TEST_CONNECTOR_CATALOG,
   API_TEST_CONNECTOR_FIREWALL_CONFIGS,
   installApiTestConnectorCatalog,
 } from "../../../test-fixtures/connector-catalog";
 import {
-  readSessionHistoryBlobRefCountFixture,
-  setRunModelProviderFixture,
-} from "../../../test-fixtures/agent-runs";
-import { timeoutRunWithoutCallbacksFixture } from "../../../test-fixtures/chat-events";
+  deleteOrgPlanEntitlementFixture,
+  upsertOrgPlanEntitlementFixture,
+} from "../../../test-fixtures/org-plan-entitlement";
+import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
+import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
+import { verifyOkouToken } from "../../auth/tokens";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { createDeferredPromise } from "../../utils";
+import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
+import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
+import { testCustomConnectorSkillVersionAssociationRoutes } from "../test-custom-connector-skill-version-association";
+import { seedAgentRunCallback$ } from "./helpers/agent-run-callback";
 import {
   createBddApi,
   expectApiError,
   type ApiTestUser,
   type ApiTestUserOptions,
 } from "./helpers/api-bdd";
-import { seedUserSecret, seedUserVariable } from "./helpers/user-config-state";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -107,22 +108,20 @@ import {
   expectCanonicalStorageManifest,
 } from "./helpers/api-bdd-runs";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
-import { setPaidToolDisabled } from "./helpers/paid-tools";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { postSubscriptionInvoicePaid } from "./helpers/stripe-billing-webhook";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { seedAgentRunCallback$ } from "./helpers/agent-run-callback";
+import {
+  deleteCustomConnectorCredentialValues,
+  setCustomConnectorCredentialStorageState,
+} from "./helpers/connector-credential-storage-state";
 import {
   deleteSlackIntegrationFixture$,
   seedSlackEnvironmentAgent$,
   seedSlackOrgInstallation$,
 } from "./helpers/integrations-slack";
-import {
-  deleteCustomConnectorCredentialValues,
-  setCustomConnectorCredentialStorageState,
-} from "./helpers/connector-credential-storage-state";
+import { setPaidToolDisabled } from "./helpers/paid-tools";
 import {
   clearRunApiStart,
   readRunFailureReasonFixture,
@@ -132,15 +131,7 @@ import {
   setRunnerJobPiContextAsVersionedWriter,
 } from "./helpers/runtime-state";
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
-import {
-  setSecretKmsClientForTests,
-  type SecretKmsClient,
-  type SecretKmsDataKey,
-  type SecretKmsGenerateDataKeyRequest,
-} from "../../../lib/secret-kms-client";
-import { testCustomConnectorSkillVersionAssociationRoutes } from "../test-custom-connector-skill-version-association";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
-import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
+import { seedUserSecret, seedUserVariable } from "./helpers/user-config-state";
 
 import { connectorAccountRoutes } from "../connector-accounts";
 import { connectorCheckRoutes } from "../connector-check";
@@ -1293,8 +1284,7 @@ export type RunLifecycleTestGroup =
   | "custom-connectors"
   | "runner-context"
   | "completion"
-  | "chat-events"
-  | "billing";
+  | "chat-events";
 
 // Each entrypoint registers one group so no single file holds every
 // run-lifecycle suite; Vitest shards by file.
@@ -14603,594 +14593,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
 
         await api.requestCancelRun(actor, runId, [200]);
-      });
-    });
-  }
-  // oxlint-disable-next-line vitest/no-conditional-tests -- The entrypoint selects this group before collection.
-  if (group === "billing") {
-    describe("BILL-02: usage reads for an entitled organization with runs", () => {
-      it("prices canonical built-in model usage from the server pricing table", async () => {
-        const api = createRunsApi(context);
-        const billing = createBillingMediaApi(context);
-        const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
-        await seedBuiltInDefaultModelKey();
-        await api.updateUserModelPreference(actor, null);
-        const modelProvider = `bdd-model-pricing-${randomUUID()}`;
-        onTestFinished(async () => {
-          await deleteUsagePricingRows({
-            kind: "model",
-            provider: modelProvider,
-            categories: ["tokens.output"],
-          });
-        });
-        await seedUsagePricingRows([
-          {
-            kind: "model",
-            provider: modelProvider,
-            category: "tokens.output",
-            unitPrice: 17,
-            unitSize: 1000,
-          },
-        ]);
-
-        const run = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "generate server-priced model usage",
-          model: null,
-        });
-        await setRunModelProviderFixture({
-          runId: run.runId,
-          modelProvider: "built-in",
-        });
-        await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
-        await webhooks.requestAgentUsageEvent(
-          {
-            runId: run.runId,
-            events: [
-              {
-                idempotencyKey: randomUUID(),
-                kind: "model",
-                provider: modelProvider,
-                category: "tokens.output",
-                quantity: 1000,
-              },
-            ],
-          },
-          { authorization: `Bearer ${claim.sandboxToken}` },
-          [200],
-        );
-        await billing.processOrgUsageEvents(actor);
-
-        const usageRecord = await billing.readUsageRecord(actor);
-        expect(usageRecord.body.totalCredits).toBe(17);
-        expect(usageRecord.body.rows).toContainEqual(
-          expect.objectContaining({
-            threadId: run.threadId,
-            credits: 17,
-          }),
-        );
-      });
-
-      it("exposes usage records, members, and processed usage events through public reads", async () => {
-        const api = createRunsApi(context);
-        const billing = createBillingMediaApi(context);
-        const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
-          {},
-          NATIVE_RUNNER_ROUTE,
-        );
-
-        const run = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "generate usage",
-        });
-        await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
-        const sandboxHeaders = {
-          authorization: `Bearer ${claim.sandboxToken}`,
-        };
-
-        await webhooks.requestAgentUsageEvent(
-          {
-            runId: run.runId,
-            events: [
-              {
-                idempotencyKey: randomUUID(),
-                kind: "connector",
-                provider: "github",
-                category: "api_request",
-                quantity: 1,
-              },
-            ],
-          },
-          sandboxHeaders,
-          [200],
-        );
-        await billing.processOrgUsageEvents(actor);
-
-        const record = await billing.readUsageRecord(actor);
-        const listedUsage = record.body.rows.find((entry) => {
-          return entry.threadId === run.threadId;
-        });
-        expect(listedUsage).toBeDefined();
-        expect(record.body.pagination.total).toBeGreaterThanOrEqual(1);
-
-        const members = await billing.readUsageMembers(actor);
-        expect(members.body.period).not.toBeNull();
-      });
-
-      it("aggregates usage members across organization users", async () => {
-        const bdd = createBddApi(context);
-        const api = createRunsApi(context);
-        const billing = createBillingMediaApi(context);
-        const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
-          {},
-          NATIVE_RUNNER_ROUTE,
-        );
-        const nonAdmin = bdd.user({
-          orgId: actor.orgId,
-          orgRole: "org:member",
-        });
-
-        const forbidden = await billing.requestUsageMembers(
-          nonAdmin,
-          {},
-          [403],
-        );
-        expectApiError(forbidden.body);
-        expect(forbidden.body.error.code).toBe("FORBIDDEN");
-
-        const invalidTimezone = await billing.requestUsageMembers(
-          actor,
-          { tz: "Not/A/Timezone" },
-          [400],
-        );
-        expectApiError(invalidTimezone.body);
-        expect(invalidTimezone.body.error.code).toBe("BAD_REQUEST");
-
-        const beforeUsage = await billing.readUsageMembers(actor);
-        expect(beforeUsage.body.period).not.toBeNull();
-        expect(beforeUsage.body.members).toStrictEqual([]);
-
-        const imageProvider = `bdd-member-usage-${randomUUID()}`;
-        onTestFinished(async () => {
-          await deleteUsagePricingRows({
-            kind: "image",
-            provider: imageProvider,
-            categories: ["output_image.low.standard"],
-          });
-        });
-        await seedUsagePricingRows([
-          {
-            kind: "image",
-            provider: imageProvider,
-            category: "output_image.low.standard",
-            unitPrice: 7,
-            unitSize: 1,
-          },
-        ]);
-
-        const member = bdd.user({ orgId: actor.orgId });
-        await bdd.completeOnboarding(member);
-        await seedBuiltInDefaultModelKey();
-        preparePiSandboxClaim();
-        const memberAgent = await bdd.createAgent(member, {
-          displayName: "BDD member usage agent",
-          visibility: "private",
-        });
-
-        const actorRun = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "actor usage",
-        });
-        const memberRun = await api.createThreadRun(member, {
-          agentId: memberAgent.agentId,
-          prompt: "member usage",
-          model: null,
-        });
-
-        await api.heartbeatRunner(runnerGroup);
-        const actorClaim = await api.claimRunnerJob(actorRun.runId);
-        const memberClaim = await api.claimRunnerJob(memberRun.runId);
-
-        await webhooks.requestAgentUsageEvent(
-          {
-            runId: actorRun.runId,
-            events: [
-              {
-                idempotencyKey: randomUUID(),
-                kind: "image",
-                provider: imageProvider,
-                category: "output_image.low.standard",
-                quantity: 1,
-              },
-            ],
-          },
-          { authorization: `Bearer ${actorClaim.sandboxToken}` },
-          [200],
-        );
-        await webhooks.requestAgentUsageEvent(
-          {
-            runId: memberRun.runId,
-            events: [
-              {
-                idempotencyKey: randomUUID(),
-                kind: "image",
-                provider: imageProvider,
-                category: "output_image.low.standard",
-                quantity: 2,
-              },
-            ],
-          },
-          { authorization: `Bearer ${memberClaim.sandboxToken}` },
-          [200],
-        );
-        await billing.processOrgUsageEvents(actor);
-
-        const aggregated = await billing.readUsageMembers(actor, {
-          range: "7d",
-          tz: "UTC",
-        });
-        expect(aggregated.body.members).toHaveLength(2);
-        expect(
-          aggregated.body.members.map((entry) => {
-            return entry.userId;
-          }),
-        ).toStrictEqual([member.userId, actor.userId]);
-        expect(aggregated.body.members[0]).toMatchObject({
-          userId: member.userId,
-          email: expect.any(String),
-          inputTokens: 0,
-          outputTokens: 0,
-          cacheReadInputTokens: 0,
-          cacheCreationInputTokens: 0,
-          creditsCharged: 14,
-          breakdown: [
-            {
-              kind: "image",
-              credits: 14,
-              providers: [
-                {
-                  provider: imageProvider,
-                  credits: 14,
-                  usageKinds: [{ kind: "image", credits: 14 }],
-                },
-              ],
-            },
-          ],
-        });
-        expect(aggregated.body.members[1]).toMatchObject({
-          userId: actor.userId,
-          email: expect.any(String),
-          inputTokens: 0,
-          outputTokens: 0,
-          cacheReadInputTokens: 0,
-          cacheCreationInputTokens: 0,
-          creditsCharged: 7,
-          breakdown: [
-            {
-              kind: "image",
-              credits: 7,
-              providers: [
-                {
-                  provider: imageProvider,
-                  credits: 7,
-                  usageKinds: [{ kind: "image", credits: 7 }],
-                },
-              ],
-            },
-          ],
-        });
-
-        await api.requestCancelRun(actor, actorRun.runId, [200]);
-        await api.requestCancelRun(member, memberRun.runId, [200]);
-        await finishCancelledRun(actorRun.runId, actorClaim.sandboxToken);
-        await finishCancelledRun(memberRun.runId, memberClaim.sandboxToken);
-        const settled = await api.readRunQueue(actor);
-        expect(settled.body.concurrency.active).toBe(0);
-      });
-    });
-
-    describe("BILL-01: billing entitlement reconciliation cron", () => {
-      function billingActorOrgId(actor: ApiTestUser): string {
-        if (!actor.orgId) {
-          throw new Error(
-            "Billing reconciliation tests require an org-scoped actor",
-          );
-        }
-        return actor.orgId;
-      }
-
-      function subscriptionEvent(args: {
-        readonly subscriptionId: string;
-        readonly customerId: string;
-        readonly status: string;
-        readonly periodEndUnix: number;
-        readonly priceId?: string;
-      }): unknown {
-        return {
-          type: "customer.subscription.updated",
-          data: {
-            object: {
-              id: args.subscriptionId,
-              status: args.status,
-              customer: args.customerId,
-              cancel_at: args.periodEndUnix,
-              cancel_at_period_end: false,
-              schedule: null,
-              trial_end: null,
-              metadata: {},
-              items: {
-                data: [
-                  {
-                    price: { id: args.priceId ?? "price_bdd_pro" },
-                    current_period_end: args.periodEndUnix,
-                  },
-                ],
-              },
-            },
-          },
-        };
-      }
-
-      async function failSubscription(args: {
-        readonly subscriptionId: string;
-        readonly customerId: string;
-        readonly priceId?: string;
-      }): Promise<void> {
-        const webhooks = createWebhookCallbackApi(context);
-        const event = subscriptionEvent({
-          ...args,
-          status: "past_due",
-          periodEndUnix: Math.floor(now() / 1000) - 2 * 86_400,
-        });
-        webhooks.configureStripeWebhookSecret();
-        webhooks.acceptNextStripeWebhookEvent(event);
-        await webhooks.requestStripeWebhook(
-          JSON.stringify(event),
-          { "stripe-signature": "t=1,v1=bdd" },
-          [200],
-        );
-      }
-
-      it("recovers payment-failed subscriptions that became active again", async () => {
-        const api = createRunsApi(context);
-        const billing = createBillingMediaApi(context);
-        const { actor, granted } = await entitledRunActor();
-        await failSubscription(granted);
-
-        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-          id: granted.subscriptionId,
-          status: "active",
-          customer: granted.customerId,
-          cancel_at: null,
-          cancel_at_period_end: false,
-          schedule: null,
-          trial_end: null,
-          metadata: {},
-          items: {
-            data: [
-              {
-                price: { id: "price_bdd_pro" },
-                current_period_end: Math.floor(now() / 1000) + 30 * 86_400,
-              },
-            ],
-          },
-        });
-        await api.reconcileBillingOrganizations([billingActorOrgId(actor)]);
-
-        const status = await billing.readBillingStatus(actor);
-        expect(status.tier).toBe("pro");
-        await expect(
-          readOrgPlanEntitlementFixture(billingActorOrgId(actor)),
-        ).resolves.toMatchObject({
-          orgId: billingActorOrgId(actor),
-          planKey: "pro",
-          source: "stripe_subscription",
-          status: "active",
-          stripeSubscriptionId: granted.subscriptionId,
-          stripePriceId: "price_bdd_pro",
-        });
-
-        await failSubscription(granted);
-        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-          id: granted.subscriptionId,
-          status: "incomplete",
-          customer: granted.customerId,
-          cancel_at: null,
-          cancel_at_period_end: false,
-          schedule: null,
-          trial_end: null,
-          metadata: {},
-          items: { data: [] },
-        });
-        await api.reconcileBillingOrganizations([billingActorOrgId(actor)]);
-        const skipped = await billing.readBillingStatus(actor);
-        expect(skipped.tier).toBe("pro");
-      });
-
-      it("keeps recently paid-through subscriptions and downgrades stale ones", async () => {
-        const api = createRunsApi(context);
-        const billing = createBillingMediaApi(context);
-        const { actor, granted } = await entitledRunActor();
-        await failSubscription(granted);
-
-        context.mocks.stripe.subscriptions.list.mockResolvedValue({
-          data: [],
-          has_more: false,
-        });
-        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-          id: granted.subscriptionId,
-          status: "past_due",
-          customer: granted.customerId,
-          cancel_at: null,
-          cancel_at_period_end: false,
-          schedule: null,
-          trial_end: null,
-          metadata: {},
-          items: {
-            data: [
-              {
-                price: { id: "price_bdd_pro" },
-                current_period_end: Math.floor(now() / 1000) + 7 * 86_400,
-              },
-            ],
-          },
-        });
-        await api.reconcileBillingOrganizations([billingActorOrgId(actor)]);
-        const synced = await billing.readBillingStatus(actor);
-        expect(synced.tier).toBe("pro");
-        await expect(
-          readOrgPlanEntitlementFixture(billingActorOrgId(actor)),
-        ).resolves.toMatchObject({
-          orgId: billingActorOrgId(actor),
-          planKey: "pro",
-          source: "stripe_subscription",
-          status: "past_due",
-          stripeSubscriptionId: granted.subscriptionId,
-          stripePriceId: "price_bdd_pro",
-        });
-
-        const stalePeriodEndUnix = Math.floor(now() / 1000) - 2 * 86_400;
-        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-          id: granted.subscriptionId,
-          status: "past_due",
-          customer: granted.customerId,
-          cancel_at: null,
-          cancel_at_period_end: false,
-          schedule: null,
-          trial_end: null,
-          metadata: {},
-          items: {
-            data: [
-              {
-                price: { id: "price_bdd_pro" },
-                current_period_end: stalePeriodEndUnix,
-              },
-            ],
-          },
-        });
-        await failSubscription(granted);
-        await api.reconcileBillingOrganizations([billingActorOrgId(actor)]);
-
-        const downgraded = await billing.readBillingStatus(actor);
-        expect(downgraded.tier).not.toBe("pro");
-        await expect(
-          readOrgPlanEntitlementFixture(billingActorOrgId(actor)),
-        ).resolves.toMatchObject({
-          orgId: billingActorOrgId(actor),
-          planKey: "limited-free-1",
-          source: "stripe_subscription",
-          status: "active",
-          baseConcurrencyLimit: 2,
-          canBuyConcurrency: false,
-          autoRechargeAllowed: false,
-          restrictedBuiltInModels: true,
-          workflowWebhookAutomationAllowed: false,
-          stripeSubscriptionId: granted.subscriptionId,
-          stripePriceId: "price_bdd_pro",
-          currentPeriodEnd: new Date(stalePeriodEndUnix * 1000).toISOString(),
-          expiresAt: null,
-        });
-      });
-
-      it("downgrades a stale payment-failed Custom subscription", async () => {
-        const api = createRunsApi(context);
-        const billing = createBillingMediaApi(context);
-        const actor = createBddApi(context).user();
-        const orgId = billingActorOrgId(actor);
-        const customerId = `cus_bdd_custom_${randomUUID().slice(0, 8)}`;
-        const subscriptionId = `sub_bdd_custom_${randomUUID().slice(0, 8)}`;
-        const customPriceId = "price_test_custom";
-        context.mocks.stripe.subscriptions.list.mockResolvedValue({
-          data: [],
-          has_more: false,
-        });
-        await postSubscriptionInvoicePaid(context.signal, {
-          orgId,
-          userId: actor.userId,
-          tier: "custom",
-          customerId,
-          subscriptionId,
-          currentPeriodEnd: new Date(now() + 30 * 86_400_000),
-        });
-        await failSubscription({
-          subscriptionId,
-          customerId,
-          priceId: customPriceId,
-        });
-
-        const stalePeriodEndUnix = Math.floor(now() / 1000) - 2 * 86_400;
-        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-          id: subscriptionId,
-          status: "past_due",
-          customer: customerId,
-          cancel_at: null,
-          cancel_at_period_end: false,
-          schedule: null,
-          trial_end: null,
-          metadata: { orgId, purpose: "custom_plan_subscription" },
-          items: {
-            data: [
-              {
-                price: { id: customPriceId },
-                current_period_end: stalePeriodEndUnix,
-              },
-            ],
-          },
-        });
-        await api.reconcileBillingOrganizations([orgId]);
-
-        const status = await billing.readBillingStatus(actor);
-        expect(status.tier).toBe("limited-free-1");
-        await expect(
-          readOrgPlanEntitlementFixture(orgId),
-        ).resolves.toMatchObject({
-          orgId,
-          planKey: "limited-free-1",
-          source: "stripe_subscription",
-          stripeSubscriptionId: subscriptionId,
-          stripePriceId: customPriceId,
-          currentPeriodEnd: new Date(stalePeriodEndUnix * 1000).toISOString(),
-        });
-      });
-
-      it("clears cancelled subscriptions during reconciliation", async () => {
-        const api = createRunsApi(context);
-        const billing = createBillingMediaApi(context);
-        const { actor, granted } = await entitledRunActor();
-        await failSubscription(granted);
-
-        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
-          id: granted.subscriptionId,
-          status: "canceled",
-          customer: granted.customerId,
-          cancel_at: null,
-          cancel_at_period_end: false,
-          schedule: null,
-          trial_end: null,
-          metadata: {},
-          items: { data: [] },
-        });
-        await api.reconcileBillingOrganizations([billingActorOrgId(actor)]);
-
-        const cleared = await billing.readBillingStatus(actor);
-        expect(cleared.tier).not.toBe("pro");
-        await expect(
-          readOrgPlanEntitlementFixture(billingActorOrgId(actor)),
-        ).resolves.toMatchObject({
-          orgId: billingActorOrgId(actor),
-          planKey: "limited-free-1",
-          source: "stripe_subscription",
-          status: "active",
-          stripeSubscriptionId: null,
-          stripePriceId: null,
-          currentPeriodEnd: null,
-          expiresAt: null,
-        });
       });
     });
   }

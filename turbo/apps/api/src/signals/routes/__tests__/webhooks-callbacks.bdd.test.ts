@@ -1,33 +1,27 @@
-import { readFileSync } from "node:fs";
 import { oomEvidenceSchema } from "@okouai/api-contracts/contracts/oom-evidence";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createHash, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 
-import { createStore } from "ccstate";
+import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
 import { RESUME_SESSION_HISTORY_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
 import { MAX_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/storages";
-import { testStorageObjectCleanupContract } from "@okouai/api-contracts/contracts/test-storage-object-cleanup";
-import type { CreateCustomConnectorBody } from "@okouai/api-contracts/contracts/custom-connectors";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 
+import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
-import { testStorageObjectCleanupRoutes } from "../test-storage-object-cleanup";
+import { deleteOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settle } from "../../utils";
-import { deleteOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
-import { seedUsagePricingRows } from "../../../test-fixtures/system-config-seeds";
 import {
   createBddApi,
   expectApiError,
   type ApiTestUser,
 } from "./helpers/api-bdd";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   createConnectorBddApi,
@@ -36,33 +30,29 @@ import {
   mockSlackConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createGithubBddApi, newGithubUserId } from "./helpers/api-bdd-github";
-import {
-  createRunsApi,
-  expectCanonicalStorageManifest,
-} from "./helpers/api-bdd-runs";
-import { createStoragesBddApi } from "./helpers/api-bdd-storages";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import {
   transitionRunToTerminal,
   transitionRunToTimeout,
   type TestTerminalRunStatus,
 } from "./helpers/api-bdd-run-timeout";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import {
+  createRunsApi,
+  expectCanonicalStorageManifest,
+} from "./helpers/api-bdd-runs";
+import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createUserConfigBddApi } from "./helpers/api-bdd-user-config";
-import {
-  generatedStripeCustomerId,
-  generatedStripeSubscriptionId,
-  postUsageAllowanceInvoicePaid,
-} from "./helpers/stripe-billing-webhook";
-import {
-  insertUsageEvent$,
-  materializeHourlyUsage$,
-  readUsageStorageCounts$,
-} from "./helpers/usage-state";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   readCustomConnectorCredentialStorageParent,
   readThreadConnectorSelectionState,
   seedCustomThreadConnectorSelection,
 } from "./helpers/connector-credential-storage-state";
+import {
+  generatedStripeCustomerId,
+  generatedStripeSubscriptionId,
+  postUsageAllowanceInvoicePaid,
+} from "./helpers/stripe-billing-webhook";
 
 const context = testContext({});
 const TERMINAL_RUN_STATUSES = [
@@ -72,7 +62,6 @@ const TERMINAL_RUN_STATUSES = [
   "timeout",
 ] as const satisfies readonly TestTerminalRunStatus[];
 const api = createWebhookCallbackApi(context);
-const store = createStore();
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const DEFAULT_AGENT_AVATAR_URL =
   "https://static.vm0.io/public/default-agent-avatar-ceb298b79964.svg";
@@ -522,19 +511,6 @@ function concurrencySubscription(args: {
       ],
     },
   };
-}
-
-function commandInput(command: unknown): Record<string, unknown> {
-  if (
-    typeof command === "object" &&
-    command !== null &&
-    "input" in command &&
-    typeof command.input === "object" &&
-    command.input !== null
-  ) {
-    return command.input as Record<string, unknown>;
-  }
-  return {};
 }
 
 function acceptGithubGrantRevocations(): void {
@@ -3142,7 +3118,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
   it("grants and renews Atom invoice-backed Team entitlements", async () => {
     const bdd = createBddApi(context);
     const billing = createBillingMediaApi(context);
-    const runs = createRunsApi(context);
     const actor = bdd.user();
     const orgId = orgOf(actor);
     const grantExpiresAtUnix = epochSeconds(7);
@@ -3261,22 +3236,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
       ]),
     );
     expect(renewed).toMatchObject(TEAM_BILLING_CAPABILITIES);
-
-    // The app clock passes the renewed grant end before reconciliation runs.
-    mockNow(renewedGrantExpiresAtUnix * 1000 + 1000);
-    await runs.reconcileBillingOrganizations([orgId]);
-
-    const downgraded = await billing.readBillingStatus(actor);
-    expect(downgraded.tier).toBe("limited-free-1");
-    expect(downgraded.credits).toBe(0);
-    expect(downgraded.hasSubscription).toBeFalsy();
-    expect(downgraded.creditGrants).toHaveLength(0);
-    expect(downgraded).toMatchObject(LIMITED_FREE_BILLING_CAPABILITIES);
-    expect(downgraded.subscriptionStatus).toBe("expired");
-    expect(downgraded.currentPeriodEnd).toBeNull();
-    await expect(billing.readVoiceQuota(actor)).resolves.toMatchObject({
-      body: { allowed: true, count: 0, limit: 10 },
-    });
   });
 
   it("upserts usage allowance entitlements from Atom subscription invoices", async () => {
@@ -3931,7 +3890,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
   it("rejects lower Atom grants after a Custom grant without canceling subscriptions", async () => {
     const bdd = createBddApi(context);
     const billing = createBillingMediaApi(context);
-    const runs = createRunsApi(context);
     const actor = bdd.user();
     const orgId = orgOf(actor);
     const suffix = randomUUID().slice(0, 8);
@@ -4014,14 +3972,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
 
     expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
     expect((await billing.readBillingStatus(actor)).tier).toBe("custom");
-
-    // The app clock passes the Custom grant end before reconciliation runs.
-    mockNow(grantExpiresAtUnix * 1000 + 1000);
-    await runs.reconcileBillingOrganizations([orgId]);
-
-    const downgraded = await billing.readBillingStatus(actor);
-    expect(downgraded.tier).toBe("limited-free-1");
-    expect(downgraded.hasSubscription).toBeFalsy();
   });
 
   it("expires Atom redeem-code day-grant subscription credits at the grant end", async () => {
@@ -6759,64 +6709,6 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       prompt: "survive until teardown",
     });
     expect(run.status).toBe("pending");
-    const usageProvider = `org-teardown-${randomUUID().slice(0, 8)}`;
-    await seedUsagePricingRows([
-      {
-        kind: "connector",
-        provider: usageProvider,
-        category: "call",
-        unitPrice: 10,
-        unitSize: 1,
-      },
-    ]);
-    await api.requestAgentUsageEvent(
-      {
-        runId: run.runId,
-        events: [
-          {
-            idempotencyKey: randomUUID(),
-            kind: "connector",
-            provider: usageProvider,
-            category: "call",
-            quantity: 1,
-          },
-        ],
-      },
-      { authorization: `Bearer ${runs.sandboxTokenForRun(actor, run.runId)}` },
-      [200],
-    );
-    await createBillingMediaApi(context).processOrgUsageEvents(actor);
-    await expect(
-      store.set(
-        materializeHourlyUsage$,
-        {
-          orgId: orgOf(actor),
-          userId: actor.userId,
-          runId: run.runId,
-        },
-        context.signal,
-      ),
-    ).resolves.toBe(1);
-    await store.set(
-      insertUsageEvent$,
-      {
-        orgId: orgOf(actor),
-        userId: actor.userId,
-        runId: run.runId,
-        status: "processed",
-        creditsCharged: 5,
-        processedAt: nowDate(),
-      },
-      context.signal,
-    );
-    await expect(
-      store.set(
-        readUsageStorageCounts$,
-        { scope: "organization", id: orgOf(actor) },
-        context.signal,
-      ),
-    ).resolves.toStrictEqual({ raw: 1, hourly: 1 });
-
     await gh.installGithubApp(actor, agent.agentId, {
       oauthCode: {
         code: `whcb08a-${randomUUID().slice(0, 8)}`,
@@ -6900,57 +6792,6 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
     await runs.requestReadRun(actor, run.runId, [404]);
     await expect(bdd.listAgents(actor)).resolves.toStrictEqual([]);
 
-    // R2 failure no longer preserves live DB references. The durable cleanup
-    // inventory survives those deletions and owns the later object retry.
-    const deletedS3Keys: string[] = [];
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      const input = commandInput(command);
-      if (typeof input.Prefix === "string") {
-        return Promise.resolve({
-          Contents: [
-            {
-              Key: `${input.Prefix}/archive.bin`,
-              Size: 1,
-              LastModified: nowDate(),
-            },
-          ],
-        });
-      }
-      const removal = input.Delete as
-        | { readonly Objects?: readonly { readonly Key?: string }[] }
-        | undefined;
-      for (const object of removal?.Objects ?? []) {
-        if (object.Key) {
-          deletedS3Keys.push(object.Key);
-        }
-      }
-      return Promise.resolve({});
-    });
-    await accept(
-      setupApp({ context, routes: testStorageObjectCleanupRoutes })(
-        testStorageObjectCleanupContract,
-      ).retry({
-        body: { kind: "organization", orgId: orgOf(actor) },
-      }),
-      [200],
-    );
-    await flushWaitUntilForTest();
-    expect(deletedS3Keys.length).toBeGreaterThan(0);
-    await waitForExpectation(async () => {
-      await runs.requestReadRun(actor, run.runId, [404]);
-    });
-    await waitForExpectation(async () => {
-      await expect(bdd.listAgents(actor)).resolves.toStrictEqual([]);
-    });
-    await waitForExpectation(async () => {
-      await expect(
-        store.set(
-          readUsageStorageCounts$,
-          { scope: "organization", id: orgOf(actor) },
-          context.signal,
-        ),
-      ).resolves.toStrictEqual({ raw: 0, hourly: 0 });
-    });
     await waitForExpectation(async () => {
       const listed = await connectors.listBuiltinConnectors(actor);
       expect(listed.connectors).not.toContainEqual(

@@ -60,7 +60,6 @@ import {
   invitationMutationSubscriptionSql,
 } from "./usage-pack-mutation-admission";
 import { acceptGetStartedInvitation$ } from "./get-started-invitation-acceptance.service";
-import type { BillingReconciliationScope } from "./billing-reconciliation-scope";
 import { completeBillingOperationInvoice } from "./billing-operation-invoice.service";
 import {
   isCurrentStripePreviewMetadata,
@@ -2802,11 +2801,7 @@ const reconcileUsagePackInvitationPurchaseCandidate$ = command(
 );
 
 export const reconcileUsagePackInvitationPurchases$ = command(
-  async (
-    { set },
-    scope: BillingReconciliationScope | undefined,
-    signal: AbortSignal,
-  ): Promise<number> => {
+  async ({ set }, signal: AbortSignal): Promise<number> => {
     const db = set(writeDb$);
 
     signal.throwIfAborted();
@@ -2831,11 +2826,6 @@ export const reconcileUsagePackInvitationPurchases$ = command(
                 .from(usagePackInvitationPurchases)
                 .where(
                   and(
-                    scope
-                      ? inArray(usagePackInvitationPurchases.orgId, [
-                          ...scope.orgIds,
-                        ])
-                      : undefined,
                     eq(usagePackInvitationPurchases.status, "checkout_pending"),
                     lte(
                       usagePackInvitationPurchases.stripeCheckoutExpiresAt,
@@ -2861,9 +2851,6 @@ export const reconcileUsagePackInvitationPurchases$ = command(
         .from(usagePackInvitationPurchases)
         .where(
           and(
-            scope
-              ? inArray(usagePackInvitationPurchases.orgId, [...scope.orgIds])
-              : undefined,
             cursor ? gt(usagePackInvitationPurchases.id, cursor) : undefined,
             inArray(usagePackInvitationPurchases.status, [
               "payment_succeeded",

@@ -58,7 +58,6 @@ import {
   usagePackPreviewSubscriptionMatches,
   type UsagePackChangeInvoiceInput,
 } from "./usage-pack-allocation-change.service";
-import type { BillingReconciliationScope } from "./billing-reconciliation-scope";
 import { completeBillingOperationInvoice } from "./billing-operation-invoice.service";
 import { deferredScheduleMatchesRequest } from "./usage-pack-deferred-schedule.service";
 import {
@@ -3832,7 +3831,6 @@ async function rollbackUnpaidSubscriptionChange(
 async function expireSubscriptionChangePreviews(
   db: Db,
   at: Date,
-  scope: BillingReconciliationScope | undefined,
 ): Promise<number> {
   const expired = await db
     .update(usagePackSubscriptionChanges)
@@ -3844,9 +3842,6 @@ async function expireSubscriptionChangePreviews(
     })
     .where(
       and(
-        scope
-          ? inArray(usagePackSubscriptionChanges.orgId, [...scope.orgIds])
-          : undefined,
         eq(usagePackSubscriptionChanges.status, "previewed"),
         lte(usagePackSubscriptionChanges.previewExpiresAt, at),
       ),
@@ -3988,7 +3983,6 @@ async function reconcileSubscriptionChangeCandidate(
 
 export async function reconcileUsagePackSubscriptionChanges(
   db: Db,
-  scope: BillingReconciliationScope | undefined,
   signal: AbortSignal,
 ): Promise<{
   readonly reconciled: number;
@@ -4000,15 +3994,12 @@ export async function reconcileUsagePackSubscriptionChanges(
   const paymentExpiredBefore = new Date(
     at.getTime() - PAYMENT_CONFIRMATION_TTL_MS,
   );
-  const expiredCount = await expireSubscriptionChangePreviews(db, at, scope);
+  const expiredCount = await expireSubscriptionChangePreviews(db, at);
   const candidates = await db
     .select()
     .from(usagePackSubscriptionChanges)
     .where(
       and(
-        scope
-          ? inArray(usagePackSubscriptionChanges.orgId, [...scope.orgIds])
-          : undefined,
         inArray(usagePackSubscriptionChanges.status, [
           "applying",
           "pending_payment",

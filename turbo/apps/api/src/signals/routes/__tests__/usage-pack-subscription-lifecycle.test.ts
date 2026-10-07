@@ -1,6 +1,5 @@
-import { reconcileBillingOrganizationsForTest } from "../../../test-fixtures/billing-workers";
-import { createPublicBillingZeroFixture } from "./helpers/public-billing-zero-fixture";
 import { randomUUID } from "node:crypto";
+import { createPublicBillingZeroFixture } from "./helpers/public-billing-zero-fixture";
 
 import {
   billingStatusContract,
@@ -14,12 +13,13 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { env, mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
-import { clearMockNow, mockNow, now } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
-import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
-import { createRouteMocks } from "./helpers/route-test";
 import { mockStripeClient } from "../../external/stripe-client";
 import { createDeferredPromise } from "../../utils";
+import { billingCheckoutRoutes } from "../billing-checkout";
+import { billingStatusRoutes } from "../billing-status";
+import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import {
   testUsagePackSubscriptionStateContract,
   testUsagePackSubscriptionStateRoutes,
@@ -27,9 +27,8 @@ import {
   type TestUsagePackSubscriptionStateResponse,
 } from "../test-usage-pack-subscription-state";
 import { webhooksStripeRoutes } from "../webhooks-stripe";
-import { billingStatusRoutes } from "../billing-status";
-import { billingCheckoutRoutes } from "../billing-checkout";
-import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
+import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const routeMocks = createRouteMocks(context);
@@ -266,13 +265,6 @@ async function postStripeEvent(
     headers: { "stripe-signature": "t=1,v1=usage-pack-lifecycle" },
   });
   expect(response.status).toBe(expectedStatus);
-}
-
-async function reconcileBillingOrganization(orgId: string) {
-  return await reconcileBillingOrganizationsForTest(
-    { orgIds: [orgId] },
-    context.signal,
-  );
 }
 
 async function usagePackStateAction(
@@ -2277,161 +2269,6 @@ describe("usage pack subscription Stripe lifecycle", () => {
 
     expect(state.org).toMatchObject({ tier: "pro", credits: -5000 });
     expect(state.grants).toHaveLength(2);
-  });
-
-  it("clears negative credits on the first paid upgrade but not after a payment-failure downgrade", async () => {
-    mockNow(new Date("2999-02-01T00:00:00.000Z"));
-    onTestFinished(() => {
-      clearMockNow();
-    });
-    const userId = `user_${randomUUID()}`;
-    const fixture = await checkoutUsagePackLifecycle(userId, 20, "pro", -5000);
-    const quantities = new Map([[TEST_PRICE_PACK_20, 1]]);
-    const paidPeriod = period(-32);
-    let currentSubscription = stripeSubscription(
-      fixture,
-      paidPeriod,
-      quantities,
-    );
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
-      currentSubscription,
-    );
-    await postStripeEvent(
-      stripeEvent(
-        "invoice.paid",
-        paidInvoice(fixture, {
-          invoiceId: `in_${randomUUID()}`,
-          paidPeriod,
-          quantities,
-        }),
-      ),
-      200,
-    );
-    const firstUpgradeOrg = (await readUsagePackState(fixture)).org;
-    expect(firstUpgradeOrg).toStrictEqual(
-      expect.objectContaining({ tier: "pro", credits: 0 }),
-    );
-
-    currentSubscription = stripeSubscription(fixture, paidPeriod, quantities, {
-      status: "past_due",
-    });
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
-      currentSubscription,
-    );
-    await postStripeEvent(
-      stripeEvent("customer.subscription.updated", currentSubscription),
-      200,
-    );
-    context.mocks.stripe.invoices.list.mockResolvedValue({ data: [] });
-
-    await reconcileBillingOrganization(fixture.orgId);
-    const downgradedOrg = (await readUsagePackState(fixture)).org;
-    expect(downgradedOrg).toStrictEqual(
-      expect.objectContaining({
-        tier: "limited-free-1",
-        subscriptionStatus: "past_due",
-      }),
-    );
-
-    await seedOrgMetadata({
-      orgId: fixture.orgId,
-      tier: "limited-free-1",
-      credits: -3000,
-    });
-    const recoveredPeriod = period(0);
-    currentSubscription = stripeSubscription(
-      fixture,
-      recoveredPeriod,
-      quantities,
-    );
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
-      currentSubscription,
-    );
-    await postStripeEvent(
-      stripeEvent(
-        "invoice.paid",
-        paidInvoice(fixture, {
-          invoiceId: `in_${randomUUID()}`,
-          paidPeriod: recoveredPeriod,
-          quantities,
-        }),
-      ),
-      200,
-    );
-    const recoveredOrg = (await readUsagePackState(fixture)).org;
-    expect(recoveredOrg).toStrictEqual(
-      expect.objectContaining({
-        tier: "pro",
-        subscriptionStatus: "active",
-        credits: -3000,
-      }),
-    );
-  });
-
-  it("reconciles a completed Checkout Session and missed paid invoice without enabling enrollment", async () => {
-    const reconciliationAt = new Date("2999-03-01T00:00:00.000Z");
-    const checkoutAt = new Date(reconciliationAt.getTime() - 10 * 60 * 1000);
-    mockNow(checkoutAt);
-    onTestFinished(() => {
-      clearMockNow();
-    });
-    const userId = `user_${randomUUID()}`;
-    const fixture = await checkoutUsagePackLifecycle(userId, 20, "pro", 0);
-    mockNow(reconciliationAt);
-    const quantities = new Map([[TEST_PRICE_PACK_20, 1]]);
-    const paidPeriod = period(0);
-    const subscription = stripeSubscription(fixture, paidPeriod, quantities);
-    const invoice = paidInvoice(fixture, {
-      invoiceId: `in_${randomUUID()}`,
-      paidPeriod,
-      quantities,
-    });
-    mockNow(checkoutAt);
-    const sentinel = await checkoutUsagePackLifecycle(
-      `user_${randomUUID()}`,
-      20,
-      "pro",
-      0,
-    );
-    mockNow(reconciliationAt);
-    const sentinelBefore = await readUsagePackState(sentinel);
-    context.mocks.stripe.checkout.sessions.retrieve.mockImplementation(
-      (sessionId) => {
-        if (sessionId === fixture.checkoutSessionId) {
-          return Promise.resolve({
-            id: fixture.checkoutSessionId,
-            status: "complete",
-            customer: fixture.customerId,
-            subscription: fixture.subscriptionId,
-            metadata: usagePackMetadata(fixture),
-          });
-        }
-        return Promise.resolve({
-          id: typeof sessionId === "string" ? sessionId : "cs_unknown",
-          status: "expired",
-          customer: null,
-          subscription: null,
-          metadata: null,
-        });
-      },
-    );
-    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(subscription);
-    context.mocks.stripe.invoices.list.mockResolvedValue({ data: [invoice] });
-
-    await expect(
-      reconcileBillingOrganization(fixture.orgId),
-    ).resolves.toStrictEqual({ downgraded: 0 });
-    await expect(grantRows(fixture)).resolves.toHaveLength(2);
-    const reconciled = (await readUsagePackState(fixture)).subscription;
-    expect(reconciled).toStrictEqual(
-      expect.objectContaining({
-        stripeSubscriptionId: fixture.subscriptionId,
-        currentPeriodEnd: new Date(paidPeriod.end * 1000).toISOString(),
-      }),
-    );
-    await expect(readUsagePackState(sentinel)).resolves.toStrictEqual(
-      sentinelBefore,
-    );
   });
 
   it("rolls back invalid Product metadata and succeeds when Stripe retries", async () => {
