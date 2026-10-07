@@ -9,6 +9,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.712.3](https://github.com/okou-ai/okou/compare/api-v1.712.2...api-v1.712.3) (2026-10-07)
+
+
+### Refactoring
+
+* clean up released switch leftovers and drop legacy chat thread provider pins ([#37851](https://github.com/okou-ai/okou/issues/37851)) ([066e9c3](https://github.com/okou-ai/okou/commit/066e9c32c2bbd5e3d48783fb0028f8dcfbaeaf06))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.537.10
+    * @okouai/core bumped to 8.734.3
+    * @okouai/db bumped to 1.323.4
+    * @okouai/pi-agent-runtime bumped to 1.46.17
+
 ## [1.712.2](https://github.com/okou-ai/okou/compare/api-v1.712.1...api-v1.712.2) (2026-10-07)
 
 
