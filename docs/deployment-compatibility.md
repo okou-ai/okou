@@ -60,8 +60,8 @@ or its destructive Release 2. Business/runtime reads (Run capture, Pi
 recapture, public lists/search/discovery/connect surfaces, account refresh,
 Runner firewall catalog, DCR current-identity checks, and permission-baseline
 refresh) use `connector_catalog(schema_version, hash)` and
-`connector_catalog_entries(hash, slug, payload)`. They do not read the header,
-slug manifest, compressed active snapshot, or persisted compatibility result.
+`connector_catalog_entries(hash, slug, payload)`. They do not read the slug
+manifest, compressed active snapshot, or persisted compatibility result.
 Full reads capture the hash first and load retained immutable entries at that
 hash, in slug order; switching the pointer cannot strand that capture. Selected
 reads capture pointer and entries in one statement. Compatibility is calculated
@@ -70,8 +70,11 @@ existing hash/capability-keyed process cache retained for full-catalog reads.
 Missing slugs remain absent and the owning business contract decides whether to
 return not-found or reject a required connector. A missing pointer or an empty
 whole-catalog generation fails unavailable; there is no legacy or R2 read
-fallback. Public category metadata is omitted (the field was already optional);
-connector category IDs and discovery category counts remain available. The
+fallback. Public list, discovery and status responses still return category
+metadata, read from `connector_catalog.catalog_header` in the same row read
+that captures the hash, because App clients use it for category labels,
+grouping and filters. That header dependency must be retired through an App
+migration before any Release 2 contraction of `catalog_header`. The
 Runner firewall projection's own digest uses canonical JSON object-key order,
 so loading the same content from JSONB cannot change its identity. The opaque
 digest/version can change once relative to the old noncanonical projection;
