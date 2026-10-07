@@ -111,12 +111,15 @@ test("Resolve the model shown for a chat", async () => {
   await expect(modelPicker("Claude Opus 5.5")).resolves.toBeVisible();
 });
 
-test("Show and send Auto when an existing thread's model is no longer selectable", async () => {
-  const sentModels: (string | null | undefined)[] = [];
+test("Switch only the thread to Auto when its model is no longer selectable", async () => {
+  const requests: string[] = [];
   installRunChat({
     selectedModel: "deepseek-v4.1-flash",
+    onModelSelectionUpdate: (body) => {
+      requests.push(`thread model ${String(body.model)}`);
+    },
     onSendRequest: (body) => {
-      sentModels.push(body.model);
+      requests.push(`send model ${String(body.model)}`);
     },
   });
   context.mocks.data.availableRunModels([
@@ -139,8 +142,12 @@ test("Show and send Auto when an existing thread's model is no longer selectable
 
   await sendText("Run on the model shown");
 
+  // The send carries no model, so the member's default model is untouched.
   await waitFor(() => {
-    expect(sentModels).toStrictEqual([null]);
+    expect(requests).toStrictEqual([
+      "thread model null",
+      "send model undefined",
+    ]);
   });
 });
 

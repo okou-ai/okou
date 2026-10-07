@@ -449,38 +449,43 @@ function createModelSelection(
 
 interface ModelSelectionForSend {
   readonly selection: ModelProviderSelection;
-  /**
-   * The request's `model` field: undefined keeps the thread's stored
-   * selection; null switches a pin without an offered route to Auto, which is
-   * what the composer shows.
-   */
-  readonly model: null | undefined;
 }
 
 function createModelSelectionForSend({
   selectedModel$,
   effectiveSelectedModel$,
   codexFastModeActive$,
+  setModelSelection$,
 }: {
   selectedModel$: Computed<string | null>;
   effectiveSelectedModel$: Computed<Promise<string | null>>;
   codexFastModeActive$: Computed<Promise<boolean>>;
+  setModelSelection$: Command<
+    Promise<void>,
+    [ModelProviderSelection | null, AbortSignal]
+  >;
 }) {
   return command(
-    async ({ get }, signal: AbortSignal): Promise<ModelSelectionForSend> => {
+    async (
+      { get, set },
+      signal: AbortSignal,
+    ): Promise<ModelSelectionForSend> => {
       const [selectedModel, codexFastModeActive] = await Promise.all([
         get(effectiveSelectedModel$),
         get(codexFastModeActive$),
       ]);
       signal.throwIfAborted();
+      // A pin without an offered route is shown as Auto. Switch the thread to
+      // Auto the way the picker does, so the send runs what the composer shows
+      // without changing the member's default model.
+      if (selectedModel === null && get(selectedModel$) !== null) {
+        await set(setModelSelection$, { selectedModel: null }, signal);
+        signal.throwIfAborted();
+      }
       return {
         selection: codexFastModeActive
           ? { selectedModel, codexServiceTier: "fast" }
           : { selectedModel },
-        model:
-          selectedModel === null && get(selectedModel$) !== null
-            ? null
-            : undefined,
       };
     },
   );
@@ -3190,9 +3195,6 @@ function sendInputForRequest(args: {
     hasTextContent: result.hasTextContent,
     userMessage: args.userMessage,
     selectedModel: request.modelSelection.selection.selectedModel,
-    ...(request.modelSelection.model === undefined
-      ? {}
-      : { model: request.modelSelection.model }),
     ...(args.runOptions === undefined ? {} : { runOptions: args.runOptions }),
     ...(args.realAgentInPreviewEnabled ? { realAgentInPreview: true } : {}),
     ...(request.options && "computerUseHostId" in request.options
@@ -3370,9 +3372,6 @@ function createQueueMessage(deps: SendMessageDeps) {
             hasTextContent: result.hasTextContent,
             userMessage,
             selectedModel: modelSelection.selection.selectedModel,
-            ...(modelSelection.model === undefined
-              ? {}
-              : { model: modelSelection.model }),
             ...(runOptions === undefined ? {} : { runOptions }),
             ...(realAgentInPreviewEnabled ? { realAgentInPreview: true } : {}),
             ...(options.computerUseHostId === undefined

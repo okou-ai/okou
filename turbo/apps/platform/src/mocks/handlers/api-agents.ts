@@ -1,4 +1,3 @@
-import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import {
   agentCustomConnectorsContract,
   type AgentCustomConnectorGrant,
@@ -295,11 +294,7 @@ export const apiAgentsHandlers = [
       id: body.clientThreadId ?? "b0000000-0000-4000-a000-000000000001",
       title: null,
       createdAt: "2026-03-10T00:00:00Z",
-      // The response names the run model; an Auto thread runs on Auto's.
-      selectedModel:
-        body.model === undefined
-          ? "claude-sonnet-5"
-          : (body.model ?? AUTO_RUN_MODEL),
+      selectedModel: body.model === undefined ? "claude-sonnet-5" : body.model,
       serviceTier: body.serviceTier ?? null,
     });
   }),
