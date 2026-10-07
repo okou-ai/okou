@@ -222,25 +222,19 @@ const moveRouteState$ = command(({ set }, move: RouteMove) => {
 
 // The browser captures the page on screen, then the update moves the route.
 // The incoming page is a live layer, so it renders inside the slide as the
-// next route's setup runs.
+// next route's setup runs. Without a slide the route moves synchronously.
 const moveRoute$ = command(
-  async (
-    { set },
-    direction: PwaPageTransitionDirection,
-    move: RouteMove,
-    signal: AbortSignal,
-  ) => {
+  ({ set }, direction: PwaPageTransitionDirection, move: RouteMove) => {
     if (direction === "none") {
       set(moveRouteState$, move);
       return;
     }
-    await document.startViewTransition({
+    return document.startViewTransition({
       update: () => {
         set(moveRouteState$, move);
       },
       types: [direction],
     }).updateCallbackDone;
-    signal.throwIfAborted();
   },
 );
 
@@ -259,12 +253,14 @@ export const initRoutes$ = command(
           pathname(),
           new URLSearchParams(search()),
         );
-        await set(
-          moveRoute$,
-          direction,
-          { kind: "pop", historyState: event.state },
-          signal,
-        );
+        const moved = set(moveRoute$, direction, {
+          kind: "pop",
+          historyState: event.state,
+        });
+        if (moved) {
+          await moved;
+          signal.throwIfAborted();
+        }
         set(navigateToDefaultWhenInvalid$);
         await set(loadRoute$, signal);
       }),
@@ -306,12 +302,14 @@ const navigate$ = command(
       pathname,
       options.searchParams ?? new URLSearchParams(),
     );
-    await set(
-      moveRoute$,
-      direction,
-      { kind: options.replace ? "replace" : "push", path: newPath },
-      signal,
-    );
+    const moved = set(moveRoute$, direction, {
+      kind: options.replace ? "replace" : "push",
+      path: newPath,
+    });
+    if (moved) {
+      await moved;
+      signal.throwIfAborted();
+    }
     // Use rootSignal$ (not the caller's route signal) so the new route gets
     // a fresh, non-aborted signal.  resetRouteSignal$ inside loadRoute$ will
     // abort the previous route's controller, which would poison any signal
