@@ -11,7 +11,13 @@ import {
 } from "@okouai/db/schema/model-provider-account";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { computed } from "ccstate";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
+import { z } from "zod";
+import { zodDriverValueDecoder } from "../../lib/db-structured-result";
+import {
+  contextJsonProjection,
+  contextProjectionSchema,
+} from "./context-rowset";
 import { db$ } from "../external/db";
 import { usagePricingByKey } from "./built-in-route-pricing";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
@@ -47,47 +53,63 @@ function providerFacts(rows: readonly ProviderRow[]) {
   ];
 }
 
-/** Member providers, connected accounts and both credential kinds share a read. */
-export function createMemberModelSources(orgId: string, userId: string) {
-  return computed(async (get) => {
-    const joined = await get(db$)
-      .select({
-        ...providerProjection(),
-        account: modelProviderAccounts,
-        secret: {
-          name: modelProviderAccountSecrets.name,
-          encryptedValue: modelProviderAccountSecrets.encryptedValue,
-        },
-      })
-      .from(modelProviders)
-      .leftJoin(
-        modelProviderAccounts,
-        and(
-          eq(modelProviderAccounts.modelProviderId, modelProviders.id),
-          eq(modelProviderAccounts.orgId, orgId),
-          eq(modelProviderAccounts.userId, userId),
-          isNull(modelProviderAccounts.disconnectedAt),
-        ),
-      )
-      .leftJoin(
-        modelProviderAccountSecrets,
-        eq(
-          modelProviderAccountSecrets.modelProviderAccountId,
-          modelProviderAccounts.id,
-        ),
-      )
-      .where(
-        and(
-          eq(modelProviders.orgId, orgId),
-          eq(modelProviders.userId, userId),
-          inArray(modelProviders.type, [
-            "codex-oauth-token",
-            "claude-code-oauth-token",
-          ]),
-        ),
-      );
-    return memberModelSourcesFromRows(orgId, userId, joined);
+function memberModelSourcePredicates(orgId: string, userId: string) {
+  return {
+    account: and(
+      eq(modelProviderAccounts.modelProviderId, modelProviders.id),
+      eq(modelProviderAccounts.orgId, orgId),
+      eq(modelProviderAccounts.userId, userId),
+      isNull(modelProviderAccounts.disconnectedAt),
+    ),
+    secret: eq(
+      modelProviderAccountSecrets.modelProviderAccountId,
+      modelProviderAccounts.id,
+    ),
+    provider: and(
+      eq(modelProviders.orgId, orgId),
+      eq(modelProviders.userId, userId),
+      inArray(modelProviders.type, [
+        "codex-oauth-token",
+        "claude-code-oauth-token",
+      ]),
+    ),
+  };
+}
+
+const sourceSecretSchema = z
+  .object({ name: z.string(), encryptedValue: z.string() })
+  .nullable();
+
+/**
+ * The same member-source join as one JSON aggregate, for statements that
+ * already read this member. Column decoders still own timestamps and enums.
+ */
+export function memberModelSourcesAggregate(orgId: string, userId: string) {
+  const on = memberModelSourcePredicates(orgId, userId);
+  const accountColumns = getTableColumns(modelProviderAccounts);
+  const payload = sql`COALESCE(jsonb_agg(jsonb_build_object(
+      'provider', ${contextJsonProjection(providerProjection().provider)},
+      'account', CASE WHEN ${modelProviderAccounts.id} IS NULL THEN NULL
+        ELSE ${contextJsonProjection(accountColumns)} END,
+      'secret', CASE WHEN ${modelProviderAccountSecrets.modelProviderAccountId} IS NULL THEN NULL
+        ELSE jsonb_build_object('name', ${modelProviderAccountSecrets.name},
+          'encryptedValue', ${modelProviderAccountSecrets.encryptedValue}) END)), '[]'::jsonb)`;
+  const rowSchema = z.object({
+    provider: contextProjectionSchema(providerProjection().provider),
+    account: contextProjectionSchema(accountColumns).nullable(),
+    secret: sourceSecretSchema,
   });
+  return {
+    payload: payload.mapWith(zodDriverValueDecoder(z.unknown())),
+    joins: on,
+    decode(value: unknown) {
+      return memberModelSourcesFromRows(
+        orgId,
+        userId,
+        z.array(rowSchema).parse(value),
+      );
+    },
+  };
 }
 
 export function memberModelSourcesFromRows(
