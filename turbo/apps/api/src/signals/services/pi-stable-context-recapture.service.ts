@@ -293,11 +293,10 @@ async function loadStableContextSourceSnapshot(
     catalogSelection = {
       kind: "scoped",
       selection: {
-        // Enabled connectors are required: a missing entry throws the typed
-        // unavailable error below and leaves the head missing.
+        // Enabled connectors whose entry left the catalog are omitted.
         ...connectorCatalogSlugRuntimeFromRows(catalogRows, {
           runtimeConnectorSlugs: connectorScope.allowedConnectorSlugs,
-          missingRuntimeEntries: "reject",
+          missingRuntimeEntries: "omit",
         }),
         catalogIdentity: connectorCatalogSlugIdentityFromRows(catalogRows),
       },

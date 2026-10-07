@@ -598,7 +598,6 @@ import {
 } from "./chat-thread-request-facts";
 import { isWebChatTriggerSource } from "./chat-trigger-source.service";
 import { currentConnectorCatalogValidatorIdentity } from "./connector-catalog-validator-authority";
-import { RequiredConnectorCatalogEntriesMissingError } from "./connector-catalog-external-reader.service";
 import {
   builtinConnectorRuntimeCredentialStatusWithMethod,
   type ConnectorCredentialStatus,
@@ -6150,29 +6149,11 @@ export function createThreadClaimRunObjects(
     },
   );
   const preCreateConnectorCatalogConnectorCatalog$ = computed(
-    async (
-      get,
-    ): Promise<RunConnectorCatalogSelection | ReturnType<typeof conflict>> => {
-      const [captured, metadata] = await Promise.all([
-        settle(get((await get(executionContext$)).catalog$)),
+    async (get): Promise<RunConnectorCatalogSelection> => {
+      const [catalog, metadata] = await Promise.all([
+        get((await get(executionContext$)).catalog$),
         get(preCreateBootstrapMetadata$),
       ]);
-      if (!captured.ok) {
-        // An enabled connector without an entry at the captured hash must not
-        // launch with a reduced scope. Reject the input like other unavailable
-        // launch prerequisites; any other catalog failure stays unexpected.
-        if (
-          captured.error instanceof RequiredConnectorCatalogEntriesMissingError
-        ) {
-          return conflict(
-            requiredConnectorCatalogEntriesMissingMessage(
-              captured.error.connectorSlugs,
-            ),
-          );
-        }
-        throw captured.error;
-      }
-      const catalog = captured.value;
       if (isEmptyRunConnectorScope(metadata)) {
         return { kind: "empty" };
       }
@@ -6196,8 +6177,7 @@ export function createThreadClaimRunObjects(
           const stored = permissionGrantsToFirewallPolicies(
             bootstrap.permissionGrants,
           );
-          // A rejected catalog never launches; its policies are discarded.
-          return "status" in catalog || catalog.kind === "empty"
+          return catalog.kind === "empty"
             ? stored
             : await expandConnectorServerFirewallPolicies({
                 catalog: catalog.selection.serverFirewalls,
@@ -6238,9 +6218,6 @@ export function createThreadClaimRunObjects(
         return account;
       }
       const catalog = catalogResult;
-      if ("status" in catalog) {
-        return catalog;
-      }
       const policies = policiesResult;
       const observation = observationResult;
       if (!agent) {
@@ -6842,9 +6819,6 @@ export function createThreadClaimRunObjects(
           get(preCreateExecutionConnectorCatalog$),
           get(threadSelections$),
         ]);
-      if ("status" in connectorCatalogSelection) {
-        return connectorCatalogSelection;
-      }
       if (isRouteError(threadConnectorSelectionIds)) {
         return threadConnectorSelectionIds;
       }
@@ -16869,12 +16843,6 @@ function runnerGroup(
   return firstAgent(content)?.experimental_runner?.group ?? null;
 }
 // --- Private implementation: connector context ---
-
-function requiredConnectorCatalogEntriesMissingMessage(
-  connectorSlugs: readonly string[],
-): string {
-  return `Connectors enabled for this agent are unavailable: ${connectorSlugs.join(", ")}. Remove them from the agent or try again later.`;
-}
 
 type RunConnectorCatalogSelection =
   | { readonly kind: "empty" }
