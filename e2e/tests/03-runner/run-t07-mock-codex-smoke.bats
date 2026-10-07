@@ -33,7 +33,7 @@ teardown_file() {
     run runner_api_curl "/api/run-models"
     assert_success
     run jq -e --arg model "$E2E_MOCK_CODEX_MODEL" '
-        .defaultModel == "okou-1.0" and
+        .models[0].model == null and
         any(.models[]?;
             .model == $model and
             .memberEffective.providerType == "codex-oauth-token" and

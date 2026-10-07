@@ -142,7 +142,12 @@ describe("thread-bound Pi Automation execution", () => {
         selectedModel === "okou-1.0" ? "@preset/okou-1-0" : selectedModel;
       const runtimeProvider =
         selectedModel === "okou-1.0" ? "openrouter" : "openai-codex";
-      await chat.updateThreadModelSelection(actor, threadId, selectedModel);
+      // Auto is the null selection; its run model is the built-in one.
+      await chat.updateThreadModelSelection(
+        actor,
+        threadId,
+        selectedModel === "okou-1.0" ? null : selectedModel,
+      );
       await updateFeatureSwitchesForUser(
         context,
         { ...actor, orgId },

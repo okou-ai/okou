@@ -116,7 +116,6 @@ async function setupHeldProjectionRefresh() {
         });
       }
       return respond(200, {
-        defaultModel: "okou-1.0",
         models: [runModelFixture(false)],
       });
     },
@@ -210,7 +209,6 @@ test("A local active-account change refreshes the member projection", async () =
   const secondId = "e7000000-0000-4000-a000-000000000004";
   context.mocks.api(runModelsMainContract.list, ({ respond }) => {
     return respond(200, {
-      defaultModel: "okou-1.0",
       models: [runModelFixture(personal)],
     });
   });

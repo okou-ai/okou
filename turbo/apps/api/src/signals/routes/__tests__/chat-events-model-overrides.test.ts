@@ -217,7 +217,7 @@ describe("CHAT-02: run-level model overrides", () => {
   it("rejects a disconnected personal thread model even when the member default is Auto", async () => {
     const { actor, agentId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
-    await api.updateUserModelPreference(actor, "okou-1.0");
+    await api.updateUserModelPreference(actor, null);
     const thread = await chat.createThread(actor, {
       agentId,
       model: "claude-sonnet-5-5",

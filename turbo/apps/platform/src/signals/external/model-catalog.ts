@@ -19,11 +19,10 @@ export interface ModelCatalogRouteQuery {
 
 /**
  * Read-only projection of `GET /api/model-catalog`. The server catalog is the
- * only product authority for model names, ordering, price tiers, the system
- * default, retirement and per-route capabilities; this view only indexes it.
+ * only product authority for model names, ordering, price tiers, retirement
+ * and per-route capabilities; this view only indexes it.
  */
 export interface ModelCatalog {
-  readonly systemDefaultModel: string;
   /** Every catalog model, active and retired, in `sortOrder`. */
   readonly models: readonly CatalogModelEntry[];
   /** Models that can be offered or added (`replacedBy === null`), in order. */
@@ -162,7 +161,6 @@ export function createModelCatalog(
     );
   };
   return {
-    systemDefaultModel: response.systemDefaultModel,
     models,
     activeModels,
     has(model) {

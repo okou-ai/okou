@@ -62,6 +62,8 @@ export interface SendInputChatEvent {
   readonly hasTextContent: boolean;
   readonly userMessage: UserMessageInputDocument;
   readonly selectedModel?: string | null;
+  /** The request's `model`; null is Auto, undefined keeps the thread's. */
+  readonly model?: string | null;
   readonly runOptions?: ChatRunOptionsRequest;
   readonly realAgentInPreview?: boolean;
   readonly computerUseHostId?: string | null;
@@ -166,6 +168,7 @@ function createSendInputChatEvent({
           hasTextContent: input.hasTextContent,
           clientEventId,
           chatThreadSortEventId,
+          ...(input.model === undefined ? {} : { model: input.model }),
           ...(input.runOptions === undefined
             ? {}
             : { runOptions: input.runOptions }),

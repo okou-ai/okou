@@ -1177,7 +1177,7 @@ describe("okou workflow automation scheduler", () => {
     async (scheduleType) => {
       const scenario = await setup();
       await seedBuiltInModelKey(context, "okou-1.0");
-      await api.updateUserModelPreference(scenario.actor, "okou-1.0");
+      await api.updateUserModelPreference(scenario.actor, null);
       const created = await accept(
         automationsClient().create({
           headers: authHeaders(),

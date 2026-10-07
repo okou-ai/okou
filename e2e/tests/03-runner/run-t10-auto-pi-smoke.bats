@@ -26,9 +26,9 @@ teardown() {
     run runner_api_curl "/api/run-models"
     assert_success
     run jq -e '
-        .defaultModel == "okou-1.0" and
+        (has("defaultModel") | not) and
         (.models | length == 1) and
-        .models[0].model == "okou-1.0" and
+        .models[0].model == null and
         .models[0].memberEffective.providerType == "built-in" and
         .models[0].memberEffective.credentialScope == "org" and
         .models[0].modelProviderId == null

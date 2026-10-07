@@ -40,7 +40,7 @@ run_auto_steer() {
         "$RUNNER_AGENT_ID" \
         "$initial_prompt" \
         "$steer_prompt" \
-        "okou-1.0" \
+        "auto" \
         "$expected_output" \
         150)" || return 1
     run_id="$(jq -er '.runId' <<< "$steer_result")" || return 1

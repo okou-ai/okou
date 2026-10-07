@@ -17,19 +17,44 @@ function findCatalogModel(
   });
 }
 
+/** The CLI argument for Auto, which the API represents as a null selection. */
+const AUTO_MODEL_ARGUMENT = "auto";
+export const AUTO_MODEL_LABEL = "Auto";
+
+/** `auto` selects Auto (null); any other id is passed through as given. */
+export function parseModelSelectionArgument(value: string): string | null {
+  return value.trim().toLowerCase() === AUTO_MODEL_ARGUMENT ? null : value;
+}
+
+/** The argument that selects a model: its id, or `auto` for Auto. */
+export function formatModelSelectionArgument(model: string | null): string {
+  return model ?? AUTO_MODEL_ARGUMENT;
+}
+
 /**
- * The model a stored selection actually runs: no selection means the catalog
- * system default, and a retired model resolves along its replacement chain.
- * Unknown ids are shown as stored so the server remains the one to reject them.
+ * The model a selection actually runs: Auto runs the catalog system default,
+ * and a retired model resolves along its replacement chain. Unknown ids are
+ * shown as stored so the server remains the one to reject them.
  */
 export function resolveCatalogModel(
   catalog: ModelCatalogResponse,
-  model: string | null | undefined,
+  model: string | null,
 ): string {
-  if (!model) {
+  if (model === null) {
     return catalog.systemDefaultModel;
   }
   return findCatalogModel(catalog, model)?.resolvedModel ?? model;
+}
+
+/** `Auto`, or `Display Name (model-id)` for any other selection. */
+export function formatCatalogModelSelection(
+  catalog: ModelCatalogResponse,
+  model: string | null,
+): string {
+  if (model === null) {
+    return AUTO_MODEL_LABEL;
+  }
+  return `${getCatalogModelDisplayName(catalog, model)} (${model})`;
 }
 
 export function getCatalogModelDisplayName(
@@ -39,24 +64,23 @@ export function getCatalogModelDisplayName(
   return findCatalogModel(catalog, model)?.displayName ?? model;
 }
 
-export function isCatalogSystemDefaultModel(
-  catalog: ModelCatalogResponse,
-  model: string,
-): boolean {
-  return model === catalog.systemDefaultModel;
-}
-
 /** Retired models stay readable for history but are never offered. */
 export function isCatalogModelActive(
   catalog: ModelCatalogResponse,
-  model: string,
+  model: string | null,
 ): boolean {
+  if (model === null) {
+    return true;
+  }
   const entry = findCatalogModel(catalog, model);
   return entry !== undefined && entry.replacedBy === null;
 }
 
-/** Order model-keyed items by catalog sort order; unknown models go last. */
-export function sortByCatalogOrder<T extends { readonly model: string }>(
+/**
+ * Order model-keyed items by catalog sort order; Auto goes first and unknown
+ * models go last.
+ */
+export function sortByCatalogOrder<T extends { readonly model: string | null }>(
   catalog: ModelCatalogResponse,
   items: readonly T[],
 ): T[] {
@@ -65,11 +89,14 @@ export function sortByCatalogOrder<T extends { readonly model: string }>(
       return [entry.model, entry.sortOrder] as const;
     }),
   );
+  const rank = (model: string | null): number => {
+    if (model === null) {
+      return Number.MIN_SAFE_INTEGER;
+    }
+    return order.get(model) ?? Number.MAX_SAFE_INTEGER;
+  };
   return [...items].sort((left, right) => {
-    return (
-      (order.get(left.model) ?? Number.MAX_SAFE_INTEGER) -
-      (order.get(right.model) ?? Number.MAX_SAFE_INTEGER)
-    );
+    return rank(left.model) - rank(right.model);
   });
 }
 
@@ -133,14 +160,18 @@ export function getCatalogThreadEffort(
   return getCatalogModelDefaultEffort(catalog, model);
 }
 
-/** `Display Name (model-id)` for the model a stored selection runs. */
+/**
+ * `Auto`, or `Display Name (model-id)` for the model a stored selection runs,
+ * followed by its effective effort.
+ */
 export function formatCatalogThreadModel(
   catalog: ModelCatalogResponse,
-  storedModel: string | null | undefined,
+  storedModel: string | null,
   settings?: ThreadModelSettings | null,
 ): string {
   const model = resolveCatalogModel(catalog, storedModel);
   const effort = getCatalogThreadEffort(catalog, model, settings);
   const suffix = effort ? ` · effort ${effort}` : "";
-  return `${getCatalogModelDisplayName(catalog, model)} (${model})${suffix}`;
+  const selection = storedModel === null ? null : model;
+  return `${formatCatalogModelSelection(catalog, selection)}${suffix}`;
 }

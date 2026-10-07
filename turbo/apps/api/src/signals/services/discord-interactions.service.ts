@@ -54,6 +54,7 @@ import {
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
 import {
+  integrationModelOptionValue,
   readIntegrationChatThreadModel$,
   updateIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
@@ -318,7 +319,7 @@ const discordModelPicker$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (!chatThreadId || !currentModel) {
+    if (!chatThreadId || currentModel.kind === "no_thread") {
       return discordAccountMessage(NO_MODEL_CONVERSATION);
     }
     if (
@@ -330,7 +331,11 @@ const discordModelPicker$ = command(
     const runModels = await set(listAvailableRunModels$, args.binding, signal);
     signal.throwIfAborted();
     const options = runModels.models.map((runModel) => {
-      return { label: runModel.modelLabel, value: runModel.model };
+      return {
+        label: runModel.modelLabel,
+        value: integrationModelOptionValue(runModel.model),
+        model: runModel.model,
+      };
     });
     if (args.selection !== undefined) {
       const option = options.find((candidate) => {
@@ -370,7 +375,7 @@ const discordModelPicker$ = command(
           orgId: args.binding.orgId,
           userId: args.binding.userId,
           chatThreadId,
-          model: option.value,
+          model: option.model,
         },
         signal,
       );
@@ -388,7 +393,7 @@ const discordModelPicker$ = command(
       modelThreadTag: discordModelThreadTag(chatThreadId),
       action: "model",
       options,
-      selected: currentModel,
+      selected: integrationModelOptionValue(currentModel.selectedModel),
       content: "Choose an allowed model for this conversation.",
     });
   },

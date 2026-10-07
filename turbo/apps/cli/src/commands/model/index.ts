@@ -10,6 +10,10 @@ import {
 } from "../../lib/api/domains/run-models";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
+  formatModelSelectionArgument,
+  parseModelSelectionArgument,
+} from "../../lib/domain/model-catalog-display";
+import {
   formatModelProviderRoute,
   formatRunModelStatus,
 } from "../../lib/domain/run-model-display";
@@ -20,11 +24,11 @@ const listCommand = new Command()
   .description("List Auto and your connected personal subscription models")
   .action(
     withErrorHandler(async () => {
-      const { models, defaultModel } = await listRunModels();
+      const { models } = await listRunModels();
       console.log(chalk.bold("Available Models:"));
       for (const model of models) {
         console.log(
-          `  - ${model.modelLabel} (${model.model})${model.model === defaultModel ? " (default)" : ""}`,
+          `  - ${model.modelLabel} (${formatModelSelectionArgument(model.model)})${model.model === null ? " (default)" : ""}`,
         );
         console.log(`    provider: ${formatModelProviderRoute(model)}`);
         const status = formatRunModelStatus(model);
@@ -32,7 +36,7 @@ const listCommand = new Command()
       }
       console.log(
         chalk.dim(
-          "Select your default: okou model select <model>. For one chat: okou chat model <model>.",
+          "Select your default: okou model select <model>, or okou model select auto for Auto. For one chat: okou chat model <model>.",
         ),
       );
     }),
@@ -68,7 +72,7 @@ const selectCommand = new Command()
   .name("select")
   .argument(
     "<model>",
-    "Auto model id or a connected personal subscription model",
+    "auto for Auto, or a connected personal subscription model id",
   )
   .description("Select your default model for new chats")
   .option("--priority", "Enable priority (Fast) for new chats on this model")
@@ -77,21 +81,21 @@ const selectCommand = new Command()
     "Use standard priority instead of your saved preference",
   )
   .action(
-    withErrorHandler(async (model: string, options: SelectOptions) => {
+    withErrorHandler(async (argument: string, options: SelectOptions) => {
+      const model = parseModelSelectionArgument(argument);
       const available = await listRunModels();
       const selected = available.models.find((candidate) => {
         return candidate.model === model;
       });
       if (!selected || !isMemberRunModelConfigurable(selected)) {
         throw new Error(
-          `Model is unavailable: ${model}. Run okou model ls and connect or reconnect your subscription in Settings > Models.`,
+          `Model is unavailable: ${argument}. Run okou model ls and connect or reconnect your subscription in Settings > Models.`,
         );
       }
       const serviceTier = await resolveServiceTier(selected, options.priority);
       const result = await selectRunModel(model, serviceTier);
-      console.log(
-        chalk.green(`✓ Default model selected: ${result.selectedModel}`),
-      );
+      const label = result.selectedModel ?? selected.modelLabel;
+      console.log(chalk.green(`✓ Default model selected: ${label}`));
       if (result.serviceTier !== null) {
         console.log(chalk.dim(`  Service tier: ${result.serviceTier}`));
       }
@@ -103,7 +107,7 @@ export const switchCommand = new Command()
   .description("Show how to switch models in the current environment")
   .action(() => {
     console.log(
-      "Use okou model select <model> for new chats, or okou chat model <model> for the current chat. You can also use the model selector next to the input box at https://app.okou.ai.",
+      "Use okou model select <model> for new chats, or okou chat model <model> for the current chat; pass auto for Auto. You can also use the model selector next to the input box at https://app.okou.ai.",
     );
   });
 

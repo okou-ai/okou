@@ -54,7 +54,7 @@ const firewall = createFirewallApi(context);
 /** A listed personal subscription model, not the fixed Auto every workspace keeps. */
 function availableModel(
   response: { readonly models: readonly AvailableRunModel[] },
-  model: string,
+  model: string | null,
 ): AvailableRunModel | undefined {
   return response.models.find((entry) => {
     return entry.model === model;
@@ -1123,7 +1123,6 @@ describe("personal priority connection boundaries", () => {
       await support.deletePersonalModelProvider(f.actor, type, [204]);
       const models = await misc.listRunModels(f.actor);
       expect(availableModel(models, f.model)).toBeUndefined();
-      expect(models.defaultModel).toBe("okou-1.0");
       const rejected = await createChatFilesBddApi(context).requestCreateThread(
         f.actor,
         { agentId: f.agentId, model: f.model },
@@ -1143,10 +1142,11 @@ describe("member-effective model contract", () => {
     const misc = createMiscRoutesApi(context);
     const ownerModels = await misc.listRunModels(f.actor);
     const memberModels = await misc.listRunModels(member);
-    expect(ownerModels.defaultModel).toBe("okou-1.0");
-    expect(memberModels.defaultModel).toBe("okou-1.0");
-    expect(availableModel(ownerModels, "okou-1.0")).toStrictEqual(
-      availableModel(memberModels, "okou-1.0"),
+    expect(availableModel(ownerModels, null)).toMatchObject({
+      modelLabel: "Auto",
+    });
+    expect(availableModel(ownerModels, null)).toStrictEqual(
+      availableModel(memberModels, null),
     );
     expect(availableModel(ownerModels, f.model)).toMatchObject({
       memberEffective: {
@@ -1190,7 +1190,7 @@ describe("member-effective model contract", () => {
         models.models.map((entry) => {
           return entry.model;
         }),
-      ).toStrictEqual(["okou-1.0"]);
+      ).toStrictEqual([null]);
     },
   );
 });

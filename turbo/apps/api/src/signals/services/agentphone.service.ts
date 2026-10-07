@@ -58,6 +58,7 @@ import {
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 import {
+  integrationModelOptionValue,
   readIntegrationChatThreadModel$,
   updateIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
@@ -71,7 +72,7 @@ import {
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import { listAvailableRunModelsWithDefault$ } from "./run-models.service";
+import { listAvailableRunModels$ } from "./run-models.service";
 const MAX_CONNECT_AGE_SECONDS = 600;
 const MAX_WEBHOOK_AGE_SECONDS = 300;
 const SIGNATURE_PREFIX = "sha256=";
@@ -1104,7 +1105,7 @@ function compactLookupKey(value: string): string {
 
 function findModelOption(
   options: readonly {
-    readonly model: string;
+    readonly model: string | null;
     readonly label: string;
     readonly isDefault: boolean;
   }[],
@@ -1112,18 +1113,20 @@ function findModelOption(
 ) {
   const inputKeys = new Set([lookupKey(input), compactLookupKey(input)]);
   return options.find((option) => {
-    return [option.model, option.label].some((value) => {
-      return (
-        inputKeys.has(lookupKey(value)) ||
-        inputKeys.has(compactLookupKey(value))
-      );
-    });
+    return [integrationModelOptionValue(option.model), option.label].some(
+      (value) => {
+        return (
+          inputKeys.has(lookupKey(value)) ||
+          inputKeys.has(compactLookupKey(value))
+        );
+      },
+    );
   });
 }
 
 function formatAgentPhoneModelOptionsMessage(
   options: readonly {
-    readonly model: string;
+    readonly model: string | null;
     readonly label: string;
     readonly isDefault: boolean;
   }[],
@@ -1137,14 +1140,13 @@ function formatAgentPhoneModelOptionsMessage(
       return marker !== null;
     });
     const suffix = markers.length > 0 ? ` (${markers.join(", ")})` : "";
-    return `/model ${option.model} - ${option.label}${suffix}`;
+    return `/model ${integrationModelOptionValue(option.model)} - ${option.label}${suffix}`;
   });
 
-  const current = currentSelectedModel
-    ? (options.find((option) => {
-        return option.model === currentSelectedModel;
-      })?.label ?? currentSelectedModel)
-    : "default";
+  const current =
+    options.find((option) => {
+      return option.model === currentSelectedModel;
+    })?.label ?? integrationModelOptionValue(currentSelectedModel);
   return [
     "Available models",
     "",
@@ -1176,7 +1178,7 @@ const handleModelCommand$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const currentSelectedModel = await set(
+    const currentModel = await set(
       readIntegrationChatThreadModel$,
       {
         orgId: args.orgId,
@@ -1186,7 +1188,7 @@ const handleModelCommand$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (!currentSelectedModel) {
+    if (currentModel.kind === "no_thread") {
       await sendAgentPhoneSlashCommandText(
         args.event,
         "Error: Start or enter an existing Okou conversation before using /model.",
@@ -1195,8 +1197,9 @@ const handleModelCommand$ = command(
       );
       return;
     }
-    const { response: runModels, systemDefaultModel } = await set(
-      listAvailableRunModelsWithDefault$,
+    const currentSelectedModel = currentModel.selectedModel;
+    const runModels = await set(
+      listAvailableRunModels$,
       { orgId: args.orgId, userId: args.userId },
       signal,
     );
@@ -1206,7 +1209,7 @@ const handleModelCommand$ = command(
       return {
         model: runModel.model,
         label: runModel.modelLabel,
-        isDefault: runModel.model === systemDefaultModel,
+        isDefault: runModel.model === null,
       };
     });
 

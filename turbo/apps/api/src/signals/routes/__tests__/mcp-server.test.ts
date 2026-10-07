@@ -798,6 +798,14 @@ describe("MCP Web parity", () => {
         .structuredContent,
     );
     expect(read.thread.title).toBe("Newer title");
+    // A send without a model on an unconfigured member creates an Auto thread;
+    // Auto resolves its run model on send.
+    expect(read.thread.model).toStrictEqual({
+      selectedModel: null,
+      effectiveModel: null,
+      source: "org_default",
+      admission: "checked_on_send",
+    });
     expect(read.thread.model.selectedModel).toBe(changed.selectedModel);
     expect(changed).not.toHaveProperty("retryUntil");
     expect(

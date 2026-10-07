@@ -165,7 +165,8 @@ async function startChatRun(
     readonly prompt: string;
     readonly clientEventId?: string;
     readonly threadId?: string;
-    readonly selectedModel?: string;
+    /** Null selects Auto. */
+    readonly selectedModel?: string | null;
     readonly userMessage?: UserMessageInputDocument;
     readonly revokesEventId?: string;
   },
@@ -3543,7 +3544,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       const run = await startChatRun(actor, {
         agentId,
         prompt: scenario.name,
-        selectedModel: scenario.builtIn ? "okou-1.0" : "claude-fable-5-1",
+        selectedModel: scenario.builtIn ? null : "claude-fable-5-1",
       });
       const callbackUrl = "https://callback.example/balance-outcome";
       const deliveries: unknown[] = [];
@@ -3566,7 +3567,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       // Changing the current default cannot change the owner of this failed run.
       await api.updateUserModelPreference(
         actor,
-        scenario.builtIn ? "claude-fable-5-1" : "okou-1.0",
+        scenario.builtIn ? "claude-fable-5-1" : null,
       );
       await failChatRun(run.runId, headers, scenario.error, scenario.reason);
       await flushWaitUntilForTest();
@@ -3630,7 +3631,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       await seedBuiltInModelKey(context, "okou-1.0");
       await api.updateUserModelPreference(
         actor,
-        builtIn ? "okou-1.0" : "claude-fable-5-1",
+        builtIn ? null : "claude-fable-5-1",
       );
       const run = await startChatRun(actor, {
         agentId,
@@ -3949,7 +3950,8 @@ describe("CHAT-02: failed chat callbacks", () => {
       readonly error: string;
       readonly expectedError?: string;
       readonly failureReason?: RunFailureReasonToken;
-      readonly selectedModel?: string;
+      /** Null selects Auto. */
+      readonly selectedModel?: string | null;
     }[] = [
       { prompt: "round one", error: actionableError },
       {
@@ -3981,7 +3983,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         expectedError:
           "Selected model is at capacity. Please try a different model.",
         failureReason: "provider_overloaded",
-        selectedModel: "okou-1.0",
+        selectedModel: null,
       },
       {
         prompt: "round eight",
@@ -4023,7 +4025,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         error: codexAccessProgramError,
         expectedError: CHAT_RUN_CODEX_ACCESS_PROGRAM_UNAVAILABLE_MESSAGE,
         failureReason: "codex_access_program_unavailable",
-        selectedModel: "okou-1.0",
+        selectedModel: null,
       },
     ];
 

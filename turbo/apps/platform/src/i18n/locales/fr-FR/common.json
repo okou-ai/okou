@@ -4931,6 +4931,7 @@
         "useAccount": "Utiliser"
       },
       "picker": {
+        "auto": "Auto",
         "chatModels": "Modèles de chat",
         "effort": "Effort",
         "effortScale": {

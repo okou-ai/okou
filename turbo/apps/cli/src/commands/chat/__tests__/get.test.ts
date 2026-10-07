@@ -131,7 +131,7 @@ describe("okou chat get command", () => {
 
     const output = mockConsoleLog.mock.calls.flat().join("\n");
     expect(output).toContain("Title:  (untitled)");
-    expect(output).toContain("Model:  Auto (okou-1.0)");
+    expect(output).toMatch(/Model: {2}Auto$/m);
     expect(output).not.toContain("effort");
   });
 

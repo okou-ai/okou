@@ -150,7 +150,8 @@ export async function getChatIndicators(): Promise<Indicators> {
 export async function createChatThread(options: {
   agentId: string;
   title: string;
-  model?: string;
+  /** Null selects Auto; omit to use the member default. */
+  model?: string | null;
   serviceTier?: ChatThreadServiceTier | null;
   reasoningEffort?: ReasoningEffort;
 }): Promise<ChatThreadCreateResult> {

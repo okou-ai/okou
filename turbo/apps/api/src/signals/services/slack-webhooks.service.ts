@@ -45,11 +45,12 @@ import { processCanonicalSlackIngress$ } from "./canonical-slack-ingress-process
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import {
+  integrationModelOptionValue,
   readIntegrationChatThreadModel$,
   updateIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
-import { listAvailableRunModelsWithDefault$ } from "./run-models.service";
+import { listAvailableRunModels$ } from "./run-models.service";
 import {
   admitCanonicalSlackChatEvent$,
   ensureCanonicalSlackChatThreadRoute$,
@@ -845,19 +846,19 @@ const slackModelPickerState$ = command(
     { set },
     orgId: string,
     userId: string,
-    currentSelectedModel: string,
+    currentSelectedModel: string | null,
     signal: AbortSignal,
   ): Promise<{
     readonly enabled: boolean;
     readonly options: readonly {
-      readonly model: string;
+      readonly model: string | null;
       readonly label: string;
       readonly isDefault: boolean;
     }[];
     readonly currentSelectedModel: string | null;
   }> => {
-    const { response: runModels, systemDefaultModel } = await set(
-      listAvailableRunModelsWithDefault$,
+    const runModels = await set(
+      listAvailableRunModels$,
       { orgId, userId },
       signal,
     );
@@ -868,7 +869,7 @@ const slackModelPickerState$ = command(
         return {
           model: runModel.model,
           label: runModel.modelLabel,
-          isDefault: runModel.model === systemDefaultModel,
+          isDefault: runModel.model === null,
         };
       }),
       currentSelectedModel,
@@ -980,7 +981,7 @@ const commandModelResponse$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (!chatThreadId || !currentModel) {
+    if (!chatThreadId || currentModel.kind === "no_thread") {
       return ephemeral(
         buildErrorMessage(
           "Use /okou model in an existing Okou Slack main DM conversation.",
@@ -991,7 +992,7 @@ const commandModelResponse$ = command(
       slackModelPickerState$,
       args.installation.orgId,
       args.connection.userId,
-      currentModel,
+      currentModel.selectedModel,
       signal,
     );
     if (!picker.enabled) {
@@ -1647,7 +1648,7 @@ const handleModelPickerSubmit$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (!currentModel) {
+    if (currentModel.kind === "no_thread") {
       return jsonResponse({
         response_action: "errors",
         errors: {
@@ -1659,11 +1660,11 @@ const handleModelPickerSubmit$ = command(
       slackModelPickerState$,
       ctx.orgId,
       ctx.connection.userId,
-      currentModel,
+      currentModel.selectedModel,
       signal,
     );
     const option = picker.options.find((candidate) => {
-      return candidate.model === selected;
+      return integrationModelOptionValue(candidate.model) === selected;
     });
     if (!option) {
       return jsonResponse({

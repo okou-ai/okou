@@ -89,6 +89,53 @@ describe("okou chat create command", () => {
     );
   });
 
+  it("creates an Auto thread with --model auto by sending a null model", async () => {
+    server.use(
+      http.get(metadataUrl(NEW_THREAD_ID), () => {
+        return HttpResponse.json({
+          id: NEW_THREAD_ID,
+          agentId: AGENT_ID,
+          title: "Launch plan",
+          selectedModel: null,
+          modelSettings: {},
+          serviceTier: null,
+        });
+      }),
+      http.post(CREATE_URL, async ({ request }) => {
+        expect(await request.json()).toStrictEqual({
+          agentId: AGENT_ID,
+          title: "Launch plan",
+          model: null,
+        });
+        return HttpResponse.json(
+          {
+            id: NEW_THREAD_ID,
+            title: "Launch plan",
+            createdAt: "2026-07-30T10:00:00.000Z",
+            selectedModel: null,
+            serviceTier: null,
+          },
+          { status: 201 },
+        );
+      }),
+    );
+
+    await chatCommand.parseAsync([
+      "node",
+      "cli",
+      "create",
+      "Launch plan",
+      "--agent",
+      AGENT_ID,
+      "--model",
+      "auto",
+    ]);
+
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+      "Model:  Auto\n",
+    );
+  });
+
   it("guides to the first send with an explicit agent, model, and priority", async () => {
     server.use(
       http.get(metadataUrl(NEW_THREAD_ID), () => {

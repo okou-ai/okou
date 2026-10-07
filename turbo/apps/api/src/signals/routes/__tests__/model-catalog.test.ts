@@ -1,7 +1,6 @@
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { mcpGetChatThreadOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-threads";
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
-import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { http, HttpResponse } from "msw";
 import { onTestFinished } from "vitest";
 import { z } from "zod";
@@ -17,7 +16,6 @@ import {
 } from "../../../test-fixtures/model-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mcpServerRoutes } from "../mcp-server";
-import { userModelPreferenceRoutes } from "../user-model-preference";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import {
   createChatEventsFixture,
@@ -294,7 +292,7 @@ describe("stored selections of replaced models", () => {
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const thread = await chat.createThread(actor, {
       agentId,
-      model: "okou-1.0",
+      model: null,
     });
     await stageLegacyChatThreadSelectedModelFixture({
       threadId: thread.id,
@@ -324,7 +322,7 @@ describe("stored selections of replaced models", () => {
     const { actor, agentId } = await entitledNativeChatActor();
     const thread = await chat.createThread(actor, {
       agentId,
-      model: "okou-1.0",
+      model: null,
     });
     await stageLegacyChatThreadSelectedModelFixture({
       threadId: thread.id,
@@ -340,29 +338,12 @@ describe("stored selections of replaced models", () => {
     });
   }, 90_000);
 
-  it("stores a member preference for okou-1.0-pro as okou-1.0", async () => {
-    const { actor } = await entitledNativeChatActor();
-    const headers = { authorization: "Bearer clerk-session" };
-    mocks.clerk.session(actor.userId, requireOrgId(actor), actor.orgRole);
-
-    const preference = await accept(
-      setupApp({ context, routes: userModelPreferenceRoutes })(
-        userModelPreferenceContract,
-      ).update({
-        headers,
-        body: { selectedModel: "okou-1.0-pro", serviceTier: null },
-      }),
-      [200],
-    );
-    expect(preference.body.selectedModel).toBe("okou-1.0");
-  }, 90_000);
-
   it("keeps the queued Auto selection when the active run releases its slot", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     await seedBuiltInModelKey("okou-1.0");
     const active = await sendChatRun(actor, {
       agentId,
-      model: "okou-1.0",
+      model: null,
       prompt: "keep the thread busy",
     });
     const clientEventId = randomUUID();
@@ -371,7 +352,7 @@ describe("stored selections of replaced models", () => {
       {
         agentId,
         threadId: active.threadId,
-        model: "okou-1.0",
+        model: null,
         prompt: "queued Auto",
         clientEventId,
       },
@@ -405,7 +386,7 @@ describe("stored selections of replaced models", () => {
     const { actor, agentId } = await entitledNativeChatActor();
     const thread = await chat.createThread(actor, {
       agentId,
-      model: "okou-1.0",
+      model: null,
     });
     await stageLegacyChatThreadSelectedModelFixture({
       threadId: thread.id,

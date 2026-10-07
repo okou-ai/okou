@@ -21,7 +21,7 @@ import { now } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { safeJsonParse } from "../utils";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
-import { listAvailableRunModelsWithDefault$ } from "./run-models.service";
+import { listAvailableRunModels$ } from "./run-models.service";
 interface Principal {
   readonly orgId: string;
   readonly userId: string;
@@ -198,7 +198,7 @@ export const listMcpModels$ = command(
     signal: AbortSignal,
   ): Promise<McpDiscoveryResult<McpListModelsOutput>> => {
     const [listing, preferences] = await Promise.all([
-      set(listAvailableRunModelsWithDefault$, principal, signal),
+      set(listAvailableRunModels$, principal, signal),
       get(db$)
         .select({ model: orgMembersMetadata.selectedModel })
         .from(orgMembersMetadata)
@@ -211,7 +211,7 @@ export const listMcpModels$ = command(
         .limit(1),
     ]);
     signal.throwIfAborted();
-    const models: McpListModelsOutput["models"] = listing.response.models.map(
+    const models: McpListModelsOutput["models"] = listing.models.map(
       (runModel) => {
         return {
           id: runModel.model,
@@ -225,18 +225,14 @@ export const listMcpModels$ = command(
     const preferred = models.find((model) => {
       return model.id === preferences[0]?.model;
     });
-    const systemDefault = models.find((model) => {
-      return model.id === listing.systemDefaultModel;
-    });
     return {
       kind: "ok",
       data: {
         models,
-        defaultModel: preferred
-          ? { model: preferred.id, source: "member_default" }
-          : systemDefault
-            ? { model: systemDefault.id, source: "org_default" }
-            : { model: null, source: null },
+        defaultModel:
+          preferred && preferred.id !== null
+            ? { model: preferred.id, source: "member_default" }
+            : { model: null, source: "org_default" },
         admission: "checked_on_send",
       },
     };

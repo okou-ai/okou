@@ -103,7 +103,8 @@ const FIXTURE_MODELS: readonly FixtureModel[] = [
 
 /**
  * A representative slice of the seeded global catalog: `okou-1.0` is the
- * system default and retired models resolve along their replacement chain.
+ * internal run model behind Auto and retired models resolve along their
+ * replacement chain.
  */
 export const MODEL_CATALOG_RESPONSE: ModelCatalogResponse = {
   systemDefaultModel: "okou-1.0",

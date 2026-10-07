@@ -2635,6 +2635,97 @@ describe("POST /api/webhooks/teams/bot", () => {
     await runsApi.requestCancelRun(actor, switchedRunId, [200]);
   });
 
+  it("switches the main Teams DM thread to Auto from the model card", async () => {
+    const { fixture, actor, runnerGroup, outboundRequests } =
+      await setupConnectedTeamsBotActor();
+
+    await createBddIntegrationApi(context).configureNativeSubscriptionModels(
+      actor,
+    );
+    teamsGraphHistoryHandlers({
+      fixture,
+      chatMessages: [],
+      channelMessages: [],
+      threadRoots: {},
+      threadReplies: {},
+    });
+
+    const initialResponse = await postTeamsActivity({
+      activity: teamsPersonalMessageActivity({
+        fixture,
+        id: teamsFixtureExternalId(fixture, "activity-dm-auto-initial"),
+        text: "run before the DM Auto switch",
+      }),
+      token: teamsToken(),
+    });
+    expect(initialResponse.status).toBe(200);
+    await readTeamsBotResponseAndFlush(initialResponse);
+    const initialRunId = await runIdForPrompt(
+      actor,
+      "run before the DM Auto switch",
+    );
+    await runsApi.heartbeatRunner(runnerGroup);
+    const initialClaim = await runsApi.claimRunnerJob(initialRunId);
+    await runsApi.requestCancelRun(actor, initialRunId, [200]);
+    await completeCancelledRun(initialRunId, initialClaim.sandboxToken);
+
+    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    const beforeEvents = await accept(
+      setupApp({ context, routes: chatThreadRoutes })(
+        chatThreadsContract,
+      ).events({
+        headers: { authorization: "Bearer clerk-session" },
+        query: {},
+      }),
+      [200],
+    );
+    const dmThread = beforeEvents.body.events.find((event) => {
+      return event.kind === "created";
+    });
+    if (!dmThread) {
+      throw new Error("Expected the main Teams DM thread");
+    }
+    const switchResponse = await postTeamsActivity({
+      activity: teamsPersonalMessageActivity({
+        fixture,
+        id: teamsFixtureExternalId(fixture, "activity-dm-auto-submit"),
+        text: "",
+        value: {
+          okouTeamsAction: "switch_model",
+          selectedModel: "auto",
+          routeConversationId: `a:personal-${fixture.teamsUserId}`,
+          routeThreadId: "direct-message:main",
+          chatThreadId: dmThread.chatThreadId,
+        },
+      }),
+      token: teamsToken(),
+    });
+    expect(switchResponse.status).toBe(200);
+    await readTeamsBotResponseAndFlush(switchResponse);
+
+    expect(outboundRequests.at(-1)?.body).toMatchObject({
+      type: "message",
+      text: expect.stringContaining("Switched to **Auto**"),
+    });
+    mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+    const threadEvents = await accept(
+      setupApp({ context, routes: chatThreadRoutes })(
+        chatThreadsContract,
+      ).events({
+        headers: { authorization: "Bearer clerk-session" },
+        query: {},
+      }),
+      [200],
+    );
+    expect(threadEvents.body.events).toContainEqual(
+      expect.objectContaining({
+        kind: "model_selection_updated",
+        chatThreadId: dmThread.chatThreadId,
+        selectedModel: null,
+      }),
+    );
+  });
+
   it("asks for a new /model card when the submitted card has no route keys", async () => {
     const { fixture, actor, outboundRequests } =
       await setupConnectedTeamsBotActor();

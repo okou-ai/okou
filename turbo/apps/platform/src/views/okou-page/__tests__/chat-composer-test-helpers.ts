@@ -22,7 +22,6 @@ import { screen, waitFor } from "@testing-library/react";
 import { expect, vi } from "vitest";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
-import { MOCK_SYSTEM_DEFAULT_MODEL } from "../../../mocks/handlers/api-model-catalog.ts";
 import {
   mockAutoRunModel,
   mockSubscriptionRunModel,
@@ -104,12 +103,12 @@ export function buildProvider(
 }
 
 export function buildRunModel(options: {
-  readonly model: string;
+  readonly model: string | null;
   readonly modelLabel?: string;
   readonly providerType?: ModelProviderType;
   readonly modelProviderId?: string | null;
 }): AvailableRunModel {
-  return options.model === MOCK_SYSTEM_DEFAULT_MODEL
+  return options.model === null
     ? mockAutoRunModel()
     : mockSubscriptionRunModel(options.model, options);
 }
@@ -145,11 +144,6 @@ export function mockPersonalModelRoutes(): void {
       modelLabel: "Claude Opus 5",
       providerType: "claude-code-oauth-token",
       modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
-    }),
-    buildRunModel({
-      model: MOCK_SYSTEM_DEFAULT_MODEL,
-      modelLabel: "Auto",
-      providerType: "built-in",
     }),
   ]);
 }

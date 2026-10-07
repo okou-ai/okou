@@ -110,7 +110,7 @@ describe("CHAT-02: run-level model overrides", () => {
         accountId: identity,
         accessTokenExpiresAt: Math.floor(now() / 1000) + 7200,
       });
-      await api.updateUserModelPreference(actor, "okou-1.0");
+      await api.updateUserModelPreference(actor, null);
       mockPiResourceArchiveDownloads();
       mockPiCheckpointObjectStore();
       const run = await sendChatRun(actor, {

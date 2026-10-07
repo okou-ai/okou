@@ -297,8 +297,11 @@ export function createRunsApi(
     body: {
       readonly agentId: string;
       readonly prompt: string;
-      /** An explicit send model; omitted, the thread or member selection applies. */
-      readonly model?: string;
+      /**
+       * An explicit send model (null is Auto); omitted, the thread or member
+       * selection applies.
+       */
+      readonly model?: string | null;
       /** Continue an existing thread, which resumes its Agent session. */
       readonly threadId?: string;
       /** Request staff-only network body capture for the run. */
@@ -364,7 +367,8 @@ export function createRunsApi(
     body: {
       readonly agentId: string;
       readonly prompt: string;
-      readonly model?: string;
+      /** Null selects Auto. */
+      readonly model?: string | null;
       readonly captureNetworkBodies?: boolean;
     },
   ): Promise<string | undefined> {
@@ -406,7 +410,8 @@ export function createRunsApi(
     body: {
       readonly agentId: string;
       readonly prompt: string;
-      readonly model?: string;
+      /** Null selects Auto. */
+      readonly model?: string | null;
       readonly threadId?: string;
     },
   ): Promise<{

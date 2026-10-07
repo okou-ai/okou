@@ -51,7 +51,7 @@ describe("fixed Auto usage display", () => {
     chatEvents.mockPiCheckpointObjectStore();
     const run = await chatEvents.sendChatRun(
       actor,
-      { agentId, prompt: "bill fixed Auto long context", model },
+      { agentId, prompt: "bill fixed Auto long context", model: null },
       pricing.resolution,
     );
     const { claim, sandboxHeaders } = await chatEvents.claimChatRun(
@@ -155,7 +155,12 @@ describe("fixed Auto usage display", () => {
     const clientEventId = randomUUID();
     const sent = await chatEvents.chat.requestSendEvent(
       actor,
-      { agentId, prompt: "run without complete pricing", model, clientEventId },
+      {
+        agentId,
+        prompt: "run without complete pricing",
+        model: null,
+        clientEventId,
+      },
       [201],
       { usagePricingResolution: pricing.resolution },
     );

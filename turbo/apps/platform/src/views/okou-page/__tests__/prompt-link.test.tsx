@@ -1,3 +1,4 @@
+import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
   chatEventsContract,
@@ -8,7 +9,6 @@ import {
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { MOCK_SYSTEM_DEFAULT_MODEL } from "../../../mocks/handlers/api-model-catalog.ts";
 
 import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -22,7 +22,7 @@ const DESIGN_AGENT_ID = "c0000000-0000-4000-a000-000000000002";
 interface PromptLaunchCapture {
   readonly createdThreads: {
     readonly connectorSelections: readonly unknown[] | undefined;
-    readonly model: string | undefined;
+    readonly model: string | null | undefined;
   }[];
   readonly sends: ChatEventSendBody[];
 }
@@ -38,7 +38,11 @@ function capturePromptLaunch(): PromptLaunchCapture {
       id: body.clientThreadId ?? "b0000000-0000-4000-a000-000000000001",
       title: null,
       createdAt: "2026-03-10T00:00:00Z",
-      selectedModel: body.model ?? "claude-sonnet-5",
+      // The response names the run model; an Auto thread runs on Auto's.
+      selectedModel:
+        body.model === undefined
+          ? "claude-sonnet-5"
+          : (body.model ?? AUTO_RUN_MODEL),
       serviceTier: body.serviceTier ?? null,
     });
   });
@@ -231,11 +235,10 @@ test("A prompt link starts a presentation chat with its selected template", asyn
       },
     },
   });
-  expect(capture.createdThreads[0]?.model).toBe(MOCK_SYSTEM_DEFAULT_MODEL);
-  expect(userMessageParts(send)).toContainEqual({
-    type: "model",
-    selectedModel: MOCK_SYSTEM_DEFAULT_MODEL,
-  });
+  expect(capture.createdThreads[0]?.model).toBeNull();
+  expect(userMessageParts(send)).not.toContainEqual(
+    expect.objectContaining({ type: "model" }),
+  );
 });
 
 test("A retired video template link keeps its brief as an editable draft", async () => {

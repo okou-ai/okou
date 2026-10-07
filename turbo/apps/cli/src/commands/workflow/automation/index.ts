@@ -31,6 +31,7 @@ import {
 import { getChatThread } from "../../../lib/api/domains/chat";
 import { getModelCatalog } from "../../../lib/api/domains/model-catalog";
 import {
+  AUTO_MODEL_LABEL,
   getCatalogModelDisplayName,
   resolveCatalogModel,
 } from "../../../lib/domain/model-catalog-display";
@@ -206,6 +207,13 @@ async function loadWorkflowAutomationThreadModel(
     getChatThread({ threadId: automation.chatThreadId }),
     getModelCatalog(),
   ]);
+  if (thread.selectedModel === null) {
+    return {
+      id: null,
+      label: AUTO_MODEL_LABEL,
+      serviceTier: thread.serviceTier,
+    };
+  }
   const modelId = resolveCatalogModel(catalog, thread.selectedModel);
 
   return {

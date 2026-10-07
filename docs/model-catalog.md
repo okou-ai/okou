@@ -4,8 +4,9 @@
 
 There are two execution sources:
 
-1. Platform **Auto**: `okou-1.0` → `openrouter-codex` → `@preset/okou-1-0`
-   by default, with an operator-only `org_metadata.openrouter_preset` override.
+1. Platform **Auto**: the empty (`null`) selection. Its runs use the internal
+   run model `okou-1.0` → `openrouter-codex` → `@preset/okou-1-0` by default,
+   with an operator-only `org_metadata.openrouter_preset` override.
 2. A member's connected personal ChatGPT/Codex or Claude subscription.
 
 Auto is defined by `@okouai/core/auto-run-model`, not a mutable platform-model
@@ -25,10 +26,9 @@ Returns the authenticated member's available choices:
 
 ```json
 {
-  "defaultModel": "okou-1.0",
   "models": [
     {
-      "model": "okou-1.0",
+      "model": null,
       "modelLabel": "Auto",
       "modelProviderId": null,
       "memberEffective": {
@@ -48,6 +48,7 @@ in `turbo/packages/api-contracts/src/contracts/run-models.ts` and its response
 schema `availableRunModelsResponseSchema` (defined in
 `turbo/packages/api-contracts/src/contracts/model-providers.ts`) are
 authoritative.
+The Auto entry has `model: null` and is always the default.
 Unconnected members have only Auto. Personal entries reflect the caller's own
 subscription accounts, route status, subscription options and effective member
 capabilities. An organization administrator does not gain another member's
@@ -67,6 +68,11 @@ operator error rather than silently inventing a route.
 
 ## Selection and credentials
 
+- Auto is represented only by `null`: thread `selected_model`, member
+  preference, create/send/metadata request `model`, `/api/run-models` and
+  CLI/iOS/Web payloads. `okou-1.0` is the Auto run model id (captured inputs,
+  `agent_runs.selected_model`, the catalog row, pricing); it is not a selection
+  value and is rejected like any other unselectable id.
 - Auto requires no provider connection or model-provider ID. Persisted/wire
   `credentialScope: "org"` denotes Auto; personal subscriptions use `member`.
 - Personal provider management uses `/api/me/model-providers` and the supported
@@ -86,7 +92,7 @@ operator error rather than silently inventing a route.
 ## Billing and history
 
 Actual Auto settlement continues through `usage_pricing`, existing pricing
-resolution and captured usage attribution. Auto reports under `okou-1.0`; its
+resolution and captured usage attribution. Auto runs report under the run model `okou-1.0`; its
 existing long-context classification threshold is 272001 total input tokens.
 Personal subscription runs do not become platform-model usage charges; unrelated
 billable tools and connectors retain their existing accounting.

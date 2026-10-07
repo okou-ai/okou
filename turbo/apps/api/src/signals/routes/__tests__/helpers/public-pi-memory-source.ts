@@ -118,6 +118,8 @@ export function createPublicPiMemorySource(
       });
     });
     const sourceModel = await configureSource(subscription.accountSourceId);
+    // Auto is selected as null; its runs record the Auto run model.
+    const sendModel = sourceModel === AUTO_RUN_MODEL ? null : sourceModel;
     const agent = await chat.bdd.createAgent(fixture.actor, {
       displayName: "Public Memory source",
       visibility: "private",
@@ -138,7 +140,7 @@ export function createPublicPiMemorySource(
       const source = await chat.sendChatRun(fixture.actor, {
         agentId: agent.agentId,
         prompt: "Remember this source",
-        model: sourceModel,
+        model: sendModel,
       });
       fixture.registerRun(source.runId);
       const claimed = await chat.claimChatRun(runnerGroup, source.runId);
@@ -180,7 +182,7 @@ export function createPublicPiMemorySource(
     const trigger = await chat.sendChatRun(fixture.actor, {
       agentId: agent.agentId,
       prompt: "Request the next Memory day",
-      model: sourceModel,
+      model: sendModel,
     });
     fixture.registerRun(trigger.runId);
     let triggerToken: string | undefined;

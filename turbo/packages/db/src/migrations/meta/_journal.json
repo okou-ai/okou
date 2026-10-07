@@ -1828,6 +1828,13 @@
       "when": 1791370868389,
       "tag": "1338_retire_model_route_state",
       "breakpoints": true
+    },
+    {
+      "idx": 1339,
+      "version": "7",
+      "when": 1791375425812,
+      "tag": "1339_auto_model_selection_null",
+      "breakpoints": true
     }
   ]
 }

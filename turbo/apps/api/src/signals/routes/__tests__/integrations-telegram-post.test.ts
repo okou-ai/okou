@@ -1289,6 +1289,19 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       expect(returned.claim.modelUsageProvider).toBe("claude-fable-5-1");
       expect(returned.chatThread.id).toBe(main.chatThread.id);
       expect(returned.chatThread.selectedModel).toBe("claude-fable-5-1");
+
+      // Auto is the empty selection.
+      await sendDm("/model auto", 3512);
+      const lifecycle = await chatApi.requestThreadEvents(dm.actor, {}, [200]);
+      if (lifecycle.status !== 200) {
+        throw new Error("Expected the Telegram thread event stream");
+      }
+      const autoThread = replayChatThreadEvents([], lifecycle.body.events).find(
+        (thread) => {
+          return thread.id === main.chatThread.id;
+        },
+      );
+      expect(autoThread?.selectedModel).toBeNull();
     });
   });
 

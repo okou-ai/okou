@@ -81,7 +81,8 @@ function changedModelSettingsPatch(args: {
     !args.threadMeta ||
     !selection ||
     args.threadMeta.selectedModel !== selectedModel ||
-    selectedModel === undefined
+    selectedModel === undefined ||
+    selectedModel === null
   ) {
     return undefined;
   }

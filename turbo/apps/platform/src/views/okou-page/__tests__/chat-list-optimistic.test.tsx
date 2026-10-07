@@ -79,7 +79,7 @@ async function openUnconfirmedConversation() {
   const requests: {
     threadId: string | undefined;
     eventId: string | undefined;
-    model: string | undefined;
+    model: string | null | undefined;
     draftRequested: boolean;
   } = {
     threadId: undefined,

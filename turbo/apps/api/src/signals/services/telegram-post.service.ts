@@ -56,6 +56,7 @@ import {
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 import {
+  integrationModelOptionValue,
   readIntegrationChatThreadModel$,
   updateIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
@@ -69,7 +70,7 @@ import {
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import { listAvailableRunModelsWithDefault$ } from "./run-models.service";
+import { listAvailableRunModels$ } from "./run-models.service";
 import {
   bindTelegramReplyMessageRoute,
   createTelegramChatThread$,
@@ -1530,7 +1531,7 @@ const handleModelCommand$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const currentSelectedModel = await set(
+    const currentModel = await set(
       readIntegrationChatThreadModel$,
       {
         orgId: args.orgId,
@@ -1540,7 +1541,7 @@ const handleModelCommand$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (!currentSelectedModel) {
+    if (currentModel.kind === "no_thread") {
       await postTelegramMessage({
         botToken: args.botToken,
         chatId,
@@ -1552,8 +1553,9 @@ const handleModelCommand$ = command(
       signal.throwIfAborted();
       return;
     }
-    const { response: runModels, systemDefaultModel } = await set(
-      listAvailableRunModelsWithDefault$,
+    const currentSelectedModel = currentModel.selectedModel;
+    const runModels = await set(
+      listAvailableRunModels$,
       { orgId: args.orgId, userId: args.userId },
       signal,
     );
@@ -1562,7 +1564,7 @@ const handleModelCommand$ = command(
       return {
         model: runModel.model,
         label: runModel.modelLabel,
-        isDefault: runModel.model === systemDefaultModel,
+        isDefault: runModel.model === null,
       };
     });
     if (options.length === 0) {
@@ -1668,7 +1670,7 @@ function compactLookupKey(value: string): string {
 
 function findModelOption(
   options: readonly {
-    readonly model: string;
+    readonly model: string | null;
     readonly label: string;
     readonly isDefault: boolean;
   }[],
@@ -1676,18 +1678,20 @@ function findModelOption(
 ) {
   const inputKeys = new Set([lookupKey(input), compactLookupKey(input)]);
   return options.find((option) => {
-    return [option.model, option.label].some((value) => {
-      return (
-        inputKeys.has(lookupKey(value)) ||
-        inputKeys.has(compactLookupKey(value))
-      );
-    });
+    return [integrationModelOptionValue(option.model), option.label].some(
+      (value) => {
+        return (
+          inputKeys.has(lookupKey(value)) ||
+          inputKeys.has(compactLookupKey(value))
+        );
+      },
+    );
   });
 }
 
 function formatTelegramModelOptionsMessage(
   options: readonly {
-    readonly model: string;
+    readonly model: string | null;
     readonly label: string;
     readonly isDefault: boolean;
   }[],
@@ -1701,16 +1705,15 @@ function formatTelegramModelOptionsMessage(
       return marker !== null;
     });
     const suffix = markers.length > 0 ? ` (${markers.join(", ")})` : "";
-    return `• <code>/model ${escapeHtml(option.model)}</code> - ${escapeHtml(
+    return `• <code>/model ${escapeHtml(integrationModelOptionValue(option.model))}</code> - ${escapeHtml(
       option.label,
     )}${escapeHtml(suffix)}`;
   });
 
-  const current = currentSelectedModel
-    ? (options.find((option) => {
-        return option.model === currentSelectedModel;
-      })?.label ?? currentSelectedModel)
-    : "default";
+  const current =
+    options.find((option) => {
+      return option.model === currentSelectedModel;
+    })?.label ?? integrationModelOptionValue(currentSelectedModel);
   return [
     "<b>Available models</b>",
     "",

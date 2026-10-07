@@ -2,7 +2,7 @@ import type { McpChatThread } from "@okouai/api-contracts/contracts/mcp-chat-thr
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
 import { command } from "ccstate";
 import { db$ } from "../external/db";
-import { listAvailableRunModelsWithDefault$ } from "./run-models.service";
+import { listAvailableRunModels$ } from "./run-models.service";
 
 /** Read the Web run model projection plus persisted replacement identities once. */
 export const mcpChatThreadModels$ = command(
@@ -16,7 +16,7 @@ export const mcpChatThreadModels$ = command(
       return new Map();
     }
     const [listing, replacements] = await Promise.all([
-      set(listAvailableRunModelsWithDefault$, principal, signal),
+      set(listAvailableRunModels$, principal, signal),
       get(db$)
         .select({
           model: runModelCatalog.model,
@@ -34,13 +34,10 @@ export const mcpChatThreadModels$ = command(
     // and transient provider availability are checked by the ordinary send;
     // they must not erase a stored model's canonical replacement in a read.
     const listed = new Set(
-      listing.response.models.map((runModel) => {
+      listing.models.map((runModel) => {
         return runModel.model;
       }),
     );
-    const defaultModel = listed.has(listing.systemDefaultModel)
-      ? listing.systemDefaultModel
-      : null;
     const result = new Map<string | null, McpChatThread["model"]>();
     for (const selectedModel of new Set(selectedModels)) {
       let finalModel = selectedModel;
@@ -57,10 +54,11 @@ export const mcpChatThreadModels$ = command(
         finalModel = replacement;
       }
       if (finalModel === null) {
+        // Auto resolves its run model on send.
         result.set(selectedModel, {
           selectedModel,
-          effectiveModel: defaultModel,
-          source: defaultModel ? "org_default" : null,
+          effectiveModel: null,
+          source: "org_default",
           admission: "checked_on_send",
         });
         continue;

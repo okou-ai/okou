@@ -108,7 +108,8 @@ should describe behavior without repeating the file identifier.
 
 The workflow uses five isolated identities.
 Platform identities use `runner-auto-bootstrap.bash`, verify the read-only
-`/api/run-models` response and select `okou-1.0`. Their real/mock runtime flags
+`/api/run-models` response (Auto is the first entry, with `model: null`) and
+select Auto by saving a `null` model preference. Their real/mock runtime flags
 remain isolated. The mock-Claude identity also hosts a personal Codex
 subscription: shell-driven BATS select it with
 `runner_e2e_use_mock_codex_profile`, while personal Claude coverage uses that
@@ -122,7 +123,8 @@ Runner BATS must not mutate shared account-level preferences from parallel
 shards. Coverage that needs mutable account-level state requires a dedicated
 identity or a serialized lane.
 
-Real platform model calls in `e2e/tests` must use `okou-1.0`;
+Real platform model calls in `e2e/tests` must use Auto, which the API receives as
+`model: null` (pass `auto` as the `runner_chat_send` model argument);
 `e2e/scripts/runner-model-selection.test.ts` enforces that boundary in CI before runner
 account preparation. Run it locally with
 `cd e2e && pnpm exec tsx --test scripts/runner-model-selection.test.ts`, independently of

@@ -265,9 +265,10 @@ actor ChatService {
       availableModels.models.contains { $0.model == model && $0.hasUsableRoute() }
         ? model : nil
     }
-    let model = usableSavedModel ?? availableModels.defaultModel
+    // Without a usable saved selection, the thread uses Auto (a nil model).
+    let model = usableSavedModel
     let serviceTier = preference.serviceTier.flatMap { tier in
-      usableSavedModel != nil
+      model != nil
         && availableModels.models.contains {
           $0.model == model && $0.supportsServiceTier(tier)
         }
@@ -277,7 +278,7 @@ actor ChatService {
       agentId: agent.agentId, clientThreadId: UUID().uuidString,
       eventId: UUID().uuidString, model: model,
       serviceTier: serviceTier,
-      reasoningEffort: preference.modelSettings?[model]?.effort)
+      reasoningEffort: model.flatMap { preference.modelSettings?[$0]?.effort })
     let created: CreatedThread = try await client.request(
       "/api/chat-threads", method: "POST", body: JSONEncoder().encode(body))
     return ChatThread(
@@ -579,9 +580,24 @@ actor ChatService {
     let agentId: String
     let clientThreadId: String
     let eventId: String
-    let model: String
+    /// Nil is Auto and is sent as an explicit JSON null.
+    let model: String?
     let serviceTier: String?
     let reasoningEffort: String?
+
+    enum CodingKeys: String, CodingKey {
+      case agentId, clientThreadId, eventId, model, serviceTier, reasoningEffort
+    }
+
+    func encode(to encoder: Encoder) throws {
+      var container = encoder.container(keyedBy: CodingKeys.self)
+      try container.encode(agentId, forKey: .agentId)
+      try container.encode(clientThreadId, forKey: .clientThreadId)
+      try container.encode(eventId, forKey: .eventId)
+      try container.encode(model, forKey: .model)
+      try container.encodeIfPresent(serviceTier, forKey: .serviceTier)
+      try container.encodeIfPresent(reasoningEffort, forKey: .reasoningEffort)
+    }
   }
   private struct ComputerAccessBody: Encodable {
     func encode(to encoder: Encoder) throws {

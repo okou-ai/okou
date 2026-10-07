@@ -60,6 +60,7 @@ import {
 import { createUserMessageDocument } from "./chat-user-message.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 import {
+  integrationModelOptionValue,
   readIntegrationChatThreadModel$,
   updateIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
@@ -73,7 +74,7 @@ import {
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
 import { loadOptionalChatEnrichment } from "./queued-launch-enrichment.service";
-import { listAvailableRunModelsWithDefault$ } from "./run-models.service";
+import { listAvailableRunModels$ } from "./run-models.service";
 import {
   ensureTeamsChatThreadRoute$,
   findTeamsRoutedChatThreadId$,
@@ -154,7 +155,8 @@ interface TeamsAgent {
 }
 
 interface TeamsModelPickerOption {
-  readonly model: string;
+  /** Null is Auto. */
+  readonly model: string | null;
   readonly label: string;
   readonly isDefault: boolean;
 }
@@ -338,6 +340,7 @@ function disconnectedNotice(): TeamsMessageDispatchResult {
 
 function buildTeamsModelPickerCard(args: {
   readonly options: readonly TeamsModelPickerOption[];
+  /** Null is Auto. */
   readonly currentSelectedModel: string | null;
   readonly routeConversationId: string;
   readonly routeThreadId: string;
@@ -346,14 +349,13 @@ function buildTeamsModelPickerCard(args: {
   const choices = args.options.map((option) => {
     return {
       title: modelLabel(option),
-      value: option.model,
+      value: integrationModelOptionValue(option.model),
     };
   });
-  const currentChoice = args.currentSelectedModel
-    ? choices.find((choice) => {
-        return choice.value === args.currentSelectedModel;
-      })
-    : undefined;
+  const currentValue = integrationModelOptionValue(args.currentSelectedModel);
+  const currentChoice = choices.find((choice) => {
+    return choice.value === currentValue;
+  });
   const initialValue = currentChoice?.value ?? choices[0]?.value;
 
   return {
@@ -789,15 +791,15 @@ const teamsModelPickerState$ = command(
     { set },
     orgId: string,
     userId: string,
-    currentSelectedModel: string,
+    currentSelectedModel: string | null,
     signal: AbortSignal,
   ): Promise<{
     readonly enabled: boolean;
     readonly options: readonly TeamsModelPickerOption[];
     readonly currentSelectedModel: string | null;
   }> => {
-    const { response: runModels, systemDefaultModel } = await set(
-      listAvailableRunModelsWithDefault$,
+    const runModels = await set(
+      listAvailableRunModels$,
       { orgId, userId },
       signal,
     );
@@ -810,7 +812,7 @@ const teamsModelPickerState$ = command(
           return {
             model: runModel.model,
             label: runModel.modelLabel,
-            isDefault: runModel.model === systemDefaultModel,
+            isDefault: runModel.model === null,
           };
         })
         .slice(0, TEAMS_MODEL_PICKER_MAX_OPTIONS),
@@ -1975,7 +1977,7 @@ const connectedCommandBeforeCompose$ = command(
           signal,
         );
         signal.throwIfAborted();
-        if (!chatThreadId || !currentModel) {
+        if (!chatThreadId || currentModel.kind === "no_thread") {
           return {
             kind: "notice",
             replyText:
@@ -1986,7 +1988,7 @@ const connectedCommandBeforeCompose$ = command(
           teamsModelPickerState$,
           args.installation.orgId,
           args.connection.userId,
-          currentModel,
+          currentModel.selectedModel,
           signal,
         );
         signal.throwIfAborted();
@@ -2093,7 +2095,7 @@ const connectedTeamsCardAction$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (!currentModel) {
+    if (currentModel.kind === "no_thread") {
       return {
         kind: "notice",
         replyText: "This model picker is out of date. Send `/model` again.",
@@ -2103,12 +2105,12 @@ const connectedTeamsCardAction$ = command(
       teamsModelPickerState$,
       args.installation.orgId,
       args.connection.userId,
-      currentModel,
+      currentModel.selectedModel,
       signal,
     );
     signal.throwIfAborted();
     const option = picker.options.find((candidate) => {
-      return candidate.model === selected;
+      return integrationModelOptionValue(candidate.model) === selected;
     });
     if (!option) {
       return {

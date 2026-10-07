@@ -227,9 +227,6 @@ async function createAutomationChatThread(
   },
 ): Promise<string> {
   const pin = args.preparation.initialModel;
-  if (!pin.selectedModel) {
-    throw new Error("A model selection is required");
-  }
   const threadPlan = prepareChatThreadInsert({
     orgId: args.orgId,
     userId: args.userId,
@@ -347,9 +344,6 @@ export function preparedWorkflowThreadValues(
   threadId: string,
 ) {
   const pin = preparation.initialModel;
-  if (!pin.selectedModel) {
-    throw new Error("A model selection is required");
-  }
   return {
     id: threadId,
     userId: args.userId,

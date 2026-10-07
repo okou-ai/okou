@@ -9,7 +9,6 @@ import { userModelPreferenceRoutes } from "../user-model-preference";
 import { createRouteMocks } from "./helpers/route-test";
 const context = testContext();
 const mocks = createRouteMocks(context);
-const SEEDED_SYSTEM_DEFAULT_MODEL = "okou-1.0";
 function authHeaders() {
   return { authorization: "Bearer clerk-session" };
 }
@@ -36,7 +35,7 @@ describe("member image preference", () => {
       preferenceClient.update({
         headers: authHeaders(),
         body: {
-          selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL,
+          selectedModel: null,
           serviceTier: null,
           selectedImageModel: "fal-ai/flux-pro/v1.1",
         },
@@ -44,7 +43,7 @@ describe("member image preference", () => {
       [200],
     );
     expect(stored.body).toMatchObject({
-      selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL,
+      selectedModel: null,
       selectedImageModel: "fal-ai/flux-pro/v1.1",
     });
     expect(stored.body.updatedAt).not.toBeNull();
@@ -88,7 +87,7 @@ describe("member image preference", () => {
       preferenceClient.update({
         headers: authHeaders(),
         body: {
-          selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL,
+          selectedModel: null,
           serviceTier: null,
           selectedImageModel: "gpt-image-2",
         },
@@ -147,7 +146,7 @@ describe("member image preference", () => {
       preferenceClient.update({
         headers: authHeaders(),
         body: {
-          selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL,
+          selectedModel: null,
           serviceTier: null,
           selectedImageModel: outsideCatalog,
         },

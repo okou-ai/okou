@@ -4866,6 +4866,7 @@
         "useAccount": "उपयोग करें"
       },
       "picker": {
+        "auto": "Auto",
         "chatModels": "चैट मॉडल",
         "effort": "प्रयास",
         "effortScale": {

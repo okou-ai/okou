@@ -60,11 +60,11 @@ test("runner behavioral E2E tests select the mock Codex profile", async () => {
       violations.push(`${file}: select the mock Codex profile in setup`);
     }
     if (
-      /runner_chat_(?:send|steer)[^\n]*"okou-1\.0"|^\s*"okou-1\.0"\s*\\?\s*$/m.test(
+      /runner_chat_(?:send|steer)[^\n]*"auto"|^\s*"auto"\s*\\?\s*$/m.test(
         source,
       )
     ) {
-      violations.push(`${file}: do not select the real default model`);
+      violations.push(`${file}: do not select the real Auto model`);
     }
   }
 
@@ -86,7 +86,7 @@ test("mock Codex start helpers reject missing or incorrect profiles before dispa
   const invalidProfiles = [
     { name: "missing profile", profile: "", model: "" },
     { name: "wrong profile", profile: "real-codex", model: "gpt-6-astra" },
-    { name: "real model", profile: "mock-codex", model: "okou-1.0" },
+    { name: "Auto model", profile: "mock-codex", model: "auto" },
   ];
 
   for (const helper of helpers) {

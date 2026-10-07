@@ -76,7 +76,7 @@ async function selectBuiltInDefaultModel(
 ): Promise<void> {
   if (model === "okou-1.0") {
     await seedBuiltInModelKey(context, model);
-    await runs.updateUserModelPreference(actor, model);
+    await runs.updateUserModelPreference(actor, null);
   } else {
     await runs.ensurePersonalSubscriptionModel(actor, { model });
   }

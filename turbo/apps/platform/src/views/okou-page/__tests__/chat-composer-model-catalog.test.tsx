@@ -50,12 +50,7 @@ async function readyComposer(): Promise<void> {
 }
 
 test("Offer the active catalog models in catalog order with catalog names", async () => {
-  configureRunModels([
-    "gpt-6-luna",
-    "claude-fable-5",
-    "claude-sonnet-5",
-    "okou-1.0",
-  ]);
+  configureRunModels(["gpt-6-luna", "claude-fable-5", "claude-sonnet-5"]);
 
   await setupPage({
     context,
@@ -77,7 +72,7 @@ test("Offer the active catalog models in catalog order with catalog names", asyn
 
 test("Show the replacement for a thread pinned to a retired model", async () => {
   installRunChat({ selectedModel: "claude-fable-5" });
-  configureRunModels(["okou-1.0", "claude-fable-5-1"]);
+  configureRunModels(["claude-fable-5-1"]);
 
   await setupPage({
     context,
@@ -89,7 +84,7 @@ test("Show the replacement for a thread pinned to a retired model", async () => 
 });
 
 test("Resolve a member preference of a retired model to its replacement", async () => {
-  configureRunModels(["okou-1.0", "gpt-6-luna", "claude-sonnet-5"]);
+  configureRunModels(["gpt-6-luna", "claude-sonnet-5"]);
   preference("deepseek-v4-pro");
 
   await setupPage({

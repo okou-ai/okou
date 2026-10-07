@@ -12,11 +12,14 @@ import { getModelCatalog } from "../../lib/api/domains/model-catalog";
 import { listRunModels } from "../../lib/api/domains/run-models";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
+  AUTO_MODEL_LABEL,
+  formatCatalogModelSelection,
   formatCatalogThreadModel,
+  formatModelSelectionArgument,
   getCatalogModelDisplayName,
   getCatalogModelEfforts,
   isCatalogModelActive,
-  isCatalogSystemDefaultModel,
+  parseModelSelectionArgument,
   resolveCatalogModel,
   sortByCatalogOrder,
 } from "../../lib/domain/model-catalog-display";
@@ -60,8 +63,16 @@ function switchablePolicies(
   );
 }
 
-function formatModelName(catalog: ModelCatalogResponse, model: string): string {
-  return `${getCatalogModelDisplayName(catalog, model)} ${chalk.dim(`(${model})`)}`;
+/** The display name with the argument that selects it, such as `Auto (auto)`. */
+function formatModelName(
+  catalog: ModelCatalogResponse,
+  model: string | null,
+): string {
+  const name =
+    model === null
+      ? AUTO_MODEL_LABEL
+      : getCatalogModelDisplayName(catalog, model);
+  return `${name} ${chalk.dim(`(${formatModelSelectionArgument(model)})`)}`;
 }
 
 function printSwitchableModels(
@@ -75,10 +86,12 @@ function printSwitchableModels(
   }
 
   for (const runModel of switchable) {
-    const defaultMarker = isCatalogSystemDefaultModel(catalog, runModel.model)
-      ? chalk.dim(" (default)")
-      : "";
-    const efforts = getCatalogModelEfforts(catalog, runModel.model);
+    const defaultMarker =
+      runModel.model === null ? chalk.dim(" (default)") : "";
+    const efforts = getCatalogModelEfforts(
+      catalog,
+      resolveCatalogModel(catalog, runModel.model),
+    );
     console.log(
       `  - ${formatModelName(catalog, runModel.model)}${defaultMarker}`,
     );
@@ -116,7 +129,7 @@ async function printModelHelp(command: Command): Promise<void> {
   console.log(
     "Effort levels depend on the model; Claude uses extra where Codex uses xhigh.",
   );
-  console.log("Use the model id in parentheses:");
+  console.log("Use the model id in parentheses, or auto for Auto:");
   console.log(
     chalk.cyan(
       "  okou chat model [--thread <thread-id>] <model> [--effort <level>]",
@@ -145,33 +158,39 @@ async function printCurrentModelAndChoices(threadId: string): Promise<void> {
 
 async function switchModel(
   threadId: string,
-  model: string,
+  model: string | null,
   effort?: string,
 ): Promise<void> {
   const [result, catalog] = await Promise.all([
     listRunModels(),
     getModelCatalog(),
   ]);
-  const resolved = resolveCatalogModel(catalog, model);
-  if (resolved !== model) {
-    printUsageError(
-      `Model is retired: ${model}`,
-      `Use its replacement: okou chat model ${resolved}`,
-    );
+  if (model !== null) {
+    const resolved = resolveCatalogModel(catalog, model);
+    if (resolved !== model) {
+      printUsageError(
+        `Model is retired: ${model}`,
+        `Use its replacement: okou chat model ${resolved}`,
+      );
+    }
   }
   const runModel = result.models.find((candidate) => {
     return candidate.model === model;
   });
 
+  const argument = formatModelSelectionArgument(model);
   if (!runModel) {
-    printUsageError(`Unknown model: ${model}`, "Run: okou chat model --help");
+    printUsageError(
+      `Unknown model: ${argument}`,
+      "Run: okou chat model --help",
+    );
   }
 
   if (!isMemberRunModelAvailable(runModel)) {
     const status = formatRunModelStatus(runModel);
     const reason = status ? ` (${status})` : "";
     printUsageError(
-      `Model is not switchable: ${model}${reason}`,
+      `Model is not switchable: ${argument}${reason}`,
       "Run: okou chat model --help",
     );
   }
@@ -190,7 +209,7 @@ async function switchModel(
   console.log(chalk.dim(`  Thread: ${updated.threadId}`));
   console.log(
     chalk.dim(
-      `  Model:  ${getCatalogModelDisplayName(catalog, model)} (${model})${reasoningEffort ? ` · effort ${reasoningEffort}` : ""}`,
+      `  Model:  ${formatCatalogModelSelection(catalog, model)}${reasoningEffort ? ` · effort ${reasoningEffort}` : ""}`,
     ),
   );
 }
@@ -203,14 +222,11 @@ async function updateCurrentEffort(
     getChatThread({ threadId }),
     getModelCatalog(),
   ]);
-  if (!thread.selectedModel) {
-    printUsageError(
-      "This chat thread has no selected model",
-      "Pass a model: okou chat model --thread <thread-id> <model> --effort <level>",
-    );
-  }
   // A retired selection runs as its replacement, so the effort applies there.
-  const model = resolveCatalogModel(catalog, thread.selectedModel);
+  const model =
+    thread.selectedModel === null
+      ? null
+      : resolveCatalogModel(catalog, thread.selectedModel);
   const reasoningEffort = parseChatEffort(effort, { catalog, model });
   await updateChatThreadModelSelection({
     threadId,
@@ -221,7 +237,7 @@ async function updateCurrentEffort(
   console.log(chalk.dim(`  Thread: ${threadId}`));
   console.log(
     chalk.dim(
-      `  Model:  ${getCatalogModelDisplayName(catalog, model)} (${model}) · effort ${reasoningEffort}`,
+      `  Model:  ${formatCatalogModelSelection(catalog, model)} · effort ${reasoningEffort}`,
     ),
   );
 }
@@ -229,7 +245,7 @@ async function updateCurrentEffort(
 export const modelCommand = new Command()
   .name("model")
   .description("Show or switch the current web chat thread model")
-  .argument("[model]", "Model id to use for this chat thread")
+  .argument("[model]", "Model id to use for this chat thread, or auto for Auto")
   .helpOption(false)
   .option("--thread <id>", "Chat thread ID (defaults to OKOU_CHAT_THREAD_ID)")
   .option("--effort <level>", "Set reasoning effort for the selected model")
@@ -241,6 +257,7 @@ Examples:
   Show this chat model:     okou chat model
   Show another chat model:  okou chat model --thread <thread-id>
   Switch this model:        okou chat model claude-sonnet-5
+  Switch to Auto:           okou chat model auto
   Switch another model:     okou chat model --thread <thread-id> claude-sonnet-5
   Switch with effort:       okou chat model claude-opus-5-5 --effort extra
   Change only effort:      okou chat model --effort max
@@ -281,7 +298,11 @@ Notes:
           return;
         }
 
-        await switchModel(threadId, model, options.effort);
+        await switchModel(
+          threadId,
+          parseModelSelectionArgument(model),
+          options.effort,
+        );
       },
     ),
   );
