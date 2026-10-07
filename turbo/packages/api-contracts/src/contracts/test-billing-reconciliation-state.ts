@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-import { cronReconcileBillingEntitlementsResponseSchema } from "./cron";
 import { initContract } from "./base";
 
 const c = initContract();
@@ -69,12 +68,6 @@ export const testBillingReconciliationStateActionResponseSchema =
     z.object({ action: z.literal("ok") }),
   ]);
 
-export const testBillingReconciliationStateReconcileBodySchema = z.object({
-  orgIds: z.array(z.string().min(1)).min(1).max(100),
-  replayUndeliveredPaidCheckouts: z.boolean().optional(),
-  replayUndeliveredPaidInvoices: z.boolean().optional(),
-});
-
 export const testBillingReconciliationStateContract = c.router({
   action: {
     method: "POST",
@@ -86,17 +79,6 @@ export const testBillingReconciliationStateContract = c.router({
       500: z.object({ error: z.string() }),
     },
     summary: "Manage organization-owned billing reconciliation fixtures",
-  },
-  reconcile: {
-    method: "POST",
-    path: "/api/test/billing-reconciliation-state/reconcile",
-    body: testBillingReconciliationStateReconcileBodySchema,
-    responses: {
-      200: cronReconcileBillingEntitlementsResponseSchema,
-      404: z.string(),
-      500: z.object({ error: z.string() }),
-    },
-    summary: "Reconcile billing candidates for selected organizations",
   },
 });
 

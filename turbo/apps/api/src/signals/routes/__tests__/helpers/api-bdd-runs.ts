@@ -1,3 +1,4 @@
+import { reconcileBillingOrganizationsForTest } from "../../../../test-fixtures/billing-workers";
 import { mockClerkUsers } from "./clerk-users";
 import { mockClaudeCodeTokenEndpoint } from "./api-bdd-auth-device";
 import { randomUUID } from "node:crypto";
@@ -29,7 +30,6 @@ import {
   cronProcessUsageEventsContract,
   cronTelegramCleanupContract,
 } from "@okouai/api-contracts/contracts/cron";
-import { testBillingReconciliationStateContract } from "@okouai/api-contracts/contracts/test-billing-reconciliation-state";
 import {
   runnersCancellationContract,
   runnersConnectorRuntimeSyncContract,
@@ -82,7 +82,6 @@ import { meModelProvidersUpsertRoutes } from "../../me-model-providers-upsert";
 import { runDetailRoutes } from "../../run-detail";
 import { runsCancelRoutes } from "../../runs-cancel";
 import { runsRoutes } from "../../runs";
-import { testBillingReconciliationStateRoutes } from "../../test-billing-reconciliation-state";
 import { userPermissionGrantsRoutes } from "../../user-permission-grants";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
@@ -1487,15 +1486,9 @@ export function createRunsApi(
     },
 
     async reconcileBillingOrganizations(orgIds: readonly string[]) {
-      const client = setupAppWithRoutes({
-        context,
-        routes: testBillingReconciliationStateRoutes,
-      })(testBillingReconciliationStateContract);
-      return await accept(
-        client.reconcile({
-          body: { orgIds: [...orgIds] },
-        }),
-        [200],
+      return await reconcileBillingOrganizationsForTest(
+        { orgIds: [...orgIds] },
+        context.signal,
       );
     },
   };
