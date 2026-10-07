@@ -10,20 +10,20 @@ import {
 
 /**
  * Fail only the first selected bootstrap read in the test-owned request.
- * Permission reads match the fixture identity; global pricing reads
+ * Permission reads match the fixture identity; global key/pricing reads
  * run only while this isolated test owns the fixture's PostgreSQL client.
  * Both callers belong to vitest.config.ts's api-bootstrap-failure project,
  * which explicitly isolates workers and runs its files and cases serially.
  * No production API can request a database cancellation. PostgreSQL produces
  * the real error; later reads remain healthy, so a retry would be observable
- * as a launched run instead of the required input rejection.
+ * as a launched run instead of the required HTTP failure or input rejection.
  */
 export async function withAgentBootstrapFailureFixture<T>(
   identity: {
     readonly userId: string;
     readonly orgId: string;
     readonly agentId: string;
-    readonly read?: "pricing";
+    readonly read?: "keys" | "pricing";
   },
   work: () => Promise<T>,
 ): Promise<T> {
@@ -38,12 +38,14 @@ export async function withAgentBootstrapFailureFixture<T>(
     apply(target, receiver: unknown, queryArgs: unknown[]): unknown {
       const text = barrierQueryText(queryArgs);
       const selected =
-        identity.read === "pricing"
-          ? text.includes('from "usage_pricing"')
-          : text.includes('from "user_permission_grants"') &&
-            barrierQueryBinds(queryArgs, identity.userId) &&
-            barrierQueryBinds(queryArgs, identity.orgId) &&
-            barrierQueryBinds(queryArgs, identity.agentId);
+        identity.read === "keys"
+          ? text.includes('from "built_in_model_keys"')
+          : identity.read === "pricing"
+            ? text.includes('from "usage_pricing"')
+            : text.includes('from "user_permission_grants"') &&
+              barrierQueryBinds(queryArgs, identity.userId) &&
+              barrierQueryBinds(queryArgs, identity.orgId) &&
+              barrierQueryBinds(queryArgs, identity.agentId);
       if (injected || !selected) {
         return Reflect.apply(target, receiver, queryArgs);
       }

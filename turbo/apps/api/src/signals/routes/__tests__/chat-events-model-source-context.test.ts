@@ -19,6 +19,51 @@ const {
 } = createChatEventsFixture(context);
 
 describe("identity model source context through real sends", () => {
+  it.each(["keys", "pricing"] as const)(
+    "fails before enqueue when the global %s read fails and accepts a later retry",
+    async (read) => {
+      const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+      const thread = await chat.createThread(actor, { agentId });
+      if (!actor.orgId) {
+        throw new Error("Expected an organization");
+      }
+      const before = await chat.listThreadEvents(actor, thread.id);
+      const clientEventId = randomUUID();
+      const prompt = "global model read must succeed before enqueue";
+      await withAgentBootstrapFailureFixture(
+        { userId: actor.userId, orgId: actor.orgId, agentId, read },
+        async () => {
+          const rejected = await requestSendEventRaw(actor, {
+            agentId,
+            threadId: thread.id,
+            clientEventId,
+            prompt,
+            hasTextContent: true,
+            userMessage: {
+              version: 1,
+              parts: [{ type: "text", text: prompt }],
+            },
+          });
+          expect(rejected).toStrictEqual({
+            status: 500,
+            body: { error: "Internal server error" },
+          });
+          await expect(flushWaitUntilForTest()).resolves.toBeUndefined();
+          const after = await chat.listThreadEvents(actor, thread.id);
+          expect(after.events).toStrictEqual(before.events);
+        },
+      );
+      const retried = await sendChatRun(actor, {
+        agentId,
+        threadId: thread.id,
+        clientEventId,
+        prompt,
+      });
+      const claimed = await claimChatRun(runnerGroup, retried.runId);
+      await cancelChatRun(actor, retried.runId, claimed.sandboxHeaders);
+    },
+  );
+
   it.each(["missing-agent", "thread-agent-mismatch"] as const)(
     "preserves %s authorization rejection while early preload fails",
     async (path) => {
