@@ -40,6 +40,9 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  npm_config_audit: false
+
 defaults:
   run:
     shell: bash
@@ -90,7 +93,7 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Test native Desktop runtime
         run: swift test --package-path desktop -j 4
@@ -105,7 +108,7 @@ jobs:
         run: python3 desktop/scripts/build.py --package
 
       - name: Upload production-configured unsigned artifact
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: okou-desktop-macos-arm64-unsigned
           path: desktop/out/*.zip
@@ -129,7 +132,7 @@ jobs:
 
       - name: Upload preview artifact
         if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: okou-desktop-macos-arm64-preview-unsigned
           path: desktop/out/Okou Dev-*.zip

@@ -310,18 +310,24 @@ const getProductDesktopUpdateFeed$ = command(
 function xmlText(value: string): string {
   return value.replace(/[&<>"']/g, (character) => {
     switch (character) {
-      case "&":
+      case "&": {
         return "&amp;";
-      case "<":
+      }
+      case "<": {
         return "&lt;";
-      case ">":
+      }
+      case ">": {
         return "&gt;";
-      case '"':
+      }
+      case '"': {
         return "&quot;";
-      case "'":
+      }
+      case "'": {
         return "&apos;";
-      default:
+      }
+      default: {
         throw new Error("Unexpected XML character");
+      }
     }
   });
 }
@@ -344,8 +350,9 @@ const getProductDesktopAppcast$ = command(
       });
     }
     signal.throwIfAborted();
-    if (!loaded.value)
+    if (!loaded.value) {
       return notFound("No desktop update is available for this feed.");
+    }
     // Both generations receive the same channel and blocked-version decisions.
     // ZIP bundles are authenticated by Sparkle against the installed app's
     // Developer ID designated requirement (same trust boundary as Squirrel).

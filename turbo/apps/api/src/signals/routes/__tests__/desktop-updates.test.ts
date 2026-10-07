@@ -121,7 +121,9 @@ describe("desktop update routes", () => {
     const path = "/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/";
     const electron = await appRequest(`${path}RELEASES.json`);
     expect(electron.status).toBe(200);
-    expect(await electron.json()).toMatchObject({ currentRelease: "0.50.0" });
+    await expect(electron.json()).resolves.toMatchObject({
+      currentRelease: "0.50.0",
+    });
     const native = await appRequest(`${path}appcast.xml`);
     expect(native.status).toBe(200);
     expect(native.headers.get("content-type")).toContain("application/rss+xml");
@@ -134,13 +136,11 @@ describe("desktop update routes", () => {
 
   it("escapes release text in the native XML feed", async () => {
     const release = darwinArm64Release("0.50.0", okouZipUrl("0.50.0"));
+    release.name = "Okou & <native>";
+    release.notes = 'Text "quoted" <script>';
     mockDesktopUpdateManifest(
       stableManifest("0.50.0", {
-        "0.50.0": {
-          ...release,
-          name: "Okou & <native>",
-          notes: 'Text "quoted" <script>',
-        },
+        "0.50.0": release,
       }),
     );
     const response = await appRequest(
