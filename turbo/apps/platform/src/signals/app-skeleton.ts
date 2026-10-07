@@ -72,11 +72,6 @@ export const unmountAppSkeletonOverlay$ = command(({ get, set }) => {
   }
 });
 
-export const showAppSkeleton$ = command(({ get, set }) => {
-  set(internalVisible$, true);
-  set(internalOverlayMounted$, !get(internalBootstrapSkeletonActive$));
-});
-
 export const hideAppSkeleton$ = command(
   async ({ set }, signal: AbortSignal): Promise<void> => {
     await hideBootstrapSkeleton(signal);
