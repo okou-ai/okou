@@ -1149,6 +1149,20 @@ jobs:
           DEV_MODEL_MOONSHOT_KEY: ${{ secrets.MOONSHOT_API_KEY }}
           DEV_MODEL_MINIMAX_KEY: ${{ secrets.MINIMAX_API_KEY }}
         run: |
+          # Temporary preview-only timing: every Neon call reports its duration
+          # so a slow branch reset can be attributed to a specific request.
+          neon_time() {
+            local label="$1"
+            shift
+            local started
+            started=$(date +%s%3N)
+            echo "[neon-timing] start ${label} $(date -u +%H:%M:%S.%3N)" >&2
+            local status=0
+            "$@" || status=$?
+            echo "[neon-timing] end ${label} status=${status} duration_ms=$(( $(date +%s%3N) - started ))" >&2
+            return "$status"
+          }
+
           while IFS= read -r line; do
             if [ -n "$line" ]; then
               key="${line%%=*}"
@@ -1177,7 +1191,21 @@ jobs:
             exit 1
           fi
 
-          npm install -g neonctl@2.15.0
+          neon_time npm-install-neonctl npm install -g neonctl@2.15.0
+
+          # neonctl's analytics middleware calls these before every command and
+          # flushes to track.neon.tech afterwards; failures are only debug-logged.
+          for endpoint in auth users/me; do
+            neon_time "curl-api-${endpoint}" curl -sS -o /dev/null --max-time 90 \
+              -w "[neon-timing] curl ${endpoint} http=%{http_code} connect=%{time_connect}s ttfb=%{time_starttransfer}s total=%{time_total}s\n" \
+              -H "Authorization: Bearer $NEON_API_KEY" -H "Accept: application/json" \
+              "https://console.neon.tech/api/v2/${endpoint}" || true
+          done
+          neon_time curl-track-neon curl -sS -o /dev/null --max-time 30 \
+            -w "[neon-timing] curl track.neon.tech http=%{http_code} connect=%{time_connect}s total=%{time_total}s\n" \
+            https://track.neon.tech/ || true
+          neon_time list-with-analytics neonctl branches list --project-id "$NEON_PROJECT_ID" --output json > /dev/null
+          neon_time list-no-analytics neonctl branches list --project-id "$NEON_PROJECT_ID" --output json --no-analytics > /dev/null
 
           # On pushes to main, migrate the test project's default (parent) branch
           # BEFORE creating/resetting the preview branch off it. Neon branches are
@@ -1201,22 +1229,22 @@ jobs:
 
           BRANCH_NAME="preview/${{ needs.prepare.outputs.job-ref }}"
 
-          if neonctl branches list --project-id "$NEON_PROJECT_ID" --output json | jq -e --arg name "$BRANCH_NAME" '.[] | select(.name == $name)' > /dev/null; then
-            neonctl branches reset "$BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --parent
+          if neon_time branch-exists neonctl branches list --project-id "$NEON_PROJECT_ID" --output json | jq -e --arg name "$BRANCH_NAME" '.[] | select(.name == $name)' > /dev/null; then
+            neon_time branch-reset neonctl branches reset "$BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --parent
 
             for attempt in {1..30}; do
-              CURRENT_STATE=$(neonctl branches list --project-id "$NEON_PROJECT_ID" --output json | jq -r --arg name "$BRANCH_NAME" '.[] | select(.name == $name) | .current_state')
+              CURRENT_STATE=$(neon_time "branch-state-${attempt}" neonctl branches list --project-id "$NEON_PROJECT_ID" --output json | jq -r --arg name "$BRANCH_NAME" '.[] | select(.name == $name) | .current_state')
               [ "$CURRENT_STATE" = "ready" ] && break
               echo "Branch state: $CURRENT_STATE (attempt $attempt/30)"
               sleep 2
             done
           else
-            neonctl branches create --name "$BRANCH_NAME" --project-id "$NEON_PROJECT_ID"
+            neon_time branch-create neonctl branches create --name "$BRANCH_NAME" --project-id "$NEON_PROJECT_ID"
           fi
 
-          DATABASE_URL=$(neonctl connection-string "$BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --database-name neondb --role-name neondb_owner --pooled --ssl verify-full)
+          DATABASE_URL=$(neon_time connection-string-pooled neonctl connection-string "$BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --database-name neondb --role-name neondb_owner --pooled --ssl verify-full)
           if [ -z "$DATABASE_URL" ]; then
-            DATABASE_URL=$(neonctl connection-string "$BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --database-name neondb --role-name neondb_owner --ssl verify-full)
+            DATABASE_URL=$(neon_time connection-string-direct neonctl connection-string "$BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --database-name neondb --role-name neondb_owner --ssl verify-full)
           fi
           WORKFLOW_COMMAND_DATA="${DATABASE_URL//%/%25}"
           WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\r'/%0D}"
@@ -1224,8 +1252,8 @@ jobs:
           printf '::add-mask::%s\n' "$WORKFLOW_COMMAND_DATA"
 
           cd turbo
-          DATABASE_URL="$DATABASE_URL" pnpm -F @okouai/db db:migrate
-          ENV=preview DATABASE_URL="$DATABASE_URL" pnpm -F api db:dev-seed --preview-onboarding-catalog
+          neon_time db-migrate env DATABASE_URL="$DATABASE_URL" pnpm -F @okouai/db db:migrate
+          neon_time db-seed env ENV=preview DATABASE_URL="$DATABASE_URL" pnpm -F api db:dev-seed --preview-onboarding-catalog
 
           echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
 
