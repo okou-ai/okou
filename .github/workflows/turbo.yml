@@ -1177,8 +1177,6 @@ jobs:
             exit 1
           fi
 
-          npm install -g neonctl@2.15.0
-
           # On pushes to main, migrate the test project's default (parent) branch
           # BEFORE creating/resetting the preview branch off it. Neon branches are
           # copy-on-write, so a preview branched from an already-migrated parent
@@ -1188,10 +1186,7 @@ jobs:
           # NEON_PROJECT_ID resolves to the Neon TEST project, never production.
           if [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; then
             echo "main push: pre-migrating test project default (parent) branch"
-            PARENT_DATABASE_URL=$(neonctl connection-string --project-id "$NEON_PROJECT_ID" --database-name neondb --role-name neondb_owner --pooled --ssl verify-full)
-            if [ -z "$PARENT_DATABASE_URL" ]; then
-              PARENT_DATABASE_URL=$(neonctl connection-string --project-id "$NEON_PROJECT_ID" --database-name neondb --role-name neondb_owner --ssl verify-full)
-            fi
+            PARENT_DATABASE_URL=$(.github/scripts/neon-preview-branch.sh parent)
             WORKFLOW_COMMAND_DATA="${PARENT_DATABASE_URL//%/%25}"
             WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\r'/%0D}"
             WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\n'/%0A}"
@@ -1199,25 +1194,7 @@ jobs:
             (cd turbo && DATABASE_URL="$PARENT_DATABASE_URL" pnpm -F @okouai/db db:migrate)
           fi
 
-          BRANCH_NAME="preview/${{ needs.prepare.outputs.job-ref }}"
-
-          if neonctl branches list --project-id "$NEON_PROJECT_ID" --output json | jq -e --arg name "$BRANCH_NAME" '.[] | select(.name == $name)' > /dev/null; then
-            neonctl branches reset "$BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --parent
-
-            for attempt in {1..30}; do
-              CURRENT_STATE=$(neonctl branches list --project-id "$NEON_PROJECT_ID" --output json | jq -r --arg name "$BRANCH_NAME" '.[] | select(.name == $name) | .current_state')
-              [ "$CURRENT_STATE" = "ready" ] && break
-              echo "Branch state: $CURRENT_STATE (attempt $attempt/30)"
-              sleep 2
-            done
-          else
-            neonctl branches create --name "$BRANCH_NAME" --project-id "$NEON_PROJECT_ID"
-          fi
-
-          DATABASE_URL=$(neonctl connection-string "$BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --database-name neondb --role-name neondb_owner --pooled --ssl verify-full)
-          if [ -z "$DATABASE_URL" ]; then
-            DATABASE_URL=$(neonctl connection-string "$BRANCH_NAME" --project-id "$NEON_PROJECT_ID" --database-name neondb --role-name neondb_owner --ssl verify-full)
-          fi
+          DATABASE_URL=$(.github/scripts/neon-preview-branch.sh branch "preview/${{ needs.prepare.outputs.job-ref }}")
           WORKFLOW_COMMAND_DATA="${DATABASE_URL//%/%25}"
           WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\r'/%0D}"
           WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\n'/%0A}"

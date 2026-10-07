@@ -40,7 +40,7 @@ function installCustomDirectory() {
   });
 }
 
-test("Show Custom and contextual creation without built-in shelves", async () => {
+test("Custom scope lists custom connectors and offers custom creation", async () => {
   installCustomDirectory();
   await setupPage({
     context,

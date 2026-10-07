@@ -30,7 +30,6 @@ import {
   resolveModelSelectionPin$,
   validateCodexServiceTier,
 } from "../services/model-selection.service";
-import { chatThreadModelPinColumns } from "../services/chat-thread-model.service";
 import { chatThreadServiceTierFromCodex } from "../services/chat-thread-event.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
@@ -273,7 +272,7 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       title: body.data.title,
       clientThreadId: body.data.clientThreadId,
       eventId: body.data.eventId,
-      ...chatThreadModelPinColumns(pin),
+      selectedModel: pin.selectedModel,
       modelSettings: effort.modelSettings,
       cloudBrowserEnabled: defaults.cloudBrowserEnabled,
       codexServiceTier,

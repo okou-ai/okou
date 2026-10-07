@@ -3,16 +3,9 @@ import { command } from "ccstate";
 import {
   resolveDefaultModelFirstPin$,
   type DefaultModelFirstPin,
-  type ModelFirstPin,
   type ModelSelectionBootstrap,
 } from "./model-selection.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-
-export function chatThreadModelPinColumns(pin: ModelFirstPin): {
-  readonly selectedModel: string | null;
-} {
-  return { selectedModel: pin.selectedModel };
-}
 
 export const resolveRequiredDefaultChatThreadModelPin$ = command(
   async (

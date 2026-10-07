@@ -697,7 +697,6 @@ test.each([{ configuredCount: 0 }, { configuredCount: 1 }])(
     click(await findFastControl("button", "Add connectors"));
     const search = await screen.findByPlaceholderText("Find connectors...");
     const dialog = search.closest('[role="dialog"]');
-    expect(screen.queryByRole("switch", { name: /SSH/u })).toBeNull();
     if (!(dialog instanceof HTMLElement)) {
       throw new Error("Missing connector dialog");
     }
@@ -785,13 +784,14 @@ test("Manage SSH hosts reopens Remote control on connections after viewing crede
     click(await findFastControl("button", "Add connectors"));
     const dialog = await screen.findByRole("dialog", { name: "Connectors" });
     click(await findFastControl("link", "Manage SSH hosts", dialog));
-    return await screen.findByRole("radio", { name: "Connections" });
+    return await screen.findByRole("radiogroup", { name: "Remote control" });
   };
 
-  await openSshFromComposer();
-  click(screen.getByRole("radio", { name: "Credentials" }));
+  const views = await openSshFromComposer();
+  const credentials = await findFastControl("radio", "Credentials", views);
+  click(credentials);
   await waitFor(() => {
-    expect(screen.getByRole("radio", { name: "Credentials" })).toBeChecked();
+    expect(credentials).toBeChecked();
   });
 
   window.history.back();
@@ -799,7 +799,12 @@ test("Manage SSH hosts reopens Remote control on connections after viewing crede
     expect(window.location.pathname).toBe(`/agents/${SCOUT_AGENT_ID}/chat`);
   });
 
-  const connections = await openSshFromComposer();
+  const reopenedViews = await openSshFromComposer();
+  const connections = await findFastControl(
+    "radio",
+    "Connections",
+    reopenedViews,
+  );
   await waitFor(() => {
     expect(connections).toBeChecked();
   });

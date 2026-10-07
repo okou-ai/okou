@@ -19,7 +19,9 @@ Migrations run before API promotion. An API built before 1332 still declares
 the columns, so its chat thread inserts, its `ownedChatThread` select and any
 bare `select()`/`returning()` on `chat_threads` receive `42703` until it
 drains. `chat_threads` is a hot table, so this is not a rolling-compatible
-contraction. New API with the old schema is unsupported, as usual.
+contraction. A new API against the old schema is compatible: it never names
+the three nullable columns, so its inserts leave them NULL and its selects
+ignore them.
 
 **Accepted rollout interruption:** Ethan explicitly accepted (2026-10-07) a
 brief unavailability of roughly ten-odd seconds during deployment while the
