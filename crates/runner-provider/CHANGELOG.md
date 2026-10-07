@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.6](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.5...runner-provider-v0.5.6) (2026-10-07)
+
+
+### Refactoring
+
+* remove all remaining custom model mode awareness ([#37856](https://github.com/okou-ai/okou/issues/37856)) ([f383835](https://github.com/okou-ai/okou/commit/f3838353ba0455ec7d57dfa2d0974e34a44796ff))
+
 ## [0.5.5](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.4...runner-provider-v0.5.5) (2026-10-03)
 
 
