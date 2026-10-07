@@ -4,6 +4,7 @@ import ast
 import hashlib
 import importlib.util
 import json
+import os
 import pathlib
 import subprocess
 import tempfile
@@ -171,6 +172,128 @@ class ProducerInputs(unittest.TestCase):
             retained = base / "public-evidence" / original.name
             self.assertEqual(retained.read_bytes(), original.read_bytes())
             self.assertTrue((base / "public-evidence/source-failed.json").is_file())
+
+    def test_completed_provision_retains_all_declared_original_archives_as_data(self):
+        # These are ordinary public IO canaries, not Debian packages, signatures
+        # or provider/native acceptance. Exercise the actual retention boundary.
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            cache = base / 'cache/archives'
+            cache.mkdir(parents=True)
+            packages = {}
+            for name in ('first', 'second'):
+                data = ('public archive storage canary: ' + name).encode()
+                (cache / (name + '.deb')).write_bytes(data)
+                digest = hashlib.sha256(data).hexdigest()
+                packages[name] = {'archiveSha256': digest, 'archiveSizeBytes': len(data)}
+            self.producer.retain_public_inputs(base, 'provision-complete', {'packages': packages})
+            evidence = base / 'public-evidence'
+            record = json.loads((evidence / 'provision-complete.json').read_text())
+            self.assertEqual(set(record.get('packageArchives', {})), set(packages))
+            for name, row in packages.items():
+                retained = evidence / 'package-archives' / (row['archiveSha256'] + '.deb')
+                self.assertTrue(retained.is_file() and not retained.is_symlink(), 'original archive bytes not retained')
+                self.assertEqual(retained.read_bytes(), (cache / (name + '.deb')).read_bytes())
+                self.assertEqual(retained.stat().st_mode & 0o777, 0o600)
+            self.assertIs(record['runtimeVerified'], False)
+            self.assertIs(record['attributionVerified'], False)
+
+    def test_completed_provision_refuses_missing_extra_or_changed_archive(self):
+        for condition in ('missing', 'extra', 'changed'):
+            with self.subTest(condition=condition), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                base = pathlib.Path(directory)
+                cache = base / 'cache/archives'
+                cache.mkdir(parents=True)
+                data = b'public storage canary; no provider authenticity'
+                digest = hashlib.sha256(data).hexdigest()
+                packages = {'canary': {'archiveSha256': digest, 'archiveSizeBytes': len(data)}}
+                if condition != 'missing':
+                    (cache / 'canary.deb').write_bytes(data if condition != 'changed' else b'x' * len(data))
+                if condition == 'extra':
+                    (cache / 'unrecorded.deb').write_bytes(b'public extra archive canary')
+                with self.assertRaises(ValueError):
+                    self.producer.retain_public_inputs(base, 'provision-complete', {'packages': packages})
+                self.assertFalse((base / 'public-evidence/provision-complete.json').exists())
+
+    def test_completed_provision_refuses_archive_and_storage_aliases(self):
+        for condition in ('archive-alias', 'storage-alias'):
+            with self.subTest(condition=condition), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                base = pathlib.Path(directory)
+                cache = base / 'cache/archives'
+                cache.mkdir(parents=True)
+                original = base / 'public.canary'
+                data = b'public alias storage canary; never a package'
+                original.write_bytes(data)
+                digest = hashlib.sha256(data).hexdigest()
+                packages = {'canary': {'archiveSha256': digest, 'archiveSizeBytes': len(data)}}
+                if condition == 'archive-alias':
+                    (cache / 'canary.deb').symlink_to(original)
+                else:
+                    (cache / 'canary.deb').write_bytes(data)
+                    evidence = base / 'public-evidence'
+                    evidence.mkdir(mode=0o700)
+                    (evidence / 'package-archives').symlink_to(cache, target_is_directory=True)
+                with self.assertRaises(ValueError):
+                    self.producer.retain_public_inputs(base, 'provision-complete', {'packages': packages})
+
+    def test_original_archive_count_and_byte_budgets_are_complete_not_truncated(self):
+        # Real narrow-directory boundary; only public IO data, never packages.
+        for count in (200, 201):
+            with self.subTest(count=count), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                base = pathlib.Path(directory)
+                cache = base / 'cache/archives'
+                cache.mkdir(parents=True)
+                (cache / 'partial').mkdir()
+                (cache / 'lock').touch()
+                packages = {}
+                for index in range(count):
+                    name = str(index)
+                    data = ('public archive budget canary ' + name).encode()
+                    (cache / (name + '.deb')).write_bytes(data)
+                    packages[name] = {'archiveSha256': hashlib.sha256(data).hexdigest(), 'archiveSizeBytes': len(data)}
+                if count == 200:
+                    self.producer.retain_public_inputs(base, 'provision-complete', {'packages': packages})
+                    record = json.loads((base / 'public-evidence/provision-complete.json').read_text())
+                    self.assertEqual(set(record['packageArchives']), set(packages))
+                    self.assertEqual(len(list((base / 'public-evidence/package-archives').iterdir())), 200)
+                else:
+                    with self.assertRaises(ValueError):
+                        self.producer.retain_public_inputs(base, 'provision-complete', {'packages': packages})
+                    self.assertFalse((base / 'public-evidence/provision-complete.json').exists())
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            # Oversize declaration refuses before any archive allocation/read.
+            packages = {str(index): {'archiveSha256': format(index, '064x'),
+                                    'archiveSizeBytes': 128 * 1024 * 1024} for index in range(5)}
+            with self.assertRaises(ValueError):
+                self.producer.retain_public_inputs(base, 'provision-complete', {'packages': packages})
+            self.assertFalse((base / 'public-evidence/package-archives').exists())
+
+    def test_original_archive_size_links_and_special_nodes_refuse_without_fd_leak(self):
+        for condition in ('size', 'hardlink', 'fifo', 'cache-alias'):
+            with self.subTest(condition=condition), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                base = pathlib.Path(directory)
+                cache = base / 'cache/archives'
+                cache.mkdir(parents=True)
+                data = b'public archive refusal canary; never executable'
+                digest = hashlib.sha256(data).hexdigest()
+                packages = {'canary': {'archiveSha256': digest, 'archiveSizeBytes': len(data)}}
+                if condition == 'fifo':
+                    os.mkfifo(cache / 'canary.deb')
+                else:
+                    (cache / 'canary.deb').write_bytes(data)
+                if condition == 'size':
+                    packages['canary']['archiveSizeBytes'] += 1
+                elif condition == 'hardlink':
+                    os.link(cache / 'canary.deb', base / 'public.link')
+                elif condition == 'cache-alias':
+                    cache.rename(base / 'public-cache')
+                    cache.symlink_to(base / 'public-cache', target_is_directory=True)
+                before = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+                with self.assertRaises(ValueError):
+                    self.producer.retain_public_inputs(base, 'provision-complete', {'packages': packages})
+                self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), before)
+                self.assertFalse((base / 'public-evidence/provision-complete.json').exists())
 
     def test_actual_pinned_release_is_admitted_without_execution(self):
         archive = ROOT / "crates/target/qemu-full-fixture-source/qemu-9.2.0.tar.xz"

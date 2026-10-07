@@ -6,6 +6,7 @@ A disposable mount/PID namespace confines the build; build commands run as the
 ordinary owner with an empty environment. Runtime is a separate explicit mode.
 """
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -115,6 +116,11 @@ def retain_public_inputs(base, stage, manifest=None):
                "indexes": records, "runtimeVerified": False, "attributionVerified": False}
     if manifest is not None:
         payload["provision"] = manifest
+        if stage == "provision-complete":
+            # Preserve the actual already-downloaded payloads once, before any
+            # source/build failure. A declaration alone is not original custody.
+            # Failure retention does not replay a partial archive-copy attempt.
+            payload["packageArchives"] = retain_public_package_archives(base, manifest["packages"])
     with (evidence / (stage + ".json")).open("x") as output:
         json.dump(payload, output, indent=2)
         output.write("\n")
@@ -126,6 +132,139 @@ def sha(path):
         for data in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(data)
     return digest.hexdigest()
+
+
+def retain_public_package_archives(base, packages):
+    """Bounded original-byte custody only; no signature or runtime admission."""
+    if not isinstance(packages, dict) or not 1 <= len(packages) <= 200:
+        raise ValueError("public package archive count refused")
+    expected = {}
+    total = 0
+    for name, row in packages.items():
+        digest, size = row["archiveSha256"], row["archiveSizeBytes"]
+        if (not isinstance(name, str) or not 1 <= len(name.encode()) <= 255
+                or not isinstance(digest, str) or len(digest) != 64
+                or any(char not in "0123456789abcdef" for char in digest)
+                or type(size) is not int or not 0 < size <= 128 * 1024 * 1024
+                or digest in expected):
+            raise ValueError("public package archive identity refused")
+        total += size
+        if total > 512 * 1024 * 1024:
+            raise ValueError("public package archive byte budget refused")
+        expected[digest] = (name, size)
+    if base.is_symlink() or base.resolve(strict=True) != base:
+        raise ValueError("public package archive root refused")
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+    inode_fields = ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink",
+                    "st_size", "st_mtime_ns", "st_ctime_ns")
+    try:
+        with contextlib.ExitStack() as opened:
+            base_fd = os.open(base, flags)
+            opened.callback(os.close, base_fd)
+            if os.fstat(base_fd).st_uid != os.geteuid():
+                raise ValueError("public package archive root owner refused")
+            cache_fd = os.open("cache", flags, dir_fd=base_fd)
+            opened.callback(os.close, cache_fd)
+            archives_fd = os.open("archives", flags, dir_fd=cache_fd)
+            opened.callback(os.close, archives_fd)
+            evidence_fd = os.open("public-evidence", flags, dir_fd=base_fd)
+            opened.callback(os.close, evidence_fd)
+            if any(os.fstat(fd).st_uid != os.geteuid() for fd in (cache_fd, archives_fd, evidence_fd)):
+                raise ValueError("public package archive directory owner refused")
+            # Exactly one new storage view; no following aliases, overwriting,
+            # or treating a prior/partial publication as a completed attempt.
+            os.mkdir("package-archives", mode=0o700, dir_fd=evidence_fd)
+            storage_fd = os.open("package-archives", flags, dir_fd=evidence_fd)
+            opened.callback(os.close, storage_fd)
+            names = []
+            count = 0
+            with os.scandir(archives_fd) as entries:
+                for entry in entries:
+                    count += 1
+                    if count > 202:
+                        raise ValueError("public package archive directory budget refused")
+                    if entry.name in ("lock", "partial"):
+                        continue
+                    if not entry.name.endswith(".deb") or len(names) == 200:
+                        raise ValueError("unexpected public package archive entry")
+                    names.append(entry.name)
+            if len(names) != len(expected):
+                raise ValueError("public package archive closure incomplete")
+            records = {}
+            for filename in sorted(names):
+                with os.fdopen(os.open(filename, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                       dir_fd=archives_fd), "rb") as source:
+                    before = os.fstat(source.fileno())
+                    if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.geteuid()
+                            or before.st_nlink != 1 or not 0 < before.st_size <= 128 * 1024 * 1024):
+                        raise ValueError("public package archive source refused")
+                    # Resolve by actual bytes, never by a package/cache pathname.
+                    digest = hashlib.sha256()
+                    read = 0
+                    for data in iter(lambda: source.read(1024 * 1024), b""):
+                        read += len(data)
+                        if read > before.st_size:
+                            raise ValueError("public package archive source grew")
+                        digest.update(data)
+                    archive_hash = digest.hexdigest()
+                    if archive_hash not in expected or archive_hash in records:
+                        raise ValueError("public package archive digest refused")
+                    package, size = expected[archive_hash]
+                    if size != read or size != before.st_size:
+                        raise ValueError("public package archive size refused")
+                    source.seek(0)
+                    retained_name = archive_hash + ".deb"
+                    with os.fdopen(os.open(retained_name, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                                           0o600, dir_fd=storage_fd), "w+b") as retained:
+                        copied = 0
+                        for data in iter(lambda: source.read(1024 * 1024), b""):
+                            copied += len(data)
+                            if copied > size:
+                                raise ValueError("public package archive copy budget refused")
+                            retained.write(data)
+                        retained.flush()
+                        retained.seek(0)
+                        digest = hashlib.sha256()
+                        checked = 0
+                        for data in iter(lambda: retained.read(1024 * 1024), b""):
+                            checked += len(data)
+                            if checked > size:
+                                raise ValueError("retained public package archive grew")
+                            digest.update(data)
+                        final = os.fstat(retained.fileno())
+                        named = os.stat(retained_name, dir_fd=storage_fd, follow_symlinks=False)
+                        if (copied != size or checked != size or digest.hexdigest() != archive_hash
+                                or not stat.S_ISREG(final.st_mode) or stat.S_IMODE(final.st_mode) != 0o600
+                                or final.st_uid != os.geteuid() or final.st_nlink != 1
+                                or tuple(getattr(final, field) for field in inode_fields)
+                                != tuple(getattr(named, field) for field in inode_fields)):
+                            raise ValueError("retained public package archive mismatch")
+                    after = os.fstat(source.fileno())
+                    named = os.stat(filename, dir_fd=archives_fd, follow_symlinks=False)
+                    if (tuple(getattr(before, field) for field in inode_fields)
+                            != tuple(getattr(after, field) for field in inode_fields)
+                            or tuple(getattr(before, field) for field in inode_fields)
+                            != tuple(getattr(named, field) for field in inode_fields)):
+                        raise ValueError("public package archive source changed")
+                    records[archive_hash] = {"package": package, "sha256": archive_hash,
+                                            "sizeBytes": size, "storagePath": "package-archives/" + retained_name}
+            if set(records) != set(expected):
+                raise ValueError("public package archive closure incomplete")
+            for parent_fd, name, fd in ((base_fd, "cache", cache_fd), (cache_fd, "archives", archives_fd),
+                                         (base_fd, "public-evidence", evidence_fd),
+                                         (evidence_fd, "package-archives", storage_fd)):
+                held, named = os.fstat(fd), os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+                if (not stat.S_ISDIR(named.st_mode) or held.st_dev != named.st_dev
+                        or held.st_ino != named.st_ino or named.st_uid != os.geteuid()):
+                    raise ValueError("public package archive directory changed")
+            held, named = os.fstat(base_fd), os.stat(base, follow_symlinks=False)
+            if (base.resolve(strict=True) != base or not stat.S_ISDIR(named.st_mode)
+                    or held.st_dev != named.st_dev or held.st_ino != named.st_ino
+                    or named.st_uid != os.geteuid()):
+                raise ValueError("public package archive root changed")
+            return {row["package"]: row for row in records.values()}
+    except OSError as error:
+        raise ValueError("public package archive custody refused") from error
 
 
 def verify_elf_header(data, arch):
@@ -474,8 +613,9 @@ def main():
     stage, manifest = "provision", None
     try:
         manifest = provision(base, arch, multiarch, origin)
-        # Persist the resolved complete package/index linkage before the first
-        # fallible source extraction or compiler invocation.
+        # Persist complete package/index linkage and original downloaded archives
+        # before the first fallible source extraction or compiler invocation.
+        stage = "archive-custody"
         retain_public_inputs(base, "provision-complete", manifest)
         stage = "source"
         if args.source_archive and args.source_archive.is_symlink():

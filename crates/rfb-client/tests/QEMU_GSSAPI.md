@@ -88,6 +88,19 @@ not a host firmware directory.
 InRelease and APT-retained Packages indexes (declared local compression), compiler
 log, package/file/alias closure and producer identities. Exact archive hashes,
 repository paths, sizes and Depends/Pre-Depends/Provides fields are retained.
+Before source extraction/build, `public-evidence/package-archives/` also retains
+EVERY already-downloaded `.deb`, named by its complete SHA256 and bound to package,
+actual size and storage path in `provision-complete.json`. Incremental directory
+collection is bounded to the existing 200-package closure plus APT's lock/partial
+entries; files are limited to 128 MiB each and 512 MiB total. Missing/extra/changed,
+aliased/special/outside-hardlinked inputs or mismatched retained bytes refuse.
+Held descriptor checks and exclusive0600 output prevent silent overwrite;
+failed/partial custody never publishes a completion record and is not replayed
+by failure-stage retention. No archive is downloaded again, installed or executed
+for this step. These originals enable independent all-payload reinspection, not
+signature verification, original-root stat, mutation barriers, loaded-byte closure
+or pin/runtime admission. The existing always-upload evidence directory carries
+them without adding a workflow, cache or time-budget change.
 Both original first/second native output streams are retained separately and
 rehash-checked as public data after the unchanged native/equality checks. Public
 failure-stage evidence covers provisioning, source/build, post-build inventory and
