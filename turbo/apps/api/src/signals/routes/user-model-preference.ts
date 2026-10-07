@@ -18,7 +18,6 @@ import { bodyResultOf } from "../context/request";
 import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
 import type { RouteEntry } from "../route-entry";
 import {
-  memberRunModelCatalog,
   type ModelCatalog,
   modelCatalog$,
   resolveCatalogRunModel,
@@ -38,11 +37,9 @@ import {
 const updateBody$ = bodyResultOf(userModelPreferenceContract.update);
 
 function configuredRunModelProviderType(
-  catalog: ModelCatalog,
   runModel: AvailableRunModel | undefined,
 ): string | null {
-  return runModel &&
-    isMemberRunModelConfigurable(runModel, memberRunModelCatalog(catalog))
+  return runModel && isMemberRunModelConfigurable(runModel)
     ? getMemberRunModelRoute(runModel).providerType
     : null;
 }
@@ -64,7 +61,7 @@ function validateModelSettingsPatch(args: {
       args.catalog,
       args.patch.model,
       args.patch.effort,
-      configuredRunModelProviderType(args.catalog, args.configuredRunModel),
+      configuredRunModelProviderType(args.configuredRunModel),
     )
   ) {
     return badRequestMessage(
@@ -87,7 +84,7 @@ function validateUltrafastServiceTier(args: {
     !isCatalogUltrafastServiceTierSupported(
       args.catalog,
       args.configuredRunModel.model,
-      configuredRunModelProviderType(args.catalog, args.configuredRunModel),
+      configuredRunModelProviderType(args.configuredRunModel),
     )
   ) {
     return badRequestMessage("Ultrafast is unavailable for this model route");
@@ -105,10 +102,7 @@ function validatePriorityServiceTier(args: {
   }
   if (
     !args.configuredRunModel ||
-    !isMemberRunModelConfigurable(
-      args.configuredRunModel,
-      memberRunModelCatalog(args.catalog),
-    )
+    !isMemberRunModelConfigurable(args.configuredRunModel)
   ) {
     return badRequestMessage("Invalid request");
   }
@@ -118,7 +112,7 @@ function validatePriorityServiceTier(args: {
     !isCatalogFastServiceTierSupported(
       args.catalog,
       args.configuredRunModel.model,
-      configuredRunModelProviderType(args.catalog, args.configuredRunModel),
+      configuredRunModelProviderType(args.configuredRunModel),
     )
   ) {
     return badRequestMessage(

@@ -1,8 +1,5 @@
 import {
-  BUILT_IN_MODEL_ROUTE_PROVIDERS,
-  type BuiltInModelRouteProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
-import {
+  AUTO_RUN_KEY_VENDOR,
   AUTO_RUN_MODEL,
   AUTO_RUN_PROVIDER,
   isAutoRunPreset,
@@ -10,117 +7,64 @@ import {
 import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 
-import { and, eq, gt, inArray } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import type { ReadonlyDb } from "../external/db";
 import {
   builtInRoutePricingRejectionMessage,
-  isBuiltInRoutePriced,
   unpricedBuiltInRouteCategories,
   type BuiltInRoutePricing,
 } from "./built-in-route-pricing";
-import {
-  catalogBuiltInCandidates,
-  type ModelCatalog,
-} from "./model-catalog.service";
+import { catalogAutoRoute, type ModelCatalog } from "./model-catalog.service";
 
-/** One enabled Built-in `model_routes` candidate with a known adapter. */
-interface BuiltInModelRouteTarget {
-  readonly selectedModel: string;
-  readonly providerType: BuiltInModelRouteProviderType;
-  readonly upstreamModel: string;
-  readonly vendor: string;
-}
-
-/** The only platform route is Auto; catalog entries cannot add candidates. */
-export function getCatalogBuiltInModelRouteCandidates(
+/**
+ * The single platform route, Auto on managed OpenRouter, when the selected
+ * model is Auto, its preset is valid, and (for a new run) it is fully priced.
+ */
+export function catalogBuiltInModelRouteUpstream(
   catalog: ModelCatalog,
   selectedModel: string,
   routePricing?: BuiltInRoutePricing,
-): readonly BuiltInModelRouteTarget[] {
-  if (
-    selectedModel !== AUTO_RUN_MODEL ||
-    !isAutoRunPreset(catalog.autoUpstreamModel)
-  ) {
-    return [];
+): string | null {
+  const route = catalogAutoRoute(catalog, selectedModel);
+  if (!route || !isAutoRunPreset(route.upstreamModel)) {
+    return null;
   }
-  const [pricingRoute] = catalogBuiltInCandidates(catalog, AUTO_RUN_MODEL);
   if (
     routePricing &&
-    (!pricingRoute || !isBuiltInRoutePriced(routePricing, pricingRoute))
+    unpricedBuiltInRouteCategories(routePricing, route).length > 0
   ) {
-    return [];
+    return null;
   }
-  return [
-    {
-      selectedModel: AUTO_RUN_MODEL,
-      providerType: AUTO_RUN_PROVIDER,
-      upstreamModel: catalog.autoUpstreamModel,
-      vendor: BUILT_IN_MODEL_ROUTE_PROVIDERS[AUTO_RUN_PROVIDER].vendor,
-    },
-  ];
+  return route.upstreamModel;
 }
 
 /**
- * The rejection for a new Built-in run whose model has executable catalog
- * candidates but none with complete usage pricing, naming each route's
- * unpriced categories. Null when some candidate is priced (no route is then
- * available for another reason, such as a missing key or a cooldown) or the
- * model has no executable candidate at all.
+ * The rejection for a new Auto run whose usage categories are not all priced;
+ * null when the route is priced (and so unavailable for another reason, such
+ * as a missing key or a cooldown) or the model is not Auto.
  */
 export function unpricedBuiltInModelMessage(
   catalog: ModelCatalog,
   selectedModel: string,
   routePricing: BuiltInRoutePricing,
 ): string | null {
-  const routes = catalogBuiltInCandidates(catalog, selectedModel);
-  const unpriced = routes.map((route) => {
-    return {
-      concreteProviderType: route.concreteProviderType,
-      categories: unpricedBuiltInRouteCategories(routePricing, route),
-    };
-  });
-  if (
-    unpriced.length === 0 ||
-    unpriced.some((route) => {
-      return route.categories.length === 0;
-    })
-  ) {
+  const route = catalogAutoRoute(catalog, selectedModel);
+  if (!route) {
     return null;
   }
-  return builtInRoutePricingRejectionMessage(selectedModel, unpriced);
+  const categories = unpricedBuiltInRouteCategories(routePricing, route);
+  return categories.length === 0
+    ? null
+    : builtInRoutePricingRejectionMessage(selectedModel, categories);
 }
 
 export interface BuiltInModelRuntimeRoute {
   readonly selectedModel: string;
-  readonly providerType: BuiltInModelRouteProviderType;
+  readonly providerType: typeof AUTO_RUN_PROVIDER;
   readonly upstreamModel: string;
   readonly modelKeyId: string;
-}
-
-function routeFromTarget(
-  target: BuiltInModelRouteTarget,
-  key: { readonly id: string },
-): BuiltInModelRuntimeRoute {
-  return {
-    selectedModel: target.selectedModel,
-    providerType: target.providerType,
-    upstreamModel: target.upstreamModel,
-    modelKeyId: key.id,
-  };
-}
-
-function eligibleBuiltInModelRouteCandidates(
-  catalog: ModelCatalog,
-  selectedModel: string,
-  routePricing: BuiltInRoutePricing | undefined,
-): readonly BuiltInModelRouteTarget[] {
-  return getCatalogBuiltInModelRouteCandidates(
-    catalog,
-    selectedModel,
-    routePricing,
-  );
 }
 
 /** Captured Auto presets survive later operator edits, never vendor changes. */
@@ -135,137 +79,90 @@ export function isBuiltInModelRuntimeRoutePermitted(
   );
 }
 
-/** Operator-managed key id for each vendor; the vendor column is unique. */
-export type BuiltInModelKeyIdsByVendor = ReadonlyMap<string, string>;
-
-async function loadBuiltInModelKeyIdsByVendor(
+async function loadBuiltInModelKeyId(
   db: ReadonlyDb,
-): Promise<BuiltInModelKeyIdsByVendor> {
-  const rows = await db
-    .select({ id: builtInModelKeys.id, vendor: builtInModelKeys.vendor })
-    .from(builtInModelKeys);
-  return new Map(
-    rows.map((row) => {
-      return [row.vendor, row.id];
-    }),
-  );
+): Promise<string | undefined> {
+  const [row] = await db
+    .select({ id: builtInModelKeys.id })
+    .from(builtInModelKeys)
+    .where(eq(builtInModelKeys.vendor, AUTO_RUN_KEY_VENDOR))
+    .limit(1);
+  return row?.id;
 }
 
-/** Request-scoped, so resolving many policies reads the key table once. */
-
-/** Loads the catalog once; callers that already hold it use the variant below. */
+/** Resolves the Auto route when its key exists and it is not cooling down. */
 export async function resolveBuiltInModelRuntimeRoute(
-  catalogSnapshot: ModelCatalog,
+  catalog: ModelCatalog,
   db: ReadonlyDb,
   selectedModel: string,
 ): Promise<BuiltInModelRuntimeRoute | null> {
-  const [catalog, keyIdsByVendor] = await Promise.all([
-    catalogSnapshot,
-    loadBuiltInModelKeyIdsByVendor(db),
-  ]);
-  return await resolveBuiltInModelRuntimeRouteWithKeys(
-    db,
+  const upstreamModel = catalogBuiltInModelRouteUpstream(
     catalog,
     selectedModel,
-    keyIdsByVendor,
   );
-}
-
-/**
- * For callers that already hold the request- or run-scoped catalog. A new run
- * passes its route pricing so unpriced candidates are skipped.
- */
-
-export async function resolveBuiltInModelRuntimeRouteWithKeys(
-  db: ReadonlyDb,
-  catalog: ModelCatalog,
-  selectedModel: string,
-  keyIdsByVendor: BuiltInModelKeyIdsByVendor,
-): Promise<BuiltInModelRuntimeRoute | null> {
-  return await firstAvailableBuiltInModelRoute(
-    db,
-    selectedModel,
-    eligibleBuiltInModelRouteCandidates(catalog, selectedModel, undefined),
-    keyIdsByVendor,
-  );
-}
-
-async function firstAvailableBuiltInModelRoute(
-  db: ReadonlyDb,
-  selectedModel: string,
-  eligible: readonly BuiltInModelRouteTarget[],
-  keyIdsByVendor: BuiltInModelKeyIdsByVendor,
-): Promise<BuiltInModelRuntimeRoute | null> {
-  const candidates = eligible.filter((target) => {
-    return keyIdsByVendor.has(target.vendor);
-  });
-  if (candidates.length === 0) {
+  if (upstreamModel === null) {
     return null;
   }
-  // One read covers every candidate's cooldown, keeping the hot path bounded.
-  const cooling = await db
+  const modelKeyId = await loadBuiltInModelKeyId(db);
+  if (modelKeyId === undefined) {
+    return null;
+  }
+  const cooldowns = await db
     .select({
-      provider: builtInModelCandidateCooldown.modelRuntimeProvider,
-      model: builtInModelCandidateCooldown.modelRuntimeModel,
+      modelRuntimeProvider: builtInModelCandidateCooldown.modelRuntimeProvider,
+      modelRuntimeModel: builtInModelCandidateCooldown.modelRuntimeModel,
     })
     .from(builtInModelCandidateCooldown)
     .where(
       and(
         eq(builtInModelCandidateCooldown.selectedModel, selectedModel),
-        inArray(
+        eq(
           builtInModelCandidateCooldown.modelRuntimeProvider,
-          candidates.map((target) => {
-            return target.providerType;
-          }),
+          AUTO_RUN_PROVIDER,
         ),
         gt(builtInModelCandidateCooldown.unavailableUntil, nowDate()),
       ),
     );
-  for (const target of candidates) {
-    const cooled = cooling.some((row) => {
-      return (
-        row.provider === target.providerType &&
-        row.model === target.upstreamModel
-      );
-    });
-    const keyId = keyIdsByVendor.get(target.vendor);
-    if (!cooled && keyId !== undefined) {
-      return routeFromTarget(target, { id: keyId });
-    }
-  }
-  return null;
+  return builtInModelRuntimeRouteFromSnapshot({
+    catalog,
+    selectedModel,
+    modelKeyId,
+    cooldowns,
+  });
 }
 
-/** Choose the same first eligible route from one batched cooldown snapshot. */
+/** Chooses the Auto route from one batched key and cooldown snapshot. */
 export function builtInModelRuntimeRouteFromSnapshot(args: {
   readonly catalog: ModelCatalog;
   readonly selectedModel: string;
-  readonly keyIdsByVendor: BuiltInModelKeyIdsByVendor;
+  readonly modelKeyId: string | undefined;
   readonly cooldowns: readonly {
     readonly modelRuntimeProvider: string;
     readonly modelRuntimeModel: string;
   }[];
-  /** A new run's route pricing; unpriced candidates are skipped. */
+  /** A new run's route pricing; an unpriced route is unavailable. */
   readonly routePricing?: BuiltInRoutePricing;
 }): BuiltInModelRuntimeRoute | null {
-  for (const target of eligibleBuiltInModelRouteCandidates(
+  const upstreamModel = catalogBuiltInModelRouteUpstream(
     args.catalog,
     args.selectedModel,
     args.routePricing,
-  )) {
-    const id = args.keyIdsByVendor.get(target.vendor);
-    if (
-      id === undefined ||
-      args.cooldowns.some((cooldown) => {
-        return (
-          cooldown.modelRuntimeProvider === target.providerType &&
-          cooldown.modelRuntimeModel === target.upstreamModel
-        );
-      })
-    ) {
-      continue;
-    }
-    return routeFromTarget(target, { id });
+  );
+  if (upstreamModel === null || args.modelKeyId === undefined) {
+    return null;
   }
-  return null;
+  const cooled = args.cooldowns.some((cooldown) => {
+    return (
+      cooldown.modelRuntimeProvider === AUTO_RUN_PROVIDER &&
+      cooldown.modelRuntimeModel === upstreamModel
+    );
+  });
+  return cooled
+    ? null
+    : {
+        selectedModel: AUTO_RUN_MODEL,
+        providerType: AUTO_RUN_PROVIDER,
+        upstreamModel,
+        modelKeyId: args.modelKeyId,
+      };
 }

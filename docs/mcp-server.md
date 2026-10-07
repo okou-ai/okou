@@ -109,11 +109,12 @@ is original accepted-input time for users and output-event time for assistants;
 and `metadataUpdatedAt` metadata change. These clocks are not interchangeable
 and none proves delivery, index/archive completeness or Run success.
 
-`list_models` adapts the ordinary Web policy projection and current member
+`list_models` adapts the ordinary Web model catalog (fixed Auto plus the
+caller's personal subscription routes), the system default and current member
 preference. It does not maintain a second route/admission implementation;
 `selectable` and `availability` remain observations, and actual permission,
-credentials, money and quota are checked on send. Missing stored policies do
-not cause MCP-specific repair writes.
+credentials, money and quota are checked on send. The read does not cause
+MCP-specific repair writes.
 
 ## Conversation discovery
 

@@ -12,8 +12,6 @@ interface SeedUserModelProviderValues {
   readonly orgId: string;
   readonly userId: string;
   readonly type: "claude-code-oauth-token" | "codex-oauth-token";
-  readonly isDefault?: boolean;
-  readonly selectedModel?: string | null;
   readonly secretName?: string | null;
   readonly authMethod?: string | null;
 }
@@ -38,9 +36,6 @@ async function seedPersonalSubscription(
     .insert(modelProviders)
     .values({
       type: values.type,
-      authMethod: values.authMethod ?? null,
-      isDefault: values.isDefault ?? false,
-      selectedModel: values.selectedModel ?? null,
       userId: values.userId,
       orgId: values.orgId,
     })

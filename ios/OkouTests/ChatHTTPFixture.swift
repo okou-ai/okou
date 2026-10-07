@@ -115,8 +115,7 @@ func modelCatalogResponse(systemDefaultModel: String) -> ChatHTTPResponse {
     let replacement = replacedBy.map { "\"\($0)\"" } ?? "null"
     return """
       {"model":"\(model)","displayName":"\(displayName)","sortOrder":\(index),\
-      "isSystemDefault":\(model == systemDefaultModel),"replacedBy":\(replacement),\
-      "resolvedModel":"\(replacedBy ?? model)","priceTier":null}
+      "replacedBy":\(replacement),"resolvedModel":"\(replacedBy ?? model)"}
       """
   }
   return ChatHTTPResponse(

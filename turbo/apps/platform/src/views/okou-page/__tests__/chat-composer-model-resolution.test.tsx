@@ -59,7 +59,6 @@ function runModelFixture(
         ? `e4000000-0000-4000-a000-${String(index).padStart(12, "0")}`
         : null,
     routeStatus: "valid",
-    routeStatusReason: null,
   };
 }
 

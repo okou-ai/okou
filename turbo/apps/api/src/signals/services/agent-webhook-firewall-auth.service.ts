@@ -1254,9 +1254,6 @@ function modelProviderRuntimeSecretName(args: {
   }
 
   const valueRef = getModelProviderEnvBindings(providerType)?.[args.key];
-  if (valueRef === "$secret") {
-    return providerSecretName;
-  }
   if (valueRef?.startsWith(CONNECTOR_SECRET_REF_PREFIX)) {
     return valueRef.slice(CONNECTOR_SECRET_REF_PREFIX.length);
   }

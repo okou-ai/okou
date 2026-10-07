@@ -213,23 +213,20 @@ export const listMcpModels$ = command(
     signal.throwIfAborted();
     const models: McpListModelsOutput["models"] = listing.response.models.map(
       (runModel) => {
-        const availability =
-          runModel.memberEffective?.availability ??
-          (runModel.routeStatus === "valid" ? "available" : "unavailable");
         return {
           id: runModel.model,
           name: runModel.modelLabel,
-          selectable: runModel.routeStatus === "valid",
-          availability,
-          reason: runModel.routeStatusReason,
+          selectable: true,
+          availability: runModel.memberEffective?.availability ?? "available",
+          reason: null,
         };
       },
     );
     const preferred = models.find((model) => {
-      return model.id === preferences[0]?.model && model.selectable;
+      return model.id === preferences[0]?.model;
     });
     const systemDefault = models.find((model) => {
-      return model.id === listing.systemDefaultModel && model.selectable;
+      return model.id === listing.systemDefaultModel;
     });
     return {
       kind: "ok",

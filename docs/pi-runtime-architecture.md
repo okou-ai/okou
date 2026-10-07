@@ -67,8 +67,8 @@ services or a command accessor.
 | Memory work and publication         | [Stage 1 worker](../turbo/apps/api/src/signals/services/pi-memory-stage1-worker.service.ts) owns extraction claims; [Phase 2 worker](../turbo/apps/api/src/signals/services/pi-memory-phase2-worker.service.ts) and [jobs](../turbo/apps/api/src/signals/services/pi-memory-phase2-job.service.ts) own durable leases. [Local filesystem boundary](../turbo/packages/pi-agent-runtime/src/phase2-memory-filesystem.ts) prepares/applies validated bytes; ordinary checkpoint publication owns durable Storage changes. [Maintenance completion](../turbo/apps/api/src/signals/services/pi-memory-phase2-maintenance.service.ts) observes the exact run/checkpoint, not a new Storage writer. |
 | Public projection and accounting    | Guest projects public content/usage. [Stage 1 usage](../turbo/apps/api/src/signals/services/pi-memory-stage1-usage.service.ts), and Runner/proxy ingestion retain their separate request owners. Public token counters are not the billing journal.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
-Product model selection, SDK catalog identity, upstream request model or Bedrock
-inference profile, credential/account owner, and billing owner are distinct.
+Product model selection, SDK catalog identity, upstream request model,
+credential/account owner, and billing owner are distinct.
 The captured route carries that meaning through API and Sandbox; adapters do not
 reselect a provider or infer a different account from a model name. Native
 destination/DNS/redirect checks, explicit headers, firewall placeholders,
@@ -195,18 +195,12 @@ are not replayed by an API executor.
 
 ## Model failure diagnostics
 
-The owned OpenAI Responses, Codex Responses and Anthropic Messages fetch
-boundaries record the last transport attempt's observed HTTP status, attempt
+The owned OpenAI Responses and Codex Responses fetch boundaries record the last transport attempt's observed HTTP status, attempt
 count and optional allowlisted failure reason. A bounded non-success body is
 classified before the SDK rewrites it; successful response bodies keep their
 native streaming path. Failed native assistant messages carry this evidence in
 `okou_model_request`. Both stream iteration and `result()` expose the same
-diagnostic. Bedrock records actual HTTP status and attempts through its native
-Smithy handler. Its event-stream deserializer classifies only successfully
-decoded, consumed modeled error events or exceptions thrown by the SDK. Unknown
-normal events remain ignored. A later buffered error frame cannot replace an
-earlier protocol or adapter failure. The shared handler continues forwarding original bytes and propagating source
-errors and SDK cancellation; sandbox usage is recorded by the Runner proxy.
+diagnostic. Sandbox usage is recorded by the Runner proxy.
 
 Request rejection and response-body read failure also retain optional
 `transportFailure` before the SDK reduces the exception to display text. It

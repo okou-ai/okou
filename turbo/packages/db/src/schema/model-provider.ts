@@ -8,7 +8,6 @@ import {
   uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
 
 /**
  * Model Providers table
@@ -20,10 +19,6 @@ export const modelProviders = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     type: varchar("type", { length: 50 }).notNull(),
-    // Personal subscription import format (e.g. Codex "auth_json").
-    authMethod: varchar("auth_method", { length: 50 }),
-    isDefault: boolean("is_default").notNull().default(false),
-    selectedModel: varchar("selected_model", { length: 255 }),
     userId: text("user_id").notNull(),
     orgId: text("org_id").notNull(),
     // OAuth token state (mirrors `connectors`). Set/cleared by the firewall
@@ -54,9 +49,6 @@ export const modelProviders = pgTable(
         table.userId,
         table.type,
       ),
-      uniqueIndex("idx_model_providers_one_default_per_user")
-        .on(table.orgId, table.userId)
-        .where(sql`is_default = true`),
     ];
   },
 );

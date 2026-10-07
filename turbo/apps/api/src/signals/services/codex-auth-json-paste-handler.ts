@@ -1,8 +1,5 @@
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
-import type {
-  ModelProviderType,
-  ModelProviderFramework,
-} from "@okouai/api-contracts/contracts/model-providers";
+import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 
 import {
   parseCodexAuthJson,
@@ -20,75 +17,6 @@ import { logger } from "../../lib/log";
 import { settle, tapError, throwIfAbort } from "../utils";
 
 /**
- * Shape of an upserted personal account row that the paste handler serializes
- * into the REST response DTO.
- */
-interface UpsertedProvider {
-  id: string;
-  modelProviderId?: string;
-  isActive?: boolean;
-  type: ModelProviderType;
-  framework: ModelProviderFramework;
-  secretName: string | null;
-  authMethod?: string | null;
-  secretNames?: string[] | null;
-  isDefault: boolean;
-  selectedModel: string | null;
-  accountEmail?: string | null;
-  workspaceName?: string | null;
-  planType?: string | null;
-  subscriptionResetPeriod?: string | null;
-  subscriptionNextResetAt?: Date | string | null;
-  needsReconnect: boolean;
-  lastRefreshErrorCode: string | null;
-  createdAt: Date | string;
-  updatedAt: Date | string;
-}
-
-function serializeDate(value: Date | string): string {
-  return typeof value === "string" ? value : value.toISOString();
-}
-
-function serializeNullableDate(
-  value: Date | string | null | undefined,
-): string | null {
-  return value ? serializeDate(value) : null;
-}
-
-/**
- * Serialize an upserted model-provider row into the REST DTO shape (Date →
- * ISO string). Shared by the paste and device-auth routes so the wire format
- * cannot drift.
- */
-function serializeUpsertedProvider(provider: UpsertedProvider) {
-  return {
-    id: provider.id,
-    ...(provider.modelProviderId
-      ? { modelProviderId: provider.modelProviderId }
-      : {}),
-    ...(provider.isActive !== undefined ? { isActive: provider.isActive } : {}),
-    type: provider.type,
-    framework: provider.framework,
-    secretName: provider.secretName,
-    authMethod: provider.authMethod ?? null,
-    secretNames: provider.secretNames ?? null,
-    isDefault: provider.isDefault,
-    selectedModel: provider.selectedModel,
-    accountEmail: provider.accountEmail ?? null,
-    workspaceName: provider.workspaceName ?? null,
-    planType: provider.planType ?? null,
-    subscriptionResetPeriod: provider.subscriptionResetPeriod ?? null,
-    subscriptionNextResetAt: serializeNullableDate(
-      provider.subscriptionNextResetAt,
-    ),
-    needsReconnect: provider.needsReconnect,
-    lastRefreshErrorCode: provider.lastRefreshErrorCode,
-    createdAt: serializeDate(provider.createdAt),
-    updatedAt: serializeDate(provider.updatedAt),
-  };
-}
-
-/**
  * Caller-supplied upsert. Personal routes bind it to
  * `upsertPersonalModelProviderAccount$`.
  */
@@ -100,7 +28,6 @@ type UpsertCodexProvider = (args: {
     CHATGPT_ACCOUNT_ID: string;
     CHATGPT_ID_TOKEN: string;
   };
-  selectedModel: string | undefined;
   metadata: {
     externalAccountId: string;
     accountEmail: string | null;
@@ -111,7 +38,7 @@ type UpsertCodexProvider = (args: {
     subscriptionNextResetAt?: Date | null;
   };
 }) => Promise<
-  | { provider: UpsertedProvider; created: boolean }
+  | { provider: ModelProviderResponse; created: boolean }
   | PersonalProviderAccountErrorResponse
 >;
 
@@ -119,7 +46,6 @@ interface CodexAuthJsonPasteArgs {
   orgId: string;
   userId: string;
   rawAuthJson: string;
-  selectedModel: string | undefined;
   upsert: UpsertCodexProvider;
 }
 
@@ -177,7 +103,6 @@ export async function handleCodexAuthJsonPaste(
             CHATGPT_ACCOUNT_ID: parsed.accountId,
             CHATGPT_ID_TOKEN: parsed.idToken,
           },
-          selectedModel: args.selectedModel,
           metadata: {
             externalAccountId: parsed.accountId,
             accountEmail:
@@ -200,11 +125,9 @@ export async function handleCodexAuthJsonPaste(
       if ("status" in upserted) {
         return upserted;
       }
-      const { provider, created } = upserted;
-
       return {
-        status: (created ? 201 : 200) as 200 | 201,
-        body: { provider: serializeUpsertedProvider(provider), created },
+        status: (upserted.created ? 201 : 200) as 200 | 201,
+        body: upserted,
       };
     })(),
     signal,

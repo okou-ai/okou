@@ -11,16 +11,15 @@ Its database reads are owned by closed computeds/read commands:
 - `createModelCatalog(): Computed<Promise<ModelCatalog>>`: fresh graph-owned catalog read. Claim and run graphs create their own instance, not a process-wide catalog cache.
 - `modelCatalog$`: one catalog snapshot in a request store.
 - `loadModelCatalog$`: fresh read for long-lived stores, accepting only an optional final positional `AbortSignal`. Workers capture its plain result and pass that snapshot through preparation/admission/run creation.
-- `systemDefaultRunModel$`: derives the default from the request catalog.
 
-Other runtime exports remain pure: `catalogBuiltInRoute`, `isCatalogRouteExecutable`, `resolveCatalogModel`, `resolveCatalogRunModel`, `isCatalogModelRunnable`, `catalogBuiltInCandidates`, `catalogProviderUpstreamModel`, `isCatalogModelAddable`, `catalogRoutesFor`, `catalogHasProviderRoute`, `memberModelPolicyCatalog`, `catalogBuiltInPriceTier`, `catalogDisplayName`, `catalogActiveModels`, `catalogModelRank`, and `ModelCatalogInvariantError`.
+Other runtime exports remain pure: `modelCatalogForOrg`, `validateModelCatalog`, `catalogBuiltInRoute`, `isCatalogRouteExecutable`, `resolveCatalogModel`, `resolveCatalogRunModel`, `isCatalogModelRunnable`, `catalogAutoRoute`, `catalogProviderUpstreamModel`, `catalogRoutesFor`, `catalogHasProviderRoute`, `catalogDisplayName`, `frameworkForProviderSelection`, and `ModelCatalogInvariantError`. The system default is the fixed Auto model carried on the catalog snapshot (`systemDefault`, `systemDefaultModel`).
 Type exports remain `CatalogRoute`, `ModelCatalog`, and `CatalogModelResolution`.
 
 `model-selection.service.ts` has no database-handle or node-valued parameters,
 no hidden database provenance Symbol, and no deferred database-reading closure.
-Its private read command captures scoped policy, entitlement, mode, preference,
-member account, organization provider, and custom-surface facts. Route decisions
-use the existing pure snapshot resolver. Subscription effort/tier validation
+Its private read command captures the catalog, the member's connected personal
+subscription accounts and the member preference. Route decisions use the
+existing pure snapshot resolver. Subscription effort/tier validation
 remains at the branches that consume subscription models, not unrelated routes.
 
 Public runtime exports:

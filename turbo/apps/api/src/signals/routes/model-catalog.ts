@@ -36,10 +36,8 @@ const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
           model: AUTO_RUN_MODEL,
           displayName: "Auto",
           sortOrder: 0,
-          isSystemDefault: true,
           replacedBy: null,
           resolvedModel: AUTO_RUN_MODEL,
-          priceTier: null,
           builtInOnRestrictedPlans: true,
           piRouteClass: "gpt-codex" as const,
         },
@@ -58,10 +56,8 @@ const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
               model: row.model,
               displayName: row.displayName,
               sortOrder: row.sortOrder,
-              isSystemDefault: false,
               replacedBy: row.replacedBy,
               resolvedModel: resolution.resolvedModel,
-              priceTier: null,
               builtInOnRestrictedPlans: false,
               piRouteClass: isPiRouteClass(row.piRouteClass)
                 ? row.piRouteClass
@@ -82,20 +78,13 @@ const getModelCatalogInner$ = command(async ({ get }, signal: AbortSignal) => {
           defaultServiceTier: null,
           efforts: [],
           defaultEffort: null,
-          priceTier: null,
         },
         ...routes.map(
-          ({
-            pricingKind: _kind,
-            pricingProvider: _pricing,
-            priceTier: _price,
-            ...route
-          }) => {
+          ({ pricingKind: _kind, pricingProvider: _pricing, ...route }) => {
             return {
               ...route,
               serviceTiers: [...route.serviceTiers],
               efforts: [...route.efforts],
-              priceTier: null,
             };
           },
         ),

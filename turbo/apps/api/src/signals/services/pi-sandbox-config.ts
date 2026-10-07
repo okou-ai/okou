@@ -14,7 +14,6 @@ import {
   PI_MODEL_CONFIG_CURRENT_GENERATION,
   PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
   type PiModelConfig,
-  type PiModelConfigLegacy,
 } from "@okouai/api-contracts/contracts/runners";
 import {
   isPiExecutionRoute,
@@ -45,36 +44,6 @@ import { PiModelConfigurationError } from "./pi-model-configuration-error";
 
 function normalizedBaseUrl(url: string): string {
   return url.replace(/\/+$/, "");
-}
-
-interface PiRuntimeContract {
-  readonly thinkingLevel?: PiModelConfigLegacy["thinkingLevel"];
-  readonly serviceTier?: PiModelConfigLegacy["serviceTier"];
-}
-
-/**
- * An OpenRouter preset upstream (`@preset/...`, the Okou models) configures
- * reasoning and service tier itself, so the client sends neither.
- */
-function piRuntimeContract(args: {
-  readonly providerType: string;
-  readonly upstreamModel: string | undefined;
-  readonly routeClass: PiRouteClass | null;
-  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
-}): PiRuntimeContract {
-  if (
-    args.routeClass === "gpt-codex" &&
-    !isPresetUpstreamModel(args.upstreamModel)
-  ) {
-    return {
-      thinkingLevel: "max",
-      ...(isBuiltInModelProviderType(args.providerType) &&
-      args.codexServiceTier === "fast"
-        ? { serviceTier: "priority" as const }
-        : {}),
-    };
-  }
-  return {};
 }
 
 function piProvider(concreteType: ModelProviderType): "openrouter" | null {
@@ -198,14 +167,12 @@ function resolvePiRouteModelConfig(
   if (provider.piModelConfig) {
     return provider.piModelConfig;
   }
-  const routeClass =
-    catalogModel?.model === provider.selectedModel
-      ? catalogModel.piRouteClass
-      : null;
   if (provider.type === "codex-oauth-token") {
     return resolveCodexSubscriptionPiModelConfig(
       provider,
-      routeClass,
+      catalogModel?.model === provider.selectedModel
+        ? catalogModel.piRouteClass
+        : null,
       codexServiceTier,
     );
   }
@@ -217,17 +184,16 @@ function resolvePiRouteModelConfig(
   ) {
     return null;
   }
-  return resolveResponsesPiModelConfig(
-    { ...provider, selectedModel: provider.selectedModel },
-    routeClass,
-    codexServiceTier,
-  );
+  // An OpenRouter preset upstream configures reasoning and service tier
+  // itself, so the client sends neither.
+  return resolveResponsesPiModelConfig({
+    ...provider,
+    selectedModel: provider.selectedModel,
+  });
 }
 
 function resolveResponsesPiModelConfig(
   provider: PiModelProviderConfigInput & { readonly selectedModel: string },
-  routeClass: PiRouteClass | null,
-  codexServiceTier: "fast" | "ultrafast" | undefined,
 ): PiModelConfig | null {
   const concreteType = modelProviderTypeSchema.safeParse(
     provider.concreteType ?? provider.type,
@@ -272,12 +238,6 @@ function resolveResponsesPiModelConfig(
   }
 
   const apiKeyEnv = "OPENAI_API_KEY";
-  const runtimeContract = piRuntimeContract({
-    providerType: provider.type,
-    upstreamModel: provider.upstreamModel,
-    routeClass,
-    codexServiceTier,
-  });
   const config = {
     provider: providerId,
     baseUrl: endpoint.baseUrl,
@@ -287,7 +247,6 @@ function resolveResponsesPiModelConfig(
     ...(isPresetUpstreamModel(provider.upstreamModel)
       ? { catalogModel: provider.selectedModel }
       : {}),
-    ...runtimeContract,
   } as const;
   return isPiAgentModelSupported({
     provider: config.provider,
@@ -297,7 +256,6 @@ function resolveResponsesPiModelConfig(
     apiKey: "sandbox-secret",
     dialect: "openai-responses",
     transport: "sse",
-    ...runtimeContract,
   })
     ? config
     : null;
@@ -376,9 +334,6 @@ export function materializePreparedPiProvider(
       "Selected Pi execution requires a supported model provider configuration",
     );
   }
-  if (provider.selectedModel === "deepseek-v4.1-flash") {
-    assertCurrentPiCliArtifact();
-  }
   return { ...provider, piModelConfig: config };
 }
 
@@ -401,11 +356,10 @@ export function resolvePlatformMemoryPiModelConfig(
     );
   }
   assertCurrentPiCliArtifact();
-  const config = resolveResponsesPiModelConfig(
-    { ...provider, selectedModel: provider.selectedModel },
-    null,
-    undefined,
-  );
+  const config = resolveResponsesPiModelConfig({
+    ...provider,
+    selectedModel: provider.selectedModel,
+  });
   if (!config) {
     throw new PiModelConfigurationError(
       "Platform memory model configuration is unavailable",

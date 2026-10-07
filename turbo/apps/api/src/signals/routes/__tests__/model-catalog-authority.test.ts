@@ -28,15 +28,9 @@ describe("fixed Auto catalog authority", () => {
     authenticate();
     const response = await accept(catalog().get({ headers }), [200]);
     expect(response.body.systemDefaultModel).toBe("okou-1.0");
-    expect(
-      response.body.models.every((entry) => {
-        return entry.priceTier === null;
-      }),
-    ).toBeTruthy();
     expect(response.body.models[0]).toMatchObject({
       model: "okou-1.0",
       displayName: "Auto",
-      priceTier: null,
     });
     expect(
       response.body.routes.filter((route) => {

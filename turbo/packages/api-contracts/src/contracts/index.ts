@@ -412,16 +412,11 @@ export {
   getFrameworkForType,
   getSecretNameForType,
   getModelProviderEnvBindings,
-  getModels,
-  getDefaultModel,
-  hasModelSelection,
   // Provider compatibility
   normalizeRunModelId,
   isBuiltInModelProviderType,
   // Multi-auth provider support
   hasAuthMethods,
-  getAuthMethodsForType,
-  getDefaultAuthMethod,
   getSecretsForAuthMethod,
   getSecretNamesForAuthMethod,
   type ModelProviderType,
@@ -429,7 +424,6 @@ export {
   type ModelProviderFramework,
   type ModelProviderEnvBindings,
   type ModelProviderResponse,
-  type ModelPriceTier,
   type ModelProviderListResponse,
   type UpsertModelProviderRequest,
   type UpsertModelProviderResponse,
@@ -437,18 +431,9 @@ export {
   type AvailableRunModel,
   type AvailableRunModelsResponse,
   type ModelProviderCredentialScope,
-  type BuiltInModelRouteProviderType,
-  // Multi-auth provider types
-  type SecretFieldConfig,
-  type AuthMethodConfig,
   // Firewall gateway for model providers
   MODEL_PROVIDER_FIREWALL_CONFIGS,
   getModelProviderFirewall,
-  // Built-in provider
-  BUILT_IN_MODEL_ROUTE_PROVIDERS,
-  BUILT_IN_MODEL_ALIAS_TO_MODEL,
-  getBuiltInModelRouteVendors,
-  normalizeBuiltInModelId,
 } from "./model-providers";
 export {
   artifactCatalogContract,

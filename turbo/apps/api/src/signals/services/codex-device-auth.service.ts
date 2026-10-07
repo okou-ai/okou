@@ -857,7 +857,6 @@ const importCodexAuthJson$ = command(
   ): Promise<ImportCodexAuthJsonResult> => {
     const common = {
       rawAuthJson: args.rawAuthJson,
-      selectedModel: undefined,
       upsert: async (pasteArgs: ImportedCodexPasteArgs) => {
         const featureSwitchContext = await get(
           userFeatureSwitchContext(args.orgId, args.userId),

@@ -41,10 +41,6 @@ export function formatRunModelStatus(
         return "reconnect_required: Reconnect your personal subscription in Preferences / Personal Models.";
       case "plan_restricted":
         return "plan_restricted: Review your organization's plan in Billing.";
-      case "unavailable":
-        return runModel.memberEffective.credentialScope === "member"
-          ? "unavailable: Connect your personal subscription in Preferences / Personal Models."
-          : "unavailable: Auto is unavailable. Try again later.";
     }
   }
   return null;

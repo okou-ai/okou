@@ -1,6 +1,4 @@
-import type { MemberRunModelCatalog } from "@okouai/api-contracts/contracts/member-run-model";
 import {
-  getBuiltInRouteProviderVendor,
   getFrameworkForType,
   isBuiltInModelProviderType,
   MODEL_PROVIDER_TYPES,
@@ -27,7 +25,6 @@ type CatalogModel = Readonly<{
   model: string;
   displayName: string;
   sortOrder: number;
-  isSystemDefault: boolean;
   replacedBy: string | null;
   /** Restricted (free) plans may run the model on Built-in routes. */
   builtInOnRestrictedPlans: boolean;
@@ -47,7 +44,6 @@ export type CatalogRoute = Readonly<{
   defaultServiceTier: string | null;
   efforts: readonly string[];
   defaultEffort: string | null;
-  priceTier: string | null;
   /**
    * `usage_pricing` key that bills usage on this route (Built-in only; NULL on
    * personal subscription routes, which are not platform-billed).
@@ -75,7 +71,6 @@ function autoCatalogRoute(): CatalogRoute {
     defaultServiceTier: null,
     efforts: [],
     defaultEffort: null,
-    priceTier: null,
     pricingKind: MODEL_USAGE_PRICING_KIND,
     pricingProvider: AUTO_RUN_PRICING_PROVIDER,
     longContextMinTotalInputTokens:
@@ -88,7 +83,6 @@ function autoCatalogModel(): CatalogModel {
     model: AUTO_RUN_MODEL,
     displayName: "Auto",
     sortOrder: 0,
-    isSystemDefault: true,
     replacedBy: null,
     builtInOnRestrictedPlans: true,
     piRouteClass: "gpt-codex",
@@ -281,8 +275,8 @@ export function catalogBuiltInRoute(
 
 /**
  * Whether code can execute an enabled route. Adapters are keyed by provider,
- * never by model ID: a Built-in route needs a concrete provider with a vendor
- * key pool, and any other route must be a personal Codex or Claude Code
+ * never by model ID: a Built-in route must run on the managed OpenRouter
+ * provider, and any other route must be a personal Codex or Claude Code
  * subscription. A model added only as catalog rows on an existing protocol is
  * therefore executable without a code change.
  */
@@ -296,9 +290,7 @@ export function isCatalogRouteExecutable(
     return false;
   }
   if (isBuiltInModelProviderType(route.providerType)) {
-    return (
-      getBuiltInRouteProviderVendor(route.concreteProviderType) !== undefined
-    );
+    return route.concreteProviderType === AUTO_RUN_PROVIDER;
   }
   return (
     route.providerType === "codex-oauth-token" ||
@@ -364,14 +356,14 @@ export function isCatalogModelRunnable(
   return resolveCatalogRunModel(catalog, model) === model;
 }
 
-/** Platform admission is fixed Auto, never a catalog fallback directory. */
-export function catalogBuiltInCandidates(
+/** Platform admission is the single fixed Auto route; null for other models. */
+export function catalogAutoRoute(
   catalog: ModelCatalog,
   model: string,
-): readonly CatalogRoute[] {
+): CatalogRoute | null {
   return model === AUTO_RUN_MODEL
-    ? [{ ...autoCatalogRoute(), upstreamModel: catalog.autoUpstreamModel }]
-    : [];
+    ? { ...autoCatalogRoute(), upstreamModel: catalog.autoUpstreamModel }
+    : null;
 }
 
 /**
@@ -392,8 +384,6 @@ export function catalogProviderUpstreamModel(
   );
   return route?.upstreamModel ?? null;
 }
-
-/** Only active models (`replaced_by IS NULL`) may be newly configured. */
 
 /** Enabled routes of one model for a selected provider type. */
 export function catalogRoutesFor(
@@ -427,31 +417,6 @@ export function catalogHasProviderRoute(
   });
 }
 
-/** The catalog lookups member policy configurability reads. */
-export function memberRunModelCatalog(
-  catalog: ModelCatalog,
-): MemberRunModelCatalog {
-  return {
-    resolve(model) {
-      const resolution = resolveCatalogModel(catalog, model);
-      return resolution.kind === "unknown"
-        ? undefined
-        : resolution.resolvedModel;
-    },
-    routes(model, query) {
-      return catalog.routes.filter((route) => {
-        return (
-          route.enabled &&
-          route.model === model &&
-          route.providerType === query.providerType
-        );
-      });
-    },
-  };
-}
-
-/** Display price tier of the model's primary Built-in route. */
-
 /** The catalog display name; unknown IDs are shown verbatim. */
 export function catalogDisplayName(
   catalog: ModelCatalog,
@@ -459,10 +424,6 @@ export function catalogDisplayName(
 ): string {
   return catalog.byModel.get(model)?.displayName ?? model;
 }
-
-/** Active models in picker order. */
-
-/** Picker rank; models outside the catalog sort last. */
 
 /**
  * Loaded per owning graph: operators change the catalog directly in the database, and
@@ -478,7 +439,6 @@ export function createModelCatalog(): Computed<Promise<ModelCatalog>> {
           model: runModelCatalog.model,
           displayName: runModelCatalog.displayName,
           sortOrder: runModelCatalog.sortOrder,
-          isSystemDefault: runModelCatalog.isSystemDefault,
           replacedBy: runModelCatalog.replacedBy,
           builtInOnRestrictedPlans: runModelCatalog.builtInOnRestrictedPlans,
           piRouteClass: runModelCatalog.piRouteClass,
@@ -498,7 +458,6 @@ export function createModelCatalog(): Computed<Promise<ModelCatalog>> {
           defaultServiceTier: modelRoutes.defaultServiceTier,
           efforts: modelRoutes.efforts,
           defaultEffort: modelRoutes.defaultEffort,
-          priceTier: modelRoutes.priceTier,
           pricingKind: modelRoutes.pricingKind,
           pricingProvider: modelRoutes.pricingProvider,
           longContextMinTotalInputTokens:
@@ -528,7 +487,6 @@ export const loadModelCatalog$ = command(
           model: runModelCatalog.model,
           displayName: runModelCatalog.displayName,
           sortOrder: runModelCatalog.sortOrder,
-          isSystemDefault: runModelCatalog.isSystemDefault,
           replacedBy: runModelCatalog.replacedBy,
           builtInOnRestrictedPlans: runModelCatalog.builtInOnRestrictedPlans,
           piRouteClass: runModelCatalog.piRouteClass,
@@ -548,7 +506,6 @@ export const loadModelCatalog$ = command(
           defaultServiceTier: modelRoutes.defaultServiceTier,
           efforts: modelRoutes.efforts,
           defaultEffort: modelRoutes.defaultEffort,
-          priceTier: modelRoutes.priceTier,
           pricingKind: modelRoutes.pricingKind,
           pricingProvider: modelRoutes.pricingProvider,
           longContextMinTotalInputTokens:
@@ -567,8 +524,6 @@ export const loadModelCatalog$ = command(
   },
 );
 
-/** The DB-owned system default, derived from the same request catalog. */
-
 export function frameworkForProviderSelection(
   catalog: ModelCatalog,
   providerType: ModelProviderType,
@@ -577,13 +532,11 @@ export function frameworkForProviderSelection(
   if (!isBuiltInModelProviderType(providerType)) {
     return getFrameworkForType(providerType);
   }
-  // The Built-in framework follows the primary catalog candidate's concrete
-  // provider protocol.
-  const [primary] = catalogBuiltInCandidates(
+  // The Built-in framework follows the Auto route's concrete provider protocol.
+  const concrete = catalogAutoRoute(
     catalog,
     selectedModel ?? catalog.systemDefaultModel,
-  );
-  const concrete = primary?.concreteProviderType;
+  )?.concreteProviderType;
   return concrete !== undefined && isModelProviderType(concrete)
     ? getFrameworkForType(concrete)
     : null;

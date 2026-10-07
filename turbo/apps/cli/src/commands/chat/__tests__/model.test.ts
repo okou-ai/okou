@@ -33,7 +33,6 @@ const AVAILABLE_MODELS_RESPONSE = {
       credentialScope: "member",
       modelProviderId: null,
       routeStatus: "valid",
-      routeStatusReason: null,
     },
     {
       model: "gpt-5.6-luna",
@@ -42,12 +41,11 @@ const AVAILABLE_MODELS_RESPONSE = {
       credentialScope: "member",
       modelProviderId: null,
       routeStatus: "valid",
-      routeStatusReason: null,
       memberEffective: {
         providerType: "codex-oauth-token",
         runtimeProviderType: "codex-oauth-token",
         credentialScope: "member",
-        availability: "unavailable",
+        availability: "reconnect_required",
         accountSelection: "capture_required",
       },
     },
@@ -58,7 +56,6 @@ const AVAILABLE_MODELS_RESPONSE = {
       credentialScope: "org",
       modelProviderId: null,
       routeStatus: "valid",
-      routeStatusReason: null,
     },
   ],
 };
@@ -377,7 +374,7 @@ describe("okou chat model command", () => {
 
     const stderr = mockConsoleError.mock.calls.flat().join("\n");
     expect(stderr).toContain("Model is not switchable: gpt-5.6-luna");
-    expect(stderr).toContain("Connect your personal subscription");
+    expect(stderr).toContain("Reconnect your personal subscription");
     expect(stderr).toContain("Run: okou chat model --help");
     expect(mockExit).toHaveBeenCalledWith(1);
   });
@@ -394,10 +391,8 @@ describe("okou chat model command", () => {
               model,
               displayName: "Acme Nova",
               sortOrder: 100_000,
-              isSystemDefault: false,
               replacedBy: null,
               resolvedModel: model,
-              priceTier: "$",
               builtInOnRestrictedPlans: false,
             },
           ],
@@ -413,7 +408,6 @@ describe("okou chat model command", () => {
               serviceTiers: [],
               efforts: ["low", "high"],
               defaultEffort: "high",
-              priceTier: "$",
             },
           ],
         });
@@ -429,7 +423,6 @@ describe("okou chat model command", () => {
               credentialScope: "member",
               modelProviderId: null,
               routeStatus: "valid",
-              routeStatusReason: null,
             },
           ],
         });
@@ -493,7 +486,6 @@ describe("okou chat model command", () => {
             {
               ...AVAILABLE_MODELS_RESPONSE.models[1],
               routeStatus: "valid",
-              routeStatusReason: null,
               memberEffective: {
                 providerType: "codex-oauth-token",
                 runtimeProviderType: "codex-oauth-token",
@@ -530,7 +522,7 @@ describe("okou chat model command", () => {
     );
   });
 
-  it.each(["reconnect_required", "plan_restricted", "unavailable"])(
+  it.each(["reconnect_required", "plan_restricted"])(
     "rejects a %s personal subscription route despite a valid route status",
     async (availability) => {
       server.use(

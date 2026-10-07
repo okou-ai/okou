@@ -5,7 +5,6 @@ import threading
 from typing import Literal
 
 import addon_process_logging
-import anthropic_accounting
 import claude_output_timing
 import codex_output_timing
 import usage
@@ -136,7 +135,6 @@ def _flush_delivery_work(*, trigger: Literal["runner", "shutdown"]) -> None:
 
 
 def _retry_retained_diagnostic_reports() -> None:
-    anthropic_accounting.retry_all_pending()
     claude_output_timing.retry_all_pending()
     codex_output_timing.retry_all_pending()
 

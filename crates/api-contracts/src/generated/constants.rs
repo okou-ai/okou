@@ -71,10 +71,6 @@ pub mod model_provider_env {
         /// This value is not a secret and must not be treated as a usable credential.
         pub const ANTHROPIC_API_KEY: &str = "sk-ant-api03-CoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCofAA";
 
-        /// Fake marker bytes for the `ANTHROPIC_AUTH_TOKEN` placeholder.
-        /// This value is not a secret and must not be treated as a usable credential.
-        pub const ANTHROPIC_AUTH_TOKEN: &str = "sk-CoffeeSafeLocalCoffeeSafeLocalCo";
-
         /// Fake marker bytes for the `CHATGPT_ACCESS_TOKEN` placeholder.
         /// This value is not a secret and must not be treated as a usable credential.
         pub const CHATGPT_ACCESS_TOKEN: &str =

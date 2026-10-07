@@ -31,7 +31,6 @@ type LegacySingleSecretProvider = Exclude<
 interface SingleSecretFirewallProviderConfig {
   readonly framework: ModelProviderFramework;
   readonly secretName: string;
-  readonly anthropicBaseUrl?: string;
   readonly openaiBaseUrl?: string;
   /**
    * OpenAI-compatible transports supported by the in-sandbox Pi agent loop.
@@ -57,9 +56,6 @@ export const MODEL_PROVIDER_ENV_PLACEHOLDERS = {
   //   Example: sk-ant-oat01-xxxxx...xxxxx (1-year OAuth token)
   CLAUDE_CODE_OAUTH_TOKEN:
     "sk-ant-oat01-CoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCofAA",
-  // Generic bearer-token marker for Claude-compatible gateways that map
-  // provider-specific secrets into ANTHROPIC_AUTH_TOKEN.
-  ANTHROPIC_AUTH_TOKEN: "sk-CoffeeSafeLocalCoffeeSafeLocalCo",
   // Placeholder: sk-proj-{chars}T3BlbkFJ{chars} (typical project key shape)
   // Source: mirrors the OpenAI connector firewall placeholder shape.
   OPENAI_API_KEY:
@@ -93,18 +89,13 @@ const ANTHROPIC_API_BASE = "https://api.anthropic.com";
 function getFirewallBaseUrl(type: LegacySingleSecretProvider): string {
   const config = MODEL_PROVIDER_FIREWALL_PROVIDER_CONFIGS[type];
   if (config.framework === "codex") {
-    return (
-      getModelProviderPiEndpoint(type, "openai-responses")?.inferenceUrl ??
-      config.openaiBaseUrl?.replace(/\/+$/, "") ??
-      "https://api.openai.com/v1/responses"
-    );
+    const endpoint = getModelProviderPiEndpoint(type, "openai-responses");
+    if (!endpoint) {
+      throw new Error(`Codex provider ${type} requires a Responses endpoint`);
+    }
+    return endpoint.inferenceUrl;
   }
-
-  const base = (config.anthropicBaseUrl ?? ANTHROPIC_API_BASE).replace(
-    /\/+$/,
-    "",
-  );
-  return `${base}/v1/messages`;
+  return `${ANTHROPIC_API_BASE}/v1/messages`;
 }
 
 function mpFirewall(
@@ -226,7 +217,7 @@ export function getModelProviderPiEndpoint(
       Record<ModelProviderType, SingleSecretFirewallProviderConfig>
     >
   )[type];
-  if (!config?.piApis?.includes(api)) {
+  if (!config?.piApis?.includes(api) || !config.openaiBaseUrl) {
     return undefined;
   }
   const baseUrl =
@@ -235,7 +226,7 @@ export function getModelProviderPiEndpoint(
           api === "openai-completions" ? "chat/completions" : "responses",
           routing,
         )
-      : (config.openaiBaseUrl ?? "https://api.openai.com/v1");
+      : config.openaiBaseUrl;
   const normalizedBaseUrl = baseUrl.replace(/\/+$/, "");
   return {
     baseUrl,

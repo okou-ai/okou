@@ -84,13 +84,9 @@
           "guidance": "Jalankan diagnostik kredit dulu. Beli kredit hanya jika paket saat ini mengizinkannya; jika tidak, kembalikan tautan upgrade paket.",
           "title": "Kredit habis"
         },
-        "modelProviderUnavailable": {
-          "guidance": "Provider model yang digunakan thread ini telah dihapus. Mulai thread chat baru untuk melanjutkan.",
-          "title": "Provider model tidak tersedia"
-        },
         "noModelProvider": {
-          "guidance": "Konfigurasikan provider model untuk mulai menjalankan agen.",
-          "title": "Belum ada provider model yang dikonfigurasi"
+          "guidance": "Coba lagi sebentar lagi, atau hubungkan langganan pribadi Claude Code atau Codex di Pengaturan.",
+          "title": "Tidak ada penyedia model yang tersedia untuk eksekusi ini"
         },
         "paidPlanRequired": {
           "guidance": "Pembuatan video bawaan tidak tersedia pada paket ini.",
@@ -1862,10 +1858,8 @@
     "errors": {
       "genericTitle": "Proses ini tidak dapat diselesaikan",
       "loadMessages": "Gagal memuat pesan",
-      "noModelProviderAction": "Siapkan di Pengaturan Workspace",
-      "noModelProviderPrefix": "Belum ada provider model yang dikonfigurasi.",
-      "providerDeletedAction": "Mulai thread chat baru",
-      "providerDeletedPrefix": "Provider model yang digunakan oleh thread ini telah dihapus.",
+      "noModelProviderAction": "Kelola langganan",
+      "noModelProviderPrefix": "Tidak ada penyedia model yang tersedia untuk eksekusi ini. Coba lagi, atau hubungkan langganan pribadi.",
       "providerIncompatibleAction": "Mulai sesi baru",
       "providerIncompatiblePrefix": "Sesi ini dimulai dengan provider model yang berbeda dan tidak bisa dilanjutkan dengan yang saat ini.",
       "recovery": {
@@ -1885,7 +1879,7 @@
         "fiveHourReset": "Batas 5 jam direset {{time}}",
         "inputTooLargeDescription": "Persingkat pesan Anda lalu kirim lagi.",
         "inputTooLargeTitle": "Pesan Anda terlalu besar",
-        "invalidApiKeyTitle": "Kunci API perlu diperbarui",
+        "invalidApiKeyTitle": "Login langganan Anda perlu diperbarui",
         "invalidCredentialsTitle": "Koneksi model Anda perlu diperiksa",
         "newChat": "Chat baru",
         "newChatDescription": "Mulai chat baru dan sertakan informasi penting yang ingin Anda bawa.",
@@ -1894,8 +1888,8 @@
         "outputLimitTitle": "Jawaban mencapai batas panjang",
         "personalAccount": "Langganan pribadi {{account}}",
         "personalAccountDisconnected": "Langganan pribadi terputus",
-        "providerBalanceDescription": "Periksa saldo kredit akun penyedia Anda, lalu coba lagi.",
-        "providerBalanceTitle": "Saldo akun penyedia model tidak cukup",
+        "providerBalanceDescription": "Periksa penggunaan atau saldo kredit akun langganan Anda, lalu coba lagi.",
+        "providerBalanceTitle": "Akun langganan Anda memerlukan lebih banyak kredit",
         "providerConnectionDescription": "Buka Penyedia Model untuk menghubungkan ulang atau memperbarui akun, lalu coba lagi.",
         "providerQueueTimeoutTitle": "Model tidak mulai tepat waktu",
         "providerRateLimitedTitle": "Saat ini ada terlalu banyak permintaan model",
@@ -4648,7 +4642,7 @@
     "modelTemporarilyUnavailable": "Model sementara tidak tersedia",
     "modelUnavailable": "Model saat ini tidak tersedia.",
     "overloaded": "{{model}} sedang kelebihan beban. Tunggu beberapa menit dan coba lagi, atau beralih ke model lain.",
-    "providerBalance": "Saldo akun penyedia model yang terhubung tidak mencukupi.",
+    "providerBalance": "Saldo akun langganan yang terhubung tidak mencukupi.",
     "transient": "Terjadi kesalahan. Silakan coba lagi nanti.",
     "vm0Credits": "Kredit tidak mencukupi. Tambah kredit atau hubungkan langganan Codex atau Claude pribadi Anda untuk melanjutkan."
   },
@@ -4884,10 +4878,8 @@
         "effort": "Upaya",
         "effortScale": {
           "faster": "Lebih cepat",
-          "fewerCredits": "Kredit lebih sedikit",
           "higherUsage": "Penggunaan lebih tinggi",
           "lowerUsage": "Penggunaan lebih rendah",
-          "moreCredits": "Kredit lebih banyak",
           "smarter": "Lebih cerdas"
         },
         "fast": "Cepat",

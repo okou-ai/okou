@@ -266,6 +266,21 @@ contraction, it requires an explicitly owner-accepted interruption under the
 [deployment compatibility](../../../docs/deployment-compatibility.md) rules;
 this document does not record such an acceptance.
 
+Migration `1332_drop_dead_model_provider_columns` drops the remaining constant
+model configuration columns: `model_providers.auth_method`, `is_default` (with
+`idx_model_providers_one_default_per_user`) and `selected_model`,
+`model_routes.price_tier` (with `chk_model_routes_price_tier`) and
+`run_model_catalog.is_system_default` (with
+`idx_run_model_catalog_one_system_default` and
+`chk_run_model_catalog_default_active`). The system default is the API-owned
+fixed Auto model; personal account import formats stay on
+`model_provider_accounts.auth_method`. There is no data conversion. Rollout:
+an API built before 1332 still selects these columns, so it must not serve
+after 1332 is applied; apply it only after every serving API (and any rollback
+target) is built from the commit that adds it. The production rollback
+resolver enforces this as a floor on the first-parent `main` commit that adds 1332. `test-model-catalog-permanent.ts` and `test-model-catalog-seed.ts` cover
+the surviving catalog and route invariants.
+
 `scripts/test-retired-model-route-cleanup.ts` replays the preceding migrations
 and protects exact retained rows, future/disabled subscriptions, NULL-marker
 retirement, schema/binding rejection with no journal advance, non-empty

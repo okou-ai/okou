@@ -60,11 +60,6 @@ function codexSubscriptionAccount(
     id: PROVIDER_ID,
     type: "codex-oauth-token",
     framework: "codex",
-    secretName: "CHATGPT_ACCESS_TOKEN",
-    authMethod: "oauth",
-    secretNames: ["CHATGPT_ACCESS_TOKEN"],
-    isDefault: true,
-    selectedModel: null,
     subscriptionResetCredits: 1,
     needsReconnect: false,
     lastRefreshErrorCode: null,
@@ -101,7 +96,6 @@ function configureRunModels(
         options.credentialScope ?? (model === "okou-1.0" ? "org" : "member"),
       modelProviderId: options.modelProviderId ?? null,
       routeStatus: "valid",
-      routeStatusReason: null,
     };
   });
   context.mocks.data.availableRunModels(routes);
@@ -183,11 +177,11 @@ const STRUCTURED_FAILURE_EXPECTATIONS = {
     action: "Upgrade to Pro",
   },
   provider_insufficient_credits: {
-    title: "Your provider account needs more credit",
+    title: "Your subscription account needs more credit",
     action: "Open Model Providers",
   },
   invalid_api_key: {
-    title: "The API key needs updating",
+    title: "Your subscription sign-in needs updating",
     action: "Open Model Providers",
   },
   invalid_credentials: {
@@ -626,8 +620,8 @@ test.each([
   [
     "Provider balance",
     "provider_insufficient_credits",
-    "Your connected model provider account has insufficient balance.",
-    "Your provider account needs more credit",
+    "Your connected subscription account has insufficient balance.",
+    "Your subscription account needs more credit",
     "Open Model Providers",
   ],
 ] as const)(
@@ -656,7 +650,6 @@ test("Recover from a personal model account limit", async () => {
   configureCodexSubscriptionPolicies(["gpt-5.6-sol", "gpt-5.6-luna"]);
   context.mocks.data.personalModelProviders([
     codexSubscriptionAccount({
-      selectedModel: "gpt-5.6-sol",
       subscriptionUsage: {
         fiveHour: {
           usedPercent: 100,

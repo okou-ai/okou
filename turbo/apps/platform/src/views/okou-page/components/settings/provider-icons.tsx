@@ -6,7 +6,6 @@ import { settingsIconAssetUrl } from "./settings-icon-assets.ts";
 const PROVIDER_ICONS: Readonly<Partial<Record<ModelProviderType, string>>> =
   Object.freeze({
     "claude-code-oauth-token": settingsIconAssetUrl("anthropic"),
-    "openrouter-codex": settingsIconAssetUrl("openrouter"),
     "codex-oauth-token": settingsIconAssetUrl("openai"),
     "built-in": platformOkouMarkDarkImg,
   });

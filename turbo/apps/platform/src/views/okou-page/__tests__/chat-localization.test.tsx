@@ -108,7 +108,6 @@ function configureModelRoute(): void {
     buildProvider({
       id: OPENROUTER_PROVIDER_ID,
       type: "claude-code-oauth-token",
-      secretName: "CLAUDE_CODE_OAUTH_TOKEN",
     }),
   ]);
   context.mocks.data.availableRunModels([

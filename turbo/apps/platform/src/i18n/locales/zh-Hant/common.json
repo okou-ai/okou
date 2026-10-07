@@ -84,13 +84,9 @@
           "guidance": "請先做積分診斷。只有當前套餐允許時才購買積分，否則返回套餐升級連結。",
           "title": "積分已用完"
         },
-        "modelProviderUnavailable": {
-          "guidance": "此會話使用的模型提供方已被刪除。請新建一個聊天會話繼續。",
-          "title": "模型提供方不可用"
-        },
         "noModelProvider": {
-          "guidance": "配置模型提供方後即可開始執行智能體。",
-          "title": "未配置模型提供方"
+          "guidance": "請稍後重試，或在設定中連結個人 Claude Code 或 Codex 訂閱。",
+          "title": "此次執行沒有可用的模型提供者"
         },
         "paidPlanRequired": {
           "guidance": "當前套餐不支援內建影片生成。",
@@ -1862,10 +1858,8 @@
     "errors": {
       "genericTitle": "這次執行沒能完成",
       "loadMessages": "訊息載入失敗",
-      "noModelProviderAction": "在工作區設定中配置一個",
-      "noModelProviderPrefix": "還沒有配置模型提供方。",
-      "providerDeletedAction": "開始一個新的聊天會話",
-      "providerDeletedPrefix": "這個會話使用的模型提供方已被刪除。",
+      "noModelProviderAction": "管理訂閱",
+      "noModelProviderPrefix": "此次執行沒有可用的模型提供者。請重試，或連結個人訂閱。",
       "providerIncompatibleAction": "開始新會話",
       "providerIncompatiblePrefix": "這個會話是用另一個模型提供方開始的，無法用當前的提供方繼續。",
       "recovery": {
@@ -1885,7 +1879,7 @@
         "fiveHourReset": "5 小時額度於 {{time}} 重置",
         "inputTooLargeDescription": "請縮短訊息內容後重新傳送。",
         "inputTooLargeTitle": "你的訊息太大",
-        "invalidApiKeyTitle": "API 金鑰需要更新",
+        "invalidApiKeyTitle": "你的訂閱登入需要更新",
         "invalidCredentialsTitle": "模型連線需要更新",
         "newChat": "新聊天",
         "newChatDescription": "開啟新聊天，並帶上想繼續使用的重要資訊。",
@@ -1894,8 +1888,8 @@
         "outputLimitTitle": "回覆達到了長度上限",
         "personalAccount": "個人訂閱 {{account}}",
         "personalAccountDisconnected": "個人訂閱已中斷",
-        "providerBalanceDescription": "請檢查模型服務商帳戶的餘額，補足後再試。",
-        "providerBalanceTitle": "模型服務商帳戶額度不足",
+        "providerBalanceDescription": "請檢查訂閱帳號的用量或額度餘額，然後重試。",
+        "providerBalanceTitle": "你的訂閱帳號需要更多額度",
         "providerConnectionDescription": "到「模型服務商」中重新連線或更新帳戶，然後再試。",
         "providerQueueTimeoutTitle": "模型等待啟動的時間過長",
         "providerRateLimitedTitle": "目前模型請求過多",
@@ -4648,7 +4642,7 @@
     "modelTemporarilyUnavailable": "模型暫時不可用",
     "modelUnavailable": "當前模型不可用。",
     "overloaded": "{{model}}負載過高。請稍等幾分鐘後重試，或改用其他模型。",
-    "providerBalance": "你連線的模型服務商帳戶餘額不足。",
+    "providerBalance": "你連結的訂閱帳號餘額不足。",
     "transient": "出了點問題，請稍後再試。",
     "vm0Credits": "積分不足。請充值積分，或連接個人 Codex 或 Claude 訂閱後繼續。"
   },
@@ -4884,10 +4878,8 @@
         "effort": "思考強度",
         "effortScale": {
           "faster": "更快",
-          "fewerCredits": "更少積分",
           "higherUsage": "更高用量",
           "lowerUsage": "更低用量",
-          "moreCredits": "更多積分",
           "smarter": "更聰明"
         },
         "fast": "快速",

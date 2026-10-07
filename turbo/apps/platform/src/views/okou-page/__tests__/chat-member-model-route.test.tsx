@@ -35,7 +35,6 @@ function runModel(
     credentialScope: "member",
     modelProviderId: null,
     routeStatus: "valid",
-    routeStatusReason: null,
     memberEffective: {
       providerType: "codex-oauth-token",
       runtimeProviderType: "codex-oauth-token",
@@ -59,7 +58,6 @@ test.each([
         ...runModel("available"),
         defaultProviderType: "codex-oauth-token",
         routeStatus: "valid",
-        routeStatusReason: null,
       },
       {
         ...runModel("available"),
@@ -109,7 +107,6 @@ test("Uses the effective subscription for reasoning and Fast guidance", async ()
       ...runModel("available"),
       defaultProviderType: "codex-oauth-token",
       routeStatus: "valid",
-      routeStatusReason: null,
     },
   ]);
   await setupPage({
@@ -141,11 +138,6 @@ test("Reconnects the personal subscription used by the selected model", async ()
           id: ACCOUNT_ID,
           type: "codex-oauth-token",
           framework: "codex",
-          secretName: null,
-          authMethod: "auth_json",
-          secretNames: ["CODEX_AUTH_JSON"],
-          isDefault: false,
-          selectedModel: null,
           isActive: true,
           needsReconnect: true,
           lastRefreshErrorCode: "refresh_token_expired",
@@ -222,11 +214,6 @@ test("Refreshes the account target on explicit reconnect after a remote account 
           id: switched ? secondAccountId : ACCOUNT_ID,
           type: "codex-oauth-token",
           framework: "codex",
-          secretName: null,
-          authMethod: "auth_json",
-          secretNames: ["CODEX_AUTH_JSON"],
-          isDefault: false,
-          selectedModel: null,
           isActive: true,
           needsReconnect: switched,
           lastRefreshErrorCode: switched ? "refresh_token_expired" : null,

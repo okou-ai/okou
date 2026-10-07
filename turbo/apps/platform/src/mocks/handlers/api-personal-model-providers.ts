@@ -72,14 +72,6 @@ export const apiPersonalModelProvidersHandlers = [
       id: existing?.id ?? crypto.randomUUID(),
       type: body.type,
       framework: "claude-code",
-      secretName:
-        body.type === "claude-code-oauth-token"
-          ? "CLAUDE_CODE_OAUTH_TOKEN"
-          : "ANTHROPIC_API_KEY",
-      authMethod: body.authMethod ?? null,
-      secretNames: body.secrets ? Object.keys(body.secrets) : null,
-      isDefault: existing?.isDefault ?? false,
-      selectedModel: body.selectedModel ?? null,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
       needsReconnect: false,

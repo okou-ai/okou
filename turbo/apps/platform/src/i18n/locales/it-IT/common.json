@@ -86,13 +86,9 @@
           "guidance": "Esegui prima la diagnostica del credito. Acquista crediti solo quando il piano attuale lo consente; altrimenti restituisci il link per l'aggiornamento del piano.",
           "title": "Crediti esauriti"
         },
-        "modelProviderUnavailable": {
-          "guidance": "Il provider del modello utilizzato da questo thread è stato eliminato. Avvia un nuovo thread di chat per continuare.",
-          "title": "Provider del modello non disponibile"
-        },
         "noModelProvider": {
-          "guidance": "Configurare un provider di modelli per avviare l'esecuzione degli agenti.",
-          "title": "Nessun provider di modelli configurato"
+          "guidance": "Riprova tra poco oppure collega un abbonamento personale Claude Code o Codex nelle Impostazioni.",
+          "title": "Nessun provider di modelli è disponibile per questa esecuzione"
         },
         "paidPlanRequired": {
           "guidance": "La generazione video integrata non è disponibile nel piano attuale.",
@@ -1902,10 +1898,8 @@
     "errors": {
       "genericTitle": "Non è stato possibile completare questa esecuzione",
       "loadMessages": "Impossibile caricare i messaggi",
-      "noModelProviderAction": "Configurane uno nelle impostazioni dell'area di lavoro",
-      "noModelProviderPrefix": "Nessun provider di modelli configurato.",
-      "providerDeletedAction": "Avvia un nuovo thread di chat",
-      "providerDeletedPrefix": "Il provider del modello utilizzato da questo thread è stato eliminato.",
+      "noModelProviderAction": "Gestisci abbonamenti",
+      "noModelProviderPrefix": "Nessun provider di modelli è disponibile per questa esecuzione. Riprova o collega un abbonamento personale.",
       "providerIncompatibleAction": "Inizia una nuova sessione",
       "providerIncompatiblePrefix": "Questa sessione è stata avviata con un provider di modelli diverso e non può continuare con quello attuale.",
       "recovery": {
@@ -1925,7 +1919,7 @@
         "fiveHourReset": "Il limite di 5 ore si reimposta {{time}}",
         "inputTooLargeDescription": "Accorcia il messaggio e invialo di nuovo.",
         "inputTooLargeTitle": "Il messaggio è troppo grande",
-        "invalidApiKeyTitle": "La chiave API deve essere aggiornata",
+        "invalidApiKeyTitle": "L'accesso al tuo abbonamento deve essere aggiornato",
         "invalidCredentialsTitle": "La connessione al modello va verificata",
         "newChat": "Nuova chat",
         "newChatDescription": "Avvia una nuova chat e aggiungi le informazioni importanti che vuoi conservare.",
@@ -1934,8 +1928,8 @@
         "outputLimitTitle": "La risposta ha raggiunto il limite di lunghezza",
         "personalAccount": "Abbonamento personale {{account}}",
         "personalAccountDisconnected": "Abbonamento personale disconnesso",
-        "providerBalanceDescription": "Controlla il credito del tuo account presso il provider, poi riprova.",
-        "providerBalanceTitle": "Il tuo account del provider ha bisogno di più credito",
+        "providerBalanceDescription": "Controlla l'utilizzo o il saldo del credito del tuo account di abbonamento, poi riprova.",
+        "providerBalanceTitle": "Il tuo account di abbonamento ha bisogno di più credito",
         "providerConnectionDescription": "Apri Fornitori di modelli per ricollegare o aggiornare il tuo account, poi riprova.",
         "providerQueueTimeoutTitle": "Il modello non si è avviato in tempo",
         "providerRateLimitedTitle": "Ci sono troppe richieste al modello in questo momento",
@@ -4732,7 +4726,7 @@
     "modelTemporarilyUnavailable": "Modello temporaneamente non disponibile",
     "modelUnavailable": "Il modello attuale non è disponibile.",
     "overloaded": "{{model}} è sovraccarico. Attendi qualche minuto e riprova, oppure passa a un altro modello.",
-    "providerBalance": "Il saldo dell’account del fornitore di modelli collegato è insufficiente.",
+    "providerBalance": "Il saldo del tuo account di abbonamento collegato è insufficiente.",
     "transient": "Si è verificato un errore. Riprova più tardi.",
     "vm0Credits": "Crediti insufficienti. Aggiungi crediti o collega un abbonamento personale Codex o Claude per continuare."
   },
@@ -4969,10 +4963,8 @@
         "effort": "Sforzo",
         "effortScale": {
           "faster": "Più veloce",
-          "fewerCredits": "Meno crediti",
           "higherUsage": "Consumo maggiore",
           "lowerUsage": "Consumo minore",
-          "moreCredits": "Più crediti",
           "smarter": "Più intelligente"
         },
         "fast": "Veloce",

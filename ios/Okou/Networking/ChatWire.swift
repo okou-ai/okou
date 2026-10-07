@@ -214,7 +214,8 @@ struct AvailableRunModels: Decodable, Sendable {
   let models: [Model]
   struct Model: Decodable, Sendable {
     let model: String
-    let routeStatus: String
+    /// Constant "valid" on current APIs; optional so a future API may omit it.
+    let routeStatus: String?
     let defaultProviderType: String?
     let memberEffective: MemberRoute?
     let subscriptionOptions: SubscriptionOptions?
@@ -231,13 +232,10 @@ struct AvailableRunModels: Decodable, Sendable {
 
     /// A member's connected subscription remains selectable when reconnecting.
     /// Admission still validates the captured personal account before execution.
-    func hasUsableRoute(catalog: ModelCatalog) -> Bool {
+    func hasUsableRoute() -> Bool {
       guard let route = memberEffective else { return routeStatus == "valid" }
       switch route.availability {
       case "available", "reconnect_required", "plan_restricted": return true
-      case "unavailable":
-        return route.credentialScope == "member"
-          && catalog.hasEnabledRoute(model: model, providerType: route.providerType)
       default: return false
       }
     }
@@ -276,15 +274,6 @@ struct ModelCatalog: Decodable, Sendable {
   /// Maps a stored selection to its active model; unknown models are unavailable.
   func resolve(_ model: String) -> String? {
     models.first(where: { $0.model == model })?.resolvedModel
-  }
-
-  func hasEnabledRoute(model: String, providerType: String) -> Bool {
-    guard let resolvedModel = resolve(model) else { return false }
-    // model-provider-types.ts defines only "built-in" as a Built-in type,
-    // so normalization preserves every current provider identifier.
-    return routes.contains {
-      $0.model == resolvedModel && $0.providerType == providerType && $0.enabled
-    }
   }
 
   func supportsServiceTier(_ tier: String, model: String, providerType: String) -> Bool {

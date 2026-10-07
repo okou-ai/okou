@@ -203,7 +203,6 @@ describe("POST /api/me/model-providers (upsert)", () => {
       provider: {
         type: "claude-code-oauth-token",
         framework: "claude-code",
-        isDefault: false,
       },
       created: true,
     });
@@ -225,6 +224,57 @@ describe("POST /api/me/model-providers (upsert)", () => {
       [400],
     );
     expect(response.body).toMatchObject({ error: { code: "BAD_REQUEST" } });
+  });
+
+  it("rejects codex auth methods other than auth_json and keeps the active account", async () => {
+    const fixture = uniqueOrgUser("zmmp-codex-other-auth");
+    mocks.clerk.session(fixture.userId, fixture.orgId);
+    server.use(
+      http.get("https://chatgpt.com/backend-api/wham/usage", () => {
+        return HttpResponse.json(codexUsageResponse());
+      }),
+    );
+
+    const client = setupApp({
+      context,
+      routes: personalModelProvidersMainTestRoutes,
+    })(personalModelProvidersMainContract);
+    await accept(
+      client.upsert({
+        body: {
+          type: "codex-oauth-token",
+          authMethod: "auth_json",
+          secrets: { CODEX_AUTH_JSON: makeAuthJson() },
+        },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [201],
+    );
+
+    const rejected = await accept(
+      client.upsert({
+        body: {
+          type: "codex-oauth-token",
+          authMethod: "oauth_token",
+          secrets: {},
+        },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [400],
+    );
+    expect(rejected.body).toMatchObject({ error: { code: "BAD_REQUEST" } });
+
+    const listed = await accept(
+      client.list({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(listed.body.modelProviders).toHaveLength(1);
+    expect(listed.body.modelProviders[0]).toMatchObject({
+      type: "codex-oauth-token",
+      accountEmail: "codex.user@example.com",
+    });
   });
 
   it("paste valid auth.json persists derived secrets + metadata", async () => {
@@ -312,7 +362,6 @@ describe("POST /api/me/model-providers (upsert)", () => {
     expect(response.body).toMatchObject({
       provider: {
         type: "codex-oauth-token",
-        authMethod: "auth_json",
         workspaceName: "Personal Acme",
         planType: "pro",
         subscriptionResetPeriod: "weekly",

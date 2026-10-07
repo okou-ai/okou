@@ -369,7 +369,6 @@ pub(super) struct CliRuntimeConfig<'a> {
     api_start_time: Cow<'a, str>,
     anthropic_model: Cow<'a, str>,
     openai_model: Cow<'a, str>,
-    openai_base_url: Cow<'a, str>,
     codex_runtime_config: Option<CodexRuntimeConfig>,
     codex_oauth_mode: bool,
     codex_fast_mode: bool,
@@ -445,10 +444,6 @@ impl<'a> CliRuntimeConfig<'a> {
             api_start_time: Cow::Borrowed(&config.api_start_time),
             anthropic_model: Cow::Borrowed(user_env_value(&config.user_env, "ANTHROPIC_MODEL")),
             openai_model: Cow::Borrowed(user_env_value(&config.user_env, "OPENAI_MODEL")),
-            openai_base_url: Cow::Borrowed(user_env_value(
-                &config.user_env,
-                OPENAI_BASE_URL_ENV_KEY,
-            )),
             codex_runtime_config,
             codex_oauth_mode: !user_env_value(&config.user_env, "CHATGPT_ACCOUNT_ID").is_empty(),
             codex_fast_mode: matches!(config.framework, env::Framework::Codex)
@@ -490,11 +485,6 @@ impl<'a> CliRuntimeConfig<'a> {
             self.codex_runtime_config.as_ref(),
             Path::new(codex_home),
         );
-        if self.codex_runtime_config.is_none() && !self.openai_base_url.is_empty() {
-            let base_url =
-                codex_runtime_config::quote_toml_basic_string(self.openai_base_url.as_ref());
-            overrides.push(format!("openai_base_url={base_url}"));
-        }
         if self.disable_builtin_web_search {
             overrides.push(CODEX_WEB_SEARCH_DISABLED_CONFIG.to_string());
         }
@@ -2584,7 +2574,6 @@ mod tests {
             api_start_time: Cow::Borrowed(""),
             anthropic_model: Cow::Borrowed(""),
             openai_model: Cow::Borrowed(""),
-            openai_base_url: Cow::Borrowed(""),
             codex_runtime_config: None,
             codex_oauth_mode: false,
             codex_fast_mode: false,
@@ -3077,9 +3066,9 @@ mod tests {
         let mut runtime = runtime_for_command_test(env::Framework::Codex, "prompt", "", &user_env);
         runtime.disable_builtin_web_search = true;
         runtime.codex_runtime_config = Some(CodexRuntimeConfig {
-            provider_id: "deepseek".to_string(),
-            name: "DeepSeek".to_string(),
-            base_url: "https://api.deepseek.com/".to_string(),
+            provider_id: "openrouter-codex".to_string(),
+            name: "OpenRouter (Codex)".to_string(),
+            base_url: "https://openrouter.ai/api/v1".to_string(),
             env_key: "OPENAI_API_KEY".to_string(),
             http_headers: None,
             requires_openai_auth: None,
@@ -3090,7 +3079,7 @@ mod tests {
 
         let overrides = runtime.codex_startup_config_overrides();
 
-        assert!(overrides.contains(&r#"model_provider="deepseek""#.to_string()));
+        assert!(overrides.contains(&r#"model_provider="openrouter-codex""#.to_string()));
         assert!(overrides.contains(&super::CODEX_WEB_SEARCH_DISABLED_CONFIG.to_string()));
     }
 
@@ -3161,9 +3150,9 @@ mod tests {
         ]);
         let mut runtime = runtime_for_command_test(env::Framework::Codex, "prompt", "", &user_env);
         runtime.codex_runtime_config = Some(CodexRuntimeConfig {
-            provider_id: "deepseek".to_string(),
-            name: "DeepSeek".to_string(),
-            base_url: "https://api.deepseek.com/".to_string(),
+            provider_id: "openrouter-codex".to_string(),
+            name: "OpenRouter (Codex)".to_string(),
+            base_url: "https://openrouter.ai/api/v1".to_string(),
             env_key: "OPENAI_API_KEY".to_string(),
             http_headers: None,
             requires_openai_auth: None,

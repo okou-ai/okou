@@ -1,8 +1,8 @@
+import { getSecretNameForType } from "@okouai/api-contracts/contracts/model-providers";
 import {
-  BUILT_IN_MODEL_ROUTE_PROVIDERS,
-  getSecretNameForType,
-  modelProviderTypeSchema,
-} from "@okouai/api-contracts/contracts/model-providers";
+  AUTO_RUN_KEY_VENDOR,
+  AUTO_RUN_PROVIDER,
+} from "@okouai/core/auto-run-model";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import {
@@ -26,8 +26,6 @@ function providerProjection() {
       type: modelProviders.type,
       userId: modelProviders.userId,
       orgId: modelProviders.orgId,
-      authMethod: modelProviders.authMethod,
-      selectedModel: modelProviders.selectedModel,
     },
   };
 }
@@ -35,7 +33,7 @@ function providerProjection() {
 type ProviderRow = {
   readonly provider: Pick<
     typeof modelProviders.$inferSelect,
-    "id" | "type" | "userId" | "orgId" | "authMethod" | "selectedModel"
+    "id" | "type" | "userId" | "orgId"
   >;
 };
 
@@ -169,15 +167,10 @@ export function managedSourceFromSnapshot(
   if (!key) {
     return null;
   }
-  const provider = Object.entries(BUILT_IN_MODEL_ROUTE_PROVIDERS).find(
-    ([, config]) => {
-      return config.vendor === key.vendor;
-    },
-  );
-  if (!provider) {
+  if (key.vendor !== AUTO_RUN_KEY_VENDOR) {
     throw new Error("Managed model key vendor is unsupported");
   }
-  const name = getSecretNameForType(modelProviderTypeSchema.parse(provider[0]));
+  const name = getSecretNameForType(AUTO_RUN_PROVIDER);
   if (!name) {
     throw new Error("Managed model key has no credential binding");
   }

@@ -781,9 +781,9 @@ mod tests {
             settings: "{}".to_string(),
             artifacts: "[]".to_string(),
             feature_flags: r#"{"flag":true}"#.to_string(),
-            codex_runtime_config: r#"{"providerId":"deepseek"}"#.to_string(),
+            codex_runtime_config: r#"{"providerId":"openrouter-codex"}"#.to_string(),
             pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
-            pi_model_config: r#"{"provider":"deepseek"}"#.to_string(),
+            pi_model_config: r#"{"provider":"openrouter-codex"}"#.to_string(),
             pi_session_id: "22222222-2222-4222-8222-222222222222".to_string(),
             pi_installed_cli_requirement: r#"{"minCliVersion":"9.352.7"}"#.to_string(),
         };
@@ -795,9 +795,12 @@ mod tests {
         assert_eq!(json["secretValues"], "secret");
         assert_eq!(json["disallowedTools"], "WebFetch");
         assert_eq!(json["featureFlags"], r#"{"flag":true}"#);
-        assert_eq!(json["codexRuntimeConfig"], r#"{"providerId":"deepseek"}"#);
+        assert_eq!(
+            json["codexRuntimeConfig"],
+            r#"{"providerId":"openrouter-codex"}"#
+        );
         assert_eq!(json["piLaunchConfig"], r#"{"schemaVersion":2}"#);
-        assert_eq!(json["piModelConfig"], r#"{"provider":"deepseek"}"#);
+        assert_eq!(json["piModelConfig"], r#"{"provider":"openrouter-codex"}"#);
         assert_eq!(json["piSessionId"], "22222222-2222-4222-8222-222222222222");
         assert_eq!(
             json["piInstalledCliRequirement"],
@@ -816,9 +819,9 @@ mod tests {
             settings: "{}".to_string(),
             artifacts: "[]".to_string(),
             feature_flags: r#"{"flag":true}"#.to_string(),
-            codex_runtime_config: r#"{"providerId":"deepseek"}"#.to_string(),
+            codex_runtime_config: r#"{"providerId":"openrouter-codex"}"#.to_string(),
             pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
-            pi_model_config: r#"{"provider":"deepseek"}"#.to_string(),
+            pi_model_config: r#"{"provider":"openrouter-codex"}"#.to_string(),
             pi_session_id: "22222222-2222-4222-8222-222222222222".to_string(),
             pi_installed_cli_requirement: r#"{"minCliVersion":"9.352.7"}"#.to_string(),
         };
@@ -862,7 +865,7 @@ mod tests {
                 },
                 RunPayloadField {
                     name: CODEX_RUNTIME_CONFIG_RUN_PAYLOAD_FIELD,
-                    value: r#"{"providerId":"deepseek"}"#
+                    value: r#"{"providerId":"openrouter-codex"}"#
                 },
                 RunPayloadField {
                     name: PI_LAUNCH_CONFIG_RUN_PAYLOAD_FIELD,
@@ -870,7 +873,7 @@ mod tests {
                 },
                 RunPayloadField {
                     name: PI_MODEL_CONFIG_RUN_PAYLOAD_FIELD,
-                    value: r#"{"provider":"deepseek"}"#
+                    value: r#"{"provider":"openrouter-codex"}"#
                 },
                 RunPayloadField {
                     name: PI_SESSION_ID_RUN_PAYLOAD_FIELD,
@@ -905,7 +908,7 @@ mod tests {
             settings: "{}".to_string(),
             artifacts: "[]".to_string(),
             feature_flags: r#"{"flag":true}"#.to_string(),
-            codex_runtime_config: r#"{"providerId":"deepseek"}"#.to_string(),
+            codex_runtime_config: r#"{"providerId":"openrouter-codex"}"#.to_string(),
             ..RunPayload::default()
         };
 

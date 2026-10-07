@@ -48,7 +48,7 @@ const selectCommand = new Command()
       const selected = available.models.find((candidate) => {
         return candidate.model === model;
       });
-      if (!selected || !isMemberRunModelConfigurable(selected, null)) {
+      if (!selected || !isMemberRunModelConfigurable(selected)) {
         throw new Error(
           `Model is unavailable: ${model}. Run okou model ls and connect or reconnect your subscription in Settings / Models.`,
         );

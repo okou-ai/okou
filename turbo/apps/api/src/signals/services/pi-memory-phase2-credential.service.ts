@@ -7,7 +7,7 @@ import {
 } from "@okouai/db/schema/model-provider-account";
 import { storages } from "@okouai/db/schema/storage";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
-import { and, asc, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
 import type { AgentRunModelPin } from "./agent-run-contracts";
@@ -68,14 +68,13 @@ async function selectCurrentCredential(
   db: ReadDb,
   claim: ClaimedPiMemoryPhase2Job,
 ): Promise<CurrentCredential> {
-  // Honor the current default first; use a stable type/ID order for other
-  // personal subscriptions. No historical source decides this ranking.
+  // A member has at most one Codex provider row per organization; the ID order
+  // keeps the read deterministic. No historical source decides this ranking.
   const providers = await db
     .select({
       id: modelProviders.id,
       type: modelProviders.type,
       userId: modelProviders.userId,
-      isDefault: modelProviders.isDefault,
       needsReconnect: modelProviders.needsReconnect,
     })
     .from(modelProviders)
@@ -86,11 +85,7 @@ async function selectCurrentCredential(
         eq(modelProviders.type, "codex-oauth-token"),
       ),
     )
-    .orderBy(
-      desc(modelProviders.isDefault),
-      asc(modelProviders.type),
-      asc(modelProviders.id),
-    );
+    .orderBy(asc(modelProviders.type), asc(modelProviders.id));
   for (const provider of providers) {
     if (provider.type === "codex-oauth-token") {
       if (provider.userId !== claim.userId || provider.needsReconnect) {

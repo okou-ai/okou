@@ -190,19 +190,6 @@ function RunErrorBanner({ error }: { error: string }) {
         };
         break;
       }
-      case "PROVIDER_DELETED": {
-        localized = {
-          title: t(($) => {
-            return $.activity.detail.errorGuidance.modelProviderUnavailable
-              .title;
-          }),
-          guidance: t(($) => {
-            return $.activity.detail.errorGuidance.modelProviderUnavailable
-              .guidance;
-          }),
-        };
-        break;
-      }
       case "TOO_MANY_REQUESTS": {
         localized = {
           title: t(($) => {

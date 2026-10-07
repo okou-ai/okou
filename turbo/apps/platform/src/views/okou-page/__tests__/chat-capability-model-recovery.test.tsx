@@ -35,18 +35,16 @@ function installProviderFailure(error: string): void {
 }
 
 test("Match model-provider recovery guidance to the failure", async () => {
-  installProviderFailure(
-    "No model provider configured. Configure a model provider to start running agents.",
-  );
+  installProviderFailure("No model provider is available for this run");
 
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
 
   await readyChat();
   const card = await screen.findByRole("status");
-  expect(card).toHaveTextContent("No model provider configured yet.");
-  const configureProvider = await findButton(
-    "Set one up in Workspace Settings",
+  expect(card).toHaveTextContent(
+    "No model provider is available for this run. Try again, or connect a personal subscription.",
   );
+  const configureProvider = await findButton("Manage subscriptions");
   expect(card).toContainElement(configureProvider);
   click(configureProvider);
 

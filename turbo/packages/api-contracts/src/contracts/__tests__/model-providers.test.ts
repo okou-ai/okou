@@ -1,16 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
-  hasModelSelection,
-  getModels,
-  getDefaultModel,
   getModelProviderEnvBindings,
   getFrameworkForType,
   getModelProviderPresentationLabel,
-  normalizeBuiltInModelId,
-  getBuiltInModelRouteVendors,
+  getBuiltInRouteProviderVendor,
   getCatalogRunModelRouteAccess,
   normalizeRunModelId,
-  getAuthMethodsForType,
   getSecretNameForType,
   getModelProviderFirewall,
   getModelProviderCodexCatalogForModel,
@@ -34,7 +29,6 @@ describe("model-first canonical catalog", () => {
   it("exposes canonical model provider env placeholders", () => {
     expect(Object.keys(MODEL_PROVIDER_ENV_PLACEHOLDERS).sort()).toEqual([
       "ANTHROPIC_API_KEY",
-      "ANTHROPIC_AUTH_TOKEN",
       "CHATGPT_ACCESS_TOKEN",
       "CHATGPT_ACCOUNT_ID",
       "CHATGPT_REFRESH_TOKEN",
@@ -111,7 +105,10 @@ describe("model-first canonical catalog", () => {
   });
 
   it("lists every Built-in route provider vendor", () => {
-    expect(getBuiltInModelRouteVendors()).toEqual(["openrouter"]);
+    expect(getBuiltInRouteProviderVendor("openrouter-codex")).toBe(
+      "openrouter",
+    );
+    expect(getBuiltInRouteProviderVendor("codex-oauth-token")).toBeUndefined();
   });
 
   it("recognizes only own Okou model IDs", () => {
@@ -202,54 +199,11 @@ describe("model-first canonical catalog", () => {
 });
 
 describe("model selection for Anthropic-native providers", () => {
-  it.each(["claude-code-oauth-token"] as const)(
-    "%s supports model selection",
-    (type) => {
-      expect(hasModelSelection(type)).toBe(true);
-    },
-  );
-
-  it.each(["claude-code-oauth-token"] as const)(
-    "%s offers fable, sonnet, and opus models",
-    (type) => {
-      const models = getModels(type);
-      expect(models).toContain("claude-fable-5-1");
-      expect(models).toContain("claude-opus-5-5");
-      expect(models).toContain("claude-opus-5");
-      expect(models).toContain("claude-sonnet-5");
-    },
-  );
-
-  it.each(["claude-code-oauth-token"] as const)(
-    "%s defaults to claude-sonnet-5",
-    (type) => {
-      expect(getDefaultModel(type)).toBe("claude-sonnet-5");
-    },
-  );
-
   it("claude-code-oauth-token maps ANTHROPIC_MODEL via env bindings", () => {
     const envBindings = getModelProviderEnvBindings("claude-code-oauth-token");
     expect(envBindings).toBeDefined();
     expect(envBindings!["CLAUDE_CODE_OAUTH_TOKEN"]).toBe("$secret");
     expect(envBindings!["ANTHROPIC_MODEL"]).toBe("$model");
-  });
-});
-
-describe("normalizeBuiltInModelId", () => {
-  it.each([
-    ["anthropic/claude-fable-5.1", "claude-fable-5-1"],
-    ["anthropic/claude-fable-5", "claude-fable-5"],
-    ["anthropic/claude-opus-5.5", "claude-opus-5-5"],
-    ["anthropic/claude-opus-5", "claude-opus-5"],
-    ["anthropic/claude-opus-4.8", "claude-opus-4-8"],
-    ["anthropic/claude-sonnet-5", "claude-sonnet-5"],
-    ["anthropic/claude-sonnet-4.6", "claude-sonnet-4-6"],
-  ])("normalizes %s to %s", (model, expected) => {
-    expect(normalizeBuiltInModelId(model)).toBe(expected);
-  });
-
-  it("keeps unknown model ids unchanged", () => {
-    expect(normalizeBuiltInModelId("custom/model")).toBe("custom/model");
   });
 });
 
@@ -336,10 +290,13 @@ describe("codex-oauth-token codex provider", () => {
   });
 
   it("supports only the auth_json multi-auth shape with CHATGPT_* fields", () => {
-    const methods = getAuthMethodsForType("codex-oauth-token");
-    expect(methods).toBeDefined();
-    expect(Object.keys(methods!)).toEqual(["auth_json"]);
-    const authJsonSecrets = methods!.auth_json!.secrets;
+    expect(
+      getSecretsForAuthMethod("codex-oauth-token", "oauth"),
+    ).toBeUndefined();
+    const authJsonSecrets = getSecretsForAuthMethod(
+      "codex-oauth-token",
+      "auth_json",
+    )!;
     expect(Object.keys(authJsonSecrets).sort()).toEqual([
       "CHATGPT_ACCESS_TOKEN",
       "CHATGPT_ACCOUNT_ID",
@@ -347,13 +304,6 @@ describe("codex-oauth-token codex provider", () => {
       "CHATGPT_REFRESH_TOKEN",
       "CODEX_AUTH_JSON",
     ]);
-  });
-
-  it("defaultAuthMethod is auth_json", () => {
-    const config = MODEL_PROVIDER_TYPES["codex-oauth-token"];
-    expect(
-      "defaultAuthMethod" in config ? config.defaultAuthMethod : undefined,
-    ).toBe("auth_json");
   });
 
   it("marks refresh and id tokens as serverOnly under auth_json", () => {
@@ -387,22 +337,6 @@ describe("codex-oauth-token codex provider", () => {
     );
     expect(envBindings.CHATGPT_ACCOUNT_ID).toBe("$secrets.CHATGPT_ACCOUNT_ID");
     expect(envBindings.OPENAI_MODEL).toBe("$model");
-  });
-
-  it("offers current GPT models with gpt-5.6-sol default", () => {
-    expect(getModels("codex-oauth-token")).toEqual([
-      "gpt-6-astra",
-      "gpt-6.1-sol",
-      "gpt-6-sol",
-      "gpt-6-luna",
-      "gpt-5.6-sol",
-      "gpt-5.6-luna",
-    ]);
-    expect(getDefaultModel("codex-oauth-token")).toBe("gpt-5.6-sol");
-  });
-
-  it("supports model selection", () => {
-    expect(hasModelSelection("codex-oauth-token")).toBe(true);
   });
 
   it("firewall includes the ChatGPT backend API and auth denial APIs", () => {
@@ -593,25 +527,6 @@ describe("Auto concrete provider (openrouter-codex)", () => {
   );
 
   it.each(["openrouter-codex"] as const)(
-    "%s offers current GPT models with gpt-5.6-luna default",
-    (type) => {
-      expect(getModels(type)).toEqual(
-        expect.arrayContaining(["openai/gpt-5.6-sol", "openai/gpt-5.6-luna"]),
-      );
-      expect(getModels(type)).toEqual(
-        expect.arrayContaining([
-          "openai/gpt-6-astra",
-          "openai/gpt-6-sol",
-          "openai/gpt-6-luna",
-          "deepseek/deepseek-v4.1-flash",
-          "deepseek/deepseek-v4-flash",
-        ]),
-      );
-      expect(getDefaultModel(type)).toBe("openai/gpt-5.6-luna");
-    },
-  );
-
-  it.each(["openrouter-codex"] as const)(
     "%s injects Authorization only on exact OpenAI inference paths",
     (type) => {
       const config = MODEL_PROVIDER_FIREWALL_CONFIGS[type];
@@ -641,11 +556,6 @@ describe("built-in provider discriminator contract", () => {
     id: "11111111-1111-4111-8111-111111111111",
     type: "built-in",
     framework: "claude-code",
-    secretName: null,
-    authMethod: null,
-    secretNames: null,
-    isDefault: true,
-    selectedModel: null,
     createdAt: "2026-08-26T00:00:00.000Z",
     updatedAt: "2026-08-26T00:00:00.000Z",
     needsReconnect: false,
@@ -659,7 +569,6 @@ describe("built-in provider discriminator contract", () => {
     credentialScope: "org",
     modelProviderId: null,
     routeStatus: "valid",
-    routeStatusReason: null,
     createdAt: "2026-08-26T00:00:00.000Z",
     updatedAt: "2026-08-26T00:00:00.000Z",
   } as const;

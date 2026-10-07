@@ -94,7 +94,6 @@ const AUTO_ROUTE: MockCatalogRoute = {
   defaultServiceTier: null,
   efforts: [],
   defaultEffort: null,
-  priceTier: null,
 };
 
 function subscriptionRouteFor(
@@ -118,7 +117,6 @@ function subscriptionRouteFor(
       defaultServiceTier: null,
       efforts: [...profile.efforts],
       defaultEffort: profile.defaultEffort,
-      priceTier: null,
     },
   ];
 }
@@ -157,10 +155,8 @@ export function createMockModelCatalog(
         model,
         displayName,
         sortOrder,
-        isSystemDefault: model === systemDefaultModel,
         replacedBy,
         resolvedModel: resolveReplacement(model),
-        priceTier: null,
         builtInOnRestrictedPlans: RESTRICTED_PLAN_BUILT_IN_MODELS.has(model),
         piRouteClass: PI_ROUTE_CLASS_BY_MODEL[model] ?? null,
       };

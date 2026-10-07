@@ -68,11 +68,11 @@ target. R1 still owns closure of old writers and the real historical-context
 drain. The digest provides recovery provenance, not permission to bypass those
 activation gates.
 
-Every newly admitted personal Claude/Codex subscription run captures a concrete `model_provider_accounts.id`, independently of UI entry points. Capture may overlap the first read-only thread session/prompt observation. Both branches are joined before environment preparation or any other captured-account consumer, and only thread-owned body, prompt, session-resolution and browser fields are composed onto the captured command. Post-authorization work remains capture-gated. A stale thread snapshot reruns only thread observation; it does not recapture or change the fixed account/model pin. The final admission transaction locks its existing thread/session rows and then takes the provider auth-state lock. It revalidates the captured connected account and writes the same ID to run metadata/model pin and execution-context model-provider `sourceId`. Removal winning that race produces an explicit subscription admission failure; it never selects a sibling account or other model.
+Every newly admitted personal Claude/Codex subscription run captures a concrete `model_provider_accounts.id`, independently of UI entry points. Capture may overlap the first read-only thread session/prompt observation. Both branches are joined before environment preparation or any other captured-account consumer, and only thread-owned body, prompt, session-resolution and browser fields are composed onto the captured command. Post-authorization work remains capture-gated. A stale thread snapshot reruns only thread observation; it does not recapture or change the fixed account/model pin. The final admission transaction locks its existing thread/session rows and revalidates the captured connected account and writes the same ID to run metadata/model pin and execution-context model-provider `sourceId`. Removal winning that race produces an explicit subscription admission failure; it never selects a sibling account or other model.
 
 This scheduling change adds no query statement and leaves successful-path query counts unchanged. If capture fails, the already-started thread branch may complete its existing bounded read-only session and prompt queries before the request returns the capture conflict. That speculative branch performs no write, post-authorization work, proof, admission, durable queue publication or spawn. Capture conflict, rejection and abort priority remain explicit, and every started branch is settled before the request returns.
 
-Account rows own encrypted credentials. Refresh and verified same-upstream-identity reconnection update those shared credentials under the existing auth-state lock; rotating refresh tokens are never copied per run. Codex uses its upstream account ID. Claude uses account/organization UUIDs when provided by the existing profile endpoint, with the existing stored email/workspace identity for older OAuth connections. A legacy Claude token without recorded identity is checked using that token before a replacement; an unavailable identity is left unchanged rather than inferred from the new active account.
+Account rows own encrypted credentials. Refresh and verified same-upstream-identity reconnection update those shared credentials on the account row; rotating refresh tokens are never copied per run. Codex uses its upstream account ID. Claude uses account/organization UUIDs when provided by the existing profile endpoint, with the existing stored email/workspace identity for older OAuth connections. A legacy Claude token without recorded identity is checked using that token before a replacement; an unavailable identity is left unchanged rather than inferred from the new active account.
 
 A different verified upstream identity selects/creates a different account row. The replaced account is retained while an admitted run still references it. Duplicate reconnection reuses the matching identity. Ordinary disconnect hides the account from listing, selection, activation, reset/usage and reconnect by the old ID. A fresh authenticated connection to the same upstream identity can restore that row and its shared refresh state.
 
@@ -99,8 +99,8 @@ for the credential storage deployment boundary.
   `idx_model_provider_accounts_provider_identity`, the account-secret
   `(account, name)` index and the provider `(org, user, type)` index with
   conditional writes; a losing concurrent writer receives `409`.
-- Token refresh keeps the `model_provider_state` advisory lock so rotating
-  refresh tokens are spent once.
+- Token refresh writes the shared account row and its secrets in place. The
+  former `model_provider_state` advisory lock was removed with that table.
 
 ## Scale and validation
 

@@ -84,13 +84,9 @@
           "guidance": "먼저 실행 크레딧 진단을 수행하세요. 현재 플랜에서 허용할 때만 크레딧을 구매하고, 그렇지 않으면 플랜 업그레이드 링크로 돌아가세요.",
           "title": "크레딧 소진"
         },
-        "modelProviderUnavailable": {
-          "guidance": "이 스레드에서 사용된 모델 제공자가 삭제되었습니다. 계속하려면 새 채팅 스레드를 시작하세요.",
-          "title": "모델 제공자 사용 불가"
-        },
         "noModelProvider": {
-          "guidance": "에이전트 실행을 시작하려면 모델 제공자를 구성하세요.",
-          "title": "구성된 모델 제공자가 없습니다"
+          "guidance": "잠시 후 다시 시도하거나 설정에서 개인 Claude Code 또는 Codex 구독을 연결하세요.",
+          "title": "이 실행에 사용할 수 있는 모델 제공업체가 없습니다"
         },
         "paidPlanRequired": {
           "guidance": "현재 플랜에서는 내장 비디오 생성 기능을 사용할 수 없습니다.",
@@ -1862,10 +1858,8 @@
     "errors": {
       "genericTitle": "이 실행을 완료하지 못했습니다",
       "loadMessages": "메시지 로드 실패",
-      "noModelProviderAction": "워크스페이스 설정에서 구성하세요",
-      "noModelProviderPrefix": "모델 공급자가 아직 구성되지 않았습니다.",
-      "providerDeletedAction": "새 채팅 스레드 시작",
-      "providerDeletedPrefix": "이 스레드에서 사용된 모델 공급자가 삭제되었습니다.",
+      "noModelProviderAction": "구독 관리",
+      "noModelProviderPrefix": "이 실행에 사용할 수 있는 모델 제공업체가 없습니다. 다시 시도하거나 개인 구독을 연결하세요.",
       "providerIncompatibleAction": "새 세션 시작",
       "providerIncompatiblePrefix": "이 세션은 다른 모델 공급자로 시작되어 현재 공급자로 계속할 수 없습니다.",
       "recovery": {
@@ -1885,7 +1879,7 @@
         "fiveHourReset": "5시간 한도는 {{time}}에 재설정",
         "inputTooLargeDescription": "메시지를 줄인 다음 다시 보내세요.",
         "inputTooLargeTitle": "메시지가 너무 큽니다",
-        "invalidApiKeyTitle": "API 키를 업데이트해야 합니다",
+        "invalidApiKeyTitle": "구독 로그인을 업데이트해야 합니다",
         "invalidCredentialsTitle": "모델 연결을 확인해야 합니다",
         "newChat": "새 채팅",
         "newChatDescription": "새 채팅을 시작하고 이어서 필요한 중요한 정보를 포함하세요.",
@@ -1894,8 +1888,8 @@
         "outputLimitTitle": "응답이 길이 제한에 도달했습니다",
         "personalAccount": "개인 구독 {{account}}",
         "personalAccountDisconnected": "개인 구독 연결이 끊어졌습니다",
-        "providerBalanceDescription": "제공자 계정의 크레딧 잔액을 확인한 다음 다시 시도하세요.",
-        "providerBalanceTitle": "모델 제공자 계정에 크레딧이 부족합니다",
+        "providerBalanceDescription": "구독 계정의 사용량 또는 크레딧 잔액을 확인한 후 다시 시도하세요.",
+        "providerBalanceTitle": "구독 계정에 크레딧이 더 필요합니다",
         "providerConnectionDescription": "'모델 제공업체'에서 계정을 다시 연결하거나 업데이트한 다음 다시 시도하세요.",
         "providerQueueTimeoutTitle": "모델이 제때 시작되지 않았습니다",
         "providerRateLimitedTitle": "지금은 모델 요청이 너무 많습니다",
@@ -4648,7 +4642,7 @@
     "modelTemporarilyUnavailable": "모델을 일시적으로 사용할 수 없음",
     "modelUnavailable": "현재 모델을 사용할 수 없습니다.",
     "overloaded": "{{model}}이(가) 과부하 상태입니다. 몇 분 후 다시 시도하거나 다른 모델로 전환하세요.",
-    "providerBalance": "연결된 모델 제공업체 계정의 잔액이 부족합니다.",
+    "providerBalance": "연결된 구독 계정의 잔액이 부족합니다.",
     "transient": "오류가 발생했습니다. 나중에 다시 시도하세요.",
     "vm0Credits": "크레딧이 부족합니다. 계속하려면 크레딧을 추가하거나 개인 Codex 또는 Claude 구독을 연결하세요."
   },
@@ -4884,10 +4878,8 @@
         "effort": "강도",
         "effortScale": {
           "faster": "빠르게",
-          "fewerCredits": "크레딧 적게",
           "higherUsage": "사용량 많이",
           "lowerUsage": "사용량 적게",
-          "moreCredits": "크레딧 많이",
           "smarter": "똑똑하게"
         },
         "fast": "빠름",

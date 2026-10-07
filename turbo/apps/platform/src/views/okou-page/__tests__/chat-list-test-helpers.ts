@@ -204,7 +204,6 @@ export function installChatListRunModels(context: TestContext): void {
         credentialScope: "member",
         modelProviderId: null,
         routeStatus: "valid",
-        routeStatusReason: null,
       };
     },
   );

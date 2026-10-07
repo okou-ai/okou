@@ -317,14 +317,6 @@ GITHUB_APP_PRIVATE_KEY=op://Development/github/GITHUB_APP_PRIVATE_KEY
 GITHUB_APP_SLUG=op://Development/github/GITHUB_APP_SLUG
 GITHUB_APP_WEBHOOK_SECRET=op://Development/github/GITHUB_APP_WEBHOOK_SECRET
 
-# Optional: Built-in model provider API keys
-DEV_MODEL_ANTHROPIC_KEY=op://Development/anthropic/DEV_MODEL_ANTHROPIC_KEY
-DEV_MODEL_OPENAI_KEY=op://Development/openai/OPENAI_API_KEY
-DEV_MODEL_MOONSHOT_KEY=op://Development/moonshot/DEV_MODEL_MOONSHOT_KEY
-DEV_MODEL_ZAI_KEY=op://Development/z.ai/DEV_MODEL_ZAI_KEY
-DEV_MODEL_MINIMAX_KEY=op://Development/minimax/DEV_MODEL_MINIMAX_KEY
-DEV_MODEL_DEEPSEEK_KEY=op://Development/deepseek/DEEPSEEK_LOCAL_DEV_KEY
-
 # Optional: Web Push (VAPID)
 VAPID_PUBLIC_KEY=op://Development/vapid/VAPID_PUBLIC_KEY
 VAPID_PRIVATE_KEY=op://Development/vapid/VAPID_PRIVATE_KEY

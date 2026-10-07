@@ -48,9 +48,9 @@ async fn codex_app_server_backend_runs_initial_turn_and_synthesizes_thread_start
             &guest_contracts::env::RunPayload {
                 prompt: prompt.to_string(),
                 codex_runtime_config: r#"{
-                    "providerId": "deepseek",
-                    "name": "DeepSeek",
-                    "baseUrl": "https://api.deepseek.com/",
+                    "providerId": "openrouter-codex",
+                    "name": "OpenRouter (Codex)",
+                    "baseUrl": "https://openrouter.ai/api/v1",
                     "envKey": "OPENAI_API_KEY",
                     "wireApi": "responses",
                     "supportsWebsockets": false
@@ -172,7 +172,7 @@ async fn codex_app_server_backend_runs_initial_turn_and_synthesizes_thread_start
         input_event
             .get("thread_request_model_provider")
             .and_then(Value::as_str),
-        Some("deepseek")
+        Some("openrouter-codex")
     );
     assert!(
         input_event

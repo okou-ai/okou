@@ -84,13 +84,9 @@
           "guidance": "Führen Sie zunächst eine Credit-Diagnose durch. Kaufen Sie Credits nur, wenn der aktuelle Plan dies zulässt. andernfalls geben Sie den Plan-Upgrade-Link zurück.",
           "title": "Credits aufgebraucht"
         },
-        "modelProviderUnavailable": {
-          "guidance": "Der von diesem Thread verwendete Modellanbieter wurde gelöscht. Starten Sie einen neuen Chat-Thread, um fortzufahren.",
-          "title": "Modellanbieter nicht verfügbar"
-        },
         "noModelProvider": {
-          "guidance": "Konfigurieren Sie einen Modellanbieter, um mit der Ausführung von Agenten zu beginnen.",
-          "title": "Kein Modellanbieter konfiguriert"
+          "guidance": "Versuche es gleich noch einmal oder verbinde in den Einstellungen ein persönliches Claude Code- oder Codex-Abonnement.",
+          "title": "Für diese Ausführung ist kein Modellanbieter verfügbar"
         },
         "paidPlanRequired": {
           "guidance": "Die integrierte Videogenerierung ist im aktuellen Plan nicht verfügbar.",
@@ -1869,10 +1865,8 @@
     "errors": {
       "genericTitle": "Dieser Lauf konnte nicht abgeschlossen werden",
       "loadMessages": "Nachrichten konnten nicht geladen werden",
-      "noModelProviderAction": "Richten Sie einen Anbieter in den Arbeitsbereichseinstellungen ein",
-      "noModelProviderPrefix": "Noch kein Modellanbieter konfiguriert.",
-      "providerDeletedAction": "Starten Sie einen neuen Chat-Thread",
-      "providerDeletedPrefix": "Der von diesem Thread verwendete Modellanbieter wurde gelöscht.",
+      "noModelProviderAction": "Abonnements verwalten",
+      "noModelProviderPrefix": "Für diese Ausführung ist kein Modellanbieter verfügbar. Versuche es erneut oder verbinde ein persönliches Abonnement.",
       "providerIncompatibleAction": "Starten Sie eine neue Sitzung",
       "providerIncompatiblePrefix": "Diese Sitzung wurde bei einem anderen Modellanbieter gestartet und kann nicht mit dem aktuellen fortgesetzt werden.",
       "recovery": {
@@ -1892,7 +1886,7 @@
         "fiveHourReset": "Das 5-Stunden-Limit wird {{time}} zurückgesetzt",
         "inputTooLargeDescription": "Kürzen Sie Ihre Nachricht und senden Sie sie erneut.",
         "inputTooLargeTitle": "Ihre Nachricht ist zu groß",
-        "invalidApiKeyTitle": "Der API-Schlüssel muss aktualisiert werden",
+        "invalidApiKeyTitle": "Die Anmeldung deines Abonnements muss aktualisiert werden",
         "invalidCredentialsTitle": "Die Modellverbindung muss überprüft werden",
         "newChat": "Neuer Chat",
         "newChatDescription": "Starten Sie einen neuen Chat und übernehmen Sie die wichtigen Angaben, die Sie weiter brauchen.",
@@ -1901,8 +1895,8 @@
         "outputLimitTitle": "Die Antwort hat ihre Längenbegrenzung erreicht",
         "personalAccount": "Persönliches Abonnement {{account}}",
         "personalAccountDisconnected": "Persönliches Abonnement getrennt",
-        "providerBalanceDescription": "Prüfen Sie das Guthaben Ihres Anbieterkontos und versuchen Sie es erneut.",
-        "providerBalanceTitle": "Das Guthaben beim Modellanbieter reicht nicht aus",
+        "providerBalanceDescription": "Prüfe die Nutzung oder das Guthaben deines Abonnementkontos und versuche es dann erneut.",
+        "providerBalanceTitle": "Dein Abonnementkonto benötigt mehr Guthaben",
         "providerConnectionDescription": "Verbinden oder aktualisieren Sie Ihr Konto unter „Modellanbieter“ und versuchen Sie es erneut.",
         "providerQueueTimeoutTitle": "Das Modell wurde nicht rechtzeitig gestartet",
         "providerRateLimitedTitle": "Gerade gibt es zu viele Modellanfragen",
@@ -4668,7 +4662,7 @@
     "modelTemporarilyUnavailable": "Modell vorübergehend nicht verfügbar",
     "modelUnavailable": "Das aktuelle Modell ist nicht verfügbar.",
     "overloaded": "{{model}} ist überlastet. Warten Sie einige Minuten und versuchen Sie es erneut oder wechseln Sie zu einem anderen Modell.",
-    "providerBalance": "Das Guthaben Ihres verbundenen Modellanbieter-Kontos reicht nicht aus.",
+    "providerBalance": "Dein verbundenes Abonnementkonto hat nicht genügend Guthaben.",
     "transient": "Ein Fehler ist aufgetreten. Bitte versuchen Sie es später erneut.",
     "vm0Credits": "Nicht genügend Guthaben. Fügen Sie Guthaben hinzu oder verbinden Sie ein persönliches Codex- oder Claude-Abonnement, um fortzufahren."
   },
@@ -4904,10 +4898,8 @@
         "effort": "Aufwand",
         "effortScale": {
           "faster": "Schneller",
-          "fewerCredits": "Weniger Credits",
           "higherUsage": "Höherer Verbrauch",
           "lowerUsage": "Geringerer Verbrauch",
-          "moreCredits": "Mehr Credits",
           "smarter": "Intelligenter"
         },
         "fast": "Schnell",

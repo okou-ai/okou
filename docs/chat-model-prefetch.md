@@ -35,11 +35,12 @@ in [API ccstate design](api-ccstate.md#1-factories-take-plain-values).
   rather than rereading the entitlement. The catalog node is created once outside
   the derived callback and starts alongside `orgRows$`; catalog SQL does not wait
   for plan or metadata resolution.
-- `memberModels$`: member providers, connected accounts, configured models and
-  encrypted provider/account secrets, joined once for `(orgId, userId)`. Routing,
-  exact source selection and subscription candidate capture share these rows.
-- `managedModelKeys$`: global managed-key IDs, vendors and secret values in one
-  projection. Route selection and the exact selected key consume this same snapshot.
+- `memberModels$`: the member's personal Claude Code/Codex subscription providers,
+  connected accounts and encrypted account secrets, joined once for
+  `(orgId, userId)`. Routing, exact source selection and subscription candidate
+  capture share these rows.
+- `managedModelKeys$`: the global managed Auto key rows (ID, vendor and secret) in
+  one projection. Auto source selection consumes this same snapshot.
 - `modelPricing$`: global `(kind, provider, category)` existence projection, indexed
   once. Request-specific pricing aliases and service tiers consume it without SQL.
 - `orgMetadata$`: one organization row shared by Agent default identity and model facts.

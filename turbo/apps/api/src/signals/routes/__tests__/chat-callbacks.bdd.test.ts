@@ -3505,8 +3505,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       builtIn: false,
       reason: "provider_insufficient_credits",
       error: "Credit balance is too low",
-      expected:
-        "Your connected model provider account has insufficient balance.",
+      expected: "Your connected subscription account has insufficient balance.",
       publicReason: "provider_insufficient_credits",
     },
     {
@@ -3738,7 +3737,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         {
           error: builtIn
             ? "The current model is unavailable."
-            : "Your connected model provider account has insufficient balance.",
+            : "Your connected subscription account has insufficient balance.",
         },
       ]);
       await failChatRun(
@@ -3938,8 +3937,7 @@ describe("CHAT-02: failed chat callbacks", () => {
     await chatCallbacks.registerPushSubscription(actor);
     chatCallbacks.enableVapid();
 
-    const actionableError =
-      "No model provider configured. Configure one in Workspace Settings → Models.";
+    const actionableError = "No model provider is available for this run";
     const usageLimitError =
       "Claude usage limit reached. Visit https://claude.ai/settings/usage or try again at 6:17 AM.";
     const executionTimeoutError =

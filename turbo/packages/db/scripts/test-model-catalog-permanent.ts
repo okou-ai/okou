@@ -34,20 +34,18 @@ export async function validatePermanentModelCatalogConstraints(
     options: {
       rank?: number;
       replacedBy?: string;
-      isSystemDefault?: boolean;
     } = {},
   ) {
     await client.query(
       `INSERT INTO run_model_catalog (
-         model, display_name, sort_order, is_system_default, lineage_rank,
+         model, display_name, sort_order, lineage_rank,
          replaced_by, replaced_by_lineage_rank
        )
-       SELECT $1, $1, 1, $2, $3, target.model, target.lineage_rank
+       SELECT $1, $1, 1, $2, target.model, target.lineage_rank
        FROM (SELECT 1) AS one
-       LEFT JOIN run_model_catalog AS target ON target.model = $4`,
+       LEFT JOIN run_model_catalog AS target ON target.model = $3`,
       [
         id(name),
-        options.isSystemDefault ?? false,
         options.rank ?? 100,
         options.replacedBy ? id(options.replacedBy) : null,
       ],
@@ -71,11 +69,7 @@ export async function validatePermanentModelCatalogConstraints(
 
   try {
     await client.query("BEGIN");
-    // Start from no default so this suite owns the single default slot.
-    await client.query(
-      "UPDATE run_model_catalog SET is_system_default = false WHERE is_system_default",
-    );
-    await insertModel("a", { isSystemDefault: true });
+    await insertModel("a");
     await insertModel("c");
     await insertModel("d");
     // Multi-hop chain x -> b -> c is accepted.
@@ -134,33 +128,7 @@ export async function validatePermanentModelCatalogConstraints(
       replacementFk,
     );
 
-    // At most one default, and the default must stay active.
-    await rejects(
-      "UPDATE run_model_catalog SET is_system_default = true WHERE model = $1",
-      [id("d")],
-      { code: "23505", constraint: "idx_run_model_catalog_one_system_default" },
-    );
-    await rejects(retire, [id("a"), id("c"), 200], {
-      code: "23514",
-      constraint: "chk_run_model_catalog_default_active",
-    });
-    await rejects(
-      `INSERT INTO run_model_catalog (model, display_name, sort_order, is_system_default, lineage_rank, replaced_by, replaced_by_lineage_rank)
-       VALUES ($1, $1, 1, true, 1, $2, 200)`,
-      [id("f"), id("c")],
-      { code: "23514", constraint: "chk_run_model_catalog_default_active" },
-    );
-
-    // Switch the default first, then retire the old default in one
-    // transaction; the chain resolves to the final active model.
-    await client.query(
-      "UPDATE run_model_catalog SET is_system_default = false WHERE model = $1",
-      [id("a")],
-    );
-    await client.query(
-      "UPDATE run_model_catalog SET is_system_default = true WHERE model = $1",
-      [id("d")],
-    );
+    // Retiring a model resolves its chain to the final active model.
     await client.query(retire, [id("a"), id("c"), 200]);
     const resolved = await client.query(
       `WITH RECURSIVE chain (source, target) AS (
@@ -193,8 +161,8 @@ export async function validatePermanentModelCatalogConstraints(
     const insertRoute = `INSERT INTO model_routes (
       model, provider_type, concrete_provider_type, subscription_type,
       upstream_model, priority, service_tiers, default_service_tier,
-      efforts, default_effort, price_tier, pricing_kind, pricing_provider
-    ) VALUES ($1, $2, $3, $4, $1, $5, $6, $7, $8, $9, $10, $11, $12)`;
+      efforts, default_effort, pricing_kind, pricing_provider
+    ) VALUES ($1, $2, $3, $4, $1, $5, $6, $7, $8, $9, $10, $11)`;
     const builtIn = (overrides: Partial<Record<number, unknown>> = {}) => {
       const values: unknown[] = [
         id("d"),
@@ -206,7 +174,6 @@ export async function validatePermanentModelCatalogConstraints(
         null,
         ["low", "high"],
         "high",
-        "$",
         "model",
         id("d"),
       ];
@@ -236,7 +203,7 @@ export async function validatePermanentModelCatalogConstraints(
       code: "23514",
       constraint: "chk_model_routes_service_tiers",
     });
-    await rejects(insertRoute, builtIn({ 10: null, 11: null, 4: 1 }), {
+    await rejects(insertRoute, builtIn({ 9: null, 10: null, 4: 1 }), {
       code: "23514",
       constraint: "chk_model_routes_pricing_link",
     });
@@ -247,7 +214,6 @@ export async function validatePermanentModelCatalogConstraints(
         2: "unknown-provider",
         9: null,
         10: null,
-        11: null,
       }),
       { code: "23514", constraint: "chk_model_routes_provider_type" },
     );
@@ -259,23 +225,8 @@ export async function validatePermanentModelCatalogConstraints(
         3: "claude-code-oauth-token",
         9: null,
         10: null,
-        11: null,
       }),
       { code: "23514", constraint: "chk_model_routes_subscription_type" },
-    );
-    await rejects(
-      insertRoute,
-      builtIn({
-        1: "codex-oauth-token",
-        2: "codex-oauth-token",
-        3: "codex-oauth-token",
-        5: [],
-        7: [],
-        8: null,
-        10: null,
-        11: null,
-      }),
-      { code: "23514", constraint: "chk_model_routes_price_tier" },
     );
     // A subscription route coexists with the model's Built-in route.
     await client.query(insertRoute, [
@@ -290,7 +241,6 @@ export async function validatePermanentModelCatalogConstraints(
       null,
       null,
       null,
-      null,
     ]);
     // A catalog row with routes cannot be deleted.
     await client.query(
@@ -301,9 +251,7 @@ export async function validatePermanentModelCatalogConstraints(
       code: "23503",
       constraint: "model_routes_model_run_model_catalog_model_fk",
     });
-    console.log(
-      "   ✅ Model catalog replacement, default and route constraints hold",
-    );
+    console.log("   ✅ Model catalog replacement and route constraints hold");
   } finally {
     await client.query("ROLLBACK");
     await client.end();

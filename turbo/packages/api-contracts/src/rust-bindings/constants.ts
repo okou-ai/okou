@@ -85,7 +85,6 @@ type CodexOauthPlaceholderName = (typeof codexOauthPlaceholderNames)[number];
 
 const modelProviderEnvPlaceholderNames = [
   "ANTHROPIC_API_KEY",
-  "ANTHROPIC_AUTH_TOKEN",
   "CLAUDE_CODE_OAUTH_TOKEN",
   "OPENAI_API_KEY",
   "CHATGPT_ACCESS_TOKEN",

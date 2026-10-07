@@ -84,13 +84,9 @@
           "guidance": "Run credit diagnostics first. Buy credits only when the current plan allows it; otherwise return the plan upgrade link.",
           "title": "Credits depleted"
         },
-        "modelProviderUnavailable": {
-          "guidance": "The model provider used by this thread has been deleted. Start a new chat thread to continue.",
-          "title": "Model provider unavailable"
-        },
         "noModelProvider": {
-          "guidance": "Configure a model provider to start running agents.",
-          "title": "No model provider configured"
+          "guidance": "Try again shortly, or connect a personal Claude Code or Codex subscription in Settings.",
+          "title": "No model provider is available for this run"
         },
         "paidPlanRequired": {
           "guidance": "Built-in video generation is unavailable on the current plan.",
@@ -1869,10 +1865,8 @@
     "errors": {
       "genericTitle": "This run couldn't finish",
       "loadMessages": "Failed to load messages",
-      "noModelProviderAction": "Set one up in Workspace Settings",
-      "noModelProviderPrefix": "No model provider configured yet.",
-      "providerDeletedAction": "Start a new chat thread",
-      "providerDeletedPrefix": "The model provider used by this thread has been deleted.",
+      "noModelProviderAction": "Manage subscriptions",
+      "noModelProviderPrefix": "No model provider is available for this run. Try again, or connect a personal subscription.",
       "providerIncompatibleAction": "Start a new session",
       "providerIncompatiblePrefix": "This session was started with a different model provider and can't be continued with the current one.",
       "recovery": {
@@ -1892,7 +1886,7 @@
         "fiveHourReset": "5h resets {{time}}",
         "inputTooLargeDescription": "Shorten your message and send it again.",
         "inputTooLargeTitle": "Your message is too large",
-        "invalidApiKeyTitle": "The API key needs updating",
+        "invalidApiKeyTitle": "Your subscription sign-in needs updating",
         "invalidCredentialsTitle": "Your model connection needs attention",
         "newChat": "New chat",
         "newChatDescription": "Start a new chat and include any important details you want to carry over.",
@@ -1901,8 +1895,8 @@
         "outputLimitTitle": "The response reached its length limit",
         "personalAccount": "Personal subscription {{account}}",
         "personalAccountDisconnected": "Personal subscription disconnected",
-        "providerBalanceDescription": "Check your provider account's credit balance, then try again.",
-        "providerBalanceTitle": "Your provider account needs more credit",
+        "providerBalanceDescription": "Check your subscription account's usage or credit balance, then try again.",
+        "providerBalanceTitle": "Your subscription account needs more credit",
         "providerConnectionDescription": "Open Model Providers to reconnect or update your account, then try again.",
         "providerQueueTimeoutTitle": "The model didn't start in time",
         "providerRateLimitedTitle": "Too many model requests right now",
@@ -4660,7 +4654,7 @@
     "modelTemporarilyUnavailable": "Model temporarily unavailable",
     "modelUnavailable": "The current model is unavailable.",
     "overloaded": "{{model}} is overloaded. Please wait a few minutes and try again, or switch to another model.",
-    "providerBalance": "Your connected model provider account has insufficient balance.",
+    "providerBalance": "Your connected subscription account has insufficient balance.",
     "transient": "Oops, something went wrong. Please try again later.",
     "vm0Credits": "Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue."
   },
@@ -4896,10 +4890,8 @@
         "effort": "Effort",
         "effortScale": {
           "faster": "Faster",
-          "fewerCredits": "Fewer credits",
           "higherUsage": "Higher usage",
           "lowerUsage": "Lower usage",
-          "moreCredits": "More credits",
           "smarter": "Smarter"
         },
         "fast": "Fast",

@@ -189,11 +189,6 @@ describe("GET /api/model-catalog", () => {
       expect.objectContaining({ model: "okou-1.0", displayName: "Auto" }),
     );
     expect(
-      response.body.models.every((entry) => {
-        return entry.priceTier === null;
-      }),
-    ).toBeTruthy();
-    expect(
       response.body.routes.filter((route) => {
         return route.providerType === "built-in";
       }),
@@ -203,7 +198,6 @@ describe("GET /api/model-catalog", () => {
         providerType: "built-in",
         concreteProviderType: "openrouter-codex",
         upstreamModel: "@preset/okou-1-0",
-        priceTier: null,
       }),
     ]);
   });
@@ -233,7 +227,6 @@ describe("GET /api/model-catalog", () => {
         expect.objectContaining({
           model: response.body.systemDefaultModel,
           displayName: "Auto",
-          isSystemDefault: true,
         }),
       );
       expect(response.body.routes.length).toBeGreaterThan(0);

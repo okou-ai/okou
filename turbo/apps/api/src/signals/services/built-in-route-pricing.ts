@@ -1,5 +1,5 @@
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
-import { and, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import {
   resolveUsagePricingProvider,
@@ -8,7 +8,7 @@ import {
 import { computed } from "ccstate";
 import { db$ } from "../external/db";
 import {
-  catalogBuiltInCandidates,
+  catalogAutoRoute,
   type CatalogRoute,
   type ModelCatalog,
   catalogBuiltInRoute,
@@ -138,40 +138,10 @@ export function builtInRoutePricingFromSnapshot(
 export function builtInRoutePricing(args: BuiltInRoutePricingInput) {
   return computed(async (get): Promise<BuiltInRoutePricing> => {
     const db = get(db$);
-    const links = catalogBuiltInCandidates(args.catalog, args.model).flatMap(
-      (route) => {
-        return route.pricingKind && route.pricingProvider
-          ? [
-              {
-                kind: route.pricingKind,
-                provider: resolveUsagePricingProvider(
-                  args.resolution,
-                  route.pricingKind,
-                  route.pricingProvider,
-                ),
-              },
-            ]
-          : [];
-      },
-    );
-    const kinds = [
-      ...new Set(
-        links.map((link) => {
-          return link.kind;
-        }),
-      ),
-    ];
-    const providers = [
-      ...new Set(
-        links.map((link) => {
-          return link.provider;
-        }),
-      ),
-    ];
+    const route = catalogAutoRoute(args.catalog, args.model);
     const rows =
-      providers.length === 0
-        ? []
-        : await db
+      route?.pricingKind && route.pricingProvider
+        ? await db
             .select({
               kind: usagePricing.kind,
               provider: usagePricing.provider,
@@ -180,10 +150,18 @@ export function builtInRoutePricing(args: BuiltInRoutePricingInput) {
             .from(usagePricing)
             .where(
               and(
-                inArray(usagePricing.kind, kinds),
-                inArray(usagePricing.provider, providers),
+                eq(usagePricing.kind, route.pricingKind),
+                eq(
+                  usagePricing.provider,
+                  resolveUsagePricingProvider(
+                    args.resolution,
+                    route.pricingKind,
+                    route.pricingProvider,
+                  ),
+                ),
               ),
-            );
+            )
+        : [];
     return {
       byKey: usagePricingByKey(rows),
       resolution: args.resolution,
@@ -193,22 +171,14 @@ export function builtInRoutePricing(args: BuiltInRoutePricingInput) {
 }
 
 /**
- * The one user-facing rejection for a Built-in run that cannot be billed:
- * each listed route with the usage categories it would report unpriced.
+ * The one user-facing rejection for a Built-in run that cannot be billed,
+ * naming the usage categories its route would report unpriced.
  */
 export function builtInRoutePricingRejectionMessage(
   model: string,
-  routes: readonly {
-    readonly concreteProviderType: string;
-    readonly categories: readonly string[];
-  }[],
+  categories: readonly string[],
 ): string {
-  const detail = routes
-    .map((route) => {
-      return `${route.concreteProviderType} (${route.categories.join(", ")})`;
-    })
-    .join("; ");
-  return `Built-in model ${model} has no route with complete usage pricing: ${detail}`;
+  return `Built-in model ${model} has no complete usage pricing: ${categories.join(", ")}`;
 }
 
 /** Categories the route can produce that settlement could not price. */
@@ -235,16 +205,6 @@ export function unpricedBuiltInRouteCategories(
       undefined
     );
   });
-}
-
-export function isBuiltInRoutePriced(
-  pricing: BuiltInRoutePricing,
-  route: Pick<
-    CatalogRoute,
-    "pricingKind" | "pricingProvider" | "longContextMinTotalInputTokens"
-  >,
-): boolean {
-  return unpricedBuiltInRouteCategories(pricing, route).length === 0;
 }
 
 interface ModelUsageContext {
@@ -421,12 +381,7 @@ function validateBuiltInRoutePricing(args: {
   }
   return {
     kind: "unpriced_route",
-    message: builtInRoutePricingRejectionMessage(args.route.model, [
-      {
-        concreteProviderType: args.route.concreteProviderType,
-        categories: unpriced,
-      },
-    ]),
+    message: builtInRoutePricingRejectionMessage(args.route.model, unpriced),
   };
 }
 

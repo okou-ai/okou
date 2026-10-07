@@ -60,7 +60,6 @@ function runModel(args: {
     credentialScope: "member",
     modelProviderId: args.modelProviderId,
     routeStatus: "valid",
-    routeStatusReason: null,
   };
 }
 
@@ -95,11 +94,6 @@ function provider(args: {
     ...(args.isActive === undefined ? {} : { isActive: args.isActive }),
     type: args.type,
     framework: isCodex ? "codex" : "claude-code",
-    secretName: isCodex ? null : "CLAUDE_CODE_OAUTH_TOKEN",
-    authMethod: isCodex ? "auth_json" : null,
-    secretNames: isCodex ? ["CODEX_AUTH_JSON"] : null,
-    isDefault: false,
-    selectedModel: null,
     accountEmail: args.email,
     workspaceName: args.email,
     planType: "pro",

@@ -3,14 +3,6 @@ import {
   type AvailableRunModel,
 } from "./model-providers";
 
-export interface MemberRunModelCatalog {
-  resolve(model: string): string | undefined;
-  routes(
-    model: string,
-    query: { readonly providerType: string },
-  ): readonly unknown[];
-}
-
 export function getMemberRunModelRoute(model: AvailableRunModel) {
   if (model.memberEffective) {
     return model.memberEffective;
@@ -21,7 +13,7 @@ export function getMemberRunModelRoute(model: AvailableRunModel) {
       ? model.runtimeProviderType
       : model.defaultProviderType,
     credentialScope: model.credentialScope,
-    availability: model.routeStatus === "valid" ? "available" : "unavailable",
+    availability: "available",
     accountSelection:
       model.credentialScope === "member"
         ? "capture_required"
@@ -35,17 +27,7 @@ export function isMemberRunModelAvailable(model: AvailableRunModel): boolean {
 
 export function isMemberRunModelConfigurable(
   model: AvailableRunModel,
-  catalog: MemberRunModelCatalog | null | undefined,
 ): boolean {
-  const route = getMemberRunModelRoute(model);
-  const resolved = catalog?.resolve(model.model);
-  return (
-    route.availability === "available" ||
-    route.availability === "reconnect_required" ||
-    (route.availability === "unavailable" &&
-      route.credentialScope === "member" &&
-      resolved !== undefined &&
-      !!catalog &&
-      catalog.routes(resolved, { providerType: route.providerType }).length > 0)
-  );
+  const { availability } = getMemberRunModelRoute(model);
+  return availability === "available" || availability === "reconnect_required";
 }

@@ -18,6 +18,7 @@ import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, count, desc, eq, isNotNull, sql } from "drizzle-orm";
+import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
 import { bodyResultOf } from "../context/request";
 import { request$ } from "../context/hono";
 import { writeDb$, type Db } from "../external/db";
@@ -28,7 +29,7 @@ import {
   releaseBuiltInModelKeyFixture,
 } from "../services/built-in-model-key-fixture";
 import {
-  getCatalogBuiltInModelRouteCandidates,
+  catalogBuiltInModelRouteUpstream,
   resolveBuiltInModelRuntimeRoute,
   type BuiltInModelRuntimeRoute,
 } from "../services/built-in-model-runtime-route.service";
@@ -69,14 +70,12 @@ function builtInCandidateVendors(
     ) {
       throw new Error("Expected the independent fixed memory binding");
     }
-    return ["openrouter"];
+    return [AUTO_RUN_KEY_VENDOR];
   }
-  return getCatalogBuiltInModelRouteCandidates(
-    catalogSnapshot,
-    selectedModel,
-  ).map((candidate) => {
-    return candidate.vendor;
-  });
+  return catalogBuiltInModelRouteUpstream(catalogSnapshot, selectedModel) ===
+    null
+    ? []
+    : [AUTO_RUN_KEY_VENDOR];
 }
 
 // Test-only support actions for generic infrastructure fixtures.

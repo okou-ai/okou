@@ -9,7 +9,6 @@ interface CatalogRow {
   model: string;
   display_name: string;
   sort_order: number;
-  is_system_default: boolean;
   replaced_by: string | null;
   built_in_on_restricted_plans: boolean | null;
 }
@@ -20,6 +19,9 @@ interface CatalogRow {
  * Built-in routes; these catalog flags, not code, decide the models.
  */
 const BUILT_IN_ON_RESTRICTED_PLANS: readonly string[] = ["okou-1.0"];
+
+/** The API-owned system default (fixed Auto); the catalog keeps its row. */
+const SYSTEM_DEFAULT_MODEL = "okou-1.0";
 
 function modelsWhere(
   rows: readonly CatalogRow[],
@@ -62,7 +64,6 @@ interface RouteRow {
   default_service_tier: string | null;
   efforts: string[];
   default_effort: string | null;
-  price_tier: string | null;
   pricing_kind: string | null;
   pricing_provider: string | null;
 }
@@ -85,11 +86,11 @@ function assertCatalogRows(rows: readonly CatalogRow[]): void {
       assert.ok(current, `${row.model}: unknown replacement`);
     }
   }
-  const defaults = rows.filter((row) => {
-    return row.is_system_default;
-  });
-  assert.equal(defaults.length, 1, "exactly one system default");
-  assert.equal(defaults[0]?.replaced_by, null, "system default is active");
+  assert.equal(
+    byModel.get(SYSTEM_DEFAULT_MODEL)?.replaced_by,
+    null,
+    "system default is active",
+  );
 }
 
 function assertRoute(route: RouteRow): void {
@@ -126,15 +127,14 @@ function assertRoute(route: RouteRow): void {
       getBuiltInRouteProviderVendor(route.concrete_provider_type),
       `${label}: no Built-in provider for ${route.concrete_provider_type}`,
     );
-    assert.ok(route.price_tier, `${label}: missing price tier`);
     assert.equal(route.pricing_kind, "model", label);
     assert.ok(route.pricing_provider, `${label}: missing pricing link`);
     return;
   }
   assert.equal(route.concrete_provider_type, route.provider_type, label);
   assert.deepEqual(
-    [route.price_tier, route.pricing_kind, route.pricing_provider],
-    [null, null, null],
+    [route.pricing_kind, route.pricing_provider],
+    [null, null],
     `${label}: own routes are not priced by the catalog`,
   );
 }
@@ -180,7 +180,7 @@ function assertRoutes(
     const builtIn = routes.filter((route) => {
       return route.model === row.model && route.provider_type === "built-in";
     });
-    // Built-in candidates have distinct priorities and one display tier.
+    // Built-in candidates have distinct priorities.
     assert.equal(
       new Set(
         builtIn.map((route) => {
@@ -190,15 +190,7 @@ function assertRoutes(
       builtIn.length,
       `${row.model}: duplicate Built-in priority`,
     );
-    assert.ok(
-      new Set(
-        builtIn.map((route) => {
-          return route.price_tier;
-        }),
-      ).size <= 1,
-      `${row.model}: Built-in routes disagree on the price tier`,
-    );
-    if (row.is_system_default) {
+    if (row.model === SYSTEM_DEFAULT_MODEL) {
       assert.ok(
         builtIn.some((route) => {
           return route.enabled;
@@ -211,10 +203,10 @@ function assertRoutes(
 
 /**
  * Validates the internal consistency of the seeded global model catalog:
- * replacement chains, one system default, and route capabilities that agree
- * with themselves (defaults inside their lists, one pricing link and price
- * tier per Built-in route), the restricted-plan entitlement flags, plus the
- * subscription catalog mirror.
+ * replacement chains, an active system default with an enabled Built-in
+ * route, and route capabilities that agree with themselves (defaults inside
+ * their lists, one pricing link per Built-in route), the restricted-plan
+ * entitlement flags, plus the subscription catalog mirror.
  */
 export async function validateModelCatalogSeed(
   databaseUrl: string,
@@ -223,7 +215,7 @@ export async function validateModelCatalogSeed(
   await client.connect();
   try {
     const catalog = await client.query<CatalogRow>(
-      `SELECT model, display_name, sort_order, is_system_default, replaced_by,
+      `SELECT model, display_name, sort_order, replaced_by,
          built_in_on_restricted_plans
        FROM run_model_catalog ORDER BY sort_order, model`,
     );
@@ -232,7 +224,7 @@ export async function validateModelCatalogSeed(
     const routes = await client.query<RouteRow>(
       `SELECT model, provider_type, concrete_provider_type, subscription_type,
          upstream_model, enabled, priority, service_tiers, default_service_tier, efforts,
-         default_effort, price_tier, pricing_kind, pricing_provider
+         default_effort, pricing_kind, pricing_provider
        FROM model_routes`,
     );
     assertRoutes(catalog.rows, routes.rows);

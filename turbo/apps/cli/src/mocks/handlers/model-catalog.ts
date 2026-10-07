@@ -9,19 +9,17 @@ type FixtureModel = readonly [
   displayName: string,
   replacedBy: string | null,
   resolvedModel: string,
-  priceTier: string | null,
   efforts: readonly string[],
   defaultEffort: string | null,
 ];
 
 const FIXTURE_MODELS: readonly FixtureModel[] = [
-  ["okou-1.0", "Auto", null, "okou-1.0", "$", [], null],
+  ["okou-1.0", "Auto", null, "okou-1.0", [], null],
   [
     "claude-fable-5-1",
     "Claude Fable 5.1",
     null,
     "claude-fable-5-1",
-    "$$$$",
     CLAUDE_EFFORTS,
     "max",
   ],
@@ -30,7 +28,6 @@ const FIXTURE_MODELS: readonly FixtureModel[] = [
     "Claude Fable 5",
     "claude-fable-5-1",
     "claude-fable-5-1",
-    null,
     [],
     null,
   ],
@@ -39,7 +36,6 @@ const FIXTURE_MODELS: readonly FixtureModel[] = [
     "Claude Opus 5.5",
     null,
     "claude-opus-5-5",
-    "$$$",
     CLAUDE_EFFORTS,
     "medium",
   ],
@@ -48,7 +44,6 @@ const FIXTURE_MODELS: readonly FixtureModel[] = [
     "Claude Opus 5",
     null,
     "claude-opus-5",
-    "$$$",
     CLAUDE_EFFORTS,
     "high",
   ],
@@ -57,7 +52,6 @@ const FIXTURE_MODELS: readonly FixtureModel[] = [
     "Claude Opus 4.8",
     "claude-opus-5-5",
     "claude-opus-5-5",
-    null,
     [],
     null,
   ],
@@ -66,7 +60,6 @@ const FIXTURE_MODELS: readonly FixtureModel[] = [
     "Claude Sonnet 5.5",
     null,
     "claude-sonnet-5-5",
-    "$$",
     CLAUDE_EFFORTS,
     "high",
   ],
@@ -75,7 +68,6 @@ const FIXTURE_MODELS: readonly FixtureModel[] = [
     "Claude Sonnet 5",
     null,
     "claude-sonnet-5",
-    "$$",
     CLAUDE_EFFORTS,
     "high",
   ],
@@ -84,45 +76,26 @@ const FIXTURE_MODELS: readonly FixtureModel[] = [
     "GPT 6 Sol",
     null,
     "gpt-6-sol",
-    "$$$",
     [...CODEX_EFFORTS, "ultra"],
     "max",
   ],
-  ["gpt-6-luna", "GPT 6 Luna", null, "gpt-6-luna", "$", CODEX_EFFORTS, "max"],
+  ["gpt-6-luna", "GPT 6 Luna", null, "gpt-6-luna", CODEX_EFFORTS, "max"],
   [
     "gpt-5.6-sol",
     "GPT 5.6 Sol",
     null,
     "gpt-5.6-sol",
-    "$$$",
     [...CODEX_EFFORTS, "ultra"],
     "max",
   ],
-  [
-    "gpt-5.6-luna",
-    "GPT 5.6 Luna",
-    null,
-    "gpt-5.6-luna",
-    "$",
-    CODEX_EFFORTS,
-    "max",
-  ],
-  ["gpt-5.5", "GPT 5.5", "gpt-6-luna", "gpt-6-luna", null, [], null],
-  [
-    "deepseek-v4-pro",
-    "DeepSeek V4 Pro",
-    "gpt-6-luna",
-    "gpt-6-luna",
-    null,
-    [],
-    null,
-  ],
+  ["gpt-5.6-luna", "GPT 5.6 Luna", null, "gpt-5.6-luna", CODEX_EFFORTS, "max"],
+  ["gpt-5.5", "GPT 5.5", "gpt-6-luna", "gpt-6-luna", [], null],
+  ["deepseek-v4-pro", "DeepSeek V4 Pro", "gpt-6-luna", "gpt-6-luna", [], null],
   [
     "deepseek-v4-flash",
     "DeepSeek V4 Flash",
     null,
     "deepseek-v4-flash",
-    "$",
     ["low", "high", "xhigh", "max"],
     "high",
   ],
@@ -135,15 +108,13 @@ const FIXTURE_MODELS: readonly FixtureModel[] = [
 export const MODEL_CATALOG_RESPONSE: ModelCatalogResponse = {
   systemDefaultModel: "okou-1.0",
   models: FIXTURE_MODELS.map(
-    ([model, displayName, replacedBy, resolvedModel, priceTier], index) => {
+    ([model, displayName, replacedBy, resolvedModel], index) => {
       return {
         model,
         displayName,
         sortOrder: (index + 1) * 10,
-        isSystemDefault: model === "okou-1.0",
         replacedBy,
         resolvedModel,
-        priceTier,
         builtInOnRestrictedPlans: model === "okou-1.0",
         piRouteClass: null,
       };
@@ -151,7 +122,7 @@ export const MODEL_CATALOG_RESPONSE: ModelCatalogResponse = {
   ),
   routes: FIXTURE_MODELS.filter(([, , replacedBy]) => {
     return replacedBy === null;
-  }).map(([model, , , , priceTier, efforts, defaultEffort]) => {
+  }).map(([model, , , , efforts, defaultEffort]) => {
     return {
       model,
       providerType: "built-in",
@@ -164,7 +135,6 @@ export const MODEL_CATALOG_RESPONSE: ModelCatalogResponse = {
       defaultServiceTier: null,
       efforts: [...efforts],
       defaultEffort,
-      priceTier,
     };
   }),
 };

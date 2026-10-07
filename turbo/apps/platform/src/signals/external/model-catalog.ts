@@ -44,8 +44,6 @@ export interface ModelCatalog {
   compare(left: string, right: string): number;
   /** The active model a stored selection resolves to; undefined when unknown. */
   resolve(model: string | null | undefined): string | undefined;
-  /** Built-in display price tier, if the model has a Built-in route. */
-  priceTier(model: string): string | null;
   /** Enabled routes of a model, optionally narrowed to one provider route. */
   routes(model: string, query?: ModelCatalogRouteQuery): CatalogRouteEntry[];
   efforts(model: string, query?: ModelCatalogRouteQuery): readonly string[];
@@ -192,17 +190,6 @@ export function createModelCatalog(
         return undefined;
       }
       return byModel.get(model)?.resolvedModel;
-    },
-    priceTier(model) {
-      const modelTier = byModel.get(model)?.priceTier;
-      if (modelTier) {
-        return modelTier;
-      }
-      return (
-        routes(model, { providerType: "built-in" }).find((route) => {
-          return route.priceTier !== null;
-        })?.priceTier ?? null
-      );
     },
     routes,
     efforts(model, query) {

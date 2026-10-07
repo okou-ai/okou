@@ -12,29 +12,12 @@ final class ModelSelectionTests: XCTestCase {
   }
 
   func testSavedPersonalPreferencePreservesReconnectAndPlanRestriction() throws {
-    let catalog = try decodeCatalog(routes: [])
     for availability in ["available", "reconnect_required", "plan_restricted"] {
       let option = try decodeModel(availability: availability)
-      XCTAssertTrue(option.hasUsableRoute(catalog: catalog), availability)
+      XCTAssertTrue(option.hasUsableRoute(), availability)
     }
-    let unavailable = try decodeModel(availability: "unavailable")
-    XCTAssertFalse(unavailable.hasUsableRoute(catalog: catalog))
-  }
-
-  func testUnavailableSubscriptionRequiresMatchingEnabledCatalogRoute() throws {
-    let catalog = try decodeCatalog(routes: [
-      #"{"model":"active","providerType":"codex-oauth-token","enabled":true,"serviceTiers":[]}"#,
-      #"{"model":"active","providerType":"claude-code-oauth-token","enabled":false,"serviceTiers":[]}"#,
-    ])
-    let subscription = try decodeModel(availability: "unavailable")
-    XCTAssertTrue(subscription.hasUsableRoute(catalog: catalog))
-    let disabled = try decodeModel(
-      availability: "unavailable", providerType: "claude-code-oauth-token")
-    XCTAssertFalse(disabled.hasUsableRoute(catalog: catalog))
-    let organization = try decodeModel(availability: "unavailable", credentialScope: "org")
-    XCTAssertFalse(organization.hasUsableRoute(catalog: catalog))
-    let unknown = try decodeModel(availability: "unavailable", model: "unknown")
-    XCTAssertFalse(unknown.hasUsableRoute(catalog: catalog))
+    let unknown = try decodeModel(availability: "unknown")
+    XCTAssertFalse(unknown.hasUsableRoute())
   }
 
   func testResolvedSubscriptionSelectionPreservesSupportedTierThroughReconnect() throws {
@@ -52,7 +35,7 @@ final class ModelSelectionTests: XCTestCase {
   func testSubscriptionPriorityUsesItsOwnCapability() throws {
     let catalog = try decodeCatalog(routes: [])
     let offered = try decodeModel(
-      availability: "unavailable", model: "active", subscriptionTier: #""priority""#)
+      availability: "reconnect_required", model: "active", subscriptionTier: #""priority""#)
     let absent = try decodeModel(
       availability: "available", model: "active", subscriptionTier: "null")
     XCTAssertTrue(offered.supportsServiceTier("priority", catalog: catalog))
@@ -65,7 +48,7 @@ final class ModelSelectionTests: XCTestCase {
     let auto = try decodeModel(
       availability: nil, providerType: "built-in", credentialScope: "org",
       model: "okou-1.0")
-    XCTAssertTrue(auto.hasUsableRoute(catalog: catalog))
+    XCTAssertTrue(auto.hasUsableRoute())
     XCTAssertFalse(auto.supportsServiceTier("priority", catalog: catalog))
   }
 

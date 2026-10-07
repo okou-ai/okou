@@ -84,13 +84,9 @@
           "guidance": "まずクレジット診断を実行してください。現在のプランで購入できる場合にのみクレジットを購入し、それ以外の場合はプランのアップグレードリンクを返してください。",
           "title": "クレジットが枯渇しました"
         },
-        "modelProviderUnavailable": {
-          "guidance": "このスレッドで使用されているモデルプロバイダーは削除されました。続行するには、新しいチャット スレッドを開始してください。",
-          "title": "モデルプロバイダーが利用できません"
-        },
         "noModelProvider": {
-          "guidance": "エージェントを実行するには、モデルプロバイダーを設定してください。",
-          "title": "モデルプロバイダーが設定されていません"
+          "guidance": "しばらくしてからもう一度お試しいただくか、設定で個人の Claude Code または Codex サブスクリプションを接続してください。",
+          "title": "この実行に使用できるモデルプロバイダーがありません"
         },
         "paidPlanRequired": {
           "guidance": "組み込みのビデオ生成は、現在のプランでは利用できません。",
@@ -1862,10 +1858,8 @@
     "errors": {
       "genericTitle": "この実行を完了できませんでした",
       "loadMessages": "メッセージの読み込みに失敗しました",
-      "noModelProviderAction": "ワークスペース設定で設定します",
-      "noModelProviderPrefix": "モデルプロバイダーがまだ構成されていません。",
-      "providerDeletedAction": "新しいチャット スレッドを開始する",
-      "providerDeletedPrefix": "このスレッドで使用されているモデルプロバイダーは削除されました。",
+      "noModelProviderAction": "サブスクリプションを管理",
+      "noModelProviderPrefix": "この実行に使用できるモデルプロバイダーがありません。もう一度お試しいただくか、個人サブスクリプションを接続してください。",
       "providerIncompatibleAction": "新しいセッションを開始する",
       "providerIncompatiblePrefix": "このセッションは別のモデル プロバイダーで開始されたため、現在のモデル プロバイダーでは続行できません。",
       "recovery": {
@@ -1885,7 +1879,7 @@
         "fiveHourReset": "5時間の上限は {{time}} にリセット",
         "inputTooLargeDescription": "メッセージを短くして、もう一度送信してください。",
         "inputTooLargeTitle": "メッセージが大きすぎます",
-        "invalidApiKeyTitle": "API キーを更新してください",
+        "invalidApiKeyTitle": "サブスクリプションのサインインを更新する必要があります",
         "invalidCredentialsTitle": "モデルとの接続を確認してください",
         "newChat": "新しいチャット",
         "newChatDescription": "新しいチャットを始め、引き継ぎたい大切な情報を含めてください。",
@@ -1894,8 +1888,8 @@
         "outputLimitTitle": "応答が長さの上限に達しました",
         "personalAccount": "個人サブスクリプション {{account}}",
         "personalAccountDisconnected": "個人サブスクリプションの接続が切れています",
-        "providerBalanceDescription": "プロバイダーアカウントの残高を確認してから、再試行してください。",
-        "providerBalanceTitle": "モデルプロバイダーのアカウント残高が不足しています",
+        "providerBalanceDescription": "サブスクリプションアカウントの使用量またはクレジット残高を確認してから、もう一度お試しください。",
+        "providerBalanceTitle": "サブスクリプションアカウントのクレジットが不足しています",
         "providerConnectionDescription": "「モデルプロバイダー」でアカウントを再接続または更新してから、再試行してください。",
         "providerQueueTimeoutTitle": "モデルの起動が間に合いませんでした",
         "providerRateLimitedTitle": "モデルへのリクエストが多すぎます",
@@ -4648,7 +4642,7 @@
     "modelTemporarilyUnavailable": "モデルは一時的に利用できません",
     "modelUnavailable": "現在のモデルは利用できません。",
     "overloaded": "{{model}} は混雑しています。数分待ってからもう一度試すか、別のモデルに切り替えてください。",
-    "providerBalance": "接続されているモデルプロバイダーのアカウント残高が不足しています。",
+    "providerBalance": "接続されたサブスクリプションアカウントの残高が不足しています。",
     "transient": "エラーが発生しました。しばらくしてからもう一度お試しください。",
     "vm0Credits": "クレジットが不足しています。続行するにはクレジットを追加するか、個人の Codex または Claude サブスクリプションを接続してください。"
   },
@@ -4884,10 +4878,8 @@
         "effort": "強度",
         "effortScale": {
           "faster": "速さ",
-          "fewerCredits": "消費クレジットが少ない",
           "higherUsage": "使用量が多い",
           "lowerUsage": "使用量が少ない",
-          "moreCredits": "消費クレジットが多い",
           "smarter": "賢さ"
         },
         "fast": "速い",

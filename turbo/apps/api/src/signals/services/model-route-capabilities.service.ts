@@ -1,5 +1,4 @@
 import {
-  getBuiltInRouteProviderVendor,
   getCatalogRunModelRouteAccess,
   isBuiltInModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
@@ -8,8 +7,9 @@ import {
   type ModelSettings,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
 import {
-  catalogBuiltInCandidates,
+  catalogAutoRoute,
   type CatalogRoute,
   type ModelCatalog,
 } from "./model-catalog.service";
@@ -234,25 +234,12 @@ export function catalogRunModelRouteAccess(
   );
 }
 
-/** Key-pool vendor of the model's primary Built-in candidate. */
-function catalogBuiltInPrimaryVendor(
-  catalog: ModelCatalog,
-  model: string,
-): string {
-  const [primary] = catalogBuiltInCandidates(catalog, model);
-  const vendor = primary
-    ? getBuiltInRouteProviderVendor(primary.concreteProviderType)
-    : undefined;
-  if (!vendor) {
-    throw new Error(`Model "${model}" has no executable Built-in route`);
+/** Key-pool vendor that serves the system default (Auto) Built-in route. */
+export function loadSystemDefaultBuiltInVendor(catalog: ModelCatalog): string {
+  if (!catalogAutoRoute(catalog, catalog.systemDefaultModel)) {
+    throw new Error(
+      `Model "${catalog.systemDefaultModel}" has no executable Built-in route`,
+    );
   }
-  return vendor;
-}
-
-/** Key-pool vendor that serves the system default on Built-in routes. */
-export function loadSystemDefaultBuiltInVendor(
-  catalogSnapshot: ModelCatalog,
-): string {
-  const catalog = catalogSnapshot;
-  return catalogBuiltInPrimaryVendor(catalog, catalog.systemDefaultModel);
+  return AUTO_RUN_KEY_VENDOR;
 }

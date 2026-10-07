@@ -57,10 +57,6 @@ export const ApiError = {
     status: 503 as const,
     code: "REQUEST_DEADLINE_EXCEEDED",
   },
-  PROVIDER_DELETED: {
-    status: 422 as const,
-    code: "PROVIDER_DELETED",
-  },
   CODEX_AUTH_JSON_SHAPE_INVALID: {
     status: 400 as const,
     code: "CODEX_AUTH_JSON_SHAPE_INVALID",
@@ -127,8 +123,9 @@ export const RUN_ERROR_GUIDANCE: Record<
       "okou connector permission-request computer-use --permission computer-use:write",
   },
   NO_MODEL_PROVIDER: {
-    title: "No model provider configured",
-    guidance: "Configure a model provider to start running agents.",
+    title: "No model provider is available for this run",
+    guidance:
+      "Try again shortly, or connect a personal Claude Code or Codex subscription in Settings.",
     cliHint: "okou model ls",
   },
   INSUFFICIENT_CREDITS: {
@@ -188,11 +185,6 @@ export const RUN_ERROR_GUIDANCE: Record<
     title: "Model temporarily unavailable",
     guidance:
       "Every built-in model route for this model is temporarily unavailable. Please try again later.",
-  },
-  PROVIDER_DELETED: {
-    title: "Model provider unavailable",
-    guidance:
-      "The model provider used by this thread has been deleted. Start a new chat thread to continue.",
   },
   TOO_MANY_REQUESTS: {
     title: "Concurrent run limit reached",

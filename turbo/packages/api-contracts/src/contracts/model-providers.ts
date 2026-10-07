@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import DEEPSEEK_V4_FLASH_MODEL_CATALOG from "./deepseek-model-catalog.json" with { type: "json" };
-import type { ModelPriceTier } from "./model-price-tiers";
 import {
   MODEL_PROVIDER_TYPE_IDS,
   isBuiltInModelProviderType,
@@ -48,16 +47,11 @@ const DEEPSEEK_V4_1_FLASH_MODEL_CATALOG = {
   models: [deepseekV41FlashCatalogModel],
 };
 
-export type { ModelPriceTier };
-
 /**
  * Secret field configuration for multi-secret providers
  */
-export interface SecretFieldConfig {
-  label: string;
+interface SecretFieldConfig {
   required: boolean;
-  placeholder?: string;
-  helpText?: string;
   /**
    * When true, this secret is persisted server-side and MUST NOT flow to the
    * runner/sandbox. Used for OAuth refresh tokens and ID tokens that the
@@ -65,25 +59,12 @@ export interface SecretFieldConfig {
    * never see (per #7365). Honored by `resolveMultiAuthProviderSecrets`.
    */
   serverOnly?: boolean;
-  /**
-   * When true, this secret is populated by a server-side parser from another
-   * secret in the same authMethod (typically a single user-input field whose
-   * raw value is exploded into multiple stored fields). UI MUST NOT render an
-   * input for this secret; the storage validation layer still uses it.
-   *
-   * Example: `codex-oauth-token` / `auth_json` — user pastes `CODEX_AUTH_JSON`,
-   * server parser writes `CHATGPT_ACCESS_TOKEN` / `_REFRESH_TOKEN` /
-   * `_ACCOUNT_ID` / `_ID_TOKEN`. Those four are `derived: true`.
-   */
-  derived?: boolean;
 }
 
 /**
  * Auth method configuration for providers with multiple auth options
  */
-export interface AuthMethodConfig {
-  label: string;
-  helpText?: string;
+interface AuthMethodConfig {
   secrets: Record<string, SecretFieldConfig>;
 }
 
@@ -180,74 +161,22 @@ export function getCatalogRunModelRouteAccess(
     : "pro_required";
 }
 
-/**
- * Mapping from built-in model names to their concrete provider type and vendor.
- * Used at build-context time to resolve the meta-provider to a real provider.
- */
-export const BUILT_IN_MODEL_ROUTE_PROVIDERS = {
-  "openrouter-codex": { vendor: "openrouter" },
-} as const satisfies Partial<Record<ModelProviderType, { vendor: string }>>;
-
-export type BuiltInModelRouteProviderType =
-  keyof typeof BUILT_IN_MODEL_ROUTE_PROVIDERS;
-
-/** The key-pool vendor of a concrete Built-in provider; undefined for others. */
+/** The key-pool vendor of the concrete Built-in provider; undefined for others. */
 export function getBuiltInRouteProviderVendor(
   concreteProviderType: string,
 ): string | undefined {
-  return BUILT_IN_ROUTE_PROVIDER_VENDORS.get(concreteProviderType);
-}
-
-const BUILT_IN_ROUTE_PROVIDER_VENDORS: ReadonlyMap<string, string> = new Map(
-  Object.entries(BUILT_IN_MODEL_ROUTE_PROVIDERS).map(([type, provider]) => {
-    return [type, provider.vendor];
-  }),
-);
-
-/** Vendors of every concrete provider a Built-in route can use (key pools). */
-export function getBuiltInModelRouteVendors(): readonly string[] {
-  return [
-    ...new Set(
-      Object.values(BUILT_IN_MODEL_ROUTE_PROVIDERS).map((provider) => {
-        return provider.vendor;
-      }),
-    ),
-  ];
-}
-
-export const BUILT_IN_MODEL_ALIAS_TO_MODEL = {
-  "openai/gpt-5.5": "gpt-5.5",
-  "anthropic/claude-fable-5.1": "claude-fable-5-1",
-  "anthropic/claude-fable-5": "claude-fable-5",
-  "anthropic/claude-opus-5.5": "claude-opus-5-5",
-  "anthropic/claude-opus-5": "claude-opus-5",
-  "anthropic/claude-opus-4.8": "claude-opus-4-8",
-  "anthropic/claude-sonnet-5-5": "claude-sonnet-5-5",
-  "anthropic/claude-sonnet-5": "claude-sonnet-5",
-  "anthropic/claude-sonnet-4.6": "claude-sonnet-4-6",
-  "deepseek/deepseek-v4-pro": "deepseek-v4-pro",
-} as const satisfies Record<string, string>;
-
-const BUILT_IN_MODEL_ALIAS_LOOKUP: Readonly<Record<string, string>> =
-  BUILT_IN_MODEL_ALIAS_TO_MODEL;
-
-export function normalizeBuiltInModelId(model: string): string {
-  return BUILT_IN_MODEL_ALIAS_LOOKUP[model] ?? model;
+  return concreteProviderType === "openrouter-codex" ? "openrouter" : undefined;
 }
 
 /**
  * Model Provider type configuration
- * Maps type to framework, secret name, and display info
+ * Maps type to framework, secret name, and display label
  *
  * For providers with `envBindings`, the secret is mapped to framework variables:
- * - `$secret` → the stored secret value (legacy single secret)
- * - `$secrets.X` → lookup secret X from the secrets map (multi-secret)
- * - `$model` → the selected model (or default)
+ * - `$secret` → the stored single secret (`secretName`)
+ * - `$secrets.X` → lookup secret X from the `authMethods` secrets map
+ * - `$model` → the selected model
  * - Other values are passed through as literals
- *
- * Provider types:
- * - Legacy providers: use `secretName` for single secret
- * - Multi-auth providers: use `authMethods` for multiple auth options with different secrets
  */
 const BUILT_IN_MODEL_PROVIDER_CONFIG = {
   framework: "claude-code" as const,
@@ -259,21 +188,10 @@ export const MODEL_PROVIDER_TYPES = {
     framework: "claude-code" as const,
     secretName: "CLAUDE_CODE_OAUTH_TOKEN",
     label: "Claude Code (OAuth Token)",
-    secretLabel: "OAuth token",
-    helpText:
-      "To get your OAuth token, run: claude setup-token\n(Requires Claude Pro or Max subscription)",
     envBindings: {
       CLAUDE_CODE_OAUTH_TOKEN: "$secret",
       ANTHROPIC_MODEL: "$model",
     } satisfies ModelProviderEnvBindings,
-    models: [
-      "claude-fable-5-1",
-      "claude-opus-5-5",
-      "claude-opus-5",
-      "claude-sonnet-5-5",
-      "claude-sonnet-5",
-    ] as string[],
-    defaultModel: "claude-sonnet-5",
   },
   // Concrete provider behind the platform Auto route (OpenAI Responses via
   // OpenRouter).
@@ -281,31 +199,15 @@ export const MODEL_PROVIDER_TYPES = {
     framework: "codex" as const,
     secretName: "OPENROUTER_API_KEY",
     label: "OpenRouter (Codex)",
-    secretLabel: "API key",
-    helpText: "Get your API key at: https://openrouter.ai/settings/keys",
     envBindings: {
       OPENAI_API_KEY: "$secret",
       OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
       OPENAI_MODEL: "$model",
     } satisfies ModelProviderEnvBindings,
-    models: [
-      "openai/gpt-6-astra",
-      "openai/gpt-6-sol",
-      "openai/gpt-6-luna",
-      "openai/gpt-5.6-sol",
-      "openai/gpt-5.6-luna",
-      "deepseek/deepseek-v4.1-flash",
-      "deepseek/deepseek-v4-flash",
-    ] as string[],
-    defaultModel: "openai/gpt-5.6-luna",
   },
   "codex-oauth-token": {
     framework: "codex" as const,
     label: "ChatGPT (Codex)",
-    helpText:
-      "Run `codex login` on your machine, then paste the resulting " +
-      "~/.codex/auth.json contents to authorize ChatGPT (Plus / Pro / " +
-      "Business / Edu / Enterprise) for Codex.",
     authMethods: {
       // Paste-based auth: client posts CODEX_AUTH_JSON, server parses it via
       // codex-auth-json-parser.ts and persists the four derived CHATGPT_*
@@ -314,66 +216,39 @@ export const MODEL_PROVIDER_TYPES = {
       // accepts it on POST without persisting; the four CHATGPT_* fields are
       // the canonical stored secrets and the firewall layer reads from those.
       auth_json: {
-        label: "Codex auth.json",
-        helpText:
-          "Run `codex login` locally, then paste the contents of ~/.codex/auth.json below.",
         secrets: {
           CODEX_AUTH_JSON: {
-            label: "auth.json contents",
             required: false,
             serverOnly: true,
-            placeholder: '{"OPENAI_API_KEY":null,"tokens":{...}}',
-            helpText: "Paste the entire contents of ~/.codex/auth.json",
           },
           // CHATGPT_ACCESS_TOKEN and CHATGPT_ACCOUNT_ID reach the sandbox env
           // as placeholder values (substituted by the firewall token-replacement
           // layer at egress) — keeping them non-serverOnly preserves the
           // placeholder injection path. CHATGPT_REFRESH_TOKEN and
-          // CHATGPT_ID_TOKEN stay serverOnly per the #7365 invariant.
-          //
-          // All four are `derived: true` — the server-side parser populates
-          // them from the user-pasted CODEX_AUTH_JSON. The UI MUST NOT render
-          // them as input fields (per #12024).
+          // CHATGPT_ID_TOKEN stay serverOnly per the #7365 invariant. The
+          // server-side parser populates all four from CODEX_AUTH_JSON.
           CHATGPT_ACCESS_TOKEN: {
-            label: "CHATGPT_ACCESS_TOKEN",
             required: true,
-            derived: true,
           },
           CHATGPT_REFRESH_TOKEN: {
-            label: "CHATGPT_REFRESH_TOKEN",
             required: true,
             serverOnly: true,
-            derived: true,
           },
           CHATGPT_ACCOUNT_ID: {
-            label: "CHATGPT_ACCOUNT_ID",
             required: true,
-            derived: true,
           },
           CHATGPT_ID_TOKEN: {
-            label: "CHATGPT_ID_TOKEN",
             required: true,
             serverOnly: true,
-            derived: true,
           },
         },
       },
     } satisfies Record<string, AuthMethodConfig>,
-    defaultAuthMethod: "auth_json",
     envBindings: {
       CHATGPT_ACCESS_TOKEN: "$secrets.CHATGPT_ACCESS_TOKEN",
       CHATGPT_ACCOUNT_ID: "$secrets.CHATGPT_ACCOUNT_ID",
       OPENAI_MODEL: "$model",
     } satisfies ModelProviderEnvBindings,
-    models: [
-      "gpt-6-astra",
-      "gpt-6.1-sol",
-      "gpt-6-sol",
-      "gpt-6-luna",
-      "gpt-5.6-sol",
-      "gpt-5.6-luna",
-    ] as string[],
-    defaultModel: "gpt-5.6-sol",
   },
   "built-in": BUILT_IN_MODEL_PROVIDER_CONFIG,
 } as const satisfies Record<ModelProviderType, unknown>;
@@ -416,7 +291,7 @@ export function getFrameworkForType(
 }
 
 /**
- * Get secret name for a model provider type (legacy single-secret providers)
+ * Get secret name for a single-secret model provider type
  * Returns undefined for multi-auth providers
  */
 export function getSecretNameForType(
@@ -437,29 +312,6 @@ export function hasAuthMethods(type: ModelProviderType): boolean {
 }
 
 /**
- * Get auth methods for a model provider type
- * Returns undefined for legacy single-secret providers
- */
-export function getAuthMethodsForType(
-  type: ModelProviderType,
-): Record<string, AuthMethodConfig> | undefined {
-  const config = MODEL_PROVIDER_TYPES[type];
-  if (!config) return undefined;
-  return "authMethods" in config ? config.authMethods : undefined;
-}
-
-/**
- * Get default auth method for a model provider type
- * Returns undefined for legacy single-secret providers
- */
-export function getDefaultAuthMethod(
-  type: ModelProviderType,
-): string | undefined {
-  const config = MODEL_PROVIDER_TYPES[type];
-  return "defaultAuthMethod" in config ? config.defaultAuthMethod : undefined;
-}
-
-/**
  * Get secrets config for a specific auth method
  * Returns undefined if provider doesn't have auth methods or auth method doesn't exist
  */
@@ -467,7 +319,9 @@ export function getSecretsForAuthMethod(
   type: ModelProviderType,
   authMethod: string,
 ): Record<string, SecretFieldConfig> | undefined {
-  const authMethods = getAuthMethodsForType(type);
+  const config = MODEL_PROVIDER_TYPES[type];
+  const authMethods: Record<string, AuthMethodConfig> | undefined =
+    "authMethods" in config ? config.authMethods : undefined;
   if (!authMethods || !(authMethod in authMethods)) {
     return undefined;
   }
@@ -564,32 +418,6 @@ export function getModelProviderCodexCatalogForModel(
   };
 }
 
-/**
- * Get available models for a model provider type
- * Returns undefined for providers without model selection
- */
-export function getModels(type: ModelProviderType): string[] | undefined {
-  const config = MODEL_PROVIDER_TYPES[type];
-  return "models" in config ? config.models : undefined;
-}
-
-/**
- * Get default model for a model provider type
- * Returns undefined for providers without model selection
- */
-export function getDefaultModel(type: ModelProviderType): string | undefined {
-  const config = MODEL_PROVIDER_TYPES[type];
-  return "defaultModel" in config ? config.defaultModel : undefined;
-}
-
-/**
- * Check if a model provider type supports model selection
- */
-export function hasModelSelection(type: ModelProviderType): boolean {
-  const config = MODEL_PROVIDER_TYPES[type];
-  return "models" in config && config.models.length > 0;
-}
-
 export const modelProviderSubscriptionUsageWindowSchema = z.object({
   usedPercent: z.number().nullable(),
   remainingPercent: z.number().nullable(),
@@ -614,11 +442,6 @@ export const modelProviderResponseSchema = z.object({
   isActive: z.boolean().optional(),
   type: modelProviderTypeSchema,
   framework: modelProviderFrameworkSchema,
-  secretName: z.string().nullable(), // Legacy single-secret (deprecated for multi-auth)
-  authMethod: z.string().nullable(), // For multi-auth providers
-  secretNames: z.array(z.string()).nullable(), // For multi-auth providers
-  isDefault: z.boolean(),
-  selectedModel: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
   // OAuth account metadata populated by provider-specific connect flows. Other
@@ -677,8 +500,6 @@ export const upsertModelProviderRequestSchema = z.object({
   secret: z.string().min(1).optional(), // Legacy single secret
   authMethod: z.string().optional(), // For multi-auth providers
   secrets: z.record(z.string(), z.string()).optional(), // For multi-auth providers
-  // Retired catalog models are rejected by the API against the catalog.
-  selectedModel: z.string().optional(),
 });
 
 export type UpsertModelProviderRequest = z.infer<
@@ -697,6 +518,8 @@ export type UpsertModelProviderResponse = z.infer<
   typeof upsertModelProviderResponseSchema
 >;
 
+// Every listed model is runnable. Shipped iOS builds decode `routeStatus` as a
+// required string, so the constant stays on the wire.
 export const runModelRouteStatusSchema = z.enum(["valid"]);
 
 export type RunModelRouteStatus = z.infer<typeof runModelRouteStatusSchema>;
@@ -710,7 +533,6 @@ export const availableRunModelSchema = z.object({
   credentialScope: modelProviderCredentialScopeSchema,
   modelProviderId: z.uuid().nullable(),
   routeStatus: runModelRouteStatusSchema,
-  routeStatusReason: z.string().nullable(),
   // Caller-specific, response-only routing. Optional across the B/C rollout.
   // A candidate has not captured a concrete subscription account for a run.
   // Present for member-only models projected from the subscription catalog.
@@ -739,7 +561,6 @@ export const availableRunModelSchema = z.object({
       availability: z.enum([
         "available",
         "reconnect_required",
-        "unavailable",
         "plan_restricted",
       ]),
       accountSelection: z.enum(["capture_required", "not_applicable"]),

@@ -6041,38 +6041,6 @@ function assistantErrorFallbackContent(
     };
   }
 
-  const deletedGuidance = RUN_ERROR_GUIDANCE.PROVIDER_DELETED;
-  const isProviderDeleted =
-    deletedGuidance !== undefined &&
-    (error.toLowerCase().includes(deletedGuidance.title.toLowerCase()) ||
-      error.toLowerCase().includes(deletedGuidance.guidance.toLowerCase()));
-
-  if (isProviderDeleted) {
-    return {
-      icon: AlertCircle,
-      title: t(($) => {
-        return $.chat.errors.genericTitle;
-      }),
-      description: t(($) => {
-        return $.chat.errors.providerDeletedPrefix;
-      }),
-      actions: (
-        <Link
-          pathname="/"
-          className={cn(
-            buttonVariants({ size: "sm", variant: "neutral" }),
-            ERROR_CARD_ACTION_CLASS,
-          )}
-        >
-          {t(($) => {
-            return $.chat.errors.providerDeletedAction;
-          })}
-        </Link>
-      ),
-      reserveActions: true,
-    };
-  }
-
   const description = localizedRunError(error);
   const showDetails = /[\r\n]/u.test(description) || description.length > 240;
   const legacyUsageLimit = isLegacyUsageLimitError(error, failureReason);

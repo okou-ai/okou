@@ -1,6 +1,4 @@
 import { Field } from "@base-ui/react/field";
-import { getMemberRunModelRoute } from "@okouai/api-contracts/contracts/member-run-model";
-import { isBuiltInModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import {
   type ReasoningEffort,
   withModelReasoningEffort,
@@ -31,9 +29,6 @@ export function useChatEffort(
   return {
     efforts: availableChatReasoningEfforts(selection, runModel, catalog),
     effort: effectiveChatReasoningEffort(selection, runModel, catalog),
-    builtIn:
-      runModel !== undefined &&
-      isBuiltInModelProviderType(getMemberRunModelRoute(runModel).providerType),
   };
 }
 
@@ -63,10 +58,11 @@ export function formatChatEffort(effort: ReasoningEffort) {
 }
 
 /**
- * Keep each end's benefit and usage visible together. Built-in routes spend
- * credits; external routes use their provider's allowance or token billing.
+ * Keep each end's benefit and usage visible together. Only personal
+ * subscription routes expose effort levels, so usage is the subscription's
+ * allowance.
  */
-function EffortScaleLabels({ builtIn }: { builtIn: boolean }) {
+function EffortScaleLabels() {
   const { t } = useTranslation();
   return (
     <div className="pointer-events-none mb-2 flex select-none items-start justify-between gap-3 text-xs text-muted-foreground">
@@ -77,13 +73,9 @@ function EffortScaleLabels({ builtIn }: { builtIn: boolean }) {
           })}
         </span>
         <span className="text-[11px] text-gray-700">
-          {builtIn
-            ? t(($) => {
-                return $.settings.models.picker.effortScale.fewerCredits;
-              })
-            : t(($) => {
-                return $.settings.models.picker.effortScale.lowerUsage;
-              })}
+          {t(($) => {
+            return $.settings.models.picker.effortScale.lowerUsage;
+          })}
         </span>
       </div>
       <div className="flex flex-col gap-0.5 text-right">
@@ -93,13 +85,9 @@ function EffortScaleLabels({ builtIn }: { builtIn: boolean }) {
           })}
         </span>
         <span className="text-[11px] text-gray-700">
-          {builtIn
-            ? t(($) => {
-                return $.settings.models.picker.effortScale.moreCredits;
-              })
-            : t(($) => {
-                return $.settings.models.picker.effortScale.higherUsage;
-              })}
+          {t(($) => {
+            return $.settings.models.picker.effortScale.higherUsage;
+          })}
         </span>
       </div>
     </div>
@@ -121,7 +109,7 @@ export function ChatEffortSettings({
   onChange: (selection: ModelProviderSelection) => void;
 }) {
   const { t } = useTranslation();
-  const { efforts, effort: value, builtIn } = useChatEffort(selection);
+  const { efforts, effort: value } = useChatEffort(selection);
   const label = t(($) => {
     return $.settings.models.picker.effort;
   });
@@ -139,7 +127,7 @@ export function ChatEffortSettings({
     <div className="flex flex-col px-2 py-3">
       {index !== -1 ? (
         <>
-          <EffortScaleLabels builtIn={builtIn} />
+          <EffortScaleLabels />
           <ChatEffortSlider
             steps={efforts.length}
             value={index}

@@ -28,7 +28,6 @@ function response(): AvailableRunModelsResponse {
     credentialScope: "org",
     modelProviderId: null,
     routeStatus: "valid",
-    routeStatusReason: null,
   };
   const personal = getMockPersonalModelProviders();
   const models: AvailableRunModel[] = catalog.models.flatMap((entry) => {
@@ -57,7 +56,6 @@ function response(): AvailableRunModelsResponse {
         credentialScope: "member",
         modelProviderId: account.id,
         routeStatus: "valid",
-        routeStatusReason: null,
         memberEffective: {
           providerType: account.type,
           runtimeProviderType: account.type,

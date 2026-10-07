@@ -53,7 +53,7 @@ export function availableChatReasoningEfforts(
     !selection ||
     !runModel ||
     !catalog ||
-    !isMemberRunModelConfigurable(runModel, catalog)
+    !isMemberRunModelConfigurable(runModel)
   ) {
     return [];
   }

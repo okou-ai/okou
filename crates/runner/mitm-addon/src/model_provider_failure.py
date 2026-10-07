@@ -83,7 +83,6 @@ FailureKind = Literal[
 ]
 ConnectionSource = Literal["provider_response", "upstream_transport"]
 _Protocol = Literal[
-    "anthropic_messages",
     "openai_chat_completions",
     "openai_responses",
     "openai_responses_websocket",
@@ -110,7 +109,6 @@ _HTTP_STATUS_UNAUTHORIZED = 401
 _HTTP_STATUS_PAYMENT_REQUIRED = 402
 _HTTP_STATUS_REQUEST_TIMEOUT = 408
 _HTTP_STATUS_TOO_MANY_REQUESTS = 429
-_HTTP_STATUS_INTERNAL_SERVER_ERROR = 500
 _HTTP_STATUS_BAD_GATEWAY = 502
 _HTTP_STATUS_SERVICE_UNAVAILABLE = 503
 _HTTP_STATUS_GATEWAY_TIMEOUT = 504
@@ -138,16 +136,6 @@ _CONNECTION_CODES = frozenset(("connection", "connection_error"))
 _OPENAI_RESPONSES_IGNORED_HTTP_EVENTS = openai_responses_events.KNOWN_NON_USAGE_EVENTS - {
     openai_responses_events.SERVER_ERROR_EVENT
 }
-_ANTHROPIC_IGNORED_HTTP_EVENTS = frozenset(
-    (
-        "message_start",
-        "message_delta",
-        "content_block_start",
-        "content_block_delta",
-        "content_block_stop",
-        "ping",
-    )
-)
 
 
 @dataclass(frozen=True)
@@ -265,7 +253,7 @@ class HttpResponseFailureObserver:
         """Return whether an SSE event needs model-provider failure inspection.
 
         ``None`` and all events for protocols without an ignore list require inspection. Known
-        non-terminal events for OpenAI Responses and Anthropic Messages can be skipped by the
+        non-terminal events for OpenAI Responses can be skipped by the
         caller without changing the reducer state.
         """
 
@@ -273,8 +261,6 @@ class HttpResponseFailureObserver:
             return True
         if self._flow_state.protocol == "openai_responses":
             return event_name not in _OPENAI_RESPONSES_IGNORED_HTTP_EVENTS
-        if self._flow_state.protocol == "anthropic_messages":
-            return event_name not in _ANTHROPIC_IGNORED_HTTP_EVENTS
         return True
 
     def observe(self, evidence: ModelHttpFailureEvidence) -> None:
@@ -297,12 +283,6 @@ class HttpResponseFailureObserver:
             return
 
         event_type = evidence.event_name or evidence.payload_type
-        if self._flow_state.protocol == "anthropic_messages":
-            if event_type == "message_stop":
-                self._record_terminal(_success_outcome())
-            elif event_type == "error":
-                self._record_terminal(_failure_or_unknown_from_codes(evidence.failure_codes))
-            return
         if self._flow_state.protocol == "openai_responses":
             if event_type in ("response.completed", "response.done"):
                 self._record_terminal(_success_outcome())
@@ -377,10 +357,7 @@ def configure_response_observer(flow: http.HTTPFlow) -> HttpResponseFailureObser
     ):
         return None
 
-    failure_kind = _failure_kind_from_http_status(
-        response.status_code,
-        flow_metadata.firewall_name(flow.metadata),
-    )
+    failure_kind = _failure_kind_from_http_status(response.status_code)
     if failure_kind is not None:
         _settle_http_flow(
             flow,
@@ -426,10 +403,7 @@ def finish_http_response(flow: http.HTTPFlow) -> None:
     ):
         return
 
-    failure_kind = _failure_kind_from_http_status(
-        response.status_code,
-        flow_metadata.firewall_name(flow.metadata),
-    )
+    failure_kind = _failure_kind_from_http_status(response.status_code)
     if failure_kind is not None:
         if not flow_state.terminal_observed:
             _settle_http_flow(
@@ -470,12 +444,7 @@ def finish_connection_error(flow: http.HTTPFlow) -> None:
     else:
         response = flow.response
         failure_kind = (
-            _failure_kind_from_http_status(
-                response.status_code,
-                flow_metadata.firewall_name(flow.metadata),
-            )
-            if response is not None
-            else None
+            _failure_kind_from_http_status(response.status_code) if response is not None else None
         )
         if failure_kind is not None and response is not None:
             outcome = _failure_outcome(
@@ -665,8 +634,6 @@ def _protocol_for_flow(flow: http.HTTPFlow) -> _Protocol | None:
         ):
             return "openai_responses_websocket"
         return None
-    if path.endswith("/messages"):
-        return "anthropic_messages"
     if path.endswith("/chat/completions"):
         return "openai_chat_completions"
     if path.endswith("/responses"):
@@ -729,8 +696,6 @@ def _outcome_from_evidence(
     if protocol == "openai_responses":
         status = evidence.status or evidence.response_status
         return _success_outcome() if status == "completed" else _unknown_outcome()
-    if protocol == "anthropic_messages":
-        return _success_outcome() if evidence.payload_type == "message" else _unknown_outcome()
     if protocol == "openai_chat_completions" and evidence.has_choices:
         return _success_outcome()
     return _unknown_outcome()
@@ -769,7 +734,7 @@ def _failure_kind_from_code(code: str) -> FailureKind | None:
     return None
 
 
-def _failure_kind_from_http_status(status: int, firewall_name: str) -> FailureKind | None:
+def _failure_kind_from_http_status(status: int) -> FailureKind | None:
     if status == _HTTP_STATUS_UNAUTHORIZED:
         return "authentication"
     if status == _HTTP_STATUS_PAYMENT_REQUIRED:
@@ -786,10 +751,6 @@ def _failure_kind_from_http_status(status: int, firewall_name: str) -> FailureKi
         _HTTP_STATUS_BAD_GATEWAY,
         _HTTP_STATUS_SERVICE_UNAVAILABLE,
         _HTTP_STATUS_SITE_OVERLOADED,
-    ):
-        return "provider_unavailable"
-    if status == _HTTP_STATUS_INTERNAL_SERVER_ERROR and not firewall_name.startswith(
-        "model-provider:openrouter-"
     ):
         return "provider_unavailable"
     return None

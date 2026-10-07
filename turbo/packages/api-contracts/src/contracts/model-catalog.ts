@@ -19,7 +19,6 @@ const modelCatalogModelSchema = z.object({
   model: z.string(),
   displayName: z.string(),
   sortOrder: z.number().int(),
-  isSystemDefault: z.boolean(),
   /** Direct replacement of a retired model; null when the model is active. */
   replacedBy: z.string().nullable(),
   /**
@@ -27,8 +26,6 @@ const modelCatalogModelSchema = z.object({
    * following the whole replacement chain.
    */
   resolvedModel: z.string(),
-  /** Display price tier of the model's Built-in route; null without one. */
-  priceTier: z.string().nullable(),
   /**
    * Plan policy for organizations whose plan restricts Built-in models:
    * whether they may run this model on a Built-in route. Only a member's
@@ -55,7 +52,6 @@ const modelCatalogRouteSchema = z.object({
   defaultServiceTier: z.string().nullable(),
   efforts: z.array(z.string()),
   defaultEffort: z.string().nullable(),
-  priceTier: z.string().nullable(),
 });
 
 export const modelCatalogResponseSchema = z.object({

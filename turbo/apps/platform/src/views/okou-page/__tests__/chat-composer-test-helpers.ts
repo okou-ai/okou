@@ -89,11 +89,6 @@ export function buildProvider(
 ): ModelProviderResponse {
   return {
     framework: "claude-code",
-    secretName: "ANTHROPIC_API_KEY",
-    authMethod: null,
-    secretNames: null,
-    isDefault: false,
-    selectedModel: null,
     needsReconnect: false,
     lastRefreshErrorCode: null,
     createdAt: "2024-01-01T00:00:00Z",
@@ -111,7 +106,6 @@ export function buildRunModel(
     credentialScope: "member",
     modelProviderId: null,
     routeStatus: "valid",
-    routeStatusReason: null,
     ...overrides,
   };
 }
@@ -121,7 +115,6 @@ export function mockPersonalModelRoutes(): void {
     buildProvider({
       id: OPENROUTER_PROVIDER_ID,
       type: "claude-code-oauth-token",
-      secretName: "CLAUDE_CODE_OAUTH_TOKEN",
     }),
   ]);
   context.mocks.data.availableRunModels([

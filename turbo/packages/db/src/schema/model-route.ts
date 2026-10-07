@@ -54,7 +54,6 @@ export const modelRoutes = pgTable(
     defaultServiceTier: varchar("default_service_tier", { length: 20 }),
     efforts: text("efforts").array().notNull(),
     defaultEffort: varchar("default_effort", { length: 20 }),
-    priceTier: varchar("price_tier", { length: 8 }),
     pricingKind: varchar("pricing_kind", { length: 30 }),
     pricingProvider: varchar("pricing_provider", { length: 100 }),
     longContextMinTotalInputTokens: integer(
@@ -101,10 +100,6 @@ export const modelRoutes = pgTable(
       check(
         "chk_model_routes_efforts",
         sql`${table.efforts} <@ ARRAY['low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'extra', 'ultracode']::text[] AND (${table.defaultEffort} IS NULL OR ${table.defaultEffort} = ANY(${table.efforts}))`,
-      ),
-      check(
-        "chk_model_routes_price_tier",
-        sql`${table.priceTier} IS NULL OR (${table.providerType} = 'built-in' AND ${table.priceTier} IN ('$', '$$', '$$$', '$$$$'))`,
       ),
       check(
         "chk_model_routes_pricing_link",

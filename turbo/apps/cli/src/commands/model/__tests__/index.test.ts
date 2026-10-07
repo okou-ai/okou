@@ -16,7 +16,6 @@ const available: AvailableRunModelsResponse = {
       credentialScope: "org",
       modelProviderId: null,
       routeStatus: "valid",
-      routeStatusReason: null,
     },
     {
       model: "gpt-6-sol",
@@ -25,7 +24,6 @@ const available: AvailableRunModelsResponse = {
       credentialScope: "member",
       modelProviderId: "00000000-0000-4000-8000-000000000102",
       routeStatus: "valid",
-      routeStatusReason: null,
     },
     {
       model: "claude-sonnet-5",
@@ -34,7 +32,6 @@ const available: AvailableRunModelsResponse = {
       credentialScope: "member",
       modelProviderId: "00000000-0000-4000-8000-000000000103",
       routeStatus: "valid",
-      routeStatusReason: null,
     },
   ],
 };

@@ -23,7 +23,6 @@ import flow_metadata_keys as metadata_keys
 import mitm_addon
 import model_provider_failure
 import platform_api
-import usage.anthropic_messages as anthropic_messages
 import usage.model_json as model_json
 import usage.openai_responses as openai_responses
 from body_limits import STREAM_BUFFER_LIMIT
@@ -374,8 +373,8 @@ def test_openrouter_edge_timeout_reports_normalized_failure(
     flow = _make_flow(
         real_flow,
         tmp_path / "proxy.jsonl",
-        firewall_name="model-provider:openrouter-api-key",
-        request_path="/api/v1/messages",
+        firewall_name="model-provider:openrouter-codex",
+        request_path="/api/v1/responses",
         response_status=524,
     )
 
@@ -1527,13 +1526,6 @@ def test_combined_sse_known_ordinary_deltas_skip_full_json_parse(
             b'data: {"type":"response.output_text.delta","delta":"hello"}\n\n',
             openai_responses,
         ),
-        (
-            "model-provider:anthropic-api-key",
-            "/v1/messages",
-            b"event: content_block_delta\n"
-            b'data: {"type":"content_block_delta","delta":{"text":"hello"}}\n\n',
-            anthropic_messages,
-        ),
     )
 
     for index, (firewall_name, request_path, body, provider_module) in enumerate(cases):
@@ -1701,20 +1693,6 @@ def test_combined_sse_overlapping_escaped_field_keeps_failure_byte_limit(
     ("firewall_name", "request_path", "body", "expected_kind"),
     [
         (
-            "model-provider:anthropic-api-key",
-            "/v1/messages",
-            b'{"type":"error","error":{"type":"invalid_request_error",'
-            b'"message":"Your credit balance is too low to access the Anthropic API. '
-            b'Please go to Plans & Billing to upgrade or purchase credits."}}',
-            "billing",
-        ),
-        (
-            "model-provider:anthropic-api-key",
-            "/v1/messages",
-            b'{"type":"error","error":{"type":"overloaded_error"}}',
-            "provider_unavailable",
-        ),
-        (
             "model-provider:openai-api-key",
             "/v1/chat/completions",
             b'{"error":{"code":"invalid_api_key"}}',
@@ -1785,40 +1763,6 @@ def test_protocol_json_failures_are_reported(
 
 
 @pytest.mark.parametrize(
-    ("error_type", "message", "expected"),
-    [
-        (
-            "invalid_request_error",
-            "The user said: Your credit balance is too low to access the Anthropic API.",
-            [],
-        ),
-        ("other_error", "Your credit balance is too low to access the Anthropic API.", []),
-        (
-            "invalid_request_error",
-            "Your credit balance is too low to access the Anthropic API." + "x" * 512,
-            [],
-        ),
-        ("billing_error", "x" * 1024, [{"failureKind": "billing"}]),
-    ],
-)
-def test_balance_message_evidence_is_bounded_without_masking_known_billing_codes(
-    tmp_path, real_flow, mitm_ctx, model_provider_failure_api, error_type, message, expected
-):
-    body = json.dumps({"type": "error", "error": {"type": error_type, "message": message}}).encode()
-    flow = _make_flow(
-        real_flow,
-        tmp_path / "proxy.jsonl",
-        firewall_name="model-provider:anthropic-api-key",
-        request_path="/v1/messages",
-        response_status=400,
-        response_body=body,
-    )
-    _finish_http_flow(flow, body=body, mitm_ctx=mitm_ctx)
-    assert _reported_payloads(model_provider_failure_api) == expected
-    assert flow.response.raw_content == body
-
-
-@pytest.mark.parametrize(
     ("request_path", "response_status"),
     [
         ("/v1/models", 429),
@@ -1848,7 +1792,7 @@ def test_ineligible_http_response_is_not_reported(
 @pytest.mark.parametrize(
     ("firewall_name", "request_path"),
     [
-        ("model-provider:openrouter-api-key", "/api/v1/messages"),
+        ("model-provider:openrouter-codex", "/api/v1/chat/completions"),
         ("model-provider:openrouter-codex", "/api/v1/responses"),
     ],
 )
@@ -1916,19 +1860,6 @@ def test_overlapping_inference_flows_report_independent_failures(
 @pytest.mark.parametrize(
     ("firewall_name", "request_path", "body", "expected_kind"),
     [
-        (
-            "model-provider:anthropic-api-key",
-            "/v1/messages",
-            b'event: error\ndata: {"type":"error","error":{"type":"api_error"}}\n\n',
-            "provider_unavailable",
-        ),
-        (
-            "model-provider:anthropic-api-key",
-            "/v1/messages",
-            b'event: error\ndata: {"type":"error","error":{"type":"invalid_request_error",'
-            b'"message":"Your credit balance is too low to access the Anthropic API."}}\n\n',
-            "billing",
-        ),
         (
             "model-provider:openrouter-codex",
             "/api/v1/chat/completions",
@@ -2087,8 +2018,8 @@ def test_uninspectable_billable_success_is_not_reported_as_provider_failure(
     flow = _make_flow(
         real_flow,
         tmp_path / "proxy.jsonl",
-        firewall_name="model-provider:anthropic-api-key",
-        request_path="/v1/messages",
+        firewall_name="model-provider:openrouter-codex",
+        request_path="/api/v1/responses",
         response_headers=header_map(
             {
                 "content-type": "text/event-stream",
@@ -2249,12 +2180,15 @@ def test_terminal_sse_success_wins_over_late_connection_error(
     mitm_ctx,
     model_provider_failure_api,
 ):
-    body = b'event: message_stop\ndata: {"type":"message_stop"}\n\n'
+    body = (
+        b"event: response.completed\n"
+        b'data: {"type":"response.completed","response":{"status":"completed"}}\n\n'
+    )
     flow = _make_flow(
         real_flow,
         tmp_path / "proxy.jsonl",
-        firewall_name="model-provider:anthropic-api-key",
-        request_path="/v1/messages",
+        firewall_name="model-provider:openrouter-codex",
+        request_path="/api/v1/responses",
         response_body=body,
         response_headers=header_map({"content-type": "text/event-stream"}),
     )

@@ -489,7 +489,6 @@ async function seedSideEffectFreeGetData(
       orgId: fixture.orgId,
       userId: fixture.userId,
       type: "codex-oauth-token",
-      isDefault: true,
       secretName: "CODEX_OAUTH_TOKEN",
     },
     context.signal,

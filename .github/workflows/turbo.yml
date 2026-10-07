@@ -31,8 +31,6 @@ on:
         required: false
       CF_API_WORKER_DEPLOY_API_TOKEN:
         required: false
-      CI_ANTHROPIC_API_KEY:
-        required: false
       CLERK_SECRET_KEY:
         required: false
       CLERK_WEBHOOK_SIGNING_SECRET:
@@ -40,8 +38,6 @@ on:
       CODECOV_TOKEN:
         required: false
       CRON_SECRET:
-        required: false
-      DEEPSEEK_API_KEY:
         required: false
       FAL_KEY:
         required: false
@@ -58,10 +54,6 @@ on:
       LANGFUSE_SECRET_KEY:
         required: false
       MICROSOFT_TEAMS_BOT_APP_PASSWORD:
-        required: false
-      MINIMAX_API_KEY:
-        required: false
-      MOONSHOT_API_KEY:
         required: false
       NEON_API_KEY:
         required: false
@@ -1141,13 +1133,7 @@ jobs:
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
           WEB_API_ENV_FILE: ${{ steps.api-seed-env.outputs.file }}
-          ANTHROPIC_API_KEY: ${{ secrets.CI_ANTHROPIC_API_KEY }}
-          DEV_MODEL_ANTHROPIC_KEY: ${{ secrets.CI_ANTHROPIC_API_KEY }}
-          DEV_MODEL_OPENAI_KEY: ${{ secrets.OPENAI_API_KEY }}
           DEV_MODEL_OPENROUTER_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          DEV_MODEL_DEEPSEEK_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          DEV_MODEL_MOONSHOT_KEY: ${{ secrets.MOONSHOT_API_KEY }}
-          DEV_MODEL_MINIMAX_KEY: ${{ secrets.MINIMAX_API_KEY }}
         run: |
           while IFS= read -r line; do
             if [ -n "$line" ]; then
@@ -1158,12 +1144,7 @@ jobs:
           done < "$WEB_API_ENV_FILE"
 
           required_seed_env=(
-            DEV_MODEL_ANTHROPIC_KEY
-            DEV_MODEL_OPENAI_KEY
             DEV_MODEL_OPENROUTER_KEY
-            DEV_MODEL_DEEPSEEK_KEY
-            DEV_MODEL_MOONSHOT_KEY
-            DEV_MODEL_MINIMAX_KEY
           )
           missing_seed_env=()
           for key in "${required_seed_env[@]}"; do

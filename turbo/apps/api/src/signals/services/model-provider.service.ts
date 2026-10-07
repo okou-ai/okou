@@ -1,16 +1,13 @@
 import {
-  getDefaultModel,
   getFrameworkForType,
   getModelProviderCodexCatalogForModel,
   getModelProviderCodexRuntimeCapabilities,
-  getModelProviderEnvBindings,
   getModelProviderFirewall,
   getSecretNameForType,
   getSecretsForAuthMethod,
   hasAuthMethods,
   MODEL_PROVIDER_TYPES,
   type ModelProviderCodexRuntimeConfig,
-  type ModelProviderEnvBindings,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { command } from "ccstate";
@@ -70,146 +67,6 @@ export const deleteUserModelProvider$ = command(
     );
   },
 );
-
-function envBindingsRequireModel(
-  envBindings: ModelProviderEnvBindings,
-): boolean {
-  return Object.values(envBindings).some((value) => {
-    return value.includes("$model");
-  });
-}
-
-function resolveModelProviderModel(args: {
-  readonly type: ModelProviderType;
-  readonly selectedModel: string | null;
-  readonly defaultModel: string | undefined;
-  readonly envBindings: ModelProviderEnvBindings | undefined;
-}): string | null {
-  let model = args.selectedModel;
-  if (model === null && args.defaultModel !== undefined) {
-    model = args.defaultModel;
-  }
-  if (
-    args.envBindings &&
-    envBindingsRequireModel(args.envBindings) &&
-    !model &&
-    args.defaultModel !== ""
-  ) {
-    throw new Error(`Missing model for model provider ${args.type}`);
-  }
-  return model === "" ? null : model;
-}
-
-function modelProviderEnvironmentSecretValue(
-  type: ModelProviderType,
-  secretName: string,
-  secretValue: string,
-): string {
-  return getModelProviderFirewall(type)
-    ? `\${{ secrets.${secretName} }}`
-    : secretValue;
-}
-
-function providerEnvironmentFromSecretRefs(
-  type: ModelProviderType,
-  secretName: string,
-  secretValue: string,
-  selectedModel: string | null,
-): Record<string, string> {
-  const envBindings = getModelProviderEnvBindings(type);
-  if (!envBindings) {
-    return {
-      [secretName]: modelProviderEnvironmentSecretValue(
-        type,
-        secretName,
-        secretValue,
-      ),
-    };
-  }
-
-  const model = resolveModelProviderModel({
-    type,
-    selectedModel,
-    defaultModel: getDefaultModel(type),
-    envBindings,
-  });
-  const environment: Record<string, string> = {};
-  for (const [key, value] of Object.entries(envBindings)) {
-    if (value === "$secret") {
-      environment[key] = modelProviderEnvironmentSecretValue(
-        type,
-        secretName,
-        secretValue,
-      );
-    } else if (value === "$model") {
-      if (model) {
-        environment[key] = model;
-      }
-    } else if (value.startsWith("$secrets.")) {
-      const referencedSecret = value.slice("$secrets.".length);
-      if (referencedSecret === secretName) {
-        environment[key] = modelProviderEnvironmentSecretValue(
-          type,
-          referencedSecret,
-          secretValue,
-        );
-      }
-    } else {
-      environment[key] = value;
-    }
-  }
-  return environment;
-}
-
-function builtInModelProviderEnvironmentFromSnapshot(args: {
-  readonly route: BuiltInModelRuntimeRoute;
-  readonly selectedModel: string;
-  readonly apiKey: string;
-}): ResolvedModelProviderEnvironment | null {
-  const { route, selectedModel } = args;
-  const key = { apiKey: args.apiKey };
-  const secretName = getSecretNameForType(route.providerType);
-  if (!secretName) {
-    return null;
-  }
-  const environment = providerEnvironmentFromSecretRefs(
-    route.providerType,
-    secretName,
-    key.apiKey,
-    route.upstreamModel,
-  );
-  const routing = {
-    credentialOwner: "builtin" as const,
-    model: route.upstreamModel,
-  };
-  const firewall = getModelProviderFirewall(route.providerType, routing);
-  const usesUsEndpoint = firewall?.apis.some((api) => {
-    return api.base.startsWith(`${OPENROUTER_US_ORIGIN}/`);
-  });
-  if (route.providerType === "openrouter-codex") {
-    environment.OPENAI_BASE_URL = getOpenRouterBaseUrl("responses", routing);
-  }
-  const codexRuntimeConfig = resolveModelProviderCodexRuntimeConfig({
-    type: route.providerType,
-    logicalModel: selectedModel,
-    runtimeModel: route.upstreamModel,
-    environment,
-  });
-
-  return {
-    id: null,
-    type: "built-in",
-    credentialOwner: "builtin",
-    concreteType: route.providerType,
-    environment,
-    secrets: { [secretName]: key.apiKey },
-    selectedModel,
-    builtInModelRuntimeRoute: route,
-    upstreamModel: route.upstreamModel,
-    ...(usesUsEndpoint ? { firewall } : {}),
-    ...(codexRuntimeConfig ? { codexRuntimeConfig } : {}),
-  };
-}
 
 function modelCredentialsAreUsable(
   source: ModelSourceSnapshot,
@@ -337,19 +194,13 @@ export async function prepareRegisteredModelEnvironment(
   ) {
     return null;
   }
-  const deferred = getModelProviderFirewall(type) !== undefined;
-  // As on main, a firewall-injected single-secret credential that Pi does not
-  // capture stays encrypted: the runtime only sees its secret reference.
+  const accountId = source.identity.accountId;
+  // Subscription credentials are firewall-injected and stay encrypted: the
+  // runtime only sees their secret references.
   const credentials =
-    deferred && type === "codex-oauth-token"
+    type === "codex-oauth-token"
       ? await codexAccountCredentials(source, piExecution)
-      : deferred &&
-          !hasAuthMethods(type) &&
-          source.credentials.every((credential) => {
-            return credential.kind === "encrypted";
-          })
-        ? deferredCredentialReferences(source)
-        : await resolveModelCredentialValues(source);
+      : deferredCredentialReferences(source);
   if (!credentials) {
     return null;
   }
@@ -389,37 +240,31 @@ export async function prepareRegisteredModelEnvironment(
     type,
     credentialOwner: compiled.credentialOwner,
     environment,
-    secrets: deferred ? {} : { ...compiled.secrets },
+    secrets: {},
     selectedModel: compiled.selectedModel,
     upstreamModel: compiled.upstreamModel,
     ...(source.configuration.kind === "registered-provider" &&
     source.configuration.authMethod
       ? { authMethod: source.configuration.authMethod }
       : {}),
-    ...(deferred
-      ? {
-          secretConnectorMap: Object.fromEntries(
-            names.map((name) => {
-              return [name, type];
-            }),
-          ),
-          secretConnectorMetadataMap: Object.fromEntries(
-            names.map((name) => {
-              return [
-                name,
-                {
-                  sourceType: "model-provider" as const,
-                  sourceUserId,
-                  ...(source.identity.kind === "member"
-                    ? { sourceId: source.identity.accountId }
-                    : {}),
-                  metadataKey: type,
-                },
-              ];
-            }),
-          ),
-        }
-      : {}),
+    secretConnectorMap: Object.fromEntries(
+      names.map((name) => {
+        return [name, type];
+      }),
+    ),
+    secretConnectorMetadataMap: Object.fromEntries(
+      names.map((name) => {
+        return [
+          name,
+          {
+            sourceType: "model-provider" as const,
+            sourceUserId,
+            sourceId: accountId,
+            metadataKey: type,
+          },
+        ];
+      }),
+    ),
     ...(codexRuntimeConfig ? { codexRuntimeConfig } : {}),
   };
 }
@@ -465,33 +310,37 @@ export async function prepareManagedModelEnvironment(
     },
     credentials,
   });
-  const secretName = getSecretNameForType(route.providerType);
-  if (!secretName || !credentials[secretName]) {
-    return null;
-  }
-  // Preserve private US-routing/firewall/Codex protocol without a query.
-  const protocol = builtInModelProviderEnvironmentFromSnapshot({
-    route,
-    selectedModel: route.selectedModel,
-    apiKey: credentials[secretName],
+  // Preserve private US routing for the managed OpenRouter endpoint.
+  const routing = {
+    credentialOwner: "builtin" as const,
+    model: route.upstreamModel,
+  };
+  const firewall = getModelProviderFirewall(route.providerType, routing);
+  const usesUsEndpoint = firewall?.apis.some((api) => {
+    return api.base.startsWith(`${OPENROUTER_US_ORIGIN}/`);
   });
-  if (!protocol) {
-    return null;
-  }
-  const environment = { ...compiled.environment };
-  if (route.providerType === "openrouter-codex") {
-    const endpoint = protocol.environment.OPENAI_BASE_URL;
-    if (!endpoint) {
-      throw new Error("Managed responses endpoint is missing");
-    }
-    environment.OPENAI_BASE_URL = endpoint;
-  }
+  const environment = {
+    ...compiled.environment,
+    OPENAI_BASE_URL: getOpenRouterBaseUrl("responses", routing),
+  };
+  const codexRuntimeConfig = resolveModelProviderCodexRuntimeConfig({
+    type: route.providerType,
+    logicalModel: route.selectedModel,
+    runtimeModel: route.upstreamModel,
+    environment,
+  });
   return {
-    ...protocol,
-    selectedModel: compiled.selectedModel,
-    upstreamModel: compiled.upstreamModel,
+    id: null,
+    type: "built-in",
+    credentialOwner: "builtin",
+    concreteType: route.providerType,
     environment,
     secrets: { ...compiled.secrets },
+    selectedModel: compiled.selectedModel,
+    builtInModelRuntimeRoute: route,
+    upstreamModel: compiled.upstreamModel,
+    ...(usesUsEndpoint ? { firewall } : {}),
+    ...(codexRuntimeConfig ? { codexRuntimeConfig } : {}),
   };
 }
 

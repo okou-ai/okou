@@ -394,19 +394,6 @@ fn execution_context_validation_rejects_invalid_codex_resume_before_sandbox() {
 }
 
 #[test]
-fn model_provider_env_placeholder_validation_accepts_empty_anthropic_api_key_with_auth_token() {
-    let ctx = context_with_env(HashMap::from([
-        ("ANTHROPIC_API_KEY".into(), String::new()),
-        (
-            "ANTHROPIC_AUTH_TOKEN".into(),
-            model_provider_placeholders::ANTHROPIC_AUTH_TOKEN.into(),
-        ),
-    ]));
-
-    assert!(validate_model_provider_env_placeholders(&ctx).is_ok());
-}
-
-#[test]
 fn model_provider_env_placeholder_validation_accepts_claude_oauth_placeholder() {
     let ctx = context_with_env(HashMap::from([(
         "CLAUDE_CODE_OAUTH_TOKEN".into(),

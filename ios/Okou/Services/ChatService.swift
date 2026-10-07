@@ -262,7 +262,7 @@ actor ChatService {
     // A saved selection of a retired model resolves to its active replacement.
     let savedModel = preference.selectedModel.flatMap { catalog.resolve($0) }
     let usableSavedModel = savedModel.flatMap { model in
-      availableModels.models.contains { $0.model == model && $0.hasUsableRoute(catalog: catalog) }
+      availableModels.models.contains { $0.model == model && $0.hasUsableRoute() }
         ? model : nil
     }
     let model = usableSavedModel ?? availableModels.defaultModel

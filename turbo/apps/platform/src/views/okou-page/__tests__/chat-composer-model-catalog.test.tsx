@@ -35,7 +35,6 @@ function personalRunModel(model: string): AvailableRunModel {
     credentialScope: model === "okou-1.0" ? "org" : "member",
     modelProviderId: null,
     routeStatus: "valid",
-    routeStatusReason: null,
   };
 }
 

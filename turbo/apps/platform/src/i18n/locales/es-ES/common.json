@@ -86,13 +86,9 @@
           "guidance": "Haz primero el diagnóstico de créditos. Compra créditos solo cuando el plan actual lo permita; de lo contrario, devuelve el enlace de actualización del plan.",
           "title": "Créditos agotados"
         },
-        "modelProviderUnavailable": {
-          "guidance": "El proveedor de modelos utilizado en este hilo ha sido eliminado. Inicia un nuevo hilo de chat para continuar.",
-          "title": "Proveedor de modelo no disponible"
-        },
         "noModelProvider": {
-          "guidance": "Configura un proveedor de modelos para que empiece a ejecutar agentes.",
-          "title": "No configurado ningún proveedor de modelos"
+          "guidance": "Inténtalo de nuevo en unos momentos o conecta una suscripción personal de Claude Code o Codex en Configuración.",
+          "title": "No hay ningún proveedor de modelos disponible para esta ejecución"
         },
         "paidPlanRequired": {
           "guidance": "La generación de vídeo integrada no está disponible en el plan actual.",
@@ -1902,10 +1898,8 @@
     "errors": {
       "genericTitle": "No se pudo completar esta ejecución",
       "loadMessages": "No se pudieron cargar los mensajes",
-      "noModelProviderAction": "Configura uno en la configuración del espacio de trabajo",
-      "noModelProviderPrefix": "Aún no hay un proveedor de modelo configurado.",
-      "providerDeletedAction": "Inicia un nuevo hilo de chat",
-      "providerDeletedPrefix": "El proveedor de modelos utilizado en este hilo ha sido eliminado.",
+      "noModelProviderAction": "Gestionar suscripciones",
+      "noModelProviderPrefix": "No hay ningún proveedor de modelos disponible para esta ejecución. Inténtalo de nuevo o conecta una suscripción personal.",
       "providerIncompatibleAction": "Empieza una nueva sesión",
       "providerIncompatiblePrefix": "Esta sesión se inició con un modelo diferente y no se puede continuar con el actual.",
       "recovery": {
@@ -1925,7 +1919,7 @@
         "fiveHourReset": "El límite de 5 h se restablece {{time}}",
         "inputTooLargeDescription": "Acorta el mensaje y vuelve a enviarlo.",
         "inputTooLargeTitle": "Tu mensaje es demasiado grande",
-        "invalidApiKeyTitle": "La clave de API debe actualizarse",
+        "invalidApiKeyTitle": "Hay que actualizar el inicio de sesión de tu suscripción",
         "invalidCredentialsTitle": "La conexión con tu modelo necesita atención",
         "newChat": "Nuevo chat",
         "newChatDescription": "Inicia un chat nuevo e incluye los detalles importantes que quieras conservar.",
@@ -1934,8 +1928,8 @@
         "outputLimitTitle": "La respuesta alcanzó el límite de longitud",
         "personalAccount": "Suscripción personal {{account}}",
         "personalAccountDisconnected": "Suscripción personal desconectada",
-        "providerBalanceDescription": "Comprueba el saldo de tu cuenta del proveedor y vuelve a intentarlo.",
-        "providerBalanceTitle": "Tu cuenta del proveedor necesita más saldo",
+        "providerBalanceDescription": "Revisa el uso o el saldo de tu cuenta de suscripción y vuelve a intentarlo.",
+        "providerBalanceTitle": "Tu cuenta de suscripción necesita más saldo",
         "providerConnectionDescription": "Abre Proveedores de modelos para volver a conectar o actualizar tu cuenta y, después, inténtalo de nuevo.",
         "providerQueueTimeoutTitle": "El modelo no se inició a tiempo",
         "providerRateLimitedTitle": "Hay demasiadas solicitudes al modelo ahora mismo",
@@ -4732,7 +4726,7 @@
     "modelTemporarilyUnavailable": "Modelo temporalmente no disponible",
     "modelUnavailable": "El modelo actual no está disponible.",
     "overloaded": "{{model}} está sobrecargado. Espera unos minutos y vuelve a intentarlo, o cambia de modelo.",
-    "providerBalance": "El saldo de tu cuenta del proveedor de modelos conectado es insuficiente.",
+    "providerBalance": "Tu cuenta de suscripción conectada no tiene saldo suficiente.",
     "transient": "Se ha producido un error. Vuelve a intentarlo más tarde.",
     "vm0Credits": "Créditos insuficientes. Añade créditos o conecta una suscripción personal de Codex o Claude para continuar."
   },
@@ -4969,10 +4963,8 @@
         "effort": "Esfuerzo",
         "effortScale": {
           "faster": "Más rápido",
-          "fewerCredits": "Menos créditos",
           "higherUsage": "Mayor consumo",
           "lowerUsage": "Menor consumo",
-          "moreCredits": "Más créditos",
           "smarter": "Más inteligente"
         },
         "fast": "Rápido",

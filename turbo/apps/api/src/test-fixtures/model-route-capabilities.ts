@@ -1,9 +1,12 @@
 import { and, asc, eq } from "drizzle-orm";
 import {
-  getBuiltInRouteProviderVendor,
   modelProviderTypeSchema,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
+import {
+  AUTO_RUN_KEY_VENDOR,
+  AUTO_RUN_PROVIDER,
+} from "@okouai/core/auto-run-model";
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { db } from "../lib/db";
 
@@ -49,9 +52,10 @@ export async function readPrimaryBuiltInRouteFixture(model: string): Promise<{
     )
     .orderBy(asc(modelRoutes.priority))
     .limit(1);
-  const vendor = route
-    ? getBuiltInRouteProviderVendor(route.concreteProviderType)
-    : undefined;
+  const vendor =
+    route?.concreteProviderType === AUTO_RUN_PROVIDER
+      ? AUTO_RUN_KEY_VENDOR
+      : undefined;
   const concreteProviderType = modelProviderTypeSchema.safeParse(
     route?.concreteProviderType,
   );

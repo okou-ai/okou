@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { escapeLiteral } from "pg";
-import { getBuiltInModelRouteVendors } from "@okouai/api-contracts/contracts/model-providers";
+import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
 import { MANAGED_SOCIALKIT_BILLING_CATEGORY } from "@okouai/api-contracts/contracts/social";
 import { resolveSkillRef } from "@okouai/core/github-url";
 import {
@@ -38,8 +38,7 @@ function writeLine(message: string): void {
  * Pricing convention: 1 USD = 1000 credits.
  * Token prices use integer credits with a per-row token unit size.
  *
- * Built-in route API keys are read from environment variables per vendor:
- *   DEV_MODEL_{VENDOR_UPPER}_KEY (e.g., DEV_MODEL_OPENROUTER_KEY)
+ * The managed OpenRouter Auto key is read from DEV_MODEL_OPENROUTER_KEY.
  */
 
 /** 1 USD = 1000 credits */
@@ -708,32 +707,21 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   ]),
 ];
 
-function getVendorApiKeyEnvVar(vendor: string): string {
-  return `DEV_MODEL_${vendor.toUpperCase()}_KEY`;
-}
-
 type OptionalEnvReader = (name: string) => string | undefined;
 type LineWriter = (message: string) => void;
 
-/**
- * Build built_in_model_keys entries from environment variables.
- * Vendors are derived from the built-in route providers.
- */
+/** Build the managed OpenRouter built_in_model_keys row from the environment. */
 export function buildBuiltInModelKeys(
   readEnv: OptionalEnvReader = optionalEnv,
   logLine: LineWriter = writeLine,
 ): (typeof builtInModelKeys.$inferInsert)[] {
-  const keys: (typeof builtInModelKeys.$inferInsert)[] = [];
-  for (const vendor of getBuiltInModelRouteVendors()) {
-    const envVar = getVendorApiKeyEnvVar(vendor);
-    const apiKey = readEnv(envVar);
-    if (!apiKey) {
-      logLine(`Skipping ${vendor}: ${envVar} is not configured`);
-      continue;
-    }
-    keys.push({ vendor, apiKey, label: "dev-seed" });
+  const envVar = "DEV_MODEL_OPENROUTER_KEY";
+  const apiKey = readEnv(envVar);
+  if (!apiKey) {
+    logLine(`Skipping ${AUTO_RUN_KEY_VENDOR}: ${envVar} is not configured`);
+    return [];
   }
-  return keys;
+  return [{ vendor: AUTO_RUN_KEY_VENDOR, apiKey, label: "dev-seed" }];
 }
 
 async function devSeed() {

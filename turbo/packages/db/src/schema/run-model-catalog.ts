@@ -7,7 +7,6 @@ import {
   pgTable,
   timestamp,
   unique,
-  uniqueIndex,
   varchar,
 } from "drizzle-orm/pg-core";
 
@@ -33,11 +32,8 @@ import {
  * Y.lineage_rank first (raising a rank only widens the gap to its referrers),
  * then set X.replaced_by = Y and X.replaced_by_lineage_rank = Y.lineage_rank.
  *
- * `is_system_default` marks the one model new organizations and unresolved
- * selections start from. At most one row can be the default and it must be
- * active; "exactly one" and "has an enabled Built-in route" are validated by
- * the API catalog loader. Switch the default by clearing the old row before
- * setting the new one inside one transaction, then retire the old default.
+ * The system default is the fixed Auto model owned by the API, not a catalog
+ * column.
  */
 export const runModelCatalog = pgTable(
   "run_model_catalog",
@@ -45,7 +41,6 @@ export const runModelCatalog = pgTable(
     model: varchar("model", { length: 255 }).primaryKey(),
     displayName: varchar("display_name", { length: 128 }).notNull(),
     sortOrder: integer("sort_order").notNull(),
-    isSystemDefault: boolean("is_system_default").notNull().default(false),
     replacedBy: varchar("replaced_by", { length: 255 }),
     /** Acyclicity rank: every replacement hop strictly increases it. */
     lineageRank: integer("lineage_rank").notNull(),
@@ -95,16 +90,9 @@ export const runModelCatalog = pgTable(
         "chk_run_model_catalog_replacement_rank",
         sql`${table.replacedByLineageRank} > ${table.lineageRank}`,
       ),
-      uniqueIndex("idx_run_model_catalog_one_system_default")
-        .on(table.isSystemDefault)
-        .where(sql`${table.isSystemDefault}`),
       check(
         "chk_run_model_catalog_pi_route_class",
         sql`${table.piRouteClass} IS NULL OR ${table.piRouteClass} IN ('claude-native', 'gpt-codex', 'deepseek')`,
-      ),
-      check(
-        "chk_run_model_catalog_default_active",
-        sql`NOT ${table.isSystemDefault} OR ${table.replacedBy} IS NULL`,
       ),
     ];
   },

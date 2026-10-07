@@ -51,7 +51,7 @@ describe("formatRunErrorForExternalSurface", () => {
   it.each([
     [
       "claude-code-oauth-token",
-      "Your connected model provider account has insufficient balance.",
+      "Your connected subscription account has insufficient balance.",
     ],
     ["built-in", "The current model is unavailable."],
     [null, "The current model is unavailable."],
@@ -111,9 +111,9 @@ describe("formatRunErrorForExternalSurface", () => {
     expect(
       formatRunErrorForExternalSurface({
         code: "NO_MODEL_PROVIDER",
-        message: "No model provider configured",
+        message: "No model provider is available for this run",
       }),
-    ).toBe("No model provider configured");
+    ).toBe("No model provider is available for this run");
   });
 
   it("preserves non-guidance allowlisted run errors", () => {

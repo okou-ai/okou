@@ -106,7 +106,7 @@ function ComposerModelPanelBody({
   });
   const configurable =
     selectedRunModel !== undefined &&
-    isMemberRunModelConfigurable(selectedRunModel, catalog);
+    isMemberRunModelConfigurable(selectedRunModel);
   const ultrafastAvailable =
     selectedRunModel !== undefined &&
     configurable &&
@@ -158,7 +158,7 @@ function ComposerModelPanelBody({
                   <RadioPrimitive.Root
                     key={runModel.model}
                     value={runModel.model}
-                    disabled={!isMemberRunModelConfigurable(runModel, catalog)}
+                    disabled={!isMemberRunModelConfigurable(runModel)}
                     nativeButton
                     render={<button type="button" />}
                     className={cn(

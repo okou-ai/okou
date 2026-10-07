@@ -86,13 +86,9 @@
           "guidance": "Exécutez d'abord le diagnostic des crédits. Achetez des crédits uniquement lorsque le plan actuel le permet ; sinon, retournez le lien de mise à niveau du plan.",
           "title": "Crédits épuisés"
         },
-        "modelProviderUnavailable": {
-          "guidance": "Le fournisseur de modèle utilisé par ce fil a été supprimé. Démarrez un nouveau fil de discussion pour continuer.",
-          "title": "Fournisseur de modèle indisponible"
-        },
         "noModelProvider": {
-          "guidance": "Configurez un fournisseur de modèle pour commencer à exécuter des agents.",
-          "title": "Aucun fournisseur de modèle configuré"
+          "guidance": "Réessayez dans un instant ou connectez un abonnement personnel Claude Code ou Codex dans les paramètres.",
+          "title": "Aucun fournisseur de modèles n'est disponible pour cette exécution"
         },
         "paidPlanRequired": {
           "guidance": "La génération vidéo intégrée n'est pas disponible dans le plan actuel.",
@@ -1902,10 +1898,8 @@
     "errors": {
       "genericTitle": "Cette exécution n’a pas pu se terminer",
       "loadMessages": "Échec du chargement des messages",
-      "noModelProviderAction": "Configurer un dans les paramètres de l'espace de travail",
-      "noModelProviderPrefix": "Aucun fournisseur de modèle configuré pour le moment.",
-      "providerDeletedAction": "Commencer une nouvelle discussion",
-      "providerDeletedPrefix": "Le fournisseur de modèle utilisé par cette discussion a été supprimé.",
+      "noModelProviderAction": "Gérer les abonnements",
+      "noModelProviderPrefix": "Aucun fournisseur de modèles n'est disponible pour cette exécution. Réessayez ou connectez un abonnement personnel.",
       "providerIncompatibleAction": "Commencer une nouvelle session",
       "providerIncompatiblePrefix": "Cette session a été commencée avec un fournisseur de modèle différent et ne peut pas être continuée avec le fournisseur actuel.",
       "recovery": {
@@ -1925,7 +1919,7 @@
         "fiveHourReset": "La limite de 5 h se réinitialise {{time}}",
         "inputTooLargeDescription": "Raccourcissez votre message et renvoyez-le.",
         "inputTooLargeTitle": "Votre message est trop volumineux",
-        "invalidApiKeyTitle": "La clé API doit être mise à jour",
+        "invalidApiKeyTitle": "La connexion de votre abonnement doit être mise à jour",
         "invalidCredentialsTitle": "La connexion au modèle doit être vérifiée",
         "newChat": "Nouvelle conversation",
         "newChatDescription": "Démarrez une nouvelle conversation et ajoutez les informations importantes à reprendre.",
@@ -1934,8 +1928,8 @@
         "outputLimitTitle": "La réponse a atteint sa limite de longueur",
         "personalAccount": "Abonnement personnel {{account}}",
         "personalAccountDisconnected": "Abonnement personnel déconnecté",
-        "providerBalanceDescription": "Vérifiez le crédit de votre compte fournisseur, puis réessayez.",
-        "providerBalanceTitle": "Le compte du fournisseur de modèles manque de crédit",
+        "providerBalanceDescription": "Vérifiez l'utilisation ou le solde de crédit de votre compte d'abonnement, puis réessayez.",
+        "providerBalanceTitle": "Votre compte d'abonnement a besoin de plus de crédit",
         "providerConnectionDescription": "Ouvrez « Fournisseurs de modèles » pour reconnecter ou mettre à jour votre compte, puis réessayez.",
         "providerQueueTimeoutTitle": "Le modèle n’a pas démarré à temps",
         "providerRateLimitedTitle": "Il y a trop de demandes au modèle en ce moment",
@@ -4732,7 +4726,7 @@
     "modelTemporarilyUnavailable": "Modèle temporairement indisponible",
     "modelUnavailable": "Le modèle actuel est indisponible.",
     "overloaded": "{{model}} est surchargé. Patientez quelques minutes avant de réessayer, ou choisissez un autre modèle.",
-    "providerBalance": "Le solde du compte de votre fournisseur de modèle connecté est insuffisant.",
+    "providerBalance": "Le solde de votre compte d'abonnement connecté est insuffisant.",
     "transient": "Une erreur s’est produite. Veuillez réessayer plus tard.",
     "vm0Credits": "Crédits insuffisants. Ajoutez des crédits ou connectez un abonnement personnel Codex ou Claude pour continuer."
   },
@@ -4969,10 +4963,8 @@
         "effort": "Effort",
         "effortScale": {
           "faster": "Plus rapide",
-          "fewerCredits": "Moins de crédits",
           "higherUsage": "Plus de consommation",
           "lowerUsage": "Moins de consommation",
-          "moreCredits": "Plus de crédits",
           "smarter": "Plus intelligent"
         },
         "fast": "Rapide",

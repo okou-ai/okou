@@ -69,11 +69,9 @@ export function isServiceTierAvailableForSelection(params: {
     return false;
   }
   // Availability can change without changing this model's Fast capability.
-  // Preserve the saved choice through reconnect, plan restrictions and outages;
-  // send readiness and admission own whether it can run now.
-  return (
-    runModel.memberEffective !== undefined || runModel.routeStatus === "valid"
-  );
+  // Preserve the saved choice through reconnect and plan restrictions; send
+  // readiness and admission own whether it can run now.
+  return true;
 }
 
 /** Whether a configurable runModel row offers the Fast (priority) toggle. */
@@ -81,11 +79,7 @@ export function isRunModelFastModeAvailable(
   runModel: AvailableRunModel | undefined,
   catalog: ModelCatalog | null | undefined,
 ): boolean {
-  if (
-    !runModel ||
-    !catalog ||
-    !isMemberRunModelConfigurable(runModel, catalog)
-  ) {
+  if (!runModel || !catalog || !isMemberRunModelConfigurable(runModel)) {
     return false;
   }
   if (runModel.subscriptionOptions) {
@@ -118,7 +112,6 @@ export function isCodexFastModeAvailableForSelection(params: {
 
 function hasUsableModelRoute(
   models: AvailableRunModelsResponse | null | undefined,
-  catalog: ModelCatalog,
   model: string,
 ): boolean {
   // Before models load there is no route evidence to reject the preference.
@@ -130,7 +123,7 @@ function hasUsableModelRoute(
   return models.models.some((runModel) => {
     return (
       runModel.model === model &&
-      (isMemberRunModelConfigurable(runModel, catalog) ||
+      (isMemberRunModelConfigurable(runModel) ||
         getMemberRunModelRoute(runModel).availability === "plan_restricted")
     );
   });
@@ -152,11 +145,7 @@ export function resolveDefaultModelSelection(params: {
   const userSelection = resolveModelFirstStoredUserSelection(params);
   if (
     userSelection &&
-    hasUsableModelRoute(
-      params.models,
-      params.catalog,
-      userSelection.selectedModel,
-    )
+    hasUsableModelRoute(params.models, userSelection.selectedModel)
   ) {
     return userSelection;
   }

@@ -157,6 +157,23 @@ earlier targets before artifact or host access. That commit descends from, and
 so supersedes, the earlier run model schema contraction
 (`014fe1867c6d1830fd35b03c3d77491da5aaa36a`). This does not claim production
 activation.
+
+Migration 1332 then drops the constant `model_providers.auth_method`,
+`model_providers.is_default`, `model_providers.selected_model`,
+`model_routes.price_tier` and `run_model_catalog.is_system_default` columns.
+Every API built before it still selects them in personal subscription and
+model catalog reads, so the same no-rolling-compatibility rule applies: apply
+1332 only after no pre-1332 API serves, and the rollback resolver rejects
+targets before the first-parent `main` commit that adds
+`1332_drop_dead_model_provider_columns.sql`. On the wire, `/api/model-catalog`
+no longer sends `isSystemDefault` or `priceTier`, personal provider responses
+no longer send `secretName`, `authMethod`, `secretNames`, `isDefault` or
+`selectedModel`, the provider upsert request no longer accepts
+`selectedModel`, and `/api/run-models` no longer sends `routeStatusReason` or
+the never-produced `unavailable` availability. App, CLI and iOS read none of
+the removed fields. `routeStatus` stays on the wire because shipped iOS builds
+decode it as a required string; current iOS decodes it as optional.
+
 Operator-only `org_metadata.openrouter_preset` overrides remain, with NULL
 using `@preset/okou-1-0`. Actual pricing/credits, historical usage, image
 generation and connectors retain their existing storage. See
@@ -1113,7 +1130,8 @@ that echoes the stored `selectedModel` and `serviceTier` without a
 `modelSettingsPatch` skips org model policy admission, so a member whose stored
 chat model has left the policy can still change their image model. Older APIs
 reject that case with `400`; the new Settings dropdown then reports a save
-error until the API is promoted.
+error until the API is promoted. Org model policies were later removed; see
+[Run model schema contraction](#run-model-schema-contraction).
 
 ## SSH/VNC Agent-grant interface contraction (#36360)
 
@@ -4423,6 +4441,12 @@ instance reaches ordinary Browser cleanup.
 
 ## Onboarding model preference
 
+> **Superseded.** Organization model policies and the onboarding model seed
+> were retired with the fixed platform Auto model (#37746, #37856). Onboarding
+> completion no longer reads a Codex or Claude Code choice or writes any model
+> policy; personal subscriptions are connected per member. The text below is
+> kept as history.
+
 New organization seeds use GPT-6 Luna as the Built-in default for both Free and
 paid workspaces. Existing organizations keep their stored default, including
 GPT-5.6 Luna. The new API also recognizes an untouched GPT-5.6 Luna seed from
@@ -5635,8 +5659,8 @@ from `X-Native-Gpt-6-Sol`: a Sol-capable artifact predating Luna must leave Luna
 jobs pending. The API excludes unsupported Luna jobs before the bounded poll
 lookup and rejects an unsupported direct claim with `404`, without changing the
 queued job. New Runners send both headers, while older APIs ignore the new
-header. No organization default or stored selection changes; a new catalog row
-must be admitted separately before an organization can add the model.
+header. No stored selection changes; the model is available only through a
+member's personal Codex subscription route.
 
 #### GPT 6 Sol native model readiness
 
@@ -5645,8 +5669,8 @@ whose bundled Guest supports GPT 6 Sol and its reasoning efforts. The API checks
 this capability after authorizing and validating the stored context, before
 claiming native `gpt-6-sol` or `openai/gpt-6-sol` work. A claimant without the
 exact capability receives the existing claim `404`; the job stays pending for
-a capable Runner. This covers Built-in and BYOK routes without changing any
-organization default or stored selection.
+a capable Runner. This covers personal subscription routes without changing any
+stored selection.
 
 Poll excludes unsupported Sol jobs before applying its candidate limit, so old
 Runners can still discover existing models behind a Sol job. Claim repeats the
@@ -6034,7 +6058,7 @@ remain compatible during the additive database migration and traffic overlap.
 
 Balance failures keep `insufficient_credits` for vm0 credit admission and add
 `provider_insufficient_credits` for upstream model-account balance. Completion
-stores that real failure reason for both BYOK and built-in runs. Public presentation
+stores that real failure reason for both personal-subscription and built-in runs. Public presentation
 uses persisted run ownership to display a platform-owned balance failure as
 "The current model is unavailable." and omit its billing reason from public chat
 metadata. Model unavailability is presentation, not a completion failure reason.
@@ -6057,7 +6081,7 @@ target and its independently resolved Runner tag, preventing an older writer or
 public reader from returning for new runs.
 
 This change does not certify alert delivery. #34219 remains open for actual
-built-in/BYOK production samples, Axiom monitor configuration and delivered-alert
+built-in/personal-subscription production samples, Axiom monitor configuration and delivered-alert
 verification. Runner INFO events are below the Axiom upload threshold, and the
 investigation token could not read monitor configuration.
 
@@ -6207,6 +6231,10 @@ from current `main`, so merging the floor constrains future canonical
 executions without a release or test rollback.
 
 ### Plan capability snapshot rollout compatibility
+
+> **Historical record.** The BYOK plan capability described here was retired
+> with organization BYOK (#37746, #37856); only the concurrency values remain
+> current.
 
 Migration `1187_expand_free_concurrency_byok` backfills only product-managed
 `org_plan_entitlements` rows for the Free concurrency/BYOK and Pro concurrency

@@ -135,20 +135,12 @@ function accountResponse(args: {
 }): ModelProviderResponse {
   const { account, provider } = args;
   const type = account.type as PersonalSubscriptionProviderType;
-  const authMethod = account.authMethod;
   return {
     id: account.id,
     modelProviderId: provider.id,
     isActive: account.isActive,
     type,
     framework: getFrameworkForType(type),
-    secretName: getSecretNameForType(type) ?? null,
-    authMethod,
-    secretNames: authMethod
-      ? (getSecretNamesForAuthMethod(type, authMethod) ?? null)
-      : null,
-    isDefault: provider.isDefault,
-    selectedModel: provider.selectedModel,
     accountEmail: account.accountEmail,
     workspaceName: account.workspaceName,
     planType: account.planType,
@@ -411,7 +403,6 @@ type UpsertPersonalAccountArgs = {
   readonly type: PersonalSubscriptionProviderType;
   readonly authMethod: string | null;
   readonly secretValues: Readonly<Record<string, string>>;
-  readonly selectedModel?: string;
   readonly metadata?: PersonalProviderAccountMetadata;
   readonly mode: PersonalProviderAccountMutation;
   readonly featureSwitchContext: FeatureSwitchContext;
@@ -498,7 +489,6 @@ async function logicalProvider(
     readonly orgId: string;
     readonly userId: string;
     readonly type: PersonalSubscriptionProviderType;
-    readonly selectedModel?: string;
   },
 ): Promise<ProviderRow> {
   const [existing] = await db
@@ -521,8 +511,6 @@ async function logicalProvider(
       orgId: args.orgId,
       userId: args.userId,
       type: args.type,
-      isDefault: false,
-      selectedModel: args.selectedModel ?? null,
     })
     .returning();
   if (!created) {
@@ -627,25 +615,12 @@ async function writePersonalAccount(
     await tx.execute(
       accountSecretsPublicationStatement(account.id, args.encryptedSecrets),
     );
-    const selectedModel =
-      args.mode.kind === "replace-active"
-        ? (args.selectedModel ?? null)
-        : provider.selectedModel;
-    if (selectedModel !== provider.selectedModel) {
-      await tx
-        .update(modelProviders)
-        .set({ selectedModel, updatedAt: nowDate() })
-        .where(eq(modelProviders.id, provider.id));
-    }
     const consent = deviceAuthSessionPublicationSql(args);
     if (consent && (await tx.execute(consent)).rowCount !== 1) {
       throw new Error("Device authorization was cancelled or expired");
     }
     return {
-      provider: accountResponse({
-        account,
-        provider: { ...provider, selectedModel },
-      }),
+      provider: accountResponse({ account, provider }),
       created: !plan.selected,
     };
   });

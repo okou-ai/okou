@@ -19,7 +19,6 @@ from typing import NamedTuple
 from mitmproxy import http
 from wsproto.utilities import generate_accept_token
 
-import anthropic_accounting
 import body_decoding
 import claude_output_timing
 import flow_metadata
@@ -52,27 +51,11 @@ _RESPONSE_STREAM_CALLBACK = "_response_stream_callback"
 _ANTHROPIC_MESSAGES_SSE_PROTOCOL = "anthropic_messages_sse"
 _OPENAI_CHAT_COMPLETIONS_SSE_PROTOCOL = "openai_chat_completions_sse"
 _OPENAI_RESPONSES_SSE_PROTOCOL = "openai_responses_sse"
-_ANTHROPIC_USAGE_EVENTS = frozenset(("message_start", "message_delta"))
-_ANTHROPIC_MESSAGE_STOP_EVENT = "message_stop"
 _MODEL_SSE_PARSE_ERROR_DIAGNOSTIC_LIMIT = 4
 
 _ResponseChunkParser = Callable[[bytes], None]
 _SseUsageParseErrorLogger = Callable[[str, str], None]
 _AnthropicLifecycleObserver = Callable[[str, str | None], None]
-
-
-def _anthropic_incomplete_accounting_status(
-    usage_dict: dict,
-    accounting_events: set[str],
-) -> anthropic_accounting.AnthropicAccountingStatus:
-    has_recoverable_usage = bool(accounting_events & _ANTHROPIC_USAGE_EVENTS) and (
-        usage.has_positive_model_provider_usage(usage_dict)
-    )
-    if not has_recoverable_usage:
-        return "no_recoverable_usage"
-    if _ANTHROPIC_MESSAGE_STOP_EVENT in accounting_events:
-        return "recovered_terminal"
-    return "recovered_partial"
 
 
 class _ResponseStreamSetup(NamedTuple):
@@ -230,7 +213,6 @@ def _configure_response_inspection_stream(
     if model_protocol is not None:
         if http_response_classification.has_event_stream_media_type(response):
             lifecycle_observer: _AnthropicLifecycleObserver | None = None
-            anthropic_accounting_events: set[str] = set()
             openai_recoverable_usage: dict = {}
             observed_terminal = False
 
@@ -289,7 +271,6 @@ def _configure_response_inspection_stream(
                 )
 
                 def observe_anthropic_event(event: str) -> None:
-                    anthropic_accounting_events.add(event)
                     observe_usage(usage_dict, event == "message_stop")
 
                 parser_fn, usage_dict = usage.create_anthropic_messages_sse_usage_extractor(
@@ -329,29 +310,16 @@ def _configure_response_inspection_stream(
                     elif extract_model_usage:
                         run_usage.observe(flow, usage_dict)
                         log_parse_error("compressed_body", decode_error)
-                        if (
-                            usage_protocol == _ANTHROPIC_MESSAGES_SSE_PROTOCOL
-                            and decode_error == body_decoding.INCOMPLETE_COMPRESSED_BODY
-                        ):
-                            accounting_status = _anthropic_incomplete_accounting_status(
-                                usage_dict,
-                                anthropic_accounting_events,
-                            )
-                            if is_billable_model_provider:
-                                anthropic_accounting.report_incomplete(
-                                    flow,
-                                    accounting_status,
-                                )
-                        elif (
-                            usage_protocol == _OPENAI_RESPONSES_SSE_PROTOCOL
-                            and decode_error == body_decoding.INCOMPLETE_COMPRESSED_BODY
-                        ):
+                        incomplete_body = decode_error == body_decoding.INCOMPLETE_COMPRESSED_BODY
+                        if usage_protocol == _OPENAI_RESPONSES_SSE_PROTOCOL and incomplete_body:
                             usage_dict.clear()
                             usage.merge_openai_responses_usage_result(
                                 usage_dict,
                                 openai_recoverable_usage,
                             )
-                        else:
+                        elif not (
+                            usage_protocol == _ANTHROPIC_MESSAGES_SSE_PROTOCOL and incomplete_body
+                        ):
                             usage_dict.clear()
                     if lifecycle_observer is not None:
                         claude_output_timing.retry_pending(flow)

@@ -86,13 +86,9 @@
           "guidance": "Primeiro, execute o diagnóstico de créditos. Compre créditos somente quando o plano atual permitir; caso contrário, retorne o link de upgrade do plano.",
           "title": "Créditos esgotados"
         },
-        "modelProviderUnavailable": {
-          "guidance": "O provedor de modelos usado por esta thread foi excluído. Inicie uma nova thread de chat para continuar.",
-          "title": "Provedor de modelos indisponível"
-        },
         "noModelProvider": {
-          "guidance": "Configure um provedor de modelos para começar a executar agentes.",
-          "title": "Nenhum provedor de modelos configurado"
+          "guidance": "Tente novamente em instantes ou conecte uma assinatura pessoal do Claude Code ou Codex nas Configurações.",
+          "title": "Nenhum provedor de modelos está disponível para esta execução"
         },
         "paidPlanRequired": {
           "guidance": "A geração de vídeo integrada não está disponível no plano atual.",
@@ -1902,10 +1898,8 @@
     "errors": {
       "genericTitle": "Não foi possível concluir esta execução",
       "loadMessages": "Falha ao carregar mensagens",
-      "noModelProviderAction": "Configure um nas Configurações do Workspace",
-      "noModelProviderPrefix": "Nenhum provedor de modelo foi configurado ainda.",
-      "providerDeletedAction": "Iniciar uma nova conversa",
-      "providerDeletedPrefix": "O provedor de modelo usado por esta conversa foi excluído.",
+      "noModelProviderAction": "Gerenciar assinaturas",
+      "noModelProviderPrefix": "Nenhum provedor de modelos está disponível para esta execução. Tente novamente ou conecte uma assinatura pessoal.",
       "providerIncompatibleAction": "Iniciar uma nova sessão",
       "providerIncompatiblePrefix": "Esta sessão foi iniciada com um provedor de modelo diferente e não pode continuar com o atual.",
       "recovery": {
@@ -1925,7 +1919,7 @@
         "fiveHourReset": "O limite de 5 h redefine {{time}}",
         "inputTooLargeDescription": "Encurte sua mensagem e envie de novo.",
         "inputTooLargeTitle": "Sua mensagem é grande demais",
-        "invalidApiKeyTitle": "A chave de API precisa ser atualizada",
+        "invalidApiKeyTitle": "O login da sua assinatura precisa ser atualizado",
         "invalidCredentialsTitle": "Sua conexão com o modelo precisa de atenção",
         "newChat": "Novo chat",
         "newChatDescription": "Inicie um novo chat e inclua as informações importantes que deseja levar adiante.",
@@ -1934,8 +1928,8 @@
         "outputLimitTitle": "A resposta chegou ao limite de tamanho",
         "personalAccount": "Assinatura pessoal {{account}}",
         "personalAccountDisconnected": "Assinatura pessoal desconectada",
-        "providerBalanceDescription": "Confira o saldo de créditos da sua conta no provedor e tente novamente.",
-        "providerBalanceTitle": "Sua conta no provedor precisa de mais créditos",
+        "providerBalanceDescription": "Verifique o uso ou o saldo de créditos da sua conta de assinatura e tente novamente.",
+        "providerBalanceTitle": "Sua conta de assinatura precisa de mais crédito",
         "providerConnectionDescription": "Abra Provedores de modelos para reconectar ou atualizar sua conta e tente novamente.",
         "providerQueueTimeoutTitle": "O modelo não iniciou a tempo",
         "providerRateLimitedTitle": "Há solicitações demais ao modelo no momento",
@@ -4732,7 +4726,7 @@
     "modelTemporarilyUnavailable": "Modelo temporariamente indisponível",
     "modelUnavailable": "O modelo atual não está disponível.",
     "overloaded": "{{model}} está sobrecarregado. Aguarde alguns minutos e tente novamente ou mude para outro modelo.",
-    "providerBalance": "O saldo da sua conta do provedor de modelos conectado é insuficiente.",
+    "providerBalance": "Sua conta de assinatura conectada não tem saldo suficiente.",
     "transient": "Ocorreu um erro. Tente novamente mais tarde.",
     "vm0Credits": "Créditos insuficientes. Adicione créditos ou conecte uma assinatura pessoal do Codex ou Claude para continuar."
   },
@@ -4969,10 +4963,8 @@
         "effort": "Esforço",
         "effortScale": {
           "faster": "Mais rápido",
-          "fewerCredits": "Menos créditos",
           "higherUsage": "Maior consumo",
           "lowerUsage": "Menor consumo",
-          "moreCredits": "Mais créditos",
           "smarter": "Mais inteligente"
         },
         "fast": "Rápido",

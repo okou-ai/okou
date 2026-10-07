@@ -877,7 +877,6 @@ describe("CLI-TEST: test-codex-oauth", () => {
 
     const legacyProvider = await readCodexProvider(actor);
     expect(legacyProvider).toMatchObject({
-      authMethod: "auth_json",
       needsReconnect: true,
       lastRefreshErrorCode: "refresh_token_invalidated",
     });
@@ -906,7 +905,6 @@ describe("CLI-TEST: test-codex-oauth", () => {
     expect(authJsonSeed.body.tokenExpiresAt).toBeDefined();
     const pastedProvider = await readCodexProvider(actor);
     expect(pastedProvider).toMatchObject({
-      authMethod: "auth_json",
       workspaceName: "Acme",
       planType: "plus",
       needsReconnect: false,

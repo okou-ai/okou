@@ -598,7 +598,7 @@ function ModelFirstRunModelRow({
     <SelectItem
       key={runModel.model}
       value={runModel.model}
-      disabled={!isMemberRunModelConfigurable(runModel, catalog)}
+      disabled={!isMemberRunModelConfigurable(runModel)}
     >
       <ModelFirstRunModelRowContent
         runModel={runModel}

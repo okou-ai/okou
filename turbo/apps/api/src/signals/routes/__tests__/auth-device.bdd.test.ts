@@ -855,7 +855,6 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       created: true,
       provider: {
         type: "codex-oauth-token",
-        authMethod: "auth_json",
         workspaceName: "Personal Acme",
         planType: "plus",
       },

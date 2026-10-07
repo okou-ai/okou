@@ -473,12 +473,6 @@ const expectedBindings = [
   },
   {
     rustModulePath: ["model_provider_env", "placeholders"],
-    rustConstName: "ANTHROPIC_AUTH_TOKEN",
-    value: rustString(MODEL_PROVIDER_ENV_PLACEHOLDERS.ANTHROPIC_AUTH_TOKEN),
-    rustDoc: placeholderRustDoc("ANTHROPIC_AUTH_TOKEN"),
-  },
-  {
-    rustModulePath: ["model_provider_env", "placeholders"],
     rustConstName: "CLAUDE_CODE_OAUTH_TOKEN",
     value: rustString(MODEL_PROVIDER_ENV_PLACEHOLDERS.CLAUDE_CODE_OAUTH_TOKEN),
     rustDoc: placeholderRustDoc("CLAUDE_CODE_OAUTH_TOKEN"),

@@ -43,7 +43,6 @@ function configureRunModels(models: readonly string[]): void {
         credentialScope: model === "okou-1.0" ? "org" : "member",
         modelProviderId: null,
         routeStatus: "valid",
-        routeStatusReason: null,
       };
     }),
   );
@@ -138,7 +137,6 @@ function autoPolicy(): AvailableRunModel {
     credentialScope: "org",
     modelProviderId: null,
     routeStatus: "valid",
-    routeStatusReason: null,
   };
 }
 

@@ -174,7 +174,7 @@ pub(super) fn startup_config_overrides(
     overrides
 }
 
-pub(super) fn quote_toml_basic_string(value: &str) -> String {
+fn quote_toml_basic_string(value: &str) -> String {
     let mut quoted = String::with_capacity(value.len() + 2);
     quoted.push('"');
     for ch in value.chars() {
@@ -226,9 +226,9 @@ mod tests {
     fn startup_config_overrides_include_provider_and_catalog_path() {
         let codex_home = Path::new("/tmp/codex-home");
         let config = CodexRuntimeConfig {
-            provider_id: "deepseek".to_string(),
-            name: "DeepSeek".to_string(),
-            base_url: "https://api.deepseek.com/".to_string(),
+            provider_id: "openrouter-codex".to_string(),
+            name: "OpenRouter (Codex)".to_string(),
+            base_url: "https://openrouter.ai/api/v1".to_string(),
             env_key: "OPENAI_API_KEY".to_string(),
             http_headers: None,
             requires_openai_auth: None,
@@ -239,21 +239,28 @@ mod tests {
 
         let overrides = startup_config_overrides(Some(&config), codex_home);
 
-        assert_eq!(overrides[0], r#"model_provider="deepseek""#);
-        assert!(overrides.contains(&r#"model_providers.deepseek.name="DeepSeek""#.to_string()));
+        assert_eq!(overrides[0], r#"model_provider="openrouter-codex""#);
         assert!(overrides.contains(
-            &r#"model_providers.deepseek.base_url="https://api.deepseek.com/""#.to_string()
+            &r#"model_providers.openrouter-codex.name="OpenRouter (Codex)""#.to_string()
         ));
         assert!(
-            overrides.contains(&r#"model_providers.deepseek.env_key="OPENAI_API_KEY""#.to_string())
+            overrides.contains(
+                &r#"model_providers.openrouter-codex.base_url="https://openrouter.ai/api/v1""#
+                    .to_string()
+            )
         );
         assert!(
-            overrides.contains(&r#"model_providers.deepseek.wire_api="responses""#.to_string())
+            overrides.contains(
+                &r#"model_providers.openrouter-codex.env_key="OPENAI_API_KEY""#.to_string()
+            )
         );
         assert!(
             overrides
-                .contains(&r#"model_providers.deepseek.supports_websockets=false"#.to_string())
+                .contains(&r#"model_providers.openrouter-codex.wire_api="responses""#.to_string())
         );
+        assert!(overrides.contains(
+            &r#"model_providers.openrouter-codex.supports_websockets=false"#.to_string()
+        ));
         assert!(
             overrides.contains(&r#"model_catalog_json="/tmp/codex-home/models.json""#.to_string())
         );
@@ -350,9 +357,9 @@ mod tests {
     fn write_model_catalog_writes_json_when_present() {
         let tmp = tempfile::tempdir().unwrap();
         let config = CodexRuntimeConfig {
-            provider_id: "deepseek".to_string(),
-            name: "DeepSeek".to_string(),
-            base_url: "https://api.deepseek.com/".to_string(),
+            provider_id: "openrouter-codex".to_string(),
+            name: "OpenRouter (Codex)".to_string(),
+            base_url: "https://openrouter.ai/api/v1".to_string(),
             env_key: "OPENAI_API_KEY".to_string(),
             http_headers: None,
             requires_openai_auth: None,
@@ -389,9 +396,9 @@ mod tests {
         std::fs::write(&symlink_target, b"TARGET_CONTENT_MUST_SURVIVE").unwrap();
         symlink(&symlink_target, model_catalog_path(&codex_home)).unwrap();
         let config = CodexRuntimeConfig {
-            provider_id: "deepseek".to_string(),
-            name: "DeepSeek".to_string(),
-            base_url: "https://api.deepseek.com/".to_string(),
+            provider_id: "openrouter-codex".to_string(),
+            name: "OpenRouter (Codex)".to_string(),
+            base_url: "https://openrouter.ai/api/v1".to_string(),
             env_key: "OPENAI_API_KEY".to_string(),
             http_headers: None,
             requires_openai_auth: None,

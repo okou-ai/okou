@@ -36,7 +36,7 @@ pub(super) const CLAUDE_MODEL_PROVIDER_PLACEHOLDER_ENV_KEYS: &[ProtectedModelPro
     },
     ProtectedModelProviderEnvKey {
         name: "ANTHROPIC_AUTH_TOKEN",
-        placeholder: Some(model_provider_placeholders::ANTHROPIC_AUTH_TOKEN),
+        placeholder: None,
     },
     ProtectedModelProviderEnvKey {
         name: "CLAUDE_CODE_OAUTH_TOKEN",

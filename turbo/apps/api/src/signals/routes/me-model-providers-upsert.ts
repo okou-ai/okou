@@ -1,8 +1,5 @@
 import { command } from "ccstate";
-import {
-  hasAuthMethods,
-  type ModelProviderResponse,
-} from "@okouai/api-contracts/contracts/model-providers";
+import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 
@@ -47,7 +44,6 @@ const upsertPersonalCodexAuthJson$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly rawAuthJson: string;
-      readonly selectedModel: string | undefined;
       readonly featureSwitchContext: FeatureSwitchContext;
     },
     signal: AbortSignal,
@@ -57,7 +53,6 @@ const upsertPersonalCodexAuthJson$ = command(
         orgId: args.orgId,
         userId: args.userId,
         rawAuthJson: args.rawAuthJson,
-        selectedModel: args.selectedModel,
         upsert: async (pasteArgs) => {
           const result = await set(
             upsertPersonalModelProviderAccount$,
@@ -67,7 +62,6 @@ const upsertPersonalCodexAuthJson$ = command(
               type: "codex-oauth-token",
               authMethod: pasteArgs.authMethod,
               secretValues: pasteArgs.secretValues,
-              selectedModel: pasteArgs.selectedModel,
               metadata: pasteArgs.metadata,
               mode: { kind: "replace-active" },
               featureSwitchContext: args.featureSwitchContext,
@@ -96,7 +90,7 @@ const upsertInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!bodyResult.ok) {
     return bodyResult.response;
   }
-  const { type, secret, authMethod, secrets, selectedModel } = bodyResult.data;
+  const { type, secret, authMethod, secrets } = bodyResult.data;
 
   // Personal provider routes only support subscription accounts.
   if (!isPersonalSubscriptionProviderType(type)) {
@@ -119,41 +113,20 @@ const upsertInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         orgId: auth.orgId,
         userId: auth.userId,
         rawAuthJson: raw,
-        selectedModel,
         featureSwitchContext,
       },
       signal,
     );
   }
 
-  // Branch 2: multi-auth provider
-  if (hasAuthMethods(type)) {
-    if (!authMethod || !secrets) {
-      return badRequestMessage(
-        `Provider "${type}" requires authMethod and secrets`,
-      );
-    }
-    const result = await set(
-      upsertPersonalModelProviderAccount$,
-      {
-        orgId: auth.orgId,
-        userId: auth.userId,
-        type,
-        authMethod,
-        secretValues: secrets,
-        selectedModel,
-        mode: { kind: "replace-active" },
-        featureSwitchContext,
-      },
-      signal,
+  // Codex subscriptions are connected only through the auth_json paste flow.
+  if (type === "codex-oauth-token") {
+    return badRequestMessage(
+      `Provider "${type}" requires authMethod "auth_json"`,
     );
-    signal.throwIfAborted();
-    return "status" in result
-      ? result
-      : shapeAccountUpsertResult(result.provider, result.created);
   }
 
-  // Branch 3: single-secret provider
+  // Claude Code subscription: single-secret provider
   if (!secret) {
     return badRequestMessage(`Provider "${type}" requires a secret`);
   }
@@ -167,7 +140,6 @@ const upsertInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       secretValues: {
         CLAUDE_CODE_OAUTH_TOKEN: secret,
       },
-      selectedModel,
       mode: { kind: "replace-active" },
       featureSwitchContext,
     },
