@@ -1828,6 +1828,20 @@
       "when": 1791370868389,
       "tag": "1338_retire_model_route_state",
       "breakpoints": true
+    },
+    {
+      "idx": 1339,
+      "version": "7",
+      "when": 1791373330988,
+      "tag": "1339_expand_connector_catalog_entry_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 1340,
+      "version": "7",
+      "when": 1791373351260,
+      "tag": "1340_backfill_connector_catalog_entry_columns",
+      "breakpoints": true
     }
   ]
 }

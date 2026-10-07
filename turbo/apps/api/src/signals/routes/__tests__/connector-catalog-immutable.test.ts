@@ -1334,6 +1334,74 @@ describe("slug-first current catalog business readers", () => {
     expect(oneClick.body.connectors.length).toBeGreaterThan(0);
   });
 
+  it("serves payload-only entries written by an outgoing API after the column backfill", async () => {
+    if (!engine) {
+      throw new Error("Missing case engine");
+    }
+    const artifact = release(
+      `2099-02-01.${randomUUID()}`,
+      "Outgoing writer catalog",
+    ).artifact;
+    const mcpConnector = artifact.connectors[0];
+    if (!mcpConnector?.mcp) {
+      throw new Error("Missing fixed MCP connector");
+    }
+    mcpConnector.tags = [];
+    mcpConnector.generation = [];
+    const candidate = publication(artifact);
+    serve(candidate);
+    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
+    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+    const expectedHttp = await accept(
+      catalogClient().get({ headers, params: { connectorSlug: "notion" } }),
+      [200],
+    );
+    const actor = await ownedMcpRun(candidate);
+
+    // Only the owned lifecycle engine can reproduce an old API's insert
+    // after migrations have run. New APIs must serve these retained rows
+    // until the outgoing writer and rollback window have drained.
+    await engine.query(
+      "DELETE FROM connector_catalog_entries WHERE hash = $1",
+      [candidate.hash],
+    );
+    await engine.query(
+      "INSERT INTO connector_catalog_entries (hash, slug, payload) SELECT $1, entry ->> 'slug', entry FROM jsonb_array_elements($2::jsonb) AS entry",
+      [candidate.hash, JSON.stringify(candidate.artifact.connectors)],
+    );
+
+    const listed = await accept(catalogClient().list({ headers }), [200]);
+    expect(listed.body.connectors).toContainEqual(
+      expect.objectContaining({
+        slug: mcpConnector.slug,
+        label: "Outgoing writer catalog",
+        tags: [],
+        generation: [],
+        mcp: mcpConnector.mcp,
+        permissionSummary: {
+          hasPermissions: false,
+          permissionCount: 0,
+          hasCategories: false,
+          hasDefaultPolicyOverrides: false,
+        },
+      }),
+    );
+    const actualHttp = await accept(
+      catalogClient().get({ headers, params: { connectorSlug: "notion" } }),
+      [200],
+    );
+    expect(actualHttp.body).toStrictEqual(expectedHttp.body);
+    await directory(candidate);
+    expect((await mcpDirectory(actor)).body).toMatchObject({
+      connectors: [
+        {
+          displayName: "Outgoing writer catalog",
+          connectionId: actor.connectionId,
+        },
+      ],
+    });
+  });
+
   it.each(["claude-code", "pi"])(
     "claims an old %s execution context and v1 permission baseline",
     async (cliAgentType) => {

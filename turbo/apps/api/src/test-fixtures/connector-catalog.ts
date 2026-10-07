@@ -1,3 +1,4 @@
+import { connectorCatalogEntryColumns } from "@okouai/connectors/connector-catalog/entry-columns";
 import { createHash } from "node:crypto";
 
 import { createStore } from "ccstate";
@@ -85,7 +86,12 @@ async function publishFixtureGeneration(args: {
     .insert(connectorCatalogEntries)
     .values(
       args.catalog.connectors.map((connector) => {
-        return { hash: args.hash, slug: connector.slug, payload: connector };
+        return {
+          hash: args.hash,
+          slug: connector.slug,
+          payload: connector,
+          ...connectorCatalogEntryColumns(connector),
+        };
       }),
     )
     .onConflictDoNothing();

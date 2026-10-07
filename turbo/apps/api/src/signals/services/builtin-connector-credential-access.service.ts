@@ -19,9 +19,9 @@ import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 
 import { logger } from "../../lib/log";
 import {
-  getConnectorRuntimeConnector,
   getConnectorRuntimeMethod,
   type ConnectorRuntimeMethod,
+  type ConnectorRuntimeAuthLookup,
   type ConnectorRuntimeLookup,
 } from "./connector-catalog-runtime.service";
 
@@ -88,15 +88,14 @@ export function builtinConnectorCredentialStorageIsCompatible(args: {
 }
 
 export function resolveStoredBuiltinConnectorRuntimeMethod(args: {
-  readonly snapshot: ConnectorRuntimeLookup;
+  readonly snapshot: ConnectorRuntimeAuthLookup;
   readonly stored: {
     readonly authMethodId: string;
     readonly connectorId: string;
     readonly connectorSlug: string;
   };
 }): ConnectorRuntimeMethod | undefined {
-  const runtimeConnector = getConnectorRuntimeConnector(
-    args.snapshot,
+  const runtimeConnector = args.snapshot.connectors.get(
     args.stored.connectorSlug,
   );
   if (

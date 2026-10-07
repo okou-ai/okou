@@ -1,3 +1,4 @@
+import { connectorCatalogEntryColumns } from "@okouai/connectors/connector-catalog/entry-columns";
 import { command } from "ccstate";
 import { eq, ne } from "drizzle-orm";
 import {
@@ -88,6 +89,7 @@ export const prepareImmutableCatalogEntries$ = command(
                 hash: args.hash,
                 slug: connector.slug,
                 payload: { ...connector },
+                ...connectorCatalogEntryColumns(connector),
               };
             }),
         )

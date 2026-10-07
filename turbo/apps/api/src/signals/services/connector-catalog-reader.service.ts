@@ -13,6 +13,11 @@ import {
   connectorCatalog,
   connectorCatalogEntries,
 } from "@okouai/db/schema/connector-catalog";
+import {
+  connectorCatalogDisplayColumns,
+  connectorCatalogRuntimeColumns,
+  materializeConnectorCatalogDisplayRow,
+} from "./connector-catalog-columns";
 import type { ReadonlyDb } from "../external/db";
 import type { ConnectorFeatureStates } from "./connector-catalog-feature-states";
 import type { ConnectorCatalogConnection } from "./connector-catalog-connection";
@@ -56,23 +61,66 @@ interface ConnectorCatalogConnectorReadArgs extends ConnectorCatalogReadArgs {
  * slug, single-item status and permission GETs), so a slug without an entry
  * is omitted or becomes 404. Required paths reject through their own readers.
  */
-async function loadSlugSource(db: ReadonlyDb, slugs: readonly ConnectorSlug[]) {
+async function loadSlugDisplaySource(
+  db: ReadonlyDb,
+  slugs: readonly ConnectorSlug[],
+) {
+  const rows = await db
+    .select({
+      current: {
+        schemaVersion: connectorCatalog.schemaVersion,
+        hash: connectorCatalog.hash,
+      },
+      entry: connectorCatalogDisplayColumns,
+    })
+    .from(connectorCatalog)
+    .leftJoin(connectorCatalogEntries, connectorCatalogSlugJoin(slugs))
+    .where(connectorCatalogCurrentWhere());
   return connectorCatalogSlugSourceFromRows(
-    await db
-      .select({
-        current: {
-          schemaVersion: connectorCatalog.schemaVersion,
-          hash: connectorCatalog.hash,
-        },
-        entry: {
-          slug: connectorCatalogEntries.slug,
-          payload: connectorCatalogEntries.payload,
-        },
-      })
-      .from(connectorCatalog)
-      .leftJoin(connectorCatalogEntries, connectorCatalogSlugJoin(slugs))
-      .where(connectorCatalogCurrentWhere()),
+    rows.map((row) => {
+      return {
+        current: row.current,
+        entry:
+          row.entry === null
+            ? null
+            : materializeConnectorCatalogDisplayRow(row.entry),
+      };
+    }),
     slugs,
+  );
+}
+
+async function loadPermissionSlugSource(db: ReadonlyDb, slug: ConnectorSlug) {
+  const rows = await db
+    .select({
+      current: {
+        schemaVersion: connectorCatalog.schemaVersion,
+        hash: connectorCatalog.hash,
+      },
+      entry: {
+        slug: connectorCatalogRuntimeColumns.slug,
+        authMethods: connectorCatalogRuntimeColumns.authMethods,
+        mcp: connectorCatalogRuntimeColumns.mcp,
+        label: connectorCatalogRuntimeColumns.label,
+        icon: connectorCatalogRuntimeColumns.icon,
+        firewall: connectorCatalogRuntimeColumns.firewall,
+      },
+    })
+    .from(connectorCatalog)
+    .leftJoin(connectorCatalogEntries, connectorCatalogSlugJoin([slug]))
+    .where(connectorCatalogCurrentWhere());
+  return connectorCatalogSlugSourceFromRows(
+    rows.map((row) => {
+      if (row.entry === null) {
+        return { current: row.current, entry: null };
+      }
+      const { mcp, ...fields } = row.entry;
+      return {
+        current: row.current,
+        entry: { ...fields, ...(mcp === null ? {} : { mcp }) },
+      };
+    }),
+    [slug],
   );
 }
 
@@ -109,7 +157,7 @@ export async function listConnectedConnectorBriefs(
     return [];
   }
   return connectorBriefsFromSource({
-    catalog: await loadSlugSource(args.db, args.connectorSlugs),
+    catalog: await loadSlugDisplaySource(args.db, args.connectorSlugs),
     featureStates: args.featureStates,
   });
 }
@@ -129,7 +177,7 @@ export async function listConnectorCatalogConnectItems(
     args.filter.kind === "slugs" && args.filter.connectorSlugs.length === 0
       ? { connectors: [], filteredMethodKeys: new Set<string>() }
       : args.filter.kind === "slugs"
-        ? await loadSlugSource(args.db, args.filter.connectorSlugs)
+        ? await loadSlugDisplaySource(args.db, args.filter.connectorSlugs)
         : await loadCompleteConnectorCatalogSource(args.db);
   return connectorCatalogConnectItemsFromSource({
     catalog,
@@ -160,7 +208,7 @@ export async function getPublicConnectorCatalogStatus(
 ): Promise<PublicConnectorCatalogStatusItem | null> {
   return publicConnectorCatalogStatusFromSource({
     ...args,
-    catalog: await loadSlugSource(args.db, [args.connectorSlug]),
+    catalog: await loadSlugDisplaySource(args.db, [args.connectorSlug]),
   });
 }
 
@@ -169,6 +217,6 @@ export async function getPublicConnectorCatalogPermissionDetail(
 ): Promise<PublicConnectorCatalogPermissionDetail | null> {
   return publicConnectorCatalogPermissionDetailFromSource({
     ...args,
-    catalog: await loadSlugSource(args.db, [args.connectorSlug]),
+    catalog: await loadPermissionSlugSource(args.db, args.connectorSlug),
   });
 }
