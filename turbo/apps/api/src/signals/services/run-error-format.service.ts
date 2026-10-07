@@ -1,8 +1,5 @@
 import { command, computed, type Computed } from "ccstate";
-import {
-  formatRunErrorForExternalSurface,
-  isClaudeCodeAuthenticationCredentialsError,
-} from "@okouai/api-contracts/contracts/errors";
+import { formatRunErrorForExternalSurface } from "@okouai/api-contracts/contracts/errors";
 import {
   getFrameworkForType,
   modelProviderCredentialScopeSchema,
@@ -18,7 +15,6 @@ import { eq } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { db$, type ReadonlyDb } from "../external/db";
-import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 import {
   catalogDisplayName,
   modelCatalog$,
@@ -29,8 +25,6 @@ const INSUFFICIENT_CREDITS_MARKER = "insufficient_credits";
 const PRO_REQUIRED_MARKER = "pro_required";
 
 interface RunErrorProviderContext {
-  readonly userId: string;
-  readonly orgId: string;
   readonly modelProviderType: ModelProviderType | null;
   readonly modelProviderCredentialScope: ModelProviderCredentialScope | null;
   readonly failureReason: RunFailureReasonToken | null;
@@ -47,7 +41,6 @@ interface FormatRunErrorLikeWebMessageParams {
   readonly modelProviderType?: ModelProviderType | null;
   readonly modelProviderCredentialScope?: ModelProviderCredentialScope | null;
   readonly selectedModel?: string | null;
-  readonly canManageOrgModelProviders?: boolean;
 }
 
 function buildModelProvidersUrl(): string {
@@ -118,8 +111,6 @@ function runErrorProviderContext(
   return computed(async (get): Promise<RunErrorProviderContext | undefined> => {
     const [run] = await get(db$)
       .select({
-        userId: agentRuns.userId,
-        orgId: agentRuns.orgId,
         modelProviderType: agentRuns.modelProvider,
         modelRuntimeProviderType: agentRuns.modelRuntimeProvider,
         modelProviderCredentialScope: agentRuns.modelProviderCredentialScope,
@@ -145,8 +136,6 @@ function runErrorProviderContext(
       (modelProviderType === "built-in" ? null : modelProviderType);
 
     return {
-      userId: run.userId,
-      orgId: run.orgId,
       modelProviderType,
       modelProviderCredentialScope: formatRunModelProviderCredentialScope(
         run.modelProviderCredentialScope,
@@ -224,8 +213,6 @@ function formatRunErrorLikeWebMessage(
       modelProviderType,
       claudeCodeCredentialRecovery: {
         modelProviderType,
-        modelProviderCredentialScope,
-        canManageOrgModelProviders: params.canManageOrgModelProviders ?? false,
         modelProvidersUrl: buildClaudeCodeCredentialRecoveryUrl({
           modelProviderType,
           modelProviderCredentialScope,
@@ -237,7 +224,7 @@ function formatRunErrorLikeWebMessage(
 
 export const formatRunErrorForRunOwner$ = command(
   async (
-    { get, set },
+    { get },
     params: Omit<
       FormatRunErrorLikeWebMessageParams,
       | "failureReason"
@@ -250,26 +237,6 @@ export const formatRunErrorForRunOwner$ = command(
     const providerContext = await get(runErrorProviderContext(params.runId));
     signal.throwIfAborted();
 
-    let canManageOrgModelProviders = params.canManageOrgModelProviders ?? false;
-    if (
-      params.canManageOrgModelProviders === undefined &&
-      providerContext?.modelProviderType === "anthropic-api-key" &&
-      providerContext.modelProviderCredentialScope === "org" &&
-      (providerContext.failureReason === "invalid_credentials" ||
-        (providerContext.failureReason === null &&
-          isClaudeCodeAuthenticationCredentialsError(params.errorMessage)))
-    ) {
-      const membership = await set(
-        getMemberRoleAndUpdateCache$,
-        providerContext.orgId,
-        providerContext.userId,
-        signal,
-      );
-      signal.throwIfAborted();
-      canManageOrgModelProviders =
-        membership.kind === "member" && membership.role === "admin";
-    }
-
     return await get(
       formatRunErrorLikeWebMessage({
         ...params,
@@ -279,7 +246,6 @@ export const formatRunErrorForRunOwner$ = command(
         modelProviderCredentialScope:
           providerContext?.modelProviderCredentialScope ?? null,
         selectedModel: providerContext?.selectedModel ?? null,
-        canManageOrgModelProviders,
       }),
     );
   },

@@ -1,9 +1,6 @@
 import { z } from "zod";
 import { formatRunBalanceError } from "./run-balance-errors";
-import type {
-  ModelProviderCredentialScope,
-  ModelProviderType,
-} from "./model-providers";
+import type { ModelProviderType } from "./model-providers";
 import type { ModelProviderFramework } from "./model-provider-types";
 import {
   knownRunFailureReasonSchema,
@@ -355,11 +352,6 @@ export const ACTIONABLE_RUN_ERROR_SNIPPETS = [
 
 type ClaudeCodeCredentialRecovery = {
   readonly modelProviderType: ModelProviderType | null | undefined;
-  readonly modelProviderCredentialScope:
-    | ModelProviderCredentialScope
-    | null
-    | undefined;
-  readonly canManageOrgModelProviders: boolean;
   readonly modelProvidersUrl: string | undefined;
 };
 
@@ -674,32 +666,12 @@ function withOptionalActionUrl(
 function formatClaudeCodeCredentialRecoveryMessage(
   recovery: ClaudeCodeCredentialRecovery,
 ): string | undefined {
-  if (recovery.modelProviderType === "claude-code-oauth-token") {
-    return withOptionalActionUrl(
-      CLAUDE_CODE_SUBSCRIPTION_RECONNECT_REQUIRED_MESSAGE,
-      "Reconnect Claude Code",
-      recovery.modelProvidersUrl,
-    );
-  }
-
-  if (recovery.modelProviderType !== "anthropic-api-key") {
+  if (recovery.modelProviderType !== "claude-code-oauth-token") {
     return undefined;
   }
-
-  if (
-    recovery.modelProviderCredentialScope === "org" &&
-    !recovery.canManageOrgModelProviders
-  ) {
-    return withOptionalActionUrl(
-      CLAUDE_CODE_ANTHROPIC_API_KEY_MEMBER_MESSAGE,
-      "Share with an admin",
-      recovery.modelProvidersUrl,
-    );
-  }
-
   return withOptionalActionUrl(
-    CLAUDE_CODE_ANTHROPIC_API_KEY_ADMIN_MESSAGE,
-    "Open Model Providers",
+    CLAUDE_CODE_SUBSCRIPTION_RECONNECT_REQUIRED_MESSAGE,
+    "Reconnect Claude Code",
     recovery.modelProvidersUrl,
   );
 }

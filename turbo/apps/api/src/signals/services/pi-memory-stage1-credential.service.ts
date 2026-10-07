@@ -302,9 +302,6 @@ async function codexCredential(
   signal: AbortSignal,
 ): Promise<PiMemoryStage1CredentialResult> {
   const { db, source, binding, context } = args;
-  if (binding.scope !== "member") {
-    return skip("source_scope_mismatch");
-  }
   const accountArgs = { db, id, orgId: source.orgId, userId: source.userId };
   const account = await personalModelProviderAccountById(accountArgs);
   signal.throwIfAborted();
@@ -442,7 +439,7 @@ export async function resolvePiMemoryStage1Credential(
   if (!binding.id) {
     return skip("source_binding_invalid");
   }
-  if (binding.scope !== "member" && binding.scope !== "org") {
+  if (binding.scope !== "member") {
     return skip("source_scope_mismatch");
   }
   switch (binding.type) {

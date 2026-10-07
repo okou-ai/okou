@@ -6108,8 +6108,7 @@ export function createThreadClaimRunObjects(
       if (
         !pin ||
         !pin.modelProvider ||
-        !isPersonalSubscriptionProviderType(pin.modelProvider) ||
-        pin.modelProviderCredentialScope === "org"
+        !isPersonalSubscriptionProviderType(pin.modelProvider)
       ) {
         return { command };
       }
@@ -6577,9 +6576,6 @@ export function createThreadClaimRunObjects(
       return null;
     },
   );
-  const pinnedGatewayProviderEnvironment$ = computed(async (get) => {
-    return await get(preparedConfiguredEnvironment$);
-  });
   const pinnedBuiltInProviderSnapshot$ = computed(async (get) => {
     const context = await get(pinnedContext$);
     return context &&
@@ -6597,17 +6593,8 @@ export function createThreadClaimRunObjects(
       if (isBuiltInModelProviderType(args.modelProviderType)) {
         return await get(pinnedBuiltInProviderSnapshot$);
       }
-      if (
-        args.modelProviderType &&
-        isPersonalSubscriptionProviderType(args.modelProviderType) &&
-        args.modelProviderCredentialScope !== "org"
-      ) {
-        // Member subscription accounts use the exact selected account source.
-        return await get(preparedConfiguredEnvironment$);
-      }
-      // Registered, organization-account and gateway sources are all prepared
-      // from their exact selected source snapshot.
-      return await get(pinnedGatewayProviderEnvironment$);
+      // Member subscription accounts use the exact selected account source.
+      return await get(preparedConfiguredEnvironment$);
     },
   );
   const queuedModelRoute$ = computed(async (get) => {
