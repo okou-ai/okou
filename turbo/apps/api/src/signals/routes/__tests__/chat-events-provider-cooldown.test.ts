@@ -100,34 +100,31 @@ async function sendUntilPicked(
 }
 
 describe("CHAT-02: isolated Auto cooldown callbacks", () => {
-  it.each(["okou-1.0"] as const)(
-    "fails closed for built-in %s when its required OpenRouter route is unavailable",
-    async () => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      configureNativeCliArtifact();
-      const model = await builtInModelWithOpenRouterCoolingDown(
-        actor,
-        agentId,
-        runnerGroup,
-      );
-      await api.updateUserModelPreference(actor, model);
-      const thread = await chat.createThread(actor, { agentId, model });
-      // Own even an unexpectedly admitted input before checking the rejection.
-      // The real thread deletion cancels its pending work before route cleanup.
-      onTestFinished(async () => {
-        await createChatFilesBddApi(context).deleteThread(actor, thread.id);
-        await flushWaitUntilForTest();
-      });
-      const { picked } = await sendUntilPicked(actor, {
-        agentId,
-        threadId: thread.id,
-        prompt: "require the managed OpenRouter DeepSeek route",
-        model,
-      });
-      expect(picked).toMatchObject({
-        eventType: "input.rejected",
-        error: "model_provider_unavailable",
-      });
-    },
-  );
+  it("fails closed for built-in okou-1.0 when its required OpenRouter route is unavailable", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    configureNativeCliArtifact();
+    const model = await builtInModelWithOpenRouterCoolingDown(
+      actor,
+      agentId,
+      runnerGroup,
+    );
+    await api.updateUserModelPreference(actor, model);
+    const thread = await chat.createThread(actor, { agentId, model });
+    // Own even an unexpectedly admitted input before checking the rejection.
+    // The real thread deletion cancels its pending work before route cleanup.
+    onTestFinished(async () => {
+      await createChatFilesBddApi(context).deleteThread(actor, thread.id);
+      await flushWaitUntilForTest();
+    });
+    const { picked } = await sendUntilPicked(actor, {
+      agentId,
+      threadId: thread.id,
+      prompt: "require the managed OpenRouter route",
+      model,
+    });
+    expect(picked).toMatchObject({
+      eventType: "input.rejected",
+      error: "model_provider_unavailable",
+    });
+  });
 });

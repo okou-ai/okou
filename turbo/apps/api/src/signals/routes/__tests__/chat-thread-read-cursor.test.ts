@@ -70,7 +70,7 @@ async function createUnreadCursorFixture(): Promise<CursorFixture> {
   const actor = bdd.user();
   await runs.grantProEntitlement(actor);
   // The Run must still be active when it is cancelled, so it uses Fable,
-  // which model policy keeps queued for the native Runner instead of Pi.
+  // whose personal subscription route queues it for the native Runner, not Pi.
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });

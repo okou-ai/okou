@@ -110,8 +110,8 @@ async function setup(): Promise<Scenario> {
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
-  // Queue ordering uses claimable native runs; Pi route tests set their
-  // own model policy instead of inheriting this fixture's default.
+  // Queue ordering uses claimable native runs; Pi route tests select their
+  // own model instead of inheriting this fixture's selection.
   await runsApi.ensurePersonalSubscriptionModel(actor);
   await api.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",

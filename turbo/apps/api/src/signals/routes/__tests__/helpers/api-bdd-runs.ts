@@ -302,7 +302,7 @@ export function createRunsApi(
     body: {
       readonly agentId: string;
       readonly prompt: string;
-      /** A member selects the organization's model; the owner's preference is personal. */
+      /** An explicit send model; omitted, the thread or member selection applies. */
       readonly model?: string;
       /** Continue an existing thread, which resumes its Agent session. */
       readonly threadId?: string;

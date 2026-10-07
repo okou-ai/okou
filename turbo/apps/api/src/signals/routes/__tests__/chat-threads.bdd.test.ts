@@ -97,7 +97,7 @@ const TEST_APP_ROUTES = Object.freeze([
  * Google Drive sync status.
  *
  * Most Given state is constructed through public APIs (Stripe-webhook
- * entitlement, org model provider routes, runner heartbeat/claim, sandbox
+ * entitlement, personal model provider routes, runner heartbeat/claim, sandbox
  * report webhooks, connector OAuth flows, and skills routes).
  * Targeted database checks are kept for migration and side-effect coverage
  * where the persisted row shape is the contract under test.
@@ -2642,9 +2642,6 @@ describe("CHAT-01 chat thread read state", () => {
 
     await api.ensurePersonalSubscriptionModel(peer);
     await selectNativeClaudeModel(peer);
-    // The peer's policy replacement moved the owner's removed preference to
-    // the fixed default; keep the owner on the native Claude route.
-    await chat.updateUserModelPreference(owner, "claude-fable-5-1");
     const peerAgent = await bdd.createAgent(peer, {
       displayName: "Unread peer agent",
       visibility: "private",

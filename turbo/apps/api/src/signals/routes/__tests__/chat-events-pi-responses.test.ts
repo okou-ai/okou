@@ -171,9 +171,6 @@ async function configureResponsesWithOwnedRuns(args: {
   await (model === "okou-1.0"
     ? configureBuiltInPiModel(args.actor, model)
     : configureSubscriptionPiModel(args.actor, {}, model));
-  // DeepSeek's direct candidate is ineligible for managed routing, so its
-  // ordinary launch already selects OpenRouter. GPT first reports the actual
-  // primary through a separate claimed Run on this test-owned mirror.
 
   return {
     model,
@@ -200,7 +197,7 @@ describe("CHAT-02: model-first routing", () => {
 
     const run = await sendChatRun(actor, {
       agentId,
-      prompt: `run ${selectedModel} on its managed fallback`,
+      prompt: `run ${selectedModel} on its Built-in route`,
       model,
     });
     await flushWaitUntilForTest();
@@ -434,310 +431,299 @@ describe("CHAT-02: model-first routing", () => {
     await cancelChatRun(actor, second.runId, claim.sandboxHeaders);
   }, 90_000);
 
-  it.each(["gpt-6-luna"] as const)(
-    "reuses one OpenRouter Responses Pi session across standard, fast, and standard turns for %s",
-    async (selectedModel) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const usagePricingResolution = await createGptUsagePricingResolution();
-      const { model, sendChatRun, claimChatRun } =
-        await configureResponsesWithOwnedRuns({
-          actor,
-          agentId,
-          runnerGroup,
-          selectedModel,
-        });
-
-      mockPiResourceArchiveDownloads();
-      const checkpointObjects = mockPiCheckpointObjectStore();
-      const prompts = [
-        "start standard Luna in the canonical Pi session",
-        "continue fast Luna in the same Pi session",
-        "return to standard Luna in the same Pi session",
-      ] as const;
-      const answers = [
-        "first standard Luna answer",
-        "fast Luna answer",
-        "returned standard Luna answer",
-      ] as const;
-
-      const first = await sendChatRun(
+  it("reuses one OpenRouter Responses Pi session across standard, fast, and standard turns for gpt-6-luna", async () => {
+    const selectedModel = "gpt-6-luna";
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const usagePricingResolution = await createGptUsagePricingResolution();
+    const { model, sendChatRun, claimChatRun } =
+      await configureResponsesWithOwnedRuns({
         actor,
-        {
-          agentId,
-          prompt: prompts[0],
-          model,
-        },
-        usagePricingResolution,
-      );
-      await flushWaitUntilForTest();
-      const firstClaim = await claimChatRun(runnerGroup, first.runId);
-      expect(firstClaim.claim.piModelConfig).toMatchObject({
-        model: selectedModel,
-      });
-      expect(firstClaim.claim.piModelConfig).not.toHaveProperty("serviceTier");
-      await completeSandboxFirstPiRun({
-        actor,
-        answer: answers[0],
-        checkpointObjects,
-        claim: firstClaim,
-        prompt: prompts[0],
-        run: first,
-        responsesModel: { provider: "openai-codex", model: selectedModel },
-        usagePricingResolution,
-      });
-      const firstSessionId = await readCompletedRunSessionId(
-        context,
-        actor,
-        first.runId,
-      );
-
-      const fast = await sendChatRun(
-        actor,
-        {
-          agentId,
-          threadId: first.threadId,
-          prompt: prompts[1],
-          model,
-          runOptions: { codexServiceTier: "fast" },
-        },
-        usagePricingResolution,
-      );
-      await flushWaitUntilForTest();
-      const fastClaim = await claimChatRun(runnerGroup, fast.runId);
-      expect(fastClaim.claim.piModelConfig).toMatchObject({
-        model: selectedModel,
-        serviceTier: "fast",
-      });
-      await completeSandboxFirstPiRun({
-        actor,
-        answer: answers[1],
-        checkpointObjects,
-        claim: fastClaim,
-        prompt: prompts[1],
-        run: fast,
-        responsesModel: { provider: "openai-codex", model: selectedModel },
-        usagePricingResolution,
-      });
-      await expect(
-        readCompletedRunSessionId(context, actor, fast.runId),
-      ).resolves.toBe(firstSessionId);
-
-      await chat.updateThreadModelSelection(actor, first.threadId, model, {
-        codexServiceTier: null,
-      });
-      const returned = await sendChatRun(
-        actor,
-        {
-          agentId,
-          threadId: first.threadId,
-          prompt: prompts[2],
-          model,
-        },
-        usagePricingResolution,
-      );
-      await flushWaitUntilForTest();
-      const returnedClaim = await claimChatRun(runnerGroup, returned.runId);
-      expect(returnedClaim.claim.piModelConfig).toMatchObject({
-        model: selectedModel,
-      });
-      expect(returnedClaim.claim.piModelConfig).not.toHaveProperty(
-        "serviceTier",
-      );
-      await completeSandboxFirstPiRun({
-        actor,
-        answer: answers[2],
-        checkpointObjects,
-        claim: returnedClaim,
-        prompt: prompts[2],
-        run: returned,
-        responsesModel: { provider: "openai-codex", model: selectedModel },
-        usagePricingResolution,
-      });
-      await expect(
-        readCompletedRunSessionId(context, actor, returned.runId),
-      ).resolves.toBe(firstSessionId);
-
-      for (const run of [first, fast, returned]) {
-        const claim = await api.requestClaimRunnerJob(true, run.runId, [404]);
-        expect(claim.status).toBe(404);
-      }
-      for (const runId of [fast.runId, returned.runId]) {
-        const run = await api.readRun(actor, runId);
-        const appendSystemPrompt = run.appendSystemPrompt ?? "";
-        expect(appendSystemPrompt).not.toContain("# Web Chat Run Context");
-        for (const turn of [...prompts, ...answers]) {
-          expect(appendSystemPrompt).not.toContain(turn);
-        }
-      }
-
-      await expectThreadModelCredits(context, actor, first.threadId, 0);
-      await expectThreadModelCredits(context, actor, fast.threadId, 0);
-      await expectThreadModelCredits(context, actor, returned.threadId, 0);
-
-      const visibleTurns = [
-        { runId: first.runId, prompt: prompts[0], answer: answers[0] },
-        { runId: fast.runId, prompt: prompts[1], answer: answers[1] },
-        { runId: returned.runId, prompt: prompts[2], answer: answers[2] },
-      ];
-      const finalEvents = await waitForThreadMessages(
-        actor,
-        first.threadId,
-        (events) => {
-          return eventBackedContents(events, returned.runId).some((event) => {
-            return event.content === answers[2];
-          });
-        },
-      );
-      const runIds = new Set(
-        visibleTurns.map((turn) => {
-          return turn.runId;
-        }),
-      );
-      expect(
-        finalEvents.events
-          .filter((event) => {
-            return (
-              event.runId !== undefined &&
-              event.runId !== null &&
-              runIds.has(event.runId) &&
-              (event.eventType === "input.prompt" ||
-                event.eventType === "output.message")
-            );
-          })
-          .map((event) => {
-            return {
-              runId: event.runId,
-              eventType: event.eventType,
-              content: chatEventDisplayText(event),
-            };
-          }),
-      ).toStrictEqual(
-        visibleTurns.flatMap((turn) => {
-          return [
-            {
-              runId: turn.runId,
-              eventType: "input.prompt",
-              content: turn.prompt,
-            },
-            {
-              runId: turn.runId,
-              eventType: "output.message",
-              content: turn.answer,
-            },
-          ];
-        }),
-      );
-      const sessionBlobs = [...checkpointObjects.entries()].filter(([key]) => {
-        return key.includes("/blobs/");
-      });
-      expect(sessionBlobs.length).toBeGreaterThan(0);
-      for (const [, bytes] of sessionBlobs) {
-        expect(bytes.toString("utf8")).not.toContain("serviceTier");
-      }
-    },
-    90_000,
-  );
-
-  it.each(["gpt-6-luna"] as const)(
-    "promotes queued fast %s to a priority Pi Sandbox run",
-    async (selectedModel) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const usagePricingResolution = await createGptUsagePricingResolution();
-      // The anchor must stay on the native Runner while the queued target
-      // proves Pi promotion; Sonnet 5 would itself run through Pi.
-      await api.updateUserModelPreference(actor, "claude-fable-5-1");
-      const anchor = await sendChatRun(actor, {
         agentId,
-        prompt: "hold the thread before queued fast Luna",
-        model: "claude-fable-5-1",
+        runnerGroup,
+        selectedModel,
       });
-      const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
 
-      await configureSubscriptionPiModel(actor, {}, selectedModel);
+    mockPiResourceArchiveDownloads();
+    const checkpointObjects = mockPiCheckpointObjectStore();
+    const prompts = [
+      "start standard Luna in the canonical Pi session",
+      "continue fast Luna in the same Pi session",
+      "return to standard Luna in the same Pi session",
+    ] as const;
+    const answers = [
+      "first standard Luna answer",
+      "fast Luna answer",
+      "returned standard Luna answer",
+    ] as const;
 
-      mockPiResourceArchiveDownloads();
-      const checkpointObjects = mockPiCheckpointObjectStore();
-      const prompt = "promote queued fast Luna through the callback";
-      const answer = "queued fast Luna Sandbox answer";
+    const first = await sendChatRun(
+      actor,
+      {
+        agentId,
+        prompt: prompts[0],
+        model,
+      },
+      usagePricingResolution,
+    );
+    await flushWaitUntilForTest();
+    const firstClaim = await claimChatRun(runnerGroup, first.runId);
+    expect(firstClaim.claim.piModelConfig).toMatchObject({
+      model: selectedModel,
+    });
+    expect(firstClaim.claim.piModelConfig).not.toHaveProperty("serviceTier");
+    await completeSandboxFirstPiRun({
+      actor,
+      answer: answers[0],
+      checkpointObjects,
+      claim: firstClaim,
+      prompt: prompts[0],
+      run: first,
+      responsesModel: { provider: "openai-codex", model: selectedModel },
+      usagePricingResolution,
+    });
+    const firstSessionId = await readCompletedRunSessionId(
+      context,
+      actor,
+      first.runId,
+    );
 
-      const queuedId = randomUUID();
-      const queued = await chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          threadId: anchor.threadId,
-          prompt,
-          clientEventId: queuedId,
-          model: selectedModel,
-          runOptions: { codexServiceTier: "fast" },
-        },
-        [201],
-        { usagePricingResolution },
-      );
-      if (queued.status !== 201) {
-        throw new Error("Expected queued fast Luna to enter the chat queue");
+    const fast = await sendChatRun(
+      actor,
+      {
+        agentId,
+        threadId: first.threadId,
+        prompt: prompts[1],
+        model,
+        runOptions: { codexServiceTier: "fast" },
+      },
+      usagePricingResolution,
+    );
+    await flushWaitUntilForTest();
+    const fastClaim = await claimChatRun(runnerGroup, fast.runId);
+    expect(fastClaim.claim.piModelConfig).toMatchObject({
+      model: selectedModel,
+      serviceTier: "fast",
+    });
+    await completeSandboxFirstPiRun({
+      actor,
+      answer: answers[1],
+      checkpointObjects,
+      claim: fastClaim,
+      prompt: prompts[1],
+      run: fast,
+      responsesModel: { provider: "openai-codex", model: selectedModel },
+      usagePricingResolution,
+    });
+    await expect(
+      readCompletedRunSessionId(context, actor, fast.runId),
+    ).resolves.toBe(firstSessionId);
+
+    await chat.updateThreadModelSelection(actor, first.threadId, model, {
+      codexServiceTier: null,
+    });
+    const returned = await sendChatRun(
+      actor,
+      {
+        agentId,
+        threadId: first.threadId,
+        prompt: prompts[2],
+        model,
+      },
+      usagePricingResolution,
+    );
+    await flushWaitUntilForTest();
+    const returnedClaim = await claimChatRun(runnerGroup, returned.runId);
+    expect(returnedClaim.claim.piModelConfig).toMatchObject({
+      model: selectedModel,
+    });
+    expect(returnedClaim.claim.piModelConfig).not.toHaveProperty("serviceTier");
+    await completeSandboxFirstPiRun({
+      actor,
+      answer: answers[2],
+      checkpointObjects,
+      claim: returnedClaim,
+      prompt: prompts[2],
+      run: returned,
+      responsesModel: { provider: "openai-codex", model: selectedModel },
+      usagePricingResolution,
+    });
+    await expect(
+      readCompletedRunSessionId(context, actor, returned.runId),
+    ).resolves.toBe(firstSessionId);
+
+    for (const run of [first, fast, returned]) {
+      const claim = await api.requestClaimRunnerJob(true, run.runId, [404]);
+      expect(claim.status).toBe(404);
+    }
+    for (const runId of [fast.runId, returned.runId]) {
+      const run = await api.readRun(actor, runId);
+      const appendSystemPrompt = run.appendSystemPrompt ?? "";
+      expect(appendSystemPrompt).not.toContain("# Web Chat Run Context");
+      for (const turn of [...prompts, ...answers]) {
+        expect(appendSystemPrompt).not.toContain(turn);
       }
-      expect(queued.body.runId).toBeNull();
+    }
 
-      chatCallbacks.mockChatOutputEvents([]);
-      await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-        usagePricingResolution,
-      });
-      await flushWaitUntilForTest();
-      const messages = await waitForThreadMessages(
-        actor,
-        anchor.threadId,
-        (events) => {
-          return userMessages(events).some((event) => {
-            return (
-              event.revokesEventId === queuedId &&
-              typeof event.runId === "string"
-            );
-          });
-        },
-      );
-      const promoted = userMessages(messages.events).find((event) => {
-        return event.revokesEventId === queuedId;
-      });
-      if (!promoted?.runId) {
-        throw new Error("Expected queued fast Luna to create a run");
-      }
-      const promotedRunId = promoted.runId;
-      await flushWaitUntilForTest();
+    await expectThreadModelCredits(context, actor, first.threadId, 0);
+    await expectThreadModelCredits(context, actor, fast.threadId, 0);
+    await expectThreadModelCredits(context, actor, returned.threadId, 0);
 
-      const promotedClaim = await claimChatRun(runnerGroup, promotedRunId);
-      expect(promotedClaim.claim.cliAgentType).toBe("pi");
-      expect(promotedClaim.claim.piModelConfig).toMatchObject({
-        model: selectedModel,
-        serviceTier: "fast",
-      });
-      await completeSandboxFirstPiRun({
-        actor,
-        answer,
-        checkpointObjects,
-        claim: promotedClaim,
-        prompt,
-        run: { runId: promotedRunId, threadId: anchor.threadId },
-        responsesModel: { provider: "openai-codex", model: selectedModel },
-        usagePricingResolution,
-      });
-      const finalEvents = await waitForThreadMessages(
-        actor,
-        anchor.threadId,
-        (events) => {
-          return eventBackedContents(events, promotedRunId).some((event) => {
-            return event.content === answer;
-          });
-        },
-      );
-      expect(
-        eventBackedContents(finalEvents.events, promotedRunId).filter(
-          (event) => {
-            return event.content === answer;
+    const visibleTurns = [
+      { runId: first.runId, prompt: prompts[0], answer: answers[0] },
+      { runId: fast.runId, prompt: prompts[1], answer: answers[1] },
+      { runId: returned.runId, prompt: prompts[2], answer: answers[2] },
+    ];
+    const finalEvents = await waitForThreadMessages(
+      actor,
+      first.threadId,
+      (events) => {
+        return eventBackedContents(events, returned.runId).some((event) => {
+          return event.content === answers[2];
+        });
+      },
+    );
+    const runIds = new Set(
+      visibleTurns.map((turn) => {
+        return turn.runId;
+      }),
+    );
+    expect(
+      finalEvents.events
+        .filter((event) => {
+          return (
+            event.runId !== undefined &&
+            event.runId !== null &&
+            runIds.has(event.runId) &&
+            (event.eventType === "input.prompt" ||
+              event.eventType === "output.message")
+          );
+        })
+        .map((event) => {
+          return {
+            runId: event.runId,
+            eventType: event.eventType,
+            content: chatEventDisplayText(event),
+          };
+        }),
+    ).toStrictEqual(
+      visibleTurns.flatMap((turn) => {
+        return [
+          {
+            runId: turn.runId,
+            eventType: "input.prompt",
+            content: turn.prompt,
           },
-        ),
-      ).toHaveLength(1);
-    },
-    90_000,
-  );
+          {
+            runId: turn.runId,
+            eventType: "output.message",
+            content: turn.answer,
+          },
+        ];
+      }),
+    );
+    const sessionBlobs = [...checkpointObjects.entries()].filter(([key]) => {
+      return key.includes("/blobs/");
+    });
+    expect(sessionBlobs.length).toBeGreaterThan(0);
+    for (const [, bytes] of sessionBlobs) {
+      expect(bytes.toString("utf8")).not.toContain("serviceTier");
+    }
+  }, 90_000);
+
+  it("promotes queued fast gpt-6-luna to a priority Pi Sandbox run", async () => {
+    const selectedModel = "gpt-6-luna";
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const usagePricingResolution = await createGptUsagePricingResolution();
+    // The anchor must stay on the native Runner while the queued target
+    // proves Pi promotion; Sonnet 5 would itself run through Pi.
+    await api.updateUserModelPreference(actor, "claude-fable-5-1");
+    const anchor = await sendChatRun(actor, {
+      agentId,
+      prompt: "hold the thread before queued fast Luna",
+      model: "claude-fable-5-1",
+    });
+    const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
+
+    await configureSubscriptionPiModel(actor, {}, selectedModel);
+
+    mockPiResourceArchiveDownloads();
+    const checkpointObjects = mockPiCheckpointObjectStore();
+    const prompt = "promote queued fast Luna through the callback";
+    const answer = "queued fast Luna Sandbox answer";
+
+    const queuedId = randomUUID();
+    const queued = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: anchor.threadId,
+        prompt,
+        clientEventId: queuedId,
+        model: selectedModel,
+        runOptions: { codexServiceTier: "fast" },
+      },
+      [201],
+      { usagePricingResolution },
+    );
+    if (queued.status !== 201) {
+      throw new Error("Expected queued fast Luna to enter the chat queue");
+    }
+    expect(queued.body.runId).toBeNull();
+
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
+      usagePricingResolution,
+    });
+    await flushWaitUntilForTest();
+    const messages = await waitForThreadMessages(
+      actor,
+      anchor.threadId,
+      (events) => {
+        return userMessages(events).some((event) => {
+          return (
+            event.revokesEventId === queuedId && typeof event.runId === "string"
+          );
+        });
+      },
+    );
+    const promoted = userMessages(messages.events).find((event) => {
+      return event.revokesEventId === queuedId;
+    });
+    if (!promoted?.runId) {
+      throw new Error("Expected queued fast Luna to create a run");
+    }
+    const promotedRunId = promoted.runId;
+    await flushWaitUntilForTest();
+
+    const promotedClaim = await claimChatRun(runnerGroup, promotedRunId);
+    expect(promotedClaim.claim.cliAgentType).toBe("pi");
+    expect(promotedClaim.claim.piModelConfig).toMatchObject({
+      model: selectedModel,
+      serviceTier: "fast",
+    });
+    await completeSandboxFirstPiRun({
+      actor,
+      answer,
+      checkpointObjects,
+      claim: promotedClaim,
+      prompt,
+      run: { runId: promotedRunId, threadId: anchor.threadId },
+      responsesModel: { provider: "openai-codex", model: selectedModel },
+      usagePricingResolution,
+    });
+    const finalEvents = await waitForThreadMessages(
+      actor,
+      anchor.threadId,
+      (events) => {
+        return eventBackedContents(events, promotedRunId).some((event) => {
+          return event.content === answer;
+        });
+      },
+    );
+    expect(
+      eventBackedContents(finalEvents.events, promotedRunId).filter((event) => {
+        return event.content === answer;
+      }),
+    ).toHaveLength(1);
+  }, 90_000);
 });

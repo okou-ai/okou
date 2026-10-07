@@ -80,9 +80,9 @@ function orgIdOf(actor: ApiTestUser): string {
 }
 
 /**
- * The creating admin of an entitled workspace with an organization default
- * model, which is what a workspace owner reaches through billing and
- * onboarding. Passing an existing identity gives that same person a second
+ * The creating admin of an entitled workspace with a connected personal
+ * subscription model, which is what a workspace owner reaches through billing
+ * and onboarding. Passing an existing identity gives that same person a second
  * workspace.
  */
 async function setupWorkspaceOwner(actor: ApiTestUser): Promise<ApiTestUser> {
