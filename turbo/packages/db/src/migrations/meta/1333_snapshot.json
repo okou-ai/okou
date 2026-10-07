@@ -1,6 +1,6 @@
 {
-  "id": "2a7a8b0b-ba4b-43ee-9c37-4b94ef6b7fb5",
-  "prevId": "0914e624-66f0-4b07-a963-a1aec0478960",
+  "id": "cd4c1797-fab3-428f-a4cc-79225141aa0d",
+  "prevId": "2a7a8b0b-ba4b-43ee-9c37-4b94ef6b7fb5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -18418,25 +18418,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "auth_method": {
-          "name": "auth_method",
-          "type": "varchar(50)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "is_default": {
-          "name": "is_default",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "selected_model": {
-          "name": "selected_model",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "user_id": {
           "name": "user_id",
           "type": "text",
@@ -18549,28 +18530,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "idx_model_providers_one_default_per_user": {
-          "name": "idx_model_providers_one_default_per_user",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "is_default = true",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {},
@@ -18656,12 +18615,6 @@
         "default_effort": {
           "name": "default_effort",
           "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "price_tier": {
-          "name": "price_tier",
-          "type": "varchar(8)",
           "primaryKey": false,
           "notNull": false
         },
@@ -18762,10 +18715,6 @@
         "chk_model_routes_efforts": {
           "name": "chk_model_routes_efforts",
           "value": "\"model_routes\".\"efforts\" <@ ARRAY['low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'extra', 'ultracode']::text[] AND (\"model_routes\".\"default_effort\" IS NULL OR \"model_routes\".\"default_effort\" = ANY(\"model_routes\".\"efforts\"))"
-        },
-        "chk_model_routes_price_tier": {
-          "name": "chk_model_routes_price_tier",
-          "value": "\"model_routes\".\"price_tier\" IS NULL OR (\"model_routes\".\"provider_type\" = 'built-in' AND \"model_routes\".\"price_tier\" IN ('$', '$$', '$$$', '$$$$'))"
         },
         "chk_model_routes_pricing_link": {
           "name": "chk_model_routes_pricing_link",
@@ -26724,13 +26673,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "is_system_default": {
-          "name": "is_system_default",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "replaced_by": {
           "name": "replaced_by",
           "type": "varchar(255)",
@@ -26777,24 +26719,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "idx_run_model_catalog_one_system_default": {
-          "name": "idx_run_model_catalog_one_system_default",
-          "columns": [
-            {
-              "expression": "is_system_default",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"run_model_catalog\".\"is_system_default\"",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
         "fk_run_model_catalog_replaced_by": {
           "name": "fk_run_model_catalog_replaced_by",
@@ -26840,10 +26765,6 @@
         "chk_run_model_catalog_pi_route_class": {
           "name": "chk_run_model_catalog_pi_route_class",
           "value": "\"run_model_catalog\".\"pi_route_class\" IS NULL OR \"run_model_catalog\".\"pi_route_class\" IN ('claude-native', 'gpt-codex', 'deepseek')"
-        },
-        "chk_run_model_catalog_default_active": {
-          "name": "chk_run_model_catalog_default_active",
-          "value": "NOT \"run_model_catalog\".\"is_system_default\" OR \"run_model_catalog\".\"replaced_by\" IS NULL"
         }
       },
       "isRLSEnabled": false

@@ -645,7 +645,7 @@ describe("MCP OAuth foundations", () => {
         params: { id: run.runId },
         body: {
           runnerIdentity,
-          capabilities: { piModelConfigGenerations: [1, 2, 3, 4] },
+          capabilities: { piModelConfigGenerations: [1, 2, 3] },
         },
       }),
       [200],

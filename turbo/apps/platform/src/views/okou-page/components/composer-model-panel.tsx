@@ -56,10 +56,10 @@ interface ComposerModelPanelProps {
  * The model list, then the effort and Fast rows for the checked model.
  *
  * The chat model, its effort and its speed are one decision about how the next
- * message runs, so they share one popover instead of a menu beside a chip. A
- * popover rather than a menu: changing effort or Fast is not a command that
- * finishes the interaction, so nothing in here closes the panel. Escape, a
- * press outside or the trigger closes it.
+ * message runs, so they share one popover. A popover rather than a menu:
+ * changing effort or Fast is not a command that finishes the interaction, so
+ * nothing in here closes the panel. Escape, a press outside or the trigger
+ * closes it.
  */
 function ComposerModelPanelBody({
   value,

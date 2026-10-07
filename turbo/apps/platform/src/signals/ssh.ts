@@ -382,13 +382,6 @@ export const sshSummary$ = computed(async (get) => {
   );
   return result.status === 200 ? result.body : null;
 });
-export const sshSingleConnectionName$ = computed(async (get) => {
-  if ((await get(sshSummary$))?.configuredCount !== 1) {
-    return null;
-  }
-  const connections = await get(sshConnections$);
-  return connections?.length === 1 ? connections[0]?.displayName : null;
-});
 export const closeSshDialog$ = command(({ set }) => {
   set(abandonSshSave$);
   set(cancelSshPrivateKeyFile$);

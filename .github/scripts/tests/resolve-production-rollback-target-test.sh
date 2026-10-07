@@ -75,6 +75,8 @@ case "${1:-}" in
     elif [ "${3:-}" = "1616161616161616161616161616161616161616" ]; then
       [ "${MOCK_RETIRED_MODEL_CONFIGURATION_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1717171717171717171717171717171717171717" ]; then
+      [ "${MOCK_CHAT_THREAD_PROVIDER_PIN_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "1818181818181818181818181818181818181818" ]; then
       [ "${MOCK_DEAD_MODEL_PROVIDER_COLUMNS_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
@@ -103,8 +105,10 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_VIDEO_ENTITLEMENT_COMMIT-1515151515151515151515151515151515151515}"
     elif [[ "$*" == *1330_drop_retired_model_configuration_columns.sql* ]]; then
       printf '%s\n' "${MOCK_RETIRED_MODEL_CONFIGURATION_COMMIT-1616161616161616161616161616161616161616}"
-    elif [[ "$*" == *1332_drop_dead_model_provider_columns.sql* ]]; then
-      printf '%s\n' "${MOCK_DEAD_MODEL_PROVIDER_COLUMNS_COMMIT-1717171717171717171717171717171717171717}"
+    elif [[ "$*" == *1332_drop_chat_thread_provider_pin_columns.sql* ]]; then
+      printf '%s\n' "${MOCK_CHAT_THREAD_PROVIDER_PIN_COMMIT-1717171717171717171717171717171717171717}"
+    elif [[ "$*" == *1333_drop_dead_model_provider_columns.sql* ]]; then
+      printf '%s\n' "${MOCK_DEAD_MODEL_PROVIDER_COLUMNS_COMMIT-1818181818181818181818181818181818181818}"
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
@@ -229,8 +233,10 @@ grep -Fxq "git merge-base --is-ancestor 1313131313131313131313131313131313131313
 grep -Fxq "git merge-base --is-ancestor 1515151515151515151515151515151515151515 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the video entitlement column drop floor"
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1330_drop_retired_model_configuration_columns.sql" "${tmp_dir}/boundaries.log" || fail "retired model configuration floor must resolve the canonical main migration"
 grep -Fxq "git merge-base --is-ancestor 1616161616161616161616161616161616161616 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the retired model configuration column drop floor"
-grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1332_drop_dead_model_provider_columns.sql" "${tmp_dir}/boundaries.log" || fail "dead model provider column floor must resolve the canonical main migration"
-grep -Fxq "git merge-base --is-ancestor 1717171717171717171717171717171717171717 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the dead model provider column drop floor"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1332_drop_chat_thread_provider_pin_columns.sql" "${tmp_dir}/boundaries.log" || fail "chat thread provider pin floor must resolve the canonical main migration"
+grep -Fxq "git merge-base --is-ancestor 1717171717171717171717171717171717171717 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread provider pin column drop floor"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1333_drop_dead_model_provider_columns.sql" "${tmp_dir}/boundaries.log" || fail "dead model provider column floor must resolve the canonical main migration"
+grep -Fxq "git merge-base --is-ancestor 1818181818181818181818181818181818181818 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the dead model provider column drop floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
 grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version output"
@@ -419,6 +425,24 @@ fi
 
 for drop_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged chat thread provider pin column drop" \
+    run_resolver "${tmp_dir}/chat-thread-provider-pin-history.output" "MOCK_CHAT_THREAD_PROVIDER_PIN_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/chat-thread-provider-pin-history.output" ] || fail "invalid chat thread provider pin history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid chat thread provider pin history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the chat thread provider pin column drop" \
+  run_resolver "${tmp_dir}/chat-thread-provider-pin-floor.output" MOCK_CHAT_THREAD_PROVIDER_PIN_FLOOR_VALID=0
+grep -Fq '1717171717171717171717171717171717171717' "${tmp_dir}/failure.err" || fail "chat thread provider pin rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/chat-thread-provider-pin-floor.output" ] || fail "pre-drop API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "chat thread provider pin floor must fail before artifact or host access"
+fi
+
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
   assert_failure "Cannot resolve the merged dead model provider column drop" \
     run_resolver "${tmp_dir}/dead-model-provider-columns-history.output" "MOCK_DEAD_MODEL_PROVIDER_COLUMNS_COMMIT=${drop_commit}"
   [ ! -s "${tmp_dir}/dead-model-provider-columns-history.output" ] || fail "invalid dead model provider column history must not publish outputs"
@@ -429,7 +453,7 @@ done
 : >"${tmp_dir}/boundaries.log"
 assert_failure "Rollback target predates the dead model provider column drop" \
   run_resolver "${tmp_dir}/dead-model-provider-columns-floor.output" MOCK_DEAD_MODEL_PROVIDER_COLUMNS_FLOOR_VALID=0
-grep -Fq '1717171717171717171717171717171717171717' "${tmp_dir}/failure.err" || fail "dead model provider column rejection must identify the canonical main commit"
+grep -Fq '1818181818181818181818181818181818181818' "${tmp_dir}/failure.err" || fail "dead model provider column rejection must identify the canonical main commit"
 [ ! -s "${tmp_dir}/dead-model-provider-columns-floor.output" ] || fail "pre-drop API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "dead model provider column floor must fail before artifact or host access"

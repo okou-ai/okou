@@ -429,6 +429,119 @@ test("Browse and filter mobile browser chats before opening a conversation and r
   expect(window.location.pathname).toBe("/me");
 });
 
+test("Slide conversations in from the mobile chat list and out back to the tabs", async () => {
+  mockDisplayMode({ standalone: true, desktop: false });
+  const viewTransition = context.mocks.browser.viewTransition();
+  const thread = continuityThread(83, 1, "Draft the brief");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 83,
+    threads: [thread],
+  });
+  context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
+    return respond(200, {
+      lastReadAt: null,
+      cancellationRecoveryPending: false,
+    });
+  });
+
+  await setupPage({
+    context,
+    path: CHAT_LIST_PATH,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
+    ...workspace.pageOptions,
+  });
+
+  await screen.findByText("Draft the brief");
+
+  click(linkTo(`/chats/${thread.id}`));
+
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeInTheDocument();
+  expect(viewTransition.startedTypes).toStrictEqual([["push"]]);
+
+  click(screen.getByLabelText("Back to chats"));
+
+  await screen.findByText("Draft the brief");
+  expect(window.location.pathname).toBe(CHAT_LIST_PATH);
+  expect(viewTransition.startedTypes).toStrictEqual([["push"], ["pop"]]);
+
+  click(linkTo(`/chats/${thread.id}`));
+
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeInTheDocument();
+  expect(viewTransition.startedTypes).toStrictEqual([
+    ["push"],
+    ["pop"],
+    ["push"],
+  ]);
+
+  act(() => {
+    window.history.back();
+  });
+
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("textbox", { name: "Message" }),
+    ).not.toBeInTheDocument();
+  });
+  await screen.findByText("Draft the brief");
+  expect(window.location.pathname).toBe(CHAT_LIST_PATH);
+  expect(viewTransition.startedTypes).toStrictEqual([
+    ["push"],
+    ["pop"],
+    ["push"],
+    ["pop"],
+  ]);
+
+  click(
+    linkTo("/me", screen.getByRole("navigation", { name: "Main navigation" })),
+  );
+
+  await expect(
+    screen.findByRole("heading", { name: "Me" }),
+  ).resolves.toBeInTheDocument();
+  expect(viewTransition.startedTypes).toStrictEqual([
+    ["push"],
+    ["pop"],
+    ["push"],
+    ["pop"],
+  ]);
+});
+
+test("Change desktop pages without a slide", async () => {
+  mockDisplayMode({ standalone: true, desktop: true });
+  const viewTransition = context.mocks.browser.viewTransition();
+  const thread = continuityThread(84, 1, "Review the roadmap");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 84,
+    threads: [thread],
+  });
+  context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
+    return respond(200, {
+      lastReadAt: null,
+      cancellationRecoveryPending: false,
+    });
+  });
+
+  await setupPage({
+    context,
+    path: CHAT_LIST_PATH,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
+    ...workspace.pageOptions,
+  });
+
+  await screen.findByRole("textbox", { name: "Message" });
+
+  click(await screen.findByText("Review the roadmap"));
+
+  await waitFor(() => {
+    expect(window.location.pathname).toBe(`/chats/${thread.id}`);
+  });
+  expect(viewTransition.startedTypes).toStrictEqual([]);
+});
+
 test("Open profile settings from Me in a regular mobile browser", async () => {
   mockDisplayMode({ standalone: false, desktop: false });
   const workspace = installContinuityWorkspace(context, {

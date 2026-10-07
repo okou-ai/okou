@@ -15,7 +15,6 @@ import { toast } from "@okouai/ui/components/ui/sonner";
 import { command, computed } from "ccstate";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
-import { startChatNavigationTiming$ } from "../../lib/posthog.ts";
 import { nowDate } from "../../lib/time.ts";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { currentChatThreadId$ } from "../agent-chat.ts";
@@ -619,7 +618,6 @@ export const sendNewThread$ = command(
       return false;
     }
 
-    set(startChatNavigationTiming$);
     await set(
       routeChatThread$,
       {

@@ -218,8 +218,7 @@ per run anyway. This is representative fixture evidence, not a production-histor
 replay.
 
 The dependency graph upgrades the Pi telemetry/TUI and provider SDK
-dependencies: `@smithy/node-http-handler` to 4.12.1 — matched by
-`pi-agent-runtime`'s own pin because `PiBedrockHttpHandler` extends it —
+dependencies: `@smithy/node-http-handler` to 4.12.1,
 `@aws-sdk/client-bedrock-runtime` to 3.1127.0, `@google/genai` to 2.21.0,
 `@anthropic-ai/sdk` to 0.124.0, `undici` to 8.10.2 and `chalk` to 6.0.0.
 `engines.node` is unchanged. Okou still imports the root modular SDK;
@@ -235,8 +234,7 @@ not adopt, so that the version bump carries no wire or cost change of its own:
 - Codex strict JSON-schema tools. The `openai-codex-responses` gate is
   `model.compat?.supportsStrictMode ?? true` and the Codex catalog never sets
   the field, so `resolvePiAgentModel` pins it to `false` for that dialect.
-  `anthropic-messages`, `bedrock-converse-stream` and `openai-responses` all
-  default to `false` upstream and need no pin.
+  `openai-responses` defaults to `false` upstream and needs no pin.
 - Prompt cache warming, whose unset mode resolves to `streaming`. It is pinned
   off through `setCacheWarmingMode("off")`, which is the effective setter;
   writing `settings` directly does not work because the mode getter reads

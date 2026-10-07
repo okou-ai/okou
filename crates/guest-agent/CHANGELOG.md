@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.104.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.0...guest-agent-v0.104.1) (2026-10-07)
+
+
+### Refactoring
+
+* remove all remaining custom model mode awareness ([#37856](https://github.com/okou-ai/okou/issues/37856)) ([f383835](https://github.com/okou-ai/okou/commit/f3838353ba0455ec7d57dfa2d0974e34a44796ff))
+
 ## [0.104.0](https://github.com/okou-ai/okou/compare/guest-agent-v0.103.4...guest-agent-v0.104.0) (2026-10-04)
 
 

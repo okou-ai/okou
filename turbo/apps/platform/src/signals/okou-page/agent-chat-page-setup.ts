@@ -26,7 +26,10 @@ import {
 import { openQueueDrawer$ } from "../queue-page/queue-drawer-state.ts";
 import { checkUnifiedSettingsParam$ } from "./settings/settings-dialog.ts";
 import { setupAgentChatKeyboardShortcuts$ } from "./agent-chat-keyboard.ts";
-import { setPwaAgentComposeRequested$ } from "./pwa-navigation.ts";
+import {
+  isPwaAgentComposeRequested,
+  setPwaAgentComposeRequested$,
+} from "./pwa-navigation.ts";
 import {
   enterHomeTaskRecommendations$,
   subscribeHomeTaskRecommendations$,
@@ -48,14 +51,9 @@ export const setupAgentChatPage$ = command(
     }
 
     set(setChatAgentId$, agentId);
-    const entryParams = get(searchParams$);
     set(
       setPwaAgentComposeRequested$,
-      Boolean(
-        entryParams.get("prompt") ||
-        entryParams.get("templatePicker") ||
-        entryParams.get("compose") === "1",
-      ),
+      isPwaAgentComposeRequested(get(searchParams$)),
     );
     const agentDraft: EnsuredAgentDraft = set(ensureAgentDraft$, agentId);
     set(setAgentComposerContext$, { agentId, agentDraft });

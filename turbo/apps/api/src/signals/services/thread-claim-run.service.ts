@@ -3360,9 +3360,6 @@ export function createThreadClaimRunObjects(
         userMessage: event.userMessage,
         requiredOfficialWorkflowIds:
           event.requiredOfficialWorkflowIds ?? undefined,
-        modelProviderId: null,
-        modelProviderType: null,
-        modelProviderCredentialScope: null,
         selectedModel: event.modelSelection?.selectedModel ?? null,
         contextType: event.contextType,
         contextId: event.contextId,
@@ -6110,8 +6107,7 @@ export function createThreadClaimRunObjects(
       if (
         !pin ||
         !pin.modelProvider ||
-        !isPersonalSubscriptionProviderType(pin.modelProvider) ||
-        pin.modelProviderCredentialScope === "org"
+        !isPersonalSubscriptionProviderType(pin.modelProvider)
       ) {
         return { command };
       }
@@ -6436,10 +6432,7 @@ export function createThreadClaimRunObjects(
     if (isRouteError(input)) {
       return input;
     }
-    const [requestedFramework, featureSwitchContext] = await Promise.all([
-      get(runFramework$),
-      get(preCreateModelFeatureSwitchContext$),
-    ]);
+    const requestedFramework = await get(runFramework$);
     if (isRouteError(requestedFramework)) {
       return requestedFramework;
     }
@@ -6458,12 +6451,10 @@ export function createThreadClaimRunObjects(
       builtInModelRuntimeRoute: args.builtInModelRuntimeRoute,
       piExecution: args.piExecution,
       retainedRunId: args.retainedRunId,
-      featureSwitchContext,
     };
     return {
       input,
       requestedFramework,
-      featureSwitchContext,
       environmentArgs,
     };
   });
@@ -18461,7 +18452,6 @@ interface ResolveModelProviderEnvironmentArgs {
   readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
   readonly retainedRunId?: string;
   readonly piExecution: boolean;
-  readonly featureSwitchContext: FeatureSwitchContext;
 }
 
 // Pending persistence uses connection-free SQL plans owned by one command.

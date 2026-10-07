@@ -556,17 +556,6 @@ test("Exiting Create mode sends the ordinary draft and template", async () => {
   );
 });
 
-async function setupComposerWithTemplatePanel(): Promise<HTMLElement> {
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerTaskChips]: true,
-    },
-  });
-  return await findComposerEditor();
-}
-
 function inlineTemplateCover(index = 0): HTMLImageElement | null {
   const chip = composerInlineTemplates()[index];
   if (!chip) {
@@ -591,7 +580,7 @@ async function addPresentationTemplate(
 async function setupCoveredPresentationTemplate() {
   setupModels();
   mockChatLifecycle(context);
-  const editor = await setupComposerWithTemplatePanel();
+  const editor = await setupComposer();
   const [first] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   if (!first) {
     throw new Error("Expected a presentation template");
@@ -611,7 +600,7 @@ test("An inline template chip shows the chosen cover", async () => {
 test("A template with no cover keeps the template glyph on its chip", async () => {
   setupModels();
   mockChatLifecycle(context);
-  await setupComposerWithTemplatePanel();
+  await setupComposer();
   const [template] = WEBSITE_TEMPLATE_ITEMS;
   if (!template) {
     throw new Error("Expected a website template");

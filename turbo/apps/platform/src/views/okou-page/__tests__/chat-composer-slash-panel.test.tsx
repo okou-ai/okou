@@ -309,6 +309,15 @@ test("The panel emphasizes the typed query inside a workflow name", async () => 
   );
 });
 
+test("A query that matches no workflow says so in the workflow list", async () => {
+  await openSlashMenu("zzz");
+  const menu = screen.getByTestId("slash-workflow-menu");
+  await expect(
+    within(menu).findByText("No matching workflows"),
+  ).resolves.toBeInTheDocument();
+  expect(querySlashButton(`/${WORKFLOW_NAME}`)).toBeNull();
+});
+
 test("Choosing a cover in the pane attaches that template without opening the picker", async () => {
   const user = userEvent.setup();
   await openSlashMenu();

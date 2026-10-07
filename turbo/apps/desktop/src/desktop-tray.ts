@@ -162,7 +162,7 @@ export class DesktopTrayController {
       typeof frame === "number"
         ? this.runningIconFrame(frame)
         : desktopTrayIcon(this.iconPathForFrame(frame), {
-            template: frame === "online",
+            template: frame !== "running",
           });
     this.iconCache.set(frame, image);
     return image;

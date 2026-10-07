@@ -1,5 +1,41 @@
 # Deployment Compatibility
 
+## Legacy chat thread provider pin columns dropped
+
+Follow-up to the run model schema contraction below (#37856). Chat threads
+persist only `selected_model`; every run resolves it to platform Auto or the
+caller's personal subscription. The legacy `chat_threads.model_provider_id`,
+`model_provider_type` and `model_provider_credential_scope` columns had no
+reader that used them: every writer stored NULL, and the only reader
+(`ownedChatThread`) parsed and discarded the values. No response, event,
+snapshot, CLI or iOS payload carries them. MaskDB (2026-10-07) showed 1479
+legacy rows with a type set, all with `model_provider_id` NULL and only
+`built-in`, `codex-oauth-token` or `claude-code-oauth-token` types; nothing
+reads those values. Generated migration
+`1332_drop_chat_thread_provider_pin_columns` drops the three columns. There is
+no data conversion or backfill.
+
+Migrations run before API promotion. An API built before 1332 still declares
+the columns, so its chat thread inserts, its `ownedChatThread` select and any
+bare `select()`/`returning()` on `chat_threads` receive `42703` until it
+drains. `chat_threads` is a hot table, so this is not a rolling-compatible
+contraction. New API with the old schema is unsupported, as usual.
+
+**Accepted rollout interruption:** Ethan explicitly accepted (2026-10-07) a
+brief unavailability of roughly ten-odd seconds during deployment while the
+outgoing API drains, so chat thread reads and writes may receive `42703` in
+that window. This bounded interruption is accepted for this contraction; no
+preparatory release or old-column compatibility branch is required. Prefer the
+same rollout as 1330 or low traffic. Acceptance of that risk is not an
+instruction to merge or deploy this PR.
+
+Rollback floor: the rollback resolver resolves the first-parent `main` commit
+that added `1332_drop_chat_thread_provider_pin_columns.sql` and rejects earlier
+targets before artifact or host access. That commit descends from the 1330
+floor. Recovering below it requires a reviewed forward migration that restores
+the columns before an older API serves. This does not claim production
+activation.
+
 ## Additive immutable connector entry columns
 
 Migrations `1328_connector_catalog_entry_columns` and
@@ -1116,8 +1152,10 @@ every member. There is no migration.
 With video generation retired (#37242), new threads pin no media model at
 all. The composer never shows the image model: the staff `composerModelPanel`
 switch still chooses between the #37229 panel and the legacy menu with its
-effort chip, and both list only chat models. The undocumented `birefnet` and
-`clarity-upscaler` transform models are removed.
+effort chip, and both list only chat models. #37848 has since removed that
+switch and the legacy menu; the composer uses the #37229 panel, which lists
+only chat models. The undocumented `birefnet` and `clarity-upscaler` transform
+models are removed.
 
 The compatibility layer this release kept for older Web App builds, iOS and
 released CLIs (the thread image-model route, the create body `imageModel`, the

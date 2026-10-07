@@ -74,17 +74,8 @@ interface ModelProviderPickerProps {
   value: ModelProviderSelection | null;
   onChange: (value: ModelProviderSelection | null) => void;
   placeholder?: string;
-  /**
-   * Classes applied to the picker trigger. Defaults to `h-9 w-full`. The
-   * composer passes an auto-width, compact variant to fit next to Send.
-   */
+  /** Classes applied to the picker trigger. Defaults to `h-9 w-full`. */
   triggerClassName?: string;
-  /**
-   * When true, the trigger shows only the friendly model name (no provider
-   * label, no price tier badge). Used by the chat composer where horizontal
-   * space is tight and the full breakdown lives in the open dropdown.
-   */
-  compactTrigger?: boolean;
   /** Controlled open state for programmatic toggle (e.g. keyboard shortcut). */
   open?: boolean;
   /** Callback when the open state changes. */

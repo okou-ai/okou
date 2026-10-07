@@ -2,16 +2,10 @@ import { Plus, Monitor } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ROUTES } from "../../../../signals/route-paths.ts";
 import { Link } from "../../../router/link.tsx";
-import {
-  ConnectorEntryCard,
-  ConnectorEntryStatus,
-} from "./connector-entry-card.tsx";
+import { ConnectorEntryCard } from "./connector-entry-card.tsx";
 
-export function VncConnectorCard({
-  configuredCount,
-}: {
-  readonly configuredCount: number;
-}) {
+/** Directory entry for adding a first VNC connection. */
+export function VncConnectorCard() {
   const { t } = useTranslation();
   return (
     <ConnectorEntryCard
@@ -22,7 +16,7 @@ export function VncConnectorCard({
       description={t(($) => {
         return $.vnc.description;
       })}
-      showDescription={configuredCount === 0}
+      showDescription
       interactive
       action={
         <Link
@@ -40,26 +34,12 @@ export function VncConnectorCard({
         />
       }
       indicator={
-        configuredCount === 0 ? (
-          <span
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/60 text-muted-foreground"
-            aria-hidden="true"
-          >
-            <Plus size={14} />
-          </span>
-        ) : null
-      }
-      status={
-        <ConnectorEntryStatus
-          tone={configuredCount > 0 ? "success" : "neutral"}
-          className="min-w-0 flex-1 text-xs text-muted-foreground"
-          label={t(
-            ($) => {
-              return $.vnc.summary;
-            },
-            { count: configuredCount },
-          )}
-        />
+        <span
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/60 text-muted-foreground"
+          aria-hidden="true"
+        >
+          <Plus size={14} />
+        </span>
       }
     />
   );

@@ -165,7 +165,8 @@ interface ComposerDraftSignals {
 }
 
 interface ComposerModelSignals extends ComposerModelUiSignals {
-  readonly temporaryModelNoticeEnabled$: Computed<boolean>;
+  /** New chats offer to keep a chat-only model for future chats. */
+  readonly temporaryModelNoticeEnabled: boolean;
   readonly modelSelection$: Computed<Promise<ModelProviderSelection | null>>;
   readonly runningModelSelection$: Computed<
     Promise<ChatRunModelSelection | null>
@@ -411,14 +412,6 @@ function createRemoveQueuedMessage(
   );
 }
 
-function createTemporaryModelNoticeEnabled(
-  options: CreateComposerSignalsOptions,
-): Computed<boolean> {
-  return computed((): boolean => {
-    return options.threadId === undefined;
-  });
-}
-
 function composerDraftSignals(
   options: CreateComposerSignalsOptions["draft"],
   fileInput: ReturnType<typeof createComposerFileInputSignals>,
@@ -501,8 +494,6 @@ export function createComposerSignals(
   const agentId$ = computed((): string => {
     return options.agentId;
   });
-  const temporaryModelNoticeEnabled$ =
-    createTemporaryModelNoticeEnabled(options);
   const ui = createComposerUiSignals();
   const workflowComposer = createWorkflowComposerSignals(
     draft,
@@ -582,7 +573,7 @@ export function createComposerSignals(
     draft: composerDraftSignals(options.draft, fileInput),
     model: {
       ...ui.model,
-      temporaryModelNoticeEnabled$,
+      temporaryModelNoticeEnabled: options.threadId === undefined,
       modelSelection$: options.modelSelection$,
       runningModelSelection$: eventSignals.runningModelSelection$,
       selectedModelOauthAvailable$: options.selectedModelOauthAvailable$,

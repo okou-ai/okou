@@ -56,6 +56,5 @@ test("Private network lists Cloudflare Access configurations", async () => {
   expect(screen.getByTestId("connectors-scope-private-network")).toBeVisible();
   await screen.findByRole("heading", { name: "Protected applications" });
   expect(getAction("button", "Add Cloudflare Access")).toBeVisible();
-  expect(screen.queryByTestId("connector-category-remote-access")).toBeNull();
   expect(screen.queryByRole("heading", { name: "SSH" })).toBeNull();
 });

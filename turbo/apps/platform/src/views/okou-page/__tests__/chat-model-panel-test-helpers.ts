@@ -1,4 +1,5 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect } from "vitest";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
@@ -21,11 +22,10 @@ export async function openModelPanel(
  * tests close it the way a user does.
  */
 export async function closeModelPanel(): Promise<void> {
-  const panel = screen.queryByRole("dialog", { name: "Chat models" });
-  if (!panel) {
+  if (!screen.queryByRole("dialog", { name: "Chat models" })) {
     return;
   }
-  fireEvent.keyDown(panel, { key: "Escape" });
+  await userEvent.setup({ delay: null }).keyboard("{Escape}");
   await waitFor(() => {
     expect(
       screen.queryByRole("dialog", { name: "Chat models" }),

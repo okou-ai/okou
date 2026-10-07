@@ -277,9 +277,6 @@ async function codexCredential(
   signal: AbortSignal,
 ): Promise<PiMemoryStage1CredentialResult> {
   const { db, source, binding, context } = args;
-  if (binding.scope !== "member") {
-    return skip("source_scope_mismatch");
-  }
   const accountArgs = { db, id, orgId: source.orgId, userId: source.userId };
   const account = await personalModelProviderAccountById(accountArgs);
   signal.throwIfAborted();

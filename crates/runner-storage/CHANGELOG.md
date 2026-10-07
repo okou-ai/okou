@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.2.1](https://github.com/okou-ai/okou/compare/runner-storage-v0.2.0...runner-storage-v0.2.1) (2026-10-07)
+
 ## [0.2.0](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.27...runner-storage-v0.2.0) (2026-10-04)
 
 

@@ -185,6 +185,11 @@ interface BrowserMatchMediaMock {
   ) => void;
 }
 
+interface BrowserViewTransitionMock {
+  /** Transition types of each started view transition, in start order. */
+  readonly startedTypes: (readonly string[])[];
+}
+
 interface BrowserVisibilityStateMock {
   readonly changeTo: (visibilityState: DocumentVisibilityState) => void;
 }
@@ -460,6 +465,9 @@ export function createTestMocks(getSignal: () => AbortSignal) {
         matches: boolean | ((query: string) => boolean),
       ): BrowserMatchMediaMock => {
         return mockMatchMedia(matches);
+      },
+      viewTransition: (): BrowserViewTransitionMock => {
+        return mockViewTransition(getSignal());
       },
       standaloneDisplayMode: (enabled: boolean): void => {
         mockMatchMedia((query) => {
@@ -871,6 +879,51 @@ function createMockWindow(): MockWindow {
     },
   } as MockWindow;
   return mockWindow;
+}
+
+// Same-document view transitions with transition types. The update runs
+// immediately because tests have no rendering steps to capture.
+function mockViewTransition(signal: AbortSignal): BrowserViewTransitionMock {
+  const startedTypes: (readonly string[])[] = [];
+  const startViewTransitionDescriptor = defineWindowProperty(
+    document,
+    "startViewTransition",
+    (options: StartViewTransitionOptions): ViewTransition => {
+      startedTypes.push([...(options.types ?? [])]);
+      const updateCallbackDone = (async () => {
+        await options.update?.();
+      })();
+      return {
+        updateCallbackDone,
+        ready: updateCallbackDone,
+        finished: updateCallbackDone,
+        types: new Set(options.types),
+        skipTransition: () => {},
+      } as unknown as ViewTransition;
+    },
+  );
+  const supports = CSS.supports.bind(CSS);
+  vi.spyOn(CSS, "supports").mockImplementation(
+    (conditionOrProperty: string, value?: string) => {
+      if (
+        value === undefined &&
+        conditionOrProperty === "selector(:active-view-transition-type(a))"
+      ) {
+        return true;
+      }
+      return value === undefined
+        ? supports(conditionOrProperty)
+        : supports(conditionOrProperty, value);
+    },
+  );
+  restoreOnAbort(signal, () => {
+    restoreWindowProperty(
+      document,
+      "startViewTransition",
+      startViewTransitionDescriptor,
+    );
+  });
+  return { startedTypes };
 }
 
 function mockMatchMedia(

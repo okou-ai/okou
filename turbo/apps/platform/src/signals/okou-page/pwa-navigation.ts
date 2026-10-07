@@ -19,6 +19,16 @@ export const pwaChatListVisible$ = computed((get) => {
 
 // Prompt and template links still open their prepared composer. A bare agent
 // chat URL is the list; starting a new chat opens its existing thread route.
+export function isPwaAgentComposeRequested(
+  searchParams: URLSearchParams,
+): boolean {
+  return Boolean(
+    searchParams.get("prompt") ||
+    searchParams.get("templatePicker") ||
+    searchParams.get("compose") === "1",
+  );
+}
+
 export const setPwaAgentComposeRequested$ = command(
   ({ set }, requested: boolean) => {
     set(agentComposeRequested$, requested);

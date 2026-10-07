@@ -19,6 +19,11 @@ import {
   installRunChat,
   NEW_CHAT_PATH,
 } from "./chat-run-test-fixtures.ts";
+import {
+  closeModelPanel,
+  modelOption,
+  openModelPanel,
+} from "./chat-model-panel-test-helpers.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
 
 function configureRunModels(models: readonly string[]): void {
@@ -46,22 +51,6 @@ function configureRunModels(models: readonly string[]): void {
       };
     }),
   );
-}
-
-async function openPanel(triggerName: string): Promise<HTMLElement> {
-  click(await findButton(triggerName));
-  return await screen.findByRole("dialog", { name: "Chat models" });
-}
-
-/** A model row, matched by the model name its label starts with. */
-function modelRadio(container: HTMLElement, model: string): HTMLElement {
-  const radio = queryAllByRoleFast("radio", container).find((candidate) => {
-    return candidate.textContent?.trim().startsWith(model);
-  });
-  if (!radio) {
-    throw new Error(`Model ${model} was not listed`);
-  }
-  return radio;
 }
 
 async function setupPanel(
@@ -158,26 +147,26 @@ test("Choose a connected subscription model and return to Auto", async () => {
   await waitFor(() => {
     expect(hasAutoModelTrigger()).toBeTruthy();
   });
-  const panel = await openPanel("Auto");
+  const panel = await openModelPanel("Auto");
   const user = userEvent.setup({ delay: null });
-  await user.click(modelRadio(panel, "GPT 6 Sol"));
+  await user.click(modelOption(/^GPT 6 Sol/u, panel));
   await waitFor(() => {
-    expect(modelRadio(panel, "GPT 6 Sol")).toBeChecked();
+    expect(modelOption(/^GPT 6 Sol/u, panel)).toBeChecked();
   });
-  await user.click(modelRadio(panel, "Auto"));
+  await user.click(modelOption(/^Auto/u, panel));
   await waitFor(() => {
-    expect(modelRadio(panel, "Auto")).toBeChecked();
+    expect(modelOption(/^Auto/u, panel)).toBeChecked();
   });
 });
 
 test("Pick only chat models, with effort and Fast in the same panel", async () => {
   await setupPanel(["gpt-5.6-sol", "claude-sonnet-5"]);
-  const panel = await openPanel("GPT 5.6 Sol, Max");
+  const panel = await openModelPanel("GPT 5.6 Sol, Max");
   const models = within(panel).getByRole("radiogroup", {
     name: "Chat models",
   });
-  expect(modelRadio(models, "GPT 5.6 Sol")).toBeChecked();
-  expect(modelRadio(models, "Claude Sonnet 5")).not.toBeChecked();
+  expect(modelOption(/^GPT 5\.6 Sol/u, models)).toBeChecked();
+  expect(modelOption(/^Claude Sonnet 5/u, models)).not.toBeChecked();
   expect(
     within(panel).getByRole("slider", { name: "Effort" }),
   ).toBeInTheDocument();
@@ -203,7 +192,7 @@ test("Pick only chat models, with effort and Fast in the same panel", async () =
 test("Keep the panel open while changing effort, Fast and model", async () => {
   const user = userEvent.setup({ delay: null });
   await setupPanel(["gpt-5.6-sol", "claude-sonnet-5"]);
-  const panel = await openPanel("GPT 5.6 Sol, Max");
+  const panel = await openModelPanel("GPT 5.6 Sol, Max");
 
   const slider = within(panel).getByRole("slider", { name: "Effort" });
   slider.focus();
@@ -217,9 +206,9 @@ test("Keep the panel open while changing effort, Fast and model", async () => {
   ).resolves.toBeInTheDocument();
   expect(panel).toBeVisible();
 
-  click(modelRadio(panel, "Claude Sonnet 5"));
+  click(modelOption(/^Claude Sonnet 5/u, panel));
   await waitFor(() => {
-    expect(modelRadio(panel, "Claude Sonnet 5")).toBeChecked();
+    expect(modelOption(/^Claude Sonnet 5/u, panel)).toBeChecked();
   });
   expect(panel).toBeVisible();
   // Effort follows the checked model; Fast is not offered for it.
@@ -242,18 +231,15 @@ test("Send with the model and effort chosen in the panel", async () => {
       creates.push(body);
     },
   );
-  const panel = await openPanel("GPT 5.6 Sol, Max");
-  click(modelRadio(panel, "Claude Sonnet 5"));
+  const panel = await openModelPanel("GPT 5.6 Sol, Max");
+  click(modelOption(/^Claude Sonnet 5/u, panel));
   await expect(
     findButton("Claude Sonnet 5, High"),
   ).resolves.toBeInTheDocument();
   within(panel).getByRole("slider", { name: "Effort" }).focus();
   await user.keyboard("{Home}");
   await expect(findButton("Claude Sonnet 5, Low")).resolves.toBeInTheDocument();
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Chat models" })).toBeNull();
-  });
+  await closeModelPanel();
   await user.click(composer);
   await fillComposer(composer, "Run this on Sonnet");
   click(await findButton("Send"));
@@ -273,7 +259,7 @@ test("Name the model and its effort on the trigger, with a bolt for Fast", async
   expect(trigger).toHaveTextContent(/^GPT 5\.6 Sol\s*· Max$/u);
   // The bolt is the Fast state rather than decoration.
   expect(trigger.querySelector("svg.lucide-zap")).toBeNull();
-  const panel = await openPanel("GPT 5.6 Sol, Max");
+  const panel = await openModelPanel("GPT 5.6 Sol, Max");
   click(within(panel).getByRole("switch", { name: "Fast mode" }));
   const fastTrigger = await findButton("GPT 5.6 Sol, Max, Fast");
   expect(fastTrigger).toHaveTextContent(/^GPT 5\.6 Sol\s*· Max$/u);

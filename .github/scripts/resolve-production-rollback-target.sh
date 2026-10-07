@@ -57,7 +57,8 @@ readonly VIDEO_MODEL_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1283_dro
 readonly IMAGE_MODEL_THREAD_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1287_drop_image_model_thread_columns.sql
 readonly VIDEO_ENTITLEMENT_DROP_PATH=turbo/packages/db/src/migrations/1315_drop_retired_video_entitlement.sql
 readonly RETIRED_MODEL_CONFIGURATION_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1330_drop_retired_model_configuration_columns.sql
-readonly DEAD_MODEL_PROVIDER_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1332_drop_dead_model_provider_columns.sql
+readonly CHAT_THREAD_PROVIDER_PIN_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1332_drop_chat_thread_provider_pin_columns.sql
+readonly DEAD_MODEL_PROVIDER_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1333_drop_dead_model_provider_columns.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -270,11 +271,23 @@ if ! git merge-base --is-ancestor "$retired_model_configuration_columns_drop_com
   fail "Rollback target predates the retired model configuration column drop: ${retired_model_configuration_columns_drop_commit}."
 fi
 
-# Migration 1332 drops model_providers.auth_method, model_providers.is_default,
+# Migration 1332 drops the legacy chat_threads provider pin columns
+# (model_provider_id, model_provider_type, model_provider_credential_scope).
+# Every earlier API still declares them, so its chat thread inserts and bare
+# selects name the dropped columns.
+chat_thread_provider_pin_columns_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$CHAT_THREAD_PROVIDER_PIN_COLUMNS_DROP_PATH" | sed -n '1p')
+if [[ ! "$chat_thread_provider_pin_columns_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged chat thread provider pin column drop on main."
+fi
+if ! git merge-base --is-ancestor "$chat_thread_provider_pin_columns_drop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the chat thread provider pin column drop: ${chat_thread_provider_pin_columns_drop_commit}."
+fi
+# Migration 1333 drops model_providers.auth_method, model_providers.is_default,
 # model_providers.selected_model, model_routes.price_tier and
 # run_model_catalog.is_system_default. Every earlier API still declares and
 # selects them in personal subscription and model catalog reads, so it cannot
-# serve after 1332. This floor descends from the 1330 floor.
+# serve after 1333. This floor descends from the 1332 floor.
 dead_model_provider_columns_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
   origin/main -- "$DEAD_MODEL_PROVIDER_COLUMNS_DROP_PATH" | sed -n '1p')
 if [[ ! "$dead_model_provider_columns_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then

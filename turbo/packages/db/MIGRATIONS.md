@@ -266,7 +266,13 @@ contraction, it requires an explicitly owner-accepted interruption under the
 [deployment compatibility](../../../docs/deployment-compatibility.md) rules;
 this document does not record such an acceptance.
 
-Migration `1332_drop_dead_model_provider_columns` drops the remaining constant
+Migration `1332_drop_chat_thread_provider_pin_columns` then drops the legacy
+`chat_threads.model_provider_id`, `model_provider_type` and
+`model_provider_credential_scope` pin columns; threads persist only
+`selected_model`. It has the same rollout constraint and its own rollback
+floor keyed to the commit that added 1332.
+
+Migration `1333_drop_dead_model_provider_columns` drops the remaining constant
 model configuration columns: `model_providers.auth_method`, `is_default` (with
 `idx_model_providers_one_default_per_user`) and `selected_model`,
 `model_routes.price_tier` (with `chk_model_routes_price_tier`) and
@@ -275,10 +281,10 @@ model configuration columns: `model_providers.auth_method`, `is_default` (with
 `chk_run_model_catalog_default_active`). The system default is the API-owned
 fixed Auto model; personal account import formats stay on
 `model_provider_accounts.auth_method`. There is no data conversion. Rollout:
-an API built before 1332 still selects these columns, so it must not serve
-after 1332 is applied; apply it only after every serving API (and any rollback
+an API built before 1333 still selects these columns, so it must not serve
+after 1333 is applied; apply it only after every serving API (and any rollback
 target) is built from the commit that adds it. The production rollback
-resolver enforces this as a floor on the first-parent `main` commit that adds 1332. `test-model-catalog-permanent.ts` and `test-model-catalog-seed.ts` cover
+resolver enforces this as a floor on the first-parent `main` commit that adds 1333. `test-model-catalog-permanent.ts` and `test-model-catalog-seed.ts` cover
 the surviving catalog and route invariants.
 
 `scripts/test-retired-model-route-cleanup.ts` replays the preceding migrations
