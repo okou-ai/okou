@@ -112,6 +112,15 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-connector-catalog-entry-columns.ts` protects migrations
+  `1339_expand_connector_catalog_entry_columns` and
+  `1340_backfill_connector_catalog_entry_columns`: historical/current hashes
+  keep the complete payload while independent columns match application writes;
+  SQL and TypeScript permission summaries agree for duplicate and empty
+  permissions, allow/deny policy ties, unknown policies, categories and MCP;
+  outgoing payload-only writes remain valid and backfill retries are idempotent.
+  Retain it through the payload dual-write/dual-read rollout and contraction.
+
 - `scripts/test-unselectable-thread-model-cleanup.ts` protects migration
   `1335_clear_unselectable_thread_models_and_unused_model_keys`: unresolvable
   thread selections return to Auto with ordered `model_selection_updated` and
@@ -121,7 +130,7 @@ are enforced by the integration ingress tests.
   passes it.
 
 - `scripts/test-auto-model-selection-null.ts` protects migration
-  `1339_auto_model_selection_null`: thread and member selections of active
+  `1341_auto_model_selection_null`: thread and member selections of active
   catalog models without an enabled subscription route (`okou-1.0` and
   Built-in-only models, by catalog or unique upstream id, plus retired models
   replaced into them such as `okou-1.0-pro`) return to NULL with

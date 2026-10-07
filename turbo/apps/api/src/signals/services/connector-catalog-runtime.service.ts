@@ -35,6 +35,7 @@ import type {
 import { singleton } from "../../lib/singleton";
 import type { ReadonlyDb } from "../external/db";
 import {
+  authMethodDetailForCatalog,
   getConnectorCatalogResolutionDetail,
   listAcceptedConnectorCatalogAvailableSlugs,
   loadAcceptedConnectorCatalogSnapshot,
@@ -71,6 +72,23 @@ export interface ConnectorRuntimeConnector {
   readonly methods: ReadonlyMap<ConnectorAuthMethodId, ConnectorRuntimeMethod>;
   readonly authoredVisibleMethodIds: ReadonlySet<ConnectorAuthMethodId>;
   readonly skill: ConnectorCatalogSkill;
+}
+
+/** Account status needs method capability and storage semantics, not firewall data. */
+export interface ConnectorRuntimeAuthLookup {
+  readonly connectors: ReadonlyMap<
+    ConnectorSlug,
+    {
+      readonly catalogConnector: Pick<
+        PublicConnectorCatalogDetail,
+        "authMethods"
+      >;
+      readonly methods: ReadonlyMap<
+        ConnectorAuthMethodId,
+        ConnectorRuntimeMethod
+      >;
+    }
+  >;
 }
 
 export interface ConnectorRuntimeLookup {
@@ -493,14 +511,17 @@ function runtimeMethodEntry(args: {
   };
 }
 
-function runtimeConnector(
-  connector: ConnectorCatalogArtifactConnector,
+function runtimeConnectorMethods(
+  connector: Pick<
+    ConnectorCatalogArtifactConnector,
+    "slug" | "authMethods" | "mcp"
+  >,
+  catalogAuthMethods: readonly PublicConnectorCatalogAuthMethodDetail[],
   filteredMethodKeys: ReadonlySet<string>,
-): ConnectorRuntimeConnector {
+) {
   const connectorSlug = connector.slug;
-  const catalogConnector = getConnectorCatalogResolutionDetail(connector);
   const catalogMethods = new Map(
-    catalogConnector.authMethods.map((method) => {
+    catalogAuthMethods.map((method) => {
       return [method.id, method];
     }),
   );
@@ -539,12 +560,48 @@ function runtimeConnector(
       }),
     );
   }
+  return { methods, authoredVisibleMethodIds };
+}
+
+function runtimeConnector(
+  connector: ConnectorCatalogArtifactConnector,
+  filteredMethodKeys: ReadonlySet<string>,
+): ConnectorRuntimeConnector {
+  const catalogConnector = getConnectorCatalogResolutionDetail(connector);
   return {
-    connectorSlug,
+    connectorSlug: connector.slug,
     catalogConnector,
-    methods,
-    authoredVisibleMethodIds,
+    ...runtimeConnectorMethods(
+      connector,
+      catalogConnector.authMethods,
+      filteredMethodKeys,
+    ),
     skill: connector.skill,
+  };
+}
+
+/** Reuses executable method rules without materializing skills or firewall catalogs. */
+export function materializeConnectorRuntimeAuthLookup(args: {
+  readonly connectors: readonly Pick<
+    ConnectorCatalogArtifactConnector,
+    "slug" | "authMethods" | "mcp"
+  >[];
+  readonly filteredMethodKeys: ReadonlySet<string>;
+}): ConnectorRuntimeAuthLookup {
+  return {
+    connectors: new Map(
+      args.connectors.map((connector) => {
+        const authMethods = connector.authMethods.map(
+          authMethodDetailForCatalog,
+        );
+        const { methods } = runtimeConnectorMethods(
+          connector,
+          authMethods,
+          args.filteredMethodKeys,
+        );
+        return [connector.slug, { catalogConnector: { authMethods }, methods }];
+      }),
+    ),
   };
 }
 
@@ -776,7 +833,7 @@ export function getConnectorRuntimeConnector(
 }
 
 export function getConnectorRuntimeMethod(args: {
-  readonly snapshot: ConnectorRuntimeLookup;
+  readonly snapshot: ConnectorRuntimeAuthLookup;
   readonly connectorSlug: string;
   readonly authMethodId: string;
   readonly requireExecutable?: boolean;

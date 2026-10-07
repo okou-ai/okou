@@ -1832,8 +1832,22 @@
     {
       "idx": 1339,
       "version": "7",
-      "when": 1791375425812,
-      "tag": "1339_auto_model_selection_null",
+      "when": 1791373330988,
+      "tag": "1339_expand_connector_catalog_entry_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 1340,
+      "version": "7",
+      "when": 1791373351260,
+      "tag": "1340_backfill_connector_catalog_entry_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 1341,
+      "version": "7",
+      "when": 1791377451349,
+      "tag": "1341_auto_model_selection_null",
       "breakpoints": true
     }
   ]

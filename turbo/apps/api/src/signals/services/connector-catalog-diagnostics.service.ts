@@ -13,10 +13,9 @@ import {
 import { connectorSlugSchema } from "@okouai/connectors/connector-catalog/artifacts/common";
 import { connectorMcpSchema } from "@okouai/connectors/connector-catalog/artifacts/source";
 import { command } from "ccstate";
-import { asc, eq, sql } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { db$, type ReadonlyDb } from "../external/db";
@@ -26,6 +25,10 @@ import {
   type ExecutableCapabilityState,
 } from "./connector-catalog-compatibility.service";
 import { loadConnectorCredentialReadiness$ } from "./connector-credential-readiness.service";
+import {
+  connectorCatalogCompatibilityColumns,
+  materializeConnectorCatalogCompatibilityRow,
+} from "./connector-catalog-columns";
 
 const log = logger("connector-catalog:diagnostics");
 
@@ -52,32 +55,30 @@ async function readCurrentPointer(db: ReadonlyDb) {
 }
 
 // The entry fields compatibility evaluation reads.
-const compatibilityInputDecoder = zodDriverValueDecoder(
-  z.object({
-    slug: connectorSlugSchema,
-    authMethods: z.array(connectorCatalogAuthMethodSchema),
-    mcp: connectorMcpSchema.optional(),
-  }),
-);
+const compatibilityInputSchema = z.object({
+  slug: connectorSlugSchema,
+  authMethods: z.array(connectorCatalogAuthMethodSchema),
+  mcp: connectorMcpSchema.optional(),
+});
 
 async function readCompatibilityInputs(db: ReadonlyDb, hash: string) {
   // Entries are immutable and retained by hash, so reading them after the
   // pointer cannot mix generations even if the pointer moves in between.
   // Only the fields compatibility reads leave the database; descriptions and
   // other presentation fields can make a generation tens of MiB.
-  const payload = connectorCatalogEntries.payload;
   const rows = await db
     .select({
-      input:
-        sql`jsonb_build_object('slug', ${payload} -> 'slug', 'authMethods', ${payload} -> 'authMethods') || CASE WHEN ${payload} ? 'mcp' THEN jsonb_build_object('mcp', ${payload} -> 'mcp') ELSE '{}'::jsonb END`.mapWith(
-          compatibilityInputDecoder,
-        ),
+      slug: connectorCatalogCompatibilityColumns.slug,
+      authMethods: connectorCatalogCompatibilityColumns.authMethods,
+      mcp: connectorCatalogCompatibilityColumns.mcp,
     })
     .from(connectorCatalogEntries)
     .where(eq(connectorCatalogEntries.hash, hash))
     .orderBy(asc(connectorCatalogEntries.slug));
   return rows.map((row) => {
-    return row.input;
+    return compatibilityInputSchema.parse(
+      materializeConnectorCatalogCompatibilityRow(row),
+    );
   });
 }
 

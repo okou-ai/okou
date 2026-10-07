@@ -15,7 +15,6 @@ import {
   type PublicConnectorCatalogItem,
   type PublicConnectorCatalogListResponse,
   type PublicConnectorCatalogPermissionDetail,
-  type PublicConnectorCatalogPermissionSummary,
   type PublicConnectorCatalogStatusItem,
   type PublicConnectorCatalogStatusResponse,
 } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -34,6 +33,17 @@ import {
   type ConnectorCatalogArtifactConnector,
   type ConnectorCatalogAuthMethod,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
+import {
+  compactConnectorCatalogDefaultPolicy,
+  connectorCatalogPermissionSummary,
+} from "@okouai/connectors/connector-catalog/entry-columns";
+import {
+  connectorCatalogDisplayColumns,
+  connectorCatalogRuntimeColumns,
+  materializeConnectorCatalogDisplayRow,
+  materializeConnectorCatalogRuntimeRow,
+  type ConnectorCatalogDisplayConnector,
+} from "./connector-catalog-columns";
 import { isConnectorCatalogIconKey } from "@okouai/connectors/connector-catalog/artifacts/icon";
 import { deriveConnectorCatalogFirewallPermissions } from "@okouai/connectors/connector-catalog/artifacts/relationships";
 import {
@@ -76,23 +86,53 @@ export type AcceptedConnectorCatalogSnapshot = ConnectorCatalogRuntimeView;
  * applies to their auth methods. Per-slug reads build it from current and
  * immutable entries; catalog-wide reads build it from the accepted snapshot.
  */
-export interface ConnectorCatalogSlugSource {
-  readonly connectors: readonly ConnectorCatalogArtifactConnector[];
+type CompatibleCatalogConnector = Pick<
+  ConnectorCatalogArtifactConnector,
+  "slug" | "authMethods" | "mcp"
+>;
+
+type CatalogPermissionConnector = Pick<
+  ConnectorCatalogArtifactConnector,
+  "slug" | "authMethods" | "mcp" | "label" | "icon" | "firewall"
+>;
+
+export interface ConnectorCatalogSlugSource<
+  Connector extends CompatibleCatalogConnector =
+    ConnectorCatalogArtifactConnector,
+> {
+  readonly connectors: readonly Connector[];
   readonly filteredMethodKeys: ReadonlySet<string>;
 }
 
-interface PreparedExternalCatalogCache {
+interface AcceptedCatalogSnapshot<
+  Connector extends CompatibleCatalogConnector,
+> {
+  readonly identity: ExternalCatalogIdentity;
+  readonly artifact: { readonly connectors: Connector[] };
+  readonly connectorBySlug: ReadonlyMap<string, Connector>;
+  readonly filteredMethodKeys: ReadonlySet<string>;
+}
+
+type AcceptedDisplayCatalogSnapshot =
+  AcceptedCatalogSnapshot<ConnectorCatalogDisplayConnector>;
+
+interface PreparedExternalCatalogCache<
+  Catalog extends { readonly identity: ExternalCatalogIdentity },
+> {
   completed:
     | {
         readonly key: string;
-        readonly catalog: AcceptedConnectorCatalogSnapshot;
+        readonly catalog: Catalog;
       }
     | undefined;
-  readonly inFlight: Map<string, Promise<AcceptedConnectorCatalogSnapshot>>;
+  readonly inFlight: Map<string, Promise<Catalog>>;
 }
 
-interface EffectiveConnector {
-  readonly connector: ConnectorCatalogArtifactConnector;
+interface EffectiveConnector<
+  Connector extends CompatibleCatalogConnector =
+    ConnectorCatalogDisplayConnector,
+> {
+  readonly connector: Connector;
   readonly authMethods: readonly ConnectorCatalogAuthMethod[];
 }
 
@@ -101,12 +141,18 @@ interface ExternalCatalogReadArgs {
   readonly featureStates: ConnectorFeatureStates;
 }
 
-interface ExternalCatalogSourceArgs {
-  readonly catalog: ConnectorCatalogSlugSource;
+interface ExternalCatalogSourceArgs<
+  Connector extends CompatibleCatalogConnector =
+    ConnectorCatalogDisplayConnector,
+> {
+  readonly catalog: ConnectorCatalogSlugSource<Connector>;
   readonly featureStates: ConnectorFeatureStates;
 }
 
-interface ExternalCatalogConnectorReadArgs extends ExternalCatalogSourceArgs {
+interface ExternalCatalogConnectorReadArgs<
+  Connector extends CompatibleCatalogConnector =
+    ConnectorCatalogDisplayConnector,
+> extends ExternalCatalogSourceArgs<Connector> {
   readonly connectorSlug: string;
 }
 
@@ -195,12 +241,23 @@ export function assertRequiredConnectorCatalogEntries(
   }
 }
 
-const preparedCatalogCache = singleton((): PreparedExternalCatalogCache => {
-  return {
-    completed: undefined,
-    inFlight: new Map<string, Promise<AcceptedConnectorCatalogSnapshot>>(),
-  };
-});
+const preparedCatalogCache = singleton(
+  (): PreparedExternalCatalogCache<AcceptedConnectorCatalogSnapshot> => {
+    return {
+      completed: undefined,
+      inFlight: new Map<string, Promise<AcceptedConnectorCatalogSnapshot>>(),
+    };
+  },
+);
+
+const preparedDisplayCatalogCache = singleton(
+  (): PreparedExternalCatalogCache<AcceptedDisplayCatalogSnapshot> => {
+    return {
+      completed: undefined,
+      inFlight: new Map<string, Promise<AcceptedDisplayCatalogSnapshot>>(),
+    };
+  },
+);
 
 function authMethodKey(connectorSlug: string, authMethodId: string): string {
   return `${connectorSlug}\0${authMethodId}`;
@@ -289,7 +346,7 @@ async function readCurrentIdentity(args: {
     : undefined;
 }
 
-async function readCurrentCatalogPayload(args: {
+async function readCurrentRuntimeCatalogRows(args: {
   readonly db: ReadonlyDb;
   readonly identity: ExternalCatalogIdentity;
   readonly timing?: ConnectorCatalogLoadTiming;
@@ -299,7 +356,19 @@ async function readCurrentCatalogPayload(args: {
     "api_dispatch_connector_catalog_query_payload",
     async () => {
       return await args.db
-        .select({ payload: connectorCatalogEntries.payload })
+        .select({
+          slug: connectorCatalogRuntimeColumns.slug,
+          authMethods: connectorCatalogRuntimeColumns.authMethods,
+          mcp: connectorCatalogRuntimeColumns.mcp,
+          label: connectorCatalogRuntimeColumns.label,
+          description: connectorCatalogRuntimeColumns.description,
+          category: connectorCatalogRuntimeColumns.category,
+          icon: connectorCatalogRuntimeColumns.icon,
+          tags: connectorCatalogRuntimeColumns.tags,
+          generation: connectorCatalogRuntimeColumns.generation,
+          skill: connectorCatalogRuntimeColumns.skill,
+          firewall: connectorCatalogRuntimeColumns.firewall,
+        })
         .from(connectorCatalogEntries)
         .where(eq(connectorCatalogEntries.hash, args.identity.catalogDigest))
         .orderBy(asc(connectorCatalogEntries.slug));
@@ -313,26 +382,27 @@ async function readCurrentCatalog(args: {
   readonly capability: ExecutableCapabilityState;
   readonly timing?: ConnectorCatalogLoadTiming;
 }): Promise<AcceptedConnectorCatalogSnapshot> {
-  const rows = await readCurrentCatalogPayload(args);
+  const rows = await readCurrentRuntimeCatalogRows(args);
   // A published artifact contains at least one connector. A whole-catalog
   // read must not turn an unavailable generation into a successful empty list.
   if (rows.length === 0) {
     throw new ExternalConnectorCatalogUnavailableError("missing_entries");
   }
-  return materializeAcceptedConnectorCatalog({ ...args, rows });
+  return materializeAcceptedConnectorCatalog({
+    ...args,
+    connectors: rows.map(materializeConnectorCatalogRuntimeRow),
+  });
 }
 
-function materializeAcceptedConnectorCatalog(args: {
+function materializeAcceptedConnectorCatalog<
+  Connector extends CompatibleCatalogConnector,
+>(args: {
   readonly identity: ExternalCatalogIdentity;
   readonly capability: ExecutableCapabilityState;
   readonly timing?: ConnectorCatalogLoadTiming;
-  readonly rows: Awaited<ReturnType<typeof readCurrentCatalogPayload>>;
-}): AcceptedConnectorCatalogSnapshot {
-  const artifact = {
-    connectors: args.rows.map((row) => {
-      return row.payload;
-    }),
-  };
+  readonly connectors: readonly Connector[];
+}): AcceptedCatalogSnapshot<Connector> {
+  const artifact = { connectors: [...args.connectors] };
   args.timing?.recordValidationResult({ outcome: "not_run" });
   const filteredAuthMethods = measureCatalogLoadSync(
     args.timing,
@@ -367,24 +437,28 @@ function materializeAcceptedConnectorCatalog(args: {
   );
 }
 
-function deleteInFlightCatalog(
-  cache: PreparedExternalCatalogCache,
+function deleteInFlightCatalog<
+  Catalog extends { readonly identity: ExternalCatalogIdentity },
+>(
+  cache: PreparedExternalCatalogCache<Catalog>,
   key: string,
-  promise: Promise<AcceptedConnectorCatalogSnapshot>,
+  promise: Promise<Catalog>,
 ): void {
   if (cache.inFlight.get(key) === promise) {
     cache.inFlight.delete(key);
   }
 }
 
-async function readCachedConnectorCatalogSnapshot(args: {
-  readonly load: () => Promise<AcceptedConnectorCatalogSnapshot>;
+async function readCachedConnectorCatalogSnapshot<
+  Catalog extends { readonly identity: ExternalCatalogIdentity },
+>(args: {
+  readonly cache: PreparedExternalCatalogCache<Catalog>;
+  readonly load: () => Promise<Catalog>;
   readonly identity: ExternalCatalogIdentity;
   readonly timing: ConnectorCatalogLoadTiming | undefined;
-}): Promise<AcceptedConnectorCatalogSnapshot> {
-  const { identity: currentIdentity, timing } = args;
+}): Promise<Catalog> {
+  const { identity: currentIdentity, timing, cache } = args;
   const currentKey = identityKey(currentIdentity);
-  const cache = preparedCatalogCache();
   if (cache.completed?.key === currentKey) {
     timing?.recordAcceptedCacheOutcome("hit");
     timing?.recordValidationResult({ outcome: "not_run" });
@@ -419,10 +493,21 @@ async function readCachedConnectorCatalogSnapshot(args: {
   return catalog;
 }
 
+export function loadAcceptedConnectorCatalogSnapshot(
+  db: ReadonlyDb,
+  timing: ConnectorCatalogLoadTiming | undefined,
+  projection: "display",
+): Promise<AcceptedDisplayCatalogSnapshot>;
+export function loadAcceptedConnectorCatalogSnapshot(
+  db: ReadonlyDb,
+  timing?: ConnectorCatalogLoadTiming,
+  projection?: "runtime",
+): Promise<AcceptedConnectorCatalogSnapshot>;
 export async function loadAcceptedConnectorCatalogSnapshot(
   db: ReadonlyDb,
   timing?: ConnectorCatalogLoadTiming,
-): Promise<AcceptedConnectorCatalogSnapshot> {
+  projection: "display" | "runtime" = "runtime",
+): Promise<AcceptedDisplayCatalogSnapshot | AcceptedConnectorCatalogSnapshot> {
   const capability = connectorCatalogExecutableCapabilityState();
   const identity = await readCurrentIdentity({
     db,
@@ -436,7 +521,43 @@ export async function loadAcceptedConnectorCatalogSnapshot(
   }
   // Entries are immutable and retained by hash. A later pointer switch cannot
   // strand this capture, so the legacy mutable-snapshot retry is unnecessary.
+  // Display reads keep a narrow cache and never materialize runtime entries.
+  if (projection === "display") {
+    return await readCachedConnectorCatalogSnapshot({
+      cache: preparedDisplayCatalogCache(),
+      identity,
+      timing,
+      load: async () => {
+        const rows = await db
+          .select({
+            slug: connectorCatalogDisplayColumns.slug,
+            authMethods: connectorCatalogDisplayColumns.authMethods,
+            mcp: connectorCatalogDisplayColumns.mcp,
+            label: connectorCatalogDisplayColumns.label,
+            description: connectorCatalogDisplayColumns.description,
+            category: connectorCatalogDisplayColumns.category,
+            icon: connectorCatalogDisplayColumns.icon,
+            tags: connectorCatalogDisplayColumns.tags,
+            generation: connectorCatalogDisplayColumns.generation,
+            permissionSummary: connectorCatalogDisplayColumns.permissionSummary,
+          })
+          .from(connectorCatalogEntries)
+          .where(eq(connectorCatalogEntries.hash, identity.catalogDigest))
+          .orderBy(asc(connectorCatalogEntries.slug));
+        if (rows.length === 0) {
+          throw new ExternalConnectorCatalogUnavailableError("missing_entries");
+        }
+        return materializeAcceptedConnectorCatalog({
+          identity,
+          capability,
+          ...(timing === undefined ? {} : { timing }),
+          connectors: rows.map(materializeConnectorCatalogDisplayRow),
+        });
+      },
+    });
+  }
   return await readCachedConnectorCatalogSnapshot({
+    cache: preparedCatalogCache(),
     identity,
     timing,
     load: async () => {
@@ -479,19 +600,21 @@ function featureSwitchHidesAuthMethod(
   return featureSwitch !== undefined && featureStates?.[featureSwitch] === true;
 }
 
-function catalogSource(
-  catalog: AcceptedConnectorCatalogSnapshot,
-): ConnectorCatalogSlugSource {
+function catalogSource<Connector extends CompatibleCatalogConnector>(
+  catalog: AcceptedCatalogSnapshot<Connector>,
+): ConnectorCatalogSlugSource<Connector> {
   return {
     connectors: catalog.artifact.connectors,
     filteredMethodKeys: catalog.filteredMethodKeys,
   };
 }
 
-function effectiveConnectors(args: {
-  readonly catalog: ConnectorCatalogSlugSource;
+function effectiveConnectors<
+  Connector extends CompatibleCatalogConnector,
+>(args: {
+  readonly catalog: ConnectorCatalogSlugSource<Connector>;
   readonly featureStates: ConnectorFeatureStates;
-}): readonly EffectiveConnector[] {
+}): readonly EffectiveConnector<Connector>[] {
   return args.catalog.connectors.flatMap((connector) => {
     const authMethods = connector.authMethods.filter((method) => {
       if (
@@ -528,7 +651,7 @@ function effectiveConnectors(args: {
 }
 
 function iconForCatalog(
-  connector: ConnectorCatalogArtifactConnector,
+  connector: Pick<ConnectorCatalogArtifactConnector, "icon">,
 ): PublicConnectorCatalogIcon {
   const key = connector.icon.key;
   if (!isConnectorCatalogIconKey(key)) {
@@ -544,7 +667,7 @@ function iconForCatalog(
 }
 
 function referenceMetadataForCatalog(
-  catalog: AcceptedConnectorCatalogSnapshot,
+  catalog: AcceptedDisplayCatalogSnapshot,
   connectorSlugs: readonly string[],
 ): readonly ConnectorCatalogReferenceMetadata[] {
   const requestedSlugs = new Set(connectorSlugs);
@@ -561,32 +684,6 @@ function referenceMetadataForCatalog(
   });
 }
 
-function permissionSummaryForCatalog(
-  connector: ConnectorCatalogArtifactConnector,
-): PublicConnectorCatalogPermissionSummary {
-  if (connector.mcp !== undefined || connector.firewall.kind === "none") {
-    return {
-      hasPermissions: false,
-      permissionCount: 0,
-      hasCategories: false,
-      hasDefaultPolicyOverrides: false,
-    };
-  }
-  const permissionCount = deriveConnectorCatalogFirewallPermissions(
-    connector.firewall.config.apis,
-  ).length;
-  const defaultPolicy = compactDefaultPolicy(connector);
-  return {
-    hasPermissions: permissionCount > 0,
-    permissionCount,
-    hasCategories: connector.firewall.categories !== null,
-    hasDefaultPolicyOverrides:
-      defaultPolicy.permissionDefault !== "allow" ||
-      defaultPolicy.unknownPolicy !== "allow" ||
-      defaultPolicy.permissionOverrides !== undefined,
-  };
-}
-
 function authMethodSummaryForCatalog(
   method: ConnectorCatalogAuthMethod,
 ): PublicConnectorCatalogAuthMethodSummary {
@@ -598,7 +695,7 @@ function authMethodSummaryForCatalog(
   };
 }
 
-function authMethodDetailForCatalog(
+export function authMethodDetailForCatalog(
   method: ConnectorCatalogAuthMethod,
 ): PublicConnectorCatalogAuthMethodDetail {
   return {
@@ -657,7 +754,7 @@ function connectorCatalogItem(
       ? {}
       : { mcp: { ...effective.connector.mcp } }),
     authMethods: effective.authMethods.map(authMethodSummaryForCatalog),
-    permissionSummary: permissionSummaryForCatalog(effective.connector),
+    permissionSummary: effective.connector.permissionSummary,
   };
 }
 
@@ -675,7 +772,10 @@ export function getConnectorCatalogResolutionDetail(
   connector: ConnectorCatalogArtifactConnector,
 ): PublicConnectorCatalogDetail {
   return connectorCatalogDetail({
-    connector,
+    connector: {
+      ...connector,
+      permissionSummary: connectorCatalogPermissionSummary(connector),
+    },
     authMethods: connector.authMethods,
   });
 }
@@ -683,8 +783,10 @@ export function getConnectorCatalogResolutionDetail(
 /** The whole accepted catalog, for reads that must scan every connector. */
 export async function loadCompleteConnectorCatalogSource(
   db: ReadonlyDb,
-): Promise<ConnectorCatalogSlugSource> {
-  return catalogSource(await loadAcceptedConnectorCatalogSnapshot(db));
+): Promise<ConnectorCatalogSlugSource<ConnectorCatalogDisplayConnector>> {
+  return catalogSource(
+    await loadAcceptedConnectorCatalogSnapshot(db, undefined, "display"),
+  );
 }
 
 export function listAcceptedConnectorCatalogAvailableSlugs(args: {
@@ -867,56 +969,14 @@ function connectorCatalogConnectionFields(
   };
 }
 
-function choosePermissionDefault(args: {
-  readonly permissions: readonly string[];
-  readonly defaultAllowed: readonly string[] | null;
-}): "allow" | "deny" {
-  if (args.defaultAllowed === null) {
-    return "allow";
-  }
-  const allowed = new Set(args.defaultAllowed);
-  const allowCount = args.permissions.filter((permission) => {
-    return allowed.has(permission);
-  }).length;
-  return args.permissions.length - allowCount > allowCount ? "deny" : "allow";
-}
-
-function compactDefaultPolicy(
-  connector: ConnectorCatalogArtifactConnector,
-): PublicConnectorCatalogPermissionDetail["defaultPolicy"] {
-  if (connector.firewall.kind === "none") {
-    throw new Error("Connector catalog firewall metadata is unavailable");
-  }
-  const permissionNames = deriveConnectorCatalogFirewallPermissions(
-    connector.firewall.config.apis,
-  ).map((permission) => {
-    return permission.name;
-  });
-  const permissionDefault = choosePermissionDefault({
-    permissions: permissionNames,
-    defaultAllowed: connector.firewall.defaultAllowed,
-  });
-  const allowed =
-    connector.firewall.defaultAllowed === null
-      ? new Set(permissionNames)
-      : new Set(connector.firewall.defaultAllowed);
-  const overrides = permissionNames.filter((permission) => {
-    return allowed.has(permission) !== (permissionDefault === "allow");
-  });
-  const overrideValue = permissionDefault === "allow" ? "deny" : "allow";
-  return {
-    permissionDefault,
-    ...(overrides.length === 0
-      ? {}
-      : { permissionOverrides: { [overrideValue]: overrides } }),
-    unknownPolicy: connector.firewall.defaultUnknownPolicy,
-  };
-}
-
 export async function listExternalPublicConnectorCatalog(
   args: ExternalCatalogReadArgs,
 ): Promise<PublicConnectorCatalogListResponse> {
-  const catalog = await loadAcceptedConnectorCatalogSnapshot(args.db);
+  const catalog = await loadAcceptedConnectorCatalogSnapshot(
+    args.db,
+    undefined,
+    "display",
+  );
   const connectors = effectiveConnectors({
     catalog: catalogSource(catalog),
     featureStates: args.featureStates,
@@ -1069,7 +1129,11 @@ function discoveryEffectiveConnectors(
 export async function searchExternalConnectorCatalog(
   args: ExternalCatalogSearchArgs,
 ): Promise<BuiltinConnectorSearchItem[]> {
-  const catalog = await loadAcceptedConnectorCatalogSnapshot(args.db);
+  const catalog = await loadAcceptedConnectorCatalogSnapshot(
+    args.db,
+    undefined,
+    "display",
+  );
   const effective = effectiveConnectors({
     catalog: catalogSource(catalog),
     featureStates: args.featureStates,
@@ -1159,8 +1223,7 @@ export function connectorBriefsFromSource(
       slug: entry.connector.slug,
       label: entry.connector.label,
       icon: iconForCatalog(entry.connector),
-      hasPermissions: permissionSummaryForCatalog(entry.connector)
-        .hasPermissions,
+      hasPermissions: entry.connector.permissionSummary.hasPermissions,
     };
   });
 }
@@ -1168,7 +1231,11 @@ export function connectorBriefsFromSource(
 export async function listExternalPublicConnectorCatalogStatus(
   args: ExternalCatalogStatusArgs,
 ): Promise<ConnectorCatalogStatusRead> {
-  const catalog = await loadAcceptedConnectorCatalogSnapshot(args.db);
+  const catalog = await loadAcceptedConnectorCatalogSnapshot(
+    args.db,
+    undefined,
+    "display",
+  );
   const effective = effectiveConnectors({
     catalog: catalogSource(catalog),
     featureStates: args.featureStates,
@@ -1185,7 +1252,11 @@ export async function listExternalPublicConnectorCatalogStatus(
 export async function discoverExternalPublicConnectorCatalogStatus(
   args: ExternalCatalogDiscoveryArgs,
 ): Promise<ConnectorCatalogDiscoveryRead> {
-  const catalog = await loadAcceptedConnectorCatalogSnapshot(args.db);
+  const catalog = await loadAcceptedConnectorCatalogSnapshot(
+    args.db,
+    undefined,
+    "display",
+  );
   const effective = effectiveConnectors({
     catalog: catalogSource(catalog),
     featureStates: args.featureStates,
@@ -1208,7 +1279,7 @@ export async function discoverExternalPublicConnectorCatalogStatus(
 }
 
 function connectorCatalogStatusRead(args: {
-  readonly catalog: AcceptedConnectorCatalogSnapshot;
+  readonly catalog: AcceptedDisplayCatalogSnapshot;
   readonly effective: readonly EffectiveConnector[];
   readonly featureStates: ConnectorFeatureStates;
   readonly connections: readonly ConnectorCatalogConnection[];
@@ -1238,7 +1309,7 @@ function connectorCatalogStatusRead(args: {
 }
 
 export function publicConnectorCatalogPermissionDetailFromSource(
-  args: ExternalCatalogConnectorReadArgs,
+  args: ExternalCatalogConnectorReadArgs<CatalogPermissionConnector>,
 ): PublicConnectorCatalogPermissionDetail | null {
   const effective = effectiveConnectors(args);
   const entry = effective.find((connector) => {
@@ -1270,6 +1341,6 @@ export function publicConnectorCatalogPermissionDetailFromSource(
             categories: { ...firewall.categories.byPermission },
             displayOrder: [...firewall.categories.displayOrder],
           },
-    defaultPolicy: compactDefaultPolicy(entry.connector),
+    defaultPolicy: compactConnectorCatalogDefaultPolicy(entry.connector),
   };
 }

@@ -49,6 +49,10 @@ import {
   connectorCatalogSlugRuntimeFromRows,
   connectorCatalogSlugIdentityFromRows,
 } from "./connector-catalog-slug-source.service";
+import {
+  connectorCatalogRuntimeColumns,
+  materializeConnectorCatalogRuntimeRow,
+} from "./connector-catalog-columns";
 import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
 import {
   ORG_SENTINEL_USER_ID,
@@ -279,10 +283,7 @@ async function loadStableContextSourceSnapshot(
           schemaVersion: connectorCatalog.schemaVersion,
           hash: connectorCatalog.hash,
         },
-        entry: {
-          slug: connectorCatalogEntries.slug,
-          payload: connectorCatalogEntries.payload,
-        },
+        entry: connectorCatalogRuntimeColumns,
       })
       .from(connectorCatalog)
       .leftJoin(
@@ -290,16 +291,26 @@ async function loadStableContextSourceSnapshot(
         connectorCatalogSlugJoin(connectorScope.allowedConnectorSlugs),
       )
       .where(connectorCatalogCurrentWhere());
+    const catalogSourceRows = catalogRows.map((row) => {
+      return {
+        ...row,
+        entry:
+          row.entry === null
+            ? null
+            : materializeConnectorCatalogRuntimeRow(row.entry),
+      };
+    });
     catalogSelection = {
       kind: "scoped",
       selection: {
         // Enabled connectors are required: a missing entry throws the typed
         // unavailable error below and leaves the head missing.
-        ...connectorCatalogSlugRuntimeFromRows(catalogRows, {
+        ...connectorCatalogSlugRuntimeFromRows(catalogSourceRows, {
           runtimeConnectorSlugs: connectorScope.allowedConnectorSlugs,
           missingRuntimeEntries: "reject",
         }),
-        catalogIdentity: connectorCatalogSlugIdentityFromRows(catalogRows),
+        catalogIdentity:
+          connectorCatalogSlugIdentityFromRows(catalogSourceRows),
       },
     };
   }
