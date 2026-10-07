@@ -99,8 +99,10 @@ embedded CLI content, not the source commit identity. The CLI contribution is
 its actual package SHA-256 plus a canonical projection of the manifest fields
 consumed by `crates/runner/build.rs`: package identity, CLI/Pi versions and
 session-construction digest. Commit provenance, JSON formatting/key order and
-unused manifest fields do not affect reuse. Invalid CLI inputs fail before
-cache lookup; commit-addressed CLI publication and provenance verification are
+unused manifest fields do not affect reuse. Manifest validation preserves JSON
+integer types and rejects duplicate compilation fields using Python 3, which is
+available in the pinned Rust toolchain. Invalid CLI inputs fail before cache
+lookup; commit-addressed CLI publication and provenance verification are
 unchanged. Input schema 6 intentionally starts a new key space, so the first
 build of each input combination misses once without migrating old references.
 

@@ -445,6 +445,16 @@ jq '.createdAt = "2026-10-07T00:00:00Z" |
     .sessionConstruction.note = "unused"' "$cli_manifest_base" > "$cli_manifest"
 [ "$(cli_digest_value)" = "$embedded_arm_digest" ] \
   || fail "unconsumed CLI metadata must not affect the digest"
+cli_manifest_compact=$(jq -c . "$cli_manifest_base")
+for unused in \
+  '"unused":1.25' \
+  '"unused":1,"unused":2' \
+  '"unused":{"cli":1,"cli":2}' \
+  '"commitSha":"first","commitSha":"second"'; do
+  printf '%s,%s}\n' "${cli_manifest_compact%?}" "$unused" > "$cli_manifest"
+  [ "$(cli_digest_value)" = "$embedded_arm_digest" ] \
+    || fail "valid ignored JSON metadata must not affect the digest: ${unused}"
+done
 cp "$cli_manifest_base" "$cli_manifest"
 
 printf 'changed bytes\n' >> "$cli_package"
@@ -474,6 +484,8 @@ printf 'wrong sibling identity\n' > "$(dirname "$cli_package")/manifest.json"
   || fail "a sibling manifest must not affect the explicit input digest"
 for mutation in \
   '.version = 2' \
+  '.version = true' \
+  '.package.size = false' \
   '.package.path = "unexpected.tgz"' \
   '.package.sha256 = ("0" * 64)' \
   '.package.size = 0' \
@@ -491,6 +503,40 @@ for mutation in \
   '.sessionConstruction.digest = ("d" * 64 + "\n")'; do
   jq "$mutation" "$cli_manifest_base" > "$cli_manifest"
   assert_cli_digest_fails "invalid CLI identity: ${mutation}"
+done
+# Do not let jq normalize away lexical integer types or duplicate fields.
+# serde's typed CliManifest rejects these even when the last value looks valid.
+cli_manifest_compact=$(jq -c . "$cli_manifest_base")
+for token in 1.0 1e0 0.1e1 1.00000000000000001; do
+  printf '%s\n' "${cli_manifest_compact/\"version\":1/\"version\":${token}}" > "$cli_manifest"
+  assert_cli_digest_fails "non-integer CLI schema token: ${token}"
+done
+cli_package_size=$(stat -c '%s' "$cli_package")
+for token in "${cli_package_size}.0" "${cli_package_size}e0" "${cli_package_size}.00000000000000001"; do
+  printf '%s\n' "${cli_manifest_compact/\"size\":${cli_package_size}/\"size\":${token}}" > "$cli_manifest"
+  assert_cli_digest_fails "non-integer CLI size token: ${token}"
+done
+for field in version package versions sessionConstruction path sha256 size cli piAgentRuntime piSdk digest; do
+  printf '%s\n' "${cli_manifest_compact/\"${field}\":/\"${field}\":null,\"${field}\":}" > "$cli_manifest"
+  assert_cli_digest_fails "duplicate consumed CLI field: ${field}"
+done
+printf '%s\n' "${cli_manifest_compact/\"version\":1/\"version\":1,\"version\":1}" > "$cli_manifest"
+assert_cli_digest_fails "identical duplicate CLI schema fields"
+printf '%s\n' "${cli_manifest_compact/\"cli\":/\"\\u0063li\":\"9.354.0\",\"cli\":}" > "$cli_manifest"
+assert_cli_digest_fails "duplicate escaped CLI version field"
+for constant in NaN Infinity -Infinity; do
+  printf '%s,"unused":%s}\n' "${cli_manifest_compact%?}" "$constant" > "$cli_manifest"
+  assert_cli_digest_fails "non-JSON numeric constant: ${constant}"
+done
+printf '%s,"\\ud800":0}\n' "${cli_manifest_compact%?}" > "$cli_manifest"
+assert_cli_digest_fails "non-UTF-8 CLI manifest field name"
+for encoding in utf-16 utf-32; do
+  python3 - "$cli_manifest_base" "$cli_manifest" "$encoding" <<'PY'
+import pathlib
+import sys
+pathlib.Path(sys.argv[2]).write_bytes(pathlib.Path(sys.argv[1]).read_text().encode(sys.argv[3]))
+PY
+  assert_cli_digest_fails "non-UTF-8 CLI manifest encoding: ${encoding}"
 done
 printf 'not JSON\n' > "$cli_manifest"
 assert_cli_digest_fails "malformed CLI JSON"

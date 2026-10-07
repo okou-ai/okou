@@ -51,34 +51,76 @@ if [ -n "$cli_package" ]; then
     exit 1
   fi
   cli_sha256=$(sha256sum "$cli_package" | awk '{print $1}')
-  if ! cli_identity=$(jq -sceS --arg sha "$cli_sha256" --argjson size "$cli_size" '
-    def release_version:
-      type == "string" and
-      test("\\A(0|[1-9][0-9]{0,9})\\.(0|[1-9][0-9]{0,9})\\.(0|[1-9][0-9]{0,9})\\z");
-    if length == 1 then .[0] else error("expected one CLI manifest") end |
+  # Preserve integer token types and reject duplicate consumed fields, as serde
+  # does. jq normalizes these invalid manifests into usable cache identities.
+  if ! cli_identity=$(python3 - "$cli_manifest" "$cli_sha256" "$cli_size" <<'PY'
+import json
+import re
+import sys
+
+
+class JsonObject(dict):
+    def __init__(self, pairs):
+        super().__init__()
+        self.duplicates = set()
+        for key, value in pairs:
+            if key in self:
+                self.duplicates.add(key)
+            self[key] = value
+
+
+def fields(value, names):
+    if not isinstance(value, JsonObject) or value.duplicates.intersection(names):
+        raise ValueError("invalid or duplicate manifest fields")
+    # serde decodes every key in a consumed struct, even an ignored field name.
+    for key in value:
+        key.encode("utf-8")
+    return {name: value[name] for name in names}
+
+
+def release_version(value):
+    return isinstance(value, str) and re.fullmatch(
+        r"(0|[1-9][0-9]{0,9})\.(0|[1-9][0-9]{0,9})\.(0|[1-9][0-9]{0,9})", value
+    ) is not None
+
+
+def invalid_constant(_value):
+    raise ValueError("non-JSON numeric constant")
+
+
+try:
+    with open(sys.argv[1], "rb") as file:
+        raw = file.read(16 * 1024 + 1)
+    if len(raw) > 16 * 1024:
+        raise ValueError("oversized manifest")
+    identity = fields(json.loads(
+        raw.decode("utf-8"), object_pairs_hook=JsonObject, parse_constant=invalid_constant
+    ), ("version", "package", "versions", "sessionConstruction"))
+    package = identity["package"] = fields(identity["package"], ("path", "sha256", "size"))
+    versions = identity["versions"] = fields(
+        identity["versions"], ("cli", "piAgentRuntime", "piSdk")
+    )
+    session = identity["sessionConstruction"] = fields(identity["sessionConstruction"], ("digest",))
     if (
-      .version == 1 and
-      .package.path == "package.tgz" and
-      .package.sha256 == $sha and
-      .package.size == $size and
-      (.versions.cli | release_version) and
-      (.versions.piAgentRuntime | release_version) and
-      (.versions.piSdk | type == "string" and
-        (split("+okou.") | length == 2 and
-          (.[0] | release_version) and
-          (.[1] | test("\\A[0-9a-f]{12}\\z")))) and
-      (.sessionConstruction.digest | type == "string" and test("\\A[0-9a-f]{64}\\z"))
-    ) then {
-      version,
-      package: {path: .package.path, sha256: .package.sha256, size: .package.size},
-      versions: {
-        cli: .versions.cli,
-        piAgentRuntime: .versions.piAgentRuntime,
-        piSdk: .versions.piSdk
-      },
-      sessionConstruction: {digest: .sessionConstruction.digest}
-    } else error("invalid CLI build identity") end
-  ' "$cli_manifest"); then
+        type(identity["version"]) is not int or identity["version"] != 1
+        or package["path"] != "package.tgz" or package["sha256"] != sys.argv[2]
+        or type(package["size"]) is not int or package["size"] != int(sys.argv[3])
+        or not release_version(versions["cli"])
+        or not release_version(versions["piAgentRuntime"])
+        or not isinstance(versions["piSdk"], str)
+        or not isinstance(session["digest"], str)
+        or re.fullmatch(r"[0-9a-f]{64}", session["digest"]) is None
+    ):
+        raise ValueError("invalid CLI build identity")
+    sdk = versions["piSdk"].split("+okou.")
+    if len(sdk) != 2 or not release_version(sdk[0]) or re.fullmatch(r"[0-9a-f]{12}", sdk[1]) is None:
+        raise ValueError("invalid Pi SDK identity")
+except (OSError, ValueError, KeyError, RecursionError):
+    sys.exit(1)
+
+print(json.dumps(identity, sort_keys=True, separators=(",", ":")))
+PY
+  ); then
     echo "runner CLI manifest is invalid or does not match the package: ${cli_manifest}" >&2
     exit 1
   fi
