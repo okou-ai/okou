@@ -48,7 +48,7 @@ Existing helpers in other domains receive a required first plain
 catalog using their database argument. Those helpers' unrelated database
 parameters are not new adapters for either owned service; their broader
 ownership migration remains with the parent/domain workers. This includes
-model policy, Pi credential/admission, bootstrap, runtime-route, and MCP
+Pi credential/admission, bootstrap, runtime-route, and MCP
 caller plumbing. Parent integration must preserve the new snapshot arguments
 when merging overlapping changes; the separate MCP worker owns protocol removal.
 
@@ -61,7 +61,7 @@ There are **zero transactions** in either owned service, and none were added.
 No locks, retries, coordination fields, migrations, provider writes, production
 hooks, or stronger MCP capabilities were added. Existing transactions in caller
 domains were not reclassified or represented as terminal by this slice. Catalog
-reads formerly inside onboarding/model-policy transactions are prepared outside
+reads formerly inside onboarding transactions are prepared outside
 those callbacks; transaction removal and remaining helper/transaction ownership
 in those domains belong to their implementation owners.
 

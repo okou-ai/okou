@@ -1,5 +1,5 @@
 {
-  "id": "351e6a12-b055-471a-bd36-e7ddb59950d4",
+  "id": "8a73062f-dba2-433b-a298-a33d9820db95",
   "prevId": "f26c38db-184b-4dd4-b2c2-e584dd1960e8",
   "version": "7",
   "dialect": "postgresql",
@@ -1276,25 +1276,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "model_provider_id": {
-          "name": "model_provider_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "selected_model": {
-          "name": "selected_model",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "prefer_personal_provider": {
-          "name": "prefer_personal_provider",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
@@ -1348,21 +1329,7 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "agents_model_provider_id_model_providers_id_fk": {
-          "name": "agents_model_provider_id_model_providers_id_fk",
-          "tableFrom": "agents",
-          "tableTo": "model_providers",
-          "columnsFrom": [
-            "model_provider_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "idx_agents_id_org_owner": {
@@ -18469,12 +18436,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "secret_id": {
-          "name": "secret_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "auth_method": {
           "name": "auth_method",
           "type": "varchar(50)",
@@ -18565,21 +18526,6 @@
         }
       },
       "indexes": {
-        "idx_model_providers_secret": {
-          "name": "idx_model_providers_secret",
-          "columns": [
-            {
-              "expression": "secret_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_model_providers_org": {
           "name": "idx_model_providers_org",
           "columns": [
@@ -18645,21 +18591,7 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "model_providers_secret_id_secrets_id_fk": {
-          "name": "model_providers_secret_id_secrets_id_fk",
-          "tableFrom": "model_providers",
-          "tableTo": "secrets",
-          "columnsFrom": [
-            "secret_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -18827,11 +18759,11 @@
       "checkConstraints": {
         "chk_model_routes_provider_type": {
           "name": "chk_model_routes_provider_type",
-          "value": "\"model_routes\".\"provider_type\" IN ('claude-code-oauth-token', 'anthropic-api-key', 'openrouter-api-key', 'deepseek', 'vercel-ai-gateway', 'openrouter-codex', 'vercel-ai-gateway-codex', 'openai-api-key', 'codex-oauth-token', 'azure-foundry', 'aws-bedrock', 'custom-anthropic-messages', 'custom-openai-responses', 'built-in')"
+          "value": "\"model_routes\".\"provider_type\" IN ('claude-code-oauth-token', 'codex-oauth-token', 'built-in')"
         },
         "chk_model_routes_concrete_provider_type": {
           "name": "chk_model_routes_concrete_provider_type",
-          "value": "CASE WHEN \"model_routes\".\"provider_type\" = 'built-in' THEN \"model_routes\".\"concrete_provider_type\" IN ('anthropic-api-key', 'openrouter-api-key', 'deepseek', 'openrouter-codex', 'openai-api-key') ELSE \"model_routes\".\"concrete_provider_type\" = \"model_routes\".\"provider_type\" END"
+          "value": "CASE WHEN \"model_routes\".\"provider_type\" = 'built-in' THEN \"model_routes\".\"concrete_provider_type\" IN ('openrouter-codex') ELSE \"model_routes\".\"concrete_provider_type\" = \"model_routes\".\"provider_type\" END"
         },
         "chk_model_routes_subscription_type": {
           "name": "chk_model_routes_subscription_type",

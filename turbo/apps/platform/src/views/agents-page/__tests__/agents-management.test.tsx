@@ -56,9 +56,6 @@ function agent(agentId: string, options: AgentOptions = {}): AgentResponse {
     displayName: options.displayName ?? null,
     sound: null,
     avatarUrl: options.avatarUrl ?? null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: options.visibility ?? "public",
   };
 }

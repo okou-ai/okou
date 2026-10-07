@@ -176,7 +176,7 @@ function boundedPiCheckpointHistory(jsonl: string): {
   };
 }
 
-describe("CHAT-02: model-first provider policies", () => {
+describe("CHAT-02: model-first routing", () => {
   async function piActivityScenario(): Promise<void> {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);

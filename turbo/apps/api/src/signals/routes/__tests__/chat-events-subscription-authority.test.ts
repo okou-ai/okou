@@ -226,7 +226,9 @@ describe("CHAT-02: run-level model overrides", () => {
     await cancelChatRun(actor, run.runId, sandboxHeaders);
   }, 30_000);
 
-  const representativeModels = { "codex-oauth-token": "gpt-6-luna" } as const;
+  const representativeModels = {
+    "codex-oauth-token": "gpt-6-luna",
+  } as const;
 
   it.each(
     USER_OWNED_GPT_FAST_BDD_ROUTES.filter((route) => {

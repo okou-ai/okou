@@ -468,8 +468,7 @@ function catalogModelUsageProvider(
   catalog: ModelCatalog,
   modelProvider: ResolvedModelProviderEnvironment | null,
 ): string | undefined {
-  // A provider-only model ID (for example a BYOK provider default) has no
-  // catalog pricing identity.
+  // A route without a selected model has no catalog pricing identity.
   if (!modelProvider?.selectedModel) {
     return undefined;
   }

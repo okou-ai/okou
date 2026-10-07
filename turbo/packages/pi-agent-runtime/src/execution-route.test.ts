@@ -1,7 +1,14 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-import type { PiModelConfig } from "@okouai/api-contracts/contracts/runners";
+import {
+  piModelConfigSchema,
+  type PiModelConfig,
+} from "@okouai/api-contracts/contracts/runners";
 
-import { materializePiAgentModelConfig } from "./credential";
+import {
+  materializePiAgentModelConfig,
+  materializePiExecutionRoute,
+} from "./credential";
+import { normalizePiExecutionRoute } from "./execution-route";
 import type { PiAgentModelConfig, PiAgentStreamConfig } from "./types";
 import { piAgentStreamForConfig } from "./model";
 import { registeredModelConfig } from "./session-model";
@@ -34,22 +41,16 @@ describe("captured Pi execution intent", () => {
   });
 
   it.each([1, 2, 3] as const)(
-    "owns generation %s header policy before credential resolution",
+    "owns the generation %s Auto route before credential resolution",
     async (generation) => {
-      const header = {
-        name: "X-Selected-Key",
-        valueTemplate: "Key {{secret}}",
-      };
       const config = {
-        provider: "openai",
-        baseUrl: "https://gateway.example.com/v1",
-        model: "company-production",
-        catalogModel: "gpt-6-luna",
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "okou-1.0",
         ...(generation === 1
           ? {
               apiKeyEnv: "OPENAI_API_KEY",
-              credentialSecretName: "OPENAI_API_KEY",
-              credentialHeader: header,
+              credentialSecretName: "OPENROUTER_API_KEY",
             }
           : {
               schemaVersion: generation,
@@ -59,35 +60,41 @@ describe("captured Pi execution intent", () => {
                 {
                   kind: "api-key",
                   environment: "OPENAI_API_KEY",
-                  secretName: "OPENAI_API_KEY",
-                  credentialHeader: header,
+                  secretName: "OPENROUTER_API_KEY",
                 },
               ],
             }),
       } satisfies PiModelConfig;
-      const materializing = materializePiAgentModelConfig({
-        config,
-        target: "direct",
+      const wire = piModelConfigSchema.parse(config);
+      const before = JSON.stringify(wire);
+      const route = normalizePiExecutionRoute(wire);
+      expect(route).not.toHaveProperty("schemaVersion");
+      const materializing = materializePiExecutionRoute({
+        route,
         async resolveCredential() {
           await Promise.resolve();
           return "selected-secret";
         },
       });
-      header.name = "Authorization";
-      header.valueTemplate = "Changed {{secret}}";
+      Object.defineProperty(route, "model", { value: "unselected-model" });
       expect(await materializing).toStrictEqual({
-        provider: "openai",
-        baseUrl: "https://gateway.example.com/v1",
-        model: "company-production",
-        catalogModel: "gpt-6-luna",
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "okou-1.0",
         dialect: "openai-responses",
         transport: "sse",
-        apiKey: "unused",
-        requestHeaders: {
-          authorization: null,
-          "X-Selected-Key": "Key selected-secret",
-        },
+        apiKey: "selected-secret",
       });
+      expect(JSON.stringify(wire)).toBe(before);
+      expect(JSON.stringify(route)).not.toContain("selected-secret");
+      await expect(
+        materializePiAgentModelConfig({
+          config,
+          resolveCredential() {
+            return "selected-secret";
+          },
+        }),
+      ).resolves.toMatchObject({ model: "okou-1.0" });
     },
   );
 });

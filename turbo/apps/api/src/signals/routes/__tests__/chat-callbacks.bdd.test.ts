@@ -3501,7 +3501,7 @@ describe("CHAT-02: drain-time admission failure", () => {
 describe("CHAT-02: failed chat callbacks", () => {
   it.each([
     {
-      name: "BYOK balance",
+      name: "personal subscription balance",
       builtIn: false,
       reason: "provider_insufficient_credits",
       error: "Credit balance is too low",
@@ -3510,11 +3510,11 @@ describe("CHAT-02: failed chat callbacks", () => {
       publicReason: "provider_insufficient_credits",
     },
     {
-      name: "vm0 credits during BYOK",
+      name: "vm0 credits during personal subscription run",
       builtIn: false,
       reason: "insufficient_credits",
       error:
-        "Insufficient credits. Add credits or configure your own API key to continue.",
+        "Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue.",
       expected: "insufficient_credits",
       publicReason: "insufficient_credits",
     },
@@ -3531,7 +3531,7 @@ describe("CHAT-02: failed chat callbacks", () => {
       builtIn: true,
       reason: "insufficient_credits",
       error:
-        "Insufficient credits. Add credits or configure your own API key to continue.",
+        "Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue.",
       expected: "insufficient_credits",
       publicReason: "insufficient_credits",
     },
@@ -3761,7 +3761,7 @@ describe("CHAT-02: failed chat callbacks", () => {
         _time: new Date(now()).toISOString(),
         action: "ALLOW",
         firewall_billable: true,
-        firewall_name: "model-provider:anthropic-api-key",
+        firewall_name: "model-provider:claude-code-oauth-token",
         status: 400,
         response_body: providerBody,
       };

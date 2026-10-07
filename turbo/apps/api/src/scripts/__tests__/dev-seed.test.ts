@@ -57,52 +57,7 @@ describe("official skill volume seeds", () => {
 });
 
 describe("buildBuiltInModelKeys", () => {
-  it("falls back to ANTHROPIC_API_KEY for Anthropic dev seed rows", () => {
-    const anthropicKeys = buildVendorKeys("anthropic", {
-      DEV_MODEL_ANTHROPIC_KEY: "",
-      ANTHROPIC_API_KEY: "provider-anthropic-key",
-    });
-
-    expect(anthropicKeys).toStrictEqual([
-      {
-        apiKey: "provider-anthropic-key",
-        label: "dev-seed",
-        vendor: "anthropic",
-      },
-    ]);
-  });
-
-  it("builds DeepSeek dev seed rows from DEV_MODEL_DEEPSEEK_KEY", () => {
-    const deepSeekKeys = buildVendorKeys("deepseek", {
-      DEV_MODEL_DEEPSEEK_KEY: "dev-deepseek-key",
-      DEEPSEEK_API_KEY: "provider-deepseek-key",
-    });
-
-    expect(deepSeekKeys).toStrictEqual([
-      {
-        apiKey: "dev-deepseek-key",
-        label: "dev-seed",
-        vendor: "deepseek",
-      },
-    ]);
-  });
-
-  it("builds one OpenAI dev seed row", () => {
-    const openAiKeys = buildVendorKeys("openai", {
-      DEV_MODEL_OPENAI_KEY: "dev-openai-key",
-      OPENAI_API_KEY: "provider-openai-key",
-    });
-
-    expect(openAiKeys).toStrictEqual([
-      {
-        apiKey: "dev-openai-key",
-        label: "dev-seed",
-        vendor: "openai",
-      },
-    ]);
-  });
-
-  it("builds the secondary OpenRouter built-in model key row", () => {
+  it("builds the OpenRouter built-in model key row", () => {
     const openRouterKeys = buildVendorKeys("openrouter", {
       DEV_MODEL_OPENROUTER_KEY: "dev-openrouter-key",
     });
@@ -114,14 +69,6 @@ describe("buildBuiltInModelKeys", () => {
         vendor: "openrouter",
       },
     ]);
-  });
-
-  it("requires DEV_MODEL_DEEPSEEK_KEY for DeepSeek dev seed rows", () => {
-    const deepSeekKeys = buildVendorKeys("deepseek", {
-      DEEPSEEK_API_KEY: "provider-deepseek-key",
-    });
-
-    expect(deepSeekKeys).toStrictEqual([]);
   });
 });
 

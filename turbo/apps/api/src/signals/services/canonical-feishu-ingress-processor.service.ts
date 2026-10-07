@@ -393,7 +393,6 @@ const persistCanonicalFeishuIngress$ = command(
           {
             orgId: args.installation.orgId,
             userId: args.connection.userId,
-            defaultSource: undefined,
             orgPlanCapabilities: undefined,
           },
           signal,

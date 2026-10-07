@@ -23,6 +23,9 @@ rollout rules.
   actual local-tool consumers, backpressure, interruption, and verification.
 - [Deployment compatibility](./deployment-compatibility.md): independently
   deployed API/Runner/Sandbox, commit-addressed CLI, history, and memory readers.
+- [Native provider preparation](./pi-native-provider-preparation.md): historical
+  record of the removed generation 4 native transport, credential/billing
+  ownership, and activation gates. No native route remains.
 - [Preparation timing](./pi-preparation-timing.md): bounded Sandbox session
   initialization observations, launch transaction/activation boundaries, and
   transport correlation.
@@ -64,11 +67,11 @@ services or a command accessor.
 | Memory work and publication         | [Stage 1 worker](../turbo/apps/api/src/signals/services/pi-memory-stage1-worker.service.ts) owns extraction claims; [Phase 2 worker](../turbo/apps/api/src/signals/services/pi-memory-phase2-worker.service.ts) and [jobs](../turbo/apps/api/src/signals/services/pi-memory-phase2-job.service.ts) own durable leases. [Local filesystem boundary](../turbo/packages/pi-agent-runtime/src/phase2-memory-filesystem.ts) prepares/applies validated bytes; ordinary checkpoint publication owns durable Storage changes. [Maintenance completion](../turbo/apps/api/src/signals/services/pi-memory-phase2-maintenance.service.ts) observes the exact run/checkpoint, not a new Storage writer. |
 | Public projection and accounting    | Guest projects public content/usage. [Stage 1 usage](../turbo/apps/api/src/signals/services/pi-memory-stage1-usage.service.ts), and Runner/proxy ingestion retain their separate request owners. Public token counters are not the billing journal.                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
-Product model selection, SDK catalog identity, upstream request model,
-credential/account owner, and billing owner are distinct.
+Product model selection, SDK catalog identity, upstream request model or Bedrock
+inference profile, credential/account owner, and billing owner are distinct.
 The captured route carries that meaning through API and Sandbox; adapters do not
-reselect a provider or infer a different account from a model name. Explicit
-headers, firewall placeholders,
+reselect a provider or infer a different account from a model name. Native
+destination/DNS/redirect checks, explicit headers, firewall placeholders,
 subscription account binding, and dialect-specific tier policy remain at their
 existing trust boundaries.
 
@@ -192,13 +195,18 @@ are not replayed by an API executor.
 
 ## Model failure diagnostics
 
-The owned OpenAI Responses and Codex Responses fetch
+The owned OpenAI Responses, Codex Responses and Anthropic Messages fetch
 boundaries record the last transport attempt's observed HTTP status, attempt
 count and optional allowlisted failure reason. A bounded non-success body is
 classified before the SDK rewrites it; successful response bodies keep their
 native streaming path. Failed native assistant messages carry this evidence in
 `okou_model_request`. Both stream iteration and `result()` expose the same
-diagnostic; sandbox usage is recorded by the Runner proxy.
+diagnostic. Bedrock records actual HTTP status and attempts through its native
+Smithy handler. Its event-stream deserializer classifies only successfully
+decoded, consumed modeled error events or exceptions thrown by the SDK. Unknown
+normal events remain ignored. A later buffered error frame cannot replace an
+earlier protocol or adapter failure. The shared handler continues forwarding original bytes and propagating source
+errors and SDK cancellation; sandbox usage is recorded by the Runner proxy.
 
 Request rejection and response-body read failure also retain optional
 `transportFailure` before the SDK reduces the exception to display text. It
@@ -396,7 +404,7 @@ retire an older launch, resource, manifest, session, or persisted reader.
 
 | Surface and actual consumers                                                                                                                                                                                                                              | Why retained                                                                                                                                    | Decisive gate and authority                                                                                                                                                                                                                                                                                                                                                            |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Model carriers Gen1–Gen3: [runners.ts](../turbo/packages/api-contracts/src/contracts/runners.ts), route normalizer, [claim capability](../turbo/apps/api/src/signals/services/pi-model-config-claim-capability.ts), CLI and Runner readers                | Gen1 remains the canonical field-absent public Responses carrier. Gen2/3 dialect/tier are active contracts.                                     | [#33966](https://github.com/vm0-ai/vm0/issues/33966) removes only the optional Gen1 wire `api` after the [September 14 readiness acceptance](https://github.com/vm0-ai/vm0/issues/31085#issuecomment-5660026283). Strict TypeScript readers reject the key; generated Rust DTOs no longer represent or retain it. Gen1, the active Codex dialect and SDK `Model.api` remain supported. |
+| Model carriers Gen1–Gen3: [runners.ts](../turbo/packages/api-contracts/src/contracts/runners.ts), route normalizer, [claim capability](../turbo/apps/api/src/signals/services/pi-model-config-claim-capability.ts), CLI and Runner readers                | Gen1 remains the canonical field-absent public Responses carrier. Gen2/3 dialect/tier are active contracts; Gen4 native was removed.            | [#33966](https://github.com/vm0-ai/vm0/issues/33966) removes only the optional Gen1 wire `api` after the [September 14 readiness acceptance](https://github.com/vm0-ai/vm0/issues/31085#issuecomment-5660026283). Strict TypeScript readers reject the key; generated Rust DTOs no longer represent or retain it. Gen1, the active Codex dialect and SDK `Model.api` remain supported. |
 | Launch snapshot V3, Pi launch config V2, private payload V1, maintenance input V1; API creation, Runner serialization and CLI parsing                                                                                                                     | Run identity and private inputs have their own strict schemas and captured lifetimes.                                                           | Audit each writer/reader and all supported old/new pairs before changing its shape; [deployment compatibility](./deployment-compatibility.md) governs release, queue, process and rollback evidence. D changes none.                                                                                                                                                                   |
 | Resource snapshots V1/V2; [snapshot service](../turbo/apps/api/src/signals/services/pi-resource-snapshot.service.ts), [resources.ts](../turbo/packages/pi-agent-runtime/src/resources.ts), shared session construction                                    | V2 adds frozen recall; both snapshots still describe admitted immutable resources. B derives runtime types from these contracts.                | Retire only with proof all captured contexts and supported readers/rollback paths use the replacement; schema numbering or absent sampled traffic is insufficient.                                                                                                                                                                                                                     |
 | Retired API-first handoff and producer contracts                                                                                                                                                                                                          | Removed in Release 7; no current runtime reader.                                                                                                | Historical rollout receipts and the explicit Release 7 rollback floor remain in [deployment compatibility](./deployment-compatibility.md).                                                                                                                                                                                                                                             |
@@ -433,7 +441,8 @@ the later model-admission upgrade rebased all three patches onto 0.87.1.
 | [pi-coding-agent](../turbo/patches/@earendil-works__pi-coding-agent@0.87.1.patch): AgentSession continuation and pre-response preparation                         | Await settlement extensions once while busy, flush native custom messages, retain `lastCompletedTurn`, and propagate cancellation through next-response compaction/auth/retry/preparation. Keep matching JS/declarations and cancellation/session fixtures until a pinned upstream replacement passes them. No new state machine or replay journal.                                                                                                                                                                                  |
 | Same coding-agent patch: official local Bash tool, `OutputAccumulator`, shared child-process helper                                                               | Pace both pipes through spool drain and final flush; preserve caller timeout, abort, process cleanup, byte order, and complete-file success. `core/exec.js` still calls the helper without drain options; `AgentSession.executeBash` uses the independent executor. These supported callers justify optional helper arguments, not a claim that every executor is paced. Retirement requires the [real child/file spool regressions](../turbo/packages/pi-agent-runtime/bash-spool-backpressure.md) against an upstream replacement. |
 | Same coding-agent patch: Photon import, image resizing, packed CLI worker/fallback                                                                                | Normalize the CJS default import while preserving worker and fallback behavior. [CLI bundling](../turbo/apps/cli/tsup.config.ts) ships the image worker and WASM. Removal requires verified upstream interop plus actual packed CLI image/worker/fallback execution; a source-only import check is insufficient.                                                                                                                                                                                                                     |
-| [pi-ai](../turbo/patches/@earendil-works__pi-ai@0.87.1.patch): Codex Responses via `model.ts`                                                                     | Explicit selected `accountId` wins over JWT extraction. Current Okou binding remains mandatory; the upstream JWT fallback still serves SDK callers such as summarization auth paths that omit this additive option. Its comment names [#31373](https://github.com/vm0-ai/vm0/issues/31373): remove only after every supported caller supplies explicit identity and the recorded Runner/Sandbox drain passes. Closure of a delivery issue alone is not that caller proof.                                                            |
+| [pi-ai](../turbo/patches/@earendil-works__pi-ai@0.87.1.patch): Bedrock adapter `clientConfig` option                                                              | Its only Okou caller, the generation 4 native stream adapter, was removed; no current route supplies `clientConfig`, so upstream SDK callers use the default branch. The hunk is a removal candidate and is not a retained native contract.                                                                                                                                                                                                                                                                                          |
+| Same pi-ai patch: Codex Responses via `model.ts`                                                                                                                  | Explicit selected `accountId` wins over JWT extraction. Current Okou binding remains mandatory; the upstream JWT fallback still serves SDK callers such as summarization auth paths that omit this additive option. Its comment names [#31373](https://github.com/vm0-ai/vm0/issues/31373): remove only after every supported caller supplies explicit identity and the recorded Runner/Sandbox drain passes. Closure of a delivery issue alone is not that caller proof.                                                            |
 
 A bounded upstream follow-up is to provide supported unresolved-tool continuation
 with native awaited settlement/cancellation and explicit provider/account
@@ -492,9 +501,8 @@ production release or fleet-drain evidence.
 Chat stores effort preferences per model in `model_settings`. At run admission,
 normal sends, queued inputs, and workflow launches resolve the preference against
 the selected runtime and concrete provider. An unsupported route choice falls
-back to the model default without rewriting the preference. DeepSeek defaults to
-`high`, supported by both its direct and OpenRouter routes; their other choices
-remain distinct. Claude's `extra` product label maps to Pi's `xhigh` level.
+back to the route's `model_routes.default_effort` without rewriting the
+preference. Claude's `extra` product label maps to Pi's `xhigh` level.
 
 The effective preference is captured in `agent_runs.reasoning_effort` and applied
 to the existing `piModelConfig.thinkingLevel` field before the execution context
@@ -503,11 +511,11 @@ When starting a new run from prior JSONL, the Sandbox appends a thinking
 change if the captured level differs. Historical entries remain intact, and the
 run keeps its captured level. Launches without a configured level
 retain the SDK session/default behavior. Memory learning and consolidation keep
-their own model policies.
+their own model binding.
 
-The model-policy API advertises the current concrete built-in provider to the
-picker; server admission resolves it again when the run starts. This advisory
-response does not reserve a route. New API launch contexts select the corresponding
+`GET /api/run-models` lists Auto and the caller's connected personal
+subscription models for the picker; server admission resolves the route again
+when the run starts. This advisory response does not reserve a route. New API launch contexts select the corresponding
 commit-addressed CLI containing the runtime change; queued execution contexts retain
 the CLI and configuration they captured. API rollback does not rewrite stored effort
 or history; this staff-only feature requires the updated API and CLI to honor changed

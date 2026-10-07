@@ -37,9 +37,6 @@ const DEFAULT_AGENTS: AgentResponse[] = [
     description: null,
     sound: null,
     avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: "private",
   },
 ];
@@ -57,9 +54,6 @@ function createMockAgentResponse(agent: MockAgentResponse): AgentResponse {
     description: null,
     sound: null,
     avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: "private",
     ...agent,
   };
@@ -237,9 +231,6 @@ export const apiAgentsHandlers = [
       displayName: null,
       sound: null,
       avatarUrl: null,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "public",
     });
   }),

@@ -3516,7 +3516,7 @@ mod tests {
         assert!(!body.to_string().contains("path"));
         assert_eq!(
             body["capabilities"]["piModelConfigGenerations"],
-            serde_json::json!([1, 2, 3, 4])
+            serde_json::json!([1, 2, 3])
         );
 
         let runner_identity = test_runner_identity();

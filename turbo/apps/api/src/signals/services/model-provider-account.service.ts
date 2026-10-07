@@ -449,7 +449,7 @@ function invalidateAccountExpiry(
 ) {
   for (const binding of bindings) {
     invalidateCodexResetCreditExpiry(
-      { scope: "personal", orgId: args.orgId, userId: args.userId },
+      { orgId: args.orgId, userId: args.userId },
       { binding },
     );
   }

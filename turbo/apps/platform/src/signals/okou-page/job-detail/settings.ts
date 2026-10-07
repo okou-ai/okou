@@ -15,9 +15,6 @@ interface AgentSettingsUpdate {
   description?: string;
   sound?: string;
   avatarUrl?: string | null;
-  modelProviderId?: string | null;
-  selectedModel?: string | null;
-  preferPersonalProvider?: boolean;
   visibility?: "public" | "private";
 }
 

@@ -29,10 +29,10 @@ historical public bytes private. Existing canonical operations and multipart
 uploads retain their allocated bucket on retry. Social jobs record the storage
 choice in their request snapshot; older jobs without that field remain public.
 
-Web previews, Agent downloads, image recognition, template import/preview, and
-Drive sync resolve the stored location. Providers that fetch bytes receive
-temporary signed URLs; durable URL fields retain the complete authenticated App
-URL while storage metadata retains the host-independent ten-character reference.
+Web previews, Agent downloads, template import/preview, and Drive sync resolve
+the stored location. Providers that fetch bytes receive temporary signed URLs;
+durable URL fields retain the complete authenticated App URL while storage
+metadata retains the host-independent ten-character reference.
 Teams and GitHub message links to new private files use that same App URL.
 Conversation sharing copies private attachment bytes into private snapshots
 controlled by the conversation's existing share policy, including when creation

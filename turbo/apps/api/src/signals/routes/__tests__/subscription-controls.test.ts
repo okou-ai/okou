@@ -62,7 +62,6 @@ async function fixture() {
   const accountIds: string[] = [];
   for (let index = 0; index < 2; index += 1) {
     mockCodexDeviceAuthProvider({
-      tokenScope: "personal",
       accountId: `account-${randomUUID()}`,
       workspaceName: `Workspace ${index}`,
     });

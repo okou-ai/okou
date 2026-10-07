@@ -12,7 +12,7 @@ import {
   WORKFLOW_WEBHOOK_BODY_LIMIT_BYTES,
 } from "../services/workflow-webhook-automation.service";
 
-type WebhookErrorStatus = 400 | 401 | 404 | 413 | 429 | 500;
+type WebhookErrorStatus = 401 | 404 | 413 | 429;
 
 function jsonError(message: string, status: WebhookErrorStatus): Response {
   return Response.json({ error: message }, { status });
@@ -72,17 +72,11 @@ const postWorkflowAutomationWebhook$ = command(
       case "unauthorized": {
         return jsonError("Unauthorized", 401);
       }
-      case "bad_request": {
-        return jsonError(result.message, 400);
-      }
       case "payload_too_large": {
         return jsonError("Payload too large", 413);
       }
       case "rate_limited": {
         return jsonError("Rate limited", 429);
-      }
-      case "run_error": {
-        return jsonError(result.message, 500);
       }
     }
   },

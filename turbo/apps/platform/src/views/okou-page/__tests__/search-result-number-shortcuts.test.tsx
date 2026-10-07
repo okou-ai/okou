@@ -76,9 +76,6 @@ function installSearchResources() {
     description: null,
     sound: null,
     avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: "private" as const,
   };
   context.mocks.api(agentsMainContract.list, ({ respond }) => {

@@ -129,7 +129,7 @@ export const RUN_ERROR_GUIDANCE: Record<
   NO_MODEL_PROVIDER: {
     title: "No model provider configured",
     guidance: "Configure a model provider to start running agents.",
-    cliHint: "okou model-provider set --help",
+    cliHint: "okou model ls",
   },
   INSUFFICIENT_CREDITS: {
     title: "Credits depleted",
@@ -265,12 +265,6 @@ export const CODEX_OAUTH_RECONNECT_REQUIRED_MESSAGE =
 export const CLAUDE_CODE_SUBSCRIPTION_RECONNECT_REQUIRED_MESSAGE =
   "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.";
 
-export const CLAUDE_CODE_ANTHROPIC_API_KEY_ADMIN_MESSAGE =
-  "Claude Code could not authenticate with the configured Anthropic API key. Update or replace the API key in Model Providers, then retry.";
-
-export const CLAUDE_CODE_ANTHROPIC_API_KEY_MEMBER_MESSAGE =
-  "Claude Code could not authenticate with the configured Anthropic API key. Ask a workspace admin to update or replace the API key.";
-
 export const CLAUDE_CODE_TERMS_ACCEPTANCE_REQUIRED_MESSAGE =
   "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Model Providers, accept the updated terms and policy, then retry.";
 
@@ -345,8 +339,6 @@ export const ACTIONABLE_RUN_ERROR_SNIPPETS = [
   "weekly limit",
   CODEX_OAUTH_RECONNECT_REQUIRED_MESSAGE,
   CLAUDE_CODE_SUBSCRIPTION_RECONNECT_REQUIRED_MESSAGE,
-  CLAUDE_CODE_ANTHROPIC_API_KEY_ADMIN_MESSAGE,
-  CLAUDE_CODE_ANTHROPIC_API_KEY_MEMBER_MESSAGE,
   CLAUDE_CODE_TERMS_ACCEPTANCE_REQUIRED_MESSAGE,
 ] as const;
 

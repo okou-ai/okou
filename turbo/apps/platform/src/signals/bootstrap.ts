@@ -94,7 +94,7 @@ import { setupLabPage$ } from "./lab-page/lab-page-setup.ts";
 import { setupExportPage$ } from "./export-page/export-page-setup.ts";
 import { initSlackOrg$ as handleSlackRedirect$ } from "./okou-page/slack.ts";
 import { setupSkeletonPage$, setupErrorPage$ } from "./skeleton-page-setup.ts";
-import { hideAppSkeleton$, initBootstrapSkeleton$ } from "./app-skeleton.ts";
+import { hideAppSkeleton$ } from "./app-skeleton.ts";
 import { setupRedeemCampaignPage$ } from "./redeem-campaign/redeem-campaign-page-setup.ts";
 import { updatePage$ } from "./react-router.ts";
 import { setupLegacySettingsRedirect$ } from "./okou-page/settings/legacy-settings-redirect.ts";
@@ -186,8 +186,6 @@ const setupPwaMeRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
 });
-
-const SOURCES_FIRST_ONBOARDING_PAGE_GROUP = "sources-first-onboarding";
 
 const ROUTE_CONFIG = [
   {
@@ -453,37 +451,30 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.onboarding,
     setup: setupAuthPageWrapper(setupOnboardingEntryPage$),
-    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
     path: ROUTES.onboardingSources,
     setup: setupAuthPageWrapper(setupOnboardingSourcesPage$),
-    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
     path: ROUTES.onboardingTeam,
     setup: setupAuthPageWrapper(setupOnboardingTeamPage$),
-    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
     path: ROUTES.onboardingExperience,
     setup: setupAuthPageWrapper(setupOnboardingExperiencePage$),
-    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
     path: ROUTES.onboardingSkills,
     setup: setupAuthPageWrapper(setupOnboardingSkillsPage$),
-    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
     path: ROUTES.onboardingSlack,
     setup: setupAuthPageWrapper(setupOnboardingSlackPage$),
-    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
     path: ROUTES.onboardingReady,
     setup: setupAuthPageWrapper(setupOnboardingReadyPage$),
-    pageGroup: SOURCES_FIRST_ONBOARDING_PAGE_GROUP,
   },
   {
     path: ROUTES.signInToken,
@@ -657,7 +648,6 @@ export const bootstrap$ = command(
     set(captureInvitationRedirect$);
     set(markBootstrapLocaleInitStarted$);
     set(setRootSignal$, signal);
-    set(initBootstrapSkeleton$);
     // Claims `clerkUser$` in this synchronous pass. The daemons and route
     // setups below read it, and without an owner it never settles.
     const clerkIdentitySetup = set(setupClerkUser$, signal);

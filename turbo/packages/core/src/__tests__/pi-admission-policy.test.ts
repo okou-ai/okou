@@ -10,8 +10,8 @@ import {
   SEEDED_ROUTED_MODELS,
 } from "./seeded-model-catalog";
 
-// Enumerate the platform source boundary so adding catalog rows cannot admit
-// another platform Pi route.
+// Enumerate the platform source boundary so adding catalog rows cannot widen
+// Pi admission beyond Auto and personal Codex subscriptions.
 describe("Auto-only platform admission", () => {
   it("admits only Auto from the platform, regardless of legacy catalog rows", () => {
     const admitted = SEEDED_ROUTED_MODELS.filter((model) => {

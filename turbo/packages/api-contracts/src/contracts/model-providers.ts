@@ -18,7 +18,6 @@ export {
   MODEL_PROVIDER_FIREWALL_CONFIGS,
   MODEL_PROVIDER_PI_APIS,
   getModelProviderFirewall,
-  getModelProviderPiChatCompletionsUrl,
   getModelProviderPiEndpoint,
 } from "./model-provider-firewalls";
 export type {
@@ -30,7 +29,6 @@ export type {
   BuiltInModelProviderType,
   ModelProviderFramework,
   ModelProviderType,
-  ModelProviderWriteType,
 } from "./model-provider-types";
 
 const deepseekV4FlashCatalogModel = DEEPSEEK_V4_FLASH_MODEL_CATALOG.models[0];
@@ -48,20 +46,6 @@ const deepseekV41FlashCatalogModel = {
 const DEEPSEEK_V4_1_FLASH_MODEL_CATALOG = {
   ...DEEPSEEK_V4_FLASH_MODEL_CATALOG,
   models: [deepseekV41FlashCatalogModel],
-};
-
-const DEEPSEEK_MODEL_CATALOG = {
-  ...DEEPSEEK_V4_FLASH_MODEL_CATALOG,
-  models: [
-    {
-      ...deepseekV41FlashCatalogModel,
-      slug: "deepseek-flash",
-    },
-    {
-      ...deepseekV41FlashCatalogModel,
-      slug: "deepseek-v4-flash",
-    },
-  ],
 };
 
 export type { ModelPriceTier };
@@ -134,21 +118,6 @@ const MODEL_PROVIDER_CODEX_RUNTIME_CAPABILITIES: Partial<
   },
 };
 
-const MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS: Partial<
-  Record<ModelProviderType, ModelProviderCodexRuntimeConfig>
-> = {
-  deepseek: {
-    providerId: "deepseek",
-    name: "DeepSeek",
-    baseUrl: "https://api.deepseek.com/",
-    envKey: "OPENAI_API_KEY",
-    requiresOpenaiAuth: false,
-    wireApi: "responses",
-    supportsWebsockets: false,
-    modelCatalog: DEEPSEEK_MODEL_CATALOG,
-  },
-};
-
 /**
  * A run model ID on the wire. The global model catalog (served by
  * `GET /api/model-catalog`) is the authority; the API validates and resolves
@@ -189,11 +158,10 @@ export interface RestrictedPlanModelAccess {
 /**
  * Plan access of a catalog model on a route. A restricted plan runs only
  * catalog models flagged `builtInOnRestrictedPlans`, and only on Built-in
- * routes (a missing or unknown provider type is treated as Built-in). Every
- * other route is the organization's or member's own and is not a plan
- * entitlement; the one exception, a member's verified personal subscription
- * route, is decided by the API before it calls this (it passes an
- * unrestricted plan). A model outside the catalog (`access` undefined) is
+ * routes (a missing or unknown provider type is treated as Built-in). A
+ * member's personal subscription route is not a plan entitlement; when the
+ * subscription is verified the API decides access before it calls this (it
+ * passes an unrestricted plan). A model outside the catalog (`access` undefined) is
  * never allowed on a restricted plan.
  */
 export function getCatalogRunModelRouteAccess(
@@ -217,11 +185,7 @@ export function getCatalogRunModelRouteAccess(
  * Used at build-context time to resolve the meta-provider to a real provider.
  */
 export const BUILT_IN_MODEL_ROUTE_PROVIDERS = {
-  "anthropic-api-key": { vendor: "anthropic" },
-  "openrouter-api-key": { vendor: "openrouter" },
-  deepseek: { vendor: "deepseek" },
   "openrouter-codex": { vendor: "openrouter" },
-  "openai-api-key": { vendor: "openai" },
 } as const satisfies Partial<Record<ModelProviderType, { vendor: string }>>;
 
 export type BuiltInModelRouteProviderType =
@@ -271,79 +235,6 @@ export function normalizeBuiltInModelId(model: string): string {
   return BUILT_IN_MODEL_ALIAS_LOOKUP[model] ?? model;
 }
 
-export type ModelImageInputSupport = "supported" | "unsupported" | "unknown";
-
-const IMAGE_INPUT_SUPPORTED_MODELS = new Set([
-  "gpt-6-astra",
-  "openai/gpt-6-astra",
-  "gpt-6.1-sol",
-  "gpt-6-sol",
-  "openai/gpt-6-sol",
-  "gpt-6-luna",
-  "openai/gpt-6-luna",
-  "deepseek-v4.1-flash",
-  "deepseek/deepseek-v4.1-flash",
-  "claude-fable-5-1",
-  "claude-opus-5-5",
-  "claude-opus-5",
-  "claude-opus-4-8",
-  "claude-sonnet-5-5",
-  "claude-sonnet-5",
-  "claude-sonnet-4-6",
-  "anthropic/claude-fable-5.1",
-  "anthropic/claude-opus-5.5",
-  "anthropic/claude-opus-5",
-  "anthropic/claude-opus-4.8",
-  "anthropic/claude-sonnet-5-5",
-  "anthropic/claude-sonnet-5",
-  "anthropic/claude-opus-4.5",
-  "anthropic/claude-sonnet-4.6",
-  "anthropic/claude-sonnet-4.5",
-]);
-
-const IMAGE_INPUT_UNSUPPORTED_MODELS = new Set([
-  "deepseek-v4-flash",
-  "deepseek-v4-pro",
-  "minimax/minimax-m2.5",
-]);
-
-/** Pass the resolved concrete provider to recognize provider-specific aliases. */
-export function getModelImageInputSupport(
-  model: string | null | undefined,
-  providerType?: ModelProviderType,
-): ModelImageInputSupport {
-  if (!model) {
-    return "unknown";
-  }
-  if (
-    providerType === "deepseek" &&
-    (model === "deepseek-flash" || model === "deepseek-v4-flash")
-  ) {
-    return "supported";
-  }
-  const normalized = normalizeBuiltInModelId(model);
-  if (
-    IMAGE_INPUT_SUPPORTED_MODELS.has(normalized) ||
-    IMAGE_INPUT_SUPPORTED_MODELS.has(model)
-  ) {
-    return "supported";
-  }
-  if (
-    IMAGE_INPUT_UNSUPPORTED_MODELS.has(normalized) ||
-    IMAGE_INPUT_UNSUPPORTED_MODELS.has(model)
-  ) {
-    return "unsupported";
-  }
-  return "unknown";
-}
-
-export function modelSupportsImageInput(
-  model: string | null | undefined,
-  providerType?: ModelProviderType,
-): boolean {
-  return getModelImageInputSupport(model, providerType) === "supported";
-}
-
 /**
  * Model Provider type configuration
  * Maps type to framework, secret name, and display info
@@ -384,72 +275,8 @@ export const MODEL_PROVIDER_TYPES = {
     ] as string[],
     defaultModel: "claude-sonnet-5",
   },
-  "anthropic-api-key": {
-    framework: "claude-code" as const,
-    secretName: "ANTHROPIC_API_KEY",
-    label: "Anthropic",
-    secretLabel: "API key",
-    helpText:
-      "Get your API key at: https://console.anthropic.com/settings/keys",
-    envBindings: {
-      ANTHROPIC_API_KEY: "$secret",
-      ANTHROPIC_MODEL: "$model",
-    } satisfies ModelProviderEnvBindings,
-    models: [
-      "claude-fable-5-1",
-      "claude-opus-5-5",
-      "claude-opus-5",
-      "claude-sonnet-5-5",
-      "claude-sonnet-5",
-    ] as string[],
-    defaultModel: "claude-sonnet-5",
-  },
-  "openrouter-api-key": {
-    framework: "claude-code" as const,
-    secretName: "OPENROUTER_API_KEY",
-    label: "OpenRouter",
-    secretLabel: "API key",
-    helpText: "Get your API key at: https://openrouter.ai/settings/keys",
-    envBindings: {
-      ANTHROPIC_AUTH_TOKEN: "$secret",
-      ANTHROPIC_BASE_URL: "https://openrouter.ai/api",
-      ANTHROPIC_API_KEY: "",
-      ANTHROPIC_MODEL: "$model",
-      ANTHROPIC_DEFAULT_OPUS_MODEL: "$model",
-      ANTHROPIC_DEFAULT_SONNET_MODEL: "$model",
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: "$model",
-      CLAUDE_CODE_SUBAGENT_MODEL: "$model",
-    } satisfies ModelProviderEnvBindings,
-    models: [
-      "anthropic/claude-fable-5.1",
-      "anthropic/claude-opus-5.5",
-      "anthropic/claude-opus-5",
-      "anthropic/claude-sonnet-5",
-      "anthropic/claude-opus-4.5",
-      "anthropic/claude-sonnet-4.5",
-    ] as string[],
-    defaultModel: "",
-  },
-  deepseek: {
-    framework: "codex" as const,
-    secretName: "DEEPSEEK_API_KEY",
-    label: "DeepSeek",
-    secretLabel: "API key",
-    helpText: "Get your API key at: https://platform.deepseek.com/api_keys",
-    envBindings: {
-      OPENAI_API_KEY: "$secret",
-      OPENAI_BASE_URL: "https://api.deepseek.com/",
-      OPENAI_MODEL: "$model",
-    } satisfies ModelProviderEnvBindings,
-    models: ["deepseek-flash", "deepseek-v4-flash"] as string[],
-    defaultModel: "deepseek-flash",
-  },
-  // Codex-framework twin of openrouter-api-key. Same upstream gateway (OpenRouter)
-  // and same API key (shared secretName), but routes through OpenRouter's
-  // OpenAI-compatible endpoint surface for models that use the Codex framework.
-  // Pairing rule: the claude-code entry serves Anthropic Messages API
-  // (/v1/messages); this codex entry serves OpenAI Chat Completions / Responses
-  // (/v1/chat/completions, /v1/responses) under the same /api/v1 prefix.
+  // Concrete provider behind the platform Auto route (OpenAI Responses via
+  // OpenRouter).
   "openrouter-codex": {
     framework: "codex" as const,
     secretName: "OPENROUTER_API_KEY",
@@ -471,26 +298,6 @@ export const MODEL_PROVIDER_TYPES = {
       "deepseek/deepseek-v4-flash",
     ] as string[],
     defaultModel: "openai/gpt-5.6-luna",
-  },
-  "openai-api-key": {
-    framework: "codex" as const,
-    secretName: "OPENAI_API_KEY",
-    label: "OpenAI",
-    secretLabel: "API key",
-    helpText: "Get your API key at: https://platform.openai.com/api-keys",
-    envBindings: {
-      OPENAI_API_KEY: "$secret",
-      OPENAI_MODEL: "$model",
-    } satisfies ModelProviderEnvBindings,
-    models: [
-      "gpt-6-astra",
-      "gpt-6.1-sol",
-      "gpt-6-sol",
-      "gpt-6-luna",
-      "gpt-5.6-sol",
-      "gpt-5.6-luna",
-    ] as string[],
-    defaultModel: "gpt-5.6-sol",
   },
   "codex-oauth-token": {
     framework: "codex" as const,
@@ -596,7 +403,6 @@ export function normalizeRunModelId(model: string): string {
 }
 
 export const modelProviderTypeSchema = z.enum(MODEL_PROVIDER_TYPE_IDS);
-export const modelProviderWriteTypeSchema = z.enum(MODEL_PROVIDER_TYPE_IDS);
 
 export const modelProviderFrameworkSchema = z.enum(["claude-code", "codex"]);
 
@@ -696,15 +502,6 @@ export function getModelProviderEnvBindings(
 }
 
 /**
- * Get built-in Codex provider metadata for a static model provider.
- */
-export function getModelProviderCodexRuntimeConfig(
-  type: ModelProviderType,
-): ModelProviderCodexRuntimeConfig | undefined {
-  return MODEL_PROVIDER_CODEX_RUNTIME_CONFIGS[type];
-}
-
-/**
  * Get Codex runtime capabilities that apply independently from model metadata.
  */
 export function getModelProviderCodexRuntimeCapabilities(
@@ -734,14 +531,9 @@ export function getModelProviderCodexCatalogForModel(
     (logicalModel === "deepseek-v4.1-flash" ||
       logicalModel === "deepseek-v4-flash");
   const catalogModel = normalizeRunModelId(logicalModel);
-  // The native V4 alias serves V4.1 (the DeepSeek provider catalog). Other
-  // providers keep the original legacy catalog until their upstream mapping
-  // is verified.
   const sourceCatalog =
     catalogModel === "deepseek-v4-flash"
-      ? runtimeProviderType === "deepseek"
-        ? DEEPSEEK_MODEL_CATALOG
-        : DEEPSEEK_V4_FLASH_MODEL_CATALOG
+      ? DEEPSEEK_V4_FLASH_MODEL_CATALOG
       : Object.hasOwn(CODEX_MODEL_CATALOGS, catalogModel)
         ? CODEX_MODEL_CATALOGS[catalogModel]
         : undefined;
@@ -881,8 +673,7 @@ export type ModelProviderListResponse = z.infer<
  * Multi-auth providers use `authMethod` + `secrets` (map)
  */
 export const upsertModelProviderRequestSchema = z.object({
-  // Members connect only their own subscription accounts.
-  type: z.enum(["claude-code-oauth-token", "codex-oauth-token"]),
+  type: modelProviderTypeSchema,
   secret: z.string().min(1).optional(), // Legacy single secret
   authMethod: z.string().optional(), // For multi-auth providers
   secrets: z.record(z.string(), z.string()).optional(), // For multi-auth providers
@@ -906,11 +697,7 @@ export type UpsertModelProviderResponse = z.infer<
   typeof upsertModelProviderResponseSchema
 >;
 
-export const runModelRouteStatusSchema = z.enum([
-  "valid",
-  "missing_provider",
-  "invalid",
-]);
+export const runModelRouteStatusSchema = z.enum(["valid"]);
 
 export type RunModelRouteStatus = z.infer<typeof runModelRouteStatusSchema>;
 

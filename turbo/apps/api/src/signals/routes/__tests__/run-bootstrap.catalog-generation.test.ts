@@ -2,10 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockOptionalEnv } from "../../../lib/env";
-import {
-  invalidateApiTestConnectorCatalogCompatibility,
-  replaceApiTestConnectorCatalogFilteredAuthMethods,
-} from "../../../test-fixtures/connector-catalog";
+import { apiTestConnectorCatalogWithUnavailableAuthMethods } from "../../../test-fixtures/connector-catalog";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/connector-catalog-artifact";
@@ -54,14 +51,12 @@ describe("Run connector catalog selection", () => {
       "CAL_COM_OAUTH_CLIENT_ID",
       "api-test-calcom-oauth-client-id",
     );
-    await publisher.publish(API_TEST_CONNECTOR_CATALOG_ARTIFACT);
-    await replaceApiTestConnectorCatalogFilteredAuthMethods([
-      {
-        connectorSlug: "x",
-        authMethodId: "oauth",
-        reasons: ["missing-grant-provider"],
-      },
-    ]);
+    await publisher.publish(
+      apiTestConnectorCatalogWithUnavailableAuthMethods(
+        API_TEST_CONNECTOR_CATALOG_ARTIFACT,
+        [{ connectorSlug: "x", authMethodId: "oauth" }],
+      ),
+    );
     const filtered = await sendChatRun(actor, {
       agentId,
       prompt: "omit a compatibility-filtered connector method",
@@ -81,32 +76,6 @@ describe("Run connector catalog selection", () => {
     expect(claim.networkPolicies ?? {}).not.toHaveProperty("x");
     expect(claim).not.toHaveProperty("connectorPermissionBaseline");
     await cancelChatRun(actor, filtered.runId, sandboxHeaders);
-  });
-
-  it("rejects invalid projection compatibility", async () => {
-    const publisher = createPublicConnectorCatalog(context);
-    await publisher.publish(API_TEST_CONNECTOR_CATALOG_ARTIFACT);
-    const { actor, agentId } = await entitledNativeChatActor();
-    const api = createRunsApi(context);
-    await api.enableAgentConnectors(actor, agentId, ["x"]);
-    await publisher.publish(API_TEST_CONNECTOR_CATALOG_ARTIFACT);
-    await invalidateApiTestConnectorCatalogCompatibility();
-    const rejectedPrompt = "invalid projection compatibility rejection";
-    await expect(
-      api.readThreadLaunchFailure(actor, { agentId, prompt: rejectedPrompt }),
-    ).resolves.toStrictEqual({
-      pickError: "Accepted external connector catalog is unavailable",
-      inputError: "internal_error",
-    });
-    const runs = await api.listAgentRuns(actor, {
-      status: "queued,pending,running,completed,failed,timeout,cancelled",
-      limit: 100,
-    });
-    expect(
-      runs.runs.filter((run) => {
-        return run.prompt === rejectedPrompt;
-      }),
-    ).toHaveLength(0);
   });
 
   it("keeps captured connector entries across catalog rotation without loading the full payload", async () => {
@@ -137,13 +106,11 @@ describe("Run connector catalog selection", () => {
       "openai",
       "x",
     ]);
-    await replaceApiTestConnectorCatalogFilteredAuthMethods([
-      {
-        connectorSlug: "x",
-        authMethodId: "oauth",
-        reasons: ["missing-grant-provider"],
-      },
-    ]);
+    await publisher.publish(
+      apiTestConnectorCatalogWithUnavailableAuthMethods(first, [
+        { connectorSlug: "x", authMethodId: "oauth" },
+      ]),
+    );
     const clientEventId = randomUUID();
     const sent = await withDatabaseTransactionBarrierFixture(
       {

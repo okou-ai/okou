@@ -12,7 +12,6 @@ import type { Db } from "../external/db";
 import {
   loadMemberModelRouteContext,
   type MemberModelRouteContext,
-  type PreparedMemberModelRouteContext,
 } from "./effective-model-route.service";
 import type { ModelCatalog } from "./model-catalog.service";
 export type MemberSubscriptionModel = Readonly<{
@@ -68,14 +67,9 @@ export function memberSubscriptionModelRoutesFromCatalog(
 /** Membership-scoped catalog: no connected account, no subscription models. */
 export async function loadMemberSubscriptionModels(
   db: Pick<Db, "select">,
-  member: MemberModelRouteContext | PreparedMemberModelRouteContext,
+  member: MemberModelRouteContext,
 ): Promise<readonly MemberSubscriptionModel[]> {
-  const subscriptions =
-    "personalMetadata" in member
-      ? member.personalMetadata.kind === "not-applicable"
-        ? []
-        : (await member.personalMetadata.load()).subscriptions
-      : member.subscriptions;
+  const subscriptions = member.subscriptions;
   if (subscriptions.length === 0) {
     return [];
   }
@@ -151,12 +145,10 @@ export async function loadMemberSubscriptionModels(
 }
 
 /**
- * A disconnected subscription stops backing an Auto member's selection. Return
- * that member to the system default when no policy or remaining subscription
- * still offers the saved model.
+ * A disconnected subscription stops backing a member's selection. Return that
+ * member to Auto when no remaining subscription still offers the saved model.
  */
-export async function resetStaleAutoMemberSelection(
-  _catalogSnapshot: ModelCatalog,
+export async function resetDisconnectedMemberModelSelection(
   db: Db,
   orgId: string,
   userId: string,

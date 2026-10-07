@@ -540,6 +540,8 @@ async function setRunnerJobPiContextAsVersionedWriter(
   body: SetRunnerJobPiContextAsVersionedWriterAction,
   signal: AbortSignal,
 ): Promise<void> {
+  // This private infrastructure fixture models stored contexts to exercise
+  // the real claim API without changing production admission.
   const piContext = {
     cliAgentType: "pi",
     piSessionId: body.run_id,

@@ -2,21 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   MODEL_PROVIDER_FIREWALL_CONFIGS,
-  getModelProviderPiChatCompletionsUrl,
   getModelProviderPiEndpoint,
 } from "../model-provider-firewalls";
 
 const PI_RESPONSES_ROUTES = [
-  [
-    "deepseek",
-    "https://api.deepseek.com/",
-    "https://api.deepseek.com/responses",
-  ],
-  [
-    "openai-api-key",
-    "https://api.openai.com/v1",
-    "https://api.openai.com/v1/responses",
-  ],
   [
     "openrouter-codex",
     "https://openrouter.ai/api/v1",
@@ -67,9 +56,8 @@ describe("model provider firewall covers Pi Responses", () => {
 describe("non-Pi endpoint compatibility", () => {
   it("keeps unsupported providers and transports unavailable", () => {
     expect(
-      getModelProviderPiChatCompletionsUrl("anthropic-api-key"),
+      getModelProviderPiEndpoint("claude-code-oauth-token", "openai-responses"),
     ).toBeUndefined();
-    expect(getModelProviderPiChatCompletionsUrl("deepseek")).toBeUndefined();
     expect(
       getModelProviderPiEndpoint("openrouter-codex", "openai-codex-responses"),
     ).toBeUndefined();

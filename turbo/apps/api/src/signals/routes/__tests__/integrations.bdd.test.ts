@@ -4288,7 +4288,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       integrations.modelPickerSubmission({
         workspaceId: teamId,
         slackUserId,
-        selectedValue: "model-outside-policy",
+        selectedValue: "model-outside-run-models",
         channelId: "C_BDD_PICK",
       }),
     );

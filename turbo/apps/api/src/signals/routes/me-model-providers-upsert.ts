@@ -13,7 +13,22 @@ import { badRequestMessage } from "../../lib/error";
 import { handleCodexAuthJsonPaste } from "../services/codex-auth-json-paste-handler";
 import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
-import { upsertPersonalModelProviderAccount$ } from "../services/model-provider-account.service";
+import {
+  upsertPersonalModelProviderAccount$,
+  isPersonalSubscriptionProviderType,
+} from "../services/model-provider-account.service";
+
+function providerNotFound(type: string) {
+  return {
+    status: 404 as const,
+    body: {
+      error: {
+        message: `Provider "${type}" not found`,
+        code: "NOT_FOUND" as const,
+      },
+    },
+  };
+}
 
 function shapeAccountUpsertResult(
   provider: ModelProviderResponse,
@@ -39,7 +54,6 @@ const upsertPersonalCodexAuthJson$ = command(
   ) => {
     return await handleCodexAuthJsonPaste(
       {
-        scope: "personal",
         orgId: args.orgId,
         userId: args.userId,
         rawAuthJson: args.rawAuthJson,
@@ -83,6 +97,11 @@ const upsertInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return bodyResult.response;
   }
   const { type, secret, authMethod, secrets, selectedModel } = bodyResult.data;
+
+  // Personal provider routes only support subscription accounts.
+  if (!isPersonalSubscriptionProviderType(type)) {
+    return providerNotFound(type);
+  }
   const featureSwitchContext = await get(
     userFeatureSwitchContext(auth.orgId, auth.userId),
   );

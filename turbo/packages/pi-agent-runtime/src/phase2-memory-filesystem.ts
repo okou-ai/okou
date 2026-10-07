@@ -321,9 +321,7 @@ function snapshotSelected(
 function snapshotModel(
   model: PiMemoryPhase2LocalConsolidationArgs["model"],
 ): Readonly<PiMemoryPhase2LocalConsolidationArgs["model"]> {
-  const snapshot = structuredClone(model);
-  if (snapshot.requestHeaders) Object.freeze(snapshot.requestHeaders);
-  return Object.freeze(snapshot);
+  return Object.freeze(structuredClone(model));
 }
 
 export function snapshotPiMemoryPhase2Input(

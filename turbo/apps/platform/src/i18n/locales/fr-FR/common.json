@@ -4718,11 +4718,8 @@
     "actions": {
       "addCredits": "Ajouter des crédits",
       "openModelProviders": "Ouvrir les fournisseurs de modèles",
-      "reconnectClaude": "Reconnecter Claude Code",
-      "shareWithAdmin": "Partager avec un administrateur"
+      "reconnectClaude": "Reconnecter Claude Code"
     },
-    "anthropicKeyAdmin": "Claude Code n’a pas pu s’authentifier avec la clé API Anthropic configurée. Mettez à jour ou remplacez la clé API dans les fournisseurs de modèles, puis réessayez.",
-    "anthropicKeyMember": "Claude Code n’a pas pu s’authentifier avec la clé API Anthropic configurée. Demandez à un administrateur de l’espace de travail de mettre à jour ou de remplacer la clé API.",
     "askAdmin": "Demandez à un administrateur de l’espace de travail d’ajouter des crédits ou de passer à une offre supérieure.",
     "claudeReconnect": "L’authentification de l’abonnement Claude Code a échoué. Reconnectez Claude Code dans les fournisseurs de modèles, puis réessayez.",
     "claudeTerms": "Claude Code nécessite l’acceptation des conditions d’utilisation et de la politique de confidentialité mises à jour. Connectez-vous à https://claude.ai avec le compte Claude associé dans les fournisseurs de modèles, acceptez les nouvelles conditions et la politique, puis réessayez.",
@@ -4737,7 +4734,7 @@
     "overloaded": "{{model}} est surchargé. Patientez quelques minutes avant de réessayer, ou choisissez un autre modèle.",
     "providerBalance": "Le solde du compte de votre fournisseur de modèle connecté est insuffisant.",
     "transient": "Une erreur s’est produite. Veuillez réessayer plus tard.",
-    "vm0Credits": "Crédits insuffisants. Ajoutez des crédits ou configurez votre propre clé API pour continuer."
+    "vm0Credits": "Crédits insuffisants. Ajoutez des crédits ou connectez un abonnement personnel Codex ou Claude pour continuer."
   },
   "serviceStatus": {
     "dismiss": "Masquer la mise à jour du service",
@@ -4990,7 +4987,7 @@
           "lowest": "Coût le plus bas par génération",
           "typical": "Coût habituel par génération"
         },
-        "inheritDefault": "Par défaut de l'organisation (Auto)",
+        "inheritDefault": "Par défaut (Auto)",
         "loadError": "Impossible de charger les modèles.",
         "loading": "Chargement des modèles...",
         "models": "Modèles",
@@ -5060,10 +5057,6 @@
         "image-generation": {
           "description": "Créez des images avec les modèles intégrés.",
           "name": "Génération d’images"
-        },
-        "image-recognition": {
-          "description": "Lisez et analysez des images.",
-          "name": "Reconnaissance d’images"
         },
         "maps": {
           "description": "Trouvez des lieux, des adresses et des itinéraires.",

@@ -10,7 +10,6 @@ import { updateDocumentTitle$ } from "../document-title.ts";
 import { defaultAgentId$ } from "../agent.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
-import { showAppSkeleton$ } from "../app-skeleton.ts";
 import { redirectToConfiguredOnboarding$ } from "../okou-page/onboard-guard.ts";
 import {
   resetChatPageModelSelection$,
@@ -144,7 +143,6 @@ export const setupPromptPage$ = command(
         return $.chat.promptDocumentTitle;
       }),
     );
-    set(showAppSkeleton$);
 
     const params = get(searchParams$);
     const prompt = params.get("prompt")?.trim();

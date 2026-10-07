@@ -106,8 +106,7 @@ Name runner BATS files `run-tNN-<behavior>.bats`, using the next unused `NN`.
 The number is a stable file identifier, not an execution order. Test titles
 should describe behavior without repeating the file identifier.
 
-The workflow retains five isolated identities; historical credential-file
-names do not imply that organization BYOK or multi-model platform routes remain.
+The workflow uses five isolated identities.
 Platform identities use `runner-auto-bootstrap.bash`, verify the read-only
 `/api/run-models` response and select `okou-1.0`. Their real/mock runtime flags
 remain isolated. The mock-Claude identity also hosts a personal Codex
@@ -124,17 +123,15 @@ shards. Coverage that needs mutable account-level state requires a dedicated
 identity or a serialized lane.
 
 Real platform model calls in `e2e/tests` must use `okou-1.0`;
-`e2e/scripts/model-policy.test.ts` enforces that boundary in CI before runner
+`e2e/scripts/runner-model-selection.test.ts` enforces that boundary in CI before runner
 account preparation. Run it locally with
-`cd e2e && pnpm exec tsx --test scripts/model-policy.test.ts`, independently of
+`cd e2e && pnpm exec tsx --test scripts/runner-model-selection.test.ts`, independently of
 the Playwright fixture suite. Personal subscription choices remain available in
-the isolated mocked native-harness profiles. Custom-only platform-model and
-vendor-fallback scenarios are retired, not skipped.
+the isolated mocked native-harness profiles.
 
 The default runner and feature-test accounts use limited-free onboarding. The
 remaining dedicated real and mock identities use Pro to preserve billing and
-personal-subscription test prerequisites; none configures an organization policy
-or organization API-key provider.
+personal-subscription test prerequisites.
 Runner preparation completes onboarding through
 the public API, creates a public usage-pack checkout, completes hosted Stripe
 payment, and verifies the resulting public entitlement before publishing tokens.

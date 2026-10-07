@@ -199,7 +199,7 @@ export async function validatePermanentModelCatalogConstraints(
       const values: unknown[] = [
         id("d"),
         "built-in",
-        "openai-api-key",
+        "openrouter-codex",
         null,
         0,
         ["priority"],
@@ -216,10 +216,6 @@ export async function validatePermanentModelCatalogConstraints(
       return values;
     };
     await client.query(insertRoute, builtIn());
-    await rejects(insertRoute, builtIn({ 2: "openrouter-codex" }), {
-      code: "23505",
-      constraint: "uq_model_routes_priority",
-    });
     await rejects(insertRoute, builtIn({ 4: 1 }), {
       code: "23505",
       constraint: "uq_model_routes_identity",
@@ -232,34 +228,28 @@ export async function validatePermanentModelCatalogConstraints(
       code: "23514",
       constraint: "chk_model_routes_concrete_provider_type",
     });
-    await rejects(insertRoute, builtIn({ 8: "max", 4: 1, 2: "deepseek" }), {
+    await rejects(insertRoute, builtIn({ 8: "max", 4: 1 }), {
       code: "23514",
       constraint: "chk_model_routes_efforts",
     });
-    await rejects(
-      insertRoute,
-      builtIn({ 6: "ultrafast", 4: 1, 2: "deepseek" }),
-      {
-        code: "23514",
-        constraint: "chk_model_routes_service_tiers",
-      },
-    );
-    await rejects(
-      insertRoute,
-      builtIn({ 10: null, 11: null, 4: 1, 2: "deepseek" }),
-      { code: "23514", constraint: "chk_model_routes_pricing_link" },
-    );
+    await rejects(insertRoute, builtIn({ 6: "ultrafast", 4: 1 }), {
+      code: "23514",
+      constraint: "chk_model_routes_service_tiers",
+    });
+    await rejects(insertRoute, builtIn({ 10: null, 11: null, 4: 1 }), {
+      code: "23514",
+      constraint: "chk_model_routes_pricing_link",
+    });
     await rejects(
       insertRoute,
       builtIn({
-        1: "codex-oauth-token",
-        2: "openrouter-codex",
-        3: "codex-oauth-token",
+        1: "unknown-provider",
+        2: "unknown-provider",
         9: null,
         10: null,
         11: null,
       }),
-      { code: "23514", constraint: "chk_model_routes_concrete_provider_type" },
+      { code: "23514", constraint: "chk_model_routes_provider_type" },
     );
     await rejects(
       insertRoute,
@@ -279,39 +269,15 @@ export async function validatePermanentModelCatalogConstraints(
         1: "codex-oauth-token",
         2: "codex-oauth-token",
         3: "codex-oauth-token",
+        5: [],
+        7: [],
+        8: null,
         10: null,
         11: null,
       }),
       { code: "23514", constraint: "chk_model_routes_price_tier" },
     );
-    // Only Built-in and personal subscription routes exist.
-    await rejects(
-      insertRoute,
-      builtIn({
-        1: "openai-api-key",
-        2: "openai-api-key",
-        9: null,
-        10: null,
-        11: null,
-      }),
-      { code: "23514", constraint: "chk_model_routes_provider_type" },
-    );
-    await rejects(
-      insertRoute,
-      builtIn({
-        1: "codex-oauth-token",
-        2: "codex-oauth-token",
-        9: null,
-        10: null,
-        11: null,
-      }),
-      { code: "23514", constraint: "chk_model_routes_subscription_type" },
-    );
-    await rejects(
-      insertRoute,
-      builtIn({ 3: "codex-oauth-token", 4: 1, 2: "deepseek" }),
-      { code: "23514", constraint: "chk_model_routes_subscription_type" },
-    );
+    // A subscription route coexists with the model's Built-in route.
     await client.query(insertRoute, [
       id("d"),
       "codex-oauth-token",

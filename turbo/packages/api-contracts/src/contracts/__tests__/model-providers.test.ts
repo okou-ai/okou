@@ -3,13 +3,10 @@ import {
   hasModelSelection,
   getModels,
   getDefaultModel,
-  getModelProviderCodexRuntimeConfig,
   getModelProviderEnvBindings,
   getFrameworkForType,
   getModelProviderPresentationLabel,
   normalizeBuiltInModelId,
-  getModelImageInputSupport,
-  modelSupportsImageInput,
   getBuiltInModelRouteVendors,
   getCatalogRunModelRouteAccess,
   normalizeRunModelId,
@@ -27,7 +24,6 @@ import {
   MODEL_PROVIDER_ENV_PLACEHOLDERS,
   MODEL_PROVIDER_TYPES,
   modelProviderTypeSchema,
-  modelProviderFrameworkSchema,
 } from "../model-providers";
 import {
   findMatchingPermissions,
@@ -101,7 +97,7 @@ describe("model-first canonical catalog", () => {
       "allowed",
     );
     expect(
-      getCatalogRunModelRouteAccess(freeModel, "openai-api-key", true),
+      getCatalogRunModelRouteAccess(freeModel, "codex-oauth-token", true),
     ).toBe("pro_required");
     expect(getCatalogRunModelRouteAccess(paidModel, "built-in", true)).toBe(
       "pro_required",
@@ -110,17 +106,12 @@ describe("model-first canonical catalog", () => {
       "allowed",
     );
     expect(
-      getCatalogRunModelRouteAccess(paidModel, "openai-api-key", false),
+      getCatalogRunModelRouteAccess(paidModel, "codex-oauth-token", false),
     ).toBe("allowed");
   });
 
   it("lists every Built-in route provider vendor", () => {
-    expect(getBuiltInModelRouteVendors()).toEqual([
-      "anthropic",
-      "openrouter",
-      "deepseek",
-      "openai",
-    ]);
+    expect(getBuiltInModelRouteVendors()).toEqual(["openrouter"]);
   });
 
   it("recognizes only own Okou model IDs", () => {
@@ -211,14 +202,14 @@ describe("model-first canonical catalog", () => {
 });
 
 describe("model selection for Anthropic-native providers", () => {
-  it.each(["claude-code-oauth-token", "anthropic-api-key"] as const)(
+  it.each(["claude-code-oauth-token"] as const)(
     "%s supports model selection",
     (type) => {
       expect(hasModelSelection(type)).toBe(true);
     },
   );
 
-  it.each(["claude-code-oauth-token", "anthropic-api-key"] as const)(
+  it.each(["claude-code-oauth-token"] as const)(
     "%s offers fable, sonnet, and opus models",
     (type) => {
       const models = getModels(type);
@@ -229,48 +220,18 @@ describe("model selection for Anthropic-native providers", () => {
     },
   );
 
-  it.each(["claude-code-oauth-token", "anthropic-api-key"] as const)(
+  it.each(["claude-code-oauth-token"] as const)(
     "%s defaults to claude-sonnet-5",
     (type) => {
       expect(getDefaultModel(type)).toBe("claude-sonnet-5");
     },
   );
 
-  it("anthropic-api-key maps ANTHROPIC_MODEL via env bindings", () => {
-    const envBindings = getModelProviderEnvBindings("anthropic-api-key");
-    expect(envBindings).toBeDefined();
-    expect(envBindings!["ANTHROPIC_API_KEY"]).toBe("$secret");
-    expect(envBindings!["ANTHROPIC_MODEL"]).toBe("$model");
-  });
-
   it("claude-code-oauth-token maps ANTHROPIC_MODEL via env bindings", () => {
     const envBindings = getModelProviderEnvBindings("claude-code-oauth-token");
     expect(envBindings).toBeDefined();
     expect(envBindings!["CLAUDE_CODE_OAUTH_TOKEN"]).toBe("$secret");
     expect(envBindings!["ANTHROPIC_MODEL"]).toBe("$model");
-  });
-});
-
-describe("model selection for Claude-compatible gateway providers", () => {
-  it("openrouter-api-key exposes current Claude models", () => {
-    expect(getModels("openrouter-api-key")).toEqual([
-      "anthropic/claude-fable-5.1",
-      "anthropic/claude-opus-5.5",
-      "anthropic/claude-opus-5",
-      "anthropic/claude-sonnet-5",
-      "anthropic/claude-opus-4.5",
-      "anthropic/claude-sonnet-4.5",
-    ]);
-  });
-
-  it.each([
-    "anthropic-api-key",
-    "claude-code-oauth-token",
-    "openrouter-api-key",
-  ] as const)("%s keeps Claude Code attachments enabled", (type) => {
-    const envBindings = getModelProviderEnvBindings(type);
-    expect(envBindings).toBeDefined();
-    expect(envBindings!["CLAUDE_CODE_DISABLE_ATTACHMENTS"]).toBeUndefined();
   });
 });
 
@@ -292,242 +253,9 @@ describe("normalizeBuiltInModelId", () => {
   });
 });
 
-describe("model image input support", () => {
-  it.each([
-    ["deepseek-flash", "deepseek", "supported"],
-    ["deepseek-v4-flash", "deepseek", "supported"],
-    ["deepseek-v4-pro", "deepseek", "unsupported"],
-    ["deepseek-flash", undefined, "unknown"],
-    ["deepseek-v4-flash", undefined, "unsupported"],
-    ["deepseek-flash", "openrouter-codex", "unknown"],
-    ["deepseek-v4-flash", "openrouter-codex", "unsupported"],
-    ["deepseek/deepseek-v4-flash", "deepseek", "unknown"],
-  ] as const)(
-    "resolves %s image support on %s as %s",
-    (model, providerType, support) => {
-      expect(getModelImageInputSupport(model, providerType)).toBe(support);
-      expect(modelSupportsImageInput(model, providerType)).toBe(
-        support === "supported",
-      );
-    },
-  );
-
-  it.each([
-    "gpt-6-astra",
-    "openai/gpt-6-astra",
-    "gpt-6-sol",
-    "openai/gpt-6-sol",
-    "gpt-6-luna",
-    "openai/gpt-6-luna",
-    "deepseek-v4.1-flash",
-    "deepseek/deepseek-v4.1-flash",
-    "claude-fable-5-1",
-    "anthropic/claude-fable-5.1",
-    "claude-opus-5-5",
-    "anthropic/claude-opus-5.5",
-    "claude-opus-5",
-    "anthropic/claude-opus-5",
-    "claude-sonnet-4-6",
-    "claude-sonnet-5",
-    "anthropic/claude-sonnet-5",
-    "claude-opus-4-8",
-  ])("marks %s as image-input capable", (model) => {
-    expect(modelSupportsImageInput(model)).toBe(true);
-    expect(getModelImageInputSupport(model)).toBe("supported");
-  });
-
-  it.each(["deepseek-v4-flash", "deepseek-v4-pro"])(
-    "marks %s as not image-input capable",
-    (model) => {
-      expect(modelSupportsImageInput(model)).toBe(false);
-      expect(getModelImageInputSupport(model)).toBe("unsupported");
-    },
-  );
-
-  it("treats unknown model ids as unknown rather than unsupported", () => {
-    expect(modelSupportsImageInput("custom/model")).toBe(false);
-    expect(getModelImageInputSupport("custom/model")).toBe("unknown");
-  });
-});
-
-describe("deepseek Responses provider", () => {
-  it("uses the Codex framework with the DeepSeek API key", () => {
-    expect(modelProviderTypeSchema.safeParse("deepseek").success).toBe(true);
-    expect(getFrameworkForType("deepseek")).toBe("codex");
-    expect(getSecretNameForType("deepseek")).toBe("DEEPSEEK_API_KEY");
-    expect(getModels("deepseek")).toEqual([
-      "deepseek-flash",
-      "deepseek-v4-flash",
-    ]);
-    expect(getDefaultModel("deepseek")).toBe("deepseek-flash");
-  });
-
-  it("pairs the native default model with a matching runtime catalog", () => {
-    const defaultModel = MODEL_PROVIDER_TYPES.deepseek.defaultModel;
-    expect(getModelProviderCodexRuntimeConfig("deepseek")).toMatchObject({
-      modelCatalog: {
-        models: expect.arrayContaining([
-          expect.objectContaining({
-            slug: defaultModel,
-            input_modalities: ["text", "image"],
-          }),
-        ]),
-      },
-    });
-    expect(normalizeRunModelId(defaultModel)).toBe("deepseek-flash");
-    expect(normalizeRunModelId("deepseek-v4-flash")).toBe("deepseek-v4-flash");
-    expect(normalizeRunModelId("deepseek-v4.1-flash")).toBe(
-      "deepseek-v4.1-flash",
-    );
-  });
-
-  it.each([
-    ["deepseek", "deepseek-v4-flash", ["text", "image"]],
-    ["openrouter-codex", "deepseek/deepseek-v4-flash", ["text"]],
-  ] as const)(
-    "projects legacy Flash capabilities for the %s route",
-    (providerType, runtimeModel, modalities) => {
-      expect(
-        getModelProviderCodexCatalogForModel(
-          "deepseek-v4-flash",
-          runtimeModel,
-          providerType,
-        )?.models,
-      ).toEqual([
-        expect.objectContaining({
-          slug: runtimeModel,
-          input_modalities: modalities,
-        }),
-      ]);
-    },
-  );
-
-  it("configures the official DeepSeek Responses model catalog", () => {
-    expect(getModelProviderCodexRuntimeConfig("deepseek")).toMatchObject({
-      providerId: "deepseek",
-      name: "DeepSeek",
-      baseUrl: "https://api.deepseek.com/",
-      envKey: "OPENAI_API_KEY",
-      requiresOpenaiAuth: false,
-      wireApi: "responses",
-      supportsWebsockets: false,
-      modelCatalog: {
-        models: [
-          expect.objectContaining({
-            slug: "deepseek-flash",
-            display_name: "DeepSeek-V4.1-Flash",
-            context_window: 1_048_576,
-            input_modalities: ["text", "image"],
-            apply_patch_tool_type: "freeform",
-          }),
-          expect.objectContaining({
-            slug: "deepseek-v4-flash",
-            display_name: "DeepSeek-V4.1-Flash",
-            input_modalities: ["text", "image"],
-            default_reasoning_level: "high",
-            context_window: 1_048_576,
-            minimal_client_version: "0.144.0",
-            experimental_supported_tools: [],
-            supports_search_tool: true,
-            default_service_tier: null,
-            supports_reasoning_summaries: true,
-            base_instructions: expect.stringContaining("You are Codex"),
-            model_messages: expect.objectContaining({
-              instructions_template: expect.stringContaining("You are Codex"),
-            }),
-          }),
-        ],
-      },
-    });
-  });
-
-  it("scopes the firewall to the native Responses endpoint", () => {
-    const config = MODEL_PROVIDER_FIREWALL_CONFIGS.deepseek;
-    expect(config.apis[0]!.base).toBe("https://api.deepseek.com/responses");
-    expect(config.apis[0]!.auth.headers).toEqual({
-      Authorization: "Bearer ${{ secrets.DEEPSEEK_API_KEY }}",
-    });
-  });
-
-  it("keeps Pi credential injection on the Responses endpoint", () => {
-    const config = MODEL_PROVIDER_FIREWALL_CONFIGS.deepseek;
-    expect(
-      config.apis.map((api) => {
-        return api.base;
-      }),
-    ).toEqual(["https://api.deepseek.com/responses"]);
-    for (const api of config.apis) {
-      expect(api.auth.headers).toEqual({
-        Authorization: "Bearer ${{ secrets.DEEPSEEK_API_KEY }}",
-      });
-    }
-  });
-});
-
-describe("openai-api-key codex provider", () => {
-  it("declares codex framework", () => {
-    expect(getFrameworkForType("openai-api-key")).toBe("codex");
-  });
-
-  it("maps OPENAI_API_KEY and OPENAI_MODEL via env bindings", () => {
-    const envBindings = getModelProviderEnvBindings("openai-api-key");
-    expect(envBindings).toBeDefined();
-    expect(envBindings!["OPENAI_API_KEY"]).toBe("$secret");
-    expect(envBindings!["OPENAI_MODEL"]).toBe("$model");
-  });
-
-  it("offers codex-compatible models with gpt-5.6-sol default", () => {
-    expect(getModels("openai-api-key")).toEqual([
-      "gpt-6-astra",
-      "gpt-6.1-sol",
-      "gpt-6-sol",
-      "gpt-6-luna",
-      "gpt-5.6-sol",
-      "gpt-5.6-luna",
-    ]);
-    expect(getDefaultModel("openai-api-key")).toBe("gpt-5.6-sol");
-  });
-
-  it("supports model selection", () => {
-    expect(hasModelSelection("openai-api-key")).toBe(true);
-  });
-
-  it("firewall scopes to OpenAI Responses API", () => {
-    const config = MODEL_PROVIDER_FIREWALL_CONFIGS["openai-api-key"];
-    expect(config.apis[0]!.base).toBe("https://api.openai.com/v1/responses");
-    expect(config.apis[0]!.auth.headers).toEqual({
-      Authorization: "Bearer ${{ secrets.OPENAI_API_KEY }}",
-    });
-  });
-
-  it("also covers the Pi sandbox chat-completions path, still scoped", () => {
-    const config = MODEL_PROVIDER_FIREWALL_CONFIGS["openai-api-key"];
-    expect(
-      config.apis.map((api) => {
-        return api.base;
-      }),
-    ).toEqual([
-      "https://api.openai.com/v1/responses",
-      "https://api.openai.com/v1/chat/completions",
-    ]);
-  });
-
-  it("modelProviderTypeSchema accepts openai-api-key", () => {
-    expect(modelProviderTypeSchema.safeParse("openai-api-key").success).toBe(
-      true,
-    );
-  });
-
-  it("modelProviderFrameworkSchema accepts codex", () => {
-    expect(modelProviderFrameworkSchema.safeParse("codex").success).toBe(true);
-  });
-});
-
 describe("firewall base URL scoped to /v1/messages (#9560)", () => {
   it.each([
-    ["anthropic-api-key", "https://api.anthropic.com/v1/messages"],
     ["claude-code-oauth-token", "https://api.anthropic.com/v1/messages"],
-    ["openrouter-api-key", "https://openrouter.ai/api/v1/messages"],
   ] as const)(
     "%s scopes firewall to /v1/messages path prefix",
     (type, expectedBase) => {
@@ -568,33 +296,13 @@ describe("firewall base URL scoped to /v1/messages (#9560)", () => {
 describe("model provider firewall placeholders", () => {
   it.each([
     [
-      "anthropic-api-key",
-      "ANTHROPIC_API_KEY",
-      MODEL_PROVIDER_ENV_PLACEHOLDERS.ANTHROPIC_API_KEY,
-    ],
-    [
       "claude-code-oauth-token",
       "CLAUDE_CODE_OAUTH_TOKEN",
       MODEL_PROVIDER_ENV_PLACEHOLDERS.CLAUDE_CODE_OAUTH_TOKEN,
     ],
     [
-      "openrouter-api-key",
-      "OPENROUTER_API_KEY",
-      MODEL_PROVIDER_ENV_PLACEHOLDERS.ANTHROPIC_AUTH_TOKEN,
-    ],
-    [
-      "deepseek",
-      "DEEPSEEK_API_KEY",
-      MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY,
-    ],
-    [
       "openrouter-codex",
       "OPENROUTER_API_KEY",
-      MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY,
-    ],
-    [
-      "openai-api-key",
-      "OPENAI_API_KEY",
       MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY,
     ],
   ] as const)(
@@ -857,11 +565,7 @@ describe("codex-oauth-token codex provider", () => {
 
 describe("model provider primary firewall bases", () => {
   it.each([
-    ["anthropic-api-key", "https://api.anthropic.com/v1/messages"],
     ["claude-code-oauth-token", "https://api.anthropic.com/v1/messages"],
-    ["openrouter-api-key", "https://openrouter.ai/api/v1/messages"],
-    ["deepseek", "https://api.deepseek.com/responses"],
-    ["openai-api-key", "https://api.openai.com/v1/responses"],
     ["codex-oauth-token", "https://chatgpt.com/backend-api"],
     ["openrouter-codex", "https://openrouter.ai/api/v1/responses"],
   ] as const)("%s firewall base URL is %s", (type, expected) => {
@@ -869,7 +573,7 @@ describe("model provider primary firewall bases", () => {
   });
 });
 
-describe("openrouter-codex gateway provider", () => {
+describe("Auto concrete provider (openrouter-codex)", () => {
   it.each(["openrouter-codex"] as const)(
     "%s declares codex framework",
     (type) => {
@@ -894,28 +598,18 @@ describe("openrouter-codex gateway provider", () => {
       expect(getModels(type)).toEqual(
         expect.arrayContaining(["openai/gpt-5.6-sol", "openai/gpt-5.6-luna"]),
       );
-      if (type === "openrouter-codex") {
-        expect(getModels(type)).toEqual(
-          expect.arrayContaining([
-            "openai/gpt-6-astra",
-            "openai/gpt-6-sol",
-            "openai/gpt-6-luna",
-            "deepseek/deepseek-v4.1-flash",
-            "deepseek/deepseek-v4-flash",
-          ]),
-        );
-      }
+      expect(getModels(type)).toEqual(
+        expect.arrayContaining([
+          "openai/gpt-6-astra",
+          "openai/gpt-6-sol",
+          "openai/gpt-6-luna",
+          "deepseek/deepseek-v4.1-flash",
+          "deepseek/deepseek-v4-flash",
+        ]),
+      );
       expect(getDefaultModel(type)).toBe("openai/gpt-5.6-luna");
     },
   );
-
-  it("shares the secretName with its claude-code twin gateway", () => {
-    // Same API key powers both protocols on the same upstream gateway.
-    // The codex twin must not invent a separate secret environment name.
-    const openrouterCodex = MODEL_PROVIDER_TYPES["openrouter-codex"];
-    const openrouterClaudeCode = MODEL_PROVIDER_TYPES["openrouter-api-key"];
-    expect(openrouterCodex.secretName).toBe(openrouterClaudeCode.secretName);
-  });
 
   it.each(["openrouter-codex"] as const)(
     "%s injects Authorization only on exact OpenAI inference paths",
@@ -991,7 +685,7 @@ describe("built-in provider discriminator contract", () => {
       "Built-in model",
     );
     expect(getSecretNameForType("built-in")).toBeUndefined();
-    expect(getModelProviderFirewall("anthropic-api-key")).toBeDefined();
+    expect(getModelProviderFirewall("openrouter-codex")).toBeDefined();
     expect(MODEL_PROVIDER_FIREWALL_CONFIGS).not.toHaveProperty("built-in");
   });
 });

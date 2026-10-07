@@ -3,7 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { builtinConnectorDcrRegistrations } from "@okouai/db/schema/connector-dcr-registration";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { connectors } from "@okouai/db/schema/connector";
-import { connectorCatalogActiveSnapshot } from "@okouai/db/schema/connector-catalog";
+import { connectorCatalog } from "@okouai/db/schema/connector-catalog";
 import type { ExternalCatalogIdentity } from "./connector-catalog-view";
 import { writeDb$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";
@@ -142,10 +142,8 @@ export const hasBuiltinDcrLinkedAccounts$ = command(
 
 function builtinDcrCatalogCondition(identity: ExternalCatalogIdentity) {
   return and(
-    eq(connectorCatalogActiveSnapshot.sourceId, identity.sourceId),
-    eq(connectorCatalogActiveSnapshot.schemaVersion, identity.schemaVersion),
-    eq(connectorCatalogActiveSnapshot.catalogVersion, identity.catalogVersion),
-    eq(connectorCatalogActiveSnapshot.catalogDigest, identity.catalogDigest),
+    eq(connectorCatalog.schemaVersion, identity.schemaVersion),
+    eq(connectorCatalog.hash, identity.catalogDigest),
   );
 }
 
@@ -168,8 +166,8 @@ export const createBuiltinDcrRegistration$ = command(
     signal.throwIfAborted();
     // A registration is created only for the current catalog.
     const [catalog] = await db
-      .select({ sourceId: connectorCatalogActiveSnapshot.sourceId })
-      .from(connectorCatalogActiveSnapshot)
+      .select({ hash: connectorCatalog.hash })
+      .from(connectorCatalog)
       .where(builtinDcrCatalogCondition(args.catalogIdentity))
       .limit(1);
     signal.throwIfAborted();

@@ -267,11 +267,11 @@ describe("Pi sandbox execution contract", () => {
     piSessionId,
     piLaunchConfig: { schemaVersion: 2 as const },
     piModelConfig: {
-      provider: "deepseek",
-      baseUrl: "https://api.deepseek.com/",
-      model: "deepseek-v4-flash",
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "openai/gpt-6-luna",
       apiKeyEnv: "OPENAI_API_KEY",
-      credentialSecretName: "DEEPSEEK_API_KEY",
+      credentialSecretName: "OPENROUTER_API_KEY",
     },
   };
   const piRunnerContext = {
@@ -291,19 +291,19 @@ describe("Pi sandbox execution contract", () => {
     },
   };
 
-  it("preserves canonical Gen1 request policy and custom gateway credentials", () => {
+  it("preserves canonical Gen1 request policy", () => {
     expect(piModelConfigSchema.parse(piStoredContext.piModelConfig)).toEqual(
       piStoredContext.piModelConfig,
     );
     expect(
       piModelConfigSchema.parse({
-        provider: "openai",
-        baseUrl: "https://api.openai.com/v1",
-        model: "gpt-6-luna",
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "openai/gpt-6-luna",
         thinkingLevel: "low",
         serviceTier: "priority",
         apiKeyEnv: "OPENAI_API_KEY",
-        credentialSecretName: "OPENAI_API_KEY",
+        credentialSecretName: "OPENROUTER_API_KEY",
       }),
     ).toMatchObject({
       thinkingLevel: "low",
@@ -311,50 +311,20 @@ describe("Pi sandbox execution contract", () => {
     });
     expect(
       piModelConfigSchema.safeParse({
-        provider: "openai",
-        baseUrl: "https://api.openai.com/v1",
-        model: "gpt-6-luna",
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "openai/gpt-6-luna",
         thinkingLevel: "low",
         serviceTier: "fast",
         apiKeyEnv: "OPENAI_API_KEY",
-        credentialSecretName: "OPENAI_API_KEY",
+        credentialSecretName: "OPENROUTER_API_KEY",
       }).success,
     ).toBe(false);
-    expect(
-      piModelConfigSchema.parse({
-        provider: "deepseek",
-        baseUrl: "https://gateway.example.com/v1",
-        model: "company-deepseek-production",
-        catalogModel: "deepseek-v4-flash",
-        apiKeyEnv: "OPENAI_API_KEY",
-        credentialSecretName: "CUSTOM_GATEWAY_API_KEY",
-        credentialHeader: {
-          name: "x-api-key",
-          valueTemplate: "Key {{secret}}",
-        },
-      }),
-    ).toMatchObject({
-      catalogModel: "deepseek-v4-flash",
-      credentialHeader: {
-        name: "x-api-key",
-        valueTemplate: "Key {{secret}}",
-      },
-    });
-    for (const valueTemplate of [
-      "missing-placeholder",
-      "{{secret}} twice {{secret}}",
-      "Bearer {{secret}} {{other}}",
-      "{{secret}}\r\nInjected: value",
-    ]) {
+    for (const provider of ["deepseek", "openai", "vercel-ai-gateway"]) {
       expect(
         piModelConfigSchema.safeParse({
-          provider: "deepseek",
-          baseUrl: "https://gateway.example.com/v1",
-          model: "company-deepseek-production",
-          catalogModel: "deepseek-v4-flash",
-          apiKeyEnv: "OPENAI_API_KEY",
-          credentialSecretName: "CUSTOM_GATEWAY_API_KEY",
-          credentialHeader: { name: "x-api-key", valueTemplate },
+          ...piStoredContext.piModelConfig,
+          provider,
         }).success,
       ).toBe(false);
     }
@@ -393,15 +363,15 @@ describe("Pi sandbox execution contract", () => {
         schemaVersion,
         dialect: "openai-responses",
         transport: "sse",
-        provider: "openai",
-        baseUrl: "https://api.openai.com/v1",
-        model: "gpt-6-luna",
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "openai/gpt-6-luna",
         thinkingLevel: "low",
         credentialBindings: [
           {
             kind: "api-key",
             environment: "OPENAI_API_KEY",
-            secretName: "OPENAI_API_KEY",
+            secretName: "OPENROUTER_API_KEY",
           },
         ],
       } as const;
@@ -473,7 +443,8 @@ describe("Pi sandbox execution contract", () => {
         { ...publicResponses, thinkingLevel: "future" },
         { ...publicResponses, catalogModel: "x".repeat(513) },
         { ...codexResponses, catalogModel: "gpt-6-luna" },
-        { ...codexResponses, provider: "openai" },
+        { ...codexResponses, provider: "openrouter" },
+        { ...publicResponses, provider: "openai" },
         {
           ...codexResponses,
           credentialBindings: [

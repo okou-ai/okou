@@ -1,7 +1,6 @@
 import {
   BUILT_IN_MODEL_ROUTE_PROVIDERS,
   getSecretNameForType,
-  hasAuthMethods,
   modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
@@ -10,31 +9,15 @@ import {
   modelProviderAccounts,
   modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
-import { secrets } from "@okouai/db/schema/secret";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { computed } from "ccstate";
-import { and, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { db$ } from "../external/db";
 import { usagePricingByKey } from "./built-in-route-pricing";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
 import type { MemberModelBootstrap } from "./model-bootstrap.service";
 
-const MULTI_AUTH_TYPES = modelProviderTypeSchema.options.filter(hasAuthMethods);
-export const providerSecretJoin = and(
-  eq(secrets.orgId, modelProviders.orgId),
-  eq(secrets.userId, modelProviders.userId),
-  or(
-    and(
-      inArray(modelProviders.type, MULTI_AUTH_TYPES),
-      eq(secrets.type, "model-provider"),
-    ),
-    and(
-      notInArray(modelProviders.type, MULTI_AUTH_TYPES),
-      eq(secrets.id, modelProviders.secretId),
-    ),
-  ),
-);
-export function providerProjection() {
+function providerProjection() {
   return {
     // Only identity and runtime configuration participate in these facts.
     // Account health/default/expiry fences remain on the full account projection.
@@ -46,10 +29,6 @@ export function providerProjection() {
       authMethod: modelProviders.authMethod,
       selectedModel: modelProviders.selectedModel,
     },
-    providerSecret: {
-      name: secrets.name,
-      encryptedValue: secrets.encryptedValue,
-    },
   };
 }
 
@@ -58,13 +37,9 @@ type ProviderRow = {
     typeof modelProviders.$inferSelect,
     "id" | "type" | "userId" | "orgId" | "authMethod" | "selectedModel"
   >;
-  readonly providerSecret: {
-    readonly name: string;
-    readonly encryptedValue: string;
-  } | null;
 };
 
-export function providerFacts(rows: readonly ProviderRow[]) {
+function providerFacts(rows: readonly ProviderRow[]) {
   return [
     ...new Map(
       rows.map((row) => {
@@ -103,7 +78,6 @@ export function createMemberModelSources(orgId: string, userId: string) {
           modelProviderAccounts.id,
         ),
       )
-      .leftJoin(secrets, providerSecretJoin)
       .where(
         and(
           eq(modelProviders.orgId, orgId),
@@ -136,11 +110,7 @@ export function memberModelSourcesFromRows(
           ? [
               [
                 JSON.stringify([row.account.id, row.secret?.name]),
-                {
-                  account: row.account,
-                  configuredModel: row.provider.selectedModel,
-                  secret: row.secret,
-                },
+                { account: row.account, secret: row.secret },
               ] as const,
             ]
           : [];
@@ -168,7 +138,6 @@ export function memberAccountSourceFromSnapshot(
       kind: "registered-provider",
       providerType: first.account.type,
       authMethod: first.account.authMethod,
-      configuredModel: first.configuredModel,
     },
     credentials: rows.flatMap((row) => {
       return row.secret ? [{ kind: "encrypted" as const, ...row.secret }] : [];
@@ -220,7 +189,6 @@ export function managedSourceFromSnapshot(
       providerType: "built-in",
       authMethod: null,
       managedVendor: key.vendor,
-      configuredModel: null,
     },
     credentials: [
       { kind: "managed-key", name, modelKeyId: key.id, apiKey: key.apiKey },

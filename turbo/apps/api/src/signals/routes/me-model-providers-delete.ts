@@ -1,4 +1,3 @@
-import { modelCatalog$ } from "../services/model-catalog.service";
 import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
@@ -8,7 +7,7 @@ import { authRoute } from "../auth/auth-route";
 import { pathParamsOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { deleteUserModelProvider$ } from "../services/model-provider.service";
-import { resetStaleAutoMemberSelection } from "../services/member-subscription-models.service";
+import { resetDisconnectedMemberModelSelection } from "../services/member-subscription-models.service";
 
 const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -26,8 +25,7 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (result) {
     return result;
   }
-  await resetStaleAutoMemberSelection(
-    await get(modelCatalog$),
+  await resetDisconnectedMemberModelSelection(
     set(writeDb$),
     auth.orgId,
     auth.userId,

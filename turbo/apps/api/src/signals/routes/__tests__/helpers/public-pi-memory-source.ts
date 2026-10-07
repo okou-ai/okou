@@ -441,7 +441,6 @@ export function createPublicPiMemorySource(
   async function activateAccount(identity: string) {
     return await withNowScopeForTest(async () => {
       const oauth = mockCodexDeviceAuthProvider({
-        tokenScope: "personal",
         accountId: identity,
         accessTokenExpiresAt: Math.floor(now() / 1000) + 72 * 3600,
       });

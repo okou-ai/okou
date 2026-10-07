@@ -129,7 +129,7 @@ async function sendNoCreditMessage(
     readonly userMessage?: UserMessageDocument;
   },
 ): Promise<string> {
-  // Snapshot input needs a no-credit Auto message, not a paid Custom route.
+  // Snapshot input needs a no-credit Auto message, not a personal subscription route.
   const sent = await chat.requestSendEvent(actor, body, [201]);
   if (sent.status !== 201) {
     throw new Error("Expected the no-credit send to be accepted");

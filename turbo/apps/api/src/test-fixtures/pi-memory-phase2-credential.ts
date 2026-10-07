@@ -106,7 +106,6 @@ async function createAdditionalPhase2CodexAccount(
   const actor = createBddApi(context).user({ ...owner, orgRole: "org:admin" });
   const auth = createAuthDeviceApiActions(context);
   mockCodexDeviceAuthProvider({
-    tokenScope: "personal",
     accountId: `active-${randomUUID()}`,
   });
   const started = await auth.requestCodexStart(actor, "personal", [200], {

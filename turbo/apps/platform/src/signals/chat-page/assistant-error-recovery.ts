@@ -314,30 +314,30 @@ function structuredRecoveryKind(
   };
 }
 
-function structuredRecoveryFrameworkFromMessage(
+function structuredRecoveryFrameworkFromError(
   kind: AssistantErrorRecoveryKind,
   error: string,
 ): ModelProviderFramework | null {
   const normalized = normalizedProviderMessage(error);
   if (kind === "model-capacity") {
     if (isCodexModelCapacity(normalized)) {
-      return getFrameworkForType("openai-api-key");
+      return "codex";
     }
     if (isClaudeModelCapacity(normalized)) {
-      return getFrameworkForType("anthropic-api-key");
+      return "claude-code";
     }
   }
   if (kind === "model-unavailable") {
     return getCodexChatGptAccountUnsupportedModel(error) === undefined
       ? null
-      : getFrameworkForType("openai-api-key");
+      : "codex";
   }
   if (kind === "usage-limit") {
     if (/you(?:'|’)ve hit your usage limit\b/iu.test(normalized)) {
-      return getFrameworkForType("openai-api-key");
+      return "codex";
     }
     if (isClaudeUsageLimit(normalized)) {
-      return getFrameworkForType("anthropic-api-key");
+      return "claude-code";
     }
   }
   return null;
@@ -580,10 +580,7 @@ function classifyCandidate(
     candidate.error,
     structuredKind.failureReason,
     structuredKind.kind,
-    structuredRecoveryFrameworkFromMessage(
-      structuredKind.kind,
-      candidate.error,
-    ),
+    structuredRecoveryFrameworkFromError(structuredKind.kind, candidate.error),
   );
 }
 

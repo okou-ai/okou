@@ -38,10 +38,8 @@ function writeLine(message: string): void {
  * Pricing convention: 1 USD = 1000 credits.
  * Token prices use integer credits with a per-row token unit size.
  *
- * API keys are read from environment variables per vendor:
- *   DEV_MODEL_{VENDOR_UPPER}_KEY (e.g., DEV_MODEL_ANTHROPIC_KEY, DEV_MODEL_OPENAI_KEY)
- * Anthropic and OpenAI also fall back to their provider env names because
- * CI and local dev already use them for real model smoke tests.
+ * Built-in route API keys are read from environment variables per vendor:
+ *   DEV_MODEL_{VENDOR_UPPER}_KEY (e.g., DEV_MODEL_OPENROUTER_KEY)
  */
 
 /** 1 USD = 1000 credits */
@@ -149,15 +147,6 @@ const GPT_5_6_LUNA_PRICING: readonly UsagePricingRow[] = [
   ["tokens.cache_read", usd(0.02), 1_000_000],
   ["tokens.cache_creation", usd(0.25), 1_000_000],
   ["tokens.output", usd(1.2), 1_000_000],
-];
-
-// OpenRouter MiMo-V2.5 recognition pricing retrieved 2026-08-05 from:
-// https://openrouter.ai/xiaomi/mimo-v2.5
-const MIMO_V2_5_RECOGNITION_PRICING: readonly UsagePricingRow[] = [
-  ["tokens.input", usd(0.14), 1_000_000],
-  ["tokens.output", usd(0.28), 1_000_000],
-  ["tokens.cache_read", usd(0.0028), 1_000_000],
-  ["tokens.cache_creation", 0, 1_000_000],
 ];
 
 const GPT_5_5_PRICING: readonly UsagePricingRow[] = [
@@ -564,18 +553,6 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
     ["tokens.output", usd(9), 1_000_000],
   ]),
 
-  // Local development pricing for managed image tasks, billed under
-  // task-scoped kinds at the backing model's token rates.
-  ...usageGroup(
-    "image-recognition",
-    "xiaomi/mimo-v2.5",
-    MIMO_V2_5_RECOGNITION_PRICING,
-  ),
-  ...usageGroup("image-recognition", "google/gemini-3.5-flash", [
-    ["tokens.input", usd(1.5), 1_000_000],
-    ["tokens.cache_read", usd(0.15), 1_000_000],
-    ["tokens.output", usd(9), 1_000_000],
-  ]),
   // X connector — https://docs.x.com/x-api/getting-started/pricing
   ...usageGroup("connector", "x", [
     // Reads — $/resource
@@ -731,15 +708,8 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
   ]),
 ];
 
-function getVendorApiKeyEnvVars(vendor: string): string[] {
-  const envVar = `DEV_MODEL_${vendor.toUpperCase()}_KEY`;
-  if (vendor === "anthropic") {
-    return [envVar, "ANTHROPIC_API_KEY"];
-  }
-  if (vendor === "openai") {
-    return [envVar, "OPENAI_API_KEY"];
-  }
-  return [envVar];
+function getVendorApiKeyEnvVar(vendor: string): string {
+  return `DEV_MODEL_${vendor.toUpperCase()}_KEY`;
 }
 
 type OptionalEnvReader = (name: string) => string | undefined;
@@ -747,8 +717,7 @@ type LineWriter = (message: string) => void;
 
 /**
  * Build built_in_model_keys entries from environment variables.
- * Vendors are derived from all built-in candidates so new providers are
- * automatically picked up.
+ * Vendors are derived from the built-in route providers.
  */
 export function buildBuiltInModelKeys(
   readEnv: OptionalEnvReader = optionalEnv,
@@ -756,16 +725,10 @@ export function buildBuiltInModelKeys(
 ): (typeof builtInModelKeys.$inferInsert)[] {
   const keys: (typeof builtInModelKeys.$inferInsert)[] = [];
   for (const vendor of getBuiltInModelRouteVendors()) {
-    const envVars = getVendorApiKeyEnvVars(vendor);
-    const apiKey = envVars
-      .map((name) => {
-        return readEnv(name);
-      })
-      .find((value): value is string => {
-        return typeof value === "string" && value.length > 0;
-      });
+    const envVar = getVendorApiKeyEnvVar(vendor);
+    const apiKey = readEnv(envVar);
     if (!apiKey) {
-      logLine(`Skipping ${vendor}: ${envVars.join(" or ")} is not configured`);
+      logLine(`Skipping ${vendor}: ${envVar} is not configured`);
       continue;
     }
     keys.push({ vendor, apiKey, label: "dev-seed" });

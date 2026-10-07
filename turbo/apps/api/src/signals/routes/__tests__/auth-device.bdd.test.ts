@@ -69,7 +69,6 @@ async function connectPersonalCodexTestAccount(
   },
 ): Promise<string> {
   mockCodexDeviceAuthProvider({
-    tokenScope: "personal",
     ...args,
   });
   const started = await authDevice.requestCodexStart(actor, "personal", [200], {
@@ -715,56 +714,56 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     });
   });
 
-  it.each(["personal"] as const)(
-    "does not publish %s Codex credentials after cancellation during token exchange",
-    async (scope) => {
-      const actor = bdd.user();
-      let sessionToken = "";
-      mockCodexDeviceAuthProvider({
-        tokenScope: scope,
-        beforeTokenResponse: async () => {
-          const cancelled = await authDevice.requestCodexCancel(
-            actor,
-            sessionToken,
-            [200],
-          );
-          expect(cancelled.body).toStrictEqual({ status: "cancelled" });
-        },
-      });
-      const started = await authDevice.requestCodexStart(actor, scope, [200]);
-      if (started.status !== 200) {
-        throw new Error("Expected device authorization to start");
-      }
-      sessionToken = started.body.sessionToken;
-      const completed = await authDevice.requestCodexComplete(
-        actor,
-        sessionToken,
-        [503],
-      );
-      expectApiError(completed.body);
-      expect(completed.body.error.message).toBe(
-        "Device authorization was cancelled or expired",
-      );
-      const providers = await support.listPersonalModelProviders(actor, [200]);
-      if (!("modelProviders" in providers.body)) {
-        throw new Error("Expected personal provider list");
-      }
-      expect(providers.body).toMatchObject({
-        modelProviders: expect.not.arrayContaining([
-          expect.objectContaining({ type: "codex-oauth-token" }),
-        ]),
-      });
-      const repeated = await authDevice.requestCodexComplete(
-        actor,
-        sessionToken,
-        [200],
-      );
-      expect(repeated.body).toStrictEqual({
-        status: "pending",
-        errorMessage: "Codex device auth session was cancelled",
-      });
-    },
-  );
+  it("does not publish personal Codex credentials after cancellation during token exchange", async () => {
+    const actor = bdd.user();
+    let sessionToken = "";
+    mockCodexDeviceAuthProvider({
+      beforeTokenResponse: async () => {
+        const cancelled = await authDevice.requestCodexCancel(
+          actor,
+          sessionToken,
+          [200],
+        );
+        expect(cancelled.body).toStrictEqual({ status: "cancelled" });
+      },
+    });
+    const started = await authDevice.requestCodexStart(
+      actor,
+      "personal",
+      [200],
+    );
+    if (started.status !== 200) {
+      throw new Error("Expected device authorization to start");
+    }
+    sessionToken = started.body.sessionToken;
+    const completed = await authDevice.requestCodexComplete(
+      actor,
+      sessionToken,
+      [503],
+    );
+    expectApiError(completed.body);
+    expect(completed.body.error.message).toBe(
+      "Device authorization was cancelled or expired",
+    );
+    const providers = await support.listPersonalModelProviders(actor, [200]);
+    if (!("modelProviders" in providers.body)) {
+      throw new Error("Expected personal provider list");
+    }
+    expect(providers.body).toMatchObject({
+      modelProviders: expect.not.arrayContaining([
+        expect.objectContaining({ type: "codex-oauth-token" }),
+      ]),
+    });
+    const repeated = await authDevice.requestCodexComplete(
+      actor,
+      sessionToken,
+      [200],
+    );
+    expect(repeated.body).toStrictEqual({
+      status: "pending",
+      errorMessage: "Codex device auth session was cancelled",
+    });
+  });
 
   it("does not publish personal Claude credentials after cancellation during token exchange", async () => {
     const actor = bdd.user();
@@ -821,7 +820,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
   });
 
   it("completes personal Codex device auth for an administrator", async () => {
-    const calls = mockCodexDeviceAuthProvider({ tokenScope: "personal" });
+    const calls = mockCodexDeviceAuthProvider();
     const admin = bdd.user();
 
     const started = await authDevice.requestCodexStart(
@@ -905,7 +904,7 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
   });
 
   it("completes personal-scope Codex device auth for an org member", async () => {
-    const calls = mockCodexDeviceAuthProvider({ tokenScope: "personal" });
+    const calls = mockCodexDeviceAuthProvider();
     const member = bdd.user({ orgRole: "org:member" });
 
     const started = await authDevice.requestCodexStart(
@@ -957,7 +956,6 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     const member = bdd.user({ orgRole: "org:member" });
 
     mockCodexDeviceAuthProvider({
-      tokenScope: "personal",
       accountId: "codex-account-a",
       workspaceName: "Account A",
     });
@@ -985,7 +983,6 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     const accountAId = completedA.body.provider.id;
 
     mockCodexDeviceAuthProvider({
-      tokenScope: "personal",
       accountId: "codex-account-b",
       workspaceName: "Account B",
     });
@@ -1015,7 +1012,6 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     await support.activatePersonalModelProviderAccount(member, accountBId);
 
     mockCodexDeviceAuthProvider({
-      tokenScope: "personal",
       accountId: "codex-account-b",
       workspaceName: "Account B reconnected",
     });
@@ -1049,7 +1045,6 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
     });
 
     mockCodexDeviceAuthProvider({
-      tokenScope: "personal",
       accountId: "codex-account-c",
       workspaceName: "Account C",
     });
@@ -1392,7 +1387,6 @@ describe("MODEL-PROVIDER: device auth boundaries", () => {
       statuses: readonly (200 | 400)[],
     ) => {
       mockCodexDeviceAuthProvider({
-        tokenScope: "personal",
         accountId: `codex-limit-account-${index}`,
         workspaceName: `Codex Account ${index}`,
       });

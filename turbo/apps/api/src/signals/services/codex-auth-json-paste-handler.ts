@@ -20,9 +20,8 @@ import { logger } from "../../lib/log";
 import { settle, tapError, throwIfAbort } from "../utils";
 
 /**
- * Shape of an upserted provider row that the paste handler serializes into the
- * REST response. Organization writes provide Date timestamps and personal
- * account writes provide ISO strings; both routes share this response DTO.
+ * Shape of an upserted personal account row that the paste handler serializes
+ * into the REST response DTO.
  */
 interface UpsertedProvider {
   id: string;
@@ -58,8 +57,8 @@ function serializeNullableDate(
 
 /**
  * Serialize an upserted model-provider row into the REST DTO shape (Date →
- * ISO string). Shared between org and personal paste handlers so the wire
- * format cannot drift.
+ * ISO string). Shared by the paste and device-auth routes so the wire format
+ * cannot drift.
  */
 function serializeUpsertedProvider(provider: UpsertedProvider) {
   return {
@@ -90,10 +89,8 @@ function serializeUpsertedProvider(provider: UpsertedProvider) {
 }
 
 /**
- * Caller-supplied upsert. Org route binds this to
- * `upsertOrgMultiAuthModelProvider$`; personal routes bind it to
- * `upsertPersonalModelProviderAccount$`. Both callbacks normalize to the same
- * shape from the handler's perspective.
+ * Caller-supplied upsert. Personal routes bind it to
+ * `upsertPersonalModelProviderAccount$`.
  */
 type UpsertCodexProvider = (args: {
   authMethod: "auth_json";
@@ -118,22 +115,13 @@ type UpsertCodexProvider = (args: {
   | PersonalProviderAccountErrorResponse
 >;
 
-/**
- * Common args shared by both scopes. Split out so the discriminated union
- * below can intersect each scope's identity fields onto the same payload
- * without repeating the paste-flow inputs.
- */
-interface CodexAuthJsonPasteCommonArgs {
+interface CodexAuthJsonPasteArgs {
+  orgId: string;
+  userId: string;
   rawAuthJson: string;
   selectedModel: string | undefined;
   upsert: UpsertCodexProvider;
 }
-
-type CodexAuthJsonPasteArgs = {
-  scope: "personal";
-  orgId: string;
-  userId: string;
-} & CodexAuthJsonPasteCommonArgs;
 
 /**
  * Handle the codex-oauth-token + auth_json paste-based connect flow.
@@ -142,7 +130,8 @@ type CodexAuthJsonPasteArgs = {
  * derived `CHATGPT_*` fields via the caller-supplied upsert. The raw
  * `CODEX_AUTH_JSON` blob is NEVER persisted (per Epic #11974 / #7365).
  *
- * Shared implementation for API org and personal model-provider paste routes.
+ * Shared implementation for personal model-provider paste and device-auth
+ * routes.
  */
 export async function handleCodexAuthJsonPaste(
   args: CodexAuthJsonPasteArgs,

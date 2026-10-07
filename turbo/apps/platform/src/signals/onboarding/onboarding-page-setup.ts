@@ -2,7 +2,7 @@ import { command } from "ccstate";
 import { createElement } from "react";
 import { i18n } from "../../i18n/index.ts";
 import { OnboardingSourcesFirstPromptPage } from "../../views/onboarding-sources-first/onboarding-prompt-page.tsx";
-import { hideAppSkeleton$, showAppSkeleton$ } from "../app-skeleton.ts";
+import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { brandName$ } from "../branding.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
@@ -20,7 +20,6 @@ import { sendEvent$ } from "../marketing/events.ts";
  */
 export const setupOnboardingPromptPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    set(showAppSkeleton$);
     const searchParams = get(searchParams$);
 
     const status = await get(onboardingStatus$);

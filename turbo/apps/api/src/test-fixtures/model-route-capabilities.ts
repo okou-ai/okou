@@ -1,4 +1,4 @@
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import {
   getBuiltInRouteProviderVendor,
   modelProviderTypeSchema,
@@ -45,7 +45,6 @@ export async function readPrimaryBuiltInRouteFixture(model: string): Promise<{
         eq(modelRoutes.model, model),
         eq(modelRoutes.providerType, "built-in"),
         eq(modelRoutes.enabled, true),
-        ne(modelRoutes.concreteProviderType, "deepseek"),
       ),
     )
     .orderBy(asc(modelRoutes.priority))

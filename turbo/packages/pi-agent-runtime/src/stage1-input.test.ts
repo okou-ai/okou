@@ -5,7 +5,7 @@ import {
   type Message,
 } from "@earendil-works/pi-ai";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
-import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
+import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { encode } from "gpt-tokenizer/encoding/o200k_base";
 import { http, HttpResponse } from "msw";
 import { setupServer } from "msw/node";
@@ -147,12 +147,13 @@ function captureBodies(url = "https://stage1.test/v1/responses"): string[] {
   return bodies;
 }
 
-function config(
-  provider = "openai",
-): Extract<PiAgentModelConfig, { dialect: "openai-responses" }> {
+function config(): Extract<
+  PiAgentModelConfig,
+  { dialect: "openai-responses" }
+> {
   return {
-    provider,
-    model: provider === "openrouter" ? `openai/${MODEL}` : MODEL,
+    provider: "openrouter",
+    model: `openai/${MODEL}`,
     baseUrl: "https://stage1.test/v1",
     apiKey: "test-key",
     dialect: "openai-responses",
@@ -166,10 +167,11 @@ function overrideCatalog(
   native = false,
 ): void {
   // External SDK metadata fault injection; serialization and HTTP remain real.
-  const model = (native ? openaiCodexProvider() : openaiProvider())
+  const catalogId = native ? MODEL : `openai/${MODEL}`;
+  const model = (native ? openaiCodexProvider() : openrouterProvider())
     .getModels()
     .find((item) => {
-      return item.id === MODEL;
+      return item.id === catalogId;
     });
   if (!model) throw new Error("Missing pinned Luna catalog");
   const descriptor = Object.getOwnPropertyDescriptor(model, property);
@@ -461,71 +463,66 @@ describe("Stage 1 evidence and complete request admission", () => {
     }).toThrow(PiMemoryStage1BudgetError);
   });
 
-  it.each(["openai", "openrouter"])(
-    "caps the actual %s Luna HTTP body with large competing canonical evidence",
-    async (provider) => {
-      const edgeTools = (id: string): Message[] => {
-        const call = fauxToolCall("read", { path: id }, { id });
-        return [
-          fauxAssistantMessage([call], { stopReason: "toolUse" }),
-          {
-            role: "toolResult",
-            toolCallId: id,
-            toolName: "read",
-            isError: false,
-            timestamp: 0,
-            content: [
-              { type: "text", text: `${id} ${"tool output ".repeat(1_000)}` },
-            ],
-          },
-        ];
-      };
-      const messages: Message[] = edgeTools("low-tool-first");
-      for (let index = 0; index < 120; index += 1) {
-        messages.push(
-          textMessage(
-            `commentary ${index} ${"tool noise ".repeat(100)}`,
-            phase("commentary"),
-          ),
-        );
-        messages.push({
-          role: "user",
-          timestamp: index,
-          content: `human-${index} ${'"\\汉😀 '.repeat(600)}`,
-        });
-        messages.push(
-          textMessage(
-            `final-${index} ${"final evidence ".repeat(100)}`,
-            phase("final_answer"),
-          ),
-        );
-      }
-      messages.push(...edgeTools("low-tool-last"));
-      const bodies = captureBodies();
-      await runPiMemoryStage1Extraction({
-        model: config(provider),
-        evidence: canonical(messages),
-        requestId: "bounded-request",
+  it("caps the actual OpenRouter Luna HTTP body with large competing canonical evidence", async () => {
+    const edgeTools = (id: string): Message[] => {
+      const call = fauxToolCall("read", { path: id }, { id });
+      return [
+        fauxAssistantMessage([call], { stopReason: "toolUse" }),
+        {
+          role: "toolResult",
+          toolCallId: id,
+          toolName: "read",
+          isError: false,
+          timestamp: 0,
+          content: [
+            { type: "text", text: `${id} ${"tool output ".repeat(1_000)}` },
+          ],
+        },
+      ];
+    };
+    const messages: Message[] = edgeTools("low-tool-first");
+    for (let index = 0; index < 120; index += 1) {
+      messages.push(
+        textMessage(
+          `commentary ${index} ${"tool noise ".repeat(100)}`,
+          phase("commentary"),
+        ),
+      );
+      messages.push({
+        role: "user",
+        timestamp: index,
+        content: `human-${index} ${'"\\汉😀 '.repeat(600)}`,
       });
-      expect(bodies).toHaveLength(1);
-      const body = bodies[0] ?? "";
-      const tokens = count(body);
-      expect(tokens).toBeGreaterThan(100_000);
-      expect(tokens).toBeLessThanOrEqual(250_000);
-      const window = provider === "openai" ? 272_000 : 1_050_000;
-      expect(tokens + 32_768 + 8_192).toBeLessThanOrEqual(window);
-      const history = historyFromBody(body);
-      expect(history).toContain("human-119");
-      expect(history).not.toContain("human-0 ");
-      expect(history).not.toContain('"role":"commentary"');
-      expect(history).not.toContain("low-tool-");
-      expect(count(history)).toBeLessThanOrEqual(Math.floor(window * 0.7));
-      for (const row of history.trimEnd().split("\n"))
-        expect(Buffer.byteLength(`${row}\n`, "utf8")).toBeLessThanOrEqual(
-          10_000,
-        );
-    },
-  );
+      messages.push(
+        textMessage(
+          `final-${index} ${"final evidence ".repeat(100)}`,
+          phase("final_answer"),
+        ),
+      );
+    }
+    messages.push(...edgeTools("low-tool-last"));
+    const bodies = captureBodies();
+    await runPiMemoryStage1Extraction({
+      model: config(),
+      evidence: canonical(messages),
+      requestId: "bounded-request",
+    });
+    expect(bodies).toHaveLength(1);
+    const body = bodies[0] ?? "";
+    const tokens = count(body);
+    expect(tokens).toBeGreaterThan(100_000);
+    expect(tokens).toBeLessThanOrEqual(250_000);
+    const window = 1_050_000;
+    expect(tokens + 32_768 + 8_192).toBeLessThanOrEqual(window);
+    const history = historyFromBody(body);
+    expect(history).toContain("human-119");
+    expect(history).not.toContain("human-0 ");
+    expect(history).not.toContain('"role":"commentary"');
+    expect(history).not.toContain("low-tool-");
+    expect(count(history)).toBeLessThanOrEqual(Math.floor(window * 0.7));
+    for (const row of history.trimEnd().split("\n"))
+      expect(Buffer.byteLength(`${row}\n`, "utf8")).toBeLessThanOrEqual(10_000);
+  });
 
   it.each([undefined, null, 0, -1, NaN, Infinity])(
     "uses the 150,000 history ceiling for unknown or invalid window %s in the actual body",
@@ -715,7 +712,11 @@ describe("Stage 1 native Codex complete request", () => {
   it("measures a mapped public Responses alias against the logical Luna catalog", async () => {
     const bodies = captureBodies();
     await runPiMemoryStage1Extraction({
-      model: { ...config(), model: "gateway-luna", catalogModel: MODEL },
+      model: {
+        ...config(),
+        model: "@preset/luna",
+        catalogModel: `openai/${MODEL}`,
+      },
       evidence: boundStage1Evidence(
         Array.from({ length: 180 }, (_, index) => {
           return {
@@ -728,7 +729,7 @@ describe("Stage 1 native Codex complete request", () => {
     });
     const body = bodies[0] ?? "";
     expect(JSON.parse(body)).toMatchObject({
-      model: "gateway-luna",
+      model: "@preset/luna",
       max_output_tokens: 32_768,
     });
     expect(count(body)).toBeGreaterThan(100_000);

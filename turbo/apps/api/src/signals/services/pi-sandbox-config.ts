@@ -77,23 +77,8 @@ function piRuntimeContract(args: {
   return {};
 }
 
-function piProvider(
-  concreteType: ModelProviderType,
-): "deepseek" | "openai" | "openrouter" | null {
-  switch (concreteType) {
-    case "deepseek": {
-      return "deepseek";
-    }
-    case "openai-api-key": {
-      return "openai";
-    }
-    case "openrouter-codex": {
-      return "openrouter";
-    }
-    default: {
-      return null;
-    }
-  }
+function piProvider(concreteType: ModelProviderType): "openrouter" | null {
+  return concreteType === "openrouter-codex" ? "openrouter" : null;
 }
 
 /**
@@ -122,13 +107,12 @@ export function shouldUsePiExecution(args: {
 
 interface PiModelProviderConfigInput {
   readonly upstreamModel?: string;
+  readonly credentialOwner?: ResolvedModelProviderEnvironment["credentialOwner"];
   readonly piModelConfig?: PiModelConfig;
   readonly type: string;
   readonly concreteType?: string;
   readonly environment: Record<string, string>;
   readonly selectedModel: string | null;
-  readonly inlineFirewall?: boolean;
-  readonly credentialHeader?: PiModelConfigLegacy["credentialHeader"];
 }
 
 function resolveCodexSubscriptionPiModelConfig(
@@ -140,8 +124,6 @@ function resolveCodexSubscriptionPiModelConfig(
     provider.type !== "codex-oauth-token" ||
     codexServiceTier === "ultrafast" ||
     routeClass !== "gpt-codex" ||
-    provider.inlineFirewall === true ||
-    provider.credentialHeader !== undefined ||
     (provider.concreteType !== undefined &&
       provider.concreteType !== "codex-oauth-token") ||
     provider.environment.OPENAI_MODEL !== provider.selectedModel ||
@@ -247,9 +229,6 @@ function resolveResponsesPiModelConfig(
   routeClass: PiRouteClass | null,
   codexServiceTier: "fast" | "ultrafast" | undefined,
 ): PiModelConfig | null {
-  if (provider.inlineFirewall) {
-    return null;
-  }
   const concreteType = modelProviderTypeSchema.safeParse(
     provider.concreteType ?? provider.type,
   );
@@ -275,9 +254,10 @@ function resolveResponsesPiModelConfig(
     concreteType.data,
     "openai-responses",
     // Captured global endpoints remain readable; only a captured US endpoint
-    // selects the model-gated US route.
-    provider.environment.OPENAI_BASE_URL === `${OPENROUTER_US_ORIGIN}/api/v1`
-      ? { model }
+    // selects the owner-gated US route.
+    provider.credentialOwner &&
+      provider.environment.OPENAI_BASE_URL === `${OPENROUTER_US_ORIGIN}/api/v1`
+      ? { credentialOwner: provider.credentialOwner, model }
       : undefined,
   );
   if (!endpoint) {
@@ -423,7 +403,7 @@ export function resolvePlatformMemoryPiModelConfig(
   assertCurrentPiCliArtifact();
   const config = resolveResponsesPiModelConfig(
     { ...provider, selectedModel: provider.selectedModel },
-    "deepseek",
+    null,
     undefined,
   );
   if (!config) {

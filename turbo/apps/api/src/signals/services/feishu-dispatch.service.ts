@@ -621,22 +621,22 @@ const feishuModelPickerState$ = command(
     readonly options: readonly FeishuModelOption[];
     readonly currentSelectedModel: string | null;
   }> => {
-    const { response: policies, systemDefaultModel } = await set(
+    const { response: runModels, systemDefaultModel } = await set(
       listAvailableRunModelsWithDefault$,
       { orgId, userId },
       signal,
     );
     signal.throwIfAborted();
     return {
-      options: policies.models
-        .flatMap((policy) => {
-          if (policy.routeStatus !== "valid") {
+      options: runModels.models
+        .flatMap((runModel) => {
+          if (runModel.routeStatus !== "valid") {
             return [];
           }
           return {
-            model: policy.model,
-            label: policy.modelLabel,
-            isDefault: policy.model === systemDefaultModel,
+            model: runModel.model,
+            label: runModel.modelLabel,
+            isDefault: runModel.model === systemDefaultModel,
           };
         })
         .slice(0, FEISHU_MODEL_PICKER_MAX_OPTIONS),
@@ -729,7 +729,7 @@ function feishuModelCommandOptions(
   return options.map((option) => {
     return {
       commandValue: option.model,
-      label: `${option.label}${option.isDefault ? " (workspace default)" : ""}`,
+      label: `${option.label}${option.isDefault ? " (default)" : ""}`,
       current: currentSelectedModel === option.model,
     };
   });

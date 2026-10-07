@@ -22,14 +22,14 @@ import { createPiAgentSessionForRuntime } from "./session-runtime";
 const queueTimeout =
   "We were unable to start processing your request within the 900-second timeout limit. Please try again later.";
 const route = {
-  provider: "deepseek",
-  baseUrl: "https://api.deepseek.com",
-  model: "deepseek-v4-flash",
+  provider: "openrouter",
+  baseUrl: "https://openrouter.ai/api/v1",
+  model: "deepseek/deepseek-v4.1-flash",
   apiKey: "synthetic-token",
   dialect: "openai-responses",
   transport: "sse",
 } as const;
-const endpoint = "https://api.deepseek.com/responses";
+const endpoint = "https://openrouter.ai/api/v1/responses";
 const server = setupServer();
 beforeAll(() => {
   server.listen({ onUnhandledRequest: "error" });
@@ -108,7 +108,7 @@ function completedResponse(text = "Recovered") {
 
 function stream(signal?: AbortSignal) {
   const model = resolvePiAgentModel(route);
-  if (!model) throw new Error("Expected the pinned DeepSeek model");
+  if (!model) throw new Error("Expected the pinned OpenRouter DeepSeek model");
   return piAgentStreamForConfig(route)(
     model,
     normalizeContext({

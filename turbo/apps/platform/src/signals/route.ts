@@ -10,7 +10,6 @@ import {
 } from "./auth.ts";
 import { hash, pathname, pushState, replaceState, search } from "./location.ts";
 import { setPageSignal$ } from "./page-signal.ts";
-import { clearPage$ } from "./react-router.ts";
 import { rootSignal$ } from "./root-signal.ts";
 import { bridgeConnected$ } from "./shared-database-bridge-state.ts";
 import { detach, onDomEventFn, Reason, resetSignal } from "./utils.ts";
@@ -97,16 +96,18 @@ interface Route {
   path: string;
   setup: Command<Promise<void> | void, [AbortSignal]>;
   analytics?: boolean;
-  /** Keep the current page mounted while navigating within this group. */
-  pageGroup?: string;
 }
 
 const internalRouteConfig$ = state<Route[] | undefined>(undefined);
 
-function findRoute(
-  config: readonly Route[],
-  currentPath: string,
-): Route | null {
+const currentRoute$ = computed((get) => {
+  const config = get(internalRouteConfig$);
+  if (!config) {
+    return null;
+  }
+
+  const currentPath = get(pathname$);
+
   for (const route of config) {
     const matcher = match(route.path, { decode: decodeURIComponent });
     const result = matcher(currentPath);
@@ -116,31 +117,7 @@ function findRoute(
   }
 
   return null;
-}
-
-const currentRoute$ = computed((get) => {
-  const config = get(internalRouteConfig$);
-  if (!config) {
-    return null;
-  }
-
-  return findRoute(config, get(pathname$));
 });
-
-const clearPageForRouteBoundary$ = command(
-  ({ get, set }, nextPathname: string) => {
-    const config = get(internalRouteConfig$);
-    const nextRoute = config ? findRoute(config, nextPathname) : null;
-    const currentRoute = get(currentRoute$);
-    if (
-      currentRoute !== nextRoute &&
-      (!currentRoute?.pageGroup ||
-        currentRoute.pageGroup !== nextRoute?.pageGroup)
-    ) {
-      set(clearPage$);
-    }
-  },
-);
 
 export const pathParams$ = computed((get) => {
   const currentRoute = get(currentRoute$);
@@ -209,7 +186,6 @@ export const initRoutes$ = command(
       "popstate",
       onDomEventFn(async (event: PopStateEvent) => {
         set(internalHistoryState$, event.state);
-        set(clearPageForRouteBoundary$, pathname());
         set(reloadPathname$, (x) => {
           return x + 1;
         });
@@ -249,7 +225,6 @@ const navigate$ = command(
       "navigating to",
       isDesktopAuthFlow(new URL(newPath, location.origin)) ? pathname : newPath,
     );
-    set(clearPageForRouteBoundary$, pathname);
     if (options.replace) {
       replaceState({}, "", newPath);
     } else {

@@ -110,10 +110,10 @@ function consolidationArgs(
     baseFiles,
     selected: selectedSnapshots,
     model: {
-      provider: "openai",
+      provider: "openrouter",
       baseUrl: "http://127.0.0.1:1/v1",
       apiKey: "unused-test-key",
-      model: "gpt-6-luna",
+      model: "openai/gpt-6-luna",
       dialect: "openai-responses",
       transport: "sse",
     },

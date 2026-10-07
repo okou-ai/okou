@@ -10,7 +10,7 @@ import {
 
 /**
  * Fail only the first selected bootstrap read in the test-owned request.
- * Organization reads match the fixture identity; global key/pricing reads
+ * Permission reads match the fixture identity; global pricing reads
  * run only while this isolated test owns the fixture's PostgreSQL client.
  * Both callers belong to vitest.config.ts's api-bootstrap-failure project,
  * which explicitly isolates workers and runs its files and cases serially.
@@ -23,7 +23,7 @@ export async function withAgentBootstrapFailureFixture<T>(
     readonly userId: string;
     readonly orgId: string;
     readonly agentId: string;
-    readonly read?: "managed-keys" | "org-providers" | "gateways" | "pricing";
+    readonly read?: "pricing";
   },
   work: () => Promise<T>,
 ): Promise<T> {
@@ -38,21 +38,12 @@ export async function withAgentBootstrapFailureFixture<T>(
     apply(target, receiver: unknown, queryArgs: unknown[]): unknown {
       const text = barrierQueryText(queryArgs);
       const selected =
-        identity.read === "managed-keys"
-          ? text.includes('from "built_in_model_keys"')
-          : identity.read === "pricing"
-            ? text.includes('from "usage_pricing"')
-            : identity.read === "org-providers"
-              ? text.includes('from "model_providers"') &&
-                barrierQueryBinds(queryArgs, identity.orgId) &&
-                barrierQueryBinds(queryArgs, "__org__")
-              : identity.read === "gateways"
-                ? text.includes('from "model_provider_surfaces"') &&
-                  barrierQueryBinds(queryArgs, identity.orgId)
-                : text.includes('from "user_permission_grants"') &&
-                  barrierQueryBinds(queryArgs, identity.userId) &&
-                  barrierQueryBinds(queryArgs, identity.orgId) &&
-                  barrierQueryBinds(queryArgs, identity.agentId);
+        identity.read === "pricing"
+          ? text.includes('from "usage_pricing"')
+          : text.includes('from "user_permission_grants"') &&
+            barrierQueryBinds(queryArgs, identity.userId) &&
+            barrierQueryBinds(queryArgs, identity.orgId) &&
+            barrierQueryBinds(queryArgs, identity.agentId);
       if (injected || !selected) {
         return Reflect.apply(target, receiver, queryArgs);
       }

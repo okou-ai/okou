@@ -1141,7 +1141,7 @@ function formatAgentPhoneModelOptionsMessage(
   const optionLines = options.map((option) => {
     const markers = [
       option.model === currentSelectedModel ? "current" : null,
-      option.isDefault ? "workspace default" : null,
+      option.isDefault ? "default" : null,
     ].filter((marker): marker is string => {
       return marker !== null;
     });
@@ -1153,7 +1153,7 @@ function formatAgentPhoneModelOptionsMessage(
     ? (options.find((option) => {
         return option.model === currentSelectedModel;
       })?.label ?? currentSelectedModel)
-    : "workspace default";
+    : "default";
   return [
     "Available models",
     "",
@@ -1204,21 +1204,21 @@ const handleModelCommand$ = command(
       );
       return;
     }
-    const { response: policies, systemDefaultModel } = await set(
+    const { response: runModels, systemDefaultModel } = await set(
       listAvailableRunModelsWithDefault$,
       { orgId: args.orgId, userId: args.userId },
       signal,
     );
     signal.throwIfAborted();
 
-    const options = policies.models.flatMap((policy) => {
-      if (policy.routeStatus !== "valid") {
+    const options = runModels.models.flatMap((runModel) => {
+      if (runModel.routeStatus !== "valid") {
         return [];
       }
       return {
-        model: policy.model,
-        label: policy.modelLabel,
-        isDefault: policy.model === systemDefaultModel,
+        model: runModel.model,
+        label: runModel.modelLabel,
+        isDefault: runModel.model === systemDefaultModel,
       };
     });
 
@@ -1477,7 +1477,6 @@ const persistAgentPhoneChatMessage$ = command(
           {
             orgId: args.userLink.orgId,
             userId: args.userLink.userId,
-            defaultSource: undefined,
             orgPlanCapabilities: undefined,
           },
           signal,

@@ -109,10 +109,12 @@ function previewCatalogProjection(artifact: ConnectorCatalogArtifact) {
   const slugs = new Set<string>([
     ...ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
     ...ONBOARDING_WORKFLOW_CONNECTOR_SLUGS,
-    // Existing Runner E2E exercises these official manual connectors.
+    // Existing Runner E2E exercises these official manual connectors;
+    // replicate backs its unconfigured-connector firewall diagnostic.
     "algolia",
     "bentoml",
     "discord-webhook",
+    "replicate",
     "serpapi",
     "twilio",
     "zendesk",

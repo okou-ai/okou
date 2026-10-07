@@ -441,7 +441,7 @@ describe("personal subscription run identity", () => {
     },
   );
 
-  describe("failed A after active B and API policy changes", () => {
+  describe("failed A after active B", () => {
     async function recoveryFixture() {
       const f = await fixture("codex-oauth-token");
       const runId = await f.start();
@@ -450,7 +450,6 @@ describe("personal subscription run identity", () => {
       await finish(f.actor, runId, claim, "failed");
       const auth = createAuthDeviceApiActions(context);
       mockCodexDeviceAuthProvider({
-        tokenScope: "personal",
         accountId: "identity-b",
       });
       const started = await auth.requestCodexStart(f.actor, "personal", [200], {
@@ -767,7 +766,6 @@ describe("personal subscription run identity", () => {
     const auth = createAuthDeviceApiActions(context);
     async function oauth(mode: "add" | "reconnect", modelProviderId?: string) {
       mockCodexDeviceAuthProvider({
-        tokenScope: "personal",
         accountId: "identity-b",
       });
       const started = await auth.requestCodexStart(f.actor, "personal", [200], {
@@ -1057,7 +1055,7 @@ test("keeps a Claude identity shared after a type-wide disconnect and reconnect"
   await runs.requestCancelRun(f.actor, runId, [200]);
 });
 
-describe("personal priority over organization API", () => {
+describe("personal subscription over credit-funded Auto", () => {
   it.each([
     { type: "claude-code-oauth-token" },
     { type: "codex-oauth-token" },
@@ -1135,7 +1133,7 @@ describe("personal priority connection boundaries", () => {
   );
 });
 
-describe("member-effective model policy contract", () => {
+describe("member-effective model contract", () => {
   it("keeps fixed Auto common and personal model visibility scoped to the member", async () => {
     const f = await fixture("claude-code-oauth-token");
     const bdd = createBddApi(context);
@@ -1181,7 +1179,7 @@ describe("member-effective model policy contract", () => {
       const { rejected, guidance } = await sendRejectedAtPick(f.actor, {
         agentId: f.agentId,
         model: f.model,
-        prompt: "organization policy requires my subscription",
+        prompt: "this model requires my subscription",
       });
       expect(rejected).toMatchObject({ error: "conflict" });
       expect(guidance?.content).toContain("subscription");
@@ -1197,34 +1195,6 @@ describe("member-effective model policy contract", () => {
 });
 
 describe("personal effective provider entitlement", () => {
-  it("keeps personal subscriptions available on a restricted built-in plan", async () => {
-    const f = await fixture("claude-code-oauth-token");
-    if (!f.actor.orgId) {
-      throw new Error("Expected an owned organization");
-    }
-    // Infrastructure-only entitlement state cannot be constructed via a production endpoint.
-    await upsertOrgPlanEntitlementFixture({
-      orgId: f.actor.orgId,
-      status: "active",
-      restrictedBuiltInModels: true,
-    });
-    const models = await createMiscRoutesApi(context).listRunModels(f.actor);
-    expect(availableModel(models, f.model)?.memberEffective).toMatchObject({
-      providerType: f.type,
-      credentialScope: "member",
-      availability: "available",
-    });
-    const runId = await f.start();
-    onTestFinished(async () => {
-      await runs.requestCancelRun(f.actor, runId, [200]);
-    });
-    const claim = await f.claim(runId);
-    expect(claim.billableFirewalls).toStrictEqual([]);
-    expect(accountId(claim, f.type)).toBe(f.connected.id);
-    await expect(resolve(claim, f.type)).resolves.toMatchObject({
-      Authorization: `Bearer ${f.connected.token}`,
-    });
-  });
   it("rejects a suspended entitlement even with org credits and a supported subscription", async () => {
     const f = await fixture("claude-code-oauth-token");
 
@@ -1317,7 +1287,6 @@ describe("subscription bundle decryption ownership", () => {
       if (mutation === "activation") {
         const auth = createAuthDeviceApiActions(context);
         mockCodexDeviceAuthProvider({
-          tokenScope: "personal",
           accountId: "identity-b",
         });
         const started = await auth.requestCodexStart(
@@ -1439,7 +1408,7 @@ describe("subscription bundle decryption ownership", () => {
   );
 });
 
-describe("personal priority gateway and session boundaries", () => {
+describe("personal priority credential and session boundaries", () => {
   it("keeps a selected subscription personal when credential decryption fails", async () => {
     const f = await fixture("codex-oauth-token");
 

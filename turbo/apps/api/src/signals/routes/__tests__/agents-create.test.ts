@@ -129,9 +129,6 @@ describe("POST /api/agents", () => {
       description: "Tracks research context",
       sound: "calm",
       avatarUrl: "preset:2",
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "private",
     });
     expect(response.body.agentId).toStrictEqual(expect.any(String));

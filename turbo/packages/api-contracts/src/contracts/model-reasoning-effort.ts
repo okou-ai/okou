@@ -70,11 +70,6 @@ export function narrowRouteReasoningEfforts(args: {
         return effort === "high" || effort === "xhigh";
       });
     }
-    if (args.runtimeProviderType === "deepseek") {
-      return choices.filter((effort) => {
-        return effort !== "xhigh";
-      });
-    }
     return [];
   }
   return choices.filter((effort) => {

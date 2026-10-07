@@ -341,13 +341,14 @@ const admitMaintenance$ = command(
       signal,
     );
     const selectedModel = credential.pin.selectedModel;
-    const modelProviderType = modelProviderTypeSchema.parse(
+    // A pinned provider outside the current enum is unavailable, not a crash.
+    const modelProviderType = modelProviderTypeSchema.safeParse(
       credential.pin.modelProvider,
-    );
+    ).data;
     const framework =
       credential.pin.modelProvider === "built-in"
         ? ("codex" as const)
-        : selectedModel
+        : selectedModel && modelProviderType
           ? frameworkForProviderSelection(
               catalog,
               modelProviderType,
@@ -1246,6 +1247,7 @@ function maintenanceModelEnvironment(args: {
   );
 }
 
+/** Credentials a native Pi configuration must never receive ambiently. */
 /**
  * The installed CLI must have this session construction and meet the CLI
  * floor; otherwise the guest uses the commit-addressed package.

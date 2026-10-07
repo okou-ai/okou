@@ -238,13 +238,13 @@ describe("desktop tray", () => {
     "needs_organization",
     "disabled",
     "error",
-  ])("uses the disabled tray icon while Computer Use is %s", (status) => {
+  ])("uses a disabled template icon while Computer Use is %s", (status) => {
     installController(() => computerUseState(status));
 
     const tray = installedTray();
 
     expect(tray.image.path).toBe(disabledIconPath);
-    expect(tray.image.templateImage).toBe(false);
+    expect(tray.image.templateImage).toBe(true);
   });
 
   it("uses the template tray icon while Computer Use is online", () => {
@@ -275,7 +275,7 @@ describe("desktop tray", () => {
     controller.refresh();
 
     expect(tray.image.path).toBe(disabledIconPath);
-    expect(tray.image.templateImage).toBe(false);
+    expect(tray.image.templateImage).toBe(true);
     expect(tray.setImage).toHaveBeenCalledTimes(2);
   });
 

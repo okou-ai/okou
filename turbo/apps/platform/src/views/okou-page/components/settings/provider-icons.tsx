@@ -6,11 +6,7 @@ import { settingsIconAssetUrl } from "./settings-icon-assets.ts";
 const PROVIDER_ICONS: Readonly<Partial<Record<ModelProviderType, string>>> =
   Object.freeze({
     "claude-code-oauth-token": settingsIconAssetUrl("anthropic"),
-    "anthropic-api-key": settingsIconAssetUrl("anthropic"),
-    "openrouter-api-key": settingsIconAssetUrl("openrouter"),
-    deepseek: settingsIconAssetUrl("deepseek"),
     "openrouter-codex": settingsIconAssetUrl("openrouter"),
-    "openai-api-key": settingsIconAssetUrl("openai"),
     "codex-oauth-token": settingsIconAssetUrl("openai"),
     "built-in": platformOkouMarkDarkImg,
   });
@@ -18,7 +14,6 @@ const PROVIDER_ICONS: Readonly<Partial<Record<ModelProviderType, string>>> =
 const DARK_INVERT_PROVIDER_ICONS: Readonly<
   Partial<Record<ModelProviderType, true>>
 > = Object.freeze({
-  "openai-api-key": true,
   "codex-oauth-token": true,
   "built-in": true,
 });

@@ -145,7 +145,10 @@ export function preparePiMemoryBuiltinEnvironment(
     selection: { kind: "built-in", ...route },
     credentials: { OPENROUTER_API_KEY: credential.apiKey },
   });
-  const routing = { model: route.upstreamModel };
+  const routing = {
+    credentialOwner: "builtin" as const,
+    model: route.upstreamModel,
+  };
   return {
     id: null,
     type: "built-in",

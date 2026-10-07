@@ -127,9 +127,6 @@ export function listAgent(
     description: null,
     sound: null,
     avatarUrl,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: "public",
   };
 }

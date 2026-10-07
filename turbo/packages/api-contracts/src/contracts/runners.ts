@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { piCredentialHeaderSchema } from "./pi-credential";
 
 import { authHeadersSchema, initContract } from "./base";
 import {
@@ -968,10 +967,8 @@ export const piInstalledCliRequirementSchema = z
 
 export const piModelConfigLegacySchema = z
   .object({
-    provider: z.enum(["deepseek", "openai", "openrouter", "codex"]),
+    provider: z.enum(["openrouter", "codex"]),
     baseUrl: z.url(),
-    // Request identity can differ from the trusted Pi catalog entry for an
-    // organization-configured model provider gateway.
     model: z.string().min(1),
     catalogModel: z.string().min(1).optional(),
     thinkingLevel: z
@@ -980,24 +977,13 @@ export const piModelConfigLegacySchema = z
     // Per-run provider request policy. This is not Pi session identity or
     // persisted Pi JSONL metadata.
     serviceTier: z.enum(["priority"]).optional(),
-    apiKeyEnv: z.enum([
-      "ANTHROPIC_AUTH_TOKEN",
-      "OPENAI_API_KEY",
-      "CHATGPT_ACCESS_TOKEN",
-    ]),
+    apiKeyEnv: z.enum(["OPENAI_API_KEY", "CHATGPT_ACCESS_TOKEN"]),
     credentialSecretName: z.string().regex(/^[A-Z_][A-Z0-9_]*$/),
-    // Non-secret gateway request policy. The credential itself remains in the
-    // encrypted secret named above and is resolved only at an execution edge.
-    credentialHeader: piCredentialHeaderSchema.optional(),
   })
   .strict()
   .readonly();
 
-const piApiKeyCredentialSecretNameSchema = z.enum([
-  "DEEPSEEK_API_KEY",
-  "OPENAI_API_KEY",
-  "OPENROUTER_API_KEY",
-]);
+const piApiKeyCredentialSecretNameSchema = z.enum(["OPENROUTER_API_KEY"]);
 
 const piModelCredentialBindingSchema = z.discriminatedUnion("kind", [
   z
@@ -1005,7 +991,6 @@ const piModelCredentialBindingSchema = z.discriminatedUnion("kind", [
       kind: z.literal("api-key"),
       environment: z.enum(["OPENAI_API_KEY"]),
       secretName: piApiKeyCredentialSecretNameSchema,
-      credentialHeader: piCredentialHeaderSchema.optional(),
     })
     .strict()
     .readonly(),
@@ -1039,14 +1024,14 @@ const piModelConfigVersionedSchema = z
     ]),
     dialect: z.enum(["openai-responses", "openai-codex-responses"]),
     transport: z.literal("sse"),
-    provider: z.enum(["deepseek", "openai", "openrouter", "openai-codex"]),
+    provider: z.enum(["openrouter", "openai-codex"]),
     baseUrl: z.url(),
     model: z.string().min(1).max(512),
     catalogModel: z.string().min(1).max(512).optional(),
     thinkingLevel: z
       .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
       .optional(),
-    serviceTier: z.enum(["priority", "fast", "ultrafast"]).optional(),
+    serviceTier: z.enum(["priority", "fast"]).optional(),
     credentialBindings: z.array(piModelCredentialBindingSchema).min(1).max(2),
   })
   .strict()
@@ -1132,8 +1117,8 @@ export const piModelConfigV3Schema = z
       schemaVersion: z.literal(PI_MODEL_CONFIG_DIALECT_TIER_GENERATION),
       dialect: z.literal("openai-responses"),
       transport: z.enum(["sse"]),
-      provider: z.enum(["deepseek", "openai", "openrouter"]),
-      serviceTier: z.enum(["priority", "ultrafast"]).optional(),
+      provider: z.enum(["openrouter"]),
+      serviceTier: z.enum(["priority"]).optional(),
     }),
     piModelConfigVersionedSchema.safeExtend({
       schemaVersion: z.literal(PI_MODEL_CONFIG_DIALECT_TIER_GENERATION),
@@ -1143,19 +1128,6 @@ export const piModelConfigV3Schema = z
       serviceTier: z.enum(["fast"]).optional(),
     }),
   ])
-  .superRefine((config, refinement) => {
-    if (
-      config.dialect === "openai-responses" &&
-      config.serviceTier === "ultrafast" &&
-      (config.provider !== "openai" || config.model !== "gpt-6-astra")
-    ) {
-      refinement.addIssue({
-        code: "custom",
-        path: ["serviceTier"],
-        message: "Ultrafast requires direct OpenAI Astra",
-      });
-    }
-  })
   .readonly();
 
 export const piModelConfigSchema = z.union([

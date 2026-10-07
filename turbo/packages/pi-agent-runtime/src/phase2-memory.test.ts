@@ -105,7 +105,7 @@ function args(
   baseUrl: string,
   overrides: Partial<PiMemoryPhase2LocalConsolidationArgs> = {},
   /** Written into the literal below so the dialect arm stays discriminated. */
-  catalogModel = "gpt-6-luna",
+  catalogModel = "openai/gpt-6-luna",
 ): PiMemoryPhase2LocalConsolidationArgs {
   return {
     memoryStorageId: "storage-phase2",
@@ -119,7 +119,7 @@ function args(
     ],
     selected: [selected()],
     model: {
-      provider: "openai",
+      provider: "openrouter",
       baseUrl,
       apiKey: "PROVIDER_KEY_SECRET_31243",
       model: "MODEL_ALIAS_SECRET_31243",
@@ -127,7 +127,6 @@ function args(
       dialect: "openai-responses",
       transport: "sse",
       thinkingLevel: "max",
-      requestHeaders: { "x-phase2-secret": "HEADER_SECRET_31243" },
     },
     ...overrides,
   };
@@ -653,10 +652,10 @@ describe("Pi memory Phase 2 consolidation engine", () => {
     const result = await runPiMemoryPhase2LocalConsolidation(
       args(provider.baseUrl, {
         model: {
-          provider: "deepseek",
+          provider: "openrouter",
           baseUrl: provider.baseUrl,
           apiKey: "PROVIDER_KEY_SECRET_31243",
-          model: "deepseek-flash",
+          model: "deepseek/deepseek-v4.1-flash",
           dialect: "openai-responses",
           transport: "sse",
         },
@@ -674,7 +673,7 @@ describe("Pi memory Phase 2 consolidation engine", () => {
     expect(provider.requests).not.toHaveLength(0);
     for (const request of provider.requests) {
       expect(request.body).toMatchObject({
-        model: "deepseek-flash",
+        model: "deepseek/deepseek-v4.1-flash",
         reasoning: { effort: "high" },
       });
     }
@@ -785,7 +784,6 @@ describe("Pi memory Phase 2 consolidation engine", () => {
     if (!firstRequest) {
       throw new Error("Missing first Phase 2 provider request");
     }
-    expect(firstRequest.headers["x-phase2-secret"]).toBe("HEADER_SECRET_31243");
     expect(
       (firstRequest.body.input as Array<Record<string, unknown>>)[0],
     ).toStrictEqual({
@@ -827,7 +825,6 @@ describe("Pi memory Phase 2 consolidation engine", () => {
       "BASE_LEGACY_SECRET_31243",
       "BASE_CODEX_RAW_SECRET_31243",
       "PROVIDER_KEY_SECRET_31243",
-      "HEADER_SECRET_31243",
       "MODEL_TEXT_SECRET_31243",
       cleanupRoot,
     ]) {
@@ -842,7 +839,14 @@ describe("Pi memory Phase 2 consolidation engine", () => {
     const provider = await startProvider([{ type: "text", text: "complete" }]);
     const bytes = Buffer.from("# Task Group: original\n");
     const candidate = selected();
-    const headers: Record<string, string> = { "x-snapshot": "original" };
+    const model = {
+      provider: "openrouter",
+      baseUrl: provider.baseUrl,
+      apiKey: "original-key",
+      model: "openai/gpt-6-luna",
+      dialect: "openai-responses",
+      transport: "sse",
+    } as const;
     const input = args(provider.baseUrl, {
       baseFiles: [
         {
@@ -855,22 +859,14 @@ describe("Pi memory Phase 2 consolidation engine", () => {
         baseFile("memory_summary.md", "v1\n## User Profile\n"),
       ],
       selected: [candidate],
-      model: {
-        provider: "openai",
-        baseUrl: provider.baseUrl,
-        apiKey: "original-key",
-        model: "gpt-6-luna",
-        dialect: "openai-responses",
-        transport: "sse",
-        requestHeaders: headers,
-      },
+      model,
     });
     const promise = runPiMemoryPhase2LocalConsolidation(
       input,
       new AbortController().signal,
     );
     bytes.fill(120);
-    headers["x-snapshot"] = "mutated";
+    Object.defineProperty(model, "model", { value: "mutated-model" });
     (candidate as { rawMemory: string }).rawMemory = "mutated raw";
     (candidate as { rolloutSummary: string }).rolloutSummary =
       "mutated summary";
@@ -893,7 +889,7 @@ describe("Pi memory Phase 2 consolidation engine", () => {
         })
         .join("\n"),
     ).toContain("ROLLOUT_SUMMARY_SECRET_31243");
-    expect(provider.requests[0]?.headers["x-snapshot"]).toBe("original");
+    expect(provider.requests[0]?.body.model).toBe("openai/gpt-6-luna");
   });
 
   it("treats stale Pi evidence deletion with an empty selection as model work", async () => {

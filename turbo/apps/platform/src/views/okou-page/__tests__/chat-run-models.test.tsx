@@ -624,7 +624,7 @@ test("A structured capacity failure offers recovery despite generic provider tex
 
 test.each([
   [
-    "BYOK balance",
+    "Provider balance",
     "provider_insufficient_credits",
     "Your connected model provider account has insufficient balance.",
     "Your provider account needs more credit",
@@ -1045,7 +1045,7 @@ test.each(["AUTONOMY_BUDGET_EXHAUSTED"])(
 
 test("Preserve provider errors that have no guided recovery", async () => {
   const providerError =
-    "Selected model capacity warning from a custom gateway; contact its operator.";
+    "Selected model capacity warning from the upstream provider; contact support.";
   configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
   installRunChat({
     selectedModel: "gpt-5.6-sol",

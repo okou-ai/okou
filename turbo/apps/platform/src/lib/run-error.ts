@@ -2,8 +2,6 @@ import {
   CHAT_RUN_CONTENT_POLICY_REJECTED_MESSAGE,
   CHAT_RUN_EXECUTION_TIMEOUT_MESSAGE,
   CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
-  CLAUDE_CODE_ANTHROPIC_API_KEY_ADMIN_MESSAGE,
-  CLAUDE_CODE_ANTHROPIC_API_KEY_MEMBER_MESSAGE,
   CLAUDE_CODE_SUBSCRIPTION_RECONNECT_REQUIRED_MESSAGE,
   CLAUDE_CODE_TERMS_ACCEPTANCE_REQUIRED_MESSAGE,
   CLAUDE_PROVIDER_OVERLOADED_GUIDANCE,
@@ -27,16 +25,6 @@ function localizedCredentialError(message: string): string | undefined {
     case CLAUDE_CODE_SUBSCRIPTION_RECONNECT_REQUIRED_MESSAGE: {
       return i18n.t(($) => {
         return $.runErrors.claudeReconnect;
-      });
-    }
-    case CLAUDE_CODE_ANTHROPIC_API_KEY_ADMIN_MESSAGE: {
-      return i18n.t(($) => {
-        return $.runErrors.anthropicKeyAdmin;
-      });
-    }
-    case CLAUDE_CODE_ANTHROPIC_API_KEY_MEMBER_MESSAGE: {
-      return i18n.t(($) => {
-        return $.runErrors.anthropicKeyMember;
       });
     }
     case CLAUDE_CODE_TERMS_ACCEPTANCE_REQUIRED_MESSAGE: {
@@ -98,8 +86,8 @@ function localizedRunErrorText(message: string): string | undefined {
         return $.activity.detail.errorGuidance.paidPlanRequired.title;
       });
     }
-    case "Insufficient credits. Add credits or configure your own API key to continue.":
-    case "API Error: 402 Insufficient credits. Add credits or configure your own API key to continue.": {
+    case "Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue.":
+    case "API Error: 402 Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue.": {
       return i18n.t(($) => {
         return $.runErrors.vm0Credits;
       });
@@ -196,11 +184,6 @@ function localizedRunErrorAction(action: string): string {
       case "Open Model Providers": {
         return i18n.t(($) => {
           return $.runErrors.actions.openModelProviders;
-        });
-      }
-      case "Share with an admin": {
-        return i18n.t(($) => {
-          return $.runErrors.actions.shareWithAdmin;
         });
       }
       case "Add credits": {

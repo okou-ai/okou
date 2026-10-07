@@ -49,10 +49,7 @@ async function openInstructionsThenChat(): Promise<void> {
       avatarUrl: null,
       description: null,
       displayName: "Markdown Agent",
-      modelProviderId: null,
       ownerId: "test-user-123",
-      preferPersonalProvider: false,
-      selectedModel: null,
       sound: null,
       visibility: "private",
     });

@@ -1243,7 +1243,7 @@ mod tests {
             feature_flags: r#"{"flag":true}"#.to_string(),
             codex_runtime_config: r#"{"providerId":"deepseek"}"#.to_string(),
             pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
-            pi_model_config: r#"{"provider":"deepseek"}"#.to_string(),
+            pi_model_config: r#"{"provider":"openrouter"}"#.to_string(),
             pi_session_id: "22222222-2222-4222-8222-222222222222".to_string(),
             pi_installed_cli_requirement: r#"{"minCliVersion":"9.352.7"}"#.to_string(),
         };
@@ -1268,7 +1268,7 @@ mod tests {
         assert_eq!(config.feature_flags.get("flag"), Some(&true));
         assert_eq!(config.codex_runtime_config, r#"{"providerId":"deepseek"}"#);
         assert_eq!(config.pi_launch_config, r#"{"schemaVersion":2}"#);
-        assert_eq!(config.pi_model_config, r#"{"provider":"deepseek"}"#);
+        assert_eq!(config.pi_model_config, r#"{"provider":"openrouter"}"#);
         assert_eq!(config.pi_session_id, "22222222-2222-4222-8222-222222222222");
         assert_eq!(
             config.pi_installed_cli_requirement,

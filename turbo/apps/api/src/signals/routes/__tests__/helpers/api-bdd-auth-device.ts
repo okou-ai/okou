@@ -215,7 +215,6 @@ function makeCodexIdToken(opts: {
 }
 
 function makeCodexTokenResponse(
-  scope: "org" | "personal",
   args: {
     readonly accessTokenExpiresAt?: number;
     readonly accountId?: string;
@@ -223,18 +222,17 @@ function makeCodexTokenResponse(
     readonly workspaceName?: string;
   } = {},
 ) {
-  const accountId = args.accountId ?? `ws_acct_from_id_token_${scope}`;
+  const accountId = args.accountId ?? "ws_acct_from_id_token_personal";
   return {
     access_token: makeCodexJwt({
       exp: args.accessTokenExpiresAt ?? Math.floor(now() / 1000) + 7200,
       account_id: accountId,
     }),
-    refresh_token: args.refreshToken ?? `rt_${scope}_synthetic_high_entropy`,
+    refresh_token: args.refreshToken ?? "rt_personal_synthetic_high_entropy",
     id_token: makeCodexIdToken({
       accountId,
       planType: "plus",
-      workspaceName:
-        args.workspaceName ?? (scope === "org" ? "Org Acme" : "Personal Acme"),
+      workspaceName: args.workspaceName ?? "Personal Acme",
     }),
   };
 }
@@ -296,7 +294,6 @@ export function mockCodexDeviceAuthProvider(
     readonly beforeTokenResponse?: () => Promise<void>;
     readonly accessTokenExpiresAt?: number;
     readonly refreshedAccessTokenExpiresAt?: number;
-    readonly tokenScope?: "org" | "personal";
     readonly accountId?: string;
     readonly refreshToken?: string;
     readonly workspaceName?: string;
@@ -340,18 +337,15 @@ export function mockCodexDeviceAuthProvider(
         ? new URLSearchParams(JSON.parse(rawBody) as Record<string, string>)
         : new URLSearchParams(rawBody);
       recorded.oauthToken.push(body);
-      const tokenResponse = makeCodexTokenResponse(
-        options.tokenScope ?? "org",
-        {
-          ...options,
-          ...(body.get("grant_type") === "refresh_token" &&
-          options.refreshedAccessTokenExpiresAt !== undefined
-            ? {
-                accessTokenExpiresAt: options.refreshedAccessTokenExpiresAt,
-              }
-            : {}),
-        },
-      );
+      const tokenResponse = makeCodexTokenResponse({
+        ...options,
+        ...(body.get("grant_type") === "refresh_token" &&
+        options.refreshedAccessTokenExpiresAt !== undefined
+          ? {
+              accessTokenExpiresAt: options.refreshedAccessTokenExpiresAt,
+            }
+          : {}),
+      });
       recorded.oauthTokenResponses.push(tokenResponse);
       await options.beforeTokenResponse?.();
       return HttpResponse.json(tokenResponse);

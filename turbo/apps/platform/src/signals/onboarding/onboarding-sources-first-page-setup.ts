@@ -10,7 +10,7 @@ import {
 } from "../../views/onboarding-sources-first/onboarding-setup-pages.tsx";
 import { OnboardingSourcesPage } from "../../views/onboarding-sources-first/onboarding-sources-page.tsx";
 import { i18n } from "../../i18n/index.ts";
-import { hideAppSkeleton$, showAppSkeleton$ } from "../app-skeleton.ts";
+import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { captureSourceOnboardingStepViewed$ } from "../bootstrap/source-onboarding-telemetry.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
@@ -28,7 +28,7 @@ import {
   telegramBots$,
 } from "../okou-page/telegram.ts";
 import { enterOnboardingPhoneCode$ } from "./onboarding-chat-channels.ts";
-import { page$, updatePage$ } from "../react-router.ts";
+import { updatePage$ } from "../react-router.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES, type RoutePath } from "../route-paths.ts";
 import { detach, Reason } from "../utils.ts";
@@ -114,10 +114,6 @@ function createSourcesFirstPageSetup(
   config: SourcesFirstPageConfig,
 ): Command<Promise<void>, [AbortSignal]> {
   return command(async ({ get, set }, signal: AbortSignal) => {
-    if (!get(page$)) {
-      set(showAppSkeleton$);
-    }
-
     const status = await get(onboardingStatus$);
     signal.throwIfAborted();
     let resumeStep: SourcesFirstStep | null = null;

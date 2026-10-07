@@ -179,10 +179,12 @@ organizations, accounts, credential storage and encrypted values remain
 case-owned. Concurrent workers share the same committed fixture: a losing
 initialization INSERT never replaces it.
 
-Legacy catalog corruption, compatibility-evaluation and identity-rotation cases
-remain while those production mechanisms are active (#26/#28). Those cases own
-an explicitly separate legacy source, never the shared fixture. The legacy
-source module is not removed by the additive schema PR.
+Readers use the current catalog pointer, which is keyed only by schema version
+and has no source dimension. A case that publishes another generation, such as
+an identity rotation or a catalog with unavailable auth methods, belongs to the
+serial `*.catalog-generation.test.ts` or publisher project and publishes its own
+prerequisite generation. Legacy snapshot and stored-compatibility mutations no
+longer change what business readers observe.
 
 `connector-catalog-immutable.test.ts` retains its dedicated PGlite catalog
 lifecycle project and existing mechanism-specific lint exceptions. Its project
@@ -220,9 +222,6 @@ central DB `vi.mock` is permitted; service mocks and case-local DB mocks remain
 forbidden. These lexical guards do not prove runtime isolation.
 
 All migrated cooldown suites use this per-case harness without serial scheduling.
-The retired Custom bootstrap left an unused catalog argument/read in the
-publication transaction; removing that obsolete dependency makes the lifecycle
-suite portable without changing transaction boundaries or redirecting reads.
 The harness uses PGlite's driver parsers to preserve int8/numeric text exactly as
 node-postgres does, rather than rewriting SQL results or weakening row schemas.
 

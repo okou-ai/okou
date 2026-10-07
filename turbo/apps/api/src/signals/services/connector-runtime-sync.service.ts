@@ -282,8 +282,8 @@ async function loadCustomSnapshot(args: {
       const catalogRows = await tx
         .select({
           current: {
-            header: connectorCatalog.catalogHeader,
-            entrySlugs: connectorCatalog.entrySlugs,
+            schemaVersion: connectorCatalog.schemaVersion,
+            hash: connectorCatalog.hash,
           },
           entry: {
             slug: connectorCatalogEntries.slug,
@@ -568,8 +568,8 @@ async function resolveConnectorRuntimeTargetStates(args: {
           await args.db
             .select({
               current: {
-                header: connectorCatalog.catalogHeader,
-                entrySlugs: connectorCatalog.entrySlugs,
+                schemaVersion: connectorCatalog.schemaVersion,
+                hash: connectorCatalog.hash,
               },
               entry: {
                 slug: connectorCatalogEntries.slug,

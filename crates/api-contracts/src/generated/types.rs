@@ -124,12 +124,6 @@ pub mod runners {
         /// Model providers supported by the Pi runtime contract.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum PiModelConfigProvider {
-            /// DeepSeek provider.
-            #[serde(rename = "deepseek")]
-            Deepseek,
-            /// OpenAI provider.
-            #[serde(rename = "openai")]
-            Openai,
             /// OpenRouter provider.
             #[serde(rename = "openrouter")]
             Openrouter,
@@ -175,25 +169,12 @@ pub mod runners {
         /// Environment variables supported for Pi provider credentials.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum PiModelConfigApiKeyEnv {
-            /// Anthropic authentication token.
-            #[serde(rename = "ANTHROPIC_AUTH_TOKEN")]
-            ANTHROPICAUTHTOKEN,
             /// OpenAI-compatible API key.
             #[serde(rename = "OPENAI_API_KEY")]
             OPENAIAPIKEY,
             /// ChatGPT access token.
             #[serde(rename = "CHATGPT_ACCESS_TOKEN")]
             CHATGPTACCESSTOKEN,
-        }
-
-        /// Non-secret custom gateway credential header policy.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfigCredentialHeader {
-            /// Request header name.
-            pub name: String,
-            /// Header value template containing the credential placeholder exactly once.
-            pub value_template: String,
         }
 
         /// API-owned non-secret Pi model configuration.
@@ -219,9 +200,6 @@ pub mod runners {
             pub api_key_env: PiModelConfigApiKeyEnv,
             /// API-owned credential secret backing the environment entry.
             pub credential_secret_name: String,
-            /// Optional non-secret custom gateway credential header policy.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub credential_header: Option<PiModelConfigCredentialHeader>,
         }
 
         /// Native Pi request dialects supported by this generation.
@@ -238,12 +216,6 @@ pub mod runners {
         /// Native Pi catalog providers supported by this generation.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum PiModelConfigV2Provider {
-            /// DeepSeek provider.
-            #[serde(rename = "deepseek")]
-            Deepseek,
-            /// OpenAI public API provider.
-            #[serde(rename = "openai")]
-            Openai,
             /// OpenRouter provider.
             #[serde(rename = "openrouter")]
             Openrouter,
@@ -286,16 +258,6 @@ pub mod runners {
             Priority,
         }
 
-        /// Non-secret custom gateway credential header policy.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfigV2CredentialBindingApiKeyCredentialHeader {
-            /// Request header name.
-            pub name: String,
-            /// Header value template containing the credential placeholder exactly once.
-            pub value_template: String,
-        }
-
         /// One non-secret execution-edge credential binding.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(tag = "kind", rename_all_fields = "camelCase")]
@@ -307,9 +269,6 @@ pub mod runners {
                 environment: String,
                 /// API-owned encrypted secret containing the value.
                 secret_name: String,
-                /// Optional non-secret custom gateway header policy.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                credential_header: Option<PiModelConfigV2CredentialBindingApiKeyCredentialHeader>,
             },
             /// ChatGPT access-token binding.
             #[serde(rename = "access-token")]
@@ -369,12 +328,6 @@ pub mod runners {
         /// Native Pi catalog providers for this dialect.
         #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
         pub enum PiModelConfigV3OpenaiResponsesProvider {
-            /// DeepSeek provider.
-            #[serde(rename = "deepseek")]
-            Deepseek,
-            /// OpenAI public API provider.
-            #[serde(rename = "openai")]
-            Openai,
             /// OpenRouter provider.
             #[serde(rename = "openrouter")]
             Openrouter,
@@ -412,19 +365,6 @@ pub mod runners {
             /// Public Responses priority service tier.
             #[serde(rename = "priority")]
             Priority,
-            /// Astra Ultrafast public API service tier.
-            #[serde(rename = "ultrafast")]
-            Ultrafast,
-        }
-
-        /// Non-secret custom gateway credential header policy.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfigV3OpenaiResponsesCredentialBindingApiKeyCredentialHeader {
-            /// Request header name.
-            pub name: String,
-            /// Header value template containing the credential placeholder exactly once.
-            pub value_template: String,
         }
 
         /// One non-secret execution-edge credential binding.
@@ -438,10 +378,6 @@ pub mod runners {
                 environment: String,
                 /// API-owned encrypted secret containing the value.
                 secret_name: String,
-                /// Optional non-secret custom gateway header policy.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                credential_header:
-                    Option<PiModelConfigV3OpenaiResponsesCredentialBindingApiKeyCredentialHeader>,
             },
             /// ChatGPT access-token binding.
             #[serde(rename = "access-token")]
@@ -511,16 +447,6 @@ pub mod runners {
             Fast,
         }
 
-        /// Non-secret custom gateway credential header policy.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        pub struct PiModelConfigV3OpenaiCodexResponsesCredentialBindingApiKeyCredentialHeader {
-            /// Request header name.
-            pub name: String,
-            /// Header value template containing the credential placeholder exactly once.
-            pub value_template: String,
-        }
-
         /// One non-secret execution-edge credential binding.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(tag = "kind", rename_all_fields = "camelCase")]
@@ -532,11 +458,6 @@ pub mod runners {
                 environment: String,
                 /// API-owned encrypted secret containing the value.
                 secret_name: String,
-                /// Optional non-secret custom gateway header policy.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                credential_header: Option<
-                    PiModelConfigV3OpenaiCodexResponsesCredentialBindingApiKeyCredentialHeader,
-                >,
             },
             /// ChatGPT access-token binding.
             #[serde(rename = "access-token")]

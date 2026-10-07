@@ -623,7 +623,6 @@ export function createChatEventsFixture(context: TestContext) {
     selectedModel: PiGptBddModel = "gpt-6-luna",
   ) {
     const oauth = mockCodexDeviceAuthProvider({
-      tokenScope: "personal",
       ...options,
     });
     const started = await authDevice.requestCodexStart(

@@ -34,7 +34,7 @@ describe("formatRunErrorForExternalSurface", () => {
       }
     },
   );
-  it.each(["anthropic-api-key", "built-in"] as const)(
+  it.each(["claude-code-oauth-token", "built-in"] as const)(
     "keeps platform credit rejection actionable when the run uses %s",
     (modelProviderType) => {
       expect(
@@ -50,7 +50,7 @@ describe("formatRunErrorForExternalSurface", () => {
 
   it.each([
     [
-      "anthropic-api-key",
+      "claude-code-oauth-token",
       "Your connected model provider account has insufficient balance.",
     ],
     ["built-in", "The current model is unavailable."],
@@ -90,7 +90,7 @@ describe("formatRunErrorForExternalSurface", () => {
       formatRunErrorForExternalSurface({
         code: "UNKNOWN",
         message,
-        modelProviderType: "anthropic-api-key",
+        modelProviderType: "claude-code-oauth-token",
         framework: "claude-code",
       }),
     ).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
@@ -103,7 +103,7 @@ describe("formatRunErrorForExternalSurface", () => {
         message: "Credit balance is too low",
         failureReason: "future_reason",
         framework: "claude-code",
-        modelProviderType: "anthropic-api-key",
+        modelProviderType: "claude-code-oauth-token",
       }),
     ).toBe(CHAT_RUN_TRANSIENT_ERROR_MESSAGE);
   });
@@ -552,7 +552,7 @@ describe("formatRunErrorForExternalSurface", () => {
         message:
           "Failed to authenticate. API Error: 401 Invalid authentication credentials",
         claudeCodeCredentialRecovery: {
-          modelProviderType: "built-in",
+          modelProviderType: "codex-oauth-token",
           modelProvidersUrl: "https://app.example.test/?settings=model",
         },
       }),

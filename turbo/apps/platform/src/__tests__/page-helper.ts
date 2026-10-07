@@ -9,6 +9,10 @@ import {
   type mockUser,
 } from "./mock-auth";
 import { loadClerkJSScript } from "../test/mocks/clerk-resource.ts";
+import {
+  installBootstrapSkeleton,
+  queryBootstrapSkeleton,
+} from "../test/bootstrap-skeleton.ts";
 import { bootstrap$ } from "../signals/bootstrap";
 import { setupRouter } from "../views/main";
 import {
@@ -231,6 +235,7 @@ async function setupPageAsync(
 ): Promise<PageStartup> {
   ensureTestLocalStorage();
   applyPageEnvironment(options.env, signal);
+  installBootstrapSkeleton(signal);
   await initializeI18nWithResources(
     await loadInitialLocaleResources(options.locale ?? DEFAULT_LOCALE, signal),
     signal,
@@ -327,7 +332,6 @@ function waitForFirstPageContent(signal: AbortSignal): {
   readonly ready: Promise<void>;
 } {
   let pageHasRendered = false;
-  let skeletonHasMounted = false;
   // Some startPage callers inspect blocked startup without awaiting ready.
   // The deferred owns their cancellation rejection as well as awaited ones.
   const ready = createDeferredPromise<void>(signal);
@@ -343,11 +347,9 @@ function waitForFirstPageContent(signal: AbortSignal): {
     if (ready.settled()) {
       return;
     }
-    const skeleton = document.querySelector('[data-testid="app-skeleton"]');
-    skeletonHasMounted ||= skeleton !== null;
+    const skeleton = queryBootstrapSkeleton();
     if (
       pageHasRendered &&
-      skeletonHasMounted &&
       (skeleton === null || skeleton.getAttribute("aria-hidden") === "true")
     ) {
       dispose();

@@ -4718,11 +4718,8 @@
     "actions": {
       "addCredits": "Adicionar créditos",
       "openModelProviders": "Abrir provedores de modelos",
-      "reconnectClaude": "Reconectar o Claude Code",
-      "shareWithAdmin": "Compartilhar com um administrador"
+      "reconnectClaude": "Reconectar o Claude Code"
     },
-    "anthropicKeyAdmin": "O Claude Code não conseguiu autenticar com a chave de API da Anthropic configurada. Atualize ou substitua a chave de API em Provedores de modelos e tente novamente.",
-    "anthropicKeyMember": "O Claude Code não conseguiu autenticar com a chave de API da Anthropic configurada. Peça a um administrador do espaço de trabalho para atualizar ou substituir a chave de API.",
     "askAdmin": "Peça a um administrador do espaço de trabalho para adicionar créditos ou fazer upgrade do plano.",
     "claudeReconnect": "A autenticação da assinatura do Claude Code falhou. Reconecte o Claude Code em Provedores de modelos e tente novamente.",
     "claudeTerms": "O Claude Code exige a aceitação dos Termos de Uso e da Política de Privacidade atualizados. Entre em https://claude.ai com a conta Claude conectada em Provedores de modelos, aceite as atualizações e tente novamente.",
@@ -4737,7 +4734,7 @@
     "overloaded": "{{model}} está sobrecarregado. Aguarde alguns minutos e tente novamente ou mude para outro modelo.",
     "providerBalance": "O saldo da sua conta do provedor de modelos conectado é insuficiente.",
     "transient": "Ocorreu um erro. Tente novamente mais tarde.",
-    "vm0Credits": "Créditos insuficientes. Adicione créditos ou configure sua própria chave de API para continuar."
+    "vm0Credits": "Créditos insuficientes. Adicione créditos ou conecte uma assinatura pessoal do Codex ou Claude para continuar."
   },
   "serviceStatus": {
     "dismiss": "Dispensar atualização de serviço",
@@ -4990,7 +4987,7 @@
           "lowest": "Menor custo por geração",
           "typical": "Custo típico por geração"
         },
-        "inheritDefault": "Padrão da organização (Auto)",
+        "inheritDefault": "Padrão (Auto)",
         "loadError": "Não foi possível carregar os modelos.",
         "loading": "Carregando modelos...",
         "models": "Modelos",
@@ -5060,10 +5057,6 @@
         "image-generation": {
           "description": "Crie imagens com modelos integrados.",
           "name": "Geração de imagens"
-        },
-        "image-recognition": {
-          "description": "Leia e analise imagens.",
-          "name": "Reconhecimento de imagens"
         },
         "maps": {
           "description": "Encontre lugares, endereços e rotas.",

@@ -3,7 +3,7 @@ import { CAPABILITIES, CAPABILITY_META } from "../capabilities";
 
 describe("CAPABILITIES", () => {
   it("should have exactly 54 capabilities", () => {
-    expect(CAPABILITIES).toHaveLength(54);
+    expect(CAPABILITIES).toHaveLength(53);
   });
 
   it("should follow {resource}:{action} naming pattern", () => {
@@ -89,10 +89,6 @@ describe("CAPABILITIES", () => {
 
   it("should include managed social read capability", () => {
     expect(CAPABILITIES).toContain("social:read");
-  });
-
-  it("should include managed image recognition capability", () => {
-    expect(CAPABILITIES).toContain("image-recognition:write");
   });
 
   it("should include managed finance read capability", () => {

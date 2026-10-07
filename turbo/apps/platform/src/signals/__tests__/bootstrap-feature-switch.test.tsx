@@ -13,10 +13,10 @@ import {
 import {
   AGENT_ID,
   context,
-  expectComposerModel,
   mockAgent,
   mockPersonalModelRoutes,
 } from "../../views/okou-page/__tests__/chat-composer-test-helpers.ts";
+import { bootstrapSkeleton } from "../../test/bootstrap-skeleton.ts";
 
 const CUSTOMER_ORG_ID = "org_customer_workspace";
 
@@ -111,42 +111,6 @@ test("another member does not receive the custom template rollout", async () => 
   expect(customTemplatesTab()).toBeUndefined();
 });
 
-test("Image recognition remains available by default", async () => {
-  const user = userEvent.setup({ delay: null });
-  mockPersonalModelRoutes();
-  mockAgent();
-  context.mocks.upload.success({
-    id: "default-image-recognition-upload",
-    filename: "workspace-map.png",
-    contentType: "image/png",
-    size: 3,
-    url: "https://example.com/workspace-map.png",
-  });
-
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-  });
-  await expectComposerModel("Auto");
-  const fileInput =
-    document.querySelector<HTMLInputElement>('input[type="file"]');
-  if (!fileInput) {
-    throw new Error("Composer file input not found");
-  }
-
-  await user.upload(
-    fileInput,
-    new File(["png"], "workspace-map.png", { type: "image/png" }),
-  );
-
-  await expect(
-    screen.findByLabelText("Open image preview for workspace-map.png"),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.queryByText(/Claude Opus 5 cannot recognize images or videos/iu),
-  ).not.toBeInTheDocument();
-});
-
 test("A signed-out page does not load workspace features", async () => {
   let workspaceFeatureRequested = false;
   context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
@@ -187,7 +151,7 @@ test("Routes wait for authoritative workspace features", async () => {
 
   const page = await startPage({ context, path: "/agents" });
   await requestStarted.promise;
-  await expect(screen.findByTestId("app-skeleton")).resolves.toBeVisible();
+  expect(bootstrapSkeleton()).toBeVisible();
   expect(
     screen.queryByRole("heading", { name: "Agents" }),
   ).not.toBeInTheDocument();

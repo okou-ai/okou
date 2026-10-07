@@ -10,40 +10,28 @@ export const PI_AGENT_THINKING_LEVELS = [
 
 export type PiAgentThinkingLevel = (typeof PI_AGENT_THINKING_LEVELS)[number];
 
-export type PiAgentServiceTier = "priority" | "fast" | "ultrafast";
+export type PiAgentServiceTier = "priority" | "fast";
 
 export type PiAgentDialect = "openai-responses" | "openai-codex-responses";
 
 export type PiAgentTransport = "sse";
 
-export type PiAgentCredentialTarget = "direct" | "sandbox-firewall";
-
-export type PiAgentRequestHeaders = Readonly<Record<string, string | null>>;
-
-export interface PiAgentCredentialHeaderTemplate {
-  readonly name: string;
-  readonly valueTemplate: string;
-}
-
 export interface PiAgentCredentialReference {
   readonly kind: "api-key" | "access-token" | "account-id";
   readonly environment: string;
   readonly secretName: string;
-  readonly credentialHeader?: PiAgentCredentialHeaderTemplate;
 }
 
 /** Model endpoint and credential resolved at a Pi execution edge. */
 interface PiAgentModelCommon {
-  /** Native provider identity used for trusted catalog metadata. */
+  /** Provider identity used for trusted catalog metadata. */
   readonly provider: string;
   readonly baseUrl: string;
   readonly apiKey: string;
   /** Provider model identifier sent with requests. */
   readonly model: string;
-  /** Native catalog entry when the request model uses a gateway alias. */
+  /** Catalog entry when the request model differs from the catalog identity. */
   readonly catalogModel?: string;
-  /** Execution-edge headers that override provider defaults case-insensitively. */
-  readonly requestHeaders?: PiAgentRequestHeaders;
   /** Omitted by legacy launch payloads, which retain Pi's medium default. */
   readonly thinkingLevel?: PiAgentThinkingLevel;
 }
@@ -54,7 +42,7 @@ export type PiAgentModelConfig = PiAgentModelCommon &
     | {
         readonly dialect: "openai-responses";
         readonly transport: "sse";
-        readonly serviceTier?: "priority" | "ultrafast";
+        readonly serviceTier?: "priority";
         readonly accountId?: never;
       }
     | {
@@ -72,11 +60,6 @@ export type PiAgentStreamConfig<T = PiAgentModelConfig> =
   T extends PiAgentModelConfig
     ? Pick<
         T,
-        | "accountId"
-        | "dialect"
-        | "requestHeaders"
-        | "serviceTier"
-        | "transport"
-        | "catalogModel"
+        "accountId" | "dialect" | "serviceTier" | "transport" | "catalogModel"
       >
     : never;

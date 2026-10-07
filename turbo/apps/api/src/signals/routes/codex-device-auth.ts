@@ -32,11 +32,7 @@ const startCodexDeviceAuthInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    if (
-      body.data.scope === "personal" &&
-      body.data.mode === "reconnect" &&
-      !body.data.modelProviderId
-    ) {
+    if (body.data.mode === "reconnect" && !body.data.modelProviderId) {
       return badRequestMessage("modelProviderId is required for reconnect");
     }
 
@@ -45,7 +41,6 @@ const startCodexDeviceAuthInner$ = command(
       {
         orgId: auth.orgId,
         userId: auth.userId,
-        scope: body.data.scope,
         mode: body.data.mode,
         modelProviderId: body.data.modelProviderId,
       },
@@ -63,7 +58,7 @@ const startCodexDeviceAuthInner$ = command(
         sessionToken: result.sessionToken,
         type: "codex" as const,
         status: "pending" as const,
-        scope: result.scope,
+        scope: "personal" as const,
         browserUrl: result.browserUrl,
         verificationCode: result.verificationCode,
         expiresIn: result.expiresIn,
@@ -87,7 +82,6 @@ const completeCodexDeviceAuthInner$ = command(
       {
         orgId: auth.orgId,
         userId: auth.userId,
-        orgRole: auth.orgRole,
         sessionToken: body.data.sessionToken,
       },
       signal,

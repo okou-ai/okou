@@ -571,7 +571,7 @@ function acceptedFixedHostOwners(
 }
 
 export function createAcceptedConnectorServerFirewallCatalog(args: {
-  readonly artifact: ConnectorCatalogArtifact;
+  readonly artifact: Pick<ConnectorCatalogArtifact, "connectors">;
   readonly runtimeMethodsForSlug: (
     connectorSlug: ConnectorSlug,
   ) => readonly ConnectorAuthMethodRuntimeConfig[];

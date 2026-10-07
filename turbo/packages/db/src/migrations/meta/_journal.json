@@ -1769,15 +1769,15 @@
     {
       "idx": 1330,
       "version": "7",
-      "when": 1791342115900,
-      "tag": "1330_drop_org_plan_support_byok",
+      "when": 1791332705518,
+      "tag": "1330_drop_retired_model_configuration_columns",
       "breakpoints": true
     },
     {
       "idx": 1331,
       "version": "7",
-      "when": 1791343976241,
-      "tag": "1331_retire_byok_route_and_thread_pin_schema",
+      "when": 1791332715254,
+      "tag": "1331_delete_organization_model_provider_rows",
       "breakpoints": true
     }
   ]

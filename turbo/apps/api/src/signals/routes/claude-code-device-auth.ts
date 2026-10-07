@@ -36,11 +36,7 @@ const startClaudeCodeDeviceAuthInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    if (
-      body.data.scope === "personal" &&
-      body.data.mode === "reconnect" &&
-      !body.data.modelProviderId
-    ) {
+    if (body.data.mode === "reconnect" && !body.data.modelProviderId) {
       return badRequestMessage("modelProviderId is required for reconnect");
     }
 
@@ -49,7 +45,6 @@ const startClaudeCodeDeviceAuthInner$ = command(
       {
         orgId: auth.orgId,
         userId: auth.userId,
-        scope: body.data.scope,
         mode: body.data.mode,
         modelProviderId: body.data.modelProviderId,
       },
@@ -67,7 +62,7 @@ const startClaudeCodeDeviceAuthInner$ = command(
         sessionToken: result.sessionToken,
         type: "claude-code" as const,
         status: "pending" as const,
-        scope: result.scope,
+        scope: "personal" as const,
         browserUrl: result.browserUrl,
         expiresIn: result.expiresIn,
       },
@@ -89,7 +84,6 @@ const completeClaudeCodeDeviceAuthInner$ = command(
       {
         orgId: auth.orgId,
         userId: auth.userId,
-        orgRole: auth.orgRole,
         sessionToken: body.data.sessionToken,
         authorizationCode: body.data.authorizationCode,
       },

@@ -126,16 +126,6 @@ describe("personal paid-tool controls through the CLI entry point", () => {
     { tool: "seo", args: ["seo", "serp", "example"] },
     { tool: "social", args: ["social", "inspect", "https://x.com/example"] },
     {
-      tool: "image-recognition",
-      args: [
-        "image-recognition",
-        "--file",
-        "missing.png",
-        "--prompt",
-        "Describe",
-      ],
-    },
-    {
       tool: "image-generation",
       args: [
         "generate",

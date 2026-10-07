@@ -168,7 +168,7 @@ function personalSubscriptionFromAccounts(
 ) {
   return isMemberSubscriptionRoute({
     catalog: input.catalog,
-    member: memberModelRouteContextFromAccounts(input.userId, accounts),
+    member: memberModelRouteContextFromAccounts(accounts),
     model: input.selectedModel,
     providerType: input.modelProviderType,
     credentialScope: "member",
@@ -483,7 +483,7 @@ export function checkOrgPlanRunAdmission(params: {
   readonly selectedModel: string | null | undefined;
   /**
    * The run uses the member's own connected, valid subscription on the
-   * model's catalog subscription route (Auto or Custom), verified by the
+   * model's catalog subscription route, verified by the
    * caller through `isMemberSubscriptionRoute`. It is the only route a free
    * plan may use besides its free Built-in models.
    */

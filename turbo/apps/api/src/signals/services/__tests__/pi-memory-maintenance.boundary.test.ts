@@ -66,10 +66,6 @@ import {
   PI_MEMORY_PHASE2_USAGE_DRAIN_MS,
 } from "../pi-memory-phase2-usage.service";
 import {
-  seedLegacyDirectMaintenanceKey,
-  readLegacyDirectMaintenanceRoute,
-} from "../../../test-fixtures/pi-memory-maintenance-routing";
-import {
   piMemoryPhase2MaintenanceCallbackPayloadSchema,
   handlePiMemoryPhase2MaintenanceCallback,
 } from "../pi-memory-phase2-maintenance.service";
@@ -1019,7 +1015,7 @@ async function assertUsageReplay(
 }
 
 describe("maintenance routing admission and captured authority", () => {
-  it("fails closed with only a historical direct key", async () => {
+  it("fails closed without a current built-in route", async () => {
     const scope = await createPhase2TestScope("routing-closed", {
       emptyBase: true,
     });
@@ -1035,10 +1031,6 @@ describe("maintenance routing admission and captured authority", () => {
       orgId: scope.orgId,
       tier: "pro",
       credits: 100_000,
-    });
-    await seedLegacyDirectMaintenanceKey();
-    await expect(readLegacyDirectMaintenanceRoute()).resolves.toMatchObject({
-      providerType: "deepseek",
     });
     await expect(
       resolveBuiltInModelRouteFixture(context, PI_MEMORY_PHASE2_BUILT_IN_MODEL),
@@ -1086,81 +1078,75 @@ describe("maintenance routing admission and captured authority", () => {
     ).resolves.toStrictEqual([]);
   });
 
-  it.each(["current", "legacy"] as const)(
-    "keeps catalog permission checks for a captured %s route",
-    async (kind) => {
-      // All-candidate fixtures intentionally retain direct keys for captured
-      // history. Their existence must not make them eligible for new work.
-      await seedBuiltInModelCandidateKeys(
-        context,
-        PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-      );
-      const current = await resolveBuiltInModelRouteFixture(
-        context,
-        PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-      );
-      if (!current) {
-        throw new Error("Missing current OpenRouter route");
-      }
-      expect(current.provider_type).toBe("openrouter-codex");
-      const route =
-        kind === "legacy"
-          ? await readLegacyDirectMaintenanceRoute()
-          : {
-              selectedModel: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-              providerType: "openrouter-codex" as const,
-              upstreamModel: current.upstream_model,
-              modelKeyId: current.model_key_id,
-            };
-      const orgId = `boundary-captured-org-${randomUUID()}`;
-      const userId = `boundary-captured-user-${randomUUID()}`;
-      const store = createStore();
-      const source = await store.get(
-        createModelSourceSnapshot({
-          orgId,
-          userId,
-          source: { kind: "built-in", modelKeyId: route.modelKeyId },
-        }),
-      );
-      if (!source) {
-        throw new Error("Missing captured managed credential source");
-      }
-      const request = {
-        catalog: await store.get(modelCatalog$),
-        // The provider adapter is Codex/Responses; maintenance materializes
-        // its prepared environment into a Pi Guest configuration afterwards.
-        framework: "codex" as const,
-        selectedModelOverride: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-        builtInModelRuntimeRoute: route,
-      };
-      const permitted = await prepareManagedModelEnvironment(source, request);
-      expect(permitted).toMatchObject({
-        selectedModel: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
-        upstreamModel: route.upstreamModel,
-      });
-      // A valid managed key cannot authorize an upstream absent from the
-      // captured catalog. Reject instead of silently selecting another route.
-      await expect(
-        prepareManagedModelEnvironment(source, {
-          ...request,
-          builtInModelRuntimeRoute: {
-            ...route,
-            upstreamModel: `unpermitted/${randomUUID()}`,
-          },
-        }),
-      ).resolves.toBeNull();
-      // A permitted route cannot borrow another managed key's source identity.
-      await expect(
-        prepareManagedModelEnvironment(source, {
-          ...request,
-          builtInModelRuntimeRoute: {
-            ...route,
-            modelKeyId: randomUUID(),
-          },
-        }),
-      ).resolves.toBeNull();
-    },
-  );
+  it("keeps catalog permission checks for a captured route", async () => {
+    // All-candidate fixtures intentionally retain direct keys for captured
+    // history. Their existence must not make them eligible for new work.
+    await seedBuiltInModelCandidateKeys(
+      context,
+      PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+    );
+    const current = await resolveBuiltInModelRouteFixture(
+      context,
+      PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+    );
+    if (!current) {
+      throw new Error("Missing current OpenRouter route");
+    }
+    expect(current.provider_type).toBe("openrouter-codex");
+    const route = {
+      selectedModel: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+      providerType: "openrouter-codex" as const,
+      upstreamModel: current.upstream_model,
+      modelKeyId: current.model_key_id,
+    };
+    const orgId = `boundary-captured-org-${randomUUID()}`;
+    const userId = `boundary-captured-user-${randomUUID()}`;
+    const store = createStore();
+    const source = await store.get(
+      createModelSourceSnapshot({
+        orgId,
+        userId,
+        source: { kind: "built-in", modelKeyId: route.modelKeyId },
+      }),
+    );
+    if (!source) {
+      throw new Error("Missing captured managed credential source");
+    }
+    const request = {
+      catalog: await store.get(modelCatalog$),
+      // The provider adapter is Codex/Responses; maintenance materializes
+      // its prepared environment into a Pi Guest configuration afterwards.
+      framework: "codex" as const,
+      selectedModelOverride: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+      builtInModelRuntimeRoute: route,
+    };
+    const permitted = await prepareManagedModelEnvironment(source, request);
+    expect(permitted).toMatchObject({
+      selectedModel: PI_MEMORY_PHASE2_BUILT_IN_MODEL,
+      upstreamModel: route.upstreamModel,
+    });
+    // A valid managed key cannot authorize an upstream absent from the
+    // captured catalog. Reject instead of silently selecting another route.
+    await expect(
+      prepareManagedModelEnvironment(source, {
+        ...request,
+        builtInModelRuntimeRoute: {
+          ...route,
+          upstreamModel: `unpermitted/${randomUUID()}`,
+        },
+      }),
+    ).resolves.toBeNull();
+    // A permitted route cannot borrow another managed key's source identity.
+    await expect(
+      prepareManagedModelEnvironment(source, {
+        ...request,
+        builtInModelRuntimeRoute: {
+          ...route,
+          modelKeyId: randomUUID(),
+        },
+      }),
+    ).resolves.toBeNull();
+  });
 });
 
 describe("private maintenance across CLI, Guest, generic checkpoint and real PostgreSQL", () => {

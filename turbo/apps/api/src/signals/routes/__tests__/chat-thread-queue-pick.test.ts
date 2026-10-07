@@ -596,8 +596,8 @@ describe("CHAT-02: queued chat thread picks", () => {
     });
     const later = await sendWaiting(actor, agentId, "uses the remaining model");
     await restoreRetiredModel();
-    // A retired stored selection normalizes to Auto. This fixture has no
-    // platform key, so rejection must not block the other personal thread.
+    // A retired stored selection is rejected at its pick; the rejection must
+    // not block the other personal thread.
 
     await finishRun(runnerGroup, blocker.runId);
 
@@ -606,13 +606,13 @@ describe("CHAT-02: queued chat thread picks", () => {
       expect.objectContaining({
         eventType: "input.rejected",
         revokesEventId: clientEventId,
-        error: "model_provider_unavailable",
+        error: "bad_request",
       }),
     );
     expect(rejected.events).toContainEqual(
       expect.objectContaining({
         eventType: "output.error",
-        error: "model_provider_unavailable",
+        error: "bad_request",
       }),
     );
     await expect(
@@ -629,17 +629,13 @@ describe("CHAT-02: queued chat thread picks", () => {
     await cancelChatRun(actor, successorRun.runId);
   }, 90_000);
 
-  it("normalizes a queued retired model to fixed Auto at its pick", async () => {
+  it("rejects a queued retired model at its pick", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const model = `queued-retired-${randomUUID()}`;
     const restore = await insertSubscriptionRouteCapabilitiesFixture(model);
     onTestFinished(restore);
-    const auto = createChatEventsFixture(context);
-    await auto.configureBuiltInPiModel(actor);
-    auto.mockPiCheckpointObjectStore();
-    auto.mockPiResourceArchiveDownloads();
 
     await createBddIntegrationApi(context)
       .configureNativeSubscriptionModels(actor)
@@ -651,39 +647,29 @@ describe("CHAT-02: queued chat thread picks", () => {
       prompt: "occupy the only organization slot",
     });
     const clientEventId = randomUUID();
-    const waiting = {
-      ...(await sendWaitingChatInput(actor, {
-        agentId,
-        prompt: "retired model input",
-        clientEventId,
-        model,
-      })),
+    const waiting = await sendWaitingChatInput(actor, {
+      agentId,
+      prompt: "retired model input",
       clientEventId,
-    };
+      model,
+    });
     // The real input records a model that existed at enqueue. Removing only
     // its owned catalog entry leaves that recorded model unknown at the pick.
     await restore();
 
     await finishRun(runnerGroup, blocker.runId);
 
-    const launched = await waiting.launchedRun();
-    const claimed = await claimChatRun(runnerGroup, launched.runId);
-    expect(claimed.claim.cliAgentType).toBe("pi");
-    expect(claimed.claim.modelUsageProvider).toBe("okou-1.0");
-    expect(claimed.claim.billableFirewalls).toContain(
-      "model-provider:openrouter-codex",
+    const rejected = await chat.listThreadEvents(actor, waiting.threadId);
+    expect(rejected.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.rejected",
+        revokesEventId: clientEventId,
+        error: "bad_request",
+      }),
     );
-    await expect(api.readRun(actor, launched.runId)).resolves.toMatchObject({
-      source: {
-        model: "okou-1.0",
-        providerType: "built-in",
-        credentialScope: "org",
-      },
-    });
-    await expect(threadRunIds(actor, waiting.threadId)).resolves.toStrictEqual([
-      launched.runId,
-    ]);
-    await cancelChatRun(actor, launched.runId, claimed.sandboxHeaders);
+    await expect(threadRunIds(actor, waiting.threadId)).resolves.toStrictEqual(
+      [],
+    );
   }, 90_000);
 
   it("skips a recalled head and launches a later message on the thread", async () => {

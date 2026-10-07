@@ -3,7 +3,7 @@
  *
  * Tests command-level behavior via parseAsync() following CLI testing principles:
  * - Entry point: command.parseAsync()
- * - Mock (external): backend metadata, model policy, and model-selection routes via MSW
+ * - Mock (external): backend metadata, run-model, and model-selection routes via MSW
  * - Real (internal): CLI argument parsing, API client, env handling
  */
 
@@ -41,8 +41,15 @@ const AVAILABLE_MODELS_RESPONSE = {
       defaultProviderType: "codex-oauth-token",
       credentialScope: "member",
       modelProviderId: null,
-      routeStatus: "missing_provider",
-      routeStatusReason: "No personal subscription connected",
+      routeStatus: "valid",
+      routeStatusReason: null,
+      memberEffective: {
+        providerType: "codex-oauth-token",
+        runtimeProviderType: "codex-oauth-token",
+        credentialScope: "member",
+        availability: "unavailable",
+        accountSelection: "capture_required",
+      },
     },
     {
       model: "okou-1.0",
@@ -101,7 +108,6 @@ describe("okou chat model command", () => {
     expect(output).toContain(
       "efforts: low, medium, high, extra, max, ultracode",
     );
-    expect(output).not.toContain("No personal subscription connected");
     expect(output).not.toContain("gpt-5.6-luna");
     expect(output).toContain("Auto (okou-1.0) (default)");
   });
@@ -371,7 +377,7 @@ describe("okou chat model command", () => {
 
     const stderr = mockConsoleError.mock.calls.flat().join("\n");
     expect(stderr).toContain("Model is not switchable: gpt-5.6-luna");
-    expect(stderr).toContain("No personal subscription connected");
+    expect(stderr).toContain("Connect your personal subscription");
     expect(stderr).toContain("Run: okou chat model --help");
     expect(mockExit).toHaveBeenCalledWith(1);
   });
@@ -486,8 +492,8 @@ describe("okou chat model command", () => {
           models: [
             {
               ...AVAILABLE_MODELS_RESPONSE.models[1],
-              defaultProviderType: "openai-api-key",
-              credentialScope: "member",
+              routeStatus: "valid",
+              routeStatusReason: null,
               memberEffective: {
                 providerType: "codex-oauth-token",
                 runtimeProviderType: "codex-oauth-token",
@@ -525,7 +531,7 @@ describe("okou chat model command", () => {
   });
 
   it.each(["reconnect_required", "plan_restricted", "unavailable"])(
-    "rejects a %s member route despite a valid administrative provider",
+    "rejects a %s personal subscription route despite a valid route status",
     async (availability) => {
       server.use(
         http.get(MODEL_RUN_MODELS_URL, () => {

@@ -27,7 +27,7 @@ import {
 } from "../../../test-fixtures/chat-events";
 import { installTelegramContextFailureFixture } from "../../../test-fixtures/telegram-context-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { settleIncludingAbort } from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { createFixtureTracker } from "./helpers/route-test";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
@@ -46,6 +46,9 @@ import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/use
 import { testTelegramStateRoutes } from "../test-telegram-state";
 import { integrationsTelegramRoutes } from "../integrations-telegram";
 
+// Mirrors the pause internal-telegram-chat-run-callback.service.ts takes between
+// completion chunks.
+const TELEGRAM_COMPLETION_CHUNK_THROTTLE_MS = 1100;
 const TEST_APP_ROUTES = Object.freeze([...integrationsTelegramRoutes]);
 
 const context = testContext();
@@ -1202,6 +1205,32 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
     }
 
     beforeEach(async () => {
+      // The long reply is sent in several chunks. Skip the real 1.1s pause
+      // between chunks; other timers, such as read deadlines, stay pending
+      // until their owner aborts them so no deadline expires early.
+      context.mocks.signalTimers.delay.mockImplementation((ms, options) => {
+        if (ms === TELEGRAM_COMPLETION_CHUNK_THROTTLE_MS) {
+          return Promise.resolve();
+        }
+        const signal = options?.signal;
+        if (!signal) {
+          throw new Error("Expected an owned timer signal");
+        }
+        // Reject like signal-timers does when the owner aborts the timer.
+        const timer = createDeferredPromise<void>(context.signal);
+        signal.addEventListener(
+          "abort",
+          () => {
+            if (!timer.settled()) {
+              timer.reject(
+                new DOMException(String(signal.reason), "AbortError"),
+              );
+            }
+          },
+          { once: true },
+        );
+        return timer.promise;
+      });
       dm = await prepareTelegramDm();
       await prepareReplyChain();
     });

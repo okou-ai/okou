@@ -119,7 +119,7 @@ test("Auto bootstrap rejects an unexpected default before writing preferences", 
   );
 });
 
-test("mock bootstrap provisions both personal subscriptions without organization APIs", async (context) => {
+test("mock bootstrap provisions both personal subscriptions", async (context) => {
   const { result, calls } = await runBootstrap(
     context,
     "runner-mock-claude-bootstrap.bash",

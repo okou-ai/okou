@@ -33,11 +33,9 @@ surface; the index does not replace their detailed rules.
 - [Deployment compatibility](./deployment-compatibility.md): compatibility
   requirements for independently deployed components and persisted state.
 - [Run models and subscription metadata](./model-catalog.md): fixed Auto,
-  personal subscription metadata, selection, billing and schema contraction.
+  personal subscription metadata, selection and billing.
 - [Run models API](./run-models-api.md): the `GET /api/run-models` response
   for Auto and the caller's connected personal subscriptions.
-- [Custom model configuration retirement](./custom-model-retirement.md): the
-  retired organization model configuration and its product contract.
 - [Retired model route cleanup](./retired-model-route-cleanup.md): the
   data-only pruning of obsolete execution routes.
 - [Personal subscription CLI and Reset Cards](./subscription-controls.md):
@@ -160,6 +158,9 @@ surface; the index does not replace their detailed rules.
   ranking and writing pipeline, its first-party evidence, and the refresh claim.
 - [Incomplete chat context](./chat-incomplete-context.md): stable retained-round
   ordering, delayed events, visibility, and the newest-20 boundary.
+- [Pi native provider preparation](./pi-native-provider-preparation.md): historical
+  record of the removed generation 4 native readers, transport/auth ownership,
+  accounting and activation gates.
 - [Pi candidate reference accounting](./database/pi-memory-candidate-accounting.md):
   explicit API ownership, guarded trigger retirement, parent cleanup, audit
   receipts and the B rollback floor.

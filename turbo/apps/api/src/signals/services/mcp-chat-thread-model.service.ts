@@ -4,7 +4,7 @@ import { command } from "ccstate";
 import { db$ } from "../external/db";
 import { listAvailableRunModelsWithDefault$ } from "./run-models.service";
 
-/** Read the Web policy projection plus persisted replacement identities once. */
+/** Read the Web run model projection plus persisted replacement identities once. */
 export const mcpChatThreadModels$ = command(
   async (
     { get, set },
@@ -35,11 +35,11 @@ export const mcpChatThreadModels$ = command(
     // they must not erase a stored model's canonical replacement in a read.
     const configured = new Set(
       listing.response.models
-        .filter((policy) => {
-          return policy.routeStatus === "valid";
+        .filter((runModel) => {
+          return runModel.routeStatus === "valid";
         })
-        .map((policy) => {
-          return policy.model;
+        .map((runModel) => {
+          return runModel.model;
         }),
     );
     const defaultModel = configured.has(listing.systemDefaultModel)
@@ -60,12 +60,22 @@ export const mcpChatThreadModels$ = command(
         }
         finalModel = replacement;
       }
-      const effectivePin =
-        finalModel !== null && configured.has(finalModel) ? finalModel : null;
+      if (finalModel === null) {
+        result.set(selectedModel, {
+          selectedModel,
+          effectiveModel: defaultModel,
+          source: defaultModel ? "org_default" : null,
+          admission: "checked_on_send",
+        });
+        continue;
+      }
+      // An unavailable stored selection is rejected on send; it never runs as
+      // the default model.
+      const available = configured.has(finalModel);
       result.set(selectedModel, {
         selectedModel,
-        effectiveModel: effectivePin ?? defaultModel,
-        source: effectivePin ? "thread" : defaultModel ? "org_default" : null,
+        effectiveModel: available ? finalModel : null,
+        source: available ? "thread" : null,
         admission: "checked_on_send",
       });
     }

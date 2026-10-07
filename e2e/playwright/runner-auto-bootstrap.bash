@@ -12,8 +12,8 @@ if [[ -n "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ]]; then
     headers+=(-H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}")
 fi
 
-# Platform models are read-only. New accounts need no organization policy,
-# provider connection, Debug gate, or Custom-mode bootstrap.
+# Platform models are read-only. New accounts need no provider connection or
+# Debug gate to use Auto.
 curl -fsS "${headers[@]}" "${api_url}/api/run-models" | jq -e '
     .defaultModel == "okou-1.0" and
     (.models | length == 1) and

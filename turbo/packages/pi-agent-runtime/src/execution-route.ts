@@ -8,7 +8,7 @@ import type { PiAgentCredentialReference } from "./types";
 
 type ResponsesRoute = Omit<
   PiModelConfigLegacy,
-  "apiKeyEnv" | "credentialSecretName" | "credentialHeader"
+  "apiKeyEnv" | "credentialSecretName"
 >;
 
 type CredentialBinding<K extends PiAgentCredentialReference["kind"]> =
@@ -42,8 +42,7 @@ export function normalizePiExecutionRoute(
 ): PiExecutionRoute {
   const config = piModelConfigSchema.parse(wire);
   if (!("schemaVersion" in config)) {
-    const { apiKeyEnv, credentialSecretName, credentialHeader, ...route } =
-      config;
+    const { apiKeyEnv, credentialSecretName, ...route } = config;
     return {
       ...route,
       dialect: "openai-responses",
@@ -53,7 +52,6 @@ export function normalizePiExecutionRoute(
           kind: "api-key",
           environment: apiKeyEnv,
           secretName: credentialSecretName,
-          ...(credentialHeader === undefined ? {} : { credentialHeader }),
         },
       ],
     };

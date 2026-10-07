@@ -989,7 +989,7 @@ describe("Usage Allowance", () => {
     await api.ensurePersonalSubscriptionModel(actor);
     const run = await api.createThreadRun(actor, {
       agentId,
-      prompt: "BYOK run uses allowance for billable firewall",
+      prompt: "personal subscription run uses allowance for billable firewall",
     });
     const client = setupApp({
       context,
@@ -1449,7 +1449,7 @@ describe("Usage Allowance", () => {
     api.acceptStorageDownloads();
     api.acceptTelemetryIngest();
     await api.ensurePersonalSubscriptionModel(actor);
-    // A BYOK run starts during entitlement but does not issue built-in
+    // A personal subscription run starts during entitlement but does not issue built-in
     // allowance windows at admission. First settlement must not backdate one.
     const run = await api.createThreadRun(actor, {
       agentId,
@@ -1569,7 +1569,7 @@ describe("Usage Allowance", () => {
     });
     const api = createRunsApi(context);
     await api.ensurePersonalSubscriptionModel(actor);
-    // BYOK runs do not receive built-in credit admission, and this run
+    // Personal subscription runs do not receive built-in credit admission, and this run
     // predates the entitlement, so it has no allowance windows.
     const run = await api.createThreadRun(actor, {
       agentId,

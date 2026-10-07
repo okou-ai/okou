@@ -338,7 +338,7 @@ There is no storage plan, cache request or intermediate context draft in this
 result. It returns ordinary prepared data, not commands or business callbacks,
 and never submits the pending run.
 
-Explicit commands initialize or repair model policy facts when needed, refresh
+Explicit commands refresh
 an expired usage allowance when required and reconcile an official automation.
 The Thread owner separately submits the pending transaction and activates the committed
 run; the parent receives only its run ID or null. Official reconciliation starts alongside independent resource work. Only
@@ -423,11 +423,11 @@ until a separately authorized repair policy schedules it. This PR does not add
 a background scan or repair policy. Frozen recall, flag-off and captured-epoch
 behavior remain intact.
 
-Admission, model-policy initialization and allowance refresh are explicit
+Admission and allowance refresh are explicit
 nodes within the claim object. Final admission deliberately captures a fresh plan, credit/expiry and
 usage-pack snapshot. Their independent read nodes join with `Promise.all`; an
-allowance refresh is requested only when admission needs it. Policy repair and
-allowance refresh commands retain their existing locked transaction semantics.
+allowance refresh is requested only when admission needs it. Allowance
+refresh commands retain their existing locked transaction semantics.
 Initial model preparation shares the claim object's already-read snapshots,
 while final admission owns its later snapshot. Commit-time locks and
 credit revalidation remain transaction-local.
@@ -485,47 +485,29 @@ The discovery/slug readers, runner firewall catalog and legacy complete runtime
 snapshot callers retain their existing `loadAcceptedConnectorCatalogSnapshot`
 compatibility behavior. Catalog publication locks remain unchanged.
 
-## Selected model source migration (in progress)
+## Selected model source
 
-Gateway Thread execution now consumes `createModelSourceSnapshot` for the exact
-selected surface. Configuration, mappings and encrypted credentials share one
-read snapshot. KMS decryption and the exact managed-key read have no side
-effects, so (Ethan, 2026-10-02) the prepared runtime is the computed
-`preparedConfiguredEnvironment$`: it decrypts once per claim graph and calls
-synchronous `compileModelRuntime`, and downstream model reads get it directly.
-Side effects (OAuth refresh, encryption with database writes, Stripe and cache
-writes) stay in commands. Official reconciliation and independent reads are not
-serialized behind it.
+Thread execution consumes `createModelSourceSnapshot`
+(`execution-model-source.service.ts`) for the exact selected source: a
+`built-in` managed key (Auto) or a `member` personal subscription account. The
+account row and its encrypted secrets share one read snapshot, reusing
+`memberModels$` rows when the org/user identity matches. KMS decryption and the
+exact managed-key read have no side effects, so (Ethan, 2026-10-02) the prepared
+runtime is the computed `preparedConfiguredEnvironment$`: it decrypts once per
+claim graph and calls synchronous `compileModelRuntime`, and downstream model
+reads get it directly. Side effects (OAuth refresh, encryption with database
+writes, Stripe and cache writes) stay in commands. Official reconciliation and
+independent reads are not serialized behind it.
 
-The pure converter has no query, KMS or provider call. Thread privately assembles
-supplementary firewall and Codex protocol from the same configuration snapshot;
-no hidden configuration query is added. Existing framework/model availability
-checks remain caller-owned. Org and member-owned single-secret provider records now use the same source,
-effect and pure-conversion path for Anthropic/OpenAI keys and the OpenRouter/
-Vercel protocol twins. `member-provider` explicitly identifies a user-owned
-`modelProviders` record, unlike `member` subscription-account identity. The
-reader applies exact owner scope without trying another source table or account.
-Thread retains deferred firewall alias metadata, conditional Pi credential capture
-and Codex protocol assembly. Non-Pi Codex subscription-account/org auth-json execution now also consumes the
-same source/effect/pure-conversion boundary. Account-source IDs remain distinct
-from member-provider IDs; required fields and server-only refresh/ID-token policy
-are selected from the existing auth-method registry. Thread retains deferred
-source IDs and real nonsecret Codex routing identity. Claude OAuth and Pi
-Codex account/org execution also consume the owned source/runtime boundary;
-member subscription accounts no longer fall back to a separate legacy
-personal-account snapshot after the exact source has been prepared. A
-registered provider pin without a stored credential scope passes an explicit
-`unscoped-provider` identity; the source reader resolves the member/workspace
-owner and credentials in one statement (no separate owner pre-query); the
-legacy regular-provider snapshot fallback is gone from Thread now that
-DeepSeek also uses the pure runtime contract.
-Specialized DeepSeek and full legacy retirement remain unfinished. Builtin paths now consume the approved managed-key
-credential variant: source reads nonsecret exact-key facts/reference, an effect
-explicitly resolves that same key, and the converter checks source/route/vendor/key
-binding without I/O. No ciphertext is fabricated, no default key is selected and
-no credential storage migration occurs. Thread retains its private US-routing,
-firewall and Codex projection from those same already-resolved values. This is
-real source execution progress, not complete model-source or fifteen-interface parity.
+The pure converter has no query, KMS or provider call. The reader applies exact
+owner scope without trying another source table or account. Claude OAuth and
+Codex subscription execution (Pi and non-Pi) use this source/effect/pure-conversion
+boundary; Thread retains deferred firewall alias metadata, conditional Pi
+credential capture, source IDs and Codex protocol assembly. The built-in path
+reads nonsecret exact-key facts; an effect resolves that same key, and the
+converter checks source/route/vendor/key binding without I/O. No ciphertext is
+fabricated and no default key is selected. Thread retains its private
+US-routing, firewall and Codex projection from those already-resolved values.
 
 ## Selected connector source migration (in progress)
 

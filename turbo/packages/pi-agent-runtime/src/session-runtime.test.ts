@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zstdDecompressSync } from "node:zlib";
 
-import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai";
 import { piModelConfigSchema } from "@okouai/api-contracts/contracts/runners";
 import { ModelRuntime, SessionManager } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
@@ -15,16 +15,15 @@ import { piMemorySummaryTokenCount } from "./memory-recall";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 import type { PiPreheatedResourceSnapshot } from "./api-types";
 import type { PiPreparationObservation } from "./preparation-timing";
-import type { PiAgentRequestHeaders } from "./types";
 import { materializePiAgentModelConfig } from "./credential";
 
 const GPT_MODELS = ["gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-luna"] as const;
 
 const LUNA_MODEL = {
-  provider: "openai" as const,
-  baseUrl: "https://api.openai.com/v1",
+  provider: "openrouter" as const,
+  baseUrl: "https://openrouter.ai/api/v1",
   apiKey: "test-key",
-  model: "gpt-6-luna",
+  model: "openai/gpt-6-luna",
   dialect: "openai-responses" as const,
   transport: "sse" as const,
   thinkingLevel: "max" as const,
@@ -202,32 +201,6 @@ async function registeredToolSchemas(
     created.session.dispose();
   }
 }
-
-const CUSTOM_GATEWAY_CREDENTIAL_CASES: ReadonlyArray<{
-  readonly name: string;
-  readonly sessionId: string;
-  readonly requestHeaders: PiAgentRequestHeaders;
-  readonly authorization: string | undefined;
-  readonly apiKey: string | undefined;
-}> = [
-  {
-    name: "x-api-key",
-    sessionId: "00000000-0000-4000-8000-000000000127",
-    requestHeaders: {
-      authorization: null,
-      "x-api-key": "Key gateway-secret",
-    },
-    authorization: undefined,
-    apiKey: "Key gateway-secret",
-  },
-  {
-    name: "Authorization",
-    sessionId: "00000000-0000-4000-8000-000000000128",
-    requestHeaders: { Authorization: "Bearer gateway-secret" },
-    authorization: "Bearer gateway-secret",
-    apiKey: undefined,
-  },
-];
 
 function responsesTextSse(response: ServerResponse, text: string): void {
   const responseId = "resp_luna_sandbox";
@@ -644,16 +617,6 @@ describe("official Pi AgentSession runtime", () => {
             secretName: "CHATGPT_ACCESS_TOKEN",
           },
           {
-            name: "OpenAI API key",
-            provider: "openai",
-            dialect: "openai-responses",
-            model: selectedModel,
-            basePath: "/v1",
-            endpoint: "/v1/responses",
-            tier,
-            secretName: "OPENAI_API_KEY",
-          },
-          {
             name: "OpenRouter API key",
             provider: "openrouter",
             dialect: "openai-responses",
@@ -692,7 +655,6 @@ describe("official Pi AgentSession runtime", () => {
         await provider.close();
       });
       const model = await materializePiAgentModelConfig({
-        target: "sandbox-firewall",
         config: {
           transport: "sse",
           baseUrl: provider.baseUrl.replace(/\/v1$/, route.basePath),
@@ -806,160 +768,14 @@ describe("official Pi AgentSession runtime", () => {
 
   it.each(
     GPT_MODELS.flatMap((selectedModel) => {
-      return ["x-api-key", "Authorization"].map((headerName) => {
-        return { selectedModel, headerName };
-      });
-    }),
-  )(
-    "preserves custom $selectedModel $headerName across standard, Fast, standard Sandbox turns",
-    async ({ selectedModel, headerName }) => {
-      const cwd = await mkdtemp(join(tmpdir(), "pi-custom-fast-"));
-      onTestFinished(async () => {
-        await rm(cwd, { recursive: true, force: true });
-      });
-      const toolFile = join(cwd, "executions.txt");
-      await writeFile(toolFile, "turn0", "utf8");
-      const provider = await startResponsesProvider(
-        (response, requestNumber) => {
-          if (requestNumber % 3 === 1) {
-            responsesToolSse(response, {
-              callId: `call_custom_${requestNumber}`,
-              name: "edit",
-              arguments: {
-                path: toolFile,
-                edits: [
-                  {
-                    oldText: `turn${Math.floor((requestNumber - 1) / 3)}`,
-                    newText: `turn${Math.floor((requestNumber - 1) / 3) + 1}`,
-                  },
-                ],
-              },
-            });
-          } else {
-            responsesTextSse(
-              response,
-              `custom Sandbox answer ${requestNumber}`,
-            );
-          }
-        },
-      );
-      onTestFinished(async () => {
-        await provider.close();
-      });
-      const sessionId = randomUUID();
-      const sessionManager = SessionManager.create(cwd, cwd, { id: sessionId });
-      const sessionFile = sessionManager.getSessionFile();
-      if (!sessionFile) throw new Error("Missing sandbox session file");
-      const upstreamModel = `company-${selectedModel}-production`;
-      let turns = 0;
-      for (const tier of [undefined, "priority", undefined] as const) {
-        const config = {
-          provider: "openai" as const,
-          baseUrl: provider.baseUrl.replace(/\/v1$/, "/custom/v1"),
-          model: upstreamModel,
-          catalogModel: selectedModel,
-          thinkingLevel: "max" as const,
-          ...(tier === undefined ? {} : { serviceTier: tier }),
-          apiKeyEnv: "OPENAI_API_KEY" as const,
-          credentialSecretName: "OKOU_MODEL_PROVIDER_API_KEY",
-          credentialHeader: {
-            name: headerName,
-            valueTemplate: "Key {{secret}}",
-          },
-        };
-        const sandbox = await materializePiAgentModelConfig({
-          target: "sandbox-firewall",
-          config,
-          resolveCredential() {
-            return "opaque-custom-credential";
-          },
-        });
-        expect(sandbox.catalogModel).toBe(selectedModel);
-        const start = provider.requests.length;
-        const created = await createPiAgentSessionForRuntime({
-          cwd,
-          agentDir: join(cwd, ".pi"),
-          sessionManager,
-          model: sandbox,
-          appendSystemPrompt: null,
-          resourceSnapshot: EMPTY_RESOURCE_SNAPSHOT,
-        });
-        try {
-          await created.session.prompt(`run custom turn ${turns}`);
-          await created.session.prompt(
-            "continue the same custom Sandbox session",
-          );
-          turns += 1;
-          const toolResults = created.session.messages.filter((message) => {
-            return message.role === "toolResult";
-          });
-          expect(toolResults).toHaveLength(turns);
-          for (const result of toolResults) {
-            expect(result).toMatchObject({ toolName: "edit", isError: false });
-          }
-          expect(await readFile(toolFile, "utf8")).toBe(`turn${turns}`);
-          expect(provider.requests).toHaveLength(start + 3);
-          for (const [index, request] of provider.requests
-            .slice(start)
-            .entries()) {
-            const header = "opaque-custom-credential";
-            expect(request).toMatchObject({
-              url: "/custom/v1/responses",
-              authorization:
-                headerName === "Authorization" ? header : undefined,
-              apiKey: headerName === "x-api-key" ? header : undefined,
-              accountId: undefined,
-              body: {
-                model: upstreamModel,
-                stream: true,
-                store: false,
-                reasoning: { effort: "max" },
-              },
-            });
-            if (tier === undefined) {
-              expect(request.body).not.toHaveProperty("service_tier");
-            } else {
-              expect(request.body).toMatchObject({ service_tier: "priority" });
-            }
-            expect(request.body).not.toHaveProperty("previous_response_id");
-            if (index > 0) {
-              expect(request.body).toMatchObject({
-                input: expect.arrayContaining([
-                  expect.objectContaining({
-                    type: "function_call_output",
-                    call_id: `call_custom_${start + 1}`,
-                    output: expect.stringContaining(toolFile),
-                  }),
-                ]),
-              });
-            }
-          }
-          expect(sessionManager.getSessionId()).toBe(sessionId);
-          expect(created.session.messages.at(-1)).toMatchObject({
-            stopReason: "stop",
-          });
-        } finally {
-          created.session.dispose();
-        }
-        const sessionJsonl = await readFile(sessionFile, "utf8");
-        expect(sessionJsonl).not.toMatch(
-          /serviceTier|service_tier|custom-secret|opaque-custom/,
-        );
-      }
-      expect(provider.requests).toHaveLength(9);
-    },
-  );
-
-  it.each(
-    GPT_MODELS.flatMap((selectedModel) => {
       return [400, 401].map((status) => {
         return { selectedModel, status };
       });
     }),
   )(
-    "surfaces custom $selectedModel priority/credential rejection $status after a real tool without replay",
+    "surfaces OpenRouter $selectedModel priority/credential rejection $status after a real tool without replay",
     async ({ selectedModel, status }) => {
-      const cwd = await mkdtemp(join(tmpdir(), "pi-custom-rejection-"));
+      const cwd = await mkdtemp(join(tmpdir(), "pi-priority-rejection-"));
       onTestFinished(async () => {
         await rm(cwd, { recursive: true, force: true });
       });
@@ -969,7 +785,7 @@ describe("official Pi AgentSession runtime", () => {
         (response, requestNumber) => {
           if (requestNumber === 1) {
             responsesToolSse(response, {
-              callId: "call_custom_rejection",
+              callId: "call_priority_rejection",
               name: "edit",
               arguments: {
                 path: toolFile,
@@ -986,7 +802,7 @@ describe("official Pi AgentSession runtime", () => {
                       ? "unsupported_service_tier"
                       : "invalid_api_key",
                   message:
-                    "custom gateway rejected the requested priority credential",
+                    "upstream rejected the requested priority credential",
                 },
               }),
             );
@@ -997,23 +813,17 @@ describe("official Pi AgentSession runtime", () => {
         await provider.close();
       });
       const model = await materializePiAgentModelConfig({
-        target: "sandbox-firewall",
         config: {
-          provider: "openai",
+          provider: "openrouter",
           baseUrl: provider.baseUrl,
-          model: `company-${selectedModel}-production`,
-          catalogModel: selectedModel,
+          model: `openai/${selectedModel}`,
           thinkingLevel: "max",
           serviceTier: "priority",
           apiKeyEnv: "OPENAI_API_KEY",
-          credentialSecretName: "OKOU_MODEL_PROVIDER_API_KEY",
-          credentialHeader: {
-            name: "x-api-key",
-            valueTemplate: "Key {{secret}}",
-          },
+          credentialSecretName: "OPENROUTER_API_KEY",
         },
         resolveCredential() {
-          return "opaque-custom-credential";
+          return "opaque-openrouter-credential";
         },
       });
       const created = await createPiAgentSessionForRuntime({
@@ -1026,12 +836,12 @@ describe("official Pi AgentSession runtime", () => {
       });
       try {
         await created.session.prompt(
-          "execute once and surface gateway rejection",
+          "execute once and surface upstream rejection",
         );
         expect(created.session.messages.at(-1)).toMatchObject({
           role: "assistant",
           stopReason: "error",
-          errorMessage: expect.stringContaining("custom gateway rejected"),
+          errorMessage: expect.stringContaining("upstream rejected"),
         });
         expect(await readFile(toolFile, "utf8")).toBe("turn1");
         expect(
@@ -1043,8 +853,8 @@ describe("official Pi AgentSession runtime", () => {
         for (const request of provider.requests) {
           expect(request).toMatchObject({
             url: "/v1/responses",
-            authorization: undefined,
-            apiKey: "opaque-custom-credential",
+            authorization: "Bearer opaque-openrouter-credential",
+            apiKey: undefined,
             body: { model: model.model, service_tier: "priority" },
           });
         }
@@ -1266,16 +1076,11 @@ describe("official Pi AgentSession runtime", () => {
         { name: "fast", selectedModel, serviceTier: "priority" },
       ] as const;
     }).flatMap((route) => {
-      return (["openai", "openrouter"] as const).map((provider) => {
-        return {
-          ...route,
-          provider,
-          model:
-            provider === "openrouter"
-              ? `openai/${route.selectedModel}`
-              : route.selectedModel,
-        };
-      });
+      return {
+        ...route,
+        provider: "openrouter" as const,
+        model: `openai/${route.selectedModel}`,
+      };
     }),
   )(
     "preserves Gen1 request policy for $name $provider $model Sandbox turns",
@@ -1294,11 +1099,10 @@ describe("official Pi AgentSession runtime", () => {
             model,
             baseUrl: provider.baseUrl,
             apiKeyEnv: "OPENAI_API_KEY",
-            credentialSecretName: "OPENAI_API_KEY",
+            credentialSecretName: "OPENROUTER_API_KEY",
             thinkingLevel: LUNA_MODEL.thinkingLevel,
             ...(serviceTier === undefined ? {} : { serviceTier }),
           }),
-          target: "sandbox-firewall",
           resolveCredential: () => {
             return LUNA_MODEL.apiKey;
           },
@@ -1323,100 +1127,6 @@ describe("official Pi AgentSession runtime", () => {
         } else {
           expect(provider.requests[0]?.body).toMatchObject({
             service_tier: "priority",
-          });
-        }
-      } finally {
-        created.session.dispose();
-        await provider.close();
-      }
-    },
-  );
-
-  it.each(
-    CUSTOM_GATEWAY_CREDENTIAL_CASES.flatMap((credential) => {
-      return (
-        ["deepseek-v4-flash", "deepseek-v4.1-flash", ...GPT_MODELS] as const
-      ).map((selectedModel) => {
-        return { ...credential, selectedModel };
-      });
-    }),
-  )(
-    "uses the stable Pi identity with the custom gateway request model and $name credential header for $selectedModel",
-    async ({
-      sessionId,
-      requestHeaders,
-      authorization,
-      apiKey,
-      selectedModel,
-    }) => {
-      const cwd = await mkdtemp(join(tmpdir(), "pi-custom-standard-"));
-      onTestFinished(async () => {
-        await rm(cwd, { recursive: true, force: true });
-      });
-      const toolFile = join(cwd, "gateway.txt");
-      await writeFile(toolFile, "custom gateway tool result", "utf8");
-      const provider = await startResponsesProvider();
-      const sessionManager = SessionManager.inMemory(cwd, {
-        id: sessionId,
-      });
-      sessionManager.appendMessage({
-        role: "user",
-        content: "read the gateway tool file",
-        timestamp: 1,
-      });
-      sessionManager.appendMessage({
-        ...fauxAssistantMessage(fauxToolCall("read", { path: toolFile }), {
-          stopReason: "toolUse",
-          timestamp: 2,
-        }),
-        api: "openai-responses",
-        provider: selectedModel.startsWith("deepseek-") ? "deepseek" : "openai",
-        model: `company-${selectedModel}-production`,
-      });
-      const created = await createPiAgentSessionForRuntime({
-        cwd,
-        agentDir: join(cwd, ".pi"),
-        sessionManager,
-        model: {
-          provider: selectedModel.startsWith("deepseek-")
-            ? "deepseek"
-            : "openai",
-          baseUrl: provider.baseUrl,
-          apiKey: "unused",
-          model: `company-${selectedModel}-production`,
-          catalogModel: selectedModel,
-          ...(selectedModel.startsWith("deepseek-")
-            ? {}
-            : { thinkingLevel: "max" as const }),
-          dialect: "openai-responses",
-          transport: "sse",
-          requestHeaders,
-        },
-        appendSystemPrompt: null,
-        resourceSnapshot: EMPTY_RESOURCE_SNAPSHOT,
-      });
-
-      try {
-        await created.session.continuePendingTools();
-
-        expect(provider.requests).toStrictEqual([
-          expect.objectContaining({
-            url: "/v1/responses",
-            authorization,
-            apiKey,
-            userAgent: "okou-pi-agent/1.0",
-            body: expect.objectContaining({
-              model: `company-${selectedModel}-production`,
-            }),
-          }),
-        ]);
-        expect(JSON.stringify(provider.requests[0]?.body)).toContain(
-          "custom gateway tool result",
-        );
-        expect(provider.requests[0]?.body).not.toHaveProperty("service_tier");
-        if (!selectedModel.startsWith("deepseek-")) {
-          expect(provider.requests[0]?.body).toMatchObject({
-            reasoning: { effort: "max" },
           });
         }
       } finally {

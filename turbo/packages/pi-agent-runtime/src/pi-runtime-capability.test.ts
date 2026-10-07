@@ -165,11 +165,23 @@ describe("pinned Pi runtime capability", () => {
     expect(disagreements).toStrictEqual([]);
   });
 
+  it("never admits Claude Opus 5.5 as a Pi execution route", () => {
+    for (const modelProviderType of seededProviderTypes("claude-opus-5-5")) {
+      expect(
+        isPiExecutionRoute({
+          catalogModel: piCatalogModel(SEEDED_MODEL_CATALOG, "claude-opus-5-5"),
+          modelProviderType,
+          runtimeProviderType: modelProviderType,
+          codexServiceTier: undefined,
+        }),
+      ).toBe(false);
+    }
+  });
+
   it.each(["gpt-6-sol", "gpt-6-luna"])(
     "resolves %s through the pinned Pi catalog",
     (model) => {
       const identities: readonly PiRuntimeIdentity[] = [
-        { provider: "openai", model },
         { provider: "openai-codex", model },
         { provider: "openrouter", model: `openai/${model}` },
       ];

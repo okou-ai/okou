@@ -19,11 +19,11 @@ change preferences. Membership removal deletes only that member's workspace
 rows; user and organization deletion remove their respective rows.
 
 The settings catalog (`AVAILABLE_PAID_TOOL_IDS`) includes `web-search`,
-`people-search`, `scrape`, `finance`, `maps`, `seo`, `social`,
-`image-recognition`, and `image-generation`. `PAID_TOOL_IDS` still accepts the
-retired `video-generation`, `voice-generation`, and `avatar-video-generation`
-IDs so stored preferences and older clients keep parsing; no current command
-acts on them.
+`people-search`, `scrape`, `finance`, `maps`, `seo`, `social`, and
+`image-generation`. `PAID_TOOL_IDS` still accepts the retired
+`image-recognition`, `video-generation`, `voice-generation`, and
+`avatar-video-generation` IDs so stored preferences and older clients keep
+parsing; no current command acts on them.
 
 ## Settings and run semantics
 
@@ -52,15 +52,14 @@ Prompt injection is unchanged. A disabled paid invocation exits with status 1
 and identifies the disabled tool, links to Settings → Personal → Tools,
 and explains that re-enabling applies to later runs.
 
-### BYOK web-search fallback
+### User-credential web-search fallback
 
 Claude Code and Codex normally keep framework-native web search disabled so
 public-web discovery uses managed `okou web-search`. Run preparation exposes
 the framework-native tool only when the captured policy disables `web-search`
-and the resolved route uses BYOK credentials. This includes a member's personal
-subscription and an explicit framework key declared in compose. An
-outer `built-in` provider remains non-BYOK even when its concrete upstream
-provider is OpenAI or Anthropic.
+and the resolved route uses user-owned credentials: a connected personal
+subscription or an explicit framework key declared in compose. The `built-in`
+Auto provider never exposes the framework-native tool.
 
 The API records the resolved decision in trusted platform environment as
 `OKOU_ENABLE_FRAMEWORK_WEB_SEARCH=true`. Guest Agent accepts only that exact
@@ -74,7 +73,7 @@ only when that fallback is exposed.
 | ---------------------------- | -------------- | -------------------------- |
 | Enabled                      | Any            | Disabled                   |
 | Disabled                     | Built-in       | Disabled                   |
-| Disabled                     | BYOK           | Enabled                    |
+| Disabled                     | User-owned     | Enabled                    |
 
 Pi behavior does not change. Pi has no registered native web-search tool and
 continues to reach managed search through the Okou CLI.
@@ -111,7 +110,7 @@ Do not enable it while an old serving API can prepare runs without the policy.
 Runner job schemas are unchanged: the existing platform environment carries
 the variable, and prepared jobs retain their commit-addressed CLI package.
 
-The BYOK native-search fallback is also additive. A new Guest paired with an
+The user-credential native-search fallback is also additive. A new Guest paired with an
 old API sees no positive marker and keeps native search disabled; an old Guest
 paired with a new API ignores the marker and also keeps native search disabled.
 The fallback activates only after both surfaces are current. Prepared

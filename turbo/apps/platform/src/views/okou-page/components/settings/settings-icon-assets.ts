@@ -6,8 +6,6 @@ const SETTINGS_ICON_ASSET_PATHS = {
   chatglm: "views/zero-page/components/settings/icons/chatglm-7e6a9cb772fa.svg",
   "claude-code":
     "views/zero-page/components/settings/icons/claude-code-03a5132e24ca.svg",
-  deepseek:
-    "views/zero-page/components/settings/icons/deepseek-a8663c0a81d9.svg",
   github: "views/zero-page/components/settings/icons/github-4a739019d805.svg",
   imessage:
     "views/zero-page/components/settings/icons/imessage-5275a5a9cb9a.svg",

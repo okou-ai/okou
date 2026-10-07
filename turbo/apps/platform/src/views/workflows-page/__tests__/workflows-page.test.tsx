@@ -863,9 +863,6 @@ function agent(id: string, displayName: string): AgentResponse {
     description: "Finds and summarizes information",
     sound: null,
     avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: "public",
   };
 }
@@ -905,9 +902,6 @@ function mockAgentPageApis(): void {
       displayName,
       sound: null,
       avatarUrl: null,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "public",
     });
   });

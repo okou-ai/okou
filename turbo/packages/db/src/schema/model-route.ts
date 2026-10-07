@@ -16,14 +16,13 @@ import { runModelCatalog } from "./run-model-catalog";
  * Execution routes for catalog models. Names and ordering come only from
  * `run_model_catalog`.
  *
- * - `provider_type` is the route a run selects: `built-in` (Auto and the
- *   platform memory binding) or a personal subscription type.
+ * - `provider_type` is `built-in` (platform Auto) or a personal subscription
+ *   type (`claude-code-oauth-token`, `codex-oauth-token`).
  * - `concrete_provider_type` is the provider that serves the request. Built-in
- *   routes list one row per candidate, tried in ascending `priority`; other
- *   routes serve themselves.
- * - `subscription_type` equals `provider_type` on personal subscription
- *   routes, which run on a member's connected subscription, and is NULL on
- *   Built-in routes.
+ *   routes are served by `openrouter-codex`; subscription routes serve
+ *   themselves.
+ * - `subscription_type` is set only for the personal subscription routes
+ *   backed by a member's connected personal subscription.
  * - `service_tiers` lists optional tiers besides the implicit Standard tier.
  * - `pricing_kind`/`pricing_provider` link a Built-in route to its
  *   `usage_pricing` rows, which remain the billing authority. No foreign key is
@@ -84,15 +83,15 @@ export const modelRoutes = pgTable(
         .nullsNotDistinct(),
       check(
         "chk_model_routes_provider_type",
-        sql`${table.providerType} IN ('built-in', 'claude-code-oauth-token', 'codex-oauth-token')`,
+        sql`${table.providerType} IN ('claude-code-oauth-token', 'codex-oauth-token', 'built-in')`,
       ),
       check(
         "chk_model_routes_concrete_provider_type",
-        sql`CASE WHEN ${table.providerType} = 'built-in' THEN ${table.concreteProviderType} IN ('anthropic-api-key', 'openrouter-api-key', 'deepseek', 'openrouter-codex', 'openai-api-key') ELSE ${table.concreteProviderType} = ${table.providerType} END`,
+        sql`CASE WHEN ${table.providerType} = 'built-in' THEN ${table.concreteProviderType} IN ('openrouter-codex') ELSE ${table.concreteProviderType} = ${table.providerType} END`,
       ),
       check(
         "chk_model_routes_subscription_type",
-        sql`CASE WHEN ${table.providerType} = 'built-in' THEN ${table.subscriptionType} IS NULL ELSE ${table.subscriptionType} IS NOT DISTINCT FROM ${table.providerType} END`,
+        sql`${table.subscriptionType} IS NULL OR (${table.subscriptionType} IN ('claude-code-oauth-token', 'codex-oauth-token') AND ${table.subscriptionType} = ${table.providerType})`,
       ),
       check("chk_model_routes_priority", sql`${table.priority} >= 0`),
       check(

@@ -1,67 +1,28 @@
 # Personal subscription run identity
 
-This document covers the #34012 identity foundation, its #34098/#34111/#34164 repairs, #34197 effective member routing, C launch consumers, and the September 16 correction (#34430) for #34010. Subscription protocols, model catalogs, pricing, and account UI availability remain unchanged.
+This document covers the #34012 identity foundation, its #34098/#34111/#34164 repairs, #34197 effective member routing, C launch consumers, and the September 16 correction (#34430) for #34010. It describes the current subscription routing, capture and credential ownership rules.
 
 ## Effective member routing (B)
 
-A new member run uses a supported personal Claude/Codex subscription before the API configured for its allowed logical model. This routing behavior and the personal subscription account UI apply in every workspace. Organization model restrictions and active entitlement still apply. A permitted subscription needs no organization model credits. Other tools and generation keep their independent billing.
+A new member run that selects a connected personal Claude/Codex subscription runs on that subscription. Routing and the personal subscription account UI apply in every workspace. A subscription run needs no organization model credits. Other tools and generation keep their independent billing.
 
-`effective-model-route.service.ts` is the shared database-only leaf for model selection and the optional member projection. It validates logical model and policy structure, then chooses a logical personal candidate or the configured organization route. Missing nullable custom provider/surface references and mappings matter only when that organization route is selected. Unknown discriminators and contradictory policy structure remain errors. A chosen personal route never returns null because of subscription failure, so persisted-model reconciliation cannot turn reconnect, refresh, quota, KMS or provider errors into another model or paid API.
+`effective-model-route.service.ts` is the shared database-only leaf for personal candidates. A chosen personal route never returns null because of subscription failure, so persisted-model reconciliation cannot turn reconnect, refresh, quota, KMS or provider errors into another model or Auto charge.
 
 Presence reads exact organization/member metadata and connected account existence. It does not list accounts, capture a concrete account, decrypt, or call OAuth/profile/usage. This matters because thread reconciliation invokes selection while holding lifecycle rows. A type without a connected account is absent for a new run. An apparent active display ID is never promoted to a captured stable identity. A fixes that identity once before any captured-account consumer; read-only thread observation may start concurrently, but final admission stays database-only.
 
 Chat, thread defaults/updates, queued messages promoted to a new run, linked integration members and workflow launches use this route through the existing model selectors. Workflow identity is `automation.ownerUserId`. A message with no run yet resolves current settings when promoted; an admitted queued/pending/running run retains its captured source and executor. Private Pi maintenance keeps its explicit source-owned plan and does not acquire a global member preference in lower-level run creation.
 
-Effective provider selection precedes executor, session and model credit/billing decisions. Claude API/Pi to personal Claude Code can rotate the canonical session without changing the logical model. Changing accounts within the same Codex executor/family retains session continuity. Supported Codex Pi/Fast/non-Pi behavior and the unsupported native Claude subscription Pi boundary remain in their existing owners. Existing transient Pi recovery can hand the same captured personal source to Sandbox; it cannot choose another account, organization API, model, or Built-in model charge.
+Effective provider selection precedes executor, session and model credit/billing decisions. Changing accounts within the same Codex executor/family retains session continuity. Supported Codex Pi/Fast/non-Pi behavior and the unsupported native Claude subscription Pi boundary remain in their existing owners. Existing transient Pi recovery can hand the same captured personal source to Sandbox; it cannot choose another account, model, or Auto charge.
 
-The policy response optionally adds `memberEffective` with `providerType`, `runtimeProviderType`, `credentialScope`, `availability` (`available`, `reconnect_required`, `unavailable`, or `plan_restricted`) and `accountSelection` (`capture_required` or `not_applicable`). Availability is local metadata, not a live provider health or quota check. Personal candidates require capture and carry no account ID or credentials. The field is always present for a real member. `isMemberModelPolicyConfigurable` keeps its `routeStatus` fallback for an older API that omits it. Because the projection is always present, member-facing decisions that consult it — including the Codex priority service tier — are now judged on the effective route's availability rather than on a merely valid organization route. Existing administrative provider/runtime/scope/IDs/route status/default fields retain their meaning in GET and PUT; request schemas and persisted thread fields do not change. C owns client adoption of this additive response and its optional-field handling.
+Each `GET /api/run-models` entry optionally carries `memberEffective` with `providerType`, `runtimeProviderType`, `credentialScope`, `availability` (`available`, `reconnect_required`, `unavailable`, or `plan_restricted`) and `accountSelection` (`capture_required` or `not_applicable`). Availability is local metadata, not a live provider health or quota check. Personal candidates require capture and carry no account ID or credentials. Clients fall back to `routeStatus` when the field is absent. Member-facing decisions that consult it, including the Codex priority service tier, are judged on the effective route's availability.
 
-Organization Subscription policies retain their required subscription route and missing-connection guidance; they never acquire an organization API because a subscription is absent or fails. Genuine absence or catalog non-support uses only an already configured organization API. The former D policy conversion and mandatory E cleanup are cancelled for all organizations; supported Subscription routes are not cleanup targets. This slice has no migration/backfill, rollout activation or production acceptance; R1 and subsequent release gates remain with the controller.
-
-## Launch consumers and policy writes (C)
+## Launch consumers (C)
 
 Member UI and CLI consumers read the optional `memberEffective` projection
-through a separate member adapter. Administrative routing remains unchanged.
-The projection describes a local logical candidate, never a captured account
-or live quota guarantee. Missing projection fields retain the old API/OFF
-interpretation, including missing credentials on an organization Subscription
-policy. Failed refreshes retain the last resolved choices and the user's draft,
-selected model, effort, and Fast preference.
-
-Authenticated user/org `modelPoliciesChanged` notices invalidate only the
-cheap policy projection, with baseline and reconnect resync through the shared
-realtime lifecycle. Account and billing actions invalidate that same projection;
-notices contain no account metadata and do not request upstream usage.
-
-Policy GET returns an opaque `revision` over the persisted administrative rows,
-independently of the requesting member. Settings submit that revision with the
-array they actually read. PUT rejects a missing or stale precondition with a
-refresh/upgrade conflict before lazy seed/default repair or policy/preference
-changes; this is unconditional now that the priority switch is gone, so every
-writer sends the revision it read. With a current revision, an eligible admin can
-add a Subscription route, change an API route to Subscription, or edit an
-existing Subscription choice. Provider choices remain independent of the
-precondition requirement, with model/plan/provider validation unchanged. The API-key-create flow reads a
-fresh policy snapshot before constructing its subsequent conditional write.
-
-Replacement and seed/default repair share an organization-local transaction
-advisory lock. Replacement locks organization provider parents, connection
-parents, surfaces, and policy rows before comparing its revision, protecting
-the snapshot against FK deletion through commit. Normal runtime selection does
-not take this lock when no repair is needed. Validation inside the transaction
-uses local data and does not acquire A's credential lifecycle lock or perform
-upstream calls. The Turbo runner bootstrap steps that previously wrote
-policies without a precondition now read the current revision first, because
-the feature-off path they relied on no longer exists.
-
-The canonical rollback resolver requires accepted B merge
-`8a5e1299b4d26bd114ccec017b84b7a83fb4a164` in addition to all prior floors and
-artifact checks. The correction retains this executable floor and the actual
-credential writer/context compatibility gates. Cancellation of policy
-conversion creates no new conversion-specific floor or migration. No saved
-policy, model default, member preference or connection is rewritten by switch
-evaluation or the change to its default audience. The controller owns separate
-release and production acceptance.
+through a member adapter. The projection describes a local logical candidate,
+never a captured account or live quota guarantee. Failed refreshes retain the
+last resolved choices and the user's draft, selected model, effort, and Fast
+preference.
 
 ## Binding and credential ownership
 
@@ -86,8 +47,8 @@ there is no guessed deployment date, active-account inference, or backfill.
 The additive owner/org-scoped run GET reports persisted provider/model/scope
 with an unknown, unavailable, or currently connected original account. A
 deleted account keeps its historical source explanation without exposing
-retained credentials or resurrecting its authority. Retired provider enums
-remain readable as unknown, following the existing error-format read boundary.
+retained credentials or resurrecting its authority. Historical provider values
+are treated as opaque strings and read as unknown, following the existing error-format read boundary.
 
 Only the latest actionable failed run lazily loads this metadata for recovery,
 independently of Debug; trace controls still require Debug. Exact account reads
@@ -107,7 +68,7 @@ target. R1 still owns closure of old writers and the real historical-context
 drain. The digest provides recovery provenance, not permission to bypass those
 activation gates.
 
-Every newly admitted personal Claude/Codex subscription run captures a concrete `model_provider_accounts.id`, independently of UI entry points. Capture may overlap the first read-only thread session/prompt observation. Both branches are joined before environment preparation or any other captured-account consumer, and only thread-owned body, prompt, session-resolution and browser fields are composed onto the captured command. Post-authorization work remains capture-gated. A stale thread snapshot reruns only thread observation; it does not recapture or change the fixed account/model pin. The final admission transaction locks its existing thread/session rows and then takes the provider auth-state lock; it no longer acquires an organization advisory lock. It revalidates the captured connected account and writes the same ID to run metadata/model pin and execution-context model-provider `sourceId`. Removal winning that race produces an explicit subscription admission failure; it never selects a sibling account, organization API key, or other model.
+Every newly admitted personal Claude/Codex subscription run captures a concrete `model_provider_accounts.id`, independently of UI entry points. Capture may overlap the first read-only thread session/prompt observation. Both branches are joined before environment preparation or any other captured-account consumer, and only thread-owned body, prompt, session-resolution and browser fields are composed onto the captured command. Post-authorization work remains capture-gated. A stale thread snapshot reruns only thread observation; it does not recapture or change the fixed account/model pin. The final admission transaction locks its existing thread/session rows and then takes the provider auth-state lock. It revalidates the captured connected account and writes the same ID to run metadata/model pin and execution-context model-provider `sourceId`. Removal winning that race produces an explicit subscription admission failure; it never selects a sibling account or other model.
 
 This scheduling change adds no query statement and leaves successful-path query counts unchanged. If capture fails, the already-started thread branch may complete its existing bounded read-only session and prompt queries before the request returns the capture conflict. That speculative branch performs no write, post-authorization work, proof, admission, durable queue publication or spawn. Capture conflict, rejection and abort priority remain explicit, and every started branch is settled before the request returns.
 
@@ -125,7 +86,6 @@ The shared terminal transition cleans the final disconnected reference after com
 store for personal Claude and Codex subscriptions. See the
 [deployment compatibility entry](deployment-compatibility.md#personal-subscription-credentials-become-account-only-2026-09-26)
 for the credential storage deployment boundary.
-Organization (`__org__`) subscriptions keep `model_providers` + `secrets`.
 
 - Reads (firewall auth, Pi first-turn and memory credentials, run capture,
   environment preparation, listing) are plain reads of the exact account and
@@ -171,5 +131,5 @@ A/A followed by B/B after replacement, unchanged OAuth request counts, terminal
 refresh rejection, cancellation and membership revocation, session disposal and
 absence of output artifacts/Built-in usage on rejection. Priority-off deletion
 remains destructive. This repair changes no persisted shape, protocol, routing
-policy or feature configuration. Priority was default-off including staff at
+or feature configuration. Priority was default-off including staff at
 A3; #34430 changes only its default audience as described above.

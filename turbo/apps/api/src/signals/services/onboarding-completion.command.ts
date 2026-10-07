@@ -1,7 +1,4 @@
-import type {
-  OnboardingIndustry,
-  OnboardingSubscriptionProvider,
-} from "@okouai/api-contracts/contracts/onboarding";
+import type { OnboardingIndustry } from "@okouai/api-contracts/contracts/onboarding";
 import { orgTierSchema } from "@okouai/api-contracts/contracts/orgs";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
@@ -16,7 +13,6 @@ interface OrgOnboardingCompletion {
   readonly orgId: string;
   readonly userId: string;
   readonly industry?: OnboardingIndustry;
-  readonly modelProvider?: OnboardingSubscriptionProvider;
 }
 
 function onboardingEntitlementValues(metadata: {
@@ -36,7 +32,7 @@ function onboardingEntitlementValues(metadata: {
     : null;
 }
 
-/** Metadata, entitlement bootstrap and untouched policy seeding commit together. */
+/** Metadata and entitlement bootstrap commit together. */
 export const markOrgOnboardingComplete$ = command(
   async ({ set }, args: OrgOnboardingCompletion, signal: AbortSignal) => {
     const db = set(writeDb$);

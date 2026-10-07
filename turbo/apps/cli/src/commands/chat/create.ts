@@ -61,7 +61,7 @@ export const createCommand = new Command()
   )
   .option(
     "--model <id>",
-    "Model for the thread (defaults to your model preference, then the workspace default)",
+    "Model for the thread (defaults to your model preference, then Auto)",
   )
   .option("--effort <level>", "Set reasoning effort for the selected model")
   .option(

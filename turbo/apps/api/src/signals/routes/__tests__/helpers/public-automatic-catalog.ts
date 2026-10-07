@@ -17,7 +17,6 @@ import {
   type AutomaticMcpCatalogOptions,
 } from "./connector-automatic-catalog";
 import { createFixtureOperationOwner } from "./fixture-operation-owner";
-import { deleteFeatureSwitchesForUser } from "./feature-switches";
 import { createPublicConnectorCatalog } from "./public-connector-catalog";
 import { createRouteMocks } from "./route-test";
 
@@ -41,7 +40,6 @@ export function createPublicAutomaticCatalog(
   const accountIds = new Set<string>();
   const accountDeletionIntents = new Set<string>();
   let published = false;
-  let featureSwitchCleanupNeeded = false;
   const cleanupFailures: unknown[] = [];
   async function cleanup(operation: () => Promise<unknown>) {
     const result = await settleIncludingAbort(operation());
@@ -99,11 +97,6 @@ export function createPublicAutomaticCatalog(
       });
     }
     await cleanup(flushWaitUntilForTest);
-    await cleanup(async () => {
-      if (featureSwitchCleanupNeeded) {
-        await deleteFeatureSwitchesForUser(context, { ...actor, orgId });
-      }
-    });
 
     await cleanup(async () => {
       const connectors = createConnectorBddApi(context);
@@ -214,8 +207,6 @@ export function createPublicAutomaticCatalog(
       runs.acceptTelemetryIngest();
       const runnerGroup = runs.configureRunnerGroup();
       await runs.grantProEntitlement(actor, { customerId, subscriptionId });
-      // Custom-mode setup writes this user override even when it ends false.
-      featureSwitchCleanupNeeded = true;
       await runs.ensurePersonalSubscriptionModel(actor);
       const agent = await bdd.createAgent(actor, {
         displayName: "BDD lifecycle agent",

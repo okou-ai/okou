@@ -22,10 +22,9 @@ retry policy and maximum text lengths remain in the
 [voice guide](./google-llm-voice.md). Maps Grounding retains its separate Gemini
 2.5 Flash model, entitlement and billing contract; it is not auxiliary prose.
 
-Jev Home scoring (`typesafe/jev-1.13`), memory, fixed Auto and the independent
-image-recognition service are not migrated here. Home refresh therefore requires
-both Google configuration for prose and the existing OpenRouter key for Jev.
-Independent image recognition removal is a separate change.
+Jev Home scoring (`typesafe/jev-1.13`), memory and fixed Auto are not migrated
+here. Home refresh therefore requires both Google configuration for prose and
+the existing OpenRouter key for Jev.
 
 The old Native Morning Brief generation entrypoint is already retired. Its
 historical database receipts and content-retention cleanup are untouched; no

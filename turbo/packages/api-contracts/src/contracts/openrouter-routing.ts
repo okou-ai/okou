@@ -1,10 +1,5 @@
 /** Product-approved model/API pairs, not the entire US catalog. */
 const US_MODELS: Readonly<Record<OpenRouterApi, readonly string[]>> = {
-  messages: [
-    "anthropic/claude-opus-5.5",
-    "anthropic/claude-opus-5",
-    "anthropic/claude-sonnet-5",
-  ],
   responses: [
     "openai/gpt-6-astra",
     "openai/gpt-5.6-sol",
@@ -14,23 +9,25 @@ const US_MODELS: Readonly<Record<OpenRouterApi, readonly string[]>> = {
   "chat/completions": [],
 };
 
-export type OpenRouterApi = "messages" | "responses" | "chat/completions";
+export type OpenRouterApi = "responses" | "chat/completions";
 
-/** Every OpenRouter credential is a platform-owned built-in key. */
 export interface OpenRouterRoutingContext {
+  readonly credentialOwner: "builtin" | "member";
   readonly model: string;
 }
 
 const OPENROUTER_GLOBAL_ORIGIN = "https://openrouter.ai";
 export const OPENROUTER_US_ORIGIN = "https://us.openrouter.ai";
 
-/** Select once per captured route; retries retain the selected endpoint. */
+/** Select once at the credential owner; retries retain the selected endpoint. */
 export function getOpenRouterBaseUrl(
   api: OpenRouterApi,
   context: OpenRouterRoutingContext,
 ): string {
-  const origin = US_MODELS[api].includes(context.model)
-    ? OPENROUTER_US_ORIGIN
-    : OPENROUTER_GLOBAL_ORIGIN;
-  return `${origin}${api === "messages" ? "/api" : "/api/v1"}`;
+  const origin =
+    context.credentialOwner === "builtin" &&
+    US_MODELS[api].includes(context.model)
+      ? OPENROUTER_US_ORIGIN
+      : OPENROUTER_GLOBAL_ORIGIN;
+  return `${origin}/api/v1`;
 }

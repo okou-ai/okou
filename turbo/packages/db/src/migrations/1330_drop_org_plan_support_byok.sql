@@ -1,1 +1,0 @@
-ALTER TABLE "org_plan_entitlements" DROP COLUMN "support_byok";

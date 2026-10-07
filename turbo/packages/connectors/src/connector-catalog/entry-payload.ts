@@ -6,7 +6,8 @@ function isUnknownRecord(
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function canonicalJsonValue(value: unknown): unknown {
+/** Stable JSON object ordering across publication bytes and JSONB reads. */
+export function canonicalJsonValue(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(canonicalJsonValue);
   }
