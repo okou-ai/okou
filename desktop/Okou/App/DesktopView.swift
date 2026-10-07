@@ -61,6 +61,7 @@ struct DesktopView: View {
           Color(red: 0.980, green: 0.961, blue: 0.953),
         ], startPoint: .top, endPoint: .bottom)
     )
+    .ignoresSafeArea(.container, edges: .top)
     .preferredColorScheme(.light)
     .sheet(isPresented: $model.showWorkspaces) { workspacePicker }
     .sheet(isPresented: $model.showDiagnostics) { diagnostics }
