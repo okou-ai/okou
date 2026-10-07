@@ -162,39 +162,49 @@ using `@preset/okou-1-0`. Actual pricing/credits, historical usage, image
 generation and connectors retain their existing storage. See
 [current model APIs](model-catalog.md).
 
-## Bounded official connector catalog initialization in CI preview
+## Complete official connector catalog initialization in CI preview
 
-`deploy-api` opts into `db:dev-seed --preview-onboarding-catalog` for the
-Neon test project's `preview/*` branch. It downloads and validates the same
-official R2 publication, but materializes only the union of the onboarding
-source/workflow contracts and the seven existing Runner E2E connectors. The
-current union is 32 connectors. Immutable entry rows are inserted in one batch,
-with no per-entry SQL readback. The current manifest lists only those rows;
-the publication version, digest and full attested compressed snapshot remain
-unchanged. Compatibility evaluations and bundled skills are prepared only for
-the selected entries. This is a preview projection, not a
-new publication or a promise that every official connector is available there.
+`deploy-api` still runs `db:dev-seed --preview-onboarding-catalog` and then
+calls `/api/cron/seed-preview-onboarding-catalog`; the flag and path keep their
+historical names so the workflow is unchanged. Both now initialize the complete
+validated official R2 publication. This replaces the former onboarding/Runner
+E2E projection (32 connectors), which left every other official connector
+absent once business readers moved to immutable entries. There is no subset,
+slug allowlist or legacy gzip/R2 read fallback, and readers are unchanged.
 
-Before aliasing the deployed preview or starting downstream E2E, CI calls
-`/api/cron/seed-preview-onboarding-catalog` with the existing cron secret. The
-endpoint repeats that bounded initialization using the deployed API's actual
-capability configuration; it does not call the full synchronizer. It returns
-404 outside `ENV=preview`. The seed command also rejects non-preview use, and
-the CLI flag is checked before any development seed writes. An unavailable,
-invalid or incomplete publication fails initialization; there is no full-sync
-fallback, fabricated active identity, or relaxed byte/relationship validation.
+Initialization reuses the production synchronizer's entry preparation. It
+lists entries already present at the publication hash, registers bundled skill
+storages/versions (and their Pi resource index rows) for the missing entries,
+then writes those entries. Only after every entry exists does one transaction
+upsert the schema-versioned pointer with the full slug manifest, together with
+the legacy compressed snapshot, synchronization state and compatibility row
+that older API instances still read. The previous generation keeps serving if
+download, byte-digest validation, skill registration or an entry write fails.
+Each deploy resets the preview Neon branch from its parent, so dev-seed performs
+a cold initialization. The post-deploy call finds the generation complete and
+only repeats download, validation and the pointer transaction. Pi invalidation
+and runtime wakeups remain production-synchronizer behavior.
 
-New workflow and new API are shipped from the same checked-out commit. An old
-API does not have the new endpoint, so the new workflow fails before exposing
-its alias rather than silently using another preview or the full synchronizer.
-Old workflow with new API retains the old full-sync invocation. Rollback must
-reset/discard the bounded preview generation before relying on full initialization:
-the unchanged full synchronizer's same-digest shortcut does not detect a partial
-preview manifest. Merely removing the CLI flag is not a full-materialization
-repair. Never promote this test database into production. No schema migration,
-production configuration, App/Runner protocol or release action is part of this
-change. Production's existing minute cron and its full validation, CAS activation
-and invalidation behavior remain unchanged.
+Entry preparation, for both production synchronization and preview, writes
+missing entries in multi-row `INSERT ... ON CONFLICT DO NOTHING` statements of
+at most 100 entries in publication order, instead of one statement per entry.
+Entry existence remains the preparation receipt; an interrupted preparer can
+leave whole batches, which a retry reuses. Production publication
+`2026-10-04.4587` has 4,597 entries and 4,554 bundled skills, 30.6 MB raw
+(5.5 MB compressed), and about 55 MiB of entry rows including derived columns.
+That is 46 entry statements, the largest about 1.8 MiB. Before the projection,
+the per-entry full synchronizer took 3.5 to 8.4 minutes (median about 6) within
+`deploy-api`'s 25-minute job, from a GitHub runner to the Neon test project.
+With batched writes, that publication initializes cold in about 8 seconds
+against local PostgreSQL, including a simulated 20 ms round trip; the repeated
+post-deploy call takes about 3 seconds. Actual Neon preview latency is measured
+by CI deploys.
+
+The workflow is unchanged, and the endpoint's response shape is unchanged; its
+slug list is now the complete manifest. Rolling back to the projection API
+reinstalls the projection on the next deploy, because the branch is reset first. Never promote this test database into production. No
+schema migration, production configuration, App/Runner protocol or release
+action is part of this change.
 
 ## Personal subscription CLI and Reset Cards
 

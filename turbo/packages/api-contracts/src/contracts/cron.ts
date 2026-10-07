@@ -612,8 +612,9 @@ export const cronConnectorCatalogContract = c.router({
       404: apiErrorSchema,
       500: apiErrorSchema,
     },
+    // Historical path retained for the CI preview workflow.
     summary:
-      "Seed the official catalog's onboarding projection in preview only",
+      "Initialize the complete official connector catalog in preview only",
   },
   sync: {
     method: "GET",
