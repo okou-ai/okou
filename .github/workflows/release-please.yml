@@ -1599,8 +1599,10 @@ jobs:
 
           if ! summary=$(jq -c '{
             outcome,
+            failureCode,
+            state,
             hasActive: (.active != null),
-            lastAttemptOutcome: .lastAttempt.outcome,
+            entryCount: .pointer.entryCount,
             filtering: {
               stale: .filtering.stale,
               filteredAuthMethodCount: (.filtering.filteredAuthMethods | length)

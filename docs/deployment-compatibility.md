@@ -2,7 +2,7 @@
 
 ## Unselectable chat thread models and unused built-in keys cleared
 
-Data-only migration `1334_clear_unselectable_thread_models_and_unused_model_keys`
+Data-only migration `1335_clear_unselectable_thread_models_and_unused_model_keys`
 has two parts.
 
 It deletes the `built_in_model_keys` rows for `zai`, `anthropic`, `openai`,
@@ -21,7 +21,12 @@ database catalog at migration time. MaskDB (2026-10-07) showed 252 such rows
 across 43 users. They are leftovers of retired providers, for example
 `claude-sonnet-4.6` (213), `vm0-model` (11), `kimi-k2.5`, `claude-opus-4.6`,
 `deepseek/deepseek-v4-pro`, MiniMax ids, `deepseek-chat`, `gpt-5.3*` and
-`codex`. Each thread is changed the same way as picking Auto in the model
+`codex`. On production these rows, and the 65k threads pinned to active
+catalog models without a route, were already remapped by an operator SQL on
+2026-10-07 (unrouted models to their subscription successors or `okou-1.0`,
+unknown ids to `okou-1.0`, each with its `model_selection_updated` event), so
+this part is expected to change no production row; it still cleans other
+environments. Each thread is changed the same way as picking Auto in the model
 selection route, in one transaction:
 
 - `selected_model` and `codex_service_tier` become NULL and `updated_at` is
@@ -44,6 +49,111 @@ nothing at or above the floor reads them.
 `scripts/test-unselectable-thread-model-cleanup.ts` covers the snapshot
 change, the appended events and their sequence, retained selections, the
 remaining OpenRouter key and an idempotent rerun.
+
+## Connector catalog Release 2 contraction (migration 1334)
+
+Release 2 removes the legacy connector catalog storage and writer state that
+Release 1 (#37820, #37861) stopped reading. Migration
+`1334_connector_catalog_release_2_contraction` drops
+`connector_catalog_runtime_projections`,
+`connector_catalog_runtime_projection_sets`,
+`connector_catalog_compatibility_evaluation`,
+`connector_catalog_active_snapshot` and `connector_catalog_sync_state`
+(dependents first, without `CASCADE`; the only foreign keys are among these
+tables). It also drops `connector_catalog.activated_at`, `catalog_version`,
+`catalog_header` and `entry_slugs`, and the redundant
+`connector_catalog_entries` projections `label`, `description`, `category`,
+`auth_methods`, `firewall`, `storage_name`, `version_id` and `mcp_endpoint`.
+No reader selected those projections; every consumer reads `payload`. The
+final schema is the pointer `connector_catalog(schema_version PK, hash)` and
+immutable entries `connector_catalog_entries(hash, slug, payload)` with
+`PK(hash, slug)`. There is no data conversion or backfill: existing entry rows
+and payloads, including generations captured by Runs, Pi contexts and
+permission baselines, are kept unchanged and stay readable by hash.
+
+**Writer.** `/api/cron/sync-connector-catalog` (hourly, plus the release
+workflow call) downloads `connectors/v4/active.json` with a plain GET. A
+pointer whose digest equals the serving hash is `unchanged` without downloading
+the catalog, because only complete, validated generations are ever published.
+Otherwise it downloads the referenced release and keeps every existing
+validation boundary: pointer schema and canonical release key, size limits,
+byte digest, artifact schema, public-leakage and relationship checks, and the
+bundled skill storage/version identity checks at registration. It then
+prepares the complete generation (reusing entries already present at that
+hash, registering missing skills, and inserting the rest with batched
+`INSERT ... ON CONFLICT DO NOTHING` of at most 100 rows) before one
+transaction upserts the pointer and, only if the hash actually changed,
+invalidates Pi stable contexts. The upsert is conditional, so exactly one
+concurrent writer observes a given switch, including the very first
+publication; runtime wakeups follow that commit. A failure or interruption
+before the pointer commit leaves the previous generation serving and at most an
+unreferenced partial generation that a retry at the same hash completes.
+Entries of earlier hashes are never rewritten or deleted, and unreferenced
+generations are not garbage-collected.
+
+One scheduled writer is assumed and last writer wins; there is no sync state,
+compare-and-swap, revision, ETag reuse or rejection cache. A rejected
+publication is not persisted: each attempt logs a warning with the failure
+code and is revalidated by the next attempt, while the current pointer keeps
+serving. Compatibility is evaluated on demand from captured entries and the
+current executable capability; the persisted evaluation and its cron
+reconciler are removed. Existing hash, schema, source, capability-digest and
+validator-identity fences (including the permission-baseline validation
+authority fast path) are unchanged, and there is no legacy gzip or R2 read
+fallback. The connectors package drops its now-unused gzip snapshot codec.
+
+**Response contracts.** The cron sync response is the staff diagnostics body
+(`schemaVersion`, `state`, `active`, `pointer`, `filtering`,
+`credentialStorage`) plus `outcome` and `failureCode` for the attempt just
+made. `state` is `stale` when that attempt was rejected while a pointer
+serves. `lastAttempt`, `lastSuccessAt`, `rejectedCandidate` and
+`active.activatedAt` are removed, and `active.catalogVersion` carries the hash
+as in staff diagnostics. The release workflow's post-deploy call logs
+`outcome`, `failureCode`, `state` and `pointer.entryCount`; its readiness check
+(`state == "current"`, `active != null`, `filtering.stale == false`) keeps its
+meaning and remains a best-effort warning that never fails the deploy. Staff
+diagnostics are unchanged. The preview seed response keeps
+`catalogVersion` (the validated publication label, which is not stored),
+`catalogDigest` and the sorted `connectorSlugs` of the validated publication,
+so the CI preview workflow is unchanged.
+
+**Compatibility and drain.** Migrations run before the API is promoted, so the
+previous production API serves while 1334 is applied.
+
+- A Release 1 API (descending from `e664957caa2056a336595e55f475001b81247fd0`,
+  #37861) reads only `connector_catalog(schema_version, hash)` and
+  `connector_catalog_entries(hash, slug, payload)` in business, runtime, App
+  and staff paths, so those keep working against the contracted schema. Its
+  catalog writer (cron sync, compatibility reconcile, preview and dev seed)
+  still names the dropped tables and columns and fails with `42P01`/`42703`
+  before it can change the pointer; the next scheduled sync from the new API
+  publishes normally. No user-facing read depends on that writer.
+- An API without #37861 (production served API 1.712.3,
+  `e1e0a3851dcdb35c6b7f8ddb41bc21cd746f50f7`, when this change was written)
+  still reads the legacy stores in business paths. It must never serve after
+  1334: connector lists, runs and diagnostics would fail.
+- A new API against a database without 1334 is unsupported: its pointer insert
+  omits the old `NOT NULL` columns.
+
+**Required order.** Merging to `main` is not a deployment, but the next
+release applies 1334 automatically before promoting its API. Therefore:
+
+1. A release containing #37861 must first be deployed to production through
+   the normal release path, and production `/api/build-info` must report a
+   commit descending from `e664957caa2056a336595e55f475001b81247fd0`.
+2. Every API instance and background task built before #37861 must have
+   drained, so the only API that can serve while 1334 runs is a Release 1 API.
+3. Only then may this change merge, so that its release is the one that runs 1334. If it merges earlier, Release 1 and Release 2 would ship in one
+   release and 1334 would run while a pre-Release-1 API serves.
+
+This document does not record that those preconditions are met, nor any
+production deployment, migration or query plan.
+
+**Rollback floor.** The rollback resolver resolves the first-parent `main`
+commit that adds `1334_connector_catalog_release_2_contraction.sql` and rejects
+earlier targets before artifact or host access. It descends from the 1333
+floor. After 1334 no earlier API is a rollback target: Release 1 APIs lose
+their catalog writer and older APIs lose their catalog readers.
 
 ## Legacy chat thread provider pin columns dropped
 
@@ -84,6 +194,10 @@ the columns before an older API serves. This does not claim production
 activation.
 
 ## Additive immutable connector entry columns
+
+> Superseded by the [Release 2 contraction](#connector-catalog-release-2-contraction-migration-1334):
+> legacy tables, pointer metadata and entry projection columns described
+> below no longer exist.
 
 Migrations `1328_connector_catalog_entry_columns` and
 `1329_backfill_connector_catalog_entry_columns` add and backfill `label`,
@@ -137,6 +251,10 @@ metadata. Rolling back restores that stricter catalog acceptance behavior.
 No production migration, deployment or storage write is executed by this PR.
 
 ## Connector catalog business readers on pointer and immutable entries
+
+> Superseded by the [Release 2 contraction](#connector-catalog-release-2-contraction-migration-1334):
+> legacy tables, pointer metadata and entry projection columns described
+> below no longer exist.
 
 Release 1 moves catalog consumers off legacy storage. It is not the
 destructive Release 2. Business/runtime reads (Run capture, Pi
@@ -362,6 +480,10 @@ generation and connectors retain their existing storage. See
 [current model APIs](model-catalog.md).
 
 ## Complete official connector catalog initialization in CI preview
+
+> Superseded by the [Release 2 contraction](#connector-catalog-release-2-contraction-migration-1334):
+> legacy tables, pointer metadata and entry projection columns described
+> below no longer exist.
 
 `deploy-api` still runs `db:dev-seed --preview-onboarding-catalog` and then
 calls `/api/cron/seed-preview-onboarding-catalog`; the flag and path keep their

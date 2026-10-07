@@ -8,11 +8,9 @@ import {
 } from "../connector-catalog/artifacts/artifacts";
 import { AUTOMATIC_MCP_RUNTIME_BEARER_TEMPLATE } from "../connector-catalog/artifacts/mcp-auth";
 import {
-  decodeAttestedConnectorCatalogSnapshot,
-  decodeConnectorCatalogSnapshot,
-  encodeConnectorCatalogSnapshot,
   loadConnectorCatalogCandidate,
   parseConnectorCatalogActivePointer,
+  validateConnectorCatalogCandidateBytes,
 } from "../connector-catalog/artifacts/loader";
 import {
   connectorCatalogExecutableCapabilityState,
@@ -43,22 +41,28 @@ function requiredConnector(
   return connector;
 }
 
-function snapshot(
+function catalogPointer(catalogVersion: string, rawBytes: Uint8Array) {
+  return {
+    catalogVersion,
+    catalogKey: `connectors/v4/releases/${catalogVersion}/catalog.json`,
+    catalogDigest: `sha256:${createHash("sha256").update(rawBytes).digest("hex")}`,
+  };
+}
+
+function candidate(
   artifact: Omit<ConnectorCatalogArtifact, "artifactSchemaVersion"> & {
     artifactSchemaVersion: number;
   },
 ) {
-  const bytes = Buffer.from(JSON.stringify(artifact));
+  const rawBytes = Buffer.from(JSON.stringify(artifact));
   return {
-    catalogGzip: encodeConnectorCatalogSnapshot(bytes),
-    catalogRawSize: bytes.length,
-    catalogVersion: artifact.catalogVersion,
-    catalogDigest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+    pointer: catalogPointer(artifact.catalogVersion, rawBytes),
+    rawBytes,
   };
 }
 
 function decode(artifact: ConnectorCatalogArtifact) {
-  return decodeConnectorCatalogSnapshot(snapshot(artifact)).artifact;
+  return validateConnectorCatalogCandidateBytes(candidate(artifact)).artifact;
 }
 
 function filteredMethods(artifact: ConnectorCatalogArtifact) {
@@ -93,26 +97,34 @@ describe("v4 connector catalog reader", () => {
     ).toBeUndefined();
   });
 
-  it("binds deep and attested snapshots to the supported schema, release, and digest", () => {
+  it("binds candidates to the supported schema, release, and digest", () => {
     const artifact = publishedCatalog();
-    const args = snapshot(artifact);
-    for (const reader of [
-      decodeConnectorCatalogSnapshot,
-      decodeAttestedConnectorCatalogSnapshot,
-    ]) {
-      expect(reader(args).artifact).toEqual(artifact);
-      for (const artifactSchemaVersion of [3, 5]) {
-        expect(() => {
-          reader(snapshot({ ...artifact, artifactSchemaVersion }));
-        }).toThrow("unsupported-schema");
-      }
+    const args = candidate(artifact);
+    expect(validateConnectorCatalogCandidateBytes(args).artifact).toEqual(
+      artifact,
+    );
+    for (const artifactSchemaVersion of [3, 5]) {
       expect(() => {
-        reader({ ...args, catalogVersion: "another-release" });
-      }).toThrow("invalid-reference");
-      expect(() => {
-        reader({ ...args, catalogDigest: `sha256:${"0".repeat(64)}` });
-      }).toThrow("digest-mismatch");
+        validateConnectorCatalogCandidateBytes(
+          candidate({ ...artifact, artifactSchemaVersion }),
+        );
+      }).toThrow("unsupported-schema");
     }
+    expect(() => {
+      validateConnectorCatalogCandidateBytes({
+        ...args,
+        pointer: catalogPointer("another-release", args.rawBytes),
+      });
+    }).toThrow("invalid-reference");
+    expect(() => {
+      validateConnectorCatalogCandidateBytes({
+        ...args,
+        pointer: {
+          ...args.pointer,
+          catalogDigest: `sha256:${"0".repeat(64)}`,
+        },
+      });
+    }).toThrow("digest-mismatch");
   });
 
   it("validates AWS firewall rules through the shared semantic parser", () => {
@@ -162,12 +174,7 @@ describe("v4 connector catalog reader", () => {
 
   it("loads candidates only from the canonical v4 release path", async () => {
     const artifact = publishedCatalog();
-    const rawBytes = Buffer.from(JSON.stringify(artifact));
-    const pointer = {
-      catalogVersion: artifact.catalogVersion,
-      catalogKey: `connectors/v4/releases/${artifact.catalogVersion}/catalog.json`,
-      catalogDigest: snapshot(artifact).catalogDigest,
-    };
+    const { pointer, rawBytes } = candidate(artifact);
     const pointerBytes = Buffer.from(JSON.stringify(pointer));
     expect(parseConnectorCatalogActivePointer(pointerBytes)).toEqual(pointer);
     const reader = {
@@ -175,13 +182,13 @@ describe("v4 connector catalog reader", () => {
         return rawBytes;
       },
     };
-    const candidate = await loadConnectorCatalogCandidate({
+    const loaded = await loadConnectorCatalogCandidate({
       pointer,
       reader,
     });
-    expect(candidate.identity).toEqual({ ...pointer, schemaVersion: 4 });
-    expect(candidate.rawBytes).toEqual(rawBytes);
-    expect(candidate.artifact).toEqual(artifact);
+    expect(loaded.identity).toEqual({ ...pointer, schemaVersion: 4 });
+    expect(loaded.rawBytes).toEqual(rawBytes);
+    expect(loaded.artifact).toEqual(artifact);
     for (const catalogKey of [
       "connectors/v4/active.json",
       "connectors/v4/releases/other/catalog.json",

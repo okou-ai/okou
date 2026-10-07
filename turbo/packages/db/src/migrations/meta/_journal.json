@@ -1797,8 +1797,15 @@
     {
       "idx": 1334,
       "version": "7",
-      "when": 1791358483688,
-      "tag": "1334_clear_unselectable_thread_models_and_unused_model_keys",
+      "when": 1791356658491,
+      "tag": "1334_connector_catalog_release_2_contraction",
+      "breakpoints": true
+    },
+    {
+      "idx": 1335,
+      "version": "7",
+      "when": 1791365961290,
+      "tag": "1335_clear_unselectable_thread_models_and_unused_model_keys",
       "breakpoints": true
     }
   ]

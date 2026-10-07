@@ -192,14 +192,6 @@ export interface S3DownloadFailureDiagnostics {
   readonly signalAborted: boolean;
 }
 
-export type ConditionalS3BufferDownload =
-  | { readonly kind: "not-modified" }
-  | {
-      readonly kind: "downloaded";
-      readonly buffer: Buffer;
-      readonly etag: string | null;
-    };
-
 export class S3ObjectSizeLimitError extends Error {
   constructor(
     readonly key: string,
@@ -614,40 +606,6 @@ export function downloadS3BufferWithMaxBytes(
   );
 }
 
-export function downloadS3BufferWithMaxBytesIfChanged(
-  bucket: string,
-  key: string,
-  maxBytes: number,
-  ifNoneMatch: string | null,
-  signal?: AbortSignal,
-): Computed<Promise<ConditionalS3BufferDownload>> {
-  return computed(async (get): Promise<ConditionalS3BufferDownload> => {
-    const client = get(s3ClientForBucket(bucket));
-    const downloaded = await settle(
-      client.send(
-        new GetObjectCommand({
-          Bucket: bucket,
-          Key: key,
-          IfNoneMatch: ifNoneMatch ?? undefined,
-        }),
-        { abortSignal: signal },
-      ),
-    );
-    if (!downloaded.ok) {
-      if (isS3NotModifiedError(downloaded.error)) {
-        return { kind: "not-modified" };
-      }
-      throw downloaded.error;
-    }
-    const response: GetObjectCommandOutput = downloaded.value;
-    return {
-      kind: "downloaded",
-      buffer: await readS3ObjectBody(response, key, { maxBytes }, signal),
-      etag: response.ETag ?? null,
-    };
-  });
-}
-
 function isAsyncIterableByteStream(
   value: unknown,
 ): value is AsyncIterable<Uint8Array> {
@@ -666,19 +624,6 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   }
   const then = (value as { then?: unknown }).then;
   return typeof then === "function";
-}
-
-function isS3NotModifiedError(value: unknown): boolean {
-  if (typeof value !== "object" || value === null || !("$metadata" in value)) {
-    return false;
-  }
-  const metadata = value.$metadata;
-  return (
-    typeof metadata === "object" &&
-    metadata !== null &&
-    "httpStatusCode" in metadata &&
-    metadata.httpStatusCode === 304
-  );
 }
 
 function closeS3Body(body: unknown): void {

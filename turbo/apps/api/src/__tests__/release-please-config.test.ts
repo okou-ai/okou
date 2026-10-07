@@ -385,9 +385,8 @@ describe("release-please API deployment graph", () => {
     expect(reconcileBlock).toContain("the scheduled cron will retry");
     expect(reconcileBlock).toContain("--max-time 120");
     expect(reconcileBlock).toContain("hasActive: (.active != null)");
-    expect(reconcileBlock).toContain(
-      "lastAttemptOutcome: .lastAttempt.outcome",
-    );
+    expect(reconcileBlock).toContain("failureCode,");
+    expect(reconcileBlock).toContain("entryCount: .pointer.entryCount");
     expect(reconcileBlock).toContain("stale: .filtering.stale");
     expect(reconcileBlock).toContain(
       "filteredAuthMethodCount: (.filtering.filteredAuthMethods | length)",

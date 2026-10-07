@@ -1,7 +1,10 @@
+import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
+import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import chalk from "chalk";
 import { Command } from "commander";
 import {
+  getUserModelPreference,
   listRunModels,
   selectRunModel,
 } from "../../lib/api/domains/run-models";
@@ -35,6 +38,32 @@ const listCommand = new Command()
     }),
   );
 
+interface SelectOptions {
+  readonly priority?: boolean;
+}
+
+/**
+ * Without an explicit flag, keep the saved tier when it still applies: the
+ * same model echoes it unchanged, and another subscription model keeps
+ * priority only when its subscription offers it.
+ */
+async function resolveServiceTier(
+  selected: AvailableRunModel,
+  priority: boolean | undefined,
+): Promise<ChatThreadServiceTier | null> {
+  if (priority !== undefined) {
+    return priority ? "priority" : null;
+  }
+  const stored = await getUserModelPreference();
+  if (stored.serviceTier === null || stored.selectedModel === selected.model) {
+    return stored.serviceTier;
+  }
+  return stored.serviceTier === "priority" &&
+    selected.subscriptionOptions?.serviceTier === "priority"
+    ? "priority"
+    : null;
+}
+
 const selectCommand = new Command()
   .name("select")
   .argument(
@@ -42,8 +71,13 @@ const selectCommand = new Command()
     "Auto model id or a connected personal subscription model",
   )
   .description("Select your default model for new chats")
+  .option("--priority", "Enable priority (Fast) for new chats on this model")
+  .option(
+    "--no-priority",
+    "Use standard priority instead of your saved preference",
+  )
   .action(
-    withErrorHandler(async (model: string) => {
+    withErrorHandler(async (model: string, options: SelectOptions) => {
       const available = await listRunModels();
       const selected = available.models.find((candidate) => {
         return candidate.model === model;
@@ -53,10 +87,14 @@ const selectCommand = new Command()
           `Model is unavailable: ${model}. Run okou model ls and connect or reconnect your subscription in Settings / Models.`,
         );
       }
-      const result = await selectRunModel(model);
+      const serviceTier = await resolveServiceTier(selected, options.priority);
+      const result = await selectRunModel(model, serviceTier);
       console.log(
         chalk.green(`✓ Default model selected: ${result.selectedModel}`),
       );
+      if (result.serviceTier !== null) {
+        console.log(chalk.dim(`  Service tier: ${result.serviceTier}`));
+      }
     }),
   );
 

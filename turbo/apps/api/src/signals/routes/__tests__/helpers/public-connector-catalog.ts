@@ -17,10 +17,7 @@ import {
   mockOptionalEnv,
   optionalEnv,
 } from "../../../../lib/env";
-import {
-  API_TEST_CONNECTOR_CATALOG,
-  captureApiTestConnectorCatalogCleanup,
-} from "../../../../test-fixtures/connector-catalog";
+import { API_TEST_CONNECTOR_CATALOG } from "../../../../test-fixtures/connector-catalog";
 import { cronConnectorCatalogRoutes } from "../../cron-connector-catalog";
 
 export { API_TEST_CONNECTOR_CATALOG };
@@ -46,8 +43,6 @@ export function createPublicConnectorCatalog(
   const cronSecret = `test-cron-${randomUUID()}`;
   mockEnv("R2_USER_STORAGES_BUCKET_NAME", bucket);
   mockEnv("CRON_SECRET", cronSecret);
-  // Catalog infrastructure has no public deletion API. Capture only our source.
-  const removeSource = captureApiTestConnectorCatalogCleanup();
   const cleanups: (() => Promise<void>)[] = [];
   let storage = context.mocks.s3.send.getMockImplementation();
   let cleaned = false;
@@ -68,7 +63,6 @@ export function createPublicConnectorCatalog(
     for (const ownedCleanup of [...cleanups].reverse()) {
       await ownedCleanup();
     }
-    await removeSource();
     mockEnv("R2_USER_STORAGES_BUCKET_NAME", previousBucket);
     mockEnv("CRON_SECRET", previousCronSecret);
     cleaned = true;

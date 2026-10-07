@@ -113,7 +113,7 @@ are enforced by the integration ingress tests.
 ### Active transition validators
 
 - `scripts/test-unselectable-thread-model-cleanup.ts` protects migration
-  `1334_clear_unselectable_thread_models_and_unused_model_keys`: unresolvable
+  `1335_clear_unselectable_thread_models_and_unused_model_keys`: unresolvable
   thread selections return to Auto with ordered `model_selection_updated` and
   `service_tier_updated` events, resolvable selections and agentless streams
   are respected, only the OpenRouter built-in key remains, and a rerun is a

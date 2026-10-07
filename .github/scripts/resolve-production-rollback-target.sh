@@ -59,6 +59,7 @@ readonly VIDEO_ENTITLEMENT_DROP_PATH=turbo/packages/db/src/migrations/1315_drop_
 readonly RETIRED_MODEL_CONFIGURATION_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1330_drop_retired_model_configuration_columns.sql
 readonly CHAT_THREAD_PROVIDER_PIN_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1332_drop_chat_thread_provider_pin_columns.sql
 readonly DEAD_MODEL_PROVIDER_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1333_drop_dead_model_provider_columns.sql
+readonly CONNECTOR_CATALOG_RELEASE_2_PATH=turbo/packages/db/src/migrations/1334_connector_catalog_release_2_contraction.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -295,6 +296,21 @@ if [[ ! "$dead_model_provider_columns_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$dead_model_provider_columns_drop_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the dead model provider column drop: ${dead_model_provider_columns_drop_commit}."
+fi
+
+# Migration 1334 is the connector catalog Release 2 contraction. It drops the
+# legacy catalog sync state, active snapshot, compatibility evaluation and
+# runtime projection tables plus the redundant pointer and entry columns. Every
+# earlier API still writes them from its catalog synchronizer and preview seed,
+# and APIs before Release 1 (#37861) also read them in business paths, so no
+# earlier API can serve after 1334. This floor descends from the 1333 floor.
+connector_catalog_release_2_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$CONNECTOR_CATALOG_RELEASE_2_PATH" | sed -n '1p')
+if [[ ! "$connector_catalog_release_2_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged connector catalog Release 2 contraction on main."
+fi
+if ! git merge-base --is-ancestor "$connector_catalog_release_2_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the connector catalog Release 2 contraction: ${connector_catalog_release_2_commit}."
 fi
 
 # Chat Event V8 removes eight event types and two context types. Earlier APIs
