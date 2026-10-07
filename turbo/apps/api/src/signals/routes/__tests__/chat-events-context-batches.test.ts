@@ -71,7 +71,7 @@ describe("shared context statement projections through normal sends", () => {
         await api.updateUserModelPreference(actor, MODEL);
       } else {
         await seedBuiltInModelKey("okou-1.0");
-        await api.updateUserModelPreference(actor, "okou-1.0");
+        await api.updateUserModelPreference(actor, null);
         await misc.deletePersonalModelProvider(
           actor,
           "claude-code-oauth-token",

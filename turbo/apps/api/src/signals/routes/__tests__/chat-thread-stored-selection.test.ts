@@ -97,10 +97,7 @@ async function postWorkflowWebhook(args: {
 describe("thread stored selection that is neither Auto nor an available subscription model", () => {
   it("rejects a web chat send without an explicit model and creates no run", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
-    const thread = await chat.createThread(actor, {
-      agentId,
-      model: "okou-1.0",
-    });
+    const thread = await chat.createThread(actor, { agentId });
     await stageLegacyChatThreadSelectedModelFixture({
       threadId: thread.id,
       model: UNKNOWN_STORED_SELECTION,

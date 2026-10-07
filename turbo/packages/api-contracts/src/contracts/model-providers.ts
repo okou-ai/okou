@@ -464,7 +464,8 @@ export type UpsertModelProviderResponse = z.infer<
 >;
 
 export const availableRunModelSchema = z.object({
-  model: runModelIdSchema,
+  /** Null is Auto; any other value is a selectable personal subscription model. */
+  model: runModelIdSchema.nullable(),
   modelLabel: z.string(),
   modelProviderId: z.uuid().nullable(),
   // Present on member subscription models projected from the subscription
@@ -504,7 +505,6 @@ export const availableRunModelSchema = z.object({
 export type AvailableRunModel = z.infer<typeof availableRunModelSchema>;
 
 export const availableRunModelsResponseSchema = z.object({
-  defaultModel: z.string(),
   models: z.array(availableRunModelSchema),
 });
 

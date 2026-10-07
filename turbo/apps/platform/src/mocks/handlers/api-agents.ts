@@ -294,7 +294,7 @@ export const apiAgentsHandlers = [
       id: body.clientThreadId ?? "b0000000-0000-4000-a000-000000000001",
       title: null,
       createdAt: "2026-03-10T00:00:00Z",
-      selectedModel: body.model ?? "claude-sonnet-5",
+      selectedModel: body.model === undefined ? "claude-sonnet-5" : body.model,
       serviceTier: body.serviceTier ?? null,
     });
   }),

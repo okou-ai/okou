@@ -79,7 +79,7 @@ async function setupLoadedModelsSettings() {
     holdSubscriptions: false,
   };
   const release = context.mocks.deferred<void>();
-  installRunChat({ selectedModel: "okou-1.0" });
+  installRunChat({ selectedModel: null });
   context.mocks.api(billingStatusContract.get, async ({ respond }) => {
     if (responses.holdPoliciesAndBilling) {
       await release.promise;

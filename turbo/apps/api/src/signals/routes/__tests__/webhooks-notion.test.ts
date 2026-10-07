@@ -1,11 +1,11 @@
 import { createHmac, randomUUID } from "node:crypto";
 
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { HttpResponse, http } from "msw";
 import { onTestFinished } from "vitest";
 
+import { executeWorkflowAutomationForTest } from "../../../test-fixtures/workflow-automation-workers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
@@ -31,12 +31,10 @@ import {
 } from "./helpers/chat-event";
 import { createRouteMocks } from "./helpers/route-test";
 import { chatThreadRoutes } from "../chat-threads";
-import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { webhooksNotionRoutes } from "../webhooks-notion";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 
 const TEST_APP_ROUTES = Object.freeze([
-  ...testWorkflowAutomationExecutionRoutes,
   ...webhooksNotionRoutes,
   ...workflowAutomationsRoutes,
 ]);
@@ -108,13 +106,6 @@ function chatThreadConnectorSelectionsClient() {
   return setupApp({ context, routes: chatThreadRoutes })(
     chatThreadConnectorSelectionContract,
   );
-}
-
-function workflowAutomationExecutionClient() {
-  return setupApp({
-    context,
-    routes: testWorkflowAutomationExecutionRoutes,
-  })(testWorkflowAutomationExecutionContract);
 }
 
 function configureNotionParentPageMock(
@@ -408,11 +399,9 @@ async function verifyNotionWebhook(): Promise<void> {
 }
 
 async function executeDueWorkflowAutomations(automationId: string) {
-  return await accept(
-    workflowAutomationExecutionClient().execute({
-      body: { automation_id: automationId },
-    }),
-    [200],
+  return await executeWorkflowAutomationForTest(
+    { automationId },
+    context.signal,
   );
 }
 
@@ -653,8 +642,7 @@ describe("POST /api/webhooks/notion", () => {
     configureNotionChildPageMock(entities);
     mockNow(new Date("2026-07-06T12:20:00.000Z"));
     const executed = await executeDueWorkflowAutomations(created.body.id);
-    expect(executed.body).toStrictEqual({
-      success: true,
+    expect(executed).toStrictEqual({
       executed: 1,
       skipped: 0,
     });
@@ -767,8 +755,7 @@ describe("POST /api/webhooks/notion", () => {
     );
     mockNow(new Date("2026-07-06T12:20:00.000Z"));
     const executed = await executeDueWorkflowAutomations(created.body.id);
-    expect(executed.body).toStrictEqual({
-      success: true,
+    expect(executed).toStrictEqual({
       executed: 1,
       skipped: 0,
     });
@@ -956,8 +943,7 @@ describe("POST /api/webhooks/notion", () => {
     mockNow(new Date("2026-07-06T12:20:00.000Z"));
 
     const executed = await executeDueWorkflowAutomations(created.body.id);
-    expect(executed.body).toStrictEqual({
-      success: true,
+    expect(executed).toStrictEqual({
       executed: 1,
       skipped: 0,
     });
@@ -1400,8 +1386,7 @@ describe("POST /api/webhooks/notion", () => {
     mockNow(new Date("2026-07-06T12:20:00.000Z"));
     const legacyPendingExecution =
       await executeDueWorkflowAutomations(automationId);
-    expect(legacyPendingExecution.body).toStrictEqual({
-      success: true,
+    expect(legacyPendingExecution).toStrictEqual({
       executed: 0,
       skipped: 1,
     });
@@ -1476,8 +1461,7 @@ describe("POST /api/webhooks/notion", () => {
 
     mockNow(new Date("2026-07-06T12:40:00.000Z"));
     const staleExecution = await executeDueWorkflowAutomations(automationId);
-    expect(staleExecution.body).toStrictEqual({
-      success: true,
+    expect(staleExecution).toStrictEqual({
       executed: 0,
       skipped: 0,
     });
@@ -1506,8 +1490,7 @@ describe("POST /api/webhooks/notion", () => {
     mockNow(new Date("2026-07-06T13:00:00.000Z"));
     const inaccessibleExecution =
       await executeDueWorkflowAutomations(automationId);
-    expect(inaccessibleExecution.body).toStrictEqual({
-      success: true,
+    expect(inaccessibleExecution).toStrictEqual({
       executed: 0,
       skipped: 1,
     });
@@ -1585,8 +1568,7 @@ describe("POST /api/webhooks/notion", () => {
         releaseNotionRead.resolve();
       })(),
     ]);
-    expect(racingExecution.body).toStrictEqual({
-      success: true,
+    expect(racingExecution).toStrictEqual({
       executed: 0,
       skipped: 1,
     });
@@ -1594,8 +1576,7 @@ describe("POST /api/webhooks/notion", () => {
     mockNow(new Date("2026-07-06T13:40:00.000Z"));
     const staleRetryExecution =
       await executeDueWorkflowAutomations(automationId);
-    expect(staleRetryExecution.body).toStrictEqual({
-      success: true,
+    expect(staleRetryExecution).toStrictEqual({
       executed: 0,
       skipped: 0,
     });
@@ -1665,8 +1646,7 @@ describe("POST /api/webhooks/notion", () => {
     });
     mockNow(new Date("2026-07-06T14:00:00.000Z"));
     const currentExecution = await executeDueWorkflowAutomations(automationId);
-    expect(currentExecution.body).toStrictEqual({
-      success: true,
+    expect(currentExecution).toStrictEqual({
       executed: 1,
       skipped: 0,
     });

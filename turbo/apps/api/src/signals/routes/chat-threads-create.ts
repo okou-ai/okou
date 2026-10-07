@@ -26,6 +26,7 @@ import {
 } from "../services/chat-thread.service";
 import { agentExistsInOrg } from "../services/agent-deletion.service";
 import {
+  autoSelectionPin,
   resolveDefaultModelFirstPin$,
   resolveModelSelectionPin$,
   validateCodexServiceTier,
@@ -51,7 +52,7 @@ function modelFirstSelection(selectedModel: string) {
 
 interface ChatThreadCreateSettings {
   readonly title: string | null;
-  readonly selectedModel: string;
+  readonly selectedModel: string | null;
   readonly codexServiceTier: CodexServiceTier | null;
 }
 
@@ -89,7 +90,7 @@ function chatThreadCreateResponse(
   }
   return chatThreadCreatedResponse(thread, {
     title: thread.title,
-    selectedModel: thread.selectedModel ?? requested.selectedModel,
+    selectedModel: thread.selectedModel,
     codexServiceTier: thread.codexServiceTier,
   });
 }
@@ -132,7 +133,7 @@ const initialThreadModel$ = command(
     { set },
     owner: { readonly orgId: string; readonly userId: string },
     requested: {
-      readonly model?: string;
+      readonly model?: string | null;
       readonly serviceTier?: ChatThreadServiceTier | null;
     },
     catalog: ModelCatalog,
@@ -211,20 +212,20 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
-  if (!selectedModel) {
-    return badRequestMessage("A model selection is required");
-  }
-  const pin = await set(
-    resolveModelSelectionPin$,
-    {
-      purpose: "configure",
-      orgId: auth.orgId,
-      userId: auth.userId,
-      modelSelection: modelFirstSelection(selectedModel),
-      catalog,
-    },
-    signal,
-  );
+  const pin =
+    selectedModel === null
+      ? autoSelectionPin()
+      : await set(
+          resolveModelSelectionPin$,
+          {
+            purpose: "configure",
+            orgId: auth.orgId,
+            userId: auth.userId,
+            modelSelection: modelFirstSelection(selectedModel),
+            catalog,
+          },
+          signal,
+        );
   signal.throwIfAborted();
   if ("status" in pin) {
     return pin;

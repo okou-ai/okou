@@ -49,8 +49,8 @@ export const chatGreetingShouldAnimate$ = computed((get) => {
 // Landing-page composer model selection
 // ---------------------------------------------------------------------------
 
-// Discriminated union so "user hasn't picked anything" can resolve to the
-// current model-first default while "user explicitly picked inherit" stays null.
+// Discriminated union so "user hasn't picked anything" resolves to the current
+// default, while an explicit pick (including Auto) is kept as chosen.
 const internalChatPageUserOverride$ = state<
   { kind: "unset" } | { kind: "set"; value: ModelProviderSelection | null }
 >({ kind: "unset" });

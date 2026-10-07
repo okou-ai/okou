@@ -303,7 +303,7 @@ test("Chat settings keep the agreed row order and save personal subscription cha
   click(await screen.findByRole("option", { name: "Auto" }));
   await waitFor(() => {
     expect(modelUpdates).toContainEqual({
-      selectedModel: "okou-1.0",
+      selectedModel: null,
       serviceTier: null,
     });
     expect(

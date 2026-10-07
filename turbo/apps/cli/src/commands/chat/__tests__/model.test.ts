@@ -24,7 +24,6 @@ const MODEL_SELECTION_URL = `http://localhost:3000/api/chat-threads/${THREAD_ID}
 const MODEL_RUN_MODELS_URL = "http://localhost:3000/api/run-models";
 
 const AVAILABLE_MODELS_RESPONSE = {
-  defaultModel: "okou-1.0",
   models: [
     {
       model: "claude-sonnet-5",
@@ -51,7 +50,7 @@ const AVAILABLE_MODELS_RESPONSE = {
       },
     },
     {
-      model: "okou-1.0",
+      model: null,
       modelLabel: "Auto",
       modelProviderId: null,
       memberEffective: {
@@ -111,7 +110,7 @@ describe("okou chat model command", () => {
       "efforts: low, medium, high, extra, max, ultracode",
     );
     expect(output).not.toContain("gpt-5.6-luna");
-    expect(output).toContain("Auto (okou-1.0) (default)");
+    expect(output).toContain("Auto (auto) (default)");
   });
 
   it("prints the current chat model and switchable models without an argument", async () => {
@@ -142,7 +141,7 @@ describe("okou chat model command", () => {
     expect(output).toContain(`okou chat model --thread ${THREAD_ID} <model>`);
   });
 
-  it("shows the catalog system default for an unpinned thread", async () => {
+  it("shows Auto for a null selection", async () => {
     server.use(
       http.get(GET_URL, () => {
         return HttpResponse.json({
@@ -158,9 +157,27 @@ describe("okou chat model command", () => {
 
     await chatCommand.parseAsync(["node", "cli", "model"]);
 
-    expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
-      "Model:  Auto (okou-1.0)",
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(output).toContain("Model:  Auto\n");
+    expect(output).toContain("Auto (auto) (default)");
+  });
+
+  it("switches to Auto with auto by sending a null selection", async () => {
+    server.use(
+      http.get(MODEL_RUN_MODELS_URL, () => {
+        return HttpResponse.json(AVAILABLE_MODELS_RESPONSE);
+      }),
+      http.post(MODEL_SELECTION_URL, async ({ request }) => {
+        await expect(request.json()).resolves.toStrictEqual({ model: null });
+        return new HttpResponse(null, { status: 204 });
+      }),
     );
+
+    await chatCommand.parseAsync(["node", "cli", "model", "auto"]);
+
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(output).toContain("Chat model updated");
+    expect(output).toContain("Model:  Auto");
   });
 
   it("shows the model for --thread outside a web chat environment", async () => {
@@ -282,7 +299,7 @@ describe("okou chat model command", () => {
     );
   });
 
-  it("does not send a model-selection request for an unpinned thread", async () => {
+  it("validates an effort-only change on an Auto thread against Auto", async () => {
     let requests = 0;
     server.use(
       http.get(GET_URL, () => {
@@ -302,7 +319,7 @@ describe("okou chat model command", () => {
     ).rejects.toThrow("process.exit called");
     expect(requests).toBe(0);
     expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-      "This chat thread has no selected model",
+      "Auto supports: none",
     );
   });
 

@@ -561,7 +561,7 @@ function registerManageTools(
     "update_chat_thread",
     {
       description:
-        "Update title/model using the ordinary Web metadata command; omitted fields stay unchanged. model:null clears the pin. Title changes disable automatic naming; model changes affect neither queued inputs nor an active run. Inspect get_chat_thread after an uncertain update.",
+        "Update title/model using the ordinary Web metadata command; omitted fields stay unchanged. model:null selects Auto. Title changes disable automatic naming; model changes affect neither queued inputs nor an active run. Inspect get_chat_thread after an uncertain update.",
       inputSchema: mcpUpdateChatThreadInputSchema,
       outputSchema: mcpUpdateChatThreadOutputSchema,
       annotations: {
@@ -610,7 +610,7 @@ function registerMutationTools(
       "send_chat_message",
       {
         description:
-          "Send an ordinary Web chat input with agentId and prompt. Omit threadId to create a conversation; provide it to continue that Agent's owned conversation. model is optional. Returns the original accepted eventId, not a Run. Follow it with get_chat_input(threadId,eventId), then get_run_status for native execution. Never automatically retry an uncertain send.",
+          "Send an ordinary Web chat input with agentId and prompt. Omit threadId to create a conversation; provide it to continue that Agent's owned conversation. model is optional; null selects Auto. Returns the original accepted eventId, not a Run. Follow it with get_chat_input(threadId,eventId), then get_run_status for native execution. Never automatically retry an uncertain send.",
         inputSchema: mcpSendChatMessageInputSchema,
         outputSchema: mcpSendChatMessageOutputSchema,
         annotations: {
@@ -741,7 +741,7 @@ function registerDiscoveryTools(
     "list_models",
     {
       description:
-        "List model catalog, member preference and system default. selectable means configurable; availability reports known plan or connection requirements. available is metadata only: quota, credentials, and admission are checked on send. This read does not repair configuration; open model settings for required setup. Use a selectable model id with send_chat_message.",
+        "List model catalog and member preference; a null model id is Auto, the default. selectable means configurable; availability reports known plan or connection requirements. available is metadata only: quota, credentials, and admission are checked on send. This read does not repair configuration; open model settings for required setup. Use a selectable model id, or null for Auto, with send_chat_message.",
       inputSchema: mcpListModelsInputSchema,
       outputSchema: mcpListModelsOutputSchema,
       annotations: { ...readAnnotations, title: "List Models" },
@@ -758,7 +758,7 @@ function registerDiscoveryTools(
           const selectable = data.models.filter((model) => {
             return model.selectable;
           }).length;
-          return `Found ${data.models.length} model(s), ${selectable} selectable; default ${data.defaultModel.model ?? "not configured"}.`;
+          return `Found ${data.models.length} model(s), ${selectable} selectable; default ${data.defaultModel.model ?? "Auto"}.`;
         },
         "Model discovery is temporarily unavailable. Retry later.",
       );

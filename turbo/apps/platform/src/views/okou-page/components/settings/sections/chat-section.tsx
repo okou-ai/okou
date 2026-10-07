@@ -62,7 +62,6 @@ function DefaultModelPreference() {
           catalog === undefined ||
           mutating
         }
-        showInheritOption
       />
     </PreferenceCardRow>
   );

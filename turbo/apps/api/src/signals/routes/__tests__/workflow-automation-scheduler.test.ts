@@ -9,7 +9,6 @@ import {
   agentsByIdContract,
   agentsMainContract,
 } from "@okouai/api-contracts/contracts/agents";
-import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import {
   workflowAutomationsContract,
@@ -21,6 +20,10 @@ import { makeCodexAuthJson, makeCodexJwt } from "./helpers/api-bdd-auth-device";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 
+import {
+  executeWorkflowAutomationForTest,
+  executeDueWorkflowAutomationsForWorkflowForTest,
+} from "../../../test-fixtures/workflow-automation-workers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
@@ -28,7 +31,6 @@ import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { agentsRoutes } from "../agents";
-import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -48,7 +50,6 @@ import { createRouteMocks } from "./helpers/route-test";
 import { seedBuiltInModelKey } from "./helpers/runtime-state";
 
 const TEST_APP_ROUTES = Object.freeze([
-  ...testWorkflowAutomationExecutionRoutes,
   ...agentsRoutes,
   ...workflowAutomationsRoutes,
   ...workflowsRoutes,
@@ -87,13 +88,6 @@ function automationsClient() {
   return setupApp({ context, routes: workflowAutomationsRoutes })(
     workflowAutomationsContract,
   );
-}
-
-function workflowAutomationExecutionClient() {
-  return setupApp({
-    context,
-    routes: testWorkflowAutomationExecutionRoutes,
-  })(testWorkflowAutomationExecutionContract);
 }
 
 function expectOk(response: Response, operation: string): void {
@@ -198,13 +192,7 @@ async function disableAutomation(automationId: string): Promise<void> {
 async function executeDueWorkflowAutomations(
   automationId: string,
 ): Promise<string> {
-  const response = await accept(
-    workflowAutomationExecutionClient().execute({
-      body: { automation_id: automationId },
-    }),
-    [200],
-  );
-  expect(response.body.success).toBeTruthy();
+  await executeWorkflowAutomationForTest({ automationId }, context.signal);
   // The tick only enqueues; its background pick finishes before this returns.
   await flushWaitUntilForTest();
   const automation = await wf.readAutomation(automationId);
@@ -315,28 +303,6 @@ async function deleteWorkflowViaApi(scenario: Scenario): Promise<void> {
 }
 
 describe("okou workflow automation scheduler", () => {
-  it("does not expose scoped workflow execution in production", async () => {
-    mockEnv("ENV", "production");
-
-    const response = await accept(
-      workflowAutomationExecutionClient().execute({
-        body: {
-          automation_id: "00000000-0000-4000-8000-000000000001",
-        },
-      }),
-      [404],
-    );
-
-    expect(response.body).toBe("Not found");
-    const scoped = await accept(
-      workflowAutomationExecutionClient().executeForWorkflow({
-        body: { workflow_id: "00000000-0000-4000-8000-000000000001" },
-      }),
-      [404],
-    );
-    expect(scoped.body).toBe("Not found");
-  });
-
   it("executes only the selected due automation", async () => {
     const scenario = await setup();
     const selected = await createDueLoopAutomation(scenario, 3600);
@@ -594,13 +560,11 @@ describe("okou workflow automation scheduler", () => {
       throw new Error("Missing one-time anchor");
     }
     mockNow(Date.parse(created.body.nextRunAt) + 30 * 60_000 + 1);
-    const response = await accept(
-      workflowAutomationExecutionClient().execute({
-        body: { automation_id: created.body.id },
-      }),
-      [200],
+    const response = await executeWorkflowAutomationForTest(
+      { automationId: created.body.id },
+      context.signal,
     );
-    expect(response.body).toMatchObject({ executed: 0, skipped: 1 });
+    expect(response).toMatchObject({ executed: 0, skipped: 1 });
     const after = await wf.readAutomation(created.body.id);
     expect(after.enabled).toBeFalsy();
     expect(after.nextRunAt).toBeNull();
@@ -627,13 +591,11 @@ describe("okou workflow automation scheduler", () => {
     }
     mockNow(now() + 60 * 60_000);
     const fresh = await createDueLoopAutomation(scenario, 900);
-    const tick = await accept(
-      workflowAutomationExecutionClient().executeForWorkflow({
-        body: { workflow_id: scenario.workflowId },
-      }),
-      [200],
+    const tick = await executeDueWorkflowAutomationsForWorkflowForTest(
+      scenario.workflowId,
+      context.signal,
     );
-    expect(tick.body).toMatchObject({ executed: 1, skipped: 35 });
+    expect(tick).toMatchObject({ executed: 1, skipped: 35 });
     await flushWaitUntilForTest();
     const after = await wf.readAutomation(fresh.automationId);
     if (!after.chatThreadId) {
@@ -672,13 +634,11 @@ describe("okou workflow automation scheduler", () => {
     const at = Date.parse(automation.nextRunAt) + 30 * 60_000 + 1;
     mockNow(at);
 
-    const first = await accept(
-      workflowAutomationExecutionClient().execute({
-        body: { automation_id: automation.automationId },
-      }),
-      [200],
+    const first = await executeWorkflowAutomationForTest(
+      { automationId: automation.automationId },
+      context.signal,
     );
-    expect(first.body).toMatchObject({ executed: 0, skipped: 1 });
+    expect(first).toMatchObject({ executed: 0, skipped: 1 });
     const afterSkip = await wf.readAutomation(automation.automationId);
     expect(afterSkip.enabled).toBeTruthy();
     expect(afterSkip.lastRunAt).toBeNull();
@@ -690,13 +650,11 @@ describe("okou workflow automation scheduler", () => {
       { scheduledAnchorAt: new Date(automation.nextRunAt) },
     ]);
 
-    const repeated = await accept(
-      workflowAutomationExecutionClient().execute({
-        body: { automation_id: automation.automationId },
-      }),
-      [200],
+    const repeated = await executeWorkflowAutomationForTest(
+      { automationId: automation.automationId },
+      context.signal,
     );
-    expect(repeated.body).toMatchObject({ executed: 0, skipped: 0 });
+    expect(repeated).toMatchObject({ executed: 0, skipped: 0 });
     await expect(
       readWorkflowScheduleSkipsFixture(automation.automationId),
     ).resolves.toHaveLength(1);
@@ -934,13 +892,10 @@ describe("okou workflow automation scheduler", () => {
       [200],
     );
 
-    const execution = await accept(
-      workflowAutomationExecutionClient().execute({
-        body: { automation_id: created.body.id },
-      }),
-      [200],
+    await executeWorkflowAutomationForTest(
+      { automationId: created.body.id },
+      context.signal,
     );
-    expect(execution.body.success).toBeTruthy();
 
     // Restore visibility so the member's product reads work again; the skip
     // already happened during the tick above.
@@ -1177,7 +1132,7 @@ describe("okou workflow automation scheduler", () => {
     async (scheduleType) => {
       const scenario = await setup();
       await seedBuiltInModelKey(context, "okou-1.0");
-      await api.updateUserModelPreference(scenario.actor, "okou-1.0");
+      await api.updateUserModelPreference(scenario.actor, null);
       const created = await accept(
         automationsClient().create({
           headers: authHeaders(),

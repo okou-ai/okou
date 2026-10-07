@@ -617,6 +617,49 @@ describe("Discord account preferences through private controls", () => {
     );
   });
 
+  it("switches the routed server thread to Auto as an empty selection", async () => {
+    const owner = actor();
+    mockDiscordMemberships(context, [owner]);
+    await configureModelPreferences({ owner });
+    const agent = await accountApi.createAgent(owner, {
+      displayName: "Discord Auto thread agent",
+    });
+    const chat = createChatFilesBddApi(context);
+    const thread = await chat.createThread(owner, {
+      agentId: agent.agentId,
+      model: "claude-fable-5-1",
+    });
+    const threadChannelId = uniqueDiscordSnowflake();
+    const scope = await fixture(owner, uniqueDiscordSnowflake(), {
+      chatThreadId: thread.id,
+      channelId: threadChannelId,
+      messageId: threadChannelId,
+      messageText: "Start the routed Discord Auto thread",
+    });
+    const discord = discordHttp([scope]);
+    const sender = guildSender(scope);
+
+    const menu = selectMenu(
+      await discord.send(commandPayload(sender, "model")),
+    );
+    expect(menu.options).toContainEqual(
+      expect.objectContaining({ label: "Auto", value: "auto" }),
+    );
+    const selected = await discord.send(
+      selectPayload(sender, menu.custom_id, "auto"),
+    );
+
+    expect(selected.content).toContain(
+      "Model selected for this conversation: Auto.",
+    );
+    expect(
+      (await chat.readThreadMetadata(owner, thread.id)).selectedModel,
+    ).toBeNull();
+    expect(
+      preselected(await discord.send(commandPayload(sender, "model"))),
+    ).toStrictEqual(["auto"]);
+  });
+
   it("rechecks personal subscription access after a picker is issued without changing the member preference", async () => {
     const scope = await routedModelFixture();
     const { headers, preference } = await configureModelPreferences(scope);

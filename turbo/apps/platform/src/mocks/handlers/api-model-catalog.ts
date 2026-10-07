@@ -142,9 +142,6 @@ const PI_ROUTE_CLASS_BY_MODEL: Readonly<Record<string, "gpt-codex">> = {
   "gpt-5.6-luna": "gpt-codex",
 };
 
-/** The seeded catalog's system default. */
-export const MOCK_SYSTEM_DEFAULT_MODEL = "okou-1.0";
-
 export function createMockModelCatalog(): ModelCatalogResponse {
   const models: MockCatalogModel[] = MODEL_ROWS.map(
     ([model, displayName, sortOrder, replacedBy]) => {
@@ -160,7 +157,7 @@ export function createMockModelCatalog(): ModelCatalogResponse {
     },
   );
   return {
-    systemDefaultModel: MOCK_SYSTEM_DEFAULT_MODEL,
+    systemDefaultModel: AUTO_RUN_MODEL,
     models,
     routes: [
       AUTO_ROUTE,

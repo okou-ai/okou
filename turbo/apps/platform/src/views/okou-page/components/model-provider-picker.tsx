@@ -13,7 +13,6 @@ import {
   SelectGroup,
   SelectItem,
   SelectLabel,
-  SelectSeparator,
   SelectTrigger,
   SelectValue,
   Tooltip,
@@ -30,6 +29,7 @@ import {
 import { Check, Cpu, Zap } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { i18n } from "../../../i18n/index.ts";
 import {
   modelCatalog$,
   type ModelCatalog,
@@ -53,8 +53,8 @@ import { getModelBrandIconType } from "./settings/provider-ui-config";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 
 export interface ModelProviderSelection {
-  /** An active catalog model ID. */
-  selectedModel: string;
+  /** An active catalog model ID, or null for Auto. */
+  selectedModel: string | null;
   codexServiceTier?: CodexServiceTier;
   modelSettings?: ModelSettings;
 }
@@ -76,13 +76,12 @@ interface ModelProviderPickerProps {
   modal?: boolean;
   // When true, picker is read-only for the current caller state.
   disabled?: boolean;
-  /** Lets settings callers clear a personal choice and inherit workspace default. */
-  showInheritOption?: boolean;
 }
 
-// Keep the inherit option distinct from an empty model identifier at the UI
-// boundary so its value remains stable across controlled Select updates.
-const INHERIT_SENTINEL = "__inherit_default__";
+// Select values are strings. Keep "no selection yet" and Auto distinct from
+// model identifiers so their values remain stable across controlled updates.
+const NO_SELECTION_VALUE = "__no_selection__";
+const AUTO_VALUE = "__auto__";
 const CODEX_FAST_OPTION_PREFIX = "__codex_fast_option__:";
 const CODEX_FAST_SELECTED_PREFIX = "__codex_fast_selected__:";
 
@@ -192,18 +191,27 @@ function stripInteractiveClasses(cls: string | undefined): string | undefined {
 }
 
 function getModelFirstIconType(
-  model: string,
+  model: string | null,
   catalog: ModelCatalog | null | undefined,
 ): ModelProviderType | undefined {
+  if (model === null) {
+    return "built-in";
+  }
   return catalog?.has(model)
     ? getModelBrandIconType(model, catalog)
     : undefined;
 }
 
-function catalogDisplayName(
+/** The display name of a selected model; null is Auto. */
+export function selectedModelDisplayName(
   catalog: ModelCatalog | null | undefined,
-  model: string,
+  model: string | null,
 ): string {
+  if (model === null) {
+    return i18n.t(($) => {
+      return $.settings.models.picker.auto;
+    });
+  }
   return catalog?.displayName(model) ?? model;
 }
 
@@ -212,7 +220,10 @@ function selectionAllowedValue(
   models: AvailableRunModel[],
   catalog: ModelCatalog | null | undefined,
 ): ModelProviderSelection | null {
-  if (!value || !catalog?.isActive(value.selectedModel)) {
+  if (
+    !value ||
+    (value.selectedModel !== null && !catalog?.isActive(value.selectedModel))
+  ) {
     return null;
   }
   const runModel = models.find((candidate) => {
@@ -246,7 +257,7 @@ function selectionLabel({
   if (!selection) {
     return placeholder;
   }
-  const modelLabel = catalogDisplayName(catalog, selection.selectedModel);
+  const modelLabel = selectedModelDisplayName(catalog, selection.selectedModel);
   return !fastShownByCaller && selection.codexServiceTier === "fast"
     ? `${modelLabel} ${fastLabel}`
     : modelLabel;
@@ -336,8 +347,11 @@ function modelFirstSelectionFromRaw(
   raw: string,
   catalog: ModelCatalog | null | undefined,
 ): ModelProviderSelection | null {
-  if (raw === INHERIT_SENTINEL) {
+  if (raw === NO_SELECTION_VALUE) {
     return null;
+  }
+  if (raw === AUTO_VALUE) {
+    return { selectedModel: null };
   }
   if (raw.startsWith(CODEX_FAST_OPTION_PREFIX)) {
     const selectedModel = raw.slice(CODEX_FAST_OPTION_PREFIX.length);
@@ -361,7 +375,10 @@ function modelFirstSelectValue(
   selection: ModelProviderSelection | null,
 ): string {
   if (!selection) {
-    return INHERIT_SENTINEL;
+    return NO_SELECTION_VALUE;
+  }
+  if (selection.selectedModel === null) {
+    return AUTO_VALUE;
   }
   return selection.codexServiceTier === "fast"
     ? `${CODEX_FAST_SELECTED_PREFIX}${selection.selectedModel}`
@@ -372,22 +389,40 @@ function codexFastOptionValue(model: string): string {
   return `${CODEX_FAST_OPTION_PREFIX}${model}`;
 }
 
+/** The control value of a selected model; Auto has a reserved value. */
+export function selectedModelControlValue(model: string | null): string {
+  return model ?? AUTO_VALUE;
+}
+
+/** The selected model a control value names; the reserved value is Auto. */
+export function selectedModelFromControlValue(value: string): string | null {
+  return value === AUTO_VALUE ? null : value;
+}
+
+function runModelSelectValue(runModel: AvailableRunModel): string {
+  return selectedModelControlValue(runModel.model);
+}
+
 function modelFirstSelectionFromInteraction(
   raw: string,
   currentSelection: ModelProviderSelection | null,
   catalog: ModelCatalog | null | undefined,
 ): ModelProviderSelection | null | undefined {
-  // Fast uses a hidden selected-value marker, distinct from its toggle option.
-  // Replaying that value must not parse it as the inherit-default sentinel.
-  if (currentSelection?.codexServiceTier === "fast") {
-    if (raw === modelFirstSelectValue(currentSelection)) {
-      return undefined;
-    }
-    if (raw === currentSelection.selectedModel) {
-      return undefined;
-    }
-    if (raw === codexFastOptionValue(currentSelection.selectedModel)) {
-      return { selectedModel: currentSelection.selectedModel };
+  // Service tiers belong to a concrete model; Auto has none.
+  const currentModel = currentSelection?.selectedModel ?? null;
+  if (currentModel !== null) {
+    // Fast uses a hidden selected-value marker, distinct from its toggle
+    // option. Replaying that value must not parse it as the empty selection.
+    if (currentSelection?.codexServiceTier === "fast") {
+      if (raw === modelFirstSelectValue(currentSelection)) {
+        return undefined;
+      }
+      if (raw === currentModel) {
+        return undefined;
+      }
+      if (raw === codexFastOptionValue(currentModel)) {
+        return { selectedModel: currentModel };
+      }
     }
   }
   return modelFirstSelectionFromRaw(raw, catalog);
@@ -395,7 +430,7 @@ function modelFirstSelectionFromInteraction(
 
 function isHiddenModelFirstSelectValue(value: string): boolean {
   return (
-    value === INHERIT_SENTINEL || value.startsWith(CODEX_FAST_SELECTED_PREFIX)
+    value === NO_SELECTION_VALUE || value.startsWith(CODEX_FAST_SELECTED_PREFIX)
   );
 }
 
@@ -416,7 +451,7 @@ export function ModelFirstRunModelRowContent({
     <span className="flex w-full min-w-0 items-center gap-2">
       {iconType && <ProviderIcon type={iconType} size={16} />}
       <span className="min-w-0 flex-1 truncate">
-        {catalogDisplayName(catalog, runModel.model)}
+        {selectedModelDisplayName(catalog, runModel.model)}
       </span>
       {route.credentialScope === "member" && (
         <SubscriptionBadge subscriptionProvider={route.providerType} />
@@ -440,10 +475,10 @@ function ModelFirstRunModelRow({
 }) {
   const { t } = useTranslation();
   const catalog = useLastResolved(modelCatalog$);
-  const fastAvailable = isRunModelFastModeAvailable(runModel);
-  if (fastAvailable) {
-    const modelLabel = catalogDisplayName(catalog, runModel.model);
-    const selected = selection?.selectedModel === runModel.model;
+  const model = runModel.model;
+  if (model !== null && isRunModelFastModeAvailable(runModel)) {
+    const modelLabel = selectedModelDisplayName(catalog, model);
+    const selected = selection?.selectedModel === model;
     const fastSelected = selected && selection?.codexServiceTier === "fast";
     const fastLabel = t(($) => {
       return $.settings.models.picker.fast;
@@ -457,7 +492,7 @@ function ModelFirstRunModelRow({
         )}
       >
         <SelectItem
-          value={runModel.model}
+          value={model}
           aria-label={modelLabel}
           // Two fixed columns sit at this row's right edge: the checkmark's
           // (`pr-8`, shared with every other row) and the fast toggle's, which
@@ -477,7 +512,7 @@ function ModelFirstRunModelRow({
             <TooltipTrigger
               render={
                 <SelectItem
-                  value={codexFastOptionValue(runModel.model)}
+                  value={codexFastOptionValue(model)}
                   aria-label={`${modelLabel} ${fastLabel}`}
                   className={cn(
                     // `right-8` parks the toggle in its own column beside the
@@ -511,8 +546,7 @@ function ModelFirstRunModelRow({
   }
   return (
     <SelectItem
-      key={runModel.model}
-      value={runModel.model}
+      value={runModelSelectValue(runModel)}
       disabled={!isMemberRunModelConfigurable(runModel)}
     >
       <ModelFirstRunModelRowContent runModel={runModel} />
@@ -523,15 +557,9 @@ function ModelFirstRunModelRow({
 function ModelFirstRunModelItems({
   models,
   selection,
-  placeholder,
-  showInheritOption,
-  showSeparator = true,
 }: {
   models: AvailableRunModel[];
   selection: ModelProviderSelection | null;
-  placeholder: string;
-  showInheritOption: boolean;
-  showSeparator?: boolean;
 }) {
   const { t } = useTranslation();
   const catalog = useLastResolved(modelCatalog$);
@@ -543,12 +571,6 @@ function ModelFirstRunModelItems({
     });
   return (
     <>
-      {showInheritOption && (
-        <SelectItem value={INHERIT_SENTINEL}>{placeholder}</SelectItem>
-      )}
-      {showSeparator && (!hasExplicitSelectedRunModel || models.length > 0) && (
-        <SelectSeparator className="my-0" />
-      )}
       {!hasExplicitSelectedRunModel && explicitSelectedModel && (
         <SelectItem
           value={explicitSelectedModel}
@@ -556,7 +578,7 @@ function ModelFirstRunModelItems({
           disabled
           aria-hidden="true"
         >
-          {catalogDisplayName(catalog, explicitSelectedModel)}
+          {selectedModelDisplayName(catalog, explicitSelectedModel)}
         </SelectItem>
       )}
       {models.length === 0 ? (
@@ -575,7 +597,7 @@ function ModelFirstRunModelItems({
           {models.map((runModel) => {
             return (
               <ModelFirstRunModelRow
-                key={runModel.model}
+                key={runModelSelectValue(runModel)}
                 runModel={runModel}
                 selection={selection}
               />
@@ -593,7 +615,6 @@ interface ModelFirstModelPickerContentBaseProps {
   models: AvailableRunModel[];
   selection: ModelProviderSelection | null;
   fastLabel: string;
-  showInheritOption: boolean;
 }
 
 function ModelFirstModelPickerContentLayout({
@@ -602,34 +623,26 @@ function ModelFirstModelPickerContentLayout({
   models,
   selection,
   fastLabel,
-  showInheritOption,
 }: ModelFirstModelPickerContentBaseProps) {
   const catalog = useLastResolved(modelCatalog$);
   return (
     <SelectContent className="min-w-[260px] max-h-[var(--available-height)]">
-      {isHiddenModelFirstSelectValue(selectValue) &&
-        !(showInheritOption && selectValue === INHERIT_SENTINEL) && (
-          <SelectItem
-            value={selectValue}
-            className={MEASURABLE_HIDDEN_SELECT_ITEM_CLASS}
-            disabled
-            aria-hidden="true"
-          >
-            {selectionLabel({
-              selection,
-              placeholder,
-              fastLabel,
-              catalog,
-            })}
-          </SelectItem>
-        )}
-      <ModelFirstRunModelItems
-        models={models}
-        selection={selection}
-        placeholder={placeholder}
-        showInheritOption={showInheritOption}
-        showSeparator={showInheritOption}
-      />
+      {isHiddenModelFirstSelectValue(selectValue) && (
+        <SelectItem
+          value={selectValue}
+          className={MEASURABLE_HIDDEN_SELECT_ITEM_CLASS}
+          disabled
+          aria-hidden="true"
+        >
+          {selectionLabel({
+            selection,
+            placeholder,
+            fastLabel,
+            catalog,
+          })}
+        </SelectItem>
+      )}
+      <ModelFirstRunModelItems models={models} selection={selection} />
     </SelectContent>
   );
 }
@@ -642,8 +655,9 @@ interface ModelFirstModelPickerState {
 }
 
 /**
- * Pickers offer Auto plus the active catalog models (`replacedBy === null`)
- * routed through the member's personal subscriptions, in catalog `sortOrder`.
+ * Pickers offer Auto first, then the active catalog models
+ * (`replacedBy === null`) routed through the member's personal subscriptions,
+ * in catalog `sortOrder`.
  */
 export function resolveModelFirstModelPickerState({
   value,
@@ -660,9 +674,16 @@ export function resolveModelFirstModelPickerState({
 }): ModelFirstModelPickerState {
   const models = (modelsResponse?.models ?? [])
     .filter((runModel) => {
-      return catalog?.isActive(runModel.model) ?? false;
+      return (
+        runModel.model === null ||
+        (runModel.memberEffective.credentialScope === "member" &&
+          (catalog?.isActive(runModel.model) ?? false))
+      );
     })
     .sort((left, right) => {
+      if (left.model === null || right.model === null) {
+        return left.model === right.model ? 0 : left.model === null ? -1 : 1;
+      }
       return catalog ? catalog.compare(left.model, right.model) : 0;
     });
   const selection = selectionAllowedValue(value, models, catalog);
@@ -793,12 +814,10 @@ function SubscribedExplicitModelFirstModelPickerContent({
   value,
   placeholder,
   fastLabel,
-  showInheritOption,
 }: {
   value: ModelProviderSelection | null;
   placeholder: string;
   fastLabel: string;
-  showInheritOption: boolean;
 }) {
   const { t } = useTranslation();
   const modelsLoadable = useLastLoadable(availableRunModels$);
@@ -839,7 +858,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
       models={state.models}
       selection={state.selection}
       fastLabel={fastLabel}
-      showInheritOption={showInheritOption}
     />
   );
 }
@@ -913,7 +931,6 @@ function EnabledExplicitModelFirstModelPicker(
       value={props.value}
       placeholder={props.placeholder}
       fastLabel={props.fastLabel}
-      showInheritOption={props.showInheritOption ?? false}
     />
   );
   return (
@@ -940,7 +957,6 @@ export function ModelProviderPicker({
   onOpenChange,
   modal,
   disabled = false,
-  showInheritOption = false,
 }: ModelProviderPickerProps) {
   const { t } = useTranslation();
   const resolvedPlaceholder =
@@ -970,7 +986,6 @@ export function ModelProviderPicker({
       open={open}
       onOpenChange={onOpenChange}
       modal={modal}
-      showInheritOption={showInheritOption}
       fastLabel={fastLabel}
     />
   );

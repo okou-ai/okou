@@ -210,10 +210,10 @@ struct ModelPreference: Decodable, Sendable {
 }
 
 struct AvailableRunModels: Decodable, Sendable {
-  let defaultModel: String
   let models: [Model]
   struct Model: Decodable, Sendable {
-    let model: String
+    /// Nil is Auto; any other value is a selectable subscription model.
+    let model: String?
     let memberEffective: MemberRoute
     /// Present on personal-subscription rows only.
     let subscriptionOptions: SubscriptionOptions?
@@ -242,8 +242,7 @@ struct AvailableRunModels: Decodable, Sendable {
   }
 }
 
-/// Personal-subscription metadata and replacement identities. Auto's default
-/// comes from the available-model response, not the subscription catalog.
+/// Personal-subscription metadata and replacement identities.
 struct ModelCatalog: Decodable, Sendable {
   let models: [Model]
 

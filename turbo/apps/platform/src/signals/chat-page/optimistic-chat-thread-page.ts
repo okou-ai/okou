@@ -367,9 +367,11 @@ async function createChatThread(
   },
   signal: AbortSignal,
 ): Promise<void> {
+  const { selectedModel } = args.modelSelection;
   const selectedEffort =
-    args.modelSelection.modelSettings?.[args.modelSelection.selectedModel]
-      ?.effort;
+    selectedModel === null
+      ? undefined
+      : args.modelSelection.modelSettings?.[selectedModel]?.effort;
   const client = args.createClient(chatThreadsContract);
   await accept(
     client.create({
@@ -377,7 +379,7 @@ async function createChatThread(
         agentId: args.agentId,
         clientThreadId: args.clientThreadId,
         eventId: args.eventId,
-        model: args.modelSelection.selectedModel,
+        model: selectedModel,
         serviceTier: apiServiceTierFromSelection(args.modelSelection),
         ...(selectedEffort === undefined
           ? {}

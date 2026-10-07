@@ -33,9 +33,10 @@ final class ModelSelectionTests: XCTestCase {
 
   func testAutoHasNoSubscriptionServiceTier() throws {
     let auto = try decodeModel(
-      availability: "available", model: "okou-1.0", providerType: "built-in",
+      availability: "available", model: nil, providerType: "built-in",
       runtimeProviderType: "openrouter-codex", credentialScope: "org",
       accountSelection: "not_applicable")
+    XCTAssertNil(auto.model)
     XCTAssertTrue(auto.hasUsableRoute())
     XCTAssertFalse(auto.supportsServiceTier("priority"))
   }
@@ -49,17 +50,19 @@ final class ModelSelectionTests: XCTestCase {
   }
 
   private func decodeModel(
-    availability: String, model: String = "gpt-5.6-sol",
+    availability: String, model: String? = "gpt-5.6-sol",
     providerType: String = "codex-oauth-token", runtimeProviderType: String = "codex-oauth-token",
     credentialScope: String = "member", accountSelection: String = "capture_required",
     subscriptionTier: String? = nil
   ) throws -> AvailableRunModels.Model {
+    let modelJSON = model.map { "\"\($0)\"" } ?? "null"
+    let label = model ?? "Auto"
     let subscription =
       subscriptionTier.map {
         #", "subscriptionOptions":{"efforts":["low","medium","high"],"serviceTier":\#($0)}"#
       } ?? ""
     let json =
-      #"{"model":"\#(model)","modelLabel":"\#(model)","modelProviderId":null,"memberEffective":{"providerType":"\#(providerType)","runtimeProviderType":"\#(runtimeProviderType)","credentialScope":"\#(credentialScope)","availability":"\#(availability)","accountSelection":"\#(accountSelection)"}\#(subscription)}"#
+      #"{"model":\#(modelJSON),"modelLabel":"\#(label)","modelProviderId":null,"memberEffective":{"providerType":"\#(providerType)","runtimeProviderType":"\#(runtimeProviderType)","credentialScope":"\#(credentialScope)","availability":"\#(availability)","accountSelection":"\#(accountSelection)"}\#(subscription)}"#
     return try APIClient.decoder().decode(AvailableRunModels.Model.self, from: Data(json.utf8))
   }
 }

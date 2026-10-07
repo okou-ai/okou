@@ -50,6 +50,7 @@ import { seedUsagePricingRows } from "../../../test-fixtures/system-config-seeds
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
+import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { compactChatThreadSnapshotsForTest } from "../../../test-fixtures/chat-thread-snapshot-compaction";
 import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
 import {
@@ -193,7 +194,7 @@ async function sendChatRun(
     readonly prompt: string;
     readonly threadId?: string;
     readonly chatThreadSortEventId?: string;
-    readonly model?: string;
+    readonly model?: string | null;
   },
 ): Promise<{ readonly runId: string; readonly threadId: string }> {
   const { runId, threadId } = await chat.sendAndLaunch(actor, body);
@@ -2312,7 +2313,66 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
     );
   }, 90_000);
 
-  it("pins okou-1.0 on its Built-in route for limited-free-1 workspaces", async () => {
+  it("rejects the internal Auto run model as a thread selection", async () => {
+    const { actor, agentId } = await entitledChatActorWithoutRunner(
+      "Auto run model selection agent",
+    );
+
+    const rejectedThreadId = randomUUID();
+    const rejectedCreate = await chat.requestCreateThread(
+      actor,
+      { agentId, clientThreadId: rejectedThreadId, model: "okou-1.0" },
+      [400],
+    );
+    expectApiError(rejectedCreate.body);
+    await chat.requestReadThread(actor, rejectedThreadId, [404]);
+
+    const thread = await chat.createThread(actor, {
+      agentId,
+      model: "claude-fable-5-1",
+    });
+    const rejectedUpdate = await chat.requestUpdateThreadModelSelection(
+      actor,
+      thread.id,
+      "okou-1.0",
+      [400],
+    );
+    expectApiError(rejectedUpdate.body);
+    await expect(
+      chat.readThreadMetadata(actor, thread.id),
+    ).resolves.toMatchObject({ selectedModel: "claude-fable-5-1" });
+  }, 90_000);
+
+  it("creates a thread without a model as Auto when the member has no preference", async () => {
+    const actor = bdd.user();
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Auto default thread agent",
+    });
+    const eventId = randomUUID();
+    const created = await accept(
+      setupApp({ context, routes: chatThreadCreateRoutes })(
+        chatThreadsContract,
+      ).create({
+        headers: authHeaders(actor),
+        body: { agentId: agent.agentId, eventId },
+      }),
+      [201],
+    );
+    expect(created.body.selectedModel).toBeNull();
+    await expect(
+      chat.readThreadMetadata(actor, created.body.id),
+    ).resolves.toMatchObject({ selectedModel: null });
+    await expect(allThreadEvents(actor)).resolves.toContainEqual(
+      expect.objectContaining({
+        id: eventId,
+        kind: "created",
+        chatThreadId: created.body.id,
+        selectedModel: null,
+      }),
+    );
+  });
+
+  it("selects Auto as a null thread selection for limited-free-1 workspaces", async () => {
     const fixture = createPublicFirewallFixture(context);
     await fixture.run(async () => {
       api.configureRunnerGroup();
@@ -2355,11 +2415,14 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
       });
       const thread = await chat.createThread(actor, {
         agentId,
-        model: "okou-1.0",
+        model: null,
         title: "limited free model pin",
       });
       expect(thread.title).toBe("limited free model pin");
-      await chat.updateThreadModelSelection(actor, thread.id, "okou-1.0");
+      await chat.updateThreadModelSelection(actor, thread.id, null);
+      await expect(
+        chat.readThreadMetadata(actor, thread.id),
+      ).resolves.toMatchObject({ selectedModel: null });
     });
   }, 90_000);
 
@@ -3413,8 +3476,7 @@ describe("CHAT-03 run usage events", () => {
 
   it("reads complete allowance-covered usage from the settled ledger", async () => {
     const fixture = await seedBuiltInDefaultModelKey(context);
-    const selectedModel = SEEDED_SYSTEM_DEFAULT_MODEL;
-    expect(fixture.selectedModel).toBe(selectedModel);
+    expect(fixture.selectedModel).toBe(SEEDED_SYSTEM_DEFAULT_MODEL);
 
     const { actor, agentId } = await entitledChatActor(
       "Allowance usage message agent",
@@ -3435,7 +3497,7 @@ describe("CHAT-03 run usage events", () => {
       weeklyWindowSeconds: 7 * 24 * 60 * 60,
       weeklyWindowUnits: 100,
     });
-    await api.updateUserModelPreference(actor, selectedModel);
+    await api.updateUserModelPreference(actor, null);
 
     const provider = `allowance-chat-${randomUUID().slice(0, 8)}`;
     const category = "api_request";
@@ -3445,7 +3507,7 @@ describe("CHAT-03 run usage events", () => {
     const { runId, threadId } = await sendChatRun(actor, {
       agentId,
       prompt: "record allowance-covered usage",
-      model: selectedModel,
+      model: null,
     });
     await cancelChatRun(actor, runId);
     const sandboxHeaders = {

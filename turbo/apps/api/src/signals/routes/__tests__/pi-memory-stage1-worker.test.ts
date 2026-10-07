@@ -708,7 +708,7 @@ describe("Pi memory Stage 1 worker", () => {
         const run = await chat.sendChatRun(actor, {
           agentId,
           prompt: "Produce owned Stage 1 history",
-          model: "okou-1.0",
+          model: null,
         });
         const owned: (typeof runs)[number] = {
           runId: run.runId,
@@ -808,7 +808,7 @@ describe("Pi memory Stage 1 worker", () => {
         const trigger = await chat.sendChatRun(actor, {
           agentId,
           prompt: "Request the next owned memory day",
-          model: "okou-1.0",
+          model: null,
         });
         runs.push({ runId: trigger.runId });
         await chat.api.requestCancelRun(actor, trigger.runId, [200]);
@@ -962,7 +962,7 @@ describe("Pi memory Stage 1 worker", () => {
           agentId,
           threadId: fixture.pi_session_id,
           prompt: "Continue the source while its worker download is held",
-          model: "okou-1.0",
+          model: null,
         });
         runs.push({ runId: active.runId });
         expect((await chat.api.readRun(actor, active.runId)).status).toBe(
@@ -1109,7 +1109,6 @@ describe("Pi memory Stage 1 worker", () => {
     const chatModels = await createMiscRoutesApi(context).listRunModels(
       storage.actor,
     );
-    expect(chatModels.defaultModel).toBe("okou-1.0");
     expect(chatModels.models).not.toContainEqual(
       expect.objectContaining({ model: selectedModel }),
     );
@@ -2564,7 +2563,6 @@ describe("Stage 1 background credential availability", () => {
   it("exposes only fixed Auto as a platform chat route", async () => {
     const actor = createBddApi(context).user();
     const models = await createMiscRoutesApi(context).listRunModels(actor);
-    expect(models.defaultModel).toBe("okou-1.0");
     expect(
       models.models
         .filter((model) => {
@@ -2573,7 +2571,7 @@ describe("Stage 1 background credential availability", () => {
         .map(({ model }) => {
           return model;
         }),
-    ).toStrictEqual(["okou-1.0"]);
+    ).toStrictEqual([null]);
   });
 
   it.each(

@@ -553,7 +553,7 @@ describe("chat agent bootstrap prefetch", () => {
     await entered.promise;
     // Attachment metadata is an external response awaited after model capture.
     // Change the member preference through its API before enqueue and admission.
-    await api.updateUserModelPreference(actor, "okou-1.0");
+    await api.updateUserModelPreference(actor, null);
     release.resolve(undefined);
     const sent = await sending;
     expect((await api.readRun(actor, sent.runId)).source).toMatchObject({

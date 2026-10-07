@@ -8,7 +8,10 @@ import {
 } from "../../lib/api/domains/chat";
 import { getModelCatalog } from "../../lib/api/domains/model-catalog";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
-import { formatCatalogThreadModel } from "../../lib/domain/model-catalog-display";
+import {
+  formatCatalogThreadModel,
+  parseModelSelectionArgument,
+} from "../../lib/domain/model-catalog-display";
 import { isUuid } from "../../lib/utils/uuid";
 import { getOkouChatThreadId } from "../../lib/okou-env";
 import { ApiRequestError } from "../../lib/api/core/client-factory";
@@ -61,7 +64,7 @@ export const createCommand = new Command()
   )
   .option(
     "--model <id>",
-    "Model for the thread (defaults to your model preference, then Auto)",
+    "Model id for the thread, or auto for Auto (defaults to your model preference, then Auto)",
   )
   .option("--effort <level>", "Set reasoning effort for the selected model")
   .option(
@@ -79,6 +82,7 @@ export const createCommand = new Command()
 Examples:
   Create a chat:     okou chat create "Launch plan"
   Pick the model:    okou chat create "Launch plan" --model claude-sonnet-5
+  Use Auto:          okou chat create "Launch plan" --model auto
   Set effort:       okou chat create "Launch plan" --model claude-opus-5-5 --effort extra
   Enable priority:   okou chat create "Launch plan" --priority
   Use standard:      okou chat create "Launch plan" --no-priority
@@ -88,7 +92,7 @@ Examples:
 Notes:
   - Creates an empty thread and does not start a run; send its first self-contained message with okou chat send
   - Defaults --agent to the agent of OKOU_CHAT_THREAD_ID
-  - Defaults --model to your model preference, then the system default model
+  - Defaults --model to your model preference, then Auto
   - Effort levels depend on the model; Claude uses extra where Codex uses xhigh
   - See okou chat model --help for the effort levels supported by each model
   - Pass --model to choose a different model for the new thread
@@ -106,14 +110,18 @@ Notes:
         );
       }
 
+      const model =
+        options.model === undefined
+          ? undefined
+          : parseModelSelectionArgument(options.model);
       const reasoningEffort =
         options.effort === undefined
           ? undefined
           : parseChatEffort(
               options.effort,
-              options.model === undefined
+              model === undefined
                 ? undefined
-                : { catalog: await getModelCatalog(), model: options.model },
+                : { catalog: await getModelCatalog(), model },
             );
       const agentId = await resolveAgentId(options.agent);
       let thread;
@@ -121,7 +129,7 @@ Notes:
         thread = await createChatThread({
           agentId,
           title,
-          ...(options.model === undefined ? {} : { model: options.model }),
+          ...(model === undefined ? {} : { model }),
           ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
           ...(options.priority === undefined
             ? {}
@@ -130,7 +138,7 @@ Notes:
       } catch (error) {
         if (
           reasoningEffort !== undefined &&
-          options.model === undefined &&
+          model === undefined &&
           error instanceof ApiRequestError &&
           error.status === 400
         ) {

@@ -20,7 +20,6 @@ import { agentsRoutes } from "../agents";
 import { billingStatusRoutes } from "../billing-status";
 import { onboardingStatusRoutes } from "../onboarding-status";
 import { runModelsRoutes } from "../run-models";
-import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 import { installDurableUserExportStorage } from "./helpers/durable-user-export-storage";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
@@ -208,10 +207,9 @@ describe("default Agent bootstrap", () => {
     );
     expect(instructions.body.content).toBe(SEED_INSTRUCTIONS);
     const policies = await accept(api.models.list({ headers }), [200]);
-    expect(policies.body.defaultModel).toBe("okou-1.0");
     expect(policies.body.models).toStrictEqual([
       expect.objectContaining({
-        model: SEEDED_SYSTEM_DEFAULT_MODEL,
+        model: null,
         memberEffective: expect.objectContaining({
           providerType: "built-in",
           credentialScope: "org",

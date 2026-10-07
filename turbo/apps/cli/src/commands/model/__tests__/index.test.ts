@@ -6,10 +6,9 @@ import { server } from "../../../mocks/server";
 import { modelCommand } from "../index";
 
 const available: AvailableRunModelsResponse = {
-  defaultModel: "okou-1.0",
   models: [
     {
-      model: "okou-1.0",
+      model: null,
       modelLabel: "Auto",
       modelProviderId: null,
       memberEffective: {
@@ -87,7 +86,7 @@ describe("okou model command", () => {
   it("lists Auto and connected personal subscription models", async () => {
     await modelCommand.parseAsync(["node", "cli", "ls"]);
     const output = log.mock.calls.flat().join("\n");
-    expect(output).toContain("Auto (okou-1.0) (default)");
+    expect(output).toContain("Auto (auto) (default)");
     expect(output).toContain("GPT 6 Sol (gpt-6-sol)");
     expect(output).toContain("Claude Sonnet 5 (claude-sonnet-5)");
     expect(output).toContain("provider: subscription");
@@ -112,7 +111,7 @@ describe("okou model command", () => {
         "http://localhost:3000/api/user-model-preference",
         async ({ request }) => {
           const body = (await request.json()) as {
-            selectedModel: string;
+            selectedModel: string | null;
             serviceTier: string | null;
           };
           captured.saved = body;
@@ -137,21 +136,25 @@ describe("okou model command", () => {
     return log.mock.calls.flat().join("\n");
   }
 
-  it.each(["okou-1.0", "gpt-6-sol"])(
-    "selects %s as the default for new chats",
-    async (model) => {
-      const request = serveSelection({
-        selectedModel: null,
-        serviceTier: null,
-      });
-      const output = await select(model);
-      expect(request.saved).toEqual({
-        selectedModel: model,
-        serviceTier: null,
-      });
-      expect(output).toContain(`Default model selected: ${model}`);
-    },
-  );
+  it("selects Auto with auto by saving a null selection", async () => {
+    const request = serveSelection({
+      selectedModel: "gpt-6-sol",
+      serviceTier: null,
+    });
+    const output = await select("auto");
+    expect(request.saved).toEqual({ selectedModel: null, serviceTier: null });
+    expect(output).toContain("Default model selected: Auto");
+  });
+
+  it("selects a subscription model as the default for new chats", async () => {
+    const request = serveSelection({ selectedModel: null, serviceTier: null });
+    const output = await select("gpt-6-sol");
+    expect(request.saved).toEqual({
+      selectedModel: "gpt-6-sol",
+      serviceTier: null,
+    });
+    expect(output).toContain("Default model selected: gpt-6-sol");
+  });
 
   it("keeps the saved Fast preference when reselecting the same model", async () => {
     const request = serveSelection({

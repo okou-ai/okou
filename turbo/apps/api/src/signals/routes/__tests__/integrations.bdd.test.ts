@@ -3089,6 +3089,24 @@ describe("INT-01: Slack app deep webhook flows", () => {
           }),
         }),
       );
+      expect(context.mocks.slack.views.open).toHaveBeenCalledWith(
+        expect.objectContaining({
+          view: expect.objectContaining({
+            blocks: expect.arrayContaining([
+              expect.objectContaining({
+                element: expect.objectContaining({
+                  options: expect.arrayContaining([
+                    {
+                      text: { type: "plain_text", text: "Auto (default)" },
+                      value: "auto",
+                    },
+                  ]),
+                }),
+              }),
+            ]),
+          }),
+        }),
+      );
 
       const selectModel = await integrations.postSlackInteractive(
         integrations.modelPickerSubmission({
@@ -3140,6 +3158,28 @@ describe("INT-01: Slack app deep webhook flows", () => {
       expect(switchedClaim.environment).toMatchObject({
         OPENAI_MODEL: "gpt-6-astra",
       });
+
+      // Auto is offered as its own picker value and stored as no selection.
+      const autoSelection = await integrations.postSlackInteractive(
+        integrations.modelPickerSubmission({
+          workspaceId: teamId,
+          slackUserId,
+          selectedValue: "auto",
+          channelId,
+          chatThreadId,
+        }),
+      );
+      expect(autoSelection).toBe("");
+      expect(context.mocks.slack.chat.postEphemeral).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          channel: channelId,
+          user: slackUserId,
+          text: "Switched to *Auto* for this conversation.",
+        }),
+      );
+      expect(
+        (await chat.readThreadMetadata(actor, chatThreadId)).selectedModel,
+      ).toBeNull();
     });
   });
 
@@ -3842,8 +3882,8 @@ describe("INT-01: Slack app deep webhook flows", () => {
       thread_ts: threadTs,
       channel: channelId,
     });
-    // An existing thread without a pin uses the system default, not the
-    // member preference.
+    // An existing Auto (null) thread runs the Auto model, not the member
+    // preference.
     const resolvedRunId = await pollSlackRun(runnerGroup);
     expect((await runs.readRun(actor, resolvedRunId)).source.model).toBe(
       SEEDED_SYSTEM_DEFAULT_MODEL,
@@ -4125,10 +4165,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     );
     expect(context.mocks.slack.views.open).not.toHaveBeenCalled();
 
-    await integrations.updateUserModelPreference(
-      actor,
-      SEEDED_SYSTEM_DEFAULT_MODEL,
-    );
+    await integrations.updateUserModelPreference(actor, null);
     const modelResponse = await integrations.postSlackCommand({
       teamId,
       userId: slackUserId,

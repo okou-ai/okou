@@ -23,6 +23,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Cron } from "croner";
 import { beforeEach, describe, expect, it } from "vitest";
+import { executeWorkflowAutomationForTest } from "../../../test-fixtures/workflow-automation-workers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
@@ -73,7 +74,7 @@ async function selectBuiltInDefaultModel(
 ): Promise<void> {
   if (model === "okou-1.0") {
     await seedBuiltInModelKey(context, model);
-    await runs.updateUserModelPreference(actor, model);
+    await runs.updateUserModelPreference(actor, null);
   } else {
     await runs.ensurePersonalSubscriptionModel(actor, { model });
   }
@@ -560,12 +561,7 @@ describe("Morning Brief schedule lifecycle through public APIs", () => {
     at: number,
   ): Promise<void> {
     mockNow(at);
-    await accept(
-      automationExecutionClient().execute({
-        body: { automation_id: automationId },
-      }),
-      [200],
-    );
+    await executeWorkflowAutomationForTest({ automationId }, context.signal);
   }
 
   async function briefThreadId(

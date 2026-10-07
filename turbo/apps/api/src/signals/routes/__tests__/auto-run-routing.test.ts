@@ -18,7 +18,7 @@ describe("fixed Auto through public admission and runner claim", () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     const run = await sendChatRun(actor, {
       agentId,
-      model: "okou-1.0",
+      model: null,
       prompt: "Use fixed Auto",
     });
     const claimed = await claimChatRun(runnerGroup, run.runId);

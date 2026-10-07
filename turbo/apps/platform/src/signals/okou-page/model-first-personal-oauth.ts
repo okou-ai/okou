@@ -92,7 +92,7 @@ export const personalModelProvider$ = computed(
         runModel,
         personal.modelProviders,
       );
-      if (status) {
+      if (status && runModel.model !== null) {
         statuses[runModel.model] = status;
       }
     }
@@ -103,7 +103,7 @@ export const personalModelProvider$ = computed(
 export const selectedModelAvailable$ = command(
   async (
     { get },
-    selectedModel: string,
+    selectedModel: string | null,
     signal: AbortSignal,
   ): Promise<boolean> => {
     const models = await get(availableRunModels$);

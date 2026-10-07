@@ -32,10 +32,13 @@ type LifecycleOptions = NonNullable<
 export function installRunChat(
   options: LifecycleOptions = {},
 ): ReturnType<typeof mockChatLifecycleWithoutBrowserSession> {
-  const requestedModel = options.selectedModel ?? DEFAULT_MODEL;
-  const selectedModel = mockCatalogHasModel(requestedModel)
-    ? requestedModel
-    : DEFAULT_MODEL;
+  // Null is Auto.
+  const requestedModel =
+    options.selectedModel === undefined ? DEFAULT_MODEL : options.selectedModel;
+  const selectedModel =
+    requestedModel === null || mockCatalogHasModel(requestedModel)
+      ? requestedModel
+      : DEFAULT_MODEL;
   context.mocks.data.agents([
     {
       agentId: AGENT_ID,

@@ -133,7 +133,7 @@ struct SubscriptionRunModel {
 /// `/api/run-models` fixture: Auto plus the member's connected subscription rows.
 func runModelsResponse(_ subscriptions: [SubscriptionRunModel] = []) -> ChatHTTPResponse {
   let auto = """
-    {"model":"okou-1.0","modelLabel":"Auto","modelProviderId":null,\
+    {"model":null,"modelLabel":"Auto","modelProviderId":null,\
     "memberEffective":{"providerType":"built-in","runtimeProviderType":"openrouter-codex",\
     "credentialScope":"org","availability":"available","accountSelection":"not_applicable"}}
     """
@@ -148,6 +148,6 @@ func runModelsResponse(_ subscriptions: [SubscriptionRunModel] = []) -> ChatHTTP
   }
   return ChatHTTPResponse(
     body:
-      "{\"defaultModel\":\"okou-1.0\",\"models\":[\(([auto] + rows).joined(separator: ","))]}"
+      "{\"models\":[\(([auto] + rows).joined(separator: ","))]}"
   )
 }

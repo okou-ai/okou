@@ -133,12 +133,13 @@ export function ChatEffortSettings({
             valueText={displayValue}
             onValueChange={(next) => {
               const effort = efforts[next];
-              if (effort !== undefined) {
+              const model = selection.selectedModel;
+              if (effort !== undefined && model !== null) {
                 onChange({
                   ...selection,
                   modelSettings: withModelReasoningEffort(
                     selection.modelSettings,
-                    { model: selection.selectedModel, effort },
+                    { model, effort },
                   ),
                 });
               }

@@ -297,12 +297,11 @@ describe("MISC-04: available run models, personal subscriptions, and logs", () =
     const { api, admin, member } = testActors();
     for (const actor of [admin, member]) {
       const available = await api.listRunModels(actor);
-      expect(available.defaultModel).toBe("okou-1.0");
       expect(
         available.models.map((model) => {
           return model.model;
         }),
-      ).toStrictEqual(["okou-1.0"]);
+      ).toStrictEqual([null]);
       expect(available.models[0]).toMatchObject({
         memberEffective: expect.objectContaining({
           providerType: "built-in",
@@ -361,7 +360,6 @@ describe("MISC-04: available run models, personal subscriptions, and logs", () =
     }
     expect("secret" in created.body.provider).toBeFalsy();
     const connectedModels = await api.listRunModels(admin);
-    expect(connectedModels.defaultModel).toBe("okou-1.0");
     expect(connectedModels.models).toContainEqual(
       expect.objectContaining({
         model: "claude-sonnet-5-5",
@@ -425,11 +423,10 @@ describe("MISC-04: available run models, personal subscriptions, and logs", () =
     }
     expect(afterDelete.body.modelProviders).toStrictEqual([]);
     const disconnectedModels = await api.listRunModels(admin);
-    expect(disconnectedModels.defaultModel).toBe("okou-1.0");
     expect(
       disconnectedModels.models.map((model) => {
         return model.model;
       }),
-    ).toStrictEqual(["okou-1.0"]);
+    ).toStrictEqual([null]);
   });
 });

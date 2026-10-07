@@ -72,7 +72,6 @@ function configurePersonalRoute(args: {
       );
     });
     return respond(200, {
-      defaultModel: "okou-1.0",
       models: [
         mockAutoRunModel(),
         mockSubscriptionRunModel(args.model, {

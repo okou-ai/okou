@@ -36,20 +36,17 @@ teardown() {
     echo "$output"
     assert_success
     run jq -e '
-        .defaultModel == "okou-1.0" and
         (.models | length == 1) and
-        any(.models[]?;
-            .model == "okou-1.0" and
-            .memberEffective.providerType == "built-in" and
-            .memberEffective.credentialScope == "org" and
-            .modelProviderId == null
-        )
+        .models[0].model == null and
+        .models[0].memberEffective.providerType == "built-in" and
+        .models[0].memberEffective.credentialScope == "org" and
+        .models[0].modelProviderId == null
     ' <<<"$output"
     echo "$output"
     assert_success
 
     local prompt="Briefly confirm that the Auto runner is responding."
-    run runner_chat_send "$AGENT_ID" "$prompt" "" "okou-1.0"
+    run runner_chat_send "$AGENT_ID" "$prompt" "" "auto"
     echo "$output"
     assert_success
     RUN_ID=$(jq -er '.runId | select(type == "string" and length > 0)' <<<"$output")

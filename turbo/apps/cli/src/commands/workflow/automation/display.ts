@@ -10,7 +10,8 @@ type GmailTextMatcher = NonNullable<GmailMatchRules["from"]>;
 type GmailTextField = "from" | "subject" | "body" | "to" | "cc";
 
 export interface WorkflowAutomationThreadModel {
-  readonly id: string;
+  /** Null is Auto. */
+  readonly id: string | null;
   readonly label: string;
   readonly serviceTier: ChatThreadServiceTier | null;
 }
@@ -800,9 +801,8 @@ export function printWorkflowAutomationThreadModel(
   if (!model) {
     return;
   }
-  console.log(
-    `${"Thread model:".padEnd(14)}${model.label} ${chalk.dim(`(${model.id})`)}`,
-  );
+  const id = model.id === null ? "" : ` ${chalk.dim(`(${model.id})`)}`;
+  console.log(`${"Thread model:".padEnd(14)}${model.label}${id}`);
   const priority = model.serviceTier === "priority" ? "enabled" : "disabled";
   console.log(`${"Thread priority:".padEnd(18)}${priority}`);
 }

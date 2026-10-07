@@ -238,7 +238,7 @@ describe("CHAT-02: model-first routing", () => {
           agentId,
           threadId: run.threadId,
           prompt: "continue the long session",
-          model: "okou-1.0",
+          model: null,
         },
         queued.usagePricingResolution,
       );
@@ -330,7 +330,7 @@ describe("CHAT-02: model-first routing", () => {
               agentId,
               threadId: run.threadId,
               prompt: originalPrompt,
-              model: "okou-1.0",
+              model: null,
             },
             queued.usagePricingResolution,
           );
@@ -480,7 +480,8 @@ describe("CHAT-02: model-first routing", () => {
         {
           agentId,
           prompt: "hand a built-in Pi turn to Sandbox",
-          model: selectedModel,
+          // Auto is the null selection; its run model is the built-in one.
+          model: builtIn ? null : selectedModel,
         },
         usagePricingResolution,
       );

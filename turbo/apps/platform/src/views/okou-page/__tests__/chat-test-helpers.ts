@@ -1,3 +1,4 @@
+import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import {
   withModelReasoningEffort,
   type ModelSettings,
@@ -360,7 +361,7 @@ export function mockChatLifecycle(
       clientThreadId?: string;
       hasTextContent?: boolean;
       userMessage?: UserMessageDocument;
-      model?: string;
+      model?: string | null;
       modelSelection?: ModelSelectionRequest | null;
       runOptions?: ChatRunOptionsRequest;
       computerUseHostId?: string | null;
@@ -375,7 +376,7 @@ export function mockChatLifecycle(
       threadId?: string;
       clientThreadId?: string;
       userMessage?: UserMessageDocument;
-      model?: string;
+      model?: string | null;
       modelSelection?: ModelSelectionRequest | null;
       computerUseHostId?: string | null;
       cloudBrowserEnabled?: boolean;
@@ -384,8 +385,8 @@ export function mockChatLifecycle(
     onThreadCreate?: (body: {
       clientThreadId?: string;
       eventId?: string;
-      model?: string;
-      modelSelection: ModelSelectionRequest;
+      model?: string | null;
+      modelSelection: ModelSelectionRequest | null;
       serviceTier?: ChatThreadServiceTier | null;
       reasoningEffort?: ReasoningEffort;
       connectorSelections?: readonly ConnectorAccountSelection[];
@@ -642,7 +643,7 @@ export function mockChatLifecycle(
     clientEventId?: string;
     hasTextContent?: boolean;
     userMessage?: UserMessageDocument;
-    model?: string;
+    model?: string | null;
     runOptions?: ChatRunOptionsRequest;
   }) => {
     const clientEventId = body.clientEventId ?? crypto.randomUUID();
@@ -678,7 +679,7 @@ export function mockChatLifecycle(
     clientEventId?: string;
     hasTextContent?: boolean;
     userMessage?: UserMessageDocument;
-    model?: string;
+    model?: string | null;
     runOptions?: ChatRunOptionsRequest;
     computerUseHostId?: string | null;
     cloudBrowserEnabled?: boolean;
@@ -710,7 +711,9 @@ export function mockChatLifecycle(
     runStatus = "running";
     runError = null;
     resultContent = "";
-    selectedModel = modelSelection?.selectedModel ?? selectedModel;
+    if (modelSelection !== undefined) {
+      selectedModel = modelSelection?.selectedModel ?? null;
+    }
     codexServiceTier = body.runOptions?.codexServiceTier ?? null;
     runAssociated = true;
     runUserSeqId = allocateDynamicSeqId();
@@ -858,12 +861,12 @@ export function mockChatLifecycle(
   context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
     threadId = body.clientThreadId ?? threadId;
     const modelSelection = modelSelectionFromBody(body);
-    if (!modelSelection) {
+    if (modelSelection === undefined) {
       throw new Error("Expected chat thread create to include model");
     }
-    selectedModel = modelSelection.selectedModel;
+    selectedModel = modelSelection?.selectedModel ?? null;
     codexServiceTier = body.serviceTier === "priority" ? "fast" : null;
-    if (body.reasoningEffort !== undefined) {
+    if (selectedModel !== null && body.reasoningEffort !== undefined) {
       modelSettings = withModelReasoningEffort(modelSettings, {
         model: selectedModel,
         effort: body.reasoningEffort,
@@ -883,7 +886,8 @@ export function mockChatLifecycle(
       id: threadId,
       title: null,
       createdAt: "2026-03-10T00:00:00Z",
-      selectedModel,
+      // The response names the run model; an Auto thread runs on Auto's.
+      selectedModel: selectedModel ?? AUTO_RUN_MODEL,
       serviceTier: body.serviceTier ?? null,
     });
   });

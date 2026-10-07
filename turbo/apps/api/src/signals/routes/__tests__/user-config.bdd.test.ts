@@ -300,7 +300,7 @@ describe("AUTH-03 agent user connectors", () => {
 });
 
 describe("AUTH-03 user model preference", () => {
-  it("defaults, updates, validates, and clears the user model preference", async () => {
+  it("defaults to Auto, rejects the Auto run model, and stores Auto as null", async () => {
     const admin = api.user();
     await onboardAdmin(admin, { slug: slug("bdd-uc-b2") });
 
@@ -313,15 +313,17 @@ describe("AUTH-03 user model preference", () => {
       updatedAt: null,
     });
 
-    const updated = await cfg.updateModelPreference(admin, {
-      selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL,
-      serviceTier: null,
-    });
-    expect(updated.selectedModel).toBe(SEEDED_SYSTEM_DEFAULT_MODEL);
-    expect(updated.serviceTier).toBeNull();
-    expect(updated.updatedAt).toStrictEqual(expect.any(String));
-    const readUpdated = await cfg.readModelPreference(admin);
-    expect(readUpdated).toStrictEqual(updated);
+    // Auto is only the null selection; its internal run model is not selectable.
+    const rejected = await cfg.requestUpdateModelPreference(
+      admin,
+      { selectedModel: SEEDED_SYSTEM_DEFAULT_MODEL, serviceTier: null },
+      [400],
+    );
+    expectApiError(rejected.body);
+    expect(rejected.body.error.code).toBe("BAD_REQUEST");
+    await expect(cfg.readModelPreference(admin)).resolves.toStrictEqual(
+      defaults,
+    );
 
     const cleared = await cfg.updateModelPreference(admin, {
       selectedModel: null,
@@ -394,6 +396,18 @@ describe("AUTH-03 user model preference", () => {
     await expect(cfg.readModelPreference(admin)).resolves.toMatchObject({
       selectedModel: "gpt-6-luna",
       modelSettings: luna.modelSettings,
+    });
+    // Selecting Auto stores the null selection and keeps model settings.
+    const auto = await cfg.updateModelPreference(admin, {
+      selectedModel: null,
+      serviceTier: null,
+    });
+    expect(auto).toMatchObject({
+      selectedModel: null,
+      modelSettings: luna.modelSettings,
+    });
+    await expect(cfg.readModelPreference(admin)).resolves.toMatchObject({
+      selectedModel: null,
     });
   });
 

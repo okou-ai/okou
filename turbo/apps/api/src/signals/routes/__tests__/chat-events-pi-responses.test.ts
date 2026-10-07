@@ -55,7 +55,10 @@ async function configureResponsesWithOwnedRuns(args: {
   readonly runnerGroup: string;
   readonly selectedModel: "okou-1.0" | "gpt-6-luna";
 }): Promise<{
-  readonly model: string;
+  /** The send selection: null is Auto. */
+  readonly model: string | null;
+  /** The run model that executes the selection. */
+  readonly runModel: string;
   readonly sendChatRun: typeof sendChatRun;
   readonly claimChatRun: typeof claimChatRun;
   readonly cancelChatRun: typeof cancelChatRun;
@@ -172,7 +175,8 @@ async function configureResponsesWithOwnedRuns(args: {
     : configureSubscriptionPiModel(args.actor, {}, model));
 
   return {
-    model,
+    model: model === "okou-1.0" ? null : model,
+    runModel: model,
     sendChatRun: sendOwnedRun,
     claimChatRun: claimOwnedRun,
     cancelChatRun: cancelOwnedRun,
@@ -218,7 +222,7 @@ describe("CHAT-02: model-first routing", () => {
       isolatePg: true,
     });
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const { model, sendChatRun, claimChatRun, cancelChatRun } =
+    const { model, runModel, sendChatRun, claimChatRun, cancelChatRun } =
       await configureResponsesWithOwnedRuns({
         actor,
         agentId,
@@ -240,7 +244,7 @@ describe("CHAT-02: model-first routing", () => {
     };
 
     // An operator takes the model off Pi: it launches on its vendor harness.
-    const restore = await setModelPiRouteClassFixture(model, null);
+    const restore = await setModelPiRouteClassFixture(runModel, null);
     const vendor = await launch("run on the vendor harness");
     await restore();
     expect(vendor.claim.cliAgentType).toBe("pi");

@@ -1,8 +1,7 @@
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { MOCK_SYSTEM_DEFAULT_MODEL } from "../../../mocks/handlers/api-model-catalog.ts";
 import {
   closeModelPanel,
   findModelOption,
@@ -23,6 +22,7 @@ import {
   NEW_CHAT_PATH,
   readyChat,
   RUN_PATH,
+  sendText,
 } from "./chat-run-test-fixtures.ts";
 
 const FIXTURE_DATE = "2026-08-12T09:00:00.000Z";
@@ -37,7 +37,7 @@ function runModelFixture(model: string, index: number): AvailableRunModel {
 function configureRunModels(models: readonly string[]): void {
   installConnectedPersonalSubscriptions(context);
   context.mocks.data.availableRunModels(
-    [...models, MOCK_SYSTEM_DEFAULT_MODEL].map((model, index) => {
+    models.map((model, index) => {
       return runModelFixture(model, index + 1);
     }),
   );
@@ -111,10 +111,18 @@ test("Resolve the model shown for a chat", async () => {
   await expect(modelPicker("Claude Opus 5.5")).resolves.toBeVisible();
 });
 
-test("Show Auto when an existing thread's model is no longer selectable", async () => {
-  installRunChat({ selectedModel: "deepseek-v4.1-flash" });
+test("Switch only the thread to Auto when its model is no longer selectable", async () => {
+  const requests: string[] = [];
+  installRunChat({
+    selectedModel: "deepseek-v4.1-flash",
+    onModelSelectionUpdate: (body) => {
+      requests.push(`thread model ${String(body.model)}`);
+    },
+    onSendRequest: (body) => {
+      requests.push(`send model ${String(body.model)}`);
+    },
+  });
   context.mocks.data.availableRunModels([
-    runModelFixture("okou-1.0", 1),
     {
       ...runModelFixture("gpt-6-sol", 2),
       subscriptionOptions: { efforts: ["low", "high"], serviceTier: null },
@@ -130,6 +138,57 @@ test("Show Auto when an existing thread's model is no longer selectable", async 
   const panel = await openModelPanel("Auto");
   await expect(findModelOption(/^GPT 6 Sol/iu, panel)).resolves.toBeVisible();
   expect(queryModelOption(/DeepSeek/iu, panel)).not.toBeInTheDocument();
+  await closeModelPanel();
+
+  await sendText("Run on the model shown");
+
+  // The send carries no model, so the member's default model is untouched.
+  await waitFor(() => {
+    expect(requests).toStrictEqual([
+      "thread model null",
+      "send model undefined",
+    ]);
+  });
+});
+
+test("Show Auto selected for a thread on Auto", async () => {
+  installRunChat({ selectedModel: null });
+  configureRunModels(["claude-opus-5"]);
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+  });
+
+  await readyChat();
+  const panel = await openModelPanel("Auto");
+  expect(modelOption(/^Auto/u, panel)).toBeChecked();
+  expect(modelOption(/^Claude Opus 5/u, panel)).not.toBeChecked();
+});
+
+test("Keep the stored selection when sending on an available model", async () => {
+  const sentModels: (string | null | undefined)[] = [];
+  installRunChat({
+    selectedModel: "claude-opus-5",
+    onSendRequest: (body) => {
+      sentModels.push(body.model);
+    },
+  });
+  configureRunModels(["claude-opus-5"]);
+
+  await setupPage({
+    context,
+    path: RUN_PATH,
+  });
+
+  await readyChat();
+  await expect(modelPicker("Claude Opus 5")).resolves.toBeVisible();
+
+  await sendText("Run on the pinned model");
+
+  await waitFor(() => {
+    expect(sentModels).toStrictEqual([undefined]);
+  });
 });
 
 test("Keep an existing thread's explicit model", async () => {

@@ -55,13 +55,18 @@ export interface ModelFirstPin {
 export interface DefaultModelFirstPin extends ModelFirstPin {
   readonly serviceTier: ChatThreadServiceTier | null;
 }
-export function autoModelPin(): ModelFirstPin {
+/** Auto as a thread or member selection: an empty selection. */
+export function autoSelectionPin(): ModelFirstPin {
   return {
     modelProviderId: null,
     modelProviderType: "built-in",
     modelProviderCredentialScope: "org",
-    selectedModel: AUTO_RUN_MODEL,
+    selectedModel: null,
   };
+}
+/** Auto as a captured input or run: the internal Auto run model. */
+export function autoModelPin(): ModelFirstPin {
+  return { ...autoSelectionPin(), selectedModel: AUTO_RUN_MODEL };
 }
 function subscriptionPin(entry: MemberSubscriptionModelRoute): ModelFirstPin {
   return {
@@ -174,15 +179,18 @@ const modelRoutingFacts$ = command(
     };
   },
 );
+/**
+ * The runnable model of a non-empty selection. Auto is only the empty
+ * selection, so its internal run model is not a selectable ID.
+ */
 export function resolveRunSelectionModel(
   catalog: ModelCatalog,
   selectedId: string,
 ): string | null {
-  if (selectedId === AUTO_RUN_MODEL) {
-    return AUTO_RUN_MODEL;
-  }
   const model = catalogModelForSelectedId(catalog, selectedId);
-  return model === null ? null : resolveCatalogRunModel(catalog, model);
+  return model === null || model === AUTO_RUN_MODEL
+    ? null
+    : resolveCatalogRunModel(catalog, model);
 }
 export function isReplacedModelSelection(
   catalog: ModelCatalog,
@@ -207,7 +215,7 @@ export const resolveDefaultModelFirstPin$ = command(
       return entry.model === selectedModel;
     });
     if (!personal) {
-      return { ...autoModelPin(), serviceTier: null };
+      return { ...autoSelectionPin(), serviceTier: null };
     }
     const tier = facts.preference?.serviceTier;
     const serviceTier =
@@ -249,9 +257,6 @@ export const resolveModelSelectionPin$ = command(
       }
       return subscriptionPin(personal);
     }
-    if (selectedModel === AUTO_RUN_MODEL) {
-      return autoModelPin();
-    }
     // Canonical personal metadata preserves ownership even when its route is disabled;
     // classification is not permission to execute that route, so the pick rejects it.
     const unavailable =
@@ -291,6 +296,10 @@ export function resolveQueuedModelSelectionPinFromSnapshot(params: {
   readonly selectedModel: string;
   readonly subscriptionModels: readonly MemberSubscriptionModelRoute[];
 }): ModelFirstPin | ReturnType<typeof badRequestMessage> {
+  // An Auto input captured the internal Auto run model.
+  if (params.selectedModel === AUTO_RUN_MODEL) {
+    return autoModelPin();
+  }
   const selectedModel = resolveRunSelectionModel(
     params.catalog,
     params.selectedModel,
@@ -300,9 +309,6 @@ export function resolveQueuedModelSelectionPinFromSnapshot(params: {
   });
   if (personal) {
     return subscriptionPin(personal);
-  }
-  if (selectedModel === AUTO_RUN_MODEL) {
-    return autoModelPin();
   }
   // Queued inputs can lose route authority after capture. Preserve canonical
   // ownership across disabling and replacement; never settle them against Auto.

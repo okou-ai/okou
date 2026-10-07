@@ -2,9 +2,9 @@ import { cleanupSandboxFixturesForTest } from "../../../test-fixtures/sandbox-cl
 import { createHash, randomUUID } from "node:crypto";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { aroundEach, it, describe, beforeEach } from "vitest";
+import { executeWorkflowAutomationForTest } from "../../../test-fixtures/workflow-automation-workers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
@@ -22,7 +22,6 @@ import { clearAllDetached } from "../../utils";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
-import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import type { ApiTestUser } from "./helpers/api-bdd";
@@ -43,7 +42,6 @@ import { refreshConcurrencyEntitlement } from "./helpers/stripe-billing-webhook"
 import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 const TEST_APP_ROUTES = Object.freeze([
-  ...testWorkflowAutomationExecutionRoutes,
   ...webhooksWorkflowAutomationsRoutes,
   ...chatEventsRoutes,
   ...chatThreadRoutes,
@@ -74,13 +72,6 @@ function automationsClient() {
   return setupApp({ context, routes: workflowAutomationsRoutes })(
     workflowAutomationsContract,
   );
-}
-
-function workflowAutomationExecutionClient() {
-  return setupApp({
-    context,
-    routes: testWorkflowAutomationExecutionRoutes,
-  })(testWorkflowAutomationExecutionContract);
 }
 
 function chatEventsClient() {
@@ -437,13 +428,7 @@ async function runAutomationNow(automationId: string) {
 async function executeDueWorkflowAutomations(
   automationId: string,
 ): Promise<void> {
-  const response = await accept(
-    workflowAutomationExecutionClient().execute({
-      body: { automation_id: automationId },
-    }),
-    [200],
-  );
-  expect(response.body.success).toBeTruthy();
+  await executeWorkflowAutomationForTest({ automationId }, context.signal);
   await flushWaitUntilForTest();
 }
 

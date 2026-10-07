@@ -46,8 +46,10 @@ export function availableChatReasoningEfforts(
   runModel: AvailableRunModel | undefined,
   catalog: ModelCatalog | null | undefined,
 ): readonly ReasoningEffort[] {
+  const model = selection?.selectedModel;
   if (
     !selection ||
+    !model ||
     !runModel ||
     !catalog ||
     !isMemberRunModelConfigurable(runModel)
@@ -60,19 +62,19 @@ export function availableChatReasoningEfforts(
     return [];
   }
   const piExecution = isPiExecutionRoute({
-    catalogModel: catalog.piModel(selection.selectedModel),
+    catalogModel: catalog.piModel(model),
     modelProviderType: route.providerType,
     runtimeProviderType,
     codexServiceTier: selection.codexServiceTier ?? undefined,
   });
   const catalogEfforts = catalog
-    .efforts(selection.selectedModel, catalogRouteQuery(runModel))
+    .efforts(model, catalogRouteQuery(runModel))
     .flatMap((effort) => {
       const parsed = reasoningEffortSchema.safeParse(effort);
       return parsed.success ? [parsed.data] : [];
     });
   const routeEfforts = narrowRouteReasoningEfforts({
-    model: selection.selectedModel,
+    model,
     efforts: catalogEfforts,
     piExecution,
     runtimeProviderType,
@@ -90,7 +92,8 @@ export function effectiveChatReasoningEffort(
   runModel: AvailableRunModel | undefined,
   catalog: ModelCatalog | null | undefined,
 ): ReasoningEffort | undefined {
-  if (!selection || !runModel || !catalog) {
+  const model = selection?.selectedModel;
+  if (!selection || !model || !runModel || !catalog) {
     return undefined;
   }
   const available = availableChatReasoningEfforts(selection, runModel, catalog);
@@ -99,7 +102,7 @@ export function effectiveChatReasoningEffort(
     return preferred;
   }
   const defaultEffort = catalog.defaultEffort(
-    selection.selectedModel,
+    model,
     catalogRouteQuery(runModel),
   );
   return available.find((effort) => {

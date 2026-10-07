@@ -31,6 +31,9 @@ import {
   ModelFirstRunModelRowContent,
   ModelFirstTriggerLabel,
   resolveModelFirstModelPickerState,
+  selectedModelControlValue,
+  selectedModelDisplayName,
+  selectedModelFromControlValue,
   useExplicitModelSelectionChange,
   type ModelProviderSelection,
 } from "./model-provider-picker.tsx";
@@ -119,8 +122,13 @@ function ComposerModelPanelBody({
           <ScrollArea.Content>
             <RadioGroup
               aria-label={chatModelsLabel}
-              value={state.selection?.selectedModel ?? null}
-              onValueChange={(model: string) => {
+              value={
+                state.selection
+                  ? selectedModelControlValue(state.selection.selectedModel)
+                  : null
+              }
+              onValueChange={(controlValue: string) => {
+                const model = selectedModelFromControlValue(controlValue);
                 changeModel(
                   value.selectedModel === model
                     ? value
@@ -141,8 +149,8 @@ function ComposerModelPanelBody({
                   state.selection?.selectedModel === runModel.model;
                 return (
                   <RadioPrimitive.Root
-                    key={runModel.model}
-                    value={runModel.model}
+                    key={selectedModelControlValue(runModel.model)}
+                    value={selectedModelControlValue(runModel.model)}
                     disabled={!isMemberRunModelConfigurable(runModel)}
                     nativeButton
                     render={<button type="button" />}
@@ -268,7 +276,7 @@ export function ComposerModelPanel({
     return $.settings.models.picker.fast;
   });
   const triggerAriaLabel = [
-    catalog?.displayName(value.selectedModel) ?? value.selectedModel,
+    selectedModelDisplayName(catalog, value.selectedModel),
     effort === undefined ? undefined : formatChatEffort(effort),
     value.codexServiceTier === "fast" ? fastLabel : undefined,
   ]
