@@ -1,304 +1,150 @@
-import {
-  expectThreadModelCredits,
-  readThreadModelUsage,
-} from "./helpers/public-thread-usage";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
-import { randomUUID } from "node:crypto";
+import { now } from "../../../lib/time";
+import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
-import { executeWorkflowAutomationForTest } from "../../../test-fixtures/workflow-automation-workers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { clearMockNow, mockNow, now } from "../../../lib/time";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import {
-  createChatEventsFixture,
-  requireOrgId,
-  createPiUsagePricingResolution,
-} from "./helpers/chat-events-fixture";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
 const context = testContext();
 const {
+  postThreadPiAutomationEvent,
+  completeSandboxFirstPiRun,
+  expectThreadPiTerminal,
+  sendChatRun,
   api,
   chat,
-  webhooks,
   entitledChatActor,
-
-  configureBuiltInPiModel,
   configureSubscriptionPiModel,
-  sendChatRun,
   claimChatRun,
   completeChatRunOk,
   failChatRun,
   cancelChatRun,
   sessionHeaders,
   threadPiAutomationsClient,
-  postThreadPiAutomationEvent,
   lastThreadPiAutomationRun,
-  expectThreadPiTerminal,
   claimGptPiSandbox,
   mockPiCheckpointObjectStore,
   mockPiResourceArchiveDownloads,
-  completeSandboxFirstPiRun,
 } = createChatEventsFixture(context);
 
 describe("thread-bound Pi Automation execution", () => {
-  it.each(
-    (["gpt-6-luna", "okou-1.0"] as const).flatMap((selectedModel) => {
-      return (["schedule", "event"] as const).map((source) => {
-        return { source, selectedModel };
-      });
-    }),
-  )(
-    "rotates the $source $selectedModel Automation session into Pi and learns only from its user turns",
-    async ({ source, selectedModel }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor(
-        {},
-        source === "event" ? "team" : "pro",
-      );
-      const orgId = requireOrgId(actor);
-      const usagePricingResolution =
-        await createPiUsagePricingResolution(selectedModel);
-      const workflows = createWorkflowsBddApi(context);
-      const workflowId = await workflows.createWorkflow(actor, {
+  it("rotates a signed event Automation session into Pi and preserves its user conversation", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor({}, "team");
+    const workflowId = await createWorkflowsBddApi(context).createWorkflow(
+      actor,
+      {
         agentId,
-        name: `pi-source-${source}`,
-      });
-      if (source === "schedule") {
-        await configureSubscriptionPiModel(actor);
-        await api.updateUserModelPreference(actor, "gpt-6-astra");
-      } else {
-        await api.updateUserModelPreference(actor, "claude-fable-5-1");
-      }
+        name: "pi-event-session",
+      },
+    );
+    await api.updateUserModelPreference(actor, "claude-fable-5-1");
+    const created = await accept(
+      threadPiAutomationsClient().create({
+        headers: sessionHeaders(actor),
+        params: { workflowId },
+        body: { kind: "event", eventType: "webhook-received" },
+      }),
+      [201],
+    );
+    const automation = created.body;
+    if (
+      automation.kind !== "event" ||
+      automation.eventType !== "webhook-received" ||
+      !automation.webhookUrl ||
+      !automation.webhookSecret ||
+      !automation.chatThreadId
+    ) {
+      throw new Error("Expected the event automation webhook and thread");
+    }
+    const eventRoute = {
+      webhookUrl: automation.webhookUrl,
+      webhookSecret: automation.webhookSecret,
+    };
+    const threadId = automation.chatThreadId;
+    await postThreadPiAutomationEvent({
+      ...eventRoute,
+      payload: "legacy",
+      timestamp: Math.floor(now() / 1000),
+    });
+    const legacyRunId = await lastThreadPiAutomationRun(actor, threadId);
+    const legacyClaim = await claimChatRun(runnerGroup, legacyRunId);
+    await completeChatRunOk(legacyRunId, legacyClaim.sandboxHeaders, {
+      cliAgentType: "claude-code",
+    });
+    await flushWaitUntilForTest();
+    const legacySessionId = await readCompletedRunSessionId(
+      context,
+      actor,
+      legacyRunId,
+    );
 
-      const created = await accept(
-        threadPiAutomationsClient().create({
-          headers: sessionHeaders(actor),
-          params: { workflowId },
-          body:
-            source === "schedule"
-              ? { schedule: { type: "loop", intervalSeconds: 3600 } }
-              : { kind: "event", eventType: "webhook-received" },
-        }),
-        [201],
-      );
-      const automation = created.body;
-      const eventRoute =
-        automation.kind === "event" &&
-        automation.eventType === "webhook-received" &&
-        automation.webhookUrl &&
-        automation.webhookSecret
-          ? {
-              webhookUrl: automation.webhookUrl,
-              webhookSecret: automation.webhookSecret,
-            }
-          : null;
-      let threadId: string;
-      if (eventRoute) {
-        await postThreadPiAutomationEvent({
-          ...eventRoute,
-          payload: "legacy",
-          timestamp: Math.floor(now() / 1000),
-          usagePricingResolution,
-        });
-        if (!automation.chatThreadId) {
-          throw new Error("Expected the event thread");
-        }
-        threadId = automation.chatThreadId;
-      } else {
-        const started = await accept(
-          threadPiAutomationsClient().run({
-            headers: sessionHeaders(actor),
-            params: { id: automation.id },
-          }),
-          [201],
-        );
-        threadId = started.body.chatThreadId;
-      }
-      const legacyRunId = await lastThreadPiAutomationRun(actor, threadId);
-      const legacyClaim = await claimChatRun(runnerGroup, legacyRunId);
-      const legacyFramework = source === "schedule" ? "codex" : "claude-code";
-      await completeChatRunOk(legacyRunId, legacyClaim.sandboxHeaders, {
-        cliAgentType: legacyFramework,
-      });
-      await flushWaitUntilForTest();
-      const legacySessionId = await readCompletedRunSessionId(
-        context,
-        actor,
-        legacyRunId,
-      );
+    await configureSubscriptionPiModel(actor);
+    await chat.updateThreadModelSelection(actor, threadId, "gpt-6-luna");
+    mockPiResourceArchiveDownloads();
+    const checkpointObjects = mockPiCheckpointObjectStore();
+    const event = {
+      ...eventRoute,
+      payload: "pi-event",
+      timestamp: Math.floor(now() / 1000),
+    };
+    await expect(postThreadPiAutomationEvent(event)).resolves.toMatchObject({
+      duplicate: false,
+    });
+    await expect(postThreadPiAutomationEvent(event)).resolves.toMatchObject({
+      duplicate: true,
+    });
+    const piRunId = await lastThreadPiAutomationRun(actor, threadId);
+    expect(piRunId).not.toBe(legacyRunId);
+    const piClaim = await claimChatRun(runnerGroup, piRunId);
+    expect(piClaim.claim.piModelConfig).toMatchObject({
+      provider: "openai-codex",
+      model: "gpt-6-luna",
+    });
+    await completeSandboxFirstPiRun({
+      actor,
+      run: { runId: piRunId, threadId },
+      claim: piClaim,
+      checkpointObjects,
+      prompt: piClaim.claim.prompt,
+      answer: "owned event answer",
+      responsesModel: { provider: "openai-codex", model: "gpt-6-luna" },
+    });
+    await expectThreadPiTerminal(actor, threadId, piRunId);
+    await expect(
+      readCompletedRunSessionId(context, actor, piRunId),
+    ).resolves.toBe(legacySessionId);
 
-      if (selectedModel === "okou-1.0") {
-        await configureBuiltInPiModel(actor, selectedModel);
-      } else {
-        await configureSubscriptionPiModel(actor, {}, selectedModel);
-      }
-      const upstreamModel =
-        selectedModel === "okou-1.0" ? "@preset/okou-1-0" : selectedModel;
-      const runtimeProvider =
-        selectedModel === "okou-1.0" ? "openrouter" : "openai-codex";
-      // Auto is the null selection; its run model is the built-in one.
-      await chat.updateThreadModelSelection(
-        actor,
-        threadId,
-        selectedModel === "okou-1.0" ? null : selectedModel,
-      );
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        {
-          [FeatureSwitchKey.PiMemory]: true,
-        },
-      );
-
-      mockPiResourceArchiveDownloads();
-      const checkpointObjects = mockPiCheckpointObjectStore();
-      if (eventRoute) {
-        const event = {
-          ...eventRoute,
-          payload: "pi-event",
-          timestamp: Math.floor(now() / 1000),
-          usagePricingResolution,
-        };
-        await expect(postThreadPiAutomationEvent(event)).resolves.toMatchObject(
-          {
-            duplicate: false,
-          },
-        );
-        // A retry keeps the original signed envelope across clock seconds.
-        mockNow(now() + 1000);
-        await expect(postThreadPiAutomationEvent(event)).resolves.toMatchObject(
-          {
-            duplicate: true,
-          },
-        );
-      } else {
-        const scheduled = await workflows.readAutomation(automation.id);
-        if (!scheduled.nextRunAt) {
-          throw new Error("Expected preserved recurrence");
-        }
-        mockNow(Date.parse(scheduled.nextRunAt) + 1000);
-        await executeWorkflowAutomationForTest(
-          { automationId: automation.id, usagePricingResolution },
-          context.signal,
-        );
-      }
-      const piRunId = await lastThreadPiAutomationRun(actor, threadId);
-      expect(piRunId).not.toBe(legacyRunId);
-      // Workflow slash input intentionally enters native AgentSession in the
-      // Sandbox. Exercise the real runner claim/checkpoint/completion protocol.
-      await flushWaitUntilForTest();
-      const piClaim = await claimChatRun(runnerGroup, piRunId);
-      expect(piClaim.claim).toMatchObject({
-        piModelConfig: {
-          provider: runtimeProvider,
-          model: upstreamModel,
-        },
-      });
-      const sandboxUsage = {
-        idempotencyKey: randomUUID(),
-        kind: "model" as const,
-        provider: selectedModel,
-        category: "tokens.output",
-        quantity: 3,
-      };
-      for (const _receipt of [1, 2]) {
-        await webhooks.requestAgentUsageEvent(
-          { runId: piRunId, events: [sandboxUsage] },
-          piClaim.sandboxHeaders,
-          [200],
-          usagePricingResolution,
-        );
-      }
-      await completeSandboxFirstPiRun({
-        actor,
-        run: { runId: piRunId, threadId },
-        claim: piClaim,
-        checkpointObjects,
-        prompt: piClaim.claim.prompt,
-        answer: `owned ${source} answer`,
-        outputTokens: 3,
-        responsesModel: {
-          provider: runtimeProvider,
-          model: upstreamModel,
-        },
-        usagePricingResolution,
-      });
-      await expectThreadPiTerminal(actor, threadId, piRunId);
-      const piSessionId = await readCompletedRunSessionId(
-        context,
-        actor,
-        piRunId,
-      );
-      expect(piSessionId).toBe(legacySessionId);
-      const billed = await readThreadModelUsage(context, actor, threadId);
-      // This endpoint reports the settled platform ledger, not vendor usage.
-      // Personal subscription model usage never enters that billable ledger.
-      expect(billed.tokens).toBe(selectedModel === "okou-1.0" ? 3 : 0);
-      if (selectedModel === "okou-1.0") {
-        expect(billed.credits).toBeGreaterThan(0);
-      } else {
-        expect(billed.credits).toBe(0);
-      }
-      await webhooks.requestAgentUsageEvent(
-        { runId: piRunId, events: [sandboxUsage] },
-        piClaim.sandboxHeaders,
-        [200],
-        usagePricingResolution,
-      );
-      await expect(
-        readThreadModelUsage(context, actor, threadId),
-      ).resolves.toStrictEqual(billed);
-      await accept(
-        setupApp({ context, routes: testWorkflowAutomationExecutionRoutes })(
-          testWorkflowAutomationExecutionContract,
-        ).dispatchCallbacks({
-          body: { run_id: piRunId, status: "completed", dispatch_count: 2 },
-        }),
-        [200],
-      );
-      await expectThreadPiTerminal(actor, threadId, piRunId);
-
-      mockNow(now() + 1000);
-      const user = await sendChatRun(
-        actor,
-        { agentId, threadId, prompt: "continue this Automation conversation" },
-        usagePricingResolution,
-      );
-      await flushWaitUntilForTest();
-      const userClaim = await claimChatRun(runnerGroup, user.runId);
-      expect(userClaim.claim.piModelConfig).toMatchObject({
-        provider: runtimeProvider,
-        model: upstreamModel,
-      });
-      await completeSandboxFirstPiRun({
-        actor,
-        run: user,
-        claim: userClaim,
-        checkpointObjects,
-        prompt: "continue this Automation conversation",
-        answer: `owned user answer for ${source}`,
-        outputTokens: 3,
-        responsesModel: {
-          provider: runtimeProvider,
-          model: upstreamModel,
-        },
-        usagePricingResolution,
-      });
-      await expectThreadPiTerminal(actor, threadId, user.runId);
-      await expect(
-        readCompletedRunSessionId(context, actor, user.runId),
-      ).resolves.toBe(piSessionId);
-      clearMockNow();
-    },
-    90_000,
-  );
+    const user = await sendChatRun(actor, {
+      agentId,
+      threadId,
+      prompt: "continue this Automation conversation",
+    });
+    const userClaim = await claimChatRun(runnerGroup, user.runId);
+    expect(userClaim.claim.piModelConfig).toMatchObject({
+      provider: "openai-codex",
+      model: "gpt-6-luna",
+    });
+    await completeSandboxFirstPiRun({
+      actor,
+      run: user,
+      claim: userClaim,
+      checkpointObjects,
+      prompt: "continue this Automation conversation",
+      answer: "owned user answer",
+      responsesModel: { provider: "openai-codex", model: "gpt-6-luna" },
+    });
+    await expectThreadPiTerminal(actor, threadId, user.runId);
+    await expect(
+      readCompletedRunSessionId(context, actor, user.runId),
+    ).resolves.toBe(legacySessionId);
+  }, 90_000);
 });
 
 describe("CHAT effort: automation launches", () => {

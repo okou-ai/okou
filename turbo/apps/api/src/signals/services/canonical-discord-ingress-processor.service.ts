@@ -7,7 +7,7 @@ import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-r
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
 import { command } from "ccstate";
-import { and, asc, eq, gte, inArray, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gte, lt, lte, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
@@ -1283,21 +1283,14 @@ export const processCanonicalDiscordIngress$ = command(
   },
 );
 
-const drainCanonicalDiscordIngress$ = command(
-  async (
-    { set },
-    connectionIds: readonly string[] | undefined,
-    signal: AbortSignal,
-  ): Promise<number> => {
+export const drainStaleCanonicalDiscordIngress$ = command(
+  async ({ set }, signal: AbortSignal): Promise<number> => {
     // Without app configuration, neither exhaust attempts nor send notices.
     if (!getDiscordAppConfig()) {
       return 0;
     }
     const db = set(writeDb$);
     const currentTime = nowDate();
-    const scope = connectionIds
-      ? inArray(discordChatIngress.connectionId, [...connectionIds])
-      : undefined;
     const exhausted = await db
       .select({
         id: discordChatIngress.id,
@@ -1307,7 +1300,6 @@ const drainCanonicalDiscordIngress$ = command(
       .from(discordChatIngress)
       .where(
         and(
-          scope,
           eq(discordChatIngress.status, "processing"),
           lt(
             discordChatIngress.claimedAt,
@@ -1342,7 +1334,7 @@ const drainCanonicalDiscordIngress$ = command(
     const rows = await db
       .select({ id: discordChatIngress.id })
       .from(discordChatIngress)
-      .where(and(scope, claimableIngress(currentTime)))
+      .where(claimableIngress(currentTime))
       .orderBy(
         asc(discordChatIngress.updatedAt),
         asc(discordChatIngress.createdAt),
@@ -1362,25 +1354,5 @@ const drainCanonicalDiscordIngress$ = command(
       }
     }
     return processed;
-  },
-);
-
-export const drainStaleCanonicalDiscordIngress$ = command(
-  ({ set }, signal: AbortSignal): Promise<number> => {
-    return set(drainCanonicalDiscordIngress$, undefined, signal);
-  },
-);
-
-/** The scoped test driver runs the same recovery path for its owned connections. */
-export const drainCanonicalDiscordIngressForConnections$ = command(
-  (
-    { set },
-    connectionIds: readonly string[],
-    signal: AbortSignal,
-  ): Promise<number> => {
-    if (connectionIds.length === 0) {
-      return Promise.resolve(0);
-    }
-    return set(drainCanonicalDiscordIngress$, connectionIds, signal);
   },
 );

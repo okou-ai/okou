@@ -26,7 +26,6 @@ import { bankingRoutes } from "../banking";
 const context = testContext();
 
 const UNATTENDED_TRIGGER_SOURCES = [
-  "automation-schedule",
   "automation-event",
 ] as const satisfies readonly TriggerSource[];
 
@@ -96,17 +95,15 @@ async function createBankingRun(args: BankingFixtureArgs = {}) {
     visibility: "private",
   });
 
-  // Unattended runs fire through the real schedule or webhook automation.
+  // Event automations fire through the signed production webhook.
   const workflows = createWorkflowsBddApi(context);
   const run =
-    args.triggerSource === "automation-schedule"
-      ? await workflows.startScheduledAutomationRun(actor, agent.agentId)
-      : args.triggerSource === "automation-event"
-        ? await workflows.startEventAutomationRun(actor, agent.agentId)
-        : await api.createThreadRun(actor, {
-            agentId: agent.agentId,
-            prompt: "banking precondition",
-          });
+    args.triggerSource === "automation-event"
+      ? await workflows.startEventAutomationRun(actor, agent.agentId)
+      : await api.createThreadRun(actor, {
+          agentId: agent.agentId,
+          prompt: "banking precondition",
+        });
 
   return {
     actor: { ...actor, orgId: actor.orgId },

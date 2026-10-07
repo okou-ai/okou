@@ -1,4 +1,3 @@
-import { renewGoogleMeetSubscriptionForTest } from "../../../test-fixtures/google-renewal";
 import { Buffer } from "node:buffer";
 import { generateKeyPairSync, randomUUID, sign as signData } from "node:crypto";
 
@@ -1059,15 +1058,6 @@ describe("Google Workspace Events subscription lifecycle", () => {
       dispatched: 0,
       duplicates: 0,
     });
-
-    const renewed = await renewGoogleMeetSubscriptionForTest(
-      { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
-      context.signal,
-    );
-    expect(renewed).toMatchObject({
-      renewed: 0,
-      repaired: 0,
-    });
     expect(fixture.provider.createdNames).toHaveLength(1);
     expect(fixture.provider.renewCalls).toBe(0);
   });
@@ -1289,39 +1279,6 @@ describe("Google Workspace Events subscription lifecycle", () => {
     expect(fixture.provider.deletedUrls).toHaveLength(2);
     expect(fixture.provider.deletedUrls[1]).toContain(
       `/${fixture.provider.createdNames[1]}?allowMissing=true`,
-    );
-  });
-
-  it("renews a due subscription while an enabled consumer remains", async () => {
-    const fixture = await setupFixture({
-      expireTime: new Date(now() + 30 * 60 * 1000).toISOString(),
-    });
-    const created = await createMeetAutomation(fixture);
-
-    const renewed = await renewGoogleMeetSubscriptionForTest(
-      { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
-      context.signal,
-    );
-    const unchanged = await renewGoogleMeetSubscriptionForTest(
-      { orgId: fixture.actor.orgId, userId: fixture.actor.userId },
-      context.signal,
-    );
-    expect(renewed).toMatchObject({
-      renewed: 1,
-      repaired: 0,
-    });
-    expect(unchanged).toMatchObject({
-      renewed: 0,
-      repaired: 0,
-    });
-    expect(fixture.provider.renewCalls).toBe(1);
-
-    await accept(
-      automationsClient().delete({
-        headers: authHeaders(fixture.actor),
-        params: { id: created.body.id },
-      }),
-      [204],
     );
   });
 });

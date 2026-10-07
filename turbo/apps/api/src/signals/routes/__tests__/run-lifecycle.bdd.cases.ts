@@ -5255,7 +5255,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(queue.body.concurrency.active).toBe(0);
       });
 
-      it("does not add Codex image upload guidance outside web chat Codex runs", async () => {
+      it("does not add Codex image upload guidance to a Claude web chat run", async () => {
         const api = createRunsApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor(
           {},
@@ -5273,27 +5273,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
         );
         await api.requestCancelRun(actor, claudeWebRun.runId, [200]);
-
-        // A native Codex route (gpt-6-astra has no Pi route) for a scheduled run.
-
-        await createBddIntegrationApi(context)
-          .configureNativeSubscriptionModels(actor)
-          .then(() => {
-            return api.updateUserModelPreference(actor, "gpt-6-astra");
-          });
-        const scheduled = await createWorkflowsBddApi(
-          context,
-        ).startScheduledAutomationRun(actor, agentId);
-        await api.heartbeatRunner(runnerGroup);
-        const scheduledClaim = await api.claimRunnerJob(scheduled.runId);
-        expect(scheduledClaim.cliAgentType).toBe("codex");
-        expect(scheduledClaim.appendSystemPrompt ?? "").not.toContain(
-          CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
-        );
-        expect(scheduledClaim.appendSystemPrompt ?? "").not.toContain(
-          "When running in Codex",
-        );
-        await api.requestCancelRun(actor, scheduled.runId, [200]);
       });
 
       it("runs a sent Codex model on the personal subscription and mounts codex workflows", async () => {

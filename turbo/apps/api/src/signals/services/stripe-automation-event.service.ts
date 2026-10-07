@@ -966,7 +966,6 @@ function deliveryClaimCondition(delivery: StripeWorkflowDeliveryRow) {
 async function claimDueDelivery(
   args: {
     readonly db: Db;
-    readonly automationId?: string;
   },
   signal: AbortSignal,
 ): Promise<StripeWorkflowDeliveryRow | null> {
@@ -977,9 +976,6 @@ async function claimDueDelivery(
       .from(stripeWorkflowDeliveries)
       .where(
         and(
-          args.automationId === undefined
-            ? undefined
-            : eq(stripeWorkflowDeliveries.automationId, args.automationId),
           eq(stripeWorkflowDeliveries.status, "pending"),
           lte(stripeWorkflowDeliveries.nextAttemptAt, currentTime),
           or(
@@ -1434,7 +1430,6 @@ async function processClaimedDelivery(
 async function executeDueStripeAutomationEvents(
   args: {
     readonly db: Db;
-    readonly automationId?: string;
     readonly startRun: (
       input: RunWorkflowAutomationNowArgs,
       signal: AbortSignal,
@@ -1502,25 +1497,6 @@ export const executeDueStripeAutomationEvents$ = command(
     return await executeDueStripeAutomationEvents(
       {
         db: set(writeDb$),
-        startRun: (input, childSignal) => {
-          return set(runWorkflowAutomationNow$, input, childSignal);
-        },
-      },
-      signal,
-    );
-  },
-);
-
-export const executeDueStripeAutomationEventsForAutomation$ = command(
-  async (
-    { set },
-    automationId: string,
-    signal: AbortSignal,
-  ): Promise<ExecuteDueStripeAutomationEventsResult> => {
-    return await executeDueStripeAutomationEvents(
-      {
-        db: set(writeDb$),
-        automationId,
         startRun: (input, childSignal) => {
           return set(runWorkflowAutomationNow$, input, childSignal);
         },

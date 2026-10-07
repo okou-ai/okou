@@ -137,18 +137,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
       .optional(),
   }),
   z.object({
-    action: z.literal("seed-pending-artifact-catalog-file"),
-    user_id: z.string(),
-    org_id: z.string(),
-    filename: z.string(),
-    url: z.url(),
-  }),
-  z.object({
-    action: z.literal("set-browser-tab-snapshot-as-previous-api"),
-    thread_id: z.uuid(),
-    tab_urls: z.array(z.string().max(8192)).max(50),
-  }),
-  z.object({
     action: z.literal("set-runner-job-context-profile-as-previous-api"),
     run_id: z.uuid(),
     profile: z.string(),
@@ -288,7 +276,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
     })
     .nullable()
     .optional(),
-  file_id: z.uuid().optional(),
 });
 
 export const testRuntimeStateContract = c.router({

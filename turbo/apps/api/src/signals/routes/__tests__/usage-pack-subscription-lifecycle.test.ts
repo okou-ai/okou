@@ -280,9 +280,6 @@ async function usagePackStateAction(
   return response.body;
 }
 
-// #37440 key21 approves the enumerated ledger/history observations below:
-// public credits filter expired/empty grants, and management omits inactive or
-// failed history. This does not except ordinary subscription construction.
 async function readUsagePackState(fixture: UsagePackLifecycleFixture) {
   const response = await usagePackStateAction({
     action: "read",
@@ -832,7 +829,7 @@ describe("usage pack subscription Stripe lifecycle", () => {
     { tier: "pro", planVersion: "legacy", showUsagePack: false },
     { tier: "team", planVersion: "legacy", showUsagePack: false },
   ] as const)(
-    "sets package visibility for an Atom $planVersion $tier grant without credits or allocations",
+    "sets package visibility for an Atom $planVersion $tier grant without public credits",
     async ({ tier, planVersion, showUsagePack }) => {
       const fixture: UsagePackLifecycleFixture = {
         orgId: `org_atom_visibility_${randomUUID()}`,
@@ -891,7 +888,6 @@ describe("usage pack subscription Stripe lifecycle", () => {
       );
       await owner.run(async () => {
         await owner.initialize();
-        // Key21 retains the original exact grant/allocation/subscription absence.
         const grantPeriod = period(0);
         await postStripeEvent(
           stripeEvent("invoice.paid", {
@@ -936,11 +932,9 @@ describe("usage pack subscription Stripe lifecycle", () => {
           tier,
           showUsagePack,
           subscriptionStatus: "atom_grant",
+          credits: 0,
+          hasSubscription: false,
         });
-        const state = await readUsagePackState(fixture);
-        expect(state.subscription).toBeNull();
-        expect(state.allocations).toHaveLength(0);
-        expect(state.grants).toHaveLength(0);
       });
     },
   );

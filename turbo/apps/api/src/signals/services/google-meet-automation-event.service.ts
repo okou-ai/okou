@@ -2257,19 +2257,6 @@ async function renewGoogleMeetSubscriptionScopes(
   return { renewed, repaired, failed };
 }
 
-export const renewGoogleMeetSubscriptionScope$ = command(
-  async (
-    { set },
-    scope: GoogleMeetSubscriptionOwnerScope,
-    signal: AbortSignal,
-  ): Promise<GoogleMeetSubscriptionRenewalSummary> => {
-    return await renewGoogleMeetSubscriptionScopes(
-      { db: set(writeDb$), scopes: [scope] },
-      signal,
-    );
-  },
-);
-
 export const renewGoogleWorkspaceEventSubscriptions$ = command(
   async ({ set }, signal: AbortSignal) => {
     const topicResult = googleWorkspaceEventsTopicName();

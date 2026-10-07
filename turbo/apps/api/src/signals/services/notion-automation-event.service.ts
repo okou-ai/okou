@@ -2168,7 +2168,6 @@ const loadDueNotionPendingEvents$ = command(
     { set },
     args: {
       readonly currentTime: Date;
-      readonly automationId?: string;
     },
     signal: AbortSignal,
   ): Promise<readonly NotionPendingRow[]> => {
@@ -2178,9 +2177,6 @@ const loadDueNotionPendingEvents$ = command(
       .from(notionWorkflowPendingEvents)
       .where(
         and(
-          args.automationId === undefined
-            ? undefined
-            : eq(notionWorkflowPendingEvents.automationId, args.automationId),
           eq(notionWorkflowPendingEvents.status, "pending"),
           lte(notionWorkflowPendingEvents.runAfter, args.currentTime),
         ),
@@ -2195,16 +2191,12 @@ const loadDueNotionPendingEvents$ = command(
 const executeDueNotionAutomationEventsBatch$ = command(
   async (
     { set },
-    args: {
-      readonly automationId?: string;
-    },
     signal: AbortSignal,
   ): Promise<ExecuteDueNotionEventsResult> => {
     const dueEvents = await set(
       loadDueNotionPendingEvents$,
       {
         currentTime: nowDate(),
-        automationId: args.automationId,
       },
       signal,
     );
@@ -3206,20 +3198,6 @@ export const executeDueNotionAutomationEvents$ = command(
     { set },
     signal: AbortSignal,
   ): Promise<ExecuteDueNotionEventsResult> => {
-    return await set(executeDueNotionAutomationEventsBatch$, {}, signal);
-  },
-);
-
-export const executeDueNotionAutomationEventsForAutomation$ = command(
-  async (
-    { set },
-    automationId: string,
-    signal: AbortSignal,
-  ): Promise<ExecuteDueNotionEventsResult> => {
-    return await set(
-      executeDueNotionAutomationEventsBatch$,
-      { automationId },
-      signal,
-    );
+    return await set(executeDueNotionAutomationEventsBatch$, signal);
   },
 );

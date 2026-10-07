@@ -2595,22 +2595,3 @@ export const renewGmailWatches$ = command(
     };
   },
 );
-
-export const renewGmailWatchScope$ = command(
-  async (
-    { set },
-    emailAddress: string,
-    topicName: string,
-    signal: AbortSignal,
-  ) => {
-    const currentTime = nowDate();
-    return await set(
-      renewGmailPhysicalScopes$,
-      {
-        scopes: [{ emailAddress, topicName }],
-        renewBefore: new Date(currentTime.getTime() + WATCH_RENEWAL_WINDOW_MS),
-      },
-      signal,
-    );
-  },
-);

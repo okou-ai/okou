@@ -191,7 +191,6 @@ const DUE_MODE_LIMIT: Readonly<Record<DueMode, number>> = Object.freeze({
 interface DueSelection {
   readonly at: Date;
   readonly automationId?: string;
-  readonly workflowId?: string;
   readonly mode?: DueMode;
 }
 
@@ -309,9 +308,6 @@ const dueWorkflowAutomationRows$ = command(
           args.automationId === undefined
             ? undefined
             : eq(workflowAutomations.id, args.automationId),
-          args.workflowId === undefined
-            ? undefined
-            : eq(workflowAutomations.workflowId, args.workflowId),
           eq(workflowAutomations.enabled, true),
           eq(workflowAutomations.kind, "schedule"),
           lte(workflowAutomations.nextRunAt, args.at),
@@ -439,7 +435,6 @@ const retireDepartedOwner$ = command(
 
 type WorkflowPollerArgs = {
   readonly automationId?: string;
-  readonly workflowId?: string;
 };
 
 type PollCounters = { executed: number; skipped: number; expired: number };
@@ -450,7 +445,6 @@ const loadDueWorkflowRows$ = command(
     args: {
       readonly currentTime: Date;
       readonly automationId?: string;
-      readonly workflowId?: string;
       readonly expiryEnabled: boolean;
     },
     signal: AbortSignal,
@@ -458,7 +452,6 @@ const loadDueWorkflowRows$ = command(
     const common = {
       at: args.currentTime,
       automationId: args.automationId,
-      workflowId: args.workflowId,
     };
     if (!args.expiryEnabled) {
       const expired = await set(
@@ -672,7 +665,6 @@ const executeDueWorkflowAutomationsImpl$ = command(
       {
         currentTime,
         automationId: args.automationId,
-        workflowId: args.workflowId,
         expiryEnabled,
       },
       signal,
@@ -777,20 +769,6 @@ const executeDueWorkflowAutomationsImpl$ = command(
 export const executeDueWorkflowAutomations$ = command(
   async ({ set }, signal: AbortSignal): Promise<ExecuteResult> => {
     return await set(executeDueWorkflowAutomationsImpl$, {}, signal);
-  },
-);
-
-// The test-only route exercises the same poller lanes without scanning another
-// suite's concurrently due automations. Production ticks remain unscoped.
-export const executeDueWorkflowAutomationsForWorkflow$ = command(
-  async ({ set }, workflowId: string, signal: AbortSignal) => {
-    return await set(
-      executeDueWorkflowAutomationsImpl$,
-      {
-        workflowId,
-      },
-      signal,
-    );
   },
 );
 

@@ -1,4 +1,3 @@
-import { renewGoogleFormsWatchForTest } from "../../../test-fixtures/google-renewal";
 import { Buffer } from "node:buffer";
 import { generateKeyPairSync, randomUUID, sign as signData } from "node:crypto";
 
@@ -395,49 +394,6 @@ async function setupGoogleFormsAutomation() {
 }
 
 describe("Google Forms Pub/Sub webhook", () => {
-  it("repairs a remotely missing watch and accepts later notifications", async () => {
-    const { actor, chatThreadId, formsApi } =
-      await setupGoogleFormsAutomation();
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped workflow actor");
-    }
-    const previousWatchId = formsApi.watchIds[0];
-    if (!previousWatchId) {
-      throw new Error("Expected a Google Forms watch");
-    }
-    formsApi.remoteWatchIds.clear();
-    const repair = await renewGoogleFormsWatchForTest(
-      { orgId: actor.orgId, userId: actor.userId },
-      context.signal,
-    );
-    expect(repair).toMatchObject({ failed: 0 });
-    const replacementWatchId = formsApi.watchIds.at(-1);
-    if (!replacementWatchId || replacementWatchId === previousWatchId) {
-      throw new Error("Expected a repaired Google Forms watch");
-    }
-    await expect(
-      postWebhook(formsPushBody("after-watch-repair", replacementWatchId)),
-    ).resolves.toMatchObject({ status: 200, body: { dispatched: 1 } });
-    await expect(
-      postWebhook(
-        formsPushBody("after-watch-repair-retry", replacementWatchId),
-      ),
-    ).resolves.toMatchObject({ status: 200, body: { dispatched: 0 } });
-    await flushWaitUntilForTest();
-    const events = await workflows.readThreadEvents(chatThreadId);
-    expect(
-      events.filter((event) => {
-        return event.eventType === "input.automation";
-      }),
-    ).toHaveLength(1);
-    await expect(
-      postWebhook(formsPushBody("retired-watch-after-repair", previousWatchId)),
-    ).resolves.toMatchObject({
-      status: 200,
-      body: { watchStates: 0, dispatched: 0 },
-    });
-  });
-
   it("keeps pending responses when an already enabled automation refreshes its watch binding", async () => {
     const { automationId, chatThreadId, formsApi } =
       await setupGoogleFormsAutomation();

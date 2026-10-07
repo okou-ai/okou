@@ -354,17 +354,11 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     );
   });
 
-  it("reads unattended automation trigger sources from logs", async () => {
+  it("reads the signed event automation trigger source from logs", async () => {
     // Webhook automations require a Team workspace.
     const actor = await entitledActor(undefined, "team");
     const compose = await createThreadAgent(actor, "bdd-trigger-sources");
 
-    // Each run fires through the real schedule or webhook automation entry.
-    const scheduled = await workflows.startScheduledAutomationRun(
-      actor,
-      compose.agentId,
-    );
-    await api.requestCancelRun(actor, scheduled.runId, [200]);
     const event = await workflows.startEventAutomationRun(
       actor,
       compose.agentId,
@@ -372,7 +366,6 @@ describe("RUN-03/RUN-04: direct run list, detail, and queue reads", () => {
     await api.requestCancelRun(actor, event.runId, [200]);
 
     const sourceRuns = [
-      { runId: scheduled.runId, triggerSource: "automation-schedule" },
       { runId: event.runId, triggerSource: "automation-event" },
     ] as const;
     const triggerSources = sourceRuns.map((run) => {
@@ -3063,7 +3056,7 @@ describe("RUN-04: agent run telemetry families", () => {
 
 describe("RUN-04/OPS-01: agent run logs", () => {
   async function setupRunLogFixture() {
-    const actor = await entitledActor();
+    const actor = await entitledActor(undefined, "team");
     const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
     await bdd.completeOnboarding(member);
     await api.ensurePersonalSubscriptionModel(member);
@@ -3102,8 +3095,8 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       prompt: "web run on agent two",
     });
     await api.requestCancelRun(actor, secondAgentRun.runId, [200]);
-    // A real schedule automation run supplies the second log source.
-    const automationRun = await workflows.startScheduledAutomationRun(
+    // A signed event automation supplies the second public log source.
+    const automationRun = await workflows.startEventAutomationRun(
       actor,
       automationCompose.agentId,
     );
@@ -3171,11 +3164,11 @@ describe("RUN-04/OPS-01: agent run logs", () => {
     expect(automationEntry).toMatchObject({
       agentId: automationCompose.agentId,
       displayName: "BDD logs automation agent",
-      triggerSource: "automation-schedule",
+      triggerSource: "automation-event",
     });
     expect(listed.body.filters.statuses).toContain("cancelled");
     expect([...listed.body.filters.sources].sort()).toStrictEqual([
-      "automation-schedule",
+      "automation-event",
       "web",
     ]);
     expect(listed.body.filters.agents).toContain(agentOne.agentId);

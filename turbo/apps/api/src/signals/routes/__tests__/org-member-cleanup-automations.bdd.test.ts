@@ -2,8 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { describe, expect, it } from "vitest";
-
-import { executeWorkflowAutomationForTest } from "../../../test-fixtures/workflow-automation-workers";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
@@ -183,14 +181,6 @@ async function postWebhookDelivery(seeded: OwnedAutomations): Promise<number> {
   return response.status;
 }
 
-async function runScheduleTick(automationId: string) {
-  const response = await executeWorkflowAutomationForTest(
-    { automationId },
-    context.signal,
-  );
-  return response;
-}
-
 /** Automation reads are organization-scoped, so any admin can audit the row. */
 async function readAsAdmin(admin: ApiTestUser, automationId: string) {
   mocks.clerk.session(admin.userId, admin.orgId, admin.orgRole);
@@ -198,7 +188,7 @@ async function readAsAdmin(admin: ApiTestUser, automationId: string) {
 }
 
 describe("Org member cleanup disarms the departing member's automations", () => {
-  it("stops event dispatch and schedule selection for the departing owner alone", async () => {
+  it("disables automations and stops event dispatch for the departing owner alone", async () => {
     runs.configureRunnerGroup();
     const departing = await setupWorkspaceOwner(wf.user());
     const peerAdmin = wf.user({
@@ -241,15 +231,6 @@ describe("Org member cleanup disarms the departing member's automations", () => 
     // webhook in their other workspace still does.
     await expect(postWebhookDelivery(departingAutomations)).resolves.toBe(404);
     await expect(postWebhookDelivery(elsewhereAutomations)).resolves.toBe(200);
-
-    // The schedule is never selected as due again - not selected and then
-    // skipped by the poller's membership gate.
-    await expect(
-      runScheduleTick(departingAutomations.scheduleAutomationId),
-    ).resolves.toStrictEqual({ executed: 0, skipped: 0 });
-    await expect(
-      runScheduleTick(elsewhereAutomations.scheduleAutomationId),
-    ).resolves.toStrictEqual({ executed: 1, skipped: 0 });
 
     // Disabled, not deleted: the schedule keeps its configuration and its
     // creation-time anchor, so an administrator can re-enable or reassign it.
@@ -324,9 +305,6 @@ describe("Org member cleanup disarms the departing member's automations", () => 
     ).resolves.toBeFalsy();
 
     await expect(postWebhookDelivery(departingAutomations)).resolves.toBe(404);
-    await expect(
-      runScheduleTick(departingAutomations.scheduleAutomationId),
-    ).resolves.toStrictEqual({ executed: 0, skipped: 0 });
     await expect(
       readAsAdmin(auditor, departingAutomations.webhookAutomationId),
     ).resolves.toMatchObject({

@@ -7,7 +7,6 @@ import { describe, expect, it } from "vitest";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import { reconcileArtifactCatalogFilesForTest } from "../../../test-fixtures/artifact-catalog-reconcile";
 import { testContext } from "../../../__tests__/test-context";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -24,9 +23,7 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { seedPendingArtifactCatalogFile } from "./helpers/runtime-state";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -315,25 +312,6 @@ async function uploadFile(args: {
   return { fileId, url: completed.body.url, threadId: run.threadId };
 }
 
-async function seedPendingCatalogFile(args: {
-  readonly owner: CatalogActor;
-  readonly filename: string;
-  readonly url: string;
-}): Promise<string> {
-  if (!args.owner.actor.orgId) {
-    throw new Error("Expected artifact catalog actor to have an org");
-  }
-
-  // The guarded test route keeps the explicit file + queue transaction but
-  // skips immediate sync to exercise the public catalog's recovery behavior.
-  return await seedPendingArtifactCatalogFile(context, {
-    userId: args.owner.actor.userId,
-    orgId: args.owner.actor.orgId,
-    filename: args.filename,
-    url: args.url,
-  });
-}
-
 async function publishHostedSite(args: {
   readonly owner: CatalogActor;
   readonly site: string;
@@ -608,17 +586,18 @@ describe("GET /api/artifacts/catalog", () => {
 
   it("lists the source URL for a video without a poster", async () => {
     const owner = await catalogActor("Artifact catalog video source owner");
-    // A real schedule-triggered workflow run.
-    const run = await createWorkflowsBddApi(
-      context,
-    ).startScheduledAutomationRun(owner.actor, owner.agentId);
+    const run = await sendChatRun(owner.actor, {
+      agentId: owner.agentId,
+      prompt: "Upload an artifact through the Runner protocol",
+    });
+    const { claim } = await claimChatRun(owner.runnerGroup, run.runId);
     const fileId = randomUUID();
     stageUploadObject(
       `artifacts/${owner.actor.userId}/${fileId}/source-fallback.webm`,
       1024,
     );
     const completed = await chat.completeUploadWithBearer(
-      `Bearer ${scopedOkouToken(owner, run.runId, ["file:write"])}`,
+      `Bearer ${okouTokenFromClaim(claim)}`,
       { id: fileId, contentType: "video/webm" },
       [200],
     );
@@ -636,72 +615,6 @@ describe("GET /api/artifacts/catalog", () => {
         title: "source-fallback.webm",
       }),
     ]);
-  }, 180_000);
-
-  it("reconciles a pending file when immediate catalog sync is deferred", async () => {
-    const owner = await catalogActor("Artifact catalog promotion owner");
-    const url = `https://files.okou.test/${randomUUID()}/legacy-output.zip`;
-    const fileId = await seedPendingCatalogFile({
-      owner,
-      filename: "legacy-output.zip",
-      url,
-    });
-
-    const catalog = await chat.listArtifactCatalog(owner.actor);
-    expect(catalog.artifacts).toStrictEqual([
-      expect.objectContaining({
-        kind: "file",
-        title: "legacy-output.zip",
-      }),
-    ]);
-
-    const artifactId = catalog.artifacts[0]?.id;
-    if (!artifactId) {
-      throw new Error("Expected the reconciled artifact to be listed");
-    }
-    const detail = await chat.getArtifactCatalogEntry(owner.actor, artifactId);
-    if (detail.kind !== "file") {
-      throw new Error("Expected the reconciled artifact to be a file");
-    }
-    expect(detail.file).toMatchObject({ id: fileId, url });
-  }, 180_000);
-
-  it("bounds list repair and recovers the remaining backlog through the scoped worker", async () => {
-    const owner = await catalogActor("Artifact catalog backlog owner");
-    const fileIds: string[] = [];
-    for (let index = 0; index < 21; index += 1) {
-      fileIds.push(
-        await seedPendingCatalogFile({
-          owner,
-          filename: `backlog-${index}.zip`,
-          url: `https://files.okou.test/${randomUUID()}/backlog-${index}.zip`,
-        }),
-      );
-    }
-
-    const firstPage = await chat.listArtifactCatalog(owner.actor);
-    expect(firstPage.artifacts).toHaveLength(20);
-
-    // The existing fixture leaves durable pending rows; scope production
-    // recovery to IDs owned by this case instead of a global scan.
-    const recovery = await reconcileArtifactCatalogFilesForTest(
-      fileIds,
-      context.signal,
-    );
-    expect(recovery).toStrictEqual({
-      processed: 1,
-      failed: 0,
-    });
-
-    const recovered = await chat.listArtifactCatalog(owner.actor);
-    expect(recovered.artifacts).toHaveLength(21);
-    expect(
-      new Set(
-        recovered.artifacts.map((artifact) => {
-          return artifact.title;
-        }),
-      ).size,
-    ).toBe(21);
   }, 180_000);
 
   it("keeps owned files and catalog identity after deleting the backing agent", async () => {
@@ -759,11 +672,6 @@ describe("GET /api/artifacts/catalog", () => {
       if (!artifactId) {
         throw new Error("Expected a retained artifact after Agent deletion");
       }
-      const pendingId = await seedPendingCatalogFile({
-        owner,
-        filename: "pending-account-report.txt",
-        url: `https://files.okou.test/${randomUUID()}/pending-account-report.txt`,
-      });
       webhooks.configureClerkWebhookSecret();
       webhooks.verifyNextClerkWebhook({
         type: kind === "user" ? "user.deleted" : "organization.deleted",
@@ -772,7 +680,6 @@ describe("GET /api/artifacts/catalog", () => {
       await webhooks.requestClerkWebhook("{}", {}, [200]);
       await flushWaitUntilForTest();
       await chat.requestWebFileUrl(owner.actor, uploaded.fileId, [404]);
-      await chat.requestWebFileUrl(owner.actor, pendingId, [404]);
       await chat.requestArtifactCatalogEntry(owner.actor, artifactId, [404]);
       const unrelatedFile = await chat.resolveWebFileUrl(
         outsider.actor,
@@ -1080,19 +987,20 @@ describe("GET /api/artifacts/catalog", () => {
     expect(new Set(collected).size).toBe(created.length);
   }, 180_000);
 
-  it("keeps a workflow run artifact under the owning Okou user", async () => {
+  it("keeps a Runner-uploaded artifact under the owning Okou user", async () => {
     const owner = await catalogActor("Artifact catalog workflow owner");
-    // A real schedule-triggered workflow run.
-    const run = await createWorkflowsBddApi(
-      context,
-    ).startScheduledAutomationRun(owner.actor, owner.agentId);
+    const run = await sendChatRun(owner.actor, {
+      agentId: owner.agentId,
+      prompt: "Upload an artifact through the Runner protocol",
+    });
+    const { claim } = await claimChatRun(owner.runnerGroup, run.runId);
     const fileId = randomUUID();
     stageUploadObject(
       `artifacts/${owner.actor.userId}/${fileId}/workflow-output.txt`,
       128,
     );
     await chat.completeUploadWithBearer(
-      `Bearer ${scopedOkouToken(owner, run.runId, ["file:write"])}`,
+      `Bearer ${okouTokenFromClaim(claim)}`,
       { id: fileId, contentType: "text/plain" },
       [200],
     );

@@ -11,8 +11,6 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { HttpResponse, http } from "msw";
 import { randomUUID } from "node:crypto";
-
-import { executeWorkflowAutomationForTest } from "../../../../test-fixtures/workflow-automation-workers";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
@@ -288,51 +286,6 @@ export function createWorkflowsBddApi(context: TestContext) {
         [200],
       );
       return response.body;
-    },
-
-    /**
-     * Starts a real schedule-triggered run: a due loop automation on a new
-     * workflow, executed through the scoped scheduler worker. The
-     * fired run's id is read from the automation's thread.
-     */
-    async startScheduledAutomationRun(
-      actor: ApiTestUser,
-      agentId: string,
-    ): Promise<{ readonly runId: string; readonly threadId: string }> {
-      const workflowName = `scheduled-${randomUUID().slice(0, 8)}`;
-      const workflowId = await api.createWorkflow(actor, {
-        agentId,
-        name: workflowName,
-      });
-      const created = await accept(
-        setupApp({ context, routes: workflowAutomationsRoutes })(
-          workflowAutomationsContract,
-        ).create({
-          headers: authenticate(actor),
-          params: { workflowId },
-          body: { schedule: { type: "loop", intervalSeconds: 60 } },
-        }),
-        [201],
-      );
-      await executeWorkflowAutomationForTest(
-        { automationId: created.body.id },
-        context.signal,
-      );
-      // The tick only enqueues; its background pick finishes here.
-      await flushWaitUntilForTest();
-      authenticate(actor);
-      const automation = await api.readAutomation(created.body.id);
-      if (!automation.chatThreadId) {
-        throw new Error("Expected the automation to bind a chat thread");
-      }
-      const events = await api.readThreadEvents(automation.chatThreadId);
-      const fired = events.find((event) => {
-        return event.eventType === "input.prompt" && event.runId !== undefined;
-      });
-      if (!fired?.runId) {
-        throw new Error("Expected the automation to start a run");
-      }
-      return { runId: fired.runId, threadId: automation.chatThreadId };
     },
 
     /**

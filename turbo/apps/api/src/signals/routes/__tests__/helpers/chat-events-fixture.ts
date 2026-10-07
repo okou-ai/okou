@@ -1108,7 +1108,7 @@ export function createChatEventsFixture(context: TestContext) {
     readonly webhookSecret: string;
     readonly payload: string;
     readonly timestamp: number;
-    readonly usagePricingResolution: UsagePricingFixture["resolution"];
+    readonly usagePricingResolution?: UsagePricingFixture["resolution"];
   }) {
     const rawBody = JSON.stringify({ event: args.payload });
     const timestamp = args.timestamp;
@@ -1410,7 +1410,7 @@ export function createChatEventsFixture(context: TestContext) {
     readonly claim: Awaited<ReturnType<typeof claimChatRun>>;
     readonly prompt: string;
     readonly run: { readonly runId: string; readonly threadId: string };
-    readonly usagePricingResolution: UsagePricingFixture["resolution"];
+    readonly usagePricingResolution?: UsagePricingFixture["resolution"];
   }): Promise<void> {
     const h0 = piSandboxBaseSession(args.claim.claim, args.checkpointObjects);
     const session = MemoryPiSession.fromJsonl(h0.toString("utf8"));

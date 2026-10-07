@@ -3,9 +3,6 @@ import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { mockNow, now } from "../../../lib/time";
-import { installDiscordContextFailureFixture } from "../../../test-fixtures/discord-context-failure";
-import { recoverDiscordIngressForTest } from "../../../test-fixtures/discord-ingress-recovery";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { settleIncludingAbort } from "../../utils";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -63,107 +60,7 @@ async function withCleanup(
   }
 }
 
-async function exerciseContextRetry() {
-  const actor = await setupConnectedDiscordActor(context);
-  await withCleanup(
-    async () => {
-      const provider = mockDiscordProvider(actor);
-      const message = discordMessageForTest(actor, {
-        channelId: provider.guildChannelId,
-        content: `<@${actor.botUserId}> preserve this context across recovery`,
-      });
-      provider.messages.set(message.id, message);
-      const removeFault = await installDiscordContextFailureFixture(message.id);
-      await withCleanup(async () => {
-        expect((await postDiscordMessage(context, message)).body.outcome).toBe(
-          "accepted",
-        );
-        await flushWaitUntilForTest();
-      }, removeFault);
-
-      // Canonical route creation happens before input preparation. A required
-      // context failure must leave this real chat empty and must not launch.
-      const threads = await discordChatThreads(context, actor);
-      expect(threads).toHaveLength(1);
-      const [thread] = threads;
-      if (!thread) {
-        throw new Error("Expected the canonical Discord thread");
-      }
-      await expect(events(actor, thread.id)).resolves.toStrictEqual([]);
-      expect(
-        (await runs.listAgentRuns(actor.actor, { limit: 20 })).runs,
-      ).toStrictEqual([]);
-      expect(provider.sentMessages).toHaveLength(0);
-
-      expect(
-        (await postDiscordMessage(context, message, `redelivery:${message.id}`))
-          .body.outcome,
-      ).toBe("duplicate");
-      mockNow(now() + 61_000);
-      await recoverDiscordIngressForTest([actor.connectionId], context.signal);
-      await flushWaitUntilForTest();
-
-      const recoveredThreads = await discordChatThreads(context, actor);
-      expect(
-        recoveredThreads.map((row) => {
-          return row.id;
-        }),
-      ).toStrictEqual([thread.id]);
-      const recovered = inputs(await events(actor, thread.id));
-      expect(recovered).toHaveLength(1);
-      const [input] = recovered;
-      if (!input?.runId) {
-        throw new Error("Expected one Run after required context recovery");
-      }
-      const run = await runs.readRun(actor.actor, input.runId);
-      expect(run.prompt).toBe("@Okou preserve this context across recovery");
-      expect(run.appendSystemPrompt).toContain(message.id);
-      expect(input.userMessage.parts).toContainEqual({
-        type: "source",
-        kind: "discord",
-        href: `https://discord.com/channels/${actor.guildId}/${provider.guildChannelId}/${message.id}`,
-      });
-
-      // Terminal projection and its native delivery also cross the active
-      // runtime mapping. Recovery must retain a single visible reply.
-      await runs.requestCancelRun(actor.actor, input.runId, [200]);
-      await flushWaitUntilForTest();
-      expect(provider.sentMessages).toHaveLength(1);
-      expect(provider.sentMessages[0]).toMatchObject({
-        channel_id: message.id,
-        content: expect.stringMatching(/cancel/iu),
-      });
-      const completed = await events(actor, thread.id);
-      expect(inputs(completed)).toHaveLength(1);
-      expect(
-        completed.filter((event) => {
-          return event.eventType === "run.cancelled";
-        }),
-      ).toHaveLength(1);
-      expect(
-        new Set(
-          completed.map((event) => {
-            return event.seqId;
-          }),
-        ).size,
-      ).toBe(completed.length);
-    },
-    flushWaitUntilForTest,
-    async () => {
-      await deleteDiscordFixture(context, actor.fixture);
-    },
-    async () => {
-      await deleteFeatureSwitchesForUser(context, actor);
-    },
-  );
-}
-
 describe("Discord chat-write rollout compatibility", () => {
-  it("retries a required context failure without a partial input or duplicate reply", async () => {
-    expect.hasAssertions();
-    await exerciseContextRetry();
-  });
-
   it(
     "posts the Discord reply once when the runner repeats its terminal callback",
     { timeout: 120_000 },

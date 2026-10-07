@@ -2329,16 +2329,3 @@ export const renewGoogleFormsWatches$ = command(
     );
   },
 );
-
-export const renewGoogleFormsWatchScope$ = command(
-  async ({ set }, owner: GoogleFormsWatchOwner, signal: AbortSignal) => {
-    return await set(
-      renewGoogleFormsWatchOwners$,
-      {
-        owners: [owner],
-        renewBefore: new Date(nowDate().getTime() + WATCH_RENEWAL_WINDOW_MS),
-      },
-      signal,
-    );
-  },
-);

@@ -479,7 +479,6 @@ async function finalize(
 async function convertClosedBrowserUserActions(
   db: Db,
   limit: number,
-  chatThreadIds: readonly string[] | null,
   signal: AbortSignal,
   cleanupFileObjects: (requestTokenHash: string) => Promise<void>,
 ): Promise<number> {
@@ -504,9 +503,6 @@ async function convertClosedBrowserUserActions(
         inArray(browserUserActionRequests.status, ["pending", "applying"]),
         eq(browserSessionInstances.status, "stopped"),
         isNotNull(browserSessionInstances.finishedAt),
-        chatThreadIds === null
-          ? undefined
-          : inArray(browserUserActionRequests.chatThreadId, chatThreadIds),
       ),
     )
     .orderBy(asc(browserUserActionRequests.requestTokenHash))
@@ -563,21 +559,13 @@ async function convertClosedBrowserUserActions(
 async function deleteRetiredDirectBrowserUserActions(
   db: Db,
   limit: number,
-  chatThreadIds: readonly string[] | null,
   signal: AbortSignal,
 ): Promise<number> {
   const retiredKind = sql`${browserUserActionRequests.payload}->>'kind' = 'direct_interaction'`;
   const candidates = db
     .select({ requestTokenHash: browserUserActionRequests.requestTokenHash })
     .from(browserUserActionRequests)
-    .where(
-      and(
-        retiredKind,
-        chatThreadIds === null
-          ? undefined
-          : inArray(browserUserActionRequests.chatThreadId, chatThreadIds),
-      ),
-    )
+    .where(retiredKind)
     .orderBy(asc(browserUserActionRequests.requestTokenHash))
     .limit(limit);
   const removed = await db
@@ -593,7 +581,6 @@ async function deleteRetiredDirectBrowserUserActions(
 async function deleteExpiredBrowserUserActions(
   db: Db,
   limit: number,
-  chatThreadIds: readonly string[] | null,
   signal: AbortSignal,
   cleanupFileObjects: (requestTokenHash: string) => Promise<void>,
 ): Promise<number> {
@@ -622,9 +609,6 @@ async function deleteExpiredBrowserUserActions(
         eq(browserSessionInstances.status, "stopped"),
         isNotNull(browserSessionInstances.finishedAt),
         lte(browserSessionInstances.finishedAt, cutoff),
-        chatThreadIds === null
-          ? undefined
-          : inArray(browserUserActionRequests.chatThreadId, chatThreadIds),
       ),
     )
     .orderBy(asc(browserUserActionRequests.requestTokenHash))
@@ -674,27 +658,23 @@ async function deleteExpiredBrowserUserActions(
 export async function reconcileBrowserUserActions(
   db: Db,
   limit: number,
-  chatThreadIds: readonly string[] | null,
   signal: AbortSignal,
   cleanupFileObjects: (requestTokenHash: string) => Promise<void>,
 ): Promise<number> {
   const retired = await deleteRetiredDirectBrowserUserActions(
     db,
     limit,
-    chatThreadIds,
     signal,
   );
   const checkedForConversion = await convertClosedBrowserUserActions(
     db,
     limit,
-    chatThreadIds,
     signal,
     cleanupFileObjects,
   );
   const checkedForCleanup = await deleteExpiredBrowserUserActions(
     db,
     limit,
-    chatThreadIds,
     signal,
     cleanupFileObjects,
   );

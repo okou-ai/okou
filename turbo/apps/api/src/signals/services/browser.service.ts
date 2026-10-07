@@ -2888,12 +2888,7 @@ export const stopThreadBrowsers$ = command(
 );
 
 const releaseStrandedBrowserStarts$ = command(
-  async (
-    { set },
-    limit: number,
-    chatThreadIds: readonly string[] | null,
-    signal: AbortSignal,
-  ): Promise<number> => {
+  async ({ set }, limit: number, signal: AbortSignal): Promise<number> => {
     const db = set(writeDb$);
     const stranded = await db
       .select({
@@ -2910,9 +2905,6 @@ const releaseStrandedBrowserStarts$ = command(
             browserSessions.updatedAt,
             new Date(nowDate().getTime() - STRANDED_START_GRACE_MS),
           ),
-          chatThreadIds === null
-            ? undefined
-            : inArray(browserSessions.chatThreadId, chatThreadIds),
         ),
       )
       .limit(limit);
@@ -2990,9 +2982,6 @@ const releaseStrandedBrowserStarts$ = command(
                 ),
               ),
           ),
-          chatThreadIds === null
-            ? undefined
-            : inArray(browserSessions.chatThreadId, chatThreadIds),
         ),
       )
       .returning({ chatThreadId: browserSessions.chatThreadId });
@@ -3289,7 +3278,6 @@ const reconcileExpiredInactiveBrowsers$ = command(
   async (
     { set },
     limit: number,
-    chatThreadIds: readonly string[] | null,
     signal: AbortSignal,
   ): Promise<{
     readonly checked: number;
@@ -3352,9 +3340,6 @@ const reconcileExpiredInactiveBrowsers$ = command(
                 ),
               ),
           ),
-          chatThreadIds === null
-            ? undefined
-            : inArray(browserSessions.chatThreadId, chatThreadIds),
         ),
       )
       .orderBy(browserSessions.updatedAt)
@@ -3394,7 +3379,6 @@ const reconcileExpiredInactiveBrowsers$ = command(
 async function purgeExpiredStoppedBrowserInstances(
   db: Db,
   limit: number,
-  chatThreadIds: readonly string[] | null,
   signal: AbortSignal,
 ): Promise<{ readonly checked: number; readonly cleaned: number }> {
   const cutoff = new Date(nowDate().getTime() - INACTIVE_BROWSER_RETENTION_MS);
@@ -3420,9 +3404,6 @@ async function purgeExpiredStoppedBrowserInstances(
               ),
             ),
         ),
-        chatThreadIds === null
-          ? undefined
-          : inArray(browserSessionInstances.chatThreadId, chatThreadIds),
       ),
     )
     .orderBy(browserSessionInstances.finishedAt)
@@ -3450,9 +3431,6 @@ async function purgeExpiredStoppedBrowserInstances(
               ),
             ),
         ),
-        chatThreadIds === null
-          ? undefined
-          : inArray(browserSessionInstances.chatThreadId, chatThreadIds),
         inArray(
           browserSessionInstances.providerSessionId,
           rows.map((row) => {
@@ -3496,7 +3474,6 @@ const reconcileOrphanedBrowserProfiles$ = command(
   async (
     { set },
     limit: number,
-    chatThreadIds: readonly string[] | null,
     signal: AbortSignal,
   ): Promise<{
     readonly checked: number;
@@ -3514,14 +3491,7 @@ const reconcileOrphanedBrowserProfiles$ = command(
         chatThreads,
         eq(chatThreads.id, browserThreadProfiles.chatThreadId),
       )
-      .where(
-        and(
-          isNull(chatThreads.id),
-          chatThreadIds === null
-            ? undefined
-            : inArray(browserThreadProfiles.chatThreadId, chatThreadIds),
-        ),
-      )
+      .where(isNull(chatThreads.id))
       .orderBy(browserThreadProfiles.updatedAt)
       .limit(limit);
     signal.throwIfAborted();
@@ -3551,7 +3521,6 @@ const reconcileOrphanedBrowserProfiles$ = command(
 async function reconcileOrphanedBrowserScreenshots(
   db: Db,
   limit: number,
-  chatThreadIds: readonly string[] | null,
   signal: AbortSignal,
 ): Promise<{
   readonly checked: number;
@@ -3568,14 +3537,7 @@ async function reconcileOrphanedBrowserScreenshots(
       chatThreads,
       eq(chatThreads.id, browserSessionScreenshots.chatThreadId),
     )
-    .where(
-      and(
-        isNull(chatThreads.id),
-        chatThreadIds === null
-          ? undefined
-          : inArray(browserSessionScreenshots.chatThreadId, chatThreadIds),
-      ),
-    )
+    .where(isNull(chatThreads.id))
     .orderBy(browserSessionScreenshots.updatedAt)
     .limit(limit);
   signal.throwIfAborted();
@@ -3673,15 +3635,11 @@ const reconcileBrowserInstance$ = command(
   },
 );
 
-const reconcileBrowsersWithScope$ = command(
+export const reconcileBrowsers$ = command(
   async (
     { get, set },
-    chatThreadIds: readonly string[] | null,
     signal: AbortSignal,
   ): Promise<BrowserReconcileResult> => {
-    if (chatThreadIds !== null && chatThreadIds.length === 0) {
-      return { checked: 0, stopped: 0, errors: 0, healthy: 0 };
-    }
     const db = set(writeDb$);
     const rows = await db
       .select({
@@ -3698,14 +3656,7 @@ const reconcileBrowsersWithScope$ = command(
         chatThreads,
         eq(chatThreads.id, browserSessionInstances.chatThreadId),
       )
-      .where(
-        and(
-          eq(browserSessionInstances.status, "active"),
-          chatThreadIds === null
-            ? undefined
-            : inArray(browserSessionInstances.chatThreadId, chatThreadIds),
-        ),
-      )
+      .where(eq(browserSessionInstances.status, "active"))
       .orderBy(browserSessionInstances.updatedAt)
       .limit(RECONCILE_BATCH_SIZE);
     signal.throwIfAborted();
@@ -3723,13 +3674,11 @@ const reconcileBrowsersWithScope$ = command(
     const releasedStarts = await set(
       releaseStrandedBrowserStarts$,
       RECONCILE_BATCH_SIZE,
-      chatThreadIds,
       signal,
     );
     const checkedUserActions = await reconcileBrowserUserActions(
       db,
       RECONCILE_BATCH_SIZE,
-      chatThreadIds,
       signal,
       async (requestTokenHash) => {
         await get(
@@ -3744,25 +3693,21 @@ const reconcileBrowsersWithScope$ = command(
     const expiredBrowserCleanup = await set(
       reconcileExpiredInactiveBrowsers$,
       RECONCILE_BATCH_SIZE,
-      chatThreadIds,
       signal,
     );
     const expiredInstanceCleanup = await purgeExpiredStoppedBrowserInstances(
       db,
       RECONCILE_BATCH_SIZE,
-      chatThreadIds,
       signal,
     );
     const profileCleanup = await set(
       reconcileOrphanedBrowserProfiles$,
       RECONCILE_BATCH_SIZE,
-      chatThreadIds,
       signal,
     );
     const orphanedScreenshotCleanup = await reconcileOrphanedBrowserScreenshots(
       db,
       RECONCILE_BATCH_SIZE,
-      chatThreadIds,
       signal,
     );
 
@@ -3788,22 +3733,5 @@ const reconcileBrowsersWithScope$ = command(
         orphanedScreenshotCleanup.errors,
       healthy,
     };
-  },
-);
-
-export const reconcileBrowsers$ = command(
-  async ({ set }, signal: AbortSignal): Promise<BrowserReconcileResult> => {
-    return await set(reconcileBrowsersWithScope$, null, signal);
-  },
-);
-
-/** Reconcile only browser resources owned by explicit test fixture threads. */
-export const reconcileBrowserFixtures$ = command(
-  async (
-    { set },
-    chatThreadIds: readonly string[],
-    signal: AbortSignal,
-  ): Promise<BrowserReconcileResult> => {
-    return await set(reconcileBrowsersWithScope$, chatThreadIds, signal);
   },
 );

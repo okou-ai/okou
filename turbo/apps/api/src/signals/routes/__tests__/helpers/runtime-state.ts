@@ -410,42 +410,6 @@ export async function steerRunTimeBudgetFixture(
   return response.run_time_budget;
 }
 
-export async function seedPendingArtifactCatalogFile(
-  context: TestContext,
-  args: {
-    readonly userId: string;
-    readonly orgId: string;
-    readonly filename: string;
-    readonly url: string;
-  },
-): Promise<string> {
-  const response = await postAction(context, {
-    action: "seed-pending-artifact-catalog-file",
-    user_id: args.userId,
-    org_id: args.orgId,
-    filename: args.filename,
-    url: args.url,
-  });
-  if (!response.file_id) {
-    throw new Error("seedPendingArtifactCatalogFile missing file_id");
-  }
-  return response.file_id;
-}
-
-export async function setBrowserTabSnapshotAsPreviousApi(
-  context: TestContext,
-  args: {
-    readonly threadId: string;
-    readonly tabUrls: readonly string[];
-  },
-): Promise<void> {
-  await postAction(context, {
-    action: "set-browser-tab-snapshot-as-previous-api",
-    thread_id: args.threadId,
-    tab_urls: [...args.tabUrls],
-  });
-}
-
 export async function clearWorkflowAutomationEventConnectorAsPreviousApi(
   context: TestContext,
   automationId: string,

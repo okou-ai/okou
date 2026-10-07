@@ -889,7 +889,6 @@ async function reconcilePendingArtifactCatalog(
 async function reconcileArtifactCatalogFiles(
   db: Db,
   signal: AbortSignal,
-  fileIds?: readonly string[],
 ): Promise<{ processed: number; failed: number }> {
   const pendingRows = await db
     .select({
@@ -897,11 +896,6 @@ async function reconcileArtifactCatalogFiles(
       revision: sql`xmin::text`.mapWith(pgTextDecoder),
     })
     .from(artifactCatalogPendingFiles)
-    .where(
-      fileIds === undefined
-        ? undefined
-        : inArray(artifactCatalogPendingFiles.fileId, fileIds),
-    )
     .orderBy(
       asc(artifactCatalogPendingFiles.queuedAt),
       asc(artifactCatalogPendingFiles.fileId),
@@ -949,13 +943,6 @@ async function reconcileArtifactCatalogFiles(
 export const reconcileArtifactCatalogFiles$ = command(
   async ({ set }, signal: AbortSignal) => {
     return await reconcileArtifactCatalogFiles(set(writeDb$), signal);
-  },
-);
-
-/** Test-only scope for exercising the production worker without global scans. */
-export const reconcileArtifactCatalogFilesForIds$ = command(
-  async ({ set }, fileIds: readonly string[], signal: AbortSignal) => {
-    return await reconcileArtifactCatalogFiles(set(writeDb$), signal, fileIds);
   },
 );
 
