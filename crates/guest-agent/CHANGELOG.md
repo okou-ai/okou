@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.104.2](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.1...guest-agent-v0.104.2) (2026-10-07)
+
+
+### Refactoring
+
+* remove remaining model provider residue ([#37870](https://github.com/okou-ai/okou/issues/37870)) ([a93133b](https://github.com/okou-ai/okou/commit/a93133b0493858a39924a1206ff5a5677e43cad6))
+
 ## [0.104.1](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.0...guest-agent-v0.104.1) (2026-10-07)
 
 

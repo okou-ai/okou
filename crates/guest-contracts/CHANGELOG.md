@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.5](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.4...guest-contracts-v0.18.5) (2026-10-07)
+
+
+### Refactoring
+
+* remove remaining model provider residue ([#37870](https://github.com/okou-ai/okou/issues/37870)) ([a93133b](https://github.com/okou-ai/okou/commit/a93133b0493858a39924a1206ff5a5677e43cad6))
+
 ## [0.18.4](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.3...guest-contracts-v0.18.4) (2026-10-07)
 
 ## [0.18.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.18.2...guest-contracts-v0.18.3) (2026-10-02)

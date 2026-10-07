@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.734.4](https://github.com/okou-ai/okou/compare/core-v8.734.3...core-v8.734.4) (2026-10-07)
+
+
+### Refactoring
+
+* remove remaining model provider residue ([#37870](https://github.com/okou-ai/okou/issues/37870)) ([a93133b](https://github.com/okou-ai/okou/commit/a93133b0493858a39924a1206ff5a5677e43cad6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.537.11
+
 ## [8.734.3](https://github.com/okou-ai/okou/compare/core-v8.734.2...core-v8.734.3) (2026-10-07)
 
 
