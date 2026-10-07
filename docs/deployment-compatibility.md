@@ -4474,6 +4474,35 @@ as needed, and drop only the seven retired relations. Preserve the anonymous
 workflows, chat events and ordinary email lifecycle. This stage is a code contract,
 not evidence of deployment or production recovery.
 
+## Native Morning Brief storage contraction (2026-10-07)
+
+Migration 1342 drops only the seven retired Native relations: schedule skips,
+occurrences, schedules, deliveries, generations, collection occurrences and
+installed preferences. Child tables are dropped before their parents without
+`CASCADE`; an unexpected dependency aborts the migration transaction. Anonymous
+platform generation cost receipts keep their existing schema and records.
+Official automation identities, claims, enrollment, workflow schedule skips,
+chat history and the ordinary email lifecycle remain authoritative.
+
+The reader/writer retirement in #37874 shipped in API 1.712.4 via #37878. Before
+preparing this contraction, production API 1.712.6 (commit
+`ad381f5bb282aa433ec34ae894a16ed8f4bb4896`) had completed promotion at
+2026-10-07 12:20:41 UTC. The 13:44:55–13:59:55 UTC trace window contained 48,797
+API spans, all on that commit; the API function maximum duration is 300 seconds.
+The existing production rollback floor for migration 1338 is commit
+`a9c3270099034c0f7ee73f6c730b07efa7d1d733`, which includes #37874 and excludes
+APIs that depend on Native storage. Keep that floor when deploying or rolling back.
+
+The production preflight found zero Native generation rows, all 10 Native
+occurrences settled, all 808 schedules in the legacy phase, and no unsent email
+outbox records. Two historical collection rows still say `running`, but their
+leases expired on September 20–21; they are not an active producer. These are
+observations at preparation time, not proof that migration 1342 has run. The
+contraction ships in a separate release; if deployment is delayed or producers
+change, recheck the drain, content, outbox and rollback gates before applying it.
+An API predating #37874 is incompatible with the contracted database; deployed
+retirement APIs and the new API both operate with or without these seven tables.
+
 ## Morning Brief settings status and collection account retirement (2026-09-24)
 
 `GET`/`PUT /api/preferences/morning-brief` no longer return `nextRunAt`,
