@@ -39,9 +39,11 @@ Returns the authenticated member's available choices:
 }
 ```
 
-The example omits route-status and member-capability fields; the contract in
-`turbo/packages/api-contracts/src/contracts/run-models.ts` (response schema
-`availableRunModelsResponseSchema`) is authoritative.
+The example omits route-status and member-capability fields; the route contract
+in `turbo/packages/api-contracts/src/contracts/run-models.ts` and its response
+schema `availableRunModelsResponseSchema` (defined in
+`turbo/packages/api-contracts/src/contracts/model-providers.ts`) are
+authoritative.
 Unconnected members have only Auto. Personal entries reflect the caller's own
 subscription accounts, route status, subscription options and effective member
 capabilities. An organization administrator does not gain another member's

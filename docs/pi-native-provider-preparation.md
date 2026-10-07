@@ -1,5 +1,11 @@
 # Pi native provider consumer preparation
 
+> **Historical record.** Generation 4 native Messages/Bedrock routes have been
+> removed entirely: no current API writer, Runner/CLI reader, native
+> transport/credential contract or native usage path remains. This document is
+> retained only as the dated preparation/activation ledger; nothing below
+> describes current runtime behavior or a retained compatibility requirement.
+
 This records the reader/runtime/accounting preparation release for [#32803](https://github.com/vm0-ai/vm0/issues/32803), part of [#32795](https://github.com/vm0-ai/vm0/issues/32795). That preparation release did not admit a new production route or emit native model configs; the later writer is described under Shared route activation below. The controller owns independent acceptance, authorized publication and the subsequent activation child.
 
 Release 7 retires the API-first foreground consumer, usage writer and handoff
@@ -12,8 +18,8 @@ Current foreground routes are Auto (`okou-1.0` through the built-in
 `openrouter-codex` Responses provider) and connected personal subscriptions.
 Personal Claude subscriptions run in their vendor harness and are never admitted
 to Pi; a personal Codex subscription may use Pi. None of these routes selects
-the native Messages or Bedrock dialects described below; the generation 4
-readers remain for already captured contexts.
+the native Messages or Bedrock dialects described below, and the generation 4
+readers, native adapters and their contract have been deleted.
 
 ## Two independent version axes
 
@@ -32,7 +38,7 @@ Normal producers remain in `pi-sandbox-config.ts` and their existing launch path
 
 ## Native transport and credentials
 
-The Messages reader accepts only the exact endpoints, credential headers and resource paths enumerated in [`pi-native.ts`](../turbo/packages/api-contracts/src/contracts/pi-native.ts). The adapter constructs thinking/output behavior from the trusted catalog and sends the captured upstream identifier only at the payload boundary. Official Claude OAuth/subscription credentials are rejected. No ambient Anthropic authentication is inherited.
+The Messages reader accepted only the exact endpoints, credential headers and resource paths enumerated in the former `pi-native.ts` contract (since deleted with generation 4). The adapter constructs thinking/output behavior from the trusted catalog and sends the captured upstream identifier only at the payload boundary. Official Claude OAuth/subscription credentials are rejected. No ambient Anthropic authentication is inherited.
 
 Bedrock uses the pinned pi-ai adapter with a narrow typed `clientConfig` patch. The real AWS client receives the frozen region/endpoint, explicit bearer or SigV4 credentials, `maxAttempts: 1`, an owned request handler, and the caller cancellation signal. The client is destroyed on completion. Credentials are copied before passing to the SDK, which annotates credential objects. The shared agent loop is not copied.
 

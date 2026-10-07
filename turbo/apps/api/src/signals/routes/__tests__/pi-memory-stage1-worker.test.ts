@@ -791,7 +791,7 @@ describe("Pi memory Stage 1 worker", () => {
         const trigger = await chat.sendChatRun(actor, {
           agentId,
           prompt: "Request the next owned memory day",
-          model: "deepseek-v4.1-flash",
+          model: "okou-1.0",
         });
         runs.push({ runId: trigger.runId });
         await chat.api.requestCancelRun(actor, trigger.runId, [200]);

@@ -56,7 +56,7 @@ readonly RETIRED_INTEGRATION_AGENT_TABLES_DROP_PATH=turbo/packages/db/src/migrat
 readonly VIDEO_MODEL_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1283_drop_retired_video_model_columns.sql
 readonly IMAGE_MODEL_THREAD_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1287_drop_image_model_thread_columns.sql
 readonly VIDEO_ENTITLEMENT_DROP_PATH=turbo/packages/db/src/migrations/1315_drop_retired_video_entitlement.sql
-readonly RUN_MODEL_SCHEMA_CONTRACTION_COMMIT=014fe1867c6d1830fd35b03c3d77491da5aaa36a
+readonly RETIRED_MODEL_CONFIGURATION_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1330_drop_retired_model_configuration_columns.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -255,10 +255,18 @@ if ! git merge-base --is-ancestor "$video_entitlement_drop_commit" "$TARGET_COMM
   fail "Rollback target predates the video entitlement column drop: ${video_entitlement_drop_commit}."
 fi
 
-# The run model schema contraction drops run-model columns and tables that
-# earlier APIs still reference during ordinary run admission.
-if ! git merge-base --is-ancestor "$RUN_MODEL_SCHEMA_CONTRACTION_COMMIT" "$TARGET_COMMIT"; then
-  fail "Rollback target predates the run model schema contraction: ${RUN_MODEL_SCHEMA_CONTRACTION_COMMIT}."
+# Migration 1330 drops agents.model_provider_id, agents.selected_model,
+# agents.prefer_personal_provider, model_providers.secret_id and
+# org_plan_entitlements.support_byok. Every earlier API still declares them, so
+# agent and entitlement reads and writes name the dropped columns. This floor
+# descends from, and so supersedes, the earlier run model schema contraction.
+retired_model_configuration_columns_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$RETIRED_MODEL_CONFIGURATION_COLUMNS_DROP_PATH" | sed -n '1p')
+if [[ ! "$retired_model_configuration_columns_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged retired model configuration column drop on main."
+fi
+if ! git merge-base --is-ancestor "$retired_model_configuration_columns_drop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the retired model configuration column drop: ${retired_model_configuration_columns_drop_commit}."
 fi
 
 # Chat Event V8 removes eight event types and two context types. Earlier APIs

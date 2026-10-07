@@ -149,15 +149,6 @@ const GPT_5_6_LUNA_PRICING: readonly UsagePricingRow[] = [
   ["tokens.output", usd(1.2), 1_000_000],
 ];
 
-// OpenRouter MiMo-V2.5 recognition pricing retrieved 2026-08-05 from:
-// https://openrouter.ai/xiaomi/mimo-v2.5
-const MIMO_V2_5_RECOGNITION_PRICING: readonly UsagePricingRow[] = [
-  ["tokens.input", usd(0.14), 1_000_000],
-  ["tokens.output", usd(0.28), 1_000_000],
-  ["tokens.cache_read", usd(0.0028), 1_000_000],
-  ["tokens.cache_creation", 0, 1_000_000],
-];
-
 const GPT_5_5_PRICING: readonly UsagePricingRow[] = [
   ["tokens.input", usd(5), 1_000_000],
   ["tokens.cache_read", usd(0.5), 1_000_000],
@@ -562,18 +553,6 @@ export const USAGE_PRICING: readonly (typeof usagePricing.$inferInsert)[] = [
     ["tokens.output", usd(9), 1_000_000],
   ]),
 
-  // Local development pricing for managed image tasks, billed under
-  // task-scoped kinds at the backing model's token rates.
-  ...usageGroup(
-    "image-recognition",
-    "xiaomi/mimo-v2.5",
-    MIMO_V2_5_RECOGNITION_PRICING,
-  ),
-  ...usageGroup("image-recognition", "google/gemini-3.5-flash", [
-    ["tokens.input", usd(1.5), 1_000_000],
-    ["tokens.cache_read", usd(0.15), 1_000_000],
-    ["tokens.output", usd(9), 1_000_000],
-  ]),
   // X connector — https://docs.x.com/x-api/getting-started/pricing
   ...usageGroup("connector", "x", [
     // Reads — $/resource

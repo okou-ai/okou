@@ -259,8 +259,10 @@ subscription types, and delete organization-owned (`__org__`)
 `model_providers` rows. Rollout: an API built before 1330 still reads the
 dropped columns, so it must not serve after 1330 is applied. Apply them only
 after every serving API (and any rollback target) no longer reads these
-columns. Because this is not a rolling-compatible contraction, it requires an
-explicitly owner-accepted interruption under the
+columns. The production rollback resolver enforces this as a floor: it
+resolves the first-parent `main` commit that added migration 1330 and rejects
+earlier rollback targets. Because this is not a rolling-compatible
+contraction, it requires an explicitly owner-accepted interruption under the
 [deployment compatibility](../../../docs/deployment-compatibility.md) rules;
 this document does not record such an acceptance.
 

@@ -624,7 +624,7 @@
     }
   },
   {
-    "name": "BYOK exclusion",
+    "name": "Subscription exclusion",
     "now": "2026-09-15T12:00:00Z",
     "events": [
       {
@@ -637,7 +637,7 @@
           "context": "PiMemoryStage1Cost",
           "operation": "pi_memory_stage1",
           "costVersion": 1,
-          "billingMode": "byok",
+          "billingMode": "subscription",
           "model": "gpt-5.6-luna",
           "ledgerStatus": "new",
           "usageStatus": "valid",

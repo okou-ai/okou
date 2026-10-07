@@ -125,12 +125,6 @@ The model identifier sent to the selected provider endpoint. For Auto
 operator-only `org_metadata.openrouter_preset` override applies.
 _Avoid_: Catalog model, logical model
 
-**Pi credential header**:
-A non-secret header name and value template stored in Pi launch metadata. The
-credential is substituted only inside the API first-turn process or the
-Sandbox's protected runtime boundary.
-_Avoid_: API key header value, stored credential
-
 # Retired Goal History Context
 
 Okou's persistent Goal lifecycle was retired through S5 on 2026-09-10; see the

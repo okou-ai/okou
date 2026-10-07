@@ -171,8 +171,8 @@ export function createMockModelCatalog(
     models,
     routes: [
       AUTO_ROUTE,
-      ...MODEL_ROWS.flatMap(([model, , , replacedBy]) => {
-        return subscriptionRouteFor(model, replacedBy);
+      ...MODEL_ROWS.flatMap((row) => {
+        return subscriptionRouteFor(row[0], row[3]);
       }),
     ],
   };

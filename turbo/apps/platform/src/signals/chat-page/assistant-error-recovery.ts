@@ -314,7 +314,7 @@ function structuredRecoveryKind(
   };
 }
 
-function structuredRecoveryFrameworkFromMessage(
+function structuredRecoveryFrameworkFromError(
   kind: AssistantErrorRecoveryKind,
   error: string,
 ): ModelProviderFramework | null {
@@ -580,10 +580,7 @@ function classifyCandidate(
     candidate.error,
     structuredKind.failureReason,
     structuredKind.kind,
-    structuredRecoveryFrameworkFromMessage(
-      structuredKind.kind,
-      candidate.error,
-    ),
+    structuredRecoveryFrameworkFromError(structuredKind.kind, candidate.error),
   );
 }
 

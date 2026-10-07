@@ -56,7 +56,7 @@ or net credits. Valid zero rates remain zero. Invalid/missing/fallback-only
 prices and invalid usage never become fabricated zero cost. Historical EPIC
 reports using `/1250` retain their original investigation assumption; D neither
 rewrites those reports nor changes prices, billing rounding or allowance policy.
-BYOK returns before any model-row write and has no company-cost summand; its
+Subscription returns before any model-row write and has no company-cost summand; its
 external spend remains unknown.
 
 The valuation computes the rational sum using integers. `grossCreditValueUsd`
@@ -82,7 +82,7 @@ at millisecond precision); it never moves to replay/processing time.
 
 Only a completely new write attempts an observation-time price lookup. A replay
 emits the same original identity/time with NULL cost and `replay` or
-`legacy_replay`; it never rereads prices. Zero usage and BYOK have no persisted
+`legacy_replay`; it never rereads prices. Zero usage and subscription have no persisted
 billing anchor and no priced summand. First-observation loss remains a coverage
 gap, not permission to reprice the response.
 
@@ -114,7 +114,7 @@ suffix; no live request or credential is used. It verifies:
 | `fields.context`                                                                                    | `PiMemoryStage1Cost`                                                    |
 | `fields.operation`, `fields.costVersion`                                                            | Explicit `pi_memory_stage1`, version 1                                  |
 | `fields.accountingId`, `fields.accountingAt`, `fields.observedAt`                                   | Opaque response, original anchor, observation time                      |
-| `fields.billingMode`, `fields.model`                                                                | Actual builtin/BYOK mode and model                                      |
+| `fields.billingMode`, `fields.model`                                                                | Actual builtin/subscription mode and model                              |
 | `fields.inputTokens`, `fields.outputTokens`, `fields.cacheReadTokens`, `fields.cacheCreationTokens` | Four quantities; invalid quantities are NULL                            |
 | `fields.ledgerStatus`, `fields.usageStatus`, `fields.pricingStatus`                                 | Finite persistence/replay, usage and pricing coverage                   |
 | `fields.grossCreditValueUsd`, `fields.grossCreditValueNanoUsd`                                      | Fractional display value and exact APL integer value                    |
@@ -129,7 +129,7 @@ implicit float conversion. Identity/status fields retain their string contract.
 The fixed-width UTC ISO `observedAt` string is preserved for ordering; converting
 it back from a datetime can remove `.000` and change lexical millisecond order.
 Production-only queries select `vm0-web-logs-prod` and explicit source/context/operation; cost
-excludes BYOK, staging and dev. No logger root-field promotion is required.
+excludes subscription, staging and dev. No logger root-field promotion is required.
 
 ## Versioned monitor artifacts
 
@@ -220,7 +220,7 @@ assertions. No secret-dependent CI job is added.
 - The corpus covers thresholds (including one nano below/above and 100 × 0.2),
   duplicated transport/category/outcome, cross-day replay, first-price loss,
   repricing, contradictory identity/ties in both input orders, millisecond order,
-  midnight, delayed prior-day data, expired groups, BYOK/nonproduction, missing
+  midnight, delayed prior-day data, expired groups, subscription/nonproduction, missing
   columns, malformed scalar values, valid zero and precision coverage.
   Expected results are assertions against service output, not another valuation.
 - The original 24 local oracle checks remain labeled as independent semantic

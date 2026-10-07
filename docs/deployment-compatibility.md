@@ -151,10 +151,12 @@ applying 1330/1331 therefore requires an owner-accepted interruption, which
 this document does not record. Stored selections that are neither Auto nor an
 available personal subscription model are rejected; they never become Auto.
 
-Rollback floor: the rollback resolver pins
-`RUN_MODEL_SCHEMA_CONTRACTION_COMMIT`
-(`014fe1867c6d1830fd35b03c3d77491da5aaa36a`) and rejects earlier targets
-before artifact or host access. This does not claim production activation.
+Rollback floor: the rollback resolver resolves the first-parent `main` commit
+that added `1330_drop_retired_model_configuration_columns.sql` and rejects
+earlier targets before artifact or host access. That commit descends from, and
+so supersedes, the earlier run model schema contraction
+(`014fe1867c6d1830fd35b03c3d77491da5aaa36a`). This does not claim production
+activation.
 Operator-only `org_metadata.openrouter_preset` overrides remain, with NULL
 using `@preset/okou-1-0`. Actual pricing/credits, historical usage, image
 generation and connectors retain their existing storage. See
@@ -758,6 +760,12 @@ preference, thread selection, send, run creation and claim) finds no route
 offering it and returns `400`. Re-enabling is a `model_routes` data change.
 
 ## Global model catalog and projected system default (2026-09-30)
+
+> **Historical record, superseded.** This and other dated global-catalog
+> sections describe their original rollouts. For current model selection they
+> are superseded by [Run model schema contraction](#run-model-schema-contraction);
+> they are not instructions to restore policy projection, organization BYOK,
+> custom gateways or general platform-model routing.
 
 The server model catalog (`run_model_catalog` plus `model_routes`, served by
 `GET /api/model-catalog`) becomes the only authority for model names, order,
@@ -7225,7 +7233,7 @@ criteria after the old version is gone.
 
 ## Pi native provider reader preparation
 
-For the generation 4 reader-first release, see [Pi native provider preparation](pi-native-provider-preparation.md). Its model generation is independent of launch snapshot V3. Native writers remain absent until the controller verifies compatible API readers and rollback targets, Runner capabilities, pinned CLI artifacts and existing-route health. The preparation merge alone does not close these gates.
+For the generation 4 reader-first release, see [Pi native provider preparation](pi-native-provider-preparation.md). Its model generation is independent of launch snapshot V3. Native writers remain absent until the controller verifies compatible API readers and rollback targets, Runner capabilities, pinned CLI artifacts and existing-route health. The preparation merge alone does not close these gates. Generation 4 native routes have since been removed entirely; this section is a historical record.
 
 ## Connector OAuth completion receipts
 
