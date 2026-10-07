@@ -270,16 +270,20 @@ the complete migration consistency command remain active.
 
 ## Pi stable-context retirement
 
-Migration `1342_retire_pi_stable_context` drops `pi_stable_context_heads`,
+Migration `1343_retire_pi_stable_context` drops `pi_stable_context_heads`,
 `pi_stable_context_artifacts`, `pi_stable_context_artifact_resources` and
 `pi_resource_snapshots`, renames `pi_stable_context_generations` and
 `pi_stable_context_publications` to `storage_publication_generations` and
 `storage_publication_tokens` (with their constraints and index), and drops
-`publication_state`. It uses the default transactional timeouts. Every earlier
+`publication_state`. It uses the default transactional timeouts. The
+`DROP ... CASCADE` of the three FK-bearing tables takes brief exclusive locks
+on `agents`, `storages` and `storage_versions`, bounded by the 1s
+`lock_timeout`, so a busy moment can fail the migration and a retry resolves
+it. Every earlier
 API writes the old tables, so it is not rolling-compatible; the interruption
 while the previous API drains is accepted by explicit owner decision
 (2026-10-07). The production rollback resolver enforces a floor on the
-first-parent `main` commit that adds 1342. Numbered operation 017 remains as a
+first-parent `main` commit that adds 1343. Numbered operation 017 remains as a
 historical record and no longer has tables to act on. See
 [deployment compatibility](../../../docs/deployment-compatibility.md#pi-stable-context-tables-retired-2026-10-07).
 

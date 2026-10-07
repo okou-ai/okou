@@ -1856,6 +1856,13 @@
       "when": 1791382338578,
       "tag": "1342_drop_native_morning_brief_storage",
       "breakpoints": true
+    },
+    {
+      "idx": 1343,
+      "version": "7",
+      "when": 1791386270721,
+      "tag": "1343_retire_pi_stable_context",
+      "breakpoints": true
     }
   ]
 }

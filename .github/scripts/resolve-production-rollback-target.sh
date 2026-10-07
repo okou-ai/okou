@@ -61,7 +61,7 @@ readonly CHAT_THREAD_PROVIDER_PIN_COLUMNS_DROP_PATH=turbo/packages/db/src/migrat
 readonly DEAD_MODEL_PROVIDER_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1333_drop_dead_model_provider_columns.sql
 readonly CONNECTOR_CATALOG_RELEASE_2_PATH=turbo/packages/db/src/migrations/1334_connector_catalog_release_2_contraction.sql
 readonly MODEL_ROUTE_STATE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1338_retire_model_route_state.sql
-readonly PI_STABLE_CONTEXT_RETIREMENT_PATH=turbo/packages/db/src/migrations/1342_retire_pi_stable_context.sql
+readonly PI_STABLE_CONTEXT_RETIREMENT_PATH=turbo/packages/db/src/migrations/1343_retire_pi_stable_context.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -330,11 +330,11 @@ if ! git merge-base --is-ancestor "$model_route_state_retirement_commit" "$TARGE
   fail "Rollback target predates the model route state retirement: ${model_route_state_retirement_commit}."
 fi
 
-# Migration 1342 drops the Pi stable-context heads, artifacts, artifact
+# Migration 1343 drops the Pi stable-context heads, artifacts, artifact
 # resources and resource snapshot tables, and renames the generation and
 # publication tables to storage_publication_generations/tokens. Every earlier
 # API writes the old tables on Agent instructions, Workflow and Storage
-# publication paths, so it cannot serve after 1342. This floor descends from
+# publication paths, so it cannot serve after 1343. This floor descends from
 # the 1338 floor.
 pi_stable_context_retirement_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
   origin/main -- "$PI_STABLE_CONTEXT_RETIREMENT_PATH" | sed -n '1p')
