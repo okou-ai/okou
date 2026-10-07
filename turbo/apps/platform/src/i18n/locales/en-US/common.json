@@ -3585,40 +3585,6 @@
         "sendToLabel": "Send to",
         "tryAgain": "Try again"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activeCatalogDigest": "Active catalog digest",
-          "entries": "Entries",
-          "evaluated": "Evaluated",
-          "evaluation": "Evaluation",
-          "executableCapabilityDigest": "Executable capability digest",
-          "filteredAuthMethods": "Filtered auth methods",
-          "missingVersions": "Missing versions",
-          "syncState": "Sync state",
-          "unownedSecrets": "Unowned secrets",
-          "unownedVariables": "Unowned variables",
-          "unresolvedBridgeCredentials": "Unresolved bridge credentials"
-        },
-        "loading": "Loading",
-        "none": "None",
-        "sections": {
-          "compatibility": "Compatibility",
-          "credentialStorage": "Credential storage"
-        },
-        "title": "Connector catalog",
-        "unavailable": "Unavailable",
-        "values": {
-          "current": "Current",
-          "missingAccessProvider": "Missing access provider",
-          "missingGrantProvider": "Missing grant provider",
-          "missingPlatformConfiguration": "Missing platform configuration",
-          "missingRevokeProvider": "Missing revoke provider",
-          "neverSynced": "Never synced",
-          "providerContractMismatch": "Provider contract mismatch",
-          "stale": "Stale",
-          "unsupportedProtocol": "Unsupported protocol"
-        }
-      },
       "errors": {
         "githubAuthorizationWindow": "Failed to open authorization window"
       },

@@ -12,7 +12,6 @@ import { pageSignal$ } from "../../../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../../../signals/utils.ts";
 import { BuildInfoBlock } from "../build-info-block.tsx";
 import { ConnectionDiagnosticsBlock } from "../connection-diagnostics-block.tsx";
-import { ConnectorCatalogDiagnosticsBlock } from "../connector-catalog-diagnostics-block.tsx";
 import { IndexedDbDiagnosticsBlock } from "../indexeddb-diagnostics-block.tsx";
 import { WelcomeThreadCard } from "../welcome-thread-card.tsx";
 import { WorkerConnectionDiagnosticsBlock } from "../worker-connection-diagnostics-block.tsx";
@@ -85,7 +84,6 @@ export function DebugSection() {
       <ConnectionDiagnosticsBlock />
       <WorkerConnectionDiagnosticsBlock />
       <IndexedDbDiagnosticsBlock />
-      <ConnectorCatalogDiagnosticsBlock />
       <CaptureNetworkBodiesBlock />
     </div>
   );

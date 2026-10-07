@@ -3574,40 +3574,6 @@
         "sendToLabel": "받는 번호",
         "tryAgain": "다시 시도"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activeCatalogDigest": "활성 카탈로그 요약",
-          "entries": "항목",
-          "evaluated": "평가됨",
-          "evaluation": "평가",
-          "executableCapabilityDigest": "실행 가능 기능 요약",
-          "filteredAuthMethods": "필터링된 인증 방법",
-          "missingVersions": "누락된 버전",
-          "syncState": "동기화 상태",
-          "unownedSecrets": "소유되지 않은 비밀",
-          "unownedVariables": "소유되지 않은 변수",
-          "unresolvedBridgeCredentials": "해결되지 않은 브리지 자격 증명"
-        },
-        "loading": "로딩 중",
-        "none": "없음",
-        "sections": {
-          "compatibility": "호환성",
-          "credentialStorage": "자격 증명 저장"
-        },
-        "title": "커넥터 카탈로그",
-        "unavailable": "사용 불가",
-        "values": {
-          "current": "현재",
-          "missingAccessProvider": "액세스 공급자 누락",
-          "missingGrantProvider": "권한 부여 공급자 누락",
-          "missingPlatformConfiguration": "플랫폼 구성 누락",
-          "missingRevokeProvider": "권한 취소 공급자 누락",
-          "neverSynced": "동기화된 적 없음",
-          "providerContractMismatch": "공급자 계약 불일치",
-          "stale": "오래됨",
-          "unsupportedProtocol": "지원되지 않는 프로토콜"
-        }
-      },
       "errors": {
         "githubAuthorizationWindow": "권한 부여 창을 열지 못했습니다"
       },

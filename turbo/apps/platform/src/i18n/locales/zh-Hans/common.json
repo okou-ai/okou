@@ -3574,40 +3574,6 @@
         "sendToLabel": "发送至",
         "tryAgain": "重试"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activeCatalogDigest": "生效目录摘要",
-          "entries": "条目",
-          "evaluated": "已评估",
-          "evaluation": "评估",
-          "executableCapabilityDigest": "可执行能力摘要",
-          "filteredAuthMethods": "已过滤的认证方式",
-          "missingVersions": "缺失版本",
-          "syncState": "同步状态",
-          "unownedSecrets": "无归属密钥",
-          "unownedVariables": "无归属变量",
-          "unresolvedBridgeCredentials": "未解析的桥接凭据"
-        },
-        "loading": "加载中",
-        "none": "无",
-        "sections": {
-          "compatibility": "兼容性",
-          "credentialStorage": "凭据存储"
-        },
-        "title": "连接器目录",
-        "unavailable": "不可用",
-        "values": {
-          "current": "当前",
-          "missingAccessProvider": "缺少访问提供方",
-          "missingGrantProvider": "缺少授权提供方",
-          "missingPlatformConfiguration": "缺少平台配置",
-          "missingRevokeProvider": "缺少撤销提供方",
-          "neverSynced": "从未同步",
-          "providerContractMismatch": "提供方契约不匹配",
-          "stale": "已过期",
-          "unsupportedProtocol": "不支持的协议"
-        }
-      },
       "errors": {
         "githubAuthorizationWindow": "无法打开授权窗口"
       },

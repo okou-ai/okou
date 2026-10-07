@@ -48,8 +48,9 @@ const connectorCatalogStateSchema = z.enum([
 
 /**
  * The sync writer's report of the attempt it just made. Nothing about the
- * attempt is persisted: a later request cannot see it, and staff diagnostics
- * do not carry it. `failureCode` is set only for a rejected attempt.
+ * attempt is persisted: only the cron sync response that made it carries it,
+ * and a later sync cannot see it. `failureCode` is set only for a rejected
+ * attempt.
  */
 export const connectorCatalogSyncAttemptReportSchema = z.object({
   outcome: z.enum(["accepted", "unchanged", "rejected"]),
@@ -57,15 +58,15 @@ export const connectorCatalogSyncAttemptReportSchema = z.object({
 });
 
 /**
- * Staff diagnostics derived from the current `connector_catalog` pointer and
- * the immutable entries at its hash. Sync history (`lastAttempt`,
+ * Catalog diagnostics carried by the cron sync response, derived from the
+ * current `connector_catalog` pointer and the immutable entries at its hash. Sync history (`lastAttempt`,
  * `lastSuccessAt`, `rejectedCandidate`) and activation time cannot be derived
  * from them and are omitted.
  */
 export const connectorCatalogDiagnosticsSchema = z.object({
   schemaVersion: z.literal(4),
-  // Staff diagnostics report `never-synced` or `current`. The cron sync
-  // response reports `stale` when its own attempt was rejected while an
+  // Pointer-derived diagnostics report `never-synced` or `current`. The cron
+  // sync response reports `stale` when its own attempt was rejected while an
   // existing pointer keeps serving.
   state: connectorCatalogStateSchema,
   // The serving pointer hash.

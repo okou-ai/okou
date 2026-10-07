@@ -558,31 +558,13 @@ describe("connector catalog v4 preparation", () => {
     },
   );
 
-  it("reports strict storage readiness through staff diagnostics around a rejected-source sync", async () => {
-    const features = setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    );
-    await accept(
-      features.update({
-        headers: sessionHeaders,
-        body: { switches: { [FeatureSwitchKey.OkouDebug]: true } },
-      }),
-      [200],
-    );
+  it("reports strict storage readiness in the cron sync response around a rejected-source sync", async () => {
     const healthy = {
       missingConnectorVersions: 0,
       unownedConnectorSecrets: 0,
       unownedConnectorVariables: 0,
       unresolvedBridgeCredentials: 0,
     };
-    context.mocks.s3.send.mockClear();
-    const before = await accept(
-      catalogClient().diagnostics({ headers: sessionHeaders }),
-      [200],
-    );
-    expect(before.body.credentialStorage).toStrictEqual(healthy);
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
-
     serveObjects(new Map());
     const rejected = await sync();
     expect(rejected.body).toMatchObject({
@@ -590,29 +572,17 @@ describe("connector catalog v4 preparation", () => {
       failureCode: "source-unavailable",
     });
     expect(rejected.body.credentialStorage).toStrictEqual(healthy);
-    context.mocks.s3.send.mockClear();
-    const after = await accept(
-      catalogClient().diagnostics({ headers: sessionHeaders }),
-      [200],
-    );
-    expect(after.body.credentialStorage).toStrictEqual(healthy);
-    expect(after.body).not.toHaveProperty("sourceId");
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+    expect(rejected.body).not.toHaveProperty("sourceId");
+
+    // The rejected attempt persists nothing that changes readiness.
+    const repeated = await sync();
+    expect(repeated.body.outcome).toBe("rejected");
+    expect(repeated.body.credentialStorage).toStrictEqual(healthy);
   });
 
-  it("keeps staff and cron storage readiness healthy across owned secret and variable account creation and deletion", async () => {
+  it("keeps cron storage readiness healthy across owned secret and variable account creation and deletion", async () => {
     const actor = bdd.user();
     mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-    const features = setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    );
-    await accept(
-      features.update({
-        headers: sessionHeaders,
-        body: { switches: { [FeatureSwitchKey.OkouDebug]: true } },
-      }),
-      [200],
-    );
     const slug = `readiness-${randomUUID()}`;
     const descriptor = httpConnector(slug, "Owned credentials");
     const candidate = release({
@@ -674,16 +644,14 @@ describe("connector catalog v4 preparation", () => {
         ).resolves.toContainEqual(
           expect.objectContaining({ id: connected.id }),
         );
-        context.mocks.s3.send.mockClear();
-        const staff = await accept(
-          catalogClient().diagnostics({ headers: sessionHeaders }),
-          [200],
+        const connectedSync = await sync();
+        expect(connectedSync.body.credentialStorage).toStrictEqual(healthy);
+        expect(JSON.stringify(connectedSync.body)).not.toContain(
+          "readiness-token",
         );
-        expect(staff.body.credentialStorage).toStrictEqual(healthy);
-        expect(JSON.stringify(staff.body)).not.toContain("readiness-token");
-        expect(JSON.stringify(staff.body)).not.toContain("readiness-region");
-        expect(context.mocks.s3.send).not.toHaveBeenCalled();
-        expect((await sync()).body.credentialStorage).toStrictEqual(healthy);
+        expect(JSON.stringify(connectedSync.body)).not.toContain(
+          "readiness-region",
+        );
       })(),
     );
     await connectorsApi.deleteBuiltinConnectorAccount(
@@ -697,72 +665,54 @@ describe("connector catalog v4 preparation", () => {
     await expect(
       connectorsApi.listBuiltinConnectorAccounts(actor, slug),
     ).resolves.toStrictEqual([]);
-    const removed = await accept(
-      catalogClient().diagnostics({ headers: sessionHeaders }),
-      [200],
-    );
-    expect(removed.body.credentialStorage).toStrictEqual(healthy);
     expect((await sync()).body.credentialStorage).toStrictEqual(healthy);
   });
 
-  it("keeps staff diagnostics on the current pointer across a rejected sync", async () => {
-    const features = setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    );
-    await accept(
-      features.update({
-        headers: sessionHeaders,
-        body: { switches: { [FeatureSwitchKey.OkouDebug]: true } },
-      }),
-      [200],
-    );
-    const before = await accept(
-      catalogClient().diagnostics({ headers: sessionHeaders }),
-      [200],
-    );
-    expect(before.body.schemaVersion).toBe(4);
+  it("keeps the cron sync response on the current pointer across a rejected sync", async () => {
+    const serving = release({ label: "Serving" });
+    serveObjects(serving.objects);
+    const before = await sync();
+    expect(before.body).toMatchObject({
+      outcome: "accepted",
+      schemaVersion: 4,
+      state: "current",
+      active: { catalogDigest: serving.pointer.catalogDigest },
+      pointer: { hash: serving.pointer.catalogDigest },
+    });
     expect(before.body).not.toHaveProperty("lastAttempt");
 
     serveObjects(new Map());
     const rejected = await sync();
-    // The rejected attempt reports the retained pointer as stale; without a
-    // pointer there is nothing to retain.
-    expect(rejected.body).toMatchObject({
+    // The rejected attempt reports the retained pointer as stale.
+    expect(rejected.body).toStrictEqual({
+      ...before.body,
       outcome: "rejected",
       failureCode: "source-unavailable",
-      state: before.body.pointer === null ? "never-synced" : "stale",
-      active: before.body.active,
+      state: "stale",
+      filtering: {
+        ...before.body.filtering,
+        evaluatedAt: rejected.body.filtering.evaluatedAt,
+      },
     });
-    expect(rejected.body.pointer).toStrictEqual(before.body.pointer);
-    context.mocks.s3.send.mockClear();
-    const after = await accept(
-      catalogClient().diagnostics({ headers: sessionHeaders }),
-      [200],
-    );
+    expect(rejected.body).not.toHaveProperty("sourceId");
+    expect(rejected.body).not.toHaveProperty("catalog");
+    expect(rejected.body).not.toHaveProperty("lastAttempt");
+
+    // Nothing about the rejection was persisted: the next sync of the serving
+    // pointer is unchanged and current.
+    serveObjects(serving.objects);
+    const after = await sync();
     expect(after.body).toStrictEqual({
       ...before.body,
+      outcome: "unchanged",
       filtering: {
         ...before.body.filtering,
         evaluatedAt: after.body.filtering.evaluatedAt,
       },
     });
-    expect(after.body).not.toHaveProperty("sourceId");
-    expect(after.body).not.toHaveProperty("catalog");
-    expect(after.body).not.toHaveProperty("lastAttempt");
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
   });
 
-  it("evaluates staff filtering on demand for the current capability and accepted v4 catalog identity", async () => {
-    const features = setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    );
-    await accept(
-      features.update({
-        headers: sessionHeaders,
-        body: { switches: { [FeatureSwitchKey.OkouDebug]: true } },
-      }),
-      [200],
-    );
+  it("evaluates cron sync filtering on demand for the current capability and accepted v4 catalog identity", async () => {
     mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", undefined);
     const initial = release({ mcpSlug: "notes-mcp" });
     serveObjects(initial.objects);
@@ -776,22 +726,12 @@ describe("connector catalog v4 preparation", () => {
       filtering: { stale: false, filteredAuthMethods: [] },
     });
     expect(accepted.body.filtering.evaluatedAt).not.toBeNull();
-    context.mocks.s3.send.mockClear();
-    const original = await accept(
-      catalogClient().diagnostics({ headers: sessionHeaders }),
-      [200],
-    );
-    expect(original.body.filtering).toStrictEqual({
-      ...accepted.body.filtering,
-      evaluatedAt: expect.any(String),
-    });
 
-    // A capability change is visible on the next read, without a sync.
+    // A capability change is visible on the next unchanged sync, which
+    // accepts no new catalog.
     mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", "catalog-capability-client-id");
-    const configured = await accept(
-      catalogClient().diagnostics({ headers: sessionHeaders }),
-      [200],
-    );
+    const configured = await sync();
+    expect(configured.body.outcome).toBe("unchanged");
     expect(configured.body.filtering).toMatchObject({
       capabilityDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
       stale: false,
@@ -799,18 +739,15 @@ describe("connector catalog v4 preparation", () => {
     });
     expect(configured.body.filtering.evaluatedAt).not.toBeNull();
     expect(configured.body.filtering.capabilityDigest).not.toBe(
-      original.body.filtering.capabilityDigest,
+      accepted.body.filtering.capabilityDigest,
     );
-    expect(configured.body.active).toStrictEqual(original.body.active);
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+    expect(configured.body.active).toStrictEqual(accepted.body.active);
 
     mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", undefined);
-    const restored = await accept(
-      catalogClient().diagnostics({ headers: sessionHeaders }),
-      [200],
-    );
+    const restored = await sync();
+    expect(restored.body.outcome).toBe("unchanged");
     expect(restored.body.filtering).toStrictEqual({
-      ...original.body.filtering,
+      ...accepted.body.filtering,
       evaluatedAt: expect.any(String),
     });
 
@@ -835,20 +772,16 @@ describe("connector catalog v4 preparation", () => {
       },
     });
     mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", undefined);
-    context.mocks.s3.send.mockClear();
-    const current = await accept(
-      catalogClient().diagnostics({ headers: sessionHeaders }),
-      [200],
-    );
+    const current = await sync();
+    expect(current.body.outcome).toBe("unchanged");
     expect(current.body.active).toStrictEqual({
       catalogDigest: replacement.pointer.catalogDigest,
     });
     expect(current.body.pointer).toStrictEqual(replaced.body.pointer);
     expect(current.body.filtering).toStrictEqual({
-      ...original.body.filtering,
+      ...accepted.body.filtering,
       evaluatedAt: expect.any(String),
     });
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
   });
 
   it("retains the last accepted v4 snapshot when a later candidate has an invalid protocol", async () => {

@@ -94,10 +94,11 @@ function unavailableFiltering(
 }
 
 /**
- * Staff diagnostics derived only from the current pointer and the immutable
- * entries at its hash, with compatibility evaluated on demand. Sync history
- * (last attempt, last success, rejected candidate) and activation time are not
- * derivable from those and are not reported.
+ * Catalog diagnostics for the cron sync response, derived only from the
+ * current pointer and the immutable entries at its hash, with compatibility
+ * evaluated on demand. Sync history (last attempt, last success, rejected
+ * candidate) and activation time are not derivable from those and are not
+ * reported.
  */
 async function currentCatalogDiagnostics(
   db: ReadonlyDb,

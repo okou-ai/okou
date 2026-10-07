@@ -42,10 +42,7 @@ import {
   onboardingWorkflowConnectorsContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { connectorCatalogRoutes } from "../connector-catalog";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { getConnectorAuthProviderRegistrationCapabilities } from "@okouai/connectors/auth-providers";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { connectorOverviewRoutes } from "../connector-overview";
 import { onboardingSourcesRoutes } from "../onboarding-sources";
 import { onboardingWorkflowConnectorsRoutes } from "../onboarding-workflow-connectors";
@@ -1624,30 +1621,11 @@ describe("slug-first current catalog business readers", () => {
 });
 
 // Account generation cases now publish only in their own lifecycle engine.
-// Staff diagnostics derive everything from the pointer and its entries.
-describe("staff connector catalog diagnostics from current entries", () => {
-  const headers = { authorization: "Bearer clerk-session" };
-
-  async function staffSession() {
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    await accept(
-      setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      ).update({
-        headers,
-        body: { switches: { [FeatureSwitchKey.OkouDebug]: true } },
-      }),
-      [200],
-    );
-  }
-
-  async function diagnostics() {
-    const response = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).diagnostics({ headers }),
-      [200],
-    );
+// The cron sync response derives its diagnostics from the pointer and its
+// entries.
+describe("cron sync diagnostics from current entries", () => {
+  async function syncDiagnostics() {
+    const response = await accept(sync(), [200]);
     return response.body;
   }
 
@@ -1655,11 +1633,10 @@ describe("staff connector catalog diagnostics from current entries", () => {
     const candidate = release(`2099-03-01.${randomUUID()}`, "Diagnostics");
     serve(candidate);
     expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    await staffSession();
-    context.mocks.s3.send.mockClear();
 
     const requestedAt = now();
-    const current = await diagnostics();
+    const current = await syncDiagnostics();
+    expect(current.outcome).toBe("unchanged");
     expect(
       Date.parse(current.filtering.evaluatedAt ?? ""),
     ).toBeGreaterThanOrEqual(requestedAt);
@@ -1683,7 +1660,8 @@ describe("staff connector catalog diagnostics from current entries", () => {
     expect(current.active).not.toHaveProperty("activatedAt");
 
     // Unconfigure one provider used by the published entries: the next
-    // request filters that method against the new capability, with no sync.
+    // unchanged sync filters that method against the new capability without
+    // publishing anything.
     const entryMethods = new Set(
       candidate.artifact.connectors.flatMap((entry) => {
         return entry.authMethods.map((method) => {
@@ -1713,7 +1691,8 @@ describe("staff connector catalog diagnostics from current entries", () => {
       filteredMethod,
     );
     mockOptionalEnv(configurationName, undefined);
-    const unconfigured = await diagnostics();
+    const unconfigured = await syncDiagnostics();
+    expect(unconfigured.outcome).toBe("unchanged");
     expect(unconfigured.filtering.capabilityDigest).toBe(
       connectorCatalogExecutableCapabilityDigest(),
     );
@@ -1725,7 +1704,6 @@ describe("staff connector catalog diagnostics from current entries", () => {
       filteredMethod,
     );
     expect(unconfigured.pointer).toStrictEqual(current.pointer);
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
   });
 
   it("flags a generation without entries and a missing pointer", async () => {
@@ -1736,10 +1714,10 @@ describe("staff connector catalog diagnostics from current entries", () => {
     serve(candidate);
     const accepted = await accept(sync(), [200]);
     expect(accepted.body).toMatchObject({ outcome: "accepted" });
-    await staffSession();
 
-    const current = await diagnostics();
+    const current = await syncDiagnostics();
     expect(current).toMatchObject({
+      outcome: "unchanged",
       state: "current",
       active: { catalogDigest: candidate.hash },
       pointer: {
@@ -1752,10 +1730,22 @@ describe("staff connector catalog diagnostics from current entries", () => {
       accepted.body.filtering.filteredAuthMethods,
     );
 
-    // A pointer whose hash has no retained entries cannot serve.
+    // A pointer whose hash has no retained entries cannot serve. The source
+    // names the same hash, so the sync is unchanged and downloads nothing.
     const emptyHash = `sha256:${"e".repeat(64)}`;
     await engine.query("UPDATE connector_catalog SET hash = $1", [emptyHash]);
-    await expect(diagnostics()).resolves.toMatchObject({
+    serve({
+      ...candidate,
+      pointer: Buffer.from(
+        JSON.stringify({
+          catalogVersion: candidate.artifact.catalogVersion,
+          catalogKey: candidate.key,
+          catalogDigest: emptyHash,
+        }),
+      ),
+    });
+    await expect(syncDiagnostics()).resolves.toMatchObject({
+      outcome: "unchanged",
       state: "current",
       active: { catalogDigest: emptyHash },
       pointer: { schemaVersion: 4, hash: emptyHash, entryCount: 0 },
@@ -1767,8 +1757,14 @@ describe("staff connector catalog diagnostics from current entries", () => {
       },
     });
 
+    // Without a pointer, a rejected attempt has nothing to retain.
     await engine.exec("DELETE FROM connector_catalog");
-    await expect(diagnostics()).resolves.toMatchObject({
+    getApiTestMocks().s3.send.mockRejectedValue(
+      new Error("Object unavailable"),
+    );
+    await expect(syncDiagnostics()).resolves.toMatchObject({
+      outcome: "rejected",
+      failureCode: "source-unavailable",
       schemaVersion: 4,
       state: "never-synced",
       active: null,

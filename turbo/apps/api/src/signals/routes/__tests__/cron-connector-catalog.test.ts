@@ -104,8 +104,6 @@ const OFFICIAL_RUNNER_AUTHORIZATION =
   "Bearer vm0_official_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
 const ACTIVE_KEY = "connectors/v4/active.json";
 const FIRST_SYNC_TIME = "2026-07-15T08:00:00.000Z";
-const DIAGNOSTICS_USER_ID = `user_${randomUUID()}`;
-const DIAGNOSTICS_ORG_ID = `org_${randomUUID()}`;
 const PRIVATE_VALUE = "SECRET_TOKEN";
 const ZERO_DIGEST = `sha256:${"0".repeat(64)}`;
 const EXPECTED_CAPABILITY_DIGEST =
@@ -1331,12 +1329,6 @@ function cronClient() {
   );
 }
 
-function diagnosticsClient() {
-  return setupApp({ context, routes: connectorCatalogRoutes })(
-    connectorCatalogContract,
-  );
-}
-
 function runnerFirewallClient() {
   return setupApp({ context, routes: runnersRoutes })(
     runnersBuiltinFirewallsResolveContract,
@@ -1440,55 +1432,11 @@ async function syncCatalog() {
   return await accept(cronClient().sync({ headers: cronHeaders() }), [200]);
 }
 
-async function enableDiagnosticsFeatureSwitch(): Promise<void> {
-  routeMocks.clerk.session(DIAGNOSTICS_USER_ID, DIAGNOSTICS_ORG_ID);
-  await accept(
-    setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    ).update({
-      headers: { authorization: "Bearer clerk-session" },
-      body: { switches: { [FeatureSwitchKey.OkouDebug]: true } },
-    }),
-    [200],
-  );
-  onTestFinished(async () => {
-    routeMocks.clerk.session(DIAGNOSTICS_USER_ID, DIAGNOSTICS_ORG_ID);
-    await accept(
-      setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      ).delete({
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-  });
-}
-
 type SyncResponseBody = Awaited<ReturnType<typeof syncCatalog>>["body"];
-
-// Staff diagnostics share the pointer, filtering and storage facts of a sync
-// response and omit the writer's report of its own attempt.
-function staffDiagnosticsFromSync(body: SyncResponseBody) {
-  const { outcome: _outcome, failureCode: _failureCode, ...diagnostics } = body;
-  return {
-    ...diagnostics,
-    state: diagnostics.pointer === null ? "never-synced" : "current",
-  };
-}
 
 // The serving pointer identifies its generation by hash.
 function servingRelease(release: ReleaseFixture) {
   return { catalogDigest: release.digest };
-}
-
-async function readStatus() {
-  await enableDiagnosticsFeatureSwitch();
-  return await accept(
-    diagnosticsClient().diagnostics({
-      headers: { authorization: "Bearer clerk-session" },
-    }),
-    [200],
-  );
 }
 
 async function rawCronRequest(path: string): Promise<Response> {
@@ -1541,32 +1489,34 @@ describe("connector catalog cron authentication and initial state", () => {
 
   // The pointer is global, so a fresh test source still sees the current
   // publication; never-synced is covered by the case-owned immutable suite.
-  it("reports staff diagnostics without sync history or storage reads", async () => {
+  it("reports pointer diagnostics and the attempt report without sync history", async () => {
     configureSource();
-    const body = (await readStatus()).body;
+    serveObjects(new Map());
+    const body = (await syncCatalog()).body;
     expect(Object.keys(body).sort()).toStrictEqual([
       "active",
       "credentialStorage",
+      "failureCode",
       "filtering",
+      "outcome",
       "pointer",
       "schemaVersion",
       "state",
     ]);
-    expect(body.state).not.toBe("stale");
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+    expectRejectedRetainingServingPointer(body, "source-unavailable");
   });
 
   it("reports zero final connector credential invariant violations", async () => {
     configureSource();
+    serveObjects(new Map());
 
-    const response = await readStatus();
+    const response = await syncCatalog();
     expect(response.body.credentialStorage).toStrictEqual({
       missingConnectorVersions: 0,
       unownedConnectorSecrets: 0,
       unownedConnectorVariables: 0,
       unresolvedBridgeCredentials: 0,
     });
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
   });
 });
 
@@ -1598,14 +1548,6 @@ describe("connector catalog valid lifecycle", () => {
       Bucket: bucket,
       Key: ACTIVE_KEY,
     });
-
-    const callsBeforeStatus = context.mocks.s3.send.mock.calls.length;
-    // Staff diagnostics carry the same pointer facts without the writer's
-    // attempt report.
-    expect((await readStatus()).body).toStrictEqual(
-      staffDiagnosticsFromSync(acceptedFirst.body),
-    );
-    expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeStatus);
 
     mockNow(new Date("2026-07-15T08:01:00.000Z"));
     const callsBeforeUnchanged = context.mocks.s3.send.mock.calls.length;
@@ -4562,7 +4504,8 @@ describe("connector catalog valid lifecycle", () => {
     for (const outcome of outcomes) {
       expect(["accepted", "unchanged"]).toContain(outcome);
     }
-    expect((await readStatus()).body).toMatchObject({
+    expect((await syncCatalog()).body).toMatchObject({
+      outcome: "unchanged",
       state: "current",
       active: servingRelease(release),
       pointer: { hash: release.digest, entryCount: 1 },
@@ -4642,11 +4585,8 @@ describe("connector catalog executable compatibility", () => {
       },
     });
 
-    // Nothing is persisted: staff diagnostics and a later unchanged sync
-    // derive the same canonical filtering from the pointer's entries.
-    expect((await readStatus()).body.filtering).toStrictEqual(
-      synced.body.filtering,
-    );
+    // Nothing is persisted: a later unchanged sync derives the same canonical
+    // filtering from the pointer's entries.
     mockNow(new Date("2026-07-31T08:01:00.000Z"));
     const unchanged = await syncCatalog();
     expect(unchanged.body.outcome).toBe("unchanged");
@@ -4992,16 +4932,16 @@ describe("connector catalog executable compatibility", () => {
     ).toMatchObject({ connectors: [] });
 
     mockOptionalEnv("STEAM_WEB_API_KEY", "configured");
-    const callsBeforeStaleStatus = context.mocks.s3.send.mock.calls.length;
-    // Staff diagnostics follow the new capability before any reconcile.
-    const onDemand = await readStatus();
+    // An unchanged sync's filtering follows the new capability on demand.
+    const onDemand = await syncCatalog();
+    expect(onDemand.body.outcome).toBe("unchanged");
     expect(onDemand.body.filtering).toMatchObject({
       evaluatedAt: FIRST_SYNC_TIME,
       stale: false,
       filteredAuthMethods: [],
     });
     expect(onDemand.body.filtering.capabilityDigest).not.toBe(firstDigest);
-    expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeStaleStatus);
+    const callsBeforeStaleStatus = context.mocks.s3.send.mock.calls.length;
     const stalePublicRead = await accept(
       catalogClient.list({ headers }),
       [200],
@@ -5036,7 +4976,7 @@ describe("connector catalog executable compatibility", () => {
     ).toStrictEqual([expect.objectContaining({ slug: "steam" })]);
 
     mockOptionalEnv("STEAM_WEB_API_KEY", undefined);
-    expect((await readStatus()).body.filtering).toStrictEqual({
+    expect((await syncCatalog()).body.filtering).toStrictEqual({
       ...missingConfiguration.body.filtering,
       evaluatedAt: "2026-07-15T08:20:00.000Z",
     });
@@ -5057,7 +4997,9 @@ describe("connector catalog executable compatibility", () => {
     serveObjects(catalogObjects([first, second], second));
     await syncCatalog();
     mockOptionalEnv("STEAM_WEB_API_KEY", undefined);
-    expect((await readStatus()).body.filtering).toStrictEqual({
+    const unconfigured = await syncCatalog();
+    expect(unconfigured.body.outcome).toBe("unchanged");
+    expect(unconfigured.body.filtering).toStrictEqual({
       ...missingConfiguration.body.filtering,
       evaluatedAt: "2026-07-15T08:20:00.000Z",
     });
@@ -5884,13 +5826,8 @@ describe("connector catalog rejection and latest-valid retention", () => {
       pointer: { hash: accepted.digest },
     });
 
-    // Staff diagnostics keep reporting the serving pointer; the rejection
-    // is only part of the writer's attempt report.
-    const callsBeforeStatus = context.mocks.s3.send.mock.calls.length;
-    expect((await readStatus()).body).toStrictEqual(
-      staffDiagnosticsFromSync(rejected.body),
-    );
-    expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeStatus);
+    // The rejection is only part of the writer's attempt report; the next
+    // sync of the serving pointer is unchanged.
     expect(JSON.stringify(rejected.body)).not.toContain(PRIVATE_VALUE);
 
     serveObjects(catalogObjects([accepted], accepted));

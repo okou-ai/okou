@@ -59,6 +59,30 @@ combine these stages merely because reads no longer return payload.
 This PR prepares that contraction; it neither drops payload nor activates or
 releases production changes.
 
+## Connector catalog staff diagnostics endpoint removed (2026-10-07)
+
+The staff-only, OkouDebug-gated `diagnostics` route of
+`connectorCatalogContract` (`GET` under `/api/connector-catalog`), its handler,
+and the Settings debug "Connector catalog" block with its translations are
+removed. Staff diagnose catalog state with masked database queries against
+`connector_catalog` and `connector_catalog_entries` instead.
+
+Kept: `connectorCatalogDiagnostics$` and `connectorCatalogDiagnosticsSchema`.
+The cron sync response (`/api/cron/sync-connector-catalog`) still carries the
+same `schemaVersion`, `state`, `active`, `pointer`, `filtering` and
+`credentialStorage` fields plus the attempt's `outcome` and `failureCode`. The
+release workflow's readiness check reads that response and is unchanged.
+
+Rolling deploy: an old Platform build that opens Settings debug as staff
+already accepted `403` and `404` from this endpoint as "no diagnostics"
+(`accept(..., [200, 403, 404])`) and rendered nothing. Against a new API the
+path falls through to the `:connectorSlug` detail route, which returns `404`
+for the non-existent `diagnostics` connector (or `403` without
+`connector:read`), so the old block still renders nothing. Only a catalog
+outage (`503`) would surface as an error, inside that staff-only block. No CLI
+command or user flow reads this endpoint. A new Platform against an old API
+makes no request. There are no schema, data or writer behavior changes.
+
 ## Frozen model provider state dropped (2026-10-07)
 
 Owner decision (Ethan, 2026-10-07): data no live reader uses is removed.
@@ -614,7 +638,9 @@ old/new-instance acceptance remain separate verification boundaries.
 
 ### Connector catalog staff diagnostics on pointer and immutable entries
 
-Staff diagnostics (`GET /api/connector-catalog/diagnostics`, OkouDebug only)
+Staff diagnostics (the OkouDebug-only `diagnostics` route under
+`/api/connector-catalog`, since removed; see
+[its removal](#connector-catalog-staff-diagnostics-endpoint-removed-2026-10-07))
 no longer read `connector_catalog_sync_state`,
 `connector_catalog_active_snapshot`,
 `connector_catalog_compatibility_evaluation` or the runtime projection tables.
