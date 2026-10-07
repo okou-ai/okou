@@ -1,5 +1,50 @@
 # Deployment Compatibility
 
+## Unselectable chat thread models and unused built-in keys cleared
+
+Data-only migration `1334_clear_unselectable_thread_models_and_unused_model_keys`
+has two parts.
+
+It deletes the `built_in_model_keys` rows for `zai`, `anthropic`, `openai`,
+`deepseek`, `minimax` and `moonshot`. Built-in runs read only the
+`openrouter` key (`AUTO_RUN_KEY_VENDOR`). Every API at or above the 1332
+rollback floor selects or resolves only that vendor, so no deployable API
+reads the deleted rows. MaskDB (2026-10-07) showed exactly these seven
+vendors. The deleted keys still need to be revoked at each vendor; that is a
+separate operator action.
+
+It also returns chat threads to Auto when the API cannot resolve their stored
+`selected_model`. A selection is resolvable when it is a `run_model_catalog`
+model (active or replaced) or the upstream id of a `model_routes` row. These
+are the two lookups of `catalogModelForSelectedId`, evaluated against the
+database catalog at migration time. MaskDB (2026-10-07) showed 252 such rows
+across 43 users. They are leftovers of retired providers, for example
+`claude-sonnet-4.6` (213), `vm0-model` (11), `kimi-k2.5`, `claude-opus-4.6`,
+`deepseek/deepseek-v4-pro`, MiniMax ids, `deepseek-chat`, `gpt-5.3*` and
+`codex`. Each thread is changed the same way as picking Auto in the model
+selection route, in one transaction:
+
+- `selected_model` and `codex_service_tier` become NULL and `updated_at` is
+  set; `model_settings` is kept.
+- One `model_selection_updated` event with a NULL model is appended to the
+  owner's `(user_id, org_id)` stream. A `service_tier_updated` event with a
+  NULL tier follows it when a tier was cleared. Sequence positions are
+  reserved per stream in key order, as in 1213 and 1299.
+- Threads without an agent have no event stream and get no event.
+- The update re-checks the selection under its row lock, so a selection an API
+  changes concurrently is kept and gets no event.
+
+Clients apply the appended events after their snapshot position. No snapshot
+or cache needs a rewrite.
+
+Old and new APIs both treat NULL as Auto, so either order of migration and API
+deploy is compatible. The migration adds no schema and does not move the
+rollback floor. Rolling back does not restore the deleted keys or selections;
+nothing at or above the floor reads them.
+`scripts/test-unselectable-thread-model-cleanup.ts` covers the snapshot
+change, the appended events and their sequence, retained selections, the
+remaining OpenRouter key and an idempotent rerun.
+
 ## Legacy chat thread provider pin columns dropped
 
 Follow-up to the run model schema contraction below (#37856). Chat threads
