@@ -340,6 +340,12 @@ export function resolveQueuedModelSelectionPinFromSnapshot(params: {
   readonly catalog: ModelCatalog;
   readonly selectedModel: string;
   readonly subscriptionModels: readonly MemberSubscriptionModelRoute[];
+  /**
+   * The member's logical provider types. A provider is removed with its last
+   * account row, so a type here means an account of it exists, including a
+   * retained disconnected one, as at capture.
+   */
+  readonly memberProviderTypes: ReadonlySet<string>;
 }): ModelFirstPin | ReturnType<typeof badRequestMessage> {
   // An Auto input captured the internal Auto run model.
   if (params.selectedModel === AUTO_RUN_MODEL) {
@@ -366,13 +372,16 @@ export function resolveQueuedModelSelectionPinFromSnapshot(params: {
       "Select Auto or a model from your connected personal subscription",
     );
   }
-  // The pick's account snapshot holds only connected accounts, so a replaced
-  // input without one names the subscription its successor requires.
-  return (
-    replacementSubscriptionRequired(
-      params.catalog,
-      params.selectedModel,
-      unavailable,
-    )?.response ?? unavailable
+  // A replaced input of a member without any account of the successor's
+  // subscription names the subscription; a retained disconnected account
+  // keeps the reconnect error, as at capture.
+  const subscriptionRequired = replacementSubscriptionRequired(
+    params.catalog,
+    params.selectedModel,
+    unavailable,
   );
+  return subscriptionRequired &&
+    !params.memberProviderTypes.has(subscriptionRequired.subscriptionType)
+    ? subscriptionRequired.response
+    : unavailable;
 }

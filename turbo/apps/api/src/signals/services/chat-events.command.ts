@@ -1,3 +1,4 @@
+import type { Tx } from "../../lib/db-types";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import {
@@ -769,6 +770,8 @@ interface ExistingSendThread {
   readonly runSettings: ThreadRunSettings;
   readonly computerAccess: ThreadComputerAccess;
   readonly current: ThreadRunSettings & ThreadComputerAccess;
+  /** The replaced model the input's captured successor rewrites. */
+  readonly replacedModel?: string;
 }
 interface NewSendThread {
   readonly kind: "new";
@@ -939,14 +942,16 @@ function withCapturedModelReplacement(
     runSettings.selectedModel,
     modelSelection,
   );
-  if (successor === null) {
+  if (successor === null || runSettings.selectedModel === null) {
     return thread;
   }
+  const replacedModel = runSettings.selectedModel;
   const patch = runSettings.modelSettingsPatch;
   const modelSettingsPatch =
     patch === undefined ? undefined : { ...patch, model: successor };
   return {
     ...thread,
+    ...(thread.kind === "existing" ? { replacedModel } : {}),
     runSettings: {
       selectedModel: successor,
       modelSettings: modelSettingsPatch
@@ -960,7 +965,13 @@ function withCapturedModelReplacement(
     },
   };
 }
-/** Prepare the send's changed thread selections and their projection events. */
+/**
+ * Prepare the send's changed thread selections and their projection events.
+ * A send without `model` that rewrites a replaced stored selection writes its
+ * model, effort and tier only while the thread still stores the replaced
+ * model (`replacement`), so a concurrent model change wins and keeps its own
+ * events; the send's other selections are written regardless.
+ */
 function existingSendThreadUpdatePlan(
   args: NormalSendArgs,
   thread: SendThread,
@@ -984,7 +995,6 @@ function existingSendThreadUpdatePlan(
     return null;
   }
   const updatedAt = nowDate();
-  const events: Parameters<typeof chatThreadEventInsertSql>[0][] = [];
   const event = {
     userId: args.userId,
     orgId: args.orgId,
@@ -992,8 +1002,9 @@ function existingSendThreadUpdatePlan(
     agentId: thread.agentId,
     createdAt: updatedAt,
   };
+  const modelEvents: Parameters<typeof chatThreadEventInsertSql>[0][] = [];
   if (modelChanged) {
-    events.push({
+    modelEvents.push({
       ...event,
       kind: "model_selection_updated",
       selectedModel,
@@ -1001,40 +1012,93 @@ function existingSendThreadUpdatePlan(
     });
   }
   if (tierChanged) {
-    events.push({
+    modelEvents.push({
       ...event,
       kind: "service_tier_updated",
       serviceTier: chatThreadServiceTierFromCodex(codexServiceTier),
     });
   }
-  if (accessChanged) {
-    events.push({
-      ...event,
-      kind: "computer_use_host_updated",
-      ...computerAccess,
-    });
+  const modelValues = {
+    ...(modelChanged ? { selectedModel } : {}),
+    // Merge the effort into the stored settings rather than writing the
+    // snapshot back, so a concurrent send's effort for another model stays.
+    ...(patch === undefined
+      ? {}
+      : {
+          modelSettings: sql`${chatThreads.modelSettings} || jsonb_build_object(
+            cast(${patch.model} as text),
+            COALESCE(${chatThreads.modelSettings} -> cast(${patch.model} as text), '{}'::jsonb)
+              || jsonb_build_object('effort', cast(${patch.effort} as text))
+          )`,
+        }),
+    ...(tierChanged ? { codexServiceTier } : {}),
+  };
+  const accessEvents: Parameters<typeof chatThreadEventInsertSql>[0][] =
+    accessChanged
+      ? [{ ...event, kind: "computer_use_host_updated", ...computerAccess }]
+      : [];
+  const replacedModel =
+    args.body.model === undefined ? thread.replacedModel : undefined;
+  if (replacedModel !== undefined) {
+    return {
+      replacement: {
+        replacedModel,
+        values: { ...modelValues, updatedAt },
+        events: modelEvents,
+      },
+      values: accessChanged ? { ...computerAccess, updatedAt } : null,
+      events: accessEvents,
+    };
   }
-
   return {
+    replacement: null,
     values: {
-      ...(modelChanged ? { selectedModel } : {}),
-      // Merge the effort into the stored settings rather than writing the
-      // snapshot back, so a concurrent send's effort for another model stays.
-      ...(patch === undefined
-        ? {}
-        : {
-            modelSettings: sql`${chatThreads.modelSettings} || jsonb_build_object(
-              cast(${patch.model} as text),
-              COALESCE(${chatThreads.modelSettings} -> cast(${patch.model} as text), '{}'::jsonb)
-                || jsonb_build_object('effort', cast(${patch.effort} as text))
-            )`,
-          }),
-      ...(tierChanged ? { codexServiceTier } : {}),
+      ...modelValues,
       ...(accessChanged ? computerAccess : {}),
       updatedAt,
     },
-    events,
+    events: [...modelEvents, ...accessEvents],
   };
+}
+/**
+ * Write the send's thread update plan. A replacement is a compare-and-set, as
+ * the enqueue rewrite: a concurrent model change wins and the replacement
+ * writes no events.
+ */
+async function applyExistingSendThreadUpdate(
+  tx: Tx,
+  args: NormalSendArgs,
+  thread: SendThread,
+  plan: NonNullable<ReturnType<typeof existingSendThreadUpdatePlan>>,
+): Promise<void> {
+  const threadCondition = and(
+    eq(chatThreads.id, thread.threadId),
+    eq(chatThreads.userId, args.userId),
+  );
+  const { replacement } = plan;
+  if (replacement) {
+    const [replaced] = await tx
+      .update(chatThreads)
+      .set(replacement.values)
+      .where(
+        and(
+          threadCondition,
+          eq(chatThreads.selectedModel, replacement.replacedModel),
+        ),
+      )
+      .returning({ id: chatThreads.id });
+    if (replaced) {
+      for (const event of replacement.events) {
+        await tx.execute(chatThreadEventInsertSql(event));
+      }
+    }
+  }
+  if (plan.values) {
+    await tx.update(chatThreads).set(plan.values).where(threadCondition);
+  }
+  for (const event of plan.events) {
+    await tx.execute(chatThreadEventInsertSql(event));
+  }
 }
 /** An explicit model selection also becomes the member's default for new chats. */
 function userModelPreferencePlan(
@@ -1348,18 +1412,7 @@ const appendNormalSendInput$ = command(
         await tx.execute(contextInsert);
       }
       if (existingPlan) {
-        await tx
-          .update(chatThreads)
-          .set(existingPlan.values)
-          .where(
-            and(
-              eq(chatThreads.id, thread.threadId),
-              eq(chatThreads.userId, args.userId),
-            ),
-          );
-        for (const event of existingPlan.events) {
-          await tx.execute(chatThreadEventInsertSql(event));
-        }
+        await applyExistingSendThreadUpdate(tx, args, thread, existingPlan);
       }
       if (args.body.captureNetworkBodies) {
         await recordChatNetworkBodyCapture(tx, {

@@ -283,11 +283,17 @@ export async function applyThreadModelReplacement(
     return;
   }
   const updatedAt = nowDate();
+  // The tier is written only with its event, so a concurrent tier change the
+  // replacement does not clear stays with the snapshot that recorded it.
+  const tierChanged =
+    replacement.codexServiceTier !== replacement.replacedCodexServiceTier;
   const [updated] = await tx
     .update(chatThreads)
     .set({
       selectedModel: replacement.selectedModel,
-      codexServiceTier: replacement.codexServiceTier,
+      ...(tierChanged
+        ? { codexServiceTier: replacement.codexServiceTier }
+        : {}),
       updatedAt,
     })
     .where(
@@ -315,7 +321,7 @@ export async function applyThreadModelReplacement(
       selectedModel: replacement.selectedModel,
     }),
   );
-  if (replacement.codexServiceTier !== replacement.replacedCodexServiceTier) {
+  if (tierChanged) {
     await tx.execute(
       chatThreadEventInsertSql({
         ...event,

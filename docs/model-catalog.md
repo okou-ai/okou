@@ -103,8 +103,10 @@ routes and are never offered as choices.
   `model_selection_updated` event carries it. A Fast tier the successor does
   not offer is cleared with a `service_tier_updated` event. Every send and
   enqueue entry point (Web, CLI, iOS, MCP, integrations and workflow
-  automations) shares this capture. The enqueue rewrite only applies while the
-  thread still stores the retired model, so a concurrent model change wins.
+  automations) shares this capture. Unless the send itself selects a model, the
+  rewrite only applies while the thread still stores the retired model, so a
+  concurrent model change wins and the rewrite writes no events; the input
+  still runs the successor it captured.
 - A thread that is not sent to keeps its stored id until its next input.
   Clients display the successor through the catalog's `resolvedModel`. Web
   shows and sends the successor when the member can run it; like any
@@ -118,7 +120,8 @@ routes and are never offered as choices.
   reconnecting, or a disconnected account that is still retained, keeps the
   subscription; its input is accepted and the pick reports the reconnect error.
   Integration and automation inputs that cannot capture are enqueued unchanged
-  and the queue pick rejects them visibly with the same message.
+  and the queue pick rejects them visibly with the same message, or with the
+  reconnect error when the member retains an account of that subscription.
 
 ## Billing and history
 

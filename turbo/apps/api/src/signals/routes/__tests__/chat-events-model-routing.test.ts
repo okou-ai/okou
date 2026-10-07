@@ -613,6 +613,49 @@ describe("CHAT-02: model-first routing", () => {
     await cancelChatRun(actor, fallback.runId, fallbackClaim.sandboxHeaders);
   }, 90_000);
 
+  it("rejects a requested retired Claude alias once its subscription account is deleted", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
+    const thread = await chat.createThread(actor, {
+      agentId,
+      model: "claude-fable-5-1",
+    });
+    await misc.deletePersonalModelProvider(
+      actor,
+      "claude-code-oauth-token",
+      [204],
+    );
+    const before = await chat.listThreadEvents(actor, thread.id);
+
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: thread.id,
+        prompt: "continue through my deleted subscription",
+        model: "claude-fable-5",
+        clientEventId: randomUUID(),
+      },
+      [400],
+    );
+
+    expect(sent.body).toMatchObject({
+      error: {
+        message:
+          "Claude Fable 5 was replaced by Claude Fable 5.1, which requires a Claude subscription. Select Auto or connect your Claude subscription.",
+      },
+    });
+    await flushWaitUntilForTest();
+    expect(
+      (await chat.listThreadEvents(actor, thread.id)).events,
+    ).toStrictEqual(before.events);
+    await expect(
+      chat.readThreadMetadata(actor, thread.id),
+    ).resolves.toMatchObject({ selectedModel: "claude-fable-5-1" });
+  }, 90_000);
+
   it("keeps the enqueued model after thread and member defaults change", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
