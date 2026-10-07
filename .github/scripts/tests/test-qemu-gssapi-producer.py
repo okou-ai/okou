@@ -8,11 +8,13 @@ import io
 import json
 import os
 import pathlib
+import signal
 import subprocess
 import sys
 import tarfile
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 SPEC = importlib.util.spec_from_file_location("qemu_producer", ROOT / ".github/scripts/prepare-qemu-gssapi-fixture.py")
@@ -194,6 +196,106 @@ if list(pathlib.Path(sys.argv[3]).iterdir()):
             root.mkdir()
             with self.assertRaisesRegex(ValueError, 'archive file byte budget refused'):
                 self.producer.extract_deb(archive, root)
+            self.assertEqual(list(root.iterdir()), [])
+
+    def test_cancelled_decoder_retains_leader_before_actual_group_signal(self):
+        # Public bytes use the REAL dpkg-deb/prlimit. Observers delegate real
+        # syscalls and inject SIGINT only after kernel-confirmed zombie state.
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            archive = self.public_payload_deb(base, b'\0' * 10240)
+            root = base / 'root'
+            root.mkdir()
+            real_spawn, real_waitid, real_killpg = subprocess.Popen, os.waitid, os.killpg
+            children, signals, observations = [], [], []
+            interrupted = False
+
+            def observe_spawn(*args, **kwargs):
+                child = real_spawn(*args, **kwargs)
+                children.append(child)
+                return child
+
+            def cancel_after_observation(*args):
+                nonlocal interrupted
+                result = real_waitid(*args)
+                if result is not None and not interrupted:
+                    interrupted = True
+                    observations.append(result)
+                    os.kill(os.getpid(), signal.SIGINT)
+                return result
+
+            def signal_reserved_group(pid, signum):
+                result = real_waitid(os.P_PID, pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                self.assertIsNotNone(result)
+                self.assertEqual(result.si_pid, children[0].pid)
+                signals.append((pid, signum))
+                return real_killpg(pid, signum)
+
+            descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+            with mock.patch.object(subprocess, 'Popen', observe_spawn), \
+                    mock.patch.object(os, 'waitid', cancel_after_observation), \
+                    mock.patch.object(os, 'killpg', signal_reserved_group):
+                with self.assertRaises(KeyboardInterrupt):
+                    self.producer.extract_deb(archive, root)
+            self.assertEqual(len(children), 1)
+            self.assertEqual(signals, [(children[0].pid, signal.SIGKILL)])
+            self.assertEqual(observations[0].si_code, os.CLD_EXITED)
+            self.assertEqual(observations[0].si_status, 0)
+            self.assertEqual(children[0].returncode, 0)
+            with self.assertRaises(ChildProcessError):
+                real_waitid(os.P_PID, children[0].pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+            self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
+            self.assertEqual(list(root.iterdir()), [])
+
+    def test_interrupt_after_real_waitpid_reap_never_signals_released_group(self):
+        # Drive the maintained Popen.wait KeyboardInterrupt path immediately
+        # AFTER its real waitpid, before returncode bookkeeping. No decoder
+        # result is invented; an unsafe old group-signal attempt is recorded but
+        # intercepted before it could address an unrelated/recycled group.
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            archive = self.public_payload_deb(base, b'\0' * 10240)
+            root = base / 'root'
+            root.mkdir()
+            real_spawn, real_try_wait = subprocess.Popen, subprocess.Popen._try_wait
+            children, reaped, signals = [], [], []
+            interrupted = False
+
+            def observe_spawn(*args, **kwargs):
+                child = real_spawn(*args, **kwargs)
+                children.append(child)
+                return child
+
+            def cancel_after_reap(child, flags):
+                nonlocal interrupted
+                result = real_try_wait(child, flags)
+                if result[0] == child.pid and not interrupted:
+                    interrupted = True
+                    reaped.append(result)
+                    self.assertIsNone(child.returncode)
+                    os.kill(os.getpid(), signal.SIGINT)
+                return result
+
+            def reject_unowned_group_signal(pid, signum):
+                signals.append((pid, signum))
+                # Never actually send to a numeric group after verified reaping.
+
+            descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+            with mock.patch.object(subprocess, 'Popen', observe_spawn), \
+                    mock.patch.object(real_spawn, '_try_wait', cancel_after_reap), \
+                    mock.patch.object(os, 'killpg', reject_unowned_group_signal):
+                with self.assertRaises(KeyboardInterrupt):
+                    self.producer.extract_deb(archive, root)
+            self.assertEqual(len(children), 1)
+            self.assertEqual(len(reaped), 1)
+            self.assertEqual(reaped[0][0], children[0].pid)
+            self.assertTrue(os.WIFEXITED(reaped[0][1]))
+            self.assertEqual(os.WEXITSTATUS(reaped[0][1]), 0)
+            self.assertEqual(children[0].returncode, 0)
+            self.assertEqual(signals, [])
+            with self.assertRaises(ChildProcessError):
+                os.waitid(os.P_PID, children[0].pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+            self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
             self.assertEqual(list(root.iterdir()), [])
 
     def test_decoder_output_is_kernel_bounded_and_all_descriptors_are_closed(self):

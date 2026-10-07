@@ -73,13 +73,18 @@ bounds and physical-data accounting; they are not blanket-rejected. No excess
 prefix is silently truncated or extracted.
 
 The exact `/usr/bin/dpkg-deb` filesystem decoder runs under `/usr/bin/prlimit`
-with an empty controlled environment, closed stdin, discarded stderr (not an
-unbounded PIPE), core-off and at most 256 MiB address space, 32 FDs and 30 CPU
-seconds. Inherited smaller limits are preserved. The existing 512 MiB stdout
-ceiling is enforced by the kernel before file growth, not after decoding. The
-30-second wait remains; interruption kills the owned process group and bounds
-the leader reap to five seconds. This is not proof of grandchild reaping or an
-external source seal. Both borrowed executable hashes enter bootstrap metadata;
+with a minimal controlled PATH+LANG environment, closed stdin, discarded stderr
+(not an unbounded PIPE), core-off and at most 256 MiB address space, 32 FDs and
+30 CPU seconds. Inherited smaller limits are preserved. The existing 512 MiB
+stdout ceiling is enforced by the kernel before file growth, not after decoding.
+The 30-second completion phase uses `waitid(WNOWAIT)`, never a reaping wait/poll:
+an interrupted owned leader remains reserved until its group is signalled.
+Nondefault SIGCHLD ownership is refused before spawn; a lost child reservation
+never authorizes a numeric group signal. SIGINT is blocked only during critical
+group termination and the five-second leader reap. Normal reaping is outside
+the signalling handler, so an interruption after `waitpid` cannot signal a
+released/recycled group. This is not proof of grandchild reaping or an external
+source seal. Both borrowed executable hashes enter bootstrap metadata;
 a pathname/hash record is not race-free executed-inode or loader attestation.
 
 One provision-wide ledger charges every physical header, including skipped roots
@@ -95,8 +100,13 @@ descendant ownership and whole-provision timing remain separate obligations.
 Public ar/tar canaries exercise the real installed data decoder and parser,
 including inherited memory/file limits, exact logical-entry capacity, skipped
 roots, PAX/GNU/sparse positives and refusals, cross-package quotas and streamed
-collision behavior. They contain no package programs or maintainer scripts and
-prove neither signatures, original input provenance nor native admission.
+collision behavior. Real-data cancellation regressions inject actual SIGINT
+after kernel-confirmed unreaped completion and immediately after actual
+`waitpid`, before maintained `Popen.wait` return-code bookkeeping. Observers
+preserve real decoder/status syscalls; a possible unsafe signal attempt in the
+old-source negative control is intercepted rather than sent to an unowned group.
+They contain no package programs or maintainer scripts and prove neither
+signatures, original input provenance nor native admission.
 No package installation or maintainer script runs. Declared usrmerge,
 compiler/rmt/UTC aliases and a bundle of signed public CA certificates replace
 only their normal maintainer-generated inputs. Dangling package documentation

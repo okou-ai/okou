@@ -22,6 +22,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 
 SNAPSHOT = "20260521T000000Z"
 # The official snapshot's signed InRelease declares both amd64 and arm64
@@ -467,6 +468,10 @@ def bounded_archive(fileobj, *, headers, member_bytes, entry_error, package_budg
 
 
 def decode_package_payload(archive, payload, limit):
+    # One local owner must retain its child until group termination. An ignored
+    # SIGCHLD or an external handler could auto-reap it and invalidate the PGID.
+    if signal.getsignal(signal.SIGCHLD) != signal.SIG_DFL:
+        raise RuntimeError("package decoder child ownership refused")
     # The kernel bounds output before write, including decoder subprocesses.
     # Fixed exact executable identities, no PATH-selected borrowed decoder.
     argv = ["/usr/bin/prlimit"]
@@ -481,19 +486,40 @@ def decode_package_payload(archive, payload, limit):
     process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=payload, stderr=subprocess.DEVNULL, start_new_session=True,
                                env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"})
     try:
-        status = process.wait(timeout=30)
+        deadline = time.monotonic() + 30
+        # WNOWAIT observes completion WITHOUT releasing the leader PID. Do not
+        # use Popen.wait/poll here: wait's KeyboardInterrupt path can reap before
+        # re-raising, including interruption between waitpid and bookkeeping.
+        while os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(argv, 30)
+            time.sleep(min(0.01, remaining))
+    except ChildProcessError as error:
+        # A lost child reservation is not permission to signal the numeric PGID.
+        raise RuntimeError("package decoder ownership unavailable") from error
     except BaseException:
-        # Hold the unreaped leader identity until its whole group is killed.
-        # Popen's context manager would wait without a deadline on error.
+        previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
         try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass  # The unreaped child may already have exited.
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired as error:
-            raise RuntimeError("package decoder cleanup unavailable") from error
+            # No wait/poll/reap has occurred in this phase; even an exited leader
+            # remains our zombie and reserves its original PID/group identity.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired as error:
+                raise RuntimeError("package decoder cleanup unavailable") from error
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, previous)
         raise
+    # The reaping phase is OUTSIDE the group-signalling handler. An interrupt
+    # after actual waitpid has released identity must never re-enter that handler.
+    try:
+        status = process.wait(timeout=5)
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError("package decoder cleanup unavailable") from error
     if status or payload.tell() > limit:
         raise ValueError("source-pinned fixture package payload refused")
 
