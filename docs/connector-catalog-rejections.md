@@ -11,9 +11,12 @@ that the catalog is current.
 Since the [Release 2 contraction](deployment-compatibility.md#connector-catalog-release-2-contraction-migration-1334),
 rejections are not persisted and there is no rejection cache. Every sync
 attempt revalidates the current publication, and each rejected attempt emits
-one `Connector catalog candidate rejected` WARN. The cron response reports that
-attempt as `outcome: "rejected"` with its `failureCode`, and `state: "stale"`
-while an earlier generation keeps serving.
+one `Connector catalog candidate rejected` WARN. The cron response is only the
+attempt report: `{ outcome: "rejected", failureCode }`. It no longer reports
+the serving state; observe the retained generation with masked database
+queries against `connector_catalog`, or by a later sync of the serving
+publication returning `outcome: "unchanged"`. See
+[diagnostics removal](deployment-compatibility.md#connector-catalog-diagnostics-removed-2026-10-07).
 
 - `failureCode` keeps its existing meaning. `relationshipRule`, when present,
   identifies an explicit semantic validator check, such as

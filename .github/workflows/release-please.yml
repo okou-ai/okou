@@ -1597,8 +1597,9 @@ jobs:
             exit 0
           fi
 
-          # The response is the attempt report `{ outcome, failureCode }`.
-          # Older APIs also return diagnostics fields, which are ignored.
+          # The deployment just created from this commit returns the attempt
+          # report `{ outcome, failureCode }`. Pre-change API builds also return
+          # `outcome` and `failureCode`; their extra fields are ignored.
           if ! summary=$(jq -c '{outcome, failureCode}' <<< "$response"); then
             echo "::warning::Connector catalog reconcile returned invalid JSON; the scheduled cron will retry"
             exit 0

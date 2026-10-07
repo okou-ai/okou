@@ -626,8 +626,9 @@ describe("connector catalog v4 preparation", () => {
       failureCode: "invalid-pointer",
     });
     // The rejected candidate never serves.
-    const listed = await catalogClient().list({ headers: sessionHeaders });
-    expect(JSON.stringify(listed.body)).not.toContain("Outside namespace");
+    expect(JSON.stringify((await publicCatalog()).body)).not.toContain(
+      "Outside namespace",
+    );
   });
 
   it("treats a pointer to the serving digest as unchanged without downloading its catalog", async () => {

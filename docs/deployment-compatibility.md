@@ -29,7 +29,9 @@ the stored permission summary. Account-status projections select only slug,
 auth methods and MCP metadata, reusing the existing executable-method rules.
 The display catalog cache contains no firewall or skill objects. Permission details select runtime fields only for the named
 slug. Runtime captures, sync, Pi recapture and staff diagnostics use independent
-column selections instead of returning the complete payload. Runtime consumers
+column selections instead of returning the complete payload. (Staff
+diagnostics were later removed; see
+[diagnostics removal](#connector-catalog-diagnostics-removed-2026-10-07).) Runtime consumers
 that materialize full executable connectors still load auth, skill and firewall
 fields; this change does not claim a new minimal runtime projection or measured
 S1–S3 latency improvement.
@@ -90,10 +92,12 @@ and keeping the serving pointer after a rejection) is unchanged.
 The release workflow's best-effort post-deploy call now logs
 `{ outcome, failureCode }` and warns when `outcome` is neither `accepted` nor
 `unchanged` (a rejection, or a missing outcome). It still never fails the
-deploy. The workflow runs from the release commit, so it can call an API that
-is older or newer than itself: an old API still returns `outcome` and
-`failureCode`, plus extra diagnostics fields that the new summary ignores; a
-new API returns exactly the fields it reads. An empty generation is no longer
+deploy. The step calls the API deployment it just created from the same
+commit (`steps.deploy.outputs.url`), so the workflow and the API agree on the
+response. The check only needs `outcome`, which pre-change API builds also
+return (alongside extra diagnostics fields the summary ignores), so a rerun or
+rollback that pairs this workflow with an older API still works. An empty
+generation is no longer
 reported by this check; query the masked database for it. The Vercel cron
 ignores the response body.
 
@@ -296,8 +300,11 @@ Platform debug panel (which shows the digest instead of an "active version")
 and its translations. Ethan confirmed (2026-10-07) that the old clients have
 exited; a staff debug panel loaded before the deploy shows the field as "None"
 until it reloads. A new App against an older API ignores the extra field; the
-release workflow only checks `active != null`. Other `catalogVersion` fields
-are not this alias and stay:
+release workflow only checks `active != null`. (Superseded: staff diagnostics
+and the Platform debug panel were later removed, the cron sync response no
+longer carries `active`, and the release workflow checks only `outcome`; see
+[diagnostics removal](#connector-catalog-diagnostics-removed-2026-10-07).)
+Other `catalogVersion` fields are not this alias and stay:
 
 - The persisted connector permission baseline and Runner execution context
   `catalogIdentity.catalogVersion` (`storedConnectorPermissionBaselineSchema`,
