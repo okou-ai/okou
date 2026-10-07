@@ -210,6 +210,14 @@ the never-produced `unavailable` availability. App, CLI and iOS read none of
 the removed fields. `routeStatus` stays on the wire because shipped iOS builds
 decode it as a required string; current iOS decodes it as optional.
 
+**Accepted rollout interruption (1333):** Ethan explicitly accepted
+(2026-10-07) a brief unavailability during deployment while the outgoing API
+drains, so model catalog, run execution and run-model reads from a pre-1333 API
+may receive `42703` in that window. This bounded interruption is accepted for
+this contraction; no preparatory release or old-column compatibility branch is
+required. Prefer the same rollout as 1330/1332 or low traffic. Acceptance of
+that risk is not an instruction to deploy.
+
 Operator-only `org_metadata.openrouter_preset` overrides remain, with NULL
 using `@preset/okou-1-0`. Actual pricing/credits, historical usage, image
 generation and connectors retain their existing storage. See
