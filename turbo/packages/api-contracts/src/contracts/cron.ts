@@ -1,9 +1,6 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
-import {
-  connectorCatalogDiagnosticsSchema,
-  connectorCatalogSyncAttemptReportSchema,
-} from "./connector-catalog-diagnostics";
+import { connectorCatalogSyncAttemptReportSchema } from "./connector-catalog-sync";
 import { apiErrorSchema } from "./errors";
 import {
   officialWorkflowCatalogSyncResponseSchema,
@@ -233,12 +230,9 @@ const cronSyncSkillsResponseSchema = z.object({
   total: z.number(),
 });
 
-// Pointer-derived diagnostics plus the writer's report of this attempt. A
-// rejected attempt reports `state: "stale"` while an existing pointer serves.
+// The writer's report of this attempt only.
 const connectorCatalogSyncResponseSchema =
-  connectorCatalogDiagnosticsSchema.extend(
-    connectorCatalogSyncAttemptReportSchema.shape,
-  );
+  connectorCatalogSyncAttemptReportSchema;
 
 export type ConnectorCatalogSyncResponse = z.infer<
   typeof connectorCatalogSyncResponseSchema

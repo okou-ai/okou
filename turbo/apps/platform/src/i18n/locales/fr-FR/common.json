@@ -3653,40 +3653,6 @@
         "sendToLabel": "Envoyer à",
         "tryAgain": "Réessayer"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activeCatalogDigest": "Synthèse du catalogue actif",
-          "entries": "Entrées",
-          "evaluated": "Évalué",
-          "evaluation": "Évaluation",
-          "executableCapabilityDigest": "Synthèse des capacités exécutables",
-          "filteredAuthMethods": "Méthodes d'authentification filtrées",
-          "missingVersions": "Versions manquantes",
-          "syncState": "État de synchronisation",
-          "unownedSecrets": "Secrets non possédés",
-          "unownedVariables": "Variables non possédées",
-          "unresolvedBridgeCredentials": "Identifiants de pont non résolus"
-        },
-        "loading": "Chargement",
-        "none": "Aucun",
-        "sections": {
-          "compatibility": "Compatibilité",
-          "credentialStorage": "Stockage des identifiants"
-        },
-        "title": "Catalogue de connecteurs",
-        "unavailable": "Indisponible",
-        "values": {
-          "current": "Actuel",
-          "missingAccessProvider": "Fournisseur d'accès manquant",
-          "missingGrantProvider": "Fournisseur d'autorisation manquant",
-          "missingPlatformConfiguration": "Configuration de plateforme manquante",
-          "missingRevokeProvider": "Fournisseur de révocation manquant",
-          "neverSynced": "Jamais synchronisé",
-          "providerContractMismatch": "Incompatibilité du contrat fournisseur",
-          "stale": "Périmé",
-          "unsupportedProtocol": "Protocole non pris en charge"
-        }
-      },
       "errors": {
         "githubAuthorizationWindow": "Échec de l'ouverture de la fenêtre d'autorisation"
       },

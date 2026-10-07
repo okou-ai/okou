@@ -1,4 +1,4 @@
-import type { ConnectorCatalogSyncFailureCode } from "@okouai/api-contracts/contracts/connector-catalog-diagnostics";
+import type { ConnectorCatalogSyncFailureCode } from "@okouai/api-contracts/contracts/connector-catalog-sync";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { and, eq, inArray } from "drizzle-orm";

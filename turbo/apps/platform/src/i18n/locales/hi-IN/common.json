@@ -3593,40 +3593,6 @@
         "sendToLabel": "इस नंबर पर भेजें",
         "tryAgain": "फिर से कोशिश करें"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activeCatalogDigest": "सक्रिय कैटलॉग डाइजेस्ट",
-          "entries": "प्रविष्टियाँ",
-          "evaluated": "का मूल्यांकन",
-          "evaluation": "मूल्यांकन",
-          "executableCapabilityDigest": "निष्पादन योग्य क्षमता डाइजेस्ट",
-          "filteredAuthMethods": "फ़िल्टर किए गए प्रमाणीकरण तरीके",
-          "missingVersions": "अनुपलब्ध संस्करण",
-          "syncState": "सिंक अवस्था",
-          "unownedSecrets": "अज्ञात रहस्य",
-          "unownedVariables": "अज्ञात चर",
-          "unresolvedBridgeCredentials": "अनसुलझे पुल क्रेडेंशियल"
-        },
-        "loading": "लोड हो रहा है",
-        "none": "कोई नहीं",
-        "sections": {
-          "compatibility": "अनुकूलता",
-          "credentialStorage": "क्रेडेंशियल भंडारण"
-        },
-        "title": "कनेक्टर कैटलॉग",
-        "unavailable": "अनुपलब्ध",
-        "values": {
-          "current": "मौजूदा",
-          "missingAccessProvider": "पहुंच प्रोवाइडर गुम है",
-          "missingGrantProvider": "अनुपलब्ध अनुदान प्रोवाइडर",
-          "missingPlatformConfiguration": "प्लेटफ़ॉर्म कॉन्फ़िगरेशन गुम है",
-          "missingRevokeProvider": "निरस्तीकरण प्रोवाइडर गुम है",
-          "neverSynced": "कभी समन्वयित नहीं किया गया",
-          "providerContractMismatch": "प्रोवाइडर अनुबंध बेमेल",
-          "stale": "बासी",
-          "unsupportedProtocol": "असमर्थित प्रोटोकॉल"
-        }
-      },
       "errors": {
         "githubAuthorizationWindow": "प्राधिकरण विंडो खोलने में विफल"
       },

@@ -2918,10 +2918,10 @@ export function createThreadClaimRunObjects(
   const queuedMemberModelRoutesMemberAccountSnapshot$ = computed(
     async (get) => {
       const { orgId, userId } = await get(queuedMemberModelRoutesInput$);
-      const { accounts } = await get(
+      const { accounts, providers } = await get(
         (await get(queuedIdentityContext$)).memberModels$,
       );
-      return { orgId, userId, accounts };
+      return { orgId, userId, accounts, providers };
     },
   );
   const memberRoutes$ = computed(async (get) => {
@@ -2961,6 +2961,13 @@ export function createThreadClaimRunObjects(
           catalog: await get(claimCatalog$),
           selectedModel: selection.selectedModel,
           subscriptionModels: await get(subscriptionModels$),
+          memberProviderTypes: new Set(
+            (
+              await get(queuedMemberModelRoutesMemberAccountSnapshot$)
+            ).providers.map((provider) => {
+              return provider.type;
+            }),
+          ),
         })
       : badRequestMessage("Queued input is missing its model selection");
   });

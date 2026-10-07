@@ -7,6 +7,7 @@ import {
   CHAT_RUN_TRANSIENT_ERROR_MESSAGE,
   CHAT_RUN_USAGE_LIMIT_MESSAGE,
   CHAT_RUN_UNSUPPORTED_MODEL_MESSAGE,
+  formatReplacementSubscriptionRequiredMessage,
   formatRunErrorForExternalSurface,
   getCodexChatGptAccountUnsupportedModel,
   INSUFFICIENT_CREDITS_ASK_ADMIN_MESSAGE,
@@ -139,6 +140,21 @@ describe("formatRunErrorForExternalSurface", () => {
     expect(isActionableRunError(error)).toBe(true);
     expect(isGenericRunErrorForDisplay(error)).toBe(false);
   });
+
+  it.each(["Codex", "Claude"] as const)(
+    "keeps the %s replacement subscription message actionable",
+    (subscriptionLabel) => {
+      const message = formatReplacementSubscriptionRequiredMessage({
+        replacedModelLabel: "GPT 5.6 Terra",
+        successorLabel: "GPT 6 Luna",
+        subscriptionLabel,
+      });
+      expect(message).toBe(
+        `GPT 5.6 Terra was replaced by GPT 6 Luna, which requires a ${subscriptionLabel} subscription. Select Auto or connect your ${subscriptionLabel} subscription.`,
+      );
+      expect(isActionableRunError(message)).toBe(true);
+    },
+  );
 
   it("uses the structured timeout reason instead of untrusted error text", () => {
     expect(

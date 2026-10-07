@@ -1,4 +1,8 @@
-import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
+import {
+  applyThreadModelReplacement,
+  resolveEnqueuedChatInputModel$,
+  type EnqueuedChatInputModel,
+} from "./chat-input-model.service";
 import { command } from "ccstate";
 import { db$, writeDb$ } from "../external/db";
 import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
@@ -539,6 +543,7 @@ interface PreparedWorkflowInputCommit {
   readonly plan: ReturnType<typeof workflowAutomationQueueEventPlan>;
   readonly source: WorkflowSourceAdmissionPlan;
   readonly replacePendingTicks: ReturnType<typeof pendingTickReplacement>;
+  readonly model: EnqueuedChatInputModel;
   readonly timing: ApiDispatchTimingCollector;
 }
 
@@ -570,11 +575,12 @@ const commitWorkflowInput$ = command(
     input: PreparedWorkflowInputCommit,
     signal: AbortSignal,
   ): Promise<ChatInputEnqueueCommit | null> => {
-    const { args, plan, source, replacePendingTicks, timing } = input;
+    const { args, plan, source, replacePendingTicks, model, timing } = input;
     const { automation, chatThreadId } = args.due;
     const queueTarget = { chatThreadId, orgId: automation.orgId };
     const { startedAt, marks, tickTiming } = createWorkflowSqlTiming();
-    // Context + input + queue + receipt/claim share one rollback authority.
+    // Context + input + thread model replacement + queue + receipt/claim share
+    // one rollback authority.
     // The finite callback performs only SQL, never commands or external I/O.
     const eventId = await set(writeDb$)
       .transaction(async (tx) => {
@@ -672,6 +678,7 @@ const commitWorkflowInput$ = command(
             throw workflowSourceAdmissionError(step.failure);
           }
         }
+        await applyThreadModelReplacement(tx, model.threadModelReplacement);
         marks.push({ step: "queue", startedAt: now() });
         const queuePlan = queuedChatThreadEnqueuePlan(queueTarget);
         await tx
@@ -740,11 +747,7 @@ export const runWorkflowAutomationNow$ = command(
     const { scheduleClaim } = args;
     const replacePendingTicks = pendingTickReplacement(args);
 
-    const modelSelection = await set(
-      workflowAutomationInputModel$,
-      args.due,
-      signal,
-    );
+    const model = await set(workflowAutomationInputModel$, args.due, signal);
     const displayName = await set(
       workflowQueueDisplayName$,
       automation.workflowId,
@@ -754,7 +757,7 @@ export const runWorkflowAutomationNow$ = command(
     const source = await set(prepareWorkflowQueueSource$, args, signal);
     const plan = workflowAutomationQueueEventPlan({
       displayName,
-      modelSelection,
+      modelSelection: model.modelSelection,
       automation,
       queueEventId: args.queueEventId,
       workflowName: args.automationContext.workflowName,
@@ -786,7 +789,7 @@ export const runWorkflowAutomationNow$ = command(
             const attempt = await settle(
               set(
                 commitWorkflowInput$,
-                { args, plan, source, replacePendingTicks, timing },
+                { args, plan, source, replacePendingTicks, model, timing },
                 signal,
               ),
             );

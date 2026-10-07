@@ -5,7 +5,6 @@ import { searchParams$, updateSearchParams$ } from "../../route.ts";
 import { reloadIndexedDbDiagnosticsFromWorker$ } from "../../shared-database.ts";
 import { resetSignal } from "../../utils.ts";
 import { usagePackManagementAsync$ } from "../billing.ts";
-import { reloadConnectorCatalogDiagnostics$ } from "./connector-catalog-diagnostics.ts";
 import { retryEmailSubscription$ } from "./email-subscription.ts";
 import {
   managedUsagePackSelection,
@@ -106,7 +105,6 @@ export const settingsActiveSection$ = computed((get) => {
 export const setSettingsActiveSection$ = command(
   ({ get, set }, section: SettingsSection) => {
     if (section === "debug" && get(internalActiveSection$) !== "debug") {
-      set(reloadConnectorCatalogDiagnostics$);
       set(reloadIndexedDbDiagnosticsFromWorker$);
     }
     set(internalActiveSection$, section);
@@ -270,7 +268,6 @@ export const setSettingsDialogOpen$ = command(
     // by an entry point outside Settings, so that flow owns the whole dialog.
     set(setBillingPlansStandalone$, get(billingSubPage$));
     if (get(internalActiveSection$) === "debug") {
-      set(reloadConnectorCatalogDiagnostics$);
       set(reloadIndexedDbDiagnosticsFromWorker$);
     }
     set(internalSettingsDialogOpen$, true);

@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import type {
   ConnectorCatalogSyncAttemptReport,
   ConnectorCatalogSyncFailureCode,
-} from "@okouai/api-contracts/contracts/connector-catalog-diagnostics";
+} from "@okouai/api-contracts/contracts/connector-catalog-sync";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { connectors } from "@okouai/db/schema/connector";

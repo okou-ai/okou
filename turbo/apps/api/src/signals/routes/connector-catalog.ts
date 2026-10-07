@@ -1,7 +1,6 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { getAllFeatureStates } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -10,7 +9,6 @@ import { pathParamsOf, queryOf } from "../context/request";
 import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchOverrides } from "../services/feature-switches.service";
-import { connectorCatalogDiagnostics$ } from "../services/connector-catalog-diagnostics.service";
 import {
   discoverPublicConnectorCatalogStatus,
   getPublicConnectorCatalogStatus,
@@ -30,22 +28,6 @@ export const connectorCatalogAuth = {
   missingOrganizationStatus: 401,
   requiredCapability: "connector:read",
 } as const;
-
-const connectorCatalogDiagnosticsAuth = {
-  requireOrganization: true,
-  missingOrganizationStatus: 401,
-  accept: ["session"],
-} as const;
-
-const connectorCatalogDiagnosticsDisabled = Object.freeze({
-  status: 403 as const,
-  body: Object.freeze({
-    error: Object.freeze({
-      message: "Connector catalog diagnostics are not enabled",
-      code: "FORBIDDEN",
-    }),
-  }),
-});
 
 function connectorCatalogNotFound() {
   return notFound("Connector catalog item not found");
@@ -269,19 +251,6 @@ const discoverConnectorCatalogInner$ = command(
   },
 );
 
-const getConnectorCatalogDiagnosticsInner$ = command(
-  async ({ set }, signal: AbortSignal) => {
-    const context = await set(connectorCatalogRequestContext$);
-    signal.throwIfAborted();
-    if (!context.featureStates[FeatureSwitchKey.OkouDebug]) {
-      return connectorCatalogDiagnosticsDisabled;
-    }
-
-    const diagnostics = await set(connectorCatalogDiagnostics$, signal);
-    return { status: 200 as const, body: diagnostics };
-  },
-);
-
 const getConnectorCatalogInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
@@ -366,13 +335,6 @@ export const connectorCatalogRoutes: readonly RouteEntry[] = [
     handler: authRoute(
       connectorCatalogAuth,
       listOneClickConnectorCatalogInner$,
-    ),
-  },
-  {
-    route: connectorCatalogContract.diagnostics,
-    handler: authRoute(
-      connectorCatalogDiagnosticsAuth,
-      getConnectorCatalogDiagnosticsInner$,
     ),
   },
   {

@@ -10,9 +10,14 @@ import { slackChatIngress } from "@okouai/db/schema/slack-chat-ingress";
 import { command } from "ccstate";
 import { eq, and } from "drizzle-orm";
 import { parseRawRows } from "../../lib/db-raw-rows";
+import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { prepareChatEvent } from "./chat-event.service";
+import {
+  applyThreadModelReplacement,
+  type ThreadModelReplacement,
+} from "./chat-input-model.service";
 import {
   appendCanonicalChatEventsSql,
   chatEventAppendResultSchema,
@@ -29,13 +34,67 @@ type IntegrationIngressReceipt =
     }
   | { readonly kind: "slack" | "feishu"; readonly ingressId: string };
 
-/** One integration input, its context and existing ingress receipt commit together. */
+type IntegrationContext = Exclude<
+  NonNullable<ReturnType<typeof prepareChatEvent>["displayContext"]>,
+  { readonly type: "agent_run" | "automation" }
+>;
+
+/** The provider context row the integration input references. */
+async function insertIntegrationContext(
+  tx: Tx,
+  context: IntegrationContext,
+  chatThreadId: string,
+  createdAt: Date,
+): Promise<void> {
+  if (context.type === "discord") {
+    await tx
+      .insert(chatDiscordContext)
+      .values({
+        ...context.snapshot,
+        id: context.id,
+        chatThreadId,
+        createdAt,
+      })
+      .onConflictDoNothing({ target: chatDiscordContext.id });
+  } else if (context.type === "slack") {
+    await tx
+      .insert(chatSlackContext)
+      .values({ ...context, createdAt })
+      .onConflictDoNothing();
+  } else if (context.type === "feishu") {
+    await tx
+      .insert(chatFeishuContext)
+      .values({ ...context, createdAt })
+      .onConflictDoNothing();
+  } else if (context.type === "teams") {
+    await tx
+      .insert(chatTeamsContext)
+      .values({ ...context, createdAt })
+      .onConflictDoNothing();
+  } else if (context.type === "telegram") {
+    await tx
+      .insert(chatTelegramContext)
+      .values({ ...context, createdAt })
+      .onConflictDoNothing();
+  } else {
+    await tx
+      .insert(chatAgentphoneContext)
+      .values({ ...context, createdAt })
+      .onConflictDoNothing();
+  }
+}
+
+/**
+ * One integration input, its context, its thread's model replacement and the
+ * existing ingress receipt commit together.
+ */
 export const enqueueIntegrationChatInput$ = command(
   async (
     { set },
     args: {
       readonly orgId: string;
       readonly input: Parameters<typeof prepareChatEvent>[0];
+      readonly threadModelReplacement: ThreadModelReplacement | null;
       readonly ingress?: IntegrationIngressReceipt;
     },
     signal: AbortSignal,
@@ -78,42 +137,7 @@ export const enqueueIntegrationChatInput$ = command(
           return null;
         }
       }
-      if (context.type === "discord") {
-        await tx
-          .insert(chatDiscordContext)
-          .values({
-            ...context.snapshot,
-            id: context.id,
-            chatThreadId,
-            createdAt,
-          })
-          .onConflictDoNothing({ target: chatDiscordContext.id });
-      } else if (context.type === "slack") {
-        await tx
-          .insert(chatSlackContext)
-          .values({ ...context, createdAt })
-          .onConflictDoNothing();
-      } else if (context.type === "feishu") {
-        await tx
-          .insert(chatFeishuContext)
-          .values({ ...context, createdAt })
-          .onConflictDoNothing();
-      } else if (context.type === "teams") {
-        await tx
-          .insert(chatTeamsContext)
-          .values({ ...context, createdAt })
-          .onConflictDoNothing();
-      } else if (context.type === "telegram") {
-        await tx
-          .insert(chatTelegramContext)
-          .values({ ...context, createdAt })
-          .onConflictDoNothing();
-      } else {
-        await tx
-          .insert(chatAgentphoneContext)
-          .values({ ...context, createdAt })
-          .onConflictDoNothing();
-      }
+      await insertIntegrationContext(tx, context, chatThreadId, createdAt);
       const [event] = parseRawRows(
         chatEventAppendResultSchema,
         await tx.execute(appendCanonicalChatEventsSql([prepared.row], "id")),
@@ -146,6 +170,7 @@ export const enqueueIntegrationChatInput$ = command(
           );
       }
       if (event) {
+        await applyThreadModelReplacement(tx, args.threadModelReplacement);
         // The queue row is locked last and only advances queuedAt; a live
         // claim lease stays with its holder (docs/chat-run-pick.md).
         const plan = queuedChatThreadEnqueuePlan({

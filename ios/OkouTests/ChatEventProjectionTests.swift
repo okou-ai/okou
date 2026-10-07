@@ -62,8 +62,8 @@ final class ChatEventProjectionTests: XCTestCase {
     XCTAssertTrue(history.messages.allSatisfy { !$0.isQueued })
   }
 
-  private func decodeRows(_ json: [String]) throws -> [ChatEventRow] {
-    try json.map { try APIClient.decoder().decode(ChatEventRow.self, from: Data($0.utf8)) }
+  private func decodeRows(_ json: [String]) throws -> [ChatEvent] {
+    try json.map { try APIClient.decoder().decode(ChatEventRow.self, from: Data($0.utf8)).event }
   }
 
   private func eventID(_ id: Int) -> String {

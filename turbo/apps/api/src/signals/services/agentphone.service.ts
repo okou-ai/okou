@@ -1508,19 +1508,20 @@ const persistAgentPhoneChatMessage$ = command(
           .filter(Boolean)
           .join("\n\n")
       : args.prompt;
+    const enqueuedModel = await set(
+      resolveEnqueuedChatInputModel$,
+      {
+        threadId: route.chatThreadId,
+        orgId: args.userLink.orgId,
+        userId: args.userLink.userId,
+      },
+      signal,
+    );
     const values = {
       id: chatEventId,
       chatThreadId: route.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await set(
-        resolveEnqueuedChatInputModel$,
-        {
-          threadId: route.chatThreadId,
-          orgId: args.userLink.orgId,
-          userId: args.userLink.userId,
-        },
-        signal,
-      ),
+      modelSelection: enqueuedModel.modelSelection,
       userMessage: createUserMessageDocument({
         text: canonicalAsset ? args.event.body.trim() : args.prompt,
         files: integrationInputMessageFiles(assets),
@@ -1550,7 +1551,11 @@ const persistAgentPhoneChatMessage$ = command(
     } as const;
     const eventId = await set(
       enqueueIntegrationChatInput$,
-      { orgId: args.userLink.orgId, input: values },
+      {
+        orgId: args.userLink.orgId,
+        input: values,
+        threadModelReplacement: enqueuedModel.threadModelReplacement,
+      },
       signal,
     );
     signal.throwIfAborted();

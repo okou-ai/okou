@@ -3574,40 +3574,6 @@
         "sendToLabel": "Kirim ke",
         "tryAgain": "Coba lagi"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activeCatalogDigest": "Digest katalog aktif",
-          "entries": "Entri",
-          "evaluated": "Dievaluasi",
-          "evaluation": "Evaluasi",
-          "executableCapabilityDigest": "Digest kemampuan eksekusi",
-          "filteredAuthMethods": "Metode autentikasi yang difilter",
-          "missingVersions": "Versi yang hilang",
-          "syncState": "Status sinkronisasi",
-          "unownedSecrets": "Secret yang tidak dimiliki",
-          "unownedVariables": "Variabel yang tidak dimiliki",
-          "unresolvedBridgeCredentials": "Kredensial bridge yang belum terselesaikan"
-        },
-        "loading": "Memuat",
-        "none": "Tidak ada",
-        "sections": {
-          "compatibility": "Kompatibilitas",
-          "credentialStorage": "Penyimpanan kredensial"
-        },
-        "title": "Katalog konektor",
-        "unavailable": "Tidak tersedia",
-        "values": {
-          "current": "Saat ini",
-          "missingAccessProvider": "Penyedia akses tidak ada",
-          "missingGrantProvider": "Penyedia pemberian akses tidak ada",
-          "missingPlatformConfiguration": "Konfigurasi platform tidak ada",
-          "missingRevokeProvider": "Penyedia pencabutan tidak ada",
-          "neverSynced": "Belum pernah disinkronkan",
-          "providerContractMismatch": "Ketidakcocokan kontrak penyedia",
-          "stale": "Usang",
-          "unsupportedProtocol": "Protokol tidak didukung"
-        }
-      },
       "errors": {
         "githubAuthorizationWindow": "Gagal membuka jendela otorisasi"
       },

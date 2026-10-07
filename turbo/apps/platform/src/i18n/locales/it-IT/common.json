@@ -3653,40 +3653,6 @@
         "sendToLabel": "Invia a",
         "tryAgain": "Riprova"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activeCatalogDigest": "Digest del catalogo attivo",
-          "entries": "Voci",
-          "evaluated": "Valutato",
-          "evaluation": "Valutazione",
-          "executableCapabilityDigest": "Digest di capacità eseguibile",
-          "filteredAuthMethods": "Metodi di autenticazione filtrati",
-          "missingVersions": "Versioni mancanti",
-          "syncState": "Stato di sincronizzazione",
-          "unownedSecrets": "Segreti non posseduti",
-          "unownedVariables": "Variabili senza proprietario",
-          "unresolvedBridgeCredentials": "Credenziali bridge non risolte"
-        },
-        "loading": "Caricamento in corso",
-        "none": "Nessuno",
-        "sections": {
-          "compatibility": "Compatibilità",
-          "credentialStorage": "Archiviazione delle credenziali"
-        },
-        "title": "Catalogo connettori",
-        "unavailable": "Non disponibile",
-        "values": {
-          "current": "Corrente",
-          "missingAccessProvider": "Provider di accesso mancante",
-          "missingGrantProvider": "Provider di sovvenzioni mancante",
-          "missingPlatformConfiguration": "Configurazione della piattaforma mancante",
-          "missingRevokeProvider": "Provider di revoca mancante",
-          "neverSynced": "Mai sincronizzato",
-          "providerContractMismatch": "Mancata corrispondenza del contratto del provider",
-          "stale": "Stanco",
-          "unsupportedProtocol": "Protocollo non supportato"
-        }
-      },
       "errors": {
         "githubAuthorizationWindow": "Impossibile aprire la finestra di autorizzazione"
       },
