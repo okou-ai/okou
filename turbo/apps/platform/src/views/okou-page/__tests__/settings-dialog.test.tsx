@@ -637,12 +637,9 @@ test("Inspect connector catalog diagnostics", async () => {
   expect(summary).toHaveTextContent(`Active version: sha256:${"a".repeat(64)}`);
   expect(summary).toHaveTextContent("Entries: 2");
   expect(summary).toHaveTextContent("Evaluation: Current");
-  expect(summary).not.toHaveTextContent("Last attempt");
 
   click(summary);
   expect(details.open).toBeTruthy();
-  expect(within(diagnostics).queryByText("Activated")).toBeNull();
-  expect(within(diagnostics).queryByText("Rejected candidate")).toBeNull();
   expect(within(diagnostics).getByText("github / oauth")).toBeInTheDocument();
   expect(
     within(diagnostics).getByText("Missing revoke provider"),
@@ -658,52 +655,6 @@ test("Inspect connector catalog diagnostics", async () => {
 
   click(summary);
   expect(details.open).toBeFalsy();
-});
-
-test("Inspect connector catalog diagnostics from an API without pointer fields", async () => {
-  // Older API instances still return sync history and omit `pointer`.
-  const olderApiBody = {
-    schemaVersion: 4 as const,
-    state: "stale" as const,
-    active: {
-      catalogVersion: "2026-07-25.1",
-      catalogDigest: `sha256:${"a".repeat(64)}`,
-      activatedAt: "2026-07-25T01:00:00.000Z",
-    },
-    lastAttempt: {
-      at: "2026-07-25T02:00:00.000Z",
-      outcome: "rejected",
-      failureCode: "invalid-artifact",
-      reusedCachedRejection: true,
-    },
-    lastSuccessAt: "2026-07-25T02:00:00.000Z",
-    rejectedCandidate: null,
-    filtering: {
-      capabilityDigest: `sha256:${"b".repeat(64)}`,
-      evaluatedAt: "2026-07-25T01:00:00.000Z",
-      stale: false,
-      filteredAuthMethods: [],
-    },
-    credentialStorage: {
-      missingConnectorVersions: 0,
-      unownedConnectorSecrets: 0,
-      unownedConnectorVariables: 0,
-      unresolvedBridgeCredentials: 0,
-    },
-  };
-  context.mocks.api(connectorCatalogContract.diagnostics, ({ respond }) => {
-    return respond(200, olderApiBody);
-  });
-  await openDialog("admin", "debug");
-
-  const diagnostics = await screen.findByRole("region", {
-    name: "Connector catalog",
-  });
-  const { summary } = connectorCatalogDisclosure(diagnostics);
-  expect(summary).toHaveTextContent("Sync state: Stale");
-  expect(summary).toHaveTextContent("Active version: 2026-07-25.1");
-  expect(summary).toHaveTextContent("Entries: None");
-  expect(summary).not.toHaveTextContent("Last attempt");
 });
 
 test("Flag a connector catalog generation without entries as unavailable", async () => {

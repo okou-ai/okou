@@ -123,7 +123,7 @@ function DiagnosticField({
 }
 
 /**
- * Older API instances omit the pointer; a pointer without entries is an
+ * No pointer means no published catalog; a pointer without entries is an
  * unavailable generation rather than an empty catalog.
  */
 function formatEntryCount(

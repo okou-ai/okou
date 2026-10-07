@@ -104,16 +104,15 @@ export const connectorCatalogDiagnosticsSchema = z.object({
       catalogDigest: z.string(),
     })
     .nullable(),
-  // Absent from older API instances; null without a published pointer. An
-  // `entryCount` of zero is an unavailable generation.
+  // Null without a published pointer. An `entryCount` of zero is an
+  // unavailable generation.
   pointer: z
     .object({
       schemaVersion: z.number().int().positive(),
       hash: z.string(),
       entryCount: z.number().int().nonnegative(),
     })
-    .nullable()
-    .optional(),
+    .nullable(),
   filtering: connectorCatalogFilteringStatusSchema,
   credentialStorage: connectorCredentialStorageReadinessSchema,
 });

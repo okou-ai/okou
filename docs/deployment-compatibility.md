@@ -190,7 +190,7 @@ cached.
 
 Response fields:
 
-- `pointer` (new, optional): `{ schemaVersion, hash, entryCount }`, or `null`
+- `pointer` (new): `{ schemaVersion, hash, entryCount }`, or `null`
   without a pointer. `entryCount: 0` is an unavailable generation: the API
   logs a warning and reports `filtering` with `stale: true` and
   `evaluatedAt: null`.
@@ -207,10 +207,11 @@ Response fields:
 Rolling deploy: the old Platform debug panel already null-guards every
 removed field (`lastAttempt ?`, `active?.activatedAt ?? null`,
 `formatTimestamp(lastSuccessAt)` on a falsy value, `rejectedCandidate ?`), so
-it renders them as "None" against a new API. The new panel parses old API
-responses: Zod ignores the extra history keys, a missing `pointer` renders
-"None", and `stale` remains translatable. Platform validates responses only in
-tests. No CLI command reads this endpoint.
+it renders them as "None" against a new API. The panel is behind the
+staff-only OkouDebug switch, so the new panel adds no handling for older API
+responses: the contract requires `pointer`, and a new panel served by an old
+API shows its fields as "None" until that API is replaced. No CLI command reads
+this endpoint.
 
 The cron sync response (`/api/cron/sync-connector-catalog`) carries the same
 `pointer`, `filtering` and `credentialStorage`, plus the writer's report of
