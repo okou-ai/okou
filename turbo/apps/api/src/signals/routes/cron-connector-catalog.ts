@@ -18,11 +18,19 @@ const syncConnectorCatalogRoute$ = command(
     const result = await set(syncConnectorCatalog$, signal);
     await set(reconcileConnectorCatalogCompatibility$, signal);
     const diagnostics = await set(connectorCatalogDiagnostics$, signal);
+    // Pointer, filtering and storage readiness are the staff diagnostics. The
+    // writer's report of the attempt it just made (state, active identity and
+    // history) comes from its own sync state and leaves with it in Release 2.
     return {
       status: 200 as const,
       body: {
-        outcome: result.outcome,
         ...diagnostics,
+        outcome: result.outcome,
+        state: result.state,
+        active: result.active,
+        lastAttempt: result.lastAttempt,
+        lastSuccessAt: result.lastSuccessAt,
+        rejectedCandidate: result.rejectedCandidate,
       },
     };
   },

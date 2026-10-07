@@ -125,8 +125,7 @@ There is no schema migration or stored-data rewrite. The writer still validates
 and completely prepares entries before publishing the pointer, and atomically
 maintains the legacy snapshot, compatibility rows and pointer metadata. The
 legacy synchronization CAS/rejection state and compatibility reconciler are
-unchanged. Staff diagnostics still read those legacy stores and must migrate in
-a subsequent Release 1 PR before any Release 2 DROP or writer contraction.
+unchanged. Staff diagnostics migrated in a follow-up Release 1 PR (below).
 
 New API/existing DB requires the pointer and entries to have been materialized
 by the existing synchronizer; a legacy gzip row alone is not readiness. Old
@@ -149,6 +148,70 @@ route coverage claims old v1 baseline contexts for both Claude Code and Pi,
 including their original publication version, after removing legacy serving
 rows from the case-owned database. Production performance and deployed
 old/new-instance acceptance remain separate verification boundaries.
+
+### Connector catalog staff diagnostics on pointer and immutable entries
+
+Staff diagnostics (`GET /api/connector-catalog/diagnostics`, OkouDebug only)
+no longer read `connector_catalog_sync_state`,
+`connector_catalog_active_snapshot`,
+`connector_catalog_compatibility_evaluation` or the runtime projection tables.
+Each request reads `connector_catalog(schema_version, hash)` and the
+`connector_catalog_entries` at that hash (only the slug, auth methods and MCP
+presence that compatibility evaluates), then calls
+`evaluateConnectorCatalogCompatibility` against the current executable
+capability. Diagnostics do not read `catalog_version`, `activated_at`,
+`catalog_header` or `entry_slugs`, so they survive the removal of those
+columns, and there is no manifest comparison. Nothing new is persisted or
+cached.
+
+Response fields:
+
+- `pointer` (new, optional): `{ schemaVersion, hash, entryCount }`, or `null`
+  without a pointer. `entryCount: 0` is an unavailable generation: the API
+  logs a warning and reports `filtering` with `stale: true` and
+  `evaluatedAt: null`.
+- `active`: `{ catalogVersion, catalogDigest }`, both carrying the hash.
+  `catalogVersion` is a legacy alias, as in the baseline identity above.
+  `activatedAt` is omitted.
+- `state`: `never-synced` without a pointer, `current` otherwise. `stale`
+  stays in the enum for older API responses but is no longer emitted.
+- `filtering`: evaluated per request. `evaluatedAt` is the request time.
+- `lastAttempt`, `lastSuccessAt` and `rejectedCandidate` are removed. Only the
+  writer's sync state records them, so the API omits them instead of
+  reporting nulls that would look like "never attempted".
+
+Rolling deploy: the old Platform debug panel already null-guards every
+removed field (`lastAttempt ?`, `active?.activatedAt ?? null`,
+`formatTimestamp(lastSuccessAt)` on a falsy value, `rejectedCandidate ?`), so
+it renders them as "None" against a new API. The new panel parses old API
+responses: Zod ignores the extra history keys, a missing `pointer` renders
+"None", and `stale` remains translatable. Platform validates responses only in
+tests. No CLI command reads this endpoint.
+
+The cron sync response (`/api/cron/sync-connector-catalog`) carries the same
+`pointer`, `filtering` and `credentialStorage`, plus the writer's report of
+the attempt it just made: `outcome`, `state` (`stale` after a rejected
+candidate while an older catalog keeps serving), `active` (publication label
+and activation time), `lastAttempt`, `lastSuccessAt` and `rejectedCandidate`.
+`syncConnectorCatalog$` returns that report from its own sync state, and it
+goes away with that state in Release 2. The release workflow's best-effort
+readiness check (`state`, `active`, `filtering.stale`) keeps the same meaning.
+With an empty generation, it now warns.
+
+The remaining legacy reads in API source are all internal to the writer. They
+stay until the Release 2 contraction because old API instances still depend
+on the writes they guard:
+
+- `connector-catalog-sync.service.ts` `readSyncState` (sync state joined with
+  the active snapshot) provides the sync attempt's CAS baseline, observed
+  pointer and rejection cache, and the attempt report described above.
+- `connector-catalog-compatibility.service.ts` `reconcileCompatibility` takes
+  locking reads (`lockSyncState`, `activeSnapshotForUpdate` and the existing
+  evaluation's validation authority) before it rewrites compatibility rows.
+- `preview-onboarding-catalog.service.ts` only writes and deletes the preview
+  source's legacy rows.
+
+There are no schema, data or writer behavior changes.
 
 ## Organization OpenRouter preset override
 

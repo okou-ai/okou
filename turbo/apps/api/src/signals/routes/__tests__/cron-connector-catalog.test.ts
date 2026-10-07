@@ -1504,6 +1504,40 @@ async function enableDiagnosticsFeatureSwitch(): Promise<void> {
   });
 }
 
+interface SyncResponseBody {
+  readonly outcome: unknown;
+  readonly state: unknown;
+  readonly active: { readonly catalogDigest: string } | null;
+  readonly lastAttempt: unknown;
+  readonly lastSuccessAt: unknown;
+  readonly rejectedCandidate: unknown;
+}
+
+// Staff diagnostics share the pointer, filtering and storage facts of a sync
+// response, identify the pointer by hash only and omit the writer's report.
+function staffDiagnosticsFromSync<T extends SyncResponseBody>(body: T) {
+  const {
+    outcome: _outcome,
+    state: _state,
+    active,
+    lastAttempt: _lastAttempt,
+    lastSuccessAt: _lastSuccessAt,
+    rejectedCandidate: _rejectedCandidate,
+    ...diagnostics
+  } = body;
+  return {
+    ...diagnostics,
+    state: active === null ? "never-synced" : "current",
+    active:
+      active === null
+        ? null
+        : {
+            catalogVersion: active.catalogDigest,
+            catalogDigest: active.catalogDigest,
+          },
+  };
+}
+
 async function readStatus() {
   await enableDiagnosticsFeatureSwitch();
   return await accept(
@@ -1563,28 +1597,20 @@ describe("connector catalog cron authentication and initial state", () => {
     expect(missing.status).toBe(401);
   });
 
-  it("reports never-synced without reading the shared storage bucket", async () => {
+  // The pointer is global, so a fresh test source still sees the current
+  // publication; never-synced is covered by the case-owned immutable suite.
+  it("reports staff diagnostics without sync history or storage reads", async () => {
     configureSource();
-    expect((await readStatus()).body).toStrictEqual({
-      schemaVersion: 4,
-      state: "never-synced",
-      active: null,
-      lastAttempt: null,
-      lastSuccessAt: null,
-      rejectedCandidate: null,
-      credentialStorage: {
-        missingConnectorVersions: expect.any(Number),
-        unownedConnectorSecrets: expect.any(Number),
-        unownedConnectorVariables: expect.any(Number),
-        unresolvedBridgeCredentials: expect.any(Number),
-      },
-      filtering: {
-        capabilityDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
-        evaluatedAt: null,
-        stale: true,
-        filteredAuthMethods: [],
-      },
-    });
+    const body = (await readStatus()).body;
+    expect(Object.keys(body).sort()).toStrictEqual([
+      "active",
+      "credentialStorage",
+      "filtering",
+      "pointer",
+      "schemaVersion",
+      "state",
+    ]);
+    expect(body.state).not.toBe("stale");
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
   });
 
@@ -1635,10 +1661,10 @@ describe("connector catalog valid lifecycle", () => {
     });
 
     const callsBeforeStatus = context.mocks.s3.send.mock.calls.length;
+    // Staff diagnostics carry the same pointer facts without the writer's
+    // attempt report.
     expect((await readStatus()).body).toStrictEqual(
-      (({ outcome: _outcome, ...status }) => {
-        return status;
-      })(acceptedFirst.body),
+      staffDiagnosticsFromSync(acceptedFirst.body),
     );
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeStatus);
 
@@ -1652,7 +1678,7 @@ describe("connector catalog valid lifecycle", () => {
       lastAttempt: { outcome: "unchanged", failureCode: null },
       lastSuccessAt: "2026-07-15T08:01:00.000Z",
       filtering: {
-        evaluatedAt: FIRST_SYNC_TIME,
+        evaluatedAt: "2026-07-15T08:01:00.000Z",
         stale: false,
         filteredAuthMethods: [],
       },
@@ -4601,9 +4627,12 @@ describe("connector catalog valid lifecycle", () => {
         })
         .sort(),
     ).toStrictEqual(["accepted", "unchanged"]);
+    const served = results[0]?.body.active?.catalogDigest;
+    expect(served).toBeDefined();
     expect((await readStatus()).body).toMatchObject({
       state: "current",
-      active: { catalogVersion: release.version },
+      active: { catalogVersion: served, catalogDigest: served },
+      pointer: { hash: served },
     });
   });
 
@@ -4796,11 +4825,13 @@ describe("connector catalog executable compatibility", () => {
       readApiTestConnectorCatalogCompatibilityEvaluations(),
     ).resolves.toHaveLength(0);
 
-    const stale = await readStatus();
-    expect(stale.body.filtering).toStrictEqual({
+    // Staff diagnostics evaluate the pointer on demand, so the missing
+    // persisted evaluation is invisible to them.
+    const onDemand = await readStatus();
+    expect(onDemand.body.filtering).toStrictEqual({
       capabilityDigest: EXPECTED_CAPABILITY_DIGEST,
-      evaluatedAt: null,
-      stale: true,
+      evaluatedAt: FIRST_SYNC_TIME,
+      stale: false,
       filteredAuthMethods: [],
     });
     routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
@@ -5234,7 +5265,10 @@ describe("connector catalog executable compatibility", () => {
     mockNow(new Date("2026-07-15T08:10:00.000Z"));
     mockOptionalEnv(unapprovedName, "must-not-affect-capabilities");
     const unchanged = await syncCatalog();
-    expect(unchanged.body.filtering).toStrictEqual(accepted.body.filtering);
+    expect(unchanged.body.filtering).toStrictEqual({
+      ...accepted.body.filtering,
+      evaluatedAt: "2026-07-15T08:10:00.000Z",
+    });
     expect(JSON.stringify(unchanged.body)).not.toContain(unapprovedName);
   });
 
@@ -5308,13 +5342,14 @@ describe("connector catalog executable compatibility", () => {
 
     mockOptionalEnv("STEAM_WEB_API_KEY", "configured");
     const callsBeforeStaleStatus = context.mocks.s3.send.mock.calls.length;
-    const stale = await readStatus();
-    expect(stale.body.filtering).toMatchObject({
-      evaluatedAt: null,
-      stale: true,
+    // Staff diagnostics follow the new capability before any reconcile.
+    const onDemand = await readStatus();
+    expect(onDemand.body.filtering).toMatchObject({
+      evaluatedAt: FIRST_SYNC_TIME,
+      stale: false,
       filteredAuthMethods: [],
     });
-    expect(stale.body.filtering.capabilityDigest).not.toBe(firstDigest);
+    expect(onDemand.body.filtering.capabilityDigest).not.toBe(firstDigest);
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeStaleStatus);
     const stalePublicRead = await accept(
       catalogClient.list({ headers }),
@@ -5350,9 +5385,10 @@ describe("connector catalog executable compatibility", () => {
     ).toStrictEqual([expect.objectContaining({ slug: "steam" })]);
 
     mockOptionalEnv("STEAM_WEB_API_KEY", undefined);
-    expect((await readStatus()).body.filtering).toStrictEqual(
-      missingConfiguration.body.filtering,
-    );
+    expect((await readStatus()).body.filtering).toStrictEqual({
+      ...missingConfiguration.body.filtering,
+      evaluatedAt: "2026-07-15T08:20:00.000Z",
+    });
     const rollingEvaluations =
       await readApiTestConnectorCatalogCompatibilityEvaluations();
     expect(rollingEvaluations).toHaveLength(2);
@@ -5385,11 +5421,9 @@ describe("connector catalog executable compatibility", () => {
     serveObjects(catalogObjects([first, second], second));
     await syncCatalog();
     mockOptionalEnv("STEAM_WEB_API_KEY", undefined);
-    expect((await readStatus()).body.filtering).toMatchObject({
-      capabilityDigest: firstDigest,
-      evaluatedAt: null,
-      stale: true,
-      filteredAuthMethods: [],
+    expect((await readStatus()).body.filtering).toStrictEqual({
+      ...missingConfiguration.body.filtering,
+      evaluatedAt: "2026-07-15T08:20:00.000Z",
     });
     expect(
       (await accept(catalogClient.list({ headers }), [200])).body.connectors,
@@ -6238,11 +6272,11 @@ describe("connector catalog rejection and latest-valid retention", () => {
       lastSuccessAt: FIRST_SYNC_TIME,
     });
 
+    // Staff diagnostics keep reporting the serving pointer; the rejection
+    // is only part of the writer's attempt report.
     const callsBeforeStatus = context.mocks.s3.send.mock.calls.length;
     expect((await readStatus()).body).toStrictEqual(
-      (({ outcome: _outcome, ...status }) => {
-        return status;
-      })(rejected.body),
+      staffDiagnosticsFromSync(rejected.body),
     );
     expect(context.mocks.s3.send).toHaveBeenCalledTimes(callsBeforeStatus);
     expect(JSON.stringify(rejected.body)).not.toContain(PRIVATE_VALUE);
@@ -6516,7 +6550,10 @@ describe("connector catalog rejection and latest-valid retention", () => {
       lastAttempt: { reusedCachedRejection: true },
       rejectedCandidate: { backendVersion: "1.319.0" },
     });
-    expect((await readStatus()).body).toMatchObject({
+    // The persisted rejection keeps the newer authority, so the newer
+    // backend reuses it instead of revalidating.
+    expect((await syncCatalog()).body).toMatchObject({
+      outcome: "rejected",
       lastAttempt: { reusedCachedRejection: true },
       rejectedCandidate: { backendVersion: "1.319.0" },
     });
