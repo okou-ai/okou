@@ -268,7 +268,10 @@ final class DesktopModel: ObservableObject {
   func goOffline() { perform { await self.host.stop() } }
   func refreshPermissions() async throws {
     guard !runtime.busy else { return }
-    let value = try await executor.permissions()
+    var value = try await executor.permissions()
+    // macOS cannot inspect browser Automation without probing it. Retain the
+    // latest explicit probe for the same UI and heartbeat permission state.
+    value["automation"] = .object(browserPermissions)
     permissions = value
     await host.updatePermissions(value)
     didChange?()
@@ -294,7 +297,9 @@ final class DesktopModel: ObservableObject {
           "automation_unavailable",
           response["error"]["message"].string ?? "Browser Automation check failed")
       }
-      self.browserPermissions[target] = response["result"]
+      var permission = response["result"]
+      permission["updatedAt"] = .string(ISO8601DateFormatter().string(from: Date()))
+      self.browserPermissions[target] = permission
       try await self.refreshPermissions()
     }
   }
