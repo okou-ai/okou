@@ -20,6 +20,7 @@ final class WorkspaceStore {
   private let client: APIClient
   private let cacheDirectory: URL?
   let webURL: URL
+  let messageMarkdown: MessageMarkdownCache
   private(set) var threads: [ChatThread] = []
   private(set) var agents: [AgentRecord] = []
   private(set) var pinnedAgentIDs: [String] = []
@@ -54,6 +55,7 @@ final class WorkspaceStore {
     self.client = client
     self.service = ChatService(client: client)
     self.webURL = webURL
+    self.messageMarkdown = MessageMarkdownCache(baseURL: webURL)
     self.cacheDirectory = cacheDirectory
   }
 
@@ -143,6 +145,7 @@ final class WorkspaceStore {
     refreshTask = nil
     realtime?.stop()
     realtime = nil
+    messageMarkdown.clear()
   }
 
   func setForeground(_ active: Bool) {
@@ -203,6 +206,7 @@ final class WorkspaceStore {
     loadingThreads.insert(id)
     defer { loadingThreads.remove(id) }
     if histories[id] == nil, let cached = await service.cachedHistory(threadID: id) {
+      await messageMarkdown.prepareLatest(cached.messages)
       guard !closed else { return }
       histories[id] = cached
     }
@@ -210,9 +214,10 @@ final class WorkspaceStore {
       historyRefreshAgain.remove(id)
       do {
         let history = try await service.history(threadID: id)
+        await messageMarkdown.prepareLatest(history.messages)
         try Task.checkCancellation()
         guard !closed else { return }
-        histories[id] = history
+        if histories[id] != history { histories[id] = history }
         let persisted = history.persistedEventIDs
         pending[id]?.removeAll { persisted.contains($0.id) }
         if pending[id]?.contains(where: \.needsRetry) != true { threadErrors[id] = nil }

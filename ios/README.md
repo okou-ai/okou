@@ -178,9 +178,12 @@ long-history performance checks remain outside the completed interactive sample.
 The transcript now uses a separate native `List` row for each message, instead
 of eagerly laying out the entire history in a `VStack`. Markdown, message
 grouping, context-menu copying, and the composer remain unchanged. Initial
-positioning follows the bottom while Markdown changes row heights; starting a
-manual scroll stops this following. A new message requests bottom positioning
-again. Keep these behaviors in local acceptance when changing the container.
+positioning targets the latest prepared messages; starting a manual scroll stops
+automatic following. Incoming messages preserve the reading position, while a
+local send or the bottom button requests bottom positioning. Keep these behaviors
+in local acceptance when changing the container. See
+[Chat UI architecture](CHAT_UI_ARCHITECTURE.md) for the Telegram reference and
+the presentation pipeline.
 
 A local investigation of a long conversation observed approximately 1.3 GB of
 process physical footprint with the eager stack and approximately 269 MB with

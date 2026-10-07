@@ -8,6 +8,11 @@ struct ChatDetailView: View {
   @State private var followsLatestMessage = true
   @State private var isAwayFromBottom = false
 
+  private struct ContentMetrics: Equatable {
+    let height: CGFloat
+    let isAwayFromBottom: Bool
+  }
+
   private var history: ChatHistory { store.histories[thread.id] ?? .empty }
   private var messages: [ChatMessage] { store.messages(for: thread.id) }
   var body: some View {
@@ -59,6 +64,9 @@ struct ChatDetailView: View {
       .refreshable { await store.loadHistory(thread.id) }
       .onScrollPhaseChange { _, phase in
         if phase == .tracking || phase == .interacting { followsLatestMessage = false }
+        if phase == .idle && hasPositionedHistory && !isAwayFromBottom {
+          followsLatestMessage = true
+        }
       }
       .onScrollGeometryChange(for: Bool.self) { geometry in
         geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY > 20
@@ -85,23 +93,50 @@ struct ChatDetailView: View {
           .padding(.bottom, 16)
         }
       }
-      .onScrollGeometryChange(for: CGSize.self) { geometry in
-        geometry.contentSize
-      } action: { _, _ in
-        if followsLatestMessage && !displayedMessages.isEmpty {
+      .simultaneousGesture(
+        DragGesture(minimumDistance: 8).onChanged { value in
+          if abs(value.translation.height) > abs(value.translation.width) {
+            followsLatestMessage = false
+          }
+        }
+      )
+      .onScrollGeometryChange(for: ContentMetrics.self) { geometry in
+        ContentMetrics(
+          height: geometry.contentSize.height,
+          isAwayFromBottom: geometry.contentSize.height + geometry.contentInsets.bottom
+            - geometry.visibleRect.maxY > 20)
+      } action: { previous, current in
+        // Correct an existing bottom request after text/images acquire their final height.
+        // Measuring a row while already at the bottom, or while reading history, is a no-op.
+        if hasPositionedHistory && followsLatestMessage && current.isAwayFromBottom
+          && current.height > previous.height
+        {
           proxy.scrollTo("conversation-bottom", anchor: .bottom)
         }
       }
-      .task(id: displayedMessages.last?.id) {
+      .task(id: displayedMessages.last) {
         guard !displayedMessages.isEmpty else { return }
+        // Incoming updates preserve the reading position; a local send follows its new bubble.
+        guard
+          !hasPositionedHistory || followsLatestMessage
+            || store.pending[thread.id]?.contains(where: { $0.id == displayedMessages.last?.id })
+              == true
+        else { return }
         followsLatestMessage = true
         await Task.yield()
         guard !Task.isCancelled else { return }
         if hasPositionedHistory {
-          withAnimation { proxy.scrollTo("conversation-bottom", anchor: .bottom) }
+          withAnimation(reduceMotion ? nil : .easeOut(duration: 0.25)) {
+            proxy.scrollTo("conversation-bottom", anchor: .bottom)
+          }
         } else {
           proxy.scrollTo("conversation-bottom", anchor: .bottom)
           hasPositionedHistory = true
+        }
+      }
+      .onChange(of: history.executionState) { _, _ in
+        if hasPositionedHistory && followsLatestMessage {
+          proxy.scrollTo("conversation-bottom", anchor: .bottom)
         }
       }
     }
@@ -129,7 +164,8 @@ struct ChatDetailView: View {
         Text("Notice")
           .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
       }
-      MessageBodyView(text: message.text, baseURL: store.webURL)
+      MessageBodyView(text: message.text, baseURL: store.webURL, markdown: store.messageMarkdown)
+        .equatable()
         .foregroundStyle(message.isError ? Color.red : Color.primary)
         .padding(.leading, message.role == .assistant ? 6 : 0)
       if let pending = store.pending[thread.id]?.first(where: { $0.id == message.id }) {
