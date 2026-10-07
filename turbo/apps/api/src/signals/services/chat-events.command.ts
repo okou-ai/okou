@@ -15,6 +15,7 @@ import {
 import { linkLayoutSegment } from "@okouai/api-contracts/contracts/link-layout";
 import {
   modelSettingsSchema,
+  withModelReasoningEffort,
   type ModelSettings,
   type ModelSettingsPatch,
   type ReasoningEffort,
@@ -84,7 +85,10 @@ import {
   type NewChatEvent,
 } from "./chat-event.service";
 import type { ChatInputEnqueueCommit } from "./chat-input-enqueue-observation";
-import { resolveChatInputModelSelection$ } from "./chat-input-model.service";
+import {
+  capturedModelReplacement,
+  resolveChatInputModelSelection$,
+} from "./chat-input-model.service";
 import { recordChatNetworkBodyCapture } from "./chat-network-body-capture.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import {
@@ -920,6 +924,42 @@ const resolveSendThread$ = command(
     };
   },
 );
+/**
+ * A stored or requested selection of a replaced model is written as the
+ * successor its input captured, so the thread, its event and the run agree.
+ */
+function withCapturedModelReplacement(
+  catalog: ModelCatalog,
+  thread: SendThread,
+  modelSelection: ChatInputModelSelection,
+): SendThread {
+  const { runSettings } = thread;
+  const successor = capturedModelReplacement(
+    catalog,
+    runSettings.selectedModel,
+    modelSelection,
+  );
+  if (successor === null) {
+    return thread;
+  }
+  const patch = runSettings.modelSettingsPatch;
+  const modelSettingsPatch =
+    patch === undefined ? undefined : { ...patch, model: successor };
+  return {
+    ...thread,
+    runSettings: {
+      selectedModel: successor,
+      modelSettings: modelSettingsPatch
+        ? withModelReasoningEffort(
+            runSettings.modelSettings,
+            modelSettingsPatch,
+          )
+        : runSettings.modelSettings,
+      modelSettingsPatch,
+      codexServiceTier: modelSelection.codexServiceTier,
+    },
+  };
+}
 /** Prepare the send's changed thread selections and their projection events. */
 function existingSendThreadUpdatePlan(
   args: NormalSendArgs,
@@ -1001,10 +1041,11 @@ function userModelPreferencePlan(
   args: NormalSendArgs,
   runSettings: ThreadRunSettings,
 ) {
-  const selectedModel = args.body.model;
-  if (selectedModel === undefined) {
+  if (args.body.model === undefined) {
     return null;
   }
+  // The captured selection: a replaced model is stored as its successor.
+  const selectedModel = runSettings.selectedModel;
   const serviceTier = chatThreadServiceTierFromCodex(
     runSettings.codexServiceTier,
   );
@@ -1545,7 +1586,7 @@ const prepareNormalSendInput$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly body: NormalSendBody;
-      readonly runSettings: ThreadRunSettings;
+      readonly thread: SendThread;
       readonly catalog: ModelCatalog;
       readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
       readonly modelBootstrap: ModelSelectionBootstrap;
@@ -1566,7 +1607,7 @@ const prepareNormalSendInput$ = command(
       {
         orgId: args.orgId,
         userId: args.userId,
-        ...args.runSettings,
+        ...args.thread.runSettings,
         reasoningEffort: args.body.runOptions?.reasoningEffort,
         orgPlanCapabilities: args.orgPlanCapabilities,
         catalog: args.catalog,
@@ -1578,7 +1619,15 @@ const prepareNormalSendInput$ = command(
     if ("status" in modelSelection) {
       return modelSelection;
     }
-    return { attachFileMetadata, modelSelection };
+    return {
+      attachFileMetadata,
+      modelSelection,
+      thread: withCapturedModelReplacement(
+        args.catalog,
+        args.thread,
+        modelSelection,
+      ),
+    };
   },
 );
 function preparedNormalSendEvent(
@@ -1709,7 +1758,7 @@ export const sendNormalEvent$ = command(
       modelBootstrap,
       context,
     } = prepared;
-    const thread = await set(
+    const resolvedThread = await set(
       resolveSendThread$,
       {
         ...args,
@@ -1725,13 +1774,13 @@ export const sendNormalEvent$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if ("status" in thread) {
-      return thread;
+    if ("status" in resolvedThread) {
+      return resolvedThread;
     }
     const revocation = await set(
       validateSendThreadRevocation$,
       args,
-      thread,
+      resolvedThread,
       signal,
     );
     signal.throwIfAborted();
@@ -1742,7 +1791,7 @@ export const sendNormalEvent$ = command(
       prepareNormalSendInput$,
       {
         ...args,
-        runSettings: thread.runSettings,
+        thread: resolvedThread,
         orgPlanCapabilities: orgModels.capabilities,
         catalog,
         modelBootstrap,
@@ -1752,7 +1801,7 @@ export const sendNormalEvent$ = command(
     if ("status" in input) {
       return input;
     }
-    const { attachFileMetadata, modelSelection } = input;
+    const { attachFileMetadata, modelSelection, thread } = input;
     const event = preparedNormalSendEvent(
       args,
       thread.threadId,

@@ -20,6 +20,7 @@ const context = testContext();
 const mocks = createRouteMocks(context);
 const wf = createWorkflowsBddApi(context);
 const { chat, entitledNativeChatActor } = createChatEventsFixture(context);
+const runsApi = createRunsApi(context);
 
 /**
  * An unknown stored selection: it is neither Auto nor one of the member's
@@ -149,7 +150,6 @@ describe("thread stored selection that is neither Auto nor an available subscrip
     });
     mocks.clerk.session(actor.userId, actor.orgId, "org:member");
     context.mocks.s3.send.mockResolvedValue({});
-    const runsApi = createRunsApi(context);
     const runnerGroup = runsApi.configureRunnerGroup();
     const webhook = await createWebhookAutomation(workflowId);
     await stageLegacyChatThreadSelectedModelFixture({
@@ -193,5 +193,108 @@ describe("thread stored selection that is neither Auto nor an available subscrip
 
     await runsApi.heartbeatRunner(runnerGroup);
     expect((await runsApi.pollRunner(runnerGroup)).body.job).toBeNull();
+  }, 90_000);
+});
+
+describe("thread stored selection of a retired model", () => {
+  /** A webhook automation whose thread stores the given legacy selection. */
+  async function stagedWebhookAutomation(model: string) {
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
+    const { actor } = await wf.setupWorkflowOrg({
+      tier: "team",
+      model: "claude-fable-5-1",
+    });
+    if (!actor.orgId) {
+      throw new Error("Expected an org-scoped workflow actor");
+    }
+    const agent = await wf.createAgent(actor, {
+      displayName: "Retired Selection Automation Agent",
+    });
+    const workflowId = await wf.createWorkflow(actor, {
+      agentId: agent.agentId,
+      name: "retired-selection-workflow",
+    });
+    mocks.clerk.session(actor.userId, actor.orgId, "org:member");
+    context.mocks.s3.send.mockResolvedValue({});
+    runsApi.configureRunnerGroup();
+    const webhook = await createWebhookAutomation(workflowId);
+    await stageLegacyChatThreadSelectedModelFixture({
+      threadId: webhook.threadId,
+      model,
+    });
+    await expect(
+      postWorkflowWebhook({
+        token: webhook.token,
+        secret: webhook.secret,
+        rawBody: JSON.stringify({ event: "retired-selection" }),
+      }),
+    ).resolves.toStrictEqual({
+      status: 200,
+      body: { success: true, duplicate: false },
+    });
+    await flushWaitUntilForTest();
+    const events = await wf.readThreadEvents(webhook.threadId);
+    const queued = events.find((event) => {
+      return event.eventType === "input.automation";
+    });
+    if (!queued) {
+      throw new Error("Expected the webhook delivery to enqueue an input");
+    }
+    const picked = events.find((event) => {
+      return event.revokesEventId === queued.id;
+    });
+    return { actor, threadId: webhook.threadId, events, picked };
+  }
+
+  it("rewrites the thread to the replacement and runs the automation on it", async () => {
+    const { actor, threadId, picked } =
+      await stagedWebhookAutomation("claude-fable-5");
+    if (picked?.runId === undefined) {
+      throw new Error("Expected the automation input to launch a run");
+    }
+    const run = await runsApi.readRun(actor, picked.runId);
+    expect(run.source.model).toBe("claude-fable-5-1");
+
+    await expect(
+      chat.readThreadMetadata(actor, threadId),
+    ).resolves.toMatchObject({ selectedModel: "claude-fable-5-1" });
+    const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
+    if (threadEvents.status !== 200) {
+      throw new Error("Expected chat thread events to load");
+    }
+    expect(
+      threadEvents.body.events.filter((event) => {
+        return (
+          event.chatThreadId === threadId &&
+          event.kind === "model_selection_updated"
+        );
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({ selectedModel: "claude-fable-5-1" }),
+    ]);
+  }, 90_000);
+
+  it("rejects an automation input whose replacement requires a subscription the member never connected", async () => {
+    const { actor, threadId, events, picked } =
+      await stagedWebhookAutomation("gpt-5.5");
+    expect(picked).toMatchObject({
+      eventType: "input.rejected",
+      error: "bad_request",
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        eventType: "output.error",
+        content:
+          "GPT 5.5 was replaced by GPT 6 Luna, which requires a Codex subscription. Select Auto or connect your Codex subscription.",
+      }),
+    );
+    expect(
+      events.some((event) => {
+        return event.runId !== undefined;
+      }),
+    ).toBeFalsy();
+    await expect(
+      chat.readThreadMetadata(actor, threadId),
+    ).resolves.toMatchObject({ selectedModel: "gpt-5.5" });
   }, 90_000);
 });

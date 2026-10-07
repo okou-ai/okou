@@ -33,8 +33,10 @@ const {
   api,
   chat,
   chatCallbacks,
+  misc,
   entitledNativeChatActor,
   sendChatRun,
+  claimChatRun,
   waitForThreadMessages,
   cancelChatRun,
   seedBuiltInModelKey,
@@ -166,6 +168,29 @@ async function pickedRunId(
   return runId;
 }
 
+/** The thread snapshot and its one model event name the final successor. */
+async function expectThreadRewrittenTo(
+  actor: ApiTestUser,
+  threadId: string,
+  successor: string,
+): Promise<void> {
+  await expect(chat.readThreadMetadata(actor, threadId)).resolves.toMatchObject(
+    { selectedModel: successor },
+  );
+  const threadEvents = await chat.requestThreadEvents(actor, {}, [200]);
+  if (threadEvents.status !== 200) {
+    throw new Error("Expected chat thread events to load");
+  }
+  expect(
+    threadEvents.body.events.filter((event) => {
+      return (
+        event.chatThreadId === threadId &&
+        event.kind === "model_selection_updated"
+      );
+    }),
+  ).toStrictEqual([expect.objectContaining({ selectedModel: successor })]);
+}
+
 function apiClient() {
   return setupApp({ context, routes: modelCatalogRoutes })(
     modelCatalogContract,
@@ -287,7 +312,7 @@ describe("GET /api/model-catalog", () => {
 });
 
 describe("stored selections of replaced models", () => {
-  it("shows and runs a thread stored with claude-fable-5 as claude-fable-5-1", async () => {
+  it("runs a thread stored with claude-fable-5 as claude-fable-5-1 and rewrites the thread", async () => {
     const { actor, agentId } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const thread = await chat.createThread(actor, {
@@ -315,7 +340,112 @@ describe("stored selections of replaced models", () => {
     const read = await api.readRun(actor, run.runId);
     expect(read.source.model).toBe("claude-fable-5-1");
     expect(read.source.providerType).toBe("claude-code-oauth-token");
+    await expectThreadRewrittenTo(actor, thread.id, "claude-fable-5-1");
+    expect((await mcpThread(actor, thread.id)).model).toMatchObject({
+      selectedModel: "claude-fable-5-1",
+      effectiveModel: "claude-fable-5-1",
+    });
     await cancelChatRun(actor, run.runId);
+  }, 90_000);
+
+  it("rejects a send whose replacement requires a subscription the member never connected", async () => {
+    const { actor, agentId } = await entitledNativeChatActor();
+    const thread = await chat.createThread(actor, {
+      agentId,
+      model: null,
+    });
+    await stageLegacyChatThreadSelectedModelFixture({
+      threadId: thread.id,
+      model: "gpt-5.6-terra",
+    });
+    const before = await chat.listThreadEvents(actor, thread.id);
+
+    for (const model of [undefined, "gpt-5.5"]) {
+      const sent = await chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          threadId: thread.id,
+          prompt: "continue the legacy Codex thread",
+          model,
+          clientEventId: randomUUID(),
+        },
+        [400],
+      );
+      expect(sent.body).toMatchObject({
+        error: {
+          message: `${model === undefined ? "GPT 5.6 Terra" : "GPT 5.5"} was replaced by GPT 6 Luna, which requires a Codex subscription. Select Auto or connect your Codex subscription.`,
+        },
+      });
+    }
+
+    await flushWaitUntilForTest();
+    expect(
+      (await chat.listThreadEvents(actor, thread.id)).events,
+    ).toStrictEqual(before.events);
+    await expect(
+      chat.readThreadMetadata(actor, thread.id),
+    ).resolves.toMatchObject({ selectedModel: "gpt-5.6-terra" });
+  }, 90_000);
+
+  it("accepts a replacement whose subscription account is disconnected and reports the reconnect error", async () => {
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    const active = await sendChatRun(actor, {
+      agentId,
+      prompt: "keep the subscription account in use",
+      model: "claude-fable-5-1",
+    });
+    const activeClaim = await claimChatRun(runnerGroup, active.runId);
+    // The running run retains the disconnected account.
+    await misc.deletePersonalModelProvider(
+      actor,
+      "claude-code-oauth-token",
+      [204],
+    );
+    const thread = await chat.createThread(actor, {
+      agentId,
+      model: null,
+    });
+    await stageLegacyChatThreadSelectedModelFixture({
+      threadId: thread.id,
+      model: "claude-fable-5",
+    });
+
+    const clientEventId = randomUUID();
+    await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: thread.id,
+        prompt: "continue through my disconnected subscription",
+        clientEventId,
+      },
+      [201],
+    );
+    await expectThreadRewrittenTo(actor, thread.id, "claude-fable-5-1");
+    await cancelChatRun(actor, active.runId, activeClaim.sandboxHeaders);
+    await flushWaitUntilForTest();
+    const page = await waitForThreadMessages(actor, thread.id, (events) => {
+      return events.some((event) => {
+        return event.eventType === "output.error";
+      });
+    });
+    expect(page.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.rejected",
+        revokesEventId: clientEventId,
+        error: "conflict",
+      }),
+    );
+    expect(page.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "output.error",
+        error: "conflict",
+        content:
+          "The selected subscription account is unavailable. Reconnect it before starting another run.",
+      }),
+    );
   }, 90_000);
 
   it("projects a legacy Codex selection without a Codex account as unavailable", async () => {
@@ -405,6 +535,7 @@ describe("stored selections of replaced models", () => {
     expect((await api.readRun(actor, run.runId)).source.model).toBe(
       "claude-opus-5-5",
     );
+    await expectThreadRewrittenTo(actor, thread.id, "claude-opus-5-5");
     await cancelChatRun(actor, run.runId);
   }, 90_000);
 });

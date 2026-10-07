@@ -568,19 +568,20 @@ const enqueueCanonicalSlackMessage$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
+    const enqueuedModel = await set(
+      resolveEnqueuedChatInputModel$,
+      {
+        threadId: args.chatThreadId,
+        orgId: args.orgId,
+        userId: args.ingress.userId,
+      },
+      signal,
+    );
     const values = {
       id: args.ingress.ingressId,
       chatThreadId: args.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await set(
-        resolveEnqueuedChatInputModel$,
-        {
-          threadId: args.chatThreadId,
-          orgId: args.orgId,
-          userId: args.ingress.userId,
-        },
-        signal,
-      ),
+      modelSelection: enqueuedModel.modelSelection,
       userMessage: createUserMessageDocument({
         text: args.displayContent,
         files: canonicalInputMessageFiles(args.canonicalAssets),
@@ -598,6 +599,7 @@ const enqueueCanonicalSlackMessage$ = command(
       {
         orgId: args.orgId,
         input: values,
+        threadModelReplacement: enqueuedModel.threadModelReplacement,
         ingress: { kind: "slack", ingressId: args.ingress.ingressId },
       },
       signal,

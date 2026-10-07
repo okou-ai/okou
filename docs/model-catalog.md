@@ -89,6 +89,37 @@ operator error rather than silently inventing a route.
   request tries the route again. Failure is not permission to choose another
   platform model/vendor.
 
+## Retired models
+
+A retired model keeps its `run_model_catalog` row with `replaced_by` set; chains
+are allowed and resolve to the final active model. Retired models have no
+routes and are never offered as choices.
+
+- Capturing an input resolves the selection to the final successor. The input,
+  the run and `agent_runs.selected_model` record the successor.
+- When a thread's stored or requested selection is a retired model, the
+  transaction that enqueues the input also rewrites the thread: the
+  `chat_threads.selected_model` snapshot becomes the successor and one
+  `model_selection_updated` event carries it. A Fast tier the successor does
+  not offer is cleared with a `service_tier_updated` event. Every send and
+  enqueue entry point (Web, CLI, iOS, MCP, integrations and workflow
+  automations) shares this capture. The enqueue rewrite only applies while the
+  thread still stores the retired model, so a concurrent model change wins.
+- A thread that is not sent to keeps its stored id until its next input.
+  Clients display the successor through the catalog's `resolvedModel`. Web
+  shows and sends the successor when the member can run it; like any
+  unavailable pin, it otherwise shows Auto and its send selects Auto.
+- Model selection writes (metadata PATCH, MCP thread updates and integration `/model`) store the
+  successor in both the snapshot and its event, so event replay never restores
+  a retired id.
+- When the successor requires a personal subscription the member has no
+  account for, the send is rejected with a message naming the required
+  subscription (select Auto or connect it). A connected account that needs
+  reconnecting, or a disconnected account that is still retained, keeps the
+  subscription; its input is accepted and the pick reports the reconnect error.
+  Integration and automation inputs that cannot capture are enqueued unchanged
+  and the queue pick rejects them visibly with the same message.
+
 ## Billing and history
 
 Actual Auto settlement continues through `usage_pricing`, existing pricing

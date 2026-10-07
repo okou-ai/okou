@@ -618,9 +618,25 @@ function isClaudeCodeTermsAcceptanceRequiredError(
   );
 }
 
+const REPLACEMENT_SUBSCRIPTION_REQUIRED_MESSAGE =
+  /^.+ was replaced by .+, which requires a (Codex|Claude) subscription\. Select Auto or connect your \1 subscription\.$/u;
+
+/**
+ * A retired model whose successor runs only through a personal subscription
+ * the member has not connected. The pick shows it unchanged.
+ */
+export function formatReplacementSubscriptionRequiredMessage(args: {
+  readonly replacedModelLabel: string;
+  readonly successorLabel: string;
+  readonly subscriptionLabel: "Codex" | "Claude";
+}): string {
+  return `${args.replacedModelLabel} was replaced by ${args.successorLabel}, which requires a ${args.subscriptionLabel} subscription. Select Auto or connect your ${args.subscriptionLabel} subscription.`;
+}
+
 export function isActionableRunError(errorMessage: string): boolean {
   return (
     errorMessage === "Presentation template not found" ||
+    REPLACEMENT_SUBSCRIPTION_REQUIRED_MESSAGE.test(errorMessage) ||
     errorMessage === "Custom template not found" ||
     isAgentExecutionTimeoutRunError(errorMessage) ||
     isCodexOAuthReconnectRequiredRunError(errorMessage) ||
