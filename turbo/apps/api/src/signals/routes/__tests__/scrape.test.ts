@@ -489,66 +489,6 @@ describe("okou scrape route", () => {
     );
   });
 
-  it("retries a transient Clerk membership failure before scraping with a CLI PAT", async () => {
-    const actor = createBddApi(context).user();
-    let token = "";
-    const owner = await fundActorWithSubscription(actor, {
-      createCliTokenBeforeFunding: async () => {
-        const issued =
-          await createAuthOrgAgentsBddApi(context).createCliToken(actor);
-        token = issued.token;
-        return token;
-      },
-    });
-    await owner.run(async () => {
-      let firecrawlRequests = 0;
-      allowExampleDotCom();
-      configureProvider();
-      const pricing = await createScrapePricingFixture(owner.registerCleanup);
-      const membershipCalls =
-        context.mocks.clerk.users.getOrganizationMembershipList.mock.calls
-          .length;
-      mockClerkMembership(context, actor, "org:admin");
-      context.mocks.clerk.users.getOrganizationMembershipList.mockRejectedValueOnce(
-        new ClerkApiResponseTestError(521),
-      );
-      context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-      server.use(
-        http.post(FIRECRAWL_SCRAPE_URL, () => {
-          firecrawlRequests += 1;
-          return HttpResponse.json({
-            success: true,
-            data: {
-              markdown: "# Example page",
-              metadata: { sourceURL: "https://example.com/page" },
-            },
-          });
-        }),
-      );
-
-      const response = await rawScrapeRequest(
-        null,
-        {
-          url: "https://example.com/page",
-          format: "markdown",
-          mode: "standard",
-        },
-        {
-          authHeaders: { authorization: `Bearer ${token}` },
-          usagePricingResolution: pricing.resolution,
-        },
-      );
-
-      expect(response.status).toBe(200);
-      expect(
-        context.mocks.clerk.users.getOrganizationMembershipList.mock.calls
-          .length - membershipCalls,
-      ).toBe(2);
-
-      expect(firecrawlRequests).toBe(1);
-    });
-  });
-
   it("returns a sanitized 503 when Clerk membership reads remain unavailable", async () => {
     const actor = createBddApi(context).user();
     let token = "";
@@ -564,7 +504,6 @@ describe("okou scrape route", () => {
       let firecrawlRequests = 0;
       allowExampleDotCom();
       configureProvider();
-      const pricing = await createScrapePricingFixture(owner.registerCleanup);
       const membershipCalls =
         context.mocks.clerk.users.getOrganizationMembershipList.mock.calls
           .length;
@@ -589,7 +528,6 @@ describe("okou scrape route", () => {
         },
         {
           authHeaders: { authorization: `Bearer ${token}` },
-          usagePricingResolution: pricing.resolution,
         },
       );
       const afterCredits = await credits(actor);

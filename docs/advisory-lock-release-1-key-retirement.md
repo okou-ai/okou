@@ -380,10 +380,13 @@ is claimed for an aborted batch.
 Cleanup deletes raw rows before hourly rows. When compaction won a raw row,
 cleanup's following READ COMMITTED DELETE sees its newly committed fragment;
 when cleanup won, compaction consumes no raw source and creates no fragment.
-Public scoped cron API tests retain exact financial/storage totals, verify
-same-hour fragments and identities after live Run deletion, and cover overlap
-followed by an ordinary next visit plus cleanup without resurrection. No
-production convergence census was performed.
+At the time of this retirement, scoped test cron cases checked exact
+financial/storage totals, same-hour fragments and identities after live Run
+deletion, and overlap followed by another visit and cleanup. Those private
+drivers did not establish user-public construction. Under the corrected
+[#37440 boundary](testing/testing-external-behavior.md), this is historical
+implementation evidence, not a recommendation to retain or recreate that
+harness. No production convergence census was performed.
 
 ## Invitation purchase key retirement
 

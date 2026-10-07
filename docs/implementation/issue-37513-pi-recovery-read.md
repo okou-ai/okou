@@ -171,22 +171,21 @@ existing clocks, action counts and provider HTTP-count assertions are retained.
 No assertions are deleted, weakened, or added. These historical service/DB
 assertions are not promoted to target public acceptance evidence.
 
-The public cron test only covers invalid auth 401 and disabled all-zero 200.
+The operator cron test only covers invalid auth 401 and disabled all-zero 200.
 It sets the background-worker breaker false. Enabled recovery is not covered.
 The existing stage1 suite has an owner-scoped cron test surface; phase2 has no
 corresponding existing exported scoped route or phase2 test-state surface. A
 global enabled phase2 cron may consume another concurrent test's rows; isolation
 cannot be replaced by clock partitions, locks, direct DB setup or cleanup.
 
-Minimal public-evidence proposal for a separately approved coverage slice:
-identify an approved owner-addressed existing test-surface boundary, create
-normal demand through real owner/storage/run/Stage1 endpoints, and exercise
-repeated admitted HTTP requests with observable responses and existing Run
-reads. This requires scope/test-surface decisions beyond these six files; it
-must not silently export a new production hook or add historical-row setup
-controls. Invalid legacy candidates and missing historical Runs remain separate
-unconstructible-state gaps. No sufficient enabled recovery public acceptance
-is claimed here, and CI green alone would not establish it.
+The earlier proposal to use an owner-addressed test surface is superseded by
+the corrected [#37440 construction boundary](../testing/testing-external-behavior.md).
+Scoping an internal cron or worker does not make it public. Keep real
+owner/storage/Runner lifecycles where they stand independently; delete cases
+that need private extraction, Phase2 execution, or fabricated legacy state.
+The baseline call-site and check records here remain historical evidence. They
+do not establish user-public recovery acceptance, and green CI alone cannot do
+so.
 
 ## Verification status
 

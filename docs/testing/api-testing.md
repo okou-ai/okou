@@ -118,18 +118,48 @@ route integration test is supposed to cover.
 
 ## External Behavior Boundary
 
-API route tests should construct cases through API endpoints and verify results
-through API endpoints. The endpoint is the external contract. The database and
-service layer are internal implementation.
+API route tests must construct, drive, and observe a case through production
+interfaces available to the real caller. Follow the complete chain, including
+shared fixtures and nested helpers. A final public response does not make
+privately constructed state a public scenario. The database, internal services,
+and worker entry points are implementation details.
 
 Do not import DB schemas, write database rows, read database rows for assertions,
 or call services from API tests. Those tests couple to table shape, service
 boundaries, and internal state transitions instead of the behavior external
 callers rely on.
 
-If a case is not constructible through the production API surface, do not add an
-API route test that reaches into internals. Add the missing API surface first, or
-raise the gap during review.
+Delete a case when its decisive state or behavior requires a special test HTTP
+route, direct DB access, a test-only internal worker driver, fabricated legacy
+state, or an internal fault trigger. A production cron protected by
+`CRON_SECRET` is an operator interface, not a user-accessible API. Do not keep
+such a case by moving the driver into a fixture, exporting a private command,
+moving the case to a service suite, or adding a product endpoint solely for the
+test. Financial, security, clock, and historical-state labels do not waive this
+construction requirement.
+
+Preserve independently reachable behavior in mixed cases. Remove only the
+unsupported phase or parameter branch when the remaining lifecycle has its own
+meaningful public assertions. Count a parameterized declaration once and report
+removed branches separately. Record the exact case name, construction dependency,
+keep/rewrite/delete decision, coverage lost or retained, and orphaned support
+removed with it.
+
+Signed provider webhooks and authenticated Runner protocols can be production
+boundaries: use their actual authorization, payload, and lifecycle. Ordinary
+Clerk, S3, Resend, and Stripe mocks at the external provider boundary remain
+valid. Basic app setup and per-case database isolation do not fabricate a
+business scenario; fixture methods that seed business rows or force workers do.
+
+For example, the agent create/list example above uses
+[`agentsMainContract`](../../turbo/packages/api-contracts/src/contracts/agents.ts)
+and [`agentsRoutes`](../../turbo/apps/api/src/signals/routes/agents.ts) for both
+construction and observation. The `updates canonical connector slugs` case in
+[`agents.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/agents.test.ts)
+creates an agent, updates its connector grants through the authenticated API,
+and checks the returned grants. Neither path needs a private DB seed or a forced
+worker visit. Apply that same standard to usage reports, storage, and automation
+lifecycles instead of using a private driver to manufacture their prerequisites.
 
 For the full reasoning, see
 [Testing External Behavior](./testing-external-behavior.md).
@@ -142,21 +172,18 @@ file or worker can observe, overwrite, or depend on that state before
 all. A test must therefore be correct while other API tests execute
 concurrently, even if its cleanup has not happened yet.
 
-Give every test uniquely owned, explicitly addressable users, organizations,
-providers, storage identities, external entities, cache namespaces, and rows.
-When a production cron scans a global table, keep production behavior global
-but drive correctness through a test-only route whose request names the owned
-IDs. Production-global routes may be mounted only by the focused contract
-harness for fixed missing/wrong-auth assertions. Do not isolate tests with a
-global lock, test ordering, worker serialization, broad clock partitions,
-snapshot/restore of shared rows, or residue-tolerant assertions.
+Give every test uniquely owned users, organizations, storage identities,
+external entities, and cache namespaces. Construct business state through the
+public lifecycle. ID scoping makes a private worker safer to run concurrently;
+it does not make that worker a public test boundary. Preserve production-global
+cron behavior without adding test-only selection or execution paths.
 
-Operator-managed usage-pricing identities and the fixed production staff
-organization are shared production data. Use `createUsagePricingFixture()` to
-map a logical canonical provider to a UUID-owned physical lookup row, and use a
-unique organization fixture for entitlement writes. Fixed production
-identities remain valid in read-only/hash/auth behavior. Raw pricing mutation
-helpers are only for providers already proven UUID-, run-, or fixture-owned.
+Do not fabricate chosen credit balances with DB-backed pricing, inspect private
+ledgers, or force settlement to make a public usage assertion pass. Use actual
+onboarding, signed billing events, and user-accessible billing responses where
+they construct the behavior; delete unsupported variations. Do not isolate tests
+with a global lock, test ordering, worker serialization, broad clock partitions,
+snapshot/restore of shared rows, or residue-tolerant assertions.
 
 Cache assertions own their key or namespace. Set and advance mocked time inside
 the test that exercises the TTL; never stagger tests with a module- or
@@ -230,15 +257,12 @@ gates to construct or assert an API scenario. Exercise concurrent requests and
 assert their responses and subsequent user-visible state. A production lock
 removal must not require preserving a test-only pause point.
 
-Compaction behavior tests retain
-`testContext({ dbFixtures: [usageEventCompactionDbFixture] })`. This fixture
-awaits the owned work; it does not install a lock namespace. Drive the real
-compaction worker through `compactUsageForTest(orgId, signal)` with an explicit
-test-owned organization. Never substitute a successful global sweep over
-another test's rows or add lock-waiter observations or pause points. X-resource
-retention tests use the resource-ID-scoped test route to construct historical rows and a
-request-scoped database clock; never invoke a successful production-global
-cleanup in a shared test database.
+Compaction and retention internals are not user construction paths. Do not force
+a sweep, backdate business rows, or assert exact internal batch counts to set up
+a public read. Keep public pin/reorder, message, storage, and usage behavior
+where it stands independently of those operations; remove private-only phases
+and their unused drivers. Endpoint-removal totals describe retired HTTP
+operations, not compliance with this construction and observation standard.
 
 ## Commands
 

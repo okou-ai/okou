@@ -91,10 +91,9 @@ const compactionRowSchema = z.object({
 // idx_usage_event_processed_org_user index. Eligible rows are always non-null.
 const oldestProcessedEventOrder = sql`${asc(event.processedAt)} NULLS FIRST`;
 
-function eligibleRawPredicate(cutoff: string, orgId?: string): SQL {
+function eligibleRawPredicate(cutoff: string): SQL {
   return sql`${and(
     eq(event.status, sql`'processed'`),
-    orgId === undefined ? undefined : eq(event.orgId, orgId),
     isNotNull(event.processedAt),
     lt(event.processedAt, sql`${cutoff}::timestamp`),
     isNull(event.billingError),
@@ -145,13 +144,12 @@ function physicalGrainOrder(alias: string): SQL {
 function retainedIdentityCtes(args: {
   readonly cutoff: string;
   readonly rawSeedLimit: number;
-  readonly orgId: string | undefined;
 }): SQL {
   return sql`
     raw_candidates AS MATERIALIZED (
       SELECT event.id, event.run_id, event.billing_run_id, event.billing_context
       FROM ${usageEvent} ${event}
-      WHERE ${eligibleRawPredicate(args.cutoff, args.orgId)}
+      WHERE ${eligibleRawPredicate(args.cutoff)}
       ORDER BY ${oldestProcessedEventOrder}
       LIMIT ${args.rawSeedLimit}
     ),
@@ -210,7 +208,6 @@ function capturedIdentityCtes(): SQL {
 function candidateCtes(args: {
   readonly cutoff: string;
   readonly rawSeedLimit: number;
-  readonly orgId: string | undefined;
 }): SQL {
   return sql`
     ${retainedIdentityCtes(args)},
@@ -266,7 +263,7 @@ function candidateCtes(args: {
       LEFT JOIN resolved_attributions attribution ON attribution.run_id = COALESCE(event.billing_run_id, event.run_id)
       LEFT JOIN ${usageAllowanceAllocations} ${allocation}
         ON ${eq(allocation.usageEventId, event.id)}
-      WHERE ${eligibleRawPredicate(args.cutoff, args.orgId)}
+      WHERE ${eligibleRawPredicate(args.cutoff)}
         AND event.run_id IS NOT DISTINCT FROM candidate.run_id
         AND event.billing_run_id IS NOT DISTINCT FROM candidate.billing_run_id
         AND event.billing_context = candidate.billing_context
@@ -555,7 +552,6 @@ function compactionSummarySelect(): SQL {
 function compactUsageEventsSql(args: {
   readonly cutoff: string;
   readonly rawSeedLimit: number;
-  readonly orgId: string | undefined;
 }): SQL {
   return sql`
     WITH
@@ -570,18 +566,13 @@ function compactUsageEventsSql(args: {
   `;
 }
 
-function compactionHoldProbeSql(
-  cutoff: string,
-  rawSeedLimit: number,
-  orgId: string | undefined,
-): SQL {
+function compactionHoldProbeSql(cutoff: string, rawSeedLimit: number): SQL {
   return sql`
     WITH probed AS MATERIALIZED (
       SELECT event.billing_error
       FROM ${usageEvent} ${event}
       WHERE ${and(
         eq(event.status, sql`'processed'`),
-        orgId === undefined ? undefined : eq(event.orgId, orgId),
         isNotNull(event.processedAt),
         lt(event.processedAt, sql`${cutoff}::timestamp`),
       )}
@@ -598,7 +589,6 @@ function compactionHoldProbeSql(
 const compactUsageEventBatch$ = command(
   async (
     { set },
-    orgId: string | undefined,
     signal: AbortSignal,
   ): Promise<
     Omit<UsageEventCompactionStats, "durationMs"> & {
@@ -625,7 +615,7 @@ const compactUsageEventBatch$ = command(
       const cutoff = timestampWithoutTimeZone(cutoffDate);
       const [holdProbe] = parseRawRows(
         holdProbeRowSchema,
-        await tx.execute(compactionHoldProbeSql(cutoff, rawSeedLimit, orgId)),
+        await tx.execute(compactionHoldProbeSql(cutoff, rawSeedLimit)),
       );
       if (!holdProbe) {
         throw new Error(
@@ -634,9 +624,7 @@ const compactUsageEventBatch$ = command(
       }
       const rows = parseRawRows(
         compactionRowSchema,
-        await tx.execute(
-          compactUsageEventsSql({ cutoff, rawSeedLimit, orgId }),
-        ),
+        await tx.execute(compactUsageEventsSql({ cutoff, rawSeedLimit })),
       );
       const compaction = rows[0];
       if (!compaction) {
@@ -669,7 +657,7 @@ const compactUsageEventBatch$ = command(
       const [remaining] = await tx
         .select({ id: event.id })
         .from(event)
-        .where(eligibleRawPredicate(cutoff, orgId))
+        .where(eligibleRawPredicate(cutoff))
         .limit(1);
       const hasMoreRaw = remaining !== undefined;
       signal.throwIfAborted();
@@ -699,15 +687,10 @@ const compactUsageEventBatch$ = command(
 );
 
 export const compactUsageEvents$ = command(
-  async (
-    { set },
-    orgId: string | undefined,
-    signal: AbortSignal,
-  ): Promise<UsageEventCompactionStats> => {
+  async ({ set }, signal: AbortSignal): Promise<UsageEventCompactionStats> => {
     const startedAt = performance.now();
     const { maxGrainSourceRows, ...batch } = await set(
       compactUsageEventBatch$,
-      orgId,
       signal,
     );
 

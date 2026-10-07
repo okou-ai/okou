@@ -1086,62 +1086,6 @@ describe("POST /api/voice-io/transcribe/segment", () => {
     }
   });
 
-  it.each(["Error", "AbortError"])(
-    "preserves a transcription failure when the diagnostic sink throws %s",
-    async (name) => {
-      const owner = await publicVoiceActor();
-      await owner.run(async () => {
-        server.use(
-          http.post(VERTEX_VOICE_URL, () => {
-            return HttpResponse.json({
-              usageMetadata: { totalTokenCount: 65_536 },
-              candidates: [
-                {
-                  finishReason: "MAX_TOKENS",
-                  content: { parts: [{ text: "private partial output" }] },
-                },
-              ],
-            });
-          }),
-        );
-        context.mocks.console.log.mockImplementation((message) => {
-          if (
-            typeof message === "string" &&
-            message.includes("[VoiceSegment]")
-          ) {
-            throw new DOMException("Diagnostic sink unavailable", name);
-          }
-        });
-        const restoreConsole = context.mocks.console.capture();
-        const outcome = await settleIncludingAbort(
-          (async () => {
-            const response = await accept(
-              client().segment({
-                headers: { authorization: "Bearer clerk-session" },
-                body: segmentForm(
-                  [audioFile(1)],
-                  "Keep recorded speech.",
-                  true,
-                  1,
-                ),
-              }),
-              [502],
-            );
-            expect(response.body.error).toStrictEqual({
-              code: "VOICE_TRANSCRIPTION_FAILED",
-              message:
-                "Voice draft transcription failed to produce a usable response",
-            });
-          })(),
-        );
-        restoreConsole();
-        if (!outcome.ok) {
-          throw outcome.error;
-        }
-      });
-    },
-  );
-
   it("accepts the 60-minute recording boundary and rejects longer recordings", async () => {
     const owner = await publicVoiceActor();
     await owner.run(async () => {

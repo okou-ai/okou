@@ -5,13 +5,10 @@ import {
   type PeopleSearchRequest,
 } from "@okouai/api-contracts/contracts/people-search";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
-import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
-import { webSearchContract } from "@okouai/api-contracts/contracts/web-search";
 import { HttpResponse, http, type JsonBodyType } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { env, mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
@@ -28,7 +25,6 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
 import { billingStatusRoutes } from "../billing-status";
 import { peopleSearchRoutes } from "../people-search";
-import { webSearchRoutes } from "../web-search";
 import {
   createBddApi,
   expectApiError,
@@ -40,11 +36,9 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
 import { createRouteMocks } from "./helpers/route-test";
-import { usageRecordRoutes } from "../usage-record";
 
 const context = testContext();
 const PERPLEXITY_AGENT_URL = "https://api.perplexity.ai/v1/agent";
-const PERPLEXITY_SEARCH_URL = "https://api.perplexity.ai/search";
 const MAX_PROVIDER_RESPONSE_BYTES = 512 * 1024;
 
 const peopleSearchTestRoutes: readonly RouteEntry[] = [
@@ -79,16 +73,6 @@ function client(usagePricingResolution?: UsagePricingFixture["resolution"]) {
   return setupAppWithRoutes({
     context,
     routes: peopleSearchTestRoutes,
-    usagePricingResolution,
-  });
-}
-
-function webSearchClient(
-  usagePricingResolution?: UsagePricingFixture["resolution"],
-) {
-  return setupAppWithRoutes({
-    context,
-    routes: webSearchRoutes,
     usagePricingResolution,
   });
 }
@@ -363,16 +347,6 @@ function peopleSearchPricing(): UsagePricingRow {
   };
 }
 
-function webSearchPricing(): UsagePricingRow {
-  return {
-    kind: "web-search",
-    provider: "perplexity",
-    category: "request",
-    unitPrice: 5,
-    unitSize: 1,
-  };
-}
-
 async function createPricingFixture(
   configured: readonly UsagePricingRow[],
   missing: readonly UsagePricingKey[] = [],
@@ -486,22 +460,6 @@ function providerResponse(args?: {
         search_people: { invocation: args?.invocation ?? 1 },
       },
     },
-  };
-}
-
-function webSearchProviderResponse() {
-  return {
-    id: "search-request-id",
-    server_time: "2026-07-14T10:00:00Z",
-    results: [
-      {
-        title: "AI regulation update",
-        url: "https://example.com/update",
-        snippet: "A relevant public-web excerpt.",
-        date: "2026-07-13",
-        last_updated: "2026-07-14",
-      },
-    ],
   };
 }
 
@@ -1045,120 +1003,6 @@ describe("okou people-search route", () => {
       expect(response.body.error.message).not.toContain("\u001b");
       expect(response.body.error.message).not.toContain("\u0007");
       expect(afterCredits).toBe(beforeCredits);
-    });
-  });
-
-  it("preserves People Search and Web Search attribution for one run", async () => {
-    const actor = createBddApi(context).user();
-    const bdd = createBddApi(context);
-    const api = createRunsApi(context);
-    let ownedRunId: string | undefined;
-    const owner = await fundActorWithSubscription(actor, {
-      beforeOrganizationCleanup: async () => {
-        api.acceptStorageDownloads();
-        api.acceptTelemetryIngest();
-        if (ownedRunId) {
-          const state = await api.readRun(actor, ownedRunId);
-          if (state.status === "pending" || state.status === "running") {
-            await api.requestCancelRun(actor, ownedRunId, [200]);
-          }
-        }
-        await flushWaitUntilForTest();
-      },
-    });
-    await owner.run(async () => {
-      bdd.acceptAgentStorageWrites();
-      api.acceptStorageDownloads();
-      api.acceptTelemetryIngest();
-
-      await api.ensurePersonalSubscriptionModel(actor);
-
-      const pricing = await createPricingFixture(
-        [peopleSearchPricing(), webSearchPricing()],
-        [],
-        owner.registerCleanup,
-      );
-      configureProvider();
-      api.configureRunnerGroup();
-      const agent = await createBddApi(context).createAgent(actor, {
-        displayName: "Tool usage agent",
-        description: "Calls a paid tool from its run.",
-        visibility: "private",
-      });
-      const run = await api.createThreadRun(actor, {
-        agentId: agent.agentId,
-        prompt: "Find a public professional profile",
-      });
-      ownedRunId = run.runId;
-      const token = api.okouTokenForRunWithCapabilities(actor, run.runId, [
-        "people-search:read",
-        "web-search:read",
-      ]);
-      server.use(
-        http.post(PERPLEXITY_AGENT_URL, () => {
-          return HttpResponse.json(providerResponse());
-        }),
-        http.post(PERPLEXITY_SEARCH_URL, () => {
-          return HttpResponse.json(webSearchProviderResponse());
-        }),
-      );
-
-      await accept(
-        client(pricing.resolution)(peopleSearchContract).search({
-          headers: { authorization: `Bearer ${token}` },
-          body: defaultRequest(),
-        }),
-        [200],
-      );
-      await accept(
-        webSearchClient(pricing.resolution)(webSearchContract).search({
-          headers: { authorization: `Bearer ${token}` },
-          body: { query: "latest AI regulation", limit: 5 },
-        }),
-        [200],
-      );
-      const usage = await accept(
-        setupApp({ context, routes: usageRecordRoutes })(
-          usageRecordContract,
-        ).get({
-          headers: authenticate(actor),
-          query: {
-            page: 1,
-            pageSize: 100,
-            scope: "mine",
-            range: "today",
-            tz: "UTC",
-          },
-        }),
-        [200],
-      );
-      const usageRow = usage.body.rows.find((row) => {
-        return row.threadId === run.threadId;
-      });
-
-      expect(usageRow).toMatchObject({
-        title: null,
-      });
-      expect(usageRow?.breakdown).toContainEqual({
-        kind: "other",
-        credits: 25,
-        providers: [
-          {
-            provider: "perplexity",
-            credits: 25,
-            usageKinds: [
-              {
-                kind: "people-search",
-                credits: 20,
-              },
-              {
-                kind: "web-search",
-                credits: 5,
-              },
-            ],
-          },
-        ],
-      });
     });
   });
 });

@@ -1,6 +1,5 @@
 import { settleIncludingAbort } from "../../utils";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { createStore } from "ccstate";
 import { Pool } from "pg";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -14,19 +13,8 @@ import {
   type RecordPiMemoryStage1UsageArgs,
 } from "../pi-memory-stage1-usage.service";
 import { PI_MEMORY_STAGE1_BUILT_IN_MODEL } from "@okouai/pi-agent-runtime/api";
-import { compactUsageEvents$ } from "../cron-compact-usage-events.service";
 
-// D infrastructure exception: immutable historical billing rows, physical
-// compaction and repeatable-read snapshots have no public product read/write API.
-// Worker route tests separately cover the real provider/admission lifecycle.
-const context = testContext();
-const ledgerSql = await readFile(
-  new URL(
-    "../../../../../../../ops/pi-memory-stage1/v1/ledger.sql",
-    import.meta.url,
-  ),
-  "utf8",
-);
+testContext();
 
 function harness() {
   const orgId = randomUUID();
@@ -51,7 +39,7 @@ function harness() {
     ]);
     await pool.end();
   });
-  return { pool, db, args, store, orgId, userId };
+  return { pool, db, args, orgId, userId };
 }
 
 describe("Stage 1 durable usage boundary", () => {
@@ -247,81 +235,5 @@ describe("Stage 1 durable usage boundary", () => {
       { category: "tokens.cache_read", quantity: 2000 },
       { category: "tokens.cache_creation", quantity: 1 },
     ]);
-  });
-
-  it("reconciles one snapshot through repeat compaction, mixed sources and genuine late raw usage", async () => {
-    const h = harness();
-    const first = await recordPiMemoryStage1Usage(h.db, h.args);
-    const day = first.accountingAt!.slice(0, 10);
-    await h.pool.query(
-      "UPDATE usage_event SET status='processed',credits_charged=0,processed_at='2020-01-01' WHERE org_id=$1",
-      [h.orgId],
-    );
-    const original = (
-      await h.pool.query(
-        "SELECT billing_anchor_at::text AS anchor FROM usage_event WHERE org_id=$1 LIMIT 1",
-        [h.orgId],
-      )
-    ).rows[0].anchor;
-    await h.pool.query(
-      "INSERT INTO usage_event(idempotency_key,org_id,user_id,kind,provider,category,quantity,status,credits_charged,processed_at,created_at,billing_anchor_at,billing_context) VALUES(gen_random_uuid(),$1,$2,'model','gpt-5.6-luna','tokens.input',5,'processed',0,'2020-01-01',$3,$3,'runless')",
-      [h.orgId, h.userId, original],
-    );
-    const reader = await h.pool.connect();
-    const outcome = await settleIncludingAbort(
-      (async () => {
-        await reader.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-        const before = (
-          await reader.query(ledgerSql, [day, h.orgId, h.userId, {}])
-        ).rows[0].report;
-        await h.store.set(compactUsageEvents$, h.orgId, context.signal);
-        expect(
-          (await reader.query(ledgerSql, [day, h.orgId, h.userId, {}])).rows[0]
-            .report,
-        ).toStrictEqual(before);
-        await reader.query("COMMIT");
-      })(),
-    );
-    await reader.query("ROLLBACK");
-    reader.release();
-    if (!outcome.ok) {
-      throw outcome.error;
-    }
-    expect(
-      (
-        await h.pool.query(
-          "SELECT billing_context, sum(quantity)::text AS q FROM usage_event_hourly_rollup WHERE org_id=$1 GROUP BY billing_context ORDER BY billing_context",
-          [h.orgId],
-        )
-      ).rows,
-    ).toStrictEqual([
-      { billing_context: "pi_memory_stage1", q: "23" },
-      { billing_context: "runless", q: "5" },
-    ]);
-    await h.store.set(compactUsageEvents$, h.orgId, context.signal);
-    // Late raw usage for the same extraction model must preserve total cost
-    // across bounded compaction batches, regardless of physical fragment count.
-    await h.pool.query(
-      "INSERT INTO usage_event(idempotency_key,org_id,user_id,kind,provider,category,quantity,status,credits_charged,processed_at,created_at,billing_anchor_at,billing_context) VALUES(gen_random_uuid(),$1,$2,'model',$4,'tokens.input',7,'processed',0,'2020-01-01',$3,$3,'pi_memory_stage1')",
-      [h.orgId, h.userId, original, PI_MEMORY_STAGE1_BUILT_IN_MODEL],
-    );
-    const late = (await h.pool.query(ledgerSql, [day, h.orgId, h.userId, {}]))
-      .rows[0].report;
-    expect(late.untagged_runless_rows_in_day).toBe("1");
-    await h.store.set(compactUsageEvents$, h.orgId, context.signal);
-    expect(
-      (
-        await h.pool.query(
-          "SELECT sum(quantity)::text AS q FROM usage_event_hourly_rollup WHERE org_id=$1 AND billing_context='pi_memory_stage1'",
-          [h.orgId],
-        )
-      ).rows[0].q,
-    ).toBe("30");
-    const after = (await h.pool.query(ledgerSql, [day, h.orgId, h.userId, {}]))
-      .rows[0].report;
-    expect(after.known_stage1_gross_usd).toBe(late.known_stage1_gross_usd);
-    expect(after.untagged_runless_rows_in_day).toBe(
-      late.untagged_runless_rows_in_day,
-    );
   });
 });

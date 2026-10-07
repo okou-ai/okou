@@ -61,5 +61,7 @@ maximum of `oldestCandidateAgeMs` shows no sustained upward trend.
 
 The observed base rate is roughly one timeout per 40,000 candidates, so a quiet
 window without an exercised timeout is not recovery evidence. Correlate at
-least one real downgraded event, or exercise the scoped snapshot test driver, and
-record the limitation otherwise.
+least one real downgraded event and record the limitation otherwise. A private
+snapshot test driver is not user-public acceptance evidence; the
+[testing boundary](testing/testing-external-behavior.md) does not permit forcing
+an internal archive sweep to manufacture a user scenario.

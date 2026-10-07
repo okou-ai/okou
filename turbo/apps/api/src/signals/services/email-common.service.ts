@@ -31,10 +31,6 @@ interface EmailOutboxDrainContext {
   readonly currentTimeMs: number;
 }
 
-interface EmailOutboxItemsContext extends EmailOutboxDrainContext {
-  readonly itemIds: readonly string[];
-}
-
 const log = logger("EmailCommon");
 const USER_CACHE_TTL_MS = 900_000;
 const MAX_ATTEMPTS = 3;
@@ -467,7 +463,6 @@ async function resolveWithoutSending(
 async function prepareNextOutboxItem(
   db: Db,
   currentTimeMs: number,
-  itemIds?: readonly string[],
 ): Promise<PrepareOutcome> {
   return await db.transaction(async (tx) => {
     const [selectedRow] = await tx
@@ -475,9 +470,6 @@ async function prepareNextOutboxItem(
       .from(emailOutbox)
       .where(
         and(
-          itemIds === undefined
-            ? undefined
-            : inArray(emailOutbox.id, [...itemIds]),
           // `sending` items belong to an in-flight attempt until their lease
           // expires; recovering them replays the committed request.
           inArray(emailOutbox.status, ["pending", "sending"]),
@@ -674,9 +666,8 @@ async function completeOutboxItem(
 async function drainNextOutboxItem(
   db: Db,
   currentTimeMs: number,
-  itemIds?: readonly string[],
 ): Promise<boolean> {
-  const prepared = await prepareNextOutboxItem(db, currentTimeMs, itemIds);
+  const prepared = await prepareNextOutboxItem(db, currentTimeMs);
   if (prepared.kind === "empty") {
     return false;
   }
@@ -705,20 +696,15 @@ async function drainEmailOutboxBatch(
   args: {
     readonly db: Db;
     readonly context: EmailOutboxDrainContext;
-    readonly itemIds?: readonly string[];
   },
   signal: AbortSignal,
 ): Promise<number> {
-  const { db, context, itemIds } = args;
+  const { db, context } = args;
   let processed = 0;
 
   for (let index = 0; index < MAX_OUTBOX_BATCH_SIZE; index++) {
     signal.throwIfAborted();
-    const hadItem = await drainNextOutboxItem(
-      db,
-      context.currentTimeMs,
-      itemIds,
-    );
+    const hadItem = await drainNextOutboxItem(db, context.currentTimeMs);
     signal.throwIfAborted();
     if (!hadItem) {
       break;
@@ -755,37 +741,16 @@ export const drainEmailOutboxBatch$ = command(
   },
 );
 
-export const drainEmailOutboxItems$ = command(
-  async (
-    { set },
-    context: EmailOutboxItemsContext,
-    signal: AbortSignal,
-  ): Promise<number> => {
-    return await drainEmailOutboxBatch(
-      {
-        db: set(writeDb$),
-        context,
-        itemIds: context.itemIds,
-      },
-      signal,
-    );
-  },
-);
-
 async function cleanupExpiredEmailOutbox(
   db: Db,
   context: EmailOutboxDrainContext,
   signal: AbortSignal,
-  itemIds?: readonly string[],
 ): Promise<number> {
   const cutoff = new Date(context.currentTimeMs - OUTBOX_TTL_MS);
   const deleted = await db
     .delete(emailOutbox)
     .where(
       and(
-        itemIds === undefined
-          ? undefined
-          : inArray(emailOutbox.id, [...itemIds]),
         lt(emailOutbox.createdAt, cutoff),
         or(eq(emailOutbox.status, "pending"), eq(emailOutbox.status, "failed")),
       ),
@@ -808,21 +773,6 @@ export const cleanupExpiredEmailOutbox$ = command(
     signal: AbortSignal,
   ): Promise<number> => {
     return await cleanupExpiredEmailOutbox(set(writeDb$), context, signal);
-  },
-);
-
-export const cleanupExpiredEmailOutboxItems$ = command(
-  async (
-    { set },
-    context: EmailOutboxItemsContext,
-    signal: AbortSignal,
-  ): Promise<number> => {
-    return await cleanupExpiredEmailOutbox(
-      set(writeDb$),
-      context,
-      signal,
-      context.itemIds,
-    );
   },
 );
 

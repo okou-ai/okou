@@ -383,6 +383,11 @@ does not admit an additional pending purchase.
 ### Pending writer inventory
 
 Paths below are relative to `turbo/apps/api/src/` unless stated otherwise.
+This is the historical preparation inventory. Its scoped test cron and private
+state writers are not recommendations for current API tests; the corrected
+[#37440 boundary](testing/testing-external-behavior.md) requires deleting
+scenarios that depend on them when no user-public lifecycle constructs the
+same behavior. Production reconciliation remains a product responsibility.
 
 | Writer                                                                                                             | Transaction and companion behavior                                                                                                                                                                                                                                                                                                                                        |
 | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
