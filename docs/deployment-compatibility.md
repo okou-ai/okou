@@ -198,8 +198,9 @@ Migration 1333 then drops the constant `model_providers.auth_method`,
 `model_providers.is_default`, `model_providers.selected_model`,
 `model_routes.price_tier` and `run_model_catalog.is_system_default` columns.
 Every API built before it still selects them in personal subscription and
-model catalog reads, so the same no-rolling-compatibility rule applies: apply
-1333 only after no pre-1333 API serves, and the rollback resolver rejects
+model catalog reads, so the same no-rolling-compatibility rule applies: a
+pre-1333 API still draining after 1333 is applied fails those reads (accepted
+below), and the rollback resolver rejects
 targets before the first-parent `main` commit that adds
 `1333_drop_dead_model_provider_columns.sql`. On the wire, `/api/model-catalog`
 no longer sends `isSystemDefault` or `priceTier`, personal provider responses
