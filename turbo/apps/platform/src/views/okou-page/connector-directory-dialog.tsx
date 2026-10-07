@@ -516,8 +516,8 @@ function DirectoryRemoteCards({
         return $.connectors.catalog.remoteAccess;
       })}
     >
-      {showSsh && <SshConnectorCard configuredCount={0} />}
-      {showVnc && <VncConnectorCard configuredCount={0} />}
+      {showSsh && <SshConnectorCard />}
+      {showVnc && <VncConnectorCard />}
     </DirectorySection>
   );
 }

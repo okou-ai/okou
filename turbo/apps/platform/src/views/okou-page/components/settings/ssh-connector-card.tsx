@@ -3,13 +3,9 @@ import { useTranslation } from "react-i18next";
 import { ROUTES } from "../../../../signals/route-paths.ts";
 import { Link } from "../../../router/link.tsx";
 import { ConnectorEntryCard } from "./connector-entry-card.tsx";
-import { SshConnectionSummary } from "../../ssh-connection-status.tsx";
 
-export function SshConnectorCard({
-  configuredCount,
-}: {
-  readonly configuredCount: number;
-}) {
+/** Directory entry for adding a first SSH host. */
+export function SshConnectorCard() {
   const { t } = useTranslation();
   return (
     <ConnectorEntryCard
@@ -20,7 +16,7 @@ export function SshConnectorCard({
       description={t(($) => {
         return $.ssh.description;
       })}
-      showDescription={configuredCount === 0}
+      showDescription
       interactive
       action={
         <Link
@@ -38,16 +34,13 @@ export function SshConnectorCard({
         />
       }
       indicator={
-        configuredCount === 0 ? (
-          <span
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/60 text-muted-foreground"
-            aria-hidden="true"
-          >
-            <Plus size={14} />
-          </span>
-        ) : null
+        <span
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/60 text-muted-foreground"
+          aria-hidden="true"
+        >
+          <Plus size={14} />
+        </span>
       }
-      status={<SshConnectionSummary configuredCount={configuredCount} />}
     />
   );
 }

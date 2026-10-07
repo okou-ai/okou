@@ -6438,12 +6438,10 @@ export function createThreadClaimRunObjects(
     if (isRouteError(input)) {
       return input;
     }
-    const [content, requestedFramework, featureSwitchContext] =
-      await Promise.all([
-        get(content$),
-        get(runFramework$),
-        get(preCreateModelFeatureSwitchContext$),
-      ]);
+    const [content, requestedFramework] = await Promise.all([
+      get(content$),
+      get(runFramework$),
+    ]);
     if (isRouteError(content)) {
       return content;
     }
@@ -6472,13 +6470,11 @@ export function createThreadClaimRunObjects(
       builtInModelRuntimeRoute: args.builtInModelRuntimeRoute,
       piExecution: args.piExecution,
       retainedRunId: args.retainedRunId,
-      featureSwitchContext,
     };
     return {
       input,
       content,
       requestedFramework,
-      featureSwitchContext,
       environmentArgs,
       shouldResolve,
     };
@@ -18599,7 +18595,6 @@ interface ResolveModelProviderEnvironmentArgs {
   readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
   readonly retainedRunId?: string;
   readonly piExecution: boolean;
-  readonly featureSwitchContext: FeatureSwitchContext;
 }
 
 // Pending persistence uses connection-free SQL plans owned by one command.

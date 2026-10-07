@@ -17,7 +17,6 @@ import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
-  configureNativeCliArtifact,
   CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
   type ChatRunSendBody,
   type PromptMessage,
@@ -1002,40 +1001,14 @@ describe("CHAT-02: model-first provider policies", () => {
     await cancelChatRun(actor, run.runId);
   });
 
-  it("routes built-in okou-1.0 through global OpenRouter", async () => {
-    const model = "okou-1.0";
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    configureNativeCliArtifact();
-    await seedBuiltInModelCandidateKeys(context, model);
-    await configureBuiltInPiModel(actor, "okou-1.0");
-    await preparePiResourceHandoff(actor, agentId);
-
-    const run = await sendChatRun(actor, {
-      agentId,
-      model,
-      prompt: "capture the managed DeepSeek route",
-    });
-    const { claim } = await claimChatRun(runnerGroup, run.runId);
-    expect(claim.cliAgentType).toBe("pi");
-    expect(claim.piModelConfig).toMatchObject({
-      provider: "openrouter",
-      baseUrl: "https://openrouter.ai/api/v1",
-      model: "@preset/okou-1-0",
-    });
-    expect(claim.billableFirewalls).toContain(
-      "model-provider:openrouter-codex",
-    );
-    await cancelChatRun(actor, run.runId);
-  }, 90_000);
-
-  it("freezes the Auto endpoint and firewall", async () => {
+  it("routes built-in okou-1.0 through global OpenRouter and resolves its firewall credential", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const model = await configureBuiltInPiModelOnOpenRouter(actor, "okou-1.0");
     await preparePiResourceHandoff(actor, agentId);
     const run = await sendChatRun(actor, {
       agentId,
       model,
-      prompt: "capture the fixed Auto route",
+      prompt: "capture the managed okou-1.0 route",
     });
     const { claim, sandboxHeaders } = await claimChatRun(
       runnerGroup,

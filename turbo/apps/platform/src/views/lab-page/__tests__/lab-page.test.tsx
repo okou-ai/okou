@@ -1,4 +1,5 @@
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { getFeatureSwitchMetadata } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -74,20 +75,47 @@ test("Lab groups active feature switches", async () => {
 
   await screen.findByRole("heading", { name: "Lab" });
 
-  // Released switches are removed once rolled out, so that group may be empty
-  // and is then not rendered at all.
-  const released = screen
-    .queryByRole("heading", { name: "Released" })
-    ?.closest("section");
+  // Each rollout stage renders as one group holding exactly its switches; a
+  // stage with no switches (Released, once every rollout has been cleaned up)
+  // renders no group at all.
+  const metadata = getFeatureSwitchMetadata();
+  const stages = [
+    ["released", "Released"],
+    ["beta", "Beta"],
+    ["alpha", "Alpha"],
+    ["internal", "Internal"],
+  ] as const;
+  for (const [stage, name] of stages) {
+    const expectedKeys = Object.values(FeatureSwitchKey)
+      .filter((key) => {
+        return metadata[key].rolloutStage === stage;
+      })
+      .sort();
+    const group =
+      screen.queryByRole("heading", { name })?.closest("section") ?? null;
+    const renderedKeys = group
+      ? Object.values(FeatureSwitchKey)
+          .filter((key) => {
+            return within(group).queryByText(key) !== null;
+          })
+          .sort()
+      : [];
+    expect({
+      name,
+      rendered: group !== null,
+      keys: renderedKeys,
+    }).toStrictEqual({
+      name,
+      rendered: expectedKeys.length > 0,
+      keys: expectedKeys,
+    });
+  }
+  expect(screen.getAllByRole("switch")).toHaveLength(
+    Object.values(FeatureSwitchKey).length,
+  );
   const beta = featureSwitchGroup("Beta");
   const alpha = featureSwitchGroup("Alpha");
   const internal = featureSwitchGroup("Internal");
-  const featureRows = [released, beta, alpha, internal].flatMap((group) => {
-    return group ? Array.from(group.querySelectorAll("li")) : [];
-  });
-
-  expect(featureRows).toHaveLength(Object.values(FeatureSwitchKey).length);
-  expect(screen.getAllByRole("switch")).toHaveLength(featureRows.length);
   expect(within(alpha).getByText(FeatureSwitchKey.Banking)).toBeVisible();
   expect(
     within(beta).getByText(FeatureSwitchKey.CustomTemplates),

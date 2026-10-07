@@ -5182,7 +5182,6 @@ function AssistantRecoveryModelPicker({
         return $.chat.errors.recovery.selectModel;
       })}
       triggerClassName="h-8 w-auto min-w-24 max-w-36 bg-background text-sm"
-      compactTrigger
     />
   );
 }

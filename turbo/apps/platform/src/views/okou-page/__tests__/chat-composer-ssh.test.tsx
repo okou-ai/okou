@@ -1,4 +1,5 @@
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -764,5 +765,43 @@ test("Directory SSH setup follows shelves and categories", async () => {
   click(await findFastControl("button", "Add host"));
   await screen.findByRole("dialog", { name: "Add host" });
   expect(window.location.pathname).toBe("/connectors");
+  expect(window.location.search).toBe("?scope=remote-control&type=ssh");
+});
+
+test("Manage SSH hosts reopens Remote control on connections after viewing credentials", async () => {
+  installComposerConnectorFixture();
+  context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {
+    return respond(200, { configuredCount: 0 });
+  });
+  context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+    return respond(200, { connections: [] });
+  });
+  context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
+    return respond(200, { credentials: [] });
+  });
+  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+  const openSshFromComposer = async () => {
+    click(await findFastControl("button", "Connectors"));
+    click(await findFastControl("button", "Add connectors"));
+    const dialog = await screen.findByRole("dialog", { name: "Connectors" });
+    click(await findFastControl("link", "Manage SSH hosts", dialog));
+    return await screen.findByRole("radio", { name: "Connections" });
+  };
+
+  await openSshFromComposer();
+  click(screen.getByRole("radio", { name: "Credentials" }));
+  await waitFor(() => {
+    expect(screen.getByRole("radio", { name: "Credentials" })).toBeChecked();
+  });
+
+  window.history.back();
+  await waitFor(() => {
+    expect(window.location.pathname).toBe(`/agents/${SCOUT_AGENT_ID}/chat`);
+  });
+
+  const connections = await openSshFromComposer();
+  await waitFor(() => {
+    expect(connections).toBeChecked();
+  });
   expect(window.location.search).toBe("?scope=remote-control&type=ssh");
 });

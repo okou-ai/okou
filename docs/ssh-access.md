@@ -290,13 +290,11 @@ host warnings. No command is retried and no trust or grant is changed.
 
 Saving or editing a host is not a connection test. Any configuration generation
 change hides observations for the previous configuration without claiming success.
-No observation means unknown connectivity. A green directory dot means configured
-with no currently reported failure, not a verified live connection; the UI does
+No observation means unknown connectivity. A host without a warning has no
+currently reported failure, which is not a verified live connection; the UI does
 not add an untested status line. A failed/unavailable diagnostic read is shown
 separately and leaves host management available. Observations refresh through
-the existing owner notification. A single-host name uses the existing owner-scoped
-host-list read; while that name is unavailable, the configured count is the
-presentational fallback.
+the existing owner notification.
 
 This is best-effort recent evidence, not continuous monitoring. Reports may be
 missed, arrive late or be rejected after a Run ends or authority changes. There
