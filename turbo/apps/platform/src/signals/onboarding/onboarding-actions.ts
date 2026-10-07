@@ -14,11 +14,8 @@ import { reloadOnboardingStatus$ } from "../okou-page/onboarding.ts";
 import { refreshOrg$ } from "../org.ts";
 import { ROUTES } from "../route-paths.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
-import {
-  clearSourcesFirstDraft$,
-  sourcesFirstDraft$,
-} from "./onboarding-sources-first-state.ts";
-import { onboardingDraft$, resetOnboardingDraft$ } from "./onboarding-state.ts";
+import { sourcesFirstDraft$ } from "./onboarding-sources-first-state.ts";
+import { onboardingDraft$ } from "./onboarding-state.ts";
 
 const ONBOARDING_TRANSIENT_PARAMS = [
   "choice",
@@ -92,12 +89,12 @@ export const completeOnboarding$ = command(
     set(refreshOrg$);
     set(invalidateAvailableRunModels$);
     set(reloadUserModelPreference$);
-    set(clearSourcesFirstDraft$);
     // Both a prior route and the Worker's HTML prefetch can retain an empty
     // list from before the status endpoint provisioned the default agent.
     set(reloadAgents$);
     set(reloadOnboardingStatus$);
-    set(resetOnboardingDraft$);
+    // The answers stay until the first chat replaces the step showing them. A
+    // later onboarding visit or app start clears them for an onboarded user.
   },
 );
 
