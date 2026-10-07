@@ -28,7 +28,7 @@ async function setupAnalyticsFirewall(publicFixture: PublicFirewallFixture) {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  runs.configureRunnerGroup();
+  const runnerGroup = runs.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
   await publicFixture.fund();
   await runs.ensurePersonalSubscriptionModel(actor);
@@ -43,7 +43,9 @@ async function setupAnalyticsFirewall(publicFixture: PublicFirewallFixture) {
     prompt: "resolve Analytics firewall auth",
   });
   publicFixture.registerRun(run.runId);
-  const headers = fw.sandboxHeaders(actor, run.runId);
+  await runs.heartbeatRunner(runnerGroup);
+  const claim = await runs.claimRunnerJob(run.runId);
+  const headers = { authorization: `Bearer ${claim.sandboxToken}` };
   mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
   mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", "google-client-id");
   mockOptionalEnv("GOOGLE_OAUTH_CLIENT_SECRET", "google-client-secret");

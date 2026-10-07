@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 
 import { createStore } from "ccstate";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 
@@ -107,55 +107,6 @@ export async function createUsagePricingFixture({
   }
 
   return { resolution, cleanup };
-}
-
-export async function upsertUsagePricingRows(
-  rows: readonly UsagePricingRow[],
-): Promise<void> {
-  if (rows.length === 0) {
-    return;
-  }
-
-  await fixtureDb()
-    .insert(usagePricing)
-    .values([...rows])
-    .onConflictDoUpdate({
-      target: [usagePricing.kind, usagePricing.provider, usagePricing.category],
-      set: {
-        unitPrice: sql`excluded.unit_price`,
-        unitSize: sql`excluded.unit_size`,
-        updatedAt: sql`now()`,
-      },
-    });
-}
-
-export async function deleteUsagePricingRows(filter: {
-  readonly kind: string;
-  readonly provider: string;
-  readonly categories: readonly string[];
-}): Promise<readonly UsagePricingRow[]> {
-  if (filter.categories.length === 0) {
-    return [];
-  }
-
-  const db = fixtureDb();
-  const where = and(
-    eq(usagePricing.kind, filter.kind),
-    eq(usagePricing.provider, filter.provider),
-    inArray(usagePricing.category, [...filter.categories]),
-  );
-  const rows = await db
-    .select({
-      kind: usagePricing.kind,
-      provider: usagePricing.provider,
-      category: usagePricing.category,
-      unitPrice: usagePricing.unitPrice,
-      unitSize: usagePricing.unitSize,
-    })
-    .from(usagePricing)
-    .where(where);
-  await db.delete(usagePricing).where(where);
-  return rows;
 }
 
 /**

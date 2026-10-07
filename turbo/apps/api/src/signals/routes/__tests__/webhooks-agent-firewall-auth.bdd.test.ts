@@ -66,9 +66,9 @@ const TEST_DATA_KEY = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
  * HOOK-02 / FW: firewall auth template resolution and connector refresh
  * through POST /api/webhooks/agent/firewall/auth.
  *
- * Given state is constructed through public routes. The narrow test-only
- * connector credential state route is used only for persisted metadata that
- * an old deployment can leave behind but no production API exposes.
+ * Corrected scenarios use public setup and authenticated Runner protocol flows.
+ * Private metadata helpers and worker entry points do not justify preserving
+ * a scenario that users cannot construct through production boundaries.
  *
  * Unreachable through public APIs (kept out of this file deliberately):
  * - TOKEN_ACCESS_RESOLUTION_FAILED needs a current token whose backing secret
@@ -133,7 +133,6 @@ async function withPublicFirewallRun(
   await fixture.run(async () => {
     const bdd = createBddApi(context);
     const runsApi = createRunsApi(context);
-    const fw = createFirewallApi(context);
     bdd.acceptAgentStorageWrites();
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
@@ -151,8 +150,10 @@ async function withPublicFirewallRun(
       prompt: "resolve firewall auth",
     });
     fixture.registerRun(run.runId);
+    await runsApi.heartbeatRunner();
+    const claim = await runsApi.claimRunnerJob(run.runId);
     await scenario(
-      fw.sandboxHeaders(fixture.actor, run.runId),
+      { authorization: `Bearer ${claim.sandboxToken}` },
       fixture,
       subscription,
       { ...run, agentId: agent.agentId },
@@ -2426,7 +2427,7 @@ describe("FW-4: connector refresh and replacement snapshots", () => {
   });
 });
 
-describe("FW-5: timeout closes firewall credential authority", () => {
+describe("FW-5: terminal runs close firewall credential authority", () => {
   it.each(TERMINAL_RUN_STATUSES)(
     "rejects a %s run before connector refresh",
     async (status) => {
@@ -2484,7 +2485,9 @@ describe("FW-5: timeout closes firewall credential authority", () => {
             [403],
           );
           if (denied.status !== 403) {
-            throw new Error("Expected timed-out firewall auth to be forbidden");
+            throw new Error(
+              "Expected terminal-run firewall auth to be forbidden",
+            );
           }
           expect(denied.body.error.code).toBe("FORBIDDEN");
           expect(refreshRequests).toBe(0);

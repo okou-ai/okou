@@ -44,9 +44,6 @@ import {
   chatEventDisplayText,
 } from "./helpers/chat-event";
 import { createRouteMocks } from "./helpers/route-test";
-import { cronRenewGmailWatchesRoutes } from "../cron-renew-gmail-watches";
-import { cronRenewGoogleCalendarWatchesRoutes } from "../cron-renew-google-calendar-watches";
-import { cronRenewGoogleFormsWatchesRoutes } from "../cron-renew-google-forms-watches";
 import { chatThreadDeleteRoutes } from "../chat-threads-delete";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { workflowAutomationsRoutes } from "../workflow-automations";
@@ -54,9 +51,6 @@ import { workflowsRoutes } from "../workflows";
 import { webhooksGoogleCalendarRoutes } from "../webhooks-google-calendar";
 
 const TEST_APP_ROUTES = Object.freeze([
-  ...cronRenewGmailWatchesRoutes,
-  ...cronRenewGoogleCalendarWatchesRoutes,
-  ...cronRenewGoogleFormsWatchesRoutes,
   ...webhooksGoogleCalendarRoutes,
   ...workflowAutomationsRoutes,
   ...workflowsRoutes,

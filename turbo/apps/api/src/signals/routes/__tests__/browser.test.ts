@@ -5248,7 +5248,6 @@ function browserHeadersForRun(
 
 async function claimChatRun(
   runs: ReturnType<typeof createRunsApi>,
-  actor: ApiTestUser,
   runId: string,
 ) {
   await flushWaitUntilForTest();
@@ -5258,7 +5257,7 @@ async function claimChatRun(
     throw new Error("Expected the runner claim to include OKOU_TOKEN");
   }
   return {
-    browserHeaders: browserHeadersForRun(runs, actor, runId),
+    browserHeaders: { authorization: `Bearer ${okouToken}` },
     sandboxHeaders: {
       authorization: `Bearer ${claim.sandboxToken}`,
     },
@@ -5328,7 +5327,7 @@ async function createClaimedChatRun(
   return {
     runId: sent.runId,
     threadId: sent.threadId,
-    claim: await claimChatRun(runs, actor, sent.runId),
+    claim: await claimChatRun(runs, sent.runId),
   };
 }
 
@@ -6977,7 +6976,7 @@ describe("okou browser route", () => {
       prompt: "Continue in the same browser",
     });
     const followupRunId = followup.runId;
-    const followupClaim = await claimChatRun(runs, actor, followupRunId);
+    const followupClaim = await claimChatRun(runs, followupRunId);
 
     // The next run attaches to the very same provider instance.
     const reused = await accept(

@@ -108,7 +108,6 @@ function terminalError(candidate: ThreadlessRunCandidate): string | undefined {
 
 async function loadThreadlessRunCandidates(
   db: Db,
-  runIds: readonly string[] | null,
   currentTime: Date,
 ): Promise<readonly ThreadlessRunCandidate[]> {
   const forwardCutoff = new Date(THREADLESS_RUN_FORWARD_CUTOFF_ISO);
@@ -135,7 +134,6 @@ async function loadThreadlessRunCandidates(
         ...THREADLESS_RUN_PROTECTIONS.flatMap((protection) => {
           return protection.sweepEligibility(db, { currentTime });
         }),
-        runIds === null ? undefined : inArray(agentRuns.id, runIds),
         or(
           gte(agentRuns.createdAt, forwardCutoff),
           exists(
@@ -328,18 +326,10 @@ const redriveTerminalLifecycle$ = command(
 );
 
 export const cleanupThreadlessRuns$ = command(
-  async (
-    { set },
-    runIds: readonly string[] | null,
-    signal: AbortSignal,
-  ): Promise<ThreadlessRunCleanupResult> => {
+  async ({ set }, signal: AbortSignal): Promise<ThreadlessRunCleanupResult> => {
     const db = set(writeDb$);
     const currentTime = nowDate();
-    const candidates = await loadThreadlessRunCandidates(
-      db,
-      runIds,
-      currentTime,
-    );
+    const candidates = await loadThreadlessRunCandidates(db, currentTime);
     signal.throwIfAborted();
 
     let cancelled = 0;

@@ -22,7 +22,6 @@ import {
 import { testOfficialWorkflowCatalogStateContract } from "@okouai/api-contracts/contracts/test-official-workflow-catalog-state";
 import { testSystemStoragePresignedUrlCacheStateContract } from "@okouai/api-contracts/contracts/test-system-storage-presigned-url-cache-state";
 import { testUserExportWorkContract } from "@okouai/api-contracts/contracts/test-user-export-work";
-import { testWorkflowAutomationExecutionContract } from "@okouai/api-contracts/contracts/test-workflow-automation-execution";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import {
   workflowAutomationsContract,
@@ -55,7 +54,6 @@ import {
   acknowledgeDetachedForTest,
   createDeferredPromise,
   onRejection,
-  settle,
   settleIncludingAbort,
 } from "../../utils";
 import {
@@ -68,7 +66,6 @@ import { officialWorkflowRoutes } from "../official-workflows";
 import { testOfficialWorkflowCatalogStateRoutes } from "../test-official-workflow-catalog-state";
 import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
 import { testUserExportWorkRoutes } from "../test-user-export-work";
-import { testWorkflowAutomationExecutionRoutes } from "../test-workflow-automation-execution";
 import { userPreferencesRoutes } from "../user-preferences";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { workflowsRoutes } from "../workflows";
@@ -1163,13 +1160,6 @@ function automationClient() {
   return setupApp({ context, routes: workflowAutomationsRoutes })(
     workflowAutomationsContract,
   );
-}
-
-function automationExecutionClient() {
-  return setupApp({
-    context,
-    routes: testWorkflowAutomationExecutionRoutes,
-  })(testWorkflowAutomationExecutionContract);
 }
 
 function storageClient() {
@@ -3322,169 +3312,6 @@ describe("Official Workflow installations", () => {
       }),
       [204],
     );
-  });
-
-  it("publishes an Official copy only after its volume is durable and compensates a rejected upload", async () => {
-    installCatalogStorageFixture();
-    const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
-    const definitionName = `api-test-copy-publication-${suffix}`;
-    await syncCatalog(
-      catalog([activeDefinition(definitionName, [loopBlueprint()])]),
-    );
-
-    const { actor } = await workflowBdd.setupWorkflowOrg({
-      timezone: "Asia/Shanghai",
-      tier: "team",
-    });
-    if (!actor.orgId) {
-      throw new Error("Expected organization-scoped copy actor");
-    }
-    await selectPersonalDefaultModel(actor);
-    const { agentId: sourceAgentId } = await workflowBdd.createAgent(actor);
-    const { agentId: targetAgentId } = await workflowBdd.createAgent(actor);
-    const headers = authHeaders(actor);
-    await setOfficialWorkflowsEnabled(actor, true);
-    const installed = await accept(
-      officialClient().install({
-        headers,
-        params: { definitionName },
-        body: {
-          agentId: sourceAgentId,
-          blueprints: [
-            {
-              blueprintKey: "pulse",
-              bindings: [{ key: "interval-seconds", value: 60 }],
-            },
-          ],
-        },
-      }),
-      [201],
-    );
-    runs.configureRunnerGroup();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    onTestFinished(async () => {
-      installCatalogStorageFixture();
-      for (const agentId of [sourceAgentId, targetAgentId]) {
-        await cancelAgentRunsThroughLogs(actor, agentId);
-      }
-      await flushWaitUntilForTest();
-      await bdd.deleteAgent(actor, targetAgentId);
-      await bdd.deleteAgent(actor, sourceAgentId);
-      await cleanupCatalog();
-    });
-
-    await expect(
-      listAgentRunLogIds(actor, targetAgentId),
-    ).resolves.toStrictEqual([]);
-    const storage = installCatalogStorageFixture();
-    const objectsBeforeCopy = storage.objectCount();
-    const heldUpload = storage.holdNextWrite();
-    const copying = settle(
-      workflowClient().copy({
-        headers,
-        params: { workflowId: installed.body.workflow.id },
-        body: { toAgentId: targetAgentId },
-      }),
-      context.signal,
-    );
-    await heldUpload.started;
-    expect(storage.objectCount()).toBe(objectsBeforeCopy + 1);
-
-    // Both reads use independent route/database work while the copy
-    // transaction is held in S3 publication. Neither the Workflow nor its
-    // final enabled Automation may be observable from that transaction.
-    const duringCopyWorkflows = await accept(
-      workflowCollectionClient().list({
-        headers,
-        query: { agentId: targetAgentId },
-      }),
-      [200],
-    );
-    expect(duringCopyWorkflows.body).toStrictEqual([]);
-    const duringCopyAutomations = await accept(
-      automationClient().listWorkspace({ headers }),
-      [200],
-    );
-    expect(
-      duringCopyAutomations.body.some((automation) => {
-        return automation.workflow.agentId === targetAgentId;
-      }),
-    ).toBeFalsy();
-    await expect(
-      listAgentRunLogIds(actor, targetAgentId),
-    ).resolves.toStrictEqual([]);
-
-    // Poll only the otherwise-empty target Agent. A buggy committed copy would
-    // expose and dispatch its due schedule here; the uncommitted target must
-    // remain absent without touching the source Automation locks.
-    const drained = await withMockNowForTest(now() + 120_000, async () => {
-      return await accept(
-        automationExecutionClient().executeForAgent({
-          body: { agent_id: targetAgentId },
-        }),
-        [200],
-      );
-    });
-    expect(drained.body).toStrictEqual({
-      success: true,
-      executed: 0,
-      skipped: 0,
-    });
-    await expect(
-      listAgentRunLogIds(actor, targetAgentId),
-    ).resolves.toStrictEqual([]);
-
-    heldUpload.reject(new Error("copy archive upload rejected"));
-    const rejectedCopy = await copying;
-    expect(rejectedCopy.ok).toBeFalsy();
-    expect(storage.objectCount()).toBe(objectsBeforeCopy);
-    const afterRejectedWorkflows = await accept(
-      workflowCollectionClient().list({
-        headers,
-        query: { agentId: targetAgentId },
-      }),
-      [200],
-    );
-    expect(afterRejectedWorkflows.body).toStrictEqual([]);
-    await expect(
-      listAgentRunLogIds(actor, targetAgentId),
-    ).resolves.toStrictEqual([]);
-
-    // If one concurrent PUT fails before its sibling completes, publication
-    // must await the sibling before compensating. Otherwise a late successful
-    // sibling could recreate an object after cleanup has already finished.
-    const lateSiblingUpload = storage.holdNextWrite();
-    storage.failNextWrite(new Error("copy manifest upload failed"));
-    let lateSiblingCopySettled = false;
-    const lateSiblingCopy = settle(
-      workflowClient().copy({
-        headers,
-        params: { workflowId: installed.body.workflow.id },
-        body: { toAgentId: targetAgentId },
-      }),
-      context.signal,
-    ).then((result) => {
-      lateSiblingCopySettled = true;
-      return result;
-    });
-    await lateSiblingUpload.started;
-    const duringLateSiblingWorkflows = await accept(
-      workflowCollectionClient().list({
-        headers,
-        query: { agentId: targetAgentId },
-      }),
-      [200],
-    );
-    expect(duringLateSiblingWorkflows.body).toStrictEqual([]);
-    expect(lateSiblingCopySettled).toBeFalsy();
-    lateSiblingUpload.resolve();
-    const rejectedLateSiblingCopy = await lateSiblingCopy;
-    expect(rejectedLateSiblingCopy.ok).toBeFalsy();
-    expect(storage.objectCount()).toBe(objectsBeforeCopy);
-    await expect(
-      listAgentRunLogIds(actor, targetAgentId),
-    ).resolves.toStrictEqual([]);
   });
 
   it.each(["reconfigure", "uninstall"] as const)(

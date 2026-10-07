@@ -185,14 +185,6 @@ export const testConnectorCredentialStorageStateActionBodySchema =
       external_id: z.string().nullable(),
     }),
     z.object({
-      action: z.literal("set-connector-account-state"),
-      org_id: z.string(),
-      user_id: z.string(),
-      connector_id: z.uuid(),
-      needs_reconnect: z.boolean(),
-      storage_version: z.number().int().positive().optional(),
-    }),
-    z.object({
       action: z.literal("seed-builtin-thread-selection"),
       chat_thread_id: z.uuid(),
       connector_id: z.uuid(),

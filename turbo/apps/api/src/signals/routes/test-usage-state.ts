@@ -15,7 +15,6 @@ import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-c
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import {
   orgUsageAllowanceEntitlements,
-  orgUsageAllowanceWindows,
   usageAllowanceAllocations,
 } from "@okouai/db/schema/org-usage-allowance";
 import { secrets } from "@okouai/db/schema/secret";
@@ -25,16 +24,7 @@ import { usageEventHourlyRollup } from "@okouai/db/schema/usage-event-hourly-rol
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
 import { variables } from "@okouai/db/schema/variable";
-import {
-  and,
-  count,
-  eq,
-  inArray,
-  isNotNull,
-  isNull,
-  sql,
-  sum,
-} from "drizzle-orm";
+import { and, count, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import {
@@ -88,17 +78,8 @@ type UsageStateFixtureAction = UsageStateAction<
   "seed-fixture" | "delete-fixture" | "seed-compose"
 >;
 
-type UsageStateRunAction = UsageStateAction<"seed-chat-thread">;
-
-type UsageStateEventWriteAction = UsageStateAction<
-  | "attach-usage-allowance"
-  | "read-allowance-window-state"
-  | "read-usage-event-state"
->;
-
-type UsageStateEventMaterializationAction = UsageStateAction<
-  "delete-run" | "delete-billing-attribution" | "read-usage-storage-counts"
->;
+type UsageStateEventMaterializationAction =
+  UsageStateAction<"read-usage-storage-counts">;
 
 function parseOptionalDate(value: string | null | undefined): Date | null {
   if (!value) {
@@ -386,30 +367,6 @@ const seedRun$ = command(
   },
 );
 
-async function seedChatThread(
-  db: Db,
-  args: {
-    readonly userId: string;
-    readonly agentId: string;
-    readonly title?: string;
-  },
-  signal: AbortSignal,
-): Promise<string> {
-  const [row] = await db
-    .insert(chatThreads)
-    .values({
-      userId: args.userId,
-      agentId: args.agentId,
-      title: args.title ?? null,
-    })
-    .returning({ id: chatThreads.id });
-  signal.throwIfAborted();
-  if (!row) {
-    throw new Error("seedChatThread: insert returned no row");
-  }
-  return row.id;
-}
-
 function buildGenericUsageRows(args: {
   readonly orgId: string;
   readonly userId?: string;
@@ -582,179 +539,6 @@ const insertFixtureUsage$ = command(
   },
 );
 
-async function attachUsageAllowance(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly runId: string | null;
-    readonly usageEventId: string;
-    readonly unitsApplied: number;
-    readonly consumedUnits: number;
-  },
-): Promise<{
-  readonly shortWindowId: string;
-  readonly weeklyWindowId: string;
-}> {
-  let [entitlement] = await db
-    .select({ id: orgUsageAllowanceEntitlements.id })
-    .from(orgUsageAllowanceEntitlements)
-    .where(eq(orgUsageAllowanceEntitlements.orgId, args.orgId))
-    .limit(1);
-  if (!entitlement) {
-    [entitlement] = await db
-      .insert(orgUsageAllowanceEntitlements)
-      .values({
-        orgId: args.orgId,
-        shortWindowSeconds: 3600,
-        shortWindowUnits: 1_000_000,
-        weeklyWindowUnits: 1_000_000,
-        effectiveAt: new Date("2000-01-01T00:00:00.000Z"),
-      })
-      .returning({ id: orgUsageAllowanceEntitlements.id });
-  }
-  if (!entitlement) {
-    throw new Error("attachUsageAllowance: entitlement insert returned no row");
-  }
-
-  const windowLimit = Math.max(args.consumedUnits, args.unitsApplied) + 100;
-  // Each attached pair is a distinct window identity (entitlement, kind,
-  // start), so successive fixture pairs start one second apart.
-  const [existing] = await db
-    .select({ windows: count() })
-    .from(orgUsageAllowanceWindows)
-    .where(eq(orgUsageAllowanceWindows.entitlementId, entitlement.id));
-  const startsAt = new Date(
-    Date.UTC(2000, 0, 1) + (existing?.windows ?? 0) * 1000,
-  );
-  const windows = await db
-    .insert(orgUsageAllowanceWindows)
-    .values([
-      {
-        orgId: args.orgId,
-        entitlementId: entitlement.id,
-        kind: "short",
-        startsAt,
-        expiresAt: new Date("3000-01-01T00:00:00.000Z"),
-        unitLimit: windowLimit,
-        consumedUnits: args.consumedUnits,
-        createdByRunId: args.runId,
-      },
-      {
-        orgId: args.orgId,
-        entitlementId: entitlement.id,
-        kind: "weekly",
-        startsAt,
-        expiresAt: new Date("3000-01-01T00:00:00.000Z"),
-        unitLimit: windowLimit,
-        consumedUnits: args.consumedUnits,
-        createdByRunId: args.runId,
-      },
-    ])
-    .returning({
-      id: orgUsageAllowanceWindows.id,
-      kind: orgUsageAllowanceWindows.kind,
-    });
-  const shortWindow = windows.find((window) => {
-    return window.kind === "short";
-  });
-  const weeklyWindow = windows.find((window) => {
-    return window.kind === "weekly";
-  });
-  if (!shortWindow || !weeklyWindow) {
-    throw new Error("attachUsageAllowance: window insert returned no pair");
-  }
-
-  await db.insert(usageAllowanceAllocations).values({
-    usageEventId: args.usageEventId,
-    orgId: args.orgId,
-    runId: args.runId,
-    shortWindowId: shortWindow.id,
-    weeklyWindowId: weeklyWindow.id,
-    unitsApplied: args.unitsApplied,
-  });
-  return {
-    shortWindowId: shortWindow.id,
-    weeklyWindowId: weeklyWindow.id,
-  };
-}
-
-async function readAllowanceWindowState(
-  db: Db,
-  args: {
-    readonly shortWindowId: string;
-    readonly weeklyWindowId: string;
-  },
-) {
-  const [[shortWindow], [weeklyWindow], [raw], [hourly]] = await Promise.all([
-    db
-      .select({ consumedUnits: orgUsageAllowanceWindows.consumedUnits })
-      .from(orgUsageAllowanceWindows)
-      .where(eq(orgUsageAllowanceWindows.id, args.shortWindowId))
-      .limit(1),
-    db
-      .select({ consumedUnits: orgUsageAllowanceWindows.consumedUnits })
-      .from(orgUsageAllowanceWindows)
-      .where(eq(orgUsageAllowanceWindows.id, args.weeklyWindowId))
-      .limit(1),
-    db
-      .select({
-        allowanceUnits: sum(usageAllowanceAllocations.unitsApplied),
-        allocationCount: count(),
-      })
-      .from(usageAllowanceAllocations)
-      .where(
-        and(
-          eq(usageAllowanceAllocations.shortWindowId, args.shortWindowId),
-          eq(usageAllowanceAllocations.weeklyWindowId, args.weeklyWindowId),
-        ),
-      ),
-    db
-      .select({
-        allowanceUnits: sum(usageEventHourlyRollup.allowanceUnits),
-      })
-      .from(usageEventHourlyRollup)
-      .where(
-        and(
-          eq(usageEventHourlyRollup.shortWindowId, args.shortWindowId),
-          eq(usageEventHourlyRollup.weeklyWindowId, args.weeklyWindowId),
-        ),
-      ),
-  ]);
-  if (!shortWindow || !weeklyWindow || !raw || !hourly) {
-    throw new Error(
-      "readAllowanceWindowState: state query returned incomplete results",
-    );
-  }
-  return {
-    shortWindowConsumedUnits: String(shortWindow.consumedUnits),
-    weeklyWindowConsumedUnits: String(weeklyWindow.consumedUnits),
-    rawAllowanceUnits: raw.allowanceUnits ?? "0",
-    hourlyAllowanceUnits: hourly.allowanceUnits ?? "0",
-    allocationCount: raw.allocationCount,
-  };
-}
-
-async function deleteRun(
-  db: Db,
-  runId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  await db.delete(agentRuns).where(eq(agentRuns.id, runId));
-  signal.throwIfAborted();
-}
-
-/** Reproduces a run whose usage predates the billing attribution table. */
-async function deleteBillingAttribution(
-  db: Db,
-  runId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  await db
-    .delete(billingRunAttribution)
-    .where(eq(billingRunAttribution.runId, runId));
-  signal.throwIfAborted();
-}
-
 const materializeHourlyUsage$ = command(
   async (
     { set },
@@ -910,41 +694,6 @@ async function readUsageStorageCounts(
   };
 }
 
-async function readUsageEventState(
-  db: Db,
-  idempotencyKey: string,
-): Promise<{
-  readonly id: string;
-  readonly status: string;
-  readonly creditsCharged: number | null;
-  readonly billingError: string | null;
-  readonly shortWindowId: string | null;
-  readonly weeklyWindowId: string | null;
-  readonly allowanceUnits: number | null;
-}> {
-  const [event] = await db
-    .select({
-      id: usageEvent.id,
-      status: usageEvent.status,
-      creditsCharged: usageEvent.creditsCharged,
-      billingError: usageEvent.billingError,
-      shortWindowId: usageAllowanceAllocations.shortWindowId,
-      weeklyWindowId: usageAllowanceAllocations.weeklyWindowId,
-      allowanceUnits: usageAllowanceAllocations.unitsApplied,
-    })
-    .from(usageEvent)
-    .leftJoin(
-      usageAllowanceAllocations,
-      eq(usageAllowanceAllocations.usageEventId, usageEvent.id),
-    )
-    .where(eq(usageEvent.idempotencyKey, idempotencyKey))
-    .limit(1);
-  if (!event) {
-    throw new Error("readUsageEventState: usage event not found");
-  }
-  return event;
-}
-
 async function mutateUsageStateFixtureState(
   db: Db,
   body: UsageStateFixtureAction,
@@ -1023,106 +772,12 @@ const seedUsageRunState$ = command(
   },
 );
 
-async function mutateUsageStateRunState(
-  db: Db,
-  body: UsageStateRunAction,
-  signal: AbortSignal,
-) {
-  switch (body.action) {
-    case "seed-chat-thread": {
-      const threadId = await seedChatThread(
-        db,
-        {
-          userId: body.user_id,
-          agentId: body.compose_id,
-          title: body.title,
-        },
-        signal,
-      );
-      return {
-        status: 200 as const,
-        body: { ok: true as const, chat_thread_id: threadId },
-      };
-    }
-  }
-}
-
-async function mutateUsageStateEventWriteState(
-  db: Db,
-  body: UsageStateEventWriteAction,
-  signal: AbortSignal,
-) {
-  switch (body.action) {
-    case "attach-usage-allowance": {
-      const windows = await attachUsageAllowance(db, {
-        orgId: body.org_id,
-        runId: body.run_id,
-        usageEventId: body.usage_event_id,
-        unitsApplied: body.units_applied,
-        consumedUnits: body.consumed_units,
-      });
-      signal.throwIfAborted();
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          short_window_id: windows.shortWindowId,
-          weekly_window_id: windows.weeklyWindowId,
-        },
-      };
-    }
-    case "read-allowance-window-state": {
-      const state = await readAllowanceWindowState(db, {
-        shortWindowId: body.short_window_id,
-        weeklyWindowId: body.weekly_window_id,
-      });
-      signal.throwIfAborted();
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          short_window_consumed_units: state.shortWindowConsumedUnits,
-          weekly_window_consumed_units: state.weeklyWindowConsumedUnits,
-          raw_allowance_units: state.rawAllowanceUnits,
-          hourly_allowance_units: state.hourlyAllowanceUnits,
-          allocation_count: state.allocationCount,
-        },
-      };
-    }
-    case "read-usage-event-state": {
-      const event = await readUsageEventState(db, body.idempotency_key);
-      signal.throwIfAborted();
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          usage_event_id: event.id,
-          usage_event_status: event.status,
-          usage_event_credits_charged: event.creditsCharged,
-          usage_event_billing_error: event.billingError,
-          usage_event_short_window_id: event.shortWindowId,
-          usage_event_weekly_window_id: event.weeklyWindowId,
-          usage_event_allowance_units: event.allowanceUnits,
-        },
-      };
-    }
-  }
-}
-
 async function mutateUsageStateEventMaterializationState(
   db: Db,
   body: UsageStateEventMaterializationAction,
   signal: AbortSignal,
 ) {
   switch (body.action) {
-    case "delete-run": {
-      await deleteRun(db, body.run_id, signal);
-      return { status: 200 as const, body: { ok: true as const } };
-    }
-    case "delete-billing-attribution": {
-      await deleteBillingAttribution(db, body.run_id, signal);
-      return { status: 200 as const, body: { ok: true as const } };
-    }
     case "read-usage-storage-counts": {
       const counts = await readUsageStorageCounts(db, {
         scope: body.scope,
@@ -1162,16 +817,6 @@ async function mutateUsageState(
     case "seed-compose": {
       return await mutateUsageStateFixtureState(db, body, signal);
     }
-    case "seed-chat-thread": {
-      return await mutateUsageStateRunState(db, body, signal);
-    }
-    case "attach-usage-allowance":
-    case "read-allowance-window-state":
-    case "read-usage-event-state": {
-      return await mutateUsageStateEventWriteState(db, body, signal);
-    }
-    case "delete-run":
-    case "delete-billing-attribution":
     case "read-usage-storage-counts": {
       return await mutateUsageStateEventMaterializationState(db, body, signal);
     }

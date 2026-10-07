@@ -999,4 +999,248 @@ describe("POST /api/webhooks/notion", () => {
     );
     await expectAutomationConnector(readdedAccount.id);
   });
+
+  it("verifies, signs, de-duplicates, and refreshes pending child page events", async () => {
+    const scenario = await setupFixture();
+    const { workflowId, entities } = scenario;
+    await connectNotion(scenario);
+    configureNotionParentPageMock(entities);
+
+    const created = await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId },
+        body: {
+          kind: "event",
+          eventType: "notion-child-page-created",
+          eventConfig: {
+            provider: "notion",
+            event: "child_page_created",
+            parentPageUrl: entities.parentPageUrl,
+          },
+        },
+      }),
+      [201],
+    );
+    if (
+      created.body.kind !== "event" ||
+      created.body.eventType !== "notion-child-page-created"
+    ) {
+      throw new Error("Expected a Notion child page automation");
+    }
+
+    await verifyNotionWebhook();
+
+    // A replacement verification while a token is active is rejected, so the
+    // original token keeps validating signed deliveries below.
+    const replacement = await postNotionWebhook({
+      rawBody: JSON.stringify({ verification_token: "attacker-token" }),
+    });
+    expect(replacement).toStrictEqual({
+      status: 401,
+      body: { error: "Unauthorized" },
+    });
+
+    const createdEvent = notionPageEvent({
+      entities,
+      type: "page.created",
+      timestamp: "2026-07-06T12:00:00.000Z",
+    });
+    const first = await postNotionWebhook({
+      rawBody: createdEvent.rawBody,
+      signature: notionSignature(createdEvent.rawBody),
+    });
+    expect(first).toStrictEqual({
+      status: 200,
+      body: {
+        success: true,
+        kind: "event",
+        pending: 1,
+        refreshed: 0,
+        duplicates: 0,
+      },
+    });
+
+    const updateEvent = notionPageEvent({
+      entities,
+      type: "page.content_updated",
+      timestamp: "2026-07-06T12:05:00.000Z",
+    });
+    const update = await postNotionWebhook({
+      rawBody: updateEvent.rawBody,
+      signature: notionSignature(updateEvent.rawBody),
+    });
+    expect(update).toStrictEqual({
+      status: 200,
+      body: {
+        success: true,
+        kind: "event",
+        pending: 0,
+        refreshed: 1,
+        duplicates: 0,
+      },
+    });
+
+    const duplicate = await postNotionWebhook({
+      rawBody: updateEvent.rawBody,
+      signature: notionSignature(updateEvent.rawBody),
+    });
+    expect(duplicate).toStrictEqual({
+      status: 200,
+      body: {
+        success: true,
+        kind: "event",
+        pending: 0,
+        refreshed: 0,
+        duplicates: 1,
+      },
+    });
+  });
+
+  it("enqueues and refreshes pending database item events", async () => {
+    const scenario = await setupFixture();
+    const { workflowId, entities } = scenario;
+    await connectNotion(scenario);
+    configureNotionDatabaseMock(entities);
+
+    const created = await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId },
+        body: {
+          kind: "event",
+          eventType: "notion-database-item-created",
+          eventConfig: {
+            provider: "notion",
+            event: "database_item_created",
+            databaseUrl: entities.databaseUrl,
+          },
+        },
+      }),
+      [201],
+    );
+    if (
+      created.body.kind !== "event" ||
+      created.body.eventType !== "notion-database-item-created"
+    ) {
+      throw new Error("Expected a Notion database item automation");
+    }
+
+    await verifyNotionWebhook();
+
+    // Notion also delivers data-source children with a database parent id
+    // plus a data_source_id field (no parent type) — both shapes must match
+    // the data-source automation.
+    const createdEvent = notionPageEvent({
+      entities,
+      type: "page.created",
+      timestamp: "2026-07-06T12:00:00.000Z",
+      parent: {
+        id: entities.databaseId,
+        data_source_id: entities.dataSourceId,
+      },
+    });
+    const first = await postNotionWebhook({
+      rawBody: createdEvent.rawBody,
+      signature: notionSignature(createdEvent.rawBody),
+    });
+    expect(first).toStrictEqual({
+      status: 200,
+      body: {
+        success: true,
+        kind: "event",
+        pending: 1,
+        refreshed: 0,
+        duplicates: 0,
+      },
+    });
+
+    const updateEvent = notionPageEvent({
+      entities,
+      type: "page.content_updated",
+      timestamp: "2026-07-06T12:05:00.000Z",
+      parent: { id: entities.dataSourceId, type: "data_source" },
+    });
+    const update = await postNotionWebhook({
+      rawBody: updateEvent.rawBody,
+      signature: notionSignature(updateEvent.rawBody),
+    });
+    expect(update).toStrictEqual({
+      status: 200,
+      body: {
+        success: true,
+        kind: "event",
+        pending: 0,
+        refreshed: 1,
+        duplicates: 0,
+      },
+    });
+  });
+
+  it("inherits explicit Notion account selection in new automations", async () => {
+    const {
+      entities,
+      threadId,
+      workflowId,
+      secondAccount,
+      expectAutomationConnector,
+    } = await setupNotionAccountLifecycle();
+    await verifyNotionWebhook();
+    const staleEvent = notionPageEvent({
+      entities,
+      type: "page.created",
+      timestamp: "2026-07-06T12:21:00.000Z",
+    });
+    await expect(
+      postNotionWebhook({
+        rawBody: staleEvent.rawBody,
+        signature: notionSignature(staleEvent.rawBody),
+      }),
+    ).resolves.toMatchObject({ body: { pending: 1 } });
+
+    await accept(
+      chatThreadConnectorSelectionsClient().update({
+        headers: authHeaders(),
+        params: { id: threadId },
+        body: {
+          connectionId: secondAccount.id,
+          target: { kind: "builtin", connectorSlug: "notion" },
+        },
+      }),
+      [200],
+    );
+    await expectAutomationConnector(secondAccount.id);
+
+    const selectedEntities = newNotionEntities();
+    configureNotionParentPageMock(
+      selectedEntities,
+      "notion-second-access-token",
+    );
+    const selectedCreation = await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId },
+        body: {
+          kind: "event",
+          eventType: "notion-child-page-created",
+          eventConfig: {
+            provider: "notion",
+            event: "child_page_created",
+            parentPageUrl: selectedEntities.parentPageUrl,
+          },
+          enabled: false,
+        },
+      }),
+      [201],
+    );
+    if (
+      selectedCreation.body.kind !== "event" ||
+      selectedCreation.body.eventType !== "notion-child-page-created"
+    ) {
+      throw new Error("Expected the selected-account Notion automation");
+    }
+    expect(selectedCreation.body.eventConfig).toMatchObject({
+      connectorId: secondAccount.id,
+    });
+  });
 });

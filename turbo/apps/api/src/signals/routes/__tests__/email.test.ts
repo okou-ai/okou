@@ -3,17 +3,15 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { mockClerkUsers } from "./helpers/clerk-users";
 
 import { testContext } from "../../../__tests__/test-context";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
-import { createEmailApi } from "./helpers/api-bdd-email";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
 const context = testContext();
 const resendMocks = context.mocks.resend;
 const bdd = createBddApi(context);
-const email = createEmailApi(context);
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 
@@ -97,8 +95,6 @@ beforeEach(() => {
   mockEnv("RESEND_FROM_DOMAIN", "okou.io");
   mockEnv("APP_URL", "https://app.okou.ai");
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-  // Resend pacing is not part of these transactional delivery assertions.
-  mockOptionalEnv("EMAIL_OUTBOX_DRAIN_DELAY_MS", "0");
 });
 
 describe("POST /api/email/inbound", () => {

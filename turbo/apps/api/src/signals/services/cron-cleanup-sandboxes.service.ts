@@ -174,7 +174,6 @@ const cleanupExportJobs$ = command(
   async (
     { get },
     db: Db,
-    exportJobIds: readonly string[] | null,
     signal: AbortSignal,
   ): Promise<{
     readonly exportJobsCleaned: number;
@@ -192,9 +191,6 @@ const cleanupExportJobs$ = command(
           eq(exportJobs.status, "completed"),
           isNotNull(exportJobs.expiresAt),
           lt(exportJobs.expiresAt, currentTime),
-          exportJobIds === null
-            ? undefined
-            : inArray(exportJobs.id, exportJobIds),
         ),
       );
     signal.throwIfAborted();
@@ -235,9 +231,6 @@ const cleanupExportJobs$ = command(
           inArray(exportJobs.status, ["pending", "running"]),
           lt(exportJobs.createdAt, stuckCutoffTime),
           isNull(exportJobs.executionMode),
-          exportJobIds === null
-            ? undefined
-            : inArray(exportJobs.id, exportJobIds),
         ),
       );
     signal.throwIfAborted();
@@ -513,17 +506,11 @@ const cleanupExpiredRuns$ = command(
 
 async function cleanupExpiredRunnerJobs(
   db: Db,
-  runIds: readonly string[] | null,
   signal: AbortSignal,
 ): Promise<number> {
   const { rowCount } = await db
     .delete(runnerJobQueue)
-    .where(
-      and(
-        lte(runnerJobQueue.expiresAt, sql`now()`),
-        runIds === null ? undefined : inArray(runnerJobQueue.runId, runIds),
-      ),
-    );
+    .where(lte(runnerJobQueue.expiresAt, sql`now()`));
   signal.throwIfAborted();
 
   const deletedCount = rowCount ?? 0;
@@ -538,7 +525,6 @@ async function cleanupExpiredRunnerJobs(
 
 async function cleanupConnectorDiagnosticRegistrations(
   db: Db,
-  runIds: readonly string[] | null,
   signal: AbortSignal,
 ): Promise<number> {
   const candidates = db
@@ -549,14 +535,9 @@ async function cleanupConnectorDiagnosticRegistrations(
       eq(agentRuns.id, agentRunConnectorDiagnosticRegistrations.runId),
     )
     .where(
-      and(
-        or(
-          isNull(agentRuns.id),
-          inArray(agentRuns.status, TERMINAL_RUN_STATUSES),
-        ),
-        runIds === null
-          ? undefined
-          : inArray(agentRunConnectorDiagnosticRegistrations.runId, runIds),
+      or(
+        isNull(agentRuns.id),
+        inArray(agentRuns.status, TERMINAL_RUN_STATUSES),
       ),
     )
     .orderBy(
@@ -582,7 +563,7 @@ const cleanupGlobalMaintenance$ = command(
   async ({ set }, signal: AbortSignal): Promise<void> => {
     // Release silent terminal runs first so the org pick can admit the
     // threads they held in the same pass.
-    await set(releaseStaleTerminalActiveAgentRuns$, null, signal);
+    await set(releaseStaleTerminalActiveAgentRuns$, signal);
     signal.throwIfAborted();
     await set(pickAllQueuedOrgs$, signal);
     signal.throwIfAborted();
@@ -640,7 +621,7 @@ export const cleanupSandboxes$ = command(
       .innerJoin(agentRuns, eq(agentRuns.id, activeAgentRuns.runId))
       .leftJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
       .leftJoin(agents, eq(agentSessions.agentId, agents.id))
-      .where(and(inArray(agentRuns.status, ["pending", "running"])));
+      .where(inArray(agentRuns.status, ["pending", "running"]));
     signal.throwIfAborted();
 
     const expiredRuns = staleRuns.filter((run) => {
@@ -650,12 +631,12 @@ export const cleanupSandboxes$ = command(
     // Run before expired-run timeouts so an active threadless run always
     // takes the hard-cancel path and can never become terminal and be deleted
     // within the same maintenance pass.
-    const threadlessRuns = await set(cleanupThreadlessRuns$, null, signal);
+    const threadlessRuns = await set(cleanupThreadlessRuns$, signal);
     signal.throwIfAborted();
 
-    await cleanupExpiredRunnerJobs(db, null, signal);
+    await cleanupExpiredRunnerJobs(db, signal);
     signal.throwIfAborted();
-    await cleanupConnectorDiagnosticRegistrations(db, null, signal);
+    await cleanupConnectorDiagnosticRegistrations(db, signal);
     signal.throwIfAborted();
     await set(cleanupGlobalMaintenance$, signal);
     signal.throwIfAborted();
@@ -674,7 +655,6 @@ export const cleanupSandboxes$ = command(
     const { exportJobsCleaned, exportJobsStuck } = await set(
       cleanupExportJobs$,
       db,
-      null,
       signal,
     );
 

@@ -31,7 +31,7 @@ async function setupAwsFirewall(publicFixture: PublicFirewallFixture) {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  runs.configureRunnerGroup();
+  const runnerGroup = runs.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
   await publicFixture.fund();
   await runs.ensurePersonalSubscriptionModel(actor);
@@ -46,7 +46,9 @@ async function setupAwsFirewall(publicFixture: PublicFirewallFixture) {
     prompt: "resolve AWS firewall auth",
   });
   publicFixture.registerRun(run.runId);
-  const headers = fw.sandboxHeaders(actor, run.runId);
+  await runs.heartbeatRunner(runnerGroup);
+  const claim = await runs.claimRunnerJob(run.runId);
+  const headers = { authorization: `Bearer ${claim.sandboxToken}` };
   mockAwsExternalCodeProvider();
   const ownedAccountIds = publicFixture.registerBuiltinConnector("aws");
 

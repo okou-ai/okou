@@ -1,49 +1,9 @@
 import { createHash } from "node:crypto";
 import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
-import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { expect } from "vitest";
 import type { TestContext } from "../../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
-
-/** Publish bytes for the actual native session through authenticated callbacks. */
-export async function completePublicPiHistory(
-  context: TestContext,
-  run: { readonly runId: string; readonly threadId: string },
-  headers: { readonly authorization: string },
-  content: string,
-) {
-  const session = MemoryPiSession.create({
-    cwd: "/home/user/workspace",
-    id: run.threadId,
-    timestamp: "2026-09-02T00:00:00.000Z",
-  });
-  session.appendMessage({ role: "user", content, timestamp: 1 });
-  session.appendMessage({
-    role: "assistant",
-    content: [{ type: "text", text: "completed safely" }],
-    api: "openai-responses",
-    provider: "openai",
-    model: "gpt-6-luna",
-    usage: {
-      input: 1,
-      output: 1,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 2,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-    },
-    stopReason: "stop",
-    timestamp: 2,
-  });
-  return await completePublicHistory(
-    context,
-    run,
-    headers,
-    Buffer.from(session.toJsonl(), "utf8"),
-    "pi",
-  );
-}
 
 /** Native Codex publishes its own JSONL format, never a retyped Pi session. */
 export async function completePublicCodexHistory(

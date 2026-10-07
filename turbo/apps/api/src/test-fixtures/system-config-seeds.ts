@@ -4,16 +4,13 @@ import {
 } from "./org-metadata";
 import {
   createUsagePricingFixture,
-  deleteUsagePricingRows,
   type UsagePricingFixture,
   type UsagePricingKey,
   type UsagePricingRow,
-  upsertUsagePricingRows,
 } from "./usage-pricing";
 
 export type { UsagePricingFixture, UsagePricingKey, UsagePricingRow };
 
 export const seedOrgMetadata = upsertOrgMetadataFixture;
 export { setOnboardingPaymentPendingFixture };
-export const seedUsagePricingRows = upsertUsagePricingRows;
-export { createUsagePricingFixture, deleteUsagePricingRows };
+export { createUsagePricingFixture };

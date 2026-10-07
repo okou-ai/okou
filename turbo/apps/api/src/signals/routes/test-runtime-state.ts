@@ -19,11 +19,7 @@ import {
   acquireBuiltInModelKeyFixture,
   releaseBuiltInModelKeyFixture,
 } from "../services/built-in-model-key-fixture";
-import {
-  catalogBuiltInModelRouteUpstream,
-  resolveBuiltInModelRuntimeRoute,
-  type BuiltInModelRuntimeRoute,
-} from "../services/built-in-model-runtime-route.service";
+import { catalogBuiltInModelRouteUpstream } from "../services/built-in-model-runtime-route.service";
 import { writeRunMetadata$ } from "../services/agent-run-metadata-write.service";
 import { saveRunSummary$ } from "../services/run-summary.service";
 import { resolveRunnerWssTarget$ } from "../services/runner-wss-target.service";
@@ -144,22 +140,13 @@ async function deleteBuiltInModelKey(
   signal.throwIfAborted();
 }
 
-function serializeBuiltInModelRuntimeRoute(route: BuiltInModelRuntimeRoute) {
-  return {
-    provider_type: route.providerType,
-    upstream_model: route.upstreamModel,
-    model_key_id: route.modelKeyId,
-  };
-}
-
 type BuiltInModelAction = Extract<
   TestRuntimeStateActionBody,
   {
     action:
       | "seed-built-in-default-model-key"
       | "seed-built-in-model-key"
-      | "delete-built-in-model-key"
-      | "resolve-built-in-model-route";
+      | "delete-built-in-model-key";
   }
 >;
 
@@ -170,7 +157,6 @@ function isBuiltInModelAction(
     "seed-built-in-default-model-key",
     "seed-built-in-model-key",
     "delete-built-in-model-key",
-    "resolve-built-in-model-route",
   ].includes(body.action);
 }
 
@@ -213,23 +199,6 @@ async function builtInModelActionResponse(
     case "delete-built-in-model-key": {
       await deleteBuiltInModelKey(db, body.fixture_id, signal);
       return { status: 200 as const, body: { ok: true as const } };
-    }
-    case "resolve-built-in-model-route": {
-      const route = await resolveBuiltInModelRuntimeRoute(
-        catalogSnapshot,
-        db,
-        body.selected_model,
-      );
-      signal.throwIfAborted();
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          built_in_model_route: route
-            ? serializeBuiltInModelRuntimeRoute(route)
-            : null,
-        },
-      };
     }
   }
 }

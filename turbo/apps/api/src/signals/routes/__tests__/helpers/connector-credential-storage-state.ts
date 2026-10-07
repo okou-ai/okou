@@ -365,28 +365,6 @@ export async function setConnectorExternalIdState(
   });
 }
 
-export async function setConnectorAccountState(
-  context: TestContext,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
-    readonly needsReconnect: boolean;
-    readonly storageVersion?: number;
-  },
-): Promise<void> {
-  await postAction(context, {
-    action: "set-connector-account-state",
-    org_id: args.orgId,
-    user_id: args.userId,
-    connector_id: args.connectorId,
-    needs_reconnect: args.needsReconnect,
-    ...(args.storageVersion === undefined
-      ? {}
-      : { storage_version: args.storageVersion }),
-  });
-}
-
 export async function seedBuiltinThreadConnectorSelection(
   context: TestContext,
   args: {

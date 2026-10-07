@@ -190,7 +190,6 @@ const DUE_MODE_LIMIT: Readonly<Record<DueMode, number>> = Object.freeze({
 
 interface DueSelection {
   readonly at: Date;
-  readonly automationId?: string;
   readonly mode?: DueMode;
 }
 
@@ -305,9 +304,6 @@ const dueWorkflowAutomationRows$ = command(
       )
       .where(
         and(
-          args.automationId === undefined
-            ? undefined
-            : eq(workflowAutomations.id, args.automationId),
           eq(workflowAutomations.enabled, true),
           eq(workflowAutomations.kind, "schedule"),
           lte(workflowAutomations.nextRunAt, args.at),
@@ -433,10 +429,6 @@ const retireDepartedOwner$ = command(
   },
 );
 
-type WorkflowPollerArgs = {
-  readonly automationId?: string;
-};
-
 type PollCounters = { executed: number; skipped: number; expired: number };
 
 const loadDueWorkflowRows$ = command(
@@ -444,14 +436,12 @@ const loadDueWorkflowRows$ = command(
     { set },
     args: {
       readonly currentTime: Date;
-      readonly automationId?: string;
       readonly expiryEnabled: boolean;
     },
     signal: AbortSignal,
   ): Promise<DueWorkflowAutomationRow[]> => {
     const common = {
       at: args.currentTime,
-      automationId: args.automationId,
     };
     if (!args.expiryEnabled) {
       const expired = await set(
@@ -652,19 +642,14 @@ const skipExpiredDueRow$ = command(
   },
 );
 
-const executeDueWorkflowAutomationsImpl$ = command(
-  async (
-    { set },
-    args: WorkflowPollerArgs,
-    signal: AbortSignal,
-  ): Promise<ExecuteResult> => {
+export const executeDueWorkflowAutomations$ = command(
+  async ({ set }, signal: AbortSignal): Promise<ExecuteResult> => {
     const currentTime = nowDate();
     const expiryEnabled = scheduleExpiryEnabled();
     const rows = await set(
       loadDueWorkflowRows$,
       {
         currentTime,
-        automationId: args.automationId,
         expiryEnabled,
       },
       signal,
@@ -755,35 +740,5 @@ const executeDueWorkflowAutomationsImpl$ = command(
       });
     }
     return { executed: counters.executed, skipped: counters.skipped };
-  },
-);
-
-/**
- * Time poller over `workflow_automations`, run from the
- * execute-workflow-automations cron route. Mirrors the automation poller: scan
- * enabled automations whose `next_run_at` is due, optimistic-lock claim the due
- * row, then fire a run that injects
- * the workflow skill (via the agent's attachment) and carries the recurrence
- * completion callback.
- */
-export const executeDueWorkflowAutomations$ = command(
-  async ({ set }, signal: AbortSignal): Promise<ExecuteResult> => {
-    return await set(executeDueWorkflowAutomationsImpl$, {}, signal);
-  },
-);
-
-export const executeDueWorkflowAutomationsForAutomation$ = command(
-  async (
-    { set },
-    automationId: string,
-    signal: AbortSignal,
-  ): Promise<ExecuteResult> => {
-    return await set(
-      executeDueWorkflowAutomationsImpl$,
-      {
-        automationId,
-      },
-      signal,
-    );
   },
 );

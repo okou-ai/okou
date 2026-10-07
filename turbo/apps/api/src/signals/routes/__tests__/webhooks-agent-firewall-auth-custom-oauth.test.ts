@@ -66,7 +66,7 @@ async function setupCustomOAuthFirewall(
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  runs.configureRunnerGroup();
+  const runnerGroup = runs.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
   await publicFixture.fund();
   await runs.ensurePersonalSubscriptionModel(actor);
@@ -79,7 +79,9 @@ async function setupCustomOAuthFirewall(
     prompt: "resolve custom OAuth firewall auth",
   });
   publicFixture.registerRun(run.runId);
-  const headers = fw.sandboxHeaders(actor, run.runId);
+  await runs.heartbeatRunner(runnerGroup);
+  const claim = await runs.claimRunnerJob(run.runId);
+  const headers = { authorization: `Bearer ${claim.sandboxToken}` };
   const connector = await connectors.createCustomConnector(
     actor,
     "endpoint" in provider

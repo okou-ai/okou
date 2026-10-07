@@ -677,36 +677,6 @@ async function setConnectorExternalId(
       };
 }
 
-async function setConnectorAccountState(
-  db: Db,
-  body: ConnectorCredentialStorageAction<"set-connector-account-state">,
-  signal: AbortSignal,
-) {
-  const [updated] = await db
-    .update(connectors)
-    .set({
-      needsReconnect: body.needs_reconnect,
-      ...(body.storage_version === undefined
-        ? {}
-        : { storageVersion: body.storage_version }),
-    })
-    .where(
-      and(
-        eq(connectors.id, body.connector_id),
-        eq(connectors.orgId, body.org_id),
-        eq(connectors.userId, body.user_id),
-      ),
-    )
-    .returning({ id: connectors.id });
-  signal.throwIfAborted();
-  return updated
-    ? actionOk()
-    : {
-        status: 400 as const,
-        body: { error: "Connector account test fixture was not found" },
-      };
-}
-
 async function seedBuiltinThreadSelection(
   db: Db,
   body: ConnectorCredentialStorageAction<"seed-builtin-thread-selection">,
@@ -854,9 +824,6 @@ async function mutateConnectorAccountCompatibilityState(
     }
     case "set-connector-external-id": {
       return await setConnectorExternalId(db, body, signal);
-    }
-    case "set-connector-account-state": {
-      return await setConnectorAccountState(db, body, signal);
     }
     case "set-builtin-oauth-scope-facts": {
       return await setBuiltinOAuthScopeFacts(db, body, signal);

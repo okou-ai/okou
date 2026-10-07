@@ -7,11 +7,9 @@ import {
   asc,
   eq,
   exists,
-  inArray,
   isNotNull,
   lt,
   notInArray,
-  or,
   sql,
 } from "drizzle-orm";
 import { eventConsumerPayload$ } from "../../lib/event-consumer/route";
@@ -100,14 +98,7 @@ export const captureRunActivity$ = command(
  * statement; the freed organizations are picked after it commits.
  */
 export const releaseStaleTerminalActiveAgentRuns$ = command(
-  async (
-    { set },
-    scope: {
-      readonly runIds: readonly string[];
-      readonly chatThreadIds: readonly string[];
-    } | null,
-    signal: AbortSignal,
-  ) => {
+  async ({ set }, signal: AbortSignal) => {
     const db = set(writeDb$);
     const staleBefore = new Date(
       nowDate().getTime() - CANCELLATION_RECOVERY_STALE_AFTER_MS,
@@ -128,12 +119,6 @@ export const releaseStaleTerminalActiveAgentRuns$ = command(
           .where(
             and(
               lt(activeAgentRuns.lastHeartbeatAt, staleBefore),
-              scope === null
-                ? undefined
-                : or(
-                    inArray(activeAgentRuns.runId, scope.runIds),
-                    inArray(activeAgentRuns.chatThreadId, scope.chatThreadIds),
-                  ),
               exists(
                 db
                   .select({ id: agentRuns.id })

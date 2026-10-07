@@ -8,10 +8,10 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now, nowDate } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../webhooks-agent-health-usage-telemetry";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
 type UsageEvent = z.infer<
   (typeof webhookUsageEventContract.send)["body"]
@@ -36,40 +36,30 @@ beforeEach(() => {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  runs.configureRunnerGroup();
 });
 
-async function createRun(
-  actor = bdd.user(),
-  modelProvider:
-    | "claude-code-oauth-token"
-    | "built-in" = "claude-code-oauth-token",
-): Promise<RunFixture> {
+async function createRun(actor = bdd.user()): Promise<RunFixture> {
   if (!actor.orgId) {
     throw new Error("X resource test requires an organization");
   }
   await runs.grantProEntitlement(actor);
-  if (modelProvider === "built-in") {
-    await createChatEventsFixture(context).configureBuiltInPiModel(
-      actor,
-      "okou-1.0",
-    );
-  } else {
-    await runs.ensurePersonalSubscriptionModel(actor);
-  }
+  await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "X resource accounting",
     visibility: "private",
   });
+  const runnerGroup = runs.configureRunnerGroup();
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "Read X resources",
   });
+  await runs.heartbeatRunner(runnerGroup);
+  const claim = await runs.claimRunnerJob(run.runId);
   return {
     actor,
     agentId: agent.agentId,
     runId: run.runId,
-    authorization: `Bearer ${runs.sandboxTokenForRun(actor, run.runId)}`,
+    authorization: `Bearer ${claim.sandboxToken}`,
   };
 }
 
@@ -111,6 +101,25 @@ function submit(fixture: RunFixture, events: UsageEvent[]) {
 }
 
 describe("X daily resource usage webhook", () => {
+  it("rejects a deleted run token while another run remains usable", async () => {
+    const deleted = await createRun();
+    const survivor = await createRun();
+    const sharedId = resourceId();
+    const freshId = resourceId();
+    await accept(submit(deleted, [observation([sharedId])]), [200]);
+    await runs.requestCancelRun(deleted.actor, deleted.runId, [200]);
+    await flushWaitUntilForTest();
+    await bdd.requestDeleteAgent(deleted.actor, deleted.agentId, [204]);
+    await runs.requestReadRun(deleted.actor, deleted.runId, [404]);
+
+    const rejected = await accept(
+      submit(deleted, [observation([freshId])]),
+      [404],
+    );
+    expect(rejected.status).toBe(404);
+    await accept(submit(survivor, [observation([sharedId, freshId])]), [200]);
+  });
+
   it("rolls back a whole mixed batch when a source UUID belongs to another organization", async () => {
     const first = await createRun();
     const second = await createRun();

@@ -1,5 +1,4 @@
 import { createStore } from "ccstate";
-import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { blobs } from "@okouai/db/schema/blob";
@@ -82,26 +81,6 @@ export async function setRunModelRuntimeRouteFixture(args: {
     .returning({ id: agentRuns.id });
   if (updated.length !== 1) {
     throw new Error("Expected one run runtime route to update");
-  }
-}
-
-/**
- * Simulate a persisted discriminator written by a later release. The current
- * production API intentionally cannot construct this canonical row because
- * its write fence still rejects `built-in`; compatibility reads still require
- * permanent coverage before that later writer exists.
- */
-export async function setRunModelProviderFixture(args: {
-  readonly runId: string;
-  readonly modelProvider: ModelProviderType;
-}): Promise<void> {
-  const updated = await db()
-    .update(agentRuns)
-    .set({ modelProvider: args.modelProvider })
-    .where(eq(agentRuns.id, args.runId))
-    .returning({ id: agentRuns.id });
-  if (updated.length !== 1) {
-    throw new Error("Expected one run model provider to update");
   }
 }
 

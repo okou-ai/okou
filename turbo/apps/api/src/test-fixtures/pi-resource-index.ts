@@ -8,33 +8,12 @@ import { createStore } from "ccstate";
 import { and, eq } from "drizzle-orm";
 
 import { db } from "../lib/db";
-import { PI_RESOURCE_EXTRACTOR_VERSION } from "../lib/pi-resource-index";
 import {
   prepareVolumeServerSide$,
   type PrepareVolumeServerSideInput,
 } from "../signals/services/storage-volume-publication.service";
 import { preparePiResourceSnapshot } from "../signals/services/pi-resource-snapshot.service";
 import { enqueuePiResourceVersionIndexes } from "../signals/services/pi-resource-version-index.service";
-
-// No production endpoint exposes indexability or the prepare/commit boundary.
-// These fixtures are limited to test-owned versions. Ordinary route tests keep
-// real creation/commit/work; the two explicitly documented infrastructure
-// seams below model an interrupted publication and an isolated empty writeback.
-export async function readPiResourceIndexStatusFixture(versionId: string) {
-  const [row] = await db()
-    .select({ status: piResourceVersionIndexes.status })
-    .from(piResourceVersionIndexes)
-    .where(
-      and(
-        eq(piResourceVersionIndexes.storageVersionId, versionId),
-        eq(
-          piResourceVersionIndexes.extractorVersion,
-          PI_RESOURCE_EXTRACTOR_VERSION,
-        ),
-      ),
-    );
-  return row?.status;
-}
 
 export async function prepareUnpublishedPiVolumeFixture(
   input: PrepareVolumeServerSideInput,

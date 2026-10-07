@@ -363,43 +363,36 @@ describe("Stripe automation event webhook", () => {
     );
   });
 
-  it.each(["delivery health"] as const)(
-    "accepts concurrent Live Stripe snapshots and exposes pending delivery health",
-    async (projection) => {
-      const receivedAt = Date.parse("2026-08-07T08:00:00.000Z");
-      mockNow(receivedAt);
-      const scenario = await setupScenario({
-        billingReasons: ["subscription_cycle"],
-      });
-      if (projection === "delivery health") {
-        expect((await readStripeAutomation(scenario)).health).toStrictEqual({
-          lastMatchingEventReceivedAt: null,
-          lastDeliveryStatus: null,
-          lastDeliveryStatusAt: null,
-          warning: null,
-        });
-      }
+  it("accepts concurrent Live Stripe snapshots and exposes pending delivery health", async () => {
+    const receivedAt = Date.parse("2026-08-07T08:00:00.000Z");
+    mockNow(receivedAt);
+    const scenario = await setupScenario({
+      billingReasons: ["subscription_cycle"],
+    });
+    expect((await readStripeAutomation(scenario)).health).toStrictEqual({
+      lastMatchingEventReceivedAt: null,
+      lastDeliveryStatus: null,
+      lastDeliveryStatusAt: null,
+      warning: null,
+    });
 
-      const event = invoicePaidEvent({
-        eventId: "evt_workflow_once",
-        invoiceId: "in_workflow_once",
-      });
+    const event = invoicePaidEvent({
+      eventId: "evt_workflow_once",
+      invoiceId: "in_workflow_once",
+    });
 
-      await Promise.all([
-        postStripeAutomationEvent(event),
-        postStripeAutomationEvent(event),
-      ]);
+    await Promise.all([
+      postStripeAutomationEvent(event),
+      postStripeAutomationEvent(event),
+    ]);
 
-      if (projection === "delivery health") {
-        expect((await readStripeAutomation(scenario)).health).toStrictEqual({
-          lastMatchingEventReceivedAt: "2026-08-07T08:00:00.000Z",
-          lastDeliveryStatus: "pending",
-          lastDeliveryStatusAt: "2026-08-07T08:00:00.000Z",
-          warning: null,
-        });
-      }
-    },
-  );
+    expect((await readStripeAutomation(scenario)).health).toStrictEqual({
+      lastMatchingEventReceivedAt: "2026-08-07T08:00:00.000Z",
+      lastDeliveryStatus: "pending",
+      lastDeliveryStatusAt: "2026-08-07T08:00:00.000Z",
+      warning: null,
+    });
+  });
 
   it("ignores receipts for disabled automations", async () => {
     const disabledAtReceipt = await setupScenario({
@@ -438,6 +431,67 @@ describe("Stripe automation event webhook", () => {
     ).toMatchObject({
       lastMatchingEventReceivedAt: null,
       lastDeliveryStatus: null,
+    });
+  });
+
+  it("updates receipt health across filters for unknown billing reasons", async () => {
+    const accountId = `acct_stripe_unknown_${randomUUID()}`;
+    const filtered = await setupScenario({
+      accountId,
+      billingReasons: ["manual"],
+    });
+    const unfiltered = await setupScenario({ accountId });
+    const unknownReasonEvent = invoicePaidEvent({
+      accountId,
+      eventId: "evt_unknown_billing_reason",
+      billingReason: "future_reason",
+    });
+
+    await postStripeAutomationEvent(unknownReasonEvent);
+
+    expect((await readStripeAutomation(filtered)).health).toMatchObject({
+      lastMatchingEventReceivedAt: expect.any(String),
+      lastDeliveryStatus: null,
+    });
+    expect((await readStripeAutomation(unfiltered)).health).toMatchObject({
+      lastMatchingEventReceivedAt: expect.any(String),
+      lastDeliveryStatus: "pending",
+    });
+  });
+
+  it("marks only the exact deauthorized account for reconnect and keeps its automation enabled", async () => {
+    const affected = await setupScenario({ accountId: STRIPE_ACCOUNT_ID });
+    const unaffected = await setupScenario({
+      accountId: "acct_stripe_workflow_other",
+    });
+    await postStripeAutomationEvent(
+      invoicePaidEvent({ eventId: "evt_before_deauthorization" }),
+    );
+    const deauthorization = {
+      id: "evt_deauthorized",
+      type: "account.application.deauthorized",
+      account: STRIPE_ACCOUNT_ID,
+      livemode: true,
+      created: Math.floor(now() / 1000),
+      data: { object: {} },
+    };
+    await postStripeAutomationEvent(deauthorization);
+    await postStripeAutomationEvent(deauthorization);
+
+    const affectedConnector = await connectors.readConnectorBySlug(
+      affected.actor,
+      "stripe",
+    );
+    expect(affectedConnector.connectionStatus).toBe("reconnect-required");
+    expect(affectedConnector.reconnectReason).toBe(
+      "authorization_expired_or_revoked",
+    );
+    await expect(
+      connectors.readConnectorBySlug(unaffected.actor, "stripe"),
+    ).resolves.toMatchObject({ connectionStatus: "connected" });
+    await expect(readStripeAutomation(affected)).resolves.toMatchObject({
+      id: affected.automationId,
+      enabled: true,
     });
   });
 });

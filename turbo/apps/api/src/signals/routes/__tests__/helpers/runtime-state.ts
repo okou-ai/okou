@@ -159,21 +159,6 @@ export async function seedBuiltInModelKey(
     : builtInModelKeyFixture(context, fixtureId, response.selected_model);
 }
 
-type BuiltInModelRuntimeRouteFixture = NonNullable<
-  TestRuntimeStateActionResponse["built_in_model_route"]
->;
-
-export async function resolveBuiltInModelRouteFixture(
-  context: TestContext,
-  selectedModel: string,
-): Promise<BuiltInModelRuntimeRouteFixture | null> {
-  const response = await postAction(context, {
-    action: "resolve-built-in-model-route",
-    selected_model: selectedModel,
-  });
-  return response.built_in_model_route ?? null;
-}
-
 export async function readRunAutonomyBudgetFixture(
   context: TestContext,
   runId: string,
