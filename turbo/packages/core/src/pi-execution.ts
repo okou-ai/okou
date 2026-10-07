@@ -3,11 +3,7 @@ import {
   isPiRouteClass,
   type PiRouteClass,
 } from "@okouai/api-contracts/contracts/model-catalog";
-import {
-  AUTO_RUN_MODEL,
-  AUTO_RUN_PROVIDER,
-  AUTO_RUN_UPSTREAM_MODEL,
-} from "./auto-run-model";
+import { AUTO_RUN_MODEL, AUTO_RUN_PROVIDER } from "./auto-run-model";
 import {
   isPiRuntimeIdentityResolvable,
   type PiRuntimeIdentity,
@@ -25,7 +21,6 @@ export interface PiCatalogRoute {
 export interface PiCatalogModel {
   readonly model: string;
   readonly piRouteClass: PiRouteClass | null;
-  readonly builtIn: readonly PiCatalogRoute[];
   readonly own: ReadonlyMap<string, PiCatalogRoute>;
 }
 
@@ -54,13 +49,6 @@ export function piCatalogModel(
     return {
       model: AUTO_RUN_MODEL,
       piRouteClass: "gpt-codex",
-      builtIn: [
-        {
-          concreteProviderType: AUTO_RUN_PROVIDER,
-          upstreamModel: AUTO_RUN_UPSTREAM_MODEL,
-          serviceTiers: [],
-        },
-      ],
       own: new Map(),
     };
   }
@@ -77,8 +65,8 @@ export function piCatalogModel(
     if (
       route.enabled &&
       route.model === row.model &&
-      (route.subscriptionType === "codex-oauth-token" ||
-        route.subscriptionType === "claude-code-oauth-token") &&
+      // Only a Codex subscription runs on Pi; Claude stays on its harness.
+      route.subscriptionType === "codex-oauth-token" &&
       route.providerType === route.subscriptionType &&
       !own.has(route.providerType)
     ) {
@@ -92,7 +80,6 @@ export function piCatalogModel(
   return {
     model: row.model,
     piRouteClass: isPiRouteClass(row.piRouteClass) ? row.piRouteClass : null,
-    builtIn: [],
     own,
   };
 }

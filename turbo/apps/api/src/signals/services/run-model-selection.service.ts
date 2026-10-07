@@ -21,5 +21,12 @@ export async function resolveRunModelSelection(
     .from(agentRuns)
     .where(and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)))
     .limit(1);
-  return row;
+  if (!row) {
+    return undefined;
+  }
+  // A historical run's retired Ultrafast tier reads as Standard.
+  return {
+    selectedModel: row.selectedModel,
+    codexServiceTier: row.codexServiceTier === "fast" ? "fast" : null,
+  };
 }

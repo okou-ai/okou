@@ -124,9 +124,10 @@ export function agentRunColumns(sessionId: () => AnyPgColumn) {
     reasoningEffort: varchar("reasoning_effort", {
       length: 20,
     }).$type<ReasoningEffort>(),
+    /** Historical runs can still hold the retired `ultrafast` tier. */
     codexServiceTier: varchar("codex_service_tier", {
       length: 20,
-    }).$type<CodexServiceTier>(),
+    }).$type<CodexServiceTier | "ultrafast">(),
     /** Built-in image model default snapshotted for this run. */
     selectedImageModel: varchar("selected_image_model", { length: 255 }),
     chatThreadId: uuid("chat_thread_id").references(

@@ -41,15 +41,7 @@ export const PI_RUNTIME_RESOLVABLE_MODELS = {
     "gpt-5.6-sol",
     "gpt-5.6-luna",
   ],
-  openrouter: [
-    "okou-1.0",
-    "deepseek/deepseek-v4.1-flash",
-    "deepseek/deepseek-v4-flash",
-    "openai/gpt-6-sol",
-    "openai/gpt-6-luna",
-    "openai/gpt-5.6-sol",
-    "openai/gpt-5.6-luna",
-  ],
+  openrouter: ["okou-1.0"],
 } as const satisfies Record<PiCatalogProvider, readonly string[]>;
 
 const RESOLVABLE_BY_PROVIDER: Readonly<

@@ -1,6 +1,5 @@
 import { z } from "zod";
 
-import DEEPSEEK_V4_FLASH_MODEL_CATALOG from "./deepseek-model-catalog.json" with { type: "json" };
 import {
   MODEL_PROVIDER_TYPE_IDS,
   isBuiltInModelProviderType,
@@ -23,29 +22,16 @@ export type {
   ModelProviderPiApi,
   ModelProviderPiEndpoint,
 } from "./model-provider-firewalls";
-export { isBuiltInModelProviderType } from "./model-provider-types";
+export {
+  isBuiltInModelProviderType,
+  isPersonalSubscriptionProviderType,
+} from "./model-provider-types";
 export type {
   BuiltInModelProviderType,
   ModelProviderFramework,
   ModelProviderType,
+  PersonalSubscriptionProviderType,
 } from "./model-provider-types";
-
-const deepseekV4FlashCatalogModel = DEEPSEEK_V4_FLASH_MODEL_CATALOG.models[0];
-if (!deepseekV4FlashCatalogModel) {
-  throw new Error("DeepSeek V4 Flash model catalog entry is required");
-}
-
-const deepseekV41FlashCatalogModel = {
-  ...deepseekV4FlashCatalogModel,
-  slug: "deepseek-v4.1-flash",
-  display_name: "DeepSeek-V4.1-Flash",
-  input_modalities: ["text", "image"],
-};
-
-const DEEPSEEK_V4_1_FLASH_MODEL_CATALOG = {
-  ...DEEPSEEK_V4_FLASH_MODEL_CATALOG,
-  models: [deepseekV41FlashCatalogModel],
-};
 
 /**
  * Secret field configuration for multi-secret providers
@@ -75,7 +61,6 @@ export const modelProviderCodexRuntimeConfigSchema = z.object({
   name: z.string().min(1),
   baseUrl: z.url(),
   envKey: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
-  httpHeaders: z.record(z.string(), z.string()).optional(),
   requiresOpenaiAuth: z.boolean().optional(),
   wireApi: z.literal("responses"),
   supportsWebsockets: z.boolean(),
@@ -161,13 +146,6 @@ export function getCatalogRunModelRouteAccess(
     : "pro_required";
 }
 
-/** The key-pool vendor of the concrete Built-in provider; undefined for others. */
-export function getBuiltInRouteProviderVendor(
-  concreteProviderType: string,
-): string | undefined {
-  return concreteProviderType === "openrouter-codex" ? "openrouter" : undefined;
-}
-
 /**
  * Model Provider type configuration
  * Maps type to framework, secret name, and display label
@@ -179,7 +157,8 @@ export function getBuiltInRouteProviderVendor(
  * - Other values are passed through as literals
  */
 const BUILT_IN_MODEL_PROVIDER_CONFIG = {
-  framework: "claude-code" as const,
+  // Auto's protocol provider is `openrouter-codex`.
+  framework: "codex" as const,
   label: "Built-in model",
 };
 
@@ -364,57 +343,23 @@ export function getModelProviderCodexRuntimeCapabilities(
   return MODEL_PROVIDER_CODEX_RUNTIME_CAPABILITIES[type];
 }
 
-const CODEX_MODEL_CATALOGS: Readonly<Record<string, Record<string, unknown>>> =
-  {
-    "deepseek-v4.1-flash": DEEPSEEK_V4_1_FLASH_MODEL_CATALOG,
-    "okou-1.0": OKOU_MODEL_CODEX_CATALOG,
-  };
-
 /**
- * Project a Codex catalog record onto the model ID and provider used at
- * runtime. Returns undefined when no authoritative metadata is available for
- * the logical model.
+ * Project an Okou model's Codex catalog record onto the model ID used at
+ * runtime. Returns undefined for a model without Okou metadata.
  */
 export function getModelProviderCodexCatalogForModel(
   logicalModel: string,
   runtimeModel: string,
-  runtimeProviderType: ModelProviderType,
 ): Record<string, unknown> | undefined {
-  const disableApplyPatch =
-    runtimeProviderType === "openrouter-codex" &&
-    (logicalModel === "deepseek-v4.1-flash" ||
-      logicalModel === "deepseek-v4-flash");
-  const catalogModel = normalizeRunModelId(logicalModel);
-  const sourceCatalog =
-    catalogModel === "deepseek-v4-flash"
-      ? DEEPSEEK_V4_FLASH_MODEL_CATALOG
-      : Object.hasOwn(CODEX_MODEL_CATALOGS, catalogModel)
-        ? CODEX_MODEL_CATALOGS[catalogModel]
-        : undefined;
-  const sourceModels = sourceCatalog?.models;
-  const sourceModel = Array.isArray(sourceModels)
-    ? sourceModels.find((model: unknown): model is Record<string, unknown> => {
-        return (
-          typeof model === "object" &&
-          model !== null &&
-          !Array.isArray(model) &&
-          "slug" in model &&
-          model.slug === catalogModel
-        );
-      })
-    : undefined;
-  if (!sourceCatalog || !sourceModel) {
+  const sourceModel = OKOU_MODEL_CODEX_CATALOG.models.find((model) => {
+    return model.slug === logicalModel;
+  });
+  if (!sourceModel) {
     return undefined;
   }
   return {
-    ...sourceCatalog,
-    models: [
-      {
-        ...sourceModel,
-        ...(disableApplyPatch ? { apply_patch_tool_type: null } : {}),
-        slug: runtimeModel,
-      },
-    ],
+    ...OKOU_MODEL_CODEX_CATALOG,
+    models: [{ ...sourceModel, slug: runtimeModel }],
   };
 }
 
@@ -467,7 +412,7 @@ export const modelProviderResponseSchema = z.object({
   // bare count, so the UI must treat it as decoration on top of the count.
   subscriptionResetCreditsNextExpiresAt: z.string().nullable().optional(),
   // OAuth refresh state. `needsReconnect` flips to true when the firewall's
-  // refresh attempt fails (#11921 writes this on the model_providers row).
+  // refresh attempt fails (written on the model_provider_accounts row).
   // `lastRefreshErrorCode` carries the typed code from `ChatgptRefreshError`
   // (e.g. `refresh_token_expired`) so the UI can render an actionable
   // re-connect message. Both fields are always emitted for OAuth-typed
@@ -518,24 +463,12 @@ export type UpsertModelProviderResponse = z.infer<
   typeof upsertModelProviderResponseSchema
 >;
 
-// Every listed model is runnable. Shipped iOS builds decode `routeStatus` as a
-// required string, so the constant stays on the wire.
-export const runModelRouteStatusSchema = z.enum(["valid"]);
-
-export type RunModelRouteStatus = z.infer<typeof runModelRouteStatusSchema>;
-
 export const availableRunModelSchema = z.object({
   model: runModelIdSchema,
   modelLabel: z.string(),
-  defaultProviderType: modelProviderTypeSchema,
-  // Concrete built-in provider; other policies use defaultProviderType.
-  runtimeProviderType: modelProviderTypeSchema.nullable().optional(),
-  credentialScope: modelProviderCredentialScopeSchema,
   modelProviderId: z.uuid().nullable(),
-  routeStatus: runModelRouteStatusSchema,
-  // Caller-specific, response-only routing. Optional across the B/C rollout.
-  // A candidate has not captured a concrete subscription account for a run.
-  // Present for member-only models projected from the subscription catalog.
+  // Present on member subscription models projected from the subscription
+  // catalog; absent on Auto.
   subscriptionOptions: z
     .object({
       efforts: z.array(
@@ -553,19 +486,19 @@ export const availableRunModelSchema = z.object({
       serviceTier: z.enum(["priority"]).nullable(),
     })
     .optional(),
-  memberEffective: z
-    .object({
-      providerType: modelProviderTypeSchema,
-      runtimeProviderType: modelProviderTypeSchema.nullable(),
-      credentialScope: modelProviderCredentialScopeSchema,
-      availability: z.enum([
-        "available",
-        "reconnect_required",
-        "plan_restricted",
-      ]),
-      accountSelection: z.enum(["capture_required", "not_applicable"]),
-    })
-    .optional(),
+  // Caller-specific, response-only routing. A candidate has not captured a
+  // concrete subscription account for a run.
+  memberEffective: z.object({
+    providerType: modelProviderTypeSchema,
+    runtimeProviderType: modelProviderTypeSchema.nullable(),
+    credentialScope: modelProviderCredentialScopeSchema,
+    availability: z.enum([
+      "available",
+      "reconnect_required",
+      "plan_restricted",
+    ]),
+    accountSelection: z.enum(["capture_required", "not_applicable"]),
+  }),
 });
 
 export type AvailableRunModel = z.infer<typeof availableRunModelSchema>;

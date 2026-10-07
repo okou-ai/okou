@@ -206,7 +206,6 @@ export const rustTypeBindings = [
           name: ["Display name recorded for the Codex provider."],
           baseUrl: ["Base URL for the provider's Responses API."],
           envKey: ["Environment variable containing the provider credential."],
-          httpHeaders: ["Optional static HTTP headers for provider requests."],
           requiresOpenaiAuth: [
             "Optional override for Codex's built-in OpenAI authentication requirement.",
           ],

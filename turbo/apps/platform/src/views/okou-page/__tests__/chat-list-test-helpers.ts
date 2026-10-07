@@ -19,6 +19,7 @@ import {
   queryAllByRoleFast,
   type SetupPageAuth,
 } from "../../../__tests__/page-helper.ts";
+import { mockSubscriptionRunModel } from "../../../mocks/handlers/api-run-models.ts";
 import type { ChatThreadEventQueryResult } from "../../../shared-database/data-key.ts";
 import {
   mockChatThreadSnapshotResponse,
@@ -195,16 +196,7 @@ export function installChatListRunModels(context: TestContext): void {
   ] as const;
   const models: AvailableRunModel[] = modelEntries.map(
     ([model, modelLabel]) => {
-      return {
-        model,
-        modelLabel,
-        defaultProviderType: model.startsWith("claude-")
-          ? "claude-code-oauth-token"
-          : "codex-oauth-token",
-        credentialScope: "member",
-        modelProviderId: null,
-        routeStatus: "valid",
-      };
+      return mockSubscriptionRunModel(model, { modelLabel });
     },
   );
   context.mocks.data.availableRunModels(models);

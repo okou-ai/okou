@@ -69,13 +69,9 @@ export const chatPageModelSelection$ = computed(
       if (!user.value.codexServiceTier) {
         return selection;
       }
-      const [models, catalog] = await Promise.all([
-        get(availableRunModels$),
-        get(modelCatalog$),
-      ]);
+      const models = await get(availableRunModels$);
       return isServiceTierAvailableForSelection({
         models,
-        catalog,
         selectedModel: user.value.selectedModel,
         tier: "priority",
       })

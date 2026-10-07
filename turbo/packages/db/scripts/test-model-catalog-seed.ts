@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import { Client } from "pg";
-import { getBuiltInRouteProviderVendor } from "@okouai/api-contracts/contracts/model-providers";
+import { AUTO_RUN_PROVIDER } from "@okouai/core/auto-run-model";
 
 const SERVICE_TIERS: ReadonlySet<string> = new Set(["priority"]);
 
@@ -123,8 +123,10 @@ function assertRoute(route: RouteRow): void {
     label,
   );
   if (route.provider_type === "built-in") {
-    assert.ok(
-      getBuiltInRouteProviderVendor(route.concrete_provider_type),
+    // Every Built-in route runs on the managed OpenRouter key pool.
+    assert.equal(
+      route.concrete_provider_type,
+      AUTO_RUN_PROVIDER,
       `${label}: no Built-in provider for ${route.concrete_provider_type}`,
     );
     assert.equal(route.pricing_kind, "model", label);

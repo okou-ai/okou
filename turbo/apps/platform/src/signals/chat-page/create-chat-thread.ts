@@ -403,7 +403,6 @@ function createModelSelection(
     if (
       !isCodexFastModeAvailableForSelection({
         models,
-        catalog,
         selectedModel,
       })
     ) {

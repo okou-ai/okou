@@ -1,8 +1,9 @@
 # Pi model-limit audit
 
 Verified on 2026-10-02 against the first-party sources below, with Pi 0.87.1.
-It covers the identities in `PI_RUNTIME_RESOLVABLE_MODELS`. It does not admit
-new models or reinterpret opaque deployment names as provider identities.
+It covers the identities in `PI_RUNTIME_RESOLVABLE_MODELS` plus the internal
+DeepSeek V4.1 Flash memory binding. It does not admit new models or reinterpret
+opaque deployment names as provider identities.
 
 ## Meaning of the numbers
 
@@ -25,14 +26,12 @@ changing its advertised ceiling does not pin or reroute to a different provider.
 Numbers below are the effective Pi context/output after this correction.
 Grouped rows explicitly enumerate every catalog identity they cover.
 
-| Catalog provider | Exact model identities                                                               | Context / output    | Disposition                                                                                                        |
-| ---------------- | ------------------------------------------------------------------------------------ | ------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `openai-codex`   | `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-luna`                             | 272,000 / 128,000   | Existing official subscription default retained.                                                                   |
-| `openai-codex`   | `gpt-6.1-sol`                                                                        | 272,000 / 128,000   | Correct the hand pin that copied the API's 1,050,000 context into a subscription binding.                          |
-| `openrouter`     | `openai/gpt-6-sol`, `openai/gpt-6-luna`, `openai/gpt-5.6-sol`, `openai/gpt-5.6-luna` | 1,050,000 / 128,000 | Live primary-provider metadata matches the pinned catalog.                                                         |
-| `openrouter`     | `deepseek/deepseek-v4.1-flash`                                                       | 1,048,576 / 943,718 | Correct the old output snapshot to the live primary-provider ceiling. This is not the direct DeepSeek API ceiling. |
-| `openrouter`     | `deepseek/deepseek-v4-flash`                                                         | 1,024,000 / 384,000 | Primary-provider metadata matches the pinned catalog, even though aggregate context is 1,048,576.                  |
-| `openrouter`     | product-owned `okou-1.0` / request preset `@preset/okou-1-0`                         | 1,050,000 / 128,000 | Existing backing-model metadata matches the OpenRouter GPT-6 Luna route.                                           |
+| Catalog provider | Exact model identities                                       | Context / output    | Disposition                                                                                                        |
+| ---------------- | ------------------------------------------------------------ | ------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `openai-codex`   | `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-luna`     | 272,000 / 128,000   | Existing official subscription default retained.                                                                   |
+| `openai-codex`   | `gpt-6.1-sol`                                                | 272,000 / 128,000   | Correct the hand pin that copied the API's 1,050,000 context into a subscription binding.                          |
+| `openrouter`     | `deepseek/deepseek-v4.1-flash`                               | 1,048,576 / 943,718 | Correct the old output snapshot to the live primary-provider ceiling. This is not the direct DeepSeek API ceiling. |
+| `openrouter`     | product-owned `okou-1.0` / request preset `@preset/okou-1-0` | 1,050,000 / 128,000 | Existing backing-model metadata matches the OpenRouter GPT-6 Luna route.                                           |
 
 ## First-party sources
 
@@ -57,7 +56,7 @@ The live V4.1 primary provider reports 1,048,576 / 943,718. Individual endpoints
 are heterogeneous: observed output limits range from 131,072 to 943,718, and
 some contexts are smaller. The primary-provider snapshot is not a promise that
 all fallback endpoints accept its maximum. No routing or account setting is
-changed. The legacy V4 primary provider reports 1,024,000 / 384,000.
+changed.
 
 ## Implementation and refresh contract
 

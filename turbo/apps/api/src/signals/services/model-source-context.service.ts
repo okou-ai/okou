@@ -133,14 +133,12 @@ export function memberAccountSourceFromSnapshot(
     identity: { kind: "member", accountId },
     credentialOwner: "member",
     configuration: {
-      kind: "registered-provider",
       providerType: first.account.type,
       authMethod: first.account.authMethod,
     },
     credentials: rows.flatMap((row) => {
       return row.secret ? [{ kind: "encrypted" as const, ...row.secret }] : [];
     }),
-    accountIdentity: first.account.externalAccountId,
   };
 }
 
@@ -178,15 +176,12 @@ export function managedSourceFromSnapshot(
     identity: { kind: "built-in", modelKeyId: key.id },
     credentialOwner: "builtin",
     configuration: {
-      kind: "registered-provider",
       providerType: "built-in",
       authMethod: null,
-      managedVendor: key.vendor,
     },
     credentials: [
       { kind: "managed-key", name, modelKeyId: key.id, apiKey: key.apiKey },
     ],
-    accountIdentity: null,
   };
 }
 

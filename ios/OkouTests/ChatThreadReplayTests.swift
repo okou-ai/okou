@@ -31,7 +31,7 @@ final class ChatThreadReplayTests: XCTestCase {
         event(
           6, "created", at: "2026-09-09T00:00:10.000Z",
           extra:
-            #""title":"Original","selectedModel":"claude-sonnet-5","modelSettings":{"claude-sonnet-5":{"effort":"high"}}"#
+            #""title":"Original","selectedModel":"claude-opus-5-5","modelSettings":{"claude-opus-5-5":{"effort":"high"}}"#
         ),
       ])
 
@@ -39,7 +39,7 @@ final class ChatThreadReplayTests: XCTestCase {
     XCTAssertEqual(result.title, "Original")
     XCTAssertNil(result.renamedAt)
     XCTAssertEqual(result.selectedModel, "claude-opus-4-8")
-    XCTAssertEqual(result.modelSettings["claude-sonnet-5"]?.effort, "high")
+    XCTAssertEqual(result.modelSettings["claude-opus-5-5"]?.effort, "high")
     XCTAssertEqual(result.modelSettings["claude-opus-4-8"]?.effort, "extra")
     XCTAssertNil(result.modelSettings["old"])
     XCTAssertEqual(result.serviceTier, "priority")
@@ -55,7 +55,7 @@ final class ChatThreadReplayTests: XCTestCase {
         {"id":"\(replayThread)","agentId":"\(replayAgent)","title":"Snapshot",\
          "createdAt":"2026-09-09T00:00:00.000Z","updatedAt":"2026-09-09T00:00:00.000Z",\
          "sortAt":"2026-09-09T00:00:00.000Z","pinnedAt":null,"archived":false,\
-         "selectedModel":"claude-sonnet-5","modelSettings":{"claude-sonnet-5":{"effort":"high"}}},
+         "selectedModel":"claude-opus-5-5","modelSettings":{"claude-opus-5-5":{"effort":"high"}}},
         {"id":"\(replayOtherThread)","agentId":"\(replayAgent)","title":"Deleted",\
          "createdAt":"2026-09-09T00:00:00.000Z","updatedAt":"2026-09-09T00:00:00.000Z",\
          "sortAt":"2026-09-09T00:00:00.000Z","pinnedAt":null,"archived":false}]}
@@ -80,7 +80,7 @@ final class ChatThreadReplayTests: XCTestCase {
     XCTAssertEqual(result.updatedAt, try date("2026-09-09T00:00:13.000Z"))
     XCTAssertEqual(result.pinnedAt, try date("2026-09-09T00:00:11.000Z"))
     XCTAssertEqual(result.pinOrder, "a0")
-    XCTAssertEqual(result.modelSettings["claude-sonnet-5"]?.effort, "high")
+    XCTAssertEqual(result.modelSettings["claude-opus-5-5"]?.effort, "high")
   }
 
   func testManualPinMoveDoesNotChangeUpdatedOrSortTimeAndRanksSidebar() throws {

@@ -30,11 +30,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     fixture_id: z.uuid(),
   }),
   z.object({
-    action: z.literal("seed-built-in-model-candidate-keys"),
-    fixture_id: z.uuid(),
-    selected_model: z.string(),
-  }),
-  z.object({
     action: z.literal("resolve-built-in-model-route"),
     selected_model: z.string(),
   }),

@@ -2,10 +2,7 @@ import {
   getSecretsForAuthMethod,
   MODEL_PROVIDER_TYPES,
 } from "@okouai/api-contracts/contracts/model-providers";
-import {
-  AUTO_RUN_KEY_VENDOR,
-  AUTO_RUN_PROVIDER,
-} from "@okouai/core/auto-run-model";
+import { AUTO_RUN_PROVIDER } from "@okouai/core/auto-run-model";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
 export type ModelCredentialValues = Readonly<Record<string, string>>;
 export type ModelRuntimeSelection =
@@ -44,10 +41,7 @@ function compileCodexSubscriptionRuntime(
   input: ModelRuntimeInput,
 ): CompiledModelRuntime {
   const { source, selection, credentials } = input;
-  if (
-    selection.kind !== "configured" ||
-    source.configuration.kind !== "registered-provider"
-  ) {
+  if (selection.kind !== "configured") {
     throw new Error("Multi-auth runtime requires a selected registered source");
   }
   const type = "codex-oauth-token";
@@ -94,10 +88,7 @@ function compileClaudeSubscriptionRuntime(
   input: ModelRuntimeInput,
 ): CompiledModelRuntime {
   const { source, selection, credentials } = input;
-  if (
-    selection.kind !== "configured" ||
-    source.configuration.kind !== "registered-provider"
-  ) {
+  if (selection.kind !== "configured") {
     throw new Error("Registered source requires configured selection");
   }
   const type = "claude-code-oauth-token";
@@ -125,15 +116,12 @@ function compileManagedRuntime(input: ModelRuntimeInput): CompiledModelRuntime {
     selection.kind !== "built-in" ||
     source.identity.kind !== "built-in" ||
     source.identity.modelKeyId !== selection.modelKeyId ||
-    source.credentialOwner !== "builtin" ||
-    source.configuration.kind !== "registered-provider"
+    source.credentialOwner !== "builtin"
   ) {
     throw new Error("Managed model source and route identity mismatch");
   }
-  if (
-    selection.providerType !== AUTO_RUN_PROVIDER ||
-    source.configuration.managedVendor !== AUTO_RUN_KEY_VENDOR
-  ) {
+  // The managed source loader admits only the Auto key vendor.
+  if (selection.providerType !== AUTO_RUN_PROVIDER) {
     throw new Error(
       "Managed model vendor does not match its selected provider",
     );

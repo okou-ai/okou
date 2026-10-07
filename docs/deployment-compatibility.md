@@ -1,5 +1,49 @@
 # Deployment Compatibility
 
+## Frozen model provider state dropped (2026-10-07)
+
+Owner decision (Ethan, 2026-10-07): data no live reader uses is removed.
+Custom migration `1337_retire_unused_model_route_data` clears
+`run_model_catalog.pi_route_class` values other than `gpt-codex`, resets the
+already-rejected `chat_threads.selected_model = 'deepseek/deepseek-v4-pro'`
+pins to NULL (unpinned, which resolves to Auto), and deletes every
+`built_in_model_keys` row except `openrouter`. No foreign key references
+`built_in_model_keys`; `agent_runs.built_in_model_key_id` remains unconstrained
+run history. The retired vendor keys are revoked upstream by the owner,
+outside this change.
+
+Generated migration `1338_drop_frozen_model_provider_state` narrows
+`chk_run_model_catalog_pi_route_class` to NULL or `gpt-codex` (the table has a
+handful of rows, so the check is added and validated directly), drops
+`model_provider_auth_sessions.sandbox_id` with its partial index, and drops the
+frozen OAuth copies on `model_providers`: `token_expires_at`,
+`needs_reconnect`, `last_refresh_error_code`, `workspace_name`, `plan_type`,
+`subscription_reset_period` and `subscription_next_reset_at`. The live values
+are on `model_provider_accounts`, which every current reader already uses. The
+new API selects explicit `model_providers` columns, and the Pi memory phase 2
+credential gate uses the account's `needs_reconnect` only.
+
+Database ordering: migrations run before API promotion. An API built before
+1338 selects every `model_providers` column when listing, connecting,
+activating or deleting personal subscription accounts, and every
+`model_provider_auth_sessions` column in the Claude Code and Codex device
+authorization flows, so those paths receive `42703` until it drains. This drop
+is **not rolling-compatible**. A new API against the old schema is compatible
+because it never names the dropped columns. An API built before 1337 that is
+still draining is unaffected by the data changes: the cleared pins and keys
+were already rejected or unused.
+
+**Rollout interruption (1338): owner acceptance pending.** No acceptance is
+recorded here. Do not deploy until the owner explicitly accepts the bounded
+interruption above or a preparatory release that stops these reads ships
+first.
+
+Rollback floor: the rollback resolver resolves the first-parent `main` commit
+that added `1338_drop_frozen_model_provider_state.sql` and rejects earlier
+targets before artifact or host access. Recovering below it requires a reviewed
+forward migration that recreates the columns before an older API serves. This
+does not claim production activation.
+
 ## Ultrafast service tier retired (2026-10-07)
 
 Ultrafast is retired across the App, API, contracts, runner and proxy pricing.

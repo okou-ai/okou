@@ -284,11 +284,7 @@ def _configure_response_inspection_stream(
             flow.metadata[_MODEL_SSE_USAGE_FINISH] = finish_sse_response
             return _ResponseStreamSetup(decode_session.feed, False)
 
-        extractor = usage.create_model_json_response_inspector(
-            model_protocol,
-            include_usage=True,
-            include_failure=False,
-        )
+        extractor = usage.create_model_json_response_inspector(model_protocol)
         decode_session = _make_response_decode_session(
             extractor.feed,
             response.headers,

@@ -222,7 +222,6 @@ function resolveNewThreadModelSelection(
     return modelSelection.codexServiceTier === "fast" &&
       !isCodexFastModeAvailableForSelection({
         models: args.models,
-        catalog: args.catalog,
         selectedModel: modelSelection.selectedModel,
       })
       ? { ...modelSelection, codexServiceTier: undefined }

@@ -295,16 +295,6 @@ function builtInModelKeyRows(agentId: string, defaultVendor: string) {
       apiKey: `built-in-key-default-${agentId}`,
       label: agentId,
     },
-    {
-      vendor: "anthropic",
-      apiKey: `built-in-key-anthropic-${agentId}`,
-      label: agentId,
-    },
-    {
-      vendor: "moonshot",
-      apiKey: `built-in-key-moonshot-${agentId}`,
-      label: agentId,
-    },
   ];
 }
 

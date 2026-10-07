@@ -214,15 +214,11 @@ struct AvailableRunModels: Decodable, Sendable {
   let models: [Model]
   struct Model: Decodable, Sendable {
     let model: String
-    /// Constant "valid" on current APIs; optional so a future API may omit it.
-    let routeStatus: String?
-    let defaultProviderType: String?
-    let memberEffective: MemberRoute?
+    let memberEffective: MemberRoute
+    /// Present on personal-subscription rows only.
     let subscriptionOptions: SubscriptionOptions?
 
     struct MemberRoute: Decodable, Sendable {
-      let providerType: String
-      let credentialScope: String
       let availability: String
     }
 
@@ -233,21 +229,15 @@ struct AvailableRunModels: Decodable, Sendable {
     /// A member's connected subscription remains selectable when reconnecting.
     /// Admission still validates the captured personal account before execution.
     func hasUsableRoute() -> Bool {
-      guard let route = memberEffective else { return routeStatus == "valid" }
-      switch route.availability {
+      switch memberEffective.availability {
       case "available", "reconnect_required", "plan_restricted": return true
       default: return false
       }
     }
 
-    func supportsServiceTier(_ tier: String, catalog: ModelCatalog) -> Bool {
-      if tier == "priority", let subscriptionOptions {
-        return subscriptionOptions.serviceTier == "priority"
-      }
-      guard let providerType = memberEffective?.providerType ?? defaultProviderType,
-        catalog.supportsServiceTier(tier, model: model, providerType: providerType)
-      else { return false }
-      return memberEffective != nil || routeStatus == "valid"
+    /// Only subscription rows offer a service tier; Fast is `priority`.
+    func supportsServiceTier(_ tier: String) -> Bool {
+      tier == "priority" && subscriptionOptions?.serviceTier == "priority"
     }
   }
 }
@@ -256,7 +246,6 @@ struct AvailableRunModels: Decodable, Sendable {
 /// comes from the available-model response, not the subscription catalog.
 struct ModelCatalog: Decodable, Sendable {
   let models: [Model]
-  let routes: [Route]
 
   struct Model: Decodable, Sendable {
     let model: String
@@ -264,23 +253,9 @@ struct ModelCatalog: Decodable, Sendable {
     let resolvedModel: String
   }
 
-  struct Route: Decodable, Sendable {
-    let model: String
-    let providerType: String
-    let enabled: Bool
-    let serviceTiers: [String]
-  }
-
   /// Maps a stored selection to its active model; unknown models are unavailable.
   func resolve(_ model: String) -> String? {
     models.first(where: { $0.model == model })?.resolvedModel
-  }
-
-  func supportsServiceTier(_ tier: String, model: String, providerType: String) -> Bool {
-    routes.contains {
-      $0.model == model && $0.providerType == providerType && $0.enabled
-        && $0.serviceTiers.contains(tier)
-    }
   }
 }
 

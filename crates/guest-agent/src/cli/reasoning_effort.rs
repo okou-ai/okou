@@ -15,12 +15,19 @@ pub(super) fn resolve(
     let Some(effort) = user_env.get("OKOU_REASONING_EFFORT") else {
         return Ok(None);
     };
-    let (model_key, prefix) = match framework {
-        Framework::Codex => ("OPENAI_MODEL", "openai/"),
-        _ => ("ANTHROPIC_MODEL", "anthropic/"),
+    let model = match framework {
+        Framework::Codex => {
+            let model = user_env
+                .get("OPENAI_MODEL")
+                .map(String::as_str)
+                .unwrap_or("");
+            model.strip_prefix("openai/").unwrap_or(model)
+        }
+        _ => user_env
+            .get("ANTHROPIC_MODEL")
+            .map(String::as_str)
+            .unwrap_or(""),
     };
-    let model = user_env.get(model_key).map(String::as_str).unwrap_or("");
-    let model = model.strip_prefix(prefix).unwrap_or(model);
     let supported = matches!(
         (framework, model, effort.as_str()),
         (
@@ -43,20 +50,11 @@ pub(super) fn resolve(
         ) | (
             Framework::ClaudeCode,
             "claude-fable-5-1"
-                | "claude-fable-5.1"
-                | "fable"
                 | "claude-opus-5-5"
-                | "claude-opus-5.5"
                 | "claude-opus-5"
-                | "claude-opus-4-8"
-                | "claude-opus-4.8"
                 | "claude-sonnet-5"
                 | "claude-sonnet-5-5",
             "low" | "medium" | "high" | "extra" | "max" | "ultracode",
-        ) | (
-            Framework::ClaudeCode,
-            "claude-sonnet-4-6" | "claude-sonnet-4.6",
-            "low" | "medium" | "high" | "max",
         )
     );
     if !supported {
@@ -88,13 +86,13 @@ mod tests {
                 Framework::ClaudeCode,
                 "ANTHROPIC_MODEL",
                 "claude-sonnet-4-6",
-                "extra",
+                "high",
             ),
             (
                 Framework::ClaudeCode,
                 "ANTHROPIC_MODEL",
-                "claude-sonnet-4-6",
-                "ultracode",
+                "anthropic/claude-opus-5-5",
+                "high",
             ),
             (
                 Framework::ClaudeCode,

@@ -429,8 +429,10 @@ async function configureWorkspaceModelProvider(
       return model.model === GMAIL_WORKSPACE_MODEL;
     }),
   ).toMatchObject({
-    defaultProviderType: "claude-code-oauth-token",
-    credentialScope: "member",
+    memberEffective: expect.objectContaining({
+      providerType: "claude-code-oauth-token",
+      credentialScope: "member",
+    }),
   });
 }
 

@@ -14,4 +14,16 @@ export function isBuiltInModelProviderType(
   return type === "built-in";
 }
 
+/** A member's own Claude Code or Codex subscription account. */
+export type PersonalSubscriptionProviderType = Extract<
+  ModelProviderType,
+  "claude-code-oauth-token" | "codex-oauth-token"
+>;
+
+export function isPersonalSubscriptionProviderType(
+  type: string | null | undefined,
+): type is PersonalSubscriptionProviderType {
+  return type === "claude-code-oauth-token" || type === "codex-oauth-token";
+}
+
 export type ModelProviderFramework = "claude-code" | "codex";

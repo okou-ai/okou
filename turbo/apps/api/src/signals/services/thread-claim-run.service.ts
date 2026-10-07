@@ -25,7 +25,6 @@ import {
 import {
   AUTO_RUN_KEY_VENDOR,
   AUTO_RUN_MODEL,
-  AUTO_RUN_PROVIDER,
 } from "@okouai/core/auto-run-model";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
@@ -63,10 +62,7 @@ import {
   type SystemSkillStorageResolution,
   systemSkillStorageResolution$,
 } from "../context/system-skill-storage-resolution";
-import {
-  type UsagePricingResolution,
-  usagePricingResolution$,
-} from "../context/usage-pricing-resolution";
+import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import { waitUntil } from "../context/wait-until";
 import {
   type Db,
@@ -170,10 +166,7 @@ import {
   routeQueuedMessagePiExecution,
 } from "./internal-chat-run-callback.service";
 import { memberSubscriptionModelRoutesFromCatalog } from "./member-subscription-models.service";
-import {
-  frameworkForProviderSelection,
-  type ModelCatalog,
-} from "./model-catalog.service";
+import { type ModelCatalog } from "./model-catalog.service";
 import {
   prepareManagedModelEnvironment,
   prepareRegisteredModelEnvironment,
@@ -608,7 +601,6 @@ import { defaultFirewallPolicyForPermissionIndex } from "./firewall-network-poli
 import { historyGenerationRunIdForStoredExecutionContext } from "./history-generation-run";
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import {
-  type CapturedPersonalSubscriptionAccount,
   isPersonalSubscriptionProviderType,
   type MemberModelAccountSnapshot,
 } from "./model-provider-account.service";
@@ -2555,13 +2547,7 @@ async function resolveQueuedProviderAdmission(params: {
   const { catalog, pin } = params;
   const effectiveModelProvider = pin.modelProviderType;
   const parsed = modelProviderTypeSchema.safeParse(effectiveModelProvider);
-  const cliAgentType = parsed.success
-    ? getFrameworkForType(
-        isBuiltInModelProviderType(parsed.data)
-          ? AUTO_RUN_PROVIDER
-          : parsed.data,
-      )
-    : null;
+  const cliAgentType = parsed.success ? getFrameworkForType(parsed.data) : null;
   const personalSubscription = await params.personalSubscription();
   const error = checkOrgPlanRunAdmission({
     catalog,
@@ -2987,10 +2973,7 @@ export function createThreadClaimRunObjects(
       : badRequestMessage("Queued input is missing its model selection");
   });
   const routing = { modelPin$: queuedModelRoutingModelPin$ };
-  const {
-    input$: queuedModelRuntimeInput$,
-    selection$: queuedModelRuntimeSelection$,
-  } = queuedModelSources;
+  const { input$: queuedModelRuntimeInput$ } = queuedModelSources;
   const { modelPin$: queuedModelRuntimeModelPin$ } = routing;
   const queuedModelRuntimeFeatureSwitchContext$ = computed(
     async (get): Promise<FeatureSwitchContext> => {
@@ -3017,16 +3000,10 @@ export function createThreadClaimRunObjects(
       return undefined;
     }
     const catalog = await get(claimCatalog$);
-    // A new run skips Built-in candidates whose billable categories for the
-    // requested service tier lack usage_pricing, like any unavailable one.
+    // A new run skips Built-in candidates that lack usage_pricing, like any
+    // unavailable one. Auto, the only Built-in model, has no service tier.
     const routePricing = builtInRoutePricingFromSnapshot(
-      {
-        serviceTier:
-          pin.selectedModel === AUTO_RUN_MODEL
-            ? undefined
-            : (await get(queuedModelRuntimeSelection$))?.codexServiceTier,
-        resolution: get(usagePricingResolution$),
-      },
+      { serviceTier: undefined, resolution: get(usagePricingResolution$) },
       await get(context.modelPricing$),
     );
     return builtInModelRuntimeRouteFromSnapshot({
@@ -3204,10 +3181,7 @@ export function createThreadClaimRunObjects(
               {
                 catalog: await get(claimCatalog$),
                 model: pin.selectedModel,
-                serviceTier:
-                  pin.selectedModel === AUTO_RUN_MODEL
-                    ? undefined
-                    : selection.codexServiceTier,
+                serviceTier: undefined,
                 resolution: get(usagePricingResolution$),
               },
               context,
@@ -6072,7 +6046,6 @@ export function createThreadClaimRunObjects(
     ): Promise<
       | {
           readonly command: ThreadRunIdentity;
-          readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
         }
       | ReturnType<typeof conflict>
     > => {
@@ -6106,12 +6079,6 @@ export function createThreadClaimRunObjects(
             );
           }
           return {
-            capturedPersonalSubscriptionAccount: {
-              id: account.id,
-              orgId: account.orgId,
-              userId: account.userId,
-              type: providerType,
-            },
             command: {
               ...command,
               modelProviderId: account.id,
@@ -6346,10 +6313,7 @@ export function createThreadClaimRunObjects(
         db: get(db$),
         timing: input.timing,
         args: {
-          ...selectedRunModelProviderArgs(
-            account.command,
-            account.capturedPersonalSubscriptionAccount,
-          ),
+          ...selectedRunModelProviderArgs(account.command),
           catalog: await get(claimCatalog$),
         },
       };
@@ -6388,13 +6352,7 @@ export function createThreadClaimRunObjects(
     const composeFramework = validation.framework;
     const args = input.args;
     if (args.modelProviderType && isModelProviderType(args.modelProviderType)) {
-      return (
-        frameworkForProviderSelection(
-          args.catalog,
-          args.modelProviderType,
-          args.selectedModelOverride,
-        ) ?? composeFramework
-      );
+      return getFrameworkForType(args.modelProviderType);
     }
     if (!args.modelProviderId) {
       return composeFramework;
@@ -6415,13 +6373,7 @@ export function createThreadClaimRunObjects(
     if (!provider || !isModelProviderType(provider.type)) {
       return composeFramework;
     }
-    return (
-      frameworkForProviderSelection(
-        args.catalog,
-        provider.type,
-        args.selectedModelOverride,
-      ) ?? composeFramework
-    );
+    return getFrameworkForType(provider.type);
   });
   const providerContext$ = computed(async (get) => {
     const input = await get(providerInput$);
@@ -6441,12 +6393,9 @@ export function createThreadClaimRunObjects(
       modelProviderId: args.modelProviderId,
       modelProviderCredentialScope: args.modelProviderCredentialScope,
       modelProviderType: args.modelProviderType,
-      capturedPersonalSubscriptionAccount:
-        args.capturedPersonalSubscriptionAccount,
       selectedModelOverride: args.selectedModelOverride,
       builtInModelRuntimeRoute: args.builtInModelRuntimeRoute,
       piExecution: args.piExecution,
-      retainedRunId: args.retainedRunId,
     };
     return {
       input,
@@ -6458,9 +6407,6 @@ export function createThreadClaimRunObjects(
     const context = await get(providerContext$);
     if (isRouteError(context) || !context.input.args.queueFirstAssociation) {
       return null;
-    }
-    if (context.environmentArgs.retainedRunId) {
-      throw new Error("A queued input cannot prepare a retained run provider");
     }
     return context;
   });
@@ -6525,31 +6471,27 @@ export function createThreadClaimRunObjects(
           context.environmentArgs,
         );
       }
-      const config = source.configuration;
-      if (config.kind === "registered-provider") {
-        const selectedModel = context.environmentArgs.selectedModelOverride;
-        const type = config.providerType;
-        if (
-          !selectedModel ||
-          !isPersonalSubscriptionProviderType(type) ||
-          getFrameworkForType(type) !== context.environmentArgs.framework ||
-          (context.environmentArgs.modelProviderType !== undefined &&
-            context.environmentArgs.modelProviderType !== type)
-        ) {
-          return null;
-        }
-        const sourceId = context.environmentArgs.modelProviderId;
-        if (!sourceId) {
-          throw new Error("Selected registered source has no identity");
-        }
-        return await prepareRegisteredModelEnvironment(source, selectedModel, {
-          catalog: await get(claimCatalog$),
-          userId: context.environmentArgs.userId,
-          sourceId,
-          piExecution: context.environmentArgs.piExecution,
-        });
+      const type = source.configuration.providerType;
+      const selectedModel = context.environmentArgs.selectedModelOverride;
+      if (
+        !selectedModel ||
+        !isPersonalSubscriptionProviderType(type) ||
+        getFrameworkForType(type) !== context.environmentArgs.framework ||
+        (context.environmentArgs.modelProviderType !== undefined &&
+          context.environmentArgs.modelProviderType !== type)
+      ) {
+        return null;
       }
-      return null;
+      const sourceId = context.environmentArgs.modelProviderId;
+      if (!sourceId) {
+        throw new Error("Selected registered source has no identity");
+      }
+      return await prepareRegisteredModelEnvironment(source, selectedModel, {
+        catalog: await get(claimCatalog$),
+        userId: context.environmentArgs.userId,
+        sourceId,
+        piExecution: context.environmentArgs.piExecution,
+      });
     },
   );
   const pinnedBuiltInProviderSnapshot$ = computed(async (get) => {
@@ -13755,7 +13697,7 @@ function customConnectorCandidateRuntimeRows(args: {
 function modelProviderFramework(
   modelProvider: ResolvedModelProviderEnvironment,
 ): SupportedFramework {
-  return getFrameworkForType(modelProvider.concreteType ?? modelProvider.type);
+  return getFrameworkForType(modelProvider.type);
 }
 
 function piConfigurationRouteError(
@@ -13972,9 +13914,6 @@ function piModelPreparationInput(
 
 function selectedRunModelProviderArgs(
   command: ThreadRunIdentity,
-  capturedPersonalSubscriptionAccount:
-    | CapturedPersonalSubscriptionAccount
-    | undefined,
 ): Omit<RunModelProviderArgs, "catalog"> {
   return {
     orgId: command.owner.orgId,
@@ -13982,7 +13921,6 @@ function selectedRunModelProviderArgs(
     modelProviderId: command.modelProviderId,
     modelProviderCredentialScope: command.modelProviderCredentialScope,
     modelProviderType: command.body.modelProvider,
-    capturedPersonalSubscriptionAccount,
     selectedModelOverride: command.selectedModelOverride,
     builtInModelRuntimeRoute: command.builtInModelRuntimeRoute,
     piExecution: selectedRunPiExecution(command),
@@ -15582,7 +15520,6 @@ interface AgentRunAfterBootstrap extends RunBootstrapContext {
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly command: ThreadRunIdentity;
   readonly threadSessionResolution?: ChatThreadSessionResolution;
-  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
 }
 
 interface AgentRunAfterPreCreate extends AgentRunAfterBootstrap {
@@ -15609,7 +15546,6 @@ interface ProductRunArgsInput {
   readonly threadSessionResolution?: ChatThreadSessionResolution;
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
-  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
 }
 
 function emptyStablePrompt(): PiStableContextPromptProjection {
@@ -15761,7 +15697,6 @@ interface ProductRunArgs {
   readonly modelProviderId?: string;
   readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
   readonly modelProviderType?: string;
-  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
   readonly selectedModelOverride?: string;
   readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
   readonly piExecution: boolean;
@@ -15800,10 +15735,7 @@ function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
     content: buildAgentExecutionConfig(args.agent.name),
   };
   return {
-    ...selectedRunModelProviderArgs(
-      command,
-      args.capturedPersonalSubscriptionAccount,
-    ),
+    ...selectedRunModelProviderArgs(command),
     catalog: args.catalog,
     body: createRunBody({
       body: command.body,
@@ -18399,42 +18331,26 @@ interface RunModelProviderArgs {
   readonly modelProviderId?: string;
   readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
   readonly modelProviderType?: string;
-  /** Captured by the product entry point for this request only. This skips
-   * an identity lookup, never the fresh environment or admission checks. */
-  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
   readonly selectedModelOverride?: string;
   readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
   /** Immutable Pi eligibility captured by the caller's admission snapshot. */
   readonly piExecution: boolean;
-  readonly retainedRunId?: string;
   readonly codexServiceTier?: "fast";
   readonly agentRunMetadata?: AgentRunMetadata;
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
 }
 
-/**
- * A new run's Built-in route selection skips candidates whose billable
- * categories for the requested service tier lack usage_pricing.
- */
-interface NewRunRoutePricingRequest {
-  readonly serviceTier: CodexServiceTier | undefined;
-  readonly resolution: UsagePricingResolution;
-}
-
 interface ResolveModelProviderEnvironmentArgs {
   /** Loaded once per run and shared by every candidate route. */
   readonly catalog: ModelCatalog;
-  readonly newRunPricing?: NewRunRoutePricingRequest;
   readonly orgId: string;
   readonly userId: string;
   readonly framework: SupportedFramework;
   readonly modelProviderId?: string;
   readonly modelProviderCredentialScope?: ModelProviderCredentialScope;
   readonly modelProviderType?: string;
-  readonly capturedPersonalSubscriptionAccount?: CapturedPersonalSubscriptionAccount;
   readonly selectedModelOverride?: string;
   readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
-  readonly retainedRunId?: string;
   readonly piExecution: boolean;
 }
 

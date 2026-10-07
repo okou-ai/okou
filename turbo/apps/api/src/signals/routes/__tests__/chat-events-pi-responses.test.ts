@@ -13,7 +13,7 @@ import { setModelPiRouteClassFixture } from "../../../test-fixtures/model-catalo
 import { flushWaitUntilForTest } from "../../context/wait-until";
 
 import { chatEventDisplayText } from "./helpers/chat-event";
-import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
+import { seedBuiltInModelKey } from "./helpers/runtime-state";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -62,7 +62,7 @@ async function configureResponsesWithOwnedRuns(args: {
 }> {
   const model = args.selectedModel;
 
-  await seedBuiltInModelCandidateKeys(context, model);
+  await seedBuiltInModelKey(context, model);
   const owned = new Map<
     string,
     {

@@ -103,23 +103,20 @@ TELEGRAM_OFFICIAL_BOT_TOKEN=op://Development/telegram/TELEGRAM_OFFICIAL_BOT_TOKE
 TELEGRAM_OFFICIAL_BOT_USERNAME=op://Development/telegram/TELEGRAM_OFFICIAL_BOT_USERNAME
 TELEGRAM_OFFICIAL_WEBHOOK_SECRET=op://Development/telegram/TELEGRAM_OFFICIAL_WEBHOOK_SECRET
 
-# Required: Claude Code Version URL
-CLAUDE_CODE_VERSION_URL=https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/latest
-
 # Required: OpenAI (voice-chat ephemeral token minting, STT, TTS)
 OPENAI_API_KEY=op://Development/openai/OPENAI_API_KEY
 
 # Optional: OpenRouter lightweight model calls
 OPENROUTER_API_KEY=op://Development/openrouter/Section_ak7dvythmldarvk4dodjs4ecyq/OPENROUTER_API_KEY
 
+# Optional: managed OpenRouter key seeded for fixed Auto by `dev-seed`
+DEV_MODEL_OPENROUTER_KEY=op://Development/openrouter/Section_ak7dvythmldarvk4dodjs4ecyq/OPENROUTER_API_KEY
+
 # Google LLM workload identity (Vercel preview uses llm-dev; no static key).
 # Configure all three together; runtime OIDC is supplied by Vercel.
 GCP_LLM_PROJECT_ID=
 GCP_LLM_WORKLOAD_IDENTITY_PROVIDER=
 GCP_LLM_SERVICE_ACCOUNT_EMAIL=
-
-# Required: OpenAI Webhook signing secret (for built-in generations webhook)
-OPENAI_WEBHOOK_SECRET=op://Development/openai/OPENAI_WEBHOOK_SECRET
 
 # Optional: fal media generation
 FAL_KEY=op://Development/fal/FAL_KEY
@@ -267,9 +264,6 @@ WEBFLOW_OAUTH_CLIENT_SECRET=op://Development/webflow/WEBFLOW_OAUTH_CLIENT_SECRET
 # Optional: Stripe OAuth Connector
 STRIPE_OAUTH_CLIENT_ID=op://Development/stripe/STRIPE_OAUTH_CLIENT_ID
 STRIPE_OAUTH_CLIENT_SECRET=op://Development/stripe/STRIPE_OAUTH_CLIENT_SECRET
-
-# Optional: Stripe Billing (Vercel AI Gateway metering)
-STRIPE_VERCEL_GATEWAY_REPORT_ACCESS_KEY=op://Development/stripe/STRIPE_VERCEL_GATEWAY_REPORT_ACCESS_KEY
 
 # Optional: Stripe Billing (subscription + credits)
 STRIPE_SECRET_KEY=op://Development/stripe/STRIPE_SECRET_KEY

@@ -46,23 +46,15 @@ row-count gate. No production SQL was executed.
 
 ## Validation
 
-From `turbo/packages/db`, using a disposable local PostgreSQL database:
+Migrations 1325–1327 shipped to production on 2026-10-07, and their one-shot
+transition regression (`test-retired-model-route-cleanup.ts`) was removed.
+The surviving invariants run in `pnpm test:migration-consistency`:
+`test-model-catalog-seed.ts` checks the retained route families and historical
+replacement chains, and `test-model-catalog-permanent.ts` checks the catalog
+and route constraints.
 
-```bash
-DATABASE_URL=postgresql://user@127.0.0.1:55432/postgres pnpm test:retired-model-route-cleanup
-```
-
-The regression replays the real preceding migrations, adds a future disabled
-subscription and an adjacent non-subscription route, then verifies exact
-retained rows, unchanged retained tables, rejection/rollback for uncontracted
-schema and invalid bindings, one committed journal entry, and journaled and
-SQL-level retries. It also validates the surviving seeded catalog.
-
-The check is included in `test:migration-consistency`. Full migration/schema
-consistency and required PR CI must pass before merge. The former #37758 is
-closed; its complete cleanup ships only through the unified #37746. Migration
-metadata was generated after integrating main's 1322 migration; numbers are not
-reserved across concurrent PRs.
+The former #37758 is closed; its complete cleanup shipped through the unified
+#37746.
 
 ## Personal subscription launch defaults
 
@@ -74,6 +66,7 @@ six matching active canonical subscription routes only. Explicit defaults,
 disabled/future rows, member preferences, Auto and memory are not rewritten.
 Luna's existing xhigh default from migration 1317 remains unchanged.
 
-The regression also checks all seven personal launch defaults, unchanged future
-metadata, repeat SQL execution, and preservation of disabled rows and explicit
-configured defaults.
+Its transition regression (all seven personal launch defaults, unchanged
+future metadata, repeat SQL execution, and preservation of disabled rows and
+explicit configured defaults) was removed with the 1325–1327 validators after
+the migration shipped.

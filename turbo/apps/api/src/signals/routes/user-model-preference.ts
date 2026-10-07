@@ -1,7 +1,4 @@
-import {
-  getMemberRunModelRoute,
-  isMemberRunModelConfigurable,
-} from "@okouai/api-contracts/contracts/member-run-model";
+import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelSettingsPatch } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { UserPreferenceChangedPayload } from "@okouai/api-contracts/contracts/realtime";
@@ -39,7 +36,7 @@ function configuredRunModelProviderType(
   runModel: AvailableRunModel | undefined,
 ): string | null {
   return runModel && isMemberRunModelConfigurable(runModel)
-    ? getMemberRunModelRoute(runModel).providerType
+    ? runModel.memberEffective.providerType
     : null;
 }
 

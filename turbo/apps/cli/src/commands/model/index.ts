@@ -50,7 +50,7 @@ const selectCommand = new Command()
       });
       if (!selected || !isMemberRunModelConfigurable(selected)) {
         throw new Error(
-          `Model is unavailable: ${model}. Run okou model ls and connect or reconnect your subscription in Settings / Models.`,
+          `Model is unavailable: ${model}. Run okou model ls and connect or reconnect your subscription in Preferences / Personal Models.`,
         );
       }
       const result = await selectRunModel(model);

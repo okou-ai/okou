@@ -512,21 +512,17 @@ test("The ready step completes onboarding once, before it runs the first request
   // Where the browser still was when completion went out, so the order of the
   // two is observable rather than assumed.
   const completedFrom: string[] = [];
-  context.mocks.api(
-    onboardingCompleteContract.complete,
-    ({ query, respond }) => {
-      completedFrom.push(pathname());
-      expect(query?.modelProvider).toBeUndefined();
-      context.mocks.data.onboardingStatus({
-        needsOnboarding: false,
-        onboardingComplete: true,
-      });
-      return respond(200, {
-        onboardingComplete: true,
-        needsOnboarding: false,
-      });
-    },
-  );
+  context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
+    completedFrom.push(pathname());
+    context.mocks.data.onboardingStatus({
+      needsOnboarding: false,
+      onboardingComplete: true,
+    });
+    return respond(200, {
+      onboardingComplete: true,
+      needsOnboarding: false,
+    });
+  });
 
   await setupPage({
     context,
@@ -546,7 +542,7 @@ test("The ready step completes onboarding once, before it runs the first request
   expect(completedFrom).toStrictEqual([ROUTES.onboardingReady]);
 });
 
-test("A refreshed ready step keeps the industry, model choice, and edited request", async () => {
+test("A refreshed ready step keeps the industry and edited request", async () => {
   mockOnboardingNeeded();
   mockCatalog({ connected: true });
   let runPrompt: string | undefined;
@@ -556,12 +552,10 @@ test("A refreshed ready step keeps the industry, model choice, and edited reques
     },
   });
   let sentIndustry: string | undefined;
-  let sentProvider: string | undefined;
   context.mocks.api(
     onboardingCompleteContract.complete,
-    ({ body, query, respond }) => {
+    ({ body, respond }) => {
       sentIndustry = body.industry;
-      sentProvider = query?.modelProvider;
       context.mocks.data.onboardingStatus({
         needsOnboarding: false,
         onboardingComplete: true,
@@ -607,7 +601,6 @@ test("A refreshed ready step keeps the industry, model choice, and edited reques
     expect(runPrompt).toBe("Draft my launch plan");
   });
   expect(sentIndustry).toBe("marketing");
-  expect(sentProvider).toBe("claudeCode");
 });
 
 test("The ready step keeps the request on screen until the first chat opens", async () => {

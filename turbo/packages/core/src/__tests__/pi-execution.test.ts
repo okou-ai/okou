@@ -15,13 +15,6 @@ describe("Auto and personal-subscription Pi execution", () => {
       codexServiceTier: undefined,
     } as const;
     expect(isPiExecutionRoute(args)).toBe(true);
-    expect(args.catalogModel?.builtIn).toStrictEqual([
-      {
-        concreteProviderType: "openrouter-codex",
-        upstreamModel: "@preset/okou-1-0",
-        serviceTiers: [],
-      },
-    ]);
     expect(piRouteCatalogIdentities(args)).toStrictEqual([
       { provider: "openrouter", model: "okou-1.0" },
     ]);

@@ -308,18 +308,36 @@ production rollback resolver enforces this as a floor on the first-parent
 deleted with the table it checked. See
 [deployment compatibility](../../../docs/deployment-compatibility.md#built-in-model-candidate-cooldown-removed-2026-10-07).
 
-`scripts/test-retired-model-route-cleanup.ts` replays the preceding migrations
-and protects exact retained rows, future/disabled subscriptions, NULL-marker
-retirement, schema/binding rejection with no journal advance, non-empty
-historical usage/credits/keys, and repeatable execution. Keep this transition
-validator until the migration is shipped and its surviving invariants are
-promoted; `test-model-catalog-seed.ts` permanently checks the retained route
-families and historical replacement chains.
+Migration `1337_retire_unused_model_route_data` clears data no live reader
+uses: `run_model_catalog.pi_route_class` values other than `gpt-codex`,
+`chat_threads.selected_model = 'deepseek/deepseek-v4-pro'` (NULL is the
+unpinned state and resolves to Auto) and every `built_in_model_keys` row other
+than `openrouter` (no foreign key references that table;
+`agent_runs.built_in_model_key_id` stays as unconstrained history). Migration
+`1338_drop_frozen_model_provider_state` then narrows
+`chk_run_model_catalog_pi_route_class` to `gpt-codex` (the table is tiny, so
+the check is added directly), drops `model_provider_auth_sessions.sandbox_id`
+with `idx_model_provider_auth_sessions_sandbox`, and drops the frozen OAuth
+copies on `model_providers` (`token_expires_at`, `needs_reconnect`,
+`last_refresh_error_code`, `workspace_name`, `plan_type`,
+`subscription_reset_period`, `subscription_next_reset_at`); the live values are
+on `model_provider_accounts`. Rollout: an API built before 1338 selects every
+`model_providers` and `model_provider_auth_sessions` column, so this is not a
+rolling-compatible contraction. The production rollback resolver enforces a
+floor on the first-parent `main` commit that adds 1338. See
+[deployment compatibility](../../../docs/deployment-compatibility.md#frozen-model-provider-state-dropped-2026-10-07).
+
+The 1325–1327 transition validators (`test-custom-model-retirement.ts`,
+`test-retired-model-route-cleanup.ts`) were removed after those migrations
+shipped to production on 2026-10-07. `test-model-catalog-seed.ts` permanently
+checks the retained route families and historical replacement chains, and
+`test-model-catalog-permanent.ts` checks the catalog and route constraints.
 
 The following records describe historical catalog migrations; they do not
 describe current routes.
 
-The API projects the system default from `run_model_catalog.is_system_default`.
+The system default is the API-owned fixed Auto model (the
+`run_model_catalog.is_system_default` column was dropped by 1333).
 Model availability and replacement use `replaced_by`; subscription routes are
 stored in `model_routes`. The owner waived pre-catalog rollback. Apply schema
 contraction only after pre-catalog API instances have drained.
@@ -331,9 +349,8 @@ CASCADE) rejects dangling targets, `replaced_by_lineage_rank > lineage_rank`
 rejects self-references and cycles, and both replacement columns must be set
 together. To retire X in favor of Y, raise Y's `lineage_rank` above X's if
 needed (raising a rank never invalidates referrers), then set `replaced_by`
-and `replaced_by_lineage_rank` on X in the same statement. To retire the
-system default, move `is_system_default` to an active model with an enabled
-Built-in route first, in the same transaction.
+and `replaced_by_lineage_rank` on X in the same statement. Auto's
+fixed model cannot be retired by a catalog edit; change the API constant.
 
 Former Okou and Terra rows: `gpt-5.6-terra`, `okou-1.0-pro` and
 `okou-1.0-max` (seeded by 1191 and 1194, code support removed by #37363 and

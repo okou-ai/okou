@@ -34,13 +34,9 @@ export const mcpChatThreadModels$ = command(
     // and transient provider availability are checked by the ordinary send;
     // they must not erase a stored model's canonical replacement in a read.
     const configured = new Set(
-      listing.response.models
-        .filter((runModel) => {
-          return runModel.routeStatus === "valid";
-        })
-        .map((runModel) => {
-          return runModel.model;
-        }),
+      listing.response.models.map((runModel) => {
+        return runModel.model;
+      }),
     );
     const defaultModel = configured.has(listing.systemDefaultModel)
       ? listing.systemDefaultModel

@@ -1814,6 +1814,20 @@
       "when": 1791357116817,
       "tag": "1336_drop_built_in_model_candidate_cooldown",
       "breakpoints": true
+    },
+    {
+      "idx": 1337,
+      "version": "7",
+      "when": 1791360671861,
+      "tag": "1337_retire_unused_model_route_data",
+      "breakpoints": true
+    },
+    {
+      "idx": 1338,
+      "version": "7",
+      "when": 1791360689069,
+      "tag": "1338_drop_frozen_model_provider_state",
+      "breakpoints": true
     }
   ]
 }

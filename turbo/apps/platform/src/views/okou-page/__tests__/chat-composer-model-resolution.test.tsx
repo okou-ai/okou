@@ -5,10 +5,7 @@ import type {
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import {
-  MOCK_SYSTEM_DEFAULT_MODEL,
-  mockCatalogDisplayName,
-} from "../../../mocks/handlers/api-model-catalog.ts";
+import { MOCK_SYSTEM_DEFAULT_MODEL } from "../../../mocks/handlers/api-model-catalog.ts";
 import {
   closeModelPanel,
   findModelOption,
@@ -19,7 +16,10 @@ import {
 import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
-import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
+import {
+  buildRunModel,
+  composerModelTrigger,
+} from "./chat-composer-test-helpers.ts";
 import {
   context,
   installRunChat,
@@ -30,36 +30,16 @@ import {
 
 const POLICY_DATE = "2026-08-12T09:00:00.000Z";
 
-interface PolicyOptions {
-  readonly providerType?: ModelProviderType;
-  readonly credentialScope?: "member" | "org";
-}
-
 function runModelFixture(
   model: string,
   index: number,
-  options: PolicyOptions = {},
+  options: { readonly providerType?: ModelProviderType } = {},
 ): AvailableRunModel {
-  const providerType =
-    options.providerType ??
-    (model === "okou-1.0"
-      ? "built-in"
-      : model.startsWith("claude-")
-        ? "claude-code-oauth-token"
-        : "codex-oauth-token");
-  const credentialScope =
-    options.credentialScope ?? (model === "okou-1.0" ? "org" : "member");
-  return {
+  return buildRunModel({
     model,
-    modelLabel: mockCatalogDisplayName(model),
-    defaultProviderType: providerType,
-    credentialScope,
-    modelProviderId:
-      credentialScope === "member"
-        ? `e4000000-0000-4000-a000-${String(index).padStart(12, "0")}`
-        : null,
-    routeStatus: "valid",
-  };
+    ...options,
+    modelProviderId: `e4000000-0000-4000-a000-${String(index).padStart(12, "0")}`,
+  });
 }
 
 function configureRunModels(models: readonly string[]): void {
@@ -146,7 +126,6 @@ test("Show Auto when an existing thread's model is no longer selectable", async 
     {
       ...runModelFixture("gpt-6-sol", 2, {
         providerType: "codex-oauth-token",
-        credentialScope: "member",
       }),
       subscriptionOptions: { efforts: ["low", "high"], serviceTier: null },
     },

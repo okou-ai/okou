@@ -95,9 +95,7 @@ function runErrorProviderContext(
     const modelRuntimeProviderType = formatLatestSessionProviderType(
       run.modelRuntimeProviderType,
     );
-    const frameworkProviderType =
-      modelRuntimeProviderType ??
-      (modelProviderType === "built-in" ? null : modelProviderType);
+    const frameworkProviderType = modelRuntimeProviderType ?? modelProviderType;
 
     return {
       modelProviderType,

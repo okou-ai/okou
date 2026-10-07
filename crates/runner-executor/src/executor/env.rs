@@ -32,7 +32,7 @@ pub(super) struct ProtectedModelProviderEnvKey {
 pub(super) const CLAUDE_MODEL_PROVIDER_PLACEHOLDER_ENV_KEYS: &[ProtectedModelProviderEnvKey] = &[
     ProtectedModelProviderEnvKey {
         name: "ANTHROPIC_API_KEY",
-        placeholder: Some(model_provider_placeholders::ANTHROPIC_API_KEY),
+        placeholder: None,
     },
     ProtectedModelProviderEnvKey {
         name: "ANTHROPIC_AUTH_TOKEN",
@@ -527,16 +527,6 @@ fn validate_codex_runtime_config_field(config: &CodexRuntimeConfig) -> Result<()
         config.env_key.as_str(),
         config.wire_api.as_str(),
     ] {
-        validate_run_payload_field(
-            guest_contracts::env::CODEX_RUNTIME_CONFIG_RUN_PAYLOAD_FIELD,
-            value,
-        )?;
-    }
-    for (name, value) in config.http_headers.iter().flatten() {
-        validate_run_payload_field(
-            guest_contracts::env::CODEX_RUNTIME_CONFIG_RUN_PAYLOAD_FIELD,
-            name,
-        )?;
         validate_run_payload_field(
             guest_contracts::env::CODEX_RUNTIME_CONFIG_RUN_PAYLOAD_FIELD,
             value,

@@ -269,7 +269,7 @@ actor ChatService {
     let serviceTier = preference.serviceTier.flatMap { tier in
       usableSavedModel != nil
         && availableModels.models.contains {
-          $0.model == model && $0.supportsServiceTier(tier, catalog: catalog)
+          $0.model == model && $0.supportsServiceTier(tier)
         }
         ? tier : nil
     }

@@ -41,11 +41,6 @@ interface SingleSecretFirewallProviderConfig {
 }
 
 export const MODEL_PROVIDER_ENV_PLACEHOLDERS = {
-  // Placeholder: sk-ant-api03-{93 word/hyphen chars}AA (108 chars total)
-  // Source: Semgrep regex \Bsk-ant-api03-[\w\-]{93}AA\B
-  //   https://semgrep.dev/blog/2025/secrets-story-and-prefixed-secrets/
-  ANTHROPIC_API_KEY:
-    "sk-ant-api03-CoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCoffeeSafeLocalCofAA",
   // Placeholder: sk-ant-oat01-{93 word/hyphen chars}AA (108 chars total)
   // Source: same structure as API key; prefix from claude setup-token output
   //   https://github.com/anthropics/claude-code/issues/18340

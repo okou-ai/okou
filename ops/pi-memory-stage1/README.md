@@ -43,7 +43,7 @@ skips produce no extraction event. Attempted requests without usable response
 usage emit `missing_usage`: vendor cost is unknown. SDK error sentinels with zero
 usage are not invented billable responses.
 
-The model remains Luna / low / standard. Four quantities use the writer's
+The model remains `deepseek-v4.1-flash` / low / standard. Four quantities use the writer's
 cache-inclusive 272,001-token long-context threshold. Pricing uses the same
 `resolveUsagePricingProvider` exact/alias mapping as credit settlement and exact
 category rows; `__fallback__` alone is unavailable. The estimate is:

@@ -1,8 +1,5 @@
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  getMemberRunModelRoute,
-  isMemberRunModelConfigurable,
-} from "@okouai/api-contracts/contracts/member-run-model";
+import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
 import {
   getModelProviderPresentationLabel,
   type AvailableRunModel,
@@ -42,13 +39,7 @@ import {
   isRunModelFastModeAvailable,
   resolveExplicitModelSelection$,
 } from "../../../signals/okou-page/model-default-selection";
-import {
-  DEFAULT_MODEL_PLAN_CAPABILITIES,
-  memberRunModelAllowedForPlan,
-  modelAllowedForPlan,
-  modelPlanCapabilities$,
-  type ModelPlanCapabilities,
-} from "../../../signals/okou-page/model-plan-capabilities";
+import { memberRunModelAllowedForPlan } from "../../../signals/okou-page/model-plan-capabilities";
 import {
   openSettingsBillingPlans$,
   setSettingsDialogOpen$,
@@ -219,7 +210,6 @@ function catalogDisplayName(
 function selectionAllowedValue(
   value: ModelProviderSelection | null,
   models: AvailableRunModel[],
-  modelCapabilities: ModelPlanCapabilities,
   catalog: ModelCatalog | null | undefined,
 ): ModelProviderSelection | null {
   if (!value || !catalog?.isActive(value.selectedModel)) {
@@ -228,10 +218,9 @@ function selectionAllowedValue(
   const runModel = models.find((candidate) => {
     return candidate.model === value.selectedModel;
   });
-  const allowed = runModel
-    ? memberRunModelAllowedForPlan(runModel, modelCapabilities)
-    : modelAllowedForPlan(value.selectedModel, modelCapabilities);
-  return allowed ? value : null;
+  return runModel === undefined || memberRunModelAllowedForPlan(runModel)
+    ? value
+    : null;
 }
 
 function selectionLabel({
@@ -412,19 +401,17 @@ function isHiddenModelFirstSelectValue(value: string): boolean {
 
 export function ModelFirstRunModelRowContent({
   runModel,
-  modelCapabilities,
   selected = false,
   showSelectedIndicator = false,
 }: {
   runModel: AvailableRunModel;
-  modelCapabilities: ModelPlanCapabilities;
   selected?: boolean;
   showSelectedIndicator?: boolean;
 }) {
   const catalog = useLastResolved(modelCatalog$);
   const iconType = getModelFirstIconType(runModel.model, catalog);
-  const route = getMemberRunModelRoute(runModel);
-  const restricted = !memberRunModelAllowedForPlan(runModel, modelCapabilities);
+  const route = runModel.memberEffective;
+  const restricted = !memberRunModelAllowedForPlan(runModel);
   return (
     <span className="flex w-full min-w-0 items-center gap-2">
       {iconType && <ProviderIcon type={iconType} size={16} />}
@@ -446,16 +433,14 @@ export function ModelFirstRunModelRowContent({
 
 function ModelFirstRunModelRow({
   runModel,
-  modelCapabilities,
   selection,
 }: {
   runModel: AvailableRunModel;
-  modelCapabilities: ModelPlanCapabilities;
   selection: ModelProviderSelection | null;
 }) {
   const { t } = useTranslation();
   const catalog = useLastResolved(modelCatalog$);
-  const fastAvailable = isRunModelFastModeAvailable(runModel, catalog);
+  const fastAvailable = isRunModelFastModeAvailable(runModel);
   if (fastAvailable) {
     const modelLabel = catalogDisplayName(catalog, runModel.model);
     const selected = selection?.selectedModel === runModel.model;
@@ -483,7 +468,6 @@ function ModelFirstRunModelRow({
         >
           <ModelFirstRunModelRowContent
             runModel={runModel}
-            modelCapabilities={modelCapabilities}
             selected={selected}
             showSelectedIndicator={fastSelected}
           />
@@ -531,10 +515,7 @@ function ModelFirstRunModelRow({
       value={runModel.model}
       disabled={!isMemberRunModelConfigurable(runModel)}
     >
-      <ModelFirstRunModelRowContent
-        runModel={runModel}
-        modelCapabilities={modelCapabilities}
-      />
+      <ModelFirstRunModelRowContent runModel={runModel} />
     </SelectItem>
   );
 }
@@ -542,14 +523,12 @@ function ModelFirstRunModelRow({
 function ModelFirstRunModelItems({
   models,
   selection,
-  modelCapabilities,
   placeholder,
   showInheritOption,
   showSeparator = true,
 }: {
   models: AvailableRunModel[];
   selection: ModelProviderSelection | null;
-  modelCapabilities: ModelPlanCapabilities;
   placeholder: string;
   showInheritOption: boolean;
   showSeparator?: boolean;
@@ -598,7 +577,6 @@ function ModelFirstRunModelItems({
               <ModelFirstRunModelRow
                 key={runModel.model}
                 runModel={runModel}
-                modelCapabilities={modelCapabilities}
                 selection={selection}
               />
             );
@@ -614,7 +592,6 @@ interface ModelFirstModelPickerContentBaseProps {
   placeholder: string;
   models: AvailableRunModel[];
   selection: ModelProviderSelection | null;
-  modelCapabilities: ModelPlanCapabilities;
   fastLabel: string;
   showInheritOption: boolean;
 }
@@ -624,7 +601,6 @@ function ModelFirstModelPickerContentLayout({
   placeholder,
   models,
   selection,
-  modelCapabilities,
   fastLabel,
   showInheritOption,
 }: ModelFirstModelPickerContentBaseProps) {
@@ -650,7 +626,6 @@ function ModelFirstModelPickerContentLayout({
       <ModelFirstRunModelItems
         models={models}
         selection={selection}
-        modelCapabilities={modelCapabilities}
         placeholder={placeholder}
         showInheritOption={showInheritOption}
         showSeparator={showInheritOption}
@@ -674,34 +649,23 @@ export function resolveModelFirstModelPickerState({
   value,
   modelsResponse,
   catalog,
-  modelCapabilities,
   placeholder,
   fastLabel,
 }: {
   value: ModelProviderSelection | null;
   modelsResponse: AvailableRunModelsResponse | null | undefined;
   catalog: ModelCatalog | null | undefined;
-  modelCapabilities: ModelPlanCapabilities;
   placeholder: string;
   fastLabel: string;
 }): ModelFirstModelPickerState {
   const models = (modelsResponse?.models ?? [])
     .filter((runModel) => {
-      return (
-        (runModel.model === modelsResponse?.defaultModel ||
-          getMemberRunModelRoute(runModel).credentialScope === "member") &&
-        (catalog?.isActive(runModel.model) ?? false)
-      );
+      return catalog?.isActive(runModel.model) ?? false;
     })
     .sort((left, right) => {
       return catalog ? catalog.compare(left.model, right.model) : 0;
     });
-  const selection = selectionAllowedValue(
-    value,
-    models,
-    modelCapabilities,
-    catalog,
-  );
+  const selection = selectionAllowedValue(value, models, catalog);
   return {
     models,
     selection,
@@ -843,8 +807,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
   const catalog = useLastResolved(modelCatalog$);
   const loading =
     modelsLoadable.state === "loading" || catalogLoadable.state === "loading";
-  const modelCapabilities =
-    useLastResolved(modelPlanCapabilities$) ?? DEFAULT_MODEL_PLAN_CAPABILITIES;
   if (modelsResponse === undefined || catalog === undefined) {
     return (
       <ModelFirstModelPickerMessageContent
@@ -867,7 +829,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
     value,
     modelsResponse,
     catalog,
-    modelCapabilities: DEFAULT_MODEL_PLAN_CAPABILITIES,
     placeholder,
     fastLabel,
   });
@@ -877,7 +838,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
       placeholder={placeholder}
       models={state.models}
       selection={state.selection}
-      modelCapabilities={modelCapabilities}
       fastLabel={fastLabel}
       showInheritOption={showInheritOption}
     />

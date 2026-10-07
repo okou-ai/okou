@@ -159,28 +159,6 @@ export async function seedBuiltInModelKey(
     : builtInModelKeyFixture(context, fixtureId, response.selected_model);
 }
 
-export async function seedBuiltInModelCandidateKeys(
-  context: TestContext,
-  selectedModel: string,
-  registerCleanup?: (cleanup: () => Promise<void>) => void,
-): Promise<BuiltInModelKeyFixture> {
-  const fixtureId = randomUUID();
-  const release = registerCleanup
-    ? registerBuiltInModelKeyCleanup(context, fixtureId, registerCleanup)
-    : undefined;
-  const response = await postAction(context, {
-    action: "seed-built-in-model-candidate-keys",
-    fixture_id: fixtureId,
-    selected_model: selectedModel,
-  });
-  if (!response.selected_model) {
-    throw new Error("seedBuiltInModelCandidateKeys missing selected_model");
-  }
-  return release
-    ? { selectedModel: response.selected_model, release }
-    : builtInModelKeyFixture(context, fixtureId, response.selected_model);
-}
-
 type BuiltInModelRuntimeRouteFixture = NonNullable<
   TestRuntimeStateActionResponse["built_in_model_route"]
 >;

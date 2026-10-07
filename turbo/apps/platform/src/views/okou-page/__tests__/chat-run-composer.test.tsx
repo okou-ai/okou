@@ -177,8 +177,7 @@ test("Send a large image with Auto", async () => {
     buildRunModel({
       model: "okou-1.0",
       modelLabel: "Auto",
-      defaultProviderType: "built-in",
-      credentialScope: "org",
+      providerType: "built-in",
       modelProviderId: null,
     }),
   ]);

@@ -62,15 +62,6 @@ export interface MemberModelAccountSnapshot {
   readonly accounts: readonly (typeof modelProviderAccounts.$inferSelect)[];
 }
 
-/** Request-local identity selected at capture. Mutable account and credential
- * state must still be read again from the account tables before use. */
-export interface CapturedPersonalSubscriptionAccount {
-  readonly id: string;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly type: PersonalSubscriptionProviderType;
-}
-
 export function isPersonalSubscriptionProviderType(
   type: string,
 ): type is PersonalSubscriptionProviderType {
@@ -99,7 +90,10 @@ interface EncryptedAccountSecret {
 }
 
 type AccountRow = typeof modelProviderAccounts.$inferSelect;
-type ProviderRow = typeof modelProviders.$inferSelect;
+/** Explicit projection: never read every `model_providers` column, so a
+ * rolling deploy survives column drops on the logical provider row. */
+const providerColumns = { id: modelProviders.id } as const;
+type ProviderRow = { readonly id: string };
 export type PersonalProviderAccountErrorResponse =
   | ReturnType<typeof badRequestMessage>
   | ReturnType<typeof notFound>
@@ -182,7 +176,7 @@ export async function listPersonalModelProviderAccounts(args: {
   readonly userId: string;
 }): Promise<ModelProviderListResponse> {
   const rows = await args.db
-    .select({ account: modelProviderAccounts, provider: modelProviders })
+    .select({ account: modelProviderAccounts, provider: providerColumns })
     .from(modelProviderAccounts)
     .innerJoin(
       modelProviders,
@@ -492,7 +486,7 @@ async function logicalProvider(
   },
 ): Promise<ProviderRow> {
   const [existing] = await db
-    .select()
+    .select(providerColumns)
     .from(modelProviders)
     .where(
       and(
@@ -512,7 +506,7 @@ async function logicalProvider(
       userId: args.userId,
       type: args.type,
     })
-    .returning();
+    .returning(providerColumns);
   if (!created) {
     throw new Error("Expected logical model provider row");
   }
@@ -758,7 +752,7 @@ async function accountWithProvider(
   readonly provider: ProviderRow;
 } | null> {
   const [row] = await db
-    .select({ account: modelProviderAccounts, provider: modelProviders })
+    .select({ account: modelProviderAccounts, provider: providerColumns })
     .from(modelProviderAccounts)
     .innerJoin(
       modelProviders,

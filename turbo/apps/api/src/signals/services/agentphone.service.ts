@@ -1,5 +1,4 @@
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
-import { normalizeRunModelId } from "@okouai/api-contracts/contracts/model-providers";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
 import { agentphoneGroupMessageReceipts } from "@okouai/db/schema/agentphone-group-message-receipt";
@@ -1111,22 +1110,14 @@ function findModelOption(
   }[],
   input: string,
 ) {
-  const normalizedInput = normalizeRunModelId(input.trim());
-  const inputKeys = new Set([
-    lookupKey(input),
-    lookupKey(normalizedInput),
-    compactLookupKey(input),
-    compactLookupKey(normalizedInput),
-  ]);
+  const inputKeys = new Set([lookupKey(input), compactLookupKey(input)]);
   return options.find((option) => {
-    return [option.model, normalizeRunModelId(option.model), option.label].some(
-      (value) => {
-        return (
-          inputKeys.has(lookupKey(value)) ||
-          inputKeys.has(compactLookupKey(value))
-        );
-      },
-    );
+    return [option.model, option.label].some((value) => {
+      return (
+        inputKeys.has(lookupKey(value)) ||
+        inputKeys.has(compactLookupKey(value))
+      );
+    });
   });
 }
 
@@ -1211,10 +1202,7 @@ const handleModelCommand$ = command(
     );
     signal.throwIfAborted();
 
-    const options = runModels.models.flatMap((runModel) => {
-      if (runModel.routeStatus !== "valid") {
-        return [];
-      }
+    const options = runModels.models.map((runModel) => {
       return {
         model: runModel.model,
         label: runModel.modelLabel,

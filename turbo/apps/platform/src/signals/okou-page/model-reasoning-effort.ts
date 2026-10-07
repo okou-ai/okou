@@ -1,7 +1,4 @@
-import {
-  getMemberRunModelRoute,
-  isMemberRunModelConfigurable,
-} from "@okouai/api-contracts/contracts/member-run-model";
+import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import {
   narrowRouteReasoningEfforts,
@@ -13,7 +10,7 @@ import type { ModelProviderSelection } from "../../views/okou-page/components/mo
 import type { ModelCatalog } from "../external/model-catalog.ts";
 
 function catalogRouteQuery(runModel: AvailableRunModel) {
-  const route = getMemberRunModelRoute(runModel);
+  const route = runModel.memberEffective;
   return {
     providerType: route.providerType,
     concreteProviderType: route.runtimeProviderType,
@@ -57,7 +54,7 @@ export function availableChatReasoningEfforts(
   ) {
     return [];
   }
-  const route = getMemberRunModelRoute(runModel);
+  const route = runModel.memberEffective;
   const runtimeProviderType = route.runtimeProviderType;
   if (runtimeProviderType === null) {
     return [];

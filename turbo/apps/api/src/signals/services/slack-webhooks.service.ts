@@ -49,10 +49,7 @@ import {
   updateIntegrationChatThreadModel$,
 } from "./integration-chat-thread-model.service";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
-import {
-  listAvailableRunModels$,
-  listAvailableRunModelsWithDefault$,
-} from "./run-models.service";
+import { listAvailableRunModelsWithDefault$ } from "./run-models.service";
 import {
   admitCanonicalSlackChatEvent$,
   ensureCanonicalSlackChatThreadRoute$,
@@ -867,10 +864,7 @@ const slackModelPickerState$ = command(
     signal.throwIfAborted();
     return {
       enabled: true,
-      options: runModels.models.flatMap((runModel) => {
-        if (runModel.routeStatus !== "valid") {
-          return [];
-        }
+      options: runModels.models.map((runModel) => {
         return {
           model: runModel.model,
           label: runModel.modelLabel,
@@ -879,27 +873,6 @@ const slackModelPickerState$ = command(
       }),
       currentSelectedModel,
     };
-  },
-);
-
-const isModelCommandAvailable$ = command(
-  async (
-    { set },
-    installation: SlackInstallation | undefined,
-    connection: SlackConnection | undefined,
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    if (!installation?.orgId || !connection) {
-      return false;
-    }
-    const runModels = await set(
-      listAvailableRunModels$,
-      { orgId: installation.orgId, userId: connection.userId },
-      signal,
-    );
-    return runModels.models.some((runModel) => {
-      return runModel.routeStatus === "valid";
-    });
   },
 );
 
@@ -1094,15 +1067,14 @@ export const handleSlackCommands$ = command(
       payload,
       signal,
     );
-    const canModel = () => {
-      return set(isModelCommandAvailable$, installation, connection, signal);
-    };
+    // Auto is always listed, so a connected workspace member can pick a model.
+    const canModel = !!installation?.orgId && !!connection;
 
     if (subCommand === "help" || subCommand === "") {
       return ephemeral(
         buildOfficialSlackHelpMessage({
           installation,
-          canModel: await canModel(),
+          canModel,
         }),
       );
     }
@@ -1192,7 +1164,7 @@ export const handleSlackCommands$ = command(
     return ephemeral(
       buildOfficialSlackHelpMessage({
         installation,
-        canModel: await canModel(),
+        canModel,
       }),
     );
   },

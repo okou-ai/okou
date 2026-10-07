@@ -112,7 +112,7 @@ account_prepare = jobs.fetch("cli-e2e-03-runner-prepare")
 account_prepare_steps = account_prepare.fetch("steps")
 model_selection_index = account_prepare_steps.index do |step|
   step["name"] == "Check runner E2E model selection" &&
-    step["run"] == "cd e2e && pnpm exec tsx --test scripts/runner-model-selection.test.ts scripts/runner-model-bootstrap.test.mjs"
+    step["run"] == "cd e2e && pnpm exec tsx --test scripts/runner-model-selection.test.ts scripts/runner-model-bootstrap.test.mjs scripts/runner-chat-model-default.test.mjs"
 end
 prepare_accounts_index = account_prepare_steps.index do |step|
   step["name"] == "Prepare runner E2E accounts"

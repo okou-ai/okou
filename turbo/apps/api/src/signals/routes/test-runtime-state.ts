@@ -51,12 +51,12 @@ import {
 
 import { PI_MEMORY_BUILTIN_BINDING } from "../services/pi-memory-builtin-config";
 
-/** Infrastructure fixtures seed only fixed Auto or the independent memory binding. */
-function builtInCandidateVendors(
+/** Infrastructure fixtures seed only the OpenRouter key behind fixed Auto or
+ * the independent memory binding; retired vendor keys are never seeded. */
+function builtInModelKeyVendor(
   catalogSnapshot: ModelCatalog,
-  db: Db,
   selectedModel: string,
-): readonly string[] {
+): string | null {
   if (selectedModel === PI_MEMORY_BUILTIN_BINDING.selectedModel) {
     const route = catalogBuiltInRoute(
       catalogSnapshot,
@@ -69,12 +69,12 @@ function builtInCandidateVendors(
     ) {
       throw new Error("Expected the independent fixed memory binding");
     }
-    return [AUTO_RUN_KEY_VENDOR];
+    return AUTO_RUN_KEY_VENDOR;
   }
   return catalogBuiltInModelRouteUpstream(catalogSnapshot, selectedModel) ===
     null
-    ? []
-    : [AUTO_RUN_KEY_VENDOR];
+    ? null
+    : AUTO_RUN_KEY_VENDOR;
 }
 
 // Test-only support actions for generic infrastructure fixtures.
@@ -131,8 +131,8 @@ async function seedBuiltInModelKey(
   selectedModel: string,
   signal: AbortSignal,
 ): Promise<string> {
-  const vendor = builtInCandidateVendors(catalogSnapshot, db, selectedModel)[0];
-  if (vendor === undefined) {
+  const vendor = builtInModelKeyVendor(catalogSnapshot, selectedModel);
+  if (vendor === null) {
     throw new Error(`Expected a Built-in catalog route for ${selectedModel}`);
   }
   await acquireBuiltInModelKeyFixture(db, fixtureId, [
@@ -141,30 +141,6 @@ async function seedBuiltInModelKey(
       apiKey: `${BUILT_IN_MODEL_KEY_FIXTURE_PREFIX}${fixtureId}`,
     },
   ]);
-  signal.throwIfAborted();
-  return selectedModel;
-}
-
-async function seedBuiltInModelCandidateKeys(
-  catalogSnapshot: ModelCatalog,
-  db: Db,
-  fixtureId: string,
-  selectedModel: string,
-  signal: AbortSignal,
-): Promise<string> {
-  const vendors = new Set(
-    builtInCandidateVendors(catalogSnapshot, db, selectedModel),
-  );
-  await acquireBuiltInModelKeyFixture(
-    db,
-    fixtureId,
-    [...vendors].map((vendor) => {
-      return {
-        vendor,
-        apiKey: `${BUILT_IN_MODEL_KEY_FIXTURE_PREFIX}${fixtureId}-${vendor}`,
-      };
-    }),
-  );
   signal.throwIfAborted();
   return selectedModel;
 }
@@ -192,7 +168,6 @@ type BuiltInModelAction = Extract<
     action:
       | "seed-built-in-default-model-key"
       | "seed-built-in-model-key"
-      | "seed-built-in-model-candidate-keys"
       | "delete-built-in-model-key"
       | "resolve-built-in-model-route";
   }
@@ -204,7 +179,6 @@ function isBuiltInModelAction(
   return [
     "seed-built-in-default-model-key",
     "seed-built-in-model-key",
-    "seed-built-in-model-candidate-keys",
     "delete-built-in-model-key",
     "resolve-built-in-model-route",
   ].includes(body.action);
@@ -237,21 +211,6 @@ async function builtInModelActionResponse(
         body: {
           ok: true as const,
           selected_model: await seedBuiltInModelKey(
-            catalogSnapshot,
-            db,
-            body.fixture_id,
-            body.selected_model,
-            signal,
-          ),
-        },
-      };
-    }
-    case "seed-built-in-model-candidate-keys": {
-      return {
-        status: 200 as const,
-        body: {
-          ok: true as const,
-          selected_model: await seedBuiltInModelCandidateKeys(
             catalogSnapshot,
             db,
             body.fixture_id,

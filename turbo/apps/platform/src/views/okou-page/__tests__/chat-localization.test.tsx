@@ -24,7 +24,7 @@ import { pathname, search } from "../../../signals/location.ts";
 import {
   buildProvider,
   buildRunModel,
-  OPENROUTER_PROVIDER_ID,
+  CLAUDE_CODE_ACCOUNT_ID,
 } from "./chat-composer-test-helpers.ts";
 
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
@@ -106,7 +106,7 @@ function chatThread(title: string): ChatThreadSnapshotProjection {
 function configureModelRoute(): void {
   context.mocks.data.personalModelProviders([
     buildProvider({
-      id: OPENROUTER_PROVIDER_ID,
+      id: CLAUDE_CODE_ACCOUNT_ID,
       type: "claude-code-oauth-token",
     }),
   ]);
@@ -114,9 +114,8 @@ function configureModelRoute(): void {
     buildRunModel({
       model: "claude-sonnet-5",
       modelLabel: "Claude Sonnet 5",
-      defaultProviderType: "claude-code-oauth-token",
-      credentialScope: "member",
-      modelProviderId: OPENROUTER_PROVIDER_ID,
+      providerType: "claude-code-oauth-token",
+      modelProviderId: CLAUDE_CODE_ACCOUNT_ID,
     }),
   ]);
 }

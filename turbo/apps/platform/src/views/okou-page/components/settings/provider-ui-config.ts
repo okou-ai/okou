@@ -1,14 +1,11 @@
+import type { ModelPriceTier } from "@okouai/api-contracts/contracts/model-price-tiers";
 import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { i18n } from "../../../../i18n/index.ts";
 import type { ModelCatalog } from "../../../../signals/external/model-catalog.ts";
 
-/** Display price tiers; which tier a model has comes from the catalog. */
-export type ModelPriceTier = "$" | "$$" | "$$$" | "$$$$";
-
 /**
- * Media tiers compare one generation against the others in the same category,
- * so they read as cost per artifact rather than as the run-model capability
- * ladder the same badge carries for chat.
+ * Media tiers (see `IMAGE_MODEL_PRICE_TIER`) compare one generation against
+ * the others in the same category, so they read as cost per artifact.
  */
 export function getMediaModelPriceTierLabel(tier: ModelPriceTier): string {
   switch (tier) {

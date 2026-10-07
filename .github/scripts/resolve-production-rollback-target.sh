@@ -60,6 +60,7 @@ readonly RETIRED_MODEL_CONFIGURATION_COLUMNS_DROP_PATH=turbo/packages/db/src/mig
 readonly CHAT_THREAD_PROVIDER_PIN_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1332_drop_chat_thread_provider_pin_columns.sql
 readonly DEAD_MODEL_PROVIDER_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1333_drop_dead_model_provider_columns.sql
 readonly BUILT_IN_MODEL_CANDIDATE_COOLDOWN_DROP_PATH=turbo/packages/db/src/migrations/1336_drop_built_in_model_candidate_cooldown.sql
+readonly FROZEN_MODEL_PROVIDER_STATE_DROP_PATH=turbo/packages/db/src/migrations/1338_drop_frozen_model_provider_state.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -309,6 +310,19 @@ if [[ ! "$built_in_model_candidate_cooldown_drop_commit" =~ ^[0-9a-f]{40}$ ]]; t
 fi
 if ! git merge-base --is-ancestor "$built_in_model_candidate_cooldown_drop_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the built-in model candidate cooldown drop: ${built_in_model_candidate_cooldown_drop_commit}."
+fi
+
+# Migration 1338 drops the frozen OAuth copies on model_providers and
+# model_provider_auth_sessions.sandbox_id. Every earlier API selects every
+# column of both tables in personal subscription account and device
+# authorization paths, so it cannot serve after 1338.
+frozen_model_provider_state_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$FROZEN_MODEL_PROVIDER_STATE_DROP_PATH" | sed -n '1p')
+if [[ ! "$frozen_model_provider_state_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged frozen model provider state drop on main."
+fi
+if ! git merge-base --is-ancestor "$frozen_model_provider_state_drop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the frozen model provider state drop: ${frozen_model_provider_state_drop_commit}."
 fi
 
 # Chat Event V8 removes eight event types and two context types. Earlier APIs

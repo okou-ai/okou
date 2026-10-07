@@ -1,11 +1,7 @@
-import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import {
-  mockCatalogBuiltInProvider,
-  mockCatalogDisplayName,
-} from "../../../mocks/handlers/api-model-catalog.ts";
+import { buildRunModel } from "./chat-composer-test-helpers.ts";
 import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
 
 import {
@@ -29,26 +25,8 @@ import { fillComposer } from "./chat-test-helpers.ts";
 function configureRunModels(models: readonly string[]): void {
   installConnectedPersonalSubscriptions(context);
   context.mocks.data.availableRunModels(
-    models.map((model): AvailableRunModel => {
-      return {
-        model,
-        modelLabel: mockCatalogDisplayName(model),
-        defaultProviderType:
-          model === "okou-1.0"
-            ? "built-in"
-            : model.startsWith("claude-")
-              ? "claude-code-oauth-token"
-              : "codex-oauth-token",
-        runtimeProviderType:
-          model === "okou-1.0"
-            ? "openrouter-codex"
-            : model.startsWith("claude-")
-              ? "claude-code-oauth-token"
-              : "codex-oauth-token",
-        credentialScope: model === "okou-1.0" ? "org" : "member",
-        modelProviderId: null,
-        routeStatus: "valid",
-      };
+    models.map((model) => {
+      return buildRunModel({ model });
     }),
   );
 }
@@ -89,18 +67,16 @@ async function setupAutoComposer(subscriptionModel?: string): Promise<void> {
   if (subscriptionModel) {
     installConnectedPersonalSubscriptions(context);
   }
-  const auto = autoPolicy();
+  const auto = buildRunModel({ model: "okou-1.0" });
   context.mocks.data.availableRunModels(
     subscriptionModel
       ? [
           auto,
           {
-            ...auto,
-            model: subscriptionModel,
-            modelLabel: mockCatalogDisplayName(subscriptionModel),
-            defaultProviderType: "codex-oauth-token",
-            runtimeProviderType: "codex-oauth-token",
-            credentialScope: "member",
+            ...buildRunModel({
+              model: subscriptionModel,
+              providerType: "codex-oauth-token",
+            }),
             subscriptionOptions: {
               efforts: ["low", "high"],
               serviceTier: null,
@@ -115,18 +91,6 @@ async function setupAutoComposer(subscriptionModel?: string): Promise<void> {
     path: NEW_CHAT_PATH,
   });
   await screen.findByRole("textbox", { name: "Message" });
-}
-
-function autoPolicy(): AvailableRunModel {
-  return {
-    model: "okou-1.0",
-    modelLabel: mockCatalogDisplayName("okou-1.0"),
-    defaultProviderType: "built-in",
-    runtimeProviderType: mockCatalogBuiltInProvider("okou-1.0"),
-    credentialScope: "org",
-    modelProviderId: null,
-    routeStatus: "valid",
-  };
 }
 
 test("Auto hides the model picker until a subscription adds models", async () => {

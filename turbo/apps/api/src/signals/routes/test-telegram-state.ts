@@ -362,14 +362,6 @@ async function seedTelegramPostModelKeys(
       vendor: await loadSystemDefaultBuiltInVendor(catalogSnapshot),
       apiKey: `built-in-key-default-${seed.composeId}`,
     },
-    {
-      vendor: "anthropic",
-      apiKey: `built-in-key-anthropic-${seed.composeId}`,
-    },
-    {
-      vendor: "moonshot",
-      apiKey: `built-in-key-moonshot-${seed.composeId}`,
-    },
   ]);
   signal.throwIfAborted();
 }

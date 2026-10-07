@@ -14,6 +14,7 @@ import {
 import type {
   AvailableRunModel,
   ModelProviderResponse,
+  ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
 import type { PresentationTemplateItem } from "@okouai/core";
@@ -22,6 +23,10 @@ import { expect, vi } from "vitest";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 import { MOCK_SYSTEM_DEFAULT_MODEL } from "../../../mocks/handlers/api-model-catalog.ts";
+import {
+  mockAutoRunModel,
+  mockSubscriptionRunModel,
+} from "../../../mocks/handlers/api-run-models.ts";
 import {
   chatEventRowsResponse,
   mockChatThreadSnapshotResponse,
@@ -42,7 +47,7 @@ const OTHER_AGENT_ID = "e0000000-0000-4000-a000-000000000011";
 
 export const THREAD_ID = "b1000000-0000-4000-a000-000000000101";
 
-export const OPENROUTER_PROVIDER_ID = "00000000-0000-4000-a000-000000000002";
+export const CLAUDE_CODE_ACCOUNT_ID = "00000000-0000-4000-a000-000000000002";
 
 export function expectTextBefore(firstText: string, secondText: string): void {
   const first = screen.getByText(firstText);
@@ -97,23 +102,21 @@ export function buildProvider(
   };
 }
 
-export function buildRunModel(
-  overrides: Partial<AvailableRunModel> & Pick<AvailableRunModel, "model">,
-): AvailableRunModel {
-  return {
-    modelLabel: "Claude Opus 5.5",
-    defaultProviderType: "claude-code-oauth-token",
-    credentialScope: "member",
-    modelProviderId: null,
-    routeStatus: "valid",
-    ...overrides,
-  };
+export function buildRunModel(options: {
+  readonly model: string;
+  readonly modelLabel?: string;
+  readonly providerType?: ModelProviderType;
+  readonly modelProviderId?: string | null;
+}): AvailableRunModel {
+  return options.model === MOCK_SYSTEM_DEFAULT_MODEL
+    ? mockAutoRunModel()
+    : mockSubscriptionRunModel(options.model, options);
 }
 
 export function mockPersonalModelRoutes(): void {
   context.mocks.data.personalModelProviders([
     buildProvider({
-      id: OPENROUTER_PROVIDER_ID,
+      id: CLAUDE_CODE_ACCOUNT_ID,
       type: "claude-code-oauth-token",
     }),
   ]);
@@ -121,36 +124,31 @@ export function mockPersonalModelRoutes(): void {
     buildRunModel({
       model: "claude-fable-5-1",
       modelLabel: "Claude Fable 5.1",
-      defaultProviderType: "claude-code-oauth-token",
-      credentialScope: "member",
-      modelProviderId: OPENROUTER_PROVIDER_ID,
+      providerType: "claude-code-oauth-token",
+      modelProviderId: CLAUDE_CODE_ACCOUNT_ID,
     }),
     buildRunModel({
       model: "claude-sonnet-5",
       modelLabel: "Claude Sonnet 5",
-      defaultProviderType: "claude-code-oauth-token",
-      credentialScope: "member",
-      modelProviderId: OPENROUTER_PROVIDER_ID,
+      providerType: "claude-code-oauth-token",
+      modelProviderId: CLAUDE_CODE_ACCOUNT_ID,
     }),
     buildRunModel({
       model: "claude-opus-5-5",
       modelLabel: "Claude Opus 5.5",
-      defaultProviderType: "claude-code-oauth-token",
-      credentialScope: "member",
-      modelProviderId: OPENROUTER_PROVIDER_ID,
+      providerType: "claude-code-oauth-token",
+      modelProviderId: CLAUDE_CODE_ACCOUNT_ID,
     }),
     buildRunModel({
       model: "claude-opus-5",
       modelLabel: "Claude Opus 5",
-      defaultProviderType: "claude-code-oauth-token",
-      credentialScope: "member",
-      modelProviderId: OPENROUTER_PROVIDER_ID,
+      providerType: "claude-code-oauth-token",
+      modelProviderId: CLAUDE_CODE_ACCOUNT_ID,
     }),
     buildRunModel({
       model: MOCK_SYSTEM_DEFAULT_MODEL,
       modelLabel: "Auto",
-      defaultProviderType: "built-in",
-      credentialScope: "org",
+      providerType: "built-in",
     }),
   ]);
 }

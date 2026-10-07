@@ -663,20 +663,6 @@ async function pidIsDirectlyBlockedBy(
 }
 
 /**
- * Acquires bdd-scoped ownership of the platform-managed built-in model key
- * pool for one vendor.
- *
- * Why product APIs cannot construct this state: built_in_model_keys is a
- * platform-operations table with no product write surface — keys are
- * provisioned out of band. Keys passed here must carry a
- * BDD_BUILT_IN_MODEL_KEY_PREFIXES prefix. The shared fixture service atomically
- * arbitrates the vendor-unique row and prevents one test owner from deleting
- * another owner's key.
- */
-
-/** Releases only this bdd fixture's ownership of its vendor key. */
-
-/**
  * Inserts one event through the production sequence writer, then holds its
  * transaction open. No product endpoint can pause between INSERT and COMMIT,
  * so this fixture is the narrow timing boundary for sequence serialization.

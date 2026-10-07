@@ -1,4 +1,7 @@
-import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  MODEL_FIRST_SELECTION_PROVIDER_ID,
+  type ChatThreadServiceTier,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import {
   modelProviderTypeSchema,
   type ModelProviderCredentialScope,
@@ -38,8 +41,6 @@ export interface ModelSelectionBootstrap {
   readonly member: MemberModelBootstrap;
   readonly memberMetadata: ExecutionMemberMetadata;
 }
-export const MODEL_FIRST_SELECTION_PROVIDER_ID =
-  "00000000-0000-4000-8000-000000000000";
 export function modelProviderWriteTypeForLaunch(
   type: string,
 ): ModelProviderType {

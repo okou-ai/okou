@@ -19,10 +19,6 @@ import { useTranslation } from "react-i18next";
 import { modelCatalog$ } from "../../../signals/external/model-catalog.ts";
 import { availableRunModels$ } from "../../../signals/external/run-models.ts";
 import { isRunModelFastModeAvailable } from "../../../signals/okou-page/model-default-selection.ts";
-import {
-  DEFAULT_MODEL_PLAN_CAPABILITIES,
-  modelPlanCapabilities$,
-} from "../../../signals/okou-page/model-plan-capabilities.ts";
 import { SCROLL_FADE_Y_WHEN_OVERFLOWING } from "../scroll-fade.ts";
 import {
   ChatEffortSettings,
@@ -67,8 +63,6 @@ function ComposerModelPanelBody({
   const catalogLoadable = useLastLoadable(modelCatalog$);
   const modelsResponse = useLastResolved(availableRunModels$);
   const catalog = useLastResolved(modelCatalog$);
-  const modelCapabilities =
-    useLastResolved(modelPlanCapabilities$) ?? DEFAULT_MODEL_PLAN_CAPABILITIES;
   const changeModel = useExplicitModelSelectionChange({ value, onChange });
   const chatModelsLabel = t(($) => {
     return $.settings.models.picker.chatModels;
@@ -91,7 +85,6 @@ function ComposerModelPanelBody({
     value,
     modelsResponse,
     catalog,
-    modelCapabilities: DEFAULT_MODEL_PLAN_CAPABILITIES,
     placeholder,
     fastLabel: t(($) => {
       return $.settings.models.picker.fast;
@@ -103,7 +96,7 @@ function ComposerModelPanelBody({
   const configurable =
     selectedRunModel !== undefined &&
     isMemberRunModelConfigurable(selectedRunModel);
-  const fastAvailable = isRunModelFastModeAvailable(selectedRunModel, catalog);
+  const fastAvailable = isRunModelFastModeAvailable(selectedRunModel);
   return (
     <>
       {/*
@@ -160,7 +153,6 @@ function ComposerModelPanelBody({
                   >
                     <ModelFirstRunModelRowContent
                       runModel={runModel}
-                      modelCapabilities={modelCapabilities}
                       selected={selected}
                       showSelectedIndicator
                     />

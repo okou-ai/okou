@@ -18,7 +18,6 @@ import usage.openai_chat_completions as openai_chat_completions
 from tests.flow_helpers import header_map, response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.model_provider_flow_helpers import make_model_provider_flow
-from usage.model_http import ModelHttpFailureEvidence
 from usage.quantities import MAX_USAGE_QUANTITY
 
 
@@ -68,23 +67,6 @@ def _run_response(flow: http.HTTPFlow, usage_webhook_api):
     return webhook
 
 
-class _RecordingFailureObserver:
-    def __init__(self) -> None:
-        self.observed: list[ModelHttpFailureEvidence] = []
-
-    def needs_sse_event(self, event_name: str | None) -> bool:
-        return True
-
-    def observe(self, evidence: ModelHttpFailureEvidence) -> None:
-        self.observed.append(evidence)
-
-    def observe_json(self, evidence: ModelHttpFailureEvidence) -> None:
-        raise AssertionError("unexpected JSON evidence")
-
-    def finish(self) -> None:
-        return None
-
-
 def _track_chat_extractor_finishes() -> tuple[list[object], Callable[..., object]]:
     calls: list[object] = []
     original_finish = openai_chat_completions.JsonSelectiveExtractor.finish
@@ -107,7 +89,6 @@ def _canonical_delta_with_size(size: int) -> bytes:
 
 
 def test_canonical_sse_deltas_skip_selective_extraction_across_framing_variants():
-    observer = _RecordingFailureObserver()
     finish_calls, tracked_finish = _track_chat_extractor_finishes()
     stream = (
         b'data: {"id":"chatcmpl_text","object":"chat.completion.chunk",'
@@ -128,9 +109,7 @@ def test_canonical_sse_deltas_skip_selective_extraction_across_framing_variants(
         tracked_finish,
     ):
         scanner, parsed_usage = (
-            openai_chat_completions.create_openai_chat_completions_sse_usage_extractor(
-                failure_observer=observer
-            )
+            openai_chat_completions.create_openai_chat_completions_sse_usage_extractor()
         )
         chunk_sizes = (1, 2, 5, 13, 3, 8)
         offset = 0
@@ -144,22 +123,13 @@ def test_canonical_sse_deltas_skip_selective_extraction_across_framing_variants(
 
     assert finish_calls == []
     assert parsed_usage == {}
-    assert observer.observed == [
-        ModelHttpFailureEvidence(has_choices=True, is_valid=True),
-        ModelHttpFailureEvidence(event_name="chunk", has_choices=True, is_valid=True),
-        ModelHttpFailureEvidence(has_choices=True, is_valid=True),
-    ]
 
 
-@pytest.mark.parametrize("include_usage", [True, False], ids=("usage", "observer-only"))
-def test_discarded_failure_event_emits_invalid_evidence_and_recovers(include_usage):
-    observer = _RecordingFailureObserver()
+def test_discarded_event_reports_parse_error_and_recovers():
     parse_errors: list[tuple[str, str]] = []
     scanner, parsed_usage = (
         openai_chat_completions.create_openai_chat_completions_sse_usage_extractor(
             on_parse_error=lambda event, error: parse_errors.append((event, error)),
-            include_usage=include_usage,
-            failure_observer=observer,
         )
     )
 
@@ -171,22 +141,18 @@ def test_discarded_failure_event_emits_invalid_evidence_and_recovers(include_usa
         + b"x" * 4097
         + b"\n\n"
         b"event: chunk\n"
-        b'data: {"object":"chat.completion.chunk","choices":[{'
-        b'"error":{"metadata":{"error_type":"provider_overloaded"}}}]}\n\n'
+        b"data: "
+        + _chat_payload(usage_payload={"prompt_tokens": 9, "completion_tokens": 2})
+        + b"\n\n"
     )
 
-    assert parsed_usage == {}
-    assert parse_errors == ([("chunk", "sse event discarded")] if include_usage else [])
-    assert observer.observed == [
-        ModelHttpFailureEvidence(event_name="chunk"),
-        ModelHttpFailureEvidence(
-            event_name="chunk",
-            failure_codes=("provider_overloaded",),
-            has_error=True,
-            has_choices=True,
-            is_valid=True,
-        ),
-    ]
+    assert parse_errors == [("chunk", "sse event discarded")]
+    assert parsed_usage == {
+        "message_id": "chatcmpl_1",
+        "model": "gpt-5.5",
+        "tokens.input": 9,
+        "tokens.output": 2,
+    }
 
 
 def test_sse_fast_path_bound_is_inclusive_and_overflow_replays_once():
@@ -361,8 +327,8 @@ def test_duplicate_usage_candidates_keep_authoritative_last_member_semantics(
     assert parsed_usage == expected_usage
 
 
-def test_fast_path_preserves_error_and_done_failure_evidence():
-    observer = _RecordingFailureObserver()
+def test_fast_path_parses_non_canonical_frames_and_signals_done():
+    done_calls: list[None] = []
     finish_calls, tracked_finish = _track_chat_extractor_finishes()
     canonical_delta = (
         b'{"object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"x"}}]}'
@@ -381,8 +347,7 @@ def test_fast_path_preserves_error_and_done_failure_evidence():
     ):
         scanner, parsed_usage = (
             openai_chat_completions.create_openai_chat_completions_sse_usage_extractor(
-                include_usage=False,
-                failure_observer=observer,
+                on_done=lambda: done_calls.append(None),
             )
         )
         scanner(
@@ -398,21 +363,7 @@ def test_fast_path_preserves_error_and_done_failure_evidence():
 
     assert len(finish_calls) == 2
     assert parsed_usage == {}
-    assert observer.observed == [
-        ModelHttpFailureEvidence(has_choices=True, is_valid=True),
-        ModelHttpFailureEvidence(
-            failure_codes=("provider_unavailable",),
-            has_error=True,
-            is_valid=True,
-        ),
-        ModelHttpFailureEvidence(
-            failure_codes=("provider_overloaded",),
-            has_error=True,
-            has_choices=True,
-            is_valid=True,
-        ),
-        ModelHttpFailureEvidence(is_done=True, is_valid=True),
-    ]
+    assert done_calls == [None]
 
 
 class TestOpenAIChatCompletionsUsage:

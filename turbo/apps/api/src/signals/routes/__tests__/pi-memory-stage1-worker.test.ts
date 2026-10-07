@@ -51,10 +51,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import {
-  seedBuiltInModelKey,
-  seedBuiltInModelCandidateKeys,
-} from "./helpers/runtime-state";
+import { seedBuiltInModelKey } from "./helpers/runtime-state";
 import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
@@ -1087,7 +1084,7 @@ describe("Pi memory Stage 1 worker", () => {
   it("extracts built-in memory through its fixed internal OpenRouter binding", async () => {
     // The maintenance binding is independent of Auto-only chat candidates.
     const selectedModel = "deepseek-v4.1-flash";
-    await seedBuiltInModelCandidateKeys(context, selectedModel);
+    await seedBuiltInModelKey(context, selectedModel);
     const storage = await createPublicStorageFixture();
     const chatModels = await createMiscRoutesApi(context).listRunModels(
       storage.actor,
@@ -2552,7 +2549,7 @@ describe("Stage 1 background credential availability", () => {
     expect(
       models.models
         .filter((model) => {
-          return model.defaultProviderType === "built-in";
+          return model.memberEffective.providerType === "built-in";
         })
         .map(({ model }) => {
           return model;

@@ -13,6 +13,7 @@ import {
   setupPage,
   startPage,
 } from "../../../__tests__/page-helper.ts";
+import { mockAutoRunModel } from "../../../mocks/handlers/api-run-models.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
@@ -71,16 +72,7 @@ function mockAutoMode(): void {
   context.mocks.api(runModelsMainContract.list, ({ respond }) => {
     return respond(200, {
       defaultModel: "okou-1.0",
-      models: [
-        {
-          model: "okou-1.0",
-          modelLabel: "Auto",
-          defaultProviderType: "built-in",
-          credentialScope: "org",
-          modelProviderId: null,
-          routeStatus: "valid",
-        },
-      ],
+      models: [mockAutoRunModel()],
     });
   });
 }

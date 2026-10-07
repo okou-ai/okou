@@ -5,7 +5,7 @@ import XCTest
 
 final class ModelSelectionTests: XCTestCase {
   func testCatalogResolvesRetiredSubscriptionSelectionsAndRejectsUnknownModels() throws {
-    let catalog = try decodeCatalog(routes: [])
+    let catalog = try decodeCatalog()
     XCTAssertEqual(catalog.resolve("retired"), "active")
     XCTAssertEqual(catalog.resolve("active"), "active")
     XCTAssertNil(catalog.resolve("unknown"))
@@ -20,60 +20,43 @@ final class ModelSelectionTests: XCTestCase {
     XCTAssertFalse(unknown.hasUsableRoute())
   }
 
-  func testResolvedSubscriptionSelectionPreservesSupportedTierThroughReconnect() throws {
-    let catalog = try decodeCatalog(routes: [
-      #"{"model":"active","providerType":"codex-oauth-token","enabled":true,"serviceTiers":["priority"]}"#
-    ])
-    let resolved = try XCTUnwrap(catalog.resolve("retired"))
-    let option = try decodeModel(
-      availability: "reconnect_required", model: resolved, routeStatus: "missing_provider")
-    XCTAssertTrue(option.supportsServiceTier("priority", catalog: catalog))
-    XCTAssertFalse(option.supportsServiceTier("unsupported", catalog: catalog))
-  }
-
   func testSubscriptionPriorityUsesItsOwnCapability() throws {
-    let catalog = try decodeCatalog(routes: [])
-    let offered = try decodeModel(
-      availability: "reconnect_required", model: "active", subscriptionTier: #""priority""#)
-    let absent = try decodeModel(
-      availability: "available", model: "active", subscriptionTier: "null")
-    XCTAssertTrue(offered.supportsServiceTier("priority", catalog: catalog))
-    XCTAssertFalse(absent.supportsServiceTier("priority", catalog: catalog))
+    let offered = try decodeModel(availability: "reconnect_required", subscriptionTier: #""priority""#)
+    let absent = try decodeModel(availability: "available", subscriptionTier: "null")
+    XCTAssertTrue(offered.supportsServiceTier("priority"))
+    XCTAssertFalse(offered.supportsServiceTier("unsupported"))
+    XCTAssertFalse(absent.supportsServiceTier("priority"))
   }
 
   func testAutoHasNoSubscriptionServiceTier() throws {
-    let catalog = try decodeCatalog(routes: [])
     let auto = try decodeModel(
-      availability: nil, providerType: "built-in", credentialScope: "org",
-      model: "okou-1.0")
+      availability: "available", model: "okou-1.0", providerType: "built-in",
+      runtimeProviderType: "openrouter-codex", credentialScope: "org",
+      accountSelection: "not_applicable")
     XCTAssertTrue(auto.hasUsableRoute())
-    XCTAssertFalse(auto.supportsServiceTier("priority", catalog: catalog))
+    XCTAssertFalse(auto.supportsServiceTier("priority"))
   }
 
-  private func decodeCatalog(routes: [String]) throws -> ModelCatalog {
+  private func decodeCatalog() throws -> ModelCatalog {
     let json = """
-      {"models":[{"model":"retired","resolvedModel":"active"},\
-      {"model":"active","resolvedModel":"active"}],\
-      "routes":[\(routes.joined(separator: ","))]}
+      {"systemDefaultModel":"okou-1.0","models":[{"model":"retired","resolvedModel":"active"},\
+      {"model":"active","resolvedModel":"active"}],"routes":[]}
       """
     return try APIClient.decoder().decode(ModelCatalog.self, from: Data(json.utf8))
   }
 
   private func decodeModel(
-    availability: String?, providerType: String = "codex-oauth-token",
-    credentialScope: String = "member", model: String = "retired", routeStatus: String = "valid",
+    availability: String, model: String = "gpt-5.6-sol",
+    providerType: String = "codex-oauth-token", runtimeProviderType: String = "codex-oauth-token",
+    credentialScope: String = "member", accountSelection: String = "capture_required",
     subscriptionTier: String? = nil
   ) throws -> AvailableRunModels.Model {
-    let memberRoute =
-      availability.map {
-        #", "memberEffective":{"providerType":"\#(providerType)","credentialScope":"\#(credentialScope)","availability":"\#($0)"}"#
-      } ?? ""
     let subscription =
       subscriptionTier.map {
-        #", "subscriptionOptions":{"serviceTier":\#($0)}"#
+        #", "subscriptionOptions":{"efforts":["low","medium","high"],"serviceTier":\#($0)}"#
       } ?? ""
     let json =
-      #"{"model":"\#(model)","routeStatus":"\#(routeStatus)","defaultProviderType":"\#(providerType)"\#(memberRoute)\#(subscription)}"#
+      #"{"model":"\#(model)","modelLabel":"\#(model)","modelProviderId":null,"memberEffective":{"providerType":"\#(providerType)","runtimeProviderType":"\#(runtimeProviderType)","credentialScope":"\#(credentialScope)","availability":"\#(availability)","accountSelection":"\#(accountSelection)"}\#(subscription)}"#
     return try APIClient.decoder().decode(AvailableRunModels.Model.self, from: Data(json.utf8))
   }
 }

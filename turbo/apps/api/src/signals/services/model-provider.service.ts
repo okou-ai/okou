@@ -69,10 +69,7 @@ function modelCredentialsAreUsable(
   credentials: ModelCredentialValues,
 ): boolean {
   if (hasAuthMethods(type)) {
-    const method =
-      source.configuration.kind === "registered-provider"
-        ? source.configuration.authMethod
-        : null;
+    const method = source.configuration.authMethod;
     const rules = method ? getSecretsForAuthMethod(type, method) : undefined;
     return (
       rules !== undefined &&
@@ -112,10 +109,7 @@ async function codexAccountCredentials(
   source: ModelSourceSnapshot,
   piExecution: boolean | undefined,
 ): Promise<ModelCredentialValues | null> {
-  const method =
-    source.configuration.kind === "registered-provider"
-      ? source.configuration.authMethod
-      : null;
+  const method = source.configuration.authMethod;
   const rules = method
     ? getSecretsForAuthMethod("codex-oauth-token", method)
     : undefined;
@@ -155,8 +149,7 @@ async function resolveModelCredentialValues(
     } else {
       if (
         source.identity.kind !== "built-in" ||
-        credential.modelKeyId !== source.identity.modelKeyId ||
-        source.configuration.kind !== "registered-provider"
+        credential.modelKeyId !== source.identity.modelKeyId
       ) {
         throw new Error("Managed key identity mismatch");
       }
@@ -238,8 +231,7 @@ export async function prepareRegisteredModelEnvironment(
     secrets: {},
     selectedModel: compiled.selectedModel,
     upstreamModel: compiled.upstreamModel,
-    ...(source.configuration.kind === "registered-provider" &&
-    source.configuration.authMethod
+    ...(source.configuration.authMethod
       ? { authMethod: source.configuration.authMethod }
       : {}),
     secretConnectorMap: Object.fromEntries(
@@ -339,11 +331,7 @@ function resolveModelProviderCodexRuntimeConfig(args: {
     return undefined;
   }
   const modelCatalog = args.logicalModel
-    ? getModelProviderCodexCatalogForModel(
-        args.logicalModel,
-        args.runtimeModel,
-        args.type,
-      )
+    ? getModelProviderCodexCatalogForModel(args.logicalModel, args.runtimeModel)
     : undefined;
   const baseUrl = args.environment.OPENAI_BASE_URL;
   if (!baseUrl) {
