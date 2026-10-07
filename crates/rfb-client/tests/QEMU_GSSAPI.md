@@ -72,8 +72,25 @@ and PAX sparse maps remain supported under explicit block/extent/logical-byte
 bounds and physical-data accounting; they are not blanket-rejected. No excess
 prefix is silently truncated or extracted.
 
+Original package collection is incremental and bounded before any package decoder:
+200 archives, 202 physical directory entries, 128 MiB per regular original and
+512 MiB aggregate compressed bytes, using the existing custody limits. Hashing
+reads a held readonly original FD under the remaining compressed budget. The
+basename is only an untrusted private-APT selector; the signed record's exact
+SHA256, size, native-or-all architecture, origin and pinned version must match
+before control parsing. Control and data decode that same held inode, not a
+later pathname replacement. Stat-change detection does not stop external writers
+and is not a complete source seal or mounted-input admission.
+
+The maintained control reader has a separate four-MiB physical file ceiling,
+including its intermediate spool, and at most 64 KiB captured field bytes with
+4096 bytes per selected field. Its private TMPDIR is producer-owned; there is no
+ambient OS-temp fallback. Complete internal control member/count/inflation
+accounting, private-APT metadata-output bounds and whole-download limits remain
+open. No maintainer program executes.
+
 The exact `/usr/bin/dpkg-deb` filesystem decoder runs under `/usr/bin/prlimit`
-with a minimal controlled PATH+LANG environment, closed stdin, discarded stderr
+with controlled PATH+LANG and private TMPDIR, closed stdin, discarded stderr
 (not an unbounded PIPE), core-off and at most 256 MiB address space, 32 FDs and
 30 CPU seconds. Inherited smaller limits are preserved. The existing 512 MiB
 stdout ceiling is enforced by the kernel before file growth, not after decoding.
@@ -94,13 +111,16 @@ extraction. Repeated identical collisions still consume these work budgets;
 collision hashing uses bounded chunks and checks sizes rather than an eager
 whole-file read. These work limits do not replace the existing final-tree limits
 or prove complete implicit-parent/hardlink-name/output reservations. Control
-metadata parsing, archive admission order, complete parser/bootstrap TCB,
+member/inflation accounting, complete parser/bootstrap TCB, final-tree reservations,
 descendant ownership and whole-provision timing remain separate obligations.
 
 Public ar/tar canaries exercise the real installed data decoder and parser,
 including inherited memory/file limits, exact logical-entry capacity, skipped
 roots, PAX/GNU/sparse positives and refusals, cross-package quotas and streamed
-collision behavior. Real-data cancellation regressions inject actual SIGINT
+collision behavior. Additional real-control cases check held-original decoding
+and oversized physical control refusal; ordinary IO cases check incremental
+compressed quotas, FD closure and a real writer change. An AST ordering check
+is structural evidence only, not a signed-provider execution receipt. Real-data cancellation regressions inject actual SIGINT
 after kernel-confirmed unreaped completion and immediately after actual
 `waitpid`, before maintained `Popen.wait` return-code bookkeeping. Observers
 preserve real decoder/status syscalls; a possible unsafe signal attempt in the

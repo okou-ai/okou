@@ -14,6 +14,7 @@ import os
 import pathlib
 import platform
 import pwd
+import re
 import resource
 import shutil
 import signal
@@ -467,7 +468,119 @@ def bounded_archive(fileobj, *, headers, member_bytes, entry_error, package_budg
     return tarfile.open(fileobj=fileobj, mode="r:", tarinfo=BoundedInfo)
 
 
-def decode_package_payload(archive, payload, limit):
+def collect_package_archives(directory, *, files=200, file_bytes=128 * 1024 * 1024,
+                             total_bytes=512 * 1024 * 1024):
+    # Apply the existing original-custody limits BEFORE any decoder/retention,
+    # and stop enumerating at the physical directory bound, not after sorting.
+    for value, maximum in ((files, 200), (file_bytes, 128 * 1024 * 1024),
+                           (total_bytes, 512 * 1024 * 1024)):
+        if type(value) is not int or not 0 < value <= maximum:
+            raise ValueError("package compressed archive budget refused")
+    if directory.is_symlink() or directory.resolve(strict=True) != directory:
+        raise ValueError("source-pinned fixture archive directory refused")
+    archives, total, entries = [], 0, 0
+    with os.scandir(directory) as scan:
+        for entry in scan:
+            entries += 1
+            if entries > files + 2:
+                raise ValueError("package compressed archive directory budget refused")
+            if entry.name in ("lock", "partial"):
+                continue
+            metadata = entry.stat(follow_symlinks=False)
+            if (not entry.name.endswith(".deb") or len(os.fsencode(entry.name)) > 255
+                    or not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid()):
+                raise ValueError("source-pinned fixture archive refused")
+            if len(archives) == files or not 0 < metadata.st_size <= file_bytes:
+                raise ValueError("package compressed archive budget refused")
+            total += metadata.st_size
+            if total > total_bytes:
+                raise ValueError("package compressed archive budget refused")
+            archives.append(directory / entry.name)
+    if not archives:
+        raise ValueError("source-pinned fixture package closure refused")
+    return sorted(archives)
+
+
+@contextlib.contextmanager
+def opened_package_archive(archive, *, maximum_bytes=128 * 1024 * 1024):
+    if type(maximum_bytes) is not int or not 0 < maximum_bytes <= 128 * 1024 * 1024:
+        raise ValueError("package compressed archive budget refused")
+    # The held original inode is shared by digest, control and data decoding.
+    # Change detection is NOT an external-writer barrier or a source seal.
+    fields = ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink",
+              "st_size", "st_mtime_ns", "st_ctime_ns")
+    with contextlib.ExitStack() as owned:
+        descriptor = os.open(archive, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        owned.callback(os.close, descriptor)
+        metadata = os.fstat(descriptor)
+        if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid()
+                or not 0 < metadata.st_size <= maximum_bytes):
+            raise ValueError("package compressed archive budget refused")
+        identity = tuple(getattr(metadata, field) for field in fields)
+        digest, offset = hashlib.sha256(), 0
+        while offset < metadata.st_size:
+            data = os.pread(descriptor, min(1024 * 1024, metadata.st_size - offset), offset)
+            if not data:
+                raise ValueError("source-pinned fixture archive changed")
+            digest.update(data)
+            offset += len(data)
+        if (os.pread(descriptor, 1, metadata.st_size)
+                or tuple(getattr(os.fstat(descriptor), field) for field in fields) != identity):
+            raise ValueError("source-pinned fixture archive changed")
+        yield descriptor, digest.hexdigest(), metadata.st_size, identity
+        if tuple(getattr(os.fstat(descriptor), field) for field in fields) != identity:
+            raise ValueError("source-pinned fixture archive changed")
+
+
+def signed_package_record(archive, base, options, arch, pins, digest, size):
+    # A basename is ONLY an untrusted selector for authenticated private APT
+    # metadata; it never establishes Package/Version/Architecture or identity.
+    selector = archive.name.split("_", 1)[0]
+    if re.fullmatch(r"[a-z0-9][a-z0-9+.-]{0,254}", selector) is None:
+        raise ValueError("source-pinned fixture archive selector refused")
+    metadata = call(["apt-cache", *options, "show", selector], cwd=base)
+    candidates = []
+    for paragraph in metadata.split("\n\n"):
+        candidate = dict(line.split(": ", 1) for line in paragraph.splitlines()
+                         if line and not line.startswith(" ") and ": " in line)
+        if (candidate.get("Package") == selector and candidate.get("Architecture") in (arch, "all")
+                and candidate.get("Origin") == "Ubuntu" and candidate.get("SHA256") == digest
+                and candidate.get("Size") == str(size)):
+            candidates.append(candidate)
+    if len(candidates) != 1:
+        raise ValueError("source-pinned fixture signed archive digest refused")
+    record = candidates[0]
+    if (not record.get("Version") or not record.get("Filename")
+            or (selector in pins and record["Version"] != pins[selector])):
+        raise ValueError("source-pinned fixture package identity refused")
+    return record
+
+
+def package_control_fields(archive, descriptor):
+    # Let maintained dpkg parse control fields, but kernel-bound its real stdout
+    # before capture. Internal control inflation still needs separate admission.
+    with tempfile.TemporaryFile(dir=archive.parent) as output:
+        # The maintained reader can spool the whole control tar before printing
+        # fields. Bound that physical work separately from captured field bytes.
+        decode_package_payload(archive, output, 4 * 1024 * 1024, descriptor=descriptor, control_fields=True)
+        if output.tell() > 64 * 1024:
+            raise ValueError("source-pinned fixture package control refused")
+        output.seek(0)
+        text = output.read(64 * 1024 + 1).decode("utf-8", errors="strict")
+    record = {}
+    for line in text.splitlines():
+        if ": " not in line:
+            raise ValueError("source-pinned fixture package control refused")
+        key, value = line.split(": ", 1)
+        if key not in ("Package", "Version", "Architecture") or key in record or not 0 < len(value.encode()) <= 4096:
+            raise ValueError("source-pinned fixture package control refused")
+        record[key] = value
+    if set(record) != {"Package", "Version", "Architecture"}:
+        raise ValueError("source-pinned fixture package control refused")
+    return record
+
+
+def decode_package_payload(archive, payload, limit, *, descriptor=None, control_fields=False):
     # One local owner must retain its child until group termination. An ignored
     # SIGCHLD or an external handler could auto-reap it and invalidate the PGID.
     if signal.getsignal(signal.SIGCHLD) != signal.SIG_DFL:
@@ -482,49 +595,55 @@ def decode_package_payload(archive, payload, limit):
         inherited = [value for value in resource.getrlimit(kind) if value != resource.RLIM_INFINITY]
         actual = min([cap, *inherited])
         argv.append("--" + name + "=" + str(actual) + ":" + str(actual))
-    argv += ["/usr/bin/dpkg-deb", "--fsys-tarfile", str(archive)]
-    process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=payload, stderr=subprocess.DEVNULL, start_new_session=True,
-                               env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"})
-    try:
-        deadline = time.monotonic() + 30
-        # WNOWAIT observes completion WITHOUT releasing the leader PID. Do not
-        # use Popen.wait/poll here: wait's KeyboardInterrupt path can reap before
-        # re-raising, including interruption between waitpid and bookkeeping.
-        while os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is None:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise subprocess.TimeoutExpired(argv, 30)
-            time.sleep(min(0.01, remaining))
-    except ChildProcessError as error:
-        # A lost child reservation is not permission to signal the numeric PGID.
-        raise RuntimeError("package decoder ownership unavailable") from error
-    except BaseException:
-        previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
+    source = str(archive) if descriptor is None else "/proc/self/fd/" + str(descriptor)
+    argv += ["/usr/bin/dpkg-deb"]
+    argv += (["-f", source, "Package", "Version", "Architecture"] if control_fields else ["--fsys-tarfile", source])
+    # dpkg's control reader can use intermediate files. Keep those in one owned
+    # private directory rather than its ambient OS temporary-file fallback.
+    with tempfile.TemporaryDirectory(prefix="package-decode-", dir=archive.parent) as temporary:
+        process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=payload, stderr=subprocess.DEVNULL, start_new_session=True,
+                                   pass_fds=() if descriptor is None else (descriptor,),
+                                   env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8", "TMPDIR": temporary})
         try:
-            # No wait/poll/reap has occurred in this phase; even an exited leader
-            # remains our zombie and reserves its original PID/group identity.
+            deadline = time.monotonic() + 30
+            # WNOWAIT observes completion WITHOUT releasing the leader PID. Do not
+            # use Popen.wait/poll here: wait's KeyboardInterrupt path can reap before
+            # re-raising, including interruption between waitpid and bookkeeping.
+            while os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(argv, 30)
+                time.sleep(min(0.01, remaining))
+        except ChildProcessError as error:
+            # A lost child reservation is not permission to signal the numeric PGID.
+            raise RuntimeError("package decoder ownership unavailable") from error
+        except BaseException:
+            previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
             try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired as error:
-                raise RuntimeError("package decoder cleanup unavailable") from error
-        finally:
-            signal.pthread_sigmask(signal.SIG_SETMASK, previous)
-        raise
-    # The reaping phase is OUTSIDE the group-signalling handler. An interrupt
-    # after actual waitpid has released identity must never re-enter that handler.
-    try:
-        status = process.wait(timeout=5)
-    except subprocess.TimeoutExpired as error:
-        raise RuntimeError("package decoder cleanup unavailable") from error
-    if status or payload.tell() > limit:
-        raise ValueError("source-pinned fixture package payload refused")
+                # No wait/poll/reap has occurred in this phase; even an exited leader
+                # remains our zombie and reserves its original PID/group identity.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired as error:
+                    raise RuntimeError("package decoder cleanup unavailable") from error
+            finally:
+                signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+            raise
+        # The reaping phase is OUTSIDE the group-signalling handler. An interrupt
+        # after actual waitpid has released identity must never re-enter that handler.
+        try:
+            status = process.wait(timeout=5)
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError("package decoder cleanup unavailable") from error
+        if status or payload.tell() > limit:
+            raise ValueError("source-pinned fixture package payload refused")
 
 
-def extract_deb(archive, root, budget=None):
+def extract_deb(archive, root, budget=None, *, descriptor=None):
     # Check/normalize every payload entry before extraction. Absolute in-root
     # Debian aliases become equivalent relative aliases; they can never cause
     # the host extractor to follow an absolute target outside this private root.
@@ -534,7 +653,13 @@ def extract_deb(archive, root, budget=None):
         limit = min(budget.payload_bytes, budget.remaining_payload_bytes)
         if limit <= 0:
             raise ValueError("package aggregate extraction budget refused")
-        decode_package_payload(archive, payload, limit)
+        before = os.fstat(descriptor) if descriptor is not None else None
+        decode_package_payload(archive, payload, limit, descriptor=descriptor)
+        if before is not None:
+            after = os.fstat(descriptor)
+            if any(getattr(before, field) != getattr(after, field) for field in
+                   ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")):
+                raise ValueError("source-pinned fixture archive changed")
         budget.remaining_payload_bytes -= payload.tell()
         payload.seek(0)
         with bounded_archive(payload, headers=200001, member_bytes=512 * 1024 * 1024,
@@ -676,32 +801,28 @@ def provision(base, arch, multiarch, origin):
     call(["apt-get", *options, "--download-only", "--yes", "--no-install-recommends", "install", *selectors], cwd=base)
     packages = {}
     root = base / "runtime"
-    archives = sorted((base / "cache/archives").glob("*.deb"))
-    if not archives or len(archives) > 200:
-        raise ValueError("source-pinned fixture package closure refused")
+    archives = collect_package_archives(base / "cache/archives")
     extraction_budget = PackageExtractionBudget()
+    compressed_remaining = 512 * 1024 * 1024
     for archive in archives:
-        if archive.is_symlink() or not archive.is_file():
-            raise ValueError("source-pinned fixture archive refused")
-        fields = call(["/usr/bin/dpkg-deb", "-f", archive, "Package", "Version", "Architecture"])
-        record = dict(line.split(": ", 1) for line in fields.splitlines())
-        name, version, package_arch = record["Package"], record["Version"], record["Architecture"]
-        if package_arch not in (arch, "all") or name in packages or (name in pins and version != pins[name]):
-            raise ValueError("source-pinned fixture package identity refused")
-        metadata = call(["apt-cache", *options, "show", name + "=" + version], cwd=base)
-        candidates = []
-        for paragraph in metadata.split("\n\n"):
-            candidate = dict(line.split(": ", 1) for line in paragraph.splitlines() if line and not line.startswith(" ") and ": " in line)
-            if candidate.get("Architecture") == package_arch and candidate.get("Version") == version:
-                candidates.append(candidate)
-        if len(candidates) != 1 or candidates[0].get("Origin") != "Ubuntu" or sha(archive) != candidates[0]["SHA256"]:
-            raise ValueError("source-pinned fixture signed archive digest refused")
-        extract_deb(archive, root, extraction_budget)
-        packages[name] = {"version": version, "architecture": package_arch, "archiveSha256": sha(archive),
-                          "archiveSizeBytes": archive.stat().st_size, "repositoryPath": candidates[0]["Filename"],
-                          "depends": candidates[0].get("Depends", ""),
-                          "preDepends": candidates[0].get("Pre-Depends", ""),
-                          "provides": candidates[0].get("Provides", "")}
+        with opened_package_archive(archive, maximum_bytes=min(128 * 1024 * 1024, compressed_remaining)) as (descriptor, digest, size, identity):
+            compressed_remaining -= size
+            candidate = signed_package_record(archive, base, options, arch, pins, digest, size)
+            record = package_control_fields(archive, descriptor)
+            name, version, package_arch = record["Package"], record["Version"], record["Architecture"]
+            if (name in packages or any(record[field] != candidate[field] for field in
+                                        ("Package", "Version", "Architecture"))):
+                raise ValueError("source-pinned fixture package identity refused")
+            if tuple(getattr(os.fstat(descriptor), field) for field in
+                     ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink",
+                      "st_size", "st_mtime_ns", "st_ctime_ns")) != identity:
+                raise ValueError("source-pinned fixture archive changed")
+            extract_deb(archive, root, extraction_budget, descriptor=descriptor)
+            packages[name] = {"version": version, "architecture": package_arch, "archiveSha256": digest,
+                              "archiveSizeBytes": size, "repositoryPath": candidate["Filename"],
+                              "depends": candidate.get("Depends", ""),
+                              "preDepends": candidate.get("Pre-Depends", ""),
+                              "provides": candidate.get("Provides", "")}
     if not set(REQUIRED).issubset(packages):
         raise ValueError("source-pinned fixture dependency closure incomplete")
     # Debian maintainer scripts never run. The reproducible usrmerge and compiler

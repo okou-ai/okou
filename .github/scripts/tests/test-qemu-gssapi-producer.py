@@ -123,13 +123,13 @@ if list(pathlib.Path(sys.argv[3]).iterdir()):
             self.assertEqual((destination / 'public-parser-canary').stat().st_mode & 0o777, 0o600)
             self.assertEqual(set(path.name for path in base.iterdir()), {'root', archive.name})
 
-    def public_payload_deb(self, base, payload):
+    def public_payload_deb(self, base, payload, *, control=None):
         # Inert format input only, decoded by the real installed dpkg-deb.
         archive = base / 'public-payload-canary.deb'
         with archive.open('xb') as output:
             output.write(b'!<arch>\n')
             for name, data in [('debian-binary', b'2.0\n'),
-                               ('control.tar.gz', gzip.compress(b'\0' * 10240, mtime=0)),
+                               ('control.tar.gz', gzip.compress(b'\0' * 10240 if control is None else control, mtime=0)),
                                ('data.tar.gz', gzip.compress(payload, mtime=0))]:
                 fields = ((name + '/').ljust(16) + '0'.ljust(12) + '0'.ljust(6)
                           + '0'.ljust(6) + '100600'.ljust(8) + str(len(data)).ljust(10) + '`\n')
@@ -138,6 +138,111 @@ if list(pathlib.Path(sys.argv[3]).iterdir()):
                 if len(data) % 2:
                     output.write(b'\n')
         return archive
+
+    def public_control_archive(self, *, package='public-canary', version='1'):
+        fields = ('Package: ' + package + '\nVersion: ' + version + '\nArchitecture: all\n'
+                  'Maintainer: Public Fixture <nobody@issue37612.invalid>\n'
+                  'Description: inert public format data\n').encode()
+        packed = io.BytesIO()
+        with tarfile.open(fileobj=packed, mode='w', format=tarfile.USTAR_FORMAT) as stream:
+            member = tarfile.TarInfo('./control')
+            member.mode = 0o644
+            member.size = len(fields)
+            stream.addfile(member, io.BytesIO(fields))
+        return packed.getvalue()
+
+    def test_compressed_collection_bounds_physical_entries_and_bytes_before_decoders(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            archives = base / 'archives'
+            archives.mkdir()
+            for name in ('one.deb', 'two.deb'):
+                (archives / name).write_bytes(b'public')
+            self.assertEqual(len(self.producer.collect_package_archives(archives, files=2, file_bytes=6, total_bytes=12)), 2)
+            for limits in ({'files': 1}, {'file_bytes': 5}, {'total_bytes': 11}, {'files': True}, {'files': 201}):
+                with self.assertRaisesRegex(ValueError, 'compressed archive.*budget refused'):
+                    self.producer.collect_package_archives(archives, **limits)
+            (archives / 'two.deb').unlink()
+            (archives / 'two.deb').symlink_to('one.deb')
+            with self.assertRaisesRegex(ValueError, 'fixture archive refused'):
+                self.producer.collect_package_archives(archives)
+            (archives / 'two.deb').unlink()
+            (archives / 'extra').write_bytes(b'unexpected')
+            with self.assertRaisesRegex(ValueError, 'fixture archive refused'):
+                self.producer.collect_package_archives(archives)
+
+    def test_opened_archive_bounds_reads_closes_fd_and_detects_actual_writer_change(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            archive = base / 'public.deb'
+            archive.write_bytes(b'public format bytes')
+            descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+            with self.assertRaisesRegex(ValueError, 'compressed archive budget refused'):
+                with self.producer.opened_package_archive(archive, maximum_bytes=4):
+                    self.fail('over-budget original was hashed or admitted')
+            with self.assertRaisesRegex(ValueError, 'fixture archive changed'):
+                with self.producer.opened_package_archive(archive) as (fd, digest, size, identity):
+                    self.assertEqual(digest, hashlib.sha256(archive.read_bytes()).hexdigest())
+                    self.assertEqual(size, 19)
+                    with archive.open('r+b') as writer:
+                        writer.write(b'changed')
+                    self.assertNotEqual(os.fstat(fd).st_ctime_ns, identity[-1])
+            self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
+
+    def test_real_control_and_data_decoders_use_held_original_not_replaced_name(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            packed = io.BytesIO()
+            with tarfile.open(fileobj=packed, mode='w') as stream:
+                member = tarfile.TarInfo('original-public-data')
+                member.size = 6
+                stream.addfile(member, io.BytesIO(b'public'))
+            archive = self.public_payload_deb(base, packed.getvalue(), control=self.public_control_archive())
+            descriptor = os.open(archive, os.O_RDONLY | os.O_CLOEXEC)
+            try:
+                archive.rename(base / 'held-original.deb')
+                archive.write_bytes(b'not a deb and never a signed provider input')
+                self.assertEqual(self.producer.package_control_fields(archive, descriptor),
+                                 {'Package': 'public-canary', 'Version': '1', 'Architecture': 'all'})
+                root = base / 'root'
+                root.mkdir()
+                self.producer.extract_deb(archive, root, descriptor=descriptor)
+                self.assertEqual((root / 'original-public-data').read_bytes(), b'public')
+            finally:
+                os.close(descriptor)
+
+    def test_real_control_output_is_kernel_bounded_without_large_parent_capture(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            archive = self.public_payload_deb(base, b'\0' * 10240,
+                                              control=self.public_control_archive(version='1' + 'a' * (5 * 1024 * 1024)))
+            descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+            with self.producer.opened_package_archive(archive) as (fd, _, _, _):
+                with tempfile.TemporaryFile(dir=base) as output:
+                    with self.assertRaisesRegex(ValueError, 'fixture package payload refused'):
+                        self.producer.decode_package_payload(archive, output, 4 * 1024 * 1024,
+                                                             descriptor=fd, control_fields=True)
+                    # dpkg's internal control spool hits the file limit before
+                    # printing fields; do not invent a 64-KiB stdout outcome.
+                    self.assertEqual(output.tell(), 0)
+            self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
+
+    def test_provision_orders_signed_digest_before_any_control_decoder(self):
+        # Structural ordering assertion, not a synthetic authenticated Ubuntu
+        # response or a runtime/signed-provider acceptance receipt.
+        tree = ast.parse((ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py').read_text())
+        provision = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'provision')
+        calls = sorted((node.lineno, node.func.id) for node in ast.walk(provision)
+                       if isinstance(node, ast.Call) and isinstance(node.func, ast.Name))
+        names = [name for _, name in calls]
+        self.assertLess(names.index('collect_package_archives'), names.index('opened_package_archive'))
+        self.assertLess(names.index('signed_package_record'), names.index('package_control_fields'))
+        self.assertLess(names.index('package_control_fields'), names.index('extract_deb'))
+        self.assertFalse(any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                             and node.func.id == 'call' and node.args and isinstance(node.args[0], ast.List)
+                             and isinstance(node.args[0].elts[0], ast.Constant)
+                             and node.args[0].elts[0].value == '/usr/bin/dpkg-deb'
+                             for node in ast.walk(provision)))
 
     def test_package_oversized_pax_is_refused_before_parser_allocation_or_writes(self):
         with tempfile.TemporaryDirectory(dir=self.parent) as directory:
@@ -602,8 +707,9 @@ with path.open('rb') as output:
         # Structural caller-boundary regression complements the real apt-config
         # startup test; it is not a package/build/signature/runtime receipt.
         module = ast.parse((ROOT / ".github/scripts/prepare-qemu-gssapi-fixture.py").read_text())
-        provision = next(node for node in module.body if isinstance(node, ast.FunctionDef) and node.name == "provision")
-        queries = [node for node in ast.walk(provision) if isinstance(node, ast.Call)
+        # Include the extracted signed-record helper: all three queries still
+        # require the same explicit startup root, rather than dropping one check.
+        queries = [node for node in ast.walk(module) if isinstance(node, ast.Call)
                    and isinstance(node.func, ast.Name) and node.func.id == "call"
                    and node.args and isinstance(node.args[0], ast.List)
                    and isinstance(node.args[0].elts[0], ast.Constant)
