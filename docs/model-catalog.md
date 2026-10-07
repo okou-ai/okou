@@ -74,8 +74,10 @@ operator error rather than silently inventing a route.
   model fails closed with an explicit error; it never silently becomes Auto.
   Catalog resolution follows `replaced_by` chains and reports unknown models
   instead of substituting the system default.
-- Built-in key availability and cooldowns still apply to the fixed OpenRouter
-  route. Failure is not permission to choose another platform model/vendor.
+- Built-in key availability still applies to the fixed OpenRouter route. A
+  provider failure fails that run; there is no route cooldown, and the next
+  request tries the route again. Failure is not permission to choose another
+  platform model/vendor.
 
 ## Billing and history
 

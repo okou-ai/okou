@@ -19,7 +19,7 @@ import { withChatModelSettings } from "./model-reasoning-effort.ts";
 
 interface UserModelDefaultSource {
   selectedModel: string | null;
-  serviceTier?: "priority" | "ultrafast" | null;
+  serviceTier?: "priority" | null;
   modelSettings?: ModelSettings;
 }
 
@@ -47,7 +47,7 @@ export function isServiceTierAvailableForSelection(params: {
   readonly models: AvailableRunModelsResponse | null | undefined;
   readonly catalog: ModelCatalog | null | undefined;
   readonly selectedModel: string | null | undefined;
-  readonly tier: "priority" | "ultrafast";
+  readonly tier: "priority";
 }): boolean {
   const { catalog, selectedModel } = params;
   if (!catalog || !selectedModel) {
@@ -88,18 +88,6 @@ export function isRunModelFastModeAvailable(
   return catalog.supportsServiceTier(runModel.model, "priority", {
     providerType: getMemberRunModelRoute(runModel).providerType,
   });
-}
-
-/** Whether a runModel row's route offers the Ultrafast service tier. */
-export function isRunModelUltrafastAvailable(
-  runModel: AvailableRunModel,
-  catalog: ModelCatalog | null | undefined,
-): boolean {
-  return (
-    catalog?.supportsServiceTier(runModel.model, "ultrafast", {
-      providerType: getMemberRunModelRoute(runModel).providerType,
-    }) ?? false
-  );
 }
 
 export function isCodexFastModeAvailableForSelection(params: {
@@ -167,17 +155,6 @@ export function resolveModelFirstStoredUserSelection(params: {
   );
   if (!userSelection) {
     return null;
-  }
-  if (
-    params.userPreference?.serviceTier === "ultrafast" &&
-    isServiceTierAvailableForSelection({
-      models: params.models,
-      catalog: params.catalog,
-      selectedModel: userSelection.selectedModel,
-      tier: "ultrafast",
-    })
-  ) {
-    return { ...userSelection, codexServiceTier: "ultrafast" };
   }
   if (
     params.userPreference?.serviceTier === "priority" &&

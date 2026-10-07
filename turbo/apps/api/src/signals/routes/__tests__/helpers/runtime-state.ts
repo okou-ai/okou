@@ -185,11 +185,6 @@ type BuiltInModelRuntimeRouteFixture = NonNullable<
   TestRuntimeStateActionResponse["built_in_model_route"]
 >;
 
-type BuiltInModelCandidateFixture = Pick<
-  BuiltInModelRuntimeRouteFixture,
-  "provider_type" | "upstream_model"
->;
-
 export async function resolveBuiltInModelRouteFixture(
   context: TestContext,
   selectedModel: string,
@@ -199,50 +194,6 @@ export async function resolveBuiltInModelRouteFixture(
     selected_model: selectedModel,
   });
   return response.built_in_model_route ?? null;
-}
-
-export async function setBuiltInCandidateCooldownFixture(
-  context: TestContext,
-  selectedModel: string,
-  route: BuiltInModelCandidateFixture,
-  unavailableUntil: Date,
-): Promise<void> {
-  await postAction(context, {
-    action: "set-built-in-candidate-cooldown",
-    selected_model: selectedModel,
-    provider_type: route.provider_type,
-    upstream_model: route.upstream_model,
-    unavailable_until: unavailableUntil.toISOString(),
-  });
-  registerBuiltInCandidateCooldownCleanup(context, selectedModel, route);
-}
-
-/**
- * Puts the given Built-in candidates of a test-owned model into cooldown for
- * the rest of the test, as the provider-failure path does in production.
- */
-
-export async function deleteBuiltInCandidateCooldownFixture(
-  context: TestContext,
-  selectedModel: string,
-  route: BuiltInModelCandidateFixture,
-): Promise<void> {
-  await postAction(context, {
-    action: "delete-built-in-candidate-cooldown",
-    selected_model: selectedModel,
-    provider_type: route.provider_type,
-    upstream_model: route.upstream_model,
-  });
-}
-
-export function registerBuiltInCandidateCooldownCleanup(
-  context: TestContext,
-  selectedModel: string,
-  route: BuiltInModelCandidateFixture,
-): void {
-  onTestFinished(async () => {
-    await deleteBuiltInCandidateCooldownFixture(context, selectedModel, route);
-  });
 }
 
 export async function readRunAutonomyBudgetFixture(

@@ -289,6 +289,17 @@ target) is built from the commit that adds it. The production rollback
 resolver enforces this as a floor on the first-parent `main` commit that adds 1333. `test-model-catalog-permanent.ts` and `test-model-catalog-seed.ts` cover
 the surviving catalog and route invariants.
 
+Migration `1336_drop_built_in_model_candidate_cooldown` drops
+`built_in_model_candidate_cooldown`; Auto no longer cools its route down after a
+provider failure. There is no data conversion. Every API built before 1336
+reads the table on the run claim path, so this is not a rolling-compatible
+contraction: apply it only after every serving API (and any rollback target) is
+built from the commit that adds it, or under an explicitly owner-accepted
+interruption, which this document does not record. The production rollback
+resolver enforces this as a floor on the first-parent `main` commit that adds 1336. The permanent `test-built-in-model-cooldown-permanent.ts` validator is
+deleted with the table it checked. See
+[deployment compatibility](../../../docs/deployment-compatibility.md#built-in-model-candidate-cooldown-removed-2026-10-07).
+
 `scripts/test-retired-model-route-cleanup.ts` replays the preceding migrations
 and protects exact retained rows, future/disabled subscriptions, NULL-marker
 retirement, schema/binding rejection with no journal advance, non-empty

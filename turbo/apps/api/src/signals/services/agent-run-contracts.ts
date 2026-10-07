@@ -11,7 +11,6 @@ import type {
   ConnectorRuntimeTargetRegistration,
 } from "@okouai/api-contracts/contracts/runners";
 import type {
-  ExpandedFirewallConfig,
   ExecutionFirewalls,
   NetworkPolicies,
 } from "@okouai/connectors/firewall-types";
@@ -63,7 +62,6 @@ export interface ResolvedModelProviderEnvironment {
   readonly environment: Record<string, string>;
   readonly secrets: Record<string, string>;
   readonly selectedModel: string | null;
-  readonly firewall?: ExpandedFirewallConfig;
   readonly secretConnectorMap?: Record<string, string>;
   readonly secretConnectorMetadataMap?: Record<string, SecretConnectorMetadata>;
   readonly codexRuntimeConfig?: ModelProviderCodexRuntimeConfig;

@@ -110,7 +110,7 @@ export interface PiRouteArgs {
 }
 
 export interface PiExecutionRouteArgs extends PiRouteArgs {
-  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
+  readonly codexServiceTier: "fast" | undefined;
 }
 
 function isAutoRoute(args: PiRouteArgs): boolean {
@@ -125,9 +125,6 @@ function isAutoRoute(args: PiRouteArgs): boolean {
 
 /** Claude subscriptions remain on the vendor harness, never Pi (vendor terms). */
 export function isPiAdmittedRoute(args: PiExecutionRouteArgs): boolean {
-  if (args.codexServiceTier === "ultrafast") {
-    return false;
-  }
   if (isAutoRoute(args)) {
     return args.codexServiceTier === undefined;
   }

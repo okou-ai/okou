@@ -1,6 +1,3 @@
-import { getModelProviderFirewall } from "@okouai/api-contracts/contracts/model-providers";
-import { getOpenRouterBaseUrl } from "@okouai/api-contracts/contracts/openrouter-routing";
-import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import {
@@ -17,8 +14,7 @@ import {
   type ModelCatalog,
 } from "./model-catalog.service";
 import { PI_MEMORY_STAGE1_BUILT_IN_MODEL } from "@okouai/pi-agent-runtime/api";
-import { and, eq, gt } from "drizzle-orm";
-import { nowDate } from "../../lib/time";
+import { and, eq } from "drizzle-orm";
 import type { ReadonlyDb } from "../external/db";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
@@ -86,29 +82,7 @@ export async function resolvePiMemoryBuiltinRoute(
   if (!key?.apiKey.trim()) {
     return null;
   }
-  const [cooldown] = await db
-    .select({ id: builtInModelCandidateCooldown.selectedModel })
-    .from(builtInModelCandidateCooldown)
-    .where(
-      and(
-        eq(
-          builtInModelCandidateCooldown.selectedModel,
-          PI_MEMORY_BUILTIN_BINDING.selectedModel,
-        ),
-        eq(
-          builtInModelCandidateCooldown.modelRuntimeProvider,
-          PI_MEMORY_BUILTIN_BINDING.providerType,
-        ),
-        eq(
-          builtInModelCandidateCooldown.modelRuntimeModel,
-          PI_MEMORY_BUILTIN_BINDING.upstreamModel,
-        ),
-        gt(builtInModelCandidateCooldown.unavailableUntil, nowDate()),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  return cooldown ? null : { ...PI_MEMORY_BUILTIN_BINDING, modelKeyId: key.id };
+  return { ...PI_MEMORY_BUILTIN_BINDING, modelKeyId: key.id };
 }
 
 export function preparePiMemoryBuiltinEnvironment(
@@ -145,10 +119,6 @@ export function preparePiMemoryBuiltinEnvironment(
     selection: { kind: "built-in", ...route },
     credentials: { OPENROUTER_API_KEY: credential.apiKey },
   });
-  const routing = {
-    credentialOwner: "builtin" as const,
-    model: route.upstreamModel,
-  };
   return {
     id: null,
     type: "built-in",
@@ -157,11 +127,7 @@ export function preparePiMemoryBuiltinEnvironment(
     selectedModel: route.selectedModel,
     upstreamModel: route.upstreamModel,
     builtInModelRuntimeRoute: route,
-    environment: {
-      ...compiled.environment,
-      OPENAI_BASE_URL: getOpenRouterBaseUrl("responses", routing),
-    },
+    environment: { ...compiled.environment },
     secrets: { ...compiled.secrets },
-    firewall: getModelProviderFirewall(route.providerType, routing),
   };
 }

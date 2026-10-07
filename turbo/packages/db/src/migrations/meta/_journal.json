@@ -1793,6 +1793,27 @@
       "when": 1791351116482,
       "tag": "1333_drop_dead_model_provider_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 1334,
+      "version": "7",
+      "when": 1791356236174,
+      "tag": "1334_retire_ultrafast_data",
+      "breakpoints": true
+    },
+    {
+      "idx": 1335,
+      "version": "7",
+      "when": 1791356254595,
+      "tag": "1335_tighten_model_route_service_tiers",
+      "breakpoints": true
+    },
+    {
+      "idx": 1336,
+      "version": "7",
+      "when": 1791357116817,
+      "tag": "1336_drop_built_in_model_candidate_cooldown",
+      "breakpoints": true
     }
   ]
 }

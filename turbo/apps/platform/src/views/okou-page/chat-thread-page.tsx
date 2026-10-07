@@ -460,11 +460,6 @@ function runModelDisplayName(
 ): string {
   const model =
     catalog?.displayName(selection.selectedModel) ?? selection.selectedModel;
-  if (selection.serviceTier === "ultrafast") {
-    return `${model} ${t(($) => {
-      return $.settings.models.picker.ultrafast;
-    })}`;
-  }
   return fastModeEnabled(selection)
     ? t(
         ($) => {
@@ -500,12 +495,6 @@ function modelChangesByEventId(
         selection !== undefined
       ) {
         if (selection.selectedModel !== previousSelection.selectedModel) {
-          changes.set(event.id, { kind: "model", selection });
-        } else if (
-          selection.serviceTier !== previousSelection.serviceTier &&
-          (selection.serviceTier === "ultrafast" ||
-            previousSelection.serviceTier === "ultrafast")
-        ) {
           changes.set(event.id, { kind: "model", selection });
         } else if (
           fastModeEnabled(selection) !== fastModeEnabled(previousSelection)
@@ -3341,9 +3330,7 @@ function ChatThreadNextRunModelNotice({
     selectedModel: selectedSelection.selectedModel,
     ...(selectedSelection.codexServiceTier === "fast"
       ? { serviceTier: "priority" as const }
-      : selectedSelection.codexServiceTier === "ultrafast"
-        ? { serviceTier: "ultrafast" as const }
-        : {}),
+      : {}),
   };
   let label: string;
   if (selectedRunSelection.selectedModel !== runningSelection.selectedModel) {
@@ -3352,21 +3339,6 @@ function ChatThreadNextRunModelNotice({
         return $.chat.run.selectedModelAppliesAfterCurrentRun;
       },
       { model: runModelDisplayName(t, selectedRunSelection, catalog) },
-    );
-  } else if (
-    selectedRunSelection.serviceTier === "ultrafast" ||
-    runningSelection.serviceTier === "ultrafast"
-  ) {
-    if (selectedRunSelection.serviceTier === runningSelection.serviceTier) {
-      return withChatScrollLayout(null);
-    }
-    label = t(
-      ($) => {
-        return $.chat.run.selectedModelAppliesAfterCurrentRun;
-      },
-      {
-        model: runModelDisplayName(t, selectedRunSelection, catalog),
-      },
     );
   } else if (
     fastModeEnabled(selectedRunSelection) !== fastModeEnabled(runningSelection)

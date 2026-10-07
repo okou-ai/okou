@@ -2,7 +2,6 @@ import {
   getFrameworkForType,
   getModelProviderCodexCatalogForModel,
   getModelProviderCodexRuntimeCapabilities,
-  getModelProviderFirewall,
   getSecretNameForType,
   getSecretsForAuthMethod,
   hasAuthMethods,
@@ -24,10 +23,6 @@ import {
   isPersonalSubscriptionProviderType,
 } from "./model-provider-account.service";
 
-import {
-  getOpenRouterBaseUrl,
-  OPENROUTER_US_ORIGIN,
-} from "@okouai/api-contracts/contracts/openrouter-routing";
 import type { SupportedFramework } from "@okouai/core/frameworks";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import {
@@ -310,19 +305,7 @@ export async function prepareManagedModelEnvironment(
     },
     credentials,
   });
-  // Preserve private US routing for the managed OpenRouter endpoint.
-  const routing = {
-    credentialOwner: "builtin" as const,
-    model: route.upstreamModel,
-  };
-  const firewall = getModelProviderFirewall(route.providerType, routing);
-  const usesUsEndpoint = firewall?.apis.some((api) => {
-    return api.base.startsWith(`${OPENROUTER_US_ORIGIN}/`);
-  });
-  const environment = {
-    ...compiled.environment,
-    OPENAI_BASE_URL: getOpenRouterBaseUrl("responses", routing),
-  };
+  const environment = { ...compiled.environment };
   const codexRuntimeConfig = resolveModelProviderCodexRuntimeConfig({
     type: route.providerType,
     logicalModel: route.selectedModel,
@@ -339,7 +322,6 @@ export async function prepareManagedModelEnvironment(
     selectedModel: compiled.selectedModel,
     builtInModelRuntimeRoute: route,
     upstreamModel: compiled.upstreamModel,
-    ...(usesUsEndpoint ? { firewall } : {}),
     ...(codexRuntimeConfig ? { codexRuntimeConfig } : {}),
   };
 }

@@ -1,5 +1,63 @@
 # Deployment Compatibility
 
+## Built-in model candidate cooldown removed (2026-10-07)
+
+Owner decision (Ethan, 2026-10-07): Auto has one platform route, so a provider
+failure fails that run and the next request tries the route again. The API no
+longer reads or writes a route cooldown when resolving Auto for new runs, queued
+claims or Pi memory maintenance. The staff cooldown diagnostics endpoints
+(`GET`/`DELETE /api/model-providers/cooldown-diagnostics`), their Settings
+debug block, and the test-runtime cooldown actions are removed. Generated
+migration `1336_drop_built_in_model_candidate_cooldown` drops
+`built_in_model_candidate_cooldown`; its rows were transient deadlines with no
+history value, so nothing is converted or archived.
+
+Runner: the mitm addon no longer observes or reports model provider failures,
+and the Runner no longer passes `OKOU_MITM_RUNNER_TOKEN` to mitmdump. Runners
+released before this change still `POST
+/api/runners/runs/:runId/model-provider-failures` best-effort. The endpoint and
+its contract stay: it authenticates the caller and returns
+`{ "outcome": "ignored" }` without reading the run or the body, so old Runners
+see the same success shape they already accept. Remove the endpoint, its
+contract and generated Rust bindings once production Runners no longer send
+these reports (no Runner after this change calls it).
+
+App: a stale App build that opens Settings debug as staff receives `404` from
+the removed diagnostics endpoint inside that debug-only block; no user flow
+depends on it.
+
+Database ordering: migrations run before API promotion. Every API built before
+1336 queries the table while resolving the Auto route for run claims and Pi
+memory maintenance, and writes it from runner failure reports, so it receives
+`42P01` on those paths until it drains. This drop is not rolling-compatible.
+Owner acceptance of that rollout interruption is pending and is not recorded
+here; do not deploy 1336 while an older API serves without it. A new API
+against the old schema is compatible because it never names the table.
+
+Rollback floor: the rollback resolver resolves the first-parent `main` commit
+that added `1336_drop_built_in_model_candidate_cooldown.sql` and rejects earlier
+targets before artifact or host access. Recovering below it requires a reviewed
+forward migration that recreates the table before an older API serves. This
+does not claim production activation.
+
+## OpenRouter US routing removed (2026-10-07)
+
+Platform OpenRouter traffic always uses the global `https://openrouter.ai/api/v1`
+endpoint. The US model allowlist, the `https://us.openrouter.ai` origin, the
+routing context on `getModelProviderPiEndpoint` / `getModelProviderFirewall`,
+and the inline per-run model-provider firewall that carried a US base URL are
+deleted. Managed Auto and Pi memory runs now use the built-in
+`openrouter-codex` firewall by name, as member-owned and non-allowlisted
+built-in runs already did.
+
+Readers of captured US endpoints are removed too. A queued or active Pi run
+whose captured `OPENAI_BASE_URL` is the US endpoint would no longer match the
+global Pi endpoint and would fail Pi model configuration. Production showed no
+Built-in US-routed run since 2026-10-04 and no in-flight run carrying a US
+endpoint, so no drain gate or migration is required. Runner, guest, and mitm
+code never special-cased the US origin; old Runners receive the same built-in
+firewall name they already resolve. No persisted schema changes.
+
 ## Legacy chat thread provider pin columns dropped
 
 Follow-up to the run model schema contraction below (#37856). Chat threads
@@ -4473,8 +4531,8 @@ The API and commit-addressed CLI now pin Pi 0.87.1. Its native catalog contains
 `claude-opus-5-5`, `gpt-6-sol`, and `gpt-6-luna`, so the Pi admission table can
 route those models through Pi when their existing product policy allows it.
 This change does not make a model newly addable to an
-organization. GPT-6 Sol and Luna continue to use the global OpenRouter endpoint
-because neither is in the US endpoint allowlist.
+organization. GPT-6 Sol and Luna continue to use the global OpenRouter
+endpoint.
 
 New Pi starts require the matching commit-addressed CLI artifact. Older CLI
 artifacts pinned to Pi 0.86.1 cannot resolve these three catalog models. Queued

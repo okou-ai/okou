@@ -30,7 +30,6 @@ import {
 import {
   catalogModelForSelectedId,
   isCatalogFastServiceTierSupported,
-  isCatalogUltrafastServiceTierSupported,
 } from "./model-route-capabilities.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
@@ -215,16 +214,9 @@ export const resolveDefaultModelFirstPin$ = command(
     }
     const tier = facts.preference?.serviceTier;
     const serviceTier =
-      tier === "ultrafast" &&
-      isCatalogUltrafastServiceTierSupported(
-        facts.catalog,
-        personal.model,
-        personal.providerType,
-      )
-        ? "ultrafast"
-        : tier === "priority" && personal.serviceTier === "priority"
-          ? "priority"
-          : null;
+      tier === "priority" && personal.serviceTier === "priority"
+        ? "priority"
+        : null;
     return { ...subscriptionPin(personal), serviceTier };
   },
 );
@@ -284,17 +276,8 @@ export type ProviderModelSupport = "validate" | "trust-enqueued";
 export function validateCodexServiceTier(params: {
   readonly catalog: ModelCatalog;
   readonly pin: ModelFirstPin;
-  readonly codexServiceTier: "fast" | "ultrafast" | null;
+  readonly codexServiceTier: "fast" | null;
 }): ReturnType<typeof badRequestMessage> | undefined {
-  if (params.codexServiceTier === "ultrafast") {
-    return isCatalogUltrafastServiceTierSupported(
-      params.catalog,
-      params.pin.selectedModel,
-      params.pin.modelProviderType,
-    )
-      ? undefined
-      : badRequestMessage("Ultrafast is unavailable for this model route");
-  }
   if (params.codexServiceTier !== "fast") {
     return undefined;
   }

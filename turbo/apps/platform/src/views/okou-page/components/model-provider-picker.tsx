@@ -33,7 +33,6 @@ import {
 import { Check, Cpu, Zap } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { i18n } from "../../../i18n/index.ts";
 import {
   modelCatalog$,
   type ModelCatalog,
@@ -41,7 +40,6 @@ import {
 import { availableRunModels$ } from "../../../signals/external/run-models";
 import {
   isRunModelFastModeAvailable,
-  isRunModelUltrafastAvailable,
   resolveExplicitModelSelection$,
 } from "../../../signals/okou-page/model-default-selection";
 import {
@@ -96,8 +94,6 @@ interface ModelProviderPickerProps {
 const INHERIT_SENTINEL = "__inherit_default__";
 const CODEX_FAST_OPTION_PREFIX = "__codex_fast_option__:";
 const CODEX_FAST_SELECTED_PREFIX = "__codex_fast_selected__:";
-const CODEX_ULTRAFAST_OPTION_PREFIX = "__codex_ultrafast_option__:";
-const CODEX_ULTRAFAST_SELECTED_PREFIX = "__codex_ultrafast_selected__:";
 
 // Select uses the selected item's offsetHeight as the scroll-button
 // step. Keep hidden selected items measurable so native hover scrolling works.
@@ -262,11 +258,6 @@ function selectionLabel({
     return placeholder;
   }
   const modelLabel = catalogDisplayName(catalog, selection.selectedModel);
-  if (selection.codexServiceTier === "ultrafast") {
-    return `${modelLabel} ${i18n.t(($) => {
-      return $.settings.models.picker.ultrafast;
-    })}`;
-  }
   return !fastShownByCaller && selection.codexServiceTier === "fast"
     ? `${modelLabel} ${fastLabel}`
     : modelLabel;
@@ -359,13 +350,6 @@ function modelFirstSelectionFromRaw(
   if (raw === INHERIT_SENTINEL) {
     return null;
   }
-  if (raw.startsWith(CODEX_ULTRAFAST_OPTION_PREFIX)) {
-    const selectedModel = raw.slice(CODEX_ULTRAFAST_OPTION_PREFIX.length);
-    return catalog?.isActive(selectedModel) &&
-      catalog.supportsServiceTier(selectedModel, "ultrafast")
-      ? { selectedModel, codexServiceTier: "ultrafast" }
-      : null;
-  }
   if (raw.startsWith(CODEX_FAST_OPTION_PREFIX)) {
     const selectedModel = raw.slice(CODEX_FAST_OPTION_PREFIX.length);
     if (
@@ -390,11 +374,9 @@ function modelFirstSelectValue(
   if (!selection) {
     return INHERIT_SENTINEL;
   }
-  return selection.codexServiceTier === "ultrafast"
-    ? `${CODEX_ULTRAFAST_SELECTED_PREFIX}${selection.selectedModel}`
-    : selection.codexServiceTier === "fast"
-      ? `${CODEX_FAST_SELECTED_PREFIX}${selection.selectedModel}`
-      : selection.selectedModel;
+  return selection.codexServiceTier === "fast"
+    ? `${CODEX_FAST_SELECTED_PREFIX}${selection.selectedModel}`
+    : selection.selectedModel;
 }
 
 function codexFastOptionValue(model: string): string {
@@ -406,20 +388,6 @@ function modelFirstSelectionFromInteraction(
   currentSelection: ModelProviderSelection | null,
   catalog: ModelCatalog | null | undefined,
 ): ModelProviderSelection | null | undefined {
-  if (currentSelection?.codexServiceTier === "ultrafast") {
-    if (
-      raw === modelFirstSelectValue(currentSelection) ||
-      raw === currentSelection.selectedModel
-    ) {
-      return undefined;
-    }
-    if (
-      raw ===
-      `${CODEX_ULTRAFAST_OPTION_PREFIX}${currentSelection.selectedModel}`
-    ) {
-      return { selectedModel: currentSelection.selectedModel };
-    }
-  }
   // Fast uses a hidden selected-value marker, distinct from its toggle option.
   // Replaying that value must not parse it as the inherit-default sentinel.
   if (currentSelection?.codexServiceTier === "fast") {
@@ -438,9 +406,7 @@ function modelFirstSelectionFromInteraction(
 
 function isHiddenModelFirstSelectValue(value: string): boolean {
   return (
-    value === INHERIT_SENTINEL ||
-    value.startsWith(CODEX_FAST_SELECTED_PREFIX) ||
-    value.startsWith(CODEX_ULTRAFAST_SELECTED_PREFIX)
+    value === INHERIT_SENTINEL || value.startsWith(CODEX_FAST_SELECTED_PREFIX)
   );
 }
 
@@ -497,92 +463,66 @@ function ModelFirstRunModelRow({
     const fastLabel = t(($) => {
       return $.settings.models.picker.fast;
     });
-    const ultrafastAvailable = isRunModelUltrafastAvailable(runModel, catalog);
     return (
-      <>
-        <div
-          className={cn(
-            "relative flex overflow-hidden rounded-lg transition-colors hover:bg-state-hover has-[[data-highlighted]]:bg-state-hover",
-            selected &&
-              "bg-state-selected hover:bg-state-selected-hover has-[[data-highlighted]]:bg-state-selected-hover",
-          )}
-        >
-          <SelectItem
-            value={runModel.model}
-            aria-label={modelLabel}
-            // Two fixed columns sit at this row's right edge: the checkmark's
-            // (`pr-8`, shared with every other row) and the fast toggle's, which
-            // `pr-16` reserves immediately left of it. Both are reserved whether
-            // or not the row is selected -- shifting the content only when
-            // selected is what used to push the checkmark off its column.
-            className="min-w-0 flex-1 rounded-lg pr-16 hover:bg-transparent data-highlighted:bg-transparent"
-          >
-            <ModelFirstRunModelRowContent
-              runModel={runModel}
-              modelCapabilities={modelCapabilities}
-              selected={selected}
-              showSelectedIndicator={fastSelected}
-            />
-          </SelectItem>
-          <TooltipProvider delay={800} timeout={0}>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <SelectItem
-                    value={codexFastOptionValue(runModel.model)}
-                    aria-label={`${modelLabel} ${fastLabel}`}
-                    className={cn(
-                      // `right-8` parks the toggle in its own column beside the
-                      // checkmark's rather than on top of it, so it keeps a full
-                      // 32x32 hit area without ever displacing the check.
-                      "group/fast-option absolute inset-y-0 right-8 w-8 justify-center rounded-lg px-0 text-muted-foreground hover:bg-transparent data-highlighted:bg-transparent",
-                      fastSelected &&
-                        "text-amber-600 hover:text-amber-700 dark:text-amber-300 dark:hover:text-amber-200",
-                    )}
-                  >
-                    <Zap
-                      size={18}
-                      fill={fastSelected ? "currentColor" : "none"}
-                      className={cn(
-                        fastSelected
-                          ? "group-hover/fast-option:fill-none group-data-[highlighted]/fast-option:fill-none"
-                          : "group-hover/fast-option:fill-current group-data-[highlighted]/fast-option:fill-current",
-                      )}
-                      aria-hidden="true"
-                    />
-                  </SelectItem>
-                }
-              />
-              <TooltipContent side="top" className="text-xs">
-                {fastLabel} · <ModelFastImpact runModel={runModel} />
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
-        {ultrafastAvailable && (
-          <SelectItem
-            value={`${CODEX_ULTRAFAST_OPTION_PREFIX}${runModel.model}`}
-            aria-label={`${modelLabel} ${t(($) => {
-              return $.settings.models.picker.ultrafast;
-            })}`}
-            className="rounded-lg"
-          >
-            <Zap size={16} aria-hidden="true" />
-            <span className="ml-2">
-              {t(($) => {
-                return $.settings.models.picker.ultrafastMode;
-              })}{" "}
-              ·{" "}
-              {t(($) => {
-                return $.settings.models.picker.ultrafastImpact;
-              })}
-            </span>
-            {selected && selection?.codexServiceTier === "ultrafast" && (
-              <Check size={15} className="ml-auto" aria-hidden="true" />
-            )}
-          </SelectItem>
+      <div
+        className={cn(
+          "relative flex overflow-hidden rounded-lg transition-colors hover:bg-state-hover has-[[data-highlighted]]:bg-state-hover",
+          selected &&
+            "bg-state-selected hover:bg-state-selected-hover has-[[data-highlighted]]:bg-state-selected-hover",
         )}
-      </>
+      >
+        <SelectItem
+          value={runModel.model}
+          aria-label={modelLabel}
+          // Two fixed columns sit at this row's right edge: the checkmark's
+          // (`pr-8`, shared with every other row) and the fast toggle's, which
+          // `pr-16` reserves immediately left of it. Both are reserved whether
+          // or not the row is selected -- shifting the content only when
+          // selected is what used to push the checkmark off its column.
+          className="min-w-0 flex-1 rounded-lg pr-16 hover:bg-transparent data-highlighted:bg-transparent"
+        >
+          <ModelFirstRunModelRowContent
+            runModel={runModel}
+            modelCapabilities={modelCapabilities}
+            selected={selected}
+            showSelectedIndicator={fastSelected}
+          />
+        </SelectItem>
+        <TooltipProvider delay={800} timeout={0}>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <SelectItem
+                  value={codexFastOptionValue(runModel.model)}
+                  aria-label={`${modelLabel} ${fastLabel}`}
+                  className={cn(
+                    // `right-8` parks the toggle in its own column beside the
+                    // checkmark's rather than on top of it, so it keeps a full
+                    // 32x32 hit area without ever displacing the check.
+                    "group/fast-option absolute inset-y-0 right-8 w-8 justify-center rounded-lg px-0 text-muted-foreground hover:bg-transparent data-highlighted:bg-transparent",
+                    fastSelected &&
+                      "text-amber-600 hover:text-amber-700 dark:text-amber-300 dark:hover:text-amber-200",
+                  )}
+                >
+                  <Zap
+                    size={18}
+                    fill={fastSelected ? "currentColor" : "none"}
+                    className={cn(
+                      fastSelected
+                        ? "group-hover/fast-option:fill-none group-data-[highlighted]/fast-option:fill-none"
+                        : "group-hover/fast-option:fill-current group-data-[highlighted]/fast-option:fill-current",
+                    )}
+                    aria-hidden="true"
+                  />
+                </SelectItem>
+              }
+            />
+            <TooltipContent side="top" className="text-xs">
+              {fastLabel} · <ModelFastImpact runModel={runModel} />
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
     );
   }
   return (

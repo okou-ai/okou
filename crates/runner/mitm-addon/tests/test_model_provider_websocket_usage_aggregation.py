@@ -382,7 +382,6 @@ class TestModelProviderWebSocketUsageAggregation:
         ),
         [
             pytest.param(20, "priority", 20, None, ".fast", id="fast-omitted-tier"),
-            pytest.param(20, "ultrafast", 20, None, ".ultrafast", id="ultrafast-omitted-tier"),
             pytest.param(
                 272_001,
                 "priority",

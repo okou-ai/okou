@@ -233,11 +233,7 @@ const pageChatThreadEventSelection = Object.freeze({
 export function chatThreadServiceTierFromCodex(
   codexServiceTier: CodexServiceTier | null,
 ): ChatThreadServiceTier | null {
-  return codexServiceTier === "fast"
-    ? "priority"
-    : codexServiceTier === "ultrafast"
-      ? "ultrafast"
-      : null;
+  return codexServiceTier === "fast" ? "priority" : null;
 }
 
 function hasCanonicalAgentReference(

@@ -39,19 +39,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
     selected_model: z.string(),
   }),
   z.object({
-    action: z.literal("set-built-in-candidate-cooldown"),
-    selected_model: z.string(),
-    provider_type: z.string(),
-    upstream_model: z.string(),
-    unavailable_until: z.iso.datetime(),
-  }),
-  z.object({
-    action: z.literal("delete-built-in-candidate-cooldown"),
-    selected_model: z.string(),
-    provider_type: z.string(),
-    upstream_model: z.string(),
-  }),
-  z.object({
     action: z.literal("set-run-autonomy-budget"),
     run_id: z.uuid(),
     autonomy_budget: z.int().min(0).max(32),

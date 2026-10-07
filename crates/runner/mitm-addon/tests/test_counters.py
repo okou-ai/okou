@@ -58,9 +58,7 @@ class TestUsagePendingCounter:
             usage.increment_in_flight_flows()
             usage.decrement_in_flight_flows()
             pending_report = usage.counters.admit_pending_report()
-            buffered_report = usage.admit_buffered_report()
             pending_report.release()
-            buffered_report.release()
 
         assert mock_log.error.call_count == 0
         assert_pending(control_root, flows=0, buffered=0, reports=0)
@@ -73,27 +71,6 @@ class TestUsagePendingCounter:
 
         usage.counters.set_buffered_usage_events(0)
         assert_pending(control_root, flows=0, buffered=0, reports=0)
-
-    def test_buffered_report_lease_composes_with_usage_events(self, tmp_path):
-        control_root = tmp_path / "delivery-control"
-        usage.counters.set_buffered_usage_events(2)
-        lease = usage.admit_buffered_report()
-
-        assert_pending(
-            control_root,
-            flows=0,
-            buffered=3,
-            reports=0,
-        )
-
-        lease.release()
-
-        assert_pending(
-            control_root,
-            flows=0,
-            buffered=2,
-            reports=0,
-        )
 
     def test_buffered_usage_blocks_pending_until_flush(self, tmp_path, real_flow, mitm_ctx):
         control_root = tmp_path / "delivery-control"
@@ -162,7 +139,6 @@ class TestUsagePendingCounter:
         ),
         [
             (usage.counters.admit_pending_report, "reports", 0, 2, 0, 1),
-            (usage.admit_buffered_report, "buffered_reports", 2, 0, 1, 0),
         ],
     )
     def test_report_lease_double_release_logs_without_decrementing_other_reports(

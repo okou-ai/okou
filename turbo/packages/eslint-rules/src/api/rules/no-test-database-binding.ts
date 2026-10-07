@@ -5,10 +5,6 @@ const nativeHarness = "/src/test-fixtures/pglite-database.ts";
 const legacyHarness =
   "/src/signals/routes/__tests__/connector-catalog-immutable.test.ts";
 const isolatedSuites = [
-  "src/signals/routes/__tests__/chat-callbacks-cooldown.test.ts",
-  "src/signals/routes/__tests__/chat-events-provider-cooldown.test.ts",
-  "src/signals/routes/__tests__/workflow-queue-cooldown.test.ts",
-  "src/signals/routes/__tests__/model-providers.test.ts",
   "src/signals/routes/__tests__/test-runtime-state.test.ts",
 ] as const;
 

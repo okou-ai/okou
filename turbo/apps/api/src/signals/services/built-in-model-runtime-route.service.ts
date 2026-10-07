@@ -4,12 +4,10 @@ import {
   AUTO_RUN_PROVIDER,
   isAutoRunPreset,
 } from "@okouai/core/auto-run-model";
-import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 
-import { and, eq, gt } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
-import { nowDate } from "../../lib/time";
 import type { ReadonlyDb } from "../external/db";
 import {
   builtInRoutePricingRejectionMessage,
@@ -43,7 +41,7 @@ export function catalogBuiltInModelRouteUpstream(
 /**
  * The rejection for a new Auto run whose usage categories are not all priced;
  * null when the route is priced (and so unavailable for another reason, such
- * as a missing key or a cooldown) or the model is not Auto.
+ * as a missing key) or the model is not Auto.
  */
 export function unpricedBuiltInModelMessage(
   catalog: ModelCatalog,
@@ -90,7 +88,7 @@ async function loadBuiltInModelKeyId(
   return row?.id;
 }
 
-/** Resolves the Auto route when its key exists and it is not cooling down. */
+/** Resolves the Auto route when its key exists. */
 export async function resolveBuiltInModelRuntimeRoute(
   catalog: ModelCatalog,
   db: ReadonlyDb,
@@ -107,39 +105,18 @@ export async function resolveBuiltInModelRuntimeRoute(
   if (modelKeyId === undefined) {
     return null;
   }
-  const cooldowns = await db
-    .select({
-      modelRuntimeProvider: builtInModelCandidateCooldown.modelRuntimeProvider,
-      modelRuntimeModel: builtInModelCandidateCooldown.modelRuntimeModel,
-    })
-    .from(builtInModelCandidateCooldown)
-    .where(
-      and(
-        eq(builtInModelCandidateCooldown.selectedModel, selectedModel),
-        eq(
-          builtInModelCandidateCooldown.modelRuntimeProvider,
-          AUTO_RUN_PROVIDER,
-        ),
-        gt(builtInModelCandidateCooldown.unavailableUntil, nowDate()),
-      ),
-    );
   return builtInModelRuntimeRouteFromSnapshot({
     catalog,
     selectedModel,
     modelKeyId,
-    cooldowns,
   });
 }
 
-/** Chooses the Auto route from one batched key and cooldown snapshot. */
+/** Chooses the Auto route from one batched key snapshot. */
 export function builtInModelRuntimeRouteFromSnapshot(args: {
   readonly catalog: ModelCatalog;
   readonly selectedModel: string;
   readonly modelKeyId: string | undefined;
-  readonly cooldowns: readonly {
-    readonly modelRuntimeProvider: string;
-    readonly modelRuntimeModel: string;
-  }[];
   /** A new run's route pricing; an unpriced route is unavailable. */
   readonly routePricing?: BuiltInRoutePricing;
 }): BuiltInModelRuntimeRoute | null {
@@ -151,18 +128,10 @@ export function builtInModelRuntimeRouteFromSnapshot(args: {
   if (upstreamModel === null || args.modelKeyId === undefined) {
     return null;
   }
-  const cooled = args.cooldowns.some((cooldown) => {
-    return (
-      cooldown.modelRuntimeProvider === AUTO_RUN_PROVIDER &&
-      cooldown.modelRuntimeModel === upstreamModel
-    );
-  });
-  return cooled
-    ? null
-    : {
-        selectedModel: AUTO_RUN_MODEL,
-        providerType: AUTO_RUN_PROVIDER,
-        upstreamModel,
-        modelKeyId: args.modelKeyId,
-      };
+  return {
+    selectedModel: AUTO_RUN_MODEL,
+    providerType: AUTO_RUN_PROVIDER,
+    upstreamModel,
+    modelKeyId: args.modelKeyId,
+  };
 }

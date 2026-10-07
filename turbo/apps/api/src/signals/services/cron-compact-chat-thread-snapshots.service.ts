@@ -404,12 +404,7 @@ async function loadScopeProjection(db: SnapshotRootDb, scope: ScopeKey) {
           renamedAt: thread.renamedAt,
           selectedModel: thread.selectedModel,
           modelSettings: modelSettingsSchema.parse(thread.modelSettings ?? {}),
-          serviceTier:
-            thread.codexServiceTier === "fast"
-              ? "priority"
-              : thread.codexServiceTier === "ultrafast"
-                ? "ultrafast"
-                : null,
+          serviceTier: thread.codexServiceTier === "fast" ? "priority" : null,
           computerUseHostId: thread.computerUseHostId,
           cloudBrowserEnabled: thread.cloudBrowserEnabled,
         }),

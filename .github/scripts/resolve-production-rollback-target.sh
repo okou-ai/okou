@@ -59,6 +59,7 @@ readonly VIDEO_ENTITLEMENT_DROP_PATH=turbo/packages/db/src/migrations/1315_drop_
 readonly RETIRED_MODEL_CONFIGURATION_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1330_drop_retired_model_configuration_columns.sql
 readonly CHAT_THREAD_PROVIDER_PIN_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1332_drop_chat_thread_provider_pin_columns.sql
 readonly DEAD_MODEL_PROVIDER_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1333_drop_dead_model_provider_columns.sql
+readonly BUILT_IN_MODEL_CANDIDATE_COOLDOWN_DROP_PATH=turbo/packages/db/src/migrations/1336_drop_built_in_model_candidate_cooldown.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -295,6 +296,19 @@ if [[ ! "$dead_model_provider_columns_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$dead_model_provider_columns_drop_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the dead model provider column drop: ${dead_model_provider_columns_drop_commit}."
+fi
+
+# Migration 1336 drops built_in_model_candidate_cooldown. Every earlier API
+# reads it while resolving the Auto route for run claims and Pi memory
+# maintenance, and writes it from runner failure reports, so it cannot serve
+# after 1336.
+built_in_model_candidate_cooldown_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$BUILT_IN_MODEL_CANDIDATE_COOLDOWN_DROP_PATH" | sed -n '1p')
+if [[ ! "$built_in_model_candidate_cooldown_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged built-in model candidate cooldown drop on main."
+fi
+if ! git merge-base --is-ancestor "$built_in_model_candidate_cooldown_drop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the built-in model candidate cooldown drop: ${built_in_model_candidate_cooldown_drop_commit}."
 fi
 
 # Chat Event V8 removes eight event types and two context types. Earlier APIs

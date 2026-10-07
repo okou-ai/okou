@@ -14,10 +14,6 @@ const immutableCatalogTests = [
 ];
 
 const isolatedDatabaseTests = [
-  "src/signals/routes/__tests__/chat-callbacks-cooldown.test.ts",
-  "src/signals/routes/__tests__/chat-events-provider-cooldown.test.ts",
-  "src/signals/routes/__tests__/workflow-queue-cooldown.test.ts",
-  "src/signals/routes/__tests__/model-providers.test.ts",
   "src/signals/routes/__tests__/test-runtime-state.test.ts",
 ];
 const databaseLifecycleTests = [

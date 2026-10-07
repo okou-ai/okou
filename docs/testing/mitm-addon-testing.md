@@ -302,9 +302,6 @@ suites before committing the upgrade.
 | `test_model_provider_websocket_source_reporting.py`     | Model provider WebSocket source reporting, admission, and frame parsing                                              |
 | `test_model_provider_websocket_usage_aggregation.py`    | Model provider WebSocket source reconciliation, aggregation, and billing tier state                                  |
 | `test_model_provider_websocket_lifecycle.py`            | Model provider WebSocket HTTP upgrade and terminal usage lifecycle                                                   |
-| `test_codex_output_timing.py`                           | Default Codex provider-output timing observations over WebSocket                                                     |
-| `test_claude_output_timing.py`                          | Claude Code provider-output lifecycle timing over Anthropic SSE                                                      |
-| `test_provider_output_timing.py`                        | Cross-provider output-timing store capacity and lifecycle independence                                               |
 | `test_websocket_retention.py`                           | Registered WebSocket message retention and cleanup                                                                   |
 | `test_model_provider_websocket_metadata.py`             | Model provider WebSocket usage metadata parsing and valid-frame recovery                                             |
 | `test_model_provider_usage.py`                          | Model provider usage reporter                                                                                        |

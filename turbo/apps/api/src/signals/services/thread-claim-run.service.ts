@@ -374,7 +374,6 @@ import {
   memorySummaryProjectionReadResult,
   type MemorySummaryProjectionReadResult,
 } from "./memory-summary-projection.service";
-import { isCatalogUltrafastServiceTierSupported } from "./model-route-capabilities.service";
 
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
@@ -506,7 +505,6 @@ import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { blobs } from "@okouai/db/schema/blob";
-import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
@@ -556,7 +554,6 @@ import {
   desc,
   eq,
   exists,
-  gt,
   inArray,
   isNotNull,
   isNull,
@@ -1599,7 +1596,7 @@ type ModelContext =
       readonly effectiveModelProvider: string | null | undefined;
       readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
       readonly cliAgentType: string | null;
-      readonly codexServiceTier: "fast" | "ultrafast" | undefined;
+      readonly codexServiceTier: "fast" | undefined;
       readonly reasoningEffort: ReasoningEffort | null;
       readonly piExecution: boolean;
     }
@@ -2385,7 +2382,7 @@ type QueuedModelContext =
         readonly error: RunErrorResponse | undefined;
       };
       readonly featureSwitchContext: FeatureSwitchContext;
-      readonly runCodexServiceTier: "fast" | "ultrafast" | undefined;
+      readonly runCodexServiceTier: "fast" | undefined;
       readonly reasoningEffort: ReasoningEffort | undefined;
       readonly builtInModelRuntimeRoute:
         | BuiltInModelRuntimeRoute
@@ -3010,25 +3007,6 @@ export function createThreadClaimRunObjects(
       return row.vendor === AUTO_RUN_KEY_VENDOR;
     })?.id;
   });
-  const cooldowns$ = computed(async (get) => {
-    const pin = await get(queuedModelRuntimeModelPin$);
-    if ("status" in pin || !pin.selectedModel) {
-      return [];
-    }
-    return await get(db$)
-      .select({
-        modelRuntimeProvider:
-          builtInModelCandidateCooldown.modelRuntimeProvider,
-        modelRuntimeModel: builtInModelCandidateCooldown.modelRuntimeModel,
-      })
-      .from(builtInModelCandidateCooldown)
-      .where(
-        and(
-          eq(builtInModelCandidateCooldown.selectedModel, pin.selectedModel),
-          gt(builtInModelCandidateCooldown.unavailableUntil, nowDate()),
-        ),
-      );
-  });
   const queuedModelRuntimeBuiltInRuntimeRoute$ = computed(async (get) => {
     const pin = await get(queuedModelRuntimeModelPin$);
     if (
@@ -3051,15 +3029,10 @@ export function createThreadClaimRunObjects(
       },
       await get(context.modelPricing$),
     );
-    const [modelKeyId, cooldowns] = await Promise.all([
-      get(modelKeyId$),
-      get(cooldowns$),
-    ]);
     return builtInModelRuntimeRouteFromSnapshot({
       catalog,
       selectedModel: pin.selectedModel,
-      modelKeyId,
-      cooldowns,
+      modelKeyId: await get(modelKeyId$),
       routePricing,
     });
   });
@@ -6635,16 +6608,6 @@ export function createThreadClaimRunObjects(
     const provider = providerResult.value;
     if (isRouteError(provider)) {
       return provider;
-    }
-    if (
-      context.input.args.codexServiceTier === "ultrafast" &&
-      !isCatalogUltrafastServiceTierSupported(
-        context.input.args.catalog,
-        provider?.selectedModel,
-        provider?.type,
-      )
-    ) {
-      return badRequestMessage("Ultrafast is unavailable for this model route");
     }
     const materialized = safeSync(() => {
       return materializePreparedPiProvider(
@@ -12014,7 +11977,7 @@ interface PendingRunArguments {
   readonly chatThreadId?: string;
   readonly agentRunMetadata?: AgentRunMetadata;
   readonly agentRunModelPin?: AgentRunModelPin;
-  readonly codexServiceTier?: "fast" | "ultrafast";
+  readonly codexServiceTier?: "fast";
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
   readonly timingDimensions?: ApiDispatchTimingDimensions;
   readonly threadSessionResolution?: PendingThreadSessionResolution;
@@ -15487,7 +15450,7 @@ function buildAgentRunPlatformEnvironment(args: {
   readonly agentId: string;
   readonly triggerSource: TriggerSource;
   readonly chatThreadId: string | undefined;
-  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
+  readonly codexServiceTier: "fast" | undefined;
   readonly reasoningEffort?: ReasoningEffort | null;
 }): Record<string, string> {
   const integrationByTriggerSource: Partial<Record<TriggerSource, string>> = {
@@ -15802,7 +15765,7 @@ interface ProductRunArgs {
   readonly selectedModelOverride?: string;
   readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
   readonly piExecution: boolean;
-  readonly codexServiceTier?: "fast" | "ultrafast";
+  readonly codexServiceTier?: "fast";
   readonly agentRunMetadata?: AgentRunMetadata;
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
   readonly body: CreateRunBody;
@@ -17054,12 +17017,6 @@ function builtinFirewallEntryForMetadata(
   };
 }
 
-function inlineFirewallEntry(
-  firewall: ExpandedFirewallConfig,
-): ExecutionFirewallEntry {
-  return { kind: "inline", firewall: runtimeFirewall(firewall) };
-}
-
 function customConnectorInlineFirewallEntry(
   firewall: ExpandedFirewallConfig,
   customConnectorIdByFirewallName: Readonly<Record<string, string>>,
@@ -17117,9 +17074,9 @@ function modelProviderPermissionManifest(
     return undefined;
   }
 
-  const firewall =
-    modelProvider.firewall ??
-    getModelProviderFirewall(modelProvider.concreteType ?? modelProvider.type);
+  const firewall = getModelProviderFirewall(
+    modelProvider.concreteType ?? modelProvider.type,
+  );
   if (!firewall) {
     return undefined;
   }
@@ -17128,12 +17085,7 @@ function modelProviderPermissionManifest(
   const denySet = new Set(firewall.defaultPolicies?.deny ?? []);
   const askSet = new Set(firewall.defaultPolicies?.ask ?? []);
   return {
-    firewalls: [
-      // A name-only entry would lose the endpoint selected for this run.
-      modelProvider.firewall !== undefined
-        ? inlineFirewallEntry(firewall)
-        : builtinFirewallEntry(firewall, vars),
-    ],
+    firewalls: [builtinFirewallEntry(firewall, vars)],
     environmentSecretPlaceholders: firewallSecretPlaceholdersFromFirewalls([
       firewall,
     ]),
@@ -18455,7 +18407,7 @@ interface RunModelProviderArgs {
   /** Immutable Pi eligibility captured by the caller's admission snapshot. */
   readonly piExecution: boolean;
   readonly retainedRunId?: string;
-  readonly codexServiceTier?: "fast" | "ultrafast";
+  readonly codexServiceTier?: "fast";
   readonly agentRunMetadata?: AgentRunMetadata;
   readonly queueFirstAssociation?: QueueFirstRunAssociation;
 }

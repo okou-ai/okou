@@ -212,16 +212,11 @@ initialization failure, failed drainage and node-postgres-compatible int8/numeri
 text decoding without precision loss.
 `api/no-test-database-binding` confines engine imports/construction to the
 harness (and the existing catalog mechanism) and prevents the migrated
-`model-providers.test.ts`, `test-runtime-state.test.ts` and the three dedicated
-`*-cooldown.test.ts` suites from returning to a serialized project. The dedicated
-callback, model-admission and workflow suites preserve their public rejection,
-no-extra-Run and billing-report assertions while isolating each global Auto
-cooldown write. Their former siblings retain native PostgreSQL, including
-concurrent event writes and queue/claim contracts. The sole
-central DB `vi.mock` is permitted; service mocks and case-local DB mocks remain
-forbidden. These lexical guards do not prove runtime isolation.
+`test-runtime-state.test.ts` suite from returning to a serialized project. The
+sole central DB `vi.mock` is permitted; service mocks and case-local DB mocks
+remain forbidden. These lexical guards do not prove runtime isolation.
 
-All migrated cooldown suites use this per-case harness without serial scheduling.
+Isolated suites use this per-case harness without serial scheduling.
 The harness uses PGlite's driver parsers to preserve int8/numeric text exactly as
 node-postgres does, rather than rewriting SQL results or weakening row schemas.
 

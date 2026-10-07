@@ -15,7 +15,7 @@ export async function updateModelRouteCapabilitiesFixture(args: {
   readonly model: string;
   readonly efforts: readonly string[];
   readonly defaultEffort: string | null;
-  readonly serviceTiers: readonly ("priority" | "ultrafast")[];
+  readonly serviceTiers: readonly "priority"[];
 }): Promise<void> {
   const updated = await db()
     .update(modelRoutes)

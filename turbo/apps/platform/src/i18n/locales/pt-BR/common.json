@@ -4959,10 +4959,7 @@
         "models": "Modelos",
         "noConfiguredModels": "Nenhum modelo configurado",
         "pro": "Pro",
-        "standard": "Padrão",
-        "ultrafast": "Ultrarrápido",
-        "ultrafastImpact": "Velocidade de tokens até 8× · Preço dos tokens da API OpenAI 6×",
-        "ultrafastMode": "Modo ultrarrápido"
+        "standard": "Padrão"
       },
       "reset": {
         "confirmDescription": "Use uma redefinição do Codex para redefinir suas janelas de uso atuais. Você tem {{remaining}}.",
@@ -5093,26 +5090,6 @@
         "sectionTitle": "Chat"
       },
       "debug": {
-        "builtInModelCooldown": {
-          "cancelAction": "Cancelar cooldown",
-          "cancelDescription": "Cancelar este cooldown global torna a rota imediatamente disponível para todos os workspaces.",
-          "cancelling": "Cancelando...",
-          "cancelTitle": "Cancelar o cooldown global?",
-          "cancelWarning": "Uma falha posterior qualificada pode colocar esta rota novamente em cooldown.",
-          "description": "Inspecione as rotas de modelos integrados temporariamente excluídas da seleção de fallback.",
-          "empty": "Nenhuma rota de modelo integrado está em cooldown global no momento.",
-          "globalActive": "cooldowns globais ativos",
-          "globalExplanation": "Cooldowns são um estado operacional global e afetam todos os workspaces que usam modelos integrados.",
-          "keepCooldown": "Manter cooldown",
-          "loading": "Carregando diagnósticos de cooldown de modelos integrados...",
-          "providerType": "Tipo de provedor",
-          "refresh": "Atualizar",
-          "selectedModel": "Modelo selecionado",
-          "title": "Fallback de modelos integrados",
-          "unavailable": "Os diagnósticos de cooldown de modelos integrados estão indisponíveis.",
-          "unavailableUntil": "Indisponível até",
-          "upstreamModel": "Modelo upstream"
-        },
         "capture": {
           "disabled": "Desativado",
           "enabled_one": "Ativado por mais {{count}} execução",

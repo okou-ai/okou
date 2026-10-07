@@ -73,17 +73,13 @@ export const chatPageModelSelection$ = computed(
         get(availableRunModels$),
         get(modelCatalog$),
       ]);
-      const ultrafast = user.value.codexServiceTier === "ultrafast";
       return isServiceTierAvailableForSelection({
         models,
         catalog,
         selectedModel: user.value.selectedModel,
-        tier: ultrafast ? "ultrafast" : "priority",
+        tier: "priority",
       })
-        ? {
-            ...selection,
-            codexServiceTier: ultrafast ? "ultrafast" : "fast",
-          }
+        ? { ...selection, codexServiceTier: "fast" }
         : selection;
     }
     const [models, userPreference, catalog] = await Promise.all([

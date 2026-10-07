@@ -204,10 +204,7 @@ export function userModelPreference({
         ? row.selectedModel
         : null;
     const serviceTier: ChatThreadServiceTier | null =
-      selectedModel &&
-      (row?.serviceTier === "priority" || row?.serviceTier === "ultrafast")
-        ? row.serviceTier
-        : null;
+      selectedModel && row?.serviceTier === "priority" ? row.serviceTier : null;
     // A model retired from the catalog reads as unset rather than throwing:
     // the column is not re-validated when the catalog changes.
     const selectedImageModel = isImageModelId(row?.selectedImageModel)

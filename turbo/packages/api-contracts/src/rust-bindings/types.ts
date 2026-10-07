@@ -454,7 +454,7 @@ export const rustTypeBindings = [
         rustDoc: ["API-owned dialect-aware non-secret Pi model configuration."],
         variants: {
           "openai-responses": [
-            "Public Responses route with optional priority or Astra Ultrafast tier.",
+            "Public Responses route with optional priority tier.",
           ],
           "openai-codex-responses": [
             "Native Codex Responses route with optional fast tier.",

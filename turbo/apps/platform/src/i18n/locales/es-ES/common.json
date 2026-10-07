@@ -4959,10 +4959,7 @@
         "models": "Modelos",
         "noConfiguredModels": "Sin modelos configurados",
         "pro": "Pro",
-        "standard": "Estándar",
-        "ultrafast": "Ultrarrápido",
-        "ultrafastImpact": "Hasta 8× más velocidad de tokens · 6× el precio de tokens de la API de OpenAI",
-        "ultrafastMode": "Modo ultrarrápido"
+        "standard": "Estándar"
       },
       "reset": {
         "confirmDescription": "Usa un restablecimiento de Codex para reiniciar tus periodos de consumo actuales. Te quedan {{remaining}}.",
@@ -5093,26 +5090,6 @@
         "sectionTitle": "Chat"
       },
       "debug": {
-        "builtInModelCooldown": {
-          "cancelAction": "Cancelar tiempo de espera",
-          "cancelDescription": "Cancelar este tiempo de espera global hace que la ruta vuelva a estar disponible de inmediato para todos los espacios de trabajo.",
-          "cancelling": "Cancelando...",
-          "cancelTitle": "¿Cancelar el tiempo de espera global?",
-          "cancelWarning": "Un fallo posterior que cumpla los requisitos puede volver a poner esta ruta en tiempo de espera.",
-          "description": "Inspecciona las rutas de modelos integrados excluidas temporalmente de la selección de respaldo.",
-          "empty": "Actualmente no hay rutas de modelos integrados en tiempo de espera global.",
-          "globalActive": "tiempos de espera globales activos",
-          "globalExplanation": "Los tiempos de espera son un estado operativo global y afectan a todos los espacios de trabajo que usan modelos integrados.",
-          "keepCooldown": "Mantener tiempo de espera",
-          "loading": "Cargando diagnósticos de tiempo de espera de modelos integrados...",
-          "providerType": "Tipo de proveedor",
-          "refresh": "Actualizar",
-          "selectedModel": "Modelo seleccionado",
-          "title": "Respaldo de modelos integrados",
-          "unavailable": "Los diagnósticos de tiempo de espera de modelos integrados no están disponibles.",
-          "unavailableUntil": "No disponible hasta",
-          "upstreamModel": "Modelo de origen"
-        },
         "capture": {
           "disabled": "Desactivado",
           "enabled_one": "Activado para la próxima {{count}} ejecución",

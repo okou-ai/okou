@@ -111,10 +111,7 @@ import {
 } from "./chat-user-message.service";
 import { recordGetStartedWorkflowSql } from "./get-started-workflow.service";
 import type { ModelCatalog } from "./model-catalog.service";
-import {
-  catalogModelOffersUltrafast,
-  isCatalogFastServiceTierSupported,
-} from "./model-route-capabilities.service";
+import { isCatalogFastServiceTierSupported } from "./model-route-capabilities.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { selectedUserPresentationTemplateIds } from "./presentation-template-data.service";
 import {
@@ -686,14 +683,6 @@ function requestedThreadRunSettings(
   const codexServiceTier = keepsStoredTier
     ? current.codexServiceTier
     : (requestedTier ?? null);
-  // The catalog route capabilities decide Ultrafast availability, including
-  // a stored thread tier kept by this send.
-  if (
-    codexServiceTier === "ultrafast" &&
-    !catalogModelOffersUltrafast(catalog, selectedModel)
-  ) {
-    return badRequestMessage("Ultrafast is unavailable for this model route");
-  }
   return {
     selectedModel,
     modelSettings: effort.modelSettings,
@@ -894,11 +883,7 @@ const resolveSendThread$ = command(
       selectedModel: initialModel?.selectedModel ?? null,
       modelSettings: defaults.modelSettings,
       codexServiceTier:
-        initialModel?.serviceTier === "priority"
-          ? "fast"
-          : initialModel?.serviceTier === "ultrafast"
-            ? "ultrafast"
-            : null,
+        initialModel?.serviceTier === "priority" ? "fast" : null,
     });
     if ("status" in runSettings) {
       return runSettings;

@@ -4874,10 +4874,7 @@
         "models": "モデル",
         "noConfiguredModels": "設定されたモデルはありません",
         "pro": "プロ",
-        "standard": "標準",
-        "ultrafast": "ウルトラファスト",
-        "ultrafastImpact": "トークン生成速度が最大8倍 · OpenAI APIのトークン料金は6倍",
-        "ultrafastMode": "ウルトラファストモード"
+        "standard": "標準"
       },
       "reset": {
         "confirmDescription": "Codexリセットを1回使用して、現在の使用枠をリセットします。{{remaining}}。",
@@ -5005,26 +5002,6 @@
         "sectionTitle": "チャット"
       },
       "debug": {
-        "builtInModelCooldown": {
-          "cancelAction": "クールダウンを解除",
-          "cancelDescription": "このグローバルクールダウンを解除すると、このルートがすべてのワークスペースで直ちに利用可能になります。",
-          "cancelling": "解除しています...",
-          "cancelTitle": "グローバルクールダウンを解除しますか？",
-          "cancelWarning": "後で対象となる障害が発生すると、このルートは再びクールダウンに入ることがあります。",
-          "description": "フォールバック選択から一時的に除外されている内蔵モデルルートを確認します。",
-          "empty": "現在、グローバルクールダウン中の内蔵モデルルートはありません。",
-          "globalActive": "有効なグローバルクールダウン",
-          "globalExplanation": "クールダウンはグローバルな運用状態であり、内蔵モデルを使用するすべてのワークスペースに影響します。",
-          "keepCooldown": "クールダウンを維持",
-          "loading": "内蔵モデルのクールダウン診断を読み込んでいます...",
-          "providerType": "プロバイダータイプ",
-          "refresh": "更新",
-          "selectedModel": "選択されたモデル",
-          "title": "内蔵モデルのフォールバック",
-          "unavailable": "内蔵モデルのクールダウン診断は利用できません。",
-          "unavailableUntil": "利用不可期限",
-          "upstreamModel": "アップストリームモデル"
-        },
         "capture": {
           "disabled": "障害者",
           "enabled_one": "次回の {{count}} の実行で有効になります",

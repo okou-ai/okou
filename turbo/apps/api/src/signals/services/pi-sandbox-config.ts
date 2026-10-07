@@ -9,7 +9,6 @@ import {
   piThinkingLevelForEffort,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { OPENROUTER_US_ORIGIN } from "@okouai/api-contracts/contracts/openrouter-routing";
 import {
   PI_MODEL_CONFIG_CURRENT_GENERATION,
   PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
@@ -59,7 +58,7 @@ export function shouldUsePiExecution(args: {
   readonly modelProviderType: string | null | undefined;
   /** The selected model's catalog projection (`piCatalogModel`). */
   readonly catalogModel: PiCatalogModel | null;
-  readonly codexServiceTier: "fast" | "ultrafast" | undefined;
+  readonly codexServiceTier: "fast" | undefined;
   readonly builtInModelRuntimeRoute: BuiltInModelRuntimeRoute | undefined;
 }): boolean {
   return (
@@ -76,7 +75,6 @@ export function shouldUsePiExecution(args: {
 
 interface PiModelProviderConfigInput {
   readonly upstreamModel?: string;
-  readonly credentialOwner?: ResolvedModelProviderEnvironment["credentialOwner"];
   readonly piModelConfig?: PiModelConfig;
   readonly type: string;
   readonly concreteType?: string;
@@ -87,11 +85,10 @@ interface PiModelProviderConfigInput {
 function resolveCodexSubscriptionPiModelConfig(
   provider: PiModelProviderConfigInput,
   routeClass: PiRouteClass | null,
-  codexServiceTier: "fast" | "ultrafast" | undefined,
+  codexServiceTier: "fast" | undefined,
 ): PiModelConfig | null {
   if (
     provider.type !== "codex-oauth-token" ||
-    codexServiceTier === "ultrafast" ||
     routeClass !== "gpt-codex" ||
     (provider.concreteType !== undefined &&
       provider.concreteType !== "codex-oauth-token") ||
@@ -159,7 +156,7 @@ function resolveCodexSubscriptionPiModelConfig(
 function resolvePiRouteModelConfig(
   provider: PiModelProviderConfigInput | null,
   catalogModel: PiCatalogModel | null,
-  codexServiceTier: "fast" | "ultrafast" | undefined,
+  codexServiceTier: "fast" | undefined,
 ): PiModelConfig | null {
   if (!provider || !provider.selectedModel) {
     return null;
@@ -219,12 +216,6 @@ function resolveResponsesPiModelConfig(
   const endpoint = getModelProviderPiEndpoint(
     concreteType.data,
     "openai-responses",
-    // Captured global endpoints remain readable; only a captured US endpoint
-    // selects the owner-gated US route.
-    provider.credentialOwner &&
-      provider.environment.OPENAI_BASE_URL === `${OPENROUTER_US_ORIGIN}/api/v1`
-      ? { credentialOwner: provider.credentialOwner, model }
-      : undefined,
   );
   if (!endpoint) {
     return null;
@@ -265,7 +256,7 @@ function resolveResponsesPiModelConfig(
 export function resolvePiSandboxModelConfig(
   provider: PiModelProviderConfigInput | null,
   catalogModel: PiCatalogModel | null,
-  codexServiceTier: "fast" | "ultrafast" | undefined = undefined,
+  codexServiceTier: "fast" | undefined = undefined,
   reasoningEffort: ReasoningEffort | null | undefined = undefined,
 ): PiModelConfig | null {
   const config = resolvePiRouteModelConfig(
@@ -311,7 +302,7 @@ function assertCurrentPiCliArtifact(): void {
 export interface PiModelPreparationInput {
   readonly catalog: ModelCatalog;
   readonly piExecution: boolean;
-  readonly codexServiceTier?: "fast" | "ultrafast";
+  readonly codexServiceTier?: "fast";
   readonly reasoningEffort?: ReasoningEffort | null;
 }
 

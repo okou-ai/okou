@@ -1,0 +1,1 @@
+DROP TABLE "built_in_model_candidate_cooldown" CASCADE;

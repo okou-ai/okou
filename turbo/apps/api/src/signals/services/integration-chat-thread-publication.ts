@@ -33,11 +33,7 @@ export function integrationChatThreadValues(
     agentId: args.agentId,
     selectedModel: args.initialModel.selectedModel,
     codexServiceTier:
-      args.initialModel.serviceTier === "priority"
-        ? ("fast" as const)
-        : args.initialModel.serviceTier === "ultrafast"
-          ? ("ultrafast" as const)
-          : null,
+      args.initialModel.serviceTier === "priority" ? ("fast" as const) : null,
     modelSettings: defaults.modelSettings,
     cloudBrowserEnabled: defaults.cloudBrowserEnabled,
     title: null,

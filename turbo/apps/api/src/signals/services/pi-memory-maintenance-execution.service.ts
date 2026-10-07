@@ -513,17 +513,13 @@ const DEFAULT_FIREWALL_SECRET_PLACEHOLDER =
 function maintenanceModelPermissionManifest(
   modelProvider: ResolvedModelProviderEnvironment,
 ): PermissionManifest | undefined {
-  const firewall =
-    modelProvider.firewall ??
-    getModelProviderFirewall(modelProvider.concreteType ?? modelProvider.type);
+  const firewall = getModelProviderFirewall(
+    modelProvider.concreteType ?? modelProvider.type,
+  );
   if (!firewall) {
     return undefined;
   }
   const entry = ((): ExecutionFirewallEntry => {
-    // A name-only entry would lose the endpoint selected for this run.
-    if (modelProvider.firewall !== undefined) {
-      return { kind: "inline", firewall: runtimeFirewall(firewall) };
-    }
     const usesBaseUrlVars = firewall.apis.some((api) => {
       return [...api.base.matchAll(FIREWALL_BASE_URL_VAR_PATTERN)].length > 0;
     });

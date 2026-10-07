@@ -3,7 +3,7 @@ import { pathToFileURL } from "node:url";
 import { Client } from "pg";
 import { getBuiltInRouteProviderVendor } from "@okouai/api-contracts/contracts/model-providers";
 
-const SERVICE_TIERS: ReadonlySet<string> = new Set(["priority", "ultrafast"]);
+const SERVICE_TIERS: ReadonlySet<string> = new Set(["priority"]);
 
 interface CatalogRow {
   model: string;

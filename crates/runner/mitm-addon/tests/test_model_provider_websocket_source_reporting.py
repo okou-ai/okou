@@ -8,7 +8,6 @@ from mitmproxy import http
 
 import flow_metadata_keys as metadata_keys
 import mitm_addon
-import model_provider_failure
 import usage
 from tests.jsonl_log_helpers import jsonl_exists_after_flush, read_jsonl_entries_after_flush
 from tests.model_provider_flow_helpers import (
@@ -158,7 +157,6 @@ class TestModelProviderWebSocketSourceReporting:
     ):
         """Codex Responses WebSocket frames should bill like SSE events."""
         flow = make_openai_responses_websocket_flow(real_flow, tmp_path)
-        model_provider_failure.admit_flow(flow)
         mitm_addon.responseheaders(flow)
         full_body_feeds = capture_openai_responses_extractor_feeds(monkeypatch)
         assert flow.metadata["model_websocket_usage_enabled"] is True
@@ -225,7 +223,6 @@ class TestModelProviderWebSocketSourceReporting:
         monkeypatch: pytest.MonkeyPatch,
     ):
         flow = make_openai_responses_websocket_flow(real_flow, tmp_path)
-        model_provider_failure.admit_flow(flow)
         mitm_addon.responseheaders(flow)
         proxy_log = Path(flow.metadata[metadata_keys.SANDBOX_PROXY_LOG_PATH])
         full_body_feeds = capture_openai_responses_extractor_feeds(monkeypatch)
@@ -269,13 +266,6 @@ class TestModelProviderWebSocketSourceReporting:
             entry for entry in proxy_entries if entry.get("type") == "model_usage_correlation"
         ]
         assert correlation_entry["reason"] == "correlation_cap"
-        [failure_entry] = [
-            entry
-            for entry in proxy_entries
-            if entry.get("type") == "model_provider_failure"
-            and entry.get("disposition") == "suppressed"
-        ]
-        assert failure_entry["reason"] == "invalid_server_event"
         assert model_provider_usage_sources(flow) == {}
         expected_rows = [
             ("gpt-5.5", "tokens.input", 7),

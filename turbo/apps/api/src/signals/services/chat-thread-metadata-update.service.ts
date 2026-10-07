@@ -404,7 +404,7 @@ const titleMetadataStateSchema = z.object({
   title: z.string().nullable(),
   titleTruncated: z.boolean(),
   selectedModel: z.string().nullable(),
-  codexServiceTier: z.enum(["fast", "ultrafast"]).nullable(),
+  codexServiceTier: z.enum(["fast"]).nullable(),
   updatedAt: pgTimestampWithoutTimezoneToDateSchema,
 });
 

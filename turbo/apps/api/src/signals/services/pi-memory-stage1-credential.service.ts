@@ -1,5 +1,4 @@
 import { getModelProviderPiEndpoint } from "@okouai/api-contracts/contracts/model-provider-firewalls";
-import { getOpenRouterBaseUrl } from "@okouai/api-contracts/contracts/openrouter-routing";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
@@ -217,6 +216,13 @@ async function builtinCredential(
   if (route?.providerType !== "openrouter-codex") {
     return skip("provider_model_unsupported");
   }
+  const endpoint = getModelProviderPiEndpoint(
+    route.providerType,
+    "openai-responses",
+  );
+  if (!endpoint) {
+    return skip("provider_model_unsupported");
+  }
   // The served route's own pricing trigger. The route was resolved from this
   // snapshot, so a miss is a broken invariant: fail closed rather than bill
   // every token at the base (single-tier) categories.
@@ -249,10 +255,7 @@ async function builtinCredential(
       provider: "openrouter",
       apiKey,
       model: route.upstreamModel,
-      baseUrl: getOpenRouterBaseUrl("responses", {
-        credentialOwner: "builtin",
-        model: route.upstreamModel,
-      }),
+      baseUrl: endpoint.baseUrl,
       dialect: "openai-responses",
       transport: "sse",
     },

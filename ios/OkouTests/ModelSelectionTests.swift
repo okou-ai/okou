@@ -28,7 +28,6 @@ final class ModelSelectionTests: XCTestCase {
     let option = try decodeModel(
       availability: "reconnect_required", model: resolved, routeStatus: "missing_provider")
     XCTAssertTrue(option.supportsServiceTier("priority", catalog: catalog))
-    XCTAssertFalse(option.supportsServiceTier("ultrafast", catalog: catalog))
     XCTAssertFalse(option.supportsServiceTier("unsupported", catalog: catalog))
   }
 
@@ -39,7 +38,6 @@ final class ModelSelectionTests: XCTestCase {
     let absent = try decodeModel(
       availability: "available", model: "active", subscriptionTier: "null")
     XCTAssertTrue(offered.supportsServiceTier("priority", catalog: catalog))
-    XCTAssertFalse(offered.supportsServiceTier("ultrafast", catalog: catalog))
     XCTAssertFalse(absent.supportsServiceTier("priority", catalog: catalog))
   }
 

@@ -306,8 +306,19 @@ export const indicatorsSchema = z.object({
 const chatThreadEventIdSchema = z.string().uuid();
 export { type ReasoningEffort } from "./model-reasoning-effort";
 
-const codexServiceTierSchema = z.enum(["fast", "ultrafast"]);
-export const chatThreadServiceTierSchema = z.enum(["priority", "ultrafast"]);
+const codexServiceTierSchema = z.enum(["fast"]);
+export const chatThreadServiceTierSchema = z.enum(["priority"]);
+/**
+ * Persisted thread events, snapshot archives, and client caches can still carry
+ * the retired Ultrafast tier. Read it as the Standard tier instead of failing.
+ */
+const persistedChatThreadServiceTierSchema = z
+  .enum(["priority", "ultrafast"])
+  .nullable()
+  .default(null)
+  .transform((tier) => {
+    return tier === "priority" ? tier : null;
+  });
 
 const chatThreadSnapshotProjectionSchema = z.object({
   id: z.string().uuid(),
@@ -326,7 +337,7 @@ const chatThreadSnapshotProjectionSchema = z.object({
   modelSettings: modelSettingsSchema.optional(),
   /** Legacy pre-GA projection. Ignored by current clients. */
   reasoningEffort: reasoningEffortSchema.nullable().optional(),
-  serviceTier: chatThreadServiceTierSchema.nullable().default(null),
+  serviceTier: persistedChatThreadServiceTierSchema,
   computerUseHostId: z.string().uuid().nullable().default(null),
   cloudBrowserEnabled: z.boolean().optional(),
 });
@@ -368,7 +379,7 @@ const chatThreadEventSchema = z.object({
   modelSettingsPatch: modelSettingsPatchSchema.optional(),
   /** Legacy pre-GA projection. Ignored by current clients. */
   reasoningEffort: reasoningEffortSchema.nullable().optional(),
-  serviceTier: chatThreadServiceTierSchema.nullable().default(null),
+  serviceTier: persistedChatThreadServiceTierSchema,
   computerUseHostId: z.string().uuid().nullable().default(null),
   cloudBrowserEnabled: z.boolean().optional(),
   createdAt: z.string(),

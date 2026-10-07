@@ -5,10 +5,12 @@ import {
   chatThreadByIdContract,
   chatEventsContract,
   chatThreadComputerUseHostContract,
+  chatThreadModelSelectionContract,
   chatThreadDraftSchema,
   chatThreadArtifactGoogleDriveSyncSchema,
   chatThreadsContract,
   chatEventSchema,
+  chatThreadSnapshotArchiveSchema,
   generationTemplateRequestSchema,
   userMessageDocumentSchema,
   userMessageInputDocumentSchema,
@@ -705,5 +707,43 @@ describe("chat thread generation template contract", () => {
     });
 
     expect(parsed.success).toBe(false);
+  });
+});
+
+describe("retired Ultrafast service tier", () => {
+  const thread = {
+    id: "00000000-0000-4000-8000-000000000001",
+    agentId: "00000000-0000-4000-8000-000000000002",
+    title: null,
+    sortAt: "2026-10-07T00:00:00.000Z",
+    createdAt: "2026-10-07T00:00:00.000Z",
+    updatedAt: "2026-10-07T00:00:00.000Z",
+    pinnedAt: null,
+    archived: false,
+    renamedAt: null,
+  };
+
+  it("reads a persisted Ultrafast snapshot tier as Standard", () => {
+    const archive = chatThreadSnapshotArchiveSchema.parse({
+      chatThreads: [
+        { ...thread, serviceTier: "ultrafast" },
+        { ...thread, serviceTier: "priority" },
+      ],
+    });
+
+    expect(
+      archive.chatThreads.map((entry) => {
+        return entry.serviceTier;
+      }),
+    ).toStrictEqual([null, "priority"]);
+  });
+
+  it("rejects Ultrafast on run option requests", () => {
+    const body = chatThreadModelSelectionContract.update.body.safeParse({
+      model: "gpt-6-astra",
+      codexServiceTier: "ultrafast",
+    });
+
+    expect(body.success).toBe(false);
   });
 });

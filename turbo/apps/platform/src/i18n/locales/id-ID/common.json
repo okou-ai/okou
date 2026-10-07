@@ -4874,10 +4874,7 @@
         "models": "Model",
         "noConfiguredModels": "Tidak ada model yang dikonfigurasi",
         "pro": "Pro",
-        "standard": "Standar",
-        "ultrafast": "Ultracepat",
-        "ultrafastImpact": "Kecepatan token hingga 8× · Harga token API OpenAI 6×",
-        "ultrafastMode": "Mode ultracepat"
+        "standard": "Standar"
       },
       "reset": {
         "confirmDescription": "Gunakan satu reset Codex untuk mereset jendela penggunaan saat ini. Anda memiliki {{remaining}}.",
@@ -5005,26 +5002,6 @@
         "sectionTitle": "Chat"
       },
       "debug": {
-        "builtInModelCooldown": {
-          "cancelAction": "Batalkan cooldown",
-          "cancelDescription": "Membatalkan cooldown global ini membuat rute langsung tersedia untuk setiap workspace.",
-          "cancelling": "Membatalkan...",
-          "cancelTitle": "Batalkan cooldown global?",
-          "cancelWarning": "Kegagalan berikutnya yang memenuhi syarat dapat menempatkan rute ini kembali dalam cooldown.",
-          "description": "Periksa rute model bawaan yang sementara dikecualikan dari pemilihan fallback.",
-          "empty": "Saat ini tidak ada rute model bawaan dalam cooldown global.",
-          "globalActive": "cooldown global aktif",
-          "globalExplanation": "Cooldown adalah status operasional global dan memengaruhi setiap workspace yang menggunakan model bawaan.",
-          "keepCooldown": "Pertahankan cooldown",
-          "loading": "Memuat diagnostik cooldown model bawaan...",
-          "providerType": "Jenis penyedia",
-          "refresh": "Segarkan",
-          "selectedModel": "Model terpilih",
-          "title": "Fallback model bawaan",
-          "unavailable": "Diagnostik cooldown model bawaan tidak tersedia.",
-          "unavailableUntil": "Tidak tersedia hingga",
-          "upstreamModel": "Model upstream"
-        },
         "capture": {
           "disabled": "Dinonaktifkan",
           "enabled_one": "Diaktifkan untuk {{count}} eksekusi berikutnya",

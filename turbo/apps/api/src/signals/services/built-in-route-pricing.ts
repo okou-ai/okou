@@ -34,7 +34,7 @@ const MODEL_TOKEN_CATEGORIES = [
 ] as const;
 
 /** The run's requested Codex service tier (`agent_runs.codex_service_tier`). */
-type RunServiceTier = "fast" | "ultrafast" | null | undefined;
+type RunServiceTier = "fast" | null | undefined;
 
 function usagePricingKey(
   kind: string,
@@ -83,8 +83,8 @@ export function usagePricingByKey<
  * addon's category scheme): the four token categories, their `.long_context`
  * variants when the route has a long-context threshold (the route's own
  * `long_context_min_total_input_tokens`, exactly the value the API captures
- * for the Runner), and the requested service tier's `.fast` / `.ultrafast`
- * suffix variants. Standard-tier categories stay included for a tiered run
+ * for the Runner), and the requested service tier's `.fast` suffix
+ * variants. Standard-tier categories stay included for a tiered run
  * because the provider may serve a request at the standard tier.
  */
 function builtInRouteBillableCategories(

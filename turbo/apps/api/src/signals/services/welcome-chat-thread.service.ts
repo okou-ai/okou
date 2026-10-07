@@ -102,12 +102,7 @@ export const createWelcomeChatThread$ = command(
         title: content.title,
         eventId: undefined,
         selectedModel: pin.selectedModel,
-        codexServiceTier:
-          pin.serviceTier === "priority"
-            ? "fast"
-            : pin.serviceTier === "ultrafast"
-              ? "ultrafast"
-              : null,
+        codexServiceTier: pin.serviceTier === "priority" ? "fast" : null,
         initialAssistantMessage: content.content,
         replayExisting: false,
       },

@@ -207,8 +207,6 @@ describe("CHAT-02: model-first routing", () => {
 
     const { claim } = await claimChatRun(runnerGroup, run.runId);
     expect(claim.cliAgentType).toBe("pi");
-    // The okou-1.0 preset is not on the US allowlist, so it stays on the
-    // global OpenRouter endpoint.
     expect(claim.piModelConfig).toMatchObject({
       provider: "openrouter",
       baseUrl: "https://openrouter.ai/api/v1",

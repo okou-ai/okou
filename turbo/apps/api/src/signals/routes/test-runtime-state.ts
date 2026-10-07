@@ -6,7 +6,6 @@ import {
 } from "@okouai/api-contracts/contracts/test-runtime-state";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { builtInModelCandidateCooldown } from "@okouai/db/schema/built-in-model-cooldown";
 import {
   browserSessionTabSnapshots,
   browserSessions,
@@ -195,9 +194,7 @@ type BuiltInModelAction = Extract<
       | "seed-built-in-model-key"
       | "seed-built-in-model-candidate-keys"
       | "delete-built-in-model-key"
-      | "resolve-built-in-model-route"
-      | "set-built-in-candidate-cooldown"
-      | "delete-built-in-candidate-cooldown";
+      | "resolve-built-in-model-route";
   }
 >;
 
@@ -210,65 +207,7 @@ function isBuiltInModelAction(
     "seed-built-in-model-candidate-keys",
     "delete-built-in-model-key",
     "resolve-built-in-model-route",
-    "set-built-in-candidate-cooldown",
-    "delete-built-in-candidate-cooldown",
   ].includes(body.action);
-}
-
-type SetBuiltInCandidateCooldownAction = Extract<
-  BuiltInModelAction,
-  { action: "set-built-in-candidate-cooldown" }
->;
-
-async function setBuiltInCandidateCooldown(
-  db: Db,
-  body: SetBuiltInCandidateCooldownAction,
-): Promise<void> {
-  const unavailableUntil = new Date(body.unavailable_until);
-  await db
-    .insert(builtInModelCandidateCooldown)
-    .values({
-      selectedModel: body.selected_model,
-      modelRuntimeProvider: body.provider_type,
-      modelRuntimeModel: body.upstream_model,
-      unavailableUntil,
-    })
-    .onConflictDoUpdate({
-      target: [
-        builtInModelCandidateCooldown.selectedModel,
-        builtInModelCandidateCooldown.modelRuntimeProvider,
-        builtInModelCandidateCooldown.modelRuntimeModel,
-      ],
-      set: {
-        unavailableUntil,
-      },
-    });
-}
-
-type DeleteBuiltInCandidateCooldownAction = Extract<
-  BuiltInModelAction,
-  { action: "delete-built-in-candidate-cooldown" }
->;
-
-async function deleteBuiltInCandidateCooldown(
-  db: Db,
-  body: DeleteBuiltInCandidateCooldownAction,
-): Promise<void> {
-  await db
-    .delete(builtInModelCandidateCooldown)
-    .where(
-      and(
-        eq(builtInModelCandidateCooldown.selectedModel, body.selected_model),
-        eq(
-          builtInModelCandidateCooldown.modelRuntimeProvider,
-          body.provider_type,
-        ),
-        eq(
-          builtInModelCandidateCooldown.modelRuntimeModel,
-          body.upstream_model,
-        ),
-      ),
-    );
 }
 
 async function builtInModelActionResponse(
@@ -342,16 +281,6 @@ async function builtInModelActionResponse(
             : null,
         },
       };
-    }
-    case "set-built-in-candidate-cooldown": {
-      await setBuiltInCandidateCooldown(db, body);
-      signal.throwIfAborted();
-      return { status: 200 as const, body: { ok: true as const } };
-    }
-    case "delete-built-in-candidate-cooldown": {
-      await deleteBuiltInCandidateCooldown(db, body);
-      signal.throwIfAborted();
-      return { status: 200 as const, body: { ok: true as const } };
     }
   }
 }

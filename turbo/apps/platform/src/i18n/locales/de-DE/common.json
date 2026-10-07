@@ -4894,10 +4894,7 @@
         "models": "Modelle",
         "noConfiguredModels": "Keine konfigurierten Modelle",
         "pro": "Pro",
-        "standard": "Standard",
-        "ultrafast": "Ultraschnell",
-        "ultrafastImpact": "Bis zu 8× Token-Geschwindigkeit · 6× OpenAI-API-Tokenpreis",
-        "ultrafastMode": "Ultraschneller Modus"
+        "standard": "Standard"
       },
       "reset": {
         "confirmDescription": "Verwenden Sie einen Codex-Reset, um Ihre aktuellen Nutzungsfenster zurückzusetzen. Sie haben {{remaining}}.",
@@ -5026,26 +5023,6 @@
         "sectionTitle": "Chat"
       },
       "debug": {
-        "builtInModelCooldown": {
-          "cancelAction": "Cooldown aufheben",
-          "cancelDescription": "Wenn dieser globale Cooldown aufgehoben wird, ist die Route sofort wieder für alle Workspaces verfügbar.",
-          "cancelling": "Cooldown wird aufgehoben...",
-          "cancelTitle": "Globalen Cooldown aufheben?",
-          "cancelWarning": "Ein späterer qualifizierender Fehler kann diese Route erneut in den Cooldown versetzen.",
-          "description": "Prüfen Sie integrierte Modellrouten, die vorübergehend von der Fallback-Auswahl ausgeschlossen sind.",
-          "empty": "Derzeit befinden sich keine integrierten Modellrouten im globalen Cooldown.",
-          "globalActive": "aktive globale Cooldowns",
-          "globalExplanation": "Cooldowns sind ein globaler Betriebszustand und betreffen alle Workspaces, die integrierte Modelle verwenden.",
-          "keepCooldown": "Cooldown beibehalten",
-          "loading": "Cooldown-Diagnose für integrierte Modelle wird geladen...",
-          "providerType": "Anbietertyp",
-          "refresh": "Aktualisieren",
-          "selectedModel": "Ausgewähltes Modell",
-          "title": "Fallback für integrierte Modelle",
-          "unavailable": "Die Cooldown-Diagnose für integrierte Modelle ist nicht verfügbar.",
-          "unavailableUntil": "Nicht verfügbar bis",
-          "upstreamModel": "Upstream-Modell"
-        },
         "capture": {
           "disabled": "Deaktiviert",
           "enabled_one": "Für {{count}} kommende Ausführung aktiviert",
