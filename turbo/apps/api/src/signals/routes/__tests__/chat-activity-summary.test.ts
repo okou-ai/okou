@@ -980,6 +980,23 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(2);
   });
 
+  it("rejects a cancelled run heartbeat before its Runner completes", async () => {
+    const f = await fixture();
+    await runs.requestCancelRun(f.actor, f.run.runId, [200]);
+    await webhooks.requestAgentHeartbeat(
+      { runId: f.run.runId },
+      f.headers,
+      [404],
+    );
+    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(1);
+    await webhooks.requestAgentComplete(
+      { runId: f.run.runId, exitCode: 1, error: "Run cancelled" },
+      f.headers,
+      [200],
+    );
+    await flushWaitUntilForTest();
+  });
+
   it("keeps a cancelled running run's compute until its runner reports completion", async () => {
     const f = await fixture();
     expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(1);

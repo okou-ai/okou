@@ -1,4 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  connectorAccountsContract,
+  type ConnectorAccountConnection,
+} from "@okouai/api-contracts/contracts/connector-accounts";
 import type { BuiltinConnectorResponse } from "@okouai/api-contracts/contracts/connector-schemas";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -19,6 +24,8 @@ import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createRouteMocks } from "./helpers/route-test";
 import { webhooksStripeAutomationEventsRoutes } from "../webhooks-stripe-automation-events";
 import { workflowAutomationsRoutes } from "../workflow-automations";
+import { chatThreadRoutes } from "../chat-threads";
+import { connectorAccountRoutes } from "../connector-accounts";
 
 const context = testContext();
 const connectors = createConnectorBddApi(context);
@@ -270,6 +277,68 @@ async function readStripeAutomation(scenario: Scenario) {
   return summary;
 }
 
+function chatThreadConnectorSelectionsClient() {
+  return setupApp({ context, routes: chatThreadRoutes })(
+    chatThreadConnectorSelectionContract,
+  );
+}
+
+function connectorAccountsClient() {
+  return setupApp({ context, routes: connectorAccountRoutes })(
+    connectorAccountsContract,
+  );
+}
+
+async function addStripeOAuthAccount(
+  actor: ApiTestUser,
+  displayName: string,
+  accountId: string,
+): Promise<ConnectorAccountConnection> {
+  mockStripeConnectorOAuth({ accountId, livemode: true });
+  const started = await connectors.startOauth(
+    actor,
+    "stripe",
+    "oauth",
+    undefined,
+    { intent: "add", displayName },
+  );
+  const state = new URL(started.authorizationUrl).searchParams.get("state");
+  if (!state) {
+    throw new Error("Expected Stripe OAuth state");
+  }
+  await connectors.completeOauthCallback("stripe", {
+    code: `stripe-workflow-${randomUUID()}`,
+    state,
+  });
+  mocks.clerk.session(actor.userId, actor.orgId);
+  const accounts = await accept(
+    connectorAccountsClient().connections({
+      headers: authHeaders(),
+      query: { kind: "builtin", connectorSlug: "stripe", limit: 100 },
+    }),
+    [200],
+  );
+  const account = accounts.body.connections.find((connection) => {
+    return connection.displayName === displayName;
+  });
+  if (!account) {
+    throw new Error(`Expected Stripe account ${displayName}`);
+  }
+  return account;
+}
+
+async function deleteAutomation(scenario: Scenario): Promise<void> {
+  mocks.clerk.session(scenario.actor.userId, scenario.actor.orgId);
+  await accept(
+    automationsClient().delete({
+      headers: authHeaders(),
+      params: { id: scenario.automationId },
+      body: undefined,
+    }),
+    [204],
+  );
+}
+
 beforeEach(() => {
   mockStripeWebhookEventConstructor((rawBody, signature, secret) => {
     return context.mocks.stripe.webhooks.constructEvent(
@@ -285,6 +354,122 @@ beforeEach(() => {
 });
 
 describe("Stripe automation event webhook", () => {
+  it("reprojects to the default account when the thread selection is cleared", async () => {
+    const originalAccountId = `acct_stripe_clear_original_${randomUUID()}`;
+    const threadAccountId = `acct_stripe_clear_thread_${randomUUID()}`;
+    const defaultAccountId = `acct_stripe_clear_default_${randomUUID()}`;
+    const scenario = await setupScenario({ accountId: originalAccountId });
+    const orgId = scenario.actor.orgId;
+    if (!orgId) {
+      throw new Error("Expected an organization-scoped workflow owner");
+    }
+    await connectors.updateFeatureSwitches(scenario.actor, {});
+    await runs.enableAgentConnectors(scenario.actor, scenario.agentId, [
+      "stripe",
+    ]);
+    const threadAccount = await addStripeOAuthAccount(
+      scenario.actor,
+      "Cleared thread account",
+      threadAccountId,
+    );
+    const defaultAccount = await addStripeOAuthAccount(
+      scenario.actor,
+      "Cleared default account",
+      defaultAccountId,
+    );
+    mocks.clerk.session(scenario.actor.userId, orgId);
+    await accept(
+      connectorAccountsClient().setDefault({
+        headers: authHeaders(),
+        params: { connectionId: defaultAccount.id },
+        body: { target: { kind: "builtin", connectorSlug: "stripe" } },
+      }),
+      [200],
+    );
+    await accept(
+      chatThreadConnectorSelectionsClient().update({
+        headers: authHeaders(),
+        params: { id: scenario.chatThreadId },
+        body: {
+          connectionId: threadAccount.id,
+          target: { kind: "builtin", connectorSlug: "stripe" },
+        },
+      }),
+      [200],
+    );
+    await accept(
+      chatThreadConnectorSelectionsClient().clear({
+        headers: authHeaders(),
+        params: { id: scenario.chatThreadId },
+        body: { kind: "builtin", connectorSlug: "stripe" },
+      }),
+      [204],
+    );
+
+    await expect(readStripeAutomation(scenario)).resolves.toMatchObject({
+      eventConfig: {
+        connectorId: defaultAccount.id,
+        stripeAccountId: defaultAccountId,
+        mode: "live",
+      },
+    });
+  });
+
+  it("creates a Stripe automation against the selected thread account", async () => {
+    const originalAccountId = `acct_stripe_create_original_${randomUUID()}`;
+    const threadAccountId = `acct_stripe_create_thread_${randomUUID()}`;
+    const scenario = await setupScenario({ accountId: originalAccountId });
+    const orgId = scenario.actor.orgId;
+    if (!orgId) {
+      throw new Error("Expected an organization-scoped workflow owner");
+    }
+    await connectors.updateFeatureSwitches(scenario.actor, {});
+    await runs.enableAgentConnectors(scenario.actor, scenario.agentId, [
+      "stripe",
+    ]);
+    const threadAccount = await addStripeOAuthAccount(
+      scenario.actor,
+      "Creation thread account",
+      threadAccountId,
+    );
+    mocks.clerk.session(scenario.actor.userId, orgId);
+    await accept(
+      chatThreadConnectorSelectionsClient().update({
+        headers: authHeaders(),
+        params: { id: scenario.chatThreadId },
+        body: {
+          connectionId: threadAccount.id,
+          target: { kind: "builtin", connectorSlug: "stripe" },
+        },
+      }),
+      [200],
+    );
+    await deleteAutomation(scenario);
+
+    mocks.clerk.session(scenario.actor.userId, orgId);
+    const created = await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId: scenario.workflowId },
+        body: {
+          kind: "event",
+          eventType: "stripe-invoice-paid",
+          eventConfig: { provider: "stripe", event: "invoice_paid" },
+          enabled: true,
+        },
+      }),
+      [201],
+    );
+    expect(created.body).toMatchObject({
+      chatThreadId: scenario.chatThreadId,
+      eventConfig: {
+        connectorId: threadAccount.id,
+        stripeAccountId: threadAccountId,
+        mode: "live",
+      },
+    });
+  });
+
   it("keeps the existing billing webhook operational without the automation secret", async () => {
     mockOptionalEnv("STRIPE_AUTOMATION_WEBHOOK_SECRET", undefined);
     const actor = workflows.user();

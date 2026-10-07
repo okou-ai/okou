@@ -10,9 +10,9 @@ A public final response does not make private setup, internal worker execution, 
 
 ## Declaration decisions
 
-Decisions were recorded before deletion. Parameterized declarations count once; branch changes are separate. The final source comparison removes **536 whole declarations**. A parameterized declaration counts once. Separately, **7 unsupported parameter branches** are removed from **5 retained declarations** (3 banking/Pi/Stripe declarations and 2 terminal-state matrices). The branch lists below are not additional whole-case deletions.
+Decisions were recorded before deletion. Parameterized declarations count once; branch changes are separate. The final source comparison removes **529 whole declarations**. A parameterized declaration counts once. Separately, **7 unsupported parameter branches** are removed from **5 retained declarations** (3 banking/Pi/Stripe declarations and 2 terminal-state matrices). The branch lists below are not additional whole-case deletions.
 
-The A/B/C/root whole-declaration subtotals are 209/118/194/17; two usage-record declarations appear in both A and C, so their union is 536. Source AST inventory over the 73 changed test files goes from 1,857 declarations to 1,321; renamed declarations and changed describe wrappers are retained, not new cases. No new declaration is added to compensate for deleted coverage. Do not add these corrections to the historical 1,125-case reduction credit.
+The A/B/C/root whole-declaration subtotals are 207/114/193/17; two usage-record declarations appear in both A and C, so their union is 529. Source AST inventory over the 73 changed test files goes from 1,857 declarations to 1,328; renamed declarations and changed describe wrappers are retained, not new cases. No new declaration is added to compensate for deleted coverage. Do not add these corrections to the historical 1,125-case reduction credit.
 
 - [Accounting, memory and early mixed migrations](accounting-memory.md)
 - [Google, artifact, Discord, Browser and workflow integrations](integrations.md)
@@ -28,4 +28,4 @@ Remove unsupported scenarios and their unused drivers, private selectors, fixtur
 
 Public portions retained include Stripe/onboarding lifecycles, Runner memory/storage and completion, Browser attach/profile behavior, automation create/disable/re-enable, thread pin/reorder, and ordinary message steer/completion. No retry, polling, sleep or timeout workaround is introduced. No local Vitest or development server is run; runtime checks belong to PR CI.
 
-Final orphan closure also removes the last test-only automation selector, the remaining null-only sandbox cleanup selectors, unused pricing/usage fixture exports and old fixture actions. Independent review restored public deleted-run token rejection, signed Stripe deauthorization/filter health and Notion signed receipt/account-selection phases before finalizing the source. These are narrowed existing declarations, not new coverage credit.
+Final orphan closure also removes the last test-only automation selector, the remaining null-only sandbox cleanup selectors, unused pricing/usage fixture exports and old fixture actions. Independent review restored public deleted-run token rejection, signed Stripe deauthorization/filter health, Notion signed receipt/account-selection, usage-report authorization, Checkout abort/reuse, Morning Brief preference and cancelled-Runner heartbeat phases before finalizing the source. These are narrowed existing declarations, not new coverage credit.

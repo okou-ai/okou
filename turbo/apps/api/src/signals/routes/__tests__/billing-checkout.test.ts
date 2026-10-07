@@ -4523,6 +4523,80 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     );
   });
 
+  it("reuses Checkout after its Session response outlives the cancelled request", async () => {
+    const fixture = createOrgFixture();
+    const customerId = `cus_${randomUUID()}`;
+    const checkoutSessionId = `cs_${randomUUID()}`;
+    const checkoutUrl = "https://checkout.stripe.test/aborted-usage-pack";
+    authenticateOrg(fixture);
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            role: "org:admin",
+            publicUserData: { userId: fixture.userId },
+            createdAt: now(),
+          },
+        ],
+      },
+    );
+    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+      { data: [] },
+    );
+    context.mocks.stripe.customers.create.mockResolvedValue({ id: customerId });
+    context.mocks.stripe.customers.retrieve.mockResolvedValue({
+      id: customerId,
+      invoice_settings: { default_payment_method: null },
+      default_source: null,
+    });
+    context.mocks.stripe.paymentMethods.list.mockResolvedValue({ data: [] });
+    const controller = new AbortController();
+    const abortError = new Error("API owner cancelled usage pack checkout");
+    abortError.name = "AbortError";
+    const ownerContext = {
+      mocks: context.mocks,
+      sessionHistoryBlobs: context.sessionHistoryBlobs,
+      signal: controller.signal,
+    };
+    context.mocks.stripe.checkout.sessions.create.mockImplementation(() => {
+      controller.abort(abortError);
+      return Promise.resolve({ id: checkoutSessionId, url: checkoutUrl });
+    });
+    const body = usagePackCheckoutBody(fixture.userId);
+    const headers = { authorization: "Bearer clerk-session" };
+    const response = await setupApp({
+      context: ownerContext,
+      routes: billingCheckoutRoutes,
+    })(billingUsagePackCheckoutContract).create({ body, headers });
+
+    expect(response.status).toBe(500);
+    expect(
+      context.mocks.stripe.checkout.sessions.expire,
+    ).not.toHaveBeenCalled();
+
+    context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValue({
+      id: checkoutSessionId,
+      status: "open",
+      url: checkoutUrl,
+    });
+    const reused = await accept(
+      setupApp({ context, routes: billingCheckoutRoutes })(
+        billingUsagePackCheckoutContract,
+      ).create({ body, headers }),
+      [200],
+    );
+    expect(reused.body).toStrictEqual({ url: checkoutUrl });
+    expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(
+      context.mocks.stripe.checkout.sessions.retrieve,
+    ).toHaveBeenCalledWith(checkoutSessionId);
+    expect(
+      context.mocks.stripe.checkout.sessions.expire,
+    ).not.toHaveBeenCalled();
+  });
+
   it("reuses an open Checkout when repeated usage pack previews lose their saved card", async () => {
     const fixture = createOrgFixture();
     authenticateOrg(fixture);

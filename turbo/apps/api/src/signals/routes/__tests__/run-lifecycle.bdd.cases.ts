@@ -1284,6 +1284,7 @@ export type RunLifecycleTestGroup =
   | "custom-connectors"
   | "runner-context"
   | "completion"
+  | "billing"
   | "chat-events";
 
 // Each entrypoint registers one group so no single file holds every
@@ -13715,6 +13716,40 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const completed = await api.readRun(actor, run.runId);
         expect(completed.status).toBe("completed");
         expect(completed.result?.checkpointId).toBeDefined();
+      });
+    });
+  }
+  // oxlint-disable-next-line vitest/no-conditional-tests -- The entrypoint selects this group before collection.
+  if (group === "billing") {
+    describe("BILL: public usage member access", () => {
+      it("validates member usage access and returns an empty public report", async () => {
+        const bdd = createBddApi(context);
+        const billing = createBillingMediaApi(context);
+        const { actor } = await entitledRunActor({}, NATIVE_RUNNER_ROUTE);
+        const nonAdmin = bdd.user({
+          orgId: actor.orgId,
+          orgRole: "org:member",
+        });
+
+        const forbidden = await billing.requestUsageMembers(
+          nonAdmin,
+          {},
+          [403],
+        );
+        expectApiError(forbidden.body);
+        expect(forbidden.body.error.code).toBe("FORBIDDEN");
+
+        const invalidTimezone = await billing.requestUsageMembers(
+          actor,
+          { tz: "Not/A/Timezone" },
+          [400],
+        );
+        expectApiError(invalidTimezone.body);
+        expect(invalidTimezone.body.error.code).toBe("BAD_REQUEST");
+
+        const beforeUsage = await billing.readUsageMembers(actor);
+        expect(beforeUsage.body.period).not.toBeNull();
+        expect(beforeUsage.body.members).toStrictEqual([]);
       });
     });
   }

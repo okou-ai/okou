@@ -2,7 +2,7 @@
 
 Baseline `13753817e6507ac8b71315166dac807a87711c4c`. This is a correction inventory, not added test-reduction credit. No historical 1,125-case total is changed. Parameterized declarations count once; parameter branches are separate. All listed baseline declaration names and keep/delete status were mechanically compared with the final worktree.
 
-209 declarations deleted; 13 declarations retained/rewritten. 39 deleted parameterized declarations contain 273 branches; 2 retained parameterized declarations contain 5 branches. No branch-only deletion in group A. Root/C overlap must be deduplicated by file and exact declaration name, especially usage-record compaction declarations.
+207 declarations deleted; 15 declarations retained/rewritten. 39 deleted parameterized declarations contain 273 branches; 2 retained parameterized declarations contain 5 branches. No branch-only deletion in group A. Root/C overlap must be deduplicated by file and exact declaration name, especially usage-record compaction declarations.
 
 - **delete** `turbo/apps/api/src/signals/services/__tests__/pi-memory-phase2-worker.service.test.ts:292` — releases a switch-off job with pi_memory_disabled and dispatches nothing
   - Dependency / decision: createPublicPhase2WorkerFixture / ownedPublicPhase2Job call createPiMemoryPhase2Worker.execute$ after test-scoped Stage1 extraction, or createPhase2WorkerFixture writes private job/source state. Every branch requires private worker dispatch; public Runner storage publication remains covered in member-memory-initialization and public-runner-memory consumers.
@@ -636,10 +636,13 @@ Baseline `13753817e6507ac8b71315166dac807a87711c4c`. This is a correction invent
   - Dependency / decision: Decisive accounting/recovery requires forced selected-org settlement/reconciliation via billing-workers; exact quantities/pricing, legacy negative balance or private billing observation is constructed by test-only fixtures. No user-callable driver exists.
   - Coverage lost: exposes usage records, members, and processed usage events through public reads; its stated private prerequisite has no public construction/driver chain.
   - Support: Remove no-longer-used imports/helpers after consumer removal.
-- **delete** `turbo/apps/api/src/signals/routes/__tests__/run-lifecycle.bdd.cases.ts:14724` — aggregates usage members across organization users
-  - Dependency / decision: Decisive accounting/recovery requires forced selected-org settlement/reconciliation via billing-workers; exact quantities/pricing, legacy negative balance or private billing observation is constructed by test-only fixtures. No user-callable driver exists.
-  - Coverage lost: aggregates usage members across organization users; its stated private prerequisite has no public construction/driver chain.
-  - Support: Remove no-longer-used imports/helpers after consumer removal.
+- **rewrite** `turbo/apps/api/src/signals/routes/__tests__/run-lifecycle.bdd.cases.ts:14724` — aggregates usage members across organization users
+  - Final name: validates member usage access and returns an empty public report.
+  - Offending dependency: chosen-price DB seed, private Built-in key and forced billing settlement in the aggregation tail.
+  - Preserved: native personal subscription setup via public onboarding/Stripe/provider routes; non-admin403/FORBIDDEN, invalid timezone400/BAD_REQUEST, non-null report period and empty members through public reads.
+  - Coverage lost: exact cross-member charged-credit ordering/breakdown from private pricing and settlement.
+  - Support: existing billing entrypoint retained for this declaration; removed worker/pricing drivers stay removed.
+
 - **delete** `turbo/apps/api/src/signals/routes/__tests__/run-lifecycle.bdd.cases.ts:14959` — recovers payment-failed subscriptions that became active again
   - Dependency / decision: Decisive accounting/recovery requires forced selected-org settlement/reconciliation via billing-workers; exact quantities/pricing, legacy negative balance or private billing observation is constructed by test-only fixtures. No user-callable driver exists.
   - Coverage lost: recovers payment-failed subscriptions that became active again; its stated private prerequisite has no public construction/driver chain.
@@ -755,10 +758,13 @@ Baseline `13753817e6507ac8b71315166dac807a87711c4c`. This is a correction invent
   - Dependency / decision: Test-scoped reconciliation is the decisive driver; other variants also fabricate stale snapshots/refund balances/legacy billing rows or assert private state. Public checkout/Stripe lifecycles are preserved in independent cases.
   - Coverage lost: keeps an unpaid Checkout usable through concurrent snapshot reconciliation; its stated private prerequisite has no public construction/driver chain.
   - Support: Remove no-longer-used imports/helpers after consumer removal.
-- **delete** `turbo/apps/api/src/signals/routes/__tests__/billing-checkout.test.ts:4274` — commits Checkout correlation before honoring an abort from Session creation
-  - Dependency / decision: Test-scoped reconciliation is the decisive driver; other variants also fabricate stale snapshots/refund balances/legacy billing rows or assert private state. Public checkout/Stripe lifecycles are preserved in independent cases.
-  - Coverage lost: commits Checkout correlation before honoring an abort from Session creation; its stated private prerequisite has no public construction/driver chain.
-  - Support: Remove no-longer-used imports/helpers after consumer removal.
+- **rewrite** `turbo/apps/api/src/signals/routes/__tests__/billing-checkout.test.ts:4274` — commits Checkout correlation before honoring an abort from Session creation
+  - Final name: reuses Checkout after its Session response outlives the cancelled request.
+  - Offending dependency: private snapshot observation and delayed selected-org billing reconciliation after the externally aborted Session creation.
+  - Preserved: public failed request500, no Stripe expiration, same public request returns the existing Checkout URL, exactly one provider Session creation and retrieval of its ID.
+  - Coverage lost: direct persisted correlation/status assertions and operator retry-window reconciliation.
+  - Support: private worker driver stays removed; only existing public checkout route and external Clerk/Stripe mocks remain.
+
 - **delete** `turbo/apps/api/src/signals/routes/__tests__/billing-checkout.test.ts:6599` — keeps Team legacy state intact when its migration schedule is canceled
   - Dependency / decision: Test-scoped reconciliation is the decisive driver; other variants also fabricate stale snapshots/refund balances/legacy billing rows or assert private state. Public checkout/Stripe lifecycles are preserved in independent cases.
   - Coverage lost: keeps Team legacy state intact when its migration schedule is canceled; its stated private prerequisite has no public construction/driver chain.
@@ -967,7 +973,7 @@ Baseline `13753817e6507ac8b71315166dac807a87711c4c`. This is a correction invent
 - Removed `turbo/apps/api/src/test-fixtures/pi-memory-quota.ts`.
 - Removed `turbo/packages/api-contracts/src/contracts/test-billing-reconciliation-state.ts`.
 
-- Removed billing fixture methods from api-bdd-billing-media/api-bdd-runs, unused private billing group entrypoint and local wrappers; removed Stage1 cost-log failure mock, obsolete maintenance include and exact ESLint exceptions.
+- Removed billing fixture methods from api-bdd-billing-media/api-bdd-runs and private local wrappers; retained the billing entrypoint solely for the public member-report rewrite; removed Stage1 cost-log failure mock, obsolete maintenance include and exact ESLint exceptions.
 - Removed the exported scoped billing worker and BillingReconciliationScope plumbing. Production global Stripe discovery, paid checkout/invoice replay, daily bucket selection, cancellation/signal propagation and actual worker entry points remain.
 - Removed the Stage1 ForTest route export and route-level scope. The deeper worker schedule scope still has existing consumers outside the affected helper chain and was not represented as orphaned.
 - Corrected the usage-pricing fixture comment: a private DB helper is not an allowed alternative construction mechanism.
@@ -985,4 +991,8 @@ After combined consumer removal and Knip review, removed unused usage-state help
 
 Independent reviewer B found the retained X resource declarations still derived bearer tokens from unclaimed runs. Their shared constructor now performs real Runner group configuration, heartbeat and claim and submits the returned sandbox token. No assertions were weakened; the unused builtin/private-model branch was removed. This also strengthens the preexisting streaming byte-limit declaration sharing the same constructor, with no extra case count.
 
-Independent-review mixed-case correction: the original `retains shared resources after run deletion and rejects the deleted run token` is retained as `rejects a deleted run token while another run remains usable`. Lost only DB chosen-price/forced settled shared-resource billing checks; preserved real Runner usage acceptance, user cancellation and Agent deletion, deleted-run404 and old-token404, independent survivor200. This is a rewrite of the original declaration, not a new case. A counts are now209 deleted,13 retained/rewritten; parameter counts unchanged.
+Independent-review mixed-case correction: the original `retains shared resources after run deletion and rejects the deleted run token` is retained as `rejects a deleted run token while another run remains usable`. Lost only DB chosen-price/forced settled shared-resource billing checks; preserved real Runner usage acceptance, user cancellation and Agent deletion, deleted-run404 and old-token404, independent survivor200. This is a rewrite of the original declaration, not a new case. Parameter counts are unchanged; the final totals include subsequent public-prefix restorations below.
+
+Independent-review mixed-case correction: restored the public auth/validation/empty-report prefix of `aggregates usage members across organization users` under the final name above. The existing billing entrypoint registers this rewritten declaration; this is no new case. Parameter counts are unchanged; the final totals include the subsequent Checkout restoration below.
+
+Independent-review Checkout preservation: same declaration rewritten to test the public abort/reuse lifecycle, without private snapshot reads or forced reconciliation. Final A counts:207 deleted,15 retained/rewritten; parameter counts unchanged.

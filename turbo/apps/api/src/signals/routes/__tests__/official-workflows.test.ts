@@ -1780,6 +1780,104 @@ beforeEach(async () => {
 });
 
 describe("Morning Brief preference", () => {
+  it("preserves enable intent while timezone is unavailable", async () => {
+    const missingTimezone = await workflowBdd.setupWorkflowOrg();
+    const timezoneHeaders = authHeaders(missingTimezone.actor);
+    const unavailableTimezone = await accept(
+      morningBriefPreferenceClient().get({ headers: timezoneHeaders }),
+      [200],
+    );
+    expect(unavailableTimezone.body).toMatchObject({
+      enabled: false,
+      unavailableReason: "missing-timezone",
+    });
+    const rejectedTimezone = await accept(
+      morningBriefPreferenceClient().update({
+        headers: timezoneHeaders,
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(rejectedTimezone.body).toMatchObject({
+      status: "preparing",
+      enabled: true,
+      unavailableReason: "missing-timezone",
+    });
+
+    const listed = await accept(
+      workflowCollectionClient().list({
+        headers: authHeaders(missingTimezone.actor),
+        query: {},
+      }),
+      [200],
+    );
+    expect(
+      listed.body.filter((workflow) => {
+        return workflow.official?.definitionName === "morning-brief";
+      }),
+    ).toHaveLength(0);
+  });
+
+  it("does not treat outstanding membership qualification as enable intent", async () => {
+    const actor = bdd.user();
+    mockBriefMemberships([
+      { actor, createdAt: new Date("2020-01-01T00:00:00.000Z") },
+    ]);
+    const membershipReads =
+      context.mocks.clerk.organizations.getOrganizationMembershipList;
+    const respond = membershipReads.getMockImplementation();
+    if (!respond) {
+      throw new Error("Expected the historical membership response");
+    }
+    const started = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    membershipReads.mockImplementation(async (...args) => {
+      if (!started.settled()) {
+        started.resolve(undefined);
+      }
+      await release.promise;
+      return await respond(...args);
+    });
+    onTestFinished(async () => {
+      if (!release.settled()) {
+        release.resolve(undefined);
+      }
+      await flushWaitUntilForTest();
+    });
+
+    await bdd.updateUserTimezone(actor, "Asia/Shanghai");
+    await started.promise;
+    // The public timezone request is still awaiting the external Clerk result.
+    // Unknown eligibility is not an enable choice.
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: false,
+      status: "preparing",
+      unavailableReason: "missing-default-agent",
+    });
+
+    // A user's explicit enable is real intent even before qualification or
+    // prerequisites complete, and the older eligibility read cannot erase it.
+    const enabled = await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(enabled.body).toMatchObject({
+      enabled: true,
+      status: "preparing",
+      unavailableReason: "missing-default-agent",
+    });
+    release.resolve(undefined);
+    await flushWaitUntilForTest();
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      enabled: true,
+      status: "preparing",
+      unavailableReason: "missing-default-agent",
+    });
+  });
+
   it("adopts the default Agent installation when installations exist across Agents", async () => {
     installCatalogStorageFixture();
     await syncDeployedCatalog();

@@ -1,6 +1,5 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
 
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import {
   bankingContract,
@@ -8,17 +7,17 @@ import {
 } from "@okouai/api-contracts/contracts/banking";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
-import { beforeEach } from "vitest";
+import { beforeEach, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { signSandboxJwtForTests } from "../../auth/tokens";
-import { now } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { bankingRoutes } from "../banking";
@@ -35,6 +34,7 @@ const FINICITY_CONNECT_URL = `${FINICITY_BASE_URL}/connect/v2/generate`;
 const FINICITY_APP_SECRET = randomBytes(32).toString("hex");
 
 interface BankingFixture {
+  readonly okouToken: string;
   readonly orgId: string;
   readonly userId: string;
   readonly runId: string;
@@ -48,26 +48,11 @@ interface BankingFixture {
 interface BankingFixtureArgs {
   readonly triggerSource?: (typeof UNATTENDED_TRIGGER_SOURCES)[number];
   readonly featureSwitchEnabled?: boolean;
+  readonly bankingEnabledAtLaunch?: boolean;
 }
 
-function currentSecond(): number {
-  return Math.floor(now() / 1000);
-}
-
-function okouToken(
-  fixture: BankingFixture,
-  capabilities: readonly Capability[] = ["banking:read"],
-): string {
-  const seconds = currentSecond();
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: fixture.userId,
-    orgId: fixture.orgId,
-    runId: fixture.runId,
-    capabilities,
-    iat: seconds,
-    exp: seconds + 60,
-  });
+function okouToken(fixture: BankingFixture): string {
+  return fixture.okouToken;
 }
 
 function randomProviderId(prefix: string): string {
@@ -84,7 +69,7 @@ async function createBankingRun(args: BankingFixtureArgs = {}) {
   bdd.acceptAgentStorageWrites();
   api.acceptStorageDownloads();
   api.acceptTelemetryIngest();
-  api.configureRunnerGroup();
+  const runnerGroup = api.configureRunnerGroup();
   // Webhook automations require a Team workspace.
   await api.grantProEntitlement(actor, {
     tier: args.triggerSource === "automation-event" ? "team" : "pro",
@@ -94,6 +79,11 @@ async function createBankingRun(args: BankingFixtureArgs = {}) {
     displayName: "Banking Agent",
     visibility: "private",
   });
+  await updateFeatureSwitchesForUser(
+    context,
+    { userId: actor.userId, orgId: actor.orgId },
+    { [FeatureSwitchKey.Banking]: args.bankingEnabledAtLaunch ?? true },
+  );
 
   // Event automations fire through the signed production webhook.
   const workflows = createWorkflowsBddApi(context);
@@ -104,11 +94,27 @@ async function createBankingRun(args: BankingFixtureArgs = {}) {
           agentId: agent.agentId,
           prompt: "banking precondition",
         });
+  await api.heartbeatRunner(runnerGroup);
+  const claim = await api.claimRunnerJob(run.runId);
+  const token = claim.platformEnvironment.OKOU_TOKEN;
+  if (!token) {
+    throw new Error("Expected the Banking Runner claim to include OKOU_TOKEN");
+  }
+  onTestFinished(async () => {
+    await api.requestCancelRun(actor, run.runId, [200]);
+    await createWebhookCallbackApi(context).requestAgentComplete(
+      { runId: run.runId, exitCode: 1, error: "Banking carrier cancelled" },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+  });
 
   return {
     actor: { ...actor, orgId: actor.orgId },
     agentId: agent.agentId,
     runId: run.runId,
+    okouToken: token,
   };
 }
 
@@ -138,7 +144,12 @@ async function postWebhook(body: Record<string, unknown>) {
 async function connectBankingFixture(
   args: BankingFixtureArgs = {},
 ): Promise<BankingFixture> {
-  const { actor, agentId, runId } = await createBankingRun(args);
+  const {
+    actor,
+    agentId,
+    runId,
+    okouToken: token,
+  } = await createBankingRun(args);
   const providerCustomerId = randomProviderId("customer");
   const enabledAccountId = randomProviderId("acct-enabled");
   const disabledAccountId = randomProviderId("acct-disabled");
@@ -255,6 +266,7 @@ async function connectBankingFixture(
     );
   }
   return {
+    okouToken: token,
     orgId: actor.orgId,
     userId: actor.userId,
     runId,
@@ -465,7 +477,9 @@ describe("/api/banking/*", () => {
   });
 
   it("rejects agent tokens without banking capability before provider access", async () => {
-    const fixture = await connectBankingFixture();
+    const fixture = await connectBankingFixture({
+      bankingEnabledAtLaunch: false,
+    });
     let authRequestCount = 0;
     server.use(
       http.post(FINICITY_AUTH_URL, () => {
@@ -480,7 +494,7 @@ describe("/api/banking/*", () => {
     const response = await accept(
       client.accounts({
         headers: {
-          authorization: `Bearer ${okouToken(fixture, ["file:read"])}`,
+          authorization: `Bearer ${okouToken(fixture)}`,
         },
         body: {},
       }),
