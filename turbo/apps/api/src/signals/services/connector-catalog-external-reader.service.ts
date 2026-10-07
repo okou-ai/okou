@@ -493,10 +493,21 @@ async function readCachedConnectorCatalogSnapshot<
   return catalog;
 }
 
+export function loadAcceptedConnectorCatalogSnapshot(
+  db: ReadonlyDb,
+  timing: ConnectorCatalogLoadTiming | undefined,
+  projection: "display",
+): Promise<AcceptedDisplayCatalogSnapshot>;
+export function loadAcceptedConnectorCatalogSnapshot(
+  db: ReadonlyDb,
+  timing?: ConnectorCatalogLoadTiming,
+  projection?: "runtime",
+): Promise<AcceptedConnectorCatalogSnapshot>;
 export async function loadAcceptedConnectorCatalogSnapshot(
   db: ReadonlyDb,
   timing?: ConnectorCatalogLoadTiming,
-): Promise<AcceptedConnectorCatalogSnapshot> {
+  projection: "display" | "runtime" = "runtime",
+): Promise<AcceptedDisplayCatalogSnapshot | AcceptedConnectorCatalogSnapshot> {
   const capability = connectorCatalogExecutableCapabilityState();
   const identity = await readCurrentIdentity({
     db,
@@ -510,6 +521,41 @@ export async function loadAcceptedConnectorCatalogSnapshot(
   }
   // Entries are immutable and retained by hash. A later pointer switch cannot
   // strand this capture, so the legacy mutable-snapshot retry is unnecessary.
+  // Display reads keep a narrow cache and never materialize runtime entries.
+  if (projection === "display") {
+    return await readCachedConnectorCatalogSnapshot({
+      cache: preparedDisplayCatalogCache(),
+      identity,
+      timing,
+      load: async () => {
+        const rows = await db
+          .select({
+            slug: connectorCatalogDisplayColumns.slug,
+            authMethods: connectorCatalogDisplayColumns.authMethods,
+            mcp: connectorCatalogDisplayColumns.mcp,
+            label: connectorCatalogDisplayColumns.label,
+            description: connectorCatalogDisplayColumns.description,
+            category: connectorCatalogDisplayColumns.category,
+            icon: connectorCatalogDisplayColumns.icon,
+            tags: connectorCatalogDisplayColumns.tags,
+            generation: connectorCatalogDisplayColumns.generation,
+            permissionSummary: connectorCatalogDisplayColumns.permissionSummary,
+          })
+          .from(connectorCatalogEntries)
+          .where(eq(connectorCatalogEntries.hash, identity.catalogDigest))
+          .orderBy(asc(connectorCatalogEntries.slug));
+        if (rows.length === 0) {
+          throw new ExternalConnectorCatalogUnavailableError("missing_entries");
+        }
+        return materializeAcceptedConnectorCatalog({
+          identity,
+          capability,
+          ...(timing === undefined ? {} : { timing }),
+          connectors: rows.map(materializeConnectorCatalogDisplayRow),
+        });
+      },
+    });
+  }
   return await readCachedConnectorCatalogSnapshot({
     cache: preparedCatalogCache(),
     identity,
@@ -520,53 +566,6 @@ export async function loadAcceptedConnectorCatalogSnapshot(
         identity,
         capability,
         ...(timing === undefined ? {} : { timing }),
-      });
-    },
-  });
-}
-
-/** Display reads keep their own narrow cache and never materialize runtime entries. */
-async function loadDisplayConnectorCatalogSnapshot(
-  db: ReadonlyDb,
-): Promise<AcceptedDisplayCatalogSnapshot> {
-  const capability = connectorCatalogExecutableCapabilityState();
-  const identity = await readCurrentIdentity({
-    db,
-    capabilityDigest: capability.digest,
-  });
-  if (!identity) {
-    throw new ExternalConnectorCatalogUnavailableError(
-      "missing_current_identity",
-    );
-  }
-  return await readCachedConnectorCatalogSnapshot({
-    cache: preparedDisplayCatalogCache(),
-    identity,
-    timing: undefined,
-    load: async () => {
-      const rows = await db
-        .select({
-          slug: connectorCatalogDisplayColumns.slug,
-          authMethods: connectorCatalogDisplayColumns.authMethods,
-          mcp: connectorCatalogDisplayColumns.mcp,
-          label: connectorCatalogDisplayColumns.label,
-          description: connectorCatalogDisplayColumns.description,
-          category: connectorCatalogDisplayColumns.category,
-          icon: connectorCatalogDisplayColumns.icon,
-          tags: connectorCatalogDisplayColumns.tags,
-          generation: connectorCatalogDisplayColumns.generation,
-          permissionSummary: connectorCatalogDisplayColumns.permissionSummary,
-        })
-        .from(connectorCatalogEntries)
-        .where(eq(connectorCatalogEntries.hash, identity.catalogDigest))
-        .orderBy(asc(connectorCatalogEntries.slug));
-      if (rows.length === 0) {
-        throw new ExternalConnectorCatalogUnavailableError("missing_entries");
-      }
-      return materializeAcceptedConnectorCatalog({
-        identity,
-        capability,
-        connectors: rows.map(materializeConnectorCatalogDisplayRow),
       });
     },
   });
@@ -785,7 +784,9 @@ export function getConnectorCatalogResolutionDetail(
 export async function loadCompleteConnectorCatalogSource(
   db: ReadonlyDb,
 ): Promise<ConnectorCatalogSlugSource<ConnectorCatalogDisplayConnector>> {
-  return catalogSource(await loadDisplayConnectorCatalogSnapshot(db));
+  return catalogSource(
+    await loadAcceptedConnectorCatalogSnapshot(db, undefined, "display"),
+  );
 }
 
 export function listAcceptedConnectorCatalogAvailableSlugs(args: {
@@ -971,7 +972,11 @@ function connectorCatalogConnectionFields(
 export async function listExternalPublicConnectorCatalog(
   args: ExternalCatalogReadArgs,
 ): Promise<PublicConnectorCatalogListResponse> {
-  const catalog = await loadDisplayConnectorCatalogSnapshot(args.db);
+  const catalog = await loadAcceptedConnectorCatalogSnapshot(
+    args.db,
+    undefined,
+    "display",
+  );
   const connectors = effectiveConnectors({
     catalog: catalogSource(catalog),
     featureStates: args.featureStates,
@@ -1124,7 +1129,11 @@ function discoveryEffectiveConnectors(
 export async function searchExternalConnectorCatalog(
   args: ExternalCatalogSearchArgs,
 ): Promise<BuiltinConnectorSearchItem[]> {
-  const catalog = await loadDisplayConnectorCatalogSnapshot(args.db);
+  const catalog = await loadAcceptedConnectorCatalogSnapshot(
+    args.db,
+    undefined,
+    "display",
+  );
   const effective = effectiveConnectors({
     catalog: catalogSource(catalog),
     featureStates: args.featureStates,
@@ -1222,7 +1231,11 @@ export function connectorBriefsFromSource(
 export async function listExternalPublicConnectorCatalogStatus(
   args: ExternalCatalogStatusArgs,
 ): Promise<ConnectorCatalogStatusRead> {
-  const catalog = await loadDisplayConnectorCatalogSnapshot(args.db);
+  const catalog = await loadAcceptedConnectorCatalogSnapshot(
+    args.db,
+    undefined,
+    "display",
+  );
   const effective = effectiveConnectors({
     catalog: catalogSource(catalog),
     featureStates: args.featureStates,
@@ -1239,7 +1252,11 @@ export async function listExternalPublicConnectorCatalogStatus(
 export async function discoverExternalPublicConnectorCatalogStatus(
   args: ExternalCatalogDiscoveryArgs,
 ): Promise<ConnectorCatalogDiscoveryRead> {
-  const catalog = await loadDisplayConnectorCatalogSnapshot(args.db);
+  const catalog = await loadAcceptedConnectorCatalogSnapshot(
+    args.db,
+    undefined,
+    "display",
+  );
   const effective = effectiveConnectors({
     catalog: catalogSource(catalog),
     featureStates: args.featureStates,

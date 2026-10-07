@@ -90,40 +90,6 @@ async function loadSlugDisplaySource(
   );
 }
 
-async function loadPermissionSlugSource(db: ReadonlyDb, slug: ConnectorSlug) {
-  const rows = await db
-    .select({
-      current: {
-        schemaVersion: connectorCatalog.schemaVersion,
-        hash: connectorCatalog.hash,
-      },
-      entry: {
-        slug: connectorCatalogRuntimeColumns.slug,
-        authMethods: connectorCatalogRuntimeColumns.authMethods,
-        mcp: connectorCatalogRuntimeColumns.mcp,
-        label: connectorCatalogRuntimeColumns.label,
-        icon: connectorCatalogRuntimeColumns.icon,
-        firewall: connectorCatalogRuntimeColumns.firewall,
-      },
-    })
-    .from(connectorCatalog)
-    .leftJoin(connectorCatalogEntries, connectorCatalogSlugJoin([slug]))
-    .where(connectorCatalogCurrentWhere());
-  return connectorCatalogSlugSourceFromRows(
-    rows.map((row) => {
-      if (row.entry === null) {
-        return { current: row.current, entry: null };
-      }
-      const { mcp, ...fields } = row.entry;
-      return {
-        current: row.current,
-        entry: { ...fields, ...(mcp === null ? {} : { mcp }) },
-      };
-    }),
-    [slug],
-  );
-}
-
 export async function searchConnectorCatalog(
   args: ConnectorCatalogSearchArgs,
 ): Promise<BuiltinConnectorSearchItem[]> {
@@ -215,8 +181,42 @@ export async function getPublicConnectorCatalogStatus(
 export async function getPublicConnectorCatalogPermissionDetail(
   args: ConnectorCatalogConnectorReadArgs,
 ): Promise<PublicConnectorCatalogPermissionDetail | null> {
+  const rows = await args.db
+    .select({
+      current: {
+        schemaVersion: connectorCatalog.schemaVersion,
+        hash: connectorCatalog.hash,
+      },
+      entry: {
+        slug: connectorCatalogRuntimeColumns.slug,
+        authMethods: connectorCatalogRuntimeColumns.authMethods,
+        mcp: connectorCatalogRuntimeColumns.mcp,
+        label: connectorCatalogRuntimeColumns.label,
+        icon: connectorCatalogRuntimeColumns.icon,
+        firewall: connectorCatalogRuntimeColumns.firewall,
+      },
+    })
+    .from(connectorCatalog)
+    .leftJoin(
+      connectorCatalogEntries,
+      connectorCatalogSlugJoin([args.connectorSlug]),
+    )
+    .where(connectorCatalogCurrentWhere());
+  const catalog = connectorCatalogSlugSourceFromRows(
+    rows.map((row) => {
+      if (row.entry === null) {
+        return { current: row.current, entry: null };
+      }
+      const { mcp, ...fields } = row.entry;
+      return {
+        current: row.current,
+        entry: { ...fields, ...(mcp === null ? {} : { mcp }) },
+      };
+    }),
+    [args.connectorSlug],
+  );
   return publicConnectorCatalogPermissionDetailFromSource({
     ...args,
-    catalog: await loadPermissionSlugSource(args.db, args.connectorSlug),
+    catalog,
   });
 }
