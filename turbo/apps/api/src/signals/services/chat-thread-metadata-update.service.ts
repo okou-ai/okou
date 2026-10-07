@@ -25,7 +25,6 @@ import {
   chatThreadServiceTierFromCodex,
   chatThreadEventInsertSql,
 } from "./chat-thread-event.service";
-import { chatThreadModelPinColumns } from "./chat-thread-model.service";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import { loadModelCatalog$, type ModelCatalog } from "./model-catalog.service";
 import {
@@ -213,7 +212,7 @@ function resolveModelColumns(
   return {
     kind: "ok",
     columns: {
-      ...chatThreadModelPinColumns(pin),
+      selectedModel: pin.selectedModel,
       modelSettings: effort.modelSettings,
       modelSettingsPatch: effort.modelSettingsPatch,
       codexServiceTier,

@@ -9,7 +9,6 @@ import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { welcomeThreadContent } from "../../lib/welcome-thread-content";
 import { writeDb$ } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
-import { chatThreadModelPinColumns } from "./chat-thread-model.service";
 import { createChatThread$ } from "./chat-thread.service";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { userPreferences } from "./user-data.service";
@@ -102,7 +101,7 @@ export const createWelcomeChatThread$ = command(
         agentId: agent.id,
         title: content.title,
         eventId: undefined,
-        ...chatThreadModelPinColumns(pin),
+        selectedModel: pin.selectedModel,
         codexServiceTier:
           pin.serviceTier === "priority"
             ? "fast"

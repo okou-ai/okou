@@ -29,7 +29,6 @@ import {
   chatThreadServiceTierFromCodex,
   type ChatThreadEventTransaction,
 } from "./chat-thread-event.service";
-import { chatThreadModelPinColumns } from "./chat-thread-model.service";
 import {
   resolveDefaultModelFirstPin$,
   type DefaultModelFirstPin,
@@ -231,7 +230,6 @@ async function createAutomationChatThread(
   if (!pin.selectedModel) {
     throw new Error("A model selection is required");
   }
-  const pinColumns = chatThreadModelPinColumns(pin);
   const threadPlan = prepareChatThreadInsert({
     orgId: args.orgId,
     userId: args.userId,
@@ -239,7 +237,7 @@ async function createAutomationChatThread(
     title: args.title,
     modelSettings: args.preparation.modelSettings,
     cloudBrowserEnabled: args.preparation.cloudBrowserEnabled,
-    selectedModel: pinColumns.selectedModel,
+    selectedModel: pin.selectedModel,
     codexServiceTier:
       pin.serviceTier === "priority"
         ? "fast"

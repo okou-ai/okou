@@ -55,7 +55,7 @@ function normalizedText(element: Element): string {
 }
 
 export function findFastControl(
-  role: "button" | "link" | "tab",
+  role: "button" | "link" | "radio" | "tab",
   name: string,
   container: ParentNode = document.body,
 ): Promise<HTMLElement> {
@@ -74,7 +74,7 @@ export function findFastControl(
 }
 
 export function queryFastControl(
-  role: "button" | "link" | "tab",
+  role: "button" | "link" | "radio" | "tab",
   name: string,
   container: ParentNode = document.body,
 ): HTMLElement | null {

@@ -310,7 +310,13 @@ test("The panel emphasizes the typed query inside a workflow name", async () => 
 });
 
 test("A query that matches no workflow says so in the workflow list", async () => {
-  await openSlashMenu("zzz");
+  await openSlashMenu("axi");
+  await waitFor(() => {
+    return slashButton(`/${WORKFLOW_NAME}`);
+  });
+
+  await fill(await findComposerEditor(), "Draft /zzz");
+
   const menu = screen.getByTestId("slash-workflow-menu");
   await expect(
     within(menu).findByText("No matching workflows"),

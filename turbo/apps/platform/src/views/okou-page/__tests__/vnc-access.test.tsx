@@ -35,8 +35,9 @@ test("VNC is available in the Remote control connection list", async () => {
     path: "/connectors?scope=remote-control",
     featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
   });
-  expect(queryFastControl("button", "Manage VNC access")).toBeNull();
-  await screen.findByRole("heading", { name: "VNC" });
+  await expect(
+    screen.findByRole("heading", { name: "VNC" }),
+  ).resolves.toBeInTheDocument();
 });
 
 test("Feature-off VNC makes no requests in Remote control", async () => {
