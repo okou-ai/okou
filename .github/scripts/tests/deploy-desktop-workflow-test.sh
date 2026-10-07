@@ -31,6 +31,7 @@ verify = steps.find { |step| step["name"] == "Verify signed and notarized macOS 
 raise "installation must test mounted app" unless verify.include?('"$mount/Okou.app" --verify-only')
 publish = release.fetch("publish-desktop-update-manifest")
 raise "feed must wait for notarized release assets" unless publish.fetch("needs").include?("promote-desktop-release") && publish.fetch("if").include?("needs.promote-desktop-release.result == 'success'")
+raise "feed must wait for the API appcast deployment" unless publish.fetch("needs").include?("promote-api-production") && publish.fetch("if").include?("needs.promote-api-production.result == 'success'")
 raise "legacy updater manifest must stay on same line" unless publish.fetch("steps").any? { |step| step.fetch("run", "").include?("ai-okou-desktop-update-manifest.json") }
 RUBY
 echo "native Desktop workflow tests passed"

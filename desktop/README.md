@@ -87,5 +87,6 @@ override the Xcode version from that file. Merge-group CI uploads the canonical
 unsigned app under its exact commit SHA in R2. The production promotion job
 downloads and verifies that artifact, signs and notarizes it without rebuilding,
 publishes `okou-desktop-v*` ZIP/DMG assets, and updates the existing manifest only
-after promotion succeeds. Both updater formats share channel/blocked-version
-selection in the canonical API service.
+after both Desktop promotion and API deployment succeed. This keeps the first
+native ZIP behind deployment of its appcast route. Both updater formats share
+channel/blocked-version selection in the canonical API service.

@@ -813,8 +813,10 @@ jobs:
 
   publish-desktop-update-manifest:
     name: publish-desktop-update-manifest
-    needs: [release-please, promote-desktop-release]
-    if: ${{ needs.release-please.outputs.desktop_release_created == 'true' && needs.promote-desktop-release.result == 'success' }}
+    # The first native release needs the API's new appcast route before old
+    # Electron clients are offered the native ZIP.
+    needs: [release-please, promote-desktop-release, promote-api-production]
+    if: ${{ needs.release-please.outputs.desktop_release_created == 'true' && needs.promote-desktop-release.result == 'success' && needs.promote-api-production.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
