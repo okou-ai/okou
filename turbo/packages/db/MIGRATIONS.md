@@ -323,8 +323,10 @@ copies on `model_providers` (`token_expires_at`, `needs_reconnect`,
 `subscription_reset_period`, `subscription_next_reset_at`); the live values are
 on `model_provider_accounts`. Rollout: an API built before 1337 selects every
 `model_providers` and `model_provider_auth_sessions` column, so this is not a
-rolling-compatible contraction. The production rollback resolver enforces a
-floor on the first-parent `main` commit that adds 1337. See
+rolling-compatible contraction; owner acceptance of that interruption is
+pending (see deployment compatibility) and must be recorded before deploy. The
+production rollback resolver enforces a floor on the first-parent `main` commit
+that adds 1337. See
 [deployment compatibility](../../../docs/deployment-compatibility.md#frozen-model-provider-state-dropped-2026-10-07).
 
 The 1325–1327 transition validators (`test-custom-model-retirement.ts`,

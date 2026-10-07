@@ -29,8 +29,8 @@ teardown() {
         .defaultModel == "okou-1.0" and
         (.models | length == 1) and
         .models[0].model == "okou-1.0" and
-        .models[0].defaultProviderType == "built-in" and
-        .models[0].credentialScope == "org" and
+        .models[0].memberEffective.providerType == "built-in" and
+        .models[0].memberEffective.credentialScope == "org" and
         .models[0].modelProviderId == null
     ' <<<"$output"
     assert_success

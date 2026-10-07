@@ -11,6 +11,8 @@ ALTER TABLE "model_providers" DROP COLUMN "workspace_name";--> statement-breakpo
 ALTER TABLE "model_providers" DROP COLUMN "plan_type";--> statement-breakpoint
 ALTER TABLE "model_providers" DROP COLUMN "subscription_reset_period";--> statement-breakpoint
 ALTER TABLE "model_providers" DROP COLUMN "subscription_next_reset_at";--> statement-breakpoint
+UPDATE "chat_threads" SET "codex_service_tier" = NULL WHERE "codex_service_tier" = 'ultrafast';--> statement-breakpoint
+UPDATE "org_members_metadata" SET "service_tier" = NULL WHERE "service_tier" = 'ultrafast';--> statement-breakpoint
 ALTER TABLE "chat_threads" ADD CONSTRAINT "chk_chat_threads_codex_service_tier" CHECK ("chat_threads"."codex_service_tier" IS NULL OR "chat_threads"."codex_service_tier" = 'fast') NOT VALID;--> statement-breakpoint
 ALTER TABLE "chat_threads" VALIDATE CONSTRAINT "chk_chat_threads_codex_service_tier";--> statement-breakpoint
 ALTER TABLE "model_routes" ADD CONSTRAINT "chk_model_routes_service_tiers" CHECK ("model_routes"."service_tiers" <@ ARRAY['priority']::text[] AND ("model_routes"."default_service_tier" IS NULL OR "model_routes"."default_service_tier" = ANY("model_routes"."service_tiers")));--> statement-breakpoint

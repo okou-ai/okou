@@ -738,6 +738,43 @@ describe("retired Ultrafast service tier", () => {
     ).toStrictEqual([null, "priority"]);
   });
 
+  it("reads a stored Ultrafast model part as the Standard tier", () => {
+    const message = userMessageDocumentSchema.parse({
+      version: 1,
+      parts: [
+        { type: "text", text: "hello" },
+        {
+          type: "model",
+          selectedModel: "gpt-6-astra",
+          serviceTier: "ultrafast",
+        },
+      ],
+    });
+
+    expect(message.parts[1]).toStrictEqual({
+      type: "model",
+      selectedModel: "gpt-6-astra",
+      serviceTier: undefined,
+    });
+    expect(
+      userMessageDocumentSchema.parse({
+        version: 1,
+        parts: [
+          { type: "text", text: "hello" },
+          {
+            type: "model",
+            selectedModel: "gpt-6-astra",
+            serviceTier: "priority",
+          },
+        ],
+      }).parts[1],
+    ).toStrictEqual({
+      type: "model",
+      selectedModel: "gpt-6-astra",
+      serviceTier: "priority",
+    });
+  });
+
   it("rejects Ultrafast on run option requests", () => {
     const body = chatThreadModelSelectionContract.update.body.safeParse({
       model: "gpt-6-astra",

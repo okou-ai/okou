@@ -708,11 +708,20 @@ const userMessageInputPartSchema = z.discriminatedUnion("type", [
     ),
 ]);
 
+/**
+ * Model parts are written by the API into append-only chat events. Events
+ * stored while Ultrafast was offered can still carry it; read it as the
+ * Standard tier (absent) instead of failing the whole message.
+ */
+const persistedUserMessageServiceTierSchema = z.preprocess((tier) => {
+  return tier === "ultrafast" ? undefined : tier;
+}, chatThreadServiceTierSchema.optional());
+
 const userMessageModelPartSchema = z
   .object({
     type: z.literal("model"),
     selectedModel: z.string().min(1),
-    serviceTier: chatThreadServiceTierSchema.optional(),
+    serviceTier: persistedUserMessageServiceTierSchema,
   })
   .strict();
 

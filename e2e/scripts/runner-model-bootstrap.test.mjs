@@ -18,10 +18,10 @@ const path = new URL(url).pathname;
 fs.appendFileSync(process.env.REQUESTS, JSON.stringify({path, method, body, args}) + "\\n");
 let response;
 if (path === "/api/run-models" && method === "GET") {
-  const models = [{model: "okou-1.0", defaultProviderType: "built-in", credentialScope: "org", modelProviderId: null}];
+  const models = [{model: "okou-1.0", modelProviderId: null, memberEffective: {providerType: "built-in", credentialScope: "org"}}];
   if (process.env.PERSONAL === "true") {
-    models.push({model: "claude-sonnet-5-5", defaultProviderType: "claude-code-oauth-token", credentialScope: "member"},
-      {model: "gpt-6-astra", defaultProviderType: "codex-oauth-token", credentialScope: "member"});
+    models.push({model: "claude-sonnet-5-5", memberEffective: {providerType: "claude-code-oauth-token", credentialScope: "member"}},
+      {model: "gpt-6-astra", memberEffective: {providerType: "codex-oauth-token", credentialScope: "member"}});
   }
   response = {defaultModel: process.env.INVALID_AUTO === "true" ? "retired-model" : "okou-1.0", models};
 } else if (path === "/api/feature-switches" && method === "POST") {

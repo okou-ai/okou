@@ -1082,10 +1082,7 @@ describe("maintenance routing admission and captured authority", () => {
   it("keeps memory binding checks for a captured route", async () => {
     // Memory maintenance resolves its independent binding, not Auto.
     await seedBuiltInModelKey(context, PI_MEMORY_PHASE2_BUILT_IN_MODEL);
-    const route = await resolvePiMemoryBuiltinRoute(
-      db(),
-      new AbortController().signal,
-    );
+    const route = await resolvePiMemoryBuiltinRoute(db(), context.signal);
     if (!route) {
       throw new Error("Missing current OpenRouter memory route");
     }

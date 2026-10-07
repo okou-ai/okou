@@ -53,8 +53,11 @@ Migration `1335_retire_ultrafast_data` clears stored Ultrafast selections:
 `1337_retire_model_route_state` then limits route tiers to `priority`
 and adds `chk_chat_threads_codex_service_tier` (NULL or `fast`) and
 `chk_org_members_metadata_service_tier` (NULL or `priority`). The two new checks
-are added `NOT VALID` and validated in a separate statement, so new writes are
-enforced without holding a blocking lock while existing rows are scanned.
+are added `NOT VALID` and validated in a separate statement after 1337 repeats
+the Ultrafast cleanup, so a value written by a draining pre-1337 API cannot fail
+validation. 1337 runs in one transaction, so the lock taken by `ADD CONSTRAINT`
+is held through the `VALIDATE` scan, bounded by the migration statement
+timeout.
 
 New requests that send `ultrafast` are rejected with 400. Immutable history
 (thread events, snapshots, client caches and queued chat input model
