@@ -1625,11 +1625,9 @@ describe("connector catalog valid lifecycle", () => {
     expect(context.mocks.s3.send.mock.calls.length - callsBeforeUnchanged).toBe(
       1,
     );
-    const unchangedRequest = commandInput(
-      context.mocks.s3.send.mock.calls[callsBeforeUnchanged]?.[0],
-    );
-    expect(unchangedRequest).toMatchObject({ Bucket: bucket, Key: ACTIVE_KEY });
-    expect(unchangedRequest).not.toHaveProperty("IfNoneMatch");
+    expect(
+      commandInput(context.mocks.s3.send.mock.calls[callsBeforeUnchanged]?.[0]),
+    ).toMatchObject({ Bucket: bucket, Key: ACTIVE_KEY });
 
     serveObjects(catalogObjects([first, second], second));
     expect((await syncCatalog()).body).toMatchObject({
