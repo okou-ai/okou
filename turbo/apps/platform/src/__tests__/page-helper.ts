@@ -495,8 +495,24 @@ function createPushStateMock(signal: AbortSignal, initialUrl: URL): void {
       return;
     }
     updateLocation(entry);
-    window.dispatchEvent(new PopStateEvent("popstate", { state: entry.data }));
+    const event = new PopStateEvent("popstate", { state: entry.data });
+    Object.defineProperty(event, "hasUAVisualTransition", {
+      value: swipingBack,
+    });
+    window.dispatchEvent(event);
   });
+}
+
+let swipingBack = false;
+
+/**
+ * Go back the way an edge swipe does: the browser animates the page change
+ * itself and reports it on the popstate event.
+ */
+export function swipeBack(): void {
+  swipingBack = true;
+  window.history.back();
+  swipingBack = false;
 }
 
 /**

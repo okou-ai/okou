@@ -247,12 +247,15 @@ export const initRoutes$ = command(
       "popstate",
       onDomEventFn(async (event: PopStateEvent) => {
         // The browser has already moved to the destination, while the route
-        // state still describes the page on screen.
-        const direction = set(
-          pageTransitionDirectionTo$,
-          pathname(),
-          new URLSearchParams(search()),
-        );
+        // state still describes the page on screen. After an edge swipe the
+        // browser has animated the change itself, so a slide would play twice.
+        const direction = event.hasUAVisualTransition
+          ? "none"
+          : set(
+              pageTransitionDirectionTo$,
+              pathname(),
+              new URLSearchParams(search()),
+            );
         const moved = set(moveRoute$, direction, {
           kind: "pop",
           historyState: event.state,
