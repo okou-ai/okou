@@ -588,15 +588,6 @@ describe("production driver generation and admission wiring", () => {
     expect(app.native.created).toBe(1);
   });
 
-  it("preserves manual Stop when a late sign-in completion arrives", async () => {
-    const app = desktop();
-    await app.controller.start();
-    await app.controller.stop();
-    await app.controller.startForAuthChange(new AbortController().signal);
-    expect(app.controller.getHostState().status).toBe("offline");
-    expect(app.native.created).toBe(1);
-  });
-
   it("does not register a host when the auth lifetime aborts during readiness", async () => {
     const app = desktop();
     const reached = deferred<void>();

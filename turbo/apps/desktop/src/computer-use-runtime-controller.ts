@@ -690,7 +690,7 @@ export class ComputerUseRuntimeController {
     );
   }
 
-  /** User-initiated stop; suppresses auto-restarts until the next manual start. */
+  /** User-initiated stop; suppresses auto-restarts until Start or interactive auth. */
   async stop(): Promise<void> {
     this.runningRequested = false;
     this.manualStopRequested = true;
@@ -725,7 +725,7 @@ export class ComputerUseRuntimeController {
     );
   }
 
-  /** Auth completion preserves manual Stop intent and cannot revive superseded work. */
+  /** Interactive auth requests a fresh start without reviving superseded work. */
   async startForAuthChange(signal: AbortSignal): Promise<void> {
     this.supersede();
     const intent = this.intent;
@@ -735,7 +735,8 @@ export class ComputerUseRuntimeController {
       this.lifecycleTimers,
     );
     signal.throwIfAborted();
-    if (intent === this.intent) await this.start({ signal });
+    if (intent === this.intent)
+      await this.start({ signal, userInitiated: true });
   }
 
   /** Clears a stale blocked host state once required permissions are missing. */

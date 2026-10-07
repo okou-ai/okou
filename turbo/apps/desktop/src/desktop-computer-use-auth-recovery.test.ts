@@ -132,12 +132,14 @@ lines.on('line', line => {
     addClientHeaders: headers,
     tokenUrl: `${api}/token`,
     selectOrgUrl: `${api}/select-org`,
+    signInUrl: `${api}/sign-in`,
     consumeUrl: () => `${api}/consume`,
     runAuthWindow: async () => {
       authWindows++;
       return await (authReplies.shift() ?? Promise.resolve(identity));
     },
     onChange: () => authChanged(),
+    onAuthCompleted: (signal) => controller.startForAuthChange(signal),
     onBackgroundRefresh: (event) =>
       controller.handleBackgroundAuthRefresh(event),
   });
@@ -553,6 +555,82 @@ it.each(["failed", "different identity"] as const)(
     expect(app.driver.getCapabilities()).toHaveLength(0);
   },
 );
+
+it.each(["native sign-in", "browser callback"] as const)(
+  "goes online after Stop, sign-out, and a successful %s",
+  async (login) => {
+    const app = desktop();
+    await app.authorize();
+    await app.controller.start({ userInitiated: true });
+    await app.controller.stop();
+    app.auth.signOut();
+    await app.settle();
+
+    if (login === "native sign-in") await app.auth.signIn();
+    else await app.auth.consumeCode("login-code");
+    await app.settle();
+
+    expect(await app.auth.getAuthState()).toMatchObject({
+      status: "signed_in",
+    });
+    expect(app.controller.getHostState()).toMatchObject({
+      status: "online",
+      hostId: "host-2",
+    });
+    expect(app.acceptedHosts()).toBe(2);
+  },
+);
+
+it("keeps Okou offline after Stop when hidden authentication refresh succeeds", async () => {
+  const app = desktop();
+  await app.authorize();
+  await app.controller.start({ userInitiated: true });
+  await app.controller.stop();
+  app.expireIdentity();
+
+  expect(await app.auth.getAuthState()).toMatchObject({ status: "signed_in" });
+  await app.settle();
+  await vi.waitFor(() => expect(app.developer.getState().available).toBe(true));
+
+  expect(app.controller.getHostState().status).toBe("offline");
+  expect(app.acceptedHosts()).toBe(1);
+});
+
+it("preserves a newer Stop while interactive sign-in waits for host cleanup", async () => {
+  const app = desktop();
+  await app.authorize();
+  await app.controller.start({ userInitiated: true });
+  const reached = deferred<void>();
+  const response = deferred<void>();
+  server.use(
+    http.post(`${api}/api/computer-use/host/stop`, async () => {
+      reached.resolve();
+      await response.promise;
+      return HttpResponse.json({});
+    }),
+  );
+  const stopping = app.controller.stop();
+  await reached.promise;
+  app.auth.signOut();
+  const signingIn = app.auth.signIn();
+  try {
+    await vi.waitFor(async () =>
+      expect(await app.auth.getAuthState()).toMatchObject({
+        status: "signed_in",
+      }),
+    );
+    const newerStop = app.controller.stop();
+    response.resolve();
+    await Promise.all([stopping, signingIn, newerStop]);
+    await app.settle();
+
+    expect(app.controller.getHostState().status).toBe("offline");
+    expect(app.acceptedHosts()).toBe(1);
+  } finally {
+    response.resolve();
+    await Promise.allSettled([stopping, signingIn]);
+  }
+});
 
 it("finishes initial hidden authentication triggered by Okou startup", async () => {
   const app = desktop();
