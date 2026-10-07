@@ -1035,6 +1035,24 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     );
     serve(next);
     switchedHash = next.hash;
+    // A pointer-transaction failure leaves the previous pointer serving, with
+    // the new entries prepared but unreferenced.
+    await engine.exec(
+      `ALTER TABLE connector_catalog ADD CONSTRAINT pointer_failure CHECK (hash <> '${next.hash}') NOT VALID`,
+    );
+    await expect(sync()).rejects.toThrow(
+      "Unknown response status 500 for GET /api/cron/sync-connector-catalog",
+    );
+    expect(
+      (await engine.query("SELECT hash FROM connector_catalog")).rows,
+    ).toStrictEqual([{ hash: concurrent.hash }]);
+    await expect(readEntryCount(next.hash)).resolves.toBe(
+      next.artifact.connectors.length,
+    );
+    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(2);
+    await engine.exec(
+      "ALTER TABLE connector_catalog DROP CONSTRAINT pointer_failure",
+    );
     context.mocks.ably.batchPublish.mockRejectedValueOnce(
       new Error("Controlled realtime boundary unavailable"),
     );
