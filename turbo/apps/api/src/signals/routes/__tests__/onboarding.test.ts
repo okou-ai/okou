@@ -376,26 +376,6 @@ describe("POST /api/onboarding/complete", () => {
     });
   });
 
-  it("rejects an unknown model preference before completing onboarding", async () => {
-    const actor = orgActor();
-    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
-
-    const rejected = await setupRawAppRequest({
-      context,
-      routes: onboardingCompleteRoutes,
-    })("/api/onboarding/complete?modelProvider=unknown", {
-      method: "POST",
-      headers: { ...authHeaders(), "content-type": "application/json" },
-      body: "{}",
-    });
-    expect(rejected.status).toBe(400);
-    const status = await accept(
-      onboardingStatusClient().getStatus({ headers: authHeaders() }),
-      [200],
-    );
-    expect(status.body.onboardingComplete).toBeFalsy();
-  });
-
   it("rejects a key the completion body does not declare", async () => {
     const actor = orgActor();
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);

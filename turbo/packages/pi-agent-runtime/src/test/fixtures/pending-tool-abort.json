@@ -10,8 +10,8 @@
         }
       ],
       "api": "openai-responses",
-      "provider": "openai",
-      "model": "gpt-6-luna",
+      "provider": "openrouter",
+      "model": "openai/gpt-6-luna",
       "usage": {
         "input": 0,
         "output": 0,

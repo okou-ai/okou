@@ -139,7 +139,7 @@ async function expectAgentChatProvenance(args: {
   });
 }
 
-describe("CHAT-02: model-first provider policies", () => {
+describe("CHAT-02: model-first routing", () => {
   it("pins recall-enabled Pi memory across Sandbox turns of one session", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);

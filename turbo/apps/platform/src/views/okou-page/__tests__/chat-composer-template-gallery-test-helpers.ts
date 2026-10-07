@@ -46,10 +46,10 @@ export function mockTemplateChat(options?: {
   const runClientThreadIds: (string | undefined)[] = [];
   const threadCreates: string[] = [];
 
-  mockAgent({ selectedModel: "claude-sonnet-5" });
+  mockAgent();
   mockPersonalModelRoutes();
   mockBillingCapabilities(
-    { supportByok: true, restrictedBuiltInModels: false },
+    { restrictedBuiltInModels: false },
     options?.tier ?? "pro",
   );
   const lifecycle = mockChatLifecycle(context, {

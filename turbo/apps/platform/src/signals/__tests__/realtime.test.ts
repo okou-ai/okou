@@ -293,7 +293,7 @@ test("A pending live-update listener starts after realtime connects", async () =
 
 test("Workspace live updates stay in the active workspace", async () => {
   mockSignedInUser();
-  const topic = "runModelsChanged";
+  const topic = "runQueueChanged";
   let runs = 0;
   const loop$ = command((_ctx, _signal: AbortSignal) => {
     runs += 1;

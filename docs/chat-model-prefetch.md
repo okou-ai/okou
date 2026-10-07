@@ -7,7 +7,7 @@ in [API ccstate design](api-ccstate.md#1-factories-take-plain-values).
 
 ## Independently consumable groups
 
-- `orgRows$`: raw results of the organization-level shared statement, only for derived nodes; reused only for matching `orgId` and started by preload. Metadata, plan, capacity, expired credits and policies decode independently, so a domain invariant failure does not reject the shared transport promise.
+- `orgRows$`: raw results of the organization-level shared statement, only for derived nodes; reused only for matching `orgId` and started by preload. Metadata, plan, capacity and expired credits decode independently, so a domain invariant failure does not reject the shared transport promise.
 - `agent$`: Agent configuration and its organization-default identity.
 - `plan$`: organization plan capabilities, shared with capacity and admission.
 - `concurrencyCapacity$`: org-keyed subscription slots plus the captured plan's
@@ -30,18 +30,14 @@ in [API ccstate design](api-ccstate.md#1-factories-take-plain-values).
   The member UNION also captures feature-switch rows (member and organization sentinel),
   ordered disabled tools and the member usage-pack aggregate. Each consumer decodes
   only its own payload; standalone Pi maintenance retains its independent metadata read.
-- `modelFacts$`: the catalog, routes, organization policies, model mode and credits.
-  It shares `plan$` rather than rereading the entitlement. The catalog node is
-  created once outside the derived callback and starts alongside `orgRows$`;
-  catalog SQL no longer waits for plan or metadata resolution. Policies come
-  from the shared organization statement.
+- `modelFacts$`: the catalog (with the organization's operator-only OpenRouter
+  preset applied), organization metadata and plan capabilities. It shares `plan$`
+  rather than rereading the entitlement. The catalog node is created once outside
+  the derived callback and starts alongside `orgRows$`; catalog SQL does not wait
+  for plan or metadata resolution.
 - `memberModels$`: member providers, connected accounts, configured models and
   encrypted provider/account secrets, joined once for `(orgId, userId)`. Routing,
   exact source selection and subscription candidate capture share these rows.
-- `orgModelSources$`: organization provider configuration and encrypted credentials,
-  read once for `(orgId, __org__)`; S1 policy resolution and S3 source assembly share it.
-- `gatewayModelSources$`: organization gateway surfaces, connection configuration
-  and encrypted credentials, read together for `orgId`.
 - `managedModelKeys$`: global managed-key IDs, vendors and secret values in one
   projection. Route selection and the exact selected key consume this same snapshot.
 - `modelPricing$`: global `(kind, provider, category)` existence projection, indexed
@@ -151,8 +147,7 @@ the selected account consumes them; an unused malformed credential does not
 fail another account's run.
 
 Regression coverage uses real send/Run/Runner APIs for a matching context, queued
-input drained in a later request without a context, model policy changes while
-an external attachment response is pending, and fail-fast matching preload
+input drained in a later request without a context, and fail-fast matching preload
 failure. #37563's captured-generation behavior and next-pick account-default visibility are preserved. Deployed parent/PR
 trace comparison reports statement/table counts separately from runner output,
 and does not claim production latency improvements from a small sample.
@@ -244,9 +239,9 @@ flush that would deadlock the suspended reader.
 
 ## Model credentials and pricing authority (E group)
 
-Global key/pricing nodes survive any identity reconciliation. Organization source
-nodes survive an org match; member providers/accounts survive an org+user match.
-All are included in immediate pre-authorization preload. Required org/gateway route facts are
+Global key/pricing nodes survive any identity reconciliation. Organization model
+facts survive an org match; member providers/accounts survive an org+user match.
+All are included in immediate pre-authorization preload. Required route facts are
 consumed in S1; unrelated global groups are not awaited before enqueue. A missing
 key, source or pricing category is authoritative; a rejected read is not retried.
 Selection is pure; secret decryption occurs only for the selected source. Native

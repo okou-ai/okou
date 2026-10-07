@@ -6,7 +6,6 @@ interface OrgTierLimits {
   readonly canBuyConcurrency: boolean;
   readonly canBuyCredits: boolean;
   readonly autoRechargeAllowed: boolean;
-  readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;
   readonly workflowWebhookAutomationAllowed: boolean;
   readonly audioLifetimeLimit: number | null;
@@ -26,7 +25,6 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
     canBuyConcurrency: false,
     canBuyCredits: false,
     autoRechargeAllowed: false,
-    supportByok: true,
     restrictedBuiltInModels: true,
     workflowWebhookAutomationAllowed: false,
     audioLifetimeLimit: 10,
@@ -39,7 +37,6 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
     canBuyConcurrency: false,
     canBuyCredits: true,
     autoRechargeAllowed: true,
-    supportByok: true,
     restrictedBuiltInModels: false,
     workflowWebhookAutomationAllowed: false,
     audioLifetimeLimit: null,
@@ -52,7 +49,6 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
     canBuyConcurrency: true,
     canBuyCredits: true,
     autoRechargeAllowed: true,
-    supportByok: true,
     restrictedBuiltInModels: false,
     workflowWebhookAutomationAllowed: true,
     audioLifetimeLimit: null,
@@ -65,7 +61,6 @@ export const ORG_PLAN_ENTITLEMENT_TIER_VALUES: Readonly<
     canBuyConcurrency: true,
     canBuyCredits: true,
     autoRechargeAllowed: true,
-    supportByok: true,
     restrictedBuiltInModels: false,
     workflowWebhookAutomationAllowed: true,
     audioLifetimeLimit: null,

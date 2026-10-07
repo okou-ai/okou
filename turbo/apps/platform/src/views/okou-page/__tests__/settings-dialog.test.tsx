@@ -382,7 +382,7 @@ test("Inspect built-in model cooldown diagnostics", async () => {
         activeCooldowns: [
           {
             selectedModel: "gpt-5.6-luna",
-            providerType: "openai-api-key",
+            providerType: "openrouter-codex",
             upstreamModel: "gpt-5.6-luna-2026-08-01",
             unavailableUntil: "2026-08-23T04:05:00.000Z",
           },
@@ -406,7 +406,7 @@ test("Inspect built-in model cooldown diagnostics", async () => {
   click(summary);
   expect(details.open).toBeTruthy();
   expect(within(diagnostics).getByText("gpt-5.6-luna")).toBeInTheDocument();
-  expect(within(diagnostics).getByText("openai-api-key")).toBeInTheDocument();
+  expect(within(diagnostics).getByText("openrouter-codex")).toBeInTheDocument();
   expect(
     within(diagnostics).getByText("gpt-5.6-luna-2026-08-01"),
   ).toBeInTheDocument();
@@ -549,7 +549,7 @@ test("Cancel a global built-in model cooldown as staff", async () => {
           ? [
               {
                 selectedModel: "gpt-5.6-luna",
-                providerType: "openai-api-key",
+                providerType: "openrouter-codex",
                 upstreamModel: "gpt-5.6-luna-2026-08-01",
                 unavailableUntil: "2026-08-23T04:05:00.000Z",
               },
@@ -584,7 +584,7 @@ test("Cancel a global built-in model cooldown as staff", async () => {
   });
   expect(cancellationBody).toBeNull();
   expect(within(confirmation).getByText("gpt-5.6-luna")).toBeVisible();
-  expect(within(confirmation).getByText("openai-api-key")).toBeVisible();
+  expect(within(confirmation).getByText("openrouter-codex")).toBeVisible();
   expect(
     within(confirmation).getByText("gpt-5.6-luna-2026-08-01"),
   ).toBeVisible();
@@ -605,7 +605,7 @@ test("Cancel a global built-in model cooldown as staff", async () => {
   expect(buttonWithText(confirmation, "Keep cooldown")).toBeDisabled();
   expect(cancellationBody).toStrictEqual({
     selectedModel: "gpt-5.6-luna",
-    providerType: "openai-api-key",
+    providerType: "openrouter-codex",
     upstreamModel: "gpt-5.6-luna-2026-08-01",
   });
 

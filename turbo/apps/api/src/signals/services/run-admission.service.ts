@@ -50,14 +50,13 @@ type CreditDb = Pick<Db, "$with" | "select" | "with">;
 
 export interface OrgCreditAvailability {
   readonly status: OrgPlanCapabilities["status"];
-  readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;
   readonly spendableCredits: number;
   readonly usagePackCredits: number;
 }
 type OrgPlanRunAdmissionCapabilities = Pick<
   OrgPlanCapabilities,
-  "status" | "supportByok" | "restrictedBuiltInModels"
+  "status" | "restrictedBuiltInModels"
 >;
 export interface RunCreditAdmissionState {
   readonly orgId: string;
@@ -169,7 +168,7 @@ function personalSubscriptionFromAccounts(
 ) {
   return isMemberSubscriptionRoute({
     catalog: input.catalog,
-    member: memberModelRouteContextFromAccounts(input.userId, accounts),
+    member: memberModelRouteContextFromAccounts(accounts),
     model: input.selectedModel,
     providerType: input.modelProviderType,
     credentialScope: "member",
@@ -189,7 +188,6 @@ function creditAvailability(
   return capabilities && balance?.credits !== null && balance !== undefined
     ? {
         status: capabilities.status,
-        supportByok: capabilities.supportByok,
         restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
         spendableCredits: balance.credits - (balance.unsettledExpired ?? 0),
         usagePackCredits,
@@ -401,7 +399,6 @@ export async function resolveOrgCreditAvailability(params: {
   });
   return {
     status: capabilities.status,
-    supportByok: capabilities.supportByok,
     restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
     spendableCredits,
     usagePackCredits,
@@ -486,7 +483,7 @@ export function checkOrgPlanRunAdmission(params: {
   readonly selectedModel: string | null | undefined;
   /**
    * The run uses the member's own connected, valid subscription on the
-   * model's catalog subscription route (Auto or Custom), verified by the
+   * model's catalog subscription route, verified by the
    * caller through `isMemberSubscriptionRoute`. It is the only route a free
    * plan may use besides its free Built-in models.
    */
@@ -520,10 +517,5 @@ export function checkOrgPlanRunAdmission(params: {
       restrictedModel.displayName,
     );
   }
-  return (!capabilities.supportByok &&
-    !params.personalSubscription &&
-    !isBuiltInModelProviderType(params.modelProviderType)) ||
-    modelAccess === "pro_required"
-    ? insufficientCredits()
-    : undefined;
+  return modelAccess === "pro_required" ? insufficientCredits() : undefined;
 }

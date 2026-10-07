@@ -143,7 +143,6 @@ import {
   PiMemoryQuotaError,
   checkPiMemoryQuota,
 } from "./pi-memory-quota.service";
-import { PiModelConfigurationError } from "./pi-model-configuration-error";
 import {
   checkOrgCreditsForRunAdmission$,
   isFreePlanForCreditAdmission,
@@ -342,13 +341,14 @@ const admitMaintenance$ = command(
       signal,
     );
     const selectedModel = credential.pin.selectedModel;
-    const modelProviderType = modelProviderTypeSchema.parse(
+    // A pinned provider outside the current enum is unavailable, not a crash.
+    const modelProviderType = modelProviderTypeSchema.safeParse(
       credential.pin.modelProvider,
-    );
+    ).data;
     const framework =
       credential.pin.modelProvider === "built-in"
         ? ("codex" as const)
-        : selectedModel
+        : selectedModel && modelProviderType
           ? frameworkForProviderSelection(
               catalog,
               modelProviderType,
@@ -1248,41 +1248,6 @@ function maintenanceModelEnvironment(args: {
 }
 
 /** Credentials a native Pi configuration must never receive ambiently. */
-const AMBIENT_PROVIDER_AUTH_KEYS = [
-  "AWS_ACCESS_KEY_ID",
-  "AWS_SECRET_ACCESS_KEY",
-  "AWS_SESSION_TOKEN",
-  "AWS_BEARER_TOKEN_BEDROCK",
-  "AWS_PROFILE",
-  "AWS_DEFAULT_PROFILE",
-  "AWS_WEB_IDENTITY_TOKEN_FILE",
-  "AWS_CONTAINER_CREDENTIALS_FULL_URI",
-  "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
-  "ANTHROPIC_FOUNDRY_API_KEY",
-  "CLAUDE_CODE_OAUTH_TOKEN",
-  "ANTHROPIC_API_KEY",
-  "ANTHROPIC_AUTH_TOKEN",
-  "OPENROUTER_API_KEY",
-  "VERCEL_AI_GATEWAY_API_KEY",
-  "OKOU_MODEL_PROVIDER_API_KEY",
-] as const;
-
-function assertNoAmbientProviderAuth(
-  modelConfig: PiModelConfig,
-  effectiveEnvironment: Record<string, string>,
-): void {
-  if (!("schemaVersion" in modelConfig) || modelConfig.schemaVersion !== 4) {
-    return;
-  }
-  for (const key of AMBIENT_PROVIDER_AUTH_KEYS) {
-    if (effectiveEnvironment[key]) {
-      throw new PiModelConfigurationError(
-        "Native Pi context cannot carry ambient provider authentication",
-      );
-    }
-  }
-}
-
 /**
  * The installed CLI must have this session construction and meet the CLI
  * floor; otherwise the guest uses the commit-addressed package.
@@ -1334,12 +1299,6 @@ function buildMaintenanceExecutionContext(
   });
   const environment = modelEnvironment;
   const effectiveEnvironment = { ...environment, ...platformEnvironment };
-  if (args.modelProvider.piModelConfig) {
-    assertNoAmbientProviderAuth(
-      args.modelProvider.piModelConfig,
-      effectiveEnvironment,
-    );
-  }
   const secretValues = Object.values(executionSecrets.secrets);
   const environmentKeyByValue = new Map<string, string>();
   for (const [key, value] of Object.entries(effectiveEnvironment)) {

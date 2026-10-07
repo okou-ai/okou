@@ -4654,11 +4654,8 @@
     "actions": {
       "addCredits": "Guthaben hinzufügen",
       "openModelProviders": "Modellanbieter öffnen",
-      "reconnectClaude": "Claude Code erneut verbinden",
-      "shareWithAdmin": "Mit einem Administrator teilen"
+      "reconnectClaude": "Claude Code erneut verbinden"
     },
-    "anthropicKeyAdmin": "Claude Code konnte sich mit dem konfigurierten Anthropic-API-Schlüssel nicht authentifizieren. Aktualisieren oder ersetzen Sie den API-Schlüssel unter Modellanbieter und versuchen Sie es erneut.",
-    "anthropicKeyMember": "Claude Code konnte sich mit dem konfigurierten Anthropic-API-Schlüssel nicht authentifizieren. Bitten Sie einen Workspace-Administrator, den API-Schlüssel zu aktualisieren oder zu ersetzen.",
     "askAdmin": "Bitten Sie einen Workspace-Administrator, Guthaben hinzuzufügen oder den Workspace-Tarif zu erweitern.",
     "claudeReconnect": "Die Authentifizierung des Claude-Code-Abonnements ist fehlgeschlagen. Verbinden Sie Claude Code unter Modellanbieter erneut und versuchen Sie es noch einmal.",
     "claudeTerms": "Claude Code erfordert die Zustimmung zu den aktualisierten Nutzungsbedingungen und der Datenschutzerklärung. Melden Sie sich unter https://claude.ai mit dem unter Modellanbieter verbundenen Claude-Konto an, stimmen Sie den Änderungen zu und versuchen Sie es erneut.",
@@ -4673,7 +4670,7 @@
     "overloaded": "{{model}} ist überlastet. Warten Sie einige Minuten und versuchen Sie es erneut oder wechseln Sie zu einem anderen Modell.",
     "providerBalance": "Das Guthaben Ihres verbundenen Modellanbieter-Kontos reicht nicht aus.",
     "transient": "Ein Fehler ist aufgetreten. Bitte versuchen Sie es später erneut.",
-    "vm0Credits": "Nicht genügend Guthaben. Fügen Sie Guthaben hinzu oder richten Sie Ihren eigenen API-Schlüssel ein, um fortzufahren."
+    "vm0Credits": "Nicht genügend Guthaben. Fügen Sie Guthaben hinzu oder verbinden Sie ein persönliches Codex- oder Claude-Abonnement, um fortzufahren."
   },
   "serviceStatus": {
     "dismiss": "Service-Update schließen",
@@ -4925,7 +4922,7 @@
           "lowest": "Niedrigste Kosten pro Generierung",
           "typical": "Typische Kosten pro Generierung"
         },
-        "inheritDefault": "Organisationsstandard (Auto)",
+        "inheritDefault": "Standard (Auto)",
         "loadError": "Modelle können nicht geladen werden.",
         "loading": "Modelle werden geladen...",
         "models": "Modelle",
@@ -4993,10 +4990,6 @@
         "image-generation": {
           "description": "Bilder mit integrierten Modellen erstellen.",
           "name": "Bilderzeugung"
-        },
-        "image-recognition": {
-          "description": "Lies und analysiere Bilder.",
-          "name": "Bilderkennung"
         },
         "maps": {
           "description": "Finde Orte, Adressen und Wegbeschreibungen.",

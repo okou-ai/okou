@@ -1,10 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { DeviceAuthSessionPublication } from "./model-provider-device-session-publication";
 
-import type {
-  ClaudeCodeDeviceAuthMode,
-  ClaudeCodeDeviceAuthScope,
-} from "@okouai/api-contracts/contracts/claude-code-device-auth";
+import type { ClaudeCodeDeviceAuthMode } from "@okouai/api-contracts/contracts/claude-code-device-auth";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
 import { command } from "ccstate";
@@ -91,7 +88,6 @@ type ClaudeCodeDeviceAuthStartResult =
   | {
       readonly ok: true;
       readonly sessionToken: string;
-      readonly scope: ClaudeCodeDeviceAuthScope;
       readonly browserUrl: string;
       readonly expiresIn: number;
     }
@@ -425,7 +421,6 @@ const moveSessionToAwaitingApproval$ = command(
     { set },
     args: {
       readonly session: ModelProviderAuthSession;
-      readonly scope: ClaudeCodeDeviceAuthScope;
       readonly mode?: ClaudeCodeDeviceAuthMode;
       readonly modelProviderId?: string;
       readonly state: string;
@@ -437,7 +432,7 @@ const moveSessionToAwaitingApproval$ = command(
       {
         version: 1,
         type: "claude-code",
-        scope: args.scope,
+        scope: "personal",
         ...(args.mode ? { mode: args.mode } : {}),
         ...(args.modelProviderId
           ? { modelProviderId: args.modelProviderId }
@@ -593,7 +588,6 @@ export const startClaudeCodeDeviceAuth$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly scope: ClaudeCodeDeviceAuthScope;
       readonly mode?: ClaudeCodeDeviceAuthMode;
       readonly modelProviderId?: string;
     },
@@ -644,7 +638,6 @@ export const startClaudeCodeDeviceAuth$ = command(
     const updatedResult = await settle(
       set(moveSessionToAwaitingApproval$, {
         session,
-        scope: args.scope,
         mode: args.mode,
         modelProviderId: args.modelProviderId,
         state,
@@ -675,7 +668,6 @@ export const startClaudeCodeDeviceAuth$ = command(
     return {
       ok: true,
       sessionToken: encodeSession({ version: 1, sessionId: session.id }),
-      scope: args.scope,
       browserUrl: approvalUrl,
       expiresIn: remainingTtlSeconds(updatedResult.value.expiresAt, nowDate()),
     };
@@ -745,7 +737,6 @@ const importClaudeCodeOAuthToken$ = command(
     { get, set },
     args: {
       readonly authSession?: DeviceAuthSessionPublication;
-      readonly scope: ClaudeCodeDeviceAuthScope;
       readonly orgId: string;
       readonly userId: string;
       readonly accessToken: string;
@@ -801,7 +792,6 @@ const completeLoadedClaudeCodeDeviceAuth$ = command(
       readonly session: ModelProviderAuthSession;
       readonly orgId: string;
       readonly userId: string;
-      readonly orgRole: "admin" | "member" | undefined;
       readonly authorizationCode: string;
     },
     signal: AbortSignal,
@@ -865,7 +855,6 @@ const completeLoadedClaudeCodeDeviceAuth$ = command(
       importClaimedClaudeCodeDeviceAuth$,
       {
         session,
-        scope: providerState.scope,
         mode: providerState.mode,
         modelProviderId: providerState.modelProviderId,
         orgId: args.orgId,
@@ -884,7 +873,6 @@ const importClaimedClaudeCodeDeviceAuth$ = command(
     { set },
     args: {
       readonly session: ModelProviderAuthSession;
-      readonly scope: ClaudeCodeDeviceAuthScope;
       readonly mode: ClaudeCodeDeviceAuthMode | undefined;
       readonly modelProviderId: string | undefined;
       readonly orgId: string;
@@ -934,7 +922,6 @@ const importClaimedClaudeCodeDeviceAuth$ = command(
             userId: args.userId,
             source: "claude-code-device-auth",
           },
-          scope: args.scope,
           orgId: args.orgId,
           userId: args.userId,
           accessToken: tokens.value.accessToken,
@@ -989,7 +976,6 @@ export const completeClaudeCodeDeviceAuth$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly orgRole: "admin" | "member" | undefined;
       readonly sessionToken: string;
       readonly authorizationCode: string;
     },
@@ -1022,7 +1008,6 @@ export const completeClaudeCodeDeviceAuth$ = command(
         session,
         orgId: args.orgId,
         userId: args.userId,
-        orgRole: args.orgRole,
         authorizationCode: args.authorizationCode,
       },
       signal,

@@ -7,11 +7,9 @@ import type { InternalRunCallbackKind } from "./internal-run-callback";
 import type {
   PiModelConfig,
   SecretConnectorMetadata,
-  PiModelConfigLegacy,
   StoredConnectorPermissionBaseline,
   ConnectorRuntimeTargetRegistration,
 } from "@okouai/api-contracts/contracts/runners";
-import type { PiModelConfigV4 } from "@okouai/api-contracts/contracts/pi-native";
 import type {
   ExpandedFirewallConfig,
   ExecutionFirewalls,
@@ -53,12 +51,10 @@ export interface AgentRunRequestAgent {
   readonly displayName: string | null;
   readonly description: string | null;
   readonly sound: string | null;
-  readonly modelProviderId: string | null;
-  readonly selectedModel: string | null;
 }
 
 export interface ResolvedModelProviderEnvironment {
-  readonly credentialOwner: PiModelConfigV4["credentialOwner"];
+  readonly credentialOwner: "builtin" | "member";
   readonly authMethod?: string | null;
   readonly piModelConfig?: PiModelConfig;
   readonly id: string | null;
@@ -68,16 +64,12 @@ export interface ResolvedModelProviderEnvironment {
   readonly secrets: Record<string, string>;
   readonly selectedModel: string | null;
   readonly firewall?: ExpandedFirewallConfig;
-  readonly inlineFirewall?: boolean;
   readonly secretConnectorMap?: Record<string, string>;
   readonly secretConnectorMetadataMap?: Record<string, SecretConnectorMetadata>;
   readonly codexRuntimeConfig?: ModelProviderCodexRuntimeConfig;
   readonly builtInModelRuntimeRoute?: BuiltInModelRuntimeRoute;
   /** Catalog route `upstream_model` placed into the provider environment. */
   readonly upstreamModel?: string;
-  readonly credentialHeader?: NonNullable<
-    PiModelConfigLegacy["credentialHeader"]
-  >;
 }
 
 type BuiltinRuntimeTargetRegistration = Extract<

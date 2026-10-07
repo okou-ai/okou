@@ -1,20 +1,15 @@
-import { piNativeCatalogModelSchema } from "@okouai/api-contracts/contracts/pi-native-models";
 import {
   isOkouRunModel,
   type OkouRunModel,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { OKOU_MODEL_METADATA } from "@okouai/api-contracts/contracts/okou-model-metadata";
-import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
-import { streamPiNative } from "./native-stream";
 import { stream as streamCodexResponses } from "@earendil-works/pi-ai/api/openai-codex-responses";
 import {
   stream as streamResponses,
   streamSimple as streamSimpleResponses,
 } from "@earendil-works/pi-ai/api/openai-responses";
 import { buildBaseOptions } from "@earendil-works/pi-ai/api/simple-options";
-import { deepseekProvider } from "@earendil-works/pi-ai/providers/deepseek";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
-import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import type {
   Api,
@@ -88,16 +83,6 @@ function okouSourceModel(
 
 function providerModels(provider: string): readonly Model<Api>[] {
   switch (provider) {
-    case "anthropic":
-    case "amazon-bedrock": {
-      return anthropicProvider().getModels();
-    }
-    case "deepseek": {
-      return deepseekProvider().getModels();
-    }
-    case "openai": {
-      return openaiProvider().getModels();
-    }
     case "openai-codex": {
       return openaiCodexProvider().getModels();
     }
@@ -108,12 +93,6 @@ function providerModels(provider: string): readonly Model<Api>[] {
       return [];
     }
   }
-}
-
-function isMessagesModel(
-  model: Model<Api>,
-): model is Model<"anthropic-messages"> {
-  return model.api === "anthropic-messages";
 }
 
 function isResponsesModel(
@@ -136,43 +115,9 @@ function catalogSourceModel(
   if (okouModel) {
     return okouModel;
   }
-  // The pinned pi-ai 0.87.1 catalog predates Sonnet 5.5. Anthropic publishes
-  // the same context, output and token rates as Sonnet 5, with the newer
-  // adaptive-thinking and conversation-bound thinking behavior.
-  if (provider === "anthropic" && model === "claude-sonnet-5-5") {
-    const sonnet5 = providerModels(provider).find((entry) => {
-      return entry.id === "claude-sonnet-5";
-    });
-    if (!sonnet5) return undefined;
-    return {
-      ...sonnet5,
-      id: model,
-      name: "Claude Sonnet 5.5",
-      thinkingLevelMap: {
-        off: null,
-        low: "low",
-        medium: "medium",
-        high: "high",
-        xhigh: "xhigh",
-        max: "max",
-      },
-      compat: {
-        ...sonnet5.compat,
-        supportsMidConvoEffort: true,
-        supportsMidConvoSystemMessages: true,
-        supportsMidConvoToolChanges: true,
-        forceAdaptiveThinking: true,
-        supportsTemperature: false,
-        supportsStrictTools: true,
-      },
-    };
-  }
-  // The pinned Pi catalog predates 6.1 Sol. Only direct OpenAI and the
-  // ChatGPT subscription are approved; do not infer OpenRouter support.
-  if (
-    (provider === "openai" || provider === "openai-codex") &&
-    model === "gpt-6.1-sol"
-  ) {
+  // The pinned Pi catalog predates 6.1 Sol. Only the ChatGPT subscription is
+  // approved; do not infer OpenRouter support.
+  if (provider === "openai-codex" && model === "gpt-6.1-sol") {
     const predecessor = providerModels(provider).find((entry) => {
       return entry.id === "gpt-6-sol";
     });
@@ -200,51 +145,15 @@ function catalogSourceModel(
       },
     };
   }
-  // pi-ai 0.86.1 retired `deepseek-v4-flash` from the DeepSeek catalog while
-  // the product still offers it. Pin the exact 0.85.1 definition so admission,
-  // tier and billing keep their current behaviour; see deepseek-v41-catalog.md.
-  // `api` stays "openai-completions" as upstream shipped it: resolvePiAgentModel
-  // copies `source.compat` only when `source.api === dialect`, so recording the
-  // upstream dialect keeps that guard false and leaves the wire unchanged.
-  // This is the V4 text-only model, priced apart from V4.1; never substitute one
-  // for the other. The OpenRouter route still resolves from the 0.87.1 catalog.
-  if (provider === "deepseek" && model === "deepseek-v4-flash") {
-    return {
-      id: model,
-      name: "DeepSeek V4 Flash",
-      provider,
-      api: "openai-completions",
-      baseUrl: "https://api.deepseek.com",
-      reasoning: true,
-      thinkingLevelMap: {
-        minimal: null,
-        low: "low",
-        medium: null,
-        high: "high",
-        max: "max",
-      },
-      input: ["text"],
-      contextWindow: 1_000_000,
-      maxTokens: 384_000,
-      cost: { input: 0.14, output: 0.28, cacheRead: 0.0028, cacheWrite: 0 },
-    };
-  }
-  // pi-ai 0.85.1 predates V4.1. These exact identities use the provider
+  // pi-ai 0.85.1 predates V4.1. This exact identity uses the provider
   // metadata recorded in deepseek-v41-catalog.md, never the V4 text-only model.
-  if (
-    (provider === "deepseek" &&
-      (model === "deepseek-flash" || model === "deepseek-v4.1-flash")) ||
-    (provider === "openrouter" && model === "deepseek/deepseek-v4.1-flash")
-  ) {
+  if (provider === "openrouter" && model === "deepseek/deepseek-v4.1-flash") {
     return {
       id: model,
       name: "DeepSeek V4.1 Flash",
       provider,
       api: "openai-responses",
-      baseUrl:
-        provider === "deepseek"
-          ? "https://api.deepseek.com"
-          : "https://openrouter.ai/api/v1",
+      baseUrl: "https://openrouter.ai/api/v1",
       reasoning: true,
       thinkingLevelMap: {
         minimal: null,
@@ -277,14 +186,8 @@ function streamSimpleResponsesWithPolicy(
   options?: PiAgentStreamOptions,
 ): AssistantMessageEventStream {
   const serviceTier = options?.serviceTier;
-  if (
-    serviceTier !== undefined &&
-    serviceTier !== "priority" &&
-    !(serviceTier === "ultrafast" && model.id === "gpt-6-astra")
-  ) {
-    throw new Error(
-      "Pi public Responses service tier only accepts priority, or Ultrafast for Astra",
-    );
+  if (serviceTier !== undefined && serviceTier !== "priority") {
+    throw new Error("Pi public Responses service tier only accepts priority");
   }
   const base = buildBaseOptions(model, context, options, options?.apiKey);
   const clampedReasoning =
@@ -294,9 +197,7 @@ function streamSimpleResponsesWithPolicy(
   return streamResponses(model, context, {
     ...base,
     reasoningEffort: clampedReasoning === "off" ? undefined : clampedReasoning,
-    // The bundled OpenAI SDK predates Ultrafast's service_tier literal. Pi
-    // forwards this value unchanged to the Responses request at runtime.
-    serviceTier: serviceTier as "priority" | undefined,
+    serviceTier,
   });
 }
 
@@ -358,35 +259,18 @@ export function piAgentStreamForConfig(
   config: PiAgentStreamConfig,
 ): typeof piAgentRegisteredStream {
   return (model, context, options) => {
-    const configuredHeaderNames = new Set(
-      Object.keys(config.requestHeaders ?? {}).map((name) => {
-        return name.toLowerCase();
-      }),
-    );
-    const inheritedHeaders = Object.fromEntries(
-      Object.entries(options?.headers ?? {}).filter(([name]) => {
-        return !configuredHeaderNames.has(name.toLowerCase());
-      }),
-    );
     const configuredOptions = {
       ...options,
       headers: {
-        ...inheritedHeaders,
+        ...options?.headers,
         "User-Agent": PI_AGENT_USER_AGENT,
-        ...config.requestHeaders,
       },
       // The immutable route owns tier even when standard omits it.
       serviceTier: config.serviceTier,
     };
-    if (
-      config.dialect === "anthropic-messages" ||
-      config.dialect === "bedrock-converse-stream"
-    ) {
-      return streamPiNative(config, model, context, configuredOptions);
-    }
     const start = (fetch: NonNullable<PiAgentStreamOptions["fetch"]>) => {
       // Observe transport evidence before a body guard can consume or reject it.
-      // Every public route still drops markup and bounds opaque gateway errors.
+      // Every public route still drops markup and bounds opaque upstream errors.
       const responseOptions = {
         ...configuredOptions,
         fetch,
@@ -427,63 +311,16 @@ export function piAgentStreamForConfig(
   };
 }
 
-function resolveNativeModel(
-  config: PiAgentModelConfig,
-): Model<"anthropic-messages"> | Model<"bedrock-converse-stream"> | null {
-  if (
-    config.serviceTier !== undefined ||
-    !piNativeCatalogModelSchema.safeParse(config.catalogModel).success ||
-    !config.catalogModel ||
-    config.provider !==
-      (config.dialect === "anthropic-messages" ? "anthropic" : "amazon-bedrock")
-  )
-    return null;
-  const native = sourceModel("anthropic", config.catalogModel);
-  if (!native || !isMessagesModel(native)) return null;
-  const common = {
-    ...native,
-    id: config.model,
-    provider: config.provider,
-    baseUrl: config.baseUrl,
-  };
-  return config.dialect === "anthropic-messages"
-    ? { ...common, api: "anthropic-messages" }
-    : {
-        ...common,
-        api: "bedrock-converse-stream",
-        compat: {
-          supportsStrictMode: native.compat?.supportsStrictTools,
-        },
-      };
-}
-
-/** Resolve model metadata from Pi's native provider catalog. */
+/** Resolve model metadata from Pi's provider catalog. */
 export function resolvePiAgentModel(
   config: PiAgentModelConfig,
-):
-  | Model<"openai-responses">
-  | Model<"openai-codex-responses">
-  | Model<"anthropic-messages">
-  | Model<"bedrock-converse-stream">
-  | null {
+): Model<"openai-responses"> | Model<"openai-codex-responses"> | null {
   if (
     config.serviceTier !== undefined &&
     config.serviceTier !==
-      (config.dialect === "openai-codex-responses" ? "fast" : "priority") &&
-    !(
-      config.serviceTier === "ultrafast" &&
-      config.dialect === "openai-responses" &&
-      config.provider === "openai" &&
-      config.model === "gpt-6-astra"
-    )
+      (config.dialect === "openai-codex-responses" ? "fast" : "priority")
   ) {
     return null;
-  }
-  if (
-    config.dialect === "anthropic-messages" ||
-    config.dialect === "bedrock-converse-stream"
-  ) {
-    return resolveNativeModel(config);
   }
   const source = sourceModel(
     config.provider,

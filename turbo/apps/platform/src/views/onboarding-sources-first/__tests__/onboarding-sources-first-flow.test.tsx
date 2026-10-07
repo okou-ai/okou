@@ -3,10 +3,12 @@ import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integ
 import {
   onboardingCompleteContract,
   onboardingRecommendationContract,
+  onboardingStatusContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { builtinConnectorManualGrantContract } from "@okouai/api-contracts/contracts/connectors";
 import { billingRedeemCodeContract } from "@okouai/api-contracts/contracts/billing";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import { DEFAULT_AGENT_DISPLAY_NAME } from "@okouai/core/brand-presentation";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -88,6 +90,51 @@ function mockMemberOnboardingNeeded(): void {
       connectUrl: null,
     });
   });
+}
+
+/**
+ * Completion answers at once, while the onboarding status read the handoff to
+ * the first chat waits on is held until the test releases it.
+ */
+function holdChatHandoffAfterCompletion(): {
+  readonly handoffPending: Promise<void>;
+  readonly release: () => void;
+} {
+  let completed = false;
+  const handoffPending = context.mocks.deferred<void>();
+  const releaseHandoff = context.mocks.deferred<void>();
+  context.mocks.api(onboardingCompleteContract.complete, ({ respond }) => {
+    completed = true;
+    return respond(200, {
+      onboardingComplete: true,
+      needsOnboarding: false,
+    });
+  });
+  context.mocks.api(
+    onboardingStatusContract.getStatus,
+    async ({ respond, withSignal }) => {
+      const finished = completed;
+      if (finished) {
+        handoffPending.resolve(undefined);
+        await withSignal(releaseHandoff.promise);
+      }
+      return respond(200, {
+        needsOnboarding: !finished,
+        onboardingComplete: finished,
+        isAdmin: true,
+        hasOrg: true,
+        hasDefaultAgent: true,
+        defaultAgentId: "c0000000-0000-4000-a000-000000000001",
+        defaultAgentMetadata: { displayName: DEFAULT_AGENT_DISPLAY_NAME },
+      });
+    },
+  );
+  return {
+    handoffPending: handoffPending.promise,
+    release: () => {
+      releaseHandoff.resolve(undefined);
+    },
+  };
 }
 
 /** A member cannot add Slack, so the step names who can and lets them go on. */
@@ -563,6 +610,54 @@ test("A refreshed ready step keeps the industry, model choice, and edited reques
   expect(sentProvider).toBe("claudeCode");
 });
 
+test("The ready step keeps the request on screen until the first chat opens", async () => {
+  mockCatalog({ connected: true });
+  let runPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      runPrompt = body.prompt;
+    },
+  });
+  const handoff = holdChatHandoffAfterCompletion();
+  context.store.set(
+    draftStorage.set$,
+    JSON.stringify({
+      version: 2,
+      orgId: "org_default",
+      userId: "test-user-123",
+      industry: "marketing",
+      experienced: true,
+      provider: null,
+      startingPromptDraft: "Draft my launch plan",
+      startingPromptKey: "marketing:gmail",
+      recommendationJobId: null,
+      recommendationStartedAt: null,
+    }),
+  );
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: ROUTES.onboardingReady,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: READY_TITLE }),
+  ).resolves.toBeInTheDocument();
+  click(getButtonByName(START_ACTION));
+  await handoff.handoffPending;
+
+  expect(screen.getByLabelText("Your starting prompt")).toHaveValue(
+    "Draft my launch plan",
+  );
+
+  handoff.release();
+  await waitFor(() => {
+    expect(runPrompt).toBe("Draft my launch plan");
+    expect(pathname()).toMatch(/^\/chats\//u);
+  });
+});
+
 test("A member runs every step but the invite, then completes their own onboarding and enters chat", async () => {
   mockMemberOnboardingNeeded();
   mockCatalog({ connected: true });
@@ -821,6 +916,38 @@ test("The prompt step completes onboarding, then runs the prompt as edited", asy
     expect(pathname()).toMatch(/^\/chats\//u);
   });
   expect(completedFrom).toStrictEqual([ROUTES.onboarding]);
+});
+
+test("The prompt step keeps the edited prompt on screen until the first chat opens", async () => {
+  const editedPrompt = "Draft the launch plan for the EU market";
+  let runPrompt: string | undefined;
+  mockChatLifecycle(context, {
+    onRunCreate: (body) => {
+      runPrompt = body.prompt;
+    },
+  });
+  const handoff = holdChatHandoffAfterCompletion();
+
+  await setupPage({
+    context,
+    locale: "en-US",
+    path: `${ROUTES.onboarding}?prompt=${encodeURIComponent(HANDOFF_PROMPT)}`,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: PROMPT_TITLE }),
+  ).resolves.toBeInTheDocument();
+  await fill(screen.getByLabelText("Onboarding prompt"), editedPrompt);
+  click(getButtonByName("Next"));
+  await handoff.handoffPending;
+
+  expect(screen.getByLabelText("Onboarding prompt")).toHaveValue(editedPrompt);
+
+  handoff.release();
+  await waitFor(() => {
+    expect(runPrompt).toBe(editedPrompt);
+    expect(pathname()).toMatch(/^\/chats\//u);
+  });
 });
 
 test("A prompt link's template carries into the first request", async () => {

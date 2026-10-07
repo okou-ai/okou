@@ -222,9 +222,6 @@ central DB `vi.mock` is permitted; service mocks and case-local DB mocks remain
 forbidden. These lexical guards do not prove runtime isolation.
 
 All migrated cooldown suites use this per-case harness without serial scheduling.
-The retired Custom bootstrap left an unused catalog argument/read in the
-publication transaction; removing that obsolete dependency makes the lifecycle
-suite portable without changing transaction boundaries or redirecting reads.
 The harness uses PGlite's driver parsers to preserve int8/numeric text exactly as
 node-postgres does, rather than rewriting SQL results or weakening row schemas.
 

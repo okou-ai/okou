@@ -289,7 +289,7 @@ const discordModelPicker$ = command(
         return channelFailure;
       }
       // Provider permission checks can wait on HTTP. Re-read local authority
-      // afterward, before reading current policy and persisting a preference.
+      // afterward, before reading current run models and persisting a preference.
       const current = await set(currentDiscordBinding$, args.actor, signal);
       if (
         current.kind !== "connected" ||
@@ -327,13 +327,13 @@ const discordModelPicker$ = command(
     ) {
       return discordAccountMessage(STALE_CONTROL);
     }
-    const policies = await set(listAvailableRunModels$, args.binding, signal);
+    const runModels = await set(listAvailableRunModels$, args.binding, signal);
     signal.throwIfAborted();
-    const options = policies.models.flatMap((policy) => {
-      if (policy.routeStatus !== "valid") {
+    const options = runModels.models.flatMap((runModel) => {
+      if (runModel.routeStatus !== "valid") {
         return [];
       }
-      return [{ label: policy.modelLabel, value: policy.model }];
+      return [{ label: runModel.modelLabel, value: runModel.model }];
     });
     if (args.selection !== undefined) {
       const option = options.find((candidate) => {
@@ -344,7 +344,7 @@ const discordModelPicker$ = command(
           "You no longer have access to that model. Run `/okou model` again.",
         );
       }
-      // Revalidate after the policy lookup before writing to the original route.
+      // Revalidate after the run model lookup before writing to the original route.
       const currentThreadId = await findDiscordInteractionChatThreadId(
         set(writeDb$),
         {

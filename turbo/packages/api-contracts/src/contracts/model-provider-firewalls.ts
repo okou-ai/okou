@@ -22,16 +22,7 @@ export interface ModelProviderPiEndpoint {
   readonly inferenceUrl: string;
 }
 
-// Custom gateway types are excluded because their firewall is compiled per
-// surface from the stored base URL and auth header, not from a static table.
-type FirewallSupportedProvider = Exclude<
-  ModelProviderType,
-  | "aws-bedrock"
-  | "azure-foundry"
-  | "custom-anthropic-messages"
-  | "custom-openai-responses"
-  | "built-in"
->;
+type FirewallSupportedProvider = Exclude<ModelProviderType, "built-in">;
 type LegacySingleSecretProvider = Exclude<
   FirewallSupportedProvider,
   "codex-oauth-token"
@@ -42,7 +33,6 @@ interface SingleSecretFirewallProviderConfig {
   readonly secretName: string;
   readonly anthropicBaseUrl?: string;
   readonly openaiBaseUrl?: string;
-  readonly firewallBaseUrl?: string;
   /**
    * OpenAI-compatible transports supported by the in-sandbox Pi agent loop.
    *
@@ -86,46 +76,14 @@ const MODEL_PROVIDER_FIREWALL_PROVIDER_CONFIGS: Record<
   LegacySingleSecretProvider,
   SingleSecretFirewallProviderConfig
 > = {
-  "anthropic-api-key": {
-    framework: "claude-code",
-    secretName: "ANTHROPIC_API_KEY",
-  },
   "claude-code-oauth-token": {
     framework: "claude-code",
     secretName: "CLAUDE_CODE_OAUTH_TOKEN",
-  },
-  "openrouter-api-key": {
-    framework: "claude-code",
-    secretName: "OPENROUTER_API_KEY",
-    anthropicBaseUrl: "https://openrouter.ai/api",
-  },
-  deepseek: {
-    framework: "codex",
-    secretName: "DEEPSEEK_API_KEY",
-    openaiBaseUrl: "https://api.deepseek.com/",
-    firewallBaseUrl: "https://api.deepseek.com/responses",
-    piApis: ["openai-responses"],
-  },
-  "vercel-ai-gateway": {
-    framework: "claude-code",
-    secretName: "VERCEL_AI_GATEWAY_API_KEY",
-    anthropicBaseUrl: "https://ai-gateway.vercel.sh",
   },
   "openrouter-codex": {
     framework: "codex",
     secretName: "OPENROUTER_API_KEY",
     openaiBaseUrl: "https://openrouter.ai/api/v1",
-    piApis: ["openai-completions", "openai-responses"],
-  },
-  "vercel-ai-gateway-codex": {
-    framework: "codex",
-    secretName: "VERCEL_AI_GATEWAY_API_KEY",
-    openaiBaseUrl: "https://ai-gateway.vercel.sh/v1",
-    piApis: ["openai-completions", "openai-responses"],
-  },
-  "openai-api-key": {
-    framework: "codex",
-    secretName: "OPENAI_API_KEY",
     piApis: ["openai-completions", "openai-responses"],
   },
 };
@@ -134,9 +92,6 @@ const ANTHROPIC_API_BASE = "https://api.anthropic.com";
 
 function getFirewallBaseUrl(type: LegacySingleSecretProvider): string {
   const config = MODEL_PROVIDER_FIREWALL_PROVIDER_CONFIGS[type];
-  if (config.firewallBaseUrl) {
-    return config.firewallBaseUrl;
-  }
   if (config.framework === "codex") {
     return (
       getModelProviderPiEndpoint(type, "openai-responses")?.inferenceUrl ??
@@ -183,59 +138,25 @@ function mpFirewall(
 /**
  * Firewall gateway configs for model providers with static base URLs.
  * Used to auto-generate firewall entries that protect API tokens from sandbox exposure.
- * Excluded: aws-bedrock (dynamic region URLs + SigV4), azure-foundry (dynamic resource URLs).
  *
- * Claude Code gateway providers scope to /v1/messages so built-in model keys
- * are only injected on LLM inference paths, not vendor admin endpoints.
+ * Claude Code scopes to /v1/messages so credentials are only injected on LLM
+ * inference paths, not vendor admin endpoints.
  */
 export const MODEL_PROVIDER_FIREWALL_CONFIGS = {
-  "anthropic-api-key": mpFirewall(
-    "anthropic-api-key",
-    { name: "x-api-key" },
-    MODEL_PROVIDER_ENV_PLACEHOLDERS.ANTHROPIC_API_KEY,
-  ),
   "claude-code-oauth-token": mpFirewall(
     "claude-code-oauth-token",
     { name: "Authorization", valuePrefix: "Bearer" },
     MODEL_PROVIDER_ENV_PLACEHOLDERS.CLAUDE_CODE_OAUTH_TOKEN,
   ),
-  "openrouter-api-key": mpFirewall(
-    "openrouter-api-key",
-    { name: "Authorization", valuePrefix: "Bearer" },
-    MODEL_PROVIDER_ENV_PLACEHOLDERS.ANTHROPIC_AUTH_TOKEN,
-  ),
-  deepseek: mpFirewall(
-    "deepseek",
-    { name: "Authorization", valuePrefix: "Bearer" },
-    MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY,
-  ),
-  "vercel-ai-gateway": mpFirewall(
-    "vercel-ai-gateway",
-    { name: "Authorization", valuePrefix: "Bearer" },
-    MODEL_PROVIDER_ENV_PLACEHOLDERS.ANTHROPIC_AUTH_TOKEN,
-  ),
-  // Codex-framework twin of openrouter-api-key. It reuses the same stored
-  // OpenRouter secret, but the sandbox env name is OPENAI_API_KEY because codex
-  // SDK hits OpenAI-compatible paths (/chat/completions, /responses) under
-  // https://openrouter.ai/api/v1.
+  // The platform Auto route's concrete provider. The sandbox env name is
+  // OPENAI_API_KEY because Codex hits OpenAI-compatible paths
+  // (/chat/completions, /responses) under https://openrouter.ai/api/v1.
   "openrouter-codex": mpFirewall(
     "openrouter-codex",
     { name: "Authorization", valuePrefix: "Bearer" },
     MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY,
   ),
-  // Codex-framework twin of vercel-ai-gateway. It reuses the same stored Vercel
-  // secret, but the sandbox env name is OPENAI_API_KEY.
-  "vercel-ai-gateway-codex": mpFirewall(
-    "vercel-ai-gateway-codex",
-    { name: "Authorization", valuePrefix: "Bearer" },
-    MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY,
-  ),
-  "openai-api-key": mpFirewall(
-    "openai-api-key",
-    { name: "Authorization", valuePrefix: "Bearer" },
-    MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY,
-  ),
-  // ChatGPT OAuth BYOK provider: backend API GET/POST injection and auth.openai.com deny.
+  // Personal ChatGPT subscription: backend API GET/POST injection and auth.openai.com deny.
   "codex-oauth-token": {
     name: "model-provider:codex-oauth-token",
     apis: [
@@ -325,16 +246,6 @@ export function getModelProviderPiEndpoint(
   };
 }
 
-/** @deprecated Use the API-aware endpoint contract instead. */
-export function getModelProviderPiChatCompletionsUrl(
-  type: ModelProviderType,
-): string | undefined {
-  if (type === "codex-oauth-token") {
-    return "https://chatgpt.com/backend-api";
-  }
-  return getModelProviderPiEndpoint(type, "openai-completions")?.inferenceUrl;
-}
-
 export function getModelProviderFirewall(
   type: ModelProviderType,
   routing?: OpenRouterRoutingContext,
@@ -342,24 +253,15 @@ export function getModelProviderFirewall(
   const firewall = isFirewallSupported(type)
     ? MODEL_PROVIDER_FIREWALL_CONFIGS[type]
     : undefined;
-  if (
-    !firewall ||
-    !routing ||
-    (type !== "openrouter-api-key" && type !== "openrouter-codex")
-  ) {
+  if (!firewall || !routing || type !== "openrouter-codex") {
     return firewall;
   }
   const apis = firewall.apis.map((api) => {
     const path = api.base.slice("https://openrouter.ai/api/v1/".length);
-    if (
-      path !== "messages" &&
-      path !== "responses" &&
-      path !== "chat/completions"
-    ) {
+    if (path !== "responses" && path !== "chat/completions") {
       return api;
     }
-    const baseUrl = getOpenRouterBaseUrl(path, routing);
-    const base = `${baseUrl}${path === "messages" ? "/v1" : ""}/${path}`;
+    const base = `${getOpenRouterBaseUrl(path, routing)}/${path}`;
     return base === api.base ? api : { ...api, base };
   });
   return apis.every((api, index) => {

@@ -1,8 +1,6 @@
 import { observePiMemoryStage1Cost } from "../services/pi-memory-stage1-cost.service";
 import { captureFixtureRunBilling } from "../services/billing-run-fixture";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
-import { modelProviders } from "@okouai/db/schema/model-provider";
-import { secrets } from "@okouai/db/schema/secret";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
@@ -50,7 +48,7 @@ import { piMemoryStage1ModelPricingThreshold } from "../services/pi-memory-stage
 import { modelCatalog$ } from "../services/model-catalog.service";
 import {
   PI_MEMORY_STAGE1_BUILT_IN_MODEL,
-  PI_MEMORY_STAGE1_BYOK_MODEL,
+  PI_MEMORY_STAGE1_PERSONAL_MODEL,
   type PiMemoryStage1Model,
 } from "@okouai/pi-agent-runtime/api";
 import { resumeSessionHistoryBlobKey } from "../services/session-history-blobs";
@@ -84,11 +82,6 @@ const sourceBindingSchema = z.object({
   userId: z.string().optional(),
 });
 const actionBodySchema = z.discriminatedUnion("action", [
-  ownerSchema.extend({
-    action: z.literal("historical-key-owner"),
-    provider_id: z.uuid(),
-    scope: z.enum(["org", "member"]),
-  }),
   candidateScopeSchema.extend({
     action: z.literal("seed"),
     source_history_hash: z.string().regex(/^[0-9a-f]{64}$/u),
@@ -124,7 +117,7 @@ const actionBodySchema = z.discriminatedUnion("action", [
     action: z.literal("record-usage"),
     source_history_hash: z.string(),
     response_source_id: z.string(),
-    billing_mode: z.enum(["builtin", "byok"]),
+    billing_mode: z.enum(["builtin", "subscription"]),
     usage: z.object({
       input: z.number(),
       output: z.number(),
@@ -183,7 +176,7 @@ const responseSchema = z.object({
         "replay",
         "legacy_replay",
         "zero_usage",
-        "byok",
+        "subscription",
       ]),
       accountingAt: z.iso.datetime().nullable(),
     })
@@ -771,43 +764,6 @@ async function mutateSource(
   return actionOk();
 }
 
-// Personal API keys are historical rows: the current user API only creates
-// subscription accounts. Preserve that reader boundary without reviving a writer.
-async function historicalKeyOwner(
-  db: Db,
-  body: Extract<
-    TestPiMemoryStage1StateActionBody,
-    { action: "historical-key-owner" }
-  >,
-  signal: AbortSignal,
-) {
-  await db.transaction(async (tx) => {
-    const owner = body.scope === "org" ? "__org__" : body.user_id;
-    const [provider] = await tx
-      .update(modelProviders)
-      .set({ userId: owner })
-      .where(
-        and(
-          eq(modelProviders.id, body.provider_id),
-          eq(modelProviders.orgId, body.org_id),
-          inArray(modelProviders.userId, [body.user_id, "__org__"]),
-        ),
-      )
-      .returning({ secretId: modelProviders.secretId });
-    if (!provider?.secretId) {
-      throw new Error("Missing historical key fixture");
-    }
-    await tx
-      .update(secrets)
-      .set({ userId: owner })
-      .where(
-        and(eq(secrets.id, provider.secretId), eq(secrets.orgId, body.org_id)),
-      );
-  });
-  signal.throwIfAborted();
-  return actionOk();
-}
-
 const runScopedWorker$ = command(
   async (
     { set },
@@ -833,11 +789,11 @@ const runScopedWorker$ = command(
 
 /** Billing mode follows the binding split the credential resolver applies. */
 function stage1ModelForBillingMode(
-  mode: "builtin" | "byok",
+  mode: "builtin" | "subscription",
 ): PiMemoryStage1Model {
   return mode === "builtin"
     ? PI_MEMORY_STAGE1_BUILT_IN_MODEL
-    : PI_MEMORY_STAGE1_BYOK_MODEL;
+    : PI_MEMORY_STAGE1_PERSONAL_MODEL;
 }
 
 const action$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -852,9 +808,6 @@ const action$ = command(async ({ get, set }, signal: AbortSignal) => {
   const db = set(writeDb$);
   const body = bodyResult.data;
   switch (body.action) {
-    case "historical-key-owner": {
-      return await historicalKeyOwner(db, body, signal);
-    }
     case "source-binding":
     case "delete-source": {
       return await mutateSource(db, body, signal);

@@ -2556,8 +2556,6 @@ async function resolveStoredExecutionContextForClaim(
     cliAgentType: storedContextResult.data.cliAgentType,
     modelConfig: storedContextResult.data.piModelConfig,
     capabilities: args.capabilities,
-    environment: storedContextResult.data.environment,
-    firewalls: storedContextResult.data.firewalls,
   });
   if (piModelConfigResolution.status === "unsupported") {
     return {

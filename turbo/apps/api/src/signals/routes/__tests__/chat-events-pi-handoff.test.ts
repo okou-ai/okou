@@ -59,7 +59,7 @@ const {
   queueCapabilityProvenPiRun,
 } = createChatEventsFixture(context);
 
-describe("CHAT-02: model-first provider policies", () => {
+describe("CHAT-02: model-first routing", () => {
   it.each(["identity", "gzip", "zstd"] as const)(
     "references Pi %s resume history without API history or resource IO",
     async (encoding) => {

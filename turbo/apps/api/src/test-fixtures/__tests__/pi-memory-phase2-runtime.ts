@@ -51,7 +51,6 @@ export async function phase2RuntimeModel(
   const encryptedSecrets = execution.encryptedSecrets;
   return await materializePiAgentModelConfig({
     config: execution.piModelConfig,
-    target: "direct",
     async resolveCredential(binding) {
       const auth = await createFirewallApi(context).requestFirewallAuth(
         { authorization: `Bearer ${execution.sandboxToken}` },

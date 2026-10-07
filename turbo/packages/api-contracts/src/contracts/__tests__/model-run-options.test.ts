@@ -8,14 +8,11 @@ describe("model run options", () => {
       builtInCreditMultiplier: 2,
       chatGptUsageMultiplier: 2.5,
       chatGptSpeedMultiplier: 2,
-      apiCostMultiplier: 2,
     });
     expect(getModelRunOptions("gpt-5.6-sol").fast).toStrictEqual({
       builtInCreditMultiplier: 2,
       chatGptUsageMultiplier: 2.5,
       chatGptSpeedMultiplier: 1.5,
-      apiCostMultiplier: 2,
-      apiSpeedMultiplier: 2.5,
     });
     expect(
       getModelRunOptions("gpt-6-luna").fast?.chatGptSpeedMultiplier,

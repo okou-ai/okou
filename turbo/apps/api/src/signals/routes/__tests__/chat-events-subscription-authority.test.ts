@@ -228,9 +228,6 @@ describe("CHAT-02: run-level model overrides", () => {
 
   const representativeModels = {
     "codex-oauth-token": "gpt-6-luna",
-    "openai-api-key": "gpt-6-sol",
-    "openrouter-codex": "gpt-6.1-sol",
-    "vercel-ai-gateway-codex": "gpt-6.1-sol",
   } as const;
 
   it.each(

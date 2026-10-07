@@ -25,8 +25,8 @@ lifecycle admission are unconditional.
 Observations must be inside the two-date admission window below. The complete
 batch commits atomically and returns the existing `{ success: true }`
 acknowledgement. Both mixed and count-event batches discard original zero
-quantities for every usage kind, retain positive quantities and the existing BYOK
-model filter, and keep bounded writes. Count-only batches insert the usage rows in one
+quantities for every usage kind, retain positive quantities and the existing filter that
+excludes model events from non-built-in (personal subscription) providers, and keep bounded writes. Count-only batches insert the usage rows in one
 statement; resource batches keep their atomic source-and-claim transaction.
 
 X post and user reads always use resource observations. Runner claims and the

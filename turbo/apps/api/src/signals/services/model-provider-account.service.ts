@@ -12,7 +12,6 @@ import {
   modelProviderAccounts,
   modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
-import { secrets } from "@okouai/db/schema/secret";
 import { command } from "ccstate";
 import {
   and,
@@ -49,7 +48,6 @@ const MAX_PERSONAL_PROVIDER_ACCOUNTS = 10;
 const CODEX_TYPE = "codex-oauth-token";
 const CLAUDE_CODE_TYPE = "claude-code-oauth-token";
 const CODEX_ACCOUNT_ID_SECRET = "CHATGPT_ACCOUNT_ID";
-const ORG_SENTINEL_USER_ID = "__org__";
 const ACCOUNT_CONFLICT_MESSAGE =
   "The subscription account changed concurrently. Refresh and try again.";
 
@@ -451,7 +449,7 @@ function invalidateAccountExpiry(
 ) {
   for (const binding of bindings) {
     invalidateCodexResetCreditExpiry(
-      { scope: "personal", orgId: args.orgId, userId: args.userId },
+      { orgId: args.orgId, userId: args.userId },
       { binding },
     );
   }
@@ -1158,63 +1156,11 @@ async function credentialValues(
   return values;
 }
 
-/** Organization subscriptions remain singleton `model_providers` + `secrets`
- * credentials. */
-async function readOrgSubscriptionCredentialBundle(
-  args: SubscriptionCredentialOwner,
-) {
-  const [provider] = await args.db
-    .select()
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.orgId, args.orgId),
-        eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-        eq(modelProviders.type, args.type),
-      ),
-    )
-    .limit(1);
-  if (!provider) {
-    return null;
-  }
-  const names =
-    (provider.authMethod
-      ? getSecretNamesForAuthMethod(args.type, provider.authMethod)
-      : undefined) ??
-    [getSecretNameForType(args.type)].filter((name): name is string => {
-      return name !== undefined;
-    });
-  const rows =
-    names.length === 0
-      ? []
-      : await args.db
-          .select({
-            name: secrets.name,
-            encryptedValue: secrets.encryptedValue,
-          })
-          .from(secrets)
-          .where(
-            and(
-              eq(secrets.orgId, args.orgId),
-              eq(secrets.userId, ORG_SENTINEL_USER_ID),
-              eq(secrets.type, "model-provider"),
-              inArray(secrets.name, [...names]),
-            ),
-          );
-  return {
-    account: provider,
-    values: await credentialValues(rows, args.featureSwitchContext),
-  };
-}
-
 /** Returns state and the complete credential bundle of the exact personal
  * account. Personal subscriptions are addressed only by their account ID. */
 export async function readPersonalSubscriptionCredentialBundle(
   args: SubscriptionCredentialOwner,
 ) {
-  if (args.userId === ORG_SENTINEL_USER_ID) {
-    return await readOrgSubscriptionCredentialBundle(args);
-  }
   if (!args.sourceId) {
     return null;
   }

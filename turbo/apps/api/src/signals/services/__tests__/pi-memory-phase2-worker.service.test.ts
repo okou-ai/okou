@@ -1337,8 +1337,8 @@ describe("Phase 2 current credential admission", () => {
     },
   );
 
-  it.each(["same-type-account", "scope", "builtin-byok"])(
-    "dispatches the whole %s selection through the current BYOK route",
+  it.each(["same-type-account", "builtin-subscription"])(
+    "dispatches the whole %s selection through the current personal subscription route",
     async (kind) => {
       expect.hasAssertions();
       const job = await createPhase2WorkerFixture(`mixed-${kind}`);
@@ -1347,14 +1347,9 @@ describe("Phase 2 current credential admission", () => {
         job.scope,
       );
       const second =
-        kind === "builtin-byok"
+        kind === "builtin-subscription"
           ? builtinSource
-          : {
-              ...provider.binding,
-              ...(kind === "scope"
-                ? { modelProviderCredentialScope: "org" }
-                : { modelProviderId: randomUUID() }),
-            };
+          : { ...provider.binding, modelProviderId: randomUUID() };
       const firstSession = randomUUID();
       const secondSession = randomUUID();
       await insertPhase2Candidates(
@@ -1510,7 +1505,7 @@ describe("Phase 2 current credential admission", () => {
     });
   });
 
-  it("uses built-in after the only BYOK account is disconnected", async () => {
+  it("uses built-in after the only personal subscription account is disconnected", async () => {
     const fixture = createPublicPiMemorySource(publicScopeContext);
     await fixture.run(async () => {
       const job = await createPublicPhase2WorkerFixture(
@@ -1550,12 +1545,12 @@ describe("Phase 2 current credential admission", () => {
     });
   });
 
-  it("ignores stale historical provider IDs when no BYOK is configured", async () => {
+  it("ignores stale historical provider IDs when no personal subscription is configured", async () => {
     const job = await createPhase2WorkerFixture("stale-source-binding");
     await insertPhase2Candidates(job.scope, [{ piSessionId: randomUUID() }], {
-      modelProvider: "openai-api-key",
+      modelProvider: "codex-oauth-token",
       modelProviderId: randomUUID(),
-      modelProviderCredentialScope: "org",
+      modelProviderCredentialScope: "member",
     });
     const result = await job.work();
     expect(result.outcome).toBe("dispatched");

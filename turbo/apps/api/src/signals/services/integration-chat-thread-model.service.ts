@@ -61,10 +61,9 @@ export const readIntegrationChatThreadModel$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if ("status" in model) {
-      throw new Error(model.body.error.message);
-    }
-    return model.selectedModel;
+    // A stored selection that no longer captures is still the thread's model;
+    // the next queued input rejects it instead of switching models silently.
+    return "status" in model ? thread.selectedModel : model.selectedModel;
   },
 );
 

@@ -223,7 +223,7 @@ describe("PUT /api/agents/:id", () => {
     expect(response.body.error.code).toBe("BAD_REQUEST");
   });
 
-  it("updates agent metadata and model selection while preserving omitted fields", async () => {
+  it("updates agent metadata while preserving omitted fields", async () => {
     const user = newOrgUser();
     const agent = await createAgentAs(user, {
       displayName: "Old Agent",
@@ -246,7 +246,6 @@ describe("PUT /api/agents/:id", () => {
       ownerId: user.userId,
       displayName: "Updated Agent",
       sound: "calm",
-      modelProviderId: null,
       visibility: "public",
     });
 
@@ -417,7 +416,6 @@ describe("PATCH /api/agents/:id", () => {
       description: "Updated description",
       sound: "calm",
       avatarUrl: null,
-      preferPersonalProvider: false,
     });
 
     const fetched = await accept(

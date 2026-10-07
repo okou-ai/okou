@@ -9,11 +9,6 @@ import {
 } from "../model-provider-firewalls";
 
 const usRouted: readonly (readonly [OpenRouterApi, string])[] = [
-  ["messages", "anthropic/claude-opus-5.5"],
-  ["messages", "anthropic/claude-opus-5"],
-  ["messages", "anthropic/claude-opus-4.8"],
-  ["messages", "anthropic/claude-sonnet-5"],
-  ["messages", "anthropic/claude-sonnet-4.6"],
   ["responses", "openai/gpt-6-astra"],
   ["responses", "openai/gpt-5.6-sol"],
   ["responses", "openai/gpt-5.6-luna"],
@@ -23,21 +18,15 @@ describe("platform OpenRouter regional selection", () => {
   it.each(usRouted)(
     "gates product-approved US %s %s by credential ownership",
     (api, model) => {
-      const path = api === "messages" ? "/api" : "/api/v1";
-      for (const credentialOwner of [
-        "builtin",
-        "organization",
-        "member",
-      ] as const) {
+      for (const credentialOwner of ["builtin", "member"] as const) {
         expect(getOpenRouterBaseUrl(api, { model, credentialOwner })).toBe(
-          `https://${credentialOwner === "builtin" ? "us." : ""}openrouter.ai${path}`,
+          `https://${credentialOwner === "builtin" ? "us." : ""}openrouter.ai/api/v1`,
         );
       }
     },
   );
 
   it.each([
-    ["messages", "anthropic/claude-fable-5.1"],
     ["chat/completions", "openai/gpt-6-luna"],
     ["responses", "deepseek/deepseek-v4.1-flash"],
     ["responses", "deepseek/deepseek-v4-flash"],
@@ -51,7 +40,7 @@ describe("platform OpenRouter regional selection", () => {
         model,
         credentialOwner: "builtin",
       }),
-    ).toBe(`https://openrouter.ai${api === "messages" ? "/api" : "/api/v1"}`);
+    ).toBe("https://openrouter.ai/api/v1");
   });
 
   it("binds US Responses auth to the exact selected path without migrating unverified Chat Completions", () => {
@@ -94,30 +83,8 @@ describe("platform OpenRouter regional selection", () => {
     expect(
       getModelProviderFirewall("openrouter-codex", {
         ...routing,
-        credentialOwner: "organization",
+        credentialOwner: "member",
       }),
     ).toEqual(getModelProviderFirewall("openrouter-codex"));
-  });
-
-  it("binds US Messages auth to /api/v1/messages and leaves direct providers unchanged", () => {
-    const routing = {
-      model: "anthropic/claude-sonnet-4.6",
-      credentialOwner: "builtin",
-    } as const;
-    expect(
-      getModelProviderFirewall("openrouter-api-key", routing)?.apis,
-    ).toEqual([
-      expect.objectContaining({
-        base: "https://us.openrouter.ai/api/v1/messages",
-        auth: {
-          headers: {
-            Authorization: "Bearer ${{ secrets.OPENROUTER_API_KEY }}",
-          },
-        },
-      }),
-    ]);
-    expect(getModelProviderFirewall("anthropic-api-key", routing)).toEqual(
-      getModelProviderFirewall("anthropic-api-key"),
-    );
   });
 });

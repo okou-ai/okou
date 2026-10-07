@@ -3,8 +3,6 @@ import { http, HttpResponse } from "msw";
 import fsSync, { promises as fs } from "node:fs";
 import { server } from "../mocks/server";
 import terminalFixtures from "../../../../../fixtures/pi-memory-phase2-terminal.json";
-import nativePiFixtures from "../../../../packages/api-contracts/src/contracts/__tests__/fixtures/pi-native.json";
-import { PI_NATIVE_CREDENTIAL_PLACEHOLDER } from "@okouai/api-contracts/contracts/pi-native";
 import { zstdDecompressSync } from "node:zlib";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -54,9 +52,9 @@ const CONFIG: PiSandboxAgentConfig = {
     launchConfig: { schemaVersion: 2 },
   },
   model: {
-    provider: "deepseek",
-    baseUrl: "https://api.deepseek.com/",
-    model: "deepseek-v4-flash",
+    provider: "openrouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    model: "deepseek/deepseek-v4.1-flash",
     dialect: "openai-responses",
     transport: "sse",
     apiKey: "test-api-key",
@@ -395,11 +393,11 @@ function piEnv(runIdEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
     OKOU_PI_SESSION_ID: SESSION_ID,
     OKOU_PI_LAUNCH_PAYLOAD_FILE: launchPayloadFile,
     OKOU_PI_MODEL_CONFIG: JSON.stringify({
-      provider: "deepseek",
-      baseUrl: "https://api.deepseek.com/",
-      model: "deepseek-v4-flash",
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "deepseek/deepseek-v4.1-flash",
       apiKeyEnv: "OPENAI_API_KEY",
-      credentialSecretName: "DEEPSEEK_API_KEY",
+      credentialSecretName: "OPENROUTER_API_KEY",
     }),
     OKOU_PI_PREPARATION_TIMING: "1",
     OPENAI_API_KEY: "test-api-key",
@@ -415,13 +413,7 @@ async function startSandboxHost(args: {
   /** History the Runner restored from the run's `resumeSession`, if any. */
   readonly restoredJsonl?: string;
   readonly providerBaseUrl: string;
-  readonly model?:
-    | "deepseek"
-    | "deepseek-v41"
-    | "openrouter-v41"
-    | "openrouter-luna"
-    | "luna"
-    | "codex-luna";
+  readonly model?: "openrouter-v41" | "openrouter-luna" | "codex-luna";
   readonly serviceTier?: "priority" | "fast";
   readonly reportPreparationTiming?: boolean;
 }): Promise<RpcHost> {
@@ -446,10 +438,7 @@ async function startSandboxHost(args: {
     }),
     { mode: 0o600 },
   );
-  const luna = args.model === "luna" || args.model === "openrouter-luna";
-  const openrouter =
-    args.model === "openrouter-luna" || args.model === "openrouter-v41";
-  const v41 = args.model === "deepseek-v41" || args.model === "openrouter-v41";
+  const luna = args.model === "openrouter-luna";
   const env = {
     ...process.env,
     OKOU_RUN_ID: RUN_ID,
@@ -480,17 +469,9 @@ async function startSandboxHost(args: {
             ],
           }
         : {
-            provider: openrouter ? "openrouter" : luna ? "openai" : "deepseek",
+            provider: "openrouter",
             baseUrl: args.providerBaseUrl,
-            model: v41
-              ? openrouter
-                ? "deepseek/deepseek-v4.1-flash"
-                : "deepseek-flash"
-              : openrouter
-                ? "openai/gpt-6-luna"
-                : luna
-                  ? "gpt-6-luna"
-                  : "deepseek-v4-flash",
+            model: luna ? "openai/gpt-6-luna" : "deepseek/deepseek-v4.1-flash",
             ...(luna
               ? {
                   thinkingLevel: "low" as const,
@@ -498,11 +479,7 @@ async function startSandboxHost(args: {
               : {}),
             ...(args.serviceTier ? { serviceTier: args.serviceTier } : {}),
             apiKeyEnv: "OPENAI_API_KEY",
-            credentialSecretName: openrouter
-              ? "OPENROUTER_API_KEY"
-              : luna
-                ? "OPENAI_API_KEY"
-                : "DEEPSEEK_API_KEY",
+            credentialSecretName: "OPENROUTER_API_KEY",
           },
     ),
     ...(args.reportPreparationTiming
@@ -753,10 +730,10 @@ describe("sandbox Pi agent loop", () => {
           config: {
             ...CONFIG,
             model: {
-              provider: "openai",
+              provider: "openrouter",
               baseUrl: "https://phase2-fixture.example/",
               apiKey: "SYNTHETIC_KEY",
-              model: "gpt-6-luna",
+              model: "openai/gpt-6-luna",
               dialect: "openai-responses",
               transport: "sse",
             },
@@ -1018,57 +995,25 @@ describe("sandbox Pi agent loop", () => {
   it("preserves canonical Gen1 request policy at launch", async () => {
     const env = piEnv({ OKOU_RUN_ID: RUN_ID });
     env.OKOU_PI_MODEL_CONFIG = JSON.stringify({
-      provider: "openai",
-      baseUrl: "https://api.openai.com/v1",
-      model: "gpt-6-luna",
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "openai/gpt-6-luna",
       thinkingLevel: "low",
       serviceTier: "priority",
       apiKeyEnv: "OPENAI_API_KEY",
-      credentialSecretName: "OPENAI_API_KEY",
+      credentialSecretName: "OPENROUTER_API_KEY",
     });
 
     const resolved = await piSandboxAgentConfigFromEnv(env);
     expect(resolved.model).toStrictEqual({
-      provider: "openai",
-      baseUrl: "https://api.openai.com/v1",
-      model: "gpt-6-luna",
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "openai/gpt-6-luna",
       dialect: "openai-responses",
       transport: "sse",
       thinkingLevel: "low",
       serviceTier: "priority",
       apiKey: "test-api-key",
-    });
-  });
-
-  it("resolves a custom gateway model without exposing its header template to Pi", async () => {
-    const env = piEnv({ OKOU_RUN_ID: RUN_ID });
-    env.OKOU_PI_MODEL_CONFIG = JSON.stringify({
-      provider: "deepseek",
-      baseUrl: "https://gateway.example.com/v1",
-      model: "company-deepseek-production",
-      catalogModel: "deepseek-v4-flash",
-      apiKeyEnv: "OPENAI_API_KEY",
-      credentialSecretName: "CUSTOM_GATEWAY_API_KEY",
-      credentialHeader: {
-        name: "x-api-key",
-        valueTemplate: "Key {{secret}}",
-      },
-    });
-    env.OPENAI_API_KEY = "safe-gateway-placeholder";
-
-    await expect(piSandboxAgentConfigFromEnv(env)).resolves.toMatchObject({
-      model: {
-        provider: "deepseek",
-        baseUrl: "https://gateway.example.com/v1",
-        model: "company-deepseek-production",
-        catalogModel: "deepseek-v4-flash",
-        dialect: "openai-responses",
-        apiKey: "unused",
-        requestHeaders: {
-          authorization: null,
-          "x-api-key": "safe-gateway-placeholder",
-        },
-      },
     });
   });
 
@@ -1120,13 +1065,13 @@ describe("sandbox Pi agent loop", () => {
   it.each([
     {
       dialect: "openai-responses",
-      provider: "openai",
+      provider: "openrouter",
       serviceTier: "fast",
       credentialBindings: [
         {
           kind: "api-key",
           environment: "OPENAI_API_KEY",
-          secretName: "OPENAI_API_KEY",
+          secretName: "OPENROUTER_API_KEY",
         },
       ],
     },
@@ -1167,12 +1112,12 @@ describe("sandbox Pi agent loop", () => {
     async (api) => {
       const env = piEnv({ OKOU_RUN_ID: RUN_ID });
       env.OKOU_PI_MODEL_CONFIG = JSON.stringify({
-        provider: "openai",
-        baseUrl: "https://api.openai.com/v1",
-        model: "gpt-6-luna",
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "openai/gpt-6-luna",
         api,
         apiKeyEnv: "OPENAI_API_KEY",
-        credentialSecretName: "OPENAI_API_KEY",
+        credentialSecretName: "OPENROUTER_API_KEY",
       });
       await expect(piSandboxAgentConfigFromEnv(env)).rejects.toMatchObject({
         issues: [
@@ -1460,15 +1405,15 @@ describe("sandbox Pi agent loop", () => {
     const finalAnswer = "sandbox answer after compaction";
     const provider = await ProviderHarness.start();
     const session = SessionManager.create(root, root, { id: SESSION_ID });
-    session.appendModelChange("deepseek", "deepseek-v4-flash");
+    session.appendModelChange("openrouter", "deepseek/deepseek-v4.1-flash");
     session.appendThinkingLevelChange("high");
     session.appendMessage({ role: "user", content: priorPrompt, timestamp: 1 });
     session.appendMessage({
       role: "assistant",
       content: [{ type: "text", text: "earlier answer to summarize" }],
       api: "openai-responses",
-      provider: "deepseek",
-      model: "deepseek-v4-flash",
+      provider: "openrouter",
+      model: "deepseek/deepseek-v4.1-flash",
       usage: {
         input: 5,
         output: 3,
@@ -1497,8 +1442,8 @@ describe("sandbox Pi agent loop", () => {
         { type: "text", text: "recent answer retained after compaction" },
       ],
       api: "openai-responses",
-      provider: "deepseek",
-      model: "deepseek-v4-flash",
+      provider: "openrouter",
+      model: "deepseek/deepseek-v4.1-flash",
       usage: {
         input: 1_033_617,
         output: 0,
@@ -1612,39 +1557,4 @@ describe("sandbox Pi agent loop", () => {
       await rm(root, { recursive: true, force: true });
     }
   }, 20_000);
-});
-
-describe("native Pi launch context reader", () => {
-  it.each(nativePiFixtures)(
-    "reads $name without changing the independent launch snapshot",
-    async ({ config }) => {
-      const launchPayload = {
-        ...CONFIG.launchPayload,
-        launchConfig: {
-          ...CONFIG.launchPayload.launchConfig,
-          memoryRecall: {
-            status: "no-content",
-            memoryStorageId: "native-memory",
-            storageVersionId: "native-version",
-          },
-        },
-      };
-      await writeFile(launchPayloadFile, JSON.stringify(launchPayload));
-      const env = piEnv({ OKOU_RUN_ID: RUN_ID });
-      env.OKOU_PI_MODEL_CONFIG = JSON.stringify(config);
-      for (const binding of config.credentialBindings)
-        env[binding.environment] = PI_NATIVE_CREDENTIAL_PLACEHOLDER;
-      const resolved = await piSandboxAgentConfigFromEnv(env);
-      expect(resolved.launchPayload).toStrictEqual(launchPayload);
-      expect(resolved.model).toMatchObject({
-        model: config.model,
-        catalogModel: config.catalogModel,
-        dialect: config.dialect,
-        transport: config.transport,
-      });
-      expect(JSON.stringify(resolved.model)).not.toContain(
-        "AWS_SECRET_ACCESS_KEY",
-      );
-    },
-  );
 });

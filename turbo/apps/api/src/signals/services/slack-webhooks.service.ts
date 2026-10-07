@@ -739,7 +739,6 @@ const resolveConnectedSlackAgentRouteAdmission$ = command(
           {
             orgId: args.orgId,
             userId: args.connection.userId,
-            defaultSource: undefined,
             orgPlanCapabilities: undefined,
           },
           signal,
@@ -860,7 +859,7 @@ const slackModelPickerState$ = command(
     }[];
     readonly currentSelectedModel: string | null;
   }> => {
-    const { response: policies, systemDefaultModel } = await set(
+    const { response: runModels, systemDefaultModel } = await set(
       listAvailableRunModelsWithDefault$,
       { orgId, userId },
       signal,
@@ -868,14 +867,14 @@ const slackModelPickerState$ = command(
     signal.throwIfAborted();
     return {
       enabled: true,
-      options: policies.models.flatMap((policy) => {
-        if (policy.routeStatus !== "valid") {
+      options: runModels.models.flatMap((runModel) => {
+        if (runModel.routeStatus !== "valid") {
           return [];
         }
         return {
-          model: policy.model,
-          label: policy.modelLabel,
-          isDefault: policy.model === systemDefaultModel,
+          model: runModel.model,
+          label: runModel.modelLabel,
+          isDefault: runModel.model === systemDefaultModel,
         };
       }),
       currentSelectedModel,
@@ -893,13 +892,13 @@ const isModelCommandAvailable$ = command(
     if (!installation?.orgId || !connection) {
       return false;
     }
-    const policies = await set(
+    const runModels = await set(
       listAvailableRunModels$,
       { orgId: installation.orgId, userId: connection.userId },
       signal,
     );
-    return policies.models.some((policy) => {
-      return policy.routeStatus === "valid";
+    return runModels.models.some((runModel) => {
+      return runModel.routeStatus === "valid";
     });
   },
 );

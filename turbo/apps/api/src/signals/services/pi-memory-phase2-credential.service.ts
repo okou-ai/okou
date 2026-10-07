@@ -69,14 +69,13 @@ async function selectCurrentCredential(
   claim: ClaimedPiMemoryPhase2Job,
 ): Promise<CurrentCredential> {
   // Honor the current default first; use a stable type/ID order for other
-  // compatible BYOK routes. No historical source decides this ranking.
+  // personal subscriptions. No historical source decides this ranking.
   const providers = await db
     .select({
       id: modelProviders.id,
       type: modelProviders.type,
       userId: modelProviders.userId,
       isDefault: modelProviders.isDefault,
-      secretId: modelProviders.secretId,
       needsReconnect: modelProviders.needsReconnect,
     })
     .from(modelProviders)

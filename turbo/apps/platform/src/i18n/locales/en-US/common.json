@@ -4646,11 +4646,8 @@
     "actions": {
       "addCredits": "Add credits",
       "openModelProviders": "Open Model Providers",
-      "reconnectClaude": "Reconnect Claude Code",
-      "shareWithAdmin": "Share with an admin"
+      "reconnectClaude": "Reconnect Claude Code"
     },
-    "anthropicKeyAdmin": "Claude Code could not authenticate with the configured Anthropic API key. Update or replace the API key in Model Providers, then retry.",
-    "anthropicKeyMember": "Claude Code could not authenticate with the configured Anthropic API key. Ask a workspace admin to update or replace the API key.",
     "askAdmin": "Ask a workspace admin to add credits or upgrade the workspace plan.",
     "claudeReconnect": "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.",
     "claudeTerms": "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Model Providers, accept the updated terms and policy, then retry.",
@@ -4665,7 +4662,7 @@
     "overloaded": "{{model}} is overloaded. Please wait a few minutes and try again, or switch to another model.",
     "providerBalance": "Your connected model provider account has insufficient balance.",
     "transient": "Oops, something went wrong. Please try again later.",
-    "vm0Credits": "Insufficient credits. Add credits or configure your own API key to continue."
+    "vm0Credits": "Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue."
   },
   "serviceStatus": {
     "dismiss": "Dismiss service update",
@@ -4917,7 +4914,7 @@
           "lowest": "Lowest cost per generation",
           "typical": "Typical cost per generation"
         },
-        "inheritDefault": "Org default (Auto)",
+        "inheritDefault": "Default (Auto)",
         "loadError": "Unable to load models.",
         "loading": "Loading models...",
         "models": "Models",
@@ -4985,10 +4982,6 @@
         "image-generation": {
           "description": "Create images with built-in models.",
           "name": "Image generation"
-        },
-        "image-recognition": {
-          "description": "Read and analyze images.",
-          "name": "Image recognition"
         },
         "maps": {
           "description": "Find places, addresses, and directions.",

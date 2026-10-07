@@ -2,8 +2,6 @@ import {
   getBuiltInRouteProviderVendor,
   getCatalogRunModelRouteAccess,
   isBuiltInModelProviderType,
-  isCustomGatewayProviderType,
-  modelProviderTypeSchema,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   reasoningEffortSchema,
@@ -44,19 +42,10 @@ function enabledRoutes(
 }
 
 /**
- * A custom gateway maps catalog models onto its own upstream and has no
- * catalog routes, so it follows the model's catalog capabilities.
- */
-function isCustomGatewaySelection(providerType: string): boolean {
-  const parsed = modelProviderTypeSchema.safeParse(providerType);
-  return parsed.success && isCustomGatewayProviderType(parsed.data);
-}
-
-/**
  * The routes that decide a model's capabilities for a selected provider type.
- * Without a provider type, or for a custom gateway, every enabled route of
- * the model counts, Built-in first. Any other provider type uses only its own
- * catalog routes; with none it declares no capabilities.
+ * Without a provider type, every enabled route of the model counts, Built-in
+ * first. A provider type uses only its own catalog routes; with none it
+ * declares no capabilities.
  */
 function capabilityRoutes(
   catalog: ModelCatalog,
@@ -71,13 +60,9 @@ function capabilityRoutes(
     return routes;
   }
   const selected = catalogProviderType(providerType);
-  const matching = routes.filter((route) => {
+  return routes.filter((route) => {
     return route.providerType === selected;
   });
-  if (matching.length > 0) {
-    return matching;
-  }
-  return isCustomGatewaySelection(providerType) ? routes : [];
 }
 
 function parseEfforts(values: readonly string[]): readonly ReasoningEffort[] {
@@ -271,10 +256,3 @@ export function loadSystemDefaultBuiltInVendor(
   const catalog = catalogSnapshot;
   return catalogBuiltInPrimaryVendor(catalog, catalog.systemDefaultModel);
 }
-
-/**
- * Whether an organization's custom gateway may serve the model. A model the
- * catalog offers on its own routes only through the vendor's API and
- * subscription (no third-party gateway route) is not served through custom
- * gateways either; models without own routes are left to the gateway mapping.
- */

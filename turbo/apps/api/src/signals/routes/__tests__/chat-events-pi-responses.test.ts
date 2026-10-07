@@ -183,7 +183,7 @@ async function configureResponsesWithOwnedRuns(args: {
   };
 }
 
-describe("CHAT-02: model-first provider policies", () => {
+describe("CHAT-02: model-first routing", () => {
   it("runs built-in okou-1.0 OpenRouter Responses", async () => {
     const selectedModel = "okou-1.0";
     configureNativeCliArtifact();

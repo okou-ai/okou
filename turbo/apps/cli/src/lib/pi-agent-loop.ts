@@ -231,7 +231,6 @@ async function materializeSandboxModel(
   try {
     const model = await materializePiAgentModelConfig({
       config,
-      target: "sandbox-firewall",
       resolveCredential(binding) {
         return requiredEnv(env, binding.environment);
       },

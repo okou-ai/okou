@@ -149,7 +149,6 @@ const initialThreadModel$ = command(
             {
               orgId: owner.orgId,
               userId: owner.userId,
-              defaultSource: undefined,
               orgPlanCapabilities: undefined,
               catalog,
             },

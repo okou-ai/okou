@@ -16,13 +16,13 @@ import { runModelCatalog } from "./run-model-catalog";
  * Execution routes for catalog models. Names and ordering come only from
  * `run_model_catalog`.
  *
- * - `provider_type` is the route the organization or member selects:
- *   `built-in`, a BYOK provider type, or a personal subscription type.
+ * - `provider_type` is `built-in` (platform Auto) or a personal subscription
+ *   type (`claude-code-oauth-token`, `codex-oauth-token`).
  * - `concrete_provider_type` is the provider that serves the request. Built-in
- *   routes list one row per candidate, tried in ascending `priority`; other
- *   routes serve themselves.
- * - `subscription_type` is set only for the Auto-mode personal subscription
- *   routes backed by a member's connected personal subscription.
+ *   routes are served by `openrouter-codex`; subscription routes serve
+ *   themselves.
+ * - `subscription_type` is set only for the personal subscription routes
+ *   backed by a member's connected personal subscription.
  * - `service_tiers` lists optional tiers besides the implicit Standard tier.
  * - `pricing_kind`/`pricing_provider` link a Built-in route to its
  *   `usage_pricing` rows, which remain the billing authority. No foreign key is
@@ -31,7 +31,7 @@ import { runModelCatalog } from "./run-model-catalog";
  *   boundary (input + cache read + cache creation) at which usage on a
  *   Built-in route bills the `.long_context` pricing categories. NULL means
  *   the route bills a single tier; it is part of the route's pricing rule, so
- *   BYOK and subscription routes never carry one.
+ *   subscription routes never carry one.
  */
 export const modelRoutes = pgTable(
   "model_routes",
@@ -83,11 +83,11 @@ export const modelRoutes = pgTable(
         .nullsNotDistinct(),
       check(
         "chk_model_routes_provider_type",
-        sql`${table.providerType} IN ('claude-code-oauth-token', 'anthropic-api-key', 'openrouter-api-key', 'deepseek', 'vercel-ai-gateway', 'openrouter-codex', 'vercel-ai-gateway-codex', 'openai-api-key', 'codex-oauth-token', 'azure-foundry', 'aws-bedrock', 'custom-anthropic-messages', 'custom-openai-responses', 'built-in')`,
+        sql`${table.providerType} IN ('claude-code-oauth-token', 'codex-oauth-token', 'built-in')`,
       ),
       check(
         "chk_model_routes_concrete_provider_type",
-        sql`CASE WHEN ${table.providerType} = 'built-in' THEN ${table.concreteProviderType} IN ('anthropic-api-key', 'openrouter-api-key', 'deepseek', 'openrouter-codex', 'openai-api-key') ELSE ${table.concreteProviderType} = ${table.providerType} END`,
+        sql`CASE WHEN ${table.providerType} = 'built-in' THEN ${table.concreteProviderType} IN ('openrouter-codex') ELSE ${table.concreteProviderType} = ${table.providerType} END`,
       ),
       check(
         "chk_model_routes_subscription_type",

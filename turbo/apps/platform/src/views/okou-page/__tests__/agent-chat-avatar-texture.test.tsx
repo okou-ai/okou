@@ -65,9 +65,6 @@ function mountedAgent(avatarUrl = avatarComposerUrl(AVATAR)): void {
     description: null,
     sound: null,
     avatarUrl,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: "public",
   };
   context.mocks.data.agents([agent]);

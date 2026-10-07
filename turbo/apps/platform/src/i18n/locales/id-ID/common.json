@@ -4634,11 +4634,8 @@
     "actions": {
       "addCredits": "Tambah kredit",
       "openModelProviders": "Buka Penyedia Model",
-      "reconnectClaude": "Hubungkan kembali Claude Code",
-      "shareWithAdmin": "Bagikan kepada admin"
+      "reconnectClaude": "Hubungkan kembali Claude Code"
     },
-    "anthropicKeyAdmin": "Claude Code tidak dapat melakukan autentikasi dengan kunci API Anthropic yang dikonfigurasi. Perbarui atau ganti kunci API di Penyedia Model, lalu coba lagi.",
-    "anthropicKeyMember": "Claude Code tidak dapat melakukan autentikasi dengan kunci API Anthropic yang dikonfigurasi. Minta admin ruang kerja untuk memperbarui atau mengganti kunci API.",
     "askAdmin": "Minta admin ruang kerja untuk menambah kredit atau meningkatkan paket ruang kerja.",
     "claudeReconnect": "Autentikasi langganan Claude Code gagal. Hubungkan kembali Claude Code di Penyedia Model, lalu coba lagi.",
     "claudeTerms": "Claude Code memerlukan persetujuan atas Ketentuan Penggunaan dan Kebijakan Privasi yang diperbarui. Masuk ke https://claude.ai dengan akun Claude yang terhubung di Penyedia Model, setujui pembaruan tersebut, lalu coba lagi.",
@@ -4653,7 +4650,7 @@
     "overloaded": "{{model}} sedang kelebihan beban. Tunggu beberapa menit dan coba lagi, atau beralih ke model lain.",
     "providerBalance": "Saldo akun penyedia model yang terhubung tidak mencukupi.",
     "transient": "Terjadi kesalahan. Silakan coba lagi nanti.",
-    "vm0Credits": "Kredit tidak mencukupi. Tambah kredit atau konfigurasikan kunci API Anda sendiri untuk melanjutkan."
+    "vm0Credits": "Kredit tidak mencukupi. Tambah kredit atau hubungkan langganan Codex atau Claude pribadi Anda untuk melanjutkan."
   },
   "serviceStatus": {
     "dismiss": "Tutup pembaruan layanan",
@@ -4905,7 +4902,7 @@
           "lowest": "Biaya terendah per generasi",
           "typical": "Biaya umum per generasi"
         },
-        "inheritDefault": "Default organisasi (Auto)",
+        "inheritDefault": "Default (Auto)",
         "loadError": "Tidak dapat memuat model.",
         "loading": "Memuat model...",
         "models": "Model",
@@ -4972,10 +4969,6 @@
         "image-generation": {
           "description": "Buat gambar dengan model bawaan.",
           "name": "Pembuatan gambar"
-        },
-        "image-recognition": {
-          "description": "Baca dan analisis gambar.",
-          "name": "Pengenalan gambar"
         },
         "maps": {
           "description": "Temukan tempat, alamat, dan rute.",

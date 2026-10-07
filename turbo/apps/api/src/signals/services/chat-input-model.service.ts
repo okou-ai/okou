@@ -16,8 +16,8 @@ import { command } from "ccstate";
 import { db$ } from "../external/db";
 import { resolveChatReasoningEffort } from "./chat-reasoning-effort.service";
 import {
+  autoModelPin,
   MODEL_FIRST_SELECTION_PROVIDER_ID,
-  resolveDefaultModelFirstPin$,
   resolveModelSelectionPin$,
   isReplacedModelSelection,
   type ModelSelectionBootstrap,
@@ -45,8 +45,8 @@ function isUnavailablePersonalCapture(
 }
 
 /**
- * Capture an input's model once. Personal selections keep their credential
- * source or fail explicitly; retired Custom choices normalize to fixed Auto.
+ * Capture an input's model once. Only Auto or an available personal
+ * subscription model is accepted; every other selection fails explicitly.
  */
 export const resolveChatInputModelSelection$ = command(
   async (
@@ -104,34 +104,24 @@ export const resolveChatInputModelSelection$ = command(
       // A replaced model with no compatible route is an explicit error; it never
       // falls back to the system default or to Built-in billing.
       return badRequestMessage(
-        `Model "${selectedModel}" was replaced and its replacement has no compatible route in this workspace`,
+        `Model "${selectedModel}" was replaced and its replacement has no compatible route`,
       );
     }
-    if (!selected || "status" in selected) {
-      const workspaceDefault = await set(
-        resolveDefaultModelFirstPin$,
-        {
-          orgId: args.orgId,
-          userId: args.userId,
-          defaultSource: "workspace",
-          orgPlanCapabilities: args.orgPlanCapabilities,
-          catalog,
-          modelBootstrap: args.modelBootstrap,
-        },
-        signal,
-      );
-      selectedModel = workspaceDefault.selectedModel;
-      modelProviderType = workspaceDefault.modelProviderType;
-      codexServiceTier = null;
-    } else {
+    if (selected && "status" in selected) {
+      return selected;
+    }
+    if (selected) {
       // New writes store the final resolved model.
       selectedModel = selected.selectedModel;
       modelProviderType = selected.modelProviderType;
+    } else {
+      const auto = autoModelPin();
+      selectedModel = auto.selectedModel;
+      modelProviderType = auto.modelProviderType;
+      codexServiceTier = null;
     }
     if (!selectedModel) {
-      return badRequestMessage(
-        "No valid model route is configured for this workspace",
-      );
+      return badRequestMessage("No valid model route is configured");
     }
     // The replacement of a stored selection keeps the caller's explicit effort
     // when its route accepts it.
@@ -167,7 +157,11 @@ export const resolveChatInputModelSelection$ = command(
   },
 );
 
-/** Integration and automation inputs follow the same existing-thread rule. */
+/**
+ * Integration and automation inputs follow the same existing-thread rule. A
+ * stored selection that no longer captures is enqueued unchanged so the queue
+ * pick rejects it visibly instead of silently switching models.
+ */
 export const resolveEnqueuedChatInputModel$ = command(
   async (
     { get, set },
@@ -201,9 +195,16 @@ export const resolveEnqueuedChatInputModel$ = command(
       },
       signal,
     );
-    if ("status" in selection) {
+    if (!("status" in selection)) {
+      return selection;
+    }
+    if (!thread.selectedModel) {
       throw new Error(selection.body.error.message);
     }
-    return selection;
+    return chatInputModelSelectionSchema.parse({
+      selectedModel: thread.selectedModel,
+      codexServiceTier: thread.codexServiceTier,
+      reasoningEffort: null,
+    });
   },
 );

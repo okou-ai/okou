@@ -2964,7 +2964,7 @@ describe("connector catalog valid lifecycle", () => {
     }
 
     const headers = { authorization: OFFICIAL_RUNNER_AUTHORIZATION };
-    const providerName = "model-provider:openai-api-key";
+    const providerName = "model-provider:claude-code-oauth-token";
     const callsBeforeReads = context.mocks.s3.send.mock.calls.length;
     const subset = await accept(
       runnerFirewallClient().resolve({
@@ -2981,7 +2981,7 @@ describe("connector catalog valid lifecycle", () => {
       "https://api.example.test/v1",
     );
     expect(subset.body.firewalls[providerName]?.apis[0]?.base).toBe(
-      "https://api.openai.com/v1/responses",
+      "https://api.anthropic.com/v1/messages",
     );
 
     const full = await accept(

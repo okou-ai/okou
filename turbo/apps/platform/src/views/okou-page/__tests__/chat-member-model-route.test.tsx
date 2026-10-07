@@ -79,8 +79,7 @@ test.each([
       context,
       path: NEW_CHAT_PATH,
     });
-    const trigger = await composerModelTrigger("GPT 5.6 Sol");
-    expect(trigger).not.toHaveTextContent("BYOK");
+    await composerModelTrigger("GPT 5.6 Sol");
     const panel = await openModelPanel("GPT 5.6 Sol");
 
     const option = await findModelOption((name) => {

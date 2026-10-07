@@ -52,9 +52,6 @@ function agent(agentId: string, avatarUrl: string): AgentResponse {
     displayName: agentId,
     sound: null,
     avatarUrl,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: "public",
   };
 }

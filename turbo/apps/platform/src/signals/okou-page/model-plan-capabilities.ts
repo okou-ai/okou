@@ -1,6 +1,5 @@
 import {
   getCatalogRunModelRouteAccess,
-  isBuiltInModelProviderType,
   type AvailableRunModel,
   type ModelProviderType,
   type RestrictedPlanModelAccess,
@@ -13,7 +12,6 @@ import { modelCatalog$ } from "../external/model-catalog.ts";
 import { orgPlanCapabilities$ } from "./org-plan-capabilities.ts";
 
 export interface ModelPlanCapabilities {
-  readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;
   /** The catalog's plan eligibility of a model; undefined outside the catalog. */
   readonly restrictedPlanAccess: (
@@ -33,7 +31,6 @@ export interface ModelPlanCapabilities {
 
 export const DEFAULT_MODEL_PLAN_CAPABILITIES =
   Object.freeze<ModelPlanCapabilities>({
-    supportByok: true,
     restrictedBuiltInModels: false,
     restrictedPlanAccess: () => {
       return undefined;
@@ -50,7 +47,6 @@ export const modelPlanCapabilities$ = computed(
       get(modelCatalog$),
     ]);
     return {
-      supportByok: capabilities.supportByok,
       restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
       restrictedPlanAccess: (model) => {
         return catalog.models.find((entry) => {
@@ -84,13 +80,6 @@ export function modelAllowedForPlan(
   );
 }
 
-function modelProviderAllowedForPlan(
-  providerType: ModelProviderType,
-  capabilities: Pick<ModelPlanCapabilities, "supportByok">,
-): boolean {
-  return capabilities.supportByok || isBuiltInModelProviderType(providerType);
-}
-
 /** A member-scope Claude Code or Codex route on the model's subscription route. */
 export function memberSubscriptionRouteAllowed(
   model: string | null | undefined,
@@ -114,13 +103,12 @@ export function modelRouteAllowedForPlan(
     return true;
   }
   return (
-    (!model ||
-      getCatalogRunModelRouteAccess(
-        capabilities.restrictedPlanAccess(model),
-        providerType,
-        capabilities.restrictedBuiltInModels,
-      ) === "allowed") &&
-    modelProviderAllowedForPlan(providerType, capabilities)
+    !model ||
+    getCatalogRunModelRouteAccess(
+      capabilities.restrictedPlanAccess(model),
+      providerType,
+      capabilities.restrictedBuiltInModels,
+    ) === "allowed"
   );
 }
 

@@ -9,7 +9,6 @@ export interface OrgPlanCapabilities {
   readonly canBuyCredits: boolean;
   readonly showUsagePack: boolean;
   readonly autoRechargeAllowed: boolean;
-  readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;
   readonly workflowWebhookAutomationAllowed: boolean;
 }
@@ -23,7 +22,6 @@ export function orgPlanCapabilitiesFromBilling(
     showUsagePack: billing.showUsagePack,
     status: billing.status,
     autoRechargeAllowed: billing.autoRechargeAllowed,
-    supportByok: billing.supportByok,
     restrictedBuiltInModels: billing.restrictedBuiltInModels,
     workflowWebhookAutomationAllowed: billing.workflowWebhookAutomationAllowed,
   };

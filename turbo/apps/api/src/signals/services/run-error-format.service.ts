@@ -1,14 +1,9 @@
 import { command, computed, type Computed } from "ccstate";
-import {
-  formatRunErrorForExternalSurface,
-  isClaudeCodeAuthenticationCredentialsError,
-} from "@okouai/api-contracts/contracts/errors";
+import { formatRunErrorForExternalSurface } from "@okouai/api-contracts/contracts/errors";
 import {
   getFrameworkForType,
-  modelProviderCredentialScopeSchema,
   normalizeRunModelId,
   modelProviderTypeSchema,
-  type ModelProviderCredentialScope,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ModelProviderFramework } from "@okouai/api-contracts/contracts/model-provider-types";
@@ -18,7 +13,6 @@ import { eq } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { db$, type ReadonlyDb } from "../external/db";
-import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 import {
   catalogDisplayName,
   modelCatalog$,
@@ -29,10 +23,7 @@ const INSUFFICIENT_CREDITS_MARKER = "insufficient_credits";
 const PRO_REQUIRED_MARKER = "pro_required";
 
 interface RunErrorProviderContext {
-  readonly userId: string;
-  readonly orgId: string;
   readonly modelProviderType: ModelProviderType | null;
-  readonly modelProviderCredentialScope: ModelProviderCredentialScope | null;
   readonly failureReason: RunFailureReasonToken | null;
   readonly framework: ModelProviderFramework | null;
   readonly selectedModel: string | null;
@@ -45,35 +36,12 @@ interface FormatRunErrorLikeWebMessageParams {
   readonly failureReason?: RunFailureReasonToken;
   readonly framework?: ModelProviderFramework | null;
   readonly modelProviderType?: ModelProviderType | null;
-  readonly modelProviderCredentialScope?: ModelProviderCredentialScope | null;
   readonly selectedModel?: string | null;
-  readonly canManageOrgModelProviders?: boolean;
 }
 
 function buildModelProvidersUrl(): string {
   const appUrl = env("APP_URL");
   return `${appUrl}/?settings=model`;
-}
-
-function buildPersonalModelProvidersUrl(): string {
-  const appUrl = env("APP_URL");
-  return `${appUrl}/?settings=model`;
-}
-
-function buildClaudeCodeCredentialRecoveryUrl(params: {
-  readonly modelProviderType: ModelProviderType | null | undefined;
-  readonly modelProviderCredentialScope:
-    | ModelProviderCredentialScope
-    | null
-    | undefined;
-}): string {
-  if (
-    params.modelProviderType === "claude-code-oauth-token" &&
-    params.modelProviderCredentialScope === "member"
-  ) {
-    return buildPersonalModelProvidersUrl();
-  }
-  return buildModelProvidersUrl();
 }
 
 function isProRequiredRunError(message: string): boolean {
@@ -85,10 +53,10 @@ function isInsufficientCreditsRunError(message: string): boolean {
   return (
     normalized === "insufficient_credits" ||
     normalized.startsWith("insufficient_credits: insufficient credits.") ||
-    normalized ===
-      "insufficient credits. add credits or configure your own api key to continue." ||
-    normalized ===
-      "api error: 402 insufficient credits. add credits or configure your own api key to continue."
+    normalized.startsWith("insufficient credits. add credits or ") ||
+    normalized.startsWith(
+      "api error: 402 insufficient credits. add credits or ",
+    )
   );
 }
 
@@ -102,27 +70,14 @@ function formatLatestSessionProviderType(
   return parsed.success ? parsed.data : null;
 }
 
-function formatRunModelProviderCredentialScope(
-  value: string | null,
-): ModelProviderCredentialScope | null {
-  if (value === null) {
-    return null;
-  }
-  const parsed = modelProviderCredentialScopeSchema.safeParse(value);
-  return parsed.success ? parsed.data : null;
-}
-
 function runErrorProviderContext(
   runId: string,
 ): Computed<Promise<RunErrorProviderContext | undefined>> {
   return computed(async (get): Promise<RunErrorProviderContext | undefined> => {
     const [run] = await get(db$)
       .select({
-        userId: agentRuns.userId,
-        orgId: agentRuns.orgId,
         modelProviderType: agentRuns.modelProvider,
         modelRuntimeProviderType: agentRuns.modelRuntimeProvider,
-        modelProviderCredentialScope: agentRuns.modelProviderCredentialScope,
         failureReason: agentRuns.failureReason,
         selectedModel: agentRuns.selectedModel,
       })
@@ -145,12 +100,7 @@ function runErrorProviderContext(
       (modelProviderType === "built-in" ? null : modelProviderType);
 
     return {
-      userId: run.userId,
-      orgId: run.orgId,
       modelProviderType,
-      modelProviderCredentialScope: formatRunModelProviderCredentialScope(
-        run.modelProviderCredentialScope,
-      ),
       failureReason: run.failureReason,
       framework:
         frameworkProviderType === null
@@ -192,7 +142,6 @@ function formatRunErrorLikeWebMessage(
 
     const providerContext =
       params.modelProviderType !== undefined &&
-      params.modelProviderCredentialScope !== undefined &&
       params.selectedModel !== undefined
         ? undefined
         : await get(runErrorProviderContext(params.runId));
@@ -200,10 +149,6 @@ function formatRunErrorLikeWebMessage(
       params.modelProviderType !== undefined
         ? params.modelProviderType
         : providerContext?.modelProviderType;
-    const modelProviderCredentialScope =
-      params.modelProviderCredentialScope !== undefined
-        ? params.modelProviderCredentialScope
-        : providerContext?.modelProviderCredentialScope;
     const selectedModel =
       params.selectedModel !== undefined
         ? params.selectedModel
@@ -224,12 +169,7 @@ function formatRunErrorLikeWebMessage(
       modelProviderType,
       claudeCodeCredentialRecovery: {
         modelProviderType,
-        modelProviderCredentialScope,
-        canManageOrgModelProviders: params.canManageOrgModelProviders ?? false,
-        modelProvidersUrl: buildClaudeCodeCredentialRecoveryUrl({
-          modelProviderType,
-          modelProviderCredentialScope,
-        }),
+        modelProvidersUrl: buildModelProvidersUrl(),
       },
     });
   });
@@ -237,38 +177,15 @@ function formatRunErrorLikeWebMessage(
 
 export const formatRunErrorForRunOwner$ = command(
   async (
-    { get, set },
+    { get },
     params: Omit<
       FormatRunErrorLikeWebMessageParams,
-      | "failureReason"
-      | "framework"
-      | "modelProviderType"
-      | "modelProviderCredentialScope"
+      "failureReason" | "framework" | "modelProviderType"
     >,
     signal: AbortSignal,
   ): Promise<string> => {
     const providerContext = await get(runErrorProviderContext(params.runId));
     signal.throwIfAborted();
-
-    let canManageOrgModelProviders = params.canManageOrgModelProviders ?? false;
-    if (
-      params.canManageOrgModelProviders === undefined &&
-      providerContext?.modelProviderType === "anthropic-api-key" &&
-      providerContext.modelProviderCredentialScope === "org" &&
-      (providerContext.failureReason === "invalid_credentials" ||
-        (providerContext.failureReason === null &&
-          isClaudeCodeAuthenticationCredentialsError(params.errorMessage)))
-    ) {
-      const membership = await set(
-        getMemberRoleAndUpdateCache$,
-        providerContext.orgId,
-        providerContext.userId,
-        signal,
-      );
-      signal.throwIfAborted();
-      canManageOrgModelProviders =
-        membership.kind === "member" && membership.role === "admin";
-    }
 
     return await get(
       formatRunErrorLikeWebMessage({
@@ -276,10 +193,7 @@ export const formatRunErrorForRunOwner$ = command(
         failureReason: providerContext?.failureReason ?? undefined,
         framework: providerContext?.framework ?? null,
         modelProviderType: providerContext?.modelProviderType ?? null,
-        modelProviderCredentialScope:
-          providerContext?.modelProviderCredentialScope ?? null,
         selectedModel: providerContext?.selectedModel ?? null,
-        canManageOrgModelProviders,
       }),
     );
   },

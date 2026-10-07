@@ -1,5 +1,4 @@
 import {
-  boolean,
   index,
   pgTable,
   text,
@@ -9,7 +8,6 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
-import { modelProviders } from "./model-provider";
 
 export type AgentVisibility = "public" | "private";
 
@@ -33,16 +31,6 @@ export const agents = pgTable(
     description: text("description"),
     sound: varchar("sound", { length: 64 }),
     avatarUrl: varchar("avatar_url", { length: 1024 }),
-    modelProviderId: uuid("model_provider_id").references(
-      () => {
-        return modelProviders.id;
-      },
-      { onDelete: "set null" },
-    ),
-    selectedModel: varchar("selected_model", { length: 255 }),
-    preferPersonalProvider: boolean("prefer_personal_provider")
-      .notNull()
-      .default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

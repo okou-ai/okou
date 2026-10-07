@@ -132,19 +132,6 @@ export {
   type QueueResponse,
 } from "./runs";
 export {
-  IMAGE_RECOGNITION_MAX_FILE_BYTES,
-  IMAGE_RECOGNITION_MAX_PROMPT_CHARS,
-  IMAGE_RECOGNITION_MAX_TEXT_CHARS,
-  imageRecognitionContract,
-  imageRecognitionMimeTypeSchema,
-  imageRecognitionRequestSchema,
-  imageRecognitionResponseSchema,
-  type ImageRecognitionContract,
-  type ImageRecognitionMimeType,
-  type ImageRecognitionRequest,
-  type ImageRecognitionResponse,
-} from "./image-recognition";
-export {
   modelCatalogContract,
   modelCatalogResponseSchema,
   type ModelCatalogContract,
@@ -411,7 +398,6 @@ export {
 } from "./variables";
 export {
   modelProviderTypeSchema,
-  modelProviderWriteTypeSchema,
   modelProviderFrameworkSchema,
   modelProviderResponseSchema,
   modelProviderListResponseSchema,
@@ -429,12 +415,8 @@ export {
   getModels,
   getDefaultModel,
   hasModelSelection,
-  allowsCustomModel,
-  getCustomModelPlaceholder,
   // Provider compatibility
   normalizeRunModelId,
-  // Selectable provider filtering
-  getSelectableProviderTypes,
   isBuiltInModelProviderType,
   // Multi-auth provider support
   hasAuthMethods,
@@ -443,7 +425,6 @@ export {
   getSecretsForAuthMethod,
   getSecretNamesForAuthMethod,
   type ModelProviderType,
-  type ModelProviderWriteType,
   type BuiltInModelProviderType,
   type ModelProviderFramework,
   type ModelProviderEnvBindings,

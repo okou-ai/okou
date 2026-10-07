@@ -110,16 +110,16 @@ playwright = jobs.fetch("cli-e2e-02-playwright")
 playwright_finalizer = jobs.fetch("cli-e2e-02-playwright-finalize")
 account_prepare = jobs.fetch("cli-e2e-03-runner-prepare")
 account_prepare_steps = account_prepare.fetch("steps")
-model_policy_index = account_prepare_steps.index do |step|
-  step["name"] == "Check runner E2E model policy" &&
-    step["run"] == "cd e2e && pnpm exec tsx --test scripts/model-policy.test.ts scripts/runner-model-bootstrap.test.mjs"
+model_selection_index = account_prepare_steps.index do |step|
+  step["name"] == "Check runner E2E model selection" &&
+    step["run"] == "cd e2e && pnpm exec tsx --test scripts/runner-model-selection.test.ts scripts/runner-model-bootstrap.test.mjs"
 end
 prepare_accounts_index = account_prepare_steps.index do |step|
   step["name"] == "Prepare runner E2E accounts"
 end
-unless model_policy_index && prepare_accounts_index &&
-    model_policy_index < prepare_accounts_index
-  raise "runner E2E must check the Auto cost policy before preparing real accounts"
+unless model_selection_index && prepare_accounts_index &&
+    model_selection_index < prepare_accounts_index
+  raise "runner E2E must check model selection before preparing real accounts"
 end
 bootstrap = jobs.fetch("cli-e2e-03-runner-bootstrap")
 runner = jobs.fetch("cli-e2e-03-runner")
@@ -474,7 +474,7 @@ unless bootstrap_steps.any? do |step|
   raise "runner bootstrap must download the token artifact"
 end
 # Fresh accounts inherit the sole platform model. Personal subscriptions are
-# provisioned independently and must never write organization routing policy.
+# provisioned independently.
 auto_steps = {
   "Reset runner model defaults" => ["runner", "false"],
   "Bootstrap real Codex account" => ["runner-real-codex", "true"],
@@ -485,13 +485,10 @@ auto_steps.each do |name, (account, real_agent)|
   step = bootstrap_steps.find { |candidate| candidate["name"] == name }
   raise "missing #{name}" unless step
   expected = "cd e2e && bash playwright/runner-auto-bootstrap.bash /tmp/e2e-api-credentials-#{account}.json #{real_agent}"
-  raise "#{name} must bootstrap Auto without policies or API keys" unless step["run"] == expected
+  raise "#{name} must bootstrap Auto" unless step["run"] == expected
   unless step.dig("env", "VERCEL_AUTOMATION_BYPASS_SECRET") ==
       "${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}"
     raise "#{name} must receive the preview bypass secret"
-  end
-  if step.fetch("env").key?("OPENAI_API_KEY")
-    raise "Auto bootstrap must not receive an organization BYOK credential"
   end
 end
 mock_claude_step = bootstrap_steps.find do |step|

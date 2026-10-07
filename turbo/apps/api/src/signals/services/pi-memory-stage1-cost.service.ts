@@ -126,7 +126,7 @@ export async function observePiMemoryStage1Cost(
 
 /** No usable response usage: unknown vendor cost, never a zero-valued response. */
 export async function observePiMemoryStage1MissingUsage(
-  billingMode: "builtin" | "byok",
+  billingMode: "builtin" | "subscription",
   model: PiMemoryStage1Model,
 ): Promise<void> {
   await settleIncludingAbort(() => {

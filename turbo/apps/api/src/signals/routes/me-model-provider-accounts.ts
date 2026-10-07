@@ -1,4 +1,3 @@
-import { modelCatalog$ } from "../services/model-catalog.service";
 import {
   personalModelProviderAccountsByIdContract,
   personalSubscriptionsContract,
@@ -26,7 +25,7 @@ import {
   failedRunAccountIdentity,
   personalSubscriptionAccountIdentity,
 } from "../services/personal-subscription-recovery.service";
-import { resetStaleAutoMemberSelection } from "../services/member-subscription-models.service";
+import { resetDisconnectedMemberModelSelection } from "../services/member-subscription-models.service";
 
 const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -161,8 +160,7 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (result) {
     return result;
   }
-  await resetStaleAutoMemberSelection(
-    await get(modelCatalog$),
+  await resetDisconnectedMemberModelSelection(
     set(writeDb$),
     auth.orgId,
     auth.userId,

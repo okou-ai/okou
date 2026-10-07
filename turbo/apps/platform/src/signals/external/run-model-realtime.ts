@@ -10,19 +10,14 @@ import { invalidateAvailableRunModels$ } from "./run-models.ts";
  */
 export const setupRunModelRealtime$ = command(
   ({ set }, signal: AbortSignal): void => {
-    for (const scope of ["user", "org"] as const) {
-      set(
-        setAblyInvalidationLoop$,
-        {
-          scope,
-          topic: "runModelsChanged",
-          invalidations: [
-            invalidateAvailableRunModels$,
-            invalidateModelCatalog$,
-          ],
-        },
-        signal,
-      );
-    }
+    set(
+      setAblyInvalidationLoop$,
+      {
+        scope: "user",
+        topic: "runModelsChanged",
+        invalidations: [invalidateAvailableRunModels$, invalidateModelCatalog$],
+      },
+      signal,
+    );
   },
 );

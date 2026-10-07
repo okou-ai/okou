@@ -396,7 +396,6 @@ import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integr
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import {
   getFrameworkForType,
-  getModelImageInputSupport,
   getModelProviderFirewall,
   isBuiltInModelProviderType,
   MODEL_PROVIDER_TYPES,
@@ -2948,7 +2947,6 @@ export function createThreadClaimRunObjects(
   const memberRoutes$ = computed(async (get) => {
     const snapshot = await get(queuedMemberModelRoutesMemberAccountSnapshot$);
     return memberModelRouteContextFromAccounts(
-      (await get(queuedMemberModelRoutesInput$)).userId,
       snapshot?.accounts.map((account) => {
         return { ...account, providerId: account.modelProviderId };
       }) ?? [],
@@ -2982,7 +2980,6 @@ export function createThreadClaimRunObjects(
       ? resolveQueuedModelSelectionPinFromSnapshot({
           catalog: await get(claimCatalog$),
           selectedModel: selection.selectedModel,
-          member: await get(queuedModelRoutingMemberRoutes$),
           subscriptionModels: await get(subscriptionModels$),
         })
       : badRequestMessage("Queued input is missing its model selection");
@@ -3078,7 +3075,7 @@ export function createThreadClaimRunObjects(
   const { input$: queuedProviderAdmissionInput$ } = queuedModelSources;
   const { modelPin$: queuedProviderAdmissionModelPin$ } = routing;
   const { creditBalance$: queuedProviderAdmissionCreditBalance$ } = credits;
-  /** Auto or Custom: the member's own valid subscription route is plan-exempt. */
+  /** The member's own valid subscription route is plan-exempt. */
   const personalSubscription$ = computed(async (get) => {
     const [pin, member, catalog] = await Promise.all([
       get(queuedProviderAdmissionModelPin$),
@@ -6357,7 +6354,6 @@ export function createThreadClaimRunObjects(
         args: {
           ...selectedRunModelProviderArgs(
             account.command,
-            agent,
             account.capturedPersonalSubscriptionAccount,
           ),
           catalog: await get(claimCatalog$),
@@ -6561,9 +6557,10 @@ export function createThreadClaimRunObjects(
       const config = source.configuration;
       if (config.kind === "registered-provider") {
         const selectedModel = context.environmentArgs.selectedModelOverride;
-        const type = modelProviderTypeSchema.parse(config.providerType);
+        const type = config.providerType;
         if (
           !selectedModel ||
+          !isPersonalSubscriptionProviderType(type) ||
           getFrameworkForType(type) !== context.environmentArgs.framework ||
           (context.environmentArgs.modelProviderType !== undefined &&
             context.environmentArgs.modelProviderType !== type)
@@ -6584,9 +6581,6 @@ export function createThreadClaimRunObjects(
       return null;
     },
   );
-  const pinnedGatewayProviderEnvironment$ = computed(async (get) => {
-    return await get(preparedConfiguredEnvironment$);
-  });
   const pinnedBuiltInProviderSnapshot$ = computed(async (get) => {
     const context = await get(pinnedContext$);
     return context &&
@@ -6612,9 +6606,7 @@ export function createThreadClaimRunObjects(
         // Member subscription accounts use the exact selected account source.
         return await get(preparedConfiguredEnvironment$);
       }
-      // Registered, organization-account and gateway sources are all prepared
-      // from their exact selected source snapshot.
-      return await get(pinnedGatewayProviderEnvironment$);
+      return null;
     },
   );
   const queuedModelRoute$ = computed(async (get) => {
@@ -8510,12 +8502,6 @@ export function createThreadClaimRunObjects(
       userTimezone,
       featureSwitchContext: bodyContext.featureSwitchContext,
       selectedImageModel,
-      imageRecognitionAvailable: isImageRecognitionAvailableForRun({
-        includeOkouTokenSecret: args.includeOkouTokenSecret,
-        selectedModel:
-          modelProvider?.selectedModel ?? args.selectedModelOverride,
-        providerType: modelProvider?.concreteType ?? modelProvider?.type,
-      }),
     };
   });
   const preparedRunPlan$ = computed(async (get) => {
@@ -9139,7 +9125,6 @@ export function createThreadClaimRunObjects(
         body: { ...context.body, appendSystemPrompt: finalAppendSystemPrompt },
         framework: context.framework,
         chatThreadId: args.chatThreadId,
-        imageRecognitionAvailable: context.imageRecognitionAvailable,
         mcpConnectorSlugs: [
           ...context.connectorContext.mcpConnectorSlugs,
           ...context.customConnectorContext.mcpConnectorSlugs,
@@ -13870,10 +13855,6 @@ interface AuthorizedAgentRunRequestObservation {
   readonly featureSwitchContext: FeatureSwitchContext;
 }
 
-function optionalAgentSetting(value: string | null): string | undefined {
-  return value === null ? undefined : value;
-}
-
 interface AgentRunsCreateHttpRunCallback {
   readonly url: string;
   readonly secret: string;
@@ -14046,7 +14027,6 @@ function piModelPreparationInput(
 
 function selectedRunModelProviderArgs(
   command: ThreadRunIdentity,
-  agent: AgentRunRecord,
   capturedPersonalSubscriptionAccount:
     | CapturedPersonalSubscriptionAccount
     | undefined,
@@ -14054,14 +14034,11 @@ function selectedRunModelProviderArgs(
   return {
     orgId: command.owner.orgId,
     userId: command.owner.userId,
-    modelProviderId:
-      command.modelProviderId ?? optionalAgentSetting(agent.modelProviderId),
+    modelProviderId: command.modelProviderId,
     modelProviderCredentialScope: command.modelProviderCredentialScope,
     modelProviderType: command.body.modelProvider,
     capturedPersonalSubscriptionAccount,
-    selectedModelOverride:
-      command.selectedModelOverride ??
-      optionalAgentSetting(agent.selectedModel),
+    selectedModelOverride: command.selectedModelOverride,
     builtInModelRuntimeRoute: command.builtInModelRuntimeRoute,
     piExecution: selectedRunPiExecution(command),
     codexServiceTier: command.codexServiceTier,
@@ -14306,25 +14283,6 @@ function buildStoredUntrustedEnvironment(args: {
   );
 }
 
-function assertNativeCredentialOverrides(
-  provider: ResolvedModelProviderEnvironment | null,
-  bodySecrets: Record<string, string> | undefined,
-): void {
-  const native = provider?.piModelConfig;
-  if (
-    native &&
-    "schemaVersion" in native &&
-    native.schemaVersion === 4 &&
-    native.credentialBindings.some((binding) => {
-      return bodySecrets?.[binding.secretName] !== undefined;
-    })
-  ) {
-    throw new PiModelConfigurationError(
-      "Native Pi credentials cannot be overridden after route capture",
-    );
-  }
-}
-
 function piLangfuseExecutionEnvironment(args: {
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly includeOkouTokenSecret: boolean | undefined;
@@ -14433,7 +14391,6 @@ function buildStoredExecutionContextDraft(
 ): BuiltStoredExecutionContextDraft {
   const permissions = args.permissionManifest;
   const langfuseEnvironment = piLangfuseExecutionEnvironment(args);
-  assertNativeCredentialOverrides(args.modelProvider, args.body.secrets);
   const executionSecrets = buildStoredExecutionSecrets({
     connectorContext: args.connectorContext,
     modelProvider: args.modelProvider,
@@ -14479,7 +14436,6 @@ function buildStoredExecutionContextDraft(
     ...environment,
     ...platformEnvironment,
   };
-  assertNativeEnvironment(args.modelProvider, effectiveEnvironment);
   const environmentKeyByValue = new Map<string, string>();
   for (const [key, value] of Object.entries(effectiveEnvironment)) {
     if (!environmentKeyByValue.has(value)) {
@@ -14623,7 +14579,6 @@ interface BuildRunnerJobPayloadInput {
   readonly includeOkouTokenSecret: boolean | undefined;
   readonly okouTokenComputerUseHostId: string | undefined;
   readonly okouTokenCloudBrowserEnabled: boolean | undefined;
-  readonly imageRecognitionAvailable: boolean;
   readonly chatThreadId: string | undefined;
   readonly platformEnvironment: Record<string, string> | undefined;
   readonly userTimezone: string | undefined;
@@ -14693,7 +14648,6 @@ function preparedRunnerJobBody(
         ? { computerUseHostId: args.okouTokenComputerUseHostId }
         : {}),
       cloudBrowserEnabled: args.okouTokenCloudBrowserEnabled === true,
-      imageRecognitionAvailable: args.imageRecognitionAvailable,
       ...(customConnectorSourceEntries.length === 0
         ? {}
         : {
@@ -14757,7 +14711,7 @@ function shouldEnableFrameworkWebSearch(
   }
 
   // A successful route without a stored provider uses the framework key
-  // declared in compose. Stored non-built-in providers are BYOK as well.
+  // declared in compose; a stored personal subscription does too.
   return (
     context.modelProvider === null ||
     !isBuiltInModelProviderType(context.modelProvider.type)
@@ -15903,7 +15857,6 @@ function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
   return {
     ...selectedRunModelProviderArgs(
       command,
-      args.agent,
       args.capturedPersonalSubscriptionAccount,
     ),
     catalog: args.catalog,
@@ -16036,9 +15989,6 @@ const AUTO_MEMORY_MISSING_ROOT_POLICY: ArtifactMissingRootPolicy =
 const CODEX_WEB_IMAGE_GENERATION_UPLOAD_PROMPT =
   "If you use the built-in image generation tool and it saves generated output image file(s) to local paths, upload each output file you intend to show with `okou web upload-file -f <path>` before telling the web chat user the image is available. Quote the path when needed. Do not provide only sandbox-local paths, because users cannot open local files.";
 
-const IMAGE_RECOGNITION_PROMPT =
-  '# Image Recognition Fallback\n\nThis run\'s selected model cannot inspect images directly. To inspect one local PNG, JPEG, or WebP image up to 20 MB, run `okou image-recognition --file <image-path> --prompt "<instruction>"`.';
-
 const MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT = 20;
 
 function buildMcpConnectorPrompt(
@@ -16081,7 +16031,6 @@ function withFinalRunAppendSystemPrompt(args: {
   readonly body: CreateRunBody;
   readonly framework: SupportedFramework;
   readonly chatThreadId: string | undefined;
-  readonly imageRecognitionAvailable: boolean;
   readonly mcpConnectorSlugs: readonly string[];
   readonly selectedImageModel: ImageModel;
   readonly cliAvailable: boolean;
@@ -16092,9 +16041,6 @@ function withFinalRunAppendSystemPrompt(args: {
     if (mcpConnectorPrompt) {
       appendedParts.push(mcpConnectorPrompt);
     }
-  }
-  if (args.imageRecognitionAvailable) {
-    appendedParts.push(IMAGE_RECOGNITION_PROMPT);
   }
   if (
     args.framework === "codex" &&
@@ -16705,18 +16651,6 @@ function prepareRunOutputMetadata(args: {
     additionalVolumeSources: additionalVolumes.sources,
     artifacts,
   };
-}
-
-function isImageRecognitionAvailableForRun(args: {
-  readonly includeOkouTokenSecret: boolean | undefined;
-  readonly selectedModel: string | undefined;
-  readonly providerType: ModelProviderType | undefined;
-}): boolean {
-  return (
-    args.includeOkouTokenSecret === true &&
-    getModelImageInputSupport(args.selectedModel, args.providerType) ===
-      "unsupported"
-  );
 }
 
 function resolveCompatibleDirectResumeSession(args: {
@@ -17531,43 +17465,6 @@ async function buildPermissionManifest(
       );
     },
   );
-}
-
-function assertNativeEnvironment(
-  provider: ResolvedModelProviderEnvironment | null,
-  effectiveEnvironment: Record<string, string>,
-): void {
-  const nativeConfig = provider?.piModelConfig;
-  if (
-    nativeConfig &&
-    "schemaVersion" in nativeConfig &&
-    nativeConfig.schemaVersion === 4
-  ) {
-    for (const key of [
-      "AWS_ACCESS_KEY_ID",
-      "AWS_SECRET_ACCESS_KEY",
-      "AWS_SESSION_TOKEN",
-      "AWS_BEARER_TOKEN_BEDROCK",
-      "AWS_PROFILE",
-      "AWS_DEFAULT_PROFILE",
-      "AWS_WEB_IDENTITY_TOKEN_FILE",
-      "AWS_CONTAINER_CREDENTIALS_FULL_URI",
-      "AWS_CONTAINER_CREDENTIALS_RELATIVE_URI",
-      "ANTHROPIC_FOUNDRY_API_KEY",
-      "CLAUDE_CODE_OAUTH_TOKEN",
-      "ANTHROPIC_API_KEY",
-      "ANTHROPIC_AUTH_TOKEN",
-      "OPENROUTER_API_KEY",
-      "VERCEL_AI_GATEWAY_API_KEY",
-      "OKOU_MODEL_PROVIDER_API_KEY",
-    ]) {
-      if (effectiveEnvironment[key]) {
-        throw new PiModelConfigurationError(
-          "Native Pi context cannot carry ambient provider authentication",
-        );
-      }
-    }
-  }
 }
 
 function sanitizeEnvironment(

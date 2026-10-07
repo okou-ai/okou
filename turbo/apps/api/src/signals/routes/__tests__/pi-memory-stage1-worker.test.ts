@@ -260,7 +260,7 @@ function installProvider(
   const calls: ProviderInvocation[] = [];
   server.use(
     http.post(
-      /https:\/\/(?:api\.openai\.com|api\.deepseek\.com|(?:us\.)?openrouter\.ai|chatgpt\.com|ai-gateway\.vercel\.sh|stage1-gateway\.example)\/(?:.*\/)?responses/u,
+      /https:\/\/(?:(?:us\.)?openrouter\.ai|chatgpt\.com)\/(?:.*\/)?responses/u,
       async ({ request }) => {
         sequence += 1;
         const body = (
@@ -791,7 +791,7 @@ describe("Pi memory Stage 1 worker", () => {
         const trigger = await chat.sendChatRun(actor, {
           agentId,
           prompt: "Request the next owned memory day",
-          model: "deepseek-v4.1-flash",
+          model: "okou-1.0",
         });
         runs.push({ runId: trigger.runId });
         await chat.api.requestCancelRun(actor, trigger.runId, [200]);
@@ -2008,12 +2008,12 @@ describe("Stage 1 source credentials", () => {
     await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
   });
 
-  it("routes mixed Auto and personal sources without serving retired credentials", async () => {
-    const storages = Array.from({ length: 5 }, () => {
+  it("routes mixed Auto and personal subscription sources", async () => {
+    const storages = Array.from({ length: 2 }, () => {
       return createStorageFixture();
     });
-    const [builtin, codex, api, gateway, vercel] = storages;
-    if (!builtin || !codex || !api || !gateway || !vercel) {
+    const [builtin, codex] = storages;
+    if (!builtin || !codex) {
       throw new Error("Missing memory owners");
     }
     const subscription = await codexSource(codex);
@@ -2027,21 +2027,6 @@ describe("Stage 1 source credentials", () => {
       "builtin evidence",
     );
     await seedSource(codex, subscription.binding, "personal evidence");
-    for (const [storage, type] of [
-      [api, "openai-api-key"],
-      [gateway, "custom-openai-responses"],
-      [vercel, "vercel-ai-gateway-codex"],
-    ] as const) {
-      await seedSource(
-        storage,
-        {
-          modelProvider: type,
-          modelProviderId: randomUUID(),
-          modelProviderCredentialScope: "org",
-        },
-        "retired credential evidence",
-      );
-    }
     const provider = installSourceProvider();
     const result = await accept(
       stage1Client(storages).extract({ headers: stage1Headers() }),
@@ -2049,7 +2034,7 @@ describe("Stage 1 source credentials", () => {
     );
     expect(result.body).toMatchObject({
       succeeded: 2,
-      terminalFailure: 3,
+      terminalFailure: 0,
       retryableFailure: 0,
     });
     expect(provider.calls).toHaveLength(2);
@@ -2075,9 +2060,7 @@ describe("Stage 1 source credentials", () => {
       reasoning: { effort: "low" },
     });
     expect((await inspectUsage(builtin)).length).toBeGreaterThan(0);
-    for (const storage of [codex, api, gateway, vercel]) {
-      await expect(inspectUsage(storage)).resolves.toStrictEqual([]);
-    }
+    await expect(inspectUsage(codex)).resolves.toStrictEqual([]);
   });
 
   it("does not select today's active subscription for a historical account", async () => {
@@ -2142,8 +2125,8 @@ describe("Stage 1 source credentials", () => {
             action: "record-usage",
             pi_session_id: candidate.pi_session_id,
             source_history_hash: candidate.source_history_hash,
-            response_source_id: "byok-replay",
-            billing_mode: "byok",
+            response_source_id: "subscription-replay",
+            billing_mode: "subscription",
             usage,
           });
         }
@@ -2158,36 +2141,29 @@ describe("Stage 1 source credentials", () => {
     "missing-scope",
     "wrong-scope",
     "unsupported",
-    "deepseek-only",
   ])(
     "skips %s without a request, watermark or repeated attempt",
     async (kind) => {
       const storage = createStorageFixture();
       const source: SourceBinding =
-        kind === "deepseek-only"
-          ? await ({
-              modelProvider: "custom-openai-responses",
-              modelProviderId: randomUUID(),
+        kind === "wrong-scope"
+          ? {
+              ...(await codexSource(storage).then(({ binding }) => {
+                return binding;
+              })),
               modelProviderCredentialScope: "org",
-            } satisfies SourceBinding)
-          : kind === "wrong-scope"
-            ? {
-                ...(await codexSource(storage).then(({ binding }) => {
-                  return binding;
-                })),
-                modelProviderCredentialScope: "org",
-              }
-            : {
-                modelProvider:
-                  kind === "missing-provider"
-                    ? null
-                    : kind === "unsupported"
-                      ? "anthropic-api-key"
-                      : "openai-api-key",
-                modelProviderId: kind === "missing-id" ? null : randomUUID(),
-                modelProviderCredentialScope:
-                  kind === "missing-scope" ? null : "org",
-              };
+            }
+          : {
+              modelProvider:
+                kind === "missing-provider"
+                  ? null
+                  : kind === "unsupported"
+                    ? "claude-code-oauth-token"
+                    : "codex-oauth-token",
+              modelProviderId: kind === "missing-id" ? null : randomUUID(),
+              modelProviderCredentialScope:
+                kind === "missing-scope" ? null : "member",
+            };
       const candidate = await seedSource(storage, source);
       const provider = installSourceProvider();
       await expect(runScoped(storage)).resolves.toMatchObject({
@@ -2473,9 +2449,9 @@ describe("Stage 1 credential lifecycle fences", () => {
     const storage = createStorageFixture();
     for (let index = 0; index < 3; index += 1) {
       await seedSource(storage, {
-        modelProvider: "anthropic-api-key",
+        modelProvider: "claude-code-oauth-token",
         modelProviderId: randomUUID(),
-        modelProviderCredentialScope: "org",
+        modelProviderCredentialScope: "member",
       });
     }
     const provider = installSourceProvider();

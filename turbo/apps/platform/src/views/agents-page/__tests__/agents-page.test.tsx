@@ -34,9 +34,6 @@ function agent(
     displayName: options.displayName ?? null,
     sound: null,
     avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: options.visibility ?? "public",
   };
 }

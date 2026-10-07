@@ -74,7 +74,7 @@ export function insufficientCredits() {
   return httpError(
     402,
     "INSUFFICIENT_CREDITS",
-    "Insufficient credits. Add credits or configure your own API key to continue.",
+    "Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue.",
   );
 }
 

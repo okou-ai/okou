@@ -161,7 +161,6 @@ describe("Codex expiry invalidation and identity isolation", () => {
     };
     first.session();
     mockCodexDeviceAuthProvider({
-      tokenScope: "personal",
       accountId: randomUUID(),
     });
     const device = setupApp({ context, routes: codexDeviceAuthRoutes })(

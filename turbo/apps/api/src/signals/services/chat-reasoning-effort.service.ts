@@ -69,7 +69,7 @@ export function resolveChatReasoningEffort(args: {
 export function resolveReasoningEffortForDispatch(args: {
   readonly catalog: ModelCatalog;
   readonly selectedModel: string | null | undefined;
-  /** The selected route's provider type (`built-in`, BYOK or subscription). */
+  /** The selected route's provider type (`built-in` or a personal subscription). */
   readonly modelProviderType: string | null | undefined;
   readonly effort: ReasoningEffort | undefined;
   readonly piExecution: boolean;

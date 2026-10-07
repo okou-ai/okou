@@ -74,7 +74,7 @@ async function sendNoCreditMessage(
     readonly clientEventId?: string;
   },
 ): Promise<string> {
-  // Snapshot input needs a no-credit Auto message, not a paid Custom route.
+  // Snapshot input needs a no-credit Auto message, not a personal subscription route.
   const sent = await chat.requestSendEvent(actor, body, [201]);
   if (sent.status !== 201 || sent.body.runId !== null) {
     throw new Error("Expected a no-credit send without a run");

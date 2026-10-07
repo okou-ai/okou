@@ -1992,11 +1992,11 @@ mod tests {
             "piSessionId": "22222222-2222-4222-8222-222222222222",
             "piLaunchConfig": { "schemaVersion": 2 },
             "piModelConfig": {
-                "provider": "deepseek",
-                "baseUrl": "https://api.deepseek.com/",
-                "model": "deepseek-v4-flash",
+                "provider": "openrouter",
+                "baseUrl": "https://openrouter.ai/api/v1",
+                "model": "openai/gpt-6-luna",
                 "apiKeyEnv": "OPENAI_API_KEY",
-                "credentialSecretName": "DEEPSEEK_API_KEY"
+                "credentialSecretName": "OPENROUTER_API_KEY"
             },
             "platformEnvironment": {},
             "connectorRuntimeTargets": []
@@ -2025,7 +2025,7 @@ mod tests {
                 .pi_model_config
                 .as_ref()
                 .and_then(|config| config["model"].as_str()),
-            Some("deepseek-v4-flash")
+            Some("openai/gpt-6-luna")
         );
     }
 

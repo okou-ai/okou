@@ -179,9 +179,6 @@ export function installChatListAgent(
         description: null,
         sound: null,
         avatarUrl: null,
-        modelProviderId: null,
-        selectedModel: null,
-        preferPersonalProvider: false,
         visibility: "private",
       },
     ]);

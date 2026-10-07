@@ -47,11 +47,12 @@ async function codexFailureResult(response: () => Response) {
   return { providerFetch, result: await stream.result() };
 }
 
-const OPENAI_LUNA = {
-  provider: "openai",
-  baseUrl: "https://api.openai.com/v1",
+const OKOU_AUTO = {
+  provider: "openrouter",
+  baseUrl: "https://openrouter.ai/api/v1",
   apiKey: "test-key",
-  model: "gpt-6-luna",
+  model: "@preset/okou-1-0",
+  catalogModel: "okou-1.0",
   dialect: "openai-responses",
   transport: "sse",
 } as const;
@@ -210,13 +211,13 @@ describe("Pi agent model adapter", () => {
     try {
       const config = await materializePiAgentModelConfig({
         config: {
-          provider: "openai",
+          provider: "openrouter",
           baseUrl: provider.baseUrl,
-          model: "gpt-6-luna",
+          model: "@preset/okou-1-0",
+          catalogModel: "okou-1.0",
           apiKeyEnv: "OPENAI_API_KEY",
-          credentialSecretName: "OPENAI_API_KEY",
+          credentialSecretName: "OPENROUTER_API_KEY",
         },
-        target: "direct",
         resolveCredential: () => {
           return "selected-public-key";
         },
@@ -235,7 +236,7 @@ describe("Pi agent model adapter", () => {
       expect(provider.requests[0]).toMatchObject({
         url: "/responses",
         headers: { authorization: "Bearer selected-public-key" },
-        body: { model: "gpt-6-luna", stream: true, store: false },
+        body: { model: "@preset/okou-1-0", stream: true, store: false },
       });
       expect(provider.requests[0]?.headers).not.toHaveProperty(
         "chatgpt-account-id",
@@ -245,56 +246,7 @@ describe("Pi agent model adapter", () => {
     }
   });
 
-  it("projects public Responses catalog capabilities onto the SDK model", () => {
-    const model = resolvePiAgentModel(OPENAI_LUNA);
-
-    expect(model).toMatchObject({
-      id: "gpt-6-luna",
-      provider: "openai",
-      baseUrl: "https://api.openai.com/v1",
-      api: "openai-responses",
-      reasoning: true,
-      input: ["text", "image"],
-      cost: {
-        input: 0.1,
-        output: 0.5,
-        cacheRead: 0.01,
-        cacheWrite: 0.125,
-        tiers: [
-          {
-            inputTokensAbove: 272_000,
-            input: 0.2,
-            output: 0.75,
-            cacheRead: 0.02,
-            cacheWrite: 0.25,
-          },
-        ],
-      },
-      contextWindow: 1_050_000,
-      maxTokens: 128_000,
-      compat: {
-        supportsStrictMode: true,
-        supportsOpenAIGrammarTools: true,
-        supportsToolSearch: true,
-        supportsExplicitPromptCacheMode: true,
-      },
-    });
-    expect(model).not.toHaveProperty("samplingParams");
-  });
-
   it.each([
-    {
-      name: "direct DeepSeek Flash",
-      provider: "deepseek",
-      baseUrl: "https://api.deepseek.com/",
-      model: "deepseek-v4-flash",
-    },
-    {
-      name: "direct DeepSeek Pro",
-      provider: "deepseek",
-      baseUrl: "https://api.deepseek.com/",
-      model: "deepseek-v4-pro",
-    },
     {
       name: "OpenRouter DeepSeek Flash",
       provider: "openrouter",
@@ -320,9 +272,8 @@ describe("Pi agent model adapter", () => {
         config: piModelConfigSchema.parse({
           ...config,
           apiKeyEnv: "OPENAI_API_KEY",
-          credentialSecretName: "OPENAI_API_KEY",
+          credentialSecretName: "OPENROUTER_API_KEY",
         }),
-        target: "direct",
         resolveCredential: () => {
           return "test-key";
         },
@@ -401,50 +352,29 @@ describe("Pi agent model adapter", () => {
     },
   );
 
-  it.each(["openai", "openai-codex"] as const)(
-    "pins the official 6.1 Sol identity and prices for %s",
-    (provider) => {
-      const config =
-        provider === "openai-codex"
-          ? {
-              provider,
-              baseUrl: "https://chatgpt.com/backend-api",
-              apiKey: "test-key",
-              model: "gpt-6.1-sol",
-              dialect: "openai-codex-responses" as const,
-              accountId: "test",
-              transport: "sse" as const,
-            }
-          : {
-              provider,
-              baseUrl: "https://api.openai.com/v1",
-              apiKey: "test-key",
-              model: "gpt-6.1-sol",
-              dialect: "openai-responses" as const,
-              transport: "sse" as const,
-            };
-      const model = resolvePiAgentModel(config);
-      expect(model).toMatchObject({
-        id: "gpt-6.1-sol",
-        name: "GPT 6.1 Sol",
-        contextWindow: provider === "openai-codex" ? 272_000 : 1_050_000,
-        maxTokens: 128_000,
-        cost: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
-      });
-    },
-  );
+  it("pins the official 6.1 Sol identity and prices for Codex", () => {
+    const model = resolvePiAgentModel({
+      provider: "openai-codex",
+      baseUrl: "https://chatgpt.com/backend-api",
+      apiKey: "test-key",
+      model: "gpt-6.1-sol",
+      dialect: "openai-codex-responses",
+      accountId: "test",
+      transport: "sse",
+    });
+    expect(model).toMatchObject({
+      id: "gpt-6.1-sol",
+      name: "GPT 6.1 Sol",
+      contextWindow: 272_000,
+      maxTokens: 128_000,
+      cost: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
+    });
+  });
 
   it.each([
     {
       name: "public Responses",
-      config: {
-        provider: "openai",
-        baseUrl: "https://api.openai.com/v1",
-        apiKey: "test-key",
-        model: "gpt-6-luna",
-        dialect: "openai-responses",
-        transport: "sse",
-      } as const,
+      config: OKOU_AUTO,
     },
     {
       name: "Codex Responses",
@@ -519,46 +449,12 @@ describe("Pi agent model adapter", () => {
   });
 
   it.each([
-    {
-      provider: "deepseek",
-      catalogModel: "deepseek-v4-flash",
-      model: "company-deepseek-production",
-    },
-    {
-      provider: "openai",
-      catalogModel: "gpt-6-luna",
-      model: "company-luna-production",
-    },
-  ])(
-    "uses $provider/$catalogModel metadata for gateway request model $model",
-    (config) => {
-      expect(
-        resolvePiAgentModel({
-          ...config,
-          baseUrl: "https://gateway.example.com/v1",
-          apiKey: "unused",
-          dialect: "openai-responses",
-          transport: "sse",
-        }),
-      ).toMatchObject({
-        id: config.model,
-        provider: config.provider,
-        baseUrl: "https://gateway.example.com/v1",
-        api: "openai-responses",
-      });
-    },
-  );
-
-  it.each([
-    { provider: "deepseek", model: "deepseek-v4.2-flash" },
     { provider: "openrouter", model: "deepseek/deepseek-v4.2-flash" },
-    { provider: "openai", model: "deepseek-v4.1-flash" },
     { provider: "unknown", model: "gpt-6-luna" },
-    { provider: "openai", model: "unknown-model" },
     { provider: "openrouter", model: "unknown/model" },
     {
-      provider: "deepseek",
-      model: "company-model",
+      provider: "openrouter",
+      model: "@preset/unknown",
       catalogModel: "unknown-catalog-model",
     },
   ])("fails closed for unknown catalog pair $provider/$model", (config) => {
@@ -591,7 +487,7 @@ describe("Pi agent model adapter", () => {
       api: "openai-codex-responses",
     });
     const invalid = { ...CODEX_ROUTE };
-    Object.defineProperty(invalid, "provider", { value: "openai" });
+    Object.defineProperty(invalid, "provider", { value: "openrouter" });
     expect(resolvePiAgentModel(invalid)).toBeNull();
   });
 
@@ -604,7 +500,7 @@ describe("Pi agent model adapter", () => {
       const config =
         policy.dialect === "openai-codex-responses"
           ? { ...CODEX_ROUTE }
-          : { ...OPENAI_LUNA };
+          : { ...OKOU_AUTO };
       const model = resolvePiAgentModel(config);
       if (!model) throw new Error("Expected a supported standard model");
       // Untyped callers can still tamper with an otherwise valid config. The
@@ -624,48 +520,6 @@ describe("Pi agent model adapter", () => {
       }).toThrow("service tier");
     },
   );
-
-  it("sends Astra Ultrafast as the public Responses service tier", async () => {
-    const config = {
-      ...OPENAI_LUNA,
-      model: "gpt-6-astra",
-      serviceTier: "ultrafast",
-    } as const;
-    const model = resolvePiAgentModel(config);
-    expect(model).not.toBeNull();
-    if (!model || model.api !== "openai-responses") {
-      throw new Error("Expected an OpenAI Responses model");
-    }
-    const requests: unknown[] = [];
-    const providerFetch = vi.fn(
-      async (input: string | URL | Request, init?: RequestInit) => {
-        requests.push(JSON.parse(await new Request(input, init).text()));
-        return new Response("Unauthorized", { status: 401 });
-      },
-    );
-    const stream = piAgentStreamForConfig(config)(
-      model,
-      normalizeContext({
-        messages: [{ role: "user", content: "hello", timestamp: 1 }],
-        tools: [],
-      }),
-      {
-        apiKey: config.apiKey,
-        fetch: providerFetch,
-        signal: AbortSignal.timeout(5_000),
-      },
-    );
-    for await (const _event of stream) {
-      // The provider rejects authentication after capturing the request.
-    }
-    expect(providerFetch).toHaveBeenCalledOnce();
-    expect(requests).toEqual([
-      expect.objectContaining({
-        model: "gpt-6-astra",
-        service_tier: "ultrafast",
-      }),
-    ]);
-  });
 
   it.each([undefined, "fast"] as const)(
     "normalizes native config tier %s with exact credentials and no retry over SSE",

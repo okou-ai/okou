@@ -198,9 +198,6 @@ describe("GET /api/agents/:id", () => {
       description: "Test description",
       sound: "friendly",
       avatarUrl: agent.avatarUrl,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "public",
     });
   });

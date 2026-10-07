@@ -125,7 +125,7 @@ describe("CHAT effort: thread configuration", () => {
       model: "gpt-6-sol",
       effort: "ultra",
       pi: true,
-      providerType: "openai-api-key",
+      providerType: "codex-oauth-token",
       effectiveEffort: "max",
     },
 
@@ -133,7 +133,7 @@ describe("CHAT effort: thread configuration", () => {
       model: "claude-fable-5-1",
       effort: "ultracode",
       pi: false,
-      providerType: "anthropic-api-key",
+      providerType: "claude-code-oauth-token",
       effectiveEffort: "max",
     },
   ] as const)(

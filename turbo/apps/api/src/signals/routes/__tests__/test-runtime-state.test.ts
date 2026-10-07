@@ -98,7 +98,7 @@ async function createClaimedBuiltInRun(
   const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   await runs.ensurePersonalSubscriptionModel(actor);
-  // A BYOK default route and an explicitly selectable built-in fixture route.
+  // A personal subscription default route and an explicitly selectable built-in fixture route.
   await runs.updateUserModelPreference(actor, selectedModel);
   const agent = await bdd.createAgent(actor, {
     displayName: "BDD built-in model failure report agent",

@@ -33,7 +33,7 @@ transaction handles to another function.
   writer. No Stripe or KMS call occurs in this transaction.
 - `checkQueuedWorkflowLaunchReadiness$` checks prior-run and owner access before
   preparing a model pin. A rejected or disabled target therefore cannot trigger
-  lazy model-policy preparation first.
+  model pin preparation first.
 - `recordWorkflowAutomationRunStart$` receives a plain launch description. The
   former returned callback capturing a database handle has been removed.
   `recordWorkflowAutomationLastRun$` owns its finite write; journaled schedules

@@ -11,7 +11,7 @@ type CatalogModelEntry = ModelCatalogResponse["models"][number];
 type CatalogRouteEntry = ModelCatalogResponse["routes"][number];
 
 export interface ModelCatalogRouteQuery {
-  /** The route the org or member selects (`built-in`, BYOK or subscription). */
+  /** The route type (`built-in` Auto or a personal subscription). */
   readonly providerType?: string | null;
   /** The provider serving the request; narrows Built-in candidates. */
   readonly concreteProviderType?: string | null;

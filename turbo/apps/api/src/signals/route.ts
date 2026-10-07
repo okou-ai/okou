@@ -100,7 +100,6 @@ import { healthRoutes } from "./routes/health";
 import { homeTaskRecommendationRoutes } from "./routes/home-task-recommendations";
 import { hostRoutes } from "./routes/host";
 import { imageIoGenerateRoutes } from "./routes/image-io-generate";
-import { imageRecognitionRoutes } from "./routes/image-recognition";
 import { integrationsAgentPhoneRoutes } from "./routes/integrations-agentphone";
 import { integrationsDiscordRoutes } from "./routes/integrations-discord";
 import { integrationsDiscordFileRoutes } from "./routes/integrations-discord-files";
@@ -382,7 +381,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...webDownloadRoutes,
   ...webFileUrlRoutes,
   ...realtimeTokenRoutes,
-  ...imageRecognitionRoutes,
   ...runDetailRoutes,
   ...runsRoutes,
   ...runsCancelRoutes,

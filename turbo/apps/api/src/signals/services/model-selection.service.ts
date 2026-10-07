@@ -1,9 +1,8 @@
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import {
-  isBuiltInModelProviderType,
   modelProviderTypeSchema,
   type ModelProviderCredentialScope,
-  type ModelProviderWriteType,
+  type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
@@ -12,10 +11,7 @@ import { command } from "ccstate";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { badRequestMessage } from "../../lib/error";
 import { db$ } from "../external/db";
-import {
-  memberModelRouteContextFromAccounts,
-  type MemberModelRouteContext,
-} from "./effective-model-route.service";
+import { memberModelRouteContextFromAccounts } from "./effective-model-route.service";
 import type { ExecutionMemberMetadata } from "./execution-member-metadata.service";
 import {
   memberSubscriptionModelRoutesFromCatalog,
@@ -47,9 +43,8 @@ export const MODEL_FIRST_SELECTION_PROVIDER_ID =
   "00000000-0000-4000-8000-000000000000";
 export function modelProviderWriteTypeForLaunch(
   type: string,
-): ModelProviderWriteType {
-  const providerType = modelProviderTypeSchema.parse(type);
-  return isBuiltInModelProviderType(providerType) ? "built-in" : providerType;
+): ModelProviderType {
+  return modelProviderTypeSchema.parse(type);
 }
 export interface ModelFirstPin {
   readonly modelProviderId: string | null;
@@ -174,7 +169,7 @@ const modelRoutingFacts$ = command(
             .limit(1),
     ]);
     signal?.throwIfAborted();
-    const member = memberModelRouteContextFromAccounts(params.userId, accounts);
+    const member = memberModelRouteContextFromAccounts(accounts);
     return {
       catalog,
       member,
@@ -204,18 +199,9 @@ export function isReplacedModelSelection(
 export const resolveDefaultModelFirstPin$ = command(
   async (
     { set },
-    params: SelectionParams & {
-      readonly defaultSource?: "member" | "workspace";
-    },
+    params: SelectionParams,
     signal?: AbortSignal,
   ): Promise<DefaultModelFirstPin> => {
-    if (
-      params.defaultSource === "workspace" ||
-      params.userId === "__no_preference__" ||
-      params.userId === "__org__"
-    ) {
-      return { ...autoModelPin(), serviceTier: null };
-    }
     const facts = await set(modelRoutingFacts$, params, signal);
     const model = facts.preference?.selectedModel;
     const selectedModel = model
@@ -274,27 +260,24 @@ export const resolveModelSelectionPin$ = command(
       }
       return subscriptionPin(personal);
     }
-    if (params.purpose === "configure") {
-      return selectedModel === AUTO_RUN_MODEL
-        ? autoModelPin()
-        : badRequestMessage(
-            "Select Auto or a model from your connected personal subscription",
-          );
+    if (selectedModel === AUTO_RUN_MODEL) {
+      return autoModelPin();
     }
     // Canonical personal metadata preserves ownership even when its route is disabled;
-    // classification is not permission to execute that route.
-    const unavailable = unavailablePersonalPin(
-      facts.catalog,
-      params.modelSelection.selectedModel,
+    // classification is not permission to execute that route, so the pick rejects it.
+    const unavailable =
+      params.purpose === "capture"
+        ? unavailablePersonalPin(
+            facts.catalog,
+            params.modelSelection.selectedModel,
+          )
+        : null;
+    return (
+      unavailable ??
+      badRequestMessage(
+        "Select Auto or a model from your connected personal subscription",
+      )
     );
-    if (unavailable) {
-      // Preserve the personal credential source, including replacement-chain aliases,
-      // so a missing account never executes against platform billing.
-      return unavailable;
-    }
-    // Stored Custom choices no longer represent a runtime source. Normalize them
-    // explicitly to Auto; a valid personal subscription never crosses billing owners.
-    return autoModelPin();
   },
 );
 export type ProviderModelSupport = "validate" | "trust-enqueued";
@@ -326,9 +309,8 @@ export function validateCodexServiceTier(params: {
 export function resolveQueuedModelSelectionPinFromSnapshot(params: {
   readonly catalog: ModelCatalog;
   readonly selectedModel: string;
-  readonly member: MemberModelRouteContext;
   readonly subscriptionModels: readonly MemberSubscriptionModelRoute[];
-}): ModelFirstPin {
+}): ModelFirstPin | ReturnType<typeof badRequestMessage> {
   const selectedModel = resolveRunSelectionModel(
     params.catalog,
     params.selectedModel,
@@ -339,10 +321,15 @@ export function resolveQueuedModelSelectionPinFromSnapshot(params: {
   if (personal) {
     return subscriptionPin(personal);
   }
+  if (selectedModel === AUTO_RUN_MODEL) {
+    return autoModelPin();
+  }
   // Queued inputs can lose route authority after capture. Preserve canonical
   // ownership across disabling and replacement; never settle them against Auto.
   return (
     unavailablePersonalPin(params.catalog, params.selectedModel) ??
-    autoModelPin()
+    badRequestMessage(
+      "Select Auto or a model from your connected personal subscription",
+    )
   );
 }

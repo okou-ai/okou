@@ -1,6 +1,5 @@
 import {
   isBuiltInModelProviderType,
-  modelProviderCredentialScopeSchema,
   modelProviderTypeSchema,
   runModelIdSchema,
   type ModelProviderType,
@@ -32,11 +31,7 @@ interface LogAgentRunFailureInput {
   readonly run: AgentRunFailureLogSnapshot;
 }
 
-type ModelCredentialOwner =
-  | "platform"
-  | "member"
-  | "organization"
-  | "unresolved";
+type ModelCredentialOwner = "platform" | "member" | "unresolved";
 
 const L = logger("webhook:complete");
 
@@ -93,13 +88,9 @@ function modelCredentialOwner(
   if (isBuiltInModelProviderType(modelProvider)) {
     return "platform";
   }
-  const scope = modelProviderCredentialScopeSchema.safeParse(
-    run.modelProviderCredentialScope,
-  );
-  if (!scope.success) {
-    return "unresolved";
-  }
-  return scope.data === "member" ? "member" : "organization";
+  return run.modelProviderCredentialScope === "member"
+    ? "member"
+    : "unresolved";
 }
 
 function shouldSuppressKnownFailureLog(
@@ -111,7 +102,7 @@ function shouldSuppressKnownFailureLog(
       return true;
     }
     case "suppress-caller-owned": {
-      return credentialOwner === "member" || credentialOwner === "organization";
+      return credentialOwner === "member";
     }
     case "retain": {
       return false;

@@ -642,7 +642,6 @@ describe("FILE-02 and CHAIN-BILLING-MEDIA: media generation, quota, and status A
       canBuyConcurrency: false,
       canBuyCredits: false,
       autoRechargeAllowed: false,
-      supportByok: false,
       restrictedBuiltInModels: true,
       workflowWebhookAutomationAllowed: false,
       audioLifetimeLimit: 0,

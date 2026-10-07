@@ -97,11 +97,6 @@ const expectedBindings = [
     direction: "response",
   },
   {
-    rustModulePath: ["runners", "runs"],
-    rustTypeName: "PiModelConfigV4",
-    direction: "response",
-  },
-  {
     rustModulePath: ["runners", "runs", "steerable_inputs", "next"],
     rustTypeName: "Response",
     direction: "response",
@@ -575,29 +570,15 @@ describe("Rust type bindings", () => {
       ],
       properties: {
         provider: {
-          enum: [
-            "deepseek",
-            "moonshotai",
-            "openai",
-            "openrouter",
-            "vercel-ai-gateway",
-            "codex",
-          ],
+          enum: ["openrouter", "codex"],
         },
         apiKeyEnv: {
-          enum: [
-            "ANTHROPIC_AUTH_TOKEN",
-            "OPENAI_API_KEY",
-            "CHATGPT_ACCESS_TOKEN",
-          ],
+          enum: ["OPENAI_API_KEY", "CHATGPT_ACCESS_TOKEN"],
         },
         thinkingLevel: {
           enum: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
         },
         catalogModel: { type: "string", minLength: 1 },
-        credentialHeader: {
-          required: ["name", "valueTemplate"],
-        },
         serviceTier: {
           enum: ["priority"],
         },
@@ -620,7 +601,7 @@ describe("Rust type bindings", () => {
         },
         transport: { const: "sse" },
         provider: {
-          enum: ["deepseek", "openai", "openrouter", "openai-codex"],
+          enum: ["openrouter", "openai-codex"],
         },
         credentialBindings: {
           minItems: 1,

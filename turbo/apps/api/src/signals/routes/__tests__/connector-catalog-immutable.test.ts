@@ -1396,11 +1396,11 @@ describe("slug-first current catalog business readers", () => {
               piSessionId: randomUUID(),
               piLaunchConfig: { schemaVersion: 2 },
               piModelConfig: {
-                provider: "deepseek",
-                baseUrl: "https://api.deepseek.com/",
-                model: "deepseek-v4-flash",
+                provider: "openrouter",
+                baseUrl: "https://openrouter.ai/api/v1",
+                model: "@preset/okou-1-0",
                 apiKeyEnv: "OPENAI_API_KEY",
-                credentialSecretName: "DEEPSEEK_API_KEY",
+                credentialSecretName: "OPENROUTER_API_KEY",
               },
             }
           : {}),

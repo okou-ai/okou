@@ -29,8 +29,8 @@ const memory = {
 } as const;
 const historical = {
   selectedModel: "gpt-5.6-luna",
-  providerType: "openai-api-key",
-  upstreamModel: "gpt-5.6-luna",
+  providerType: "openrouter-codex",
+  upstreamModel: "openai/gpt-5.6-luna",
 } as const;
 function diagnostics() {
   return setupApp({ context, routes: modelProvidersRoutes })(

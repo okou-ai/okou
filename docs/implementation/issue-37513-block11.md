@@ -41,9 +41,7 @@ Worker: `refactor/37513-worker-block11-terminal-20261002`.
 
 Context callers: Pi memory Stage 1 schedule/candidate/credential/worker, Phase 2
 credential, GitHub OAuth, connector runtime sync, webhook firewall auth, internal
-Slack callback, Stripe workflow feature gating, Feishu configuration and model
-policy listing. The supplied catalog snapshot ownership in model-policy is
-preserved; its response/member projection is pure.
+Slack callback, Stripe workflow feature gating and Feishu configuration.
 
 Pi callers: Workflow create/update/delete/visibility, Agent updates/instructions,
 Official workflow installation/catalog publication, custom/Feishu connectors,

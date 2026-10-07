@@ -24,9 +24,6 @@ export function agentResponse(row: {
   readonly description: string | null;
   readonly sound: string | null;
   readonly avatarUrl: string | null;
-  readonly modelProviderId: string | null;
-  readonly selectedModel: string | null;
-  readonly preferPersonalProvider: boolean;
   readonly visibility: "public" | "private";
 }): AgentResponse {
   return {
@@ -45,9 +42,6 @@ export function agentResponse(row: {
       defaultAgentId: row.defaultAgentId,
       avatarUrl: row.avatarUrl,
     }),
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: row.visibility,
   };
 }
@@ -96,9 +90,6 @@ export function agentList(
         description: agents.description,
         sound: agents.sound,
         avatarUrl: agents.avatarUrl,
-        modelProviderId: agents.modelProviderId,
-        selectedModel: agents.selectedModel,
-        preferPersonalProvider: agents.preferPersonalProvider,
         visibility: agents.visibility,
       })
       .from(agents)
@@ -127,9 +118,6 @@ export function agentDetail(args: {
         description: agents.description,
         sound: agents.sound,
         avatarUrl: agents.avatarUrl,
-        modelProviderId: agents.modelProviderId,
-        selectedModel: agents.selectedModel,
-        preferPersonalProvider: agents.preferPersonalProvider,
         visibility: agents.visibility,
       })
       .from(agents)
@@ -221,6 +209,4 @@ export interface BootstrapAgent {
   readonly description: string | null;
   readonly sound: string | null;
   readonly defaultAgentId: string | null;
-  readonly modelProviderId: string | null;
-  readonly selectedModel: string | null;
 }

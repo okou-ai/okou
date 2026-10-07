@@ -61,7 +61,6 @@ import type { TestTerminalRunStatus } from "./helpers/api-bdd-run-timeout";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { setBuiltinOAuthScopeFacts } from "./helpers/connector-credential-storage-state";
 
-const ORG_SENTINEL_USER_ID = "__org__";
 const TEST_DATA_KEY = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
 
 /**
@@ -2824,53 +2823,6 @@ async function ownedCodexMetadata(actor: ApiTestUser) {
 }
 
 describe("FW-9: codex model-provider access", () => {
-  it("rejects organization-scoped model credentials from an empty runtime namespace", async () => {
-    await withPublicFirewallRun(async (headers) => {
-      const fw = codexFirewallApi;
-
-      const resolved = await fw.requestFirewallAuth(
-        headers,
-        {
-          encryptedSecrets: fw.encryptedSecretsBody({}),
-          authHeaders: {
-            "x-api-key": secretTemplate("ANTHROPIC_API_KEY"),
-          },
-          secretConnectorMap: { ANTHROPIC_API_KEY: "anthropic-api-key" },
-          secretConnectorMetadataMap: {
-            ANTHROPIC_API_KEY: {
-              sourceType: "model-provider" as const,
-              sourceUserId: ORG_SENTINEL_USER_ID,
-              metadataKey: "anthropic-api-key",
-            },
-          },
-        },
-        [403],
-      );
-      expect(resolved.body).toMatchObject({ error: { code: "FORBIDDEN" } });
-      expect(resolved.body).not.toHaveProperty("headers");
-    });
-  });
-
-  it("rejects model credentials with omitted account ownership metadata", async () => {
-    await withPublicFirewallRun(async (headers) => {
-      const fw = codexFirewallApi;
-
-      const resolved = await fw.requestFirewallAuth(
-        headers,
-        {
-          encryptedSecrets: fw.encryptedSecretsBody({}),
-          authHeaders: {
-            "x-api-key": secretTemplate("ANTHROPIC_API_KEY"),
-          },
-          secretConnectorMap: { ANTHROPIC_API_KEY: "anthropic-api-key" },
-        },
-        [403],
-      );
-      expect(resolved.body).toMatchObject({ error: { code: "FORBIDDEN" } });
-      expect(resolved.body).not.toHaveProperty("headers");
-    });
-  });
-
   it("refreshes the exact owned Codex account and serves its stored token afterwards", async () => {
     const fw = codexFirewallApi;
     const { actor, headers } = await firewallRun();
@@ -3219,7 +3171,6 @@ describe("FW-9: codex model-provider access", () => {
     const accounts: string[] = [];
     for (const accountId of ["expired-account", "healthy-account"]) {
       mockCodexDeviceAuthProvider({
-        tokenScope: "personal",
         accountId,
         accessTokenExpiresAt:
           Math.floor(now() / 1000) +
@@ -3307,7 +3258,6 @@ describe("FW-9: codex model-provider access", () => {
     });
 
     const reconnected = mockCodexDeviceAuthProvider({
-      tokenScope: "personal",
       accountId: "expired-account",
     });
     const started = await authDevice.requestCodexStart(

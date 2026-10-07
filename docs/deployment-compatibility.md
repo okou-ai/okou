@@ -120,8 +120,8 @@ the column. No Runner or Pi payload shape changes are required.
 
 For the Built-in `okou-1.0` OpenRouter route, new execution contexts use
 `org_metadata.openrouter_preset ?? model_routes.upstream_model`. The org-owned
-catalog projection never mutates the shared global catalog. Other models,
-BYOK and subscription routes are unchanged. Pi memory maintenance uses the
+catalog projection never mutates the shared global catalog. Subscription
+routes are unchanged. Pi memory maintenance uses the
 same org-specific projection. Already launched Runs keep their captured route;
 operator changes apply to subsequent launches.
 
@@ -133,32 +133,34 @@ switch models. Presets must remain compatible with the `okou-1.0` runtime
 capability and token-limit contract; this change does not introduce dynamic
 backing-model metadata or different billing prices.
 
-## Custom model configuration retirement
+## Run model schema contraction
 
-Migration 1325 deletes `org_model_policies`, `model_provider_surfaces`,
-`model_provider_connections` and `org_metadata.model_mode` with its constraint.
-It contains no data conversion or backfill. Operators must finish the production
-Custom-to-Auto and workspace-credential cleanup before merging/deploying.
+Migrations 1325–1327 and 1330/1331 leave the model schema with fixed platform
+Auto (`okou-1.0` on `openrouter-codex`) and members' personal Codex/Claude
+subscriptions; the DeepSeek memory binding is unchanged. 1330 drops
+`agents.model_provider_id`, `agents.selected_model`,
+`agents.prefer_personal_provider`, `model_providers.secret_id` and
+`org_plan_entitlements.support_byok` and narrows the `model_routes` provider
+checks; 1331 deletes organization-owned (`__org__`) `model_providers` rows.
+There is no data conversion or backfill.
 
-This retirement intentionally has no rolling API or old-client compatibility:
-the API, App/worker, CLI and iOS move together to `/api/run-models`. Do not run an
-old API against the contracted schema or roll back to an old policy writer.
-The rollback resolver enforces this floor using
-`.github/rollback-floors/custom-model-configuration-retired`: it resolves the
-first main commit adding the marker and rejects earlier targets before artifact
-or host access. A missing/invalid canonical floor also fails closed. This does
-not claim production activation or waive the operator-owned cutover.
-The historical global-catalog migration descriptions below are superseded for
-new model selection; they are not instructions to restore policy projection,
-organization BYOK, gateways or general platform-model routing.
+This contraction has no rolling API or old-client compatibility: the API,
+App/worker, CLI and iOS use `/api/run-models` together. An API built before
+1330 reads the dropped columns, so it must not serve after 1330 is applied;
+applying 1330/1331 therefore requires an owner-accepted interruption, which
+this document does not record. Stored selections that are neither Auto nor an
+available personal subscription model are rejected; they never become Auto.
 
-Platform Auto remains fixed to OpenRouter; operator-only organization presets
-from #37799 remain supported, with NULL using `@preset/okou-1-0`. No preset
-management API/UI or BYOK configuration is restored. Personal ChatGPT/Codex and Claude
-subscription selection, account ownership, capabilities and reconnect behavior
-remain. Actual pricing/credits, historical usage, image generation and unrelated
-connectors retain their existing storage. See [the retirement boundary](custom-model-retirement.md)
-and [current model APIs](model-catalog.md). This source PR does not deploy or merge.
+Rollback floor: the rollback resolver resolves the first-parent `main` commit
+that added `1330_drop_retired_model_configuration_columns.sql` and rejects
+earlier targets before artifact or host access. That commit descends from, and
+so supersedes, the earlier run model schema contraction
+(`014fe1867c6d1830fd35b03c3d77491da5aaa36a`). This does not claim production
+activation.
+Operator-only `org_metadata.openrouter_preset` overrides remain, with NULL
+using `@preset/okou-1-0`. Actual pricing/credits, historical usage, image
+generation and connectors retain their existing storage. See
+[current model APIs](model-catalog.md).
 
 ## Bounded official connector catalog initialization in CI preview
 
@@ -357,26 +359,6 @@ feature-flagged execution path. It does not introduce reliable MCP Events,
 exact-send replay, indexed unlimited lookup, automatic merge or production
 activation. A lost send response remains ambiguous and must not be retried
 automatically.
-
-## Organization model mode defaults to Auto
-
-Migration 1320 changes only the `org_metadata.model_mode` column default to
-`auto`; existing explicit Auto/Custom rows and personal subscription data are
-unchanged. The new API treats missing metadata as Auto in policy listing,
-model selection, queued claims, subscription disconnect cleanup and workspace
-configuration guards. New metadata needs no mode backfill. Explicit Custom
-rows and the Debug mode-switch API remain supported in this incremental fix.
-
-Apply the default migration before the new API so writers that omit the mode
-create Auto rows. A new API with the old database can still read existing
-modes, but omitted-mode inserts retain the old Custom default. An old API with
-the migrated database supports Auto rows, but still treats missing metadata as
-Custom; all serving API versions must drain before relying on that case.
-App, CLI and Runner contracts and persisted Run snapshots are unchanged.
-Rolling back the API does not undo the database default or rewrite saved modes;
-old missing-metadata behavior returns until an Auto-default API serves again.
-This PR does not delete policies, backfill organization modes, modify billing,
-remove Custom configuration APIs, or authorize a production deployment.
 
 ## Autonomous delegation budget expansion
 
@@ -778,6 +760,12 @@ preference, thread selection, send, run creation and claim) finds no route
 offering it and returns `400`. Re-enabling is a `model_routes` data change.
 
 ## Global model catalog and projected system default (2026-09-30)
+
+> **Historical record, superseded.** This and other dated global-catalog
+> sections describe their original rollouts. For current model selection they
+> are superseded by [Run model schema contraction](#run-model-schema-contraction);
+> they are not instructions to restore policy projection, organization BYOK,
+> custom gateways or general platform-model routing.
 
 The server model catalog (`run_model_catalog` plus `model_routes`, served by
 `GET /api/model-catalog`) becomes the only authority for model names, order,
@@ -7245,7 +7233,7 @@ criteria after the old version is gone.
 
 ## Pi native provider reader preparation
 
-For the generation 4 reader-first release, see [Pi native provider preparation](pi-native-provider-preparation.md). Its model generation is independent of launch snapshot V3. Native writers remain absent until the controller verifies compatible API readers and rollback targets, Runner capabilities, pinned CLI artifacts and existing-route health. The preparation merge alone does not close these gates.
+For the generation 4 reader-first release, see [Pi native provider preparation](pi-native-provider-preparation.md). Its model generation is independent of launch snapshot V3. Native writers remain absent until the controller verifies compatible API readers and rollback targets, Runner capabilities, pinned CLI artifacts and existing-route health. The preparation merge alone does not close these gates. Generation 4 native routes have since been removed entirely; this section is a historical record.
 
 ## Connector OAuth completion receipts
 

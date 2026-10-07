@@ -334,9 +334,6 @@ test("Browse and filter mobile browser chats before opening a conversation and r
       description: null,
       sound: null,
       avatarUrl: null,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "private",
     });
   });
@@ -683,9 +680,6 @@ test("Switch the mobile browser chat list to another agent", async () => {
     description: null,
     sound: null,
     avatarUrl: null,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: "private",
   };
   const agents = [

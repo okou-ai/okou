@@ -81,12 +81,6 @@ async function openChat(
         "runModelsChanged",
       ),
     ).toBeTruthy();
-    expect(
-      context.mocks.ably.hasSubscriptionOnChannel(
-        "org:org_default",
-        "runModelsChanged",
-      ),
-    ).toBeTruthy();
   });
 }
 
@@ -98,10 +92,10 @@ async function personalOption(): Promise<HTMLElement> {
   });
 }
 
-function notice(scope: "user" | "org"): void {
+function notice(): void {
   act(() => {
     context.mocks.ably.triggerOnChannel(
-      scope === "user" ? "user:test-user-123" : "org:org_default",
+      "user:test-user-123",
       "runModelsChanged",
       null,
     );
@@ -148,7 +142,7 @@ async function setupHeldProjectionRefresh() {
   await personalOption();
 
   failRefresh = true;
-  notice("user");
+  notice();
   await started.promise;
   return { composer, release };
 }

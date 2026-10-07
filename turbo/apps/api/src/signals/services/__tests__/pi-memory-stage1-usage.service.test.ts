@@ -164,15 +164,18 @@ describe("Stage 1 durable usage boundary", () => {
     ).rejects.toHaveProperty("code", "23514");
   });
 
-  it("keeps untrusted legacy context collisions closed and BYOK entirely outside the model ledger", async () => {
+  it("keeps untrusted legacy context collisions closed and personal subscriptions entirely outside the model ledger", async () => {
     const h = harness();
     await expect(
       recordPiMemoryStage1Usage(h.db, {
         ...h.args,
-        billing: { ...h.args.billing, mode: "byok" },
+        billing: { ...h.args.billing, mode: "subscription" },
         usage: { input: Number.NaN, output: -1, cacheRead: 0, cacheWrite: 0 },
       }),
-    ).resolves.toStrictEqual({ disposition: "byok", accountingAt: null });
+    ).resolves.toStrictEqual({
+      disposition: "subscription",
+      accountingAt: null,
+    });
     expect(
       (
         await h.pool.query(

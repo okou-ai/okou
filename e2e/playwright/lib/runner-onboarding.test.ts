@@ -97,11 +97,10 @@ test("checkout failure reports its request ID and Retry-After without replaying 
   );
 });
 
-test("runner entitlement requires settled Pro, BYOK and unrestricted models", async () => {
+test("runner entitlement requires settled Pro and unrestricted models", async () => {
   let state = {
     tier: "limited-free-1",
     onboardingPaymentPending: false,
-    supportByok: false,
     restrictedBuiltInModels: true,
   };
   await withApi(
@@ -116,7 +115,6 @@ test("runner entitlement requires settled Pro, BYOK and unrestricted models", as
       state = {
         tier: "pro",
         onboardingPaymentPending: true,
-        supportByok: true,
         restrictedBuiltInModels: false,
       };
       assert.equal(await readRunnerPaidEntitlement(options), false);

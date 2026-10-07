@@ -80,9 +80,6 @@ export function prepareAgents(targetContext = context): AgentResponse[] {
       description: null,
       sound: null,
       avatarUrl: null,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "public",
     },
     {
@@ -93,9 +90,6 @@ export function prepareAgents(targetContext = context): AgentResponse[] {
       description: null,
       sound: null,
       avatarUrl: null,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "public",
     },
     {
@@ -106,9 +100,6 @@ export function prepareAgents(targetContext = context): AgentResponse[] {
       description: null,
       sound: null,
       avatarUrl: null,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "public",
     },
   ];
@@ -127,9 +118,6 @@ export function prepareAgents(targetContext = context): AgentResponse[] {
       displayName: displayNameById[params.id] ?? null,
       sound: null,
       avatarUrl: null,
-      modelProviderId: null,
-      selectedModel: null,
-      preferPersonalProvider: false,
       visibility: "public",
     });
   });

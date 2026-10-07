@@ -1,15 +1,5 @@
 /** Product-approved model/API pairs, not the entire US catalog. */
 const US_MODELS: Readonly<Record<OpenRouterApi, readonly string[]>> = {
-  // Retired Claude Opus 4.8 and Sonnet 4.6 stay listed: the native Gen4
-  // reader validates in-flight US Messages configs against this list, and run
-  // admission already rejects new work for retired models.
-  messages: [
-    "anthropic/claude-opus-5.5",
-    "anthropic/claude-opus-5",
-    "anthropic/claude-opus-4.8",
-    "anthropic/claude-sonnet-5",
-    "anthropic/claude-sonnet-4.6",
-  ],
   responses: [
     "openai/gpt-6-astra",
     "openai/gpt-5.6-sol",
@@ -19,10 +9,10 @@ const US_MODELS: Readonly<Record<OpenRouterApi, readonly string[]>> = {
   "chat/completions": [],
 };
 
-export type OpenRouterApi = "messages" | "responses" | "chat/completions";
+export type OpenRouterApi = "responses" | "chat/completions";
 
 export interface OpenRouterRoutingContext {
-  readonly credentialOwner: "builtin" | "organization" | "member";
+  readonly credentialOwner: "builtin" | "member";
   readonly model: string;
 }
 
@@ -39,5 +29,5 @@ export function getOpenRouterBaseUrl(
     US_MODELS[api].includes(context.model)
       ? OPENROUTER_US_ORIGIN
       : OPENROUTER_GLOBAL_ORIGIN;
-  return `${origin}${api === "messages" ? "/api" : "/api/v1"}`;
+  return `${origin}/api/v1`;
 }

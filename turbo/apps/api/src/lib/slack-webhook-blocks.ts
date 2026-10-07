@@ -375,7 +375,7 @@ function formatModelPickerOptionLabel(option: ModelPickerOption): string {
   if (!option.isDefault) {
     return option.label.slice(0, 75);
   }
-  const suffix = " (workspace default)";
+  const suffix = " (default)";
   if (option.label.length + suffix.length <= 75) {
     return `${option.label}${suffix}`;
   }

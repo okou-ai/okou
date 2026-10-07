@@ -56,7 +56,7 @@ readonly RETIRED_INTEGRATION_AGENT_TABLES_DROP_PATH=turbo/packages/db/src/migrat
 readonly VIDEO_MODEL_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1283_drop_retired_video_model_columns.sql
 readonly IMAGE_MODEL_THREAD_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1287_drop_image_model_thread_columns.sql
 readonly VIDEO_ENTITLEMENT_DROP_PATH=turbo/packages/db/src/migrations/1315_drop_retired_video_entitlement.sql
-readonly CUSTOM_MODEL_CONFIGURATION_RETIRED_PATH=.github/rollback-floors/custom-model-configuration-retired
+readonly RETIRED_MODEL_CONFIGURATION_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1330_drop_retired_model_configuration_columns.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -255,16 +255,18 @@ if ! git merge-base --is-ancestor "$video_entitlement_drop_commit" "$TARGET_COMM
   fail "Rollback target predates the video entitlement column drop: ${video_entitlement_drop_commit}."
 fi
 
-# Custom retirement drops model_mode and the organization configuration tables.
-# Earlier APIs still reference them during ordinary run admission. Resolve the
-# canonical main cutover, not a branch SHA or a renumberable migration filename.
-custom_model_configuration_retired_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
-  origin/main -- "$CUSTOM_MODEL_CONFIGURATION_RETIRED_PATH" | sed -n '1p')
-if [[ ! "$custom_model_configuration_retired_commit" =~ ^[0-9a-f]{40}$ ]]; then
-  fail "Cannot resolve the merged Custom model configuration retirement on main."
+# Migration 1330 drops agents.model_provider_id, agents.selected_model,
+# agents.prefer_personal_provider, model_providers.secret_id and
+# org_plan_entitlements.support_byok. Every earlier API still declares them, so
+# agent and entitlement reads and writes name the dropped columns. This floor
+# descends from, and so supersedes, the earlier run model schema contraction.
+retired_model_configuration_columns_drop_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$RETIRED_MODEL_CONFIGURATION_COLUMNS_DROP_PATH" | sed -n '1p')
+if [[ ! "$retired_model_configuration_columns_drop_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged retired model configuration column drop on main."
 fi
-if ! git merge-base --is-ancestor "$custom_model_configuration_retired_commit" "$TARGET_COMMIT"; then
-  fail "Rollback target predates the Custom model configuration retirement: ${custom_model_configuration_retired_commit}."
+if ! git merge-base --is-ancestor "$retired_model_configuration_columns_drop_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the retired model configuration column drop: ${retired_model_configuration_columns_drop_commit}."
 fi
 
 # Chat Event V8 removes eight event types and two context types. Earlier APIs

@@ -47,11 +47,5 @@ export function formatRunModelStatus(
           : "unavailable: Auto is unavailable. Try again later.";
     }
   }
-  if (runModel.routeStatus === "valid") {
-    return null;
-  }
-
-  return runModel.routeStatusReason
-    ? `${runModel.routeStatus}: ${runModel.routeStatusReason}`
-    : runModel.routeStatus;
+  return null;
 }

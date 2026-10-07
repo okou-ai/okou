@@ -1,9 +1,4 @@
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
-import {
-  piModelConfigV4Schema,
-  PI_NATIVE_CREDENTIAL_PLACEHOLDER,
-} from "@okouai/api-contracts/contracts/pi-native";
-import { piNativeFirewall } from "@okouai/api-contracts/contracts/pi-native-firewall";
 import { command } from "ccstate";
 import {
   testRuntimeStateContract,
@@ -545,23 +540,9 @@ async function setRunnerJobPiContextAsVersionedWriter(
   body: SetRunnerJobPiContextAsVersionedWriterAction,
   signal: AbortSignal,
 ): Promise<void> {
-  // Native generation 4 has no production writer in this preparation release.
   // This private infrastructure fixture models stored contexts to exercise
   // the real claim API without changing production admission.
-  const native = piModelConfigV4Schema.safeParse(body.pi_model_config);
   const piContext = {
-    ...(native.success
-      ? {
-          environment: Object.fromEntries(
-            native.data.credentialBindings.map((binding) => {
-              return [binding.environment, PI_NATIVE_CREDENTIAL_PLACEHOLDER];
-            }),
-          ),
-          firewalls: [
-            { kind: "inline", firewall: piNativeFirewall(native.data) },
-          ],
-        }
-      : {}),
     cliAgentType: "pi",
     piSessionId: body.run_id,
     piLaunchConfig: { schemaVersion: 2 },

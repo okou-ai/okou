@@ -1,8 +1,4 @@
 import {
-  PI_MODEL_CONFIG_NATIVE_GENERATION,
-  PI_NATIVE_CREDENTIAL_PLACEHOLDER,
-} from "../../contracts/pi-native";
-import {
   normalizeConstantBindings,
   renderRustConstants,
   type NormalizedConstantBinding,
@@ -205,23 +201,6 @@ function placeholderRustDoc(name: string): readonly string[] {
 }
 
 const expectedBindings = [
-  {
-    rustModulePath: ["runners"],
-    rustConstName: "PI_MODEL_CONFIG_NATIVE_GENERATION",
-    value: rustU32(PI_MODEL_CONFIG_NATIVE_GENERATION),
-    rustDoc: [
-      "Native Messages and Bedrock reader generation; activation is separate.",
-    ],
-  },
-  {
-    rustModulePath: ["runners"],
-    rustConstName: "PI_NATIVE_CREDENTIAL_PLACEHOLDER",
-    value: rustString(PI_NATIVE_CREDENTIAL_PLACEHOLDER),
-    rustDoc: [
-      "Opaque native Pi sandbox marker; never a real signing credential.",
-    ],
-  },
-
   {
     rustModulePath: ["runners"],
     rustConstName: "OFFICIAL_RUNNER_TOKEN_PREFIX",

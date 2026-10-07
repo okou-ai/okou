@@ -338,7 +338,6 @@ const createDiscordAdmissionRoute$ = command(
           {
             orgId: binding.orgId,
             userId: binding.userId,
-            defaultSource: undefined,
             orgPlanCapabilities: undefined,
           },
           signal,

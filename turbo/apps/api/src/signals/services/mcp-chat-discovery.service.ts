@@ -190,7 +190,7 @@ export const listMcpAgents$ = command(
   },
 );
 
-/** Use the ordinary Web model policy projection, not a second admission engine. */
+/** Use the ordinary Web run model projection, not a second admission engine. */
 export const listMcpModels$ = command(
   async (
     { get, set },
@@ -212,23 +212,23 @@ export const listMcpModels$ = command(
     ]);
     signal.throwIfAborted();
     const models: McpListModelsOutput["models"] = listing.response.models.map(
-      (policy) => {
+      (runModel) => {
         const availability =
-          policy.memberEffective?.availability ??
-          (policy.routeStatus === "valid" ? "available" : "unavailable");
+          runModel.memberEffective?.availability ??
+          (runModel.routeStatus === "valid" ? "available" : "unavailable");
         return {
-          id: policy.model,
-          name: policy.modelLabel,
-          selectable: policy.routeStatus === "valid",
+          id: runModel.model,
+          name: runModel.modelLabel,
+          selectable: runModel.routeStatus === "valid",
           availability,
-          reason: policy.routeStatusReason,
+          reason: runModel.routeStatusReason,
         };
       },
     );
     const preferred = models.find((model) => {
       return model.id === preferences[0]?.model && model.selectable;
     });
-    const workspaceDefault = models.find((model) => {
+    const systemDefault = models.find((model) => {
       return model.id === listing.systemDefaultModel && model.selectable;
     });
     return {
@@ -237,8 +237,8 @@ export const listMcpModels$ = command(
         models,
         defaultModel: preferred
           ? { model: preferred.id, source: "member_default" }
-          : workspaceDefault
-            ? { model: workspaceDefault.id, source: "org_default" }
+          : systemDefault
+            ? { model: systemDefault.id, source: "org_default" }
             : { model: null, source: null },
         admission: "checked_on_send",
       },

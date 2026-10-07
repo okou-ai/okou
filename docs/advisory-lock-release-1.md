@@ -28,7 +28,7 @@ requirements, not authorization to release or to remove their locks prematurely.
 
 Current source: **3 API definitions and zero operator definitions** (before
 this continuation 16 + 0; initial steer 17 + 1). All nonfinancial keys are
-removed, including Gmail, SSH, model-policy, native/preference Morning Brief,
+removed, including Gmail, SSH, native/preference Morning Brief,
 bootstrap, connector/model-provider state and DCR; customer publication is also
 key-free. The [current key table](./advisory-lock-release-1-key-retirement.md)
 is authoritative for exact behavior and remaining financial work.
@@ -94,7 +94,6 @@ the baseline. A definition can serve multiple runtime callers.
 | Browser — `browser.service.ts`                                                          | **Removed.** Existing unique owned-thread slot and exact state predicates arbitrate all six former call sites. All eight transactions are command-local with direct SQL.                                                                                                                                                                                                                                                                                                                                                                                                                                                  | #37097 serving, drain and rollback evidence established; recheck before promotion.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Custom account — `auth-state-lock.service.ts` custom branch                             | **Removed.** Ordered account mutation and selection UNIQUE/FK arbitration remain. The initial-thread ownership/projection deletion race is fixed by omitting only an authoritatively absent account.                                                                                                                                                                                                                                                                                                                                                                                                                      | #37097 serving and rollback evidence established. Shared account transaction propagation still needs structural cleanup.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | Custom prefix — `custom-connector.service.ts`                                           | **Removed.** Accepted shared-prefix semantics remove the organization-wide exclusion scan, organization-row serialization and advisory key. Existing org/slug uniqueness retains identity; API and Runner select an explicit authorized connector or reject ambiguous routing.                                                                                                                                                                                                                                                                                                                                            | No prefix-exclusivity old-writer gate remains: exclusivity is no longer a business invariant. Existing Runner intent/ambiguity handling and ID-scoped credential resolution are unchanged. OAuth/Storage transaction ownership remains a separate implementation gap; see [prefix evidence](./advisory-lock-release-1-custom-prefix.md).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| Model policy — `model-policy.service.ts`                                                | All three writers now share existing default-slot uniqueness, ordered parent/policy ownership, and a fresh whole-set identity check. Empty initialization inserts only the real default before completing the seed; replacements retain client revision checks.                                                                                                                                                                                                                                                                                                                                                           | Outgoing seed/default writers lack common row-set ownership. Retain the key for overlap. Replacement, onboarding, lazy seed/default repair and policy/route reads now use owning commands and ordinary snapshots. Remaining workflow creation, dispatch and shared runtime callers have separate unfinished handle propagation; see the Model Policy inventory.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Builtin connector state — `auth-state-lock.service.ts` `connector_state`                | **New-writer dependency removed.** All 44 acquisition sites across 25 files (at `98111e9`) were re-arbitrated: queue admission uses its automation/watch-state row locks; watch publication, repair and credential/OAuth/DCR publications use conditional writes on account, automation and state rows; account-set writers (connect, default, delete, selections, projections) take ordered account row locks (`builtinConnectorAccountRowsLockSql`, `FOR UPDATE`); the first account is decided by `idx_connectors_org_user_slug_default`. See [connector state writers](./advisory-lock-release-1-connector-state.md). | Six short local compatibility acquisitions remain, each for a named outgoing selection or automation-creation writer that changes projection inputs under the key without locking account rows. R2 deletes them once no serving, in-flight or rollback writer takes the key.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Model-provider credential state — `auth-state-lock.service.ts` `model_provider_state`   | Firewall refresh publication no longer takes the key; it publishes by exact owner-row CAS. Settings save/delete now lock the existing provider row before secrets.                                                                                                                                                                                                                                                                                                                                                                                                                                                        | **Unfinished:** `deleteUserModelProvider$` and `persistMultiAuthModelProvider$` still depend on the key for the no-row first-save race (two concurrent first saves with different auth methods could leave orphan secrets). A lock-free design for that race is required in R1.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | Automatic OAuth/DCR — `builtin-connector-automatic-dcr.service.ts`                      | Provider registration and encryption precede conditional issuer publication. Issuer uniqueness selects the published winner; linked-account replacement and reconnect are bound to exact registration identity.                                                                                                                                                                                                                                                                                                                                                                                                           | Registration preparation/read/publication now use no-Db command inputs and direct SQL, including an existing catalog identity snapshot fence. Callback token exchange and KMS now precede a command-local atomic account/secret/binding publication, and exact-registration retirement has its own command. Start and callback entrypoints, state claim, catalog reads and post-commit wakeup now use owning commands. Runtime refresh still needs its full caller graph and one-time-provider protocol; the key cannot yet be classified as outgoing-only.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
@@ -237,10 +236,6 @@ scope is intentional evidence, not a whole-package completion claim:
   create the partial organization/entitlement state that caused the earlier
   chat-creation regression. Normal onboarding retains its complete initialization;
   target selection continues to reject ambiguous or unauthorized identities.
-- `c332058`: rejected Model Policy updates now roll back default-row preparation
-  before returning their original conflict/validation response. Public API
-  revision/initialization coverage remains; later continuation removes the
-  internal uninitialized-state snapshot assertion and its fixture.
 - `ec10bad`: a losing credential refresh returns connection-changed. It cannot
   reuse a replacement authorization merely because the account/method/storage
   identity stayed the same; the existing API rejection assertion is preserved.
@@ -325,7 +320,7 @@ the historical baseline, not a current complete propagation inventory.
 [Usage and Storage boundaries](./advisory-lock-release-1-usage-boundaries.md) and
 [billing boundaries](./advisory-lock-release-1-billing.md), and
 [credential/watch boundaries](./advisory-lock-release-1-credentials.md), and
-[Model Policy boundaries](./advisory-lock-release-1-model-policy.md), and
+[chat routing and publication boundaries](#chat-routing-and-publication-ownership), and
 [workflow queue boundaries](./advisory-lock-release-1-workflow-queue.md) record the remaining
 actual caller chains. The semantic obligations above remain open independently
 of these syntax counts.
@@ -419,10 +414,6 @@ compares the complete billing response before and after pre-acceptance payment,
 then verifies activation and redelivery, including the existing 100-credit
 invitation reward. API shard 5 passed on combined head `117aab2`.
 
-Four Model Policy cases and their dedicated internal-lock/uninitialized-state
-fixtures were removed. Public API cases still cover initialization, stale
-revision rejection and preservation of another administrator's configuration.
-The chat routing case now constructs its workspace default through that API.
 Calendar no longer exposes the internal admission hook. Forms retry delivery
 shares the normal delivery setup, while usable repair and explicit disable /
 re-enable retain separate tests without failure-window replay assertions. Credential replacement asserts the stored
@@ -460,14 +451,6 @@ cancellation, and the common Clerk/settlement parent ordering. These are concret
 boundary improvements, not a declaration that every writer or helper is complete.
 
 ### Subsequent command and test changes
-
-`fd18a6d` moves complete Model Policy replacement into a business-input command
-with direct SQL for parent/set ownership, validation reads, policy writes and
-member preference projection. `a82fa82` also ensures the reused pure write planner
-receives an explicit business-value object rather than a wider legacy argument
-that happens to contain a database. Lazy initialization, onboarding ownership and
-response-read adapters were subsequently migrated to owning commands; the current
-Model Policy inventory lists the remaining surrounding callers.
 
 `c88273e` owns Clerk's core user/organization lifecycle deletion and its
 post-authority cleanup in commands. Conversation/blob reference accounting,
@@ -532,7 +515,7 @@ to hide these gaps.
 
 ### Continued command ownership and combined validation
 
-The current implementation also owns lazy Model Policy initialization and routing
+The current implementation also owns model routing
 preparation, chat metadata mutation, MCP discovery/creation/thread projection,
 workflow lazy thread publication, all six integration route/thread/event writers,
 Discord/Slack/Feishu receipt admission, and ordinary/integration/Stripe queue admission. Pure
@@ -540,7 +523,7 @@ SQL builders and ordinary route snapshots replace database-bearing adapters in
 those paths. Workflow launch bookkeeping now returns ordinary data rather than a
 closure retaining its database. Usage-pack migration publication owns direct
 snapshot/allocation SQL and no longer traverses the unrelated pending-count
-callback. See the detailed Model Policy, workflow queue and billing inventories
+callback. See the chat routing, workflow queue and billing inventories
 for exact scopes.
 
 The `c942d2d` pipeline passed API shards 2/4/6/7/8, types, lint, format, Knip,
@@ -581,3 +564,119 @@ immutable version and commits HEAD plus the prepared Pi index. Preparation and
 R2 verification remain outside publication. This closes that shared propagation
 chain; enclosing OAuth, Pi invalidation and ordinary catalog/Workflow owners
 remain explicitly unfinished rather than being disguised by the SQL builder.
+
+## Chat routing and publication ownership
+
+Model selection preparation, chat metadata mutation, MCP discovery/creation,
+integration route publication and workflow lazy thread publication use
+business-input commands. Effective route resolution is pure and works from
+ordinary snapshots of platform Auto and the member's personal subscription
+accounts. Personal metadata is read only when the selected model can use a
+personal subscription. No credentials are decrypted or captured by this
+metadata preparation.
+
+The caller graph includes chat creation/input/run selection, metadata updates,
+MCP discovery/creation/projection, Discord interaction and welcome threads,
+integration thread creation, and workflow trigger preparation. Integration
+thread writers receive a plain prepared default pin and validate a required
+selection only when they actually create a thread; reusing an existing route
+does not require a valid new-thread default. Telegram, AgentPhone, Teams,
+Feishu and Slack route publication obtains member defaults before the
+transaction and owns the route, thread and created-event SQL in one command. A
+unique-route loser deletes only its candidate thread and reads the winner once;
+existing direct-message routes retain their destination updates. Plain value
+and event-SQL builders never receive a database handle. Slack lookup also owns
+its existing direct-message destination update in a finite local transaction;
+slash-command lookup retains its explicit channel restriction.
+
+`ensureWorkflowUserAutomationThread$` prepares its default pin, localized title
+and member defaults before opening its own finite transaction. It directly
+locks the agent/workflow parents, owns the existing unique binding, inserts a
+thread and its created event, and publishes the binding together. Trigger,
+manual-run and poller lazy creation use this command. Atomic automation
+creation still uses its existing transaction with ordinary prepared thread
+values; no database-aware model selection helper executes inside that
+inherited transaction.
+
+### Discord canonical route publication
+
+`ensureCanonicalDiscordChatThreadRoute$` receives only the ingress claim,
+connection/channel/user ownership, prepared model pin and final `AbortSignal`.
+It loads member defaults before opening its own transaction. Finite direct SQL
+then verifies the live ingress claim, reuses an assigned/current route, or
+inserts the candidate thread and route. A uniqueness loser deletes only its
+candidate and reads the winning route; only the route winner inserts a created
+chat event. DM destination refresh and ingress attachment commit with that
+route decision. No database handle is passed to a helper or another command.
+
+`admitCanonicalDiscordChatEvent$` also owns the finite receipt/ingress commit.
+The gateway supplies only verified event identity, connection, payload, time
+and final signal. The existing durable message digest and ingress uniqueness
+remain unchanged, including duplicate admission after chat/connection deletion
+and rejection of a message already owned by another connection. Separate
+legacy discovery/destination helpers are not included in this ownership
+completion.
+
+### Slack and Feishu receipt publication
+
+`admitCanonicalSlackChatEvent$` and `admitFeishuChatEvent$` own their finite SQL
+transactions with ordinary event/source inputs and a final signal. Existing
+unique receipts, replay results, atomic retry increments and foreign-source
+rejection remain. Feishu's outer admission command no longer accepts a database
+or processor callback; it schedules the existing processor after the receipt
+commit. Surrounding provider/configuration and callback delivery remain
+separate. Integration `/model` controls are limited to existing routed threads;
+their thread-model reader uses an owning command and ordinary model-selection
+inputs.
+
+### MCP discovery and chat metadata publication
+
+`listMcpAgents$` and `listMcpModels$` receive business inputs and a final
+`AbortSignal`; the MCP transport does not supply its database handle to these
+operations. The Agent preparation command obtains `writeDb$` and owns its
+direct, bounded read. Cursor signing and response-size accounting operate on
+committed ordinary rows after that transaction closes. The model snapshot reads
+one entitlement and one member preference inside its own finite read-only
+transaction; member subscription sources, feature-switch context and Auto
+availability are obtained through their owning commands after it commits. The
+response retains the 15-second cancellation budget and 16 KiB size limit, and
+reports that actual admission is checked when sending.
+
+`updateChatThreadMetadata$` prepares model selection after an owned-thread
+check, then `commitMetadata$` directly owns the current thread row, validates
+the existing mutation receipt, updates metadata, and appends at most three
+ordered thread events in one finite transaction. A matching accepted mutation
+is replayed before a now unavailable model can reject it.
+
+MCP creation prepares the model and member defaults before publication. Its
+own command directly checks the selected Agent, inserts the request-ID thread
+and its exact creation event, and commits them together. A conflicting request
+ID is read back under the existing principal, identity and 24-hour retry rules.
+MCP thread list/get commands own their finite reads, and model projection uses
+ordinary route snapshots. Realtime remains after the publication commit.
+
+### Remaining caller chains
+
+- Atomic event/webhook/Stripe automation creation and workflow copying still call
+  `ensureWorkflowUserAutomationThread(Db)` → `createAutomationChatThread(Db)` →
+  `insertChatThread` / `appendChatThreadCreatedEvent`. The owned lazy-creation
+  command does not replace those multi-write callers.
+- Workflow read/delete/disable/finalization and Morning Brief migration/expiry
+  still call `loadWorkflowUserAutomationThreadId` and its database-aware binding
+  reader.
+- `executeDueWorkflowAutomationsImpl$` still forwards its database through due-row
+  reads, expiry/classification and claim helpers.
+- Telegram reply-chain and callback delivery still pass handles through
+  `persistTelegramReplyChainRoute`, route/context/owner reads, footer preparation
+  and `storeTelegramBotMessage`.
+- Discord discovery, interaction lookup, destination refresh and gateway receipt
+  lookup still use database-aware adapters. The route and receipt publication
+  commands execute their own SQL and do not call these adapters internally.
+- Shared `insertChatThread` still forwards its transaction to default
+  preparation, and `loadOrgPlanCapabilities` remains in billing, admission,
+  Run and workflow helpers. Their callers must migrate explicitly.
+
+Direct chat input and queued-run model preparation invoke the same commands
+without supplying a database. The broader direct send queue callback,
+launch/producer graph and other legacy credit-admission callers still require
+their own ownership migration; this section does not mark those paths complete.

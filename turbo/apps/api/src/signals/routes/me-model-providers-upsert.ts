@@ -54,7 +54,6 @@ const upsertPersonalCodexAuthJson$ = command(
   ) => {
     return await handleCodexAuthJsonPaste(
       {
-        scope: "personal",
         orgId: args.orgId,
         userId: args.userId,
         rawAuthJson: args.rawAuthJson,

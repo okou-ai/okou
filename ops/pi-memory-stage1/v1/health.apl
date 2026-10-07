@@ -23,7 +23,7 @@ let observations = ['vm0-web-logs-prod']
 | where _time >= startofday(now()) - 2d and _time < now()
 | where source == 'api' and level == 'info'
 | where context == 'PiMemoryStage1Cost' and operation == 'pi_memory_stage1'
-| where tostring(billingMode) != 'byok'
+| where tostring(billingMode) != 'subscription'
 | extend accountingId = tostring(accountingId), accountingAt = todatetime(accountingAt), observedAt = todatetime(observedAt), amount = todouble(grossCreditValueUsd)
 | extend incidentDay = substring(tostring(startofday(_time)), 0, 10);
 let invalid = observations
@@ -36,7 +36,7 @@ let invalid = observations
   or (ledgerStatus == 'zero_usage' and (todouble(inputTokens) + todouble(outputTokens) + todouble(cacheReadTokens) + todouble(cacheCreationTokens) != 0))
   or (ledgerStatus in ('replay', 'zero_usage') and (tostring(pricingStatus) != tostring(ledgerStatus) or isnotnull(grossCreditValueUsd) or isnotnull(grossCreditValueNanoUsd)))
   or ledgerStatus in ('persistence_error', 'legacy_replay', 'not_recorded')
-  or (ledgerStatus !in ('byok', 'zero_usage') and (isempty(accountingId) or isnull(accountingAt) or isnull(observedAt)))
+  or (ledgerStatus !in ('subscription', 'zero_usage') and (isempty(accountingId) or isnull(accountingAt) or isnull(observedAt)))
   or tostring(currency) != 'USD' or tostring(unit) != 'gross_credit_value' or isnull(creditsPerUsd) or creditsPerUsd != 1000
   or (ledgerStatus == 'new' and (tostring(pricingStatus) != 'available' or isnull(amount) or not(isfinite(amount)) or amount < 0 or isempty(tostring(priceBasis)) or isnull(tolong(grossCreditValueNanoUsd)) or tolong(grossCreditValueNanoUsd) < 0))
 | summarize by incidentDay, accountingId

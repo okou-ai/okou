@@ -4718,11 +4718,8 @@
     "actions": {
       "addCredits": "Añadir créditos",
       "openModelProviders": "Abrir proveedores de modelos",
-      "reconnectClaude": "Volver a conectar Claude Code",
-      "shareWithAdmin": "Compartir con un administrador"
+      "reconnectClaude": "Volver a conectar Claude Code"
     },
-    "anthropicKeyAdmin": "Claude Code no pudo autenticarse con la clave API de Anthropic configurada. Actualiza o sustituye la clave API en Proveedores de modelos y vuelve a intentarlo.",
-    "anthropicKeyMember": "Claude Code no pudo autenticarse con la clave API de Anthropic configurada. Pide a un administrador del espacio de trabajo que actualice o sustituya la clave API.",
     "askAdmin": "Pide a un administrador del espacio de trabajo que añada créditos o mejore el plan.",
     "claudeReconnect": "La autenticación de la suscripción de Claude Code ha fallado. Vuelve a conectar Claude Code en Proveedores de modelos e inténtalo de nuevo.",
     "claudeTerms": "Claude Code requiere aceptar las condiciones de uso y la política de privacidad actualizadas. Inicia sesión en https://claude.ai con la cuenta de Claude conectada en Proveedores de modelos, acepta las actualizaciones y vuelve a intentarlo.",
@@ -4737,7 +4734,7 @@
     "overloaded": "{{model}} está sobrecargado. Espera unos minutos y vuelve a intentarlo, o cambia de modelo.",
     "providerBalance": "El saldo de tu cuenta del proveedor de modelos conectado es insuficiente.",
     "transient": "Se ha producido un error. Vuelve a intentarlo más tarde.",
-    "vm0Credits": "Créditos insuficientes. Añade créditos o configura tu propia clave API para continuar."
+    "vm0Credits": "Créditos insuficientes. Añade créditos o conecta una suscripción personal de Codex o Claude para continuar."
   },
   "serviceStatus": {
     "dismiss": "Descartar actualización del servicio",
@@ -4990,7 +4987,7 @@
           "lowest": "Coste más bajo por generación",
           "typical": "Coste habitual por generación"
         },
-        "inheritDefault": "Predeterminado de la organización (Auto)",
+        "inheritDefault": "Predeterminado (Auto)",
         "loadError": "No se pudieron cargar los modelos.",
         "loading": "Cargando modelos...",
         "models": "Modelos",
@@ -5060,10 +5057,6 @@
         "image-generation": {
           "description": "Crea imágenes con modelos integrados.",
           "name": "Generación de imágenes"
-        },
-        "image-recognition": {
-          "description": "Lee y analiza imágenes.",
-          "name": "Reconocimiento de imágenes"
         },
         "maps": {
           "description": "Encuentra lugares, direcciones y rutas.",

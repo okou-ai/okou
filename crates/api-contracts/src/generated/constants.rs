@@ -139,12 +139,6 @@ pub mod runners {
     /// Legacy unversioned Pi model configuration generation.
     pub const PI_MODEL_CONFIG_LEGACY_GENERATION: u32 = 1;
 
-    /// Native Messages and Bedrock reader generation; activation is separate.
-    pub const PI_MODEL_CONFIG_NATIVE_GENERATION: u32 = 4;
-
-    /// Opaque native Pi sandbox marker; never a real signing credential.
-    pub const PI_NATIVE_CREDENTIAL_PLACEHOLDER: &str = "OKOUPINATIVEPLACEHOLDER";
-
     /// Maximum resume session history blob size accepted by the API, runner, and guest verifier.
     /// Rust and TypeScript components use this shared contract value when validating resume history refs, downloads, and idle-reuse verification.
     pub const RESUME_SESSION_HISTORY_MAX_BYTES: u64 = 134217728;

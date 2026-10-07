@@ -104,9 +104,6 @@ const instructionResponseColumns = Object.freeze({
   description: agents.description,
   sound: agents.sound,
   avatarUrl: agents.avatarUrl,
-  modelProviderId: agents.modelProviderId,
-  selectedModel: agents.selectedModel,
-  preferPersonalProvider: agents.preferPersonalProvider,
   visibility: agents.visibility,
 });
 

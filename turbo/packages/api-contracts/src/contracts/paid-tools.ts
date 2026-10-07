@@ -10,7 +10,6 @@ export const AVAILABLE_PAID_TOOL_IDS = [
   "maps",
   "seo",
   "social",
-  "image-recognition",
   "image-generation",
 ] as const;
 
@@ -18,6 +17,7 @@ export const AVAILABLE_PAID_TOOL_IDS = [
 // Discovery and settings controls use only AVAILABLE_PAID_TOOL_IDS.
 export const PAID_TOOL_IDS = [
   ...AVAILABLE_PAID_TOOL_IDS,
+  "image-recognition",
   "video-generation",
   "voice-generation",
   "avatar-video-generation",

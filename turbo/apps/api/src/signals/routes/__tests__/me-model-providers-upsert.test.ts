@@ -160,7 +160,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
     })(personalModelProvidersMainContract);
     const response = await accept(
       client.upsert({
-        body: { type: "anthropic-api-key", secret: "sk-ant-test" },
+        body: { type: "claude-code-oauth-token", secret: "sk-ant-test" },
         headers: {},
       }),
       [401],
@@ -176,7 +176,7 @@ describe("POST /api/me/model-providers (upsert)", () => {
     })(personalModelProvidersMainContract);
     const response = await accept(
       client.upsert({
-        body: { type: "anthropic-api-key", secret: "sk-ant-test" },
+        body: { type: "claude-code-oauth-token", secret: "sk-ant-test" },
         headers: { authorization: "Bearer clerk-session" },
       }),
       [401],
@@ -225,56 +225,6 @@ describe("POST /api/me/model-providers (upsert)", () => {
       [400],
     );
     expect(response.body).toMatchObject({ error: { code: "BAD_REQUEST" } });
-  });
-
-  it("returns 404 for anthropic-api-key", async () => {
-    const fixture = uniqueOrgUser("zmmp-anthropic-rejected");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    const response = await accept(
-      client.upsert({
-        body: { type: "anthropic-api-key", secret: "sk-ant-test" },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [404],
-    );
-    expect(response.body).toMatchObject({
-      error: {
-        code: "NOT_FOUND",
-        message: 'Provider "anthropic-api-key" not found',
-      },
-    });
-  });
-
-  it("returns 404 for openai-api-key", async () => {
-    const fixture = uniqueOrgUser("zmmp-openai-rejected");
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({
-      context,
-      routes: personalModelProvidersMainTestRoutes,
-    })(personalModelProvidersMainContract);
-    const response = await accept(
-      client.upsert({
-        body: {
-          type: "openai-api-key",
-          secret: "sk-proj-test",
-          selectedModel: "gpt-5.6-luna",
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [404],
-    );
-    expect(response.body).toMatchObject({
-      error: {
-        code: "NOT_FOUND",
-        message: 'Provider "openai-api-key" not found',
-      },
-    });
   });
 
   it("paste valid auth.json persists derived secrets + metadata", async () => {

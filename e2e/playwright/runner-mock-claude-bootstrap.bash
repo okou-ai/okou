@@ -24,9 +24,9 @@ provider_response=$(curl -fsS "${headers[@]}" \
     "${api_url}/api/me/model-providers")
 jq -e '.provider.type == "claude-code-oauth-token"' <<<"$provider_response" >/dev/null
 
-# The native Codex behavioral suite must select a personal subscription, not a
-# retired platform API-key route. These credentials are synthetic and the
-# preview runtime stays mocked; no real subscription credential enters CI.
+# The native Codex behavioral suite selects a personal subscription. These
+# credentials are synthetic and the preview runtime stays mocked; no real
+# subscription credential enters CI.
 jwt_header=$(printf '%s' '{"alg":"none","typ":"JWT"}' | base64 | tr -d '\n=' | tr '+/' '-_')
 access_claims=$(jq -nc --argjson exp "$(($(date +%s) + 86400))" '{exp: $exp}')
 id_claims=$(jq -nc --argjson exp "$(($(date +%s) + 86400))" '{

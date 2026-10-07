@@ -29,7 +29,7 @@ function blobEntriesOf(objects: ReadonlyMap<string, Buffer>) {
   });
 }
 
-describe("CHAT-02: model-first provider policies", () => {
+describe("CHAT-02: model-first routing", () => {
   it("preserves an ordinary Pi stop checkpoint for referenced Sandbox continuation", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const usagePricingResolution = await createGptUsagePricingResolution();

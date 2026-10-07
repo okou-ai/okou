@@ -4,18 +4,14 @@ import { firewallPoliciesSchema } from "@okouai/connectors/firewall-contracts";
 import {
   modelProviderCredentialScopeSchema,
   modelProviderTypeSchema,
-  modelProviderWriteTypeSchema,
-  type ModelProviderWriteType,
+  type ModelProviderType,
 } from "./model-providers";
 import { triggerSourceSchema } from "./logs";
 import { orgTierSchema } from "./orgs";
 
-export type DirectRunModelProviderType = Exclude<
-  ModelProviderWriteType,
-  "built-in"
->;
+export type DirectRunModelProviderType = Exclude<ModelProviderType, "built-in">;
 
-const directRunModelProviderTypeSchema = modelProviderWriteTypeSchema.refine(
+const directRunModelProviderTypeSchema = modelProviderTypeSchema.refine(
   (type) => {
     return type !== "built-in";
   },
