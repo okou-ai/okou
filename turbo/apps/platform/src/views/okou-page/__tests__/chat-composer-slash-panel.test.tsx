@@ -31,7 +31,6 @@ function setupModels(): void {
   mockAgent();
   mockPersonalModelRoutes();
   mockBillingCapabilities({
-    supportByok: true,
     restrictedBuiltInModels: false,
   });
   context.mocks.data.userModelPreference({

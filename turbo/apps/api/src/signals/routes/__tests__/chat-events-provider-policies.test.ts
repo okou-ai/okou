@@ -983,7 +983,6 @@ describe("CHAT-02: model-first provider policies", () => {
     await upsertOrgPlanEntitlementFixture({
       orgId: requireOrgId(actor),
       status: "active",
-      supportByok: true,
       restrictedBuiltInModels: true,
     });
 

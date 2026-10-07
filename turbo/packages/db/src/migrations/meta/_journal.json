@@ -1765,6 +1765,13 @@
       "when": 1791299680021,
       "tag": "1329_backfill_connector_catalog_entry_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 1330,
+      "version": "7",
+      "when": 1791342115900,
+      "tag": "1330_drop_org_plan_support_byok",
+      "breakpoints": true
     }
   ]
 }

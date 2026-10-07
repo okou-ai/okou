@@ -165,7 +165,6 @@ export function mockPersonalModelRoutes(): void {
 function billingStatus(
   tier: string,
   modelCapabilities?: {
-    readonly supportByok?: boolean;
     readonly restrictedBuiltInModels?: boolean;
   },
 ): BillingStatusResponse {
@@ -195,7 +194,6 @@ function billingStatus(
 
 export function mockBillingCapabilities(
   modelCapabilities: {
-    readonly supportByok: boolean;
     readonly restrictedBuiltInModels: boolean;
   },
   tier = "pro",

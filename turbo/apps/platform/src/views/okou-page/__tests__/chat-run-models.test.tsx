@@ -117,7 +117,6 @@ function limitedFreeBillingStatus(): BillingStatusResponse {
     showUsagePack: false,
     tier: "limited-free-1",
     ...billingPlanCapabilities("limited-free-1"),
-    supportByok: true,
     restrictedBuiltInModels: true,
     credits: 0,
     onboardingPaymentPending: false,

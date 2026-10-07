@@ -27,7 +27,6 @@ async function connectedActor() {
   await upsertOrgPlanEntitlementFixture({
     orgId: actor.orgId,
     status: "active",
-    supportByok: false,
     restrictedBuiltInModels: true,
   });
   await configureSubscriptionPiModel(actor);

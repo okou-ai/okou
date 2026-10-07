@@ -1197,7 +1197,7 @@ describe("member-effective model policy contract", () => {
 });
 
 describe("personal effective provider entitlement", () => {
-  it("keeps personal subscriptions independent of retired organization BYOK entitlement", async () => {
+  it("keeps personal subscriptions available on a restricted built-in plan", async () => {
     const f = await fixture("claude-code-oauth-token");
     if (!f.actor.orgId) {
       throw new Error("Expected an owned organization");
@@ -1206,7 +1206,6 @@ describe("personal effective provider entitlement", () => {
     await upsertOrgPlanEntitlementFixture({
       orgId: f.actor.orgId,
       status: "active",
-      supportByok: false,
       restrictedBuiltInModels: true,
     });
     const models = await createMiscRoutesApi(context).listRunModels(f.actor);
@@ -1236,7 +1235,6 @@ describe("personal effective provider entitlement", () => {
     await upsertOrgPlanEntitlementFixture({
       orgId: f.actor.orgId,
       status: "suspended",
-      supportByok: true,
       restrictedBuiltInModels: false,
     });
     const restricted = await sendRejectedAtPick(f.actor, {

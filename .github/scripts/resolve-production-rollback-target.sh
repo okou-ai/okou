@@ -57,6 +57,7 @@ readonly VIDEO_MODEL_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1283_dro
 readonly IMAGE_MODEL_THREAD_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1287_drop_image_model_thread_columns.sql
 readonly VIDEO_ENTITLEMENT_DROP_PATH=turbo/packages/db/src/migrations/1315_drop_retired_video_entitlement.sql
 readonly CUSTOM_MODEL_CONFIGURATION_RETIRED_PATH=.github/rollback-floors/custom-model-configuration-retired
+readonly RETIRED_BYOK_SCHEMA_PATH=.github/rollback-floors/retired-byok-schema
 
 fail() {
   echo "::error::$*" >&2
@@ -265,6 +266,19 @@ if [[ ! "$custom_model_configuration_retired_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$custom_model_configuration_retired_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Custom model configuration retirement: ${custom_model_configuration_retired_commit}."
+fi
+
+# The retired BYOK schema contraction drops org_plan_entitlements.support_byok,
+# the legacy chat_threads provider pin columns and the model_providers secret
+# and OAuth mirror columns. Earlier APIs still declare them, so their inserts,
+# bare selects and bare returning on those tables name the dropped columns.
+retired_byok_schema_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$RETIRED_BYOK_SCHEMA_PATH" | sed -n '1p')
+if [[ ! "$retired_byok_schema_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged retired BYOK schema contraction on main."
+fi
+if ! git merge-base --is-ancestor "$retired_byok_schema_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the retired BYOK schema contraction: ${retired_byok_schema_commit}."
 fi
 
 # Chat Event V8 removes eight event types and two context types. Earlier APIs

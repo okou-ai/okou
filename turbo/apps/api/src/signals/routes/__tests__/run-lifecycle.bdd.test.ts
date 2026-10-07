@@ -4806,7 +4806,6 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await upsertOrgPlanEntitlementFixture({
       orgId,
       status: "active",
-      supportByok: true,
       restrictedBuiltInModels: false,
     });
     const completed = await bdd.completeOnboarding(actor);
@@ -4814,7 +4813,6 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await upsertOrgPlanEntitlementFixture({
       orgId,
       status: "active",
-      supportByok: true,
       restrictedBuiltInModels: false,
     });
     await api.ensurePersonalSubscriptionModel(actor);
@@ -4834,7 +4832,6 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await upsertOrgPlanEntitlementFixture({
       orgId,
       status: "active",
-      supportByok: true,
       restrictedBuiltInModels: false,
     });
 
@@ -4853,7 +4850,6 @@ describe("RUN-02: model provider selection and built-in admission", () => {
     await upsertOrgPlanEntitlementFixture({
       orgId,
       status: "suspended",
-      supportByok: true,
       restrictedBuiltInModels: false,
     });
 
@@ -14666,7 +14662,6 @@ describe("BILL-01: billing entitlement reconciliation cron", () => {
       baseConcurrencyLimit: 2,
       canBuyConcurrency: false,
       autoRechargeAllowed: false,
-      supportByok: true,
       restrictedBuiltInModels: true,
       workflowWebhookAutomationAllowed: false,
       stripeSubscriptionId: granted.subscriptionId,

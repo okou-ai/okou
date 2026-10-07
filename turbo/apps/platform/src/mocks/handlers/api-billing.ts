@@ -28,7 +28,6 @@ type BillingPlanCapabilities = Pick<
   | "concurrencyPurchaseReviewAvailable"
   | "canBuyCredits"
   | "autoRechargeAllowed"
-  | "supportByok"
   | "restrictedBuiltInModels"
   | "workflowWebhookAutomationAllowed"
   | "canRestorePlan"
@@ -43,7 +42,6 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
         concurrencyPurchaseReviewAvailable: false,
         canBuyCredits: false,
         autoRechargeAllowed: false,
-        supportByok: true,
         restrictedBuiltInModels: true,
         workflowWebhookAutomationAllowed: false,
         canRestorePlan: false,
@@ -57,7 +55,6 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
         concurrencyPurchaseReviewAvailable: false,
         canBuyCredits: true,
         autoRechargeAllowed: true,
-        supportByok: true,
         restrictedBuiltInModels: false,
         workflowWebhookAutomationAllowed: true,
         canRestorePlan: false,
@@ -70,7 +67,6 @@ export function billingPlanCapabilities(tier: string): BillingPlanCapabilities {
         concurrencyPurchaseReviewAvailable: false,
         canBuyCredits: true,
         autoRechargeAllowed: true,
-        supportByok: true,
         restrictedBuiltInModels: false,
         workflowWebhookAutomationAllowed: false,
         canRestorePlan: false,

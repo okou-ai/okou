@@ -133,7 +133,6 @@ describe("GET /api/billing/status", () => {
     expect(response.body.tier).toBe("limited-free-1");
     expect(response.body.status).toBe("active");
     expect(response.body.concurrencyLimit).toBe(2);
-    expect(response.body.supportByok).toBeTruthy();
     expect(response.body.restrictedBuiltInModels).toBeTruthy();
     expect(response.body.credits).toBe(100_000);
     expect(response.body.onboardingPaymentPending).toBeFalsy();
@@ -477,7 +476,6 @@ describe("GET /api/billing/status", () => {
       canBuyCredits: false,
       showUsagePack: true,
       autoRechargeAllowed: false,
-      supportByok: false,
       restrictedBuiltInModels: false,
       workflowWebhookAutomationAllowed: true,
     });
@@ -498,7 +496,6 @@ describe("GET /api/billing/status", () => {
     expect(response.body.showUsagePack).toBeTruthy();
     expect(response.body.status).toBe("active");
     expect(response.body.autoRechargeAllowed).toBeFalsy();
-    expect(response.body.supportByok).toBeFalsy();
     expect(response.body.restrictedBuiltInModels).toBeFalsy();
     expect(response.body.workflowWebhookAutomationAllowed).toBeTruthy();
     expect(response.body.concurrencyLimit).toBe(3);

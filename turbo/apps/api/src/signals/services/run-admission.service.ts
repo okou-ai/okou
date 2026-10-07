@@ -50,14 +50,13 @@ type CreditDb = Pick<Db, "$with" | "select" | "with">;
 
 export interface OrgCreditAvailability {
   readonly status: OrgPlanCapabilities["status"];
-  readonly supportByok: boolean;
   readonly restrictedBuiltInModels: boolean;
   readonly spendableCredits: number;
   readonly usagePackCredits: number;
 }
 type OrgPlanRunAdmissionCapabilities = Pick<
   OrgPlanCapabilities,
-  "status" | "supportByok" | "restrictedBuiltInModels"
+  "status" | "restrictedBuiltInModels"
 >;
 export interface RunCreditAdmissionState {
   readonly orgId: string;
@@ -189,7 +188,6 @@ function creditAvailability(
   return capabilities && balance?.credits !== null && balance !== undefined
     ? {
         status: capabilities.status,
-        supportByok: capabilities.supportByok,
         restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
         spendableCredits: balance.credits - (balance.unsettledExpired ?? 0),
         usagePackCredits,
@@ -401,7 +399,6 @@ export async function resolveOrgCreditAvailability(params: {
   });
   return {
     status: capabilities.status,
-    supportByok: capabilities.supportByok,
     restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
     spendableCredits,
     usagePackCredits,
@@ -520,10 +517,5 @@ export function checkOrgPlanRunAdmission(params: {
       restrictedModel.displayName,
     );
   }
-  return (!capabilities.supportByok &&
-    !params.personalSubscription &&
-    !isBuiltInModelProviderType(params.modelProviderType)) ||
-    modelAccess === "pro_required"
-    ? insufficientCredits()
-    : undefined;
+  return modelAccess === "pro_required" ? insufficientCredits() : undefined;
 }

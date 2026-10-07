@@ -49,7 +49,7 @@ export function mockTemplateChat(options?: {
   mockAgent({ selectedModel: "claude-sonnet-5" });
   mockPersonalModelRoutes();
   mockBillingCapabilities(
-    { supportByok: true, restrictedBuiltInModels: false },
+    { restrictedBuiltInModels: false },
     options?.tier ?? "pro",
   );
   const lifecycle = mockChatLifecycle(context, {

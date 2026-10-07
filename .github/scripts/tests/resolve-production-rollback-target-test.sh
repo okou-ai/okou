@@ -74,6 +74,8 @@ case "${1:-}" in
       [ "${MOCK_VIDEO_ENTITLEMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1616161616161616161616161616161616161616" ]; then
       [ "${MOCK_CUSTOM_MODEL_CONFIGURATION_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "1717171717171717171717171717171717171717" ]; then
+      [ "${MOCK_RETIRED_BYOK_SCHEMA_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -101,6 +103,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_VIDEO_ENTITLEMENT_COMMIT-1515151515151515151515151515151515151515}"
     elif [[ "$*" == *custom-model-configuration-retired* ]]; then
       printf '%s\n' "${MOCK_CUSTOM_MODEL_CONFIGURATION_COMMIT-1616161616161616161616161616161616161616}"
+    elif [[ "$*" == *retired-byok-schema* ]]; then
+      printf '%s\n' "${MOCK_RETIRED_BYOK_SCHEMA_COMMIT-1717171717171717171717171717171717171717}"
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
@@ -225,6 +229,8 @@ grep -Fxq "git merge-base --is-ancestor 1313131313131313131313131313131313131313
 grep -Fxq "git merge-base --is-ancestor 1515151515151515151515151515151515151515 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the video entitlement column drop floor"
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- .github/rollback-floors/custom-model-configuration-retired" "${tmp_dir}/boundaries.log" || fail "Custom model floor must resolve the canonical main marker"
 grep -Fxq "git merge-base --is-ancestor 1616161616161616161616161616161616161616 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Custom model configuration floor"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- .github/rollback-floors/retired-byok-schema" "${tmp_dir}/boundaries.log" || fail "retired BYOK schema floor must resolve the canonical main marker"
+grep -Fxq "git merge-base --is-ancestor 1717171717171717171717171717171717171717 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the retired BYOK schema floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
 grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version output"
@@ -410,6 +416,25 @@ grep -Fq '1616161616161616161616161616161616161616' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/custom-model-floor.output" ] || fail "pre-retirement API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Custom retirement floor must fail before artifact or host access"
+fi
+
+# Guard the active rollback boundary, not the absence of retired columns.
+for contraction_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged retired BYOK schema contraction" \
+    run_resolver "${tmp_dir}/retired-byok-history.output" "MOCK_RETIRED_BYOK_SCHEMA_COMMIT=${contraction_commit}"
+  [ ! -s "${tmp_dir}/retired-byok-history.output" ] || fail "invalid retired BYOK schema history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid retired BYOK schema history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the retired BYOK schema contraction" \
+  run_resolver "${tmp_dir}/retired-byok-floor.output" MOCK_RETIRED_BYOK_SCHEMA_FLOOR_VALID=0
+grep -Fq '1717171717171717171717171717171717171717' "${tmp_dir}/failure.err" || fail "retired BYOK schema rejection must identify the canonical contraction commit"
+[ ! -s "${tmp_dir}/retired-byok-floor.output" ] || fail "pre-contraction API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "retired BYOK schema floor must fail before artifact or host access"
 fi
 
 for v8_commit in "" invalid; do

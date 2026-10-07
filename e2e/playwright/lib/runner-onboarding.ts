@@ -65,7 +65,6 @@ export async function readRunnerPaidEntitlement(
   return (
     result.tier === "pro" &&
     result.onboardingPaymentPending === false &&
-    result.supportByok === true &&
     result.restrictedBuiltInModels === false
   );
 }
