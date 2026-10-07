@@ -1,5 +1,35 @@
 # Deployment Compatibility
 
+## Legacy chat thread provider pin columns dropped
+
+Follow-up to the run model schema contraction below (#37856). Chat threads
+persist only `selected_model`; every run resolves it to platform Auto or the
+caller's personal subscription. The legacy `chat_threads.model_provider_id`,
+`model_provider_type` and `model_provider_credential_scope` columns had no
+reader that used them: every writer stored NULL, and the only reader
+(`ownedChatThread`) parsed and discarded the values. No response, event,
+snapshot, CLI or iOS payload carries them. MaskDB (2026-10-07) showed 1479
+legacy rows with a type set, all with `model_provider_id` NULL and only
+`built-in`, `codex-oauth-token` or `claude-code-oauth-token` types; nothing
+reads those values. Generated migration
+`1332_drop_chat_thread_provider_pin_columns` drops the three columns. There is
+no data conversion or backfill.
+
+Migrations run before API promotion. An API built before 1332 still declares
+the columns, so its chat thread inserts, its `ownedChatThread` select and any
+bare `select()`/`returning()` on `chat_threads` receive `42703` until it
+drains. `chat_threads` is a hot table, so this is not a rolling-compatible
+contraction: applying 1332 requires an owner-accepted interruption (ideally in
+the same rollout as 1330, or at low traffic), which this document does not
+record. New API with the old schema is unsupported, as usual.
+
+Rollback floor: the rollback resolver resolves the first-parent `main` commit
+that added `1332_drop_chat_thread_provider_pin_columns.sql` and rejects earlier
+targets before artifact or host access. That commit descends from the 1330
+floor. Recovering below it requires a reviewed forward migration that restores
+the columns before an older API serves. This does not claim production
+activation.
+
 ## Additive immutable connector entry columns
 
 Migrations `1328_connector_catalog_entry_columns` and

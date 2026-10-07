@@ -1779,6 +1779,13 @@
       "when": 1791332715254,
       "tag": "1331_delete_organization_model_provider_rows",
       "breakpoints": true
+    },
+    {
+      "idx": 1332,
+      "version": "7",
+      "when": 1791347855011,
+      "tag": "1332_drop_chat_thread_provider_pin_columns",
+      "breakpoints": true
     }
   ]
 }
