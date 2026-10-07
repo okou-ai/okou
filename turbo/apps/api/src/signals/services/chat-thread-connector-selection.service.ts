@@ -21,11 +21,7 @@ import {
 } from "./agent-connector-scope.service";
 import { listConnectorAccountsByIds } from "./connector-account-lifecycle.service";
 import { connectorAccountTargetKey } from "./connector-account-resolution.service";
-import {
-  getConnectorRuntimeConnector,
-  loadConnectorRuntimeSnapshot,
-  type ConnectorRuntimeSelection,
-} from "./connector-catalog-runtime.service";
+import { loadCurrentConnectorCatalogSlugs } from "./connector-catalog-slug-source.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 
 interface OwnedChatThread {
@@ -89,25 +85,25 @@ function selectionFromRow(
 }
 
 function targetExistsInCatalog(
-  snapshot: ConnectorRuntimeSelection | undefined,
+  catalogSlugs: ReadonlySet<string> | undefined,
   target: ConnectorAccountTarget,
 ): boolean {
   return (
-    target.kind === "custom" ||
-    (snapshot !== undefined &&
-      getConnectorRuntimeConnector(snapshot, target.connectorSlug) !==
-        undefined)
+    target.kind === "custom" || catalogSlugs?.has(target.connectorSlug) === true
   );
 }
 
-async function loadSnapshotForBuiltinTargets(
+async function loadCatalogSlugsForBuiltinTargets(
   db: ReadonlyDb,
   selections: readonly ConnectorAccountSelection[],
-): Promise<ConnectorRuntimeSelection | undefined> {
-  return selections.some((selection) => {
-    return selection.target.kind === "builtin";
-  })
-    ? await loadConnectorRuntimeSnapshot(db)
+): Promise<ReadonlySet<string> | undefined> {
+  const connectorSlugs = selections.flatMap((selection) => {
+    return selection.target.kind === "builtin"
+      ? [selection.target.connectorSlug]
+      : [];
+  });
+  return connectorSlugs.length > 0
+    ? await loadCurrentConnectorCatalogSlugs(db, connectorSlugs)
     : undefined;
 }
 
@@ -276,10 +272,13 @@ export const prepareChatThreadConnectorSelections$ = command(
     // selectionParentMissing), never a stale selection.
     const scope = await loadAgentConnectorScope(db, args);
     signal.throwIfAborted();
-    const snapshot = await loadSnapshotForBuiltinTargets(db, selections);
+    const catalogSlugs = await loadCatalogSlugsForBuiltinTargets(
+      db,
+      selections,
+    );
     signal.throwIfAborted();
     for (const selection of byTarget.values()) {
-      if (!targetExistsInCatalog(snapshot, selection.target)) {
+      if (!targetExistsInCatalog(catalogSlugs, selection.target)) {
         return {
           kind: "invalid",
           message: "Connector target is unavailable",

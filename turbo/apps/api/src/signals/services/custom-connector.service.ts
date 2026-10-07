@@ -46,7 +46,7 @@ import { nowDate } from "../../lib/time";
 import { clerk$ } from "../external/clerk";
 import { db$, writeDb$, type ReadonlyDb } from "../external/db";
 import { safeSync, settle } from "../utils";
-import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
+import { loadConnectorRuntimeSlugSelection } from "./connector-catalog-slug-source.service";
 import {
   publishCustomConnectorOrganizationInvalidationAfterCommit,
   publishCustomConnectorUserInvalidationAfterCommit,
@@ -83,7 +83,10 @@ import {
   customConnectorDefinitionSelection,
   type CustomConnectorDefinitionRow,
 } from "./custom-connector-definition-selection";
-import { loadCustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
+import {
+  customConnectorPermissionBundleDependencySlug,
+  loadCustomConnectorPermissionBundle,
+} from "./custom-connector-permission-bundle.service";
 import { prepareCustomConnectorSkillVolume$ } from "./custom-connector-skill-volume.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
@@ -1570,6 +1573,19 @@ function validateDefinition(
   };
 }
 
+/** A bundle reads only its dependency connector's firewall metadata. */
+async function loadPermissionBundleCatalog(
+  db: ReadonlyDb,
+  permissionBundleRef: CustomConnectorPermissionBundleRef,
+) {
+  const dependency =
+    customConnectorPermissionBundleDependencySlug(permissionBundleRef);
+  return await loadConnectorRuntimeSlugSelection(db, {
+    connectorSlugs: [],
+    metadataConnectorSlugs: dependency === null ? [] : [dependency],
+  });
+}
+
 const validatePermissionBundleRef$ = command(
   async (
     { set },
@@ -1579,7 +1595,10 @@ const validatePermissionBundleRef$ = command(
     if (permissionBundleRef === null) {
       return null;
     }
-    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
+    const snapshot = await loadPermissionBundleCatalog(
+      set(writeDb$),
+      permissionBundleRef,
+    );
     signal.throwIfAborted();
     const bundle = await loadCustomConnectorPermissionBundle({
       catalog: snapshot.serverFirewallMetadata,
@@ -2588,7 +2607,7 @@ export function getCustomConnectorPermissionBundle(args: {
     if (!permissionBundleRef) {
       return null;
     }
-    const snapshot = await loadConnectorRuntimeSnapshot(db);
+    const snapshot = await loadPermissionBundleCatalog(db, permissionBundleRef);
     const bundle = await loadCustomConnectorPermissionBundle({
       catalog: snapshot.serverFirewallMetadata,
       ref: permissionBundleRef,

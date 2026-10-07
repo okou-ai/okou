@@ -42,10 +42,8 @@ import {
 } from "../services/cli-auth.service";
 import { upsertBuiltinConnectorTokenConnection$ } from "../services/connector-data.service";
 import { connectorActionResolverForSnapshot } from "../services/connector-action-resolver.service";
-import {
-  getConnectorRuntimeConnector,
-  loadConnectorRuntimeSnapshot,
-} from "../services/connector-catalog-runtime.service";
+import { loadConnectorRuntimeSlugSelection } from "../services/connector-catalog-slug-source.service";
+import { getConnectorRuntimeConnector } from "../services/connector-catalog-runtime.service";
 import { upsertPersonalModelProviderAccount$ } from "../services/model-provider-account.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import {
@@ -240,7 +238,9 @@ const createTestConnector$ = command(
       );
     }
     const connectorSlug = connectorParsed.data;
-    const snapshot = await loadConnectorRuntimeSnapshot(get(db$));
+    const snapshot = await loadConnectorRuntimeSlugSelection(get(db$), {
+      connectorSlugs: [connectorSlug],
+    });
     signal.throwIfAborted();
     if (getConnectorRuntimeConnector(snapshot, connectorSlug) === undefined) {
       return stringError(400, `Unknown connector slug: "${connectorSlug}"`);
@@ -388,7 +388,9 @@ const enableTestConnectors$ = command(
       );
     }
 
-    const snapshot = await loadConnectorRuntimeSnapshot(get(db$));
+    const snapshot = await loadConnectorRuntimeSlugSelection(get(db$), {
+      connectorSlugs,
+    });
     signal.throwIfAborted();
     const unknownConnectorSlug = connectorSlugs.find((connectorSlug) => {
       return (

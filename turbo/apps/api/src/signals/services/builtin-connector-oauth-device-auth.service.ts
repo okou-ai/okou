@@ -1195,7 +1195,7 @@ export const startBuiltinConnectorOauthDeviceAuthSession$ = command(
       return badRequestMessage(agentTarget.message);
     }
 
-    const resolver = await get(connectorActionResolver());
+    const resolver = await get(connectorActionResolver([args.connectorSlug]));
     signal.throwIfAborted();
     const resolvedMethod = await resolveRequestedDeviceAuthMethod({
       resolver,
@@ -1323,7 +1323,7 @@ export const pollBuiltinConnectorOauthDeviceAuthSession$ = command(
       return notFound("OAuth device authorization session not found");
     }
 
-    const resolver = await get(connectorActionResolver());
+    const resolver = await get(connectorActionResolver([args.connectorSlug]));
     signal.throwIfAborted();
     const resolvedMethod = await resolveStoredDeviceAuthMethod({
       resolver,

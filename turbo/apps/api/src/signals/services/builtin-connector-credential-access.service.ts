@@ -22,7 +22,6 @@ import {
   getConnectorRuntimeMethod,
   type ConnectorRuntimeMethod,
   type ConnectorRuntimeAuthLookup,
-  type ConnectorRuntimeLookup,
 } from "./connector-catalog-runtime.service";
 
 const log = logger("api:connector-credential-access");
@@ -125,7 +124,7 @@ export function resolveStoredBuiltinConnectorRuntimeMethod(args: {
 }
 
 export function resolveBuiltinConnectorCredentialAccess(args: {
-  readonly snapshot: ConnectorRuntimeLookup;
+  readonly snapshot: ConnectorRuntimeAuthLookup;
   readonly stored: BuiltinConnectorCredentialStoredIdentity;
 }): BuiltinConnectorCredentialAccessResult {
   const runtimeMethod = resolveStoredBuiltinConnectorRuntimeMethod({

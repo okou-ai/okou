@@ -107,7 +107,7 @@ import {
   type ReleasedRunSlot,
 } from "../services/agent-run-terminal-transition.service";
 import { notifyRunningChatRunOfPendingInput$ } from "../services/chat-thread-queue-drain.service";
-import { loadConnectorRuntimeSnapshot } from "../services/connector-catalog-runtime.service";
+import { loadConnectorRuntimeSlugSelection } from "../services/connector-catalog-slug-source.service";
 import { loadConnectorRunnerFirewallCatalog } from "../services/connector-runner-firewall-catalog.service";
 import { resolveConnectorRuntimeTargets } from "../services/connector-runtime-sync.service";
 import { decryptPersistentSecretsMap } from "../services/crypto.utils";
@@ -1491,8 +1491,9 @@ async function refreshClaimNetworkPolicies(args: {
     const fullRefresh = async (
       path: Extract<ClaimNetworkPolicyRefreshPath, `full_${string}`>,
     ) => {
-      const connectorCatalogSnapshot = await loadConnectorRuntimeSnapshot(
+      const connectorCatalogSnapshot = await loadConnectorRuntimeSlugSelection(
         args.db,
+        { connectorSlugs: builtinConnectorSlugs },
       );
       const connectorSlugs = networkPolicyRefreshConnectorSlugs(
         connectorCatalogSnapshot.serverFirewalls,

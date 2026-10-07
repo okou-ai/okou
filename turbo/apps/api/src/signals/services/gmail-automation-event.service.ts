@@ -44,7 +44,7 @@ import {
 } from "./automation-event-source-timing.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-credential-runtime.service";
-import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
+import { loadConnectorRuntimeAuthSelection } from "./connector-catalog-slug-source.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import { GmailAutomationSourceChangedError } from "./workflow-gmail-queue.service";
@@ -290,7 +290,9 @@ const resolveGmailAccess$ = command(
     signal: AbortSignal,
   ): Promise<GmailAccessResult> => {
     const currentTime = nowDate();
-    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
+    const snapshot = await loadConnectorRuntimeAuthSelection(set(writeDb$), {
+      connectorSlugs: ["gmail"],
+    });
     signal.throwIfAborted();
     const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
       snapshot,

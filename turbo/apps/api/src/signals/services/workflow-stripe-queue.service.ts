@@ -19,7 +19,7 @@ import {
   resolveBuiltinConnectorCredentialAccess,
   builtinConnectorCredentialVariableReadCondition,
 } from "./builtin-connector-credential-access.service";
-import type { ConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
+import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 import { variables } from "@okouai/db/schema/variable";
 import type { WorkflowSourceAdmissionPlan } from "./workflow-input-queue.service";
 import { visibleWorkflowCondition } from "./workflow-data.service";
@@ -81,7 +81,7 @@ export function stripeSourceCredentialAccess(
   source: StripeQueueSource,
   automation: typeof workflowAutomations.$inferSelect | undefined,
   connector: typeof connectors.$inferSelect | undefined,
-  snapshot: ConnectorRuntimeSnapshot,
+  snapshot: ConnectorRuntimeSelection,
 ) {
   if (
     !automation ||

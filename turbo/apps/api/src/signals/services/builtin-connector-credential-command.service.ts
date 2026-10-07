@@ -2,7 +2,7 @@ import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { command } from "ccstate";
 
 import { writeDb$ } from "../external/db";
-import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
+import type { ConnectorRuntimeAuthLookup } from "./connector-catalog-runtime.service";
 import {
   loadBuiltinConnectorCredentialConnection,
   loadBuiltinConnectorCredentialValues,
@@ -19,7 +19,7 @@ export const loadBuiltinConnectorCredentialConnection$ = command(
       readonly connectorId: string;
       readonly connectorSlug: string;
       readonly orgId: string;
-      readonly snapshot: ConnectorRuntimeSelection;
+      readonly snapshot: ConnectorRuntimeAuthLookup;
       readonly userId: string;
     },
   ): Promise<BuiltinConnectorCredentialConnectionResult> => {

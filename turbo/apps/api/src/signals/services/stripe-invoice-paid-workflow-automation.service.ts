@@ -6,13 +6,13 @@ import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { and, eq, isNull } from "drizzle-orm";
 
 import type { Db, ReadonlyDb } from "../external/db";
-import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import {
   loadBuiltinConnectorCredentialConnection,
   loadBuiltinConnectorCredentialValues,
   type BuiltinConnectorCredentialConnection,
 } from "./builtin-connector-credential-runtime.service";
 import { resolveWorkflowAutomationConnectorId } from "./workflow-automation-account.service";
+import { loadConnectorRuntimeAuthSelection } from "./connector-catalog-slug-source.service";
 
 const STRIPE_CONNECTOR_SLUG = "stripe";
 const STRIPE_LIVEMODE_VALUE_REF = "$vars.STRIPE_LIVEMODE";
@@ -66,7 +66,9 @@ async function loadReadyStripeConnection(
   },
   signal: AbortSignal,
 ): Promise<ReadyStripeConnectionResult> {
-  const snapshot = await loadConnectorRuntimeSnapshot(args.db);
+  const snapshot = await loadConnectorRuntimeAuthSelection(args.db, {
+    connectorSlugs: [STRIPE_CONNECTOR_SLUG],
+  });
   signal.throwIfAborted();
   const loaded = await loadBuiltinConnectorCredentialConnection({
     db: args.db,

@@ -517,7 +517,9 @@ const connectGithubUserAfterSetup$ = command(
         sendsRedirectUri: false,
       });
 
-      const resolver = await get(connectorActionResolver());
+      const resolver = await get(
+        connectorActionResolver([GITHUB_CONNECTOR_SLUG]),
+      );
       signal.throwIfAborted();
       const resolvedMethod = await resolveGithubOauthMethod(resolver);
       signal.throwIfAborted();
@@ -791,7 +793,7 @@ const installGithubOauth$ = command(
     const oauthRequestedScopes =
       userId && githubAppUserOauthCredentials()
         ? await githubAppInstallRequestedScopes(
-            get(connectorActionResolver()),
+            get(connectorActionResolver([GITHUB_CONNECTOR_SLUG])),
             signal,
           )
         : undefined;
@@ -904,7 +906,9 @@ const connectGithubUserOauth$ = command(
 
     const origin = githubApiOrigin(request);
     const db = set(writeDb$);
-    const resolver = await get(connectorActionResolver());
+    const resolver = await get(
+      connectorActionResolver([GITHUB_CONNECTOR_SLUG]),
+    );
     signal.throwIfAborted();
     const resolvedMethod = await resolveGithubOauthMethodForNewAction(resolver);
     signal.throwIfAborted();

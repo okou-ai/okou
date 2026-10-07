@@ -27,7 +27,6 @@ import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import { stripeInvoicePaidWorkflowAutomationEnabledForOwnerInDb } from "./stripe-invoice-paid-workflow-automation-feature-switch.service";
 import {
   repairMissingStripeInvoicePaidAutomationProjection,
@@ -45,6 +44,7 @@ import {
   StripeDeliveryClaimChangedError,
   StripeDeliveryTargetChangedError,
 } from "./workflow-stripe-queue.service";
+import { loadConnectorRuntimeSlugSelection } from "./connector-catalog-slug-source.service";
 
 const log = logger("api:stripe-automation-event");
 
@@ -1356,7 +1356,9 @@ async function processClaimedDelivery(
     return "lost";
   }
   const target = validation.target;
-  const snapshot = await loadConnectorRuntimeSnapshot(args.db);
+  const snapshot = await loadConnectorRuntimeSlugSelection(args.db, {
+    connectorSlugs: ["stripe"],
+  });
   signal.throwIfAborted();
   const started = await settle(
     args.startRun(

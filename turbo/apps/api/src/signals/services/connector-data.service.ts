@@ -71,11 +71,11 @@ import {
 } from "./connector-catalog-reader.service";
 import {
   getConnectorRuntimeConnector,
-  loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeMethod,
   type ConnectorRuntimeLookup,
-  type ConnectorRuntimeSnapshot,
+  type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
+import { loadConnectorRuntimeSlugSelection } from "./connector-catalog-slug-source.service";
 import { publishBuiltinConnectorInvalidationAfterCommit } from "./connector-client-invalidation.service";
 import {
   replaceConnectorConnectionOutcome,
@@ -285,8 +285,11 @@ type PendingBuiltinConnectorTokenRevoke = {
  */
 export async function loadStoredBuiltinConnectorRuntimeSnapshot(
   db: ReadonlyDb,
-): Promise<ConnectorRuntimeSnapshot | null> {
-  const result = await settle(loadConnectorRuntimeSnapshot(db));
+  connectorSlugs: readonly ConnectorSlug[],
+): Promise<ConnectorRuntimeSelection | null> {
+  const result = await settle(
+    loadConnectorRuntimeSlugSelection(db, { connectorSlugs }),
+  );
   if (result.ok) {
     return result.value;
   }
@@ -303,10 +306,11 @@ export async function loadStoredBuiltinConnectorRuntimeSnapshot(
 export const loadStoredBuiltinConnectorRuntimeSnapshot$ = command(
   async (
     { set },
+    connectorSlugs: readonly ConnectorSlug[],
     signal: AbortSignal,
-  ): Promise<ConnectorRuntimeSnapshot | null> => {
+  ): Promise<ConnectorRuntimeSelection | null> => {
     const result = await settle(
-      loadConnectorRuntimeSnapshot(set(writeDb$)),
+      loadConnectorRuntimeSlugSelection(set(writeDb$), { connectorSlugs }),
       signal,
     );
     signal.throwIfAborted();
@@ -835,7 +839,9 @@ export function builtinConnectorBySlug(args: {
   return computed(async (get): Promise<BuiltinConnectorResponse | null> => {
     const snapshot =
       args.snapshot ??
-      (await loadStoredBuiltinConnectorRuntimeSnapshot(get(db$)));
+      (await loadStoredBuiltinConnectorRuntimeSnapshot(get(db$), [
+        args.connectorSlug,
+      ]));
     if (snapshot === null) {
       return null;
     }
@@ -1068,7 +1074,7 @@ interface DeleteBuiltinConnectorLocalStateArgs {
   readonly userId: string;
   readonly connectorSlug: string;
   readonly sourceId: string;
-  readonly snapshot?: ConnectorRuntimeSnapshot | null;
+  readonly snapshot?: ConnectorRuntimeSelection | null;
 }
 
 interface PendingConnectorAutomationCleanup {
@@ -1101,7 +1107,7 @@ async function prepareDeletedConnectorMeetCleanup(
 async function deleteBuiltinConnectorAccountLocalState(
   tx: Tx,
   args: DeleteBuiltinConnectorLocalStateArgs,
-  snapshot: ConnectorRuntimeSnapshot | null,
+  snapshot: ConnectorRuntimeSelection | null,
   featureSwitchContext: FeatureSwitchContext | null,
   signal: AbortSignal,
 ) {
@@ -1276,6 +1282,16 @@ const prepareDeletedConnectorCalendarCleanup$ = command(
   },
 );
 
+/** A caller-provided snapshot, including an unavailable `null`, is reused. */
+async function deletionRuntimeSnapshot(
+  db: ReadonlyDb,
+  args: DeleteBuiltinConnectorLocalStateArgs,
+): Promise<ConnectorRuntimeSelection | null> {
+  return args.snapshot === undefined
+    ? await loadStoredBuiltinConnectorRuntimeSnapshot(db, [args.connectorSlug])
+    : args.snapshot;
+}
+
 export const deleteBuiltinConnectorLocalState$ = command(
   async (
     { get, set },
@@ -1283,10 +1299,8 @@ export const deleteBuiltinConnectorLocalState$ = command(
     signal: AbortSignal,
   ): Promise<DeleteBuiltinConnectorLocalStateResult> => {
     const writeDb = set(writeDb$);
-    const snapshot =
-      args.snapshot === undefined
-        ? await loadStoredBuiltinConnectorRuntimeSnapshot(get(db$))
-        : args.snapshot;
+    const snapshot = await deletionRuntimeSnapshot(get(db$), args);
+    signal.throwIfAborted();
     const featureSwitchOverrides =
       snapshot === null
         ? null
@@ -1460,7 +1474,7 @@ async function loadPendingConnectorTokenRevokeForLocalConnect(
     readonly orgId: string;
     readonly userId: string;
     readonly connectorSlug: string;
-    readonly snapshot: ConnectorRuntimeSnapshot;
+    readonly snapshot: ConnectorRuntimeSelection;
     readonly featureSwitchContext: FeatureSwitchContext;
     readonly existing: Pick<
       StoredConnectorRow,
@@ -1549,7 +1563,7 @@ async function commitManualGrantConnector(
     readonly orgId: string;
     readonly userId: string;
     readonly runtimeMethod: ConnectorRuntimeMethod;
-    readonly snapshot: ConnectorRuntimeSnapshot;
+    readonly snapshot: ConnectorRuntimeSelection;
     readonly account: ConnectorAccountMutationIntent;
     readonly prepared: PreparedManualGrantConnect;
     readonly encryptedSecrets: readonly EncryptedManualGrantSecret[];
@@ -1661,7 +1675,7 @@ export const connectManualGrantBuiltinConnector$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly runtimeMethod: ConnectorRuntimeMethod;
-      readonly snapshot: ConnectorRuntimeSnapshot;
+      readonly snapshot: ConnectorRuntimeSelection;
       readonly values: Readonly<Record<string, string>>;
       readonly account: ConnectorAccountMutationIntent;
     },
@@ -1742,7 +1756,7 @@ export const connectNoAuthBuiltinConnector$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly runtimeMethod: ConnectorRuntimeMethod;
-      readonly snapshot: ConnectorRuntimeSnapshot;
+      readonly snapshot: ConnectorRuntimeSelection;
       readonly account: ConnectorAccountMutationIntent;
     },
     signal: AbortSignal,
@@ -2251,7 +2265,7 @@ async function loadPendingConnectorTokenRevokeForTokenConnect(
     readonly orgId: string;
     readonly userId: string;
     readonly connectorSlug: string;
-    readonly snapshot: ConnectorRuntimeSnapshot;
+    readonly snapshot: ConnectorRuntimeSelection;
     readonly featureSwitchContext: FeatureSwitchContext;
     readonly existing: StoredConnectorRow | null;
   },
@@ -2308,7 +2322,7 @@ interface PreparedBuiltinConnectorTokenConnection {
   readonly orgId: string;
   readonly userId: string;
   readonly runtimeMethod: ConnectorRuntimeMethod;
-  readonly snapshot: ConnectorRuntimeSnapshot;
+  readonly snapshot: ConnectorRuntimeSelection;
   readonly connectorTokenState: PreparedBuiltinConnectorTokenState;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly userInfo: ExternalUserInfo;
@@ -2336,7 +2350,7 @@ interface BuiltinConnectorTokenConnectionArgs {
   readonly orgId: string;
   readonly userId: string;
   readonly runtimeMethod: ConnectorRuntimeMethod;
-  readonly snapshot: ConnectorRuntimeSnapshot;
+  readonly snapshot: ConnectorRuntimeSelection;
   readonly outputs: BuiltinConnectorTokenOutputValues;
   readonly userInfo: ExternalUserInfo;
   readonly oauthRequestedScopes: readonly string[];
@@ -2741,12 +2755,14 @@ export function builtinConnectorScopeDiff(args: {
   readonly userId: string;
   readonly connectorSlug: string;
   readonly selection: StoredBuiltinConnectorSelection;
-  readonly snapshot?: ConnectorRuntimeSnapshot;
+  readonly snapshot?: ConnectorRuntimeSelection;
 }): Computed<Promise<ScopeDiffResponse | null>> {
   return computed(async (get): Promise<ScopeDiffResponse | null> => {
     const snapshot =
       args.snapshot ??
-      (await loadStoredBuiltinConnectorRuntimeSnapshot(get(db$)));
+      (await loadStoredBuiltinConnectorRuntimeSnapshot(get(db$), [
+        args.connectorSlug,
+      ]));
     if (snapshot === null) {
       return null;
     }

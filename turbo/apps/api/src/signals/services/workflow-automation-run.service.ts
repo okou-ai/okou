@@ -82,7 +82,7 @@ import {
 } from "./feature-switch-scope";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { ConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
+import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 
 const publishEnqueuedWorkflowInput$ = command(
   async (
@@ -251,7 +251,7 @@ const prepareStripeQueueSource$ = command(
     { get },
     args: {
       readonly source: StripeQueueSource;
-      readonly snapshot: ConnectorRuntimeSnapshot;
+      readonly snapshot: ConnectorRuntimeSelection;
       readonly chatThreadId: string;
     },
     signal: AbortSignal,

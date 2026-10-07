@@ -30,13 +30,12 @@ import {
   defaultFirewallPolicyForPermissionIndex,
   networkPolicyForFirewallPolicy,
 } from "./firewall-network-policy.service";
-import {
-  loadConnectorRuntimeSnapshot,
-  type ConnectorRuntimeLookup,
-  type ConnectorRuntimeSelection,
+import type {
+  ConnectorRuntimeLookup,
+  ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import type {
-  ConnectorServerFirewallCatalog,
+  ConnectorServerFirewallSelection,
   ConnectorServerFirewallMetadataCatalog,
 } from "./connector-server-firewall-catalog.service";
 import { connectorCatalogSource } from "./connector-catalog-source";
@@ -47,6 +46,10 @@ import {
   currentConnectorCatalogValidatorIdentity,
 } from "./connector-catalog-validator-authority";
 import { commitConnectorRuntimeMutation } from "./connector-runtime-wakeup.service";
+import {
+  loadConnectorRuntimeSlugSelection,
+  loadCurrentConnectorCatalogSlugs,
+} from "./connector-catalog-slug-source.service";
 
 const userPermissionGrantSelection = Object.freeze({
   id: userPermissionGrants.id,
@@ -288,7 +291,8 @@ export async function resolveActiveNetworkPolicyRefreshes(
   }
 
   const snapshot =
-    preloadedSnapshot ?? (await loadConnectorRuntimeSnapshot(db));
+    preloadedSnapshot ??
+    (await loadConnectorRuntimeSlugSelection(db, { connectorSlugs }));
   const uniqueConnectorSlugs = networkPolicyRefreshConnectorSlugs(
     snapshot.serverFirewalls,
     connectorSlugs,
@@ -659,7 +663,7 @@ async function lockVisibleAgentForUpdate(
 
 async function validateApplyUserPermissionGrants(
   apply: ApplyUserPermissionGrantsRequest,
-  catalog: ConnectorServerFirewallCatalog,
+  catalog: ConnectorServerFirewallSelection,
 ): Promise<ValidationErrorResponse | null> {
   const index = await catalog.loadPermissionIndex(apply.connectorSlug);
   if (!index) {
@@ -813,7 +817,7 @@ function applyPermissionGrantResponseScope(
 async function applyRowsAndPublishNetworkPolicyRefreshes(
   db: Db,
   args: ApplyUserPermissionGrantsArgs,
-  serverFirewalls: ConnectorServerFirewallCatalog,
+  serverFirewalls: ConnectorServerFirewallSelection,
 ): Promise<readonly StoredPermissionGrantRow[] | NotFoundResponse> {
   return await commitConnectorRuntimeMutation(
     applyVisibleGrantRows(db, args),
@@ -875,15 +879,22 @@ export const listUserPermissionGrants$ = command(
         asc(userPermissionGrants.permission),
       );
     signal.throwIfAborted();
-    const snapshot =
-      grants.length === 0 ? undefined : await loadConnectorRuntimeSnapshot(db);
+    const catalogSlugs =
+      grants.length === 0
+        ? undefined
+        : await loadCurrentConnectorCatalogSlugs(
+            db,
+            grants.map((grant) => {
+              return grant.connectorSlug;
+            }),
+          );
     signal.throwIfAborted();
     const responseScope = permissionGrantResponseScope(scope);
 
     return {
       kind: "ok" as const,
       grants: grants.flatMap((grant) => {
-        return snapshot?.connectors.has(grant.connectorSlug)
+        return catalogSlugs?.has(grant.connectorSlug)
           ? [formatUserPermissionGrant(grant, responseScope)]
           : [];
       }),
@@ -898,7 +909,9 @@ export const applyUserPermissionGrants$ = command(
     signal: AbortSignal,
   ): Promise<ApplyUserPermissionGrantsResult> => {
     const writeDb = set(writeDb$);
-    const snapshot = await loadConnectorRuntimeSnapshot(writeDb);
+    const snapshot = await loadConnectorRuntimeSlugSelection(writeDb, {
+      connectorSlugs: [args.apply.connectorSlug],
+    });
     signal.throwIfAborted();
     const validation = await validateApplyUserPermissionGrants(
       args.apply,

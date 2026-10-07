@@ -13,11 +13,13 @@ import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 
 import { writeDb$, type Db } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
+import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 import {
-  loadConnectorRuntimeSnapshot,
-  type ConnectorRuntimeSelection,
-} from "./connector-catalog-runtime.service";
-import { loadCustomConnectorPermissionBundle } from "./custom-connector-permission-bundle.service";
+  customConnectorPermissionBundleDependencySlug,
+  loadCustomConnectorPermissionBundle,
+  loadCustomConnectorPermissionBundleDependencySlugs,
+} from "./custom-connector-permission-bundle.service";
+import { loadConnectorRuntimeSlugSelection } from "./connector-catalog-slug-source.service";
 import { publishConnectorRuntimeSyncWakeups } from "./connector-runtime-wakeup.service";
 import { changedCustomConnectorIds } from "./user-custom-connector-changes";
 import {
@@ -583,14 +585,59 @@ async function persistUserCustomConnectorUpdate(
   };
 }
 
+/** Dependency metadata for custom connector permission bundles. */
+interface GrantConnectorCatalog {
+  readonly snapshot: ConnectorRuntimeSelection;
+  readonly dependencies: readonly ConnectorSlug[];
+  /** A final catalog is used as-is, even if a ref changed concurrently. */
+  readonly final: boolean;
+}
+
+interface StaleGrantConnectorCatalog {
+  readonly catalogDependencies: readonly ConnectorSlug[];
+}
+
+function permissionBundleDependencySlugs(
+  permissionBundleRefs: Iterable<string | null>,
+): ConnectorSlug[] {
+  return [
+    ...new Set(
+      [...permissionBundleRefs].flatMap((permissionBundleRef) => {
+        const dependency =
+          permissionBundleRef === null
+            ? null
+            : customConnectorPermissionBundleDependencySlug(
+                permissionBundleRef,
+              );
+        return dependency === null ? [] : [dependency];
+      }),
+    ),
+  ];
+}
+
+async function loadGrantConnectorCatalog(
+  db: Db,
+  dependencies: readonly ConnectorSlug[],
+  final: boolean,
+): Promise<GrantConnectorCatalog> {
+  return {
+    snapshot: await loadConnectorRuntimeSlugSelection(db, {
+      connectorSlugs: [],
+      metadataConnectorSlugs: dependencies,
+    }),
+    dependencies,
+    final,
+  };
+}
+
 async function persistUserCustomConnectorTransaction(args: {
   readonly tx: DbTransaction;
   readonly request: UpdateUserCustomConnectorsArgs;
   readonly grants: readonly AgentCustomConnectorGrant[];
   readonly grantByConnectorId: ReadonlyMap<string, readonly string[]>;
   readonly operation: UserCustomConnectorUpdateOperation;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSelection | null;
-}): Promise<UserCustomConnectorTransactionResult> {
+  readonly connectorCatalog: GrantConnectorCatalog | null;
+}): Promise<UserCustomConnectorTransactionResult | StaleGrantConnectorCatalog> {
   const agentLocked = await lockUserCustomConnectorGrantScope(
     args.tx,
     args.request,
@@ -645,6 +692,20 @@ async function persistUserCustomConnectorTransaction(args: {
       changedConnectorIds: [],
     };
   }
+  const catalogDependencies = permissionBundleDependencySlugs(
+    definitions.permissionBundleRefs.values(),
+  );
+  // The catalog is read before this transaction from unlocked definitions.
+  // A bundle ref changed since then is re-read once with the locked refs.
+  if (
+    args.connectorCatalog !== null &&
+    !args.connectorCatalog.final &&
+    catalogDependencies.some((dependency) => {
+      return !args.connectorCatalog?.dependencies.includes(dependency);
+    })
+  ) {
+    return { catalogDependencies };
+  }
   const permissionSelection = await resolveCustomConnectorPermissionSelection({
     connectorIds,
     permissionIntent: args.request.permissionIntent,
@@ -655,7 +716,7 @@ async function persistUserCustomConnectorTransaction(args: {
       }),
     ),
     permissionBundleRefs: definitions.permissionBundleRefs,
-    snapshot: args.connectorCatalogSnapshot,
+    snapshot: args.connectorCatalog?.snapshot ?? null,
   });
   if (!permissionSelection.ok) {
     return { result: permissionSelection.error, changedConnectorIds: [] };
@@ -697,26 +758,48 @@ export async function updateUserCustomConnectors(
   }
   const { grants, grantByConnectorId } = normalized;
   const operation = args.operation ?? "replace";
-  const connectorCatalogSnapshot =
+  const readsConnectorCatalog =
     args.permissionIntent === "exact" &&
     operation !== "remove" &&
     grants.some((grant) => {
       return grant.permissionNames.length > 0;
-    })
-      ? await loadConnectorRuntimeSnapshot(db)
-      : null;
-
-  const committed = await db.transaction(async (tx) => {
-    const persisted = await persistUserCustomConnectorTransaction({
-      tx,
-      request: args,
-      grants,
-      grantByConnectorId,
-      operation,
-      connectorCatalogSnapshot,
     });
-    return persisted;
-  });
+
+  const transact = async (connectorCatalog: GrantConnectorCatalog | null) => {
+    return await db.transaction(async (tx) => {
+      const persisted = await persistUserCustomConnectorTransaction({
+        tx,
+        request: args,
+        grants,
+        grantByConnectorId,
+        operation,
+        connectorCatalog,
+      });
+      return persisted;
+    });
+  };
+  const firstCatalog = readsConnectorCatalog
+    ? await loadGrantConnectorCatalog(
+        db,
+        await loadCustomConnectorPermissionBundleDependencySlugs(db, {
+          orgId: args.orgId,
+          customConnectorIds: grants.map((grant) => {
+            return grant.customConnectorId;
+          }),
+        }),
+        false,
+      )
+    : null;
+  const first = await transact(firstCatalog);
+  const committed =
+    "result" in first
+      ? first
+      : await transact(
+          await loadGrantConnectorCatalog(db, first.catalogDependencies, true),
+        );
+  if (!("result" in committed)) {
+    throw new Error("Final grant connector catalog cannot be stale");
+  }
   if (
     committed.result.status === "updated" &&
     !options.deferRuntimeWakeupUntilOuterCommit

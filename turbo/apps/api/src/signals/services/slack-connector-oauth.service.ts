@@ -63,7 +63,7 @@ function failed(message: string): Response {
 
 const resolveSlackOAuthMethod$ = command(
   async ({ get }, starting: boolean, signal: AbortSignal) => {
-    const resolver = await get(connectorActionResolver());
+    const resolver = await get(connectorActionResolver(["slack"]));
     signal.throwIfAborted();
     const args = {
       connectorSlug: "slack",

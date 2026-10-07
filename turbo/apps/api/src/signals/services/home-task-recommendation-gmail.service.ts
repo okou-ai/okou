@@ -18,8 +18,11 @@ import {
 } from "../utils";
 import { loadAgentConnectorScope$ } from "./agent-connector-scope.service";
 import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-credential-runtime.service";
-import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import { connectorUrlPermission$ } from "./connector-url-permission.service";
+import {
+  loadConnectorRuntimeAuthSelection,
+  loadConnectorRuntimeSlugSelection,
+} from "./connector-catalog-slug-source.service";
 
 const GMAIL_ACCESS_TOKEN_ENVIRONMENT_NAME = "GMAIL_TOKEN";
 const GMAIL_API_ORIGIN = "https://gmail.googleapis.com";
@@ -167,7 +170,9 @@ const gmailAccessToken$ = command(
     connectorId: string,
     signal: AbortSignal,
   ): Promise<string | null> => {
-    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
+    const snapshot = await loadConnectorRuntimeAuthSelection(set(writeDb$), {
+      connectorSlugs: ["gmail"],
+    });
     signal.throwIfAborted();
     const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
       snapshot,
@@ -233,7 +238,9 @@ const currentlyAuthorized$ = command(
     if (!connectorScope.allowedConnectorSlugs.includes("gmail")) {
       return false;
     }
-    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
+    const snapshot = await loadConnectorRuntimeSlugSelection(set(writeDb$), {
+      connectorSlugs: ["gmail"],
+    });
     signal.throwIfAborted();
     const decision = await set(
       connectorUrlPermission$,
@@ -277,7 +284,9 @@ const gmailConnectionIsUsable$ = command(
     connectorId: string,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
+    const snapshot = await loadConnectorRuntimeAuthSelection(set(writeDb$), {
+      connectorSlugs: ["gmail"],
+    });
     signal.throwIfAborted();
     const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
       snapshot,

@@ -52,7 +52,6 @@ import {
   refreshBuiltinConnectorCredentialAccess$,
 } from "./builtin-connector-credential-command.service";
 import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-credential-runtime.service";
-import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
@@ -70,6 +69,7 @@ import {
   notionConfigWithConnectorId,
 } from "./notion-automation-account.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
+import { loadConnectorRuntimeAuthSelection } from "./connector-catalog-slug-source.service";
 
 const log = logger("api:notion-automation-event");
 
@@ -484,7 +484,9 @@ const resolveNotionCredentialAccess$ = command(
     signal: AbortSignal,
   ): Promise<NotionAccessResult> => {
     const currentTime = nowDate();
-    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
+    const snapshot = await loadConnectorRuntimeAuthSelection(set(writeDb$), {
+      connectorSlugs: ["notion"],
+    });
     signal.throwIfAborted();
     const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
       snapshot,

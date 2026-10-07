@@ -9,7 +9,7 @@ import {
   buildConnectorDiagnosticBaseCandidates,
   loadConnectorDiagnosticCatalogView,
 } from "./connector-diagnostic-runtime.service";
-import type { ConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
+import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 import { resolveActiveNetworkPolicyRefreshes$ } from "./user-permission-grants.service";
 
 function decisionPermissions(
@@ -40,7 +40,7 @@ export const connectorUrlPermission$ = command(
   async (
     { set },
     args: {
-      readonly snapshot: ConnectorRuntimeSnapshot;
+      readonly snapshot: ConnectorRuntimeSelection;
       readonly scope: {
         readonly orgId: string;
         readonly userId: string;

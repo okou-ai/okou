@@ -43,10 +43,8 @@ import {
   builtinConnectorCredentialRuntimeValueRef,
   type BuiltinConnectorCredentialConnection,
 } from "./builtin-connector-credential-runtime.service";
-import {
-  loadConnectorRuntimeSnapshot,
-  type ConnectorRuntimeSnapshot,
-} from "./connector-catalog-runtime.service";
+import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
+import { loadConnectorRuntimeSlugSelection } from "./connector-catalog-slug-source.service";
 import { builtinConnectorList } from "./connector-data.service";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import {
@@ -203,7 +201,7 @@ const loadCollectorAccess$ = command(
       readonly source: ConnectedSource;
       readonly orgId: string;
       readonly userId: string;
-      readonly snapshot: ConnectorRuntimeSnapshot;
+      readonly snapshot: ConnectorRuntimeSelection;
       readonly featureSwitchContext: FeatureSwitchContext;
     },
     signal: AbortSignal,
@@ -307,7 +305,7 @@ const authorityStillCurrent$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly connection: BuiltinConnectorCredentialConnection;
-      readonly snapshot: ConnectorRuntimeSnapshot;
+      readonly snapshot: ConnectorRuntimeSelection;
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
@@ -335,7 +333,7 @@ const collectOneSource$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly now: Date;
-      readonly snapshot: ConnectorRuntimeSnapshot;
+      readonly snapshot: ConnectorRuntimeSelection;
       readonly featureSwitchContext: FeatureSwitchContext;
     },
     signal: AbortSignal,
@@ -559,7 +557,11 @@ const runJob$ = command(
     if (sources.length === 0) {
       throw new Error("No supported connected source was available");
     }
-    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
+    const snapshot = await loadConnectorRuntimeSlugSelection(set(writeDb$), {
+      connectorSlugs: sources.map((source) => {
+        return source.slug;
+      }),
+    });
     signal.throwIfAborted();
     const collected = await Promise.allSettled(
       sources.map((source) => {

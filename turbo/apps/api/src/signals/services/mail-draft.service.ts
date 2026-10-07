@@ -34,16 +34,14 @@ import {
   builtinConnectorCredentialRuntimeValueRef,
   type BuiltinConnectorCredentialConnection,
 } from "./builtin-connector-credential-runtime.service";
-import {
-  loadConnectorRuntimeSnapshot,
-  type ConnectorRuntimeSnapshot,
-} from "./connector-catalog-runtime.service";
+import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 import {
   GmailAuthorizationError,
   gmailResponseRequiresReconnect,
   handleGmailSendError,
   type GmailDraftRejection,
 } from "./gmail-error";
+import { loadConnectorRuntimeSlugSelection } from "./connector-catalog-slug-source.service";
 
 const L = logger("api:mail-draft");
 
@@ -263,7 +261,7 @@ const loadMailConnections$ = command(
   async (
     { set },
     args: {
-      readonly snapshot: ConnectorRuntimeSnapshot;
+      readonly snapshot: ConnectorRuntimeSelection;
       readonly orgId: string;
       readonly userId: string;
       readonly agentId: string;
@@ -1108,7 +1106,7 @@ const connectionForRow$ = command(
   async (
     { set },
     args: {
-      readonly snapshot: ConnectorRuntimeSnapshot;
+      readonly snapshot: ConnectorRuntimeSelection;
       readonly orgId: string;
       readonly userId: string;
       readonly row: MailDraftRow;
@@ -1140,7 +1138,7 @@ const accessForRow$ = command(
   async (
     { set },
     args: {
-      readonly snapshot: ConnectorRuntimeSnapshot;
+      readonly snapshot: ConnectorRuntimeSelection;
       readonly orgId: string;
       readonly userId: string;
       readonly row: MailDraftRow;
@@ -1294,7 +1292,7 @@ const loadMailDraftDetails$ = command(
   async (
     { set },
     args: {
-      readonly snapshot: ConnectorRuntimeSnapshot;
+      readonly snapshot: ConnectorRuntimeSelection;
       readonly orgId: string;
       readonly userId: string;
       readonly row: MailDraftRow;
@@ -1592,7 +1590,9 @@ export const linkMailDraft$ = command(
     },
     signal: AbortSignal,
   ): Promise<MailDraftLinkMutationResult> => {
-    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
+    const snapshot = await loadConnectorRuntimeSlugSelection(set(writeDb$), {
+      connectorSlugs: ["gmail"],
+    });
     signal.throwIfAborted();
     const thread = await set(loadOwnedMailThreadContext$, { ...args });
     signal.throwIfAborted();
@@ -1709,7 +1709,9 @@ export const getMailDraft$ = command(
     if (!row) {
       return { kind: "not_found", message: "Mail draft not found" };
     }
-    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
+    const snapshot = await loadConnectorRuntimeSlugSelection(set(writeDb$), {
+      connectorSlugs: ["gmail"],
+    });
     signal.throwIfAborted();
     return await set(
       loadMailDraftDetails$,
@@ -1740,7 +1742,9 @@ export const getMailDraftAttachment$ = command(
     if (!row) {
       return { kind: "not_found", message: "Mail draft not found" };
     }
-    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
+    const snapshot = await loadConnectorRuntimeSlugSelection(set(writeDb$), {
+      connectorSlugs: ["gmail"],
+    });
     signal.throwIfAborted();
     const access = await set(
       accessForRow$,
@@ -1843,7 +1847,9 @@ export const deleteMailDraft$ = command(
         message: "Only an active draft can be deleted",
       };
     }
-    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
+    const snapshot = await loadConnectorRuntimeSlugSelection(set(writeDb$), {
+      connectorSlugs: ["gmail"],
+    });
     signal.throwIfAborted();
     const access = await set(
       accessForRow$,
@@ -1909,7 +1915,9 @@ export const sendMailDraft$ = command(
         message: "This mail draft can no longer be sent",
       };
     }
-    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
+    const snapshot = await loadConnectorRuntimeSlugSelection(set(writeDb$), {
+      connectorSlugs: ["gmail"],
+    });
     signal.throwIfAborted();
     const access = await set(
       accessForRow$,

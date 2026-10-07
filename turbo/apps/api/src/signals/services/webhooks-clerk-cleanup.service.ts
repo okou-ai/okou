@@ -373,11 +373,6 @@ async function cancelStripeSubscriptionsForDeletedOrg(
 const revokeOrgConnectorTokens$ = command(
   async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
-    const snapshot = await set(
-      loadStoredBuiltinConnectorRuntimeSnapshot$,
-      signal,
-    );
-    signal.throwIfAborted();
     const rows = await db
       .select({
         connectorId: connectors.id,
@@ -390,6 +385,14 @@ const revokeOrgConnectorTokens$ = command(
       .where(
         and(eq(connectors.orgId, orgId), isNotNull(connectors.connectorSlug)),
       );
+    signal.throwIfAborted();
+    const snapshot = await set(
+      loadStoredBuiltinConnectorRuntimeSnapshot$,
+      rows.map((row) => {
+        return row.connectorSlug;
+      }),
+      signal,
+    );
     signal.throwIfAborted();
 
     for (const row of rows) {
@@ -411,11 +414,6 @@ const revokeOrgConnectorTokens$ = command(
 const revokeUserConnectorTokens$ = command(
   async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
     const db = set(writeDb$);
-    const snapshot = await set(
-      loadStoredBuiltinConnectorRuntimeSnapshot$,
-      signal,
-    );
-    signal.throwIfAborted();
     const rows = await db
       .select({
         connectorId: connectors.id,
@@ -428,6 +426,14 @@ const revokeUserConnectorTokens$ = command(
       .where(
         and(eq(connectors.userId, userId), isNotNull(connectors.connectorSlug)),
       );
+    signal.throwIfAborted();
+    const snapshot = await set(
+      loadStoredBuiltinConnectorRuntimeSnapshot$,
+      rows.map((row) => {
+        return row.connectorSlug;
+      }),
+      signal,
+    );
     signal.throwIfAborted();
 
     for (const row of rows) {

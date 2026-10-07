@@ -34,7 +34,6 @@ import {
   loadBuiltinConnectorCredentialValues,
   refreshBuiltinConnectorCredentialAccess,
 } from "./builtin-connector-credential-runtime.service";
-import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import { reprojectGoogleMeetAutomationsForOwner } from "./google-meet-automation-account.service";
 import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-account.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
@@ -42,6 +41,7 @@ import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import { GoogleMeetAutomationSourceChangedError } from "./workflow-google-meet-queue.service";
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
+import { loadConnectorRuntimeAuthSelection } from "./connector-catalog-slug-source.service";
 
 const GOOGLE_MEET_ACCESS_TOKEN_ENVIRONMENT_NAME = "GOOGLE_MEET_TOKEN";
 const GOOGLE_WORKSPACE_EVENTS_API_BASE =
@@ -255,7 +255,9 @@ async function resolveGoogleMeetAccess(
   signal: AbortSignal,
 ): Promise<GoogleMeetAccessResult> {
   const currentTime = nowDate();
-  const snapshot = await loadConnectorRuntimeSnapshot(args.db);
+  const snapshot = await loadConnectorRuntimeAuthSelection(args.db, {
+    connectorSlugs: ["google-meet"],
+  });
   signal.throwIfAborted();
   const loaded = await loadBuiltinConnectorCredentialConnection({
     db: args.db,

@@ -18,7 +18,7 @@ import { nowDate } from "../../lib/time";
 import { settleIncludingAbort } from "../utils";
 import type {
   ConnectorRuntimeMethod,
-  ConnectorRuntimeSelection,
+  ConnectorRuntimeAuthLookup,
 } from "./connector-catalog-runtime.service";
 import {
   builtinConnectorCredentialSecretReadCondition,
@@ -147,7 +147,7 @@ export async function loadBuiltinConnectorCredentialConnection(args: {
   readonly connectorSlug: string;
   readonly db: ReadonlyDb;
   readonly orgId: string;
-  readonly snapshot: ConnectorRuntimeSelection;
+  readonly snapshot: ConnectorRuntimeAuthLookup;
   readonly userId: string;
 }): Promise<BuiltinConnectorCredentialConnectionResult> {
   const [row] = await args.db

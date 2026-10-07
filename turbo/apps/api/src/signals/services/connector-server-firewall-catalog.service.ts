@@ -121,8 +121,14 @@ export interface ConnectorServerFirewallCatalog extends ConnectorServerFirewallS
   getFixedHostOwner(host: string): ConnectorServerFirewallHostOwner | null;
 }
 
+/** Server firewall facts never need skills, auth methods, or display copy. */
+type ConnectorServerFirewallSource = Pick<
+  ConnectorCatalogArtifactConnector,
+  "slug" | "label" | "mcp" | "firewall"
+>;
+
 interface AcceptedConnectorServerFirewallEntry {
-  readonly connector: ConnectorCatalogArtifactConnector;
+  readonly connector: ConnectorServerFirewallSource;
   readonly runtimeMethods: () => readonly ConnectorAuthMethodRuntimeConfig[];
   firewall: AcceptedServerFirewall | undefined;
   routing: ConnectorCatalogFirewallRouting | undefined;
@@ -414,7 +420,7 @@ function acceptedRoutingMetadata(args: {
 }
 
 function acceptedEntries(args: {
-  readonly connectors: readonly ConnectorCatalogArtifactConnector[];
+  readonly connectors: readonly ConnectorServerFirewallSource[];
   readonly runtimeMethodsForSlug: (
     connectorSlug: ConnectorSlug,
   ) => readonly ConnectorAuthMethodRuntimeConfig[];
@@ -583,7 +589,7 @@ export function createAcceptedConnectorServerFirewallCatalog(args: {
 }
 
 export function createAcceptedConnectorServerFirewallCatalogFromConnectors(args: {
-  readonly connectors: readonly ConnectorCatalogArtifactConnector[];
+  readonly connectors: readonly ConnectorServerFirewallSource[];
   readonly runtimeMethodsForSlug: (
     connectorSlug: ConnectorSlug,
   ) => readonly ConnectorAuthMethodRuntimeConfig[];

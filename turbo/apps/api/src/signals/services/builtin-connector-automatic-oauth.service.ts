@@ -43,11 +43,11 @@ import {
 import type { ResolvedConnectorActionMethod } from "./connector-action-resolver.service";
 import {
   getConnectorRuntimeMethod,
-  loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeMethod,
-  type ConnectorRuntimeSnapshot,
+  type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import { upsertConnectorOwnedSecret } from "./connector-credential-storage-write.service";
+import { loadConnectorRuntimeSlugSelection } from "./connector-catalog-slug-source.service";
 import {
   claimBuiltinConnectorOAuthState$,
   insertConnectorOAuthState,
@@ -113,7 +113,7 @@ type BuiltinAutomaticMethod = Extract<
   { readonly grant: { readonly kind: "automatic" } }
 >;
 interface BuiltinAutomaticContract {
-  readonly catalogIdentity: ConnectorRuntimeSnapshot["catalogIdentity"];
+  readonly catalogIdentity: ConnectorRuntimeSelection["catalogIdentity"];
   readonly connectorSlug: string;
   readonly authMethodId: string;
   readonly storageVersion: number;
@@ -138,7 +138,7 @@ interface Failure {
 function contractFromMethod(
   runtime: ConnectorRuntimeMethod,
   endpoint: string | undefined,
-  catalogIdentity: ConnectorRuntimeSnapshot["catalogIdentity"],
+  catalogIdentity: ConnectorRuntimeSelection["catalogIdentity"],
 ): BuiltinAutomaticContract | null {
   const { connectorSlug, authMethodId, method } = runtime;
   if (
@@ -176,7 +176,7 @@ function contractFromMethod(
 }
 
 function currentContractFromSnapshot(
-  snapshot: ConnectorRuntimeSnapshot,
+  snapshot: ConnectorRuntimeSelection,
   connectorSlug: string,
   authMethodId: string,
 ): BuiltinAutomaticContract | null {
@@ -201,7 +201,9 @@ async function currentContract(
   authMethodId: string,
 ): Promise<BuiltinAutomaticContract | null> {
   return currentContractFromSnapshot(
-    await loadConnectorRuntimeSnapshot(db),
+    await loadConnectorRuntimeSlugSelection(db, {
+      connectorSlugs: [connectorSlug],
+    }),
     connectorSlug,
     authMethodId,
   );
@@ -213,7 +215,9 @@ const currentBuiltinAutomaticContract$ = command(
     args: { readonly connectorSlug: string; readonly authMethodId: string },
     signal: AbortSignal,
   ): Promise<BuiltinAutomaticContract | null> => {
-    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
+    const snapshot = await loadConnectorRuntimeSlugSelection(set(writeDb$), {
+      connectorSlugs: [args.connectorSlug],
+    });
     signal.throwIfAborted();
     return currentContractFromSnapshot(
       snapshot,
@@ -1090,7 +1094,9 @@ async function credentialDestinationMatches(
   if (expectedEndpoint !== contract.endpoint) {
     return false;
   }
-  const snapshot = await loadConnectorRuntimeSnapshot(db);
+  const snapshot = await loadConnectorRuntimeSlugSelection(db, {
+    connectorSlugs: [contract.connectorSlug],
+  });
   const current = currentContractFromSnapshot(
     snapshot,
     contract.connectorSlug,

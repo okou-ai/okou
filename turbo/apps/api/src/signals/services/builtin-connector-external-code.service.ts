@@ -914,7 +914,7 @@ export const startBuiltinConnectorExternalCodeSession$ = command(
       return badRequestMessage(agentTarget.message);
     }
 
-    const resolver = await get(connectorActionResolver());
+    const resolver = await get(connectorActionResolver([args.connectorSlug]));
     signal.throwIfAborted();
     const resolved = await resolver.resolveNewActionMethod({
       connectorSlug: args.connectorSlug,
@@ -1070,7 +1070,7 @@ export const completeBuiltinConnectorExternalCodeSession$ = command(
     if (!session) {
       return notFound("External-code authorization session not found");
     }
-    const resolver = await get(connectorActionResolver());
+    const resolver = await get(connectorActionResolver([args.connectorSlug]));
     signal.throwIfAborted();
     const resolvedMethod = await resolveStoredExternalCodeMethod({
       resolver,

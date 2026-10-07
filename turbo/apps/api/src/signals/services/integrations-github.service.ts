@@ -282,7 +282,7 @@ export const getGithubInstallation$ = command(
           });
     signal.throwIfAborted();
 
-    const resolver = await get(connectorActionResolver());
+    const resolver = await get(connectorActionResolver(["github"]));
     signal.throwIfAborted();
     const resolvedMethod = await resolver.resolveNewActionMethod({
       connectorSlug: "github",

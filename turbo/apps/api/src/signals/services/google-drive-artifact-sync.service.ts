@@ -56,10 +56,8 @@ import {
   type BuiltinConnectorCredentialConnection,
 } from "./builtin-connector-credential-runtime.service";
 import { runOwnedChatEventForRunCondition } from "./chat-event-type.service";
-import {
-  loadConnectorRuntimeSnapshot,
-  type ConnectorRuntimeSnapshot,
-} from "./connector-catalog-runtime.service";
+import type { ConnectorRuntimeAuthLookup } from "./connector-catalog-runtime.service";
+import { loadConnectorRuntimeAuthSelection } from "./connector-catalog-slug-source.service";
 import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { resolveArtifactFileReference } from "./private-artifact-storage.service";
 import { uploadedArtifactObject } from "./uploaded-artifact.service";
@@ -229,7 +227,7 @@ const loadDriveConnection$ = command(
     args: {
       readonly featureSwitchContext: FeatureSwitchContext;
       readonly orgId: string;
-      readonly snapshot: ConnectorRuntimeSnapshot;
+      readonly snapshot: ConnectorRuntimeAuthLookup;
       readonly threadId: string;
       readonly userId: string;
     },
@@ -517,7 +515,9 @@ export function googleDriveArtifactStatusLookup(args: {
       userId: args.userId,
       overrides: featureSwitchOverrides,
     };
-    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
+    const snapshot = await loadConnectorRuntimeAuthSelection(set(writeDb$), {
+      connectorSlugs: ["google-drive"],
+    });
     signal.throwIfAborted();
     const connection = await set(
       loadDriveConnection$,
@@ -1475,7 +1475,9 @@ export const syncArtifactToGoogleDrive$ = command(
       userId: args.userId,
       overrides: featureSwitchOverrides,
     };
-    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
+    const snapshot = await loadConnectorRuntimeAuthSelection(set(writeDb$), {
+      connectorSlugs: ["google-drive"],
+    });
     signal.throwIfAborted();
     const connection = await set(
       loadDriveConnection$,

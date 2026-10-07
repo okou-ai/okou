@@ -424,7 +424,7 @@ const getAgentUserConnectorsInner$ = computed(async (get) => {
       agentId: params.id,
     }),
   );
-  const resolver = await get(connectorActionResolver());
+  const resolver = await get(connectorActionResolver(enabledConnectorSlugs));
   const availableEnabledConnectorSlugs: (typeof enabledConnectorSlugs)[number][] =
     [];
   for (const connectorSlug of enabledConnectorSlugs) {
@@ -820,7 +820,7 @@ const updateAgentUserConnectorsInner$ = command(
       // discovery surface. Validate that each connector can execute, but do
       // not consult feature switches or authored visibility: rollout changes
       // must not invalidate direct API updates or an existing agent config.
-      const resolver = await get(connectorActionResolver());
+      const resolver = await get(connectorActionResolver(uniqueConnectorSlugs));
       signal.throwIfAborted();
       const resolved = await resolver.resolveSlugs({
         connectorSlugs: uniqueConnectorSlugs,

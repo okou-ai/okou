@@ -104,12 +104,11 @@ import {
   resolveConnectorAccounts,
   type ConnectorAccountResolutionRequest,
 } from "./connector-account-resolution.service";
+import type { ConnectorRuntimeMethod } from "./connector-catalog-runtime.service";
 import {
-  getConnectorRuntimeConnector,
-  loadConnectorRuntimeSnapshot,
-  type ConnectorRuntimeMethod,
-  type ConnectorRuntimeSnapshot,
-} from "./connector-catalog-runtime.service";
+  loadConnectorRuntimeAuthSelection,
+  type ConnectorRuntimeAuthSelection,
+} from "./connector-catalog-slug-source.service";
 import {
   connectorRuntimeCredentialStatusForAccess,
   type ConnectorCredentialStatus,
@@ -260,7 +259,7 @@ interface PreparedCustomFirewallAuth {
 interface PreparedNonCustomFirewallAuth {
   readonly kind: "non-custom";
   readonly builtinMcpExpiresAt: number | null;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSnapshot;
+  readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly secrets: Record<string, string>;
   readonly context: FirewallAuthResolutionContext;
@@ -707,7 +706,7 @@ function refreshFailedResult(
 interface RefreshExpiredTokensArgs {
   readonly db: Db;
   readonly subscriptionBundles: SubscriptionBundleReads;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSnapshot;
+  readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
   readonly auth: SandboxAuth;
   readonly orgId: string;
   readonly featureSwitchContext: FeatureSwitchContext;
@@ -727,7 +726,7 @@ interface RefreshExpiredTokensArgs {
 interface RefreshBatchContext {
   readonly db: Db;
   readonly subscriptionBundles: SubscriptionBundleReads;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSnapshot;
+  readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
   readonly auth: SandboxAuth;
   readonly orgId: string;
   readonly userId: string;
@@ -1383,7 +1382,7 @@ async function loadBuiltinConnectorAccessStates(
   orgId: string,
   userId: string,
   requests: readonly ConnectorAccountResolutionRequest[],
-  snapshot: ConnectorRuntimeSnapshot,
+  snapshot: ConnectorRuntimeAuthSelection,
 ): Promise<Map<string, BuiltinConnectorAccessState>> {
   const result = new Map<string, BuiltinConnectorAccessState>();
   if (requests.length === 0) {
@@ -1677,7 +1676,7 @@ async function loadAccessSourceStates(args: {
 async function loadCurrentSourceStateSnapshot(args: {
   readonly db: Db;
   readonly featureSwitchContext: FeatureSwitchContext;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSnapshot;
+  readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
   readonly orgId: string;
   readonly userId: string;
   readonly accessSourceKeys: readonly string[];
@@ -3783,7 +3782,7 @@ function hasMissingFirewallVariables(args: {
  * override this account's proxy credentials. */
 function bindMatchedBuiltinMcpSecrets(args: {
   readonly body: FirewallAuthBody;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSnapshot;
+  readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
   readonly connectorAccessBySlug: ReadonlyMap<
     string,
     BuiltinConnectorAccessState
@@ -3793,7 +3792,7 @@ function bindMatchedBuiltinMcpSecrets(args: {
   const connectorSlug = args.body.matchedFirewall?.connectorSlug;
   if (
     connectorSlug === undefined ||
-    !getConnectorRuntimeConnector(args.connectorCatalogSnapshot, connectorSlug)
+    !args.connectorCatalogSnapshot.connectors.get(connectorSlug)
       ?.catalogConnector.mcp
   ) {
     return args.body;
@@ -3834,7 +3833,7 @@ function bindMatchedBuiltinMcpSecrets(args: {
 
 async function prepareFirewallConnectorBindings(args: {
   readonly db: Db;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSnapshot;
+  readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
   readonly auth: SandboxAuth;
   readonly body: FirewallAuthBody;
   readonly orgId: string;
@@ -3870,10 +3869,8 @@ async function prepareFirewallConnectorBindings(args: {
   }
   if (
     matchedConnectorSlug !== undefined &&
-    getConnectorRuntimeConnector(
-      args.connectorCatalogSnapshot,
-      matchedConnectorSlug,
-    )?.catalogConnector.mcp !== undefined
+    args.connectorCatalogSnapshot.connectors.get(matchedConnectorSlug)
+      ?.catalogConnector.mcp !== undefined
   ) {
     const matchedAccess = connectorAccessBySlug.get(matchedConnectorSlug);
     if (
@@ -3914,7 +3911,7 @@ async function prepareFirewallConnectorBindings(args: {
 
 async function prepareFirewallAuthResolutionContext(args: {
   readonly db: Db;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSnapshot;
+  readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
   readonly auth: SandboxAuth;
   readonly body: FirewallAuthBody;
   readonly orgId: string;
@@ -5259,7 +5256,7 @@ function applyCustomConnectorRoutingVariables(args: {
 }
 
 function requestedAutomaticMcpCatalogAuth(args: {
-  readonly snapshot: ConnectorRuntimeSnapshot;
+  readonly snapshot: ConnectorRuntimeAuthSelection;
   readonly body: FirewallAuthBody;
 }): "none" | "oauth" | "mismatch" | null {
   const connectorSlug = args.body.matchedFirewall?.connectorSlug;
@@ -5267,8 +5264,8 @@ function requestedAutomaticMcpCatalogAuth(args: {
   if (connectorSlug === undefined || matchedBase === undefined) {
     return null;
   }
-  const mcpEndpoint = getConnectorRuntimeConnector(args.snapshot, connectorSlug)
-    ?.catalogConnector.mcp?.endpoint;
+  const mcpEndpoint =
+    args.snapshot.connectors.get(connectorSlug)?.catalogConnector.mcp?.endpoint;
   if (matchedBase !== mcpEndpoint) {
     return null;
   }
@@ -5305,6 +5302,21 @@ function requestedAutomaticMcpCatalogAuth(args: {
     : "mismatch";
 }
 
+/**
+ * Every slug this request can resolve is the matched firewall or an access
+ * source named by the secret map; only the matched slug needs firewall rules.
+ */
+async function loadFirewallAuthConnectorCatalog(
+  db: Db,
+  body: FirewallAuthBody,
+): Promise<ConnectorRuntimeAuthSelection> {
+  const connectorSlug = body.matchedFirewall?.connectorSlug;
+  return await loadConnectorRuntimeAuthSelection(db, {
+    connectorSlugs: Object.values(body.secretConnectorMap ?? {}),
+    firewallConnectorSlugs: connectorSlug === undefined ? [] : [connectorSlug],
+  });
+}
+
 async function prepareNonCustomFirewallAuth(args: {
   readonly db: Db;
   readonly auth: SandboxAuth;
@@ -5317,8 +5329,11 @@ async function prepareNonCustomFirewallAuth(args: {
     | PreparedBuiltinConnectorAutomaticFirewallAuth
   >
 > {
-  const connectorCatalogSnapshot = await loadConnectorRuntimeSnapshot(args.db);
   const connectorSlug = args.body.matchedFirewall?.connectorSlug;
+  const connectorCatalogSnapshot = await loadFirewallAuthConnectorCatalog(
+    args.db,
+    args.body,
+  );
   const requestedAutomaticMcpAuth = requestedAutomaticMcpCatalogAuth({
     snapshot: connectorCatalogSnapshot,
     body: args.body,
@@ -5328,8 +5343,8 @@ async function prepareNonCustomFirewallAuth(args: {
   // the lease before reading the account so slow resolution cannot extend it.
   const builtinMcpExpiresAt =
     connectorSlug !== undefined &&
-    getConnectorRuntimeConnector(connectorCatalogSnapshot, connectorSlug)
-      ?.catalogConnector.mcp !== undefined
+    connectorCatalogSnapshot.connectors.get(connectorSlug)?.catalogConnector
+      .mcp !== undefined
       ? Math.floor(nowDate().getTime() / 1000) + BUILTIN_MCP_AUTH_LEASE_SECONDS
       : null;
   if (
@@ -5358,10 +5373,9 @@ async function prepareNonCustomFirewallAuth(args: {
       .limit(1);
     if (
       account &&
-      getConnectorRuntimeConnector(
-        connectorCatalogSnapshot,
-        connectorSlug,
-      )?.methods.get(account.authMethod)?.method.grant.kind === "automatic"
+      connectorCatalogSnapshot.connectors
+        .get(connectorSlug)
+        ?.methods.get(account.authMethod)?.method.grant.kind === "automatic"
     ) {
       if (requestedAutomaticMcpAuth === "mismatch") {
         return { ok: false, response: connectorNotConfigured() };

@@ -30,7 +30,6 @@ import {
 } from "./automation-event-source-timing.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-credential-runtime.service";
-import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import { GoogleCalendarSourceTransitionChangedError } from "./workflow-google-calendar-queue.service";
@@ -49,6 +48,7 @@ import {
   loadBuiltinConnectorCredentialValues$,
   refreshBuiltinConnectorCredentialAccess$,
 } from "./builtin-connector-credential-command.service";
+import { loadConnectorRuntimeAuthSelection } from "./connector-catalog-slug-source.service";
 
 const log = logger("api:google-calendar-automation-event");
 
@@ -309,7 +309,9 @@ export const normalizeGoogleCalendarIdForConnector$ = command(
     if (args.calendarId === GOOGLE_CALENDAR_PRIMARY_ID) {
       return args.calendarId;
     }
-    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
+    const snapshot = await loadConnectorRuntimeAuthSelection(set(writeDb$), {
+      connectorSlugs: ["google-calendar"],
+    });
     signal.throwIfAborted();
     const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
       snapshot,
@@ -340,7 +342,9 @@ const resolveGoogleCalendarAccess$ = command(
     signal: AbortSignal,
   ): Promise<GoogleCalendarAccessResult> => {
     const currentTime = nowDate();
-    const snapshot = await loadConnectorRuntimeSnapshot(set(writeDb$));
+    const snapshot = await loadConnectorRuntimeAuthSelection(set(writeDb$), {
+      connectorSlugs: ["google-calendar"],
+    });
     signal.throwIfAborted();
     const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
       snapshot,

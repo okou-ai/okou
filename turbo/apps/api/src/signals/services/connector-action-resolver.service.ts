@@ -15,11 +15,11 @@ import { immutableConnectorRuntimeSelection } from "./connector-catalog-entries.
 import {
   getConnectorRuntimeConnector,
   getConnectorRuntimeMethod,
-  loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeConnector,
   type ConnectorRuntimeMethod,
-  type ConnectorRuntimeSnapshot,
+  type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
+import { loadConnectorRuntimeSlugSelection } from "./connector-catalog-slug-source.service";
 
 const log = logger("api:connector-action-resolver");
 
@@ -53,7 +53,7 @@ export type ResolvedConnectorSlug = {
   readonly connectorSlug: ConnectorSlug;
   readonly catalogConnector: PublicConnectorCatalogDetail;
   readonly runtimeConnector: ConnectorRuntimeConnector;
-  readonly snapshot: ConnectorRuntimeSnapshot;
+  readonly snapshot: ConnectorRuntimeSelection;
 };
 
 export type ResolvedConnectorActionMethod = ResolvedConnectorSlug & {
@@ -134,7 +134,7 @@ function resolvedSlug(args: {
   readonly connectorSlug: ConnectorSlug;
   readonly requireExecutable: boolean;
   readonly runtimeConnector: ConnectorRuntimeConnector;
-  readonly snapshot: ConnectorRuntimeSnapshot;
+  readonly snapshot: ConnectorRuntimeSelection;
 }): ResolvedConnectorSlug | ConnectorSlugResolutionFailure {
   if (args.requireExecutable && lacksExecutableCapability(args)) {
     return { ok: false, reason: "missing_executable_capability" };
@@ -180,7 +180,7 @@ function executableMethod(args: {
 }
 
 function createConnectorActionResolver(
-  snapshot: ConnectorRuntimeSnapshot,
+  snapshot: ConnectorRuntimeSelection,
 ): ConnectorActionResolver {
   const resolveSlug: ConnectorActionResolver["resolveSlug"] = (input) => {
     const runtimeConnector = getConnectorRuntimeConnector(
@@ -284,11 +284,17 @@ function createConnectorActionResolver(
   };
 }
 
-export function connectorActionResolver(): Computed<
-  Promise<ConnectorActionResolver>
-> {
+/**
+ * Resolves only the named connectors; any other slug resolves as unknown, so
+ * callers must name every slug they will resolve.
+ */
+export function connectorActionResolver(
+  connectorSlugs: readonly ConnectorSlug[],
+): Computed<Promise<ConnectorActionResolver>> {
   return computed(async (get): Promise<ConnectorActionResolver> => {
-    const snapshot = await loadConnectorRuntimeSnapshot(get(db$));
+    const snapshot = await loadConnectorRuntimeSlugSelection(get(db$), {
+      connectorSlugs,
+    });
     return createConnectorActionResolver(snapshot);
   });
 }
@@ -325,7 +331,7 @@ export function executableConnectorSlugs(
 }
 
 export function connectorActionResolverForSnapshot(
-  snapshot: ConnectorRuntimeSnapshot,
+  snapshot: ConnectorRuntimeSelection,
 ): Computed<ConnectorActionResolver> {
   return computed((): ConnectorActionResolver => {
     return createConnectorActionResolver(snapshot);

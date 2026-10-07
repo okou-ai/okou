@@ -81,7 +81,7 @@ export interface ConnectorRuntimeAuthLookup {
     {
       readonly catalogConnector: Pick<
         PublicConnectorCatalogDetail,
-        "authMethods"
+        "authMethods" | "mcp"
       >;
       readonly methods: ReadonlyMap<
         ConnectorAuthMethodId,
@@ -599,7 +599,18 @@ export function materializeConnectorRuntimeAuthLookup(args: {
           authMethods,
           args.filteredMethodKeys,
         );
-        return [connector.slug, { catalogConnector: { authMethods }, methods }];
+        return [
+          connector.slug,
+          {
+            catalogConnector: {
+              authMethods,
+              ...(connector.mcp === undefined
+                ? {}
+                : { mcp: { ...connector.mcp } }),
+            },
+            methods,
+          },
+        ];
       }),
     ),
   };
