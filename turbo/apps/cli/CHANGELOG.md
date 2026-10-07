@@ -1,5 +1,22 @@
 # Changelog
 
+## [9.378.19](https://github.com/okou-ai/okou/compare/cli-v9.378.18...cli-v9.378.19) (2026-10-07)
+
+
+### Bug Fixes
+
+* **cli:** preserve saved service tier in okou model select ([#37887](https://github.com/okou-ai/okou/issues/37887)) ([8fd1b1c](https://github.com/okou-ai/okou/commit/8fd1b1c9205501fcb518d101b1fe7c03ef6b1d4c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.537.12
+    * @okouai/connectors bumped to 3.16.4
+    * @okouai/core bumped to 8.734.5
+    * @okouai/pi-agent-runtime bumped to 1.46.19
+
 ## [9.378.18](https://github.com/okou-ai/okou/compare/cli-v9.378.17...cli-v9.378.18) (2026-10-07)
 
 
