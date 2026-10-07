@@ -873,7 +873,6 @@ async function loadConnectorAccountRuntimeSelection(
       // account whose connector has no entry is omitted (404 for one item).
       return connectorCatalogSlugRuntimeFromRows(catalogRows, {
         runtimeConnectorSlugs: connectorSlugs,
-        missingRuntimeEntries: "omit",
       });
     })(),
   );

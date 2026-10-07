@@ -775,6 +775,29 @@ export function getConnectorRuntimeConnector(
   return snapshot.connectors.get(connectorSlug);
 }
 
+/**
+ * Keeps only enabled connectors with an executable catalog method. A connector
+ * that left the catalog is dropped, exactly as if it were never authorized.
+ */
+export function connectorScopeForRuntimeSnapshot<
+  Scope extends { readonly allowedConnectorSlugs: readonly ConnectorSlug[] },
+>(scope: Scope, snapshot: ConnectorRuntimeLookup): Scope {
+  return {
+    ...scope,
+    allowedConnectorSlugs: scope.allowedConnectorSlugs.filter(
+      (connectorSlug) => {
+        const connector = getConnectorRuntimeConnector(snapshot, connectorSlug);
+        return (
+          connector !== undefined &&
+          [...connector.methods.values()].some((method) => {
+            return method.executable;
+          })
+        );
+      },
+    ),
+  };
+}
+
 export function getConnectorRuntimeMethod(args: {
   readonly snapshot: ConnectorRuntimeLookup;
   readonly connectorSlug: string;

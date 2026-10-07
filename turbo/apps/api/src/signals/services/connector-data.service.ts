@@ -346,7 +346,6 @@ function loadStoredBuiltinConnectorRuntimeSelection(
     return await get(
       immutableConnectorRuntimeSelection({
         requestedConnectorSlugs,
-        missingEntries: "omit",
       }),
     );
   });

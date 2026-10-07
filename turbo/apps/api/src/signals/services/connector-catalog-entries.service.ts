@@ -19,7 +19,6 @@ import {
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
 import { catalogIdentityFromCapture } from "./connector-catalog-view";
-import { assertRequiredConnectorCatalogEntries } from "./connector-catalog-external-reader.service";
 
 export interface ImmutableConnectorCatalogCapture {
   readonly schemaVersion: number;
@@ -36,17 +35,13 @@ export interface ImmutableConnectorRuntimeSelection extends ConnectorRuntimeLook
 }
 
 /**
- * Each caller decides whether its requested slugs are business-required.
- * `reject` throws `RequiredConnectorCatalogEntriesMissingError` when any
- * requested slug has no entry at the captured hash; `omit` leaves it absent
- * (search, display filters, optional capability checks). Metadata-only
- * dependencies are always optional and never grant execution.
+ * A requested slug with no entry at the captured hash is left absent, exactly
+ * as if the user had never authorized it: a delisted connector cannot be
+ * disconnected, so no reader may fail on it. Metadata-only dependencies never
+ * grant execution.
  */
-export type MissingConnectorCatalogEntryPolicy = "reject" | "omit";
-
 interface SelectionInput {
   readonly requestedConnectorSlugs: readonly ConnectorSlug[];
-  readonly missingEntries: MissingConnectorCatalogEntryPolicy;
   readonly metadataConnectorSlugs?: readonly ConnectorSlug[];
   readonly capturedCatalog?: ImmutableConnectorCatalogCapture;
 }
@@ -134,12 +129,6 @@ function capturedEntries(
     if (captured.schemaVersion !== SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION) {
       throw new Error("Immutable connector catalog schema is unsupported");
     }
-    if (input.missingEntries === "reject") {
-      assertRequiredConnectorCatalogEntries(
-        entries,
-        input.requestedConnectorSlugs,
-      );
-    }
     return {
       input,
       capturedCatalog: captured,
@@ -180,7 +169,6 @@ export function createConnectorRuntimeSelection(
     return requested
       ? {
           requestedConnectorSlugs: requested.runtimeConnectorSlugs,
-          missingEntries: "omit" as const,
           metadataConnectorSlugs: requested.metadataConnectorSlugs,
         }
       : null;

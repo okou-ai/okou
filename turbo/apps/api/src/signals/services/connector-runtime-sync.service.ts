@@ -293,7 +293,6 @@ async function loadCustomSnapshot(args: {
         {
           runtimeConnectorSlugs: [],
           metadataConnectorSlugs,
-          missingRuntimeEntries: "omit",
         },
       );
       const accountResolutions = await resolveConnectorAccounts(tx, {
@@ -583,7 +582,6 @@ async function resolveConnectorRuntimeTargetStates(args: {
           // becomes `unresolved` below, never an authoritative `absent`.
           {
             runtimeConnectorSlugs: builtinConnectorSlugs,
-            missingRuntimeEntries: "omit",
           },
         )
       : undefined;

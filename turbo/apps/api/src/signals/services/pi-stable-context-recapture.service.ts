@@ -38,7 +38,10 @@ import {
   buildAgentToolsPromptInputs,
 } from "./agent-tools-prompt.service";
 import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
-import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
+import {
+  connectorScopeForRuntimeSnapshot,
+  type ConnectorRuntimeSelection,
+} from "./connector-catalog-runtime.service";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -260,7 +263,7 @@ async function loadStableContextSourceSnapshot(
   });
   const runWorkflows = await loadRunWorkflows(db, input);
   const permission = await loadPermissionSnapshot(db, input, checkedAt);
-  const connectorScope = {
+  let connectorScope = {
     ...connectorScopeBase,
     workflows: runWorkflows,
   };
@@ -290,18 +293,19 @@ async function loadStableContextSourceSnapshot(
         connectorCatalogSlugJoin(connectorScope.allowedConnectorSlugs),
       )
       .where(connectorCatalogCurrentWhere());
-    catalogSelection = {
-      kind: "scoped",
-      selection: {
-        // Enabled connectors are required: a missing entry throws the typed
-        // unavailable error below and leaves the head missing.
-        ...connectorCatalogSlugRuntimeFromRows(catalogRows, {
-          runtimeConnectorSlugs: connectorScope.allowedConnectorSlugs,
-          missingRuntimeEntries: "reject",
-        }),
-        catalogIdentity: connectorCatalogSlugIdentityFromRows(catalogRows),
-      },
+    const selection = {
+      ...connectorCatalogSlugRuntimeFromRows(catalogRows, {
+        runtimeConnectorSlugs: connectorScope.allowedConnectorSlugs,
+      }),
+      catalogIdentity: connectorCatalogSlugIdentityFromRows(catalogRows),
     };
+    catalogSelection = { kind: "scoped", selection };
+    // Same scope as Run launch: an enabled connector that left the catalog is
+    // dropped as if never authorized, so the context still publishes.
+    connectorScope = connectorScopeForRuntimeSnapshot(
+      connectorScope,
+      selection,
+    );
   }
   const permissionPolicies =
     catalogSelection.kind === "empty"

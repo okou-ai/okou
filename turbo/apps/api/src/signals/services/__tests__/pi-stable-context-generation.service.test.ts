@@ -1131,14 +1131,13 @@ describe("Pi stable context generation fences", () => {
     ).resolves.toStrictEqual([{ storageId, storageVersionId: v2 }]);
   });
 
-  it("leaves the head missing while an enabled connector has no catalog entry", async () => {
+  it("publishes the context while an enabled connector has no catalog entry", async () => {
     const fixture = await seed();
     await db
       .delete(piStableContextHeads)
       .where(eq(piStableContextHeads.id, fixture.headId));
     // The current catalog generation has no entry for this enabled slug.
-    // Recapture treats enabled connectors as required, so it publishes no
-    // demand instead of a context with a silently reduced connector scope.
+    // Recapture drops it as if never authorized, matching Run launch.
     const missingSlug = `retired-${randomUUID().slice(0, 8)}`;
     await db.insert(userBuiltinConnectors).values({
       orgId: fixture.orgId,
@@ -1203,18 +1202,6 @@ describe("Pi stable context generation fences", () => {
         .where(eq(piStableContextHeads.variantDigest, variantDigest));
     };
 
-    await expect(
-      createStore().get(
-        preparePiStableContext(args, AbortSignal.timeout(5000)),
-      ),
-    ).resolves.toMatchObject({ kind: "missing" });
-    await expect(variantHeads()).resolves.toStrictEqual([]);
-
-    // Removing the connector from the agent lets the same demand register,
-    // and the next-use canonical repair publishes it.
-    await db
-      .delete(userBuiltinConnectors)
-      .where(eq(userBuiltinConnectors.agentId, fixture.agentId));
     await expect(
       createStore().get(
         preparePiStableContext(args, AbortSignal.timeout(5000)),

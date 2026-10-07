@@ -31,7 +31,6 @@ import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-conne
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { mcpConnectorsRoutes } from "../mcp-connectors";
 import { immutableConnectorRuntimeSelection } from "../../services/connector-catalog-entries.service";
-import { RequiredConnectorCatalogEntriesMissingError } from "../../services/connector-catalog-external-reader.service";
 import {
   builtinConnectorsSearchContract,
   builtinConnectorManualGrantContract,
@@ -1134,7 +1133,6 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     const captured = await createStore().get(
       immutableConnectorRuntimeSelection({
         requestedConnectorSlugs: [slug],
-        missingEntries: "reject",
       }),
     );
     expect(statements).toHaveLength(1);
@@ -1150,7 +1148,6 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     const retained = await createStore().get(
       immutableConnectorRuntimeSelection({
         requestedConnectorSlugs: [slug],
-        missingEntries: "reject",
         capturedCatalog: captured.capturedCatalog,
       }),
     );
@@ -1160,21 +1157,10 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(retained.catalogIdentity.hash).toBe(first.hash);
     expect(statements).toHaveLength(1);
     expect(statements[0]).not.toContain('from "connector_catalog"');
-    // Without a manifest a missing entry is indistinguishable from an unknown
-    // slug: required reads reject it, optional reads omit it.
-    await expect(
-      createStore().get(
-        immutableConnectorRuntimeSelection({
-          requestedConnectorSlugs: [slug, "missing-required-entry"],
-          missingEntries: "reject",
-          capturedCatalog: captured.capturedCatalog,
-        }),
-      ),
-    ).rejects.toThrow(RequiredConnectorCatalogEntriesMissingError);
+    // A slug missing from the generation is omitted, as if never authorized.
     const omitted = await createStore().get(
       immutableConnectorRuntimeSelection({
-        requestedConnectorSlugs: [slug, "missing-required-entry"],
-        missingEntries: "omit",
+        requestedConnectorSlugs: [slug, "missing-entry"],
         capturedCatalog: captured.capturedCatalog,
       }),
     );
@@ -1189,7 +1175,6 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     const metadata = await createStore().get(
       immutableConnectorRuntimeSelection({
         requestedConnectorSlugs: [],
-        missingEntries: "reject",
         metadataConnectorSlugs: [slug],
       }),
     );
@@ -1200,14 +1185,12 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     const configured = await createStore().get(
       immutableConnectorRuntimeSelection({
         requestedConnectorSlugs: ["github"],
-        missingEntries: "reject",
       }),
     );
     clearMockedEnv();
     const unconfigured = await createStore().get(
       immutableConnectorRuntimeSelection({
         requestedConnectorSlugs: ["github"],
-        missingEntries: "reject",
       }),
     );
     expect(unconfigured.catalogIdentity.hash).toBe(
@@ -1220,7 +1203,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       configured.connectors.get("github")?.methods.size ?? 0,
     );
   });
-  it("n5: real MCP consumer rejects a missing admitted entry, ignores unadmitted slugs and rejects a missing pointer", async () => {
+  it("n5: real MCP consumer omits a missing admitted entry, ignores unadmitted slugs and rejects a missing pointer", async () => {
     if (!engine) {
       throw new Error("Missing case engine");
     }
@@ -1241,7 +1224,6 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     const empty = await createStore().get(
       immutableConnectorRuntimeSelection({
         requestedConnectorSlugs: [],
-        missingEntries: "reject",
       }),
     );
     expect(empty.catalogIdentity.hash).toBe(candidate.hash);
@@ -1252,8 +1234,11 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       "DELETE FROM connector_catalog_entries WHERE hash = $1 AND slug = $2",
       [candidate.hash, slug],
     );
-    // The admitted account's entry is required: no silent empty directory.
-    expect((await mcpDirectory(actor)).status).toBe(500);
+    // A delisted connector cannot be disconnected; omit it like an
+    // unauthorized one instead of failing the directory.
+    expect((await mcpDirectory(actor)).body).toStrictEqual({
+      connectors: [],
+    });
     expect((await mcpDirectory(unknownActor)).body).toStrictEqual({
       connectors: [],
     });
@@ -1263,7 +1248,6 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       createStore().get(
         immutableConnectorRuntimeSelection({
           requestedConnectorSlugs: [],
-          missingEntries: "reject",
         }),
       ),
     ).rejects.toThrow("Immutable connector catalog current is missing");

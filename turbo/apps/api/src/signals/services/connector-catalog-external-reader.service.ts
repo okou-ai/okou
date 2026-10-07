@@ -146,8 +146,7 @@ interface ConnectorCatalogDiscoveryRead {
 
 type ExternalConnectorCatalogUnavailableReason =
   | "missing_current_identity"
-  | "missing_entries"
-  | "missing_required_entries";
+  | "missing_entries";
 
 export class ExternalConnectorCatalogUnavailableError extends Error {
   readonly code: `CONNECTOR_CATALOG_UNAVAILABLE:${ExternalConnectorCatalogUnavailableReason}`;
@@ -159,39 +158,6 @@ export class ExternalConnectorCatalogUnavailableError extends Error {
     super(message);
     this.name = "ExternalConnectorCatalogUnavailableError";
     this.code = `CONNECTOR_CATALOG_UNAVAILABLE:${reason}`;
-  }
-}
-
-/**
- * Without a manifest, a missing entry and a slug the generation never had are
- * indistinguishable. Paths whose slugs are already authorized business facts
- * (a Run's enabled connectors, its admitted accounts) must not shrink that
- * scope silently, so they fail with this error instead of omitting the slug.
- */
-export class RequiredConnectorCatalogEntriesMissingError extends ExternalConnectorCatalogUnavailableError {
-  constructor(readonly connectorSlugs: readonly ConnectorSlug[]) {
-    super(
-      "missing_required_entries",
-      `Connector catalog entries are missing for required connectors: ${connectorSlugs.join(", ")}`,
-    );
-    this.name = "RequiredConnectorCatalogEntriesMissingError";
-  }
-}
-
-/** Throws when any required slug has no entry at the captured catalog hash. */
-export function assertRequiredConnectorCatalogEntries(
-  presentConnectorSlugs: ReadonlySet<string> | ReadonlyMap<string, unknown>,
-  requiredConnectorSlugs: readonly ConnectorSlug[],
-): void {
-  const missing = [...new Set(requiredConnectorSlugs)]
-    .filter((connectorSlug) => {
-      return !presentConnectorSlugs.has(connectorSlug);
-    })
-    .sort((left, right) => {
-      return left < right ? -1 : left > right ? 1 : 0;
-    });
-  if (missing.length > 0) {
-    throw new RequiredConnectorCatalogEntriesMissingError(missing);
   }
 }
 

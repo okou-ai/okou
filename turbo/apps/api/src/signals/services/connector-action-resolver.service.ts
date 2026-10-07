@@ -309,7 +309,6 @@ export function executableConnectorSlugs(
     const selection = await get(
       immutableConnectorRuntimeSelection({
         requestedConnectorSlugs: connectorSlugs,
-        missingEntries: "omit",
       }),
     );
     return connectorSlugs.filter((connectorSlug) => {
