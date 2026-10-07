@@ -1207,6 +1207,25 @@ jobs:
           neon_time list-with-analytics neonctl branches list --project-id "$NEON_PROJECT_ID" --output json > /dev/null
           neon_time list-no-analytics neonctl branches list --project-id "$NEON_PROJECT_ID" --output json --no-analytics > /dev/null
 
+          # Server-side latency of the endpoints neonctl relies on, without neonctl.
+          NEON_API="https://console.neon.tech/api/v2/projects/$NEON_PROJECT_ID"
+          neon_curl() {
+            local label="$1" url="$2" out="$3"
+            neon_time "curl-${label}" curl -sS -o "$out" --max-time 300 \
+              -w "[neon-timing] curl ${label} http=%{http_code} ttfb=%{time_starttransfer}s total=%{time_total}s bytes=%{size_download}\n" \
+              -H "Authorization: Bearer $NEON_API_KEY" -H "Accept: application/json" "$url" || true
+          }
+          for i in 1 2 3; do
+            neon_curl "branches-list-${i}" "$NEON_API/branches" /tmp/neon-branches.json
+          done
+          echo "[neon-timing] branch count: $(jq '.branches | length' /tmp/neon-branches.json 2>/dev/null || echo unknown)"
+          jq -r '.branches[] | "\(.name | split("/")[0]) \(.current_state)"' /tmp/neon-branches.json 2>/dev/null | sort | uniq -c | sed 's/^/[neon-timing] branches by prefix\/state: /' || true
+          neon_curl branches-search "$NEON_API/branches?search=preview%2F${{ needs.prepare.outputs.job-ref }}" /dev/null
+          TIMING_BRANCH_ID=$(jq -r --arg name "preview/${{ needs.prepare.outputs.job-ref }}" '.branches[] | select(.name == $name) | .id' /tmp/neon-branches.json 2>/dev/null || true)
+          if [ -n "$TIMING_BRANCH_ID" ]; then
+            neon_curl branch-get "$NEON_API/branches/$TIMING_BRANCH_ID" /dev/null
+          fi
+
           # On pushes to main, migrate the test project's default (parent) branch
           # BEFORE creating/resetting the preview branch off it. Neon branches are
           # copy-on-write, so a preview branched from an already-migrated parent
@@ -1234,6 +1253,7 @@ jobs:
 
             for attempt in {1..30}; do
               CURRENT_STATE=$(neon_time "branch-state-${attempt}" neonctl branches list --project-id "$NEON_PROJECT_ID" --output json | jq -r --arg name "$BRANCH_NAME" '.[] | select(.name == $name) | .current_state')
+              echo "[neon-timing] branch-state-${attempt} state=${CURRENT_STATE}" >&2
               [ "$CURRENT_STATE" = "ready" ] && break
               echo "Branch state: $CURRENT_STATE (attempt $attempt/30)"
               sleep 2
