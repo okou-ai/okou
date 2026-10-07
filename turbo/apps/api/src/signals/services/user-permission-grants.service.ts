@@ -161,24 +161,6 @@ function visibleAgentCondition(userId: string) {
   return or(eq(agents.visibility, "public"), eq(agents.owner, userId));
 }
 
-async function findVisibleAgent(
-  db: ReadonlyDb,
-  scope: UserPermissionGrantBaseScope & { readonly agentId: string },
-): Promise<{ readonly id: string } | null> {
-  const [agent] = await db
-    .select({ id: agents.id })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.orgId, scope.orgId),
-        eq(agents.id, scope.agentId),
-        visibleAgentCondition(scope.userId),
-      ),
-    )
-    .limit(1);
-  return agent ?? null;
-}
-
 function validateGrantExpiration(grant: {
   readonly action: UserPermissionGrantAction;
   readonly expiresIn?: UserPermissionGrantExpiresIn;
@@ -634,28 +616,6 @@ function formatUserPermissionGrant(
   };
 }
 
-async function loadActiveUserPermissionGrants(
-  db: ReadonlyDb,
-  scope: UserPermissionGrantScope,
-  checkedAt: Date = nowDate(),
-): Promise<readonly StoredPermissionGrantRow[]> {
-  return await db
-    .select(userPermissionGrantSelection)
-    .from(userPermissionGrants)
-    .where(
-      and(
-        eq(userPermissionGrants.orgId, scope.orgId),
-        eq(userPermissionGrants.userId, scope.userId),
-        eq(userPermissionGrants.agentId, scope.agentId),
-        activeUserPermissionGrantCondition(checkedAt),
-      ),
-    )
-    .orderBy(
-      asc(userPermissionGrants.connectorSlug),
-      asc(userPermissionGrants.permission),
-    );
-}
-
 async function loadActiveUserPermissionGrantsForConnectorSlugs(
   db: ReadonlyDb,
   scope: UserPermissionGrantScope,
@@ -678,15 +638,6 @@ async function loadActiveUserPermissionGrantsForConnectorSlugs(
       asc(userPermissionGrants.connectorSlug),
       asc(userPermissionGrants.permission),
     );
-}
-
-async function visibleAgentOrNotFound(
-  db: ReadonlyDb,
-  scope: UserPermissionGrantBaseScope & { readonly agentId: string },
-): Promise<NotFoundResponse | null> {
-  return (await findVisibleAgent(db, scope))
-    ? null
-    : notFound(`Agent not found: ${scope.agentId}`);
 }
 
 async function lockVisibleAgentForUpdate(
@@ -929,18 +880,38 @@ export const listUserPermissionGrants$ = command(
     signal: AbortSignal,
   ): Promise<ListUserPermissionGrantsResult> => {
     const db = get(db$);
-    const visibleError = await visibleAgentOrNotFound(db, {
-      orgId: scope.orgId,
-      userId: scope.userId,
-      role: scope.role,
-      agentId: scope.agentId,
-    });
+    const [agent] = await db
+      .select({ id: agents.id })
+      .from(agents)
+      .where(
+        and(
+          eq(agents.orgId, scope.orgId),
+          eq(agents.id, scope.agentId),
+          visibleAgentCondition(scope.userId),
+        ),
+      )
+      .limit(1);
     signal.throwIfAborted();
-    if (visibleError) {
-      return visibleError;
+    if (!agent) {
+      return notFound(`Agent not found: ${scope.agentId}`);
     }
 
-    const grants = await loadActiveUserPermissionGrants(db, scope);
+    const checkedAt = nowDate();
+    const grants = await db
+      .select(userPermissionGrantSelection)
+      .from(userPermissionGrants)
+      .where(
+        and(
+          eq(userPermissionGrants.orgId, scope.orgId),
+          eq(userPermissionGrants.userId, scope.userId),
+          eq(userPermissionGrants.agentId, scope.agentId),
+          activeUserPermissionGrantCondition(checkedAt),
+        ),
+      )
+      .orderBy(
+        asc(userPermissionGrants.connectorSlug),
+        asc(userPermissionGrants.permission),
+      );
     signal.throwIfAborted();
     const snapshot =
       grants.length === 0 ? undefined : await loadConnectorRuntimeSnapshot(db);
