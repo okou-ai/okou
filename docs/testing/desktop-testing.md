@@ -51,13 +51,23 @@ and relaunch path in an isolated installation. A fabricated feed alone does not
 prove that an installed updater can start the native app. Preserve the real
 production feed and installation while using the isolated updater harness.
 
+Exercise native automatic updates with complete signed/notarized apps, an
+isolated bundle/profile, and an HTTPS appcast using an already trusted
+certificate. Pinned Sparkle's code-signing-only validation rejects HTTP feeds.
+Use a higher candidate version and verify background checking, download,
+idle installation, replacement, and automatic relaunch. Validate the installed
+app's signature, Gatekeeper acceptance, version, and executable against the
+candidate; a successful feed response or download alone is insufficient.
+
 ## Release Workflow Contracts
 
 The `.github/scripts/tests/` Desktop tests protect version-file migration,
 immutable SHA-addressed R2 artifacts, exact-artifact promotion, signing inputs,
-and publishing the mutable manifest only after notarized assets succeed. Run
-them when changing Desktop workflow or release ownership. Release Please
-workspace coverage must recognize the standalone `desktop` component.
+and publishing the mutable manifest only after both notarized assets and API
+deployment succeed. The API appcast route must be deployed before Electron
+clients receive the first native ZIP. Run these checks when changing Desktop
+workflow or release ownership. Release Please workspace coverage must recognize
+the standalone `desktop` component.
 
 The API's Desktop update-route tests protect both legacy `RELEASES.json` and
 native `appcast.xml` responses, shared blocked-version selection, retired lines,
