@@ -7,7 +7,6 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";

@@ -88,8 +88,6 @@ export const featureSwitch$ = computed((get) => {
   return get(featureSwitchState$);
 });
 
-});
-
 export const applyFeatureSwitches$ = command(
   ({ set }, switches: Record<FeatureSwitchKey, boolean>) => {
     set(setFeatureSwitchState$, switches);

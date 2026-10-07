@@ -12,7 +12,6 @@ import {
   type UpdateUserModelPreferenceRequest,
   type UserModelPreferenceResponse,
 } from "@okouai/api-contracts/contracts/user-model-preference";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";

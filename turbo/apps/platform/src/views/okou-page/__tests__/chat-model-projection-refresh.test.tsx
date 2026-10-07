@@ -7,7 +7,6 @@ import {
   personalModelProvidersMainContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";

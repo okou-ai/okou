@@ -1,5 +1,4 @@
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
