@@ -87,28 +87,3 @@ export const modelCatalogContract = c.router({
 });
 
 export type ModelCatalogContract = typeof modelCatalogContract;
-
-const THIRD_PARTY_GATEWAY_PROVIDER_TYPES: ReadonlySet<string> = new Set([
-  "openrouter-api-key",
-  "vercel-ai-gateway",
-  "openrouter-codex",
-  "vercel-ai-gateway-codex",
-]);
-
-/**
- * Whether an organization's custom gateway may serve a model, from the
- * provider types of the model's enabled non-Built-in routes. A model offered
- * on its own routes only through the vendor's API and subscription (no
- * third-party gateway route) is not served through custom gateways either;
- * models without own routes are left to the gateway mapping.
- */
-export function ownRoutesAllowCustomGateway(
-  ownRouteProviderTypes: readonly string[],
-): boolean {
-  return (
-    ownRouteProviderTypes.length === 0 ||
-    ownRouteProviderTypes.some((providerType) => {
-      return THIRD_PARTY_GATEWAY_PROVIDER_TYPES.has(providerType);
-    })
-  );
-}

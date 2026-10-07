@@ -968,14 +968,7 @@ export const piInstalledCliRequirementSchema = z
 
 export const piModelConfigLegacySchema = z
   .object({
-    provider: z.enum([
-      "deepseek",
-      "moonshotai",
-      "openai",
-      "openrouter",
-      "vercel-ai-gateway",
-      "codex",
-    ]),
+    provider: z.enum(["deepseek", "openai", "openrouter", "codex"]),
     baseUrl: z.url(),
     // Request identity can differ from the trusted Pi catalog entry for an
     // organization-configured model provider gateway.
@@ -1004,8 +997,6 @@ const piApiKeyCredentialSecretNameSchema = z.enum([
   "DEEPSEEK_API_KEY",
   "OPENAI_API_KEY",
   "OPENROUTER_API_KEY",
-  "VERCEL_AI_GATEWAY_API_KEY",
-  "OKOU_MODEL_PROVIDER_API_KEY",
 ]);
 
 const piModelCredentialBindingSchema = z.discriminatedUnion("kind", [

@@ -3,8 +3,6 @@ import { platformStaticAssetUrl } from "../../../../lib/static-assets.ts";
 const SETTINGS_ICON_ASSET_PATHS = {
   anthropic:
     "views/zero-page/components/settings/icons/anthropic-3fcfdf761a69.svg",
-  azure: "views/zero-page/components/settings/icons/azure-a3fe212c8716.svg",
-  bedrock: "views/zero-page/components/settings/icons/bedrock-60e2c52cb4a2.svg",
   chatglm: "views/zero-page/components/settings/icons/chatglm-7e6a9cb772fa.svg",
   "claude-code":
     "views/zero-page/components/settings/icons/claude-code-03a5132e24ca.svg",
@@ -28,7 +26,6 @@ const SETTINGS_ICON_ASSET_PATHS = {
   teams: "views/zero-page/components/settings/icons/teams-0dc3a5275d31.svg",
   telegram:
     "views/zero-page/components/settings/icons/telegram-2d9ff5d01146.svg",
-  vercel: "views/zero-page/components/settings/icons/vercel-c2c941b10e27.svg",
 } as const;
 
 type SettingsIconAssetKey = keyof typeof SETTINGS_ICON_ASSET_PATHS;

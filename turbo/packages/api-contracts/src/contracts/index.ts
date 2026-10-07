@@ -429,8 +429,6 @@ export {
   getModels,
   getDefaultModel,
   hasModelSelection,
-  allowsCustomModel,
-  getCustomModelPlaceholder,
   // Provider compatibility
   normalizeRunModelId,
   // Selectable provider filtering

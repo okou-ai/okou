@@ -4,7 +4,7 @@ This document covers the #34012 identity foundation, its #34098/#34111/#34164 re
 
 ## Effective member routing (B)
 
-A new member run uses a supported personal Claude/Codex subscription before the API configured for its allowed logical model. This routing behavior and the personal subscription account UI apply in every workspace. Organization model restrictions, active entitlement and the effective provider's BYOK permission still apply. A permitted subscription needs no organization model credits. Other tools and generation keep their independent billing.
+A new member run uses a supported personal Claude/Codex subscription before the API configured for its allowed logical model. This routing behavior and the personal subscription account UI apply in every workspace. Organization model restrictions and active entitlement still apply. A permitted subscription needs no organization model credits. Other tools and generation keep their independent billing.
 
 `effective-model-route.service.ts` is the shared database-only leaf for model selection and the optional member projection. It validates logical model and policy structure, then chooses a logical personal candidate or the configured organization route. Missing nullable custom provider/surface references and mappings matter only when that organization route is selected. Unknown discriminators and contradictory policy structure remain errors. A chosen personal route never returns null because of subscription failure, so persisted-model reconciliation cannot turn reconnect, refresh, quota, KMS or provider errors into another model or paid API.
 

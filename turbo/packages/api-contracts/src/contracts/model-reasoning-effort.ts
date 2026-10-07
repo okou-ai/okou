@@ -70,10 +70,7 @@ export function narrowRouteReasoningEfforts(args: {
         return effort === "high" || effort === "xhigh";
       });
     }
-    if (
-      args.runtimeProviderType === "deepseek" ||
-      args.runtimeProviderType === "custom-openai-responses"
-    ) {
+    if (args.runtimeProviderType === "deepseek") {
       return choices.filter((effort) => {
         return effort !== "xhigh";
       });

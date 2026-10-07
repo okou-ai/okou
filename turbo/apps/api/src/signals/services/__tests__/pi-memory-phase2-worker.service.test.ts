@@ -1550,7 +1550,7 @@ describe("Phase 2 current credential admission", () => {
     });
   });
 
-  it("ignores stale historical provider IDs when no BYOK is configured", async () => {
+  it("ignores the provider IDs of historical API-key source runs", async () => {
     const job = await createPhase2WorkerFixture("stale-source-binding");
     await insertPhase2Candidates(job.scope, [{ piSessionId: randomUUID() }], {
       modelProvider: "openai-api-key",

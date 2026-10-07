@@ -309,13 +309,7 @@ fn validate_pi_v2_credential_bindings(
                 }
                 let known_secret = matches!(
                     object.get("secretName").and_then(serde_json::Value::as_str),
-                    Some(
-                        "DEEPSEEK_API_KEY"
-                            | "OPENAI_API_KEY"
-                            | "OPENROUTER_API_KEY"
-                            | "VERCEL_AI_GATEWAY_API_KEY"
-                            | "OKOU_MODEL_PROVIDER_API_KEY"
-                    )
+                    Some("DEEPSEEK_API_KEY" | "OPENAI_API_KEY" | "OPENROUTER_API_KEY")
                 );
                 if !known_secret
                     || object

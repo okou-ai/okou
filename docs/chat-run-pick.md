@@ -519,11 +519,7 @@ registered provider pin without a stored credential scope passes an explicit
 owner and credentials in one statement (no separate owner pre-query); the
 legacy regular-provider snapshot fallback is gone from Thread now that
 DeepSeek also uses the pure runtime contract.
-Explicit cloud deployments/profiles now use stored `configuredModel` facts:
-Bedrock bearer/SigV4 and Azure projections validate required auth fields through
-the existing registry; the owner retains Pi cloud mapping checks before pure
-conversion. Specialized DeepSeek and full legacy retirement remain unfinished.
-No missing cloud profile is replaced with a guessed model. Builtin paths now consume the approved managed-key
+Specialized DeepSeek and full legacy retirement remain unfinished. Builtin paths now consume the approved managed-key
 credential variant: source reads nonsecret exact-key facts/reference, an effect
 explicitly resolves that same key, and the converter checks source/route/vendor/key
 binding without I/O. No ciphertext is fabricated, no default key is selected and

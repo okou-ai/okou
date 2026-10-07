@@ -663,17 +663,6 @@ describe("official Pi AgentSession runtime", () => {
             tier,
             secretName: "OPENROUTER_API_KEY",
           },
-          {
-            name: "Vercel API key",
-            provider: "openai",
-            dialect: "openai-responses",
-            model: `openai/${selectedModel}`,
-            catalogModel: selectedModel,
-            basePath: "/v1",
-            endpoint: "/v1/responses",
-            tier,
-            secretName: "VERCEL_AI_GATEWAY_API_KEY",
-          },
         ] as const;
       });
     }),
@@ -736,9 +725,6 @@ describe("official Pi AgentSession runtime", () => {
                 dialect: route.dialect,
                 provider: route.provider,
                 model: route.model,
-                ...(route.name === "Vercel API key"
-                  ? { catalogModel: route.catalogModel }
-                  : {}),
                 credentialBindings: [
                   {
                     kind: "api-key",

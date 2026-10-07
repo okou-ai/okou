@@ -28,33 +28,17 @@ export interface ModelRuntimeInput {
   readonly source: ModelSourceSnapshot;
   readonly credentials: ModelCredentialValues;
 }
-export type ModelTransport =
-  | {
-      readonly kind: "http";
-      readonly protocol: "anthropic-messages" | "openai-responses";
-      readonly baseUrl: string;
-    }
-  | { readonly kind: "bedrock"; readonly region: string };
-export interface HeaderModelAuthentication {
+export interface ModelTransport {
+  readonly kind: "http";
+  readonly protocol: "anthropic-messages" | "openai-responses";
+  readonly baseUrl: string;
+}
+export interface ModelAuthentication {
   readonly kind: "header";
   readonly headerName: string;
   readonly valueTemplate: string;
   readonly secretName: string;
 }
-export interface AwsBearerModelAuthentication {
-  readonly kind: "aws-bearer";
-  readonly secretName: string;
-}
-export interface AwsSigV4ModelAuthentication {
-  readonly kind: "aws-sigv4";
-  readonly accessKeyIdSecretName: string;
-  readonly secretAccessKeySecretName: string;
-  readonly sessionTokenSecretName: string | null;
-}
-export type ModelAuthentication =
-  | HeaderModelAuthentication
-  | AwsBearerModelAuthentication
-  | AwsSigV4ModelAuthentication;
 export interface CompiledModelRuntime {
   readonly selectedModel: string;
   readonly upstreamModel: string;

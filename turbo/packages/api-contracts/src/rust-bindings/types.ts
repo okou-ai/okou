@@ -334,10 +334,8 @@ export const rustTypeBindings = [
         rustDoc: ["Model providers supported by the Pi runtime contract."],
         variants: {
           deepseek: ["DeepSeek provider."],
-          moonshotai: ["Moonshot AI provider."],
           openai: ["OpenAI provider."],
           openrouter: ["OpenRouter provider."],
-          "vercel-ai-gateway": ["Vercel AI Gateway provider."],
           codex: ["Codex provider."],
         },
       },

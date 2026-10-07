@@ -570,14 +570,7 @@ describe("Rust type bindings", () => {
       ],
       properties: {
         provider: {
-          enum: [
-            "deepseek",
-            "moonshotai",
-            "openai",
-            "openrouter",
-            "vercel-ai-gateway",
-            "codex",
-          ],
+          enum: ["deepseek", "openai", "openrouter", "codex"],
         },
         apiKeyEnv: {
           enum: [

@@ -444,33 +444,6 @@ export const MODEL_PROVIDER_TYPES = {
     models: ["deepseek-flash", "deepseek-v4-flash"] as string[],
     defaultModel: "deepseek-flash",
   },
-  "vercel-ai-gateway": {
-    framework: "claude-code" as const,
-    secretName: "VERCEL_AI_GATEWAY_API_KEY",
-    label: "Vercel AI Gateway",
-    secretLabel: "API key",
-    helpText: "Get your API key from the Vercel AI Gateway dashboard",
-    envBindings: {
-      ANTHROPIC_AUTH_TOKEN: "$secret",
-      ANTHROPIC_BASE_URL: "https://ai-gateway.vercel.sh",
-      ANTHROPIC_API_KEY: "",
-      ANTHROPIC_MODEL: "$model",
-      ANTHROPIC_DEFAULT_OPUS_MODEL: "$model",
-      ANTHROPIC_DEFAULT_SONNET_MODEL: "$model",
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: "$model",
-      CLAUDE_CODE_SUBAGENT_MODEL: "$model",
-    } satisfies ModelProviderEnvBindings,
-    models: [
-      "anthropic/claude-fable-5.1",
-      "anthropic/claude-opus-5.5",
-      "anthropic/claude-opus-5",
-      "anthropic/claude-sonnet-5",
-      "anthropic/claude-opus-4.5",
-      "anthropic/claude-sonnet-4.5",
-      "minimax/minimax-m2.5",
-    ] as string[],
-    defaultModel: "anthropic/claude-sonnet-5",
-  },
   // Codex-framework twin of openrouter-api-key. Same upstream gateway (OpenRouter)
   // and same API key (shared secretName), but routes through OpenRouter's
   // OpenAI-compatible endpoint surface for models that use the Codex framework.
@@ -497,25 +470,6 @@ export const MODEL_PROVIDER_TYPES = {
       "deepseek/deepseek-v4.1-flash",
       "deepseek/deepseek-v4-flash",
     ] as string[],
-    defaultModel: "openai/gpt-5.6-luna",
-  },
-  // Codex-framework twin of vercel-ai-gateway. Vercel exposes both
-  // Anthropic Messages and OpenAI Chat Completions / Responses on the same
-  // base URL, distinguished by path. The claude-code entry uses /v1/messages;
-  // this codex entry uses /v1/chat/completions or /v1/responses (codex CLI
-  // picks the path it needs).
-  "vercel-ai-gateway-codex": {
-    framework: "codex" as const,
-    secretName: "VERCEL_AI_GATEWAY_API_KEY",
-    label: "Vercel AI Gateway (Codex)",
-    secretLabel: "API key",
-    helpText: "Get your API key from the Vercel AI Gateway dashboard",
-    envBindings: {
-      OPENAI_API_KEY: "$secret",
-      OPENAI_BASE_URL: "https://ai-gateway.vercel.sh/v1",
-      OPENAI_MODEL: "$model",
-    } satisfies ModelProviderEnvBindings,
-    models: ["openai/gpt-5.6-sol", "openai/gpt-5.6-luna"] as string[],
     defaultModel: "openai/gpt-5.6-luna",
   },
   "openai-api-key": {
@@ -613,120 +567,6 @@ export const MODEL_PROVIDER_TYPES = {
       "gpt-5.6-luna",
     ] as string[],
     defaultModel: "gpt-5.6-sol",
-  },
-  "azure-foundry": {
-    framework: "claude-code" as const,
-    label: "Azure Foundry",
-    helpText:
-      "Run Claude on Microsoft Azure Foundry.\nSetup guide: https://code.claude.com/docs/en/microsoft-foundry",
-    authMethods: {
-      "api-key": {
-        label: "API Key",
-        helpText: "Use an Azure Foundry API key for authentication",
-        secrets: {
-          ANTHROPIC_FOUNDRY_API_KEY: {
-            label: "ANTHROPIC_FOUNDRY_API_KEY",
-            required: true,
-            helpText: "API key from Azure Foundry portal (Endpoints and keys)",
-          },
-          ANTHROPIC_FOUNDRY_RESOURCE: {
-            label: "ANTHROPIC_FOUNDRY_RESOURCE",
-            required: true,
-            placeholder: "my-resource",
-            helpText: "Azure resource name (from portal URL)",
-          },
-        },
-      },
-    } satisfies Record<string, AuthMethodConfig>,
-    defaultAuthMethod: "api-key",
-    envBindings: {
-      CLAUDE_CODE_USE_FOUNDRY: "1",
-      ANTHROPIC_FOUNDRY_API_KEY: "$secrets.ANTHROPIC_FOUNDRY_API_KEY",
-      ANTHROPIC_FOUNDRY_RESOURCE: "$secrets.ANTHROPIC_FOUNDRY_RESOURCE",
-      ANTHROPIC_MODEL: "$model",
-    } satisfies ModelProviderEnvBindings,
-    models: [] as string[],
-    defaultModel: "",
-    allowCustomModel: true,
-    customModelPlaceholder: "claude-sonnet-4-5",
-  },
-  "aws-bedrock": {
-    framework: "claude-code" as const,
-    label: "AWS Bedrock",
-    helpText:
-      "Run Claude on AWS Bedrock.\nSetup guide: https://code.claude.com/docs/en/amazon-bedrock",
-    authMethods: {
-      "api-key": {
-        label: "Bedrock API Key",
-        helpText: "Use a Bedrock API key for authentication",
-        secrets: {
-          AWS_BEARER_TOKEN_BEDROCK: {
-            label: "AWS_BEARER_TOKEN_BEDROCK",
-            required: true,
-            helpText: "Bedrock API key from AWS console",
-          },
-          AWS_REGION: {
-            label: "AWS_REGION",
-            required: true,
-            placeholder: "us-east-1",
-            helpText: "e.g., us-east-1, us-west-2",
-          },
-        },
-      },
-      "access-keys": {
-        label: "IAM Access Keys",
-        helpText: "Use IAM access key secrets",
-        secrets: {
-          AWS_ACCESS_KEY_ID: {
-            label: "AWS_ACCESS_KEY_ID",
-            required: true,
-            helpText: "IAM access key ID",
-          },
-          AWS_SECRET_ACCESS_KEY: {
-            label: "AWS_SECRET_ACCESS_KEY",
-            required: true,
-            helpText: "IAM secret access key",
-          },
-          AWS_SESSION_TOKEN: {
-            label: "AWS_SESSION_TOKEN",
-            required: false,
-            helpText: "Optional, for temporary secrets",
-          },
-          AWS_REGION: {
-            label: "AWS_REGION",
-            required: true,
-            placeholder: "us-east-1",
-            helpText: "e.g., us-east-1, us-west-2",
-          },
-        },
-      },
-    } satisfies Record<string, AuthMethodConfig>,
-    defaultAuthMethod: "api-key",
-    envBindings: {
-      CLAUDE_CODE_USE_BEDROCK: "1",
-      AWS_REGION: "$secrets.AWS_REGION",
-      AWS_BEARER_TOKEN_BEDROCK: "$secrets.AWS_BEARER_TOKEN_BEDROCK",
-      AWS_ACCESS_KEY_ID: "$secrets.AWS_ACCESS_KEY_ID",
-      AWS_SECRET_ACCESS_KEY: "$secrets.AWS_SECRET_ACCESS_KEY",
-      AWS_SESSION_TOKEN: "$secrets.AWS_SESSION_TOKEN",
-      ANTHROPIC_MODEL: "$model",
-    } satisfies ModelProviderEnvBindings,
-    models: [] as string[],
-    defaultModel: "",
-    allowCustomModel: true,
-    customModelPlaceholder: "anthropic.claude-sonnet-4-20250514-v1:0",
-  },
-  // Org-configured custom gateways. These mirror the ModelProviderSurfaceProtocol
-  // enum so a stored provider type never names an unrelated vendor. The runtime
-  // (env vars, firewall, codex provider config) is compiled from the surface row
-  // itself, so these entries carry no secret, binding, or model catalog.
-  "custom-anthropic-messages": {
-    framework: "claude-code" as const,
-    label: "Custom Gateway (Anthropic Messages)",
-  },
-  "custom-openai-responses": {
-    framework: "codex" as const,
-    label: "Custom Gateway (OpenAI Responses)",
   },
   "built-in": BUILT_IN_MODEL_PROVIDER_CONFIG,
 } as const satisfies Record<ModelProviderType, unknown>;
@@ -955,31 +795,7 @@ export function getDefaultModel(type: ModelProviderType): string | undefined {
  */
 export function hasModelSelection(type: ModelProviderType): boolean {
   const config = MODEL_PROVIDER_TYPES[type];
-  // Has predefined models OR allows custom model input
-  return (
-    ("models" in config && config.models.length > 0) ||
-    ("allowCustomModel" in config && config.allowCustomModel === true)
-  );
-}
-
-/**
- * Check if a model provider allows custom model input
- */
-export function allowsCustomModel(type: ModelProviderType): boolean {
-  const config = MODEL_PROVIDER_TYPES[type];
-  return "allowCustomModel" in config && config.allowCustomModel === true;
-}
-
-/**
- * Get custom model placeholder for a model provider type
- */
-export function getCustomModelPlaceholder(
-  type: ModelProviderType,
-): string | undefined {
-  const config = MODEL_PROVIDER_TYPES[type];
-  return "customModelPlaceholder" in config
-    ? config.customModelPlaceholder
-    : undefined;
+  return "models" in config && config.models.length > 0;
 }
 
 export const modelProviderSubscriptionUsageWindowSchema = z.object({

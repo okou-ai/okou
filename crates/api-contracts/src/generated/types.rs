@@ -127,18 +127,12 @@ pub mod runners {
             /// DeepSeek provider.
             #[serde(rename = "deepseek")]
             Deepseek,
-            /// Moonshot AI provider.
-            #[serde(rename = "moonshotai")]
-            Moonshotai,
             /// OpenAI provider.
             #[serde(rename = "openai")]
             Openai,
             /// OpenRouter provider.
             #[serde(rename = "openrouter")]
             Openrouter,
-            /// Vercel AI Gateway provider.
-            #[serde(rename = "vercel-ai-gateway")]
-            VercelAiGateway,
             /// Codex provider.
             #[serde(rename = "codex")]
             Codex,

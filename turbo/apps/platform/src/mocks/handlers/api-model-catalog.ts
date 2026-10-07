@@ -12,21 +12,6 @@ const CLAUDE_EFFORTS = ["low", "medium", "high", "extra", "max", "ultracode"];
 const GPT_EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultra"];
 const GPT_LUNA_EFFORTS = ["low", "medium", "high", "xhigh"];
 const DEEPSEEK_EFFORTS = ["low", "high", "xhigh", "max"];
-const ANTHROPIC_BYOK = [
-  "anthropic-api-key",
-  "openrouter-api-key",
-  "vercel-ai-gateway",
-  "azure-foundry",
-  "aws-bedrock",
-  "custom-anthropic-messages",
-] as const;
-const OPENAI_BYOK = [
-  "openai-api-key",
-  "openrouter-codex",
-  "vercel-ai-gateway-codex",
-  "custom-openai-responses",
-] as const;
-
 // Mirrors the seeded production catalog (migration 1298), including retired
 // models and their single-hop replacements.
 const MODEL_ROWS: readonly (readonly [
@@ -65,7 +50,6 @@ interface MockModelProfile {
   efforts: readonly string[];
   defaultEffort: string | null;
   serviceTiers: readonly string[];
-  byok: readonly string[];
   subscription: string | null;
 }
 
@@ -77,7 +61,6 @@ function profileFor(model: string): MockModelProfile {
       efforts: [],
       defaultEffort: null,
       serviceTiers: [],
-      byok: [],
       subscription: null,
     };
   }
@@ -90,7 +73,6 @@ function profileFor(model: string): MockModelProfile {
       efforts: CLAUDE_EFFORTS,
       defaultEffort: premium ? "max" : "high",
       serviceTiers: [],
-      byok: ANTHROPIC_BYOK,
       subscription: "claude-code-oauth-token",
     };
   }
@@ -101,7 +83,6 @@ function profileFor(model: string): MockModelProfile {
       efforts: model === "deepseek-v4.1-flash" ? [] : DEEPSEEK_EFFORTS,
       defaultEffort: model === "deepseek-v4.1-flash" ? null : "high",
       serviceTiers: [],
-      byok: ["deepseek", "openrouter-codex", "custom-openai-responses"],
       subscription: null,
     };
   }
@@ -118,19 +99,8 @@ function profileFor(model: string): MockModelProfile {
         : GPT_EFFORTS,
     defaultEffort: luna ? "xhigh" : "max",
     serviceTiers: ["priority"],
-    byok: OPENAI_BYOK,
     subscription: "codex-oauth-token",
   };
-}
-
-function gatewayUpstreamModel(model: string, providerType: string): string {
-  if (
-    providerType !== "openrouter-codex" &&
-    providerType !== "vercel-ai-gateway-codex"
-  ) {
-    return model;
-  }
-  return `${model.startsWith("deepseek-") ? "deepseek" : "openai"}/${model}`;
 }
 
 function routesFor(model: string): MockCatalogRoute[] {
@@ -154,20 +124,6 @@ function routesFor(model: string): MockCatalogRoute[] {
       priceTier: profile.priceTier,
     },
   ];
-  for (const providerType of profile.byok) {
-    routes.push({
-      ...base,
-      // Gateway routes send the vendor-prefixed upstream ID, as seeded.
-      upstreamModel: gatewayUpstreamModel(model, providerType),
-      providerType,
-      concreteProviderType: providerType,
-      // Astra Ultrafast is temporarily disabled: the seeded direct OpenAI
-      // route offers no Ultrafast tier, as in migration 1298.
-      serviceTiers: [...profile.serviceTiers],
-      defaultServiceTier: null,
-      priceTier: null,
-    });
-  }
   if (profile.subscription) {
     routes.push({
       ...base,

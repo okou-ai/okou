@@ -3361,9 +3361,6 @@ export function createThreadClaimRunObjects(
         userMessage: event.userMessage,
         requiredOfficialWorkflowIds:
           event.requiredOfficialWorkflowIds ?? undefined,
-        modelProviderId: null,
-        modelProviderType: null,
-        modelProviderCredentialScope: null,
         selectedModel: event.modelSelection?.selectedModel ?? null,
         contextType: event.contextType,
         contextId: event.contextId,

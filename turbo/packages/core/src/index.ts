@@ -102,8 +102,6 @@ export {
   getModels,
   getDefaultModel,
   hasModelSelection,
-  allowsCustomModel,
-  getCustomModelPlaceholder,
   normalizeRunModelId,
   hasAuthMethods,
   getAuthMethodsForType,

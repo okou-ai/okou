@@ -3,15 +3,9 @@ export const MODEL_PROVIDER_TYPE_IDS = [
   "anthropic-api-key",
   "openrouter-api-key",
   "deepseek",
-  "vercel-ai-gateway",
   "openrouter-codex",
-  "vercel-ai-gateway-codex",
   "openai-api-key",
   "codex-oauth-token",
-  "azure-foundry",
-  "aws-bedrock",
-  "custom-anthropic-messages",
-  "custom-openai-responses",
   "built-in",
 ] as const;
 

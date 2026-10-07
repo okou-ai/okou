@@ -22,16 +22,7 @@ export interface ModelProviderPiEndpoint {
   readonly inferenceUrl: string;
 }
 
-// Custom gateway types are excluded because their firewall is compiled per
-// surface from the stored base URL and auth header, not from a static table.
-type FirewallSupportedProvider = Exclude<
-  ModelProviderType,
-  | "aws-bedrock"
-  | "azure-foundry"
-  | "custom-anthropic-messages"
-  | "custom-openai-responses"
-  | "built-in"
->;
+type FirewallSupportedProvider = Exclude<ModelProviderType, "built-in">;
 type LegacySingleSecretProvider = Exclude<
   FirewallSupportedProvider,
   "codex-oauth-token"
@@ -106,21 +97,10 @@ const MODEL_PROVIDER_FIREWALL_PROVIDER_CONFIGS: Record<
     firewallBaseUrl: "https://api.deepseek.com/responses",
     piApis: ["openai-responses"],
   },
-  "vercel-ai-gateway": {
-    framework: "claude-code",
-    secretName: "VERCEL_AI_GATEWAY_API_KEY",
-    anthropicBaseUrl: "https://ai-gateway.vercel.sh",
-  },
   "openrouter-codex": {
     framework: "codex",
     secretName: "OPENROUTER_API_KEY",
     openaiBaseUrl: "https://openrouter.ai/api/v1",
-    piApis: ["openai-completions", "openai-responses"],
-  },
-  "vercel-ai-gateway-codex": {
-    framework: "codex",
-    secretName: "VERCEL_AI_GATEWAY_API_KEY",
-    openaiBaseUrl: "https://ai-gateway.vercel.sh/v1",
     piApis: ["openai-completions", "openai-responses"],
   },
   "openai-api-key": {
@@ -183,7 +163,6 @@ function mpFirewall(
 /**
  * Firewall gateway configs for model providers with static base URLs.
  * Used to auto-generate firewall entries that protect API tokens from sandbox exposure.
- * Excluded: aws-bedrock (dynamic region URLs + SigV4), azure-foundry (dynamic resource URLs).
  *
  * Claude Code gateway providers scope to /v1/messages so built-in model keys
  * are only injected on LLM inference paths, not vendor admin endpoints.
@@ -209,24 +188,12 @@ export const MODEL_PROVIDER_FIREWALL_CONFIGS = {
     { name: "Authorization", valuePrefix: "Bearer" },
     MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY,
   ),
-  "vercel-ai-gateway": mpFirewall(
-    "vercel-ai-gateway",
-    { name: "Authorization", valuePrefix: "Bearer" },
-    MODEL_PROVIDER_ENV_PLACEHOLDERS.ANTHROPIC_AUTH_TOKEN,
-  ),
   // Codex-framework twin of openrouter-api-key. It reuses the same stored
   // OpenRouter secret, but the sandbox env name is OPENAI_API_KEY because codex
   // SDK hits OpenAI-compatible paths (/chat/completions, /responses) under
   // https://openrouter.ai/api/v1.
   "openrouter-codex": mpFirewall(
     "openrouter-codex",
-    { name: "Authorization", valuePrefix: "Bearer" },
-    MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY,
-  ),
-  // Codex-framework twin of vercel-ai-gateway. It reuses the same stored Vercel
-  // secret, but the sandbox env name is OPENAI_API_KEY.
-  "vercel-ai-gateway-codex": mpFirewall(
-    "vercel-ai-gateway-codex",
     { name: "Authorization", valuePrefix: "Bearer" },
     MODEL_PROVIDER_ENV_PLACEHOLDERS.OPENAI_API_KEY,
   ),

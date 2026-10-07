@@ -9,13 +9,9 @@ const PROVIDER_ICONS: Readonly<Partial<Record<ModelProviderType, string>>> =
     "anthropic-api-key": settingsIconAssetUrl("anthropic"),
     "openrouter-api-key": settingsIconAssetUrl("openrouter"),
     deepseek: settingsIconAssetUrl("deepseek"),
-    "vercel-ai-gateway": settingsIconAssetUrl("vercel"),
     "openrouter-codex": settingsIconAssetUrl("openrouter"),
-    "vercel-ai-gateway-codex": settingsIconAssetUrl("vercel"),
     "openai-api-key": settingsIconAssetUrl("openai"),
     "codex-oauth-token": settingsIconAssetUrl("openai"),
-    "azure-foundry": settingsIconAssetUrl("azure"),
-    "aws-bedrock": settingsIconAssetUrl("bedrock"),
     "built-in": platformOkouMarkDarkImg,
   });
 

@@ -93,9 +93,6 @@ interface CurrentModelState {
 }
 
 interface ModelColumns {
-  readonly modelProviderId: null;
-  readonly modelProviderType: null;
-  readonly modelProviderCredentialScope: null;
   readonly selectedModel: string | null;
   readonly modelSettings: ModelSettings;
   readonly modelSettingsPatch: ModelSettingsPatch | undefined;

@@ -252,8 +252,9 @@ export async function validatePermanentModelCatalogConstraints(
     await rejects(
       insertRoute,
       builtIn({
-        1: "openai-api-key",
+        1: "codex-oauth-token",
         2: "openrouter-codex",
+        3: "codex-oauth-token",
         9: null,
         10: null,
         11: null,
@@ -275,30 +276,56 @@ export async function validatePermanentModelCatalogConstraints(
     await rejects(
       insertRoute,
       builtIn({
-        1: "openai-api-key",
-        2: "openai-api-key",
+        1: "codex-oauth-token",
+        2: "codex-oauth-token",
+        3: "codex-oauth-token",
         10: null,
         11: null,
       }),
       { code: "23514", constraint: "chk_model_routes_price_tier" },
     );
-    // A BYOK route and a subscription route of the same provider coexist.
-    for (const subscriptionType of [null, "codex-oauth-token"]) {
-      await client.query(insertRoute, [
-        id("d"),
-        "codex-oauth-token",
-        "codex-oauth-token",
-        subscriptionType,
-        0,
-        [],
-        null,
-        [],
-        null,
-        null,
-        null,
-        null,
-      ]);
-    }
+    // Only Built-in and personal subscription routes exist.
+    await rejects(
+      insertRoute,
+      builtIn({
+        1: "openai-api-key",
+        2: "openai-api-key",
+        9: null,
+        10: null,
+        11: null,
+      }),
+      { code: "23514", constraint: "chk_model_routes_provider_type" },
+    );
+    await rejects(
+      insertRoute,
+      builtIn({
+        1: "codex-oauth-token",
+        2: "codex-oauth-token",
+        9: null,
+        10: null,
+        11: null,
+      }),
+      { code: "23514", constraint: "chk_model_routes_subscription_type" },
+    );
+    await rejects(
+      insertRoute,
+      builtIn({ 3: "codex-oauth-token", 4: 1, 2: "deepseek" }),
+      { code: "23514", constraint: "chk_model_routes_subscription_type" },
+    );
+    await client.query(insertRoute, [
+      id("d"),
+      "codex-oauth-token",
+      "codex-oauth-token",
+      "codex-oauth-token",
+      0,
+      [],
+      null,
+      [],
+      null,
+      null,
+      null,
+      null,
+    ]);
     // A catalog row with routes cannot be deleted.
     await client.query(
       "DELETE FROM run_model_catalog WHERE model = ANY($1::varchar[])",

@@ -57,8 +57,8 @@ and explains that re-enabling applies to later runs.
 Claude Code and Codex normally keep framework-native web search disabled so
 public-web discovery uses managed `okou web-search`. Run preparation exposes
 the framework-native tool only when the captured policy disables `web-search`
-and the resolved route uses BYOK credentials. This includes a stored member or
-organization provider and an explicit framework key declared in compose. An
+and the resolved route uses BYOK credentials. This includes a member's personal
+subscription and an explicit framework key declared in compose. An
 outer `built-in` provider remains non-BYOK even when its concrete upstream
 provider is OpenAI or Anthropic.
 
