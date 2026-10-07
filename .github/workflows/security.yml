@@ -280,6 +280,7 @@ jobs:
             .github/scripts/cloudflare-ssh-preconnect.sh \
             .github/scripts/download-verified.sh \
             .github/scripts/fetch-okou-desktop-artifact.sh \
+            .github/scripts/neon-preview-branch.sh \
             .github/scripts/pass-release-pr-ci-gates.sh \
             .github/scripts/publish-okou-app-assets.sh \
             .github/scripts/reconcile-and-start-runner-groups.sh \
