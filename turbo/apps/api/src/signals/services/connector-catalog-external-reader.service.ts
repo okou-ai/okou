@@ -223,11 +223,17 @@ function measureCatalogLoadSync<T>(
   return timing ? timing.measureSync(actionType, operation) : operation();
 }
 
+// Category labels belong to the same pointer row as the captured hash.
+interface CurrentCatalogCapture {
+  readonly identity: ExternalCatalogIdentity;
+  readonly categoryMetadata: AcceptedConnectorCatalogSnapshot["artifact"]["categoryMetadata"];
+}
+
 async function readCurrentIdentity(args: {
   readonly db: ReadonlyDb;
   readonly capabilityDigest: string;
   readonly timing?: ConnectorCatalogLoadTiming;
-}): Promise<ExternalCatalogIdentity | undefined> {
+}): Promise<CurrentCatalogCapture | undefined> {
   const [row] = await measureCatalogLoad(
     args.timing,
     "api_dispatch_connector_catalog_query_identity",
@@ -236,6 +242,7 @@ async function readCurrentIdentity(args: {
         .select({
           schemaVersion: connectorCatalog.schemaVersion,
           hash: connectorCatalog.hash,
+          catalogHeader: connectorCatalog.catalogHeader,
         })
         .from(connectorCatalog)
         .where(
@@ -248,7 +255,10 @@ async function readCurrentIdentity(args: {
     },
   );
   return row
-    ? catalogIdentityFromCapture(row, args.capabilityDigest)
+    ? {
+        identity: catalogIdentityFromCapture(row, args.capabilityDigest),
+        categoryMetadata: row.catalogHeader.categoryMetadata,
+      }
     : undefined;
 }
 
@@ -273,6 +283,7 @@ async function readCurrentCatalogPayload(args: {
 async function readCurrentCatalog(args: {
   readonly db: ReadonlyDb;
   readonly identity: ExternalCatalogIdentity;
+  readonly categoryMetadata: CurrentCatalogCapture["categoryMetadata"];
   readonly capability: ExecutableCapabilityState;
   readonly timing?: ConnectorCatalogLoadTiming;
 }): Promise<AcceptedConnectorCatalogSnapshot> {
@@ -287,11 +298,13 @@ async function readCurrentCatalog(args: {
 
 function materializeAcceptedConnectorCatalog(args: {
   readonly identity: ExternalCatalogIdentity;
+  readonly categoryMetadata: CurrentCatalogCapture["categoryMetadata"];
   readonly capability: ExecutableCapabilityState;
   readonly timing?: ConnectorCatalogLoadTiming;
   readonly rows: Awaited<ReturnType<typeof readCurrentCatalogPayload>>;
 }): AcceptedConnectorCatalogSnapshot {
   const artifact = {
+    categoryMetadata: args.categoryMetadata,
     connectors: args.rows.map((row) => {
       return row.payload;
     }),
@@ -387,18 +400,19 @@ export async function loadAcceptedConnectorCatalogSnapshot(
   timing?: ConnectorCatalogLoadTiming,
 ): Promise<AcceptedConnectorCatalogSnapshot> {
   const capability = connectorCatalogExecutableCapabilityState();
-  const identity = await readCurrentIdentity({
+  const capture = await readCurrentIdentity({
     db,
     capabilityDigest: capability.digest,
     ...(timing === undefined ? {} : { timing }),
   });
-  if (!identity) {
+  if (!capture) {
     throw new ExternalConnectorCatalogUnavailableError(
       "missing_current_identity",
     );
   }
   // Entries are immutable and retained by hash. A later pointer switch cannot
   // strand this capture, so the legacy mutable-snapshot retry is unnecessary.
+  const { identity, categoryMetadata } = capture;
   return await readCachedConnectorCatalogSnapshot({
     identity,
     timing,
@@ -406,6 +420,7 @@ export async function loadAcceptedConnectorCatalogSnapshot(
       return await readCurrentCatalog({
         db,
         identity,
+        categoryMetadata,
         capability,
         ...(timing === undefined ? {} : { timing }),
       });
@@ -664,6 +679,39 @@ export function listAcceptedConnectorCatalogAvailableSlugs(args: {
     .sort();
 }
 
+function categoryMetadataForConnectors(
+  catalog: AcceptedConnectorCatalogSnapshot,
+  connectors: readonly EffectiveConnector[],
+): PublicConnectorCatalogListResponse["categoryMetadata"] {
+  const visibleCategories = new Set(
+    connectors.map((effective) => {
+      return effective.connector.category;
+    }),
+  );
+  const categories = catalog.artifact.categoryMetadata.categories.filter(
+    (category) => {
+      return visibleCategories.has(category.id);
+    },
+  );
+  const visibleGroups = new Set(
+    categories.flatMap((category) => {
+      return category.groupId === null ? [] : [category.groupId];
+    }),
+  );
+  return {
+    categories: categories.map((category) => {
+      return { ...category };
+    }),
+    groups: catalog.artifact.categoryMetadata.groups
+      .filter((group) => {
+        return visibleGroups.has(group.id);
+      })
+      .map((group) => {
+        return { ...group };
+      }),
+  };
+}
+
 function connectionForCatalogStatus(
   connector: BuiltinConnectorResponse | null,
 ): PublicConnectorCatalogConnection | null {
@@ -889,6 +937,7 @@ export async function listExternalPublicConnectorCatalog(
     connectors: connectors.map((connector) => {
       return connectorCatalogItem(connector, popularityIndex);
     }),
+    categoryMetadata: categoryMetadataForConnectors(catalog, connectors),
   };
 }
 
@@ -1162,6 +1211,7 @@ export async function discoverExternalPublicConnectorCatalogStatus(
     // connectors Okou runs for itself, not the slice that came back for a
     // named category. Offering a category the counts do not know would be a
     // chip that opens nothing.
+    categorySource: withoutInternalConnectors(effective),
     connections: args.connections,
     referenceConnectorSlugs: args.referenceConnectorSlugs,
   });
@@ -1185,6 +1235,7 @@ function connectorCatalogStatusRead(args: {
    * category, and the category list is how a client offers the others, so it
    * has to keep describing the whole catalog. Defaults to what is returned.
    */
+  readonly categorySource?: readonly EffectiveConnector[];
   readonly connections: readonly ConnectorCatalogConnection[];
   readonly referenceConnectorSlugs: readonly string[];
 }): ConnectorCatalogStatusRead {
@@ -1205,6 +1256,10 @@ function connectorCatalogStatusRead(args: {
   return {
     status: {
       connectors,
+      categoryMetadata: categoryMetadataForConnectors(
+        args.catalog,
+        args.categorySource ?? args.effective,
+      ),
     },
     referenceMetadata: referenceMetadataForCatalog(
       args.catalog,

@@ -162,8 +162,8 @@ and [current model APIs](model-catalog.md). This source PR does not deploy or me
 `deploy-api` opts into `db:dev-seed --preview-onboarding-catalog` for the
 Neon test project's `preview/*` branch. It downloads and validates the same
 official R2 publication, but materializes only the union of the onboarding
-source/workflow contracts and the six existing Runner E2E connectors. The
-current union is 31 connectors. Immutable entry rows are inserted in one batch,
+source/workflow contracts and the seven existing Runner E2E connectors. The
+current union is 32 connectors. Immutable entry rows are inserted in one batch,
 with no per-entry SQL readback. The current manifest lists only those rows;
 the publication version, digest and full attested compressed snapshot remain
 unchanged. Compatibility evaluations and bundled skills are prepared only for

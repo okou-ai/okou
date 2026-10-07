@@ -22,9 +22,15 @@ export interface ConnectorCatalogLookup {
   readonly filteredMethodKeys: ReadonlySet<string>;
 }
 
-/** Catalog-wide entries; publication headers are not a runtime dependency. */
+/**
+ * Catalog-wide entries plus the pointer row's category labels, which public
+ * discovery still returns to App clients.
+ */
 export interface ConnectorCatalogView extends ConnectorCatalogLookup {
-  readonly artifact: Pick<ConnectorCatalogArtifact, "connectors">;
+  readonly artifact: Pick<
+    ConnectorCatalogArtifact,
+    "categoryMetadata" | "connectors"
+  >;
 }
 
 export type ConnectorCatalogRuntimeView = ConnectorCatalogView;

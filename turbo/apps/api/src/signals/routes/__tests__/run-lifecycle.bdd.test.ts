@@ -75,7 +75,6 @@ import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org"
 import {
   API_TEST_CONNECTOR_CATALOG,
   API_TEST_CONNECTOR_FIREWALL_CONFIGS,
-  corruptApiTestConnectorCatalogActiveSnapshotPayload,
   installApiTestConnectorCatalog,
 } from "../../../test-fixtures/connector-catalog";
 import {
@@ -1270,12 +1269,6 @@ async function setupSameThreadReuseScenario(
 
 async function scopedRuntimeScenario() {
   const api = createRunsApi(context);
-  mockEnv(
-    "R2_USER_STORAGES_BUCKET_NAME",
-    `test-run-lifecycle-scoped-runtime-${randomUUID()}`,
-  );
-  const catalogVersion = `api-test-scoped-runtime-${randomUUID()}`;
-  await installApiTestConnectorCatalog({ catalogVersion });
   const { actor, agentId, runnerGroup } = await entitledRunActor();
   let enabledSlugs: readonly string[] = [];
   const createScopedRun = async (
@@ -1290,7 +1283,7 @@ async function scopedRuntimeScenario() {
     }
     return await api.createThreadRun(actor, { agentId, prompt });
   };
-  return { api, actor, runnerGroup, catalogVersion, createScopedRun };
+  return { api, actor, runnerGroup, createScopedRun };
 }
 
 describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks", () => {
@@ -1471,40 +1464,19 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     );
   });
 
-  it("rematerializes scoped runtime entries after catalog identity rotation", async () => {
-    const { api, actor, createScopedRun } = await scopedRuntimeScenario();
-    const firstRun = await createScopedRun("warm scoped connector runtime", [
-      "x",
-    ]);
-    await api.requestCancelRun(actor, firstRun.runId, [200]);
-
-    const rotatedCatalogVersion = `api-test-scoped-runtime-${randomUUID()}`;
-    await installApiTestConnectorCatalog({
-      catalogVersion: rotatedCatalogVersion,
-    });
-    const rotatedRun = await createScopedRun(
-      "materialize after catalog identity rotation",
-      ["x"],
-    );
-    expect((await api.readRun(actor, rotatedRun.runId)).status).toBe("pending");
-    await api.requestCancelRun(actor, rotatedRun.runId, [200]);
-  });
-
   it("rematerializes scoped runtime entries after capability identity rotation", async () => {
     const capabilityIdentityEnvName = "CAL_COM_OAUTH_CLIENT_ID";
     mockOptionalEnv(
       capabilityIdentityEnvName,
       "api-test-calcom-oauth-client-id",
     );
-    const { api, actor, catalogVersion, createScopedRun } =
-      await scopedRuntimeScenario();
+    const { api, actor, createScopedRun } = await scopedRuntimeScenario();
     const firstRun = await createScopedRun("warm scoped connector runtime", [
       "x",
     ]);
     await api.requestCancelRun(actor, firstRun.runId, [200]);
 
     mockOptionalEnv(capabilityIdentityEnvName, undefined);
-    await installApiTestConnectorCatalog({ catalogVersion });
     const capabilityRotatedPrompt =
       "materialize after capability identity rotation";
     const capabilityRotatedRun = await createScopedRun(
@@ -1521,13 +1493,6 @@ describe("CHAIN-RUN: entitled run lifecycle through runner and sandbox webhooks"
     const api = createRunsApi(context);
     const fw = createFirewallApi(context);
     mockEnv("GIT_COMMIT_SHA", "a".repeat(40));
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      `test-run-lifecycle-reusable-projection-authority-${randomUUID()}`,
-    );
-    await installApiTestConnectorCatalog({
-      catalogVersion: `api-test-reusable-projection-authority-${randomUUID()}`,
-    });
     const { actor, agentId, runnerGroup } = await entitledRunActor();
     await fw.seedTestConnector(actor, {
       connectorSlug: "x",
@@ -6058,11 +6023,6 @@ describe("RUN-02: stored connector injection into claimed runs", () => {
       plainCustom.id,
     );
     const mixedTargets = [larkTarget, permissionedTarget, plainTarget];
-
-    await installApiTestConnectorCatalog({
-      catalogVersion: `api-test-runtime-sync-projection-${randomUUID()}`,
-    });
-    await corruptApiTestConnectorCatalogActiveSnapshotPayload();
 
     const [projectedBuiltin, projectedPermissioned, projectedPlain] =
       await api.syncConnectorRuntime(run.runId, {

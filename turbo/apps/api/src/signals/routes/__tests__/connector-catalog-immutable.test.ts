@@ -1317,13 +1317,25 @@ describe("slug-first current catalog business readers", () => {
       "DELETE FROM connector_catalog_compatibility_evaluation; DELETE FROM connector_catalog_active_snapshot; DELETE FROM connector_catalog_sync_state",
     );
     await engine.query(
-      "UPDATE connector_catalog SET entry_slugs = '[]'::jsonb, catalog_header = '{}'::jsonb, catalog_version = 'ignored-publication-label'",
+      "UPDATE connector_catalog SET entry_slugs = '[]'::jsonb, catalog_version = 'ignored-publication-label'",
     );
     const listed = await accept(catalogClient().list({ headers }), [200]);
     expect(listed.body.connectors).toContainEqual(
       expect.objectContaining({ slug: "github" }),
     );
-    expect(listed.body.categoryMetadata).toBeUndefined();
+    // Category labels come from the pointer row that owns the listed hash.
+    const listedCategories = new Set(
+      listed.body.connectors.map((connector) => {
+        return connector.category;
+      }),
+    );
+    expect(
+      new Set(
+        listed.body.categoryMetadata?.categories.map((category) => {
+          return category.id;
+        }),
+      ),
+    ).toStrictEqual(listedCategories);
     await directory(candidate);
     const oneClick = await accept(catalogClient().oneClick({ headers }), [200]);
     expect(oneClick.body.connectors.length).toBeGreaterThan(0);
