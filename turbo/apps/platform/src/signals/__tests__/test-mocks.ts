@@ -890,16 +890,8 @@ function mockViewTransition(signal: AbortSignal): BrowserViewTransitionMock {
     "startViewTransition",
     (options: StartViewTransitionOptions): ViewTransition => {
       startedTypes.push([...(options.types ?? [])]);
-      const updateCallbackDone = (async () => {
-        await options.update?.();
-      })();
-      return {
-        updateCallbackDone,
-        ready: updateCallbackDone,
-        finished: updateCallbackDone,
-        types: new Set(options.types),
-        skipTransition: () => {},
-      } as unknown as ViewTransition;
+      options.update?.();
+      return {} as ViewTransition;
     },
   );
   const supports = CSS.supports.bind(CSS);

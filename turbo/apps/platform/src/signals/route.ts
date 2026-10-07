@@ -10,23 +10,14 @@ import {
 } from "./auth.ts";
 import { hash, pathname, pushState, replaceState, search } from "./location.ts";
 import { setPageSignal$ } from "./page-signal.ts";
-import { releasePageCommit$, waitNextPageCommit$ } from "./react-router.ts";
+import { setNextPageTransition$ } from "./react-router.ts";
 import { rootSignal$ } from "./root-signal.ts";
 import { bridgeConnected$ } from "./shared-database-bridge-state.ts";
-import {
-  createDeferredPromise,
-  detach,
-  onDomEventFn,
-  Reason,
-  resetSignal,
-} from "./utils.ts";
+import { detach, onDomEventFn, Reason, resetSignal } from "./utils.ts";
 import { logger } from "./log.ts";
 import { capturePageView, markBootstrapRouteSetup$ } from "../lib/posthog.ts";
 import { pwaNavigationEnabled$ } from "./okou-page/pwa-navigation.ts";
-import {
-  pwaPageTransitionDirection,
-  type PwaPageTransitionDirection,
-} from "./okou-page/pwa-page-transition.ts";
+import { pwaPageTransitionDirection } from "./okou-page/pwa-page-transition.ts";
 
 const L = logger("Route");
 
@@ -185,90 +176,23 @@ const navigateToDefaultWhenInvalid$ = command(({ get, set }) => {
   }
 });
 
-const pageTransitionDirectionTo$ = command(
-  ({ get }, pathname: string, searchParams: URLSearchParams) => {
-    if (!get(pwaNavigationEnabled$)) {
-      return "none";
-    }
-    return pwaPageTransitionDirection(
-      { pathname: get(pathname$), searchParams: get(searchParams$) },
-      { pathname, searchParams },
+// Must run before the route state moves, while it still describes the page on
+// screen.
+const prepareNextPageTransition$ = command(
+  ({ get, set }, pathname: string, searchParams: URLSearchParams) => {
+    const enabled =
+      get(pwaNavigationEnabled$) &&
+      "startViewTransition" in document &&
+      CSS.supports("selector(:active-view-transition-type(a))");
+    set(
+      setNextPageTransition$,
+      enabled
+        ? pwaPageTransitionDirection(
+            { pathname: get(pathname$), searchParams: get(searchParams$) },
+            { pathname, searchParams },
+          )
+        : "none",
     );
-  },
-);
-
-type RouteCommit =
-  | { readonly kind: "push" | "replace"; readonly path: string }
-  | { readonly kind: "pop"; readonly historyState: unknown };
-
-const commitRouteState$ = command(({ set }, commit: RouteCommit) => {
-  if (commit.kind === "pop") {
-    set(internalHistoryState$, commit.historyState);
-    set(reloadPathname$, (x) => {
-      return x + 1;
-    });
-    set(navigateToDefaultWhenInvalid$);
-    return;
-  }
-  if (commit.kind === "replace") {
-    replaceState({}, "", commit.path);
-  } else {
-    pushState({}, "", commit.path);
-  }
-  set(internalHistoryState$, {});
-  set(reloadPathname$, (x) => {
-    return x + 1;
-  });
-});
-
-// Like TanStack Router, the view transition update only commits the route and
-// waits for React to render the next page. The rest of the route setup keeps
-// running after the slide starts.
-const transitionRoute$ = command(
-  async (
-    { set },
-    direction: PwaPageTransitionDirection,
-    commit: RouteCommit,
-    signal: AbortSignal,
-  ) => {
-    if (
-      direction === "none" ||
-      !("startViewTransition" in document) ||
-      !CSS.supports("selector(:active-view-transition-type(a))")
-    ) {
-      set(commitRouteState$, commit);
-      await set(loadRoute$, signal);
-      return;
-    }
-
-    const { resolve: startCommit, promise: commitStartedPromise } =
-      createDeferredPromise<void>(signal);
-    // Armed while the current page is still on screen; the next page that
-    // React commits completes the update.
-    const pageCommit = set(waitNextPageCommit$, signal);
-    const transition = document.startViewTransition({
-      update: () => {
-        startCommit();
-        return pageCommit.promise;
-      },
-      types: [direction],
-    });
-    // The browser has captured the current page; the DOM may change now.
-    await commitStartedPromise;
-    signal.throwIfAborted();
-    set(commitRouteState$, commit);
-    const [load] = await Promise.allSettled([set(loadRoute$, signal)]);
-    // Aborting the signal also rejects the pending page commit, which makes the
-    // browser skip the transition.
-    signal.throwIfAborted();
-    if (load.status === "rejected") {
-      transition.skipTransition();
-      throw load.reason;
-    }
-    // A setup that ends without rendering a page releases the update.
-    set(releasePageCommit$, pageCommit);
-    await transition.updateCallbackDone;
-    signal.throwIfAborted();
   },
 );
 
@@ -280,19 +204,17 @@ export const initRoutes$ = command(
     window.addEventListener(
       "popstate",
       onDomEventFn(async (event: PopStateEvent) => {
-        // The browser has already moved to the destination, while the route
-        // state still describes the page on screen.
-        const direction = set(
-          pageTransitionDirectionTo$,
+        set(
+          prepareNextPageTransition$,
           pathname(),
           new URLSearchParams(search()),
         );
-        await set(
-          transitionRoute$,
-          direction,
-          { kind: "pop", historyState: event.state },
-          signal,
-        );
+        set(internalHistoryState$, event.state);
+        set(reloadPathname$, (x) => {
+          return x + 1;
+        });
+        set(navigateToDefaultWhenInvalid$);
+        await set(loadRoute$, signal);
       }),
       { signal },
     );
@@ -327,22 +249,26 @@ const navigate$ = command(
       "navigating to",
       isDesktopAuthFlow(new URL(newPath, location.origin)) ? pathname : newPath,
     );
-    const direction = set(
-      pageTransitionDirectionTo$,
+    set(
+      prepareNextPageTransition$,
       pathname,
       options.searchParams ?? new URLSearchParams(),
     );
+    if (options.replace) {
+      replaceState({}, "", newPath);
+    } else {
+      pushState({}, "", newPath);
+    }
+    set(internalHistoryState$, {});
+    set(reloadPathname$, (x) => {
+      return x + 1;
+    });
     // Use rootSignal$ (not the caller's route signal) so the new route gets
     // a fresh, non-aborted signal.  resetRouteSignal$ inside loadRoute$ will
     // abort the previous route's controller, which would poison any signal
     // derived from it — passing the caller's signal here causes the new
     // route's signal to be born-aborted.
-    await set(
-      transitionRoute$,
-      direction,
-      { kind: options.replace ? "replace" : "push", path: newPath },
-      get(rootSignal$),
-    );
+    await set(loadRoute$, get(rootSignal$));
     signal.throwIfAborted();
   },
 );
