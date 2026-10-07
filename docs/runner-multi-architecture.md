@@ -94,6 +94,16 @@ binary directly from the trusted R2 cache. GitHub cache metadata is a lookup
 index, not a second source of provenance validation for R2 objects. Cached
 binaries are not re-uploaded as a combined GitHub artifact.
 
+The binary input key hashes the committed source/build inventory, target and
+embedded CLI content, not the source commit identity. The CLI contribution is
+its actual package SHA-256 plus a canonical projection of the manifest fields
+consumed by `crates/runner/build.rs`: package identity, CLI/Pi versions and
+session-construction digest. Commit provenance, JSON formatting/key order and
+unused manifest fields do not affect reuse. Invalid CLI inputs fail before
+cache lookup; commit-addressed CLI publication and provenance verification are
+unchanged. Input schema 6 intentionally starts a new key space, so the first
+build of each input combination misses once without migrating old references.
+
 Targets without an available cache reference use the normal compile job, which
 uploads the binary directly to the existing content-addressed R2 cache. Only
 after verifying that object does it publish a small R2 manifest scoped to the

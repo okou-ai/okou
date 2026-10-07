@@ -367,50 +367,154 @@ workflow_toolchain=$(awk '
   in_compile && /^      image: / { sub(/^      image: /, ""); print; exit }
 ' "${REPO_ROOT}/.github/workflows/runner-image.yml")
 . "${REPO_ROOT}/.github/scripts/runner-binary-build/contract.env"
-[ "$RUNNER_BINARY_INPUT_SCHEMA_VERSION" = "5" ] \
-  || fail "runner binary input schema must include the CLI identity input"
+[ "$RUNNER_BINARY_INPUT_SCHEMA_VERSION" = "6" ] \
+  || fail "runner binary input schema must identify content-only CLI inputs"
 [ "$workflow_toolchain" = 'ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20260825' ] \
   || fail "Runner Image workflow toolchain must derive its owner from GitHub context"
 expected_runtime_toolchain="ghcr.io/${GITHUB_REPOSITORY_OWNER:-okou-ai}/vm0-toolchain-rust:20260825"
 [ "$RUNNER_BINARY_TOOLCHAIN_IMAGE" = "$expected_runtime_toolchain" ] \
   || fail "hashed build contract must derive the same runtime toolchain owner"
 
-# The private compiler input contains the tarball and build-side identity.
-# Only the tarball is embedded, but both files affect the compiled Runner.
+# Only package bytes and the identity consumed by Runner compilation matter.
 cli_package="${TMPDIR}/cli-intermediate/package.tgz"
 cli_manifest="${TMPDIR}/cli-identity/install-metadata.json"
+cli_manifest_base="${TMPDIR}/cli-manifest-base.json"
+cli_package_copy="${TMPDIR}/cli-package-copy.tgz"
 mkdir -p "$(dirname "$cli_package")" "$(dirname "$cli_manifest")"
 printf 'fixture CLI package\n' > "$cli_package"
-printf 'fixture CLI identity\n' > "$cli_manifest"
+jq -n \
+  --arg commit "$(git -C "$repo" rev-parse HEAD)" \
+  --arg sha "$(sha256sum "$cli_package" | awk '{print $1}')" \
+  --argjson size "$(stat -c '%s' "$cli_package")" '{
+    version: 1,
+    commitSha: $commit,
+    package: {path: "package.tgz", sha256: $sha, size: $size},
+    versions: {cli: "9.353.0", piAgentRuntime: "1.36.0", piSdk: "0.87.1+okou.0123456789ab"},
+    sessionConstruction: {digest: ("d" * 64)}
+  }' > "$cli_manifest"
+cp "$cli_manifest" "$cli_manifest_base"
+
+cli_digest_value() {
+  local target=${1:-aarch64-unknown-linux-musl} revision=${2:-HEAD}
+  GUEST_CLI_PATH="$cli_package" GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
+    digest_value "$repo" "$target" "$revision"
+}
+
+assert_cli_digest_fails() {
+  local label=$1
+  if cli_digest_value > "${TMPDIR}/rejected-digest" 2>/dev/null; then
+    fail "$label must fail"
+  fi
+  [ ! -s "${TMPDIR}/rejected-digest" ] || fail "$label must not emit a digest"
+}
+
 plain_arm_digest=$(digest_value "$repo" aarch64-unknown-linux-musl)
-embedded_arm_digest=$(GUEST_CLI_PATH="$cli_package" GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
-  digest_value "$repo" aarch64-unknown-linux-musl)
-embedded_x86_digest=$(GUEST_CLI_PATH="$cli_package" GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
-  digest_value "$repo" x86_64-unknown-linux-musl)
+embedded_arm_digest=$(cli_digest_value)
+embedded_x86_digest=$(cli_digest_value x86_64-unknown-linux-musl)
 [ "$plain_arm_digest" != "$embedded_arm_digest" ] \
   || fail "bundled and unbundled Runner inputs must have different cache digests"
 [ "$embedded_arm_digest" != "$embedded_x86_digest" ] \
-  || fail "architecture must remain part of the source-bound digest"
-stale_revision_digest=$(GUEST_CLI_PATH="$cli_package" GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
-  digest_value "$repo" aarch64-unknown-linux-musl "$baseline_revision")
-[ "$stale_revision_digest" != "$embedded_arm_digest" ] \
-  || fail "source revision must remain part of the Runner cache digest"
+  || fail "architecture must remain part of the content digest"
+[ "$(cli_digest_value aarch64-unknown-linux-musl "$baseline_revision")" != "$embedded_arm_digest" ] \
+  || fail "historical revisions with different included inputs must invalidate reuse"
+[ "$(cli_digest_value aarch64-unknown-linux-musl "$valid_revision")" = "$embedded_arm_digest" ] \
+  || fail "different commits with identical included inputs must share a digest"
+
+embedded_revision=$(git -C "$repo" rev-parse HEAD)
+printf 'another unrelated change\n' >> "${repo}/README.md"
+printf 'another excluded test change\n' >> "${repo}/crates/guest-one/tests/integration.rs"
+# Do not stage the deliberately dirty/untracked build inputs from materialization tests.
+git -C "$repo" add -- README.md crates/guest-one/tests/integration.rs
+git -C "$repo" commit -qm bundled-excluded-changes
+for target in aarch64-unknown-linux-musl x86_64-unknown-linux-musl; do
+  [ "$(cli_digest_value "$target")" = "$(cli_digest_value "$target" "$embedded_revision")" ] \
+    || fail "unrelated/excluded commit changes must preserve bundled ${target} inputs"
+done
+if cli_digest_value aarch64-unknown-linux-musl missing-revision >/dev/null 2>&1; then
+  fail "invalid source revisions must still fail"
+fi
+
+jq '.commitSha = ("b" * 40)' "$cli_manifest_base" > "$cli_manifest"
+[ "$(cli_digest_value)" = "$embedded_arm_digest" ] \
+  || fail "CLI commit provenance must not affect the digest"
+jq -cS . "$cli_manifest_base" > "$cli_manifest"
+[ "$(cli_digest_value)" = "$embedded_arm_digest" ] \
+  || fail "CLI JSON formatting and key order must not affect the digest"
+jq '.createdAt = "2026-10-07T00:00:00Z" |
+    .package.provenance = "unused" | .versions.note = "unused" |
+    .sessionConstruction.note = "unused"' "$cli_manifest_base" > "$cli_manifest"
+[ "$(cli_digest_value)" = "$embedded_arm_digest" ] \
+  || fail "unconsumed CLI metadata must not affect the digest"
+cp "$cli_manifest_base" "$cli_manifest"
+
 printf 'changed bytes\n' >> "$cli_package"
-changed_cli_digest=$(GUEST_CLI_PATH="$cli_package" GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
-  digest_value "$repo" aarch64-unknown-linux-musl)
+assert_cli_digest_fails "CLI package/manifest disagreement"
+jq --arg sha "$(sha256sum "$cli_package" | awk '{print $1}')" \
+  --argjson size "$(stat -c '%s' "$cli_package")" \
+  '.package.sha256 = $sha | .package.size = $size' "$cli_manifest_base" > "$cli_manifest"
+changed_cli_digest=$(cli_digest_value)
 [ "$changed_cli_digest" != "$embedded_arm_digest" ] \
   || fail "CLI byte changes must invalidate the Runner cache digest"
-printf 'changed identity\n' >> "$cli_manifest"
-changed_identity_digest=$(GUEST_CLI_PATH="$cli_package" GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
-  digest_value "$repo" aarch64-unknown-linux-musl)
-[ "$changed_identity_digest" != "$changed_cli_digest" ] \
-  || fail "CLI identity changes must invalidate the Runner cache digest"
+cp "$cli_manifest" "$cli_manifest_base"
+cp "$cli_package" "$cli_package_copy"
+for mutation in \
+  '.versions.cli = "9.354.0"' \
+  '.versions.piAgentRuntime = "1.37.0"' \
+  '.versions.piSdk = "0.87.1+okou.abcdefabcdef"' \
+  '.sessionConstruction.digest = ("e" * 64)'; do
+  jq "$mutation" "$cli_manifest_base" > "$cli_manifest"
+  [ "$(cli_digest_value)" != "$changed_cli_digest" ] \
+    || fail "compiled CLI identity change must invalidate the digest: ${mutation}"
+done
+cp "$cli_manifest_base" "$cli_manifest"
+
 # A sibling manifest is irrelevant: only the explicitly supplied path counts.
 printf 'wrong sibling identity\n' > "$(dirname "$cli_package")/manifest.json"
-explicit_identity_digest=$(GUEST_CLI_PATH="$cli_package" GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
-  digest_value "$repo" aarch64-unknown-linux-musl)
-[ "$explicit_identity_digest" = "$changed_identity_digest" ] \
+[ "$(cli_digest_value)" = "$changed_cli_digest" ] \
   || fail "a sibling manifest must not affect the explicit input digest"
+for mutation in \
+  '.version = 2' \
+  '.package.path = "unexpected.tgz"' \
+  '.package.sha256 = ("0" * 64)' \
+  '.package.size = 0' \
+  'del(.versions.cli)' \
+  'del(.versions.piAgentRuntime)' \
+  'del(.versions.piSdk)' \
+  'del(.sessionConstruction.digest)' \
+  '.versions.cli = "09.353.0"' \
+  '.versions.cli = "9.353.0\n"' \
+  '.versions.piAgentRuntime = 1' \
+  '.versions.piAgentRuntime = "1.36.0\n"' \
+  '.versions.piSdk = "0.87.1"' \
+  '.versions.piSdk = "0.87.1+okou.0123456789ab\n"' \
+  '.sessionConstruction.digest = "invalid"' \
+  '.sessionConstruction.digest = ("d" * 64 + "\n")'; do
+  jq "$mutation" "$cli_manifest_base" > "$cli_manifest"
+  assert_cli_digest_fails "invalid CLI identity: ${mutation}"
+done
+printf 'not JSON\n' > "$cli_manifest"
+assert_cli_digest_fails "malformed CLI JSON"
+cat "$cli_manifest_base" "$cli_manifest_base" > "$cli_manifest"
+assert_cli_digest_fails "multiple CLI JSON documents"
+: > "$cli_manifest"
+assert_cli_digest_fails "empty CLI manifest"
+jq '.unused = ("x" * 16384)' "$cli_manifest_base" > "$cli_manifest"
+assert_cli_digest_fails "oversized CLI manifest"
+rm "$cli_manifest"
+ln -s "$cli_manifest_base" "$cli_manifest"
+assert_cli_digest_fails "symlinked CLI manifest"
+rm "$cli_manifest"
+cp "$cli_manifest_base" "$cli_manifest"
+: > "$cli_package"
+assert_cli_digest_fails "empty CLI package"
+truncate -s $((64 * 1024 * 1024 + 1)) "$cli_package"
+assert_cli_digest_fails "oversized CLI package"
+rm "$cli_package"
+ln -s "$cli_package_copy" "$cli_package"
+assert_cli_digest_fails "symlinked CLI package"
+rm "$cli_package"
+cp "$cli_package_copy" "$cli_package"
+
 if GUEST_CLI_PATH="$cli_package" GUEST_CLI_MANIFEST_PATH="" \
   digest_value "$repo" aarch64-unknown-linux-musl >/dev/null 2>&1; then
   fail "package-only CLI input must fail even with a sibling manifest"
@@ -420,15 +524,9 @@ if GUEST_CLI_PATH="" GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
   fail "manifest-only CLI input must fail"
 fi
 rm "$cli_manifest"
-if GUEST_CLI_PATH="$cli_package" GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
-  digest_value "$repo" aarch64-unknown-linux-musl >/dev/null 2>&1; then
-  fail "an explicitly provided missing CLI manifest must fail"
-fi
-printf 'fixture CLI identity\n' > "$cli_manifest"
+assert_cli_digest_fails "explicitly provided missing CLI manifest"
+cp "$cli_manifest_base" "$cli_manifest"
 rm "$cli_package"
-if GUEST_CLI_PATH="$cli_package" GUEST_CLI_MANIFEST_PATH="$cli_manifest" \
-  digest_value "$repo" aarch64-unknown-linux-musl >/dev/null 2>&1; then
-  fail "an explicitly provided missing CLI package must fail"
-fi
+assert_cli_digest_fails "explicitly provided missing CLI package"
 
 echo "runner-binary-build-test: ok"
