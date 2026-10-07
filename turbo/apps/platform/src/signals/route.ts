@@ -100,10 +100,14 @@ interface Route {
 
 const internalRouteConfig$ = state<Route[] | undefined>(undefined);
 
-function findRoute(
-  config: readonly Route[],
-  currentPath: string,
-): Route | null {
+const currentRoute$ = computed((get) => {
+  const config = get(internalRouteConfig$);
+  if (!config) {
+    return null;
+  }
+
+  const currentPath = get(pathname$);
+
   for (const route of config) {
     const matcher = match(route.path, { decode: decodeURIComponent });
     const result = matcher(currentPath);
@@ -113,15 +117,6 @@ function findRoute(
   }
 
   return null;
-}
-
-const currentRoute$ = computed((get) => {
-  const config = get(internalRouteConfig$);
-  if (!config) {
-    return null;
-  }
-
-  return findRoute(config, get(pathname$));
 });
 
 export const pathParams$ = computed((get) => {
