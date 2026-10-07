@@ -20,12 +20,10 @@ import {
   transitionAgentRunsToTerminal,
   type ReleasedRunSlot,
 } from "./agent-run-terminal-transition.service";
-import { revokeMorningBriefNativeAuthority } from "./morning-brief-native-schedule.service";
-import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
-import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 import { eraseVncOwnerData$ } from "./vnc-owner-lifecycle.service";
 import { deleteDiscordOrgMemberData } from "./discord-owner-cleanup.service";
+import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
 
 import { command } from "ccstate";
 import { writeDb$, type Db } from "../external/db";
@@ -115,7 +113,7 @@ export const cleanupOrgMemberResources$ = command(
     // An official installation is excluded because it does not own its enabled
     // bit: official reconciliation drives it from `official_intended_enabled`,
     // and this same cleanup already ends the installation's authority above by
-    // marking the Morning Brief enrollment `departed` and revoking its native
+    // marking the Morning Brief enrollment `departed` and revoking its Official
     // schedule, collection and delivery ownership. Disabling the row here would
     // both contend with that reconciler and silently pause the brief of a member
     // who rejoins.
@@ -238,16 +236,7 @@ async function revokeOrgMemberRunAuthority(
   // Membership revocation is a hard authority boundary, including credentials
   // retained by ordinary personal-settings disconnect. Commit revocation before
   // best-effort runner notification or the remaining member resource cleanup.
-  const revokedAt = nowDate();
   const { cancelled, releasedSlots } = await db.transaction(async (tx) => {
-    // Native schedule authority is the first Morning Brief business lock. The
-    // same order is used by admission, delivery, thread/Agent deletion and the
-    // remaining cleanup writers below.
-    await revokeMorningBriefNativeAuthority(
-      tx,
-      { orgId: args.orgId, userId: args.userId },
-      revokedAt,
-    );
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: {
         status: "cancelled",
@@ -260,29 +249,11 @@ async function revokeOrgMemberRunAuthority(
         inArray(agentRuns.status, ["pending", "running"]),
       ],
     });
-    // A Morning Brief collection attempt is the same kind of authority, so it
-    // is revoked here rather than surviving until the member row it hangs from
-    // is removed further down this cleanup. The durable stamp this writes is
-    // what also stops a claim admitted just before this commit, including when
-    // there is no occurrence to delete yet.
-    await revokeMorningBriefCollectionOwnership(
-      tx,
-      { kind: "membership", orgId: args.orgId, userId: args.userId },
-      revokedAt,
-    );
 
     // The departing member's legacy schedule occurrences lose the same
     // authority here, before the rows they hang from are torn down.
+    await tx.execute(purgeRetiredMorningBriefEmailSql());
     await revokeMorningBriefScheduleOwnership(tx, {
-      kind: "membership",
-      orgId: args.orgId,
-      userId: args.userId,
-    });
-
-    // A delivered brief's unsent email intent is the same kind of authority and
-    // still carries the recipient and the rendered body, so it leaves in this
-    // same transaction rather than in a later one that a fault could skip.
-    await revokeMorningBriefDeliveryOwnership(tx, {
       kind: "membership",
       orgId: args.orgId,
       userId: args.userId,

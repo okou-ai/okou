@@ -3,8 +3,6 @@ import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
 import { conversations } from "@okouai/db/schema/conversation";
-import { emailOutbox } from "@okouai/db/schema/email-outbox";
-import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";
 import {
   piStableContextArtifacts,
   piStableContextGenerations,
@@ -186,16 +184,6 @@ export function clerkStableContextCleanupSql(
         ]
       : []),
   ];
-}
-
-export function revokeAgentDeliveriesSql(agentIds: readonly string[]) {
-  return sql`WITH revoked AS (
-    DELETE FROM ${morningBriefDeliveries}
-    WHERE ${morningBriefDeliveries.agentId} = ANY(${sql.param(agentIds)}::uuid[])
-    RETURNING ${morningBriefDeliveries.emailOutboxId} AS outbox_id
-  ) DELETE FROM ${emailOutbox} WHERE ${emailOutbox.id} IN (
-    SELECT outbox_id FROM revoked WHERE outbox_id IS NOT NULL
-  )`;
 }
 
 export interface ConversationDeletionReceipt {

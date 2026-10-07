@@ -25,7 +25,6 @@ import {
   releaseRunConversationsSql,
   releasedConversationSweepSchema,
   requireReleasedConversationReferences,
-  revokeAgentDeliveriesSql,
   runFreeAgentDeleteSql,
   runFreeUserSessionDeleteSql,
   throwClerkLifecycleFailure,
@@ -33,6 +32,7 @@ import {
   type ClerkDeletionScope,
   type ConversationDeletionReceipt,
 } from "./clerk-lifecycle-plan";
+import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
 
 /**
  * Delete one snapshot of target Runs conversation-first, in a single pass.
@@ -248,7 +248,7 @@ const deleteClerkOrganizationLifecycleData$ = command(
           await tx.execute(statement);
         }
         if (agentIds.length > 0) {
-          await tx.execute(revokeAgentDeliveriesSql(agentIds));
+          await tx.execute(purgeRetiredMorningBriefEmailSql());
           // Only Agents with no Run left under their Sessions; a late Run
           // (and its conversation) is never removed by the Agent cascade.
           await tx.execute(runFreeAgentDeleteSql(orgId, agentIds));

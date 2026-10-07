@@ -5,18 +5,7 @@ import { emailSuppressions } from "@okouai/db/schema/email-suppression";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { users } from "@okouai/db/schema/user";
 import { command } from "ccstate";
-import {
-  and,
-  asc,
-  eq,
-  inArray,
-  isNull,
-  lt,
-  lte,
-  notInArray,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { Resend } from "resend";
 import { delay } from "signal-timers";
 import { Webhook } from "svix";
@@ -28,26 +17,11 @@ import { env, optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { webUrl } from "../../lib/web-url";
-import { safeSync } from "../utils";
-import { clerk$, type ClerkClient } from "../external/clerk";
+import type { ClerkClient } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import { writeDb$, type Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
 import { renderOfficialAutomationResultEmail } from "./official-automation-result-email-renderer";
-import {
-  admitNativeMorningBriefEmail,
-  currentNativeMorningBriefMembership,
-  lockNativeMorningBriefEmailAdmission,
-  MORNING_BRIEF_RESULT_EMAIL_TEMPLATE,
-  peekNativeMorningBriefEmailOwner,
-  type NativeMorningBriefOwnerPreflight,
-} from "./morning-brief-native-email-admission.service";
-import {
-  MORNING_BRIEF_RESULT_EMAIL_BODY_MAX_BYTES,
-  MORNING_BRIEF_RESULT_EMAIL_TITLE_MAX_CHARACTERS,
-  MorningBriefResultEmailRenderError,
-  renderMorningBriefResultEmail,
-} from "./morning-brief-result-email-renderer";
 import { renderCreditLowBalanceEmail } from "./credit-low-balance-email-renderer";
 import { renderDataExportReadyEmail } from "./data-export-ready-email-renderer";
 
@@ -108,18 +82,6 @@ function unicodeCharacterCount(value: string): number {
   return Array.from(value).length;
 }
 
-function boundedUtf8String(maxBytes: number) {
-  return z
-    .string()
-    .min(1)
-    .refine(
-      (value) => {
-        return Buffer.byteLength(value, "utf8") <= maxBytes;
-      },
-      { message: `Must contain at most ${maxBytes} UTF-8 bytes` },
-    );
-}
-
 function boundedUnicodeString(maxCharacters: number) {
   return z
     .string()
@@ -164,25 +126,6 @@ const emailTemplateSchema = z.discriminatedUnion("template", [
             OFFICIAL_AUTOMATION_RESULT_EMAIL_TEXT_MAX_CHARACTERS,
           ),
           runUrl: z.url().max(1024),
-          manageUrl: z.url().max(1024),
-        })
-        .strict(),
-    })
-    .strict(),
-  z
-    .object({
-      template: z.literal(MORNING_BRIEF_RESULT_EMAIL_TEMPLATE),
-      props: z
-        .object({
-          title: boundedUnicodeString(
-            MORNING_BRIEF_RESULT_EMAIL_TITLE_MAX_CHARACTERS,
-          ),
-          // Byte-bounded to match the accepted generation result exactly, so
-          // the brief Chat shows is the brief this email carries.
-          resultMarkdown: boundedUtf8String(
-            MORNING_BRIEF_RESULT_EMAIL_BODY_MAX_BYTES,
-          ),
-          threadUrl: z.url().max(1024),
           manageUrl: z.url().max(1024),
         })
         .strict(),
@@ -369,12 +312,6 @@ function renderTemplate(
       }
       return { html: rendered.html, text: rendered.text };
     }
-    case MORNING_BRIEF_RESULT_EMAIL_TEMPLATE: {
-      return renderMorningBriefResultEmail(
-        template.props,
-        officialAutomationResultUnsubscribeUrl(headers),
-      );
-    }
   }
 }
 
@@ -386,8 +323,7 @@ function fromAddressForTemplate(template: EmailTemplate): string {
       return buildTeamFromAddress();
     }
     case "data-export-ready":
-    case "official-automation-result":
-    case MORNING_BRIEF_RESULT_EMAIL_TEMPLATE: {
+    case "official-automation-result": {
       return buildFromAddress();
     }
   }
@@ -506,9 +442,6 @@ interface PreparedOutboxItem {
 
 type PrepareOutcome =
   | { readonly kind: "empty" }
-  // Left untouched until this pass excludes the preflight candidate that
-  // prevented the selected row from receiving exact-owner evidence.
-  | { readonly kind: "deferred"; readonly excludedId: string }
   // Resolved without contacting the provider: expired, out of attempts, or
   // suppressed.
   | { readonly kind: "resolved" }
@@ -534,19 +467,9 @@ async function resolveWithoutSending(
 async function prepareNextOutboxItem(
   db: Db,
   currentTimeMs: number,
-  nativeOwnerPreflight: NativeMorningBriefOwnerPreflight | null,
-  deferredIds: ReadonlySet<string>,
   itemIds?: readonly string[],
 ): Promise<PrepareOutcome> {
   return await db.transaction(async (tx) => {
-    // Native cleanup locks its member, Agent or thread/automation authority
-    // before deleting delivery and outbox. Take those same authority and policy
-    // locks before touching the outbox, then revalidate the exact relationship
-    // after the claim wait. Generic producers keep their direct outbox claim.
-    const nativeAdmission = await lockNativeMorningBriefEmailAdmission(
-      tx,
-      nativeOwnerPreflight,
-    );
     const [selectedRow] = await tx
       .select(outboxRowSelection())
       .from(emailOutbox)
@@ -555,12 +478,6 @@ async function prepareNextOutboxItem(
           itemIds === undefined
             ? undefined
             : inArray(emailOutbox.id, [...itemIds]),
-          // Items this pass already deferred are skipped here and excluded
-          // from the preflight above, so a native intent without live-owner
-          // evidence cannot stall its siblings.
-          deferredIds.size === 0
-            ? undefined
-            : notInArray(emailOutbox.id, [...deferredIds]),
           // `sending` items belong to an in-flight attempt until their lease
           // expires; recovering them replays the committed request.
           inArray(emailOutbox.status, ["pending", "sending"]),
@@ -577,6 +494,36 @@ async function prepareNextOutboxItem(
       .for("update", { skipLocked: true });
     if (!selectedRow) {
       return { kind: "empty" };
+    }
+    // Retired Native intents never reach parsing, rendering or provider replay,
+    // including malformed payloads and requests committed by an older API.
+    if (
+      z
+        .object({ template: z.literal("morning-brief-result") })
+        .safeParse(selectedRow.template).success
+    ) {
+      await tx
+        .update(emailOutbox)
+        .set({
+          status: "failed",
+          lastError:
+            selectedRow.provider_request === null
+              ? "Native Morning Brief email retired"
+              : "Native Morning Brief email retired with unresolved provider outcome",
+          providerRequest: null,
+          template: {
+            template: "morning-brief-result",
+            props: {
+              title: "",
+              resultMarkdown: "",
+              threadUrl: "",
+              manageUrl: "",
+            },
+          },
+          nextRetryAt: null,
+        })
+        .where(eq(emailOutbox.id, selectedRow.id));
+      return { kind: "resolved" };
     }
     const row = outboxRowSchema.parse(selectedRow);
     const itemId = row.id;
@@ -609,31 +556,6 @@ async function prepareNextOutboxItem(
       );
     }
 
-    // A native Morning Brief intent is admitted only while its own delivery
-    // row and the owner's current policy still authorise it. Missing
-    // provenance fails closed here; it never falls through to the generic
-    // sender.
-    if (row.template.template === MORNING_BRIEF_RESULT_EMAIL_TEMPLATE) {
-      const admission = await admitNativeMorningBriefEmail(
-        tx,
-        itemId,
-        nativeAdmission,
-      );
-      if (admission.kind === "rejected") {
-        return await resolveWithoutSending(tx, itemId, admission.reason);
-      }
-      if (admission.kind === "deferred") {
-        // Neither sent nor failed: the row keeps its state and attempt count.
-        // When the unlocked claim skipped the preflight candidate and selected
-        // a sibling, exclude that stale/locked candidate rather than the
-        // sibling, so the sibling can obtain its own evidence this pass.
-        return {
-          kind: "deferred",
-          excludedId: nativeOwnerPreflight?.outboxId ?? itemId,
-        };
-      }
-    }
-
     const toAddresses =
       typeof row.to_addresses === "string"
         ? [row.to_addresses]
@@ -654,19 +576,7 @@ async function prepareNextOutboxItem(
     if (hasCommittedRequest) {
       request = providerRequestSchema.parse(committedRequest);
     } else {
-      const built = safeSync(() => {
-        return buildProviderRequest(row);
-      });
-      if ("error" in built) {
-        // Only the native Morning Brief template reports this. It means the
-        // accepted body cannot be carried intact, which is an explicit
-        // delivery failure rather than a reason to mail a shorter brief.
-        if (!(built.error instanceof MorningBriefResultEmailRenderError)) {
-          throw built.error;
-        }
-        return await resolveWithoutSending(tx, itemId, built.error.message);
-      }
-      request = built.ok;
+      request = buildProviderRequest(row);
     }
     // The committed key stays authoritative for the row it was written for,
     // even if the derivation below ever changes.
@@ -764,23 +674,11 @@ async function completeOutboxItem(
 async function drainNextOutboxItem(
   db: Db,
   currentTimeMs: number,
-  nativeOwnerPreflight: NativeMorningBriefOwnerPreflight | null,
-  deferredIds: Set<string>,
   itemIds?: readonly string[],
 ): Promise<boolean> {
-  const prepared = await prepareNextOutboxItem(
-    db,
-    currentTimeMs,
-    nativeOwnerPreflight,
-    deferredIds,
-    itemIds,
-  );
+  const prepared = await prepareNextOutboxItem(db, currentTimeMs, itemIds);
   if (prepared.kind === "empty") {
     return false;
-  }
-  if (prepared.kind === "deferred") {
-    deferredIds.add(prepared.excludedId);
-    return true;
   }
   if (prepared.kind === "resolved") {
     return true;
@@ -807,35 +705,18 @@ async function drainEmailOutboxBatch(
   args: {
     readonly db: Db;
     readonly context: EmailOutboxDrainContext;
-    readonly clerk: ClerkClient;
     readonly itemIds?: readonly string[];
   },
   signal: AbortSignal,
 ): Promise<number> {
-  const { db, context, clerk, itemIds } = args;
+  const { db, context, itemIds } = args;
   let processed = 0;
-  const deferredIds = new Set<string>();
 
   for (let index = 0; index < MAX_OUTBOX_BATCH_SIZE; index++) {
-    signal.throwIfAborted();
-    // Live-owner evidence for the next due native intent is resolved here,
-    // outside the claim transaction, because it reaches Clerk.
-    const nativeOwner = await resolveNativeOwnerPreflight(
-      {
-        db,
-        clerk,
-        dueAt: new Date(context.currentTimeMs),
-        deferredIds,
-        ...(itemIds === undefined ? {} : { itemIds }),
-      },
-      signal,
-    );
     signal.throwIfAborted();
     const hadItem = await drainNextOutboxItem(
       db,
       context.currentTimeMs,
-      nativeOwner,
-      deferredIds,
       itemIds,
     );
     signal.throwIfAborted();
@@ -858,50 +739,9 @@ async function drainEmailOutboxBatch(
   return processed;
 }
 
-/**
- * Live-owner evidence for the next due native intent.
- *
- * Resolved outside the claim transaction because it reaches Clerk, and coupled
- * to the exact candidate it names so a claim that takes a different row is not
- * sent on somebody else's evidence. The candidate is chosen under the same
- * bounds the claim admits against — this pass's deferrals, the row's original
- * lifetime and the attempt ceiling — so one candidate the claim cannot admit
- * does not leave an eligible native sibling without evidence of its own.
- */
-async function resolveNativeOwnerPreflight(
-  args: {
-    readonly db: Db;
-    readonly clerk: ClerkClient;
-    readonly dueAt: Date;
-    readonly deferredIds: ReadonlySet<string>;
-    readonly itemIds?: readonly string[];
-  },
-  signal: AbortSignal,
-): Promise<NativeMorningBriefOwnerPreflight | null> {
-  const candidate = await peekNativeMorningBriefEmailOwner(args.db, {
-    dueAt: args.dueAt,
-    observedAt: nowDate(),
-    outboxTtlMs: OUTBOX_TTL_MS,
-    maxAttempts: MAX_ATTEMPTS,
-    excludedIds: args.deferredIds,
-    ...(args.itemIds === undefined ? {} : { itemIds: args.itemIds }),
-  });
-  signal.throwIfAborted();
-  if (candidate === null) {
-    return null;
-  }
-  const membership = await currentNativeMorningBriefMembership(
-    args.clerk,
-    candidate,
-    signal,
-  );
-  signal.throwIfAborted();
-  return membership;
-}
-
 export const drainEmailOutboxBatch$ = command(
   async (
-    { get, set },
+    { set },
     context: EmailOutboxDrainContext,
     signal: AbortSignal,
   ): Promise<number> => {
@@ -909,7 +749,6 @@ export const drainEmailOutboxBatch$ = command(
       {
         db: set(writeDb$),
         context,
-        clerk: get(clerk$),
       },
       signal,
     );
@@ -918,7 +757,7 @@ export const drainEmailOutboxBatch$ = command(
 
 export const drainEmailOutboxItems$ = command(
   async (
-    { get, set },
+    { set },
     context: EmailOutboxItemsContext,
     signal: AbortSignal,
   ): Promise<number> => {
@@ -926,7 +765,6 @@ export const drainEmailOutboxItems$ = command(
       {
         db: set(writeDb$),
         context,
-        clerk: get(clerk$),
         itemIds: context.itemIds,
       },
       signal,

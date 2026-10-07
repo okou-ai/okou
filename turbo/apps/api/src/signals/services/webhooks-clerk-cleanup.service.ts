@@ -78,8 +78,6 @@ import {
   deleteDiscordOrgData,
   deleteDiscordUserData,
 } from "./discord-owner-cleanup.service";
-import { revokeMorningBriefCollectionOwnership } from "./morning-brief-collection-occurrence.service";
-import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
 import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
 import { cleanupOrgMemberResources$ } from "./org-member-cleanup.service";
@@ -93,6 +91,7 @@ import {
 import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
 import { eraseVncOwnerData$ } from "./vnc-owner-lifecycle.service";
+import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
 
 const L = logger("WebhookClerkCleanup");
 const CLERK_ORG_MEMBERSHIP_PAGE_SIZE = 100;
@@ -120,17 +119,11 @@ async function publishCancelBestEffort(
  * What a deletion's first committed transaction revokes beyond its own runs.
  *
  * `cascadeOwnedAgents` widens organization run cancellation to the owned Agent
- * cascade, and `revokeMorningBriefCollection` joins Morning Brief collection
- * ownership to that same commit. User deletion and bans only ever cancel the
+ * cascade. User deletion and bans only ever cancel the
  * user's own runs; members' runs on Agents the user owns continue.
  */
 interface OrgRunCancellationScope {
   readonly cascadeOwnedAgents?: boolean;
-  readonly revokeMorningBriefCollection?: boolean;
-}
-
-interface UserRunCancellationScope {
-  readonly revokeMorningBriefCollection?: boolean;
 }
 
 type SlotsReleased = (slots: readonly ReleasedRunSlot[]) => void;
@@ -159,7 +152,6 @@ async function cancelOrgRuns(
   onSlotsReleased: SlotsReleased,
   scope: OrgRunCancellationScope = {},
 ): Promise<void> {
-  const revokedAt = nowDate();
   const { cancelled, releasedSlots } = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: {
@@ -174,19 +166,7 @@ async function cancelOrgRuns(
         inArray(agentRuns.status, ["pending", "running"]),
       ],
     });
-    if (scope.revokeMorningBriefCollection) {
-      await revokeMorningBriefCollectionOwnership(
-        tx,
-        { kind: "organization", orgId },
-        revokedAt,
-      );
-      // Same transaction, same reason: an unsent native intent still holds the
-      // recipient and the rendered brief.
-      await revokeMorningBriefDeliveryOwnership(tx, {
-        kind: "organization",
-        orgId,
-      });
-    }
+    await tx.execute(purgeRetiredMorningBriefEmailSql());
     const released = await releaseNeverStartedRunSlots(tx, rows);
     return { cancelled: rows, releasedSlots: released };
   });
@@ -246,9 +226,7 @@ async function cancelUserRuns(
   db: Db,
   userId: string,
   onSlotsReleased: SlotsReleased,
-  scope: UserRunCancellationScope = {},
 ): Promise<void> {
-  const revokedAt = nowDate();
   const { cancelled, releasedSlots } = await db.transaction(async (tx) => {
     const rows = await transitionAgentRunsToTerminal(tx, {
       values: {
@@ -261,14 +239,7 @@ async function cancelUserRuns(
         inArray(agentRuns.status, ["pending", "running"]),
       ],
     });
-    if (scope.revokeMorningBriefCollection) {
-      await revokeMorningBriefCollectionOwnership(
-        tx,
-        { kind: "user", userId },
-        revokedAt,
-      );
-      await revokeMorningBriefDeliveryOwnership(tx, { kind: "user", userId });
-    }
+    await tx.execute(purgeRetiredMorningBriefEmailSql());
     const released = await releaseNeverStartedRunSlots(tx, rows);
     return { cancelled: rows, releasedSlots: released };
   });
@@ -872,7 +843,6 @@ const deleteOrgData$ = command(
       .delete(morningBriefEnrollments)
       .where(eq(morningBriefEnrollments.orgId, orgId));
     signal.throwIfAborted();
-    signal.throwIfAborted();
     await db.delete(orgMetadata).where(eq(orgMetadata.orgId, orgId));
     signal.throwIfAborted();
     return { slots: released.slots, cleanupJobIds };
@@ -1006,7 +976,6 @@ export const cleanupClerkDeletedOrg$ = command(
     signal.throwIfAborted();
     await cancelOrgRuns(db, orgId, released.collect, {
       cascadeOwnedAgents: true,
-      revokeMorningBriefCollection: true,
     });
     signal.throwIfAborted();
     await revokeMorningBriefScheduleOwnership(db, {
@@ -1062,9 +1031,7 @@ export const cleanupClerkDeletedUser$ = command(
     await set(eraseVncOwnerData$, { kind: "user", userId }, signal);
     signal.throwIfAborted();
     // Only the user's own runs: members' runs on Agents the user owns continue.
-    await cancelUserRuns(db, userId, released.collect, {
-      revokeMorningBriefCollection: true,
-    });
+    await cancelUserRuns(db, userId, released.collect);
     signal.throwIfAborted();
     await revokeMorningBriefScheduleOwnership(db, { kind: "user", userId });
     signal.throwIfAborted();
@@ -1086,7 +1053,6 @@ export const cleanupClerkDeletedUser$ = command(
       signal.throwIfAborted();
       await cancelOrgRuns(db, orgId, released.collect, {
         cascadeOwnedAgents: true,
-        revokeMorningBriefCollection: true,
       });
       signal.throwIfAborted();
       await revokeMorningBriefScheduleOwnership(db, {

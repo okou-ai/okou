@@ -1,5 +1,4 @@
 import { sql } from "drizzle-orm";
-import type { MorningBriefNativeScheduleRow } from "./morning-brief-native-schedule.service";
 import { SCHEDULE_GRACE_MS } from "./schedule-expiry-policy";
 import type { WorkflowScheduleClaimPlan } from "./workflow-automation-enqueue.service";
 
@@ -14,50 +13,17 @@ export class WorkflowScheduleAdmissionError extends Error {
   }
 }
 
-/**
- * Consume the exact due anchor with one conditional UPDATE.
- *
- * A selected Morning Brief first consumes the durable legacy-owned anchor on
- * its native row, then the automation row; that is the documented native ->
- * automation order, taken here by the writes themselves rather than by row
- * locks. Both predicates are re-checked against the current row versions, so a
- * concurrent claim, expiry, toggle or settlement that moved the anchor makes
- * this statement return no row.
- */
+/** Consume the exact Official anchor; a concurrent toggle, claim or expiry wins. */
 export function consumeWorkflowScheduleAnchorSql(
   claim: WorkflowScheduleClaimPlan,
-  native: MorningBriefNativeScheduleRow | undefined,
   admittedAt: Date,
 ) {
-  const selected =
-    native?.legacyWorkflowId === claim.workflowId &&
-    native?.legacyAutomationId === claim.automationId;
-  const consumeNative = selected
-    ? sql`UPDATE morning_brief_native_schedules SET next_run_at = NULL,
-        schedule_owner = NULL, updated_at = ${claim.claimedAt}
-      WHERE org_id = ${claim.orgId} AND user_id = ${claim.ownerUserId}
-        AND owner_epoch = ${native.ownerEpoch} AND phase = 'legacy'
-        AND enabled AND schedule_owner = 'legacy'
-        AND next_run_at = ${claim.scheduledAnchorAt}
-        AND legacy_workflow_id = ${claim.workflowId}::uuid
-        AND legacy_automation_id = ${claim.automationId}::uuid
-      RETURNING owner_epoch`
-    : sql`SELECT 1 WHERE false`;
-  const nativeGuard = selected
-    ? sql`AND EXISTS (SELECT 1 FROM consumed)`
-    : sql.empty();
-  return sql`
-    WITH consumed AS (${consumeNative})
-    UPDATE workflow_automations SET next_run_at = NULL,
-      last_run_at = ${claim.claimedAt}, updated_at = ${claim.claimedAt}
-    WHERE id = ${claim.automationId}::uuid
-      AND enabled AND org_id = ${claim.orgId} AND owner_user_id = ${claim.ownerUserId}
-      AND workflow_id = ${claim.workflowId}::uuid
-      AND next_run_at = ${claim.scheduledAnchorAt}
-      AND next_run_at >= ${new Date(admittedAt.getTime() - SCHEDULE_GRACE_MS)}
-      ${nativeGuard}
-    RETURNING id
-  `;
+  return sql`UPDATE workflow_automations SET next_run_at = NULL, last_run_at = ${claim.claimedAt}, updated_at = ${claim.claimedAt}
+ WHERE id = ${claim.automationId}::uuid AND enabled AND org_id = ${claim.orgId} AND owner_user_id = ${claim.ownerUserId}
+ AND workflow_id = ${claim.workflowId}::uuid AND official_blueprint_key = 'daily-delivery'
+ AND next_run_at = ${claim.scheduledAnchorAt} AND next_run_at >= ${new Date(admittedAt.getTime() - SCHEDULE_GRACE_MS)}
+ AND NOT EXISTS (SELECT 1 FROM morning_brief_schedule_claims
+   WHERE automation_id = ${claim.automationId}::uuid AND settlement = 'unsettled') RETURNING id`;
 }
 
 /**

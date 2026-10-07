@@ -34,7 +34,7 @@ import {
   loadMorningBriefOwnership,
   type MorningBriefMigrationState,
 } from "./morning-brief-migration-state.service";
-import { completeAndMaterializeMorningBriefEnrollment$ } from "./morning-brief-materialization.service";
+import { completeMorningBriefEnrollment$ } from "./morning-brief-enrollment-completion.service";
 import { writeDb$, type ReadonlyDb } from "../external/db";
 import {
   installOfficialWorkflow$,
@@ -112,16 +112,16 @@ function conflict(
   return { kind: "conflict", code, message };
 }
 
-const MORNING_BRIEF_MATERIALIZATION_CONFLICT_MESSAGE =
+const MORNING_BRIEF_TIMEZONE_CONFLICT_MESSAGE =
   "Morning Brief changed concurrently. Retry the preference update.";
 
 /** A lost conditional Morning Brief write, reported once for the enrollment retry schedule. */
-function materializationConflict(): EnsureMorningBriefDefaultEnabledResult {
+function timezoneConflict(): EnsureMorningBriefDefaultEnabledResult {
   return {
     outcome: "failed",
     reason: "installation-failed",
     failureKind: "conflict",
-    message: MORNING_BRIEF_MATERIALIZATION_CONFLICT_MESSAGE,
+    message: MORNING_BRIEF_TIMEZONE_CONFLICT_MESSAGE,
   };
 }
 
@@ -348,8 +348,8 @@ const qualifyMorningBriefMembership$ = command(
   },
 );
 
-/** Complete an already-installed brief; a lost race is one conflict result. */
-const materializeExistingMorningBriefInstallation$ = command(
+/** Complete enrollment for an already-installed Official brief. */
+const completeExistingMorningBriefEnrollment$ = command(
   async (
     { set },
     args: {
@@ -359,20 +359,18 @@ const materializeExistingMorningBriefInstallation$ = command(
     },
     signal: AbortSignal,
   ): Promise<EnsureMorningBriefDefaultEnabledResult> => {
-    const materialized = await set(
-      completeAndMaterializeMorningBriefEnrollment$,
+    await set(
+      completeMorningBriefEnrollment$,
       args.identity,
       args.workflowId,
       signal,
     );
     signal.throwIfAborted();
-    return materialized === "conflict"
-      ? materializationConflict()
-      : {
-          outcome: "unchanged",
-          reason: "existing-installation",
-          installationCount: args.installationCount,
-        };
+    return {
+      outcome: "unchanged",
+      reason: "existing-installation",
+      installationCount: args.installationCount,
+    };
   },
 );
 
@@ -419,16 +417,13 @@ const installMorningBriefEnrollment$ = command(
         }
         return { outcome: "skipped", reason: "membership-unavailable" };
       }
-      const materialized = await set(
-        completeAndMaterializeMorningBriefEnrollment$,
+      await set(
+        completeMorningBriefEnrollment$,
         identity,
         installed.workflowId,
         signal,
       );
       signal.throwIfAborted();
-      if (materialized === "conflict") {
-        return materializationConflict();
-      }
       const synchronized = await set(
         synchronizeMorningBriefTimezone$,
         args,
@@ -436,7 +431,7 @@ const installMorningBriefEnrollment$ = command(
       );
       signal.throwIfAborted();
       if (synchronized === "conflict") {
-        return materializationConflict();
+        return timezoneConflict();
       }
       return { outcome: "installed", workflowId: installed.workflowId };
     }
@@ -445,7 +440,7 @@ const installMorningBriefEnrollment$ = command(
     signal.throwIfAborted();
     if (raced.installation?.installationState === "installed") {
       return await set(
-        materializeExistingMorningBriefInstallation$,
+        completeExistingMorningBriefEnrollment$,
         {
           identity,
           workflowId: raced.installation.id,
@@ -571,7 +566,7 @@ const ensureMorningBriefEnrollment$ = command(
     signal.throwIfAborted();
     if (installation?.installationState === "installed") {
       return await set(
-        materializeExistingMorningBriefInstallation$,
+        completeExistingMorningBriefEnrollment$,
         {
           identity,
           workflowId: installation.id,
@@ -739,22 +734,23 @@ const createMorningBriefFromPreference$ = command(
             "Morning Brief could not be installed. Retry the preference update.",
           );
     }
-    const materialized = await set(
-      completeAndMaterializeMorningBriefEnrollment$,
+    await set(
+      completeMorningBriefEnrollment$,
       identity,
       installed.workflowId,
       signal,
     );
     signal.throwIfAborted();
-    const synchronized =
-      materialized === "conflict"
-        ? "conflict"
-        : await set(synchronizeMorningBriefTimezone$, args, signal);
+    const synchronized = await set(
+      synchronizeMorningBriefTimezone$,
+      args,
+      signal,
+    );
     signal.throwIfAborted();
     if (synchronized === "conflict") {
       return conflict(
         "MORNING_BRIEF_STATE_CONFLICT",
-        MORNING_BRIEF_MATERIALIZATION_CONFLICT_MESSAGE,
+        MORNING_BRIEF_TIMEZONE_CONFLICT_MESSAGE,
       );
     }
     return await loadInstalledPreference(db, args);
@@ -887,19 +883,13 @@ const applyMorningBriefPreference$ = command(
     }
     if (current.preference.enabled === args.enabled) {
       if (args.enabled) {
-        const materialized = await set(
-          completeAndMaterializeMorningBriefEnrollment$,
+        await set(
+          completeMorningBriefEnrollment$,
           identity,
           current.workflowId,
           signal,
         );
         signal.throwIfAborted();
-        if (materialized === "conflict") {
-          return conflict(
-            "MORNING_BRIEF_STATE_CONFLICT",
-            MORNING_BRIEF_MATERIALIZATION_CONFLICT_MESSAGE,
-          );
-        }
       }
       return current;
     }
@@ -932,22 +922,16 @@ const applyMorningBriefPreference$ = command(
       );
     }
     if (args.enabled) {
-      const materialized = await set(
-        completeAndMaterializeMorningBriefEnrollment$,
+      await set(
+        completeMorningBriefEnrollment$,
         identity,
         current.workflowId,
         signal,
       );
       signal.throwIfAborted();
-      if (materialized === "conflict") {
-        return conflict(
-          "MORNING_BRIEF_STATE_CONFLICT",
-          MORNING_BRIEF_MATERIALIZATION_CONFLICT_MESSAGE,
-        );
-      }
     }
     // The generic automation writer recognizes the selected Morning Brief and
-    // commits the legacy bit and durable choice in one conditional
+    // commits the Official enabled bit and enrollment choice in one conditional
     // transaction, so the last toggle to commit leaves both consistent.
     return await loadInstalledPreference(db, args);
   },

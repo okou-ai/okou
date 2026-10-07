@@ -21,7 +21,7 @@ import {
   workflows,
 } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
@@ -79,13 +79,6 @@ import {
   type WorkflowAutomationAccountConnectorSlug,
 } from "./workflow-automation-account-classification.service";
 import { resolveStripeInvoicePaidAutomationBinding } from "./stripe-invoice-paid-workflow-automation.service";
-import {
-  lockMorningBriefLegacyWriterAuthority,
-  lockMorningBriefNativeSchedule,
-  prepareMorningBriefLegacyReconciliationMutation,
-  type MorningBriefLegacyWriterAuthority,
-  type MorningBriefLegacyWriterFence,
-} from "./morning-brief-native-schedule.service";
 
 const DORMANT_CREATION_LEASE_MS = 5 * 60 * 1000;
 
@@ -147,7 +140,20 @@ interface ReconciliationContext {
 interface PersistedReconfiguration {
   readonly previous: OfficialAutomationRow;
   readonly current: OfficialAutomationRow;
-  readonly morningBriefFence: MorningBriefLegacyWriterFence | undefined;
+}
+
+/** Reconfiguration must leave the current Official claim's empty slot for its completion callback. */
+function reconciledScheduleAnchor(
+  automation: OfficialAutomationRow,
+  nextRunAt: Date | null,
+) {
+  if (
+    automation.officialBlueprintKey !== MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY ||
+    nextRunAt === null
+  ) {
+    return nextRunAt;
+  }
+  return sql`CASE WHEN (SELECT settlement FROM morning_brief_schedule_claims WHERE automation_id = ${automation.id}::uuid ORDER BY claim_sequence DESC LIMIT 1) = 'unsettled' THEN NULL ELSE ${nextRunAt}::timestamp END`;
 }
 
 function isMorningBriefReconciliation(args: {
@@ -159,28 +165,6 @@ function isMorningBriefReconciliation(args: {
     args.blueprintKey === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY
   );
 }
-function morningBriefReconciliationFence(
-  args: {
-    readonly definitionName: string;
-    readonly blueprintKey: string | null;
-  },
-  authority: Exclude<
-    MorningBriefLegacyWriterAuthority,
-    {
-      kind: "stale";
-    }
-  >,
-): MorningBriefLegacyWriterFence | undefined {
-  return isMorningBriefReconciliation(args) ? authority.fence : undefined;
-}
-function ordinaryMorningBriefWriterAuthority(): Exclude<
-  MorningBriefLegacyWriterAuthority,
-  {
-    kind: "stale";
-  }
-> {
-  return { kind: "ordinary", fence: { kind: "ordinary" } };
-}
 
 interface ReconciliationMutationLockArgs {
   readonly orgId: string;
@@ -190,53 +174,16 @@ interface ReconciliationMutationLockArgs {
   readonly definitionName: string;
   readonly blueprintKey: string | null;
 }
-
-async function lockReconciliationMorningBriefAuthority(
-  tx: Tx,
-  args: ReconciliationMutationLockArgs,
-  expected?: MorningBriefLegacyWriterFence,
-): Promise<MorningBriefLegacyWriterAuthority> {
-  if (!isMorningBriefReconciliation(args)) {
-    return ordinaryMorningBriefWriterAuthority();
-  }
-  return await lockMorningBriefLegacyWriterAuthority(
-    tx,
-    {
-      orgId: args.orgId,
-      userId: args.userId,
-      workflowId: args.workflowId,
-      automationId: args.automationId,
-    },
-    expected,
-  );
-}
 async function lockReconciliationMutationContext(
   tx: Tx,
   args: ReconciliationMutationLockArgs,
-  expected?: MorningBriefLegacyWriterFence,
-): Promise<Exclude<
-  MorningBriefLegacyWriterAuthority,
-  {
-    readonly kind: "stale";
-  }
-> | null> {
-  const authority = await lockReconciliationMorningBriefAuthority(
-    tx,
-    args,
-    expected,
-  );
-  if (
-    authority.kind === "stale" ||
-    !(await lockInstalledWorkflow(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      workflowId: args.workflowId,
-      definitionName: args.definitionName,
-    }))
-  ) {
-    return null;
-  }
-  return authority;
+): Promise<boolean> {
+  return await lockInstalledWorkflow(tx, {
+    orgId: args.orgId,
+    userId: args.userId,
+    workflowId: args.workflowId,
+    definitionName: args.definitionName,
+  });
 }
 
 function failureMessage(result: AutomationResult) {
@@ -657,19 +604,7 @@ async function persistReconfigurationPatch(
       },
       signal,
     );
-    const morningBriefAuthority = await lockReconciliationMorningBriefAuthority(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.expected.workflowId,
-        automationId: args.expected.id,
-        definitionName: args.definitionName,
-        blueprintKey: args.blueprint.key,
-      },
-    );
     if (
-      morningBriefAuthority.kind === "stale" ||
       !(await lockInstalledWorkflow(tx, {
         orgId: args.orgId,
         userId: args.userId,
@@ -701,20 +636,12 @@ async function persistReconfigurationPatch(
       { ...args.patch, enabled },
       currentTime,
     );
-    const morningBrief = await prepareMorningBriefLegacyReconciliationMutation(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: current.workflowId,
-        automationId: current.id,
-      },
-      morningBriefAuthority,
-      { mode: "configured", proposed: refreshed, at: currentTime },
-    );
     const [updated] = await tx
       .update(workflowAutomations)
-      .set({ ...refreshed, ...morningBrief.automation })
+      .set({
+        ...refreshed,
+        nextRunAt: reconciledScheduleAnchor(current, refreshed.nextRunAt),
+      })
       .where(eq(workflowAutomations.id, current.id))
       .returning(workflowAutomationColumns());
     if (!updated) {
@@ -729,12 +656,6 @@ async function persistReconfigurationPatch(
     return {
       previous: current,
       current: updated,
-      morningBriefFence: isMorningBriefReconciliation({
-        definitionName: args.definitionName,
-        blueprintKey: args.blueprint.key,
-      })
-        ? morningBrief.authority.fence
-        : undefined,
     };
   });
 }
@@ -833,19 +754,15 @@ const restoreFailedReconfiguration$ = command(
         },
         cleanupSignal,
       );
-      const morningBriefAuthority = await lockReconciliationMutationContext(
-        tx,
-        {
-          orgId: args.orgId,
-          userId: args.userId,
-          workflowId: args.persisted.previous.workflowId,
-          automationId: args.persisted.previous.id,
-          definitionName: args.definitionName,
-          blueprintKey: args.persisted.previous.officialBlueprintKey,
-        },
-        args.persisted.morningBriefFence,
-      );
-      if (morningBriefAuthority === null) {
+      const installationLocked = await lockReconciliationMutationContext(tx, {
+        orgId: args.orgId,
+        userId: args.userId,
+        workflowId: args.persisted.previous.workflowId,
+        automationId: args.persisted.previous.id,
+        definitionName: args.definitionName,
+        blueprintKey: args.persisted.previous.officialBlueprintKey,
+      });
+      if (!installationLocked) {
         return null;
       }
       const [current] = await tx
@@ -867,36 +784,19 @@ const restoreFailedReconfiguration$ = command(
         args.persisted.previous.nextRunAt,
         currentTime,
       );
-      const morningBrief =
-        await prepareMorningBriefLegacyReconciliationMutation(
-          tx,
-          {
-            orgId: args.orgId,
-            userId: args.userId,
-            workflowId: current.workflowId,
-            automationId: current.id,
-          },
-          morningBriefAuthority,
-          { mode: "configured", proposed: restorePatch, at: currentTime },
-        );
       const [row] = await tx
         .update(workflowAutomations)
         .set({
           ...restorePatch,
-          ...morningBrief.automation,
+          nextRunAt: reconciledScheduleAnchor(current, restorePatch.nextRunAt),
           ...restoredAutomationAccountFields(
             accountProjection,
             args.persisted.previous,
             restorePatch.eventConfig,
           ),
-          enabled:
-            morningBriefAuthority.kind === "selected"
-              ? morningBrief.automation.enabled
-              : args.persisted.previous.enabled,
+          enabled: args.persisted.previous.enabled,
           officialIntendedEnabled:
-            morningBriefAuthority.kind === "selected"
-              ? morningBrief.automation.officialIntendedEnabled
-              : args.persisted.previous.officialIntendedEnabled,
+            args.persisted.previous.officialIntendedEnabled,
           officialReconciliationStatus: "failed",
         })
         .where(eq(workflowAutomations.id, current.id))
@@ -951,19 +851,15 @@ async function finalizeReconfiguration(
     ) {
       return false;
     }
-    const morningBriefAuthority = await lockReconciliationMutationContext(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.persisted.current.workflowId,
-        automationId: args.persisted.current.id,
-        definitionName: args.definitionName,
-        blueprintKey: args.blueprint.key,
-      },
-      args.persisted.morningBriefFence,
-    );
-    if (morningBriefAuthority === null) {
+    const installationLocked = await lockReconciliationMutationContext(tx, {
+      orgId: args.orgId,
+      userId: args.userId,
+      workflowId: args.persisted.current.workflowId,
+      automationId: args.persisted.current.id,
+      definitionName: args.definitionName,
+      blueprintKey: args.blueprint.key,
+    });
+    if (!installationLocked) {
       return false;
     }
     const [current] = await tx
@@ -1018,12 +914,7 @@ function retryReconciliation(
 ): OfficialWorkflowReconciliationResult {
   return { kind: "retry", workflowId, message };
 }
-function reconciliationBlueprintIdentity(
-  definitionName: string,
-  blueprintKey: string,
-) {
-  return { definitionName, blueprintKey };
-}
+
 interface PauseForReconfigurationArgs {
   readonly orgId: string;
   readonly userId: string;
@@ -1057,18 +948,15 @@ const pauseForReconfiguration$ = command(
       ) {
         return null;
       }
-      const morningBriefAuthority = await lockReconciliationMutationContext(
-        tx,
-        {
-          orgId: args.orgId,
-          userId: args.userId,
-          workflowId: args.automation.workflowId,
-          automationId: args.automation.id,
-          definitionName: args.definitionName,
-          blueprintKey: args.blueprint.key,
-        },
-      );
-      if (morningBriefAuthority === null) {
+      const installationLocked = await lockReconciliationMutationContext(tx, {
+        orgId: args.orgId,
+        userId: args.userId,
+        workflowId: args.automation.workflowId,
+        automationId: args.automation.id,
+        definitionName: args.definitionName,
+        blueprintKey: args.blueprint.key,
+      });
+      if (!installationLocked) {
         return null;
       }
       const [current] = await tx
@@ -1081,24 +969,11 @@ const pauseForReconfiguration$ = command(
         return null;
       }
       const currentTime = nowDate();
-      const morningBrief =
-        await prepareMorningBriefLegacyReconciliationMutation(
-          tx,
-          {
-            orgId: args.orgId,
-            userId: args.userId,
-            workflowId: current.workflowId,
-            automationId: current.id,
-          },
-          morningBriefAuthority,
-          { mode: "paused", at: currentTime },
-        );
       const [paused] = await tx
         .update(workflowAutomations)
         .set({
           enabled: false,
           nextRunAt: null,
-          ...morningBrief.automation,
           officialParameterBindings: [...args.bindings],
           officialReconciliationStatus: "needs_reconfiguration",
           updatedAt: currentTime,
@@ -1112,13 +987,6 @@ const pauseForReconfiguration$ = command(
       return {
         previous: current,
         current: paused,
-        morningBriefFence: morningBriefReconciliationFence(
-          reconciliationBlueprintIdentity(
-            args.definitionName,
-            args.blueprint.key,
-          ),
-          morningBrief.authority,
-        ),
       };
     });
     if (!persisted) {
@@ -1318,19 +1186,7 @@ async function stageAutomationStructureTransition(
     ) {
       return null;
     }
-    const morningBriefAuthority = await lockReconciliationMorningBriefAuthority(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.member.userId,
-        workflowId: args.automation.workflowId,
-        automationId: args.automation.id,
-        definitionName: args.definitionName,
-        blueprintKey: args.blueprint.key,
-      },
-    );
     if (
-      morningBriefAuthority.kind === "stale" ||
       !(await lockInstalledWorkflow(tx, {
         orgId: args.orgId,
         userId: args.member.userId,
@@ -1353,23 +1209,11 @@ async function stageAutomationStructureTransition(
       return null;
     }
     const currentTime = nowDate();
-    const morningBrief = await prepareMorningBriefLegacyReconciliationMutation(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.member.userId,
-        workflowId: current.workflowId,
-        automationId: current.id,
-      },
-      morningBriefAuthority,
-      { mode: "paused", at: currentTime },
-    );
     const [staged] = await tx
       .update(workflowAutomations)
       .set({
         enabled: false,
         nextRunAt: null,
-        ...morningBrief.automation,
         officialReconciliationStatus: "reconciling",
         updatedAt: currentTime,
       })
@@ -1382,12 +1226,6 @@ async function stageAutomationStructureTransition(
     return {
       previous: current,
       current: staged,
-      morningBriefFence: isMorningBriefReconciliation({
-        definitionName: args.definitionName,
-        blueprintKey: args.blueprint.key,
-      })
-        ? morningBrief.authority.fence
-        : undefined,
     };
   });
 }
@@ -1546,19 +1384,12 @@ async function commitAutomationStructureTransition(
   input: {
     readonly args: FinalizeAutomationStructureTransitionArgs;
     readonly current: OfficialAutomationRow;
-    readonly authority: Exclude<
-      MorningBriefLegacyWriterAuthority,
-      {
-        kind: "stale";
-      }
-    >;
     readonly accountProjection: OfficialAutomationAccountProjection;
     readonly webhookTierEligible: boolean;
   },
   signal: AbortSignal,
 ): Promise<FinalizeAutomationStructureTransitionResult> {
-  const { args, current, authority, accountProjection, webhookTierEligible } =
-    input;
+  const { args, current, accountProjection, webhookTierEligible } = input;
   if (!accountProjectionMatchesPatch(accountProjection, args.patch)) {
     return { kind: "superseded" };
   }
@@ -1568,17 +1399,6 @@ async function commitAutomationStructureTransition(
     current,
     args.patch,
     currentTime,
-  );
-  const morningBrief = await prepareMorningBriefLegacyReconciliationMutation(
-    tx,
-    {
-      orgId: args.orgId,
-      userId: args.userId,
-      workflowId: current.workflowId,
-      automationId: current.id,
-    },
-    authority,
-    { mode: "configured", proposed: refreshed, at: currentTime },
   );
   const subtypeFailure = await syncOfficialAutomationSubtypeRows(
     tx,
@@ -1597,7 +1417,7 @@ async function commitAutomationStructureTransition(
     .update(workflowAutomations)
     .set({
       ...refreshed,
-      ...morningBrief.automation,
+      nextRunAt: reconciledScheduleAnchor(current, refreshed.nextRunAt),
       officialReconciliationStatus: "current",
     })
     .where(eq(workflowAutomations.id, current.id))
@@ -1670,19 +1490,15 @@ async function finalizeAutomationStructureTransition(
       },
       signal,
     );
-    const morningBriefAuthority = await lockReconciliationMutationContext(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.persisted.current.workflowId,
-        automationId: args.persisted.current.id,
-        definitionName: args.definitionName,
-        blueprintKey: args.blueprint.key,
-      },
-      args.persisted.morningBriefFence,
-    );
-    if (morningBriefAuthority === null) {
+    const installationLocked = await lockReconciliationMutationContext(tx, {
+      orgId: args.orgId,
+      userId: args.userId,
+      workflowId: args.persisted.current.workflowId,
+      automationId: args.persisted.current.id,
+      definitionName: args.definitionName,
+      blueprintKey: args.blueprint.key,
+    });
+    if (!installationLocked) {
       return { kind: "superseded" };
     }
     const [current] = await tx
@@ -1705,7 +1521,6 @@ async function finalizeAutomationStructureTransition(
       {
         args,
         current,
-        authority: morningBriefAuthority,
         accountProjection,
         webhookTierEligible,
       },
@@ -2075,19 +1890,7 @@ async function markActiveAutomationFailed(
     ) {
       return false;
     }
-    const morningBriefAuthority = await lockReconciliationMorningBriefAuthority(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.workflowId,
-        automationId: args.automationId,
-        definitionName: args.definitionName,
-        blueprintKey: args.blueprint.key,
-      },
-    );
     if (
-      morningBriefAuthority.kind === "stale" ||
       !(await lockInstalledWorkflow(tx, {
         orgId: args.orgId,
         userId: args.userId,
@@ -2136,36 +1939,16 @@ interface DormantIdentityReservation {
   readonly intendedEnabled: boolean;
 }
 function resolveDormantReservationChoice(args: {
-  readonly schedule:
-    | Awaited<ReturnType<typeof lockMorningBriefNativeSchedule>>
-    | undefined;
   readonly identity:
     | typeof officialWorkflowAutomationIdentities.$inferSelect
     | undefined;
-  readonly workflowId: string;
   readonly fallbackIntendedEnabled: boolean;
-}): {
-  readonly id: string | null;
-  readonly intendedEnabled: boolean;
-} | null {
-  const durableAutomationId =
-    args.schedule?.legacyWorkflowId === args.workflowId
-      ? args.schedule.legacyAutomationId
-      : null;
-  if (
-    args.identity !== undefined &&
-    durableAutomationId !== null &&
-    args.identity.id !== durableAutomationId
-  ) {
-    return null;
-  }
-  const id = args.identity?.id ?? durableAutomationId;
-  const intendedEnabled =
-    durableAutomationId !== null && id === durableAutomationId
-      ? (args.schedule?.enabled ?? args.fallbackIntendedEnabled)
-      : (args.identity?.retainedIntendedEnabled ??
-        args.fallbackIntendedEnabled);
-  return { id, intendedEnabled };
+}): { readonly id: string | null; readonly intendedEnabled: boolean } {
+  return {
+    id: args.identity?.id ?? null,
+    intendedEnabled:
+      args.identity?.retainedIntendedEnabled ?? args.fallbackIntendedEnabled,
+  };
 }
 
 async function persistDormantIdentityReservation(
@@ -2256,15 +2039,6 @@ async function reserveDormantIdentity(
     ) {
       return null;
     }
-    const morningBriefSchedule = isMorningBriefReconciliation({
-      definitionName: args.definitionName,
-      blueprintKey: args.blueprint.key,
-    })
-      ? await lockMorningBriefNativeSchedule(tx, {
-          orgId: args.orgId,
-          userId: args.userId,
-        })
-      : undefined;
     if (
       !(await lockInstalledWorkflow(tx, {
         orgId: args.orgId,
@@ -2309,16 +2083,9 @@ async function reserveDormantIdentity(
       .limit(1);
     const currentTime = nowDate();
     const choice = resolveDormantReservationChoice({
-      schedule: morningBriefSchedule,
       identity,
-      workflowId: args.workflowId,
       fallbackIntendedEnabled: args.fallbackIntendedEnabled,
     });
-    if (choice === null) {
-      // Two identities claim the selected slot. Fail closed rather than
-      // manufacturing another lineage.
-      return null;
-    }
     return await persistDormantIdentityReservation(tx, {
       identity,
       reservationId: choice.id,
@@ -2363,15 +2130,6 @@ async function retainDormantIdentity(
     ) {
       return false;
     }
-    const morningBriefSchedule = isMorningBriefReconciliation({
-      definitionName: args.definitionName,
-      blueprintKey: args.blueprint.key,
-    })
-      ? await lockMorningBriefNativeSchedule(tx, {
-          orgId: args.orgId,
-          userId: args.userId,
-        })
-      : undefined;
     if (
       !(await lockInstalledWorkflow(tx, {
         orgId: args.orgId,
@@ -2412,14 +2170,9 @@ async function retainDormantIdentity(
       .limit(1);
     const currentTime = nowDate();
     const choice = resolveDormantReservationChoice({
-      schedule: morningBriefSchedule,
       identity,
-      workflowId: args.workflowId,
       fallbackIntendedEnabled: args.fallbackIntendedEnabled,
     });
-    if (choice === null) {
-      return false;
-    }
     const { id: retainedIdentityId, intendedEnabled } = choice;
     if (identity) {
       await tx
@@ -2481,17 +2234,7 @@ const removeDormantCreationOrphan$ = command(
       ) {
         return { kind: "blocked" as const };
       }
-      const morningBriefAuthority =
-        await lockReconciliationMorningBriefAuthority(tx, {
-          orgId: args.orgId,
-          userId: args.userId,
-          workflowId: args.workflowId,
-          automationId: args.reservationId,
-          definitionName: args.definitionName,
-          blueprintKey: args.blueprint.key,
-        });
       if (
-        morningBriefAuthority.kind === "stale" ||
         !(await lockInstalledWorkflow(tx, {
           orgId: args.orgId,
           userId: args.userId,
@@ -2588,18 +2331,8 @@ interface DormantMaterializationOwnershipArgs {
 async function lockDormantMaterializationOwnership(
   db: Tx,
   args: DormantMaterializationOwnershipArgs,
-  morningBriefAuthority: Exclude<
-    MorningBriefLegacyWriterAuthority,
-    {
-      kind: "stale";
-    }
-  >,
 ): Promise<OfficialAutomationRow | null> {
-  const rows = await lockDormantMaterializationRows(
-    db,
-    args,
-    morningBriefAuthority,
-  );
+  const rows = await lockDormantMaterializationRows(db, args);
   if (
     !rows ||
     rows.identity.state !== "reconciling" ||
@@ -2612,21 +2345,9 @@ async function lockDormantMaterializationOwnership(
 async function lockDormantMaterializationRows(
   db: Tx,
   args: DormantMaterializationOwnershipArgs,
-  morningBriefAuthority: Exclude<
-    MorningBriefLegacyWriterAuthority,
-    {
-      kind: "stale";
-    }
-  >,
 ): Promise<{
   readonly automation: OfficialAutomationRow;
   readonly identity: typeof officialWorkflowAutomationIdentities.$inferSelect;
-  readonly morningBriefAuthority: Exclude<
-    MorningBriefLegacyWriterAuthority,
-    {
-      kind: "stale";
-    }
-  >;
 } | null> {
   const [automation] = await db
     .select(workflowAutomationColumns())
@@ -2649,12 +2370,11 @@ async function lockDormantMaterializationRows(
     )
     .for("update")
     .limit(1);
-  const selected = morningBriefAuthority.kind === "selected";
   if (
     !identity ||
     identity.automationId !== null ||
     identity.retainedAppliedFingerprint !== args.fingerprint ||
-    (!selected && identity.retainedIntendedEnabled !== args.intendedEnabled) ||
+    identity.retainedIntendedEnabled !== args.intendedEnabled ||
     !isDeepStrictEqual(identity.retainedParameterBindings, args.bindings) ||
     !automation ||
     automation.orgId !== args.orgId ||
@@ -2663,14 +2383,13 @@ async function lockDormantMaterializationRows(
     automation.officialBlueprintKey !== args.blueprintKey ||
     automation.officialAppliedFingerprint !== args.fingerprint ||
     automation.officialReconciliationStatus === null ||
-    (!selected &&
-      automation.officialIntendedEnabled !== args.intendedEnabled) ||
+    automation.officialIntendedEnabled !== args.intendedEnabled ||
     automation.officialResultEmailEnabled !== args.resultEmailEnabled ||
     !isDeepStrictEqual(automation.officialParameterBindings, args.bindings)
   ) {
     return null;
   }
-  return { automation, identity, morningBriefAuthority };
+  return { automation, identity };
 }
 
 async function validateDormantMaterialization(
@@ -2695,10 +2414,10 @@ async function validateDormantMaterialization(
       return null;
     }
     const authority = await lockReconciliationMutationContext(tx, args);
-    if (authority === null) {
+    if (!authority) {
       return null;
     }
-    return await lockDormantMaterializationOwnership(tx, args, authority);
+    return await lockDormantMaterializationOwnership(tx, args);
   });
 }
 
@@ -2724,14 +2443,11 @@ async function finalizeDormantMaterialization(
       return false;
     }
     const authority = await lockReconciliationMutationContext(tx, args);
-    if (authority === null) {
+    if (!authority) {
       return false;
     }
-    const rows = await lockDormantMaterializationRows(tx, args, authority);
-    const expectedEnabled =
-      rows?.morningBriefAuthority.kind === "selected"
-        ? rows.morningBriefAuthority.row.enabled
-        : args.intendedEnabled;
+    const rows = await lockDormantMaterializationRows(tx, args);
+    const expectedEnabled = args.intendedEnabled;
     if (
       !rows ||
       rows.identity.state !== "reconciling" ||
@@ -2742,21 +2458,9 @@ async function finalizeDormantMaterialization(
     }
     const automation = rows.automation;
     const currentTime = nowDate();
-    const morningBrief = await prepareMorningBriefLegacyReconciliationMutation(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.workflowId,
-        automationId: args.automationId,
-      },
-      rows.morningBriefAuthority,
-      { mode: "configured", proposed: automation, at: currentTime },
-    );
     const [finalized] = await tx
       .update(workflowAutomations)
       .set({
-        ...morningBrief.automation,
         officialReconciliationStatus: "current",
         updatedAt: currentTime,
       })
@@ -2808,11 +2512,7 @@ const discardDormantMaterialization$ = command(
     // eslint-disable-next-line api/signal-check-await -- Complete the committed automation handoff and its watch compensation before propagating cancellation.
     const persisted = await db.transaction(async (tx) => {
       await lockAcceptedOfficialWorkflowCatalog(tx);
-      const authority = await lockReconciliationMorningBriefAuthority(tx, args);
-      if (authority.kind === "stale") {
-        return null;
-      }
-      const rows = await lockDormantMaterializationRows(tx, args, authority);
+      const rows = await lockDormantMaterializationRows(tx, args);
       if (
         !rows ||
         !(
@@ -2826,24 +2526,11 @@ const discardDormantMaterialization$ = command(
       }
       const previous = rows.automation;
       const currentTime = nowDate();
-      const morningBrief =
-        await prepareMorningBriefLegacyReconciliationMutation(
-          tx,
-          {
-            orgId: args.orgId,
-            userId: args.userId,
-            workflowId: args.workflowId,
-            automationId: args.automationId,
-          },
-          rows.morningBriefAuthority,
-          { mode: "paused", at: currentTime },
-        );
       const [current] = await tx
         .update(workflowAutomations)
         .set({
           enabled: false,
           nextRunAt: null,
-          ...morningBrief.automation,
           officialReconciliationStatus: "failed",
           updatedAt: currentTime,
         })
@@ -2890,11 +2577,7 @@ const discardDormantMaterialization$ = command(
     }
     return await db.transaction(async (tx) => {
       await lockAcceptedOfficialWorkflowCatalog(tx);
-      const authority = await lockReconciliationMorningBriefAuthority(tx, args);
-      if (authority.kind === "stale") {
-        return false;
-      }
-      const rows = await lockDormantMaterializationRows(tx, args, authority);
+      const rows = await lockDormantMaterializationRows(tx, args);
       if (
         !rows ||
         rows.automation.enabled ||
@@ -3228,7 +2911,6 @@ async function pauseRemovedAutomationConfiguration(
   | {
       readonly previous: OfficialAutomationRow;
       readonly current: OfficialAutomationRow;
-      readonly morningBriefFence: MorningBriefLegacyWriterFence | undefined;
     }
   | undefined
 > {
@@ -3245,19 +2927,7 @@ async function pauseRemovedAutomationConfiguration(
     ) {
       return undefined;
     }
-    const morningBriefAuthority = await lockReconciliationMorningBriefAuthority(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.automation.workflowId,
-        automationId: args.automation.id,
-        definitionName: args.definition.name,
-        blueprintKey: args.automation.officialBlueprintKey,
-      },
-    );
     if (
-      morningBriefAuthority.kind === "stale" ||
       !(await lockInstalledWorkflow(tx, {
         orgId: args.orgId,
         userId: args.userId,
@@ -3277,23 +2947,11 @@ async function pauseRemovedAutomationConfiguration(
       return undefined;
     }
     const currentTime = nowDate();
-    const morningBrief = await prepareMorningBriefLegacyReconciliationMutation(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: current.workflowId,
-        automationId: current.id,
-      },
-      morningBriefAuthority,
-      { mode: "paused", at: currentTime },
-    );
     const [row] = await tx
       .update(workflowAutomations)
       .set({
         enabled: false,
         nextRunAt: null,
-        ...morningBrief.automation,
         officialReconciliationStatus: "reconciling",
         updatedAt: currentTime,
       })
@@ -3303,12 +2961,6 @@ async function pauseRemovedAutomationConfiguration(
       ? {
           previous: current,
           current: row,
-          morningBriefFence: isMorningBriefReconciliation({
-            definitionName: args.definition.name,
-            blueprintKey: args.automation.officialBlueprintKey,
-          })
-            ? morningBrief.authority.fence
-            : undefined,
         }
       : undefined;
   });
@@ -3319,7 +2971,6 @@ async function deleteRemovedAutomationConfiguration(
   args: RemoveAutomationConfigurationArgs,
   paused: {
     readonly current: OfficialAutomationRow;
-    readonly morningBriefFence: MorningBriefLegacyWriterFence | undefined;
   },
   signal: AbortSignal,
 ): Promise<boolean> {
@@ -3336,20 +2987,7 @@ async function deleteRemovedAutomationConfiguration(
     ) {
       return false;
     }
-    const morningBriefAuthority = await lockReconciliationMorningBriefAuthority(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: paused.current.workflowId,
-        automationId: paused.current.id,
-        definitionName: args.definition.name,
-        blueprintKey: paused.current.officialBlueprintKey,
-      },
-      paused.morningBriefFence,
-    );
     if (
-      morningBriefAuthority.kind === "stale" ||
       !(await lockInstalledWorkflow(tx, {
         orgId: args.orgId,
         userId: args.userId,
@@ -3732,18 +3370,6 @@ const reconcileCurrentBlueprintLifecycleGap$ = command(
     const db = set(writeDb$);
     const { args, context, operations } = execution;
     const overrides = execution.overridesByKey.get(blueprint.key) ?? [];
-    // A selected Morning Brief must pass through the schedule-first persistence
-    // transaction even when reconciliation only needs to close a lifecycle gap.
-    // The generic enable composition represents a user choice and cannot carry
-    // this reconciliation's expected durable authority.
-    if (
-      isMorningBriefReconciliation({
-        definitionName: context.definition.name,
-        blueprintKey: blueprint.key,
-      })
-    ) {
-      return null;
-    }
     if (
       overrides.length !== 0 ||
       automation.officialAppliedFingerprint !== blueprint.fingerprint ||

@@ -50,6 +50,7 @@ import {
   or,
   sql,
 } from "drizzle-orm";
+import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
 
 import { settle } from "../utils";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
@@ -60,8 +61,6 @@ import { db$, writeDb$ } from "../external/db";
 import { prepareChatEvent } from "./chat-event.service";
 import { appendCanonicalChatEventsSql } from "./chat-event-append.service";
 import { inferMimetype } from "./chat-event-shared.service";
-import { revokeMorningBriefThreadDeliverySql } from "./morning-brief-delivery.service";
-import { revokeMorningBriefNativeThreadAuthoritySql } from "./morning-brief-native-schedule.service";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import {
   deleteChatThreadDraft$,
@@ -967,24 +966,11 @@ const disabledAutomationSelection = Object.freeze({
   eventConnectorId: workflowAutomations.eventConnectorId,
 });
 
-/** The attach fence, native authority epoch and deletion tombstone commit together. */
+/** The attach fence and deletion tombstone commit together. */
 const deleteChatThreadContent$ = command(
   async ({ set }, args: DeleteChatThreadArgs, signal: AbortSignal) => {
     signal.throwIfAborted();
     const result = await set(writeDb$).transaction(async (tx) => {
-      // Fence only this destination's current native epoch before its cascade.
-      // The same statement suppresses its pending occurrence obligations; no
-      // advisory lock or separate native schedule read is required.
-      await tx.execute(
-        revokeMorningBriefNativeThreadAuthoritySql(
-          {
-            orgId: args.orgId,
-            userId: args.userId,
-            chatThreadId: args.threadId,
-          },
-          nowDate(),
-        ),
-      );
       signal.throwIfAborted();
 
       const ownedThreadCondition = and(
@@ -1084,10 +1070,7 @@ const deleteChatThreadContent$ = command(
         .where(eq(chatEventSearchMessages.chatThreadId, ownedThread.id));
       signal.throwIfAborted();
 
-      // A native Morning Brief delivery cascades away with this thread, and it
-      // is the only association to its still-unsent mail. Remove both here, so
-      // the cascade cannot orphan content-bearing email.
-      await tx.execute(revokeMorningBriefThreadDeliverySql(ownedThread.id));
+      await tx.execute(purgeRetiredMorningBriefEmailSql());
       signal.throwIfAborted();
 
       // Delete the thread after cleanup under its row lock. Cascades chat_events.

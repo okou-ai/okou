@@ -6888,7 +6888,7 @@ export const enableWorkflowAutomation$ = command(
         nextRunAt,
         now,
         inheritedAutonomyBudget: args.inheritedAutonomyBudget,
-        useDurableChoice: args.allowReservedOfficialMaterialization === true,
+        reconciliationOwned: args.allowReservedOfficialMaterialization === true,
       },
       signal,
     );

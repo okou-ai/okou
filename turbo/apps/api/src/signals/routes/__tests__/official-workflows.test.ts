@@ -52,7 +52,6 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { readNativeSchedule } from "../../../test-fixtures/morning-brief-native-schedule";
 import {
   appendOfficialWorkflowQueueInputFixture,
   readOfficialWorkflowQueueInputFixture,
@@ -2795,25 +2794,10 @@ async function readBriefPreference(actor: ApiTestUser) {
   );
 }
 
-/**
- * The member's single Morning Brief schedule. A legacy-phase member is read
- * through the workflow detail endpoint. No endpoint exposes the native
- * schedule row, so once a member leaves the legacy phase that row is read
- * directly.
- */
+/** The member's Official schedule, read through the workflow detail endpoint. */
 async function readBriefSchedule(actor: ApiTestUser) {
   if (!actor.orgId) {
     throw new Error("Expected organization-scoped actor");
-  }
-  const native = await readNativeSchedule({
-    orgId: actor.orgId,
-    userId: actor.userId,
-  });
-  if (native !== undefined && native.phase !== "legacy") {
-    return {
-      nextRunAt: native.nextRunAt?.toISOString() ?? null,
-      timezone: native.timezone,
-    };
   }
   const [installation] = await listMorningBriefInstallations(actor);
   if (!installation) {

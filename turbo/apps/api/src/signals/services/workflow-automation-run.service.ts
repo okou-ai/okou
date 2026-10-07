@@ -35,8 +35,6 @@ import {
   consumeWorkflowScheduleAnchorSql,
   journalWorkflowScheduleClaimSql,
 } from "./workflow-schedule-queue.service";
-import { morningBriefNativeSchedules } from "@okouai/db/schema/morning-brief-native-schedule";
-import { morningBriefScheduleWhere } from "./morning-brief-native-schedule.service";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { connectors } from "@okouai/db/schema/connector";
@@ -604,21 +602,11 @@ const commitWorkflowInput$ = command(
         if (args.scheduleClaim) {
           marks.push({ step: "schedule", startedAt: now() });
           const claim = args.scheduleClaim;
-          const [native] = await tx
-            .select()
-            .from(morningBriefNativeSchedules)
-            .where(
-              morningBriefScheduleWhere({
-                orgId: claim.orgId,
-                userId: claim.ownerUserId,
-              }),
-            )
-            .limit(1);
           const admittedAt = nowDate();
           if (
             (
               await tx.execute(
-                consumeWorkflowScheduleAnchorSql(claim, native, admittedAt),
+                consumeWorkflowScheduleAnchorSql(claim, admittedAt),
               )
             ).rowCount !== 1
           ) {

@@ -668,7 +668,7 @@ describe("Morning Brief schedule lifecycle through public APIs", () => {
     });
   }
 
-  it("skips an expired unclaimed legacy brief without inventing a Run or leaving the native anchor behind", async () => {
+  it("skips an expired unclaimed Official brief to the future without inventing a Run", async () => {
     mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "true");
     const brief = await installJournaledBrief();
     const at = brief.anchor + 30 * 60_000 + 1;
@@ -685,7 +685,7 @@ describe("Morning Brief schedule lifecycle through public APIs", () => {
     expect(automation?.chatThreadId).toBeNull();
   });
 
-  it("does not claim or change an expired brief while general expiry is off", async () => {
+  it("recovers an expired Official brief to the future while general expiry is off", async () => {
     mockEnv("WORKFLOW_SCHEDULE_EXPIRY_ENABLED", "false");
     const brief = await installJournaledBrief();
     const at = brief.anchor + 30 * 60_000 + 1;
@@ -695,7 +695,7 @@ describe("Morning Brief schedule lifecycle through public APIs", () => {
       brief.actor,
       brief.workflowId,
     );
-    expect(automation?.nextRunAt).toBe(new Date(brief.anchor).toISOString());
+    expect(Date.parse(automation?.nextRunAt ?? "")).toBeGreaterThan(at);
     expect(automation?.lastRunAt).toBeNull();
     expect(automation?.chatThreadId).toBeNull();
   });
@@ -763,6 +763,38 @@ describe("Morning Brief schedule lifecycle through public APIs", () => {
     }
     const claimed = await runs.claimRunnerJob(runId);
     expect(claimed.cliAgentType).toBe("pi");
+  });
+
+  it("holds a republished anchor until the current Official claim settles", async () => {
+    const brief = await installJournaledBrief();
+    await pollAt(brief.automationId, brief.anchor + 60_000);
+    const threadId = await briefThreadId(brief.actor, brief.workflowId);
+    const runIds = await briefRunIds(threadId);
+    const [runId] = runIds;
+    if (!runId) {
+      throw new Error("Expected the occurrence to start a run");
+    }
+    const enabled = await accept(
+      automationClient().enable({
+        headers: authHeaders(brief.actor),
+        params: { id: brief.automationId },
+        body: undefined,
+      }),
+      [200],
+    );
+    if (!enabled.body.nextRunAt) {
+      throw new Error("Expected enabling to publish a future anchor");
+    }
+    const at = Date.parse(enabled.body.nextRunAt) + 60_000;
+    await pollAt(brief.automationId, at);
+    await expect(briefRunIds(threadId)).resolves.toStrictEqual(runIds);
+    await expect(readBriefState(brief)).resolves.toMatchObject({
+      nextRunAt: enabled.body.nextRunAt,
+    });
+
+    await cancelRunAndFlush(brief.actor, runId);
+    await pollAt(brief.automationId, at);
+    await expect(briefRunIds(threadId)).resolves.toHaveLength(2);
   });
 
   it("settles once when concurrent first deliveries of the same completion arrive", async () => {

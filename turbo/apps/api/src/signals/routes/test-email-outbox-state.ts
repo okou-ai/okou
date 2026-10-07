@@ -2,28 +2,14 @@ import {
   testEmailOutboxStateContract,
   type TestEmailOutboxStateActionBody,
 } from "@okouai/api-contracts/contracts/test-email-outbox-state";
-import { randomUUID } from "node:crypto";
-import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { emailOutbox } from "@okouai/db/schema/email-outbox";
-import { morningBriefCollectionOccurrences } from "@okouai/db/schema/morning-brief-collection-occurrence";
-import { morningBriefDeliveries } from "@okouai/db/schema/morning-brief-delivery";
-import { morningBriefNativeSchedules } from "@okouai/db/schema/morning-brief-native-schedule";
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { users } from "@okouai/db/schema/user";
 import { officialAutomationResultEmailClaims } from "@okouai/db/schema/official-automation-result-email-claim";
 import { command } from "ccstate";
 import { and, asc, eq, inArray } from "drizzle-orm";
-
-import type { Tx } from "../../lib/db-types";
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { writeDb$, type Db } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import {
-  buildOneClickUnsubscribeUrl,
-  buildUnsubscribeHeaders,
-} from "../services/email-common.service";
 import {
   isTestEndpointAllowed,
   testEndpointNotFoundResponse,
@@ -96,6 +82,8 @@ async function seedTestOutboxItem(
               },
             },
       status: body.status,
+      providerIdempotencyKey: body.provider_idempotency_key,
+      providerRequest: body.provider_request,
       attempts: 0,
       createdAt: new Date(body.created_at),
     })
@@ -110,261 +98,6 @@ async function seedTestOutboxItem(
   };
 }
 
-/** Reconstruct one old in-flight owner only inside the test-only state route. */
-async function seedActiveHistoricalAuthority(
-  tx: Tx,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly membershipId: string;
-    readonly agentId: string;
-    readonly threadId: string;
-    readonly workflowId: string;
-    readonly automationId: string;
-    readonly at: Date;
-  },
-) {
-  await tx.insert(users).values({ id: args.userId });
-  await tx.insert(morningBriefNativeSchedules).values({
-    orgId: args.orgId,
-    userId: args.userId,
-    enabled: true,
-    cronExpression: "0 7 * * *",
-    timezone: "UTC",
-    nextRunAt: null,
-    scheduleOwner: null,
-    phase: "native",
-    target: "native",
-    ownerEpoch: 1,
-    membershipId: args.membershipId,
-    agentId: args.agentId,
-    chatThreadId: args.threadId,
-    materializedAt: args.at,
-  });
-  await tx.insert(morningBriefCollectionOccurrences).values({
-    orgId: args.orgId,
-    userId: args.userId,
-    scheduledFor: args.at,
-    collectionKind: "sources",
-    collectionVersion: 1,
-    windowStart: new Date(args.at.getTime() - 60 * 60 * 1000),
-    windowEnd: args.at,
-    timezone: "UTC",
-    membershipId: args.membershipId,
-    workflowId: args.workflowId,
-    automationId: args.automationId,
-    agentId: args.agentId,
-    status: "completed",
-    attempt: 1,
-    outcome: "complete",
-    claimedAt: args.at,
-    finishedAt: args.at,
-  });
-}
-
-async function seedLinkedNativeMail(
-  db: Db,
-  body: Extract<TestEmailOutboxStateActionBody, { action: "seed-native-mail" }>,
-  signal: AbortSignal,
-) {
-  const owner = { orgId: body.org_id, userId: body.user_id };
-  const agentId = randomUUID();
-  const threadId = randomUUID();
-  const workflowId = randomUUID();
-  const automationId = randomUUID();
-  const at = new Date(body.created_at);
-  const item = await db.transaction(async (tx) => {
-    await tx.insert(orgMembersMetadata).values({ ...owner, timezone: "UTC" });
-    await tx.insert(agents).values({
-      id: agentId,
-      orgId: owner.orgId,
-      owner: owner.userId,
-      name: `historical-mail-${agentId.slice(0, 8)}`,
-      visibility: "private",
-    });
-    await tx.insert(chatThreads).values({
-      id: threadId,
-      userId: owner.userId,
-      agentId,
-      title: "Historical Native mail fixture",
-    });
-    if (body.active_authority === true) {
-      await seedActiveHistoricalAuthority(tx, {
-        ...owner,
-        membershipId: body.membership_id,
-        agentId,
-        threadId,
-        workflowId,
-        automationId,
-        at,
-      });
-    }
-    const [queued] = await tx
-      .insert(emailOutbox)
-      .values({
-        fromAddress: "Okou <outbox-fixture@mail.example.com>",
-        toAddresses: body.to_address,
-        subject: "Historical Native Morning Brief",
-        template: historicalNativeMailTemplate,
-        headers: buildUnsubscribeHeaders(
-          buildOneClickUnsubscribeUrl(owner.userId),
-        ),
-        createdAt: at,
-      })
-      .returning(itemStateSelection());
-    if (!queued) {
-      throw new Error("Failed to seed linked Native email intent");
-    }
-    await tx.insert(morningBriefDeliveries).values({
-      ...owner,
-      scheduledFor: at,
-      collectionKind: "sources",
-      collectionVersion: 1,
-      executionPurpose: "production",
-      resultAttemptId: randomUUID(),
-      membershipId: body.membership_id,
-      nativeOwnerEpoch: 1,
-      workflowId,
-      automationId,
-      agentId,
-      chatThreadId: threadId,
-      chatEventId: randomUUID(),
-      resultDigest: "historical-mail-fixture",
-      emailResolution: "enqueued",
-      emailOutboxId: queued.id,
-      deliveredAt: at,
-    });
-    return queued;
-  });
-  signal.throwIfAborted();
-  return {
-    status: 200 as const,
-    body: {
-      action: "seed-native-mail" as const,
-      item: itemState(item),
-      agent_id: agentId,
-    },
-  };
-}
-
-async function deleteLinkedNativeMail(
-  db: Db,
-  itemId: string,
-  signal: AbortSignal,
-) {
-  const deleted = await db.transaction(async (tx) => {
-    const [delivery] = await tx
-      .select({
-        orgId: morningBriefDeliveries.orgId,
-        userId: morningBriefDeliveries.userId,
-        agentId: morningBriefDeliveries.agentId,
-        chatThreadId: morningBriefDeliveries.chatThreadId,
-      })
-      .from(morningBriefDeliveries)
-      .where(eq(morningBriefDeliveries.emailOutboxId, itemId));
-    if (!delivery) {
-      return false;
-    }
-    await tx
-      .delete(morningBriefDeliveries)
-      .where(eq(morningBriefDeliveries.emailOutboxId, itemId));
-    await tx.delete(emailOutbox).where(eq(emailOutbox.id, itemId));
-    await tx
-      .delete(morningBriefCollectionOccurrences)
-      .where(
-        and(
-          eq(morningBriefCollectionOccurrences.orgId, delivery.orgId),
-          eq(morningBriefCollectionOccurrences.userId, delivery.userId),
-        ),
-      );
-    await tx
-      .delete(morningBriefNativeSchedules)
-      .where(
-        and(
-          eq(morningBriefNativeSchedules.orgId, delivery.orgId),
-          eq(morningBriefNativeSchedules.userId, delivery.userId),
-        ),
-      );
-    await tx
-      .delete(chatThreads)
-      .where(eq(chatThreads.id, delivery.chatThreadId));
-    await tx.delete(agents).where(eq(agents.id, delivery.agentId));
-    await tx.delete(users).where(eq(users.id, delivery.userId));
-    await tx
-      .delete(orgMembersMetadata)
-      .where(
-        and(
-          eq(orgMembersMetadata.orgId, delivery.orgId),
-          eq(orgMembersMetadata.userId, delivery.userId),
-        ),
-      );
-    return true;
-  });
-  signal.throwIfAborted();
-  return {
-    status: 200 as const,
-    body: { action: "delete-native-mail" as const, deleted },
-  };
-}
-
-async function cleanupNativeOwnerFixture(
-  db: Db,
-  orgId: string,
-  userId: string,
-  signal: AbortSignal,
-) {
-  await db.transaction(async (tx) => {
-    const owned = and(
-      eq(morningBriefDeliveries.orgId, orgId),
-      eq(morningBriefDeliveries.userId, userId),
-    );
-    const removed = await tx
-      .delete(morningBriefDeliveries)
-      .where(owned)
-      .returning({ outboxId: morningBriefDeliveries.emailOutboxId });
-    const outboxIds = removed.flatMap((row) => {
-      return row.outboxId === null ? [] : [row.outboxId];
-    });
-    if (outboxIds.length > 0) {
-      await tx.delete(emailOutbox).where(inArray(emailOutbox.id, outboxIds));
-    }
-    await tx
-      .delete(morningBriefCollectionOccurrences)
-      .where(
-        and(
-          eq(morningBriefCollectionOccurrences.orgId, orgId),
-          eq(morningBriefCollectionOccurrences.userId, userId),
-        ),
-      );
-    await tx
-      .delete(morningBriefNativeSchedules)
-      .where(
-        and(
-          eq(morningBriefNativeSchedules.orgId, orgId),
-          eq(morningBriefNativeSchedules.userId, userId),
-        ),
-      );
-    await tx.delete(chatThreads).where(eq(chatThreads.userId, userId));
-    await tx
-      .delete(agents)
-      .where(and(eq(agents.orgId, orgId), eq(agents.owner, userId)));
-    await tx
-      .delete(orgMembersMetadata)
-      .where(
-        and(
-          eq(orgMembersMetadata.orgId, orgId),
-          eq(orgMembersMetadata.userId, userId),
-        ),
-      );
-    await tx.delete(users).where(eq(users.id, userId));
-  });
-  signal.throwIfAborted();
-  return {
-    status: 200 as const,
-    body: { action: "cleanup-native-owner" as const, cleaned: true },
-  };
-}
-
 async function applyAction(
   db: Db,
   body: TestEmailOutboxStateActionBody,
@@ -373,31 +106,6 @@ async function applyAction(
   switch (body.action) {
     case "seed-item": {
       return await seedTestOutboxItem(db, body, signal);
-    }
-    case "seed-native-mail": {
-      return await seedLinkedNativeMail(db, body, signal);
-    }
-    case "read-native-receipt": {
-      const [delivery] = await db
-        .select({ emailOutboxId: morningBriefDeliveries.emailOutboxId })
-        .from(morningBriefDeliveries)
-        .where(eq(morningBriefDeliveries.emailOutboxId, body.item_id));
-      signal.throwIfAborted();
-      return {
-        status: 200 as const,
-        body: { action: "read-native-receipt" as const, exists: !!delivery },
-      };
-    }
-    case "delete-native-mail": {
-      return await deleteLinkedNativeMail(db, body.item_id, signal);
-    }
-    case "cleanup-native-owner": {
-      return await cleanupNativeOwnerFixture(
-        db,
-        body.org_id,
-        body.user_id,
-        signal,
-      );
     }
     case "find-item": {
       const items = await db

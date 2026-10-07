@@ -21,20 +21,15 @@ import { nowDate } from "../../lib/time";
 import { db$, writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import {
-  morningBriefLegacyWriterAuthorityFromRow,
-  readMorningBriefNativeScheduleForWrite,
-  type MorningBriefLegacyWriterAuthority,
-} from "./morning-brief-native-schedule.service";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
 
-import { advanceInFlightSchedule } from "./morning-brief-legacy-settlement-sql";
+import { advanceInFlightSchedule } from "./workflow-schedule-settlement";
 
 type AutomationRow = typeof workflowAutomations.$inferSelect;
 
 const log = logger("MorningBriefScheduleClaim");
 
-/** Mirrors the legacy poller and callback policy; they share one constant. */
+/** Matches the Official poller and callback policy; they share one constant. */
 const MAX_CONSECUTIVE_FAILURES = 3;
 
 /**
@@ -234,13 +229,6 @@ interface SettleMorningBriefScheduleInput {
 }
 
 interface SettleMorningBriefScheduleArgs extends SettleMorningBriefScheduleInput {
-  readonly owner:
-    | {
-        readonly orgId: string;
-        readonly userId: string;
-        readonly workflowId: string;
-      }
-    | undefined;
   readonly isCreditError: boolean;
 }
 
@@ -273,26 +261,6 @@ const prepareMorningBriefScheduleSettlement$ = command(
     if (!binding) {
       return null;
     }
-    let owner: SettleMorningBriefScheduleArgs["owner"];
-    if (binding.orgId !== null && binding.userId !== null) {
-      owner = {
-        orgId: binding.orgId,
-        userId: binding.userId,
-        workflowId: binding.workflowId,
-      };
-    } else {
-      const [automation] = await db
-        .select({
-          orgId: workflowAutomations.orgId,
-          userId: workflowAutomations.ownerUserId,
-          workflowId: workflowAutomations.workflowId,
-        })
-        .from(workflowAutomations)
-        .where(eq(workflowAutomations.id, args.automationId))
-        .limit(1);
-      signal?.throwIfAborted();
-      owner = automation;
-    }
     let isCreditError = args.isCreditError ?? false;
     if (args.subject.kind === "run" && args.settlement !== "completed") {
       // The exact journal binding authorizes this read; no unrelated Run is inspected.
@@ -304,18 +272,16 @@ const prepareMorningBriefScheduleSettlement$ = command(
       signal?.throwIfAborted();
       isCreditError = run?.failureReason === "insufficient_credits";
     }
-    return { ...args, owner, isCreditError };
+    return { ...args, isCreditError };
   },
 );
 
-function legacyMorningBriefSettlementPlan(
+function officialMorningBriefSettlementPlan(
   automation: AutomationRow,
-  authority: MorningBriefLegacyWriterAuthority,
   args: SettleMorningBriefScheduleArgs,
   settledAt: Date,
 ) {
   if (
-    (authority.kind === "selected" && authority.row.phase !== "legacy") ||
     !automation.enabled ||
     automation.nextRunAt !== null ||
     automation.scheduleType !== "cron"
@@ -342,9 +308,7 @@ function legacyMorningBriefSettlementPlan(
     automationValues: {
       consecutiveFailures,
       ...(shouldDisable ? { enabled: false } : {}),
-      ...(shouldDisable && authority.kind === "selected"
-        ? { officialIntendedEnabled: false }
-        : {}),
+      ...(shouldDisable ? { officialIntendedEnabled: false } : {}),
       nextRunAt,
       updatedAt: settledAt,
     },
@@ -360,32 +324,11 @@ type MorningBriefScheduleSettlementOutcome = {
 /** Another settler already settled this occurrence; roll back this transaction. */
 class MorningBriefClaimAlreadySettled extends Error {}
 
-/**
- * Settle one occurrence once: read, compute, then conditional writes.
- *
- * No row is locked and nothing is retried. Writes follow the documented order
- * (native row, legacy automation, then its claim). The schedule advance is a
- * single conditional pass ({@link advanceInFlightSchedule}): a toggle, cutover
- * or settlement that already published the successor wins unchanged, and a
- * cron or timezone edit that landed after the read is applied from the
- * columns the write returned. The claim write is the exactly-once gate: when
- * another settler already settled it, the whole transaction rolls back and
- * this call settles nothing.
- */
+/** Settle a current claim exactly once; publishing a successor and the claim share rollback authority. */
 async function attemptMorningBriefScheduleSettlement(
   tx: Tx,
   args: SettleMorningBriefScheduleArgs,
 ): Promise<MorningBriefScheduleSettlementOutcome> {
-  const lineage = args.owner && {
-    ...args.owner,
-    automationId: args.automationId,
-  };
-  const native = lineage
-    ? await readMorningBriefNativeScheduleForWrite(tx, lineage)
-    : undefined;
-  const authority: MorningBriefLegacyWriterAuthority = lineage
-    ? morningBriefLegacyWriterAuthorityFromRow(native?.row, lineage)
-    : { kind: "ordinary", fence: { kind: "ordinary" } };
   const [automation] = await tx
     .select(workflowAutomationColumns())
     .from(workflowAutomations)
@@ -412,12 +355,7 @@ async function attemptMorningBriefScheduleSettlement(
     return null;
   }
   const settledAt = nowDate();
-  const plan = legacyMorningBriefSettlementPlan(
-    automation,
-    authority,
-    args,
-    settledAt,
-  );
+  const plan = officialMorningBriefSettlementPlan(automation, args, settledAt);
   const advanced = plan
     ? await advanceInFlightSchedule(tx, {
         automationId: args.automationId,
@@ -428,15 +366,8 @@ async function attemptMorningBriefScheduleSettlement(
           timezone: automation.timezone,
         },
         automationValues: plan.automationValues,
-        shouldDisable: plan.shouldDisable,
         at: settledAt,
         requireEmptySlot: true,
-        legacy:
-          lineage &&
-          authority.kind === "selected" &&
-          authority.row.phase === "legacy"
-            ? { lineage, row: authority.row }
-            : undefined,
       })
     : "superseded";
   const [settled] = await tx
@@ -462,7 +393,7 @@ async function attemptMorningBriefScheduleSettlement(
     : null;
 }
 
-/** One occurrence and its native mirror settle together with direct local SQL. */
+/** Settle the Official occurrence and its successor in one commit. */
 const commitMorningBriefScheduleSettlement$ = command(
   async (
     { set },

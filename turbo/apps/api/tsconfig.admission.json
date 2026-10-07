@@ -110,7 +110,7 @@
     "src/signals/services/internal-telegram-chat-run-callback.service.ts",
     "src/signals/services/memory-summary-projection.service.ts",
     "src/signals/services/model-provider.service.ts",
-    "src/signals/services/morning-brief-legacy-settlement-sql.ts",
+    "src/signals/services/workflow-schedule-settlement.ts",
     "src/signals/services/morning-brief-schedule-claim.service.ts",
     "src/signals/services/official-workflow-reconciliation-dispatch.service.ts",
     "src/signals/services/pending-launch-admission-plan.ts",
@@ -158,7 +158,11 @@
     "src/types/auth.ts"
   ],
   "references": [
-    { "path": "./tsconfig.gateways.json" },
-    { "path": "./tsconfig.foundation.json" }
+    {
+      "path": "./tsconfig.gateways.json"
+    },
+    {
+      "path": "./tsconfig.foundation.json"
+    }
   ]
 }

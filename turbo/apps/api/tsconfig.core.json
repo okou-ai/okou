@@ -93,8 +93,6 @@
     "src/signals/services/managed-usage-record.ts",
     "src/signals/services/model-provider-device-session-publication.ts",
     "src/signals/services/model-token-categories.ts",
-    "src/signals/services/morning-brief-collection-occurrence.service.ts",
-    "src/signals/services/morning-brief-delivery.service.ts",
     "src/signals/services/onboarding-credit-grants.service.ts",
     "src/signals/services/org-credit-expiration.ts",
     "src/signals/services/org-plan-entitlement-tier-values.ts",
@@ -282,9 +280,6 @@
     "src/signals/services/morning-brief-enrollment-data.service.ts",
     "src/signals/services/morning-brief-membership.service.ts",
     "src/signals/services/morning-brief-migration-state.service.ts",
-    "src/signals/services/morning-brief-native-email-admission.service.ts",
-    "src/signals/services/morning-brief-native-schedule.service.ts",
-    "src/signals/services/morning-brief-result-email-renderer.ts",
     "src/signals/services/notion-automation-account.service.ts",
     "src/signals/services/official-automation-result-email-renderer.ts",
     "src/signals/services/official-workflow-catalog-read.service.ts",
@@ -487,7 +482,7 @@
     "src/signals/services/internal-telegram-chat-run-callback.service.ts",
     "src/signals/services/memory-summary-projection.service.ts",
     "src/signals/services/model-provider.service.ts",
-    "src/signals/services/morning-brief-legacy-settlement-sql.ts",
+    "src/signals/services/workflow-schedule-settlement.ts",
     "src/signals/services/morning-brief-schedule-claim.service.ts",
     "src/signals/services/official-workflow-reconciliation-dispatch.service.ts",
     "src/signals/services/pending-launch-admission-plan.ts",
@@ -532,11 +527,18 @@
     "src/signals/services/workflow-queue-admission-timing.service.ts",
     "src/signals/services/workflow-schedule-failure.service.ts",
     "src/signals/services/workflow-stripe-queue.service.ts",
-    "src/types/auth.ts"
+    "src/types/auth.ts",
+    "src/signals/services/retired-morning-brief-email.ts"
   ],
   "references": [
-    { "path": "./tsconfig.gateways.json" },
-    { "path": "./tsconfig.foundation.json" },
-    { "path": "./tsconfig.admission.json" }
+    {
+      "path": "./tsconfig.gateways.json"
+    },
+    {
+      "path": "./tsconfig.foundation.json"
+    },
+    {
+      "path": "./tsconfig.admission.json"
+    }
   ]
 }

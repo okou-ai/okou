@@ -1,40 +1,23 @@
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { isValidTimeZone } from "@okouai/core/timezone";
-import {
-  morningBriefNativeOccurrences,
-  morningBriefNativeSchedules,
-} from "@okouai/db/schema/morning-brief-native-schedule";
-import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
-import {
-  MorningBriefSnapshotChanged,
-  morningBriefLogicalChoicePlan,
-  morningBriefScheduleWhere,
-  readMorningBriefNativeScheduleForWrite,
-  commitMorningBriefSnapshotOnce,
-} from "./morning-brief-native-schedule.service";
+import { pgTextDecoder } from "../../lib/db-structured-result";
+import { settle } from "../utils";
 import { morningBriefTimezoneTargetSql } from "./morning-brief-preference-sql";
 import { calculateNextRun } from "./time-automation";
+
+class StaleMorningBriefTimezone extends Error {}
 
 const timezoneTarget = z.object({
   workflowId: z.string(),
   timezone: z.string().nullable(),
 });
-
-function unsettledOccurrenceWhere(owner: MorningBriefMemberIdentity) {
-  return and(
-    eq(morningBriefNativeOccurrences.orgId, owner.orgId),
-    eq(morningBriefNativeOccurrences.userId, owner.userId),
-    isNull(morningBriefNativeOccurrences.settledAt),
-  );
-}
 
 function automationTimezoneValues(
   row: typeof workflowAutomations.$inferSelect,
@@ -58,19 +41,7 @@ function automationTimezoneValues(
   };
 }
 
-/**
- * A timezone edit preserves enabled choice and every admitted execution's epoch.
- *
- * No lock is held and no row is locked. The native row and each Morning Brief
- * automation are read with their row versions, their successors are computed
- * from the current cron and the timezone read in the same transaction, and
- * each is written with a conditional UPDATE on that version. A concurrent
- * settlement, toggle, reconciliation or timezone commit rolls the transaction
- * back and the result is `conflict` once, which callers report as their
- * retryable conflict; nothing is re-read or retried here. An installation that commits after this
- * read runs this synchronization itself once installed, so one of the two
- * writers always observes the other.
- */
+/** Preserve user choice and an in-flight slot; concurrent Official writes return a conflict. */
 export const synchronizeMorningBriefTimezone$ = command(
   async (
     { set },
@@ -83,8 +54,8 @@ export const synchronizeMorningBriefTimezone$ = command(
     const owner = { orgId: args.orgId, userId: args.member.userId };
     const db = set(writeDb$);
     signal.throwIfAborted();
-    const outcome = await commitMorningBriefSnapshotOnce(() => {
-      return db.transaction(async (tx) => {
+    const outcome = await settle(
+      db.transaction(async (tx) => {
         const [target] = parseRawRows(
           timezoneTarget,
           await tx.execute(morningBriefTimezoneTargetSql(owner)),
@@ -93,10 +64,12 @@ export const synchronizeMorningBriefTimezone$ = command(
           return;
         }
         const { workflowId, timezone } = target;
-        const native = await readMorningBriefNativeScheduleForWrite(tx, owner);
         const automations = await tx
           .select({
             row: workflowAutomations,
+            version: sql`${workflowAutomations}.xmin::text`.mapWith(
+              pgTextDecoder,
+            ),
           })
           .from(workflowAutomations)
           .where(
@@ -109,47 +82,7 @@ export const synchronizeMorningBriefTimezone$ = command(
             ),
           );
         const at = nowDate();
-        if (native !== undefined) {
-          const [occurrence] = await tx
-            .select()
-            .from(morningBriefNativeOccurrences)
-            .where(unsettledOccurrenceWhere(owner))
-            .orderBy(morningBriefNativeOccurrences.scheduledFor)
-            .limit(1);
-          const [claim] = await tx
-            .select({ settlement: morningBriefScheduleClaims.settlement })
-            .from(morningBriefScheduleClaims)
-            .where(
-              native.row.legacyAutomationId === null
-                ? isNull(morningBriefScheduleClaims.automationId)
-                : eq(
-                    morningBriefScheduleClaims.automationId,
-                    native.row.legacyAutomationId,
-                  ),
-            )
-            .orderBy(desc(morningBriefScheduleClaims.claimSequence))
-            .limit(1);
-          const plan = morningBriefLogicalChoicePlan(
-            native.row,
-            { timezone },
-            occurrence,
-            native.row.phase === "legacy" &&
-              native.row.legacyAutomationId !== null &&
-              claim?.settlement === "unsettled",
-            at,
-          );
-          const [applied] = await tx
-            .update(morningBriefNativeSchedules)
-            .set(plan.values)
-            .where(and(morningBriefScheduleWhere(owner)))
-            .returning({
-              ownerEpoch: morningBriefNativeSchedules.ownerEpoch,
-            });
-          if (applied === undefined) {
-            throw new MorningBriefSnapshotChanged();
-          }
-        }
-        for (const { row } of automations) {
+        for (const { row, version } of automations) {
           const values = automationTimezoneValues(row, timezone, at);
           if (values === undefined) {
             continue;
@@ -157,16 +90,28 @@ export const synchronizeMorningBriefTimezone$ = command(
           const [applied] = await tx
             .update(workflowAutomations)
             .set(values)
-            .where(and(eq(workflowAutomations.id, row.id)))
+            .where(
+              and(
+                eq(workflowAutomations.id, row.id),
+                sql`${workflowAutomations}.xmin::text = ${version}`,
+              ),
+            )
             .returning({ id: workflowAutomations.id });
           if (applied === undefined) {
-            throw new MorningBriefSnapshotChanged();
+            throw new StaleMorningBriefTimezone();
           }
         }
         signal.throwIfAborted();
-      });
-    }, signal);
+      }),
+      signal,
+    );
     signal.throwIfAborted();
-    return outcome.kind === "committed" ? "synchronized" : "conflict";
+    if (outcome.ok) {
+      return "synchronized";
+    }
+    if (outcome.error instanceof StaleMorningBriefTimezone) {
+      return "conflict";
+    }
+    throw outcome.error;
   },
 );

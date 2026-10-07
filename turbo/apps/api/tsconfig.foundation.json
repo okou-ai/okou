@@ -54,8 +54,6 @@
     "src/signals/services/managed-usage-record.ts",
     "src/signals/services/model-provider-device-session-publication.ts",
     "src/signals/services/model-token-categories.ts",
-    "src/signals/services/morning-brief-collection-occurrence.service.ts",
-    "src/signals/services/morning-brief-delivery.service.ts",
     "src/signals/services/onboarding-credit-grants.service.ts",
     "src/signals/services/org-credit-expiration.ts",
     "src/signals/services/org-plan-entitlement-tier-values.ts",
@@ -243,9 +241,6 @@
     "src/signals/services/morning-brief-enrollment-data.service.ts",
     "src/signals/services/morning-brief-membership.service.ts",
     "src/signals/services/morning-brief-migration-state.service.ts",
-    "src/signals/services/morning-brief-native-email-admission.service.ts",
-    "src/signals/services/morning-brief-native-schedule.service.ts",
-    "src/signals/services/morning-brief-result-email-renderer.ts",
     "src/signals/services/notion-automation-account.service.ts",
     "src/signals/services/official-automation-result-email-renderer.ts",
     "src/signals/services/official-workflow-catalog-read.service.ts",
@@ -342,8 +337,13 @@
     "src/signals/services/ssh-client-invalidation.service.ts",
     "src/signals/services/ssh-creation.service.ts",
     "src/signals/services/ssh-runtime-wakeup.service.ts",
-    "src/signals/services/uploaded-artifact.service.ts"
+    "src/signals/services/uploaded-artifact.service.ts",
+    "src/signals/services/retired-morning-brief-email.ts"
   ],
   "exclude": ["node_modules", "dist"],
-  "references": [{ "path": "./tsconfig.gateways.json" }]
+  "references": [
+    {
+      "path": "./tsconfig.gateways.json"
+    }
+  ]
 }

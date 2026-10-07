@@ -6,6 +6,21 @@
 > the shared installation/ownership reader and as migration history; its
 > Native transition discussions below are historical, not operational advice.
 
+## Current code stage: Official-only authority (2026-10-07)
+
+The Native replacement plan is abandoned. The API no longer consumes any of the
+seven Native tables; Official workflow automations, retained automation identities
+and the Official claim journal own scheduling and user choice. Native generation
+retention and lifecycle hooks are retired. Historical Native mail is rejected and
+its queued body is scrubbed; ordinary Official result email remains active.
+
+This stage retains all schema declarations and physical tables. It does not claim
+production deployment, resolution of an incident, or completion of the table-drop
+epic. See [the deployment contract](deployment-compatibility.md#morning-brief-official-only-storage-authority-2026-10-07)
+for version overlap, the retention precondition, future-only anchor recovery and the
+later contraction gates. The transition protocols and dated inventories below
+record the earlier migration; they do not authorize returning to Native execution.
+
 ## Native storage retirement: pre-drop evidence, not authorization
 
 This inventory is for [#36916](https://github.com/okou-ai/okou/issues/36916)

@@ -168,6 +168,7 @@ const claimAutomation$ = command(
 );
 
 type DueMode =
+  | "morning-brief-expired"
   | "legacy"
   | "fresh"
   | "retry"
@@ -177,7 +178,8 @@ type DueMode =
   | "once-expired";
 
 const DUE_MODE_LIMIT: Readonly<Record<DueMode, number>> = Object.freeze({
-  legacy: DUE_BATCH_LIMIT,
+  legacy: DUE_BATCH_LIMIT - EXPIRED_BATCH_LIMIT,
+  "morning-brief-expired": EXPIRED_BATCH_LIMIT,
   fresh: FRESH_BATCH_LIMIT,
   retry: RETRY_BATCH_LIMIT,
   expired: EXPIRED_BATCH_LIMIT,
@@ -194,10 +196,28 @@ interface DueSelection {
 }
 
 function scheduleModeFilter(mode: DueMode, at: Date) {
+  if (mode === "morning-brief-expired") {
+    return and(
+      eq(
+        workflowAutomations.officialBlueprintKey,
+        MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+      ),
+      lt(
+        workflowAutomations.nextRunAt,
+        new Date(at.getTime() - SCHEDULE_GRACE_MS),
+      ),
+      or(
+        sql`${workflowAutomations.deferredAnchorAt} IS DISTINCT FROM ${workflowAutomations.nextRunAt}`,
+        isNull(workflowAutomations.deferredUntil),
+        lte(workflowAutomations.deferredUntil, at),
+      ),
+    );
+  }
+
   if (mode === "legacy") {
     // While general expiry is off, old Morning Brief anchors must not occupy
-    // the entire due batch. They remain untouched until a safe skip contract
-    // can move them; other due automations still retain their legacy policy.
+    // the entire due batch. A bounded separate lane
+    // skips them to the future; other automations retain their legacy policy.
     return or(
       isNull(workflowAutomations.officialBlueprintKey),
       ne(
@@ -400,7 +420,9 @@ const retireDepartedOwner$ = command(
   ): Promise<boolean> => {
     const anchor = row.automation.nextRunAt;
     if (
-      !context.expiryEnabled ||
+      (!context.expiryEnabled &&
+        row.automation.officialBlueprintKey !==
+          MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY) ||
       !anchor ||
       !scheduleExpired(anchor, nowDate())
     ) {
@@ -439,7 +461,15 @@ const loadDueWorkflowRows$ = command(
       workflowId: args.workflowId,
     };
     if (!args.expiryEnabled) {
-      return await set(dueWorkflowAutomationRows$, common, signal);
+      const expired = await set(
+        dueWorkflowAutomationRows$,
+        { ...common, mode: "morning-brief-expired" },
+        signal,
+      );
+      signal.throwIfAborted();
+      const due = await set(dueWorkflowAutomationRows$, common, signal);
+      signal.throwIfAborted();
+      return [...expired, ...due];
     }
     const modes: readonly DueMode[] = [
       "expired",
@@ -590,7 +620,9 @@ const skipExpiredDueRow$ = command(
   ): Promise<boolean> => {
     const anchor = row.automation.nextRunAt;
     if (
-      !expiryEnabled ||
+      (!expiryEnabled &&
+        row.automation.officialBlueprintKey !==
+          MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY) ||
       anchor === null ||
       !scheduleExpired(anchor, nowDate())
     ) {

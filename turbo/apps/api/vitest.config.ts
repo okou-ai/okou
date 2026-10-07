@@ -5,6 +5,10 @@ export const realDatabaseSetupFiles = [
   "./src/__tests__/setup.ts",
 ];
 
+// Retired Native intents are globally purged by owner cleanup. These fixtures
+// must run after all other projects finish their lifecycle transactions.
+const emailLifecycleTests = ["src/signals/routes/__tests__/email.test.ts"];
+
 const immutableCatalogTests = [
   "src/signals/routes/__tests__/connector-catalog-immutable.test.ts",
 ];
@@ -130,6 +134,7 @@ export default defineConfig({
             ...immutableCatalogTests,
             ...isolatedDatabaseTests,
             ...databaseLifecycleTests,
+            ...emailLifecycleTests,
           ],
         },
       },
@@ -176,6 +181,17 @@ export default defineConfig({
           benchmark: { enabled: false },
           fileParallelism: false,
           sequence: { groupOrder: 4 },
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "api-email-lifecycle",
+          setupFiles: realDatabaseSetupFiles,
+          include: emailLifecycleTests,
+          benchmark: { enabled: false },
+          fileParallelism: false,
+          sequence: { groupOrder: 5 },
         },
       },
     ],

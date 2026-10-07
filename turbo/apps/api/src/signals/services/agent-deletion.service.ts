@@ -8,6 +8,7 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
+import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
 
 import { db$, writeDb$, type Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
@@ -29,12 +30,6 @@ import {
   logCommittedConversationDeletion,
   releaseDeletedConversationReferences,
 } from "./conversation-history-deletion.service";
-import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
-import {
-  lockMorningBriefNativeAgentAuthorities,
-  revokeMorningBriefNativeAuthority,
-} from "./morning-brief-native-schedule.service";
-import { nowDate } from "../../lib/time";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 
 const log = logger("api:agent-deletion");
@@ -205,17 +200,11 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
   await tx.execute(
     sql`SELECT set_config('lock_timeout', ${DELETE_AGENT_LOCK_TIMEOUT}, true)`,
   );
-  // Read authorization without a row lock, then fence every native owner before
-  // taking the Agent lifecycle lock. The lifecycle reader below revalidates the
-  // same permission and identity under lock before any deletion commits.
+  // Revalidate permission and identity under the lifecycle lock before deletion commits.
   const preflight = await preflightAgentDeletion(tx, args);
   if (preflight.kind !== "ready") {
     return preflight;
   }
-  const nativeOwners = await lockMorningBriefNativeAgentAuthorities(tx, {
-    orgId: args.orgId,
-    agentId: args.agentId,
-  });
   const lifecycle = await lockAgentLifecycleForDeletion(tx, args);
   if (lifecycle.kind !== "ready") {
     return lifecycle;
@@ -231,14 +220,6 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
     .where(eq(chatThreads.agentId, args.agentId))
     .orderBy(asc(chatEventSequences.chatThreadId))
     .for("update", { of: chatEventSequences });
-  const revokedAt = nowDate();
-  for (const owner of nativeOwners) {
-    await revokeMorningBriefNativeAuthority(
-      tx,
-      { orgId: owner.orgId, userId: owner.userId },
-      revokedAt,
-    );
-  }
   const automations = await tx
     .select({
       orgId: workflowAutomations.orgId,
@@ -261,11 +242,7 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
     ]);
   // Remove current non-FK lifecycle rows before the Agent cascade.
   await deleteAgentStableContextLifecycleData(tx, args.agentId);
-  // Revoke unsent native Morning Brief mail before the Agent cascade.
-  await revokeMorningBriefDeliveryOwnership(tx, {
-    kind: "agent",
-    agentId: args.agentId,
-  });
+  await tx.execute(purgeRetiredMorningBriefEmailSql());
   await tx
     .delete(agents)
     .where(and(eq(agents.id, args.agentId), eq(agents.orgId, args.orgId)));

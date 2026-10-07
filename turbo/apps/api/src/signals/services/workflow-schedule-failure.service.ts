@@ -1,6 +1,5 @@
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
-import { morningBriefNativeSchedules } from "@okouai/db/schema/morning-brief-native-schedule";
 import { morningBriefScheduleClaims } from "@okouai/db/schema/morning-brief-schedule-claim";
 import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
@@ -13,11 +12,6 @@ import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
-import { settleLegacyMorningBriefSql } from "./morning-brief-legacy-settlement-sql";
-import {
-  morningBriefLegacyWriterAuthorityFromRow,
-  morningBriefScheduleWhere,
-} from "./morning-brief-native-schedule.service";
 import { settleMorningBriefSchedulePreRunFailure$ } from "./morning-brief-schedule-claim.service";
 import { calculateNextRun } from "./time-automation";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
@@ -79,7 +73,7 @@ function logPreRunFailure(
   }
 }
 
-/** A concurrent writer changed the selected automation or its durable mirror. */
+/** A concurrent writer changed the selected Official automation. */
 class StalePreRunFailure extends Error {}
 
 const STALE_PRE_RUN_FAILURE = {
@@ -105,16 +99,7 @@ interface PreRunFailureInput {
   readonly stillDueAt?: Date;
 }
 
-/**
- * No row locks: the native row and automation are read plainly and each write
- * is conditional on what was read — the native mirror on its epoch, phase and
- * lineage, then the automation on its exact row version, in the documented
- * native -> automation order. A concurrent claim, settlement, toggle or edit
- * that wins makes a write match zero rows; the whole transaction rolls back and
- * this failure publishes nothing (the winner's state stands, and a still-due
- * anchor is polled again). The pre-existing owner-key advisory lock still
- * covers a member without a durable row.
- */
+/** Count only the still-due Official row version; a winning concurrent writer remains authoritative. */
 const recordSelectedMorningBriefPreRunFailure$ = command(
   async (
     { set },
@@ -128,26 +113,8 @@ const recordSelectedMorningBriefPreRunFailure$ = command(
       return false;
     }
     const db = set(writeDb$);
-    const lineage = {
-      orgId: automation.orgId,
-      userId: automation.ownerUserId,
-      workflowId: automation.workflowId,
-      automationId: automation.id,
-    };
     const settled = await settle(
       db.transaction(async (tx) => {
-        const [native] = await tx
-          .select()
-          .from(morningBriefNativeSchedules)
-          .where(morningBriefScheduleWhere(lineage))
-          .limit(1);
-        const authority = morningBriefLegacyWriterAuthorityFromRow(
-          native,
-          lineage,
-        );
-        if (authority.kind === "ordinary") {
-          return undefined;
-        }
         const [current] = await tx
           .select({
             ...workflowAutomationColumns(),
@@ -159,9 +126,7 @@ const recordSelectedMorningBriefPreRunFailure$ = command(
           .where(eq(workflowAutomations.id, automation.id))
           .limit(1);
         if (
-          authority.kind === "stale" ||
           !current ||
-          authority.row.phase !== "legacy" ||
           (stillDueAt !== undefined &&
             current.nextRunAt?.getTime() !== stillDueAt.getTime()) ||
           (current.scheduleType !== "once" && !current.enabled)
@@ -177,18 +142,6 @@ const recordSelectedMorningBriefPreRunFailure$ = command(
           failureTime,
           shouldDisable,
         );
-        const { rowCount } = await tx.execute(
-          settleLegacyMorningBriefSql(lineage, authority.row, {
-            enabled: !shouldDisable,
-            cronExpression: current.cronExpression,
-            timezone: current.timezone,
-            nextRunAt,
-            at: failureTime,
-          }),
-        );
-        if (rowCount !== 1) {
-          throw new StalePreRunFailure();
-        }
         const [updated] = await tx
           .update(workflowAutomations)
           .set({

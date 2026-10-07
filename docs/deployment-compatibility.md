@@ -3894,6 +3894,54 @@ retained historical cleanup and scheduling services. Do not remove their fail-cl
 scheduler is gone. Releasing this PR needs a separate authorization and normal
 release/production checks; PR creation is not deployment approval.
 
+## Morning Brief Official-only storage authority (2026-10-07)
+
+This code stage removes all API consumers of the seven retired Native relations.
+`workflow_automations` owns the enabled choice, recurrence and next-run anchor;
+Official automation identities retain dormant choices and stable IDs. Enrollment,
+canonical installation selection, Official schedule claims and result email remain.
+Installation, reconciliation, toggles, timezone edits, admission, completion,
+expiry and lifecycle cleanup neither read nor mirror Native schedules, occurrences,
+collections, generations, deliveries, skips or installed preferences.
+
+Morning Brief expiry is enabled independently of general workflow expiry. A bounded
+lane moves an unclaimed anchor older than 30 minutes to the next future occurrence,
+without creating a Run, incrementing failures or mailing a missed brief. Exact
+Official row predicates and the claim journal fence concurrent admission, edits,
+settlement and expiry. An unsettled Official claim or pending queue input is held;
+reconciliation preserves its empty in-flight slot for completion. Admission holds
+a republished anchor until the current claim settles. Pre-journal callbacks can
+advance only a lineage without any Official claim records.
+
+The distinct historical `morning-brief-result` outbox template is terminally rejected
+before parsing, rendering or provider replay, including a previously committed
+provider request. Its body and rendered request are scrubbed; its provider key and
+an explicit unresolved-outcome error remain until ordinary outbox retention removes
+the failed record. Owner lifecycle cleanup also purges globally retired Native
+unsent intents directly from the outbox, without the former delivery association;
+completed mail and other templates are untouched. Rejection does not imply a previous provider attempt was never
+accepted. `official-automation-result` keeps its existing result callbacks,
+unsubscribe, suppression, retention and idempotent delivery contract.
+
+No database migration accompanies this code stage. Keep all seven tables and their
+columns while the outgoing API drains: old API writers can still require them, and
+old expiry/callback paths may fail to advance an anchor after the new API stops
+mirroring Native state. The new API can recover an unclaimed expired Official anchor
+on a later tick. Neither version re-enables Native execution; old clients continue
+to use the same Official preference and workflow APIs. Rolling back to the previous
+API restores its Native mirror dependency and may restore the stuck-anchor behavior;
+prefer a forward fix. Do not restore an API older than Native execution retirement.
+
+Before removing the Native generation retention worker in production, confirm the
+retired generation store has no remaining content that needs its bounded retention
+and no admitted producer can still write it. Later table contraction requires its
+own release after every outgoing API and worker has drained and the rollback floor
+excludes Native readers. Recheck historical content and Native outbox intents, purge
+as needed, and drop only the seven retired relations. Preserve the anonymous
+`morning_brief_platform_generation_receipts`, Official schedule claims, enrollment,
+workflows, chat events and ordinary email lifecycle. This stage is a code contract,
+not evidence of deployment or production recovery.
+
 ## Morning Brief settings status and collection account retirement (2026-09-24)
 
 `GET`/`PUT /api/preferences/morning-brief` no longer return `nextRunAt`,

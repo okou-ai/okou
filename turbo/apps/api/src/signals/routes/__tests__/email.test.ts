@@ -111,7 +111,7 @@ beforeEach(() => {
 });
 
 describe("retired Native Morning Brief email", () => {
-  it("fails a provenance-free intent closed without asking the provider to send", async () => {
+  it("rejects a historical Native intent and clears its body without contacting the provider", async () => {
     const outbox = createEmailOutboxStateApi(context);
     const item = await outbox.seedItem({
       template: "morning-brief-result",
@@ -129,134 +129,83 @@ describe("retired Native Morning Brief email", () => {
     ).resolves.toBe(1);
     await expect(outbox.readItem(item.id)).resolves.toMatchObject({
       status: "failed",
-      last_error: "Morning Brief email has no native delivery provenance",
+      last_error: "Native Morning Brief email retired",
+      has_provider_request: false,
+      template: {
+        template: "morning-brief-result",
+        props: { title: "", resultMarkdown: "", threadUrl: "", manageUrl: "" },
+      },
     });
     expect(resendMocks.send).not.toHaveBeenCalled();
   });
-
-  it("rejects a linked historical intent after membership rejoin while preserving its receipt", async () => {
+  it("stops a committed historical Native provider request without replaying or replacing its key", async () => {
     const outbox = createEmailOutboxStateApi(context);
-    const orgId = `org_${randomUUID()}`;
-    const userId = `user_${randomUUID()}`;
-    const item = await outbox.seedLinkedNativeMail({
-      orgId,
-      userId,
-      membershipId: "mem_before_rejoin",
-      toAddress: `recipient-${randomUUID()}@example.test`,
+    const to = `recipient-${randomUUID()}@example.test`;
+    const key = `historical-native-${randomUUID()}`;
+    const item = await outbox.seedItem({
+      template: "morning-brief-result",
+      toAddress: to,
+      subject: "Historical Morning Brief",
+      status: "sending",
       createdAt: nowDate(),
-    });
-    let cleaned = false;
-    onTestFinished(async () => {
-      if (!cleaned) {
-        await outbox.deleteLinkedNativeMail(item.id);
-      }
-    });
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-      {
-        data: [
-          {
-            id: "mem_after_rejoin",
-            publicUserData: { userId },
-            organization: { id: orgId },
-          },
-        ],
+      providerIdempotencyKey: key,
+      providerRequest: {
+        from: "Okou <outbox-fixture@mail.example.com>",
+        to,
+        subject: "Historical Morning Brief",
+        html: "<p>Historical content</p>",
+        text: "Historical content",
       },
-    );
-
-    await expect(outbox.nativeReceiptExists(item.id)).resolves.toBeTruthy();
+    });
+    onTestFinished(async () => {
+      await outbox.deleteItems([item.id]);
+    });
     await expect(
       drainEmailOutboxItemsForTest([item.id], context.signal),
     ).resolves.toBe(1);
     await expect(outbox.readItem(item.id)).resolves.toMatchObject({
       status: "failed",
+      attempts: 0,
+      provider_idempotency_key: key,
+      has_provider_request: false,
       last_error:
-        "Morning Brief recipient rejoined under a new membership generation",
-    });
-    await expect(outbox.nativeReceiptExists(item.id)).resolves.toBeTruthy();
-    expect(resendMocks.send).not.toHaveBeenCalled();
-
-    await expect(outbox.deleteLinkedNativeMail(item.id)).resolves.toBeTruthy();
-    cleaned = true;
-    await expect(outbox.nativeReceiptExists(item.id)).resolves.toBeFalsy();
-  });
-
-  it("sends a still-authorized historical intent once and retains its receipt", async () => {
-    const outbox = createEmailOutboxStateApi(context);
-    const orgId = `org_${randomUUID()}`;
-    const userId = `user_${randomUUID()}`;
-    const membershipId = `mem_${randomUUID()}`;
-    const item = await outbox.seedLinkedNativeMail({
-      orgId,
-      userId,
-      membershipId,
-      activeAuthority: true,
-      toAddress: `recipient-${randomUUID()}@example.test`,
-      createdAt: nowDate(),
-    });
-    onTestFinished(async () => {
-      await outbox.deleteLinkedNativeMail(item.id);
-    });
-    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-      {
-        data: [
-          {
-            id: membershipId,
-            publicUserData: { userId },
-            organization: { id: orgId },
-          },
-        ],
+        "Native Morning Brief email retired with unresolved provider outcome",
+      template: {
+        template: "morning-brief-result",
+        props: { title: "", resultMarkdown: "", threadUrl: "", manageUrl: "" },
       },
-    );
-
-    await expect(
-      drainEmailOutboxItemsForTest([item.id], context.signal),
-    ).resolves.toBe(1);
-    await expect(outbox.readItem(item.id)).resolves.toMatchObject({
-      status: "sent",
-      resend_id: "resend-test-id",
-      provider_idempotency_key: `okou-email-outbox/v1/${item.id}`,
     });
-    await expect(outbox.nativeReceiptExists(item.id)).resolves.toBeTruthy();
     await expect(
       drainEmailOutboxItemsForTest([item.id], context.signal),
     ).resolves.toBe(0);
-    expect(resendMocks.send).toHaveBeenCalledTimes(1);
-    expect(resendMocks.send).toHaveBeenCalledWith(
-      expect.objectContaining({ subject: "Historical Native Morning Brief" }),
-      { idempotencyKey: `okou-email-outbox/v1/${item.id}` },
-    );
+    expect(resendMocks.send).not.toHaveBeenCalled();
   });
-
-  it("removes unsent Native mail and its receipt through Agent deletion without touching a sibling", async () => {
+  it("purges globally retired Native intents during Agent deletion and preserves ordinary queued mail", async () => {
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Native mail retirement",
+    });
     const outbox = createEmailOutboxStateApi(context);
-    const orgId = `org_${randomUUID()}`;
-    const userId = `user_${randomUUID()}`;
-    const item = await outbox.seedLinkedNativeMail({
-      orgId,
-      userId,
-      membershipId: `mem_${randomUUID()}`,
-      toAddress: `recipient-${randomUUID()}@example.test`,
+    const native = await outbox.seedItem({
+      template: "morning-brief-result",
+      toAddress: `native-${randomUUID()}@example.test`,
+      subject: "Historical Morning Brief",
+      status: "pending",
       createdAt: nowDate(),
     });
-    const sibling = await outbox.seedItem({
-      toAddress: `sibling-${randomUUID()}@example.test`,
+    const ordinary = await outbox.seedItem({
+      toAddress: `ordinary-${randomUUID()}@example.test`,
       subject: "Unrelated transactional mail",
       status: "pending",
       createdAt: nowDate(),
     });
     onTestFinished(async () => {
-      await outbox.cleanupNativeOwner(orgId, userId);
-      await outbox.deleteItems([sibling.id]);
+      await outbox.deleteItems([native.id, ordinary.id]);
     });
-
-    await expect(outbox.nativeReceiptExists(item.id)).resolves.toBeTruthy();
-    await bdd.deleteAgent(
-      { userId, orgId, orgRole: "org:admin", email: `${userId}@example.test` },
-      item.agentId,
-    );
-    await expect(outbox.nativeReceiptExists(item.id)).resolves.toBeFalsy();
-    await expect(outbox.readItem(item.id)).resolves.toBeNull();
-    await expect(outbox.readItem(sibling.id)).resolves.toMatchObject({
+    await bdd.deleteAgent(actor, agent.agentId);
+    await expect(outbox.readItem(native.id)).resolves.toBeNull();
+    await expect(outbox.readItem(ordinary.id)).resolves.toMatchObject({
       status: "pending",
     });
     expect(resendMocks.send).not.toHaveBeenCalled();

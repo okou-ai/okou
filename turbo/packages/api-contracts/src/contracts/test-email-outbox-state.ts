@@ -45,30 +45,18 @@ export const testEmailOutboxStateActionBodySchema = z.discriminatedUnion(
         .optional(),
       to_address: z.string().min(1),
       subject: z.string().min(1),
-      status: z.enum(["pending", "failed"]),
+      status: z.enum(["pending", "sending", "failed"]),
+      provider_idempotency_key: z.string().max(256).optional(),
+      provider_request: z
+        .object({
+          from: z.string(),
+          to: z.string(),
+          subject: z.string(),
+          html: z.string(),
+          text: z.string().optional(),
+        })
+        .optional(),
       created_at: z.iso.datetime(),
-    }),
-    z.object({
-      action: z.literal("seed-native-mail"),
-      org_id: z.string().min(1),
-      user_id: z.string().min(1),
-      membership_id: z.string().min(1),
-      active_authority: z.boolean().optional(),
-      to_address: z.string().min(1),
-      created_at: z.iso.datetime(),
-    }),
-    z.object({
-      action: z.literal("read-native-receipt"),
-      item_id: z.string().uuid(),
-    }),
-    z.object({
-      action: z.literal("delete-native-mail"),
-      item_id: z.string().uuid(),
-    }),
-    z.object({
-      action: z.literal("cleanup-native-owner"),
-      org_id: z.string().min(1),
-      user_id: z.string().min(1),
     }),
     z.object({
       action: z.literal("find-item"),
@@ -97,23 +85,6 @@ export const testEmailOutboxStateActionResponseSchema = z.discriminatedUnion(
     z.object({
       action: z.literal("seed-item"),
       item: testEmailOutboxStateItemSchema,
-    }),
-    z.object({
-      action: z.literal("seed-native-mail"),
-      item: testEmailOutboxStateItemSchema,
-      agent_id: z.string().uuid(),
-    }),
-    z.object({
-      action: z.literal("read-native-receipt"),
-      exists: z.boolean(),
-    }),
-    z.object({
-      action: z.literal("delete-native-mail"),
-      deleted: z.boolean(),
-    }),
-    z.object({
-      action: z.literal("cleanup-native-owner"),
-      cleaned: z.boolean(),
     }),
     z.object({
       action: z.literal("find-item"),
