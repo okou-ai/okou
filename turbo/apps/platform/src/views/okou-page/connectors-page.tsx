@@ -13,10 +13,7 @@ import { useTranslation } from "react-i18next";
 import { Search, Filter, ChevronDown, Check } from "lucide-react";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
-import type {
-  PublicConnectorCatalogCategoryMetadata,
-  PublicConnectorCatalogDiscoveryResponse,
-} from "@okouai/api-contracts/contracts/connector-catalog";
+import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -64,6 +61,7 @@ import {
 import {
   groupConnectorsByCategory,
   type ConnectorCategoryGroup,
+  type ConnectorCategoryLabels,
   type ConnectorCategorySection,
 } from "../../signals/okou-page/settings/connector-categories.ts";
 import {
@@ -72,7 +70,7 @@ import {
   connectorCategoryGridWindow,
   CONNECTOR_CATEGORY_GRID_ROW_HEIGHT,
 } from "../../signals/okou-page/settings/connector-category-grid.ts";
-import { localizeConnectorCategoryMetadata } from "./components/settings/connector-category-labels.ts";
+import { connectorCategoryLabels } from "./components/settings/connector-category-labels.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import {
@@ -874,23 +872,28 @@ function discoveryCategoryCounts(
 }
 
 /**
- * The categories the filter offers. They come from the catalog's own category
- * list rather than from the connectors that came back, because inside a
- * category the response holds only that category and a filter offering
- * nothing else is a dead end.
+ * The categories the filter offers. They come from the whole catalog's
+ * category counts rather than from the connectors that came back, because
+ * inside a category the response holds only that category and a filter
+ * offering nothing else is a dead end.
  */
 function categoryFilterSections(
-  categoryMetadata: PublicConnectorCatalogCategoryMetadata | undefined,
+  categoryLabels: ConnectorCategoryLabels,
+  categoryCounts: Readonly<Record<string, number>> | undefined,
 ): ConnectorCategorySection<PlatformConnectorCatalogStatusItem>[] {
-  return (categoryMetadata?.categories ?? []).map((category) => {
-    return {
-      category: category.id,
-      label: category.label,
-      menuLabel: category.menuLabel,
-      groupId: category.groupId,
-      connectors: [],
-    };
-  });
+  return categoryLabels.categories
+    .filter((category) => {
+      return (categoryCounts?.[category.id] ?? 0) > 0;
+    })
+    .map((category) => {
+      return {
+        category: category.id,
+        label: category.label,
+        menuLabel: category.menuLabel,
+        groupId: category.groupId,
+        connectors: [],
+      };
+    });
 }
 
 interface ConnectorsBrowseModel {
@@ -931,7 +934,7 @@ function buildConnectorsBrowseModel({
   ready,
 }: {
   readonly catalogItems: readonly PlatformConnectorCatalogStatusItem[];
-  readonly categoryMetadata: PublicConnectorCatalogCategoryMetadata | undefined;
+  readonly categoryMetadata: ConnectorCategoryLabels;
   readonly categoryCounts: Readonly<Record<string, number>> | undefined;
   readonly otherCategoryLabel: string;
   readonly headLabel: string;
@@ -974,7 +977,7 @@ function buildConnectorsBrowseModel({
   // The filter lists the catalog's categories, not the ones the current
   // response happens to contain: inside a category the response holds only
   // that category, and a filter that offers nothing else is a dead end.
-  const chipSections = categoryFilterSections(categoryMetadata);
+  const chipSections = categoryFilterSections(categoryMetadata, categoryCounts);
   return {
     ready,
     connectionFilter,
@@ -1402,11 +1405,14 @@ export function ConnectorsPage() {
     catalogStatusLoadable.state === "hasData"
       ? catalogStatusLoadable.data.totalConnectorCount
       : null;
-  const categoryMetadata = localizeConnectorCategoryMetadata(
-    catalogStatusLoadable.state === "hasData"
-      ? catalogStatusLoadable.data.categoryMetadata
-      : undefined,
-  );
+  // Category ids come from the whole catalog's counts and the connectors on
+  // screen; the catalog carries no category names.
+  const categoryMetadata = connectorCategoryLabels([
+    ...Object.keys(discoveryCategoryCounts(catalogStatusLoadable) ?? {}),
+    ...filteredConnectors.map((connector) => {
+      return connector.category;
+    }),
+  ]);
   const allConnectors =
     relatedCatalogItemsLoadable.state === "hasData"
       ? relatedCatalogItemsLoadable.data

@@ -1,4 +1,17 @@
-import type { PublicConnectorCatalogCategoryMetadata } from "@okouai/api-contracts/contracts/connector-catalog";
+/** Display names for the category ids that catalog entries carry. */
+export interface ConnectorCategoryLabels {
+  readonly categories: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly menuLabel: string;
+    readonly groupId: string | null;
+  }[];
+  readonly groups: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly menuLabel: string;
+  }[];
+}
 
 export interface ConnectorCategorySection<T> {
   category: string;
@@ -16,7 +29,7 @@ export interface ConnectorCategoryGroup<T> {
   sections: [ConnectorCategorySection<T>, ...ConnectorCategorySection<T>[]];
 }
 
-function fallbackCategoryLabel(category: string): string {
+export function fallbackCategoryLabel(category: string): string {
   const label = category
     .split(/[-_\s]+/)
     .filter((part) => {
@@ -65,7 +78,7 @@ export function groupConnectorsByCategory<
   },
 >(
   connectors: readonly T[],
-  categoryMetadata: PublicConnectorCatalogCategoryMetadata | undefined,
+  categoryMetadata: ConnectorCategoryLabels | undefined,
   otherCategoryLabel = "Other",
 ): ConnectorCategoryGroup<T>[] {
   const grouped = new Map<string, T[]>();

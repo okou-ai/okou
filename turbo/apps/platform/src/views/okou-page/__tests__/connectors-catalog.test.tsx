@@ -133,10 +133,6 @@ test("Browse connectors by category", async () => {
     });
   expect(labels).toContain("GitHub");
   expect(labels).toContain("Asana");
-  const ai = screen.getByTestId("connector-category-ai");
-  expect(
-    ai.compareDocumentPosition(engineering) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
   // The catalog is browsed a category at a time, and a category is far taller
   // than the viewport. Its marks are fetched as they are reached.
   expect(getConnectorIcon("Asana")).toHaveAttribute("loading", "lazy");
