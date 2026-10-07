@@ -19,9 +19,15 @@ Migrations run before API promotion. An API built before 1332 still declares
 the columns, so its chat thread inserts, its `ownedChatThread` select and any
 bare `select()`/`returning()` on `chat_threads` receive `42703` until it
 drains. `chat_threads` is a hot table, so this is not a rolling-compatible
-contraction: applying 1332 requires an owner-accepted interruption (ideally in
-the same rollout as 1330, or at low traffic), which this document does not
-record. New API with the old schema is unsupported, as usual.
+contraction. New API with the old schema is unsupported, as usual.
+
+**Accepted rollout interruption:** Ethan explicitly accepted (2026-10-07) a
+brief unavailability of roughly ten-odd seconds during deployment while the
+outgoing API drains, so chat thread reads and writes may receive `42703` in
+that window. This bounded interruption is accepted for this contraction; no
+preparatory release or old-column compatibility branch is required. Prefer the
+same rollout as 1330 or low traffic. Acceptance of that risk is not an
+instruction to merge or deploy this PR.
 
 Rollback floor: the rollback resolver resolves the first-parent `main` commit
 that added `1332_drop_chat_thread_provider_pin_columns.sql` and rejects earlier
