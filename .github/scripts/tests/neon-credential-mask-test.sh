@@ -16,7 +16,7 @@ mapfile -t generator_files < <(
     --glob '*.yml' \
     --glob '*.yaml' \
     -e 'neonctl connection-string' \
-    -e 'neon-preview-branch.sh' \
+    -e '$(.github/scripts/neon-preview-branch.sh' \
     .github/actions \
     .github/workflows |
     sort
@@ -57,7 +57,7 @@ mapfile -t script_invocations < <(
     --line-number \
     --no-heading \
     --fixed-strings \
-    '.github/scripts/neon-preview-branch.sh' \
+    '$(.github/scripts/neon-preview-branch.sh' \
     "${generator_files[@]}"
 )
 
