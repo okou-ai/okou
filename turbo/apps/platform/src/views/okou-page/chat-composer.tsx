@@ -8773,7 +8773,6 @@ function composerDirectoryBrowseData(
 ) {
   return {
     categoryCounts: browse?.categoryConnectorCounts,
-    categoryMetadata: browse?.categoryMetadata,
     chipCatalog: browse?.connectors ?? items,
   };
 }
@@ -9025,7 +9024,6 @@ function ComposerConnectorDialogsSlot({
           state={connectorUi}
           onUpdateState={updateConnectorUi}
           categoryCounts={directoryBrowse.categoryCounts}
-          categoryMetadata={directoryBrowse.categoryMetadata}
           loading={addDialogCatalog === undefined || addDialogCatalog === null}
           chipCatalog={directoryBrowse.chipCatalog}
           connected={directoryConnected}
