@@ -25,10 +25,7 @@ through a separate member adapter. Administrative routing remains unchanged.
 The projection describes a local logical candidate, never a captured account
 or live quota guarantee. Missing projection fields retain the old API/OFF
 interpretation, including missing credentials on an organization Subscription
-policy. Expanded model menus use the short **BYOK** badge for Claude/Codex
-personal routes in select, compact and flyout layouts; the tooltip retains the
-provider source and own-credentials help. The closed button and Fast guidance
-keep their existing presentation. Failed refreshes retain the last resolved choices and the user's draft,
+policy. Failed refreshes retain the last resolved choices and the user's draft,
 selected model, effort, and Fast preference.
 
 Authenticated user/org `modelPoliciesChanged` notices invalidate only the
