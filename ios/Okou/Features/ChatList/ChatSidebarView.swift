@@ -17,9 +17,9 @@ struct ChatSidebarView: View {
   }
 
   private var visibleThreads: [ChatThread] {
-    store.threads.filter { thread in
+    store.list.threads.filter { thread in
       thread.agentID == store.selectedAgentID
-        && (!store.canArchiveChats || thread.isArchived == showArchived)
+        && (!store.list.canArchiveChats || thread.isArchived == showArchived)
     }
   }
 
@@ -32,24 +32,24 @@ struct ChatSidebarView: View {
 
       List {
         pinnedAgentsSection
-        if let error = store.navigationError {
+        if let error = store.list.navigationError {
           Text(error)
             .font(.footnote)
             .foregroundStyle(.secondary)
         }
-        if let error = store.error {
+        if let error = store.list.error ?? store.error {
           VStack(alignment: .leading, spacing: 8) {
             Text(error).font(.footnote).foregroundStyle(.secondary)
             Button("Try again") { Task { await store.refresh() } }
               .font(.footnote.weight(.semibold))
           }
         }
-        if store.isLoading && store.threads.isEmpty {
+        if store.list.isLoading && store.list.threads.isEmpty {
           ProgressView("Loading chats…")
             .frame(maxWidth: .infinity)
         } else {
           threadSection
-          if visibleThreads.isEmpty && store.error == nil {
+          if visibleThreads.isEmpty && store.list.error == nil && store.error == nil {
             Text("Your conversations will appear here.")
               .font(.subheadline)
               .foregroundStyle(.secondary)
@@ -81,7 +81,7 @@ struct ChatSidebarView: View {
       Button("Cancel", role: .cancel) { renamingThread = nil }
       Button("Save") {
         if let thread = renamingThread {
-          Task { await store.rename(thread, title: renameTitle) }
+          Task { await store.list.rename(thread, title: renameTitle) }
         }
         renamingThread = nil
       }
@@ -130,7 +130,7 @@ struct ChatSidebarView: View {
 
   private var pinnedAgentsSection: some View {
     Section {
-      ForEach(store.visiblePinnedAgents, id: \.agentId) { agent in
+      ForEach(store.list.visiblePinnedAgents, id: \.agentId) { agent in
         Button {
           newChat(agent.agentId)
         } label: {
@@ -215,25 +215,25 @@ struct ChatSidebarView: View {
         .accessibilityAddTraits(store.selectedThreadID == thread.id ? .isSelected : [])
         .contextMenu {
           Button(thread.pinnedAt == nil ? "Pin" : "Unpin", systemImage: "pin") {
-            Task { await store.setPinned(thread, pinned: thread.pinnedAt == nil) }
+            Task { await store.list.setPinned(thread, pinned: thread.pinnedAt == nil) }
           }
           Button("Rename", systemImage: "pencil") {
             renameTitle = thread.displayTitle
             renamingThread = thread
           }
-          if store.canArchiveChats {
+          if store.list.canArchiveChats {
             Button(
               thread.isArchived ? "Unarchive" : "Archive",
               systemImage: thread.isArchived ? "archivebox.fill" : "archivebox"
             ) {
-              Task { await store.setArchived(thread, archived: !thread.isArchived) }
+              Task { await store.list.setArchived(thread, archived: !thread.isArchived) }
             }
           }
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-          if store.canArchiveChats {
+          if store.list.canArchiveChats {
             Button {
-              Task { await store.setArchived(thread, archived: !thread.isArchived) }
+              Task { await store.list.setArchived(thread, archived: !thread.isArchived) }
             } label: {
               Label(thread.isArchived ? "Unarchive" : "Archive", systemImage: "archivebox")
             }
@@ -242,7 +242,7 @@ struct ChatSidebarView: View {
         }
       }
     } header: {
-      Text(store.canArchiveChats && showArchived ? "Archived" : "Recent")
+      Text(store.list.canArchiveChats && showArchived ? "Archived" : "Recent")
         .lineLimit(1)
         .textCase(nil)
     }
@@ -264,7 +264,7 @@ struct ChatSidebarView: View {
       .accessibilityIdentifier("new-chat")
       Spacer()
       Menu {
-        if store.canArchiveChats {
+        if store.list.canArchiveChats {
           Button(
             showArchived ? "Show recent chats" : "Show archived chats", systemImage: "archivebox"
           ) {

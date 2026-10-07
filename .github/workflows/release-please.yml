@@ -1597,28 +1597,19 @@ jobs:
             exit 0
           fi
 
-          if ! summary=$(jq -c '{
-            outcome,
-            failureCode,
-            state,
-            hasActive: (.active != null),
-            entryCount: .pointer.entryCount,
-            filtering: {
-              stale: .filtering.stale,
-              filteredAuthMethodCount: (.filtering.filteredAuthMethods | length)
-            }
-          }' <<< "$response"); then
+          # The deployment just created from this commit returns the attempt
+          # report `{ outcome, failureCode }`. Pre-change API builds also return
+          # `outcome` and `failureCode`; their extra fields are ignored.
+          if ! summary=$(jq -c '{outcome, failureCode}' <<< "$response"); then
             echo "::warning::Connector catalog reconcile returned invalid JSON; the scheduled cron will retry"
             exit 0
           fi
 
           echo "Connector catalog reconcile: ${summary}"
           if ! jq -e '
-            .state == "current"
-            and .active != null
-            and .filtering.stale == false
+            .outcome == "accepted" or .outcome == "unchanged"
           ' <<< "$response" >/dev/null; then
-            echo "::warning::Connector catalog is not ready; the scheduled cron will retry"
+            echo "::warning::Connector catalog reconcile was rejected or reported no outcome; the scheduled cron will retry"
           fi
 
       - name: Resolve Vercel dashboard URL

@@ -3593,40 +3593,6 @@
         "sendToLabel": "Senden an",
         "tryAgain": "Erneut versuchen"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activeCatalogDigest": "Aktiver Katalogauszug",
-          "entries": "Einträge",
-          "evaluated": "Bewertet",
-          "evaluation": "Auswertung",
-          "executableCapabilityDigest": "Zusammenfassung der ausführbaren Funktionen",
-          "filteredAuthMethods": "Gefilterte Authentifizierungsmethoden",
-          "missingVersions": "Fehlende Versionen",
-          "syncState": "Synchronisierungsstatus",
-          "unownedSecrets": "Nicht zugeordnete Secrets",
-          "unownedVariables": "Unbesessene Variablen",
-          "unresolvedBridgeCredentials": "Ungelöste Bridge-Anmeldeinformationen"
-        },
-        "loading": "Laden",
-        "none": "Keiner",
-        "sections": {
-          "compatibility": "Kompatibilität",
-          "credentialStorage": "Anmeldeinformationsspeicher"
-        },
-        "title": "Integrationskatalog",
-        "unavailable": "Nicht verfügbar",
-        "values": {
-          "current": "Aktuell",
-          "missingAccessProvider": "Fehlender Access-Provider",
-          "missingGrantProvider": "Fehlender Grant-Provider",
-          "missingPlatformConfiguration": "Fehlende Plattformkonfiguration",
-          "missingRevokeProvider": "Fehlender Revoke-Provider",
-          "neverSynced": "Nie synchronisiert",
-          "providerContractMismatch": "Provider-Vertrag stimmt nicht überein",
-          "stale": "Veraltet",
-          "unsupportedProtocol": "Nicht unterstütztes Protokoll"
-        }
-      },
       "errors": {
         "githubAuthorizationWindow": "Das Autorisierungsfenster konnte nicht geöffnet werden"
       },

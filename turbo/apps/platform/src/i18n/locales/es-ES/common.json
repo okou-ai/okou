@@ -3653,40 +3653,6 @@
         "sendToLabel": "Enviar a",
         "tryAgain": "Intentar de nuevo"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activeCatalogDigest": "Resumen activo del catálogo",
-          "entries": "Entradas",
-          "evaluated": "Evaluado",
-          "evaluation": "Evaluación",
-          "executableCapabilityDigest": "Resumen de capacidades ejecutables",
-          "filteredAuthMethods": "Métodos de autenticación filtrados",
-          "missingVersions": "Versiones ausentes",
-          "syncState": "Estado de sincronización",
-          "unownedSecrets": "Secretos sin dueño",
-          "unownedVariables": "Variables sin propietario",
-          "unresolvedBridgeCredentials": "Credenciales de puente sin resolver"
-        },
-        "loading": "Cargando",
-        "none": "Ninguno",
-        "sections": {
-          "compatibility": "Compatibilidad",
-          "credentialStorage": "Almacenamiento de credenciales"
-        },
-        "title": "Catálogo de conectores",
-        "unavailable": "No disponible",
-        "values": {
-          "current": "Actual",
-          "missingAccessProvider": "Proveedor de acceso ausente",
-          "missingGrantProvider": "Proveedor de concesión ausente",
-          "missingPlatformConfiguration": "Configuración de plataforma ausente",
-          "missingRevokeProvider": "Proveedor de revocación faltante",
-          "neverSynced": "Nunca sincronizado",
-          "providerContractMismatch": "Desajuste contractual con el proveedor",
-          "stale": "Obsoleto",
-          "unsupportedProtocol": "Protocolo no soportado"
-        }
-      },
       "errors": {
         "githubAuthorizationWindow": "No se abrió la ventana de autorización"
       },

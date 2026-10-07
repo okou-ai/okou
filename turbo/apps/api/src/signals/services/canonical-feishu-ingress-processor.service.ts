@@ -438,19 +438,20 @@ const persistCanonicalFeishuIngress$ = command(
       args.message.chatId,
       args.message.platform,
     );
+    const enqueuedModel = await set(
+      resolveEnqueuedChatInputModel$,
+      {
+        threadId: route.chatThreadId,
+        orgId: args.installation.orgId,
+        userId: args.connection.userId,
+      },
+      signal,
+    );
     const values = {
       id: args.ingress.ingressId,
       chatThreadId: route.chatThreadId,
       eventType: "input.prompt",
-      modelSelection: await set(
-        resolveEnqueuedChatInputModel$,
-        {
-          threadId: route.chatThreadId,
-          orgId: args.installation.orgId,
-          userId: args.connection.userId,
-        },
-        signal,
-      ),
+      modelSelection: enqueuedModel.modelSelection,
       userMessage: feishuInboundUserMessage(args.message, chatOpenUrl, assets),
       runId: null,
       feishuContext: {
@@ -464,6 +465,7 @@ const persistCanonicalFeishuIngress$ = command(
       {
         orgId: args.installation.orgId,
         input: values,
+        threadModelReplacement: enqueuedModel.threadModelReplacement,
         ingress: { kind: "feishu", ingressId: args.ingress.ingressId },
       },
       signal,

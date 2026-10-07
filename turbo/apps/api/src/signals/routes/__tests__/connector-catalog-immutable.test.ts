@@ -26,10 +26,6 @@ import {
   onboardingWorkflowConnectorsContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { connectorCatalogRoutes } from "../connector-catalog";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { getConnectorAuthProviderRegistrationCapabilities } from "@okouai/connectors/auth-providers";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { connectorOverviewRoutes } from "../connector-overview";
 import { onboardingSourcesRoutes } from "../onboarding-sources";
 import { onboardingWorkflowConnectorsRoutes } from "../onboarding-workflow-connectors";
@@ -43,8 +39,6 @@ import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/conn
 import { getApiTestMocks } from "../../../__tests__/mocks";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { accept, testContext } from "../../../__tests__/test-context";
-import { mockOptionalEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { builtinConnectorsRoutes } from "../connectors";
 import { createRouteMocks } from "./helpers/route-test";
@@ -189,26 +183,26 @@ async function admittedMcpRun() {
 }
 
 describe("immutable connector catalog publication", () => {
-  it("publishes the supplied digest and keeps repeated publication idempotent", async () => {
+  it("publishes the supplied catalog and keeps repeated publication idempotent", async () => {
     const first = release("2099-01-01.first", "First lifecycle catalog");
     serve(first);
     const response = await accept(sync(), [200]);
-    expect(response.body).toMatchObject({
+    expect(response.body).toStrictEqual({
       outcome: "accepted",
-      active: { catalogDigest: first.hash },
+      failureCode: null,
     });
     await directory(first);
     const repeated = await accept(sync(), [200]);
-    expect(repeated.body).toMatchObject({
+    expect(repeated.body).toStrictEqual({
       outcome: "unchanged",
-      active: { catalogDigest: first.hash },
+      failureCode: null,
     });
     const next = release("2099-01-01.next", "Next lifecycle catalog");
     serve(next);
     const changed = await accept(sync(), [200]);
-    expect(changed.body).toMatchObject({
+    expect(changed.body).toStrictEqual({
       outcome: "accepted",
-      active: { catalogDigest: next.hash },
+      failureCode: null,
     });
     await directory(next);
   });
@@ -247,7 +241,7 @@ describe("immutable connector catalog publication", () => {
     ).toContain("accepted");
     for (const response of responses) {
       expect(["accepted", "unchanged"]).toContain(response.body.outcome);
-      expect(response.body.active?.catalogDigest).toBe(candidate.hash);
+      expect(response.body.failureCode).toBeNull();
     }
     routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
     const listed = await accept(
@@ -556,107 +550,6 @@ describe("slug-first current catalog business readers", () => {
         )
       ).body.connector.label,
     ).toBe("Next OpenAI");
-  });
-});
-
-describe("staff connector catalog diagnostics from current entries", () => {
-  const headers = { authorization: "Bearer clerk-session" };
-
-  async function staffSession() {
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-    await accept(
-      setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      ).update({
-        headers,
-        body: { switches: { [FeatureSwitchKey.OkouDebug]: true } },
-      }),
-      [200],
-    );
-  }
-
-  async function diagnostics() {
-    const response = await accept(
-      setupApp({ context, routes: connectorCatalogRoutes })(
-        connectorCatalogContract,
-      ).diagnostics({ headers }),
-      [200],
-    );
-    return response.body;
-  }
-
-  it("reports the pointer and on-demand compatibility", async () => {
-    const candidate = release(`2099-03-01.${randomUUID()}`, "Diagnostics");
-    serve(candidate);
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    await staffSession();
-    context.mocks.s3.send.mockClear();
-
-    const requestedAt = now();
-    const current = await diagnostics();
-    expect(
-      Date.parse(current.filtering.evaluatedAt ?? ""),
-    ).toBeGreaterThanOrEqual(requestedAt);
-    expect(current).toMatchObject({
-      schemaVersion: 4,
-      state: "current",
-      active: { catalogDigest: candidate.hash },
-      pointer: {
-        schemaVersion: 4,
-        hash: candidate.hash,
-        entryCount: candidate.artifact.connectors.length,
-      },
-      filtering: {
-        capabilityDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
-        stale: false,
-      },
-    });
-    expect(current).not.toHaveProperty("lastAttempt");
-    expect(current).not.toHaveProperty("lastSuccessAt");
-    expect(current).not.toHaveProperty("rejectedCandidate");
-    expect(current.active).not.toHaveProperty("activatedAt");
-
-    // Unconfigure one provider used by the published entries: the next
-    // request filters that method against the new capability, with no sync.
-    const entryMethods = new Set(
-      candidate.artifact.connectors.flatMap((entry) => {
-        return entry.authMethods.map((method) => {
-          return `${entry.slug}\0${method.id}`;
-        });
-      }),
-    );
-    const registration =
-      getConnectorAuthProviderRegistrationCapabilities().find((capability) => {
-        return (
-          capability.requiredConfigurationNames.length > 0 &&
-          entryMethods.has(
-            `${capability.connectorSlug}\0${capability.authMethodId}`,
-          )
-        );
-      });
-    const configurationName = registration?.requiredConfigurationNames[0];
-    if (!registration || !configurationName) {
-      throw new Error("Missing configurable catalog auth method");
-    }
-    const filteredMethod = {
-      connectorSlug: registration.connectorSlug,
-      authMethodId: registration.authMethodId,
-      reasons: ["missing-platform-configuration"],
-    };
-    expect(current.filtering.filteredAuthMethods).not.toContainEqual(
-      filteredMethod,
-    );
-    mockOptionalEnv(configurationName, undefined);
-    const unconfigured = await diagnostics();
-    expect(unconfigured.filtering.capabilityDigest).not.toBe(
-      current.filtering.capabilityDigest,
-    );
-    expect(unconfigured.filtering.stale).toBeFalsy();
-    expect(unconfigured.filtering.filteredAuthMethods).toContainEqual(
-      filteredMethod,
-    );
-    expect(unconfigured.pointer).toStrictEqual(current.pointer);
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
   });
 });
 

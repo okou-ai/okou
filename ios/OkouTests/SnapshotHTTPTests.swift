@@ -18,7 +18,7 @@ final class SnapshotHTTPTests: XCTestCase {
     defer { session.invalidateAndCancel() }
     let client = APIClient(baseURL: baseURL, session: session) { "local-gzip-test-session" }
 
-    let threads = try await ChatService(client: client).threads()
+    let threads = try await ChatSync(client: client).threads()
 
     XCTAssertEqual(threads.map(\.title), ["Updated chat"])
     XCTAssertEqual(threads.first?.indicator, .unread)
@@ -52,7 +52,7 @@ final class SnapshotHTTPTests: XCTestCase {
     defer { session.invalidateAndCancel() }
     let client = APIClient(baseURL: baseURL, session: session) { "local-gzip-test-session" }
 
-    let history = try await ChatService(client: client).history(
+    let history = try await ChatSync(client: client).history(
       threadID: SnapshotLoopbackServer.threadID)
 
     XCTAssertEqual(history.messages.map(\.text), ["Gzip history works."])

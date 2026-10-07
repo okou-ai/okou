@@ -3574,40 +3574,6 @@
         "sendToLabel": "送信先",
         "tryAgain": "もう一度試す"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activeCatalogDigest": "アクティブなカタログダイジェスト",
-          "entries": "エントリ",
-          "evaluated": "評価済み",
-          "evaluation": "評価",
-          "executableCapabilityDigest": "実行可能機能のダイジェスト",
-          "filteredAuthMethods": "フィルタリングされた認証方法",
-          "missingVersions": "欠落しているバージョン",
-          "syncState": "同期状態",
-          "unownedSecrets": "所有されていないシークレット",
-          "unownedVariables": "所有されていない変数",
-          "unresolvedBridgeCredentials": "未解決のブリッジ認証情報"
-        },
-        "loading": "読み込み中",
-        "none": "なし",
-        "sections": {
-          "compatibility": "互換性",
-          "credentialStorage": "認証情報のストレージ"
-        },
-        "title": "コネクタカタログ",
-        "unavailable": "利用不可",
-        "values": {
-          "current": "現在",
-          "missingAccessProvider": "アクセスプロバイダーがありません",
-          "missingGrantProvider": "助成金提供者が不足している",
-          "missingPlatformConfiguration": "プラットフォーム構成がありません",
-          "missingRevokeProvider": "取り消しプロバイダーがありません",
-          "neverSynced": "決して同期しない",
-          "providerContractMismatch": "プロバイダ契約の不一致",
-          "stale": "古い",
-          "unsupportedProtocol": "サポートされていないプロトコル"
-        }
-      },
       "errors": {
         "githubAuthorizationWindow": "認証ウィンドウを開けませんでした"
       },

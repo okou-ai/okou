@@ -618,9 +618,47 @@ function isClaudeCodeTermsAcceptanceRequiredError(
   );
 }
 
+const REPLACEMENT_SEPARATOR = " was replaced by ";
+
+function replacementSubscriptionSuffix(
+  subscriptionLabel: "Codex" | "Claude",
+): string {
+  return `, which requires a ${subscriptionLabel} subscription. Select Auto or connect your ${subscriptionLabel} subscription.`;
+}
+
+/** Linear-time match for formatReplacementSubscriptionRequiredMessage output. */
+function isReplacementSubscriptionRequiredMessage(message: string): boolean {
+  for (const subscriptionLabel of ["Codex", "Claude"] as const) {
+    const suffix = replacementSubscriptionSuffix(subscriptionLabel);
+    if (!message.endsWith(suffix)) {
+      continue;
+    }
+    const head = message.slice(0, message.length - suffix.length);
+    const separatorIndex = head.indexOf(REPLACEMENT_SEPARATOR);
+    return (
+      separatorIndex > 0 &&
+      separatorIndex + REPLACEMENT_SEPARATOR.length < head.length
+    );
+  }
+  return false;
+}
+
+/**
+ * A retired model whose successor runs only through a personal subscription
+ * the member has not connected. The pick shows it unchanged.
+ */
+export function formatReplacementSubscriptionRequiredMessage(args: {
+  readonly replacedModelLabel: string;
+  readonly successorLabel: string;
+  readonly subscriptionLabel: "Codex" | "Claude";
+}): string {
+  return `${args.replacedModelLabel}${REPLACEMENT_SEPARATOR}${args.successorLabel}${replacementSubscriptionSuffix(args.subscriptionLabel)}`;
+}
+
 export function isActionableRunError(errorMessage: string): boolean {
   return (
     errorMessage === "Presentation template not found" ||
+    isReplacementSubscriptionRequiredMessage(errorMessage) ||
     errorMessage === "Custom template not found" ||
     isAgentExecutionTimeoutRunError(errorMessage) ||
     isCodexOAuthReconnectRequiredRunError(errorMessage) ||

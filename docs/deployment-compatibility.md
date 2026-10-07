@@ -29,7 +29,9 @@ the stored permission summary. Account-status projections select only slug,
 auth methods and MCP metadata, reusing the existing executable-method rules.
 The display catalog cache contains no firewall or skill objects. Permission details select runtime fields only for the named
 slug. Runtime captures, sync, Pi recapture and staff diagnostics use independent
-column selections instead of returning the complete payload. Runtime consumers
+column selections instead of returning the complete payload. (Staff
+diagnostics were later removed; see
+[diagnostics removal](#connector-catalog-diagnostics-removed-2026-10-07).) Runtime consumers
 that materialize full executable connectors still load auth, skill and firewall
 fields; this change does not claim a new minimal runtime projection or measured
 S1–S3 latency improvement.
@@ -58,6 +60,48 @@ combine these stages merely because reads no longer return payload.
 
 This PR prepares that contraction; it neither drops payload nor activates or
 releases production changes.
+
+## Connector catalog diagnostics removed (2026-10-07)
+
+Staff diagnose connector catalog state with masked database queries against
+`connector_catalog` and `connector_catalog_entries`. The API no longer computes
+catalog diagnostics anywhere.
+
+**Staff endpoint.** The staff-only, OkouDebug-gated `diagnostics` route of
+`connectorCatalogContract` (`GET` under `/api/connector-catalog`), its handler,
+and the Settings debug "Connector catalog" block with its translations are
+removed. An old Platform build that opens Settings debug as staff already
+accepted `403` and `404` from this endpoint as "no diagnostics"
+(`accept(..., [200, 403, 404])`) and rendered nothing. Against a new API the
+path falls through to the `:connectorSlug` detail route, which returns `404`
+for the non-existent `diagnostics` connector (or `403` without
+`connector:read`), so the old block still renders nothing. Only a catalog
+outage (`503`) would surface as an error, inside that staff-only block. No CLI
+command or user flow reads this endpoint. A new Platform against an old API
+makes no request.
+
+**Cron sync response.** `/api/cron/sync-connector-catalog` now returns only
+the writer's report of the attempt it just made: `{ outcome, failureCode }`.
+`schemaVersion`, `state`, `active`, `pointer`, `filtering` and
+`credentialStorage` are removed, together with the API diagnostics service,
+the connector credential storage readiness counts and their schemas. The
+remaining sync schemas (failure code and attempt report) now live in
+`contracts/connector-catalog-sync`. Sync behavior (accept, unchanged, reject,
+and keeping the serving pointer after a rejection) is unchanged.
+
+The release workflow's best-effort post-deploy call now logs
+`{ outcome, failureCode }` and warns when `outcome` is neither `accepted` nor
+`unchanged` (a rejection, or a missing outcome). It still never fails the
+deploy. The step calls the API deployment it just created from the same
+commit (`steps.deploy.outputs.url`), so the workflow and the API agree on the
+response. The check only needs `outcome`, which pre-change API builds also
+return (alongside extra diagnostics fields the summary ignores), so a rerun or
+rollback that pairs this workflow with an older API still works. An empty
+generation is no longer
+reported by this check; query the masked database for it. The Vercel cron
+ignores the response body.
+
+There are no schema, data or writer behavior changes.
 
 ## Frozen model provider state dropped (2026-10-07)
 
@@ -256,8 +300,11 @@ Platform debug panel (which shows the digest instead of an "active version")
 and its translations. Ethan confirmed (2026-10-07) that the old clients have
 exited; a staff debug panel loaded before the deploy shows the field as "None"
 until it reloads. A new App against an older API ignores the extra field; the
-release workflow only checks `active != null`. Other `catalogVersion` fields
-are not this alias and stay:
+release workflow only checks `active != null`. (Superseded: staff diagnostics
+and the Platform debug panel were later removed, the cron sync response no
+longer carries `active`, and the release workflow checks only `outcome`; see
+[diagnostics removal](#connector-catalog-diagnostics-removed-2026-10-07).)
+Other `catalogVersion` fields are not this alias and stay:
 
 - The persisted connector permission baseline and Runner execution context
   `catalogIdentity.catalogVersion` (`storedConnectorPermissionBaselineSchema`,
@@ -379,7 +426,9 @@ alias, was removed by the [Release 2 follow-up](#connector-catalog-release-2-fol
 `outcome`, `failureCode`, `state` and `pointer.entryCount`; its readiness check
 (`state == "current"`, `active != null`, `filtering.stale == false`) keeps its
 meaning and remains a best-effort warning that never fails the deploy. Staff
-diagnostics are unchanged. The preview seed response keeps
+diagnostics are unchanged. (The cron sync response was later reduced to
+`outcome` and `failureCode`, and the readiness check to `outcome`; see
+[diagnostics removal](#connector-catalog-diagnostics-removed-2026-10-07).) The preview seed response keeps
 `catalogVersion` (the validated publication label, which is not stored),
 `catalogDigest` and the sorted `connectorSlugs` of the validated publication,
 so the CI preview workflow is unchanged.
@@ -614,7 +663,9 @@ old/new-instance acceptance remain separate verification boundaries.
 
 ### Connector catalog staff diagnostics on pointer and immutable entries
 
-Staff diagnostics (`GET /api/connector-catalog/diagnostics`, OkouDebug only)
+Staff diagnostics (the OkouDebug-only `diagnostics` route under
+`/api/connector-catalog`, since removed; see
+[its removal](#connector-catalog-diagnostics-removed-2026-10-07))
 no longer read `connector_catalog_sync_state`,
 `connector_catalog_active_snapshot`,
 `connector_catalog_compatibility_evaluation` or the runtime projection tables.
@@ -660,7 +711,9 @@ and activation time), `lastAttempt`, `lastSuccessAt` and `rejectedCandidate`.
 `syncConnectorCatalog$` returns that report from its own sync state, and it
 goes away with that state in Release 2. The release workflow's best-effort
 readiness check (`state`, `active`, `filtering.stale`) keeps the same meaning.
-With an empty generation, it now warns.
+With an empty generation, it now warns. (The response's diagnostics fields
+and this readiness check were later removed; see
+[diagnostics removal](#connector-catalog-diagnostics-removed-2026-10-07).)
 
 The remaining legacy reads in API source are all internal to the writer. They
 stay until the Release 2 contraction because old API instances still depend

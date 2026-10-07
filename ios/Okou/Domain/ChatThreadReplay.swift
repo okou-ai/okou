@@ -4,10 +4,10 @@ import Foundation
 /// `replayChatThreadEvents` in the web client; display-specific pin ranking is
 /// applied separately by `sidebarOrder`.
 enum ChatThreadReplay {
-  static func replay(snapshot: [ThreadProjection], events: [ThreadEvent]) -> [ChatThread] {
+  static func replay(snapshot: [ChatThread], events: [ChatThreadChange]) -> [ChatThread] {
     var threads: [String: ChatThread] = [:]
-    for thread in snapshot { threads[thread.id] = thread.thread }
-    var pendingUpdates: [String: [ThreadEvent]] = [:]
+    for thread in snapshot { threads[thread.id] = thread }
+    var pendingUpdates: [String: [ChatThreadChange]] = [:]
 
     for event in events {
       apply(event, to: &threads, pendingUpdates: &pendingUpdates)
@@ -33,9 +33,9 @@ enum ChatThreadReplay {
   }
 
   private static func apply(
-    _ event: ThreadEvent,
+    _ event: ChatThreadChange,
     to threads: inout [String: ChatThread],
-    pendingUpdates: inout [String: [ThreadEvent]]
+    pendingUpdates: inout [String: [ChatThreadChange]]
   ) {
     if event.kind == .created {
       threads[event.chatThreadId] = ChatThread(
@@ -117,7 +117,7 @@ enum ChatThreadReplay {
     threads[event.chatThreadId] = thread
   }
 
-  private static func isDeferrable(_ kind: ThreadEvent.Kind) -> Bool {
+  private static func isDeferrable(_ kind: ChatThreadChange.Kind) -> Bool {
     switch kind {
     case .modelSelectionUpdated, .serviceTierUpdated, .computerUseHostUpdated:
       true

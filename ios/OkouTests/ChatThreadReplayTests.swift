@@ -73,8 +73,10 @@ final class ChatThreadReplayTests: XCTestCase {
         event(7, "unarchived", at: "2026-09-09T00:00:13.000Z"),
       ])
 
-    let result = try XCTUnwrap(ChatThreadReplay.replay(snapshot: snapshot, events: events).first)
-    XCTAssertEqual(ChatThreadReplay.replay(snapshot: snapshot, events: events).count, 1)
+    let result = try XCTUnwrap(
+      ChatThreadReplay.replay(snapshot: snapshot.map(\.thread), events: events).first)
+    XCTAssertEqual(
+      ChatThreadReplay.replay(snapshot: snapshot.map(\.thread), events: events).count, 1)
     XCTAssertFalse(result.isArchived)
     XCTAssertEqual(result.sortAt, try date("2026-09-09T00:00:10.000Z"))
     XCTAssertEqual(result.updatedAt, try date("2026-09-09T00:00:13.000Z"))
@@ -151,8 +153,8 @@ final class ChatThreadReplayTests: XCTestCase {
     XCTAssertEqual(unpinned.updatedAt, try date("2026-09-09T00:00:01.000Z"))
   }
 
-  private func decodeEvents(_ json: [String]) throws -> [ThreadEvent] {
-    try json.map { try APIClient.decoder().decode(ThreadEvent.self, from: Data($0.utf8)) }
+  private func decodeEvents(_ json: [String]) throws -> [ChatThreadChange] {
+    try json.map { try APIClient.decoder().decode(ThreadEvent.self, from: Data($0.utf8)).change }
   }
 
   private func decodeSnapshot(_ json: String) throws -> [ThreadProjection] {
