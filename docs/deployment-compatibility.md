@@ -1042,6 +1042,32 @@ public wire contract or Run lifecycle changes. Old/new APIs can read the same
 facts throughout rollout; rollback changes cost only. No production activation,
 latency acceptance, merge or deployment is claimed.
 
+## MCP shared read budgets (#37913)
+
+The public MCP read adapter enforces a 15-second operation budget and a
+160 KiB JSON-serialized UTF-8 structured-output limit for all nine registered
+read tools. Within budget, advertised tool schemas and ordinary successful
+payloads are unchanged. Over-budget reads use the existing extensible tool-error
+envelope with explicit `read_timeout` or `response_limit` codes instead of
+partial/fabricated success. Clients must already handle `isError:true`; no new
+client negotiation or old-protocol projection is introduced.
+
+Native Web/CLI Run contracts, database shapes/writers, Runner protocols,
+authorization/cache lifetimes and mutation/post-commit signal ownership are
+unchanged. In particular this output policy is not installed in native readers
+used internally by `get_chat_input`, which observes only native Run ID/status
+under #37912; unrelated oversized Run fields do not break input observations. No schema migration or data backfill
+is required. Existing source/query deadlines and continuation contracts remain.
+
+Old and new API instances can coexist without persisted-data incompatibility,
+but old instances do not enforce the new generic read limits. Uniform budget
+coverage requires convergence of serving MCP API versions; rollback removes the
+new generic limits without altering data or mutation effects. This is not a
+deployment instruction. The policy does not promise global tenant admission,
+aggregate RSS limits, cancellation of every native query, or HTTP authentication
+and response-delivery deadlines. See [MCP read budgets](mcp-server.md#shared-read-budgets-37913)
+for exact limits, diagnostics and recovery.
+
 ## MCP original-input event identity (#37750)
 
 This is an explicitly authorized breaking MCP tool-schema cutover, not a Web,

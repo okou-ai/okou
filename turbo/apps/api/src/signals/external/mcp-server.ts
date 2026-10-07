@@ -80,8 +80,14 @@ import {
   MCP_TOOL_ERROR_MAX_PATH_SEGMENTS,
   type McpToolError,
 } from "@okouai/api-contracts/contracts/mcp-tool-errors";
+import { trace } from "@opentelemetry/api";
 import { z } from "zod";
-import { onRejection, settle, settleIncludingAbort } from "../utils";
+import {
+  awaitWithSignal,
+  onRejection,
+  settle,
+  settleIncludingAbort,
+} from "../utils";
 
 interface McpChatAccess {
   readonly readScope: string;
@@ -147,6 +153,19 @@ const readAnnotations = Object.freeze({
 });
 
 const toolSummaryMaxBytes = 512;
+const readTimeoutMs = 15_000;
+const readStructuredMaxBytes = 160 * 1024;
+
+type ReadToolName =
+  | "list_agents"
+  | "list_models"
+  | "get_chat_indicators"
+  | "list_chat_threads"
+  | "get_chat_thread"
+  | "get_chat_messages"
+  | "search_chat_messages"
+  | "get_chat_input"
+  | "get_run_status";
 
 function utf8Bytes(value: string): number {
   return new TextEncoder().encode(value).byteLength;
@@ -437,15 +456,21 @@ function retryableReadError(code: string): boolean {
   );
 }
 
+/** Public read policy only: internal Run observation and mutations do not use it. */
 async function readTool<T extends Record<string, unknown>>(
   access: McpChatAccess,
-  operation: () => Promise<
+  name: ReadToolName,
+  operation: (
+    signal: AbortSignal,
+  ) => Promise<
     | { readonly kind: "ok"; readonly data: T }
     | { readonly kind: string; readonly message: string }
   >,
+  options: {
+    readonly summarize: (data: T) => string;
+    readonly unavailableMessage?: string;
+  },
   signal: AbortSignal,
-  summarize: (data: T) => string,
-  unavailableMessage = "Thread information is temporarily unavailable. Retry, or narrow the Agent/time filters for a large search.",
 ): Promise<CallToolResult> {
   if (!access.scopes.includes(access.readScope)) {
     return toolError({
@@ -455,22 +480,110 @@ async function readTool<T extends Record<string, unknown>>(
     });
   }
   signal.throwIfAborted();
-  const result = await settle(operation(), signal);
-  if (!result.ok) {
-    return toolError({
-      code: "unavailable",
-      message: unavailableMessage,
-      retryable: true,
-    });
-  }
-  if (!("data" in result.value)) {
-    return toolError({
-      code: result.value.kind,
-      message: result.value.message,
-      retryable: retryableReadError(result.value.kind),
-    });
-  }
-  return toolSuccess(result.value.data, summarize(result.value.data));
+  const startedAt = performance.now();
+  const timeout = AbortSignal.timeout(readTimeoutMs);
+  const operationSignal = AbortSignal.any([signal, timeout]);
+  return await trace.getTracer("okou-api/mcp").startActiveSpan(
+    "mcp.read",
+    {
+      attributes: {
+        "mcp.tool.name": name,
+        "mcp.read.timeout_ms": readTimeoutMs,
+        "mcp.read.max_structured_bytes": readStructuredMaxBytes,
+      },
+    },
+    async (span) => {
+      let outcome = "failed";
+      const deadlineError = (): CallToolResult => {
+        outcome = "timeout";
+        return toolError({
+          code: "read_timeout",
+          message:
+            "MCP read exceeded the 15-second operation budget. Retry the read later; do not resend uncertain work.",
+          retryable: true,
+        });
+      };
+      const exceededDeadline = (): boolean => {
+        return (
+          timeout.aborted || performance.now() - startedAt >= readTimeoutMs
+        );
+      };
+      const completed = await settleIncludingAbort(
+        (async () => {
+          // Stop caller waiting even if a dependency ignores cancellation. The
+          // helper continues observing its original promise; native queries and
+          // transactions retain ownership of their eventual completion/release.
+          const result = await settleIncludingAbort(
+            awaitWithSignal(operation(operationSignal), operationSignal),
+          );
+          // Providers may report AbortError for our deadline. Preserve external
+          // cancellation, but map the owned timeout independently of that shape.
+          signal.throwIfAborted();
+          if (exceededDeadline()) {
+            return deadlineError();
+          }
+          if (!result.ok) {
+            outcome = "unavailable";
+            return toolError({
+              code: "unavailable",
+              message:
+                options.unavailableMessage ??
+                "Thread information is temporarily unavailable. Retry, or narrow the Agent/time filters for a large search.",
+              retryable: true,
+            });
+          }
+          if (!("data" in result.value)) {
+            outcome = result.value.kind.endsWith("_limit")
+              ? "resource_limit"
+              : retryableReadError(result.value.kind)
+                ? "unavailable"
+                : "rejected";
+            return toolError({
+              code: result.value.kind,
+              message: result.value.message,
+              retryable: retryableReadError(result.value.kind),
+            });
+          }
+          // Measure the actual wire representation (escaping and UTF-8), not
+          // source string lengths. This is an output cap, not an allocation cap.
+          const bytes = Buffer.byteLength(JSON.stringify(result.value.data));
+          span.setAttribute("mcp.read.structured_bytes", bytes);
+          if (exceededDeadline()) {
+            return deadlineError();
+          }
+          if (bytes > readStructuredMaxBytes) {
+            outcome = "response_limit";
+            return toolError({
+              code: "response_limit",
+              message:
+                "MCP read exceeds the 160 KiB structured-output limit. Use narrower filters or supported pagination; a full Run has no MCP content continuation. Do not resend work.",
+              retryable: false,
+            });
+          }
+          const response = toolSuccess(
+            result.value.data,
+            options.summarize(result.value.data),
+          );
+          if (exceededDeadline()) {
+            return deadlineError();
+          }
+          outcome = "ok";
+          return response;
+        })(),
+      );
+      // Only fixed classes and numeric facts enter telemetry, never input,
+      // results, identities, raw exceptions, tokens or private URLs.
+      span.setAttributes({
+        "mcp.read.duration_ms": Math.round(performance.now() - startedAt),
+        "mcp.read.outcome": signal.aborted ? "cancelled" : outcome,
+      });
+      span.end();
+      if (!completed.ok) {
+        throw completed.error;
+      }
+      return completed.value;
+    },
+  );
 }
 
 function registerMessageTool(
@@ -492,20 +605,24 @@ function registerMessageTool(
       const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
       return await readTool(
         access,
-        () => {
-          return access.getMessages(args, signal);
+        "get_chat_messages",
+        (readSignal) => {
+          return access.getMessages(args, readSignal);
+        },
+        {
+          summarize(data) {
+            const older = data.olderCursor
+              ? "older messages available"
+              : "oldest page";
+            const newer = data.newerCursor
+              ? "newer messages available"
+              : "newest page";
+            return `Read ${data.messages.length} message(s); ${older}; ${newer}.`;
+          },
+          unavailableMessage:
+            "Conversation history is temporarily unavailable. Retry later.",
         },
         signal,
-        (data) => {
-          const older = data.olderCursor
-            ? "older messages available"
-            : "oldest page";
-          const newer = data.newerCursor
-            ? "newer messages available"
-            : "newest page";
-          return `Read ${data.messages.length} message(s); ${older}; ${newer}.`;
-        },
-        "Conversation history is temporarily unavailable. Retry later.",
       );
     },
   );
@@ -725,14 +842,18 @@ function registerDiscoveryTools(
       const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
       return readTool(
         access,
-        () => {
-          return access.listAgents(input, signal);
+        "list_agents",
+        (readSignal) => {
+          return access.listAgents(input, readSignal);
+        },
+        {
+          summarize(data) {
+            return `Found ${data.agents.length} visible Agent(s)${data.nextCursor ? "; more available" : "; end of list"}.`;
+          },
+          unavailableMessage:
+            "Agent discovery is temporarily unavailable. Retry later.",
         },
         signal,
-        (data) => {
-          return `Found ${data.agents.length} visible Agent(s)${data.nextCursor ? "; more available" : "; end of list"}.`;
-        },
-        "Agent discovery is temporarily unavailable. Retry later.",
       );
     },
   );
@@ -750,17 +871,21 @@ function registerDiscoveryTools(
       const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
       return readTool(
         access,
-        () => {
-          return access.listModels(signal);
+        "list_models",
+        (readSignal) => {
+          return access.listModels(readSignal);
+        },
+        {
+          summarize(data) {
+            const selectable = data.models.filter((model) => {
+              return model.selectable;
+            }).length;
+            return `Found ${data.models.length} model(s), ${selectable} selectable; default ${data.defaultModel.model ?? "Auto"}.`;
+          },
+          unavailableMessage:
+            "Model discovery is temporarily unavailable. Retry later.",
         },
         signal,
-        (data) => {
-          const selectable = data.models.filter((model) => {
-            return model.selectable;
-          }).length;
-          return `Found ${data.models.length} model(s), ${selectable} selectable; default ${data.defaultModel.model ?? "Auto"}.`;
-        },
-        "Model discovery is temporarily unavailable. Retry later.",
       );
     },
   );
@@ -785,16 +910,20 @@ function registerSearchAndStatusTools(
       const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
       return await readTool(
         access,
-        () => {
-          return access.searchMessages(args, signal);
+        "search_chat_messages",
+        (readSignal) => {
+          return access.searchMessages(args, readSignal);
+        },
+        {
+          summarize(data) {
+            const more = data.nextCursor ? "; more candidates available" : "";
+            const limited = data.scanLimited ? "; scan limit reached" : "";
+            return `Found ${data.matches.length} message match(es)${more}${limited}.`;
+          },
+          unavailableMessage:
+            "Message search is temporarily unavailable. Retry or narrow the thread, Agent or time filters.",
         },
         signal,
-        (data) => {
-          const more = data.nextCursor ? "; more candidates available" : "";
-          const limited = data.scanLimited ? "; scan limit reached" : "";
-          return `Found ${data.matches.length} message match(es)${more}${limited}.`;
-        },
-        "Message search is temporarily unavailable. Retry or narrow the thread, Agent or time filters.",
       );
     },
   );
@@ -812,14 +941,18 @@ function registerSearchAndStatusTools(
       const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
       return await readTool(
         access,
-        () => {
-          return access.getInput(args, signal);
+        "get_chat_input",
+        (readSignal) => {
+          return access.getInput(args, readSignal);
+        },
+        {
+          summarize(data) {
+            return `Input ${data.eventId}: ${data.inputStatus}${data.run ? `; Run ${data.run.runId}: ${data.run.status}` : ""}.`;
+          },
+          unavailableMessage:
+            "Chat input is temporarily unavailable. Retry the read later; do not resend uncertain work.",
         },
         signal,
-        (data) => {
-          return `Input ${data.eventId}: ${data.inputStatus}${data.run ? `; Run ${data.run.runId}: ${data.run.status}` : ""}.`;
-        },
-        "Chat input is temporarily unavailable. Retry the read later; do not resend uncertain work.",
       );
     },
   );
@@ -828,7 +961,7 @@ function registerSearchAndStatusTools(
     "get_run_status",
     {
       description:
-        "Read the ordinary Web Run state by runId, obtainable from get_chat_input after consumption. This read does not wait, derive a second lifecycle, mark read, change execution or imply output completeness.",
+        "Read the ordinary Web Run state by runId, obtainable from get_chat_input after consumption. Limits: 15-second read budget and 160 KiB serialized structured output; oversize fails explicitly without truncation or content continuation. This does not await completion, derive a second lifecycle, mark read, change execution or imply output completeness.",
       inputSchema: mcpGetRunStatusInputSchema,
       outputSchema: mcpGetRunStatusOutputSchema,
       annotations: { ...readAnnotations, title: "Get Run Status" },
@@ -837,14 +970,18 @@ function registerSearchAndStatusTools(
       const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
       return await readTool(
         access,
-        () => {
-          return access.getRunStatus(args, signal);
+        "get_run_status",
+        (readSignal) => {
+          return access.getRunStatus(args, readSignal);
+        },
+        {
+          summarize(data) {
+            return `Run ${data.runId}: ${data.status}.`;
+          },
+          unavailableMessage:
+            "Run status is temporarily unavailable. Retry later.",
         },
         signal,
-        (data) => {
-          return `Run ${data.runId}: ${data.status}.`;
-        },
-        "Run status is temporarily unavailable. Retry later.",
       );
     },
   );
@@ -876,13 +1013,16 @@ function createChatServer(
         const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
         return await readTool(
           access,
-          () => {
-            return access.getIndicators(signal);
+          "get_chat_indicators",
+          (readSignal) => {
+            return access.getIndicators(readSignal);
+          },
+          {
+            summarize() {
+              return "Read chat indicators.";
+            },
           },
           signal,
-          () => {
-            return "Read chat indicators.";
-          },
         );
       },
     );
@@ -900,13 +1040,16 @@ function createChatServer(
         const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
         return await readTool(
           access,
-          () => {
-            return access.listThreads(args, signal);
+          "list_chat_threads",
+          (readSignal) => {
+            return access.listThreads(args, readSignal);
+          },
+          {
+            summarize(data) {
+              return `Found ${data.threads.length} chat thread(s)${data.nextCursor ? "; more available" : "; end of list"}.`;
+            },
           },
           signal,
-          (data) => {
-            return `Found ${data.threads.length} chat thread(s)${data.nextCursor ? "; more available" : "; end of list"}.`;
-          },
         );
       },
     );
@@ -924,13 +1067,16 @@ function createChatServer(
         const signal = AbortSignal.any([requestSignal, context.mcpReq.signal]);
         return await readTool(
           access,
-          () => {
-            return access.getThread(args, signal);
+          "get_chat_thread",
+          (readSignal) => {
+            return access.getThread(args, readSignal);
+          },
+          {
+            summarize(data) {
+              return `Read chat thread ${data.thread.threadId}.`;
+            },
           },
           signal,
-          (data) => {
-            return `Read chat thread ${data.thread.threadId}.`;
-          },
         );
       },
     );

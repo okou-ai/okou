@@ -7,6 +7,68 @@ OAuth, scopes, current organization membership, tenant and conversation ownershi
 remain required. Successful results return machine-readable `structuredContent`
 and a human summary of at most 512 UTF-8 bytes; JSON is not duplicated as text.
 
+## Shared read budgets (#37913)
+
+Every registered read tool has a **15-second operation budget** and a maximum
+**160 KiB (163,840 bytes) of JSON-serialized UTF-8 `structuredContent`**. These
+budgets start after authentication and argument validation, include dependency
+and database-pool waiting, and apply only to public MCP reads:
+
+| Tools                                       | Additional existing limits                                                                            |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `get_run_status`                            | Full ordinary Web Run response within the shared output budget; no MCP content continuation.          |
+| `get_chat_input`                            | Canonical history limits below; its output is input identity/state and native Run id/status only.     |
+| `get_chat_messages`, `search_chat_messages` | Existing history/source, SQL, page/segment and candidate limits below, with supported cursors.        |
+| `list_agents`                               | At most 50 Agents requested; existing 16 KiB discovery pages and three-second SQL statement deadline. |
+| `list_chat_threads`, `get_chat_thread`      | Existing metadata bounds, at most 50 threads per list page, and three-second SQL statement deadline.  |
+| `list_models`, `get_chat_indicators`        | Native authorized projections; shared output budget, not an invented partial list.                    |
+
+Successful output within budget keeps its normal schema and complete fields.
+Oversized output returns `isError:true`, `error.code:"response_limit"` and
+`retryable:false`, never an apparently complete truncated Run or empty success.
+Use supported pagination/narrower filters where the tool provides them. A full
+Run has no MCP content cursor: use the ordinary authorized Web/CLI Run reader,
+not repeated identical status polls, to retrieve an oversized Run. The output
+cap is **not** applied inside the native Run reader: large unrelated Run
+prompt/result fields do not make a consumed `get_chat_input` fail.
+
+A deadline returns a bounded `error.code:"read_timeout"`, `retryable:true`.
+Retrying a read later is distinct from sending new work; do not automatically
+resend an uncertain mutation. Existing source/resource/cursor errors retain
+their own meanings and recovery. Real request/SDK cancellation propagates to
+read dependencies. The signal-aware wait retains late promise fulfillment and
+rejection observation. PostgreSQL statements/acquisitions that cannot abort keep
+native completion/rollback/connection release; a timeout does not prove all
+underlying work stopped. No read budget is added to mutations or accepted
+background work. SDK exchange completion still is not mutation cancellation.
+
+These are per-call waiting/output policies, **not** an HTTP authentication or
+response-delivery deadline, absolute RSS ceiling, tenant/global concurrency
+limit or production p95/p99 claim. Full native Run data still materializes before
+serialization/size checking. Synchronous JavaScript/serialization cannot be
+preempted: an elapsed check rejects over-budget success when control returns.
+History source caps and the configurable native `DB_POOL_MAX` (default 10 per
+pool) remain; pool capacity does not bound aggregate reads/storage/allocations
+across instances, and late reads can overlap new calls. No speculative
+instance-local semaphore, global coordinator or rate quota is introduced.
+Uniform enforcement requires serving API versions with these budgets; an old
+instance in a mixed-version deployment retains its earlier behavior.
+
+### Read diagnostics
+
+Existing OpenTelemetry records an `mcp.read` span with `mcp.tool.name`,
+`mcp.read.duration_ms`, `mcp.read.timeout_ms`,
+`mcp.read.max_structured_bytes`, and, when measured,
+`mcp.read.structured_bytes`. `mcp.read.outcome` is a fixed class: `ok`,
+`timeout`, `response_limit`, `resource_limit`, `unavailable`, `rejected`,
+`cancelled` or `failed`. Size is the attempted structured payload, not source
+archive bytes, process allocation or transport-envelope size. Join its trace to
+existing PostgreSQL query/pool-acquisition spans to distinguish waiting costs;
+a late query may end after the read span. These spans contain no arguments,
+principal/Run identity, prompts, results, credentials, raw exception text or
+private URLs. Normal configured tracing/sampling applies; no tracing provider
+means no-op spans, not complete production accounting.
+
 ## Breaking protocol simplification (#37513)
 
 There is no `create_chat_thread` tool. `send_chat_message` takes `agentId`,
@@ -74,8 +136,9 @@ the same user/organization ownership; prompt/result/launch/account metadata is
 not needed or loaded. This is a query/payload reduction, not a measured production
 latency claim.
 
-Use `get_run_status({runId})` for the ordinary Web Run response. It replaces the
-old Run-only tool name directly, without an alias, and does not wait or derive
+Use `get_run_status({runId})` for the ordinary Web Run response within the shared
+read/output budgets above. It replaces the old Run-only tool name directly,
+without an alias, and does not wait for completion or derive
 another lifecycle, outcome or output-readiness state. Sending enqueues input;
 it does not prove launch, completion, delivery or readable output. No public MCP
 Events subscription/webhook or durable replay is introduced by this contract.

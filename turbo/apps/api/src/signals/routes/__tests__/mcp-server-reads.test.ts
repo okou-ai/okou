@@ -12,6 +12,7 @@ import {
 import { mcpGetChatInputOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-input";
 import { mcpSendChatMessageOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mcpGetRunStatusOutputSchema } from "@okouai/api-contracts/contracts/mcp-run-status";
 import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 
 import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
@@ -328,6 +329,132 @@ async function chatRunFixture() {
   });
   return { auth, actor, chat, agent, runs };
 }
+
+describe("MCP shared read budgets", () => {
+  it.each([
+    {
+      name: "multibyte text within budget",
+      prompt: "界".repeat(40_000),
+      oversized: false,
+    },
+    {
+      name: "oversized multibyte text",
+      prompt: "界".repeat(60_000),
+      oversized: true,
+    },
+    {
+      name: "oversized JSON escaping",
+      prompt: `Large prompt\n${"\n".repeat(85_000)}`,
+      oversized: true,
+    },
+  ])(
+    "bounds Run structured output by serialized bytes: $name",
+    async ({ prompt, oversized }) => {
+      const auth = fixture();
+      const f = createChatEventsFixture(context);
+      const actor = await nativeRunnerChatActor(f, auth);
+      const sent = await f.sendChatRun(actor.actor, {
+        agentId: actor.agentId,
+        model: NATIVE_RUNNER_MODEL,
+        prompt,
+      });
+      onTestFinished(async () => {
+        await f.cancelChatRun(actor.actor, sent.runId);
+      });
+      const web = await f.api.readRun(actor.actor, sent.runId);
+      expect(web.prompt).toBe(prompt);
+      const bytes = Buffer.byteLength(JSON.stringify(web));
+      const result = await callTool(auth.token(), "get_run_status", {
+        runId: sent.runId,
+      });
+      if (oversized) {
+        expect(bytes).toBeGreaterThan(160 * 1024);
+        expect(structuredToolError(result)).toMatchObject({
+          code: "response_limit",
+          retryable: false,
+        });
+        expect(Buffer.byteLength(JSON.stringify(result))).toBeLessThan(1024);
+        expect(result.structuredContent).not.toHaveProperty("prompt");
+      } else {
+        expect(bytes).toBeLessThanOrEqual(160 * 1024);
+        expect(result.isError).not.toBeTruthy();
+        expect(
+          mcpGetRunStatusOutputSchema.parse(result.structuredContent),
+        ).toStrictEqual(web);
+      }
+      const foreign = await callTool(
+        auth.token({ sub: `user_${randomUUID()}` }),
+        "get_run_status",
+        { runId: sent.runId },
+      );
+      expect(structuredToolError(foreign).code).toBe("not_found");
+    },
+  );
+
+  it("keeps consumed input readable with an unrelated oversized native Run prompt", async () => {
+    const auth = fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await nativeRunnerChatActor(f, auth);
+    const eventId = randomUUID();
+    const prompt = `Oversized native prompt ${"界".repeat(60_000)}`;
+    // The ordinary Web send accepts this prompt; MCP send has its own smaller
+    // input bound. No historical result or private business row is fabricated.
+    const sent = await f.sendChatRun(actor.actor, {
+      agentId: actor.agentId,
+      model: NATIVE_RUNNER_MODEL,
+      prompt,
+      clientEventId: eventId,
+    });
+    const runId = sent.runId;
+    onTestFinished(async () => {
+      const run = await f.api.readRun(actor.actor, runId);
+      if (["pending", "queued", "running"].includes(run.status)) {
+        await f.cancelChatRun(actor.actor, runId);
+      }
+    });
+    const token = auth.token();
+    const args = { threadId: sent.threadId, eventId };
+    const initial = mcpGetChatInputOutputSchema.parse(
+      (await callTool(token, "get_chat_input", args)).structuredContent,
+    );
+    expect(initial).toMatchObject({
+      ...args,
+      inputStatus: "consumed",
+      run: { runId, status: "pending" },
+      error: null,
+    });
+    const claimed = await f.claimChatRun(actor.runnerGroup, runId);
+    f.chatCallbacks.mockChatOutputEvents([]);
+    await f.completeChatRunOk(runId, claimed.sandboxHeaders);
+    await flushWaitUntilForTest();
+    const web = await f.api.readRun(actor.actor, runId);
+    expect(web.prompt).toBe(prompt);
+    expect(Buffer.byteLength(JSON.stringify(web))).toBeGreaterThan(160 * 1024);
+    expect(
+      structuredToolError(await callTool(token, "get_run_status", { runId })),
+    ).toMatchObject({ code: "response_limit", retryable: false });
+    const observed = await callTool(token, "get_chat_input", args);
+    expect(observed.isError).not.toBeTruthy();
+    expect(
+      mcpGetChatInputOutputSchema.parse(observed.structuredContent),
+    ).toMatchObject({
+      ...args,
+      inputStatus: "consumed",
+      run: { runId, status: "completed" },
+      error: null,
+    });
+    expect(JSON.stringify(observed)).not.toContain("Oversized native prompt");
+    expect(
+      structuredToolError(
+        await callTool(
+          auth.token({ sub: `user_${randomUUID()}` }),
+          "get_chat_input",
+          args,
+        ),
+      ).code,
+    ).toBe("not_found");
+  });
+});
 
 describe("MCP canonical message reads", () => {
   it("pages latest and earlier messages with the default 20-message limit", async () => {
