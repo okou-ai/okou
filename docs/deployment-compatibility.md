@@ -103,8 +103,23 @@ hash, in slug order; switching the pointer cannot strand that capture. Selected
 reads capture pointer and entries in one statement. Compatibility is calculated
 from the captured entries and current code/configuration capability, with the
 existing hash/capability-keyed process cache retained for full-catalog reads.
-Missing slugs remain absent and the owning business contract decides whether to
-return not-found or reject a required connector. A missing pointer or an empty
+Without a manifest, a missing entry and a slug the generation never had are
+indistinguishable, so every per-slug or selected-entry reader declares whether
+its slugs are required. Required slugs are already-authorized business facts
+and fail explicitly with the typed
+`CONNECTOR_CATALOG_UNAVAILABLE:missing_required_entries` error instead of
+shrinking scope: a Run's enabled connectors at capture reject the input with a
+launch `conflict`; Pi stable-context recapture leaves the head missing; the
+Run MCP connector list fails the request; and Runner runtime sync reports a
+missing registered builtin target as `unresolved` (Runner keeps last-known-good
+and retries) rather than authoritative `absent`. Optional reads (search,
+discovery, connect items, connected briefs, single-item status/permission and
+account GETs, stored-connection lists, display filters, and metadata-only
+custom permission-bundle dependencies) still omit the slug or return
+not-found. This contract does not probe all slugs or restore a manifest, and a
+missing slug in one reader is never a global catalog failure. Old Runners
+already treat `unresolved` as retain-and-retry, so no Runner protocol change
+is required. A missing pointer or an empty
 whole-catalog generation fails unavailable; there is no legacy or R2 read
 fallback. The pointer read selects only `schema_version` and `hash`; no
 business reader reads `connector_catalog.catalog_header`, which writers still

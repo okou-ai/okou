@@ -192,16 +192,6 @@ function builtinUnresolvedResult(
   };
 }
 
-function builtinAbsentResult(
-  target: Extract<ConnectorRuntimeTarget, { readonly kind: "builtin" }>,
-): ConnectorRuntimeBuiltinSyncResult {
-  return {
-    target,
-    state: "absent",
-    reason: "connector-unavailable",
-  };
-}
-
 function authResolvesAtNetworkBoundary(auth: FirewallApi["auth"]): boolean {
   return (
     Object.keys(auth.headers ?? {}).length > 0 ||
@@ -296,10 +286,15 @@ async function loadCustomSnapshot(args: {
           connectorCatalogSlugJoin(metadataConnectorSlugs),
         )
         .where(connectorCatalogCurrentWhere());
+      // Permission-bundle dependencies are metadata only. A missing entry
+      // resolves through the fail-closed unavailable custom runtime row.
       const connectorCatalogSelection = connectorCatalogSlugRuntimeFromRows(
         catalogRows,
-        [],
-        metadataConnectorSlugs,
+        {
+          runtimeConnectorSlugs: [],
+          metadataConnectorSlugs,
+          missingRuntimeEntries: "omit",
+        },
       );
       const accountResolutions = await resolveConnectorAccounts(tx, {
         orgId: args.scope.orgId,
@@ -536,8 +531,10 @@ function resolveBuiltinTarget(args: {
   return {
     kind: "builtin",
     ...(credentialResolution === undefined ? {} : { credentialResolution }),
+    // Without a manifest a missing entry cannot prove the connector was
+    // retired. Keep the Run's registered scope (last-known-good) and retry.
     result: !snapshot?.connectors.has(registration.connectorSlug)
-      ? builtinAbsentResult(target)
+      ? builtinUnresolvedResult(target)
       : refresh && credentialAccess?.kind === "ok"
         ? {
             target,
@@ -582,7 +579,12 @@ async function resolveConnectorRuntimeTargetStates(args: {
               connectorCatalogSlugJoin(builtinConnectorSlugs),
             )
             .where(connectorCatalogCurrentWhere()),
-          builtinConnectorSlugs,
+          // Registered targets are required, but per target: a missing entry
+          // becomes `unresolved` below, never an authoritative `absent`.
+          {
+            runtimeConnectorSlugs: builtinConnectorSlugs,
+            missingRuntimeEntries: "omit",
+          },
         )
       : undefined;
   const builtinCatalogConnectorSlugs = new Set(
@@ -593,6 +595,13 @@ async function resolveConnectorRuntimeTargetStates(args: {
       return builtinCatalogConnectorSlugs.has(connectorSlug);
     },
   );
+  if (catalogBuiltinConnectorSlugs.length < builtinConnectorSlugs.length) {
+    L.warn("Registered connector runtime targets have no catalog entry", {
+      connectorSlugs: builtinConnectorSlugs.filter((connectorSlug) => {
+        return !builtinCatalogConnectorSlugs.has(connectorSlug);
+      }),
+    });
+  }
   const [builtinRefreshes, builtinAccountResolutions, customSnapshot] =
     await Promise.all([
       resolveActiveNetworkPolicyRefreshes(
