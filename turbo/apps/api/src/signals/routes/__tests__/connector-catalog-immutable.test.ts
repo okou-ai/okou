@@ -1323,19 +1323,6 @@ describe("slug-first current catalog business readers", () => {
     expect(listed.body.connectors).toContainEqual(
       expect.objectContaining({ slug: "github" }),
     );
-    // Category labels come from the pointer row that owns the listed hash.
-    const listedCategories = new Set(
-      listed.body.connectors.map((connector) => {
-        return connector.category;
-      }),
-    );
-    expect(
-      new Set(
-        listed.body.categoryMetadata?.categories.map((category) => {
-          return category.id;
-        }),
-      ),
-    ).toStrictEqual(listedCategories);
     await directory(candidate);
     const oneClick = await accept(catalogClient().oneClick({ headers }), [200]);
     expect(oneClick.body.connectors.length).toBeGreaterThan(0);

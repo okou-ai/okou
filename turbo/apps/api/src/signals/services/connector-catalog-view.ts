@@ -22,15 +22,9 @@ export interface ConnectorCatalogLookup {
   readonly filteredMethodKeys: ReadonlySet<string>;
 }
 
-/**
- * Catalog-wide entries plus the pointer row's category labels, which public
- * discovery still returns to App clients.
- */
+/** Catalog-wide entries read from the immutable entry rows. */
 export interface ConnectorCatalogView extends ConnectorCatalogLookup {
-  readonly artifact: Pick<
-    ConnectorCatalogArtifact,
-    "categoryMetadata" | "connectors"
-  >;
+  readonly artifact: Pick<ConnectorCatalogArtifact, "connectors">;
 }
 
 export type ConnectorCatalogRuntimeView = ConnectorCatalogView;

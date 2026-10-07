@@ -19,8 +19,8 @@ const context = testContext();
 test("Offer every whole-catalog category id, named from the id alone", async () => {
   const user = userEvent.setup({ delay: null });
   mockConnectors(context, []);
-  // The response carries no category metadata: the whole-catalog counts
-  // decide which category ids exist, and each is named from its id.
+  // The whole-catalog counts decide which category ids exist, and each is
+  // named from its id.
   mockPublicConnectorStatus(
     context,
     [
@@ -37,7 +37,6 @@ test("Offer every whole-catalog category id, named from the id alone", async () 
         connected: false,
       }),
     ],
-    undefined,
     {
       "docs-files-knowledge": 40,
       "communication-collaboration": 12,

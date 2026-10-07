@@ -1,6 +1,5 @@
 import type {
   PublicConnectorCatalogAuthMethodDetail,
-  PublicConnectorCatalogCategoryMetadata,
   PublicConnectorCatalogIcon,
   PublicConnectorCatalogPermissionDetail,
   PublicConnectorCatalogPermissionSummary,
@@ -706,63 +705,3 @@ export const testConnectorCatalogDefinitions = (
 ).sort((left, right) => {
   return left.connectorSlug.localeCompare(right.connectorSlug);
 });
-
-export const testConnectorCatalogCategoryMetadata = {
-  categories: [
-    {
-      id: "ai-general-models",
-      label: "General Models and Reasoning",
-      menuLabel: "General Models",
-      groupId: "ai",
-    },
-    {
-      id: "ai-agent-apps",
-      label: "Agent Platforms and AI Apps",
-      menuLabel: "Agent Platforms",
-      groupId: "ai",
-    },
-    {
-      id: "communication-collaboration",
-      label: "Communication and Collaboration",
-      menuLabel: "Communication",
-      groupId: null,
-    },
-    {
-      id: "meetings-scheduling",
-      label: "Meetings and Scheduling",
-      menuLabel: "Meetings",
-      groupId: null,
-    },
-    {
-      id: "docs-files-knowledge",
-      label: "Docs, Files, and Knowledge",
-      menuLabel: "Documents",
-      groupId: null,
-    },
-    {
-      id: "engineering-team-execution",
-      label: "Engineering and Team Execution",
-      menuLabel: "Engineering",
-      groupId: null,
-    },
-    {
-      id: "sales-crm-business-operations",
-      label: "Sales, CRM, and Business Operations",
-      menuLabel: "Sales and Business",
-      groupId: null,
-    },
-    {
-      id: "marketing-content-growth",
-      label: "Marketing, Content, and Growth",
-      menuLabel: "Marketing",
-      groupId: null,
-    },
-    {
-      id: "data-automation-infrastructure",
-      label: "Data, Automation, and Infrastructure",
-      menuLabel: "Data and Automation",
-      groupId: null,
-    },
-  ],
-  groups: [{ id: "ai", label: "AI", menuLabel: "AI" }],
-} satisfies PublicConnectorCatalogCategoryMetadata;

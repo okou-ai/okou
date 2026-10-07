@@ -42,24 +42,6 @@ export const publicConnectorCatalogIconSchema = z.object({
   scale: z.number().min(1).max(3).optional(),
 });
 
-const publicConnectorCatalogCategoryGroupSchema = z.object({
-  id: z.string(),
-  label: z.string(),
-  menuLabel: z.string(),
-});
-
-const publicConnectorCatalogCategorySchema = z.object({
-  id: z.string(),
-  label: z.string(),
-  menuLabel: z.string(),
-  groupId: z.string().nullable(),
-});
-
-const publicConnectorCatalogCategoryMetadataSchema = z.object({
-  categories: z.array(publicConnectorCatalogCategorySchema),
-  groups: z.array(publicConnectorCatalogCategoryGroupSchema),
-});
-
 const publicConnectorCatalogItemSchema = z.object({
   slug: connectorSlugSchema,
   label: z.string(),
@@ -118,7 +100,6 @@ const publicConnectorCatalogDetailSchema =
 
 const publicConnectorCatalogListResponseSchema = z.object({
   connectors: z.array(publicConnectorCatalogItemSchema),
-  categoryMetadata: publicConnectorCatalogCategoryMetadataSchema.optional(),
 });
 
 const publicConnectorCatalogConnectionStatusSchema = z.enum([
@@ -182,7 +163,6 @@ const publicConnectorCatalogDetailResponseSchema = z.object({
 
 const publicConnectorCatalogStatusResponseSchema = z.object({
   connectors: z.array(publicConnectorCatalogStatusItemSchema),
-  categoryMetadata: publicConnectorCatalogCategoryMetadataSchema.optional(),
 });
 
 const publicConnectorCatalogDiscoveryResponseSchema =
@@ -263,15 +243,6 @@ export type PublicConnectorCatalogPermissionSummary = z.infer<
 >;
 export type PublicConnectorCatalogIcon = z.infer<
   typeof publicConnectorCatalogIconSchema
->;
-export type PublicConnectorCatalogCategoryGroup = z.infer<
-  typeof publicConnectorCatalogCategoryGroupSchema
->;
-export type PublicConnectorCatalogCategory = z.infer<
-  typeof publicConnectorCatalogCategorySchema
->;
-export type PublicConnectorCatalogCategoryMetadata = z.infer<
-  typeof publicConnectorCatalogCategoryMetadataSchema
 >;
 export type PublicConnectorCatalogItem = z.infer<
   typeof publicConnectorCatalogItemSchema

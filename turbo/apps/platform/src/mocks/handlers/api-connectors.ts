@@ -44,7 +44,6 @@ import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-cred
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { mockApi } from "../msw-contract.ts";
 import {
-  testConnectorCatalogCategoryMetadata,
   testConnectorCatalogDefinitions,
   testConnectorPermissionDetails,
   type TestConnectorCatalogDefinition,
@@ -488,10 +487,7 @@ export const apiConnectorsHandlers = [
 
   mockApi(connectorCatalogContract.status, ({ respond }) => {
     const connectors = mockConnectorCatalogStatus();
-    return respond(200, {
-      connectors,
-      categoryMetadata: testConnectorCatalogCategoryMetadata,
-    });
+    return respond(200, { connectors });
   }),
 
   mockApi(connectorCatalogContract.oneClick, ({ respond }) => {
@@ -534,7 +530,6 @@ export const apiConnectorsHandlers = [
       : allConnectors.slice(0, 100);
     return respond(200, {
       connectors,
-      categoryMetadata: testConnectorCatalogCategoryMetadata,
       totalConnectorCount: allConnectors.length,
     });
   }),

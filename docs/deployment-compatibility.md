@@ -106,11 +106,15 @@ existing hash/capability-keyed process cache retained for full-catalog reads.
 Missing slugs remain absent and the owning business contract decides whether to
 return not-found or reject a required connector. A missing pointer or an empty
 whole-catalog generation fails unavailable; there is no legacy or R2 read
-fallback. Public list, discovery and status responses still return category
-metadata, read from `connector_catalog.catalog_header` in the same row read
-that captures the hash, because App clients use it for category labels,
-grouping and filters. That header dependency must be retired through an App
-migration before any Release 2 contraction of `catalog_header`. The
+fallback. The pointer read selects only `schema_version` and `hash`; no
+business reader reads `connector_catalog.catalog_header`, which writers still
+populate until Release 2. Public list, discovery and status responses no longer
+return `categoryMetadata`; connectors carry only their `category` id, and
+discovery keeps `categoryConnectorCounts`. App clients own category names
+(#37855). Rollout order: this API change deploys only after the App change in
+#37855 is deployed. App bundles loaded before #37855 then receive no category
+metadata and fall back to id-derived category names, without grouping or
+Connectors-page category chips, until they reload. The
 Runner firewall projection's own digest uses canonical JSON object-key order,
 so loading the same content from JSONB cannot change its identity. The opaque
 digest/version can change once relative to the old noncanonical projection;

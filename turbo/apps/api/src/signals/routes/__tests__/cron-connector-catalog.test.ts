@@ -1752,17 +1752,6 @@ describe("connector catalog valid lifecycle", () => {
         hasDefaultPolicyOverrides: true,
       },
     });
-    expect(list.body.categoryMetadata).toStrictEqual({
-      categories: [
-        {
-          id: "testing",
-          label: "Testing",
-          menuLabel: "Testing",
-          groupId: null,
-        },
-      ],
-      groups: [],
-    });
     assertPublicConnectorCatalogHasNoPrivateFields(list.body);
 
     const detail = await accept(
@@ -5026,10 +5015,7 @@ describe("connector catalog executable compatibility", () => {
 
     expect(
       (await accept(catalogClient.list({ headers }), [200])).body,
-    ).toStrictEqual({
-      connectors: [],
-      categoryMetadata: { categories: [], groups: [] },
-    });
+    ).toStrictEqual({ connectors: [] });
     await accept(
       featureClient.update({
         headers,

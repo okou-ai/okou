@@ -140,9 +140,8 @@ test.each([2])(
           connected: false,
         });
       }),
-      // Category metadata is ignored; discovery's whole-catalog totals name the
-      // categories the filter offers.
-      undefined,
+      // Discovery reports whole-catalog category totals, and the filter
+      // offers the categories those totals name.
       { "communication-collaboration": 8 },
     );
     context.mocks.api(sshConnectionsContract.summary, ({ respond }) => {

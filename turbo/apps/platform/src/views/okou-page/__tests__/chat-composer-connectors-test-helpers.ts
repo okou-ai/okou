@@ -14,7 +14,6 @@ import {
 import {
   connectorCatalogContract,
   type PublicConnectorCatalogAuthMethodDetail,
-  type PublicConnectorCatalogCategoryMetadata,
   type PublicConnectorCatalogPermissionDetail,
   type PublicConnectorCatalogStatusItem,
 } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -74,8 +73,6 @@ interface ConnectorFixtureOptions {
   readonly featuredConnectorSlugs?: readonly ConnectorSlug[];
   /** Category totals discovery reports, so a shelf can close on a real count. */
   readonly categoryConnectorCounts?: Readonly<Record<string, number>>;
-  /** The catalog's own category names, as discovery returns them. */
-  readonly categoryMetadata?: PublicConnectorCatalogCategoryMetadata;
   readonly customConnectors?: readonly CustomConnectorResponse[];
   readonly builtinAuthorizations?: Readonly<
     Record<string, readonly ConnectorSlug[]>
@@ -378,9 +375,6 @@ export function installComposerConnectorFixture(
         ...(options.categoryConnectorCounts === undefined
           ? {}
           : { categoryConnectorCounts: options.categoryConnectorCounts }),
-        ...(options.categoryMetadata === undefined
-          ? {}
-          : { categoryMetadata: options.categoryMetadata }),
       });
     },
   );

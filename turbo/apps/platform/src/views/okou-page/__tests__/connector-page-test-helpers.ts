@@ -8,7 +8,6 @@ import {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import {
-  type PublicConnectorCatalogCategoryMetadata,
   type PublicConnectorCatalogStatusItem,
   connectorCatalogContract,
 } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -304,14 +303,10 @@ function browseSlice<
 export function mockPublicConnectorStatus(
   context: TestContext,
   connectors: readonly PublicConnectorCatalogStatusItem[],
-  categoryMetadata?: PublicConnectorCatalogCategoryMetadata,
   categoryConnectorCounts?: Readonly<Record<string, number>>,
 ): void {
   context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, {
-      connectors: [...connectors],
-      ...(categoryMetadata ? { categoryMetadata } : {}),
-    });
+    return respond(200, { connectors: [...connectors] });
   });
   context.mocks.api(
     connectorCatalogContract.discovery,
@@ -328,7 +323,6 @@ export function mockPublicConnectorStatus(
       return respond(200, {
         connectors: [...scoped],
         totalConnectorCount: connectors.length,
-        ...(categoryMetadata ? { categoryMetadata } : {}),
         ...(categoryConnectorCounts ? { categoryConnectorCounts } : {}),
       });
     },
