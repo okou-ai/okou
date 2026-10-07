@@ -2,8 +2,7 @@ import {
   ensurePublicationGenerations,
   publicationIsPending,
   retirePublicationSql,
-  publicationScopePendingSql,
-  publicationReadinessSql,
+  lockPublicationScopeSql,
   workflowPublicationKey,
 } from "../services/storage-publication-fence.service";
 import { preparedVolumePublicationSql } from "../services/storage-volume-publication-sql";
@@ -2173,9 +2172,8 @@ async function applyVisibilityUpdate(
       return false;
     }
     for (const scope of scopes) {
-      await tx.execute(publicationScopePendingSql(scope, nowDate()));
+      await tx.execute(lockPublicationScopeSql(scope, nowDate()));
       await tx.execute(retirePublicationSql(scope, publicationKey));
-      await tx.execute(publicationReadinessSql(scope, nowDate()));
     }
     return true;
   });

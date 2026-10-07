@@ -59,6 +59,41 @@ combine these stages merely because reads no longer return payload.
 This PR prepares that contraction; it neither drops payload nor activates or
 releases production changes.
 
+## Pi stable-context tables retired (2026-10-07)
+
+The Pi stable-context cache never had a production reader and is removed from
+the API: run launch builds the stable prompt directly, and the API no longer
+invalidates, records demand for, materializes, garbage-collects or drains
+stable-context heads, artifacts or Pi resource snapshots. The materialize cron
+response no longer has a `stableContext` field (only Vercel cron calls it).
+
+Migration `1341_retire_pi_stable_context` drops `pi_stable_context_heads`,
+`pi_stable_context_artifacts`, `pi_stable_context_artifact_resources` and
+`pi_resource_snapshots` with their indexes, checks and foreign keys. It keeps
+the reserve-before-IO publication fence for Agent instructions and Workflow
+volumes, which still rejects an older, slower upload with `409` once a newer
+reservation exists. Its tables are renamed: `pi_stable_context_generations` to
+`storage_publication_generations` and `pi_stable_context_publications` to
+`storage_publication_tokens`. Their primary keys, generation checks and the
+token index are renamed to the matching `storage_publication_*` names. The
+generation table drops `publication_state` and its state check, which only the
+stable-context reader consumed.
+
+Database ordering: migrations run before API promotion. Every API built before
+1341 writes the dropped tables and the old generation and publication table
+names on Agent update, instructions, Workflow create/update/delete/visibility,
+Storage HEAD publication, connector, permission, feature-switch and catalog
+writes, Clerk and Agent deletion, and its crons. It fails on those paths
+(`42P01`/`42703`) until it drains. This is not rolling-compatible; the
+interruption while the previous API drains is accepted by explicit owner
+decision (2026-10-07). No preparatory release or compatibility branch is
+required. Acceptance of that risk is not an instruction to deploy.
+
+Rollback floor: the rollback resolver resolves the first-parent `main` commit
+that added `1341_retire_pi_stable_context.sql` and rejects earlier targets
+before artifact or host access. Recovering below it requires a reviewed forward
+migration that recreates the old tables before an older API serves.
+
 ## Frozen model provider state dropped (2026-10-07)
 
 Owner decision (Ethan, 2026-10-07): data no live reader uses is removed.
@@ -5176,19 +5211,9 @@ cron convergence after release; a deferred watermark is never advanced.
 
 ## Pi stable-context schema rollout and rollback
 
-Status: the stable-context subsystem has been removed from the API (it had no
-production reader). The current API no longer reads stable-context heads or
-artifacts, no longer writes heads, artifacts or Pi resource snapshots, and no
-longer runs stable-context materialization, invalidation or artifact GC. It
-still uses `pi_stable_context_generations` and `pi_stable_context_publications`
-for the Agent instructions and Workflow volume publication fence. Agent and
-Clerk account deletion still delete the owner's existing rows, and expired
-resource snapshots are still drained. Migrations run before API promotion and
-the previous API still writes these tables while it drains, so no table is
-dropped here. Dropping heads, artifacts, artifact resources and resource
-snapshots is a later contract migration after the previous API drains. The
-generation and publication tables can only be dropped after the fence moves
-elsewhere. The history below describes the original rollout.
+Status: retired by migration `1341_retire_pi_stable_context`; see
+[Pi stable-context tables retired](#pi-stable-context-tables-retired-2026-10-07).
+The history below describes the original rollout.
 
 Migration 1168, following retained main migrations through
 `1167_private_artifact_absolute_urls`, adds

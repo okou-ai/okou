@@ -18,7 +18,7 @@ import {
   artifactCatalogFileBatchCondition,
 } from "./artifact-catalog-deletion.service";
 import {
-  clerkStableContextCleanupSql,
+  clerkPublicationFenceCleanupSql,
   conversationFreeRunDeleteSql,
   deletedRunCountSchema,
   emptyConversationDeletionReceipt,
@@ -150,7 +150,7 @@ const deleteClerkUserLifecycleData$ = command(
           .delete(chatThreadDrafts)
           .where(eq(chatThreadDrafts.userId, userId));
         await tx.delete(chatThreads).where(eq(chatThreads.userId, userId));
-        for (const statement of clerkStableContextCleanupSql(
+        for (const statement of clerkPublicationFenceCleanupSql(
           { kind: "user", userId },
           [],
         )) {
@@ -244,7 +244,10 @@ const deleteClerkOrganizationLifecycleData$ = command(
         );
         const receipt = await deleteTargetRunsConversationFirst(tx, runIds);
         const scope = { kind: "organization", orgId } as const;
-        for (const statement of clerkStableContextCleanupSql(scope, agentIds)) {
+        for (const statement of clerkPublicationFenceCleanupSql(
+          scope,
+          agentIds,
+        )) {
           await tx.execute(statement);
         }
         if (agentIds.length > 0) {
@@ -268,7 +271,7 @@ const deleteClerkOrganizationLifecycleData$ = command(
           // Agent cascades drain child-row writers that could initialize non-FK
           // lifecycle metadata after the first sweep. The Agent DELETE waits for
           // those writers, so this second sweep removes their late state.
-          for (const statement of clerkStableContextCleanupSql(
+          for (const statement of clerkPublicationFenceCleanupSql(
             scope,
             agentIds,
           )) {
@@ -302,7 +305,7 @@ export const deleteClerkAgentLifecycleData$ = command(
   },
 );
 
-export const deleteStableContextLifecycleAfterAuthorityRemoval$ = command(
+export const deletePublicationFencesAfterAuthorityRemoval$ = command(
   async (
     { set },
     scope: ClerkDeletionScope,
@@ -311,7 +314,7 @@ export const deleteStableContextLifecycleAfterAuthorityRemoval$ = command(
     signal.throwIfAborted();
     const db = set(writeDb$);
     await db.transaction(async (tx) => {
-      for (const statement of clerkStableContextCleanupSql(scope, [])) {
+      for (const statement of clerkPublicationFenceCleanupSql(scope, [])) {
         await tx.execute(statement);
       }
     });

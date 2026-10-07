@@ -18,7 +18,7 @@ import { logger } from "../../lib/log";
 import { isLockNotAvailable } from "../../lib/pg-errors";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { settle } from "../utils";
-import { deleteAgentStableContextLifecycleData } from "./agent-lifecycle.service";
+import { deleteAgentPublicationFences } from "./agent-lifecycle.service";
 import {
   lockAgentInstructionsStoragesInTransaction,
   removeLockedAgentInstructionsStoragesInTransaction,
@@ -234,14 +234,14 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
       and(eq(workflows.orgId, args.orgId), eq(workflows.agentId, args.agentId)),
     );
   const removed = await deleteRunConversations(tx, lifecycle.runIds);
-  // Storage parents precede stable artifacts/edges in the publisher and GC
-  // lock order. Prelock before lifecycle cleanup, not after Agent deletion.
+  // Prelock instruction Storages in UUID order before lifecycle cleanup, not
+  // after Agent deletion.
   const lockedInstructionsStorages =
     await lockAgentInstructionsStoragesInTransaction(tx, [
       { orgId: args.orgId, agentName: lifecycle.agentName },
     ]);
   // Remove current non-FK lifecycle rows before the Agent cascade.
-  await deleteAgentStableContextLifecycleData(tx, args.agentId);
+  await deleteAgentPublicationFences(tx, args.agentId);
   await tx.execute(purgeRetiredMorningBriefEmailSql());
   await tx
     .delete(agents)
@@ -249,7 +249,7 @@ export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
   // The cascade drains transactions that already owned a child Workflow row.
   // Sweep again afterward so any generation/publication they initialized
   // after the first scan cannot outlive the deleted Agent.
-  await deleteAgentStableContextLifecycleData(tx, args.agentId);
+  await deleteAgentPublicationFences(tx, args.agentId);
   await removeLockedAgentInstructionsStoragesInTransaction(
     tx,
     lockedInstructionsStorages,

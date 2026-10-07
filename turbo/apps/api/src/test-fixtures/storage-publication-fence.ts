@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { piStableContextPublications } from "@okouai/db/schema/pi-stable-context";
+import { storagePublicationTokens } from "@okouai/db/schema/storage-publication-fence";
 import { createStore } from "ccstate";
 import { eq } from "drizzle-orm";
 
@@ -14,7 +14,7 @@ export async function seedAgentPublicationFenceFixture(args: {
 }): Promise<void> {
   await store
     .set(writeDb$)
-    .insert(piStableContextPublications)
+    .insert(storagePublicationTokens)
     .values({
       orgId: args.orgId,
       agentId: args.agentId,
@@ -30,8 +30,8 @@ export async function countAgentPublicationFencesFixture(
 ): Promise<number> {
   const rows = await store
     .set(writeDb$)
-    .select({ token: piStableContextPublications.token })
-    .from(piStableContextPublications)
-    .where(eq(piStableContextPublications.agentId, agentId));
+    .select({ token: storagePublicationTokens.token })
+    .from(storagePublicationTokens)
+    .where(eq(storagePublicationTokens.agentId, agentId));
   return rows.length;
 }

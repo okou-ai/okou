@@ -75,23 +75,18 @@ dialect-specific tier policy remain at their existing trust boundaries.
 
 The Pi stable-context projection (an owner-bound, generation-fenced cache of
 the stable prompt and resource snapshot) never had a production reader and has
-been removed from the API. Run launch builds the stable prompt directly from
-the canonical composers on every claim. The API no longer invalidates, demands,
-recaptures, materializes or garbage-collects stable-context heads or artifacts,
-and no longer writes Pi resource snapshots. Agent and Clerk account deletion
-still remove existing rows for the deleted owner, and the weekly launch-artifact
-cleanup still drains expired resource snapshots.
+been removed. Run launch builds the stable prompt directly from the canonical
+composers on every claim. Migration `1341_retire_pi_stable_context` dropped its
+heads, artifacts, artifact resources and the Pi resource snapshot table.
 
 Only the reserve-before-IO publication fence survives, in
-[`storage-publication-fence.service.ts`](../turbo/apps/api/src/signals/services/storage-publication-fence.service.ts).
-Agent instructions and Workflow volume writers still reserve a generation and
-key/token before preparing an archive, so an older, slower preparation cannot
-publish its Storage HEAD over a newer reservation. It still stores those rows
-in `pi_stable_context_generations` and `pi_stable_context_publications`.
-The `pi_stable_context_heads`, `pi_stable_context_artifacts`,
-`pi_stable_context_artifact_resources` and `pi_resource_snapshots` tables are
-retained only until their drop migration; see
-[deployment compatibility](deployment-compatibility.md#pi-stable-context-schema-rollout-and-rollback).
+[`storage-publication-fence.service.ts`](../turbo/apps/api/src/signals/services/storage-publication-fence.service.ts),
+on the renamed `storage_publication_generations` and
+`storage_publication_tokens` tables. Agent instructions and Workflow volume
+writers reserve a generation and key/token before preparing an archive, so an
+older, slower preparation cannot publish its Storage HEAD over a newer
+reservation. See
+[deployment compatibility](deployment-compatibility.md#pi-stable-context-tables-retired-2026-10-07).
 
 ## Launch through settlement
 

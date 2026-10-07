@@ -2,8 +2,7 @@ import { nowDate } from "../../lib/time";
 import {
   ensurePublicationGenerations,
   retirePublicationSql,
-  publicationScopePendingSql,
-  publicationReadinessSql,
+  lockPublicationScopeSql,
   workflowPublicationKey,
 } from "./storage-publication-fence.service";
 import {
@@ -63,9 +62,8 @@ async function retireDeletedWorkflowPublications(
   await ensurePublicationGenerations(tx, scopes);
   const publicationKey = workflowPublicationKey(args.workflow.id);
   for (const scope of scopes) {
-    await tx.execute(publicationScopePendingSql(scope, nowDate()));
+    await tx.execute(lockPublicationScopeSql(scope, nowDate()));
     await tx.execute(retirePublicationSql(scope, publicationKey));
-    await tx.execute(publicationReadinessSql(scope, nowDate()));
   }
 }
 

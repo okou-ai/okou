@@ -19,7 +19,6 @@ import {
 import { piResourceProjectionValues } from "./pi-resource-version-index.service";
 import {
   consumePublicationFence,
-  publicationReadinessSql,
   type StoragePublicationFence,
 } from "./storage-publication-fence.service";
 
@@ -149,8 +148,6 @@ const commitPreparedVolumeUpload$ = command(
           "Storage publication was superseded before Storage HEAD commit",
         );
       }
-      await tx.execute(publicationReadinessSql(fence.scope, nowDate()));
-      signal.throwIfAborted();
     });
   },
 );

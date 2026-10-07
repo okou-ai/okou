@@ -2,8 +2,7 @@ import {
   completePublicationSql,
   publicationGenerationReceiptSchema,
   publicationFenceIsCurrent,
-  publicationScopePendingSql,
-  publicationReadinessSql,
+  lockPublicationScopeSql,
   beginPublicationSql,
   publicationFenceFromReceipt,
   AGENT_INSTRUCTIONS_PUBLICATION_KEY,
@@ -199,7 +198,7 @@ const publishPreparedAgentInstructions$ = command(
         return { kind: "conflict" as const };
       }
       const { rowCount: admittedScope } = await tx.execute(
-        publicationScopePendingSql(reservation.fence.scope, nowDate()),
+        lockPublicationScopeSql(reservation.fence.scope, nowDate()),
       );
       signal.throwIfAborted();
       if (admittedScope !== 1) {
@@ -208,10 +207,6 @@ const publishPreparedAgentInstructions$ = command(
       const fenceIsCurrent = await publicationFenceIsCurrent(
         tx,
         reservation.fence,
-      );
-      signal.throwIfAborted();
-      await tx.execute(
-        publicationReadinessSql(reservation.fence.scope, nowDate()),
       );
       signal.throwIfAborted();
 
@@ -229,10 +224,6 @@ const publishPreparedAgentInstructions$ = command(
       }
       const { rowCount: completedPublicationCount } = await tx.execute(
         completePublicationSql(reservation.fence),
-      );
-      signal.throwIfAborted();
-      await tx.execute(
-        publicationReadinessSql(reservation.fence.scope, nowDate()),
       );
       signal.throwIfAborted();
       if (!(completedPublicationCount === 1)) {
@@ -407,9 +398,8 @@ async function settleInstructionPublication(
 ): Promise<void> {
   // Deliberately outlive request cancellation; await exact-token settlement.
   await db.transaction(async (tx) => {
-    await tx.execute(publicationScopePendingSql(fence.scope, nowDate()));
+    await tx.execute(lockPublicationScopeSql(fence.scope, nowDate()));
     await tx.execute(completePublicationSql(fence));
-    await tx.execute(publicationReadinessSql(fence.scope, nowDate()));
   });
 }
 

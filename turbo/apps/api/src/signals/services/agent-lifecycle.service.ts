@@ -1,57 +1,33 @@
 import {
-  piStableContextArtifacts,
-  piStableContextGenerations,
-  piStableContextHeads,
-  piStableContextPublications,
-} from "@okouai/db/schema/pi-stable-context";
-import { asc, eq, type SQL } from "drizzle-orm";
+  storagePublicationGenerations,
+  storagePublicationTokens,
+} from "@okouai/db/schema/storage-publication-fence";
+import { asc, eq } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 
-async function deleteStableContextGenerations(
-  tx: Tx,
-  condition: SQL,
-): Promise<void> {
-  await tx
-    .select({
-      orgId: piStableContextGenerations.orgId,
-      agentId: piStableContextGenerations.agentId,
-      subject: piStableContextGenerations.subject,
-    })
-    .from(piStableContextGenerations)
-    .where(condition)
-    .orderBy(
-      asc(piStableContextGenerations.orgId),
-      asc(piStableContextGenerations.agentId),
-      asc(piStableContextGenerations.subject),
-    )
-    .for("update");
-  await tx.delete(piStableContextGenerations).where(condition);
-}
-
-async function deleteStableContextHeads(tx: Tx, condition: SQL): Promise<void> {
-  await tx
-    .select({ id: piStableContextHeads.id })
-    .from(piStableContextHeads)
-    .where(condition)
-    .orderBy(asc(piStableContextHeads.id))
-    .for("update");
-  await tx.delete(piStableContextHeads).where(condition);
-}
-
-export async function deleteAgentStableContextLifecycleData(
+/** Remove an Agent's non-FK storage publication fence rows. */
+export async function deleteAgentPublicationFences(
   tx: Tx,
   agentId: string,
 ): Promise<void> {
-  await deleteStableContextGenerations(
-    tx,
-    eq(piStableContextGenerations.agentId, agentId),
-  );
+  const condition = eq(storagePublicationGenerations.agentId, agentId);
   await tx
-    .delete(piStableContextPublications)
-    .where(eq(piStableContextPublications.agentId, agentId));
-  await deleteStableContextHeads(tx, eq(piStableContextHeads.agentId, agentId));
+    .select({
+      orgId: storagePublicationGenerations.orgId,
+      agentId: storagePublicationGenerations.agentId,
+      subject: storagePublicationGenerations.subject,
+    })
+    .from(storagePublicationGenerations)
+    .where(condition)
+    .orderBy(
+      asc(storagePublicationGenerations.orgId),
+      asc(storagePublicationGenerations.agentId),
+      asc(storagePublicationGenerations.subject),
+    )
+    .for("update");
+  await tx.delete(storagePublicationGenerations).where(condition);
   await tx
-    .delete(piStableContextArtifacts)
-    .where(eq(piStableContextArtifacts.agentId, agentId));
+    .delete(storagePublicationTokens)
+    .where(eq(storagePublicationTokens.agentId, agentId));
 }

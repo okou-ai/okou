@@ -2,9 +2,9 @@ import { z } from "zod";
 import { pgInt8ToSafeIntegerSchema } from "../../lib/db-raw-rows";
 
 import {
-  piStableContextGenerations,
-  piStableContextPublications,
-} from "@okouai/db/schema/pi-stable-context";
+  storagePublicationGenerations,
+  storagePublicationTokens,
+} from "@okouai/db/schema/storage-publication-fence";
 import { and, eq, sql, type SQL } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
@@ -13,9 +13,6 @@ import type { Tx } from "../../lib/db-types";
  * Reserve-before-IO ordering for Agent instructions and workflow volume
  * publication. A newer reservation replaces the exact key/token, so an older,
  * slower preparation can no longer publish its Storage HEAD.
- *
- * The rows still live in the retained `pi_stable_context_generations` and
- * `pi_stable_context_publications` tables; only this fence uses them now.
  */
 const AGENT_SUBJECT = "@agent";
 export const AGENT_INSTRUCTIONS_PUBLICATION_KEY = "agent-instructions";
@@ -43,18 +40,18 @@ function subjectForScope(scope: PublicationFenceScope): string {
 }
 
 export function generationScopeCondition(scope: PublicationFenceScope): SQL {
-  return sql`${eq(piStableContextGenerations.orgId, scope.orgId)} AND ${eq(piStableContextGenerations.agentId, scope.agentId)} AND ${eq(piStableContextGenerations.subject, subjectForScope(scope))}`;
+  return sql`${eq(storagePublicationGenerations.orgId, scope.orgId)} AND ${eq(storagePublicationGenerations.agentId, scope.agentId)} AND ${eq(storagePublicationGenerations.subject, subjectForScope(scope))}`;
 }
 
 export function publicationKeyCondition(
   scope: PublicationFenceScope,
   publicationKey: string,
 ): SQL {
-  return sql`${eq(piStableContextPublications.orgId, scope.orgId)} AND ${eq(piStableContextPublications.agentId, scope.agentId)} AND ${eq(piStableContextPublications.subject, subjectForScope(scope))} AND ${eq(piStableContextPublications.publicationKey, publicationKey)}`;
+  return sql`${eq(storagePublicationTokens.orgId, scope.orgId)} AND ${eq(storagePublicationTokens.agentId, scope.agentId)} AND ${eq(storagePublicationTokens.subject, subjectForScope(scope))} AND ${eq(storagePublicationTokens.publicationKey, publicationKey)}`;
 }
 
 export function publicationScopeCondition(fence: StoragePublicationFence): SQL {
-  return sql`${publicationKeyCondition(fence.scope, fence.publicationKey)} AND ${eq(piStableContextPublications.generation, fence.generation)} AND ${eq(piStableContextPublications.token, fence.token)}`;
+  return sql`${publicationKeyCondition(fence.scope, fence.publicationKey)} AND ${eq(storagePublicationTokens.generation, fence.generation)} AND ${eq(storagePublicationTokens.token, fence.token)}`;
 }
 
 export const publicationGenerationReceiptSchema = z.object({
@@ -82,12 +79,12 @@ export function beginPublicationSql(
   at: Date,
 ): SQL {
   return sql`WITH advanced AS (
-    INSERT INTO ${piStableContextGenerations} (org_id, agent_id, subject, publication_state, updated_at)
-    VALUES (${scope.orgId}, ${scope.agentId}, ${subjectForScope(scope)}, 'pending', ${at.toISOString()}::timestamp)
-    ON CONFLICT (org_id, agent_id, subject) DO UPDATE SET generation = ${piStableContextGenerations.generation} + 1,
-      publication_state = 'pending', updated_at = EXCLUDED.updated_at RETURNING generation
+    INSERT INTO ${storagePublicationGenerations} (org_id, agent_id, subject, updated_at)
+    VALUES (${scope.orgId}, ${scope.agentId}, ${subjectForScope(scope)}, ${at.toISOString()}::timestamp)
+    ON CONFLICT (org_id, agent_id, subject) DO UPDATE SET generation = ${storagePublicationGenerations.generation} + 1,
+      updated_at = EXCLUDED.updated_at RETURNING generation
   ), reserved AS (
-    INSERT INTO ${piStableContextPublications} (org_id, agent_id, subject, publication_key, generation, token, created_at, updated_at)
+    INSERT INTO ${storagePublicationTokens} (org_id, agent_id, subject, publication_key, generation, token, created_at, updated_at)
     SELECT ${scope.orgId}, ${scope.agentId}, ${subjectForScope(scope)}, ${publicationKey}, generation, ${token}::uuid,
       ${at.toISOString()}::timestamp, ${at.toISOString()}::timestamp FROM advanced
     ON CONFLICT (org_id, agent_id, subject, publication_key) DO UPDATE SET generation = EXCLUDED.generation,
@@ -95,33 +92,27 @@ export function beginPublicationSql(
   ) SELECT generation FROM reserved`;
 }
 
-/** An actual pending publication write precedes token consumption, matching reservation order. */
-export function publicationScopePendingSql(
+/**
+ * Lock the scope generation row before touching its tokens, matching
+ * reservation order. Zero rows means the scope was deleted.
+ */
+export function lockPublicationScopeSql(
   scope: PublicationFenceScope,
   at: Date,
 ): SQL {
-  return sql`UPDATE ${piStableContextGenerations} SET publication_state = 'pending', updated_at = ${at.toISOString()}::timestamp
+  return sql`UPDATE ${storagePublicationGenerations} SET updated_at = ${at.toISOString()}::timestamp
     WHERE ${generationScopeCondition(scope)}`;
 }
 
-export function publicationReadinessSql(
-  scope: PublicationFenceScope,
-  at: Date,
-): SQL {
-  return sql`UPDATE ${piStableContextGenerations} SET publication_state = CASE WHEN EXISTS (
-    SELECT 1 FROM ${piStableContextPublications} WHERE org_id = ${scope.orgId} AND agent_id = ${scope.agentId} AND subject = ${subjectForScope(scope)}
-  ) THEN 'pending' ELSE 'ready' END, updated_at = ${at.toISOString()}::timestamp WHERE ${generationScopeCondition(scope)}`;
-}
-
 export function completePublicationSql(fence: StoragePublicationFence): SQL {
-  return sql`DELETE FROM ${piStableContextPublications} WHERE ${publicationScopeCondition(fence)} AND EXISTS (SELECT 1 FROM ${piStableContextGenerations} WHERE ${generationScopeCondition(fence.scope)})`;
+  return sql`DELETE FROM ${storagePublicationTokens} WHERE ${publicationScopeCondition(fence)} AND EXISTS (SELECT 1 FROM ${storagePublicationGenerations} WHERE ${generationScopeCondition(fence.scope)})`;
 }
 
 export function retirePublicationSql(
   scope: PublicationFenceScope,
   key: string,
 ): SQL {
-  return sql`DELETE FROM ${piStableContextPublications} WHERE ${publicationKeyCondition(scope, key)} AND EXISTS (SELECT 1 FROM ${piStableContextGenerations} WHERE ${generationScopeCondition(scope)})`;
+  return sql`DELETE FROM ${storagePublicationTokens} WHERE ${publicationKeyCondition(scope, key)} AND EXISTS (SELECT 1 FROM ${storagePublicationGenerations} WHERE ${generationScopeCondition(scope)})`;
 }
 
 function publicationGenerationValues(scopes: readonly PublicationFenceScope[]) {
@@ -149,7 +140,7 @@ export async function ensurePublicationGenerations(
   scopes: readonly PublicationFenceScope[],
 ): Promise<void> {
   await tx
-    .insert(piStableContextGenerations)
+    .insert(storagePublicationGenerations)
     .values(publicationGenerationValues(scopes))
     .onConflictDoNothing();
 }
@@ -160,8 +151,8 @@ export async function publicationFenceIsCurrent(
   fence: StoragePublicationFence,
 ): Promise<boolean> {
   const [publication] = await tx
-    .select({ token: piStableContextPublications.token })
-    .from(piStableContextPublications)
+    .select({ token: storagePublicationTokens.token })
+    .from(storagePublicationTokens)
     .where(publicationScopeCondition(fence))
     .limit(1);
   return publication !== undefined;
@@ -174,19 +165,19 @@ export async function publicationIsPending(
   publicationKey: string,
 ): Promise<boolean> {
   const [publication] = await tx
-    .select({ token: piStableContextPublications.token })
-    .from(piStableContextPublications)
+    .select({ token: storagePublicationTokens.token })
+    .from(storagePublicationTokens)
     .innerJoin(
-      piStableContextGenerations,
+      storagePublicationGenerations,
       and(
-        eq(piStableContextGenerations.orgId, piStableContextPublications.orgId),
+        eq(storagePublicationGenerations.orgId, storagePublicationTokens.orgId),
         eq(
-          piStableContextGenerations.agentId,
-          piStableContextPublications.agentId,
+          storagePublicationGenerations.agentId,
+          storagePublicationTokens.agentId,
         ),
         eq(
-          piStableContextGenerations.subject,
-          piStableContextPublications.subject,
+          storagePublicationGenerations.subject,
+          storagePublicationTokens.subject,
         ),
       ),
     )
@@ -207,15 +198,15 @@ export async function consumePublicationFence(
   // Generation before publication, matching beginPublicationSql. Both are
   // ordinary writes; zero rows means this fence was superseded.
   const [generation] = await tx
-    .update(piStableContextGenerations)
+    .update(storagePublicationGenerations)
     .set({ updatedAt: at })
     .where(generationScopeCondition(fence.scope))
-    .returning({ generation: piStableContextGenerations.generation });
+    .returning({ generation: storagePublicationGenerations.generation });
   const [publication] = generation
     ? await tx
-        .delete(piStableContextPublications)
+        .delete(storagePublicationTokens)
         .where(publicationScopeCondition(fence))
-        .returning({ token: piStableContextPublications.token })
+        .returning({ token: storagePublicationTokens.token })
     : [];
   return publication !== undefined;
 }
