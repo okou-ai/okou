@@ -13,6 +13,18 @@ interface PendingRequest {
   readonly reject: (error: Error) => void;
 }
 
+export function desktopClerkExecutablePath(): string {
+  return path.join(
+    path.dirname(process.execPath),
+    "..",
+    "Helpers",
+    "Okou.app",
+    "Contents",
+    "MacOS",
+    "Okou",
+  );
+}
+
 /** Only the Electron main process may speak to the native auth owner. */
 export class DesktopClerkNative {
   private child: ChildProcessWithoutNullStreams | null = null;
@@ -22,10 +34,7 @@ export class DesktopClerkNative {
 
   constructor(
     private readonly publishableKey: string,
-    private readonly executable = path.join(
-      path.dirname(process.execPath),
-      "clerk-auth-helper",
-    ),
+    private readonly executable = desktopClerkExecutablePath(),
   ) {}
 
   private ensureChild(): ChildProcessWithoutNullStreams {
