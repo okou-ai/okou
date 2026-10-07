@@ -770,7 +770,6 @@ describe("connector catalog v4 preparation", () => {
     expect(accepted.body).toMatchObject({
       outcome: "accepted",
       active: {
-        catalogVersion: initial.pointer.catalogDigest,
         catalogDigest: initial.pointer.catalogDigest,
       },
       pointer: { hash: initial.pointer.catalogDigest },
@@ -826,7 +825,6 @@ describe("connector catalog v4 preparation", () => {
     expect(replaced.body).toMatchObject({
       outcome: "accepted",
       active: {
-        catalogVersion: replacement.pointer.catalogDigest,
         catalogDigest: replacement.pointer.catalogDigest,
       },
       pointer: { hash: replacement.pointer.catalogDigest },
@@ -843,7 +841,6 @@ describe("connector catalog v4 preparation", () => {
       [200],
     );
     expect(current.body.active).toStrictEqual({
-      catalogVersion: replacement.pointer.catalogDigest,
       catalogDigest: replacement.pointer.catalogDigest,
     });
     expect(current.body.pointer).toStrictEqual(replaced.body.pointer);

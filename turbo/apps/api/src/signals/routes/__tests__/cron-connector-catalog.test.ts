@@ -1476,9 +1476,9 @@ function staffDiagnosticsFromSync(body: SyncResponseBody) {
   };
 }
 
-// The serving pointer identifies its generation by hash in both fields.
+// The serving pointer identifies its generation by hash.
 function servingRelease(release: ReleaseFixture) {
-  return { catalogVersion: release.digest, catalogDigest: release.digest };
+  return { catalogDigest: release.digest };
 }
 
 async function readStatus() {

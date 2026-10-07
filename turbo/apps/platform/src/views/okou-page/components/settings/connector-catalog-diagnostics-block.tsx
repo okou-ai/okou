@@ -145,7 +145,7 @@ function CatalogDiagnosticsSummary({
 }: {
   readonly diagnostics: ConnectorCatalogDiagnostics;
 }) {
-  const activeVersion = diagnostics.active?.catalogVersion ?? emptyValue();
+  const activeDigest = diagnostics.active?.catalogDigest ?? emptyValue();
   const entryCount = formatEntryCount(diagnostics.pointer);
   const evaluation = formatEnumValue(
     diagnostics.filtering.stale ? "stale" : "current",
@@ -176,9 +176,9 @@ function CatalogDiagnosticsSummary({
           <Badge className="max-w-full break-all">
             {i18n.t(($) => {
               return $.connectors.providerSettings.catalogDiagnostics.fields
-                .activeVersion;
+                .activeCatalogDigest;
             })}
-            : {activeVersion}
+            : {activeDigest}
           </Badge>
           <Badge className="max-w-full break-all">
             {i18n.t(($) => {
@@ -225,14 +225,6 @@ function CatalogPointerDiagnostics({
               .entries;
           })}
           value={formatEntryCount(pointer)}
-        />
-        <DiagnosticField
-          label={i18n.t(($) => {
-            return $.connectors.providerSettings.catalogDiagnostics.fields
-              .activeVersion;
-          })}
-          value={active?.catalogVersion ?? emptyValue()}
-          code={active !== null}
         />
       </div>
 

@@ -3577,7 +3577,6 @@
       "catalogDiagnostics": {
         "fields": {
           "activeCatalogDigest": "활성 카탈로그 요약",
-          "activeVersion": "활성 버전",
           "entries": "항목",
           "evaluated": "평가됨",
           "evaluation": "평가",

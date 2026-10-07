@@ -93,10 +93,8 @@ surface; the index does not replace their detailed rules.
 - [Storage version publication](./storage-version-publication.md): R2-first
   version registration, DB-only reuse, and durable reference-first Clerk cleanup.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
-  validation reasons, cached rejection records, retained snapshots and recovered
-  publication-order evidence.
-- [Connector catalog v4 consumption](./connector-catalog-v4.md): v4 sync, the
-  v4-only accepted-snapshot reader, capability filtering and rollback boundaries.
+  validation reasons, rejection log records, retained serving generations and
+  recovered publication-order evidence.
 - [Slug-first projection-reader retirement](./connector-catalog-projection-reader-retirement.md):
   eight-site reader closure, transaction ownership, physical retirement and test mapping.
 - [Dependency override audit](./dependency-overrides.md): retained dependency

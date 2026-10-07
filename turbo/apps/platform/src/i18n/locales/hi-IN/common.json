@@ -3596,7 +3596,6 @@
       "catalogDiagnostics": {
         "fields": {
           "activeCatalogDigest": "सक्रिय कैटलॉग डाइजेस्ट",
-          "activeVersion": "सक्रिय संस्करण",
           "entries": "प्रविष्टियाँ",
           "evaluated": "का मूल्यांकन",
           "evaluation": "मूल्यांकन",

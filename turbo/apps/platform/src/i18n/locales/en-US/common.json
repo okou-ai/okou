@@ -3588,7 +3588,6 @@
       "catalogDiagnostics": {
         "fields": {
           "activeCatalogDigest": "Active catalog digest",
-          "activeVersion": "Active version",
           "entries": "Entries",
           "evaluated": "Evaluated",
           "evaluation": "Evaluation",

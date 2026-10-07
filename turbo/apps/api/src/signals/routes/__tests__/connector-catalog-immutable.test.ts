@@ -564,7 +564,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       outcome: "accepted",
-      active: { catalogVersion: first.hash, catalogDigest: first.hash },
+      active: { catalogDigest: first.hash },
     });
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,
@@ -599,7 +599,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(changed.status).toBe(200);
     expect(changed.body).toMatchObject({
       outcome: "accepted",
-      active: { catalogVersion: next.hash, catalogDigest: next.hash },
+      active: { catalogDigest: next.hash },
     });
     expect(
       (
@@ -659,7 +659,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     );
     expect((await sync()).body).toMatchObject({
       outcome: "accepted",
-      active: { catalogVersion: failed.hash, catalogDigest: failed.hash },
+      active: { catalogDigest: failed.hash },
     });
     await directory(failed);
     expect((await mcpDirectory(mcpActor)).body).toMatchObject({
@@ -822,7 +822,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     `);
     expect((await sync()).body).toMatchObject({
       outcome: "accepted",
-      active: { catalogVersion: candidate.hash, catalogDigest: candidate.hash },
+      active: { catalogDigest: candidate.hash },
       pointer: { hash: candidate.hash, entryCount: artifact.connectors.length },
     });
     const completed = await readCandidateEntries();
@@ -1614,7 +1614,7 @@ describe("staff connector catalog diagnostics from current entries", () => {
     expect(current).toMatchObject({
       schemaVersion: 4,
       state: "current",
-      active: { catalogVersion: candidate.hash, catalogDigest: candidate.hash },
+      active: { catalogDigest: candidate.hash },
       pointer: {
         schemaVersion: 4,
         hash: candidate.hash,
@@ -1689,7 +1689,7 @@ describe("staff connector catalog diagnostics from current entries", () => {
     const current = await diagnostics();
     expect(current).toMatchObject({
       state: "current",
-      active: { catalogVersion: candidate.hash, catalogDigest: candidate.hash },
+      active: { catalogDigest: candidate.hash },
       pointer: {
         hash: candidate.hash,
         entryCount: candidate.artifact.connectors.length,
@@ -1705,7 +1705,7 @@ describe("staff connector catalog diagnostics from current entries", () => {
     await engine.query("UPDATE connector_catalog SET hash = $1", [emptyHash]);
     await expect(diagnostics()).resolves.toMatchObject({
       state: "current",
-      active: { catalogVersion: emptyHash, catalogDigest: emptyHash },
+      active: { catalogDigest: emptyHash },
       pointer: { schemaVersion: 4, hash: emptyHash, entryCount: 0 },
       filtering: {
         capabilityDigest: connectorCatalogExecutableCapabilityDigest(),

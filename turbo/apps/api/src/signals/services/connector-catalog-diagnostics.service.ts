@@ -118,8 +118,7 @@ async function currentCatalogDiagnostics(
   const entries = await readCompatibilityInputs(db, pointer.hash);
   signal.throwIfAborted();
   const identity = {
-    // Legacy wire field, carrying the hash; there is no publication label.
-    active: { catalogVersion: pointer.hash, catalogDigest: pointer.hash },
+    active: { catalogDigest: pointer.hash },
     pointer: {
       schemaVersion: pointer.schemaVersion,
       hash: pointer.hash,

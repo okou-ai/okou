@@ -68,10 +68,9 @@ export const connectorCatalogDiagnosticsSchema = z.object({
   // response reports `stale` when its own attempt was rejected while an
   // existing pointer keeps serving.
   state: connectorCatalogStateSchema,
-  // Both fields carry the pointer hash; `catalogVersion` is a legacy alias.
+  // The serving pointer hash.
   active: z
     .object({
-      catalogVersion: z.string(),
       catalogDigest: z.string(),
     })
     .nullable(),

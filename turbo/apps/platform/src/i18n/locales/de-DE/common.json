@@ -3596,7 +3596,6 @@
       "catalogDiagnostics": {
         "fields": {
           "activeCatalogDigest": "Aktiver Katalogauszug",
-          "activeVersion": "Aktive Version",
           "entries": "Einträge",
           "evaluated": "Bewertet",
           "evaluation": "Auswertung",

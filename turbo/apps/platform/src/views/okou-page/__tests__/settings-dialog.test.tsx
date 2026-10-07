@@ -634,7 +634,9 @@ test("Inspect connector catalog diagnostics", async () => {
   const { details, summary } = connectorCatalogDisclosure(diagnostics);
   expect(details.open).toBeFalsy();
   expect(summary).toHaveTextContent("Sync state: Current");
-  expect(summary).toHaveTextContent(`Active version: sha256:${"a".repeat(64)}`);
+  expect(summary).toHaveTextContent(
+    `Active catalog digest: sha256:${"a".repeat(64)}`,
+  );
   expect(summary).toHaveTextContent("Entries: 2");
   expect(summary).toHaveTextContent("Evaluation: Current");
 
@@ -663,7 +665,7 @@ test("Flag a connector catalog generation without entries as unavailable", async
     return respond(200, {
       schemaVersion: 4,
       state: "current",
-      active: { catalogVersion: hash, catalogDigest: hash },
+      active: { catalogDigest: hash },
       pointer: { schemaVersion: 4, hash, entryCount: 0 },
       filtering: {
         capabilityDigest: `sha256:${"b".repeat(64)}`,

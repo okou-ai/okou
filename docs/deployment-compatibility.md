@@ -50,6 +50,76 @@ nothing at or above the floor reads them.
 change, the appended events and their sequence, retained selections, the
 remaining OpenRouter key and an idempotent rerun.
 
+## Connector catalog Release 2 follow-up
+
+Release 1 and Release 2 are deployed (production API 1.712.5, `82cab4d`, with
+migration 1334 applied). This follow-up removes the remaining compatibility
+surface and records the final behavior; it has no schema migration.
+
+**Diagnostics `catalogVersion` alias removed.** Staff diagnostics and the cron
+sync response now report `active: { catalogDigest }` only. The
+`active.catalogVersion` hash alias is gone from the contract, the API, the
+Platform debug panel (which shows the digest instead of an "active version")
+and its translations. Ethan confirmed (2026-10-07) that no client reading the
+alias remains. A new App against an older API ignores the extra field; the
+release workflow only checks `active != null`. Other `catalogVersion` fields
+are not this alias and stay:
+
+- The persisted connector permission baseline and Runner execution context
+  `catalogIdentity.catalogVersion` (`storedConnectorPermissionBaselineSchema`,
+  `catalogIdentityFromCapture`). It is a required field of a strict, persisted
+  v1 shape that stored rows and Runner payloads still carry; removing it would
+  need a baseline schema version change and a Runner-side rollout.
+- The Runner builtin firewall catalog `catalogVersion`
+  (`/api/runners/builtin-firewalls` response, `RunnerRuntimeFirewallCatalog`).
+  It is a short digest label the Rust Runner and the mitm addon validate as
+  non-empty and store in their caches; it is a Runner protocol field.
+- The publication label `catalogVersion` of the v4 pointer and artifact, which
+  validation uses to bind the canonical release key, and which the preview
+  seed response, writer logs and dev seed report. It is not stored.
+
+**`invalid-compression` removed.** The failure code had no producer after the
+gzip snapshot codec was deleted in Release 2. It is removed from
+`CONNECTOR_CATALOG_VALIDATION_FAILURE_CODES` and therefore from the cron
+`failureCode` enum. No persisted state carries failure codes any more.
+
+**Required and optional entries.** The current reader contract (after #37893)
+is described under
+[business readers](#connector-catalog-business-readers-on-pointer-and-immutable-entries):
+Run launch omits an agent-enabled connector that is missing from the captured
+generation, Pi stable-context recapture and the Run MCP connector list still
+fail with `missing_required_entries`, and Runner runtime sync reports the
+target `unresolved`. A dedicated test covers recapture: it publishes no
+stable-context demand while the entry is missing and repairs normally once the
+connector is no longer enabled.
+
+**Known, accepted behavior: brief pointer regression between two writers.**
+Two callers run the writer: the hourly cron and the release workflow's
+post-deploy sync. Each reads `connectors/v4/active.json` independently and
+last writer wins. If the publication advances between their reads and the
+writer holding the older publication commits last, the pointer briefly returns
+to the previous complete generation; the next hourly sync republishes the
+newer one. Readers always see a complete generation and Pi invalidation and
+wakeups follow each actual switch. Ethan accepted this (2026-10-07); there is
+no compare-and-swap or monotonic guard.
+
+**Final catalog architecture.** The former staged v4 rollout guide is removed;
+its still-current content is:
+
+- The pointer must name `connectors/v4/releases/<catalogVersion>/catalog.json`;
+  only artifact schema version 4 is accepted.
+- An explicit `mcp` descriptor, never the `-mcp` naming convention, makes a
+  connector MCP. MCP descriptors declare `skill: { kind: "none" }` and register
+  no skill resources. Methods filtered by capability are expected and do not
+  reject an otherwise valid catalog.
+- An accepted change to a connector's runtime-bearing `mcp`, `authMethods` or
+  `firewall` wakes affected builtin HTTP and MCP Runs so the Runner resolves the
+  current endpoint, credentials and firewall policy. Removing a connector from
+  the catalog removes that owner from request matching without selecting
+  another connector's credentials for the same destination, and installs no
+  route tombstone. Builtin MCP execution and Automatic authentication are
+  described under [Builtin MCP execution](#builtin-mcp-execution).
+
 ## Connector catalog Release 2 contraction (migration 1334)
 
 Release 2 removes the legacy connector catalog storage and writer state that
@@ -107,8 +177,8 @@ fallback. The connectors package drops its now-unused gzip snapshot codec.
 `credentialStorage`) plus `outcome` and `failureCode` for the attempt just
 made. `state` is `stale` when that attempt was rejected while a pointer
 serves. `lastAttempt`, `lastSuccessAt`, `rejectedCandidate` and
-`active.activatedAt` are removed, and `active.catalogVersion` carries the hash
-as in staff diagnostics. The release workflow's post-deploy call logs
+`active.activatedAt` are removed. (`active.catalogVersion`, then a hash
+alias, was removed by the [Release 2 follow-up](#connector-catalog-release-2-follow-up).) The release workflow's post-deploy call logs
 `outcome`, `failureCode`, `state` and `pointer.entryCount`; its readiness check
 (`state == "current"`, `active != null`, `filtering.stale == false`) keeps its
 meaning and remains a best-effort warning that never fails the deploy. Staff
@@ -270,18 +340,25 @@ from the captured entries and current code/configuration capability, with the
 existing hash/capability-keyed process cache retained for full-catalog reads.
 Without a manifest, a missing entry and a slug the generation never had are
 indistinguishable, so every per-slug or selected-entry reader declares whether
-its slugs are required. Required slugs are already-authorized business facts
-and fail explicitly with the typed
-`CONNECTOR_CATALOG_UNAVAILABLE:missing_required_entries` error instead of
-shrinking scope: a Run's enabled connectors at capture reject the input with a
-launch `conflict`; Pi stable-context recapture leaves the head missing; the
-Run MCP connector list fails the request; and Runner runtime sync reports a
-missing registered builtin target as `unresolved` (Runner keeps last-known-good
-and retries) rather than authoritative `absent`. Optional reads (search,
-discovery, connect items, connected briefs, single-item status/permission and
-account GETs, stored-connection lists, display filters, and metadata-only
-custom permission-bundle dependencies) still omit the slug or return
-not-found. This contract does not probe all slugs or restore a manifest, and a
+its slugs are required. The current contract (after #37893) is:
+
+- Required readers fail explicitly with the typed
+  `CONNECTOR_CATALOG_UNAVAILABLE:missing_required_entries` error instead of
+  shrinking scope: Pi stable-context recapture leaves the head missing (no new
+  context is published), and the Run MCP connector list fails the request.
+- Run capture at launch omits an agent-enabled connector whose entry is
+  missing at the captured hash and launches without it; the launch is not
+  rejected. The agent keeps its enabled-connector setting, and the connector
+  returns once a later generation contains it again.
+- Runner runtime sync omits the missing entry and reports that registered
+  builtin target as `unresolved` (the Runner keeps last-known-good and
+  retries), never as authoritative `absent`.
+- Optional reads (search, discovery, connect items, connected briefs,
+  single-item status/permission and account GETs, stored-connection lists,
+  account lifecycle refresh, display filters, and metadata-only custom
+  permission-bundle dependencies) omit the slug or return not-found.
+
+This contract does not probe all slugs or restore a manifest, and a
 missing slug in one reader is never a global catalog failure. Old Runners
 already treat `unresolved` as retain-and-retry, so no Runner protocol change
 is required. A missing pointer or an empty
@@ -357,9 +434,9 @@ Response fields:
   without a pointer. `entryCount: 0` is an unavailable generation: the API
   logs a warning and reports `filtering` with `stale: true` and
   `evaluatedAt: null`.
-- `active`: `{ catalogVersion, catalogDigest }`, both carrying the hash.
-  `catalogVersion` is a legacy alias, as in the baseline identity above.
-  `activatedAt` is omitted.
+- `active`: `{ catalogDigest }`, carrying the hash; `activatedAt` is omitted.
+  (The `catalogVersion` hash alias it originally also carried was removed by
+  the [Release 2 follow-up](#connector-catalog-release-2-follow-up).)
 - `state`: `never-synced` without a pointer, `current` otherwise. `stale`
   stays in the enum for older API responses but is no longer emitted.
 - `filtering`: evaluated per request. `evaluatedAt` is the request time.
@@ -7689,8 +7766,9 @@ require an accepted v4 snapshot. Later candidate failures retain v4, and a
 corrupt accepted v4 snapshot fails. Diagnostics describe the same v4 generation
 used by the current reader.
 
-[The v4 rollout guide](connector-catalog-v4.md) documents bootstrap, capability
-and rollback requirements. Production diagnostics reported active catalog
+The current catalog storage and writer are described under the
+[Release 2 contraction](#connector-catalog-release-2-contraction-migration-1334).
+Production diagnostics reported active catalog
 `2026-09-19.4560` on 2026-09-20 Asia/Shanghai, opening the v4-only reader gate
 under [#34913](https://github.com/vm0-ai/okou/issues/34913). Historical v3
 objects and rows remain available to older rollback binaries through their own

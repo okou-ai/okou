@@ -3656,7 +3656,6 @@
       "catalogDiagnostics": {
         "fields": {
           "activeCatalogDigest": "Resumen activo del catálogo",
-          "activeVersion": "Versión activa",
           "entries": "Entradas",
           "evaluated": "Evaluado",
           "evaluation": "Evaluación",

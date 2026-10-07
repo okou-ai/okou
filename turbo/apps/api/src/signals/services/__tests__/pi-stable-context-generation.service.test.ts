@@ -37,6 +37,7 @@ import {
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
+import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
 import { workflows } from "@okouai/db/schema/workflow";
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -1128,6 +1129,98 @@ describe("Pi stable context generation fences", () => {
           ),
         ),
     ).resolves.toStrictEqual([{ storageId, storageVersionId: v2 }]);
+  });
+
+  it("leaves the head missing while an enabled connector has no catalog entry", async () => {
+    const fixture = await seed();
+    await db
+      .delete(piStableContextHeads)
+      .where(eq(piStableContextHeads.id, fixture.headId));
+    // The current catalog generation has no entry for this enabled slug.
+    // Recapture treats enabled connectors as required, so it publishes no
+    // demand instead of a context with a silently reduced connector scope.
+    const missingSlug = `retired-${randomUUID().slice(0, 8)}`;
+    await db.insert(userBuiltinConnectors).values({
+      orgId: fixture.orgId,
+      userId: fixture.userId,
+      agentId: fixture.agentId,
+      connectorSlug: missingSlug,
+    });
+    const variantDigest = "d".repeat(64);
+    const args = {
+      db,
+      owner: fixture.input.owner,
+      variantDigest,
+      buildPrompt: () => {
+        return {
+          agentIdentity: "captured identity",
+          executionLimit: "captured limit",
+          tools: "captured tools",
+        };
+      },
+      semantic: {
+        promptInputs: {
+          privateArtifactsEnabled: false,
+          bankingEnabled: false,
+          vncEnabled: false,
+          larkEnabled: false,
+          discordEnabled: false,
+          deliveryFormatGuidanceEnabled: false,
+          presentationConvertEnabled: false,
+          browserNativeInputEnabled: false,
+          customConnectorMcpEnabled: false,
+          triggerSource: "web" as const,
+          cloudBrowserEnabled: undefined,
+        },
+        connectorScope: {
+          allowedConnectorSlugs: [missingSlug],
+          allowedCustomConnectorIds: [],
+          customConnectorGrants: [],
+          customConnectorDefinitions: [],
+          workflows: [],
+        },
+      },
+      source: {
+        catalogIdentity: null,
+        catalogSourceId: null,
+        agentIdentityDigest: "captured-agent",
+        featurePromptDigest: "captured-feature",
+        permissionDigest: "captured-permission",
+        connectorScopeDigest: "captured-missing-connector",
+        validityHorizon: null,
+        promptSchemaVersion: 1,
+        runtimeSchemaVersion: 1,
+      },
+      mounts: [],
+      persistedStorageMounts: [],
+      eligible: true,
+      checkedAt: new Date("2026-10-07T00:00:00.000Z"),
+    } as const;
+    const variantHeads = async () => {
+      return await db
+        .select({ status: piStableContextHeads.status })
+        .from(piStableContextHeads)
+        .where(eq(piStableContextHeads.variantDigest, variantDigest));
+    };
+
+    await expect(
+      createStore().get(
+        preparePiStableContext(args, AbortSignal.timeout(5000)),
+      ),
+    ).resolves.toMatchObject({ kind: "missing" });
+    await expect(variantHeads()).resolves.toStrictEqual([]);
+
+    // Removing the connector from the agent lets the same demand register,
+    // and the next-use canonical repair publishes it.
+    await db
+      .delete(userBuiltinConnectors)
+      .where(eq(userBuiltinConnectors.agentId, fixture.agentId));
+    await expect(
+      createStore().get(
+        preparePiStableContext(args, AbortSignal.timeout(5000)),
+      ),
+    ).resolves.toMatchObject({ kind: "missing" });
+    await expect(variantHeads()).resolves.toStrictEqual([{ status: "ready" }]);
   });
 
   it("keeps V2 demand when a delayed request captured latest instructions V1", async () => {

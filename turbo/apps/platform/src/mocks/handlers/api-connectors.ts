@@ -542,10 +542,7 @@ export const apiConnectorsHandlers = [
     return respond(200, {
       schemaVersion: 4,
       state: "current",
-      active: {
-        catalogVersion: `sha256:${"a".repeat(64)}`,
-        catalogDigest: `sha256:${"a".repeat(64)}`,
-      },
+      active: { catalogDigest: `sha256:${"a".repeat(64)}` },
       pointer: {
         schemaVersion: 4,
         hash: `sha256:${"a".repeat(64)}`,
