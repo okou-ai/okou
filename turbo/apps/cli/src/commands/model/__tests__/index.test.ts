@@ -24,6 +24,22 @@ const available: AvailableRunModelsResponse = {
       credentialScope: "member",
       modelProviderId: "00000000-0000-4000-8000-000000000102",
       routeStatus: "valid",
+      subscriptionOptions: {
+        efforts: ["medium", "high"],
+        serviceTier: "priority",
+      },
+    },
+    {
+      model: "gpt-6-sol-mini",
+      modelLabel: "GPT 6 Sol Mini",
+      defaultProviderType: "codex-oauth-token",
+      credentialScope: "member",
+      modelProviderId: "00000000-0000-4000-8000-000000000102",
+      routeStatus: "valid",
+      subscriptionOptions: {
+        efforts: ["medium", "high"],
+        serviceTier: "priority",
+      },
     },
     {
       model: "claude-sonnet-5",
@@ -63,30 +79,119 @@ describe("okou model command", () => {
     expect(output).toContain("okou model select <model>");
   });
 
+  function serveSelection(stored: {
+    readonly selectedModel: string | null;
+    readonly serviceTier: "priority" | "ultrafast" | null;
+  }): { saved?: unknown } {
+    const captured: { saved?: unknown } = {};
+    server.use(
+      http.get("http://localhost:3000/api/user-model-preference", () => {
+        return HttpResponse.json({
+          ...stored,
+          modelSettings: {},
+          selectedImageModel: null,
+          updatedAt: "2026-10-01T00:00:00Z",
+        });
+      }),
+      http.put(
+        "http://localhost:3000/api/user-model-preference",
+        async ({ request }) => {
+          const body = (await request.json()) as {
+            selectedModel: string;
+            serviceTier: string | null;
+          };
+          captured.saved = body;
+          return HttpResponse.json({
+            ...body,
+            modelSettings: {},
+            selectedImageModel: null,
+            updatedAt: "2026-10-02T00:00:00Z",
+          });
+        },
+      ),
+    );
+    return captured;
+  }
+
+  async function select(...args: string[]): Promise<string> {
+    // Commander keeps parsed option values on the command between runs.
+    for (const command of modelCommand.commands) {
+      command.setOptionValue("priority", undefined);
+    }
+    await modelCommand.parseAsync(["node", "cli", "select", ...args]);
+    return log.mock.calls.flat().join("\n");
+  }
+
   it.each(["okou-1.0", "gpt-6-sol"])(
     "selects %s as the default for new chats",
     async (model) => {
-      let saved: unknown;
-      server.use(
-        http.put(
-          "http://localhost:3000/api/user-model-preference",
-          async ({ request }) => {
-            saved = await request.json();
-            return HttpResponse.json({
-              selectedModel: model,
-              serviceTier: null,
-              modelSettings: {},
-              selectedImageModel: null,
-              updatedAt: "2026-10-01T00:00:00Z",
-            });
-          },
-        ),
-      );
-      await modelCommand.parseAsync(["node", "cli", "select", model]);
-      expect(saved).toEqual({ selectedModel: model, serviceTier: null });
-      expect(log.mock.calls.flat().join("\n")).toContain(
-        `Default model selected: ${model}`,
-      );
+      const request = serveSelection({
+        selectedModel: null,
+        serviceTier: null,
+      });
+      const output = await select(model);
+      expect(request.saved).toEqual({
+        selectedModel: model,
+        serviceTier: null,
+      });
+      expect(output).toContain(`Default model selected: ${model}`);
     },
   );
+
+  it("keeps the saved Fast preference when reselecting the same model", async () => {
+    const request = serveSelection({
+      selectedModel: "gpt-6-sol",
+      serviceTier: "priority",
+    });
+    const output = await select("gpt-6-sol");
+    expect(request.saved).toEqual({
+      selectedModel: "gpt-6-sol",
+      serviceTier: "priority",
+    });
+    expect(output).toContain("Service tier: priority");
+  });
+
+  it("keeps the saved Fast preference on another subscription model that offers it", async () => {
+    const request = serveSelection({
+      selectedModel: "gpt-6-sol",
+      serviceTier: "priority",
+    });
+    await select("gpt-6-sol-mini");
+    expect(request.saved).toEqual({
+      selectedModel: "gpt-6-sol-mini",
+      serviceTier: "priority",
+    });
+  });
+
+  it("drops the saved Fast preference for a model that does not offer it", async () => {
+    const request = serveSelection({
+      selectedModel: "gpt-6-sol",
+      serviceTier: "priority",
+    });
+    const output = await select("claude-sonnet-5");
+    expect(request.saved).toEqual({
+      selectedModel: "claude-sonnet-5",
+      serviceTier: null,
+    });
+    expect(output).not.toContain("Service tier");
+  });
+
+  it("writes the tier requested by --priority and --no-priority", async () => {
+    const enabled = serveSelection({ selectedModel: null, serviceTier: null });
+    await select("gpt-6-sol", "--priority");
+    expect(enabled.saved).toEqual({
+      selectedModel: "gpt-6-sol",
+      serviceTier: "priority",
+    });
+
+    const disabled = serveSelection({
+      selectedModel: "gpt-6-sol",
+      serviceTier: "priority",
+    });
+    await select("gpt-6-sol", "--no-priority");
+    expect(disabled.saved).toEqual({
+      selectedModel: "gpt-6-sol",
+      serviceTier: null,
+    });
+  });
 });

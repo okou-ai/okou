@@ -1,3 +1,4 @@
+import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type { AvailableRunModelsResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
@@ -20,14 +21,33 @@ export async function listRunModels(): Promise<AvailableRunModelsResponse> {
   handleError(result, "Failed to list available models");
 }
 
-export async function selectRunModel(model: string) {
+export async function getUserModelPreference() {
+  const client = initClient(
+    userModelPreferenceContract,
+    await getClientConfig(),
+  );
+  const result = await client.get({ headers: {} });
+  if (result.status === 200) {
+    return result.body;
+  }
+  handleError(result, "Failed to load default model");
+}
+
+/**
+ * The API requires `serviceTier` on every write and treats null as "clear",
+ * so callers pass the tier to store explicitly.
+ */
+export async function selectRunModel(
+  model: string,
+  serviceTier: ChatThreadServiceTier | null,
+) {
   const client = initClient(
     userModelPreferenceContract,
     await getClientConfig(),
   );
   const result = await client.update({
     headers: {},
-    body: { selectedModel: model, serviceTier: null },
+    body: { selectedModel: model, serviceTier },
   });
   if (result.status === 200) {
     return result.body;
