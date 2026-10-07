@@ -1228,6 +1228,7 @@ describe("hosted Artifact previews", () => {
       rateLimitedSnapshot("1"),
       {},
     ]);
+    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
     const site = `rate-limit-retry-${randomUUID().slice(0, 8)}`;
 
     await createHostedArtifact({
@@ -1240,6 +1241,11 @@ describe("hosted Artifact previews", () => {
     await flushWaitUntilForTest();
 
     expect(snapshotRequests).toHaveLength(2);
+    // The stated wait is requested rather than slept on in the test.
+    expect(context.mocks.signalTimers.delay).toHaveBeenCalledExactlyOnceWith(
+      1000,
+      expect.anything(),
+    );
     // An admission rejection happens before any render, so the retry repeats
     // the primary profile rather than falling back to the navigation one.
     expect(snapshotRequests[1]?.body).toMatchObject({
@@ -1259,6 +1265,7 @@ describe("hosted Artifact previews", () => {
       rateLimitedSnapshot(),
       {},
     ]);
+    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
     const site = `rate-limit-backoff-${randomUUID().slice(0, 8)}`;
 
     await createHostedArtifact({
@@ -1271,6 +1278,11 @@ describe("hosted Artifact previews", () => {
     await flushWaitUntilForTest();
 
     expect(snapshotRequests).toHaveLength(2);
+    // Without a stated wait the first backoff is 2s plus up to 500ms jitter.
+    expect(context.mocks.signalTimers.delay).toHaveBeenCalledOnce();
+    const [backoffMs] = context.mocks.signalTimers.delay.mock.calls[0] ?? [];
+    expect(backoffMs).toBeGreaterThanOrEqual(2000);
+    expect(backoffMs).toBeLessThanOrEqual(2500);
     const previewedArtifact = await findCatalogArtifact(owner.actor, site);
     expect(previewedArtifact?.thumbnail?.url).toMatch(
       /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.webp$/u,
@@ -1286,6 +1298,7 @@ describe("hosted Artifact previews", () => {
       rateLimitedSnapshot("1"),
       rateLimitedSnapshot("1"),
     ]);
+    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
     const site = `rate-limit-budget-${randomUUID().slice(0, 8)}`;
 
     const artifact = await createHostedArtifact({
@@ -1298,6 +1311,11 @@ describe("hosted Artifact previews", () => {
     await flushWaitUntilForTest();
 
     expect(snapshotRequests).toHaveLength(3);
+    expect(
+      context.mocks.signalTimers.delay.mock.calls.map(([ms]) => {
+        return ms;
+      }),
+    ).toStrictEqual([1000, 1000]);
     const unpreviewedArtifact = await findCatalogArtifact(owner.actor, site);
     expect(unpreviewedArtifact?.thumbnail).toBeNull();
     expect(
@@ -1327,6 +1345,7 @@ describe("hosted Artifact previews", () => {
       rateLimitedSnapshot("1"),
       rateLimitedSnapshot("1"),
     ]);
+    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
     const site = `retry-sharing-${randomUUID().slice(0, 8)}`;
 
     await createHostedArtifact({
@@ -1339,6 +1358,12 @@ describe("hosted Artifact previews", () => {
     await flushWaitUntilForTest();
 
     expect(snapshotRequests).toHaveLength(3);
+    // The last shared request stops instead of waiting for a fourth one.
+    expect(
+      context.mocks.signalTimers.delay.mock.calls.map(([ms]) => {
+        return ms;
+      }),
+    ).toStrictEqual([1000]);
     // The rate-limit retry repeats whichever profile the render had reached,
     // so it must not reset the navigation fallback back to the primary one.
     expect(snapshotRequests[2]?.body).toMatchObject({
