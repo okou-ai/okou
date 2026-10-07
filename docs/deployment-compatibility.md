@@ -91,8 +91,8 @@ No production migration, deployment or storage write is executed by this PR.
 
 ## Connector catalog business readers on pointer and immutable entries
 
-This is the first, reader-focused PR of Release 1, not the completed Release 1
-or its destructive Release 2. Business/runtime reads (Run capture, Pi
+Release 1 moves catalog consumers off legacy storage. It is not the
+destructive Release 2. Business/runtime reads (Run capture, Pi
 recapture, public lists/search/discovery/connect surfaces, account refresh,
 Runner firewall catalog, DCR current-identity checks, and permission-baseline
 refresh) use `connector_catalog(schema_version, hash)` and
@@ -125,11 +125,17 @@ fallback. The pointer read selects only `schema_version` and `hash`; no
 business reader reads `connector_catalog.catalog_header`, which writers still
 populate until Release 2. Public list, discovery and status responses no longer
 return `categoryMetadata`; connectors carry only their `category` id, and
-discovery keeps `categoryConnectorCounts`. App clients own category names
-(#37855). Rollout order: this API change deploys only after the App change in
-#37855 is deployed. App bundles loaded before #37855 then receive no category
-metadata and fall back to id-derived category names, without grouping or
-Connectors-page category chips, until they reload. The
+discovery keeps `categoryConnectorCounts`. The App ships in the same change:
+it derives categories only from connector `category` ids (existing localized
+copy for known ids, id-derived names otherwise, ordered by name, ungrouped) and
+no longer reads `categoryMetadata`. App and API deploy independently, in either
+order. A new App with an old API ignores the field it still returns. An App
+bundle loaded before this change, talking to a new API, receives no category
+metadata: it shows id-derived names, loses category grouping and the
+Connectors-page category filter, and the chat directory uses id-derived
+names, until the page reloads. Browsing, search, connect and runs are unaffected. That
+degradation is accepted; the API does not keep a `catalog_header` read for old
+bundles. The
 Runner firewall projection's own digest uses canonical JSON object-key order,
 so loading the same content from JSONB cannot change its identity. The opaque
 digest/version can change once relative to the old noncanonical projection;
@@ -140,13 +146,14 @@ There is no schema migration or stored-data rewrite. The writer still validates
 and completely prepares entries before publishing the pointer, and atomically
 maintains the legacy snapshot, compatibility rows and pointer metadata. The
 legacy synchronization CAS/rejection state and compatibility reconciler are
-unchanged. Staff diagnostics migrated in a follow-up Release 1 PR (below).
+unchanged. Staff diagnostics move off the legacy stores in the same change
+(below).
 
 New API/existing DB requires the pointer and entries to have been materialized
 by the existing synchronizer; a legacy gzip row alone is not readiness. Old
 API/new DB remains supported because no table or field is removed and all
 compatibility writes remain. No production activation, backfill, release or
-migration is executed by this source PR.
+migration is executed by this change.
 
 The persisted permission baseline and stored Pi execution-context schemas are
 unchanged. New baseline identity retains the v1 wire fields: `catalogDigest`
@@ -223,8 +230,8 @@ on the writes they guard:
 - `connector-catalog-compatibility.service.ts` `reconcileCompatibility` takes
   locking reads (`lockSyncState`, `activeSnapshotForUpdate` and the existing
   evaluation's validation authority) before it rewrites compatibility rows.
-- `preview-onboarding-catalog.service.ts` only writes and deletes the preview
-  source's legacy rows.
+- `preview-connector-catalog.service.ts` only writes and deletes the preview
+  source's legacy rows, in the same transaction as the pointer; it reads none.
 
 There are no schema, data or writer behavior changes.
 
@@ -315,8 +322,9 @@ the per-entry full synchronizer took 3.5 to 8.4 minutes (median about 6) within
 `deploy-api`'s 25-minute job, from a GitHub runner to the Neon test project.
 With batched writes, that publication initializes cold in about 8 seconds
 against local PostgreSQL, including a simulated 20 ms round trip; the repeated
-post-deploy call takes about 3 seconds. Actual Neon preview latency is measured
-by CI deploys.
+post-deploy call takes about 3 seconds. A CI preview deploy against Neon
+installed all 4,597 entries in about 11 seconds (dev-seed about 15 seconds,
+post-deploy call about 7 seconds).
 
 The workflow is unchanged, and the endpoint's response shape is unchanged; its
 slug list is now the complete manifest. Rolling back to the projection API
