@@ -1041,6 +1041,60 @@ test("Preserve provider errors that have no guided recovery", async () => {
   ).not.toBeInTheDocument();
 });
 
+// Run errors persisted before the copy moved to Settings > Models are immutable
+// chat events, so their earlier text must still render as the current copy.
+test.each([
+  [
+    "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.",
+    "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Settings > Models, then retry.",
+  ],
+  [
+    "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.",
+    "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.",
+  ],
+  [
+    "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Model Providers, accept the updated terms and policy, then retry.",
+    "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Settings > Models, accept the updated terms and policy, then retry.",
+  ],
+])(
+  "Render a persisted pre-rename credential error as current copy: %s",
+  async (persistedError, currentCopy) => {
+    configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
+    installRunChat({
+      selectedModel: "gpt-5.6-sol",
+      chatEvents: failedRunEvents(persistedError, "gpt-5.6-sol"),
+    });
+
+    await setupPage({ context, path: RUN_PATH });
+    await readyChat();
+
+    await expect(screen.findByText(currentCopy)).resolves.toBeInTheDocument();
+    expect(screen.queryByText(persistedError)).not.toBeInTheDocument();
+  },
+);
+
+test("Render a persisted Open Model Providers action as the current label", async () => {
+  const actionUrl = "https://app.okou.ai/settings/models";
+  configureConnectedRunModels(["gpt-5.6-sol", "gpt-5.6-luna"]);
+  installRunChat({
+    selectedModel: "gpt-5.6-sol",
+    chatEvents: failedRunEvents(
+      `ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.\n\nOpen Model Providers: ${actionUrl}`,
+      "gpt-5.6-sol",
+    ),
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+  await readyChat();
+
+  const card = await screen.findByTestId("assistant-error-card-shell");
+  await waitFor(() => {
+    expect(card).toHaveTextContent(`Open model settings: ${actionUrl}`);
+  });
+  expect(card).not.toHaveTextContent("Open Model Providers");
+  expect(card).not.toHaveTextContent("in Model Providers");
+});
+
 const UNSUPPORTED_MODEL_ERROR = JSON.stringify({
   type: "error",
   status: 400,
