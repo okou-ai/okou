@@ -211,7 +211,7 @@ The table records actual service rows, not JavaScript-calculated costs. Health c
 | 7   | unavailable first estimate cannot become available on replay          | none                          | 2026-09-15: 2                 | PASS       |
 | 8   | replay without original is a coverage gap                             | none                          | 2026-09-15: 1                 | PASS       |
 | 9   | legacy replay is unpriced history                                     | none                          | 2026-09-15: 1                 | PASS       |
-| 10  | BYOK exclusion                                                        | none                          | none                          | PASS       |
+| 10  | Subscription exclusion                                                | none                          | none                          | PASS       |
 | 11  | nonproduction exclusion                                               | none                          | none                          | PASS       |
 | 12  | future accounting day excluded                                        | none                          | none                          | PASS       |
 | 13  | expired accounting day excluded                                       | none                          | none                          | PASS       |

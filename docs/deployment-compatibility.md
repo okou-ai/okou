@@ -924,6 +924,11 @@ code check: migration 1298 seeds the `gpt-6-astra` `openai-api-key` route with
 preference, thread selection, send, run creation and claim) finds no route
 offering it and returns `400`. Re-enabling is a `model_routes` data change.
 
+> **Superseded.** Migration `1326_prune_retired_model_routes` deleted the
+> `gpt-6-astra` `openai-api-key` route along with every other non-subscription,
+> non-Auto route. The remaining `gpt-6-astra` `codex-oauth-token` route still
+> lists only `priority`, so Ultrafast stays unavailable.
+
 ## Global model catalog and projected system default (2026-09-30)
 
 > **Historical record, superseded.** This and other dated global-catalog

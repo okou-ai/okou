@@ -241,7 +241,8 @@ flush that would deadlock the suspended reader.
 ## Model credentials and pricing authority (E group)
 
 Global key/pricing nodes survive any identity reconciliation. Organization model
-facts survive an org match; member providers/accounts survive an org+user match.
+facts (the catalog with its OpenRouter preset override) survive an org match;
+member subscription providers/accounts survive an org+user match.
 All are included in immediate pre-authorization preload. Required route facts are
 consumed in S1; unrelated global groups are not awaited before enqueue. A missing
 key, source or pricing category is authoritative; a rejected read is not retried.

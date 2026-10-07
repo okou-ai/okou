@@ -97,7 +97,6 @@ final class ChatServiceTests: XCTestCase {
     struct CreatedRequest: Decodable, Sendable {
       let model: String
     }
-    let routeStatus = Mutex("valid")
     let createdModels = Mutex<[String]>([])
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
@@ -112,10 +111,9 @@ final class ChatServiceTests: XCTestCase {
             "{\"selectedModel\":null,\"serviceTier\":null,\"modelSettings\":{},\"selectedImageModel\":null,\"updatedAt\":null}"
         )
       case "/api/run-models":
-        let status = routeStatus.withLock { $0 }
         return ChatHTTPResponse(
           body:
-            "{\"defaultModel\":\"okou-1.0\",\"models\":[{\"model\":\"okou-1.0\",\"routeStatus\":\"valid\"},{\"model\":\"claude-sonnet-5\",\"routeStatus\":\"\(status)\"}]}"
+            "{\"defaultModel\":\"okou-1.0\",\"models\":[{\"model\":\"okou-1.0\",\"routeStatus\":\"valid\"},{\"model\":\"claude-sonnet-5\",\"routeStatus\":\"valid\"}]}"
         )
       case "/api/model-catalog":
         return modelCatalogResponse(systemDefaultModel: "claude-sonnet-5")
@@ -133,11 +131,6 @@ final class ChatServiceTests: XCTestCase {
     let created = try await ChatService(client: fixture.client).createThread()
     XCTAssertEqual(created.selectedModel, "okou-1.0")
     XCTAssertEqual(createdModels.withLock { $0 }, ["okou-1.0"])
-
-    routeStatus.withLock { $0 = "missing_provider" }
-    let needsProvider = try await ChatService(client: fixture.client).createThread()
-    XCTAssertEqual(needsProvider.selectedModel, "okou-1.0")
-    XCTAssertEqual(createdModels.withLock { $0 }, ["okou-1.0", "okou-1.0"])
   }
 
   func testCreateResolvesRetiredSavedModelThroughCatalog() async throws {
@@ -208,8 +201,7 @@ final class ChatServiceTests: XCTestCase {
         case "/api/run-models":
           return ChatHTTPResponse(
             body: """
-              {"defaultModel":"okou-1.0","models":[{"model":"okou-1.0","routeStatus":"valid"},\
-              {"model":"gpt-5.6-sol","routeStatus":"missing_provider"}]}
+              {"defaultModel":"okou-1.0","models":[{"model":"okou-1.0","routeStatus":"valid"}]}
               """)
         case "/api/model-catalog": return modelCatalogResponse(systemDefaultModel: "okou-1.0")
         case "/api/chat-threads":

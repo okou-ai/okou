@@ -25,8 +25,7 @@ final class ModelSelectionTests: XCTestCase {
       #"{"model":"active","providerType":"codex-oauth-token","enabled":true,"serviceTiers":["priority"]}"#
     ])
     let resolved = try XCTUnwrap(catalog.resolve("retired"))
-    let option = try decodeModel(
-      availability: "reconnect_required", model: resolved, routeStatus: "missing_provider")
+    let option = try decodeModel(availability: "reconnect_required", model: resolved)
     XCTAssertTrue(option.supportsServiceTier("priority", catalog: catalog))
     XCTAssertFalse(option.supportsServiceTier("ultrafast", catalog: catalog))
     XCTAssertFalse(option.supportsServiceTier("unsupported", catalog: catalog))
@@ -45,9 +44,7 @@ final class ModelSelectionTests: XCTestCase {
 
   func testAutoHasNoSubscriptionServiceTier() throws {
     let catalog = try decodeCatalog(routes: [])
-    let auto = try decodeModel(
-      availability: nil, providerType: "built-in", credentialScope: "org",
-      model: "okou-1.0")
+    let auto = try decodeModel(availability: nil, providerType: "built-in", model: "okou-1.0")
     XCTAssertTrue(auto.hasUsableRoute())
     XCTAssertFalse(auto.supportsServiceTier("priority", catalog: catalog))
   }
@@ -63,19 +60,18 @@ final class ModelSelectionTests: XCTestCase {
 
   private func decodeModel(
     availability: String?, providerType: String = "codex-oauth-token",
-    credentialScope: String = "member", model: String = "retired", routeStatus: String = "valid",
-    subscriptionTier: String? = nil
+    model: String = "retired", subscriptionTier: String? = nil
   ) throws -> AvailableRunModels.Model {
     let memberRoute =
       availability.map {
-        #", "memberEffective":{"providerType":"\#(providerType)","credentialScope":"\#(credentialScope)","availability":"\#($0)"}"#
+        #", "memberEffective":{"providerType":"\#(providerType)","availability":"\#($0)"}"#
       } ?? ""
     let subscription =
       subscriptionTier.map {
         #", "subscriptionOptions":{"serviceTier":\#($0)}"#
       } ?? ""
     let json =
-      #"{"model":"\#(model)","routeStatus":"\#(routeStatus)","defaultProviderType":"\#(providerType)"\#(memberRoute)\#(subscription)}"#
+      #"{"model":"\#(model)","routeStatus":"valid","defaultProviderType":"\#(providerType)"\#(memberRoute)\#(subscription)}"#
     return try APIClient.decoder().decode(AvailableRunModels.Model.self, from: Data(json.utf8))
   }
 }

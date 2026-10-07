@@ -88,8 +88,8 @@ async function main(): Promise<void> {
       email: accounts.runner,
       fileName: "e2e-api-credentials-runner.json",
       organizationId: requiredEnvironmentVariable("E2E_RUNNER_ORGANIZATION_ID"),
-      // Free plans run only okou-1.0 on Built-in; the deterministic runner
-      // policy pins DeepSeek and Luna Built-in routes, which need a paid plan.
+      // Free plans admit Built-in runs against the limited free credit
+      // allowance; the runner suites launch many runs across parallel shards.
       upgradeToPro: true,
     },
   ];

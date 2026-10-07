@@ -214,7 +214,8 @@ struct AvailableRunModels: Decodable, Sendable {
   let models: [Model]
   struct Model: Decodable, Sendable {
     let model: String
-    /// Constant "valid" on current APIs; optional so a future API may omit it.
+    /// Always "valid" on current APIs. Without it, only a member subscription
+    /// route (`memberEffective`) makes the model usable.
     let routeStatus: String?
     let defaultProviderType: String?
     let memberEffective: MemberRoute?
@@ -222,7 +223,6 @@ struct AvailableRunModels: Decodable, Sendable {
 
     struct MemberRoute: Decodable, Sendable {
       let providerType: String
-      let credentialScope: String
       let availability: String
     }
 
