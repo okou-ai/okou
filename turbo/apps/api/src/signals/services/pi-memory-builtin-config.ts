@@ -117,7 +117,6 @@ export function preparePiMemoryBuiltinEnvironment(
 ): ResolvedModelProviderEnvironment | null {
   if (
     source.identity.kind !== "built-in" ||
-    source.credentialOwner !== "builtin" ||
     !route ||
     route.modelKeyId !== source.identity.modelKeyId ||
     route.selectedModel !== PI_MEMORY_BUILTIN_BINDING.selectedModel ||
@@ -145,10 +144,7 @@ export function preparePiMemoryBuiltinEnvironment(
     selection: { kind: "built-in", ...route },
     credentials: { OPENROUTER_API_KEY: credential.apiKey },
   });
-  const routing = {
-    credentialOwner: "builtin" as const,
-    model: route.upstreamModel,
-  };
+  const routing = { model: route.upstreamModel };
   return {
     id: null,
     type: "built-in",

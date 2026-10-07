@@ -8,7 +8,7 @@ import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account"
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
 import { command } from "ccstate";
-import { and, eq, gt, inArray, isNull, lte, sql, sum } from "drizzle-orm";
+import { and, eq, gt, isNull, lte, sql, sum } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   nullableDriverValueDecoder,
@@ -139,10 +139,6 @@ function memberAccountsQuery(
       and(
         eq(modelProviderAccounts.orgId, input.orgId),
         eq(modelProviderAccounts.userId, input.userId),
-        inArray(modelProviderAccounts.type, [
-          "claude-code-oauth-token",
-          "codex-oauth-token",
-        ]),
         isNull(modelProviderAccounts.disconnectedAt),
       ),
     )
@@ -171,7 +167,6 @@ function personalSubscriptionFromAccounts(
     member: memberModelRouteContextFromAccounts(accounts),
     model: input.selectedModel,
     providerType: input.modelProviderType,
-    credentialScope: "member",
   });
 }
 
@@ -410,6 +405,7 @@ export async function resolveOrgCreditAvailability(params: {
  * an active catalog model with an enabled route, and a Built-in run needs an
  * enabled Built-in route. Retired or unknown IDs are resolved (or rejected)
  * before admission; this only stops an unresolved ID from reaching a runner.
+ * Every run model, Built-in or personal subscription, is a catalog model.
  */
 export function checkCatalogRunRoute(
   catalog: ModelCatalog,
@@ -424,29 +420,11 @@ export function checkCatalogRunRoute(
   // Normalized through the catalog like the plan check: a catalog model ID,
   // or a route upstream ID that names exactly one catalog model.
   const model = catalogModelForSelectedId(catalog, params.selectedModel);
-  const builtIn = isBuiltInModelProviderType(params.modelProviderType);
-  if (model !== null) {
-    if (!isCatalogModelRunnable(catalog, model)) {
-      return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
-    }
-    return builtIn && !catalogHasProviderRoute(catalog, model, "built-in")
-      ? badRequestMessage(RETIRED_RUN_MODEL_MESSAGE)
-      : undefined;
-  }
-  // Built-in only runs catalog models.
-  if (builtIn) {
+  if (model === null || !isCatalogModelRunnable(catalog, model)) {
     return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
   }
-  // A provider-native ID is an upstream model of catalog routes. It is
-  // retired only when every catalog model it is an upstream of is retired;
-  // an ID the catalog does not know stays the provider's own model.
-  const upstreamOf = catalog.routes.filter((route) => {
-    return route.upstreamModel === params.selectedModel;
-  });
-  return upstreamOf.length > 0 &&
-    !upstreamOf.some((route) => {
-      return route.enabled && isCatalogModelRunnable(catalog, route.model);
-    })
+  return isBuiltInModelProviderType(params.modelProviderType) &&
+    !catalogHasProviderRoute(catalog, model, "built-in")
     ? badRequestMessage(RETIRED_RUN_MODEL_MESSAGE)
     : undefined;
 }

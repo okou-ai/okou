@@ -36,7 +36,7 @@ import {
 } from "./execution-model-runtime";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
 import {
-  catalogProviderUpstreamModel,
+  catalogSubscriptionUpstreamModel,
   type ModelCatalog,
 } from "./model-catalog.service";
 export const deleteUserModelProvider$ = command(
@@ -74,10 +74,7 @@ function modelCredentialsAreUsable(
   credentials: ModelCredentialValues,
 ): boolean {
   if (hasAuthMethods(type)) {
-    const method =
-      source.configuration.kind === "registered-provider"
-        ? source.configuration.authMethod
-        : null;
+    const method = source.configuration.authMethod;
     const rules = method ? getSecretsForAuthMethod(type, method) : undefined;
     return (
       rules !== undefined &&
@@ -93,7 +90,7 @@ function modelCredentialsAreUsable(
 /**
  * Firewall-resolved credentials: each stored secret's runtime reference. A
  * missing secret row yields no reference, so the usability check rejects the
- * source as unavailable (fail-closed, as on main).
+ * source as unavailable (fail-closed).
  */
 function deferredCredentialReferences(
   source: ModelSourceSnapshot,
@@ -108,19 +105,16 @@ function deferredCredentialReferences(
 }
 
 /**
- * A ChatGPT account's credentials stay server-side, as on main: firewall auth
- * resolves its stored token rows by name, so only rows of its own auth method
- * become references. A non-Pi run decrypts just CHATGPT_ACCOUNT_ID, which
+ * A ChatGPT account's credentials stay server-side: firewall auth resolves
+ * its stored token rows by name, so only rows of its own auth method become
+ * references. A non-Pi run decrypts just CHATGPT_ACCOUNT_ID, which
  * workspace routing compares with the account check; it is not a credential.
  */
 async function codexAccountCredentials(
   source: ModelSourceSnapshot,
   piExecution: boolean | undefined,
 ): Promise<ModelCredentialValues | null> {
-  const method =
-    source.configuration.kind === "registered-provider"
-      ? source.configuration.authMethod
-      : null;
+  const method = source.configuration.authMethod;
   const rules = method
     ? getSecretsForAuthMethod("codex-oauth-token", method)
     : undefined;
@@ -160,8 +154,7 @@ async function resolveModelCredentialValues(
     } else {
       if (
         source.identity.kind !== "built-in" ||
-        credential.modelKeyId !== source.identity.modelKeyId ||
-        source.configuration.kind !== "registered-provider"
+        credential.modelKeyId !== source.identity.modelKeyId
       ) {
         throw new Error("Managed key identity mismatch");
       }
@@ -174,8 +167,8 @@ async function resolveModelCredentialValues(
   return values;
 }
 
-/** Exact registered/account source → resolved credentials → runtime. */
-export async function prepareRegisteredModelEnvironment(
+/** Exact subscription account source → resolved credentials → runtime. */
+export async function prepareSubscriptionModelEnvironment(
   source: ModelSourceSnapshot,
   selectedModel: string,
   options: {
@@ -189,7 +182,6 @@ export async function prepareRegisteredModelEnvironment(
   const type = source.configuration.providerType;
   if (
     source.identity.kind !== "member" ||
-    source.credentialOwner !== "member" ||
     !isPersonalSubscriptionProviderType(type)
   ) {
     return null;
@@ -207,10 +199,9 @@ export async function prepareRegisteredModelEnvironment(
   if (!modelCredentialsAreUsable(source, type, credentials)) {
     return null;
   }
-  const upstreamModel = catalogProviderUpstreamModel(
+  const upstreamModel = catalogSubscriptionUpstreamModel(
     catalog,
     selectedModel,
-    type,
     type,
   );
   if (!upstreamModel) {
@@ -218,7 +209,7 @@ export async function prepareRegisteredModelEnvironment(
   }
   const compiled = compileModelRuntime({
     source,
-    selection: { kind: "configured", selectedModel, upstreamModel },
+    selection: { kind: "subscription", selectedModel, upstreamModel },
     credentials,
   });
   const names = Object.keys(compiled.secrets);
@@ -238,13 +229,12 @@ export async function prepareRegisteredModelEnvironment(
   return {
     id: sourceId,
     type,
-    credentialOwner: compiled.credentialOwner,
+    credentialOwner: "member",
     environment,
     secrets: {},
     selectedModel: compiled.selectedModel,
     upstreamModel: compiled.upstreamModel,
-    ...(source.configuration.kind === "registered-provider" &&
-    source.configuration.authMethod
+    ...(source.configuration.authMethod
       ? { authMethod: source.configuration.authMethod }
       : {}),
     secretConnectorMap: Object.fromEntries(
@@ -289,7 +279,7 @@ export async function prepareManagedModelEnvironment(
   if (
     !route ||
     route.selectedModel !== args.selectedModelOverride ||
-    !isBuiltInModelRuntimeRoutePermitted(args.catalog, route) ||
+    !isBuiltInModelRuntimeRoutePermitted(route) ||
     getFrameworkForType(route.providerType) !== args.framework ||
     route.modelKeyId !== source.identity.modelKeyId
   ) {
@@ -311,10 +301,7 @@ export async function prepareManagedModelEnvironment(
     credentials,
   });
   // Preserve private US routing for the managed OpenRouter endpoint.
-  const routing = {
-    credentialOwner: "builtin" as const,
-    model: route.upstreamModel,
-  };
+  const routing = { model: route.upstreamModel };
   const firewall = getModelProviderFirewall(route.providerType, routing);
   const usesUsEndpoint = firewall?.apis.some((api) => {
     return api.base.startsWith(`${OPENROUTER_US_ORIGIN}/`);

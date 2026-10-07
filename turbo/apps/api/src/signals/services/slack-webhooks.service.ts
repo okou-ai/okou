@@ -867,10 +867,7 @@ const slackModelPickerState$ = command(
     signal.throwIfAborted();
     return {
       enabled: true,
-      options: runModels.models.flatMap((runModel) => {
-        if (runModel.routeStatus !== "valid") {
-          return [];
-        }
+      options: runModels.models.map((runModel) => {
         return {
           model: runModel.model,
           label: runModel.modelLabel,
@@ -897,9 +894,7 @@ const isModelCommandAvailable$ = command(
       { orgId: installation.orgId, userId: connection.userId },
       signal,
     );
-    return runModels.models.some((runModel) => {
-      return runModel.routeStatus === "valid";
-    });
+    return runModels.models.length > 0;
   },
 );
 

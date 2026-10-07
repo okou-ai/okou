@@ -15,16 +15,11 @@ const usRouted: readonly (readonly [OpenRouterApi, string])[] = [
 ];
 
 describe("platform OpenRouter regional selection", () => {
-  it.each(usRouted)(
-    "gates product-approved US %s %s by credential ownership",
-    (api, model) => {
-      for (const credentialOwner of ["builtin", "member"] as const) {
-        expect(getOpenRouterBaseUrl(api, { model, credentialOwner })).toBe(
-          `https://${credentialOwner === "builtin" ? "us." : ""}openrouter.ai/api/v1`,
-        );
-      }
-    },
-  );
+  it.each(usRouted)("routes product-approved US %s %s", (api, model) => {
+    expect(getOpenRouterBaseUrl(api, { model })).toBe(
+      "https://us.openrouter.ai/api/v1",
+    );
+  });
 
   it.each([
     ["chat/completions", "openai/gpt-6-luna"],
@@ -35,19 +30,13 @@ describe("platform OpenRouter regional selection", () => {
     ["chat/completions", "google/gemini-3.8-flash"],
     ["responses", "new/unverified-model"],
   ] as const)("keeps non-US-routed %s %s global", (api, model) => {
-    expect(
-      getOpenRouterBaseUrl(api, {
-        model,
-        credentialOwner: "builtin",
-      }),
-    ).toBe("https://openrouter.ai/api/v1");
+    expect(getOpenRouterBaseUrl(api, { model })).toBe(
+      "https://openrouter.ai/api/v1",
+    );
   });
 
   it("binds US Responses auth to the exact selected path without migrating unverified Chat Completions", () => {
-    const routing = {
-      model: "openai/gpt-6-astra",
-      credentialOwner: "builtin",
-    } as const;
+    const routing = { model: "openai/gpt-6-astra" } as const;
     const endpoint = getModelProviderPiEndpoint(
       "openrouter-codex",
       "openai-responses",
@@ -80,11 +69,5 @@ describe("platform OpenRouter regional selection", () => {
       getModelProviderPiEndpoint("openrouter-codex", "openai-responses")
         ?.baseUrl,
     ).toBe("https://openrouter.ai/api/v1");
-    expect(
-      getModelProviderFirewall("openrouter-codex", {
-        ...routing,
-        credentialOwner: "member",
-      }),
-    ).toEqual(getModelProviderFirewall("openrouter-codex"));
   });
 });

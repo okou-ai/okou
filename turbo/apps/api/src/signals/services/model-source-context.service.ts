@@ -11,7 +11,7 @@ import {
 } from "@okouai/db/schema/model-provider-account";
 import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { computed } from "ccstate";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db$ } from "../external/db";
 import { usagePricingByKey } from "./built-in-route-pricing";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
@@ -77,14 +77,7 @@ export function createMemberModelSources(orgId: string, userId: string) {
         ),
       )
       .where(
-        and(
-          eq(modelProviders.orgId, orgId),
-          eq(modelProviders.userId, userId),
-          inArray(modelProviders.type, [
-            "codex-oauth-token",
-            "claude-code-oauth-token",
-          ]),
-        ),
+        and(eq(modelProviders.orgId, orgId), eq(modelProviders.userId, userId)),
       );
     return memberModelSourcesFromRows(orgId, userId, joined);
   });
@@ -131,9 +124,7 @@ export function memberAccountSourceFromSnapshot(
   }
   return {
     identity: { kind: "member", accountId },
-    credentialOwner: "member",
     configuration: {
-      kind: "registered-provider",
       providerType: first.account.type,
       authMethod: first.account.authMethod,
     },
@@ -176,9 +167,7 @@ export function managedSourceFromSnapshot(
   }
   return {
     identity: { kind: "built-in", modelKeyId: key.id },
-    credentialOwner: "builtin",
     configuration: {
-      kind: "registered-provider",
       providerType: "built-in",
       authMethod: null,
       managedVendor: key.vendor,

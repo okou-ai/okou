@@ -176,7 +176,7 @@ import {
 } from "./model-catalog.service";
 import {
   prepareManagedModelEnvironment,
-  prepareRegisteredModelEnvironment,
+  prepareSubscriptionModelEnvironment,
 } from "./model-provider.service";
 import {
   managedSourceFromSnapshot,
@@ -3092,7 +3092,6 @@ export function createThreadClaimRunObjects(
         member,
         model: pin.selectedModel,
         providerType: pin.modelProviderType,
-        credentialScope: pin.modelProviderCredentialScope,
       })
     );
   });
@@ -3101,7 +3100,7 @@ export function createThreadClaimRunObjects(
     if ("status" in pin) {
       throw new Error("Provider admission requires a valid queued model pin");
     }
-    // Policy facts are prepared for every routed pin before admission.
+    // Plan facts are prepared for every routed pin before admission.
     const capabilities = await get(context.plan$);
     return await resolveQueuedProviderAdmission({
       catalog: await get(claimCatalog$),
@@ -6491,7 +6490,7 @@ export function createThreadClaimRunObjects(
     }
     return context;
   });
-  const selectedConfiguredModelSource$ = computed(async (get) => {
+  const selectedModelSource$ = computed(async (get) => {
     const context = await get(pinnedContext$);
     if (!context) {
       return null;
@@ -6506,7 +6505,7 @@ export function createThreadClaimRunObjects(
       if (
         !route ||
         route.selectedModel !== args.selectedModelOverride ||
-        !isBuiltInModelRuntimeRoutePermitted(args.catalog, route) ||
+        !isBuiltInModelRuntimeRoutePermitted(route) ||
         getFrameworkForType(route.providerType) !== args.framework
       ) {
         return null;
@@ -6519,7 +6518,6 @@ export function createThreadClaimRunObjects(
     }
     if (
       args.modelProviderId &&
-      args.modelProviderCredentialScope === "member" &&
       args.modelProviderType &&
       isPersonalSubscriptionProviderType(args.modelProviderType)
     ) {
@@ -6533,7 +6531,7 @@ export function createThreadClaimRunObjects(
   // The selected source's model runtime. KMS decryption and captured
   // managed-key values have no side effects, so the runtime is derived here
   // (Ethan 2026-10-02); each graph resolves it once.
-  const preparedConfiguredEnvironment$ = computed(
+  const preparedModelEnvironment$ = computed(
     async (get): Promise<ResolvedModelProviderEnvironment | null> => {
       const selection = await get(selectionInput$);
       if (!selection) {
@@ -6541,7 +6539,7 @@ export function createThreadClaimRunObjects(
       }
       const [context, source] = await Promise.all([
         get(pinnedContext$),
-        get(selectedConfiguredModelSource$),
+        get(selectedModelSource$),
       ]);
       if (!context || !source) {
         return null;
@@ -6552,38 +6550,34 @@ export function createThreadClaimRunObjects(
           context.environmentArgs,
         );
       }
-      const config = source.configuration;
-      if (config.kind === "registered-provider") {
-        const selectedModel = context.environmentArgs.selectedModelOverride;
-        const type = config.providerType;
-        if (
-          !selectedModel ||
-          !isPersonalSubscriptionProviderType(type) ||
-          getFrameworkForType(type) !== context.environmentArgs.framework ||
-          (context.environmentArgs.modelProviderType !== undefined &&
-            context.environmentArgs.modelProviderType !== type)
-        ) {
-          return null;
-        }
-        const sourceId = context.environmentArgs.modelProviderId;
-        if (!sourceId) {
-          throw new Error("Selected registered source has no identity");
-        }
-        return await prepareRegisteredModelEnvironment(source, selectedModel, {
-          catalog: await get(claimCatalog$),
-          userId: context.environmentArgs.userId,
-          sourceId,
-          piExecution: context.environmentArgs.piExecution,
-        });
+      const selectedModel = context.environmentArgs.selectedModelOverride;
+      const type = source.configuration.providerType;
+      if (
+        !selectedModel ||
+        !isPersonalSubscriptionProviderType(type) ||
+        getFrameworkForType(type) !== context.environmentArgs.framework ||
+        (context.environmentArgs.modelProviderType !== undefined &&
+          context.environmentArgs.modelProviderType !== type)
+      ) {
+        return null;
       }
-      return null;
+      const sourceId = context.environmentArgs.modelProviderId;
+      if (!sourceId) {
+        throw new Error("Selected subscription source has no identity");
+      }
+      return await prepareSubscriptionModelEnvironment(source, selectedModel, {
+        catalog: await get(claimCatalog$),
+        userId: context.environmentArgs.userId,
+        sourceId,
+        piExecution: context.environmentArgs.piExecution,
+      });
     },
   );
   const pinnedBuiltInProviderSnapshot$ = computed(async (get) => {
     const context = await get(pinnedContext$);
     return context &&
       isBuiltInModelProviderType(context.environmentArgs.modelProviderType)
-      ? await get(preparedConfiguredEnvironment$)
+      ? await get(preparedModelEnvironment$)
       : null;
   });
   const environment$ = computed(
@@ -6598,11 +6592,10 @@ export function createThreadClaimRunObjects(
       }
       if (
         args.modelProviderType &&
-        isPersonalSubscriptionProviderType(args.modelProviderType) &&
-        args.modelProviderCredentialScope !== "org"
+        isPersonalSubscriptionProviderType(args.modelProviderType)
       ) {
         // Member subscription accounts use the exact selected account source.
-        return await get(preparedConfiguredEnvironment$);
+        return await get(preparedModelEnvironment$);
       }
       return null;
     },
@@ -8567,7 +8560,6 @@ export function createThreadClaimRunObjects(
         member: memberModels.member,
         model: input.selectedModel,
         providerType: input.modelProviderType,
-        credentialScope: "member",
       });
       if (!input.enforceBuiltInCredits) {
         return (

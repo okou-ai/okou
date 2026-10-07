@@ -51,7 +51,7 @@ function piProvider(concreteType: ModelProviderType): "openrouter" | null {
 }
 
 /**
- * Route canonical chat threads by model and provider policy. Trigger source is
+ * Route canonical chat threads by model and provider route. Trigger source is
  * intentionally absent so every thread-bound launch shares the same admission.
  */
 export function shouldUsePiExecution(args: {
@@ -76,7 +76,6 @@ export function shouldUsePiExecution(args: {
 
 interface PiModelProviderConfigInput {
   readonly upstreamModel?: string;
-  readonly credentialOwner?: ResolvedModelProviderEnvironment["credentialOwner"];
   readonly piModelConfig?: PiModelConfig;
   readonly type: string;
   readonly concreteType?: string;
@@ -220,10 +219,9 @@ function resolveResponsesPiModelConfig(
     concreteType.data,
     "openai-responses",
     // Captured global endpoints remain readable; only a captured US endpoint
-    // selects the owner-gated US route.
-    provider.credentialOwner &&
-      provider.environment.OPENAI_BASE_URL === `${OPENROUTER_US_ORIGIN}/api/v1`
-      ? { credentialOwner: provider.credentialOwner, model }
+    // selects the model-gated US route.
+    provider.environment.OPENAI_BASE_URL === `${OPENROUTER_US_ORIGIN}/api/v1`
+      ? { model }
       : undefined,
   );
   if (!endpoint) {

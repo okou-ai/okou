@@ -329,11 +329,8 @@ const discordModelPicker$ = command(
     }
     const runModels = await set(listAvailableRunModels$, args.binding, signal);
     signal.throwIfAborted();
-    const options = runModels.models.flatMap((runModel) => {
-      if (runModel.routeStatus !== "valid") {
-        return [];
-      }
-      return [{ label: runModel.modelLabel, value: runModel.model }];
+    const options = runModels.models.map((runModel) => {
+      return { label: runModel.modelLabel, value: runModel.model };
     });
     if (args.selection !== undefined) {
       const option = options.find((candidate) => {
