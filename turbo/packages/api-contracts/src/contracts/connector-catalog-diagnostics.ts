@@ -40,9 +40,20 @@ export const connectorCredentialStorageReadinessSchema = z.object({
   unresolvedBridgeCredentials: z.number().int().nonnegative(),
 });
 
-export const connectorCatalogDiagnosticsSchema = z.object({
-  schemaVersion: z.literal(4),
-  state: z.enum(["never-synced", "current", "stale"]),
+const connectorCatalogStateSchema = z.enum([
+  "never-synced",
+  "current",
+  "stale",
+]);
+
+/**
+ * The sync writer's own report of the attempt it just made, built from its
+ * internal sync state. Only the cron sync response carries it; staff
+ * diagnostics do not. Removed with the sync state in Release 2.
+ */
+export const connectorCatalogSyncAttemptReportSchema = z.object({
+  outcome: z.enum(["accepted", "unchanged", "rejected"]),
+  state: connectorCatalogStateSchema,
   active: z
     .object({
       catalogVersion: z.string(),
@@ -72,6 +83,37 @@ export const connectorCatalogDiagnosticsSchema = z.object({
         .regex(/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u),
     })
     .nullable(),
+});
+
+/**
+ * Staff diagnostics derived from the current `connector_catalog` pointer and
+ * the immutable entries at its hash. Sync history (`lastAttempt`,
+ * `lastSuccessAt`, `rejectedCandidate`) and activation time cannot be derived
+ * from them and are omitted; older API instances still send those keys and
+ * this schema ignores them.
+ */
+export const connectorCatalogDiagnosticsSchema = z.object({
+  schemaVersion: z.literal(4),
+  // Current API instances report `never-synced` or `current`; `stale` remains
+  // for responses from older instances during a rolling deploy.
+  state: connectorCatalogStateSchema,
+  // Both fields carry the pointer hash; `catalogVersion` is a legacy alias.
+  active: z
+    .object({
+      catalogVersion: z.string(),
+      catalogDigest: z.string(),
+    })
+    .nullable(),
+  // Absent from older API instances; null without a published pointer. An
+  // `entryCount` of zero is an unavailable generation.
+  pointer: z
+    .object({
+      schemaVersion: z.number().int().positive(),
+      hash: z.string(),
+      entryCount: z.number().int().nonnegative(),
+    })
+    .nullable()
+    .optional(),
   filtering: connectorCatalogFilteringStatusSchema,
   credentialStorage: connectorCredentialStorageReadinessSchema,
 });

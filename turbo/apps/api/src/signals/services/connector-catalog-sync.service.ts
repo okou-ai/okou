@@ -9,10 +9,7 @@ import {
   invalidatePiStableContextsForCatalogSourceSql,
 } from "./pi-stable-context-generation.service";
 
-import type {
-  ConnectorCatalogSyncFailureCode,
-  ConnectorCatalogDiagnostics,
-} from "@okouai/api-contracts/contracts/connector-catalog-diagnostics";
+import type { ConnectorCatalogSyncFailureCode } from "@okouai/api-contracts/contracts/connector-catalog-diagnostics";
 import type { ConnectorCatalogSyncResponse } from "@okouai/api-contracts/contracts/cron";
 import {
   connectorCatalogActiveSnapshot,
@@ -28,7 +25,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import {
   downloadS3BufferWithMaxBytes,
   downloadS3BufferWithMaxBytesIfChanged,
@@ -88,13 +85,13 @@ import { createAcceptedConnectorServerFirewallCatalog } from "./connector-server
 
 const log = logger("connector-catalog:sync");
 
-type ConnectorCatalogRawSyncStatus = Omit<
-  ConnectorCatalogDiagnostics,
-  "filtering" | "credentialStorage"
->;
 type ConnectorCatalogRawSyncResponse = Omit<
   ConnectorCatalogSyncResponse,
-  "filtering" | "credentialStorage"
+  "filtering" | "credentialStorage" | "pointer"
+>;
+type ConnectorCatalogRawSyncStatus = Omit<
+  ConnectorCatalogRawSyncResponse,
+  "outcome"
 >;
 
 interface SyncStateSnapshot {
@@ -1503,18 +1500,6 @@ const syncConnectorCatalogAttempt$ = command(
       },
       signal,
     );
-  },
-);
-
-export const connectorCatalogStatus$ = command(
-  async (
-    { get },
-    signal: AbortSignal,
-  ): Promise<ConnectorCatalogRawSyncStatus> => {
-    const source = connectorCatalogSource();
-    const state = await readSyncState(get(db$), source.sourceId);
-    signal.throwIfAborted();
-    return statusFromState(state);
   },
 );
 

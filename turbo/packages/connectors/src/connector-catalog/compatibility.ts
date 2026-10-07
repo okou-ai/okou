@@ -14,7 +14,7 @@ import {
 } from "../connector-identity";
 
 import type {
-  ConnectorCatalogArtifact,
+  ConnectorCatalogArtifactConnector,
   ConnectorCatalogAuthMethod,
 } from "./artifacts/artifacts";
 import {
@@ -277,7 +277,13 @@ function evaluateMethod(args: {
 }
 
 export function evaluateConnectorCatalogCompatibility(args: {
-  readonly artifact: Pick<ConnectorCatalogArtifact, "connectors">;
+  // Only identity, auth methods and MCP presence affect compatibility.
+  readonly artifact: {
+    readonly connectors: readonly Pick<
+      ConnectorCatalogArtifactConnector,
+      "slug" | "authMethods" | "mcp"
+    >[];
+  };
   readonly capability: ExecutableCapabilityState;
 }) {
   const registrations = new Map(

@@ -546,24 +546,15 @@ export const apiConnectorsHandlers = [
   mockApi(connectorCatalogContract.diagnostics, ({ respond }) => {
     return respond(200, {
       schemaVersion: 4,
-      state: "stale",
+      state: "current",
       active: {
-        catalogVersion: "2026-07-25.1",
+        catalogVersion: `sha256:${"a".repeat(64)}`,
         catalogDigest: `sha256:${"a".repeat(64)}`,
-        activatedAt: "2026-07-25T01:00:00.000Z",
       },
-      lastAttempt: {
-        at: "2026-07-25T02:00:00.000Z",
-        outcome: "rejected",
-        failureCode: "invalid-artifact",
-        reusedCachedRejection: true,
-      },
-      lastSuccessAt: "2026-07-25T02:00:00.000Z",
-      rejectedCandidate: {
-        catalogVersion: "2026-07-25.2",
-        catalogDigest: `sha256:${"c".repeat(64)}`,
-        failureCode: "invalid-artifact",
-        backendVersion: "1.319.0",
+      pointer: {
+        schemaVersion: 4,
+        hash: `sha256:${"a".repeat(64)}`,
+        entryCount: 2,
       },
       filtering: {
         capabilityDigest: `sha256:${"b".repeat(64)}`,

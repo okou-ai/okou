@@ -1,21 +1,14 @@
-import type {
-  ConnectorCatalogFilteredAuthMethod,
-  ConnectorCatalogFilteringStatus,
-} from "@okouai/api-contracts/contracts/connector-catalog-diagnostics";
 import {
   connectorCatalogActiveSnapshot,
   connectorCatalogCompatibilityEvaluation,
   connectorCatalogSyncState,
 } from "@okouai/db/schema/connector-catalog";
-import type {
-  ConnectorCatalogCompatibilityEvaluationPayload,
-  ConnectorCatalogCompatibilityFilteredAuthMethod,
-} from "@okouai/db/jsonb-contracts/connector-catalog";
+import type { ConnectorCatalogCompatibilityEvaluationPayload } from "@okouai/db/jsonb-contracts/connector-catalog";
 import { command } from "ccstate";
 import { and, eq, ne } from "drizzle-orm";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import {
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
@@ -221,17 +214,6 @@ async function activeSnapshotForUpdate(
   return snapshot;
 }
 
-function staleFilteringStatus(
-  capabilityDigest: string,
-): ConnectorCatalogFilteringStatus {
-  return {
-    capabilityDigest,
-    evaluatedAt: null,
-    stale: true,
-    filteredAuthMethods: [],
-  };
-}
-
 async function reconcileCompatibility(args: {
   readonly db: Db;
   readonly sourceId: string;
@@ -305,77 +287,6 @@ async function reconcileCompatibility(args: {
   });
 }
 
-function diagnosticFilteredAuthMethods(
-  filteredAuthMethods: readonly ConnectorCatalogCompatibilityFilteredAuthMethod[],
-): ConnectorCatalogFilteredAuthMethod[] {
-  return filteredAuthMethods.map((method) => {
-    return {
-      connectorSlug: method.connectorSlug,
-      authMethodId: method.authMethodId,
-      reasons: [...method.reasons],
-    };
-  });
-}
-
-const readCompatibilityStatus$ = command(
-  async (
-    { get },
-    args: {
-      readonly sourceId: string;
-      readonly capabilityDigest: string;
-      readonly snapshot: ConnectorCatalogCompatibilityIdentity | null;
-    },
-  ): Promise<ConnectorCatalogFilteringStatus> => {
-    const db = get(db$);
-    if (args.snapshot === null) {
-      return staleFilteringStatus(args.capabilityDigest);
-    }
-
-    const [result] = await db
-      .select({
-        evaluatedAt: connectorCatalogCompatibilityEvaluation.evaluatedAt,
-        filteredAuthMethods:
-          connectorCatalogCompatibilityEvaluation.filteredAuthMethods,
-      })
-      .from(connectorCatalogCompatibilityEvaluation)
-      .where(
-        and(
-          eq(connectorCatalogCompatibilityEvaluation.sourceId, args.sourceId),
-          eq(
-            connectorCatalogCompatibilityEvaluation.schemaVersion,
-            SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-          ),
-          eq(
-            connectorCatalogCompatibilityEvaluation.catalogVersion,
-            args.snapshot.catalogVersion,
-          ),
-          eq(
-            connectorCatalogCompatibilityEvaluation.catalogDigest,
-            args.snapshot.catalogDigest,
-          ),
-          eq(
-            connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-            args.capabilityDigest,
-          ),
-        ),
-      )
-      .limit(1);
-    if (result === undefined) {
-      return staleFilteringStatus(args.capabilityDigest);
-    }
-    return {
-      capabilityDigest: args.capabilityDigest,
-      evaluatedAt: result.evaluatedAt.toISOString(),
-      stale: false,
-      filteredAuthMethods: diagnosticFilteredAuthMethods(
-        connectorCatalogCompatibilityEvaluationSchema.parse(
-          result.filteredAuthMethods,
-        ).filteredAuthMethods,
-      ),
-    };
-  },
-);
-
 export const reconcileConnectorCatalogCompatibility$ = command(
   async ({ set }, signal: AbortSignal): Promise<void> => {
     const source = connectorCatalogSource();
@@ -390,23 +301,5 @@ export const reconcileConnectorCatalogCompatibility$ = command(
       });
     });
     signal.throwIfAborted();
-  },
-);
-
-export const connectorCatalogCompatibilityStatus$ = command(
-  async (
-    { set },
-    snapshot: ConnectorCatalogCompatibilityIdentity | null,
-    signal: AbortSignal,
-  ): Promise<ConnectorCatalogFilteringStatus> => {
-    const source = connectorCatalogSource();
-    const capability = connectorCatalogExecutableCapabilityState();
-    const status = await set(readCompatibilityStatus$, {
-      sourceId: source.sourceId,
-      capabilityDigest: capability.digest,
-      snapshot,
-    });
-    signal.throwIfAborted();
-    return status;
   },
 );

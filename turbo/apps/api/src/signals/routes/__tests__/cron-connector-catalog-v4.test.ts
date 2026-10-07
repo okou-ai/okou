@@ -559,7 +559,7 @@ describe("connector catalog v4 preparation", () => {
     },
   );
 
-  it("reports strict storage readiness through cold and rejected-source staff diagnostics", async () => {
+  it("reports strict storage readiness through staff diagnostics around a rejected-source sync", async () => {
     const features = setupApp({ context, routes: featureSwitchesRoutes })(
       featureSwitchesContract,
     );
@@ -577,12 +577,11 @@ describe("connector catalog v4 preparation", () => {
       unresolvedBridgeCredentials: 0,
     };
     context.mocks.s3.send.mockClear();
-    const cold = await accept(
+    const before = await accept(
       catalogClient().diagnostics({ headers: sessionHeaders }),
       [200],
     );
-    expect(cold.body.state).toBe("never-synced");
-    expect(cold.body.credentialStorage).toStrictEqual(healthy);
+    expect(before.body.credentialStorage).toStrictEqual(healthy);
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
 
     serveObjects(new Map());
@@ -707,7 +706,7 @@ describe("connector catalog v4 preparation", () => {
     expect((await sync()).body.credentialStorage).toStrictEqual(healthy);
   });
 
-  it("reports strict cold filtering through staff diagnostics before and after a rejected sync", async () => {
+  it("keeps staff diagnostics on the current pointer across a rejected sync", async () => {
     const features = setupApp({ context, routes: featureSwitchesRoutes })(
       featureSwitchesContract,
     );
@@ -722,17 +721,8 @@ describe("connector catalog v4 preparation", () => {
       catalogClient().diagnostics({ headers: sessionHeaders }),
       [200],
     );
-    expect(before.body).toMatchObject({
-      schemaVersion: 4,
-      state: "never-synced",
-      active: null,
-    });
-    expect(before.body.filtering).toStrictEqual({
-      capabilityDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
-      evaluatedAt: null,
-      stale: true,
-      filteredAuthMethods: [],
-    });
+    expect(before.body.schemaVersion).toBe(4);
+    expect(before.body).not.toHaveProperty("lastAttempt");
 
     serveObjects(new Map());
     const rejected = await sync();
@@ -742,19 +732,26 @@ describe("connector catalog v4 preparation", () => {
       active: null,
       lastAttempt: { failureCode: "source-unavailable" },
     });
-    expect(rejected.body.filtering).toStrictEqual(before.body.filtering);
+    expect(rejected.body.pointer).toStrictEqual(before.body.pointer);
     context.mocks.s3.send.mockClear();
     const after = await accept(
       catalogClient().diagnostics({ headers: sessionHeaders }),
       [200],
     );
-    expect(after.body.filtering).toStrictEqual(before.body.filtering);
+    expect(after.body).toStrictEqual({
+      ...before.body,
+      filtering: {
+        ...before.body.filtering,
+        evaluatedAt: after.body.filtering.evaluatedAt,
+      },
+    });
     expect(after.body).not.toHaveProperty("sourceId");
     expect(after.body).not.toHaveProperty("catalog");
+    expect(after.body).not.toHaveProperty("lastAttempt");
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
   });
 
-  it("isolates staff filtering by current capability and accepted v4 catalog identity", async () => {
+  it("evaluates staff filtering on demand for the current capability and accepted v4 catalog identity", async () => {
     const features = setupApp({ context, routes: featureSwitchesRoutes })(
       featureSwitchesContract,
     );
@@ -775,6 +772,7 @@ describe("connector catalog v4 preparation", () => {
         catalogVersion: initial.pointer.catalogVersion,
         catalogDigest: initial.pointer.catalogDigest,
       },
+      pointer: { hash: initial.pointer.catalogDigest },
       filtering: { stale: false, filteredAuthMethods: [] },
     });
     expect(accepted.body.filtering.evaluatedAt).not.toBeNull();
@@ -783,45 +781,38 @@ describe("connector catalog v4 preparation", () => {
       catalogClient().diagnostics({ headers: sessionHeaders }),
       [200],
     );
-    expect(original.body.filtering).toStrictEqual(accepted.body.filtering);
+    expect(original.body.filtering).toStrictEqual({
+      ...accepted.body.filtering,
+      evaluatedAt: expect.any(String),
+    });
 
+    // A capability change is visible on the next read, without a sync.
     mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", "catalog-capability-client-id");
-    const stale = await accept(
+    const configured = await accept(
       catalogClient().diagnostics({ headers: sessionHeaders }),
       [200],
     );
-    expect(stale.body.filtering).toStrictEqual({
+    expect(configured.body.filtering).toMatchObject({
       capabilityDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/u),
-      evaluatedAt: null,
-      stale: true,
+      stale: false,
       filteredAuthMethods: [],
     });
-    expect(stale.body.filtering.capabilityDigest).not.toBe(
+    expect(configured.body.filtering.evaluatedAt).not.toBeNull();
+    expect(configured.body.filtering.capabilityDigest).not.toBe(
       original.body.filtering.capabilityDigest,
     );
+    expect(configured.body.active).toStrictEqual(original.body.active);
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
 
-    const configured = await sync();
-    expect(configured.body).toMatchObject({
-      outcome: "unchanged",
-      filtering: {
-        capabilityDigest: stale.body.filtering.capabilityDigest,
-        stale: false,
-        filteredAuthMethods: [],
-      },
-    });
-    expect(configured.body.filtering.evaluatedAt).not.toBeNull();
-    const current = await accept(
-      catalogClient().diagnostics({ headers: sessionHeaders }),
-      [200],
-    );
-    expect(current.body.filtering).toStrictEqual(configured.body.filtering);
     mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", undefined);
     const restored = await accept(
       catalogClient().diagnostics({ headers: sessionHeaders }),
       [200],
     );
-    expect(restored.body.filtering).toStrictEqual(original.body.filtering);
+    expect(restored.body.filtering).toStrictEqual({
+      ...original.body.filtering,
+      evaluatedAt: expect.any(String),
+    });
 
     mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", "catalog-capability-client-id");
     const replacement = release({
@@ -837,6 +828,7 @@ describe("connector catalog v4 preparation", () => {
         catalogVersion: replacement.pointer.catalogVersion,
         catalogDigest: replacement.pointer.catalogDigest,
       },
+      pointer: { hash: replacement.pointer.catalogDigest },
       filtering: {
         capabilityDigest: configured.body.filtering.capabilityDigest,
         stale: false,
@@ -845,16 +837,18 @@ describe("connector catalog v4 preparation", () => {
     });
     mockOptionalEnv("GOOGLE_OAUTH_CLIENT_ID", undefined);
     context.mocks.s3.send.mockClear();
-    const notReused = await accept(
+    const current = await accept(
       catalogClient().diagnostics({ headers: sessionHeaders }),
       [200],
     );
-    expect(notReused.body.active).toStrictEqual(replaced.body.active);
-    expect(notReused.body.filtering).toStrictEqual({
-      capabilityDigest: original.body.filtering.capabilityDigest,
-      evaluatedAt: null,
-      stale: true,
-      filteredAuthMethods: [],
+    expect(current.body.active).toStrictEqual({
+      catalogVersion: replacement.pointer.catalogDigest,
+      catalogDigest: replacement.pointer.catalogDigest,
+    });
+    expect(current.body.pointer).toStrictEqual(replaced.body.pointer);
+    expect(current.body.filtering).toStrictEqual({
+      ...original.body.filtering,
+      evaluatedAt: expect.any(String),
     });
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
   });

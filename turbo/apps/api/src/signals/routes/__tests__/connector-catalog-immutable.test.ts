@@ -42,6 +42,10 @@ import {
   onboardingWorkflowConnectorsContract,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { connectorCatalogRoutes } from "../connector-catalog";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { getConnectorAuthProviderRegistrationCapabilities } from "@okouai/connectors/auth-providers";
+import { featureSwitchesRoutes } from "../feature-switches";
 import { connectorOverviewRoutes } from "../connector-overview";
 import { onboardingSourcesRoutes } from "../onboarding-sources";
 import { onboardingWorkflowConnectorsRoutes } from "../onboarding-workflow-connectors";
@@ -79,7 +83,7 @@ import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/conn
 import { getApiTestMocks, resetApiTestMocks } from "../../../__tests__/mocks";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { accept, testContext } from "../../../__tests__/test-context";
-import { clearMockedEnv, mockEnv } from "../../../lib/env";
+import { clearMockedEnv, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { flushWaitUntilForTest, waitUntil } from "../../context/wait-until";
@@ -1591,6 +1595,204 @@ describe("slug-first current catalog business readers", () => {
 });
 
 // Account generation cases now publish only in their own lifecycle engine.
+// Staff diagnostics derive everything from the pointer and its entries, so a
+// case-owned engine can remove or corrupt every legacy store underneath them.
+describe("staff connector catalog diagnostics from current entries", () => {
+  const headers = { authorization: "Bearer clerk-session" };
+  const legacyTables = [
+    "connector_catalog_sync_state",
+    "connector_catalog_active_snapshot",
+    "connector_catalog_compatibility_evaluation",
+    "connector_catalog_runtime_projection",
+  ];
+  // Pointer columns slated for removal; only schema_version and hash remain.
+  const retiredPointerColumns = [
+    "catalog_version",
+    "activated_at",
+    "catalog_header",
+    "entry_slugs",
+  ];
+
+  async function staffSession() {
+    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+    await accept(
+      setupApp({ context, routes: featureSwitchesRoutes })(
+        featureSwitchesContract,
+      ).update({
+        headers,
+        body: { switches: { [FeatureSwitchKey.OkouDebug]: true } },
+      }),
+      [200],
+    );
+  }
+
+  async function diagnostics() {
+    statements = [];
+    const response = await accept(
+      setupApp({ context, routes: connectorCatalogRoutes })(
+        connectorCatalogContract,
+      ).diagnostics({ headers }),
+      [200],
+    );
+    for (const query of statements) {
+      for (const table of legacyTables) {
+        expect(query).not.toContain(table);
+      }
+      if (/\bfrom "connector_catalog"/u.test(query)) {
+        for (const column of retiredPointerColumns) {
+          expect(query).not.toContain(column);
+        }
+      }
+    }
+    return response.body;
+  }
+
+  it("reports the pointer and on-demand compatibility without legacy rows", async () => {
+    if (!engine) {
+      throw new Error("Missing case engine");
+    }
+    const candidate = release(`2099-03-01.${randomUUID()}`, "Diagnostics");
+    serve(candidate);
+    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
+    await engine.exec(
+      "DELETE FROM connector_catalog_compatibility_evaluation; DELETE FROM connector_catalog_active_snapshot; DELETE FROM connector_catalog_sync_state",
+    );
+    await staffSession();
+    context.mocks.s3.send.mockClear();
+
+    const requestedAt = now();
+    const current = await diagnostics();
+    expect(
+      Date.parse(current.filtering.evaluatedAt ?? ""),
+    ).toBeGreaterThanOrEqual(requestedAt);
+    expect(current).toMatchObject({
+      schemaVersion: 4,
+      state: "current",
+      active: { catalogVersion: candidate.hash, catalogDigest: candidate.hash },
+      pointer: {
+        schemaVersion: 4,
+        hash: candidate.hash,
+        entryCount: candidate.artifact.connectors.length,
+      },
+      filtering: {
+        capabilityDigest: connectorCatalogExecutableCapabilityDigest(),
+        stale: false,
+      },
+    });
+    expect(current).not.toHaveProperty("lastAttempt");
+    expect(current).not.toHaveProperty("lastSuccessAt");
+    expect(current).not.toHaveProperty("rejectedCandidate");
+    expect(current.active).not.toHaveProperty("activatedAt");
+
+    // Unconfigure one provider used by the published entries: the next
+    // request filters that method against the new capability, with no sync.
+    const entryMethods = new Set(
+      candidate.artifact.connectors.flatMap((entry) => {
+        return entry.authMethods.map((method) => {
+          return `${entry.slug}\0${method.id}`;
+        });
+      }),
+    );
+    const registration =
+      getConnectorAuthProviderRegistrationCapabilities().find((capability) => {
+        return (
+          capability.requiredConfigurationNames.length > 0 &&
+          entryMethods.has(
+            `${capability.connectorSlug}\0${capability.authMethodId}`,
+          )
+        );
+      });
+    const configurationName = registration?.requiredConfigurationNames[0];
+    if (!registration || !configurationName) {
+      throw new Error("Missing configurable catalog auth method");
+    }
+    const filteredMethod = {
+      connectorSlug: registration.connectorSlug,
+      authMethodId: registration.authMethodId,
+      reasons: ["missing-platform-configuration"],
+    };
+    expect(current.filtering.filteredAuthMethods).not.toContainEqual(
+      filteredMethod,
+    );
+    mockOptionalEnv(configurationName, undefined);
+    const unconfigured = await diagnostics();
+    expect(unconfigured.filtering.capabilityDigest).toBe(
+      connectorCatalogExecutableCapabilityDigest(),
+    );
+    expect(unconfigured.filtering.capabilityDigest).not.toBe(
+      current.filtering.capabilityDigest,
+    );
+    expect(unconfigured.filtering.stale).toBeFalsy();
+    expect(unconfigured.filtering.filteredAuthMethods).toContainEqual(
+      filteredMethod,
+    );
+    expect(unconfigured.pointer).toStrictEqual(current.pointer);
+    expect(context.mocks.s3.send).not.toHaveBeenCalled();
+  });
+
+  it("ignores corrupt legacy rows and flags a generation without entries", async () => {
+    if (!engine) {
+      throw new Error("Missing case engine");
+    }
+    const candidate = release(`2099-03-02.${randomUUID()}`, "Diagnostics");
+    serve(candidate);
+    const accepted = await accept(sync(), [200]);
+    expect(accepted.body).toMatchObject({ outcome: "accepted" });
+    await engine.query(
+      "UPDATE connector_catalog_active_snapshot SET catalog_gzip = $1, catalog_digest = $2",
+      [Buffer.from("invalid gzip"), `sha256:${"0".repeat(64)}`],
+    );
+    // Legacy sync state now claims a rejected attempt the pointer never saw.
+    await engine.exec(
+      "DELETE FROM connector_catalog_compatibility_evaluation; UPDATE connector_catalog_sync_state SET last_attempt_outcome = 'rejected', last_failure_code = 'invalid-artifact', last_success_at = NULL",
+    );
+    await staffSession();
+
+    const current = await diagnostics();
+    expect(current).toMatchObject({
+      state: "current",
+      active: { catalogVersion: candidate.hash, catalogDigest: candidate.hash },
+      pointer: {
+        hash: candidate.hash,
+        entryCount: candidate.artifact.connectors.length,
+      },
+      filtering: { stale: false },
+    });
+    expect(current.filtering.filteredAuthMethods).toStrictEqual(
+      accepted.body.filtering.filteredAuthMethods,
+    );
+
+    // A pointer whose hash has no retained entries cannot serve.
+    const emptyHash = `sha256:${"e".repeat(64)}`;
+    await engine.query("UPDATE connector_catalog SET hash = $1", [emptyHash]);
+    await expect(diagnostics()).resolves.toMatchObject({
+      state: "current",
+      active: { catalogVersion: emptyHash, catalogDigest: emptyHash },
+      pointer: { schemaVersion: 4, hash: emptyHash, entryCount: 0 },
+      filtering: {
+        capabilityDigest: connectorCatalogExecutableCapabilityDigest(),
+        evaluatedAt: null,
+        stale: true,
+        filteredAuthMethods: [],
+      },
+    });
+
+    await engine.exec("DELETE FROM connector_catalog");
+    await expect(diagnostics()).resolves.toMatchObject({
+      schemaVersion: 4,
+      state: "never-synced",
+      active: null,
+      pointer: null,
+      filtering: {
+        capabilityDigest: connectorCatalogExecutableCapabilityDigest(),
+        evaluatedAt: null,
+        stale: true,
+        filteredAuthMethods: [],
+      },
+    });
+  });
+});
+
 describe("current-publication account readers", () => {
   const mocks = routeMocks;
   const routes = Object.freeze([
