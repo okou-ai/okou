@@ -62,7 +62,10 @@ async function configureResponsesWithOwnedRuns(args: {
 }> {
   const model = args.selectedModel;
 
-  await seedBuiltInModelKey(context, model);
+  // Personal Codex subscription models carry their own account credentials.
+  if (model === "okou-1.0") {
+    await seedBuiltInModelKey(context, model);
+  }
   const owned = new Map<
     string,
     {

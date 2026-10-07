@@ -166,7 +166,7 @@ import {
   routeQueuedMessagePiExecution,
 } from "./internal-chat-run-callback.service";
 import { memberSubscriptionModelRoutesFromCatalog } from "./member-subscription-models.service";
-import { type ModelCatalog } from "./model-catalog.service";
+import type { ModelCatalog } from "./model-catalog.service";
 import {
   prepareManagedModelEnvironment,
   prepareSubscriptionModelEnvironment,
