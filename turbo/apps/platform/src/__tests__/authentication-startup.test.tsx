@@ -12,6 +12,10 @@ import {
 import frFRCommonUrl from "../i18n/locales/fr-FR/common.json?url";
 import { testContext } from "../signals/__tests__/test-helpers.ts";
 import { resetSignal } from "../signals/utils.ts";
+import {
+  bootstrapSkeleton,
+  queryBootstrapSkeleton,
+} from "../test/bootstrap-skeleton.ts";
 
 const context = testContext();
 
@@ -70,7 +74,7 @@ test("Authentication is ready before Platform content becomes interactive", asyn
     path: "/agents",
   });
 
-  const skeleton = await screen.findByTestId("app-skeleton");
+  const skeleton = bootstrapSkeleton();
   expect(skeleton).toBeVisible();
   expect(screen.queryByRole("heading", { name: "Agents" })).toBeNull();
   expect(queryAllByRoleFast("link")).toHaveLength(0);
@@ -125,7 +129,7 @@ test.each(["setupPage", "startPage"])(
         ? setupPage(options)
         : (await startPage(options)).ready;
 
-    const skeleton = await screen.findByTestId("app-skeleton");
+    const skeleton = bootstrapSkeleton();
     expect(skeleton).toBeVisible();
     context.store.set(resetPage$);
     clerkLoad.resolve();
@@ -155,7 +159,7 @@ test.each(["setupPage", "startPage"])(
     await expect(
       entryPoint === "setupPage" ? setupPage(options) : startPage(options),
     ).rejects.toBe(reason);
-    expect(screen.queryByTestId("app-skeleton")).not.toBeInTheDocument();
+    expect(queryBootstrapSkeleton()).toBeNull();
     expect(
       screen.queryByRole("heading", { name: "Agents" }),
     ).not.toBeInTheDocument();
@@ -192,7 +196,7 @@ test("Cancelled locale startup does not adopt a replacement lifetime", async () 
 
   expect(currentSignal.aborted).toBeFalsy();
   expect(request.signal.aborted).toBeTruthy();
-  expect(screen.queryByTestId("app-skeleton")).not.toBeInTheDocument();
+  expect(queryBootstrapSkeleton()).toBeNull();
   expect(
     screen.queryByRole("heading", { name: "Agents" }),
   ).not.toBeInTheDocument();
@@ -210,7 +214,7 @@ test("Authentication startup is reused without a duplicate load", async () => {
     path: "/agents",
   });
 
-  await screen.findByTestId("app-skeleton");
+  expect(bootstrapSkeleton()).toBeVisible();
   expect(clerk.resourceRequests).toStrictEqual([]);
   expect(clerk.loads).toHaveLength(1);
 
@@ -248,7 +252,7 @@ test("A Clerk core failure offers a visible refresh without an automatic retry",
   await expect(page.ready).rejects.toBe(failure);
   expect(alert).toHaveTextContent("Oops! Something went sideways");
   expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
-  expect(screen.queryByTestId("app-skeleton")).not.toBeInTheDocument();
+  expect(bootstrapSkeleton()).toHaveAttribute("aria-hidden", "true");
   expect(clerk.resourceRequests).toStrictEqual([
     { publishableKey: "test_production_key" },
   ]);

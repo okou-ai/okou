@@ -17,6 +17,7 @@ import {
   mockAgent,
   mockPersonalModelRoutes,
 } from "../../views/okou-page/__tests__/chat-composer-test-helpers.ts";
+import { bootstrapSkeleton } from "../../test/bootstrap-skeleton.ts";
 
 const CUSTOMER_ORG_ID = "org_customer_workspace";
 
@@ -187,7 +188,7 @@ test("Routes wait for authoritative workspace features", async () => {
 
   const page = await startPage({ context, path: "/agents" });
   await requestStarted.promise;
-  await expect(screen.findByTestId("app-skeleton")).resolves.toBeVisible();
+  expect(bootstrapSkeleton()).toBeVisible();
   expect(
     screen.queryByRole("heading", { name: "Agents" }),
   ).not.toBeInTheDocument();

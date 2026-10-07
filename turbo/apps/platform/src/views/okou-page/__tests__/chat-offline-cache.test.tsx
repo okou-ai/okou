@@ -30,6 +30,7 @@ import {
   mockChatEventRows,
   normalizeMockChatEvents,
 } from "./chat-event-test-helpers.ts";
+import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
 
 const context = testContext();
 
@@ -243,7 +244,7 @@ function mockConversationRows(
 
 async function visibleAppSkeleton(): Promise<HTMLElement> {
   const skeleton = await screen.findByRole("status", { name: "Loading" });
-  expect(skeleton).toHaveAttribute("data-testid", "app-skeleton");
+  expect(skeleton).toBe(bootstrapSkeleton());
   expect(skeleton).not.toHaveAttribute("aria-hidden");
   return skeleton;
 }
@@ -263,10 +264,7 @@ async function visibleChatSkeleton(): Promise<HTMLElement> {
 
 async function expectAppSkeletonDismissed(): Promise<void> {
   await waitFor(() => {
-    expect(screen.getByTestId("app-skeleton")).toHaveAttribute(
-      "aria-hidden",
-      "true",
-    );
+    expect(bootstrapSkeleton()).toHaveAttribute("aria-hidden", "true");
   });
 }
 

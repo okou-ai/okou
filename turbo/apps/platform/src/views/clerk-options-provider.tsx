@@ -16,7 +16,6 @@ import { locale$ } from "../signals/locale.ts";
 import { theme$ } from "../signals/theme.ts";
 import { AuthV1LoadError } from "./auth-v1/auth-v1-load-error.tsx";
 import { getAuthV1ProviderAppearance } from "./auth-v1/provider-appearance.ts";
-import { AppSkeletonOverlay } from "./router.tsx";
 
 /**
  * The single Clerk provider for the whole app.
@@ -31,7 +30,7 @@ import { AppSkeletonOverlay } from "./router.tsx";
  * Children stay unmounted until the runtime resolves. Mounting them earlier
  * would move the whole tree under the provider once Clerk arrives, and every
  * route already waits for the same runtime before it publishes a page, so the
- * app skeleton covers this gap.
+ * bootstrap skeleton from `index.html` covers this gap.
  */
 export function ClerkOptionsProvider({ children }: { children: ReactNode }) {
   const clerkLoadable = useLoadable(clerk$);
@@ -43,31 +42,28 @@ export function ClerkOptionsProvider({ children }: { children: ReactNode }) {
     return <AuthV1LoadError />;
   }
   if (clerkLoadable.state === "loading") {
-    return <AppSkeletonOverlay />;
+    return null;
   }
 
   const clerk = clerkLoadable.data;
   const appUrl = resolveAppUrl();
   return (
-    <>
-      <AppSkeletonOverlay />
-      <BaseClerkProvider
-        Clerk={clerk}
-        afterSignOutUrl={resolveAppAuthUrl("/sign-in")}
-        allowedRedirectOrigins={getAllowedAuthRedirectOriginsForCurrentPage()}
-        appearance={getAuthV1ProviderAppearance(theme)}
-        localization={clerkLocalizationForLocale(clerkLocalizations, locale)}
-        // The runtime already holds the deferred hosted UI handle from its own
-        // `load()`, so this must not request a second download.
-        prefetchUI={false}
-        publishableKey={resolvePlatformRuntimeConfig().clerkPublishableKey}
-        signInFallbackRedirectUrl={appUrl}
-        signInUrl={resolveAppAuthUrl("/sign-in")}
-        signUpFallbackRedirectUrl={appUrl}
-        signUpUrl={resolveAppAuthUrl("/sign-up")}
-      >
-        {children}
-      </BaseClerkProvider>
-    </>
+    <BaseClerkProvider
+      Clerk={clerk}
+      afterSignOutUrl={resolveAppAuthUrl("/sign-in")}
+      allowedRedirectOrigins={getAllowedAuthRedirectOriginsForCurrentPage()}
+      appearance={getAuthV1ProviderAppearance(theme)}
+      localization={clerkLocalizationForLocale(clerkLocalizations, locale)}
+      // The runtime already holds the deferred hosted UI handle from its own
+      // `load()`, so this must not request a second download.
+      prefetchUI={false}
+      publishableKey={resolvePlatformRuntimeConfig().clerkPublishableKey}
+      signInFallbackRedirectUrl={appUrl}
+      signInUrl={resolveAppAuthUrl("/sign-in")}
+      signUpFallbackRedirectUrl={appUrl}
+      signUpUrl={resolveAppAuthUrl("/sign-up")}
+    >
+      {children}
+    </BaseClerkProvider>
   );
 }
