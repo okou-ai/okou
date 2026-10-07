@@ -32,6 +32,8 @@ def build(version, development, output):
     )
     name = "Okou Dev" if development else "Okou"
     identifier = "ai.okou.desktop.dev" if development else "ai.okou.desktop"
+    # Custom settings are consumed only by our target. Global PRODUCT_NAME
+    # would also rename Swift package resource bundles on a clean build.
     try:
         run(
             "xcodebuild",
@@ -50,10 +52,9 @@ def build(version, development, output):
             ROOT / ".build-app",
             "-onlyUsePackageVersionsFromResolvedFile",
             "CODE_SIGNING_ALLOWED=NO",
-            f"PRODUCT_NAME={name}",
-            f"PRODUCT_BUNDLE_IDENTIFIER={identifier}",
-            f"MARKETING_VERSION={version}",
-            f"CURRENT_PROJECT_VERSION={version}",
+            f"OKOU_PRODUCT_NAME={name}",
+            f"OKOU_BUNDLE_IDENTIFIER={identifier}",
+            f"OKOU_VERSION={version}",
         )
     finally:
         config.unlink(missing_ok=True)
