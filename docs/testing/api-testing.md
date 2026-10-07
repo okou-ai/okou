@@ -224,10 +224,12 @@ external mocks. Shared PostgreSQL fixtures still own and clean up their rows.
 
 `src/__tests__/global-setup.ts` seeds the shared PostgreSQL pricing and complete
 fixed connector catalog once per run. It also migrates and seeds one PGlite,
-saves an immutable snapshot, and provides its path to workers. Workers reuse the
-snapshot bytes, and isolated cases fork a new engine from them. Cases do not
-replay migrations or reseed their isolated database. Shared fixture installation
-uses `ifAbsent: true` and must never replace an existing catalog pointer.
+saves a checkpointed immutable snapshot, and provides its path to workers.
+The fixture caches the unpacked files for subsequent cases. Each isolated case
+creates a fresh engine and memory filesystem with its own writable copies; cases do not
+repeat gzip/tar decoding, replay migrations, or reseed their database. Shared
+fixture installation uses `ifAbsent: true` and must never replace an existing
+catalog pointer.
 
 `src/__tests__/external-setup.ts` restores the fixed source and provider
 configuration and installs a fresh KMS mock before each case. The mock remains

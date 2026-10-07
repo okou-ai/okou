@@ -1,9 +1,11 @@
 import { createHash } from "node:crypto";
+import { once } from "node:events";
 import { readFile, readdir } from "node:fs/promises";
-import { PGlite } from "@electric-sql/pglite";
+import { MemoryFS, PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { btree_gin } from "@electric-sql/pglite/contrib/btree_gin";
 import { drizzle, type PgliteDatabase } from "drizzle-orm/pglite";
+import { Parser } from "tar";
 import { singleton } from "../lib/singleton";
 import { settleIncludingAbort } from "../signals/utils";
 
@@ -120,6 +122,8 @@ export async function createPgliteSnapshot(
       }
       await engine.exec("SET search_path TO public; SET timezone TO 'UTC'");
       await seed(drizzle(engine));
+      // Checkpoint the seeded baseline to reduce WAL recovery when restoring cases.
+      await engine.exec("CHECKPOINT");
       return await engine.dumpDataDir();
     })(),
     async () => {
@@ -128,24 +132,104 @@ export async function createPgliteSnapshot(
   );
 }
 
-// Cache only immutable bytes. Every case loads a fresh engine from the image.
-const snapshotImages = singleton(() => {
-  return new Map<string, Promise<Blob>>();
-});
-
-async function readSnapshotImage(path: string): Promise<Blob> {
-  const bytes = await readFile(path);
-  return new Blob([new Uint8Array(bytes)]);
+interface SnapshotFile {
+  readonly path: string;
+  readonly data: Uint8Array;
+  readonly modifiedAt: number;
 }
 
-function snapshotImage(path: string): Promise<Blob> {
-  const images = snapshotImages();
-  let image = images.get(path);
-  if (!image) {
-    image = readSnapshotImage(path);
-    images.set(path, image);
+interface SnapshotFiles {
+  readonly directories: readonly string[];
+  readonly files: readonly SnapshotFile[];
+}
+
+// Decode immutable files once. Each engine still owns separate writable copies.
+const snapshots = singleton(() => {
+  return new Map<string, Promise<SnapshotFiles>>();
+});
+
+async function readSnapshotFiles(path: string): Promise<SnapshotFiles> {
+  const bytes = await readFile(path);
+  const directories: string[] = [];
+  const files: SnapshotFile[] = [];
+  const parser = new Parser({
+    strict: true,
+    onReadEntry(entry) {
+      const relativePath = entry.path.replace(/^\/+/, "");
+      if (relativePath.split("/").includes("..")) {
+        parser.abort(new Error(`Invalid snapshot path: ${entry.path}`));
+        return;
+      }
+      const target = `/pglite/data/${relativePath}`;
+      if (entry.type === "Directory") {
+        directories.push(target);
+        entry.resume();
+        return;
+      }
+      if (entry.type !== "File") {
+        parser.abort(new Error(`Unsupported snapshot entry: ${entry.type}`));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      entry.on("data", (chunk: Buffer) => {
+        chunks.push(chunk);
+      });
+      entry.on("error", (error: unknown) => {
+        parser.abort(
+          new Error(`Cannot read snapshot entry: ${entry.path}`, {
+            cause: error,
+          }),
+        );
+      });
+      entry.on("end", () => {
+        files.push({
+          path: target,
+          // MEMFS copies with .slice(); Buffer.slice() would alias the cache.
+          data: new Uint8Array(Buffer.concat(chunks)),
+          modifiedAt: Math.floor((entry.mtime?.getTime() ?? 0) / 1000),
+        });
+      });
+    },
+  });
+  parser.on("error", (error: Error) => {
+    parser.abort(error);
+  });
+  const completed = once(parser, "end");
+  parser.end(bytes);
+  await completed;
+  return { directories, files };
+}
+
+function snapshotFiles(path: string): Promise<SnapshotFiles> {
+  const images = snapshots();
+  let files = images.get(path);
+  if (!files) {
+    files = readSnapshotFiles(path);
+    images.set(path, files);
   }
-  return image;
+  return files;
+}
+
+class SnapshotMemoryFS extends MemoryFS {
+  constructor(private readonly snapshot: SnapshotFiles) {
+    super();
+  }
+
+  override async initialSyncFs(): Promise<void> {
+    await super.initialSyncFs();
+    if (!this.pg) {
+      throw new Error("Snapshot filesystem has not been initialized");
+    }
+    const filesystem = this.pg.Module.FS;
+    filesystem.mkdirTree("/pglite/data");
+    for (const directory of this.snapshot.directories) {
+      filesystem.mkdirTree(directory);
+    }
+    for (const file of this.snapshot.files) {
+      filesystem.writeFile(file.path, file.data);
+      filesystem.utime(file.path, file.modifiedAt, file.modifiedAt);
+    }
+  }
 }
 
 export interface PgliteTestDatabase {
@@ -159,13 +243,13 @@ export async function createPgliteDatabase(
 ): Promise<PgliteTestDatabase> {
   const engine = new PGlite({
     extensions: { pgcrypto, btree_gin },
-    loadDataDir: await snapshotImage(snapshotPath),
+    fs: new SnapshotMemoryFS(await snapshotFiles(snapshotPath)),
     parsers: driverParsers,
   });
   const database = drizzle(engine);
   const ready = await settleIncludingAbort(async () => {
     await engine.waitReady;
-    // Session settings are not carried by dumpDataDir/loadDataDir. Keep UTC
+    // Session settings are not carried by filesystem snapshots. Keep UTC
     // timestamp-without-time-zone columns consistent with PostgreSQL tests.
     await engine.exec("SET search_path TO public; SET timezone TO 'UTC'");
   });

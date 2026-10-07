@@ -14,6 +14,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { builtinConnectorsRoutes } from "../connectors";
@@ -478,6 +479,7 @@ describe("connector catalog v4 preparation", () => {
       context.mocks.s3.send.mockResolvedValue({ Contents: [] });
       if (created.runId) {
         await runs.requestCancelRun(actor, created.runId, [200, 404]);
+        await flushWaitUntilForTest();
       }
       if (created.connectionId) {
         await connectorsApi.deleteBuiltinConnectorAccount(
