@@ -60,7 +60,7 @@ export function createMcpChatHistoryBudget(signal: AbortSignal): HistoryBudget {
     rows: 0,
   };
 }
-function addHistorySize(
+export function addHistorySize(
   budget: HistoryBudget,
   bytes: number,
   rows: number,
@@ -121,7 +121,7 @@ function decodeHistoryArchive(
   budget.check();
   return rows;
 }
-function historyReadFailure(error: unknown): McpMessageHistoryError {
+export function historyReadFailure(error: unknown): McpMessageHistoryError {
   if (error instanceof McpMessageHistoryError) {
     return error;
   }
@@ -142,6 +142,12 @@ function historyReadFailure(error: unknown): McpMessageHistoryError {
     "Chat history could not be read completely. Retry the request later.",
   );
 }
+
+/** Preflight payloads before transferring them, shared by targeted input reads. */
+export const chatEventHistoryBytes =
+  sql`(COALESCE(octet_length(${chatEvents.payload}::text), 0)::bigint + 1024 + 6 * (COALESCE(octet_length(${chatEvents.contextType}), 0)::bigint + COALESCE(octet_length(${chatEvents.runEventId}), 0)::bigint + COALESCE(octet_length(${chatEvents.failureReason}), 0)::bigint))`.mapWith(
+    pgInt8ToSafeIntegerDecoder,
+  );
 
 interface HistoryQueryFacts {
   readonly principal: { readonly userId: string; readonly orgId: string };
@@ -201,10 +207,7 @@ const readHistorySnapshot$ = command(
           const metadata = await tx
             .select({
               seqId: chatEvents.seqId,
-              bytes:
-                sql`(COALESCE(octet_length(${chatEvents.payload}::text), 0)::bigint + 1024 + 6 * (COALESCE(octet_length(${chatEvents.contextType}), 0)::bigint + COALESCE(octet_length(${chatEvents.runEventId}), 0)::bigint + COALESCE(octet_length(${chatEvents.failureReason}), 0)::bigint))`.mapWith(
-                  pgInt8ToSafeIntegerDecoder,
-                ),
+              bytes: chatEventHistoryBytes,
             })
             .from(chatEvents)
             .where(

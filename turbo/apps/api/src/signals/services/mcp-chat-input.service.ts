@@ -15,7 +15,8 @@ import {
   McpMessageHistoryError,
   readMcpChatMessageHistory$,
 } from "./mcp-chat-message-history.service";
-import { getMcpRunStatus$ } from "./mcp-run-status.service";
+import { readUnarchivedMcpChatInput$ } from "./mcp-chat-input-history.service";
+import { nativeRunStatus } from "./native-run-status.service";
 
 interface Principal {
   readonly userId: string;
@@ -133,13 +134,23 @@ export const readCanonicalMcpChatInput$ = command(
     const budget = createMcpChatHistoryBudget(operationSignal);
     const result = await settle(
       (async (): Promise<CanonicalInputResult> => {
-        const rows = await set(
-          readMcpChatMessageHistory$,
+        const selected = await set(
+          readUnarchivedMcpChatInput$,
           principal,
-          input.threadId,
+          input,
           budget,
           operationSignal,
         );
+        const rows =
+          selected.kind === "canonical"
+            ? await set(
+                readMcpChatMessageHistory$,
+                principal,
+                input.threadId,
+                budget,
+                operationSignal,
+              )
+            : selected.rows;
         budget.check();
         const resolved =
           rows === null
@@ -206,7 +217,7 @@ function publicRejection(
 
 const observeMcpChatInput$ = command(
   async (
-    { set },
+    { get, set },
     principal: Principal,
     input: McpGetChatInputInput,
     signal: AbortSignal,
@@ -250,10 +261,10 @@ const observeMcpChatInput$ = command(
       };
     }
     const run = await awaitWithSignal(
-      set(getMcpRunStatus$, principal, { runId: current.runId }, signal),
+      get(nativeRunStatus({ ...principal, runId: current.runId })),
       signal,
     );
-    if (run.kind !== "ok") {
+    if (!run) {
       return {
         kind: "history_unavailable",
         message:
@@ -265,14 +276,14 @@ const observeMcpChatInput$ = command(
       data: {
         ...identity,
         inputStatus: "consumed",
-        run: { runId: run.data.runId, status: run.data.status },
+        run,
         error: null,
       },
     };
   },
 );
 
-/** Bound the full observation, including the ordinary consuming-Run read. */
+/** Bound the full observation, including the minimal native consuming-Run read. */
 export const getMcpChatInput$ = command(
   async (
     { set },

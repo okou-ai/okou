@@ -3,6 +3,12 @@ import {
   mcpListModelsOutputSchema,
 } from "@okouai/api-contracts/contracts/mcp-chat-discovery";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import {
+  mockGoogleText,
+  VERTEX_TEXT_URL,
+  vertexTextRequest,
+  vertexTextResponse,
+} from "./helpers/google-text";
 import { mcpGetChatInputOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-input";
 import { mcpSendChatMessageOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-mutations";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
@@ -13,7 +19,10 @@ import { mcpServerContract } from "@okouai/api-contracts/contracts/mcp-server";
 import { mcpGetChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-messages";
 
 import { mcpToolErrorContentSchema } from "@okouai/api-contracts/contracts/mcp-tool-errors";
-import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  resolveChatEventRecommendedFollowups,
+  type UserMessageDocument,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { http, HttpResponse } from "msw";
 
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -31,6 +40,7 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { chatEventDisplayText } from "./helpers/chat-event";
@@ -1073,6 +1083,395 @@ describe("MCP canonical message reads", () => {
   });
 });
 describe("MCP original input observations", () => {
+  it("observes a small live input despite unrelated output exceeding the full-history budget", async () => {
+    const auth = fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await nativeRunnerChatActor(f, auth);
+    const token = auth.token({
+      scope: `${requiredScopes} okou:chat:send okou:run:cancel`,
+    });
+    const sent = mcpSendChatMessageOutputSchema.parse(
+      (
+        await callTool(token, "send_chat_message", {
+          agentId: actor.agentId,
+          model: NATIVE_RUNNER_MODEL,
+          prompt: "Small observed origin",
+        })
+      ).structuredContent,
+    );
+    await flushWaitUntilForTest();
+    const selector = { threadId: sent.threadId, eventId: sent.eventId };
+    const first = mcpGetChatInputOutputSchema.parse(
+      (await callTool(token, "get_chat_input", selector)).structuredContent,
+    );
+    if (first.inputStatus !== "consumed") {
+      throw new Error("Expected an admitted native Run");
+    }
+    onTestFinished(async () => {
+      await f.cancelChatRun(actor.actor, first.run.runId);
+    });
+    const claimed = await f.claimChatRun(actor.runnerGroup, first.run.runId);
+    await f.webhooks.requestAgentEvents(
+      {
+        runId: first.run.runId,
+        events: Array.from({ length: 33 }, (_, sequenceNumber) => {
+          return {
+            type: "assistant",
+            sequenceNumber,
+            message: {
+              content: [{ type: "text", text: "x".repeat(1024 * 1024) }],
+            },
+          };
+        }),
+      },
+      claimed.sandboxHeaders,
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(
+      structuredToolError(
+        await callTool(token, "get_chat_messages", { threadId: sent.threadId }),
+      ).code,
+    ).toBe("history_limit");
+    const observed = mcpGetChatInputOutputSchema.parse(
+      (await callTool(token, "get_chat_input", selector)).structuredContent,
+    );
+    expect(observed).toStrictEqual({
+      ...selector,
+      createdAt: first.createdAt,
+      inputStatus: "consumed",
+      run: { runId: first.run.runId, status: "running" },
+      error: null,
+    });
+  }, 30_000);
+
+  it.each(["completed", "failed", "cancelled"] as const)(
+    "keeps input consumption separate from native %s state and owner/org authority",
+    async (status) => {
+      const auth = fixture();
+      const f = createChatEventsFixture(context);
+      const actor = await nativeRunnerChatActor(f, auth);
+      const token = auth.token({
+        scope: `${requiredScopes} okou:chat:send okou:run:cancel`,
+      });
+      const sent = mcpSendChatMessageOutputSchema.parse(
+        (
+          await callTool(token, "send_chat_message", {
+            agentId: actor.agentId,
+            model: NATIVE_RUNNER_MODEL,
+            prompt: "PRIVATE_INPUT_STATE_CANARY",
+          })
+        ).structuredContent,
+      );
+      await flushWaitUntilForTest();
+      const selector = { threadId: sent.threadId, eventId: sent.eventId };
+      const initial = mcpGetChatInputOutputSchema.parse(
+        (await callTool(token, "get_chat_input", selector)).structuredContent,
+      );
+      if (initial.inputStatus !== "consumed") {
+        throw new Error("Expected the accepted input to be consumed");
+      }
+      const runId = initial.run.runId;
+      onTestFinished(async () => {
+        const run = await f.api.readRun(actor.actor, runId);
+        if (["pending", "queued", "running"].includes(run.status)) {
+          await f.cancelChatRun(actor.actor, runId);
+        }
+      });
+      const claimed = await f.claimChatRun(actor.runnerGroup, runId);
+      if (status === "completed") {
+        await f.completeChatRunOk(runId, claimed.sandboxHeaders);
+      } else if (status === "failed") {
+        await f.failChatRun(
+          runId,
+          claimed.sandboxHeaders,
+          "PRIVATE_RUN_ERROR_CANARY",
+        );
+      } else {
+        expect(
+          (await callTool(token, "cancel_run", { runId })).isError,
+        ).not.toBeTruthy();
+      }
+      await flushWaitUntilForTest();
+      const observed = mcpGetChatInputOutputSchema.parse(
+        (await callTool(token, "get_chat_input", selector)).structuredContent,
+      );
+      expect(observed).toStrictEqual({
+        ...selector,
+        createdAt: initial.createdAt,
+        inputStatus: "consumed",
+        run: { runId, status },
+        error: null,
+      });
+      expect(JSON.stringify(observed)).not.toContain("PRIVATE_");
+      expect(
+        structuredToolError(
+          await callTool(
+            auth.token({ sub: `user_${randomUUID()}` }),
+            "get_chat_input",
+            selector,
+          ),
+        ).code,
+      ).toBe("not_found");
+      const foreignOrg = `org_${randomUUID()}`;
+      context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
+        {
+          data: [
+            {
+              id: randomUUID(),
+              role: "org:member",
+              organization: { id: auth.orgId },
+            },
+            {
+              id: randomUUID(),
+              role: "org:member",
+              organization: { id: foreignOrg },
+            },
+          ],
+          totalCount: 2,
+        },
+      );
+      expect(
+        structuredToolError(
+          await callTool(
+            auth.token({ org_id: foreignOrg }),
+            "get_chat_input",
+            selector,
+          ),
+        ).code,
+      ).toBe("not_found");
+    },
+  );
+
+  it("arbitrates live recall against consumption without resurrecting the origin", async () => {
+    const auth = fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await nativeRunnerChatActor(f, auth);
+    const active = await f.sendChatRun(actor.actor, {
+      agentId: actor.agentId,
+      model: NATIVE_RUNNER_MODEL,
+      prompt: "Hold the active native Run",
+    });
+    onTestFinished(async () => {
+      await f.cancelChatRun(actor.actor, active.runId);
+    });
+    const claimed = await f.claimChatRun(actor.runnerGroup, active.runId);
+    const token = auth.token({
+      scope: `${requiredScopes} okou:chat:send okou:run:cancel`,
+    });
+    const sent = mcpSendChatMessageOutputSchema.parse(
+      (
+        await callTool(token, "send_chat_message", {
+          agentId: actor.agentId,
+          threadId: active.threadId,
+          model: NATIVE_RUNNER_MODEL,
+          prompt: "Race recall and steering",
+        })
+      ).structuredContent,
+    );
+    await flushWaitUntilForTest();
+    const selector = { threadId: active.threadId, eventId: sent.eventId };
+    expect(
+      (await callTool(token, "get_chat_input", selector)).structuredContent,
+    ).toMatchObject({ inputStatus: "queued" });
+    const [recall, steer] = await Promise.all([
+      callTool(token, "revoke_queued_message", {
+        ...selector,
+        agentId: actor.agentId,
+      }),
+      f.api.requestDeclareSteeredInputAs(
+        `Bearer ${claimed.claim.sandboxToken}`,
+        active.runId,
+        sent.eventId,
+        [200, 404, 409],
+      ),
+    ]);
+    await flushWaitUntilForTest();
+    const observed = mcpGetChatInputOutputSchema.parse(
+      (await callTool(token, "get_chat_input", selector)).structuredContent,
+    );
+    expect(observed.eventId).toBe(sent.eventId);
+    if (observed.inputStatus === "recalled") {
+      expect(recall.isError).not.toBeTruthy();
+      expect(steer.status).not.toBe(200);
+      expect(
+        (await getMessages(token, { threadId: active.threadId })).messages.some(
+          (message) => {
+            return message.ref.eventId === sent.eventId;
+          },
+        ),
+      ).toBeFalsy();
+    } else {
+      expect(observed).toMatchObject({
+        inputStatus: "consumed",
+        run: { runId: active.runId, status: "running" },
+      });
+      expect(steer.status).toBe(200);
+      expect(recall.isError).toBeTruthy();
+    }
+  });
+
+  it("recognizes a recommended-followup prompt as an origin rather than its replacement", async () => {
+    const auth = fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await nativeRunnerChatActor(f, auth);
+    mockGoogleText();
+    server.use(
+      http.post(VERTEX_TEXT_URL, async ({ request }) => {
+        const payload = vertexTextRequest(await request.json(), request.url);
+        return vertexTextResponse(
+          payload.messages[0]?.content.includes(
+            "recommended follow-up messages",
+          )
+            ? JSON.stringify([
+                { prompt: "Use the recommendation", kind: "talk" },
+              ])
+            : "Recommended origin",
+        );
+      }),
+    );
+    const completed = await f.sendChatRun(actor.actor, {
+      agentId: actor.agentId,
+      model: NATIVE_RUNNER_MODEL,
+      prompt: "Generate a recommended follow-up",
+    });
+    const claim = await f.claimChatRun(actor.runnerGroup, completed.runId);
+    await f.webhooks.requestAgentEvents(
+      {
+        runId: completed.runId,
+        events: [
+          {
+            type: "assistant",
+            sequenceNumber: 0,
+            message: {
+              content: [{ type: "text", text: "An answer with a follow-up" }],
+            },
+          },
+        ],
+      },
+      claim.sandboxHeaders,
+      [200],
+    );
+    await f.completeChatRunOk(completed.runId, claim.sandboxHeaders, {
+      lastEventSequence: 0,
+    });
+    await flushWaitUntilForTest();
+    const page = await f.chat.listThreadEvents(actor.actor, completed.threadId);
+    const recommendation = page.events.find((event) => {
+      return (
+        event.eventType === "output.followups" &&
+        resolveChatEventRecommendedFollowups(event).length > 0
+      );
+    });
+    if (!recommendation) {
+      throw new Error("Expected a real generated recommendation");
+    }
+    const eventId = randomUUID();
+    await f.chat.requestSendEvent(
+      actor.actor,
+      {
+        agentId: actor.agentId,
+        threadId: completed.threadId,
+        model: NATIVE_RUNNER_MODEL,
+        prompt: "Use the recommendation",
+        revokesEventId: recommendation.id,
+        clientEventId: eventId,
+      },
+      [201],
+    );
+    await flushWaitUntilForTest();
+    const token = auth.token();
+    const observed = mcpGetChatInputOutputSchema.parse(
+      (
+        await callTool(token, "get_chat_input", {
+          threadId: completed.threadId,
+          eventId,
+        })
+      ).structuredContent,
+    );
+    expect(observed).toMatchObject({ eventId, inputStatus: "consumed" });
+    if (observed.inputStatus !== "consumed") {
+      throw new Error("Expected the recommendation to launch a native Run");
+    }
+    onTestFinished(async () => {
+      await f.cancelChatRun(actor.actor, observed.run.runId);
+    });
+    const after = await f.chat.listThreadEvents(
+      actor.actor,
+      completed.threadId,
+    );
+    const replacement = after.events.find((event) => {
+      return event.revokesEventId === eventId;
+    });
+    if (!replacement) {
+      throw new Error("Expected the consuming replacement");
+    }
+    for (const invalidId of [recommendation.id, replacement.id]) {
+      expect(
+        structuredToolError(
+          await callTool(token, "get_chat_input", {
+            threadId: completed.threadId,
+            eventId: invalidId,
+          }),
+        ).code,
+      ).toBe("not_found");
+    }
+  });
+
+  it("excludes live automation origins and their consuming replacements", async () => {
+    const auth = fixture();
+    const f = createChatEventsFixture(context);
+    const actor = await nativeRunnerChatActor(f, auth);
+    const workflowId = await createWorkflowsBddApi(context).createWorkflow(
+      actor.actor,
+      {
+        agentId: actor.agentId,
+        name: "hidden-mcp-input",
+      },
+    );
+    const created = await accept(
+      f.threadPiAutomationsClient().create({
+        headers: f.sessionHeaders(actor.actor),
+        params: { workflowId },
+        body: { schedule: { type: "loop", intervalSeconds: 3600 } },
+      }),
+      [201],
+    );
+    const started = await accept(
+      f.threadPiAutomationsClient().run({
+        headers: f.sessionHeaders(actor.actor),
+        params: { id: created.body.id },
+      }),
+      [201],
+    );
+    await flushWaitUntilForTest();
+    const threadId = started.body.chatThreadId;
+    const page = await f.chat.listThreadEvents(actor.actor, threadId);
+    const origin = page.events.find((event) => {
+      return event.eventType === "input.automation";
+    });
+    if (!origin) {
+      throw new Error("Expected the real hidden automation origin");
+    }
+    const replacement = page.events.find((event) => {
+      return event.revokesEventId === origin.id;
+    });
+    if (!replacement?.runId) {
+      throw new Error("Expected the automation's consuming native Run");
+    }
+    const runId = replacement.runId;
+    onTestFinished(async () => {
+      await f.cancelChatRun(actor.actor, runId);
+    });
+    for (const eventId of [origin.id, replacement.id]) {
+      expect(
+        structuredToolError(
+          await callTool(auth.token(), "get_chat_input", { threadId, eventId }),
+        ).code,
+      ).toBe("not_found");
+    }
+  });
+
   it("tracks concurrent identical inputs through queue, steering and a shared Run's completion", async () => {
     const auth = fixture();
     const f = createChatEventsFixture(context);

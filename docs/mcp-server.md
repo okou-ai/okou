@@ -55,6 +55,25 @@ unauthorized, replacement, control, output and hidden automation IDs are not
 valid original-input selectors. Unreadable history or an unavailable consuming
 Run is an explicit error, never a fabricated queued result.
 
+Input observation and recall use indexed origin/predecessor/successor reads only
+when one authorized repeatable-read snapshot proves the conversation has no
+archive. Retention requires archive coverage, so live primary/revoke keys then
+establish complete relevant identity and facts. Only those rows count toward
+the existing history byte/row budgets; unrelated live content is not loaded.
+A hot-origin miss still delegates to the complete canonical reader.
+
+Any archive-backed conversation retains full verified archive-plus-tail reading,
+even for an origin newer than the archive watermark. Ordering proves where
+newer successors reside, but not archive-wide UUID uniqueness: Web client IDs
+can be reused after archived live rows are deleted. Duplicate IDs, missing
+facts, corrupt/unavailable archives and canonical limits remain explicit errors.
+Archive-backed reads therefore remain O(history), with an extra short eligibility
+query. No persistent locator, archive index or unlimited retained lookup is
+introduced. Consumed input observations select only native Run ID/status with
+the same user/organization ownership; prompt/result/launch/account metadata is
+not needed or loaded. This is a query/payload reduction, not a measured production
+latency claim.
+
 Use `get_run_status({runId})` for the ordinary Web Run response. It replaces the
 old Run-only tool name directly, without an alias, and does not wait or derive
 another lifecycle, outcome or output-readiness state. Sending enqueues input;
@@ -87,7 +106,8 @@ identity; consumed and other rejected inputs are refused without cancelling a Ru
 Retained inputs can remain readable after their live rows disappear without being
 recallable; an unrecorded recall returns an explicit reference error rather than
 accepting Web's historical missing-target success. Recall performs up to two
-separately bounded canonical history reads. It does not cancel a Run. `cancel_run` takes `{runId}` and uses Web's
+separately bounded canonical input reads, using the same no-archive optimization
+when eligible. It does not cancel a Run. `cancel_run` takes `{runId}` and uses Web's
 cooperative cancellation command and side effects. Cancellation neither undoes
 past effects nor recalls unrelated queued inputs; worker cleanup can finish
 later. Completed/failed Runs cannot be cancelled.

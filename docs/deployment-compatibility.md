@@ -1022,6 +1022,26 @@ until it drains; source cleanup alone does not disable a serving old revision.
 Rollback restores that revision's feature-switch-controlled behavior. This PR
 does not change production overrides, merge, deploy, or revoke provider grants.
 
+## MCP input observation query reduction (#37912)
+
+Input observation reads only native Run ID/status with unchanged run/user/org
+ownership predicates and the native status schema. The public full-Run MCP tool
+and Web/CLI responses are unchanged. Observation and recall may read only the
+origin, immediate predecessor and successor chain when one authorized read-only
+repeatable-read snapshot proves there is no archive. Native retention requires
+archive coverage; live identity/revoke constraints establish completeness in
+that case. Missing origins and all archive-backed conversations retain complete
+canonical archive-plus-tail authority and its integrity/resource errors.
+
+An origin newer than an archive watermark is not sufficient: Web caller-owned
+IDs can be reused after archived live rows are deleted, so ordering does not
+prove archive-wide identity uniqueness. Those conversations remain O(history),
+including recent hot inputs, and pay an additional bounded eligibility query.
+No persistent projection, schema/migration, archive version, writer/retention,
+public wire contract or Run lifecycle changes. Old/new APIs can read the same
+facts throughout rollout; rollback changes cost only. No production activation,
+latency acceptance, merge or deployment is claimed.
+
 ## MCP original-input event identity (#37750)
 
 This is an explicitly authorized breaking MCP tool-schema cutover, not a Web,
