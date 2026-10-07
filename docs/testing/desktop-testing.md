@@ -23,15 +23,18 @@ Build each affected packaged configuration with `desktop/scripts/build.py`.
 Use `--development` for preview isolation. Packaging must retain the Clerk
 resource bundle, native backend, same production bundle ID, and legacy Swift
 ShipIt relaunch bridge. `--smoke-test` checks startup without touching account
-state or registering a host. It does not prove login, permissions, or remote
-command execution.
+state or registering a host. `--auth-smoke-test` initializes the real Clerk SDK
+and reports the Keychain service and signed-in state without registering a host.
+Clean CI builds must start signed out in the new production/preview namespaces.
+These checks do not prove interactive login, permissions, or remote commands.
 
 ## Native Acceptance
 
 Use the actual packaged app for these cases:
 
 - Signed-out users complete native sign-in and workspace selection.
-- Existing native sessions and the installation ID survive migration.
+- Electron upgrade users start signed out and retain their installation ID.
+- Subsequent native launches and updates retain the new native session.
 - Accessibility, Screen Recording, and browser Automation display their actual
   state and expose request/settings actions.
 - Online, offline, recovery, disabled, and error states show the expected controls.

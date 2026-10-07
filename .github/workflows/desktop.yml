@@ -105,7 +105,18 @@ jobs:
         env:
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY_PROD }}
           SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
-        run: python3 desktop/scripts/build.py --package
+        run: |
+          python3 desktop/scripts/build.py --package
+          python3 - 'desktop/out/Okou-darwin-arm64/Okou.app/Contents/MacOS/Okou' 'ai.okou.desktop.native-auth' <<'PY'
+          import json
+          import subprocess
+          import sys
+          result = subprocess.run([sys.argv[1], "--auth-smoke-test"], check=True, capture_output=True, text=True, timeout=30)
+          proof = json.loads(result.stdout)
+          assert proof["keychainService"] == sys.argv[2], proof
+          assert proof["signedIn"] is False, proof
+          print(result.stdout)
+          PY
 
       - name: Upload production-configured unsigned artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -128,7 +139,18 @@ jobs:
         env:
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY_PREVIEW }}
           OKOU_DESKTOP_PLATFORM_URL: ${{ steps.preview.outputs.url }}
-        run: python3 desktop/scripts/build.py --development --package
+        run: |
+          python3 desktop/scripts/build.py --development --package
+          python3 - 'desktop/out/Okou Dev-darwin-arm64/Okou Dev.app/Contents/MacOS/Okou Dev' 'ai.okou.desktop.dev.native-auth' <<'PY'
+          import json
+          import subprocess
+          import sys
+          result = subprocess.run([sys.argv[1], "--auth-smoke-test"], check=True, capture_output=True, text=True, timeout=30)
+          proof = json.loads(result.stdout)
+          assert proof["keychainService"] == sys.argv[2], proof
+          assert proof["signedIn"] is False, proof
+          print(result.stdout)
+          PY
 
       - name: Upload preview artifact
         if: github.event_name == 'pull_request'
