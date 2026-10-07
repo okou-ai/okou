@@ -10,12 +10,7 @@ import { afterEach } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import {
-  invalidateApiTestConnectorCatalogCompatibility,
-  installApiTestConnectorCatalog,
-} from "../../../test-fixtures/connector-catalog";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 
 import { seedOrgMembership$ } from "./helpers/org-membership";
@@ -185,35 +180,6 @@ describe("GET /api/connectors/:connectorSlug", () => {
       authMethod: "api-token",
       connectionStatus: "connected",
     });
-  });
-
-  it("returns 404 when the external catalog is unavailable", async () => {
-    // Preserve the legacy corruption contract without changing shared authority.
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      `legacy-slug-unavailable-${randomUUID()}`,
-    );
-    await installApiTestConnectorCatalog();
-    const fixture = seedAuthenticatedFixture();
-    seededFixtures.push(fixture);
-    await connectOpenai(fixture);
-    mockOptionalEnv("DROPBOX_OAUTH_CLIENT_ID", undefined);
-    await installApiTestConnectorCatalog();
-    await invalidateApiTestConnectorCatalogCompatibility();
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsBySlugContract,
-    );
-    const response = await accept(
-      client.get({
-        params: { connectorSlug: "openai" },
-        headers: authHeaders(),
-      }),
-      [404],
-    );
-
-    expect(response.body.error.code).toBe("NOT_FOUND");
   });
 
   it("allows access with a sandbox JWT carrying connector:read capability", async () => {

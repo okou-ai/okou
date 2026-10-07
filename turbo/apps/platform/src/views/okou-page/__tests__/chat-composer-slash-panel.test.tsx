@@ -1,5 +1,4 @@
 import { workflowsCollectionContract } from "@okouai/api-contracts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
@@ -56,9 +55,6 @@ async function openSlashMenu(query = ""): Promise<void> {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
-    },
   });
   const editor = await findComposerEditor();
   await fill(editor, `Draft /${query}`);
@@ -298,9 +294,6 @@ test("The panel emphasizes the typed query inside a workflow name", async () => 
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
-    },
   });
   const editor = await findComposerEditor();
   await fill(editor, "Draft /axi");

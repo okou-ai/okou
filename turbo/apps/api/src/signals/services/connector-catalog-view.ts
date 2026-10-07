@@ -1,3 +1,4 @@
+import { connectorCatalogSource } from "./connector-catalog-source";
 import type {
   ConnectorCatalogArtifact,
   ConnectorCatalogArtifactConnector,
@@ -21,13 +22,30 @@ export interface ConnectorCatalogLookup {
   readonly filteredMethodKeys: ReadonlySet<string>;
 }
 
-/** Full ordered entries and header for consumers that genuinely scan the catalog. */
+/**
+ * Catalog-wide entries plus the pointer row's category labels, which public
+ * discovery still returns to App clients.
+ */
 export interface ConnectorCatalogView extends ConnectorCatalogLookup {
-  readonly artifact: ConnectorCatalogArtifact;
+  readonly artifact: Pick<
+    ConnectorCatalogArtifact,
+    "categoryMetadata" | "connectors"
+  >;
 }
 
-/** Existing load observations, kept separate from lookup-only consumers. */
-export interface ConnectorCatalogRuntimeView extends ConnectorCatalogView {
-  readonly catalogRawSize: number;
-  readonly catalogCompressedSize: number;
+export type ConnectorCatalogRuntimeView = ConnectorCatalogView;
+
+/** Keep the persisted/Runner v1 shape readable without retaining version identity. */
+export function catalogIdentityFromCapture(
+  capture: { readonly schemaVersion: number; readonly hash: string },
+  capabilityDigest: string,
+): ExternalCatalogIdentity {
+  return {
+    sourceId: connectorCatalogSource().sourceId,
+    schemaVersion: capture.schemaVersion,
+    // Legacy wire field, no longer used for identity comparisons.
+    catalogVersion: capture.hash,
+    catalogDigest: capture.hash,
+    capabilityDigest,
+  };
 }

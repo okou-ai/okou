@@ -17,7 +17,6 @@ import {
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -355,11 +354,7 @@ test.each(["http", "mcp", "automatic"] as const)(
     context.mocks.api(customConnectorOAuth2Contract.start, ({ respond }) => {
       return respond(200, start);
     });
-    await setupPage({
-      context,
-      path: "/connectors?tab=custom",
-      featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
-    });
+    await setupPage({ context, path: "/connectors?scope=custom" });
     const connect = await waitFor(() => {
       return getConnectorAction("button", `Connect ${connector.displayName}`);
     });

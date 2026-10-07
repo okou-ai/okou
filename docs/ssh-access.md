@@ -8,22 +8,18 @@ SSH uses neither connector accounts nor connector permissions.
 ## Owner setup
 
 Open **Connectors -> Remote control** (`/connectors?scope=remote-control&type=ssh`) to manage hosts for your
-current organization and user, without selecting or creating an Agent. This scope is available in both the legacy tabs and the Connector Directory. The SSH
-card uses the same presentation as connector cards: no hosts shows the service
-description and add affordance; one configured host shows its display name and
-multiple hosts show their count. Hosts without a reported failure use a green dot;
-current failures use an amber dot and `failed/total need attention`, including
-`1/1 need attention` for a single failed host. Agent-wide grant controls are no longer shown. Each host has a chat default,
-and each chat can explicitly allow or deny that exact host; see
-[Chat remote access](thread-remote-access.md). The count is configuration,
-not tested connectivity. It participates in search and category navigation.
-Connection-status filters mean configured or not configured for SSH; Agent
-and unshared filters do not list SSH hosts. SSH never opens generic connector
-account or permission dialogs.
+current organization and user, without selecting or creating an Agent. While
+any host reports a current failure, the host list shows how many SSH hosts need
+attention, and each failed host explains its failure. Agent-wide grant controls
+are no longer shown. Each host has a chat default, and each chat can explicitly
+allow or deny that exact host; see [Chat remote access](thread-remote-access.md).
+SSH never opens generic connector account or permission dialogs.
 
-The SSH card opens the Remote control scope with the SSH type selected. Use
-**Add host** there to create a host. Host management remains independent of
-chat host selections.
+While no host is configured, the chat composer's connector directory offers an
+SSH card with the service description and an add affordance. It participates in
+search and in the Remote access category, and opens the Remote control scope
+with the SSH type selected. Use **Add host** there to create a host. Host
+management remains independent of chat host selections.
 
 The **Connections** view configures a display name, public hostname or IP, port, and a
 credential. Select an existing credential or create a named credential inline with

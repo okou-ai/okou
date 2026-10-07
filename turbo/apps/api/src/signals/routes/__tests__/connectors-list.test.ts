@@ -12,10 +12,7 @@ import { afterEach } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import {
-  invalidateApiTestConnectorCatalogCompatibility,
-  installApiTestConnectorCatalog,
-} from "../../../test-fixtures/connector-catalog";
+import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import {
   readConnectorCredentialStorageState,
   setConnectorDefaultState,
@@ -242,9 +239,8 @@ describe("GET /api/connectors", () => {
     expect(detail.body.error.code).toBe("NOT_FOUND");
   });
 
-  it("keeps current-entry account reads available while full-snapshot scope reads reject unavailable compatibility", async () => {
-    // Only this case-owned legacy compatibility generation becomes unavailable.
-    // The accepted immutable current and entries remain intact.
+  it("keeps current-entry account and scope reads available after a capability change", async () => {
+    // The capability change re-evaluates compatibility from the same entries.
     mockEnv(
       "R2_USER_STORAGES_BUCKET_NAME",
       `legacy-list-unavailable-${randomUUID()}`,
@@ -295,7 +291,6 @@ describe("GET /api/connectors", () => {
     ]);
     mockOptionalEnv("BOX_OAUTH_CLIENT_ID", undefined);
     await installApiTestConnectorCatalog();
-    await invalidateApiTestConnectorCatalogCompatibility();
     mocks.clerk.session(fixture.userId, fixture.orgId);
 
     const response = await accept(
@@ -333,37 +328,43 @@ describe("GET /api/connectors", () => {
       hasSibling: false,
     });
 
-    // The nonexistent receipt and unchanged full-snapshot scope readers reject.
-    const unavailableReads = await Promise.all([
-      accept(
-        accountClient.oauthCompletion({
-          headers: authHeaders(),
-          query: target,
-          params: { attemptId: randomUUID() },
-        }),
-        [404],
-      ),
-      accept(
-        accountClient.scopeDiff({
-          headers: authHeaders(),
-          query: { connectorSlug: "gitlab" },
-          params: { connectionId: account.id },
-        }),
-        [404],
-      ),
-      accept(
-        setupApp({ context, routes: builtinConnectorsRoutes })(
-          builtinConnectorScopeDiffContract,
-        ).getScopeDiff({
-          headers: authHeaders(),
-          params: { connectorSlug: "gitlab" },
-        }),
-        [404],
-      ),
-    ]);
-    for (const result of unavailableReads) {
-      expect(result.body.error.code).toBe("NOT_FOUND");
-    }
+    // Scope reads compute compatibility from the current entry.
+    const connectorScopeDiff = await accept(
+      setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorScopeDiffContract,
+      ).getScopeDiff({
+        headers: authHeaders(),
+        params: { connectorSlug: "gitlab" },
+      }),
+      [200],
+    );
+    const scopeDiff = await accept(
+      accountClient.scopeDiff({
+        headers: authHeaders(),
+        query: { connectorSlug: "gitlab" },
+        params: { connectionId: account.id },
+      }),
+      [200],
+    );
+    const emptyScopeDiff = {
+      addedScopes: [],
+      removedScopes: [],
+      currentScopes: [],
+      storedScopes: [],
+    };
+    expect(connectorScopeDiff.body).toStrictEqual(emptyScopeDiff);
+    expect(scopeDiff.body).toStrictEqual(emptyScopeDiff);
+
+    // A nonexistent OAuth receipt still rejects.
+    const missingReceipt = await accept(
+      accountClient.oauthCompletion({
+        headers: authHeaders(),
+        query: target,
+        params: { attemptId: randomUUID() },
+      }),
+      [404],
+    );
+    expect(missingReceipt.body.error.code).toBe("NOT_FOUND");
     const selection = { target, connectionId: account.id };
     const inspected = await accept(
       accountClient.inspect({

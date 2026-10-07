@@ -76,7 +76,7 @@ function button(
   return found;
 }
 
-async function setupChat(content: string, enabled = true) {
+async function setupChat(content: string) {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "Subscription actions",
@@ -94,7 +94,6 @@ async function setupChat(content: string, enabled = true) {
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: { subscriptionControls: enabled },
   });
 }
 
@@ -209,7 +208,6 @@ test("the direct URL opens an authenticated reset page and still requires a clic
     context,
     path: PATH,
     host: "app.okou.ai",
-    featureSwitches: { subscriptionControls: true },
   });
   await screen.findByText("Remaining resets: 3");
   expect(submitted).toBeFalsy();
@@ -235,7 +233,6 @@ test("the standalone Claude Code page exposes natural recovery without manual-cr
     context,
     path: PATH,
     host: "app.okou.ai",
-    featureSwitches: { subscriptionControls: true },
   });
   await expect(
     screen.findByText(
@@ -511,16 +508,6 @@ test.each([
     "original@example.test Week remaining",
     label,
   ]);
-});
-
-test("disabled rollout renders an inert card rather than performing a reset", async () => {
-  await setupChat(URL, false);
-  await screen.findByText(
-    "This subscription is unavailable in the current workspace.",
-  );
-  expect(
-    queryAllByRoleFast("button", screen.getByTestId("subscription-reset-card")),
-  ).toHaveLength(0);
 });
 
 test("untrusted reset URLs and code examples stay ordinary message content", async () => {

@@ -1780,8 +1780,7 @@
       "workflows": {
         "empty": "일치하는 워크플로가 없습니다",
         "loading": "워크플로 로딩 중...",
-        "title": "워크플로",
-        "viewAll": "모든 워크플로 보기"
+        "title": "워크플로"
       }
     },
     "computerUse": {
@@ -1819,8 +1818,6 @@
       "add": "{{connectorName}} 추가",
       "addConnectors": "커넥터 추가",
       "authorized": "{{connectorName}}가 연결되고 {{agentName}}에 권한이 부여되었습니다",
-      "available_one": "연결 가능한 커넥터 ({{count}})",
-      "available_other": "연결 가능한 커넥터 ({{count}})",
       "back": "뒤로",
       "configurePermissions": "{{connectorName}} 권한 구성",
       "customAuthorizeDescription": "이 맞춤 커넥터를 검토하고 연결한 후 에이전트에 권한을 부여하세요.",
@@ -2948,7 +2945,6 @@
     "delete": "Cloudflare Access 삭제",
     "deleteHelp": "이 Cloudflare Access를 삭제할까요? 저장된 Service Token은 복구할 수 없습니다. 내 호스트는 먼저 다시 연결해야 합니다.",
     "deleteUncertain": "삭제 여부를 확인할 수 없습니다. 다시 시도하기 전에 최신 영향을 확인하세요.",
-    "description": "Cloudflare Access 서비스 토큰으로 보호된 애플리케이션에 액세스하세요.",
     "edit": "Cloudflare Access 편집",
     "failed": "Cloudflare Access 변경 사항을 저장하지 못했습니다. 다시 시도하세요.",
     "forbidden": "조직 관리자만 공유 Cloudflare Access를 변경할 수 있습니다.",
@@ -2963,7 +2959,6 @@
     "latest": "최근 저장된 설정",
     "loadFailed": "Cloudflare Access를 불러오지 못했습니다. 다시 시도하세요.",
     "loading": "Cloudflare Access 불러오는 중…",
-    "manage": "Cloudflare Access 관리",
     "memberIdentifier": " (ID {{identifier}})",
     "missing": "이 Cloudflare Access는 더 이상 사용할 수 없습니다. 다른 항목을 선택하거나 새로 만드세요.",
     "name": "이름",
@@ -3171,7 +3166,6 @@
           "menu": "영업 및 비즈니스"
         }
       },
-      "categoriesAria": "커넥터 카테고리",
       "description": "에이전트가 사용할 수 있도록 타사 서비스를 연결하세요.",
       "descriptionWithCount": "에이전트가 사용할 수 있도록 {{value}}개의 서비스를 연결하세요.",
       "directory": {
@@ -3190,8 +3184,6 @@
       "empty": {
         "agent": "이 에이전트에 연결된 커넥터가 없습니다",
         "connected": "연결된 커넥터가 없습니다",
-        "matching": "\"{{search}}\"와(과) 일치하는 {{message}}",
-        "notConnected": "연결할 커넥터가 남아 있지 않습니다",
         "search": "\"{{search}}\"와(과) 일치하는 커넥터가 없습니다",
         "unshared": "모든 커넥터가 에이전트와 공유되어 있습니다"
       },
@@ -3201,14 +3193,10 @@
         "all": "전체",
         "allAgents": "모든 에이전트",
         "aria": "커넥터 필터",
-        "connected": "연결됨",
-        "notConnected": "연결 안 됨",
-        "status": "상태",
         "unshared": "어떤 에이전트와도 공유되지 않음"
       },
       "filterWith": "필터: {{category}}",
       "iconUnavailable": "커넥터 아이콘을 사용할 수 없습니다",
-      "newConnector": "새 커넥터",
       "noConnectorsAlt": "커넥터 없음",
       "otherCategory": "기타",
       "remoteAccess": "원격 액세스",
@@ -3235,10 +3223,6 @@
         "seeMore_one": "{{names}} 외 {{count}}개 보기",
         "seeMore_other": "{{names}} 외 {{count}}개 보기",
         "top": "인기 커넥터"
-      },
-      "tabs": {
-        "builtin": "내장",
-        "custom": "사용자 지정"
       },
       "title": "커넥터",
       "unnamedAgent": "이름 없음"
@@ -3379,7 +3363,6 @@
       "edit": {
         "title": "커스텀 커넥터 편집"
       },
-      "emptyAdmin": "아직 커스텀 커넥터가 없습니다. 모든 멤버가 사용할 API를 등록하려면 새로 만드세요.",
       "emptyMember": "조직에 등록된 커스텀 커넥터가 없습니다.",
       "mcpStreamableHttp": "MCP · Streamable HTTP",
       "mcpType": "MCP",
@@ -5169,10 +5152,8 @@
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "⌘/Ctrl+Enter를 눌러 전송, Enter는 새 줄",
-        "description": "채팅에서 메시지 전송 방식을 선택하세요.",
         "enter": "Enter",
         "enterDescription": "Enter를 눌러 전송, Shift+Enter는 새 줄",
-        "sectionTitle": "Enter",
         "title": "메시지 전송 키"
       },
       "timezone": {

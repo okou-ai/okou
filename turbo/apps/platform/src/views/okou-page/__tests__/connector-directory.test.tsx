@@ -1,6 +1,5 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -46,7 +45,6 @@ test("Show builtin tool service details without HTTP permission controls", async
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
   const dialog = await openDirectory(user);
   await fill(
@@ -129,7 +127,6 @@ test("Offer the catalog for adding, and find a connected connector by name", asy
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
 
   // The composer's connector popover already lists what is connected, so the
@@ -161,7 +158,6 @@ test("Find a connector by a tag that is not in its name", async () => {
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
 
   const dialog = await openDirectory(user);
@@ -193,7 +189,6 @@ test("Open connector detail and step back to the list", async () => {
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
 
   const dialog = await openDirectory(user);
@@ -225,25 +220,6 @@ test("Open connector detail and step back to the list", async () => {
   expect(
     screen.getByRole("dialog", { name: "Connectors" }),
   ).toBeInTheDocument();
-});
-
-test("Keep the existing dialog when the directory switch is off", async () => {
-  const user = userEvent.setup({ delay: null });
-  installComposerConnectorFixture({ catalog: directoryCatalog() });
-
-  await setupPage({
-    context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
-  });
-
-  await expect(screen.findByTestId("start-cards")).resolves.toBeVisible();
-  await user.click(await findFastControl("button", "Connectors"));
-  await user.click(await findFastControl("button", "Add connectors"));
-
-  await expect(
-    screen.findByRole("dialog", { name: /Available connectors/u }),
-  ).resolves.toBeInTheDocument();
 });
 
 function rankedCatalog() {
@@ -304,7 +280,6 @@ test("Close a shelf with the products behind it, and open that category", async 
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
 
   const dialog = await openDirectory(user);
@@ -339,7 +314,6 @@ test("Show a connector on one shelf only", async () => {
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
 
   const dialog = await openDirectory(user);
@@ -359,7 +333,6 @@ test("List the catalog when it is too small for any category to fill a shelf", a
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
 
   const dialog = await openDirectory(user);
@@ -395,7 +368,6 @@ test("Count the whole category on a chip, not the slice discovery returned", asy
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
 
   const dialog = await openDirectory(user);
@@ -429,7 +401,6 @@ test("Show the whole category the chip counted, not the browse slice", async () 
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
 
   const dialog = await openDirectory(user);
@@ -492,7 +463,6 @@ test("Open one provider authorization window from a focused card with Enter", as
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
 
   const dialog = await openDirectory(user);
@@ -530,7 +500,6 @@ test("Keep remote access results outside connector action navigation", async () 
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
 
   const dialog = await openDirectory(user);

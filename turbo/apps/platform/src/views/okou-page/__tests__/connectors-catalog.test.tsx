@@ -5,7 +5,6 @@ import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contra
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { connectorAgentAccessContract } from "@okouai/api-contracts/contracts/connector-agent-access";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -25,7 +24,6 @@ import {
   getConnectorIcon,
   listAgent,
   mockConnectors,
-  mockCustomConnectorStory,
   mockOAuthCompletions,
   mockPublicConnectorStatus,
   publicStatusItem,
@@ -181,34 +179,17 @@ async function openConnectorFilterCatalog() {
   mockConnectorAgentAccess(context, (agentId) => {
     return { enabledConnectorSlugs: agentId === researchId ? ["github"] : [] };
   });
-  await setupPage({
-    context,
-    path: "/connectors",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
-  });
-  await expectCards({ github: true, asana: true });
+  await setupPage({ context, path: "/connectors?scope=connected" });
+  await expectCards({ github: true, asana: false });
   return { researchId };
 }
 
-test("Switch between connected and disconnected connector filters", async () => {
-  await openConnectorFilterCatalog();
-  click(getConnectorAction("button", "Filter connectors"));
-  click(getConnectorAction("menuitem", "Connected"));
-  await expectCards({ github: true, asana: false });
-  expect(new URLSearchParams(locationSearch()).get("connection")).toBe(
-    "connected",
-  );
-
-  click(getConnectorAction("button", "Filter connectors"));
-  click(getConnectorAction("menuitem", "Not connected"));
-  await expectCards({ github: false, asana: true });
-});
-
-test("Filter connectors by an agent after clearing the text search", async () => {
+test("Filter connected connectors by an agent after clearing the text search", async () => {
   const { researchId } = await openConnectorFilterCatalog();
-  await fill(screen.getByPlaceholderText("Find connectors"), "git");
+  const search = screen.getByPlaceholderText("Find connected connectors");
+  await fill(search, "git");
   await expectCards({ github: true, asana: false });
-  await fill(screen.getByPlaceholderText("Find connectors"), "");
+  await fill(search, "");
   click(getConnectorAction("button", "Filter connectors"));
   click(
     await waitFor(() => {
@@ -275,14 +256,10 @@ test("Search the full connector catalog", async () => {
       });
     },
   );
-  await setupPage({
-    context,
-    path: "/connectors",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
-  });
+  await setupPage({ context, path: "/connectors" });
   await expect(screen.findByText("GitHub")).resolves.toBeInTheDocument();
   await expect(
-    screen.findByText("Connect 1,236 services for your agents to use."),
+    screen.findByText("Connect 1,234 services for your agents to use."),
   ).resolves.toBeInTheDocument();
 
   await fill(screen.getByPlaceholderText("Find connectors"), "Slack");
@@ -293,40 +270,8 @@ test("Search the full connector catalog", async () => {
   });
   expect(keywords).toContain("Slack");
   await expect(
-    screen.findByText("Connect 1,236 services for your agents to use."),
+    screen.findByText("Connect 1,234 services for your agents to use."),
   ).resolves.toBeInTheDocument();
-});
-
-test("Switch between built-in and custom connectors", async () => {
-  mockCustomConnectorStory(context);
-  await setupPage({
-    context,
-    path: "/connectors?tab=custom",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: false },
-  });
-  const custom = await waitFor(() => {
-    return getConnectorAction("tab", "Custom");
-  });
-  expect(custom).toHaveAttribute("aria-selected", "true");
-  expect(new URLSearchParams(locationSearch()).get("tab")).toBe("custom");
-
-  click(getConnectorAction("tab", "Built-in"));
-  await waitFor(() => {
-    expect(getConnectorAction("tab", "Built-in")).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-    expect(new URLSearchParams(locationSearch()).has("tab")).toBeFalsy();
-  });
-
-  click(getConnectorAction("tab", "Custom"));
-  await waitFor(() => {
-    expect(getConnectorAction("tab", "Custom")).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-    expect(new URLSearchParams(locationSearch()).get("tab")).toBe("custom");
-  });
 });
 
 test("Present a connector with no accounts and start direct OAuth", async () => {
@@ -454,7 +399,6 @@ test("Browse the catalog as shelves, then enter a category and come back", async
   await setupPage({
     context,
     path: "/connectors",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
 
   // Six per shelf, closed by the products it stands for rather than a count.
@@ -532,7 +476,6 @@ test("Land on Discover, then switch to the connectors this workspace has", async
   await setupPage({
     context,
     path: "/connectors",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
 
   // Discovery leads: the catalog is what a visit is usually for, and the
@@ -599,7 +542,6 @@ test("Warn on the scope control when a connection this workspace owns needs a re
   await setupPage({
     context,
     path: "/connectors",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
 
   // The list is behind a control, so the control has to carry the one thing a
@@ -639,7 +581,6 @@ test("Find the connectors no agent is using", async () => {
   await setupPage({
     context,
     path: "/connectors?scope=connected",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
 
   await waitFor(() => {
@@ -674,7 +615,6 @@ test("Reach the connectors this workspace built from their own segment", async (
   await setupPage({
     context,
     path: "/connectors",
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
 
   // Browsing the catalog no longer trails a block of connectors this workspace

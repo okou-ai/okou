@@ -263,24 +263,11 @@ describe("auth tokens", () => {
   );
 
   it.each(["subscription:read", "subscription:switch"] as const)(
-    "grants %s by default unless subscription controls are switched off",
+    "grants %s by default",
     (capability) => {
-      const defaultToken = generateOkouToken(
-        "user_okou",
-        "run_okou",
-        "org_okou",
-      );
-      const disabledToken = generateOkouToken(
-        "user_okou",
-        "run_okou",
-        "org_okou",
-        { [FeatureSwitchKey.SubscriptionControls]: false },
-      );
+      const token = generateOkouToken("user_okou", "run_okou", "org_okou");
 
-      expect(verifyOkouToken(defaultToken)?.capabilities).toContain(capability);
-      expect(verifyOkouToken(disabledToken)?.capabilities).not.toContain(
-        capability,
-      );
+      expect(verifyOkouToken(token)?.capabilities).toContain(capability);
     },
   );
 

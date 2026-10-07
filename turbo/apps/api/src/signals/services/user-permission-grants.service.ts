@@ -15,10 +15,7 @@ import {
 } from "@okouai/connectors/firewall-types";
 
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
-import {
-  connectorCatalogActiveSnapshot,
-  connectorCatalogCompatibilityEvaluation,
-} from "@okouai/db/schema/connector-catalog";
+import { connectorCatalog } from "@okouai/db/schema/connector-catalog";
 import { agents } from "@okouai/db/schema/agent";
 import { and, asc, eq, gt, inArray, isNull, or, type SQL } from "drizzle-orm";
 import type {
@@ -422,27 +419,6 @@ export const resolveActiveNetworkPolicyRefreshes$ = command(
   },
 );
 
-function connectorCatalogIdentityJoin() {
-  return and(
-    eq(
-      connectorCatalogCompatibilityEvaluation.sourceId,
-      connectorCatalogActiveSnapshot.sourceId,
-    ),
-    eq(
-      connectorCatalogCompatibilityEvaluation.schemaVersion,
-      connectorCatalogActiveSnapshot.schemaVersion,
-    ),
-    eq(
-      connectorCatalogCompatibilityEvaluation.catalogVersion,
-      connectorCatalogActiveSnapshot.catalogVersion,
-    ),
-    eq(
-      connectorCatalogCompatibilityEvaluation.catalogDigest,
-      connectorCatalogActiveSnapshot.catalogDigest,
-    ),
-  );
-}
-
 function baselineStaticIdentityIsCurrent(
   baseline: StoredConnectorPermissionBaseline,
   current: {
@@ -538,9 +514,8 @@ export async function resolveActiveNetworkPolicyRefreshesFromBaseline(
     return await db
       .select({
         identity: {
-          schemaVersion: connectorCatalogActiveSnapshot.schemaVersion,
-          catalogVersion: connectorCatalogActiveSnapshot.catalogVersion,
-          catalogDigest: connectorCatalogActiveSnapshot.catalogDigest,
+          schemaVersion: connectorCatalog.schemaVersion,
+          catalogDigest: connectorCatalog.hash,
         },
         grant: {
           connectorSlug: userPermissionGrants.connectorSlug,
@@ -549,11 +524,7 @@ export async function resolveActiveNetworkPolicyRefreshesFromBaseline(
           expiresAt: userPermissionGrants.expiresAt,
         },
       })
-      .from(connectorCatalogActiveSnapshot)
-      .innerJoin(
-        connectorCatalogCompatibilityEvaluation,
-        connectorCatalogIdentityJoin(),
-      )
+      .from(connectorCatalog)
       .leftJoin(
         userPermissionGrants,
         and(
@@ -565,16 +536,9 @@ export async function resolveActiveNetworkPolicyRefreshesFromBaseline(
         ),
       )
       .where(
-        and(
-          eq(connectorCatalogActiveSnapshot.sourceId, current.sourceId),
-          eq(
-            connectorCatalogActiveSnapshot.schemaVersion,
-            SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-          ),
-          eq(
-            connectorCatalogCompatibilityEvaluation.executableCapabilityDigest,
-            current.capabilityDigest,
-          ),
+        eq(
+          connectorCatalog.schemaVersion,
+          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
         ),
       )
       .orderBy(
@@ -587,7 +551,6 @@ export async function resolveActiveNetworkPolicyRefreshesFromBaseline(
   if (
     first === undefined ||
     first.identity.schemaVersion !== baseline.catalogIdentity.schemaVersion ||
-    first.identity.catalogVersion !== baseline.catalogIdentity.catalogVersion ||
     first.identity.catalogDigest !== baseline.catalogIdentity.catalogDigest
   ) {
     return { kind: "incompatible" };

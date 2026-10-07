@@ -34,7 +34,6 @@ const {
   chat,
   chatCallbacks,
   misc,
-  authDeviceSupport,
   entitledChatActor,
 
   seedBuiltInModelKey,
@@ -1002,99 +1001,73 @@ describe("CHAT-02: model-first routing", () => {
     await cancelChatRun(actor, run.runId);
   });
 
-  it.each(
-    [false, true].map((usRoutingEnabled) => {
-      return { model: "okou-1.0" as const, usRoutingEnabled };
-    }),
-  )(
-    "routes built-in $model through global OpenRouter with US routing $usRoutingEnabled",
-    async ({ model, usRoutingEnabled }) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      configureNativeCliArtifact();
-      await seedBuiltInModelCandidateKeys(context, model);
-      await configureBuiltInPiModel(actor, "okou-1.0");
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.OpenRouterUsRouting]: usRoutingEnabled,
-      });
-      await preparePiResourceHandoff(actor, agentId);
+  it("routes built-in okou-1.0 through global OpenRouter", async () => {
+    const model = "okou-1.0";
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    configureNativeCliArtifact();
+    await seedBuiltInModelCandidateKeys(context, model);
+    await configureBuiltInPiModel(actor, "okou-1.0");
+    await preparePiResourceHandoff(actor, agentId);
 
-      const run = await sendChatRun(actor, {
-        agentId,
-        model,
-        prompt: "capture the managed DeepSeek route",
-      });
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.OpenRouterUsRouting]: !usRoutingEnabled,
-      });
-      const { claim } = await claimChatRun(runnerGroup, run.runId);
-      expect(claim.cliAgentType).toBe("pi");
-      expect(claim.piModelConfig).toMatchObject({
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        model: "@preset/okou-1-0",
-      });
-      expect(claim.billableFirewalls).toContain(
-        "model-provider:openrouter-codex",
-      );
-      await cancelChatRun(actor, run.runId);
-    },
-    90_000,
-  );
+    const run = await sendChatRun(actor, {
+      agentId,
+      model,
+      prompt: "capture the managed DeepSeek route",
+    });
+    const { claim } = await claimChatRun(runnerGroup, run.runId);
+    expect(claim.cliAgentType).toBe("pi");
+    expect(claim.piModelConfig).toMatchObject({
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "@preset/okou-1-0",
+    });
+    expect(claim.billableFirewalls).toContain(
+      "model-provider:openrouter-codex",
+    );
+    await cancelChatRun(actor, run.runId);
+  }, 90_000);
 
-  it.each([false, true])(
-    "freezes the Auto endpoint and firewall with US switch %s",
-    async (enabled) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const model = await configureBuiltInPiModelOnOpenRouter(
-        actor,
-        "okou-1.0",
-      );
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.OpenRouterUsRouting]: enabled,
-      });
-      await preparePiResourceHandoff(actor, agentId);
-      const run = await sendChatRun(actor, {
-        agentId,
-        model,
-        prompt: "capture the fixed Auto route",
-      });
-      await authDeviceSupport.updateFeatureSwitches(actor, {
-        [FeatureSwitchKey.OpenRouterUsRouting]: !enabled,
-      });
-      const { claim, sandboxHeaders } = await claimChatRun(
-        runnerGroup,
-        run.runId,
-      );
-      expect(claim.cliAgentType).toBe("pi");
-      expect(claim.piModelConfig).toMatchObject({
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        model: "@preset/okou-1-0",
-      });
-      expect(claim.billableFirewalls).toContain(
-        "model-provider:openrouter-codex",
-      );
-      if (!claim.encryptedSecrets) {
-        throw new Error("Missing managed credential bundle");
-      }
-      const auth = await createFirewallApi(context).requestFirewallAuth(
-        sandboxHeaders,
-        {
-          encryptedSecrets: claim.encryptedSecrets,
-          authHeaders: {
-            Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
-          },
-          secretConnectorMap: claim.secretConnectorMap ?? undefined,
-          secretConnectorMetadataMap:
-            claim.secretConnectorMetadataMap ?? undefined,
+  it("freezes the Auto endpoint and firewall", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const model = await configureBuiltInPiModelOnOpenRouter(actor, "okou-1.0");
+    await preparePiResourceHandoff(actor, agentId);
+    const run = await sendChatRun(actor, {
+      agentId,
+      model,
+      prompt: "capture the fixed Auto route",
+    });
+    const { claim, sandboxHeaders } = await claimChatRun(
+      runnerGroup,
+      run.runId,
+    );
+    expect(claim.cliAgentType).toBe("pi");
+    expect(claim.piModelConfig).toMatchObject({
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "@preset/okou-1-0",
+    });
+    expect(claim.billableFirewalls).toContain(
+      "model-provider:openrouter-codex",
+    );
+    if (!claim.encryptedSecrets) {
+      throw new Error("Missing managed credential bundle");
+    }
+    const auth = await createFirewallApi(context).requestFirewallAuth(
+      sandboxHeaders,
+      {
+        encryptedSecrets: claim.encryptedSecrets,
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("OPENROUTER_API_KEY")}`,
         },
-        [200],
-      );
-      expect(auth.body).toMatchObject({
-        resolvedSecrets: ["OPENROUTER_API_KEY"],
-      });
-      await cancelChatRun(actor, run.runId);
-    },
-    90_000,
-  );
+        secretConnectorMap: claim.secretConnectorMap ?? undefined,
+        secretConnectorMetadataMap:
+          claim.secretConnectorMetadataMap ?? undefined,
+      },
+      [200],
+    );
+    expect(auth.body).toMatchObject({
+      resolvedSecrets: ["OPENROUTER_API_KEY"],
+    });
+    await cancelChatRun(actor, run.runId);
+  }, 90_000);
 });

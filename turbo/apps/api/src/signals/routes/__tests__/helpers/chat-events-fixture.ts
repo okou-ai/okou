@@ -147,6 +147,7 @@ const GPT_USAGE_PRICING = [
 });
 
 export type PiUsageProvider =
+  | "claude-fable-5-1"
   | "deepseek-v4-flash"
   | "deepseek-v4.1-flash"
   | "okou-1.0"

@@ -1,7 +1,5 @@
 import type { UsagePackManagementResponse } from "@okouai/api-contracts/contracts/billing";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed, state } from "ccstate";
-import { featureSwitch$ } from "../../external/feature-switch.ts";
 import { isOrgAdmin$ } from "../../org.ts";
 import { searchParams$, updateSearchParams$ } from "../../route.ts";
 import { reloadIndexedDbDiagnosticsFromWorker$ } from "../../shared-database.ts";
@@ -66,13 +64,9 @@ export function resolveAvailableSettingsSection(
   section: SettingsSection,
   options: {
     readonly isAdmin: boolean;
-    readonly chatPreferenceEnabled: boolean;
   },
 ): SettingsSection {
-  if (
-    (!options.isAdmin && isAdminOnlySettingsSection(section)) ||
-    (!options.chatPreferenceEnabled && section === "chat")
-  ) {
+  if (!options.isAdmin && isAdminOnlySettingsSection(section)) {
     return "preference";
   }
   return section;
@@ -357,11 +351,7 @@ export const checkUnifiedSettingsParam$ = command(
       return;
     }
 
-    const resolved = resolveAvailableSettingsSection(section, {
-      isAdmin,
-      chatPreferenceEnabled:
-        get(featureSwitch$)[FeatureSwitchKey.ChatPreference] ?? false,
-    });
+    const resolved = resolveAvailableSettingsSection(section, { isAdmin });
     set(internalActiveSection$, resolved);
     set(setBillingSubPage$, opensBillingPlans && resolved === "billing");
     if (opensBuyCredits && resolved === "billing") {

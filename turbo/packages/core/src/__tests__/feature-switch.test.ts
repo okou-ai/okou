@@ -16,7 +16,6 @@ describe("FeatureSwitchKey", () => {
       "sidebarSubscriptionUsage",
     );
     expect(FeatureSwitchKey.FeishuIntegration).toBe("_feishuIntegration");
-    expect(FeatureSwitchKey.ChatPreference).toBe("chatPreference");
     expect(FeatureSwitchKey.OkouDebug).toBe("_debug");
     expect(FeatureSwitchKey.RealAgentInPreview).toBe("_realAgentInPreview");
     expect(FeatureSwitchKey.LangfuseTrace).toBe("_langfuseTrace");
@@ -111,20 +110,6 @@ describe("isFeatureEnabled", () => {
         overrides: { [FeatureSwitchKey.ChatThreadArchiving]: false },
       }),
     ).toBe(false);
-  });
-
-  it("enables OpenRouter US routing for everyone and honors explicit overrides", () => {
-    for (const context of [{}, { orgId: "org_nonexistent" }]) {
-      expect(
-        isFeatureEnabled(FeatureSwitchKey.OpenRouterUsRouting, context),
-      ).toBe(true);
-      expect(
-        isFeatureEnabled(FeatureSwitchKey.OpenRouterUsRouting, {
-          ...context,
-          overrides: { [FeatureSwitchKey.OpenRouterUsRouting]: false },
-        }),
-      ).toBe(false);
-    }
   });
 
   it("should return true for globally enabled switch", () => {
@@ -316,10 +301,8 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.OkouDebug]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.PiMemory]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.ChatPreference]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
 
@@ -330,10 +313,8 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.OkouDebug]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.ChatPreference]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.ChatThreadHeaderActions]).toBe(true);
     expect(otherOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
   });
 

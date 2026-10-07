@@ -7,7 +7,6 @@ import {
   type UserModelPreferenceResponse,
   userModelPreferenceContract,
 } from "@okouai/api-contracts/contracts/user-model-preference";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   queryAllByRoleFast,
@@ -46,9 +45,6 @@ async function openPaidTools(path = "/?settings=tools") {
         activeOrg: { id: "org_default", name: "Research team" },
         memberships: [{ id: "org_default" }],
       },
-    },
-    featureSwitches: {
-      [FeatureSwitchKey.ChatPreference]: true,
     },
   });
   return screen.findByRole("dialog", { name: "Settings" });

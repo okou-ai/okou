@@ -9,7 +9,6 @@ import {
   connectorCatalogCompatibilityEvaluation,
   connectorCatalogSyncState,
 } from "@okouai/db/schema/connector-catalog";
-import type { ConnectorCatalogCompatibilityEvaluationPayload } from "@okouai/db/jsonb-contracts/connector-catalog";
 import { and, asc, eq } from "drizzle-orm";
 
 import { mockOptionalEnv } from "../lib/env";
@@ -30,11 +29,13 @@ import {
 } from "@okouai/connectors/connector-catalog/artifacts/relationships";
 import {
   connectorCatalogExecutableCapabilityState,
-  connectorCatalogCompatibilityEvaluationSchema,
   persistConnectorCatalogCompatibility,
 } from "../signals/services/connector-catalog-compatibility.service";
 import { connectorCatalogSource } from "../signals/services/connector-catalog-source";
-import { immutableCatalogEntryColumns } from "../signals/services/connector-catalog-immutable.service";
+import {
+  immutableCatalogEntryColumns,
+  immutableCatalogValues,
+} from "../signals/services/connector-catalog-immutable.service";
 import {
   currentConnectorCatalogValidatorIdentity,
   type ConnectorCatalogValidationAuthority,
@@ -176,6 +177,36 @@ function requireOwnedLegacyCatalogSource(sourceId: string): void {
   }
 }
 
+async function publishOwnedImmutableCatalog(args: {
+  readonly tx: Tx;
+  readonly catalog: ConnectorCatalogArtifact;
+  readonly hash: string;
+  readonly activatedAt: Date;
+}): Promise<void> {
+  await args.tx
+    .insert(connectorCatalogEntries)
+    .values(
+      args.catalog.connectors.map((connector) => {
+        return {
+          hash: args.hash,
+          slug: connector.slug,
+          payload: connector,
+          ...immutableCatalogEntryColumns(connector),
+        };
+      }),
+    )
+    .onConflictDoNothing();
+  const values = immutableCatalogValues(
+    args.catalog,
+    args.hash,
+    args.activatedAt,
+  );
+  await args.tx.insert(connectorCatalog).values(values).onConflictDoUpdate({
+    target: connectorCatalog.schemaVersion,
+    set: values,
+  });
+}
+
 export async function installApiTestConnectorCatalog(
   options: {
     readonly catalogVersion?: string;
@@ -253,6 +284,13 @@ export async function installApiTestConnectorCatalog(
         return;
       }
     } else {
+      // Generation-owning fixtures publish the same pointer/entries as cron.
+      await publishOwnedImmutableCatalog({
+        tx,
+        catalog,
+        hash: catalogDigest,
+        activatedAt,
+      });
       await tx
         .insert(connectorCatalogSyncState)
         .values(syncState)
@@ -530,135 +568,57 @@ export async function setApiTestConnectorCatalogValidationAuthority(
   requireSingleCatalogMutation(updated, "validation-authority update");
 }
 
-export async function replaceApiTestConnectorCatalogStoredBytes(args: {
-  readonly catalogVersion: string;
-  readonly rawBytes: Uint8Array;
-  readonly catalogValidationAuthority: ConnectorCatalogValidationAuthority | null;
-  readonly retainCatalogDigest?: boolean;
-}): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const rawBytes = Buffer.from(args.rawBytes);
-  const catalogDigest =
-    args.retainCatalogDigest === true
-      ? identity.catalogDigest
-      : sha256Digest(rawBytes);
-  const db = store.set(writeDb$);
-  await db.transaction(async (tx) => {
-    const updatedCompatibility = await tx
-      .update(connectorCatalogCompatibilityEvaluation)
-      .set({
-        catalogVersion: args.catalogVersion,
-        catalogDigest,
-        catalogValidationBackendVersion:
-          args.catalogValidationAuthority?.validatorVersion ?? null,
-        catalogValidationBuildCommitSha:
-          args.catalogValidationAuthority?.buildCommitSha ?? null,
-      })
-      .where(currentApiTestConnectorCatalogCompatibilityWhere(identity))
-      .returning({
-        sourceId: connectorCatalogCompatibilityEvaluation.sourceId,
-      });
-    requireSingleCatalogMutation(
-      updatedCompatibility,
-      "stored compatibility replacement",
-    );
-    const updatedSnapshot = await tx
-      .update(connectorCatalogActiveSnapshot)
-      .set({
-        catalogVersion: args.catalogVersion,
-        catalogDigest,
-        catalogRawSize: rawBytes.byteLength,
-        catalogGzip: encodeConnectorCatalogSnapshot(rawBytes),
-      })
-      .where(
-        and(
-          eq(connectorCatalogActiveSnapshot.sourceId, identity.sourceId),
-          eq(
-            connectorCatalogActiveSnapshot.schemaVersion,
-            SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-          ),
-        ),
-      )
-      .returning({ sourceId: connectorCatalogActiveSnapshot.sourceId });
-    requireSingleCatalogMutation(
-      updatedSnapshot,
-      "stored catalog snapshot replacement",
-    );
-  });
-}
+const UNAVAILABLE_PLATFORM_SECRET = "API_TEST_UNAVAILABLE_PLATFORM_SECRET";
 
-export async function corruptApiTestConnectorCatalogActiveSnapshotPayload(): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const db = store.set(writeDb$);
-  const updated = await db
-    .update(connectorCatalogActiveSnapshot)
-    .set({ catalogGzip: Buffer.from("invalid-gzip", "utf8") })
-    .where(
-      and(
-        eq(connectorCatalogActiveSnapshot.sourceId, identity.sourceId),
-        eq(
-          connectorCatalogActiveSnapshot.schemaVersion,
-          SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-        ),
-        eq(
-          connectorCatalogActiveSnapshot.catalogVersion,
-          identity.catalogVersion,
-        ),
-        eq(
-          connectorCatalogActiveSnapshot.catalogDigest,
-          identity.catalogDigest,
-        ),
-      ),
-    )
-    .returning({ sourceId: connectorCatalogActiveSnapshot.sourceId });
-  requireSingleCatalogMutation(updated, "active snapshot payload corruption");
-}
-
-export async function invalidateApiTestConnectorCatalogCompatibility(): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const db = store.set(writeDb$);
-  const updated = await db
-    .update(connectorCatalogCompatibilityEvaluation)
-    .set({
-      filteredAuthMethods: {
-        filteredAuthMethods: [
-          {
-            connectorSlug: "external-test",
-            authMethodId: "api-token",
-            reasons: [],
-          },
-        ],
-      },
-    })
-    .where(currentApiTestConnectorCatalogCompatibilityWhere(identity))
-    .returning({ sourceId: connectorCatalogCompatibilityEvaluation.sourceId });
-  requireSingleCatalogMutation(updated, "compatibility corruption");
-}
-
-export async function replaceApiTestConnectorCatalogFilteredAuthMethods(
-  filteredAuthMethods: ConnectorCatalogCompatibilityEvaluationPayload["filteredAuthMethods"],
-): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const payload = connectorCatalogCompatibilityEvaluationSchema.parse({
-    filteredAuthMethods,
-  });
-  const db = store.set(writeDb$);
-  const updated = await db
-    .update(connectorCatalogCompatibilityEvaluation)
-    .set({ filteredAuthMethods: payload })
-    .where(currentApiTestConnectorCatalogCompatibilityWhere(identity))
-    .returning({ sourceId: connectorCatalogCompatibilityEvaluation.sourceId });
-  requireSingleCatalogMutation(updated, "compatibility filter replacement");
-}
-
-export async function deleteApiTestConnectorCatalogCompatibility(): Promise<void> {
-  const identity = await currentApiTestConnectorCatalogIdentity();
-  const db = store.set(writeDb$);
-  const deleted = await db
-    .delete(connectorCatalogCompatibilityEvaluation)
-    .where(currentApiTestConnectorCatalogCompatibilityWhere(identity))
-    .returning({ sourceId: connectorCatalogCompatibilityEvaluation.sourceId });
-  requireSingleCatalogMutation(deleted, "compatibility deletion");
+// Requires an undeclared platform secret, so on-demand compatibility reports a
+// provider contract mismatch for exactly these executable methods.
+export function apiTestConnectorCatalogWithUnavailableAuthMethods(
+  catalog: ConnectorCatalogArtifact,
+  methods: readonly {
+    readonly connectorSlug: string;
+    readonly authMethodId: string;
+  }[],
+): ConnectorCatalogArtifact {
+  const remaining = new Set(
+    methods.map((method) => {
+      return `${method.connectorSlug}\0${method.authMethodId}`;
+    }),
+  );
+  const unavailable = {
+    ...catalog,
+    connectors: catalog.connectors.map((connector) => {
+      return {
+        ...connector,
+        authMethods: connector.authMethods.map((method) => {
+          if (!remaining.delete(`${connector.slug}\0${method.id}`)) {
+            return method;
+          }
+          if (
+            method.access.kind !== "static" &&
+            method.access.kind !== "refresh-token"
+          ) {
+            throw new Error(
+              `${connector.slug}/${method.id} has no platform secret contract`,
+            );
+          }
+          return {
+            ...method,
+            access: {
+              ...method.access,
+              platformSecrets: [
+                ...(method.access.platformSecrets ?? []),
+                UNAVAILABLE_PLATFORM_SECRET,
+              ],
+            },
+          };
+        }),
+      };
+    }),
+  };
+  if (remaining.size > 0) {
+    throw new Error(`Unknown auth methods: ${[...remaining].join(", ")}`);
+  }
+  return connectorCatalogArtifactSchema.parse(unavailable);
 }
 
 export async function deleteApiTestConnectorCatalogCompatibilityEvaluation(

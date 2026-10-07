@@ -10,11 +10,7 @@ import {
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
-  Button,
   cn,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
   Select,
   SelectContent,
   SelectGroup,
@@ -34,7 +30,7 @@ import {
   useLastResolved,
   useSet,
 } from "ccstate-react";
-import { Check, ChevronDown, Cpu, Zap } from "lucide-react";
+import { Check, Cpu, Zap } from "lucide-react";
 import type { ComponentProps, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../../i18n/index.ts";
@@ -62,7 +58,6 @@ import {
 import { pageSignal$ } from "../../../signals/page-signal";
 import { detach, Reason } from "../../../signals/utils";
 import { ModelFastImpact } from "./model-fast-impact.tsx";
-import { ModelPickerMenuContent } from "./model-picker-menu.tsx";
 import { ProviderIcon } from "./settings/provider-icons";
 import { getModelBrandIconType } from "./settings/provider-ui-config";
 
@@ -90,11 +85,6 @@ interface ModelProviderPickerProps {
    * space is tight and the full breakdown lives in the open dropdown.
    */
   compactTrigger?: boolean;
-  /**
-   * When true, the trigger renders as a provider icon on mobile while keeping
-   * the normal label on larger screens.
-   */
-  mobileIconTrigger?: boolean;
   /** Controlled open state for programmatic toggle (e.g. keyboard shortcut). */
   open?: boolean;
   /** Callback when the open state changes. */
@@ -108,19 +98,6 @@ interface ModelProviderPickerProps {
   disabled?: boolean;
   /** Lets settings callers clear a personal choice and inherit workspace default. */
   showInheritOption?: boolean;
-  /**
-   * Renders the composer's native menu of chat models. Callers that leave it
-   * unset get the plain select instead.
-   */
-  nativeMenu?: boolean;
-  /**
-   * When true, the trigger leaves the Fast suffix off the model's name because
-   * the caller already shows that state. The composer's effort control sits
-   * beside the model and carries the bolt, so repeating the word on the model
-   * would say it twice and change the model's name as a side effect. The
-   * accessible name still carries it, for callers who cannot see the bolt.
-   */
-  fastShownByCaller?: boolean;
 }
 
 // Keep the inherit option distinct from an empty model identifier at the UI
@@ -281,7 +258,13 @@ function selectionLabel({
   placeholder: string;
   fastLabel: string;
   catalog: ModelCatalog | null | undefined;
-  /** See `ModelProviderPickerProps.fastShownByCaller`. */
+  /**
+   * When true, the label leaves the Fast suffix off the model's name because
+   * the caller already shows that state. The composer's model panel trigger
+   * carries the bolt, so repeating the word on the model would say it twice
+   * and change the model's name as a side effect. The accessible name still
+   * carries it, for callers who cannot see the bolt.
+   */
   fastShownByCaller?: boolean;
 }): string {
   if (!selection) {
@@ -344,15 +327,13 @@ export function ModelFirstTriggerLabel({
 function ModelFirstDisabledPickerLabel({
   value,
   placeholder,
-  mobileIconTrigger,
   triggerClassName,
   fastLabel,
 }: Pick<
   ModelProviderPickerProps,
-  "value" | "placeholder" | "mobileIconTrigger" | "triggerClassName"
+  "value" | "placeholder" | "triggerClassName"
 > & {
   placeholder: string;
-  mobileIconTrigger: boolean;
   fastLabel: string;
 }) {
   const catalog = useLastResolved(modelCatalog$);
@@ -373,7 +354,7 @@ function ModelFirstDisabledPickerLabel({
       <ModelFirstTriggerLabel
         selection={value}
         placeholder={placeholder}
-        mobileIcon={mobileIconTrigger}
+        mobileIcon={false}
         fastLabel={fastLabel}
       />
     </span>
@@ -808,9 +789,7 @@ function ModelFirstSelectPicker({
   content,
   placeholder,
   triggerClassName,
-  mobileIconTrigger,
   fastLabel,
-  fastShownByCaller,
   open,
   onOpenChange,
   modal,
@@ -820,9 +799,7 @@ function ModelFirstSelectPicker({
   content: ReactNode;
   placeholder: string;
   triggerClassName: string | undefined;
-  mobileIconTrigger: boolean;
   fastLabel: string;
-  fastShownByCaller: boolean;
   open: boolean | undefined;
   onOpenChange:
     | ((
@@ -851,9 +828,8 @@ function ModelFirstSelectPicker({
           <ModelFirstTriggerLabel
             selection={state.selection}
             placeholder={placeholder}
-            mobileIcon={mobileIconTrigger}
+            mobileIcon={false}
             fastLabel={fastLabel}
-            fastShownByCaller={fastShownByCaller}
           />
         </SelectValue>
       </SelectTrigger>
@@ -923,15 +899,11 @@ function SubscribedExplicitModelFirstModelPickerContent({
   placeholder,
   fastLabel,
   showInheritOption,
-  nativeMenu,
-  onMenuChange,
 }: {
   value: ModelProviderSelection | null;
   placeholder: string;
   fastLabel: string;
   showInheritOption: boolean;
-  nativeMenu: boolean;
-  onMenuChange: (selection: ModelProviderSelection) => void;
 }) {
   const { t } = useTranslation();
   const modelsLoadable = useLastLoadable(availableRunModels$);
@@ -943,19 +915,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
   const modelCapabilities =
     useLastResolved(modelPlanCapabilities$) ?? DEFAULT_MODEL_PLAN_CAPABILITIES;
   if (modelsResponse === undefined || catalog === undefined) {
-    if (nativeMenu) {
-      return (
-        <div className="px-2 py-2 text-sm text-muted-foreground" role="status">
-          {loading
-            ? t(($) => {
-                return $.settings.models.picker.loading;
-              })
-            : t(($) => {
-                return $.settings.models.picker.loadError;
-              })}
-        </div>
-      );
-    }
     return (
       <ModelFirstModelPickerMessageContent
         value={value}
@@ -981,27 +940,6 @@ function SubscribedExplicitModelFirstModelPickerContent({
     placeholder,
     fastLabel,
   });
-  if (nativeMenu) {
-    return (
-      <ModelPickerMenuContent
-        value={state.selection}
-        onChange={onMenuChange}
-        options={state.models.map((runModel) => {
-          return {
-            model: runModel.model,
-            label: catalog.displayName(runModel.model),
-            content: (
-              <ModelFirstRunModelRowContent
-                runModel={runModel}
-                modelCapabilities={modelCapabilities}
-              />
-            ),
-            disabled: !isMemberRunModelConfigurable(runModel, catalog),
-          };
-        })}
-      />
-    );
-  }
   return (
     <ModelFirstModelPickerContentLayout
       selectValue={state.selectValue}
@@ -1047,7 +985,6 @@ export function useExplicitModelSelectionChange(
 function EnabledExplicitModelFirstModelPicker(
   props: ModelProviderPickerProps & {
     placeholder: string;
-    mobileIconTrigger: boolean;
     fastLabel: string;
   },
 ) {
@@ -1086,37 +1023,14 @@ function EnabledExplicitModelFirstModelPicker(
       placeholder={props.placeholder}
       fastLabel={props.fastLabel}
       showInheritOption={props.showInheritOption ?? false}
-      nativeMenu={props.nativeMenu ?? false}
-      onMenuChange={handleSelectionChange}
     />
   );
-  if (props.nativeMenu) {
-    return (
-      <ComposerModelMenu
-        {...props}
-        triggerAriaLabel={state.triggerAriaLabel}
-        triggerLabel={
-          <ModelFirstTriggerLabel
-            selection={state.selection}
-            placeholder={props.placeholder}
-            mobileIcon={props.mobileIconTrigger}
-            fastLabel={props.fastLabel}
-            fastShownByCaller={props.fastShownByCaller ?? false}
-          />
-        }
-      >
-        {content}
-      </ComposerModelMenu>
-    );
-  }
   return (
     <ModelFirstSelectPicker
       state={state}
       content={content}
       placeholder={props.placeholder}
       triggerClassName={props.triggerClassName}
-      mobileIconTrigger={props.mobileIconTrigger}
-      fastShownByCaller={props.fastShownByCaller ?? false}
       fastLabel={props.fastLabel}
       open={props.open}
       onOpenChange={props.onOpenChange}
@@ -1126,77 +1040,16 @@ function EnabledExplicitModelFirstModelPicker(
   );
 }
 
-/**
- * The composer's native menu. It lists only the chat models; effort and Fast
- * live on the effort control beside it.
- */
-function ComposerModelMenu({
-  open,
-  onOpenChange,
-  modal,
-  triggerClassName,
-  triggerAriaLabel,
-  triggerLabel,
-  children,
-}: Pick<
-  ModelProviderPickerProps,
-  "open" | "onOpenChange" | "modal" | "triggerClassName"
-> & {
-  triggerAriaLabel: string;
-  triggerLabel: ReactNode;
-  children: ReactNode;
-}) {
-  const { t } = useTranslation();
-  return (
-    <DropdownMenu open={open} modal={modal} onOpenChange={onOpenChange}>
-      <DropdownMenuTrigger
-        render={<Button variant="ghost" />}
-        aria-label={triggerAriaLabel}
-        className={cn(
-          "h-9 w-full justify-start gap-2 rounded-lg text-sm font-normal",
-          triggerClassName,
-        )}
-      >
-        <span data-slot="select-value" className="min-w-0">
-          {triggerLabel}
-        </span>
-        <span data-slot="select-icon">
-          <ChevronDown
-            size={16}
-            className="shrink-0 opacity-50"
-            aria-hidden="true"
-          />
-        </span>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        side="top"
-        align="end"
-        collisionPadding={8}
-        aria-labelledby={undefined}
-        aria-label={t(($) => {
-          return $.settings.models.picker.chatModels;
-        })}
-        className="w-[252px] max-w-[calc(100vw-16px)] overscroll-contain"
-      >
-        {children}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 export function ModelProviderPicker({
   value,
   onChange,
   placeholder,
   triggerClassName,
-  mobileIconTrigger = false,
   open,
   onOpenChange,
   modal,
   disabled = false,
   showInheritOption = false,
-  nativeMenu = false,
-  fastShownByCaller,
 }: ModelProviderPickerProps) {
   const { t } = useTranslation();
   const resolvedPlaceholder =
@@ -1212,7 +1065,6 @@ export function ModelProviderPicker({
       <ModelFirstDisabledPickerLabel
         value={value}
         placeholder={resolvedPlaceholder}
-        mobileIconTrigger={mobileIconTrigger}
         triggerClassName={triggerClassName}
         fastLabel={fastLabel}
       />
@@ -1224,14 +1076,11 @@ export function ModelProviderPicker({
       onChange={onChange}
       placeholder={resolvedPlaceholder}
       triggerClassName={triggerClassName}
-      mobileIconTrigger={mobileIconTrigger}
       open={open}
       onOpenChange={onOpenChange}
       modal={modal}
       showInheritOption={showInheritOption}
       fastLabel={fastLabel}
-      nativeMenu={nativeMenu}
-      fastShownByCaller={fastShownByCaller ?? false}
     />
   );
 }

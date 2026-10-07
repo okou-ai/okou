@@ -12,6 +12,42 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1000.1](https://github.com/okou-ai/okou/compare/app-v0.1000.0...app-v0.1000.1) (2026-10-07)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.537.8
+    * @okouai/connectors bumped to 3.16.2
+    * @okouai/core bumped to 8.734.1
+
+## [0.1000.0](https://github.com/okou-ai/okou/compare/app-v0.999.2...app-v0.1000.0) (2026-10-06)
+
+
+### Features
+
+* **core:** release eleven staff feature switches to all users ([#37818](https://github.com/okou-ai/okou/issues/37818)) ([8d05119](https://github.com/okou-ai/okou/commit/8d051194184d595b67f78f5d6f7ec728ed6cc31d))
+
+
+### Refactoring
+
+* remove expired deployment compatibility ([#37845](https://github.com/okou-ai/okou/issues/37845)) ([ada585f](https://github.com/okou-ai/okou/commit/ada585fdc70a1fc5c26e70e0ec53bbef893c4f4c))
+
+
+### Performance Improvements
+
+* **platform:** pin i18next-cli to 1.74.0 to fix quadratic i18n lint ([#37825](https://github.com/okou-ai/okou/issues/37825)) ([f5360e5](https://github.com/okou-ai/okou/commit/f5360e56a58748cd5c808a8b73943372315274ad))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.537.7
+    * @okouai/core bumped to 8.734.0
+
 ## [0.999.2](https://github.com/okou-ai/okou/compare/app-v0.999.1...app-v0.999.2) (2026-10-06)
 
 

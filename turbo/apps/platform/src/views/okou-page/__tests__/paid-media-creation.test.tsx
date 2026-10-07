@@ -36,8 +36,6 @@ async function setupComposer(taskChips = false) {
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      [FeatureSwitchKey.ChatPreference]: true,
-      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
       [FeatureSwitchKey.ComposerTaskChips]: taskChips,
     },
   });

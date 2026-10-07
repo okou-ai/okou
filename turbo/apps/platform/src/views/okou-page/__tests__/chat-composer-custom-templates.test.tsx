@@ -196,7 +196,7 @@ function menuItemByName(name: string): HTMLElement {
   return item;
 }
 
-async function openCustomPanel(enabled = true, chipCover = false) {
+async function openCustomPanel(enabled = true) {
   const user = userEvent.setup({ delay: null });
   const capture = mockTemplateChat();
   await setupPage({
@@ -204,9 +204,6 @@ async function openCustomPanel(enabled = true, chipCover = false) {
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.CustomTemplates]: enabled,
-      // Off by default, as in production. The two tests that turn it on are
-      // the ones asking which covers reach the chip once it draws any.
-      [FeatureSwitchKey.ComposerTemplateChipCover]: chipCover,
     },
   });
   const dialog = await openTemplatePicker(user);
@@ -521,7 +518,7 @@ test("Opening a deck shows its pages and management controls", async () => {
 test("Using a custom template sends the row id and nothing about its kind", async () => {
   mockCustomTemplateStore([customTemplate()]);
 
-  const { dialog } = await openCustomPanel(true, true);
+  const { dialog } = await openCustomPanel();
 
   click(tabByText("Custom"));
   await within(dialog).findByText("Q3 board review");

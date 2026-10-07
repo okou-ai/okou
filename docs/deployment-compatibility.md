@@ -53,6 +53,63 @@ from the stored version; the new API accepts it and retains the storage-owned
 metadata. Rolling back restores that stricter catalog acceptance behavior.
 No production migration, deployment or storage write is executed by this PR.
 
+## Connector catalog business readers on pointer and immutable entries
+
+This is the first, reader-focused PR of Release 1, not the completed Release 1
+or its destructive Release 2. Business/runtime reads (Run capture, Pi
+recapture, public lists/search/discovery/connect surfaces, account refresh,
+Runner firewall catalog, DCR current-identity checks, and permission-baseline
+refresh) use `connector_catalog(schema_version, hash)` and
+`connector_catalog_entries(hash, slug, payload)`. They do not read the slug
+manifest, compressed active snapshot, or persisted compatibility result.
+Full reads capture the hash first and load retained immutable entries at that
+hash, in slug order; switching the pointer cannot strand that capture. Selected
+reads capture pointer and entries in one statement. Compatibility is calculated
+from the captured entries and current code/configuration capability, with the
+existing hash/capability-keyed process cache retained for full-catalog reads.
+Missing slugs remain absent and the owning business contract decides whether to
+return not-found or reject a required connector. A missing pointer or an empty
+whole-catalog generation fails unavailable; there is no legacy or R2 read
+fallback. Public list, discovery and status responses still return category
+metadata, read from `connector_catalog.catalog_header` in the same row read
+that captures the hash, because App clients use it for category labels,
+grouping and filters. That header dependency must be retired through an App
+migration before any Release 2 contraction of `catalog_header`. The
+Runner firewall projection's own digest uses canonical JSON object-key order,
+so loading the same content from JSONB cannot change its identity. The opaque
+digest/version can change once relative to the old noncanonical projection;
+Runner caches already invalidate by that identity and do not recompute it from
+response serialization. No Runner protocol or firewall body shape changes.
+
+There is no schema migration or stored-data rewrite. The writer still validates
+and completely prepares entries before publishing the pointer, and atomically
+maintains the legacy snapshot, compatibility rows and pointer metadata. The
+legacy synchronization CAS/rejection state and compatibility reconciler are
+unchanged. Staff diagnostics still read those legacy stores and must migrate in
+a subsequent Release 1 PR before any Release 2 DROP or writer contraction.
+
+New API/existing DB requires the pointer and entries to have been materialized
+by the existing synchronizer; a legacy gzip row alone is not readiness. Old
+API/new DB remains supported because no table or field is removed and all
+compatibility writes remain. No production activation, backfill, release or
+migration is executed by this source PR.
+
+The persisted permission baseline and stored Pi execution-context schemas are
+unchanged. New baseline identity retains the v1 wire fields: `catalogDigest`
+contains the hash and `catalogVersion` is a legacy required alias containing
+that same hash, not a publication label or comparison key. Old baseline rows
+with their original publication version remain readable without rewriting:
+currentness compares hash, schema, source and capability (and preserves the
+existing validation-authority fast-path fence), not `catalogVersion`. A changed
+capability/validator still takes the existing canonical full refresh, now also
+from immutable entries. An old API claiming a newly captured baseline can take
+its existing version-mismatch full refresh; legacy serving state remains intact.
+Pi source-vector fields and Runner payload shapes remain unchanged. Native
+route coverage claims old v1 baseline contexts for both Claude Code and Pi,
+including their original publication version, after removing legacy serving
+rows from the case-owned database. Production performance and deployed
+old/new-instance acceptance remain separate verification boundaries.
+
 ## Organization OpenRouter preset override
 
 Migration `1324_org_openrouter_preset` adds nullable
@@ -108,8 +165,8 @@ generation and connectors retain their existing storage. See
 `deploy-api` opts into `db:dev-seed --preview-onboarding-catalog` for the
 Neon test project's `preview/*` branch. It downloads and validates the same
 official R2 publication, but materializes only the union of the onboarding
-source/workflow contracts and the six existing Runner E2E connectors. The
-current union is 31 connectors. Immutable entry rows are inserted in one batch,
+source/workflow contracts and the seven existing Runner E2E connectors. The
+current union is 32 connectors. Immutable entry rows are inserted in one batch,
 with no per-entry SQL readback. The current manifest lists only those rows;
 the publication version, digest and full attested compressed snapshot remain
 unchanged. Compatibility evaluations and bundled skills are prepared only for
@@ -139,7 +196,7 @@ and invalidation behavior remain unchanged.
 
 ## Personal subscription CLI and Reset Cards
 
-`SubscriptionControls` adds a staff-gated single-account usage GET at
+Subscription controls add a single-account usage GET at
 `/api/me/subscriptions/:id`, additive optional `subscriptionResetSupported`
 metadata, and `subscription:read` / `subscription:switch` run capabilities.
 Existing human list, activation, and Codex reset behavior remain unchanged.

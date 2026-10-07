@@ -1,7 +1,5 @@
 import { getModelProviderPiEndpoint } from "@okouai/api-contracts/contracts/model-provider-firewalls";
 import { getOpenRouterBaseUrl } from "@okouai/api-contracts/contracts/openrouter-routing";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { builtInModelKeys } from "@okouai/db/schema/built-in-model-key";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
@@ -204,7 +202,7 @@ async function builtinCredential(
   args: ResolutionContext,
   signal: AbortSignal,
 ): Promise<PiMemoryStage1CredentialResult> {
-  const { db, binding, context } = args;
+  const { db, binding } = args;
   // Model-first Chat pins use org scope; direct built-in launches leave it null.
   if (
     binding.id !== null ||
@@ -254,10 +252,6 @@ async function builtinCredential(
       baseUrl: getOpenRouterBaseUrl("responses", {
         credentialOwner: "builtin",
         model: route.upstreamModel,
-        usRoutingEnabled: isFeatureEnabled(
-          FeatureSwitchKey.OpenRouterUsRouting,
-          context,
-        ),
       }),
       dialect: "openai-responses",
       transport: "sse",

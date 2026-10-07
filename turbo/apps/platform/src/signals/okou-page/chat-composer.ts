@@ -1,8 +1,6 @@
 import { command, computed, state, type Command } from "ccstate";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cloudBrowserEnabledByDefault$ } from "../cloud-browser-preference.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { onRef } from "../utils.ts";
 import { createPresentationTemplatePreviewSignals } from "./presentation-template-preview.ts";
 import { createImportedPresentationTemplateSignals } from "./presentation-template-library.ts";
@@ -41,9 +39,7 @@ export const newThreadCloudBrowserEnabled$ = computed(
     if (selection !== null) {
       return selection.kind === "cloudBrowser";
     }
-    const preferenceEnabled =
-      get(featureSwitch$)[FeatureSwitchKey.ChatPreference] ?? false;
-    return preferenceEnabled ? get(cloudBrowserEnabledByDefault$) : true;
+    return get(cloudBrowserEnabledByDefault$);
   },
 );
 
@@ -58,11 +54,9 @@ export const newThreadComputerAccess$ = computed(
     if (selection !== null) {
       return selection;
     }
-    const cloudBrowserEnabled = get(newThreadCloudBrowserEnabled$);
-    if (typeof cloudBrowserEnabled === "boolean") {
-      return cloudBrowserEnabled ? { kind: "cloudBrowser" } : { kind: "none" };
-    }
-    return computerAccessFromSavedCloudBrowserDefault(cloudBrowserEnabled);
+    return computerAccessFromSavedCloudBrowserDefault(
+      get(cloudBrowserEnabledByDefault$),
+    );
   },
 );
 

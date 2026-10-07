@@ -1,6 +1,5 @@
 import { expectThreadModelCredits } from "./helpers/public-thread-usage";
 import { createHash, randomUUID } from "node:crypto";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
@@ -14,7 +13,6 @@ import { setModelPiRouteClassFixture } from "../../../test-fixtures/model-catalo
 import { flushWaitUntilForTest } from "../../context/wait-until";
 
 import { chatEventDisplayText } from "./helpers/chat-event";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedBuiltInModelCandidateKeys } from "./helpers/runtime-state";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import type { ApiTestUser } from "./helpers/api-bdd";
@@ -24,7 +22,6 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   createChatEventsFixture,
   configureNativeCliArtifact,
-  requireOrgId,
   createGptUsagePricingResolution,
   userMessages,
   eventBackedContents,
@@ -187,54 +184,39 @@ async function configureResponsesWithOwnedRuns(args: {
 }
 
 describe("CHAT-02: model-first routing", () => {
-  it.each(
-    [false, true].map((usRoutingEnabled) => {
-      return { selectedModel: "okou-1.0" as const, usRoutingEnabled };
-    }),
-  )(
-    "runs built-in $selectedModel OpenRouter Responses with US switch $usRoutingEnabled",
-    async ({ selectedModel, usRoutingEnabled }) => {
-      configureNativeCliArtifact();
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      const orgId = requireOrgId(actor);
-      const { model, sendChatRun, claimChatRun, cancelChatRun } =
-        await configureResponsesWithOwnedRuns({
-          actor,
-          agentId,
-          runnerGroup,
-          selectedModel,
-        });
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId },
-        {
-          [FeatureSwitchKey.OpenRouterUsRouting]: usRoutingEnabled,
-        },
-      );
-      mockPiResourceArchiveDownloads();
-      mockPiCheckpointObjectStore();
-
-      const run = await sendChatRun(actor, {
+  it("runs built-in okou-1.0 OpenRouter Responses", async () => {
+    const selectedModel = "okou-1.0";
+    configureNativeCliArtifact();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { model, sendChatRun, claimChatRun, cancelChatRun } =
+      await configureResponsesWithOwnedRuns({
+        actor,
         agentId,
-        prompt: `run ${selectedModel} on its managed fallback`,
-        model,
+        runnerGroup,
+        selectedModel,
       });
-      await flushWaitUntilForTest();
+    mockPiResourceArchiveDownloads();
+    mockPiCheckpointObjectStore();
 
-      const { claim } = await claimChatRun(runnerGroup, run.runId);
-      expect(claim.cliAgentType).toBe("pi");
-      // Only the approved Sol route uses the US endpoint; the GPT 6 pair
-      // stays on the global OpenRouter endpoint even when enabled.
-      expect(claim.piModelConfig).toMatchObject({
-        provider: "openrouter",
-        baseUrl: "https://openrouter.ai/api/v1",
-        model: "@preset/okou-1-0",
-      });
-      await expectThreadModelCredits(context, actor, run.threadId, 0);
-      await cancelChatRun(actor, run.runId);
-    },
-    90_000,
-  );
+    const run = await sendChatRun(actor, {
+      agentId,
+      prompt: `run ${selectedModel} on its managed fallback`,
+      model,
+    });
+    await flushWaitUntilForTest();
+
+    const { claim } = await claimChatRun(runnerGroup, run.runId);
+    expect(claim.cliAgentType).toBe("pi");
+    // The okou-1.0 preset is not on the US allowlist, so it stays on the
+    // global OpenRouter endpoint.
+    expect(claim.piModelConfig).toMatchObject({
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "@preset/okou-1-0",
+    });
+    await expectThreadModelCredits(context, actor, run.threadId, 0);
+    await cancelChatRun(actor, run.runId);
+  }, 90_000);
 
   it("launches a model on the runtime its catalog Pi route class selects", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();

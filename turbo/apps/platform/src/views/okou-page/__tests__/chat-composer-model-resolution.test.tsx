@@ -2,7 +2,6 @@ import type {
   AvailableRunModel,
   ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -11,9 +10,12 @@ import {
   mockCatalogDisplayName,
 } from "../../../mocks/handlers/api-model-catalog.ts";
 import {
-  findModelMenuOption,
-  queryModelMenuOption,
-} from "./chat-model-menu-test-helpers.ts";
+  closeModelPanel,
+  findModelOption,
+  modelOption,
+  openModelPanel,
+  queryModelOption,
+} from "./chat-model-panel-test-helpers.ts";
 import { installConnectedPersonalSubscriptions } from "./personal-subscription-fixtures.ts";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
@@ -98,8 +100,9 @@ async function chooseModel(
   currentLabel: string,
   optionName: string | RegExp,
 ): Promise<void> {
-  await user.click(await modelPicker(currentLabel));
-  await user.click(await findModelMenuOption(optionName));
+  const panel = await openModelPanel(currentLabel);
+  await user.click(modelOption(optionName, panel));
+  await closeModelPanel();
 }
 
 test("Edit only the model for an existing thread", async () => {
@@ -110,10 +113,6 @@ test("Edit only the model for an existing thread", async () => {
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerModelPanel]: false,
-      [FeatureSwitchKey.ChatPreference]: true,
-    },
   });
 
   await readyChat();
@@ -135,7 +134,6 @@ test("Resolve the model shown for a chat", async () => {
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
 
   await readyComposer();
@@ -143,7 +141,6 @@ test("Resolve the model shown for a chat", async () => {
 });
 
 test("Show Auto when an existing thread's model is no longer selectable", async () => {
-  const user = userEvent.setup({ delay: null });
   installRunChat({ selectedModel: "deepseek-v4.1-flash" });
   context.mocks.data.availableRunModels([
     runModelFixture("okou-1.0", 1),
@@ -159,13 +156,12 @@ test("Show Auto when an existing thread's model is no longer selectable", async 
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
 
   await readyChat();
-  await user.click(await modelPicker("Auto"));
-  await expect(findModelMenuOption(/^GPT 6 Sol/iu)).resolves.toBeVisible();
-  expect(queryModelMenuOption(/DeepSeek/iu)).not.toBeInTheDocument();
+  const panel = await openModelPanel("Auto");
+  await expect(findModelOption(/^GPT 6 Sol/iu, panel)).resolves.toBeVisible();
+  expect(queryModelOption(/DeepSeek/iu, panel)).not.toBeInTheDocument();
 });
 
 test("Keep an existing thread's explicit model", async () => {
@@ -176,7 +172,6 @@ test("Keep an existing thread's explicit model", async () => {
   await setupPage({
     context,
     path: RUN_PATH,
-    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
 
   await readyChat();
@@ -189,7 +184,6 @@ test("Start a new chat on Auto without a saved preference", async () => {
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
 
   await readyComposer();
@@ -203,7 +197,6 @@ test("Start a new chat on Auto when the saved preference has no route", async ()
   await setupPage({
     context,
     path: NEW_CHAT_PATH,
-    featureSwitches: { [FeatureSwitchKey.ComposerModelPanel]: false },
   });
 
   await readyComposer();

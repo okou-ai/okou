@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { expect, test } from "vitest";
 import { http, HttpResponse } from "msw";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   personalSubscriptionsContract,
   personalModelProvidersMainContract,
@@ -20,7 +19,6 @@ import { meModelProviderAccountRoutes } from "../me-model-provider-accounts";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { createRouteMocks } from "./helpers/route-test";
-import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import {
   createAuthDeviceApiActions,
   mockCodexDeviceAuthProvider,
@@ -29,7 +27,6 @@ import {
 
 const context = testContext();
 const mocks = createRouteMocks(context);
-const support = createAuthDeviceSupportApi(context);
 const routes = Object.freeze([
   ...meModelProvidersListRoutes,
   ...meModelProvidersUpsertRoutes,
@@ -42,9 +39,6 @@ const humanHeaders = Object.freeze({ authorization: "Bearer clerk-session" });
 
 async function fixture() {
   const actor = createBddApi(context).user();
-  await support.updateFeatureSwitches(actor, {
-    [FeatureSwitchKey.SubscriptionControls]: true,
-  });
   server.use(
     http.get("https://chatgpt.com/backend-api/wham/usage", () => {
       return HttpResponse.json({
@@ -242,9 +236,6 @@ test("foreign users and organizations cannot read or activate the linked account
     createBddApi(context).user({ orgId: actor.orgId }),
     createBddApi(context).user({ userId: actor.userId }),
   ]) {
-    await support.updateFeatureSwitches(other, {
-      [FeatureSwitchKey.SubscriptionControls]: true,
-    });
     const headers = human(other);
     const existing = await accept(
       app()(personalSubscriptionsContract).get({
@@ -273,44 +264,6 @@ test("foreign users and organizations cannot read or activate the linked account
   }
 });
 
-test("disabling rollout blocks new agent access without changing the existing human settings API", async () => {
-  const { actor, accountIds } = await fixture();
-  await support.updateFeatureSwitches(actor, {
-    [FeatureSwitchKey.SubscriptionControls]: false,
-  });
-  const headers = agentHeaders(actor, [
-    "subscription:read",
-    "subscription:switch",
-  ]);
-  const list = await accept(
-    app()(personalModelProvidersMainContract).list({ headers }),
-    [404],
-  );
-  expect(list.status).toBe(404);
-  const detail = await accept(
-    app()(personalSubscriptionsContract).get({
-      headers,
-      params: { id: accountIds[0] },
-    }),
-    [404],
-  );
-  expect(detail.status).toBe(404);
-  const switchResult = await accept(
-    app()(personalModelProviderAccountsByIdContract).activate({
-      headers,
-      params: { id: accountIds[1] },
-      body: {},
-    }),
-    [404],
-  );
-  expect(switchResult.status).toBe(404);
-  const legacy = await accept(
-    app()(personalModelProvidersMainContract).list({ headers: human(actor) }),
-    [200],
-  );
-  expect(legacy.body.modelProviders).toHaveLength(2);
-});
-
 test("an unavailable upstream usage read keeps quota unknown instead of fabricating zero", async () => {
   const { actor, accountIds } = await fixture();
   server.use(
@@ -336,9 +289,6 @@ test("an unavailable upstream usage read keeps quota unknown instead of fabricat
 
 test("claude Code exposes natural usage windows but explicitly rejects manual reset", async () => {
   const actor = createBddApi(context).user();
-  await support.updateFeatureSwitches(actor, {
-    [FeatureSwitchKey.SubscriptionControls]: true,
-  });
   mockClaudeCodeTokenEndpoint({
     accountEmail: actor.email,
     organizationName: `Workspace ${randomUUID()}`,

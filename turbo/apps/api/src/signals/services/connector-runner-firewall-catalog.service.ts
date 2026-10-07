@@ -35,7 +35,6 @@ function externalIdentityKey(identity: ExternalCatalogIdentity): string {
   return [
     identity.sourceId,
     identity.schemaVersion,
-    identity.catalogVersion,
     identity.catalogDigest,
     identity.capabilityDigest,
   ].join("\0");

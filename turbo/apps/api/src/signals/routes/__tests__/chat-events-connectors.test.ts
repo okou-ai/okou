@@ -6,7 +6,6 @@ import { describe, expect, it, beforeEach, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv } from "../../../lib/env";
-import { installApiTestConnectorCatalog } from "../../../test-fixtures/connector-catalog";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
@@ -57,18 +56,7 @@ interface SelectedThreadConnectorFixture extends EntitledChatActor {
 
 async function selectedThreadConnectorFixture(
   title: string,
-  legacyProjectionMutation = false,
 ): Promise<SelectedThreadConnectorFixture> {
-  if (legacyProjectionMutation) {
-    // Preserve the live legacy fallback contract without mutating the shared fixture.
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      `test-thread-runtime-context-${randomUUID()}`,
-    );
-    await installApiTestConnectorCatalog({
-      catalogVersion: `api-test-thread-runtime-overlap-${randomUUID()}`,
-    });
-  }
   const entitled = await entitledChatActor();
   const connection = await connectors.connectManualGrant(
     entitled.actor,

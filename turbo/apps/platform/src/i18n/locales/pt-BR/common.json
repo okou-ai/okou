@@ -1812,8 +1812,7 @@
       "workflows": {
         "empty": "Nenhum fluxo de trabalho correspondente",
         "loading": "Carregando fluxos de trabalho...",
-        "title": "Fluxos de trabalho",
-        "viewAll": "Ver todos os fluxos de trabalho"
+        "title": "Fluxos de trabalho"
       }
     },
     "computerUse": {
@@ -1851,9 +1850,6 @@
       "add": "Adicionar {{connectorName}}",
       "addConnectors": "Adicionar conectores",
       "authorized": "{{connectorName}} foi conectado e autorizado para {{agentName}}",
-      "available_one": "Conectores disponíveis para conectar ({{count}})",
-      "available_many": "Conectores disponíveis para conectar ({{count}})",
-      "available_other": "Conectores disponíveis para conectar ({{count}})",
       "back": "Voltar",
       "configurePermissions": "Configurar permissões de {{connectorName}}",
       "customAuthorizeDescription": "Revise, conecte e autorize este conector personalizado para o agente.",
@@ -3010,7 +3006,6 @@
     "delete": "Excluir Cloudflare Access",
     "deleteHelp": "Excluir este Cloudflare Access? O Service Token salvo não poderá ser recuperado. Vincule seus próprios hosts a outra configuração primeiro.",
     "deleteUncertain": "Não foi possível confirmar a exclusão. Revise o impacto atualizado antes de tentar novamente.",
-    "description": "Acesse aplicativos protegidos com tokens de serviço do Cloudflare Access.",
     "edit": "Editar Cloudflare Access",
     "failed": "Não foi possível salvar a alteração do Cloudflare Access. Tente novamente.",
     "forbidden": "Só administradores da organização podem alterar o Cloudflare Access compartilhado.",
@@ -3027,7 +3022,6 @@
     "latest": "Últimas configurações salvas",
     "loadFailed": "Não foi possível carregar Cloudflare Access. Tente novamente.",
     "loading": "Carregando Cloudflare Access…",
-    "manage": "Gerenciar Cloudflare Access",
     "memberIdentifier": " (ID {{identifier}})",
     "missing": "Este Cloudflare Access não está mais disponível. Selecione outro ou crie um.",
     "name": "Nome",
@@ -3247,7 +3241,6 @@
           "menu": "Vendas e negócios"
         }
       },
-      "categoriesAria": "Categorias de conectores",
       "description": "Conecte serviços de terceiros para seus agentes usarem.",
       "descriptionWithCount": "Conecte {{value}} serviços para seus agentes usarem.",
       "directory": {
@@ -3266,8 +3259,6 @@
       "empty": {
         "agent": "Nenhum conector para este agente",
         "connected": "Nenhum conector conectado",
-        "matching": "{{message}} correspondente a \"{{search}}\"",
-        "notConnected": "Não há mais conectores para conectar",
         "search": "Nenhum conector correspondente a \"{{search}}\"",
         "unshared": "Todos os conectores estão compartilhados com um agente"
       },
@@ -3277,14 +3268,10 @@
         "all": "Todos",
         "allAgents": "Todos os agentes",
         "aria": "Filtrar conectores",
-        "connected": "Conectados",
-        "notConnected": "Não conectados",
-        "status": "Status",
         "unshared": "Não compartilhado com nenhum agente"
       },
       "filterWith": "Filtro: {{category}}",
       "iconUnavailable": "Ícone do conector indisponível",
-      "newConnector": "Novo conector",
       "noConnectorsAlt": "Nenhum conector",
       "otherCategory": "Outros",
       "remoteAccess": "Acesso remoto",
@@ -3312,10 +3299,6 @@
         "seeMore_many": "Ver {{names}} e mais {{count}}",
         "seeMore_other": "Ver {{names}} e mais {{count}}",
         "top": "Principais conectores"
-      },
-      "tabs": {
-        "builtin": "Integrados",
-        "custom": "Personalizados"
       },
       "title": "Conectores",
       "unnamedAgent": "Sem nome"
@@ -3456,7 +3439,6 @@
       "edit": {
         "title": "Editar conector personalizado"
       },
-      "emptyAdmin": "Ainda não há conectores personalizados. Crie um para registrar uma API que todos os membros possam usar.",
       "emptyMember": "Sua organização ainda não registrou conectores personalizados.",
       "mcpStreamableHttp": "MCP · Streamable HTTP",
       "mcpType": "MCP",
@@ -5259,10 +5241,8 @@
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "Pressione ⌘/Ctrl+Enter para enviar e Enter para criar uma nova linha",
-        "description": "Escolha como enviar mensagens no chat.",
         "enter": "Enter",
         "enterDescription": "Pressione Enter para enviar e Shift+Enter para criar uma nova linha",
-        "sectionTitle": "Enter",
         "title": "Enviar mensagem com"
       },
       "timezone": {

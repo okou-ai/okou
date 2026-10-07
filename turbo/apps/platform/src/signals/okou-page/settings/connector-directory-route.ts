@@ -1,12 +1,6 @@
 import { command, computed, state } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../external/feature-switch.ts";
 import { pathname$, searchParams$, updateSearchParams$ } from "../../route.ts";
 import { onRef } from "../../utils.ts";
-
-export const connectorDirectoryEnabled$ = computed((get) => {
-  return get(featureSwitch$)[FeatureSwitchKey.ConnectorDirectory] === true;
-});
 
 /**
  * Which list the connectors page is showing. Discovery, connected accounts,
@@ -24,11 +18,6 @@ const CONNECTORS_SCOPE_PARAM = "scope";
 
 export const connectorsScope$ = computed((get): ConnectorsScope => {
   const raw = get(searchParams$).get(CONNECTORS_SCOPE_PARAM);
-  if (!get(connectorDirectoryEnabled$)) {
-    return raw === "remote-control" || raw === "private-network"
-      ? raw
-      : "discover";
-  }
   if (
     raw === "connected" ||
     raw === "custom" ||
@@ -52,9 +41,6 @@ export const setConnectorsScope$ = command(
       params.delete(CONNECTORS_SCOPE_PARAM);
     } else {
       params.set(CONNECTORS_SCOPE_PARAM, value);
-    }
-    if (value === "remote-control" || value === "private-network") {
-      params.delete("tab");
     }
     if (value !== "remote-control") {
       params.delete("type");
@@ -109,7 +95,6 @@ export const showCreatedDirectoryConnector$ = command(
 export const focusCreatedDirectoryConnector$ = onRef(
   command(({ get, set }, element: HTMLDivElement, _signal: AbortSignal) => {
     if (
-      get(connectorDirectoryEnabled$) &&
       get(pathname$) === "/connectors" &&
       element.dataset.customConnectorId === get(createdConnectorId$)
     ) {

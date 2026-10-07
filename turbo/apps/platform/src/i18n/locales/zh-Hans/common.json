@@ -1780,8 +1780,7 @@
       "workflows": {
         "empty": "没有匹配的工作流",
         "loading": "正在加载工作流…",
-        "title": "工作流",
-        "viewAll": "查看全部工作流"
+        "title": "工作流"
       }
     },
     "computerUse": {
@@ -1819,8 +1818,6 @@
       "add": "添加 {{connectorName}}",
       "addConnectors": "添加连接器",
       "authorized": "{{connectorName}} 已连接，并已授权给 {{agentName}}",
-      "available_one": "可连接的连接器（{{count}}）",
-      "available_other": "可连接的连接器（{{count}}）",
       "back": "返回",
       "configurePermissions": "配置 {{connectorName}} 权限",
       "customAuthorizeDescription": "查看并连接这个自定义连接器，然后授权给智能体。",
@@ -2948,7 +2945,6 @@
     "delete": "删除Cloudflare Access",
     "deleteHelp": "确定删除这个 Cloudflare Access？保存的 Service Token 无法恢复。你自己的主机必须先重新绑定。",
     "deleteUncertain": "无法确认是否已删除。请查看最新影响范围后再尝试。",
-    "description": "使用 Cloudflare Access 服务令牌访问受保护的应用。",
     "edit": "编辑Cloudflare Access",
     "failed": "无法保存 Cloudflare Access 更改，请重试。",
     "forbidden": "只有组织管理员可以修改共享的 Cloudflare Access。",
@@ -2963,7 +2959,6 @@
     "latest": "最新保存的设置",
     "loadFailed": "无法加载Cloudflare Access，请重试。",
     "loading": "正在加载Cloudflare Access…",
-    "manage": "管理 Cloudflare Access",
     "memberIdentifier": "（ID {{identifier}}）",
     "missing": "该Cloudflare Access已不可用。请选择其他项或新建一个。",
     "name": "名称",
@@ -3171,7 +3166,6 @@
           "menu": "销售与业务"
         }
       },
-      "categoriesAria": "连接器分类",
       "description": "连接第三方服务，供你的智能体使用。",
       "descriptionWithCount": "连接{{value}}个服务，供你的智能体使用。",
       "directory": {
@@ -3190,8 +3184,6 @@
       "empty": {
         "agent": "此智能体暂无连接器",
         "connected": "暂无已连接的连接器",
-        "matching": "{{message}}，匹配「{{search}}」",
-        "notConnected": "没有可连接的连接器了",
         "search": "没有与「{{search}}」匹配的连接器",
         "unshared": "每个连接器都已共享给智能体"
       },
@@ -3201,14 +3193,10 @@
         "all": "全部",
         "allAgents": "全部智能体",
         "aria": "筛选连接器",
-        "connected": "已连接",
-        "notConnected": "未连接",
-        "status": "状态",
         "unshared": "未共享给任何智能体"
       },
       "filterWith": "筛选：{{category}}",
       "iconUnavailable": "连接器图标不可用",
-      "newConnector": "新建连接器",
       "noConnectorsAlt": "暂无连接器",
       "otherCategory": "其他",
       "remoteAccess": "远程访问",
@@ -3235,10 +3223,6 @@
         "seeMore_one": "查看{{names}}及其他{{count}}个",
         "seeMore_other": "查看{{names}}及其他{{count}}个",
         "top": "热门连接器"
-      },
-      "tabs": {
-        "builtin": "内置",
-        "custom": "自定义"
       },
       "title": "连接器",
       "unnamedAgent": "未命名"
@@ -3379,7 +3363,6 @@
       "edit": {
         "title": "编辑自定义连接器"
       },
-      "emptyAdmin": "还没有自定义连接器。创建一个，把API注册给所有成员使用。",
       "emptyMember": "你的组织还没有注册任何自定义连接器。",
       "mcpStreamableHttp": "MCP · Streamable HTTP",
       "mcpType": "MCP",
@@ -5169,10 +5152,8 @@
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "按⌘/Ctrl+Enter发送，按Enter换行",
-        "description": "选择在对话中发送消息的方式。",
         "enter": "Enter",
         "enterDescription": "按Enter发送，按Shift+Enter换行",
-        "sectionTitle": "Enter",
         "title": "发送消息的按键"
       },
       "timezone": {

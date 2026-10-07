@@ -7,7 +7,6 @@ import {
   personalModelProvidersMainContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -16,10 +15,13 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import {
-  findModelMenuOption,
-  modelMenuOption,
-} from "./chat-model-menu-test-helpers.ts";
+  closeModelPanel,
+  findModelOption,
+  modelOption,
+  openModelPanel,
+} from "./chat-model-panel-test-helpers.ts";
 import {
   context,
   findButton,
@@ -68,12 +70,10 @@ async function openChat(
     context,
     path: NEW_CHAT_PATH,
     sharedWorkerTestTransport: transport,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerModelPanel]: false,
-      [FeatureSwitchKey.ChatPreference]: true,
-    },
   });
-  await expect(findButton("GPT 5.6 Sol")).resolves.toBeInTheDocument();
+  await expect(
+    composerModelTrigger("GPT 5.6 Sol"),
+  ).resolves.toBeInTheDocument();
   await waitFor(() => {
     expect(
       context.mocks.ably.hasSubscriptionOnChannel(
@@ -86,7 +86,7 @@ async function openChat(
 
 async function personalOption(): Promise<HTMLElement> {
   return await waitFor(() => {
-    const option = modelMenuOption(/GPT 5\.6 Sol/u);
+    const option = modelOption(/GPT 5\.6 Sol/u);
     expect(within(option).getByText("ChatGPT (Codex)")).toBeInTheDocument();
     return option;
   });
@@ -129,22 +129,22 @@ async function setupHeldProjectionRefresh() {
   await openChat();
   const composer = await screen.findByRole("textbox", { name: "Message" });
   await fillComposer(composer, "Keep this unsent draft");
-  click(await findButton("Effort, Max"));
-  const slider = await screen.findByRole("slider", { name: "Effort" });
+  const panel = await openModelPanel("GPT 5.6 Sol, Max");
+  const slider = within(panel).getByRole("slider", { name: "Effort" });
   slider.focus();
   const user = userEvent.setup({ delay: null });
   await user.keyboard("{Home}");
-  await expect(findButton("Effort, Low")).resolves.toBeInTheDocument();
-  click(screen.getByRole("switch", { name: "Fast mode" }));
-  await expect(findButton("GPT 5.6 Sol Fast")).resolves.toBeInTheDocument();
-  await user.keyboard("{Escape}");
-  click(await findButton("GPT 5.6 Sol Fast"));
+  await expect(findButton("GPT 5.6 Sol, Low")).resolves.toBeInTheDocument();
+  click(within(panel).getByRole("switch", { name: "Fast mode" }));
+  await expect(
+    findButton("GPT 5.6 Sol, Low, Fast"),
+  ).resolves.toBeInTheDocument();
   await personalOption();
 
   failRefresh = true;
   notice();
   await started.promise;
-  return { composer, release, user };
+  return { composer, release };
 }
 
 async function finishFailedProjectionRefresh(release: {
@@ -172,20 +172,26 @@ test("Keep the draft through a held and failed projection refresh", async () => 
 
 test("Keep effort through a held and failed projection refresh", async () => {
   const { release } = await setupHeldProjectionRefresh();
-  await expect(findButton("Effort, Low")).resolves.toBeInTheDocument();
+  await expect(
+    composerModelTrigger("GPT 5.6 Sol, Low"),
+  ).resolves.toBeInTheDocument();
   await finishFailedProjectionRefresh(release);
-  await expect(findButton("Effort, Low")).resolves.toBeInTheDocument();
+  await expect(
+    composerModelTrigger("GPT 5.6 Sol, Low"),
+  ).resolves.toBeInTheDocument();
 });
 
 test("Keep Fast through a failed projection refresh", async () => {
-  const { release, user } = await setupHeldProjectionRefresh();
+  const { release } = await setupHeldProjectionRefresh();
   await finishFailedProjectionRefresh(release);
-  await expect(findButton("GPT 5.6 Sol Fast")).resolves.toBeInTheDocument();
-  await user.keyboard("{Escape}");
-  click(await findButton("Effort, Low"));
   await expect(
-    screen.findByRole("switch", { name: "Fast mode" }),
-  ).resolves.toBeChecked();
+    findButton("GPT 5.6 Sol, Low, Fast"),
+  ).resolves.toBeInTheDocument();
+  await closeModelPanel();
+  const panel = await openModelPanel("GPT 5.6 Sol, Low, Fast");
+  expect(
+    within(panel).getByRole("switch", { name: "Fast mode" }),
+  ).toBeChecked();
 });
 
 test("A local active-account change refreshes the member projection", async () => {
@@ -235,11 +241,10 @@ test("A local active-account change refreshes the member projection", async () =
     },
   );
   await openChat();
-  click(await findButton("GPT 5.6 Sol"));
-  const initial = await findModelMenuOption(/GPT 5\.6 Sol/u);
+  const initialPanel = await openModelPanel("GPT 5.6 Sol");
+  const initial = await findModelOption(/GPT 5\.6 Sol/u, initialPanel);
   expect(within(initial).getByText("ChatGPT (Codex)")).toBeInTheDocument();
-  const user = userEvent.setup({ delay: null });
-  await user.keyboard("{Escape}");
+  await closeModelPanel();
   const rail = screen.queryByTestId("labeled-nav-rail");
   const trigger = rail
     ? within(rail).getByLabelText("Test User")
@@ -274,16 +279,11 @@ test("A local active-account change refreshes the member projection", async () =
       screen.queryByRole("dialog", { name: "Settings" }),
     ).not.toBeInTheDocument();
   });
-  click(await findButton("GPT 5.6 Sol"));
+  const panel = await openModelPanel("GPT 5.6 Sol");
   await personalOption();
-  await user.keyboard("{Escape}");
-  const effortTrigger = queryAllByRoleFast("button").find((button) => {
-    return button.getAttribute("aria-label")?.startsWith("Effort,");
-  });
-  expect(effortTrigger).toBeDefined();
-  click(effortTrigger!);
-  const slider = await screen.findByRole("slider", { name: "Effort" });
+  const slider = within(panel).getByRole("slider", { name: "Effort" });
   slider.focus();
+  const user = userEvent.setup({ delay: null });
   await user.keyboard("{Home}{ArrowRight}");
   await waitFor(() => {
     expect(slider).toHaveAttribute("aria-valuetext", "High");

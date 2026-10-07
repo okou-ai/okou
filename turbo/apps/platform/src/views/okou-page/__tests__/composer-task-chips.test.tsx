@@ -51,19 +51,6 @@ async function setupChips(enabled = true): Promise<HTMLElement> {
   return await findComposerEditor();
 }
 
-/** The chips and the slash panel are separate switches, so both are named. */
-async function setupChipsWithSlashPanel(): Promise<HTMLElement> {
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerTaskChips]: true,
-      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
-    },
-  });
-  return await findComposerEditor();
-}
-
 function composerCard(editor: HTMLElement): HTMLElement {
   const card = editor.closest<HTMLElement>('[data-slot="chat-composer-card"]');
   if (!card) {
@@ -353,7 +340,7 @@ async function closeTemplatePicker(): Promise<void> {
 
 test("The /ill slash command selects Image", async () => {
   mockTemplateChat();
-  const editor = await setupChipsWithSlashPanel();
+  const editor = await setupChips();
   const user = userEvent.setup({ delay: null });
   await fill(editor, "A quiet garden /ill");
   const menu = await screen.findByTestId("slash-workflow-menu");
@@ -372,7 +359,7 @@ test("The /ill slash command selects Image", async () => {
 // the composer in the same task its category row would.
 test("A slash panel cover attaches its template and lands on its task", async () => {
   mockTemplateChat();
-  const editor = await setupChipsWithSlashPanel();
+  const editor = await setupChips();
   await fill(editor, "A launch page /web");
   await screen.findByTestId("slash-workflow-menu");
   // The covers float beside the index in their own flyout, so they are not

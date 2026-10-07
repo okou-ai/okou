@@ -60,13 +60,14 @@ test("a large official catalog installs only onboarding and existing Runner E2E 
       "algolia",
       "bentoml",
       "discord-webhook",
+      "replicate",
       "serpapi",
       "twilio",
       "zendesk",
     ]),
   ].sort();
   expect(seeded.body).toStrictEqual({ ...published, connectorSlugs: required });
-  expect(seeded.body.connectorSlugs).toHaveLength(31);
+  expect(seeded.body.connectorSlugs).toHaveLength(32);
 
   const client = catalogClient();
   const github = await accept(

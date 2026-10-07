@@ -8,7 +8,6 @@ import {
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Menu, Package, Share2, UserPlus } from "lucide-react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { RouteKey } from "../../signals/route-paths.ts";
 import { Button, cn, useMediaQuery } from "@okouai/ui";
 import { Sidebar, ThreeColumnSearchDialogContainer } from "./sidebar.tsx";
@@ -45,7 +44,6 @@ import {
 } from "../pwa-install/install-banner.tsx";
 import { useOpenThreadArtifacts } from "./thread-sidebar.tsx";
 import { ChatShortcutHelpDialog } from "./chat-shortcut-help-dialog.tsx";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { ConcurrencyConfirmDialog } from "./components/org-manage/org-billing-tab.tsx";
 import { CreditPurchaseConfirmDialog } from "./components/org-manage/credit-purchase-confirm-dialog.tsx";
 import { SubscriptionPurchaseConfirmDialog } from "./components/org-manage/subscription-purchase-confirm-dialog.tsx";
@@ -278,10 +276,8 @@ function MobileChatThreadActions({ thread }: { thread: ChatPanelSignals }) {
 }
 
 function MobileTopBarActions({ activeId }: { activeId: RouteKey | null }) {
-  const headerActionsEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadHeaderActions];
   const thread = useCurrentThread();
-  if (headerActionsEnabled && activeId === "chat" && thread) {
+  if (activeId === "chat" && thread) {
     return (
       <SettledChatThreadActions thread={thread}>
         <MobileChatThreadActions thread={thread} />

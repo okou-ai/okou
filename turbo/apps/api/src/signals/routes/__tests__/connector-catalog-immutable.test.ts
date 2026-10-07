@@ -63,6 +63,15 @@ import {
 } from "vitest";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import {
+  runnersJobClaimContract,
+  storedExecutionContextSchema,
+} from "@okouai/api-contracts/contracts/runners";
+import { runnersRoutes } from "../runners";
+import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/runner-primitives";
+import { connectorCatalogExecutableCapabilityDigest } from "../../services/connector-catalog-compatibility.service";
+import { connectorCatalogSource } from "../../services/connector-catalog-source";
+import { currentConnectorCatalogValidatorIdentity } from "../../services/connector-catalog-validator-authority";
+import {
   connectorCatalogArtifactSchema,
   CONNECTOR_CATALOG_ACTIVE_KEY,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
@@ -1176,7 +1185,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       configured.connectors.get("github")?.methods.size ?? 0,
     );
   });
-  it("n5: real MCP consumer distinguishes unknown from missing rows without legacy or R2 fallback", async () => {
+  it("n5: real MCP consumer treats absent entries as unknown and rejects a missing pointer", async () => {
     if (!engine) {
       throw new Error("Missing case engine");
     }
@@ -1207,7 +1216,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       "DELETE FROM connector_catalog_entries WHERE hash = $1 AND slug = $2",
       [candidate.hash, slug],
     );
-    expect((await mcpDirectory(actor)).status).toBe(500);
+    expect((await mcpDirectory(actor)).body).toStrictEqual({ connectors: [] });
     expect((await mcpDirectory(unknownActor)).body).toStrictEqual({
       connectors: [],
     });
@@ -1286,7 +1295,7 @@ describe("slug-first current catalog business readers", () => {
     );
     expect(permissions.body.permissions.connectorSlug).toBe("notion");
   });
-  it("reports a slug absent from the manifest as unknown", async () => {
+  it("reports an absent slug as unknown", async () => {
     await publishedCatalog();
     await unreadableLegacySnapshot();
     const result = await accept(
@@ -1298,6 +1307,146 @@ describe("slug-first current catalog business readers", () => {
     );
     expect(result.body.error.code).toBe("NOT_FOUND");
   });
+  it("serves complete lists, search and compatibility from published entries", async () => {
+    const candidate = await publishedCatalog();
+    if (!engine) {
+      throw new Error("Missing case engine");
+    }
+    await unreadableLegacySnapshot();
+    await engine.exec(
+      "DELETE FROM connector_catalog_compatibility_evaluation; DELETE FROM connector_catalog_active_snapshot; DELETE FROM connector_catalog_sync_state",
+    );
+    await engine.query(
+      "UPDATE connector_catalog SET entry_slugs = '[]'::jsonb, catalog_version = 'ignored-publication-label'",
+    );
+    const listed = await accept(catalogClient().list({ headers }), [200]);
+    expect(listed.body.connectors).toContainEqual(
+      expect.objectContaining({ slug: "github" }),
+    );
+    // Category labels come from the pointer row that owns the listed hash.
+    const listedCategories = new Set(
+      listed.body.connectors.map((connector) => {
+        return connector.category;
+      }),
+    );
+    expect(
+      new Set(
+        listed.body.categoryMetadata?.categories.map((category) => {
+          return category.id;
+        }),
+      ),
+    ).toStrictEqual(listedCategories);
+    await directory(candidate);
+    const oneClick = await accept(catalogClient().oneClick({ headers }), [200]);
+    expect(oneClick.body.connectors.length).toBeGreaterThan(0);
+  });
+
+  it.each(["claude-code", "pi"])(
+    "claims an old %s execution context and v1 permission baseline",
+    async (cliAgentType) => {
+      const candidate = await publishedCatalog();
+      if (!engine) {
+        throw new Error("Missing case engine");
+      }
+      const actor = await ownedMcpRun(candidate);
+      const validator = currentConnectorCatalogValidatorIdentity();
+      const storedContext = storedExecutionContextSchema.parse({
+        storageMounts: [],
+        environment: null,
+        platformEnvironment: {},
+        secretValueEnvironmentKeys: null,
+        resumeSession: null,
+        encryptedSecrets: null,
+        cliAgentType,
+        connectorRuntimeTargets: [{ kind: "builtin", connectorSlug: "github" }],
+        networkPolicies: {
+          github: {
+            allow: [],
+            deny: ["user:read"],
+            ask: [],
+            unknownPolicy: "deny",
+          },
+        },
+        connectorPermissionBaseline: {
+          version: 1,
+          catalogIdentity: {
+            sourceId: connectorCatalogSource().sourceId,
+            schemaVersion: 4,
+            // Pre-migration contexts have a publication version, not the hash alias.
+            catalogVersion: candidate.artifact.catalogVersion,
+            catalogDigest: candidate.hash,
+            capabilityDigest: connectorCatalogExecutableCapabilityDigest(),
+          },
+          validationAuthority: {
+            backendVersion: validator.validatorVersion,
+            buildCommitSha: validator.buildCommitSha,
+          },
+          connectors: {
+            github: {
+              permissionNames: ["user:read"],
+              defaultPolicy: {
+                permissionDefault: "deny",
+                unknownPolicy: "deny",
+              },
+            },
+          },
+        },
+        ...(cliAgentType === "pi"
+          ? {
+              piSessionId: randomUUID(),
+              piLaunchConfig: { schemaVersion: 2 },
+              piModelConfig: {
+                provider: "deepseek",
+                baseUrl: "https://api.deepseek.com/",
+                model: "deepseek-v4-flash",
+                apiKeyEnv: "OPENAI_API_KEY",
+                credentialSecretName: "DEEPSEEK_API_KEY",
+              },
+            }
+          : {}),
+      });
+      await engine.query(
+        "UPDATE agent_runs SET status = 'pending', runner_group = 'vm0/default' WHERE id = $1",
+        [actor.runId],
+      );
+      await engine.query(
+        "INSERT INTO runner_job_queue (run_id, runner_group, execution_context, expires_at) VALUES ($1, 'vm0/default', $2, now() + interval '1 hour')",
+        [actor.runId, JSON.stringify(storedContext)],
+      );
+      await engine.exec(
+        "DELETE FROM connector_catalog_compatibility_evaluation; DELETE FROM connector_catalog_active_snapshot; DELETE FROM connector_catalog_sync_state",
+      );
+      const claim = await accept(
+        setupApp({ context, routes: runnersRoutes })(
+          runnersJobClaimContract,
+        ).claim({
+          headers: {
+            authorization: `Bearer ${OFFICIAL_RUNNER_TOKEN_PREFIX}${"abcdef0123456789".repeat(4)}`,
+          },
+          params: { id: actor.runId },
+          body: {
+            runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 1 },
+            capabilities: { piModelConfigGenerations: [1] },
+          },
+        }),
+        [200],
+      );
+      expect(claim.body.cliAgentType).toBe(cliAgentType);
+      expect(claim.body.networkPolicies?.github).toStrictEqual({
+        allow: [],
+        deny: ["user:read"],
+        ask: [],
+        unknownPolicy: "deny",
+      });
+      if (cliAgentType === "pi") {
+        expect(claim.body.piSessionId).toBe(storedContext.piSessionId);
+        expect(claim.body.piLaunchConfig).toStrictEqual(
+          storedContext.piLaunchConfig,
+        );
+      }
+    },
+  );
+
   it("lists named onboarding sources from current entries", async () => {
     await publishedCatalog();
     const client = setupApp({ context, routes: onboardingSourcesRoutes })(
@@ -1360,7 +1509,7 @@ describe("slug-first current catalog business readers", () => {
       before.body,
     );
   });
-  it("rejects a manifest-listed missing entry without substituting the full snapshot", async () => {
+  it("reports a missing entry as not found and a missing pointer as unavailable", async () => {
     const candidate = await publishedCatalog();
     if (!engine) {
       throw new Error("Missing case engine");
@@ -1372,9 +1521,9 @@ describe("slug-first current catalog business readers", () => {
     );
     const result = await accept(
       catalogClient().get({ headers, params: { connectorSlug: "openai" } }),
-      [503],
+      [404],
     );
-    expect(result.body.error.code).toBe("PROVIDER_UNAVAILABLE");
+    expect(result.body.error.code).toBe("NOT_FOUND");
     await accept(
       catalogClient().get({ headers, params: { connectorSlug: "github" } }),
       [200],
@@ -1386,6 +1535,15 @@ describe("slug-first current catalog business readers", () => {
       }),
       [404],
     );
+    await engine.query(
+      "DELETE FROM connector_catalog_entries WHERE hash = $1",
+      [candidate.hash],
+    );
+    const listUnavailable = await accept(
+      catalogClient().list({ headers }),
+      [503],
+    );
+    expect(listUnavailable.body.error.code).toBe("PROVIDER_UNAVAILABLE");
     await engine.exec("DELETE FROM connector_catalog");
     const detailUnavailable = await accept(
       catalogClient().get({ headers, params: { connectorSlug: "github" } }),

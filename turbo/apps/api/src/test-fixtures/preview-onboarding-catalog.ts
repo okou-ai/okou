@@ -16,6 +16,7 @@ export function previewOnboardingCatalogFixture(extraCount = 1) {
     "algolia",
     "bentoml",
     "discord-webhook",
+    "replicate",
     "serpapi",
     "twilio",
     "zendesk",

@@ -26,34 +26,14 @@ interface AgentMentionAvatarSource {
   readonly avatarUrl: string | null;
 }
 
-/** The avatar composition switches, as seen by a mention chip. */
-export interface AgentMentionAvatarSwitches {
-  readonly framing: boolean;
-}
-
 export interface AgentMentionAvatarRuntime {
   readonly resolve: (agentId: string, fallback: string | null) => string | null;
   readonly replaceAgents: (agents: readonly AgentMentionAvatarSource[]) => void;
-  /**
-   * The `avatarFraming` switch. Mention chips are
-   * ProseMirror node views built outside React and outside command scope, so
-   * the switches are pushed in from the sync command that already feeds this
-   * runtime rather than read from `featureSwitch$` here.
-   */
-  readonly setSwitches: (next: AgentMentionAvatarSwitches) => void;
-  /**
-   * Stable by reference until a field actually changes, which is what lets a
-   * node view detect a switch flip by identity.
-   */
-  readonly switches: () => AgentMentionAvatarSwitches;
   readonly subscribe: (listener: () => void) => () => void;
 }
 
 export function createAgentMentionAvatarRuntime(): AgentMentionAvatarRuntime {
   let agents: readonly AgentMentionAvatarSource[] = [];
-  let switches: AgentMentionAvatarSwitches = {
-    framing: false,
-  };
   const listeners = new Set<() => void>();
   const notify = () => {
     for (const listener of listeners) {
@@ -70,16 +50,6 @@ export function createAgentMentionAvatarRuntime(): AgentMentionAvatarRuntime {
     replaceAgents(nextAgents) {
       agents = nextAgents;
       notify();
-    },
-    setSwitches(next) {
-      if (switches.framing === next.framing) {
-        return;
-      }
-      switches = next;
-      notify();
-    },
-    switches() {
-      return switches;
     },
     subscribe(listener) {
       listeners.add(listener);
@@ -112,13 +82,12 @@ export function agentMentionText(node: ProseMirrorNode): string {
 function renderAgentMentionAvatar(
   container: HTMLElement,
   avatarUrl: string | null,
-  switches: AgentMentionAvatarSwitches,
 ): void {
   container.replaceChildren();
   const svgConfig = resolveAvatarSvgConfig(avatarUrl);
   if (svgConfig) {
     const { behind, head, front, headOffsetY, contentOffsetY, contentScale } =
-      avatarSvgComposition(svgConfig, switches);
+      avatarSvgComposition(svgConfig, { framing: true });
     const applySlot = (
       element: HTMLElement,
       slot: Readonly<Record<string, string>>,
@@ -131,7 +100,7 @@ function renderAgentMentionAvatar(
     layers.className = "absolute inset-0";
     applySlot(layers, AVATAR_ARTWORK_SLOT);
     const transform = avatarSvgContentTransform({
-      contentOffsetY: switches.framing ? contentOffsetY : 0,
+      contentOffsetY,
       contentScale,
     });
     if (transform) {
@@ -189,17 +158,13 @@ function createAgentMentionNodeView(
 
   let currentNode = node;
   let currentAvatarUrl: string | null | undefined;
-  // The chip is redrawn only when its picture would actually change. The
-  // switches are part of that picture, not just the URL: flipping one swaps the
-  // layer set or the framing for the same avatar.
-  let currentSwitches: AgentMentionAvatarSwitches | undefined;
+  // The chip is redrawn only when its picture would actually change.
   function render(nextNode: ProseMirrorNode): void {
     const attributes = agentMentionAttributes(nextNode);
     const avatarUrl = avatarRuntime.resolve(
       attributes.agentId,
       attributes.avatarUrl,
     );
-    const switches = avatarRuntime.switches();
     dom.dataset.agentMention = attributes.agentId;
     dom.dataset.agentName = attributes.name;
     if (avatarUrl === null) {
@@ -208,10 +173,9 @@ function createAgentMentionNodeView(
       dom.dataset.agentAvatarUrl = avatarUrl;
     }
     name.textContent = attributes.name;
-    if (avatarUrl !== currentAvatarUrl || switches !== currentSwitches) {
+    if (avatarUrl !== currentAvatarUrl) {
       currentAvatarUrl = avatarUrl;
-      currentSwitches = switches;
-      renderAgentMentionAvatar(avatar, avatarUrl, switches);
+      renderAgentMentionAvatar(avatar, avatarUrl);
     }
   }
   render(node);

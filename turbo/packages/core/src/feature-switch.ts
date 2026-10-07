@@ -281,12 +281,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Workday HCM and finance connector",
     enabled: false,
   },
-  [FeatureSwitchKey.ChatPreference]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Enable dedicated Chat settings and explicit new-chat default actions.",
-    enabled: true,
-  },
   [FeatureSwitchKey.RealAgentInPreview]: {
     maintainer: "ethan@okou.ai",
     description:
@@ -300,29 +294,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.OpenRouterUsRouting]: {
-    maintainer: "liangyou@okou.ai",
-    description:
-      "Use US routing for supported non-DeepSeek models with platform-owned OpenRouter keys.",
-    enabled: true,
-  },
   [FeatureSwitchKey.LangfuseTrace]: {
     maintainer: "ethan@okou.ai",
     description:
       "Trace explicitly opted-in Pi runs across the API-first and Sandbox ownership boundary in Langfuse.",
     enabled: false,
-  },
-  [FeatureSwitchKey.AvatarFraming]: {
-    maintainer: "tongx@okou.ai",
-    description:
-      "Center every avatar's visible artwork in its box and move it halfway to a shared fill, so hair volume stops changing how large an avatar looks.",
-    enabled: true,
-  },
-  [FeatureSwitchKey.AvatarTexture]: {
-    maintainer: "tongx@okou.ai",
-    description:
-      "Back the chat home greeting avatar with a brand texture chosen to stay clear of the avatar's own colours, sit it on the frame's bottom edge, and drop the frame's hairline.",
-    enabled: true,
   },
   [FeatureSwitchKey.ZapierConnector]: {
     maintainer: "yuma@okou.ai",
@@ -345,18 +321,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ComposerImageAnnotation]: {
-    maintainer: "tongx@okou.ai",
-    description:
-      "Let an attached image be marked up in the composer lightbox — boxes, arrows, freehand, text, highlight and redaction, each able to carry a note — and send a rendered copy carrying the editable marks.",
-    enabled: true,
-  },
-  [FeatureSwitchKey.SubscriptionControls]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Read and switch personal subscriptions through the CLI and reset Codex usage through a user-confirmed chat card.",
-    enabled: true,
-  },
   [FeatureSwitchKey.SidebarSubscriptionUsage]: {
     maintainer: "ethan@okou.ai",
     description:
@@ -377,12 +341,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Require a responsibility when creating an Agent, then pin it and open a setup thread asking it to adopt that responsibility.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ComposerModelPanel]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Replace the composer's model menu and effort chip with one panel that picks the chat model and sets its effort and Fast mode.",
-    enabled: true,
   },
   [FeatureSwitchKey.LarkIntegration]: {
     maintainer: "linghan@okou.ai",
@@ -407,18 +365,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable owner-scoped VNC host and credential configuration",
     enabled: false,
   },
-  [FeatureSwitchKey.ConnectorDirectory]: {
-    maintainer: "tongx@okou.ai",
-    description:
-      "Shelf-based connector browsing with Discover, Connected, Remote control, Private network, and Custom scopes on the connectors page, plus connector discovery in the chat composer.",
-    enabled: true,
-  },
-  [FeatureSwitchKey.ChatThreadHeaderActions]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Pin chats from the desktop title and keep Pin, Share, and More visible in the mobile thread header.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ChatThreadArchiving]: {
     maintainer: "ethan@okou.ai",
     description:
@@ -432,18 +378,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Mute chats to suppress unread indicators, push notifications and automatic unarchiving.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ComposerSlashTemplatePanel]: {
-    maintainer: "tongx@okou.ai",
-    description:
-      "Replace the composer's flat slash menu with a two-pane panel that previews each template type's covers.",
-    enabled: true,
-  },
-  [FeatureSwitchKey.ComposerTemplateChipCover]: {
-    maintainer: "tongx@okou.ai",
-    description:
-      "Show the chosen template's cover image on the composer's inline template chip instead of a generic glyph.",
-    enabled: true,
   },
   [FeatureSwitchKey.ComposerAddMenu]: {
     maintainer: "bingjie@okou.ai",

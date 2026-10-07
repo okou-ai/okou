@@ -1,5 +1,4 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -56,7 +55,6 @@ async function openCategory(): Promise<void> {
   await setupPage({
     context,
     path: `/connectors?category=${CATEGORY}`,
-    featureSwitches: { [FeatureSwitchKey.ConnectorDirectory]: true },
   });
   await screen.findByTestId("connector-category-grid");
 }

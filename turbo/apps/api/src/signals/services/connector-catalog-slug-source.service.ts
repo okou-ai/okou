@@ -3,10 +3,7 @@ import {
   connectorCatalog,
   connectorCatalogEntries,
 } from "@okouai/db/schema/connector-catalog";
-import type {
-  ImmutableConnectorCatalogHeader,
-  ImmutableConnectorCatalogEntry,
-} from "@okouai/db/jsonb-contracts/immutable-connector-catalog";
+import type { ImmutableConnectorCatalogEntry } from "@okouai/db/jsonb-contracts/immutable-connector-catalog";
 import { SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import {
@@ -21,8 +18,10 @@ import {
   materializeConnectorRuntimeLookup,
   uniqueSortedConnectorSlugs,
 } from "./connector-catalog-runtime.service";
-import { connectorCatalogSource } from "./connector-catalog-source";
-import type { ExternalCatalogIdentity } from "./connector-catalog-view";
+import {
+  catalogIdentityFromCapture,
+  type ExternalCatalogIdentity,
+} from "./connector-catalog-view";
 
 /** Pure predicates: the reader executes its SQL on its own connection/transaction. */
 export function connectorCatalogCurrentWhere() {
@@ -41,8 +40,8 @@ export function connectorCatalogSlugJoin(slugs: readonly ConnectorSlug[]) {
 
 interface CatalogSlugRow {
   readonly current: {
-    readonly header: ImmutableConnectorCatalogHeader;
-    readonly entrySlugs: readonly string[];
+    readonly schemaVersion: number;
+    readonly hash: string;
   };
   readonly entry: {
     readonly slug: string;
@@ -69,32 +68,23 @@ function currentFromRows<Row extends CatalogSlugRow>(
   return current;
 }
 
-/** Unknown slugs are absent; a listed entry missing in storage is unavailable. */
+/** Missing entries are absent; callers enforce their required-slug contract. */
 export function connectorCatalogSlugSourceFromRows(
   rows: readonly CatalogSlugRow[],
   requestedSlugs: readonly ConnectorSlug[],
 ): ConnectorCatalogSlugSource {
-  const current = currentFromRows(rows);
-  const manifest = new Set(current.entrySlugs);
+  currentFromRows(rows);
   const entries = new Map(
     rows.flatMap(({ entry }) => {
       return entry === null ? [] : [[entry.slug, entry.payload] as const];
     }),
   );
   const connectors = [...new Set(requestedSlugs)].flatMap((slug) => {
-    if (!manifest.has(slug)) {
-      return [];
-    }
     const entry = entries.get(slug);
-    if (entry === undefined) {
-      throw new ExternalConnectorCatalogUnavailableError(
-        "missing_manifest_entry",
-      );
-    }
-    return [entry];
+    return entry === undefined ? [] : [entry];
   });
   const filtered = evaluateConnectorCatalogCompatibility({
-    artifact: { ...current.header, connectors },
+    artifact: { connectors },
     capability: connectorCatalogExecutableCapabilityState(),
   });
   return {
@@ -128,11 +118,8 @@ export function connectorCatalogSlugIdentityFromRows(
   rows: readonly CatalogSlugIdentityRow[],
 ): ExternalCatalogIdentity {
   const current = currentFromRows(rows);
-  return {
-    sourceId: connectorCatalogSource().sourceId,
-    schemaVersion: current.schemaVersion,
-    catalogVersion: current.header.catalogVersion,
-    catalogDigest: current.hash,
-    capabilityDigest: connectorCatalogExecutableCapabilityState().digest,
-  };
+  return catalogIdentityFromCapture(
+    current,
+    connectorCatalogExecutableCapabilityState().digest,
+  );
 }

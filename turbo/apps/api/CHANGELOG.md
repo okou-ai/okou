@@ -9,6 +9,41 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.712.1](https://github.com/okou-ai/okou/compare/api-v1.712.0...api-v1.712.1) (2026-10-07)
+
+
+### Refactoring
+
+* read connector catalogs from immutable entries ([#37820](https://github.com/okou-ai/okou/issues/37820)) ([562e53f](https://github.com/okou-ai/okou/commit/562e53fdeb02c8feb1f131f0f8629bc84bf1f2d0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.537.8
+    * @okouai/connectors bumped to 3.16.2
+    * @okouai/core bumped to 8.734.1
+    * @okouai/db bumped to 1.323.2
+    * @okouai/pi-agent-runtime bumped to 1.46.15
+
+## [1.712.0](https://github.com/okou-ai/okou/compare/api-v1.711.0...api-v1.712.0) (2026-10-06)
+
+
+### Features
+
+* **core:** release eleven staff feature switches to all users ([#37818](https://github.com/okou-ai/okou/issues/37818)) ([8d05119](https://github.com/okou-ai/okou/commit/8d051194184d595b67f78f5d6f7ec728ed6cc31d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.537.7
+    * @okouai/core bumped to 8.734.0
+    * @okouai/db bumped to 1.323.1
+    * @okouai/pi-agent-runtime bumped to 1.46.14
+
 ## [1.711.0](https://github.com/okou-ai/okou/compare/api-v1.710.3...api-v1.711.0) (2026-10-06)
 
 
