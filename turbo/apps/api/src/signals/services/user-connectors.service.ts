@@ -1,6 +1,4 @@
 import { command } from "ccstate";
-import { nowDate } from "../../lib/time";
-import { invalidatePiStableContextSql } from "./pi-stable-context-generation.service";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
@@ -300,16 +298,6 @@ export const updateUserBuiltinConnectors$ = command(
       }
 
       if (operation === "replace") {
-        await tx.execute(
-          invalidatePiStableContextSql(
-            {
-              orgId: args.orgId,
-              userId: args.userId,
-              agentId: args.agentId,
-            },
-            nowDate(),
-          ),
-        );
         return { status: "updated", enabledConnectorSlugs };
       }
 
@@ -323,16 +311,6 @@ export const updateUserBuiltinConnectors$ = command(
           return row.connectorSlug;
         }),
       } as const;
-      await tx.execute(
-        invalidatePiStableContextSql(
-          {
-            orgId: args.orgId,
-            userId: args.userId,
-            agentId: args.agentId,
-          },
-          nowDate(),
-        ),
-      );
       return result;
     });
   },
@@ -737,18 +715,6 @@ export async function updateUserCustomConnectors(
       operation,
       connectorCatalogSnapshot,
     });
-    if (persisted.result.status === "updated") {
-      await tx.execute(
-        invalidatePiStableContextSql(
-          {
-            orgId: args.orgId,
-            userId: args.userId,
-            agentId: args.agentId,
-          },
-          nowDate(),
-        ),
-      );
-    }
     return persisted;
   });
   if (

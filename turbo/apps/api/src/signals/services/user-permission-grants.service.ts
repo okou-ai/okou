@@ -1,4 +1,3 @@
-import { invalidatePiStableContextSql } from "./pi-stable-context-generation.service";
 import { command } from "ccstate";
 import type { StoredConnectorPermissionBaseline } from "@okouai/api-contracts/contracts/runners";
 import {
@@ -23,7 +22,6 @@ import type {
   UserPermissionGrantExpiresIn,
   UserPermissionGrantResponse,
 } from "@okouai/api-contracts/contracts/user-permission-grants";
-import type { Tx } from "../../lib/db-types";
 import { notFound } from "../../lib/error";
 import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { publishConnectorPermissionUpdatedSafely } from "../external/realtime";
@@ -747,36 +745,14 @@ async function validateApplyUserPermissionGrants(
 async function applyVisibleGrantRows(
   db: Db,
   args: ApplyUserPermissionGrantsArgs,
-  serverFirewalls: ConnectorServerFirewallCatalog,
 ): Promise<readonly StoredPermissionGrantRow[] | NotFoundResponse> {
-  return await applyVisibleAgentGrantRows(
-    db,
-    args,
-    args.apply.agentId,
-    serverFirewalls,
-  );
-}
-
-async function invalidatePermissionStableContext(
-  tx: Tx,
-  args: ApplyUserPermissionGrantsArgs,
-  agentId: string,
-  _checkedAt: Date,
-  _serverFirewalls: ConnectorServerFirewallCatalog,
-): Promise<void> {
-  await tx.execute(
-    invalidatePiStableContextSql(
-      { orgId: args.orgId, userId: args.userId, agentId },
-      nowDate(),
-    ),
-  );
+  return await applyVisibleAgentGrantRows(db, args, args.apply.agentId);
 }
 
 async function applyVisibleAgentGrantRows(
   db: Db,
   args: ApplyUserPermissionGrantsArgs,
   agentId: string,
-  serverFirewalls: ConnectorServerFirewallCatalog,
 ): Promise<readonly UserPermissionGrantRow[] | NotFoundResponse> {
   return await db.transaction(async (tx) => {
     const visibleAgent = await lockVisibleAgentForUpdate(tx, {
@@ -802,13 +778,6 @@ async function applyVisibleAgentGrantRows(
     }
 
     if (args.apply.grants.length === 0) {
-      await invalidatePermissionStableContext(
-        tx,
-        args,
-        agentId,
-        timestamp,
-        serverFirewalls,
-      );
       return [];
     }
 
@@ -874,13 +843,6 @@ async function applyVisibleAgentGrantRows(
       }
       rows.push(row);
     }
-    await invalidatePermissionStableContext(
-      tx,
-      args,
-      agentId,
-      timestamp,
-      serverFirewalls,
-    );
     return rows;
   });
 }
@@ -903,7 +865,7 @@ async function applyRowsAndPublishNetworkPolicyRefreshes(
   serverFirewalls: ConnectorServerFirewallCatalog,
 ): Promise<readonly StoredPermissionGrantRow[] | NotFoundResponse> {
   return await commitConnectorRuntimeMutation(
-    applyVisibleGrantRows(db, args, serverFirewalls),
+    applyVisibleGrantRows(db, args),
     (rows) => {
       if ("status" in rows || !serverFirewalls.has(args.apply.connectorSlug)) {
         return undefined;

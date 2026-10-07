@@ -1,13 +1,11 @@
 import { nowDate } from "../../lib/time";
-import { piStableContextGenerations } from "@okouai/db/schema/pi-stable-context";
 import {
-  piStableContextGenerationValues,
-  retirePiStableContextPublicationSql,
+  ensurePublicationGenerations,
+  retirePublicationSql,
   publicationScopePendingSql,
   publicationReadinessSql,
-  invalidatePiStableContextSql,
-  piStableContextWorkflowPublicationKey,
-} from "./pi-stable-context-generation.service";
+  workflowPublicationKey,
+} from "./storage-publication-fence.service";
 import {
   getCustomSkillStorageName,
   VOLUME_ORG_USER_ID,
@@ -38,7 +36,7 @@ interface DeleteOrphanedWorkflowVolumeInput {
   readonly workflowId: string;
 }
 
-async function retireDeletedWorkflowStableContext(
+async function retireDeletedWorkflowPublications(
   tx: Tx,
   args: {
     readonly orgId: string;
@@ -53,8 +51,7 @@ async function retireDeletedWorkflowStableContext(
 ): Promise<void> {
   // A Workflow can have an abandoned obligation in either scope after a
   // visibility transition or a stale update. Settle both in one deterministic
-  // @agent → user order, then invalidate both memberships from the same
-  // post-delete snapshot.
+  // @agent → user order.
   const scopes = [
     { orgId: args.orgId, agentId: args.workflow.agentId },
     {
@@ -63,22 +60,12 @@ async function retireDeletedWorkflowStableContext(
       userId: args.workflow.ownerUserId,
     },
   ] as const;
-  await tx
-    .insert(piStableContextGenerations)
-    .values(piStableContextGenerationValues(scopes))
-    .onConflictDoNothing();
-  const publicationKey = piStableContextWorkflowPublicationKey(
-    args.workflow.id,
-  );
+  await ensurePublicationGenerations(tx, scopes);
+  const publicationKey = workflowPublicationKey(args.workflow.id);
   for (const scope of scopes) {
     await tx.execute(publicationScopePendingSql(scope, nowDate()));
-    await tx.execute(
-      retirePiStableContextPublicationSql(scope, publicationKey),
-    );
+    await tx.execute(retirePublicationSql(scope, publicationKey));
     await tx.execute(publicationReadinessSql(scope, nowDate()));
-  }
-  for (const scope of scopes) {
-    await tx.execute(invalidatePiStableContextSql(scope, nowDate()));
   }
 }
 
@@ -246,12 +233,9 @@ export const deleteWorkflow$ = command(
         )
         .limit(1);
       if (storage) {
-        // Stable-context publishers lock resource parents before the head.
-        // Delete in the same parent-before-head order so a publisher holding a
-        // Storage key-share lock cannot deadlock with Workflow invalidation.
         await tx.delete(storages).where(eq(storages.id, storage.id));
       }
-      await retireDeletedWorkflowStableContext(tx, {
+      await retireDeletedWorkflowPublications(tx, {
         orgId: args.orgId,
         workflow,
       });

@@ -1,9 +1,3 @@
-import { piStableContextHeads } from "@okouai/db/schema/pi-stable-context";
-import {
-  piStableContextDemandInputSql,
-  piStableContextStorageDemandValues,
-  storageDependentHeadCondition,
-} from "./pi-stable-context-generation.service";
 import {
   computeContentHashFromHashes,
   type FileEntryWithHash,
@@ -20,7 +14,7 @@ import { piMemoryPhase2Checkpoints } from "@okouai/db/schema/pi-memory-phase2-ch
 import { storageVersionLineage } from "@okouai/db/schema/storage-version-lineage";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command, computed, type Computed } from "ccstate";
-import { and, eq, gt, asc } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 
 import { badRequestMessage, notFound } from "../../lib/error";
 import { env } from "../../lib/env";
@@ -868,7 +862,6 @@ async function publishStorageHeadIfChanged(args: {
     "versionId" | "sandboxAuth"
   >;
   readonly size: number;
-  readonly archiveSize: number;
   readonly fileCount: number;
 }): Promise<void> {
   if (args.storage.headVersionId === args.input.versionId) {
@@ -894,41 +887,6 @@ async function publishStorageHeadIfChanged(args: {
     .returning({ id: storages.id });
   if (!published) {
     throw new Error("Locked Storage HEAD could not be published");
-  }
-  const piMutation0Resource = {
-    storageId: args.storage.id,
-    versionId: args.input.versionId,
-    archiveSize: args.archiveSize,
-    fileCount: args.fileCount,
-  };
-  const piMutation0Heads = await args.tx
-    .select({
-      id: piStableContextHeads.id,
-      generation: piStableContextHeads.generation,
-      input: piStableContextDemandInputSql().mapWith(
-        piStableContextHeads.input,
-      ),
-    })
-    .from(piStableContextHeads)
-    .where(storageDependentHeadCondition([piMutation0Resource.storageId]))
-    .orderBy(asc(piStableContextHeads.id));
-  const piMutation0At = nowDate();
-  for (const head of piMutation0Heads) {
-    await args.tx
-      .update(piStableContextHeads)
-      .set(
-        piStableContextStorageDemandValues(
-          head,
-          piMutation0Resource,
-          piMutation0At,
-        ),
-      )
-      .where(
-        and(
-          eq(piStableContextHeads.id, head.id),
-          eq(piStableContextHeads.generation, head.generation),
-        ),
-      );
   }
   if (
     args.storage.name !== MEMORY_ARTIFACT_NAME ||
@@ -961,7 +919,6 @@ async function commitExistingActiveStorageVersion(
     storage: args.storage,
     input: args.input,
     size: Number(args.version.size),
-    archiveSize: args.verification.archiveSize,
     fileCount: args.version.fileCount,
   });
   await recordStorageLineage({
@@ -1034,10 +991,7 @@ async function commitActiveStorageVersion(
       createdBy: args.input.runId ? "agent" : "user",
     })
     .onConflictDoNothing()
-    .returning({
-      id: storageVersions.id,
-      archiveSize: storageVersions.archiveSize,
-    });
+    .returning({ id: storageVersions.id });
 
   const [existingVersion] = insertedVersion
     ? []
@@ -1048,7 +1002,6 @@ async function commitActiveStorageVersion(
           s3Key: storageVersions.s3Key,
           size: storageVersions.size,
           fileCount: storageVersions.fileCount,
-          archiveSize: storageVersions.archiveSize,
         })
         .from(storageVersions)
         .where(eq(storageVersions.id, args.input.versionId))
@@ -1066,18 +1019,11 @@ async function commitActiveStorageVersion(
       `Storage version ${args.input.versionId} conflicts with committed metadata`,
     );
   }
-  const archiveSize =
-    insertedVersion?.archiveSize ?? existingVersion?.archiveSize;
-  if (archiveSize === undefined) {
-    throw new Error(`Version ${args.input.versionId} not found after insert`);
-  }
-
   await publishStorageHeadIfChanged({
     tx: args.tx,
     storage,
     input: args.input,
     size,
-    archiveSize,
     fileCount,
   });
   await recordStorageLineage({

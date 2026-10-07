@@ -1,4 +1,3 @@
-import { invalidatePiStableContextSql } from "../services/pi-stable-context-generation.service";
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
@@ -546,12 +545,6 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     if (!agent) {
       throw new Error(`Canonical Agent missing after update: ${params.id}`);
     }
-    await tx.execute(
-      invalidatePiStableContextSql(
-        { orgId: auth.orgId, agentId: params.id },
-        nowDate(),
-      ),
-    );
     return { agent };
   });
   signal.throwIfAborted();
@@ -646,12 +639,6 @@ const updateAgentMetadataInner$ = command(
       if (!agent) {
         throw new Error(`Canonical Agent missing after update: ${params.id}`);
       }
-      await tx.execute(
-        invalidatePiStableContextSql(
-          { orgId: auth.orgId, agentId: params.id },
-          nowDate(),
-        ),
-      );
       return { agent };
     });
     signal.throwIfAborted();

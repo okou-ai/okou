@@ -1,7 +1,8 @@
-import type {
-  PiStableContextBuildInput,
-  PiStableContextProjection,
-} from "@okouai/db/jsonb-contracts/pi-stable-context";
+// Heads, artifacts and artifact resources are retained only until the drop
+// migration, after the previous API drains; the current API no longer writes
+// them. Generations and publications still back the storage publication fence
+// in apps/api storage-publication-fence.service.ts.
+import type { RetiredJsonbPayload } from "@okouai/db/jsonb-contracts/retired-jsonb-payload";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -103,9 +104,7 @@ export const piStableContextArtifacts = pgTable(
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
     agentId: uuid("agent_id").notNull(),
-    projection: jsonb("projection")
-      .$type<PiStableContextProjection>()
-      .notNull(),
+    projection: jsonb("projection").$type<RetiredJsonbPayload>().notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => {
@@ -154,7 +153,7 @@ export const piStableContextHeads = pgTable(
       .$type<PiStableContextHeadStatus>()
       .notNull()
       .default("missing"),
-    input: jsonb("input").$type<PiStableContextBuildInput>(),
+    input: jsonb("input").$type<RetiredJsonbPayload>(),
     artifactDigest: varchar("artifact_digest", { length: 64 }).references(
       () => {
         return piStableContextArtifacts.digest;

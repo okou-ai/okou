@@ -1,3 +1,5 @@
+// Retained only until the drop migration, after the previous API drains.
+// The current API no longer writes Pi resource snapshots; cleanup only drains them.
 import { index, jsonb, pgTable, timestamp, varchar } from "drizzle-orm/pg-core";
 
 import type { PiResourceSnapshot } from "@okouai/db/jsonb-contracts/pi-resource-snapshot";

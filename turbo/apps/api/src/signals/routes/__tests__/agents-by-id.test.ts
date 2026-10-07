@@ -7,9 +7,9 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { now } from "../../../lib/time";
 import {
-  countAgentStableContextPublicationsFixture,
-  seedAgentStableContextPublicationFixture,
-} from "../../../test-fixtures/pi-stable-context";
+  countAgentPublicationFencesFixture,
+  seedAgentPublicationFenceFixture,
+} from "../../../test-fixtures/storage-publication-fence";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import {
   createBddApi,
@@ -425,13 +425,13 @@ describe("DELETE /api/agents/:id", () => {
     });
   });
 
-  it("removes abandoned stable-context publications on ordinary deletion", async () => {
+  it("removes abandoned publication fences on ordinary deletion", async () => {
     const actor = bdd.user();
     if (!actor.orgId) {
       throw new Error("Expected org-scoped actor");
     }
     const agent = await createAgent(actor);
-    await seedAgentStableContextPublicationFixture({
+    await seedAgentPublicationFenceFixture({
       orgId: actor.orgId,
       agentId: agent.agentId,
     });
@@ -439,7 +439,7 @@ describe("DELETE /api/agents/:id", () => {
     await bdd.deleteAgent(actor, agent.agentId);
 
     await expect(
-      countAgentStableContextPublicationsFixture(agent.agentId),
+      countAgentPublicationFencesFixture(agent.agentId),
     ).resolves.toBe(0);
   });
 

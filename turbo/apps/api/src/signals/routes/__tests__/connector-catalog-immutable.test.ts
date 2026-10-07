@@ -906,7 +906,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(rejected.body).toMatchObject({ outcome: "rejected" });
     await directory(changed);
   });
-  it("n3: real cron competitors publish one complete generation with atomic Pi invalidation and switch-only wakeups", async () => {
+  it("n3: real cron competitors publish one complete generation with switch-only wakeups", async () => {
     if (!engine) {
       throw new Error("Missing case engine");
     }
@@ -933,14 +933,6 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     await engine.query(
       "INSERT INTO connectors (auth_method, user_id, org_id, storage_version, connector_slug) VALUES ('token', 'catalog-lifecycle-user', 'catalog-lifecycle-org', 1, $1)",
       [connector.slug],
-    );
-    await engine.query(
-      "INSERT INTO pi_stable_context_generations (org_id, agent_id, subject) VALUES ('catalog-lifecycle-org', $1, '@agent')",
-      [agentId],
-    );
-    await engine.query(
-      "INSERT INTO pi_stable_context_heads (org_id, user_id, agent_id, variant_digest) VALUES ('catalog-lifecycle-org', 'catalog-lifecycle-user', $1, $2)",
-      [agentId, "a".repeat(64)],
     );
     const caseEngine = engine;
     let switchedHash: string | undefined;
@@ -1003,13 +995,6 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     switchedHash = first.hash;
     const accepted = await Promise.all([sync(), sync()]);
     expectCompetitorsComplete(accepted);
-    expect(
-      (
-        await engine.query(
-          "SELECT generation FROM pi_stable_context_generations",
-        )
-      ).rows,
-    ).toStrictEqual([{ generation: 2 }]);
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(1);
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,
@@ -1018,7 +1003,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
       first.artifact.connectors.length,
     );
     // Same-hash idempotence: a repeated publication is unchanged, rewrites no
-    // entry and repeats neither Pi invalidation nor wakeups.
+    // entry and repeats no wakeups.
     await engine.exec(
       `ALTER TABLE connector_catalog_entries ADD CONSTRAINT no_rewrite CHECK (hash <> '${first.hash}') NOT VALID`,
     );
@@ -1026,13 +1011,6 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     await engine.exec(
       "ALTER TABLE connector_catalog_entries DROP CONSTRAINT no_rewrite",
     );
-    expect(
-      (
-        await engine.query(
-          "SELECT generation FROM pi_stable_context_generations",
-        )
-      ).rows,
-    ).toStrictEqual([{ generation: 2 }]);
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(1);
     const concurrent = release(
       "2099-01-01.same-baseline",
@@ -1043,13 +1021,6 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     switchedHash = concurrent.hash;
     const competed = await Promise.all([sync(), sync()]);
     expectCompetitorsComplete(competed);
-    expect(
-      (
-        await engine.query(
-          "SELECT generation FROM pi_stable_context_generations",
-        )
-      ).rows,
-    ).toStrictEqual([{ generation: 3 }]);
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(2);
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,
@@ -1064,24 +1035,6 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     );
     serve(next);
     switchedHash = next.hash;
-    // Pi invalidation shares the pointer transaction: its failure leaves the
-    // previous pointer serving, with the new entries prepared but unreferenced.
-    await engine.exec(
-      "ALTER TABLE pi_stable_context_generations ADD CONSTRAINT invalidation_failure CHECK (generation <= 3)",
-    );
-    await expect(sync()).rejects.toThrow(
-      "Unknown response status 500 for GET /api/cron/sync-connector-catalog",
-    );
-    expect(
-      (await engine.query("SELECT hash FROM connector_catalog")).rows,
-    ).toStrictEqual([{ hash: concurrent.hash }]);
-    await expect(readEntryCount(next.hash)).resolves.toBe(
-      next.artifact.connectors.length,
-    );
-    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(2);
-    await engine.exec(
-      "ALTER TABLE pi_stable_context_generations DROP CONSTRAINT invalidation_failure",
-    );
     context.mocks.ably.batchPublish.mockRejectedValueOnce(
       new Error("Controlled realtime boundary unavailable"),
     );
@@ -1089,29 +1042,8 @@ describe("immutable connector catalog real-entry lifecycle", () => {
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,
     ).toStrictEqual([{ hash: next.hash }]);
-    expect(
-      (
-        await engine.query(
-          "SELECT generation FROM pi_stable_context_generations",
-        )
-      ).rows,
-    ).toStrictEqual([{ generation: 4 }]);
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(3);
-    expect(
-      (
-        await engine.query(
-          "SELECT generation, status FROM pi_stable_context_heads",
-        )
-      ).rows,
-    ).toStrictEqual([{ generation: 4, status: "missing" }]);
     expect((await sync()).body).toMatchObject({ outcome: "unchanged" });
-    expect(
-      (
-        await engine.query(
-          "SELECT generation FROM pi_stable_context_generations",
-        )
-      ).rows,
-    ).toStrictEqual([{ generation: 4 }]);
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(3);
   });
   it("n4: real MCP consumer follows hash switches while captured entries retain their hash", async () => {

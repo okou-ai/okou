@@ -71,103 +71,27 @@ reselect a provider or infer a different account from a model name. Explicit
 headers, firewall placeholders, subscription account binding, and
 dialect-specific tier policy remain at their existing trust boundaries.
 
-## Stable model-visible context publication
+## Retired stable-context projection
 
-Pi resource preparation has a versioned API-owned projection in
-[`pi-stable-context.service.ts`](../turbo/apps/api/src/signals/services/pi-stable-context.service.ts).
-It reuses the canonical resource-index composer and the existing resource
-snapshot wire contract; it is not a second prompt or discovery format. The
-projection is owner-bound by organization, executing user, Agent, and resource
-owner. Its variant and semantic vector also bind ordered effective mounts and
-exact Storage versions, mount/remapping/overlay/writeback behavior, Agent
-identity and instructions, selected skills and capability metadata, catalog,
-feature, permission and connector-scope identities, plus prompt, runtime and
-extractor schema versions. Mount order is retained, including canonical
-last-wins behavior. Artifact digests include owner bindings, so an equal body
-in another owner scope is not reusable authority.
+The Pi stable-context projection (an owner-bound, generation-fenced cache of
+the stable prompt and resource snapshot) never had a production reader and has
+been removed from the API. Run launch builds the stable prompt directly from
+the canonical composers on every claim. The API no longer invalidates, demands,
+recaptures, materializes or garbage-collects stable-context heads or artifacts,
+and no longer writes Pi resource snapshots. Agent and Clerk account deletion
+still remove existing rows for the deleted owner, and the weekly launch-artifact
+cleanup still drains expired resource snapshots.
 
-The persisted lifecycle consists of five additive tables:
-
-- `pi_stable_context_generations` is the authoritative Agent- or user-scoped
-  source fence. A source writer advances it in the same transaction as a
-  single-stage write, or changes it to `pending` before a multi-stage Storage
-  publication.
-- `pi_stable_context_publications` holds one generation/token obligation per
-  logical source key. A newer write supersedes only the same Agent/Workflow
-  source; independent Workflow publications can finish in either order and the
-  generation becomes ready only after every obligation for it is gone.
-- `pi_stable_context_heads` is one current owner/variant generation and carries
-  `missing`, `pending`, `running`, `ready`, `unindexable`, or `failed` state.
-  Lease ID, generation and input digest fence every worker completion.
-- `pi_stable_context_artifacts` is immutable and content addressed. A stale
-  builder may leave an orphan artifact, but compare-and-swap cannot replace a
-  newer head or resurrect a revoked/deleted source.
-- `pi_stable_context_artifact_resources` retains every exact Storage/version
-  dependency. Live heads therefore do not rely on run-only inference-object
-  retention. Weekly cleanup removes only old artifacts with no head; Clerk
-  account cleanup removes owner artifacts and the deliberately non-FK generation fence.
-
-Workflow metadata and synthesized volume publication are a real two-stage
-boundary. Metadata first publishes its source-keyed pending token. The upload
-transaction commits the prepared Storage version and HEAD first, then locks the
-exact token before rebinding captured heads to the committed version and
-removing only that obligation; a stale token rolls the whole transaction back.
-Agent instruction publication opens its transaction before creating the token
-and preparing the archive. Token creation, archive preparation, token locking,
-Storage HEAD, demand refresh, metadata touch, and completion all commit in that
-one transaction, so there is no cross-connection lock window. A superseded
-publisher may retain immutable Storage history but cannot
-publish a ready mixed metadata/volume generation. Agent/workflow create,
-update, delete, installation, custom connector, connector catalog, official
-workflow catalog, feature and grant writers invalidate known heads in their
-authoritative transactions. For each bounded captured variant, the writer then
-recaptures one post-write snapshot of effective Workflow and connector
-membership, custom-definition versions, catalog identity, permission policies
-and horizon, feature-dependent tool text, and exact dynamic skill mounts. The
-worker receives only that immutable recaptured input. A referenced artifact
-that is not authoritatively published leaves the head `missing`; copying an old
-input under a new generation is not valid demand. Mutable feature values are a
-source-vector dimension, not a request-variant identity, so feature writes
-rebuild the existing trigger/browser/platform variant instead of creating an
-unreachable key. Storage encoding repair under the same logical version also
-invalidates every retained dependent head.
-
-| Prompt/runtime input                                                                                                                                                        | Classification and authority                                                                                                                                             |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Agent identity/instructions, execution/tool text, effective resource mounts, skills and capability metadata                                                                 | Stable artifact. Constructed from the existing canonical composers and immutable resource-version indexes.                                                               |
-| Frozen memory summary, explicit no-content epoch                                                                                                                            | Frozen session layer. Bound after the stable artifact; changing memory does not rebuild the resource layer, and memory-off never reads a prior memory-bearing selection. |
-| Canonical input/history, source-thread and trigger/user profile metadata, request time, per-run volume/session overlays, selected model/account/effort/tier and credentials | Dynamic authoritative input. Captured and checked by their existing owners; credential bytes, signed URLs and mutable SDK sessions never enter the artifact.             |
-
-A ready resource projection is one bounded head/artifact/generation read. It
-does not fetch one index or archive per resource and does not run the stable
-resource composer. Request-specific Storage/session overlays and memory remain
-separately resolved and are never borrowed from another session. A legitimate
-missing, pending, unindexable, failed, old-writer or exact-version repair case
-uses canonical discovery with the same eligibility, archive limits,
-cancellation and error policy; it is recorded separately and may publish a
-fenced read repair. No stale-ready substitution, reduced prompt/tool set or
-indefinite in-request worker wait is permitted.
-
-Permission expiry needs no writer. Each artifact records the earliest grant
-validity horizon and is rejected at or after that instant; the bootstrap query
-still evaluates grants at the request's checked time. This optimization never
-replaces the final catalog/definition, permission, credential/account, provider
-ownership, organization, thread, session, subscription, claim or admission-lock
-checks. The official-workflow catalog lock and provider-after-durable-commit
-ordering remain unchanged.
-
-The bounded worker coalesces demand, claims at most 16 heads per pass, leases
-for five minutes and caps one generation at five attempts. An expired lease is
-reclaimed below the cap and is terminally marked failed at the cap. Source
-writes rebind at most one worker batch of already captured exact variants;
-additional variants remain explicit canonical-repair misses rather than an
-unbounded cross product. Cron reports claimed,
-ready, pending, unindexable, failed and stale counts; request telemetry reports
-ready, repaired miss, stale repair, source pending and dynamic paths with wall
-time. These local phase observations are not evidence that the epic's original
-API-start-to-correlated-provider-HTTP target is achieved. Cold process, cache
-state, resource cardinality, index/archive work and provider interception must
-be identified by any later measurement.
+Only the reserve-before-IO publication fence survives, in
+[`storage-publication-fence.service.ts`](../turbo/apps/api/src/signals/services/storage-publication-fence.service.ts).
+Agent instructions and Workflow volume writers still reserve a generation and
+key/token before preparing an archive, so an older, slower preparation cannot
+publish its Storage HEAD over a newer reservation. It still stores those rows
+in `pi_stable_context_generations` and `pi_stable_context_publications`.
+The `pi_stable_context_heads`, `pi_stable_context_artifacts`,
+`pi_stable_context_artifact_resources` and `pi_resource_snapshots` tables are
+retained only until their drop migration; see
+[deployment compatibility](deployment-compatibility.md#pi-stable-context-schema-rollout-and-rollback).
 
 ## Launch through settlement
 
@@ -397,7 +321,7 @@ retire an older launch, resource, manifest, session, or persisted reader.
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Model carriers Gen1–Gen3: [runners.ts](../turbo/packages/api-contracts/src/contracts/runners.ts), route normalizer, [claim capability](../turbo/apps/api/src/signals/services/pi-model-config-claim-capability.ts), CLI and Runner readers                | Gen1 remains the canonical field-absent public Responses carrier. Gen2/3 dialect/tier are active contracts; Gen4 native was removed.            | [#33966](https://github.com/vm0-ai/vm0/issues/33966) removes only the optional Gen1 wire `api` after the [September 14 readiness acceptance](https://github.com/vm0-ai/vm0/issues/31085#issuecomment-5660026283). Strict TypeScript readers reject the key; generated Rust DTOs no longer represent or retain it. Gen1, the active Codex dialect and SDK `Model.api` remain supported. |
 | Launch snapshot V3, Pi launch config V2, private payload V1, maintenance input V1; API creation, Runner serialization and CLI parsing                                                                                                                     | Run identity and private inputs have their own strict schemas and captured lifetimes.                                                           | Audit each writer/reader and all supported old/new pairs before changing its shape; [deployment compatibility](./deployment-compatibility.md) governs release, queue, process and rollback evidence. D changes none.                                                                                                                                                                   |
-| Resource snapshots V1/V2; [snapshot service](../turbo/apps/api/src/signals/services/pi-resource-snapshot.service.ts), [resources.ts](../turbo/packages/pi-agent-runtime/src/resources.ts), shared session construction                                    | V2 adds frozen recall; both snapshots still describe admitted immutable resources. B derives runtime types from these contracts.                | Retire only with proof all captured contexts and supported readers/rollback paths use the replacement; schema numbering or absent sampled traffic is insufficient.                                                                                                                                                                                                                     |
+| Resource snapshots V1/V2; [runners.ts](../turbo/packages/api-contracts/src/contracts/runners.ts) schema, [resources.ts](../turbo/packages/pi-agent-runtime/src/resources.ts), shared session construction                                                 | V2 adds frozen recall; both snapshots still describe admitted immutable resources. B derives runtime types from these contracts.                | Retire only with proof all captured contexts and supported readers/rollback paths use the replacement; schema numbering or absent sampled traffic is insufficient.                                                                                                                                                                                                                     |
 | Retired API-first handoff and producer contracts                                                                                                                                                                                                          | Removed in Release 7; no current runtime reader.                                                                                                | Historical rollout receipts and the explicit Release 7 rollback floor remain in [deployment compatibility](./deployment-compatibility.md).                                                                                                                                                                                                                                             |
 | Commit-addressed CLI and queued/active contexts; API context writer, Runner launcher, CLI package                                                                                                                                                         | A current Runner can launch an older package frozen when a context was created. Semantic package version alone is not an artifact floor.        | Maximum queue plus claimed execution/finalization lifetime, complete old-context drain and supported external-caller audit, separately from Runner/Sandbox and rollback-target retirement. No blanket elapsed-time gate.                                                                                                                                                               |
 | Session v3; byte-backed API adapter, SDK file reader, checkpoint/Stage 1/export readers                                                                                                                                                                   | Branches, compaction and pending tools must retain native meaning and source identity.                                                          | [0.84.1/0.85.1 session fixtures](../turbo/packages/pi-agent-runtime/src/session-version-compatibility.test.ts) prove representative compatibility, not fleet drain or historical replay. Any replacement needs supported-reader and retained-history evidence, not just a newer SDK.                                                                                                   |

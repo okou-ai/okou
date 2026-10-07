@@ -5176,6 +5176,20 @@ cron convergence after release; a deferred watermark is never advanced.
 
 ## Pi stable-context schema rollout and rollback
 
+Status: the stable-context subsystem has been removed from the API (it had no
+production reader). The current API no longer reads stable-context heads or
+artifacts, no longer writes heads, artifacts or Pi resource snapshots, and no
+longer runs stable-context materialization, invalidation or artifact GC. It
+still uses `pi_stable_context_generations` and `pi_stable_context_publications`
+for the Agent instructions and Workflow volume publication fence. Agent and
+Clerk account deletion still delete the owner's existing rows, and expired
+resource snapshots are still drained. Migrations run before API promotion and
+the previous API still writes these tables while it drains, so no table is
+dropped here. Dropping heads, artifacts, artifact resources and resource
+snapshots is a later contract migration after the previous API drains. The
+generation and publication tables can only be dropped after the fence moves
+elsewhere. The history below describes the original rollout.
+
 Migration 1168, following retained main migrations through
 `1167_private_artifact_absolute_urls`, adds
 `pi_stable_context_erasure_fences`,
