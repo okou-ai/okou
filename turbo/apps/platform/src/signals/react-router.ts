@@ -31,20 +31,28 @@ interface PendingPageCommit {
 // on screen. Only the latest transition waits; a newer one releases it.
 const pendingPageCommit$ = state<PendingPageCommit | undefined>(undefined);
 
-export const releasePageCommit$ = command(({ get, set }) => {
-  const pending = get(pendingPageCommit$);
-  set(pendingPageCommit$, undefined);
-  if (pending && !pending.deferred.settled()) {
-    pending.deferred.resolve();
-  }
-});
+// Resolves one transition's wait. It clears the pending entry only when that
+// entry is still this wait, so an older transition cannot release a newer one.
+export const releasePageCommit$ = command(
+  ({ get, set }, pageCommit: DeferredPromise<void>) => {
+    if (get(pendingPageCommit$)?.deferred === pageCommit) {
+      set(pendingPageCommit$, undefined);
+    }
+    if (!pageCommit.settled()) {
+      pageCommit.resolve();
+    }
+  },
+);
 
 export const waitNextPageCommit$ = command(
-  ({ get, set }, signal: AbortSignal) => {
-    set(releasePageCommit$);
+  ({ get, set }, signal: AbortSignal): DeferredPromise<void> => {
+    const pending = get(pendingPageCommit$);
+    if (pending) {
+      set(releasePageCommit$, pending.deferred);
+    }
     const deferred = createDeferredPromise<void>(signal);
     set(pendingPageCommit$, { previousPage: get(internalPage$), deferred });
-    return deferred.promise;
+    return deferred;
   },
 );
 
@@ -52,7 +60,7 @@ const acknowledgePageCommit$ = command(
   ({ get, set }, page: ReactNode | undefined) => {
     const pending = get(pendingPageCommit$);
     if (pending && page !== pending.previousPage) {
-      set(releasePageCommit$);
+      set(releasePageCommit$, pending.deferred);
     }
   },
 );

@@ -466,6 +466,35 @@ test("Slide conversations in from the mobile chat list and out back to the tabs"
   expect(window.location.pathname).toBe(CHAT_LIST_PATH);
   expect(viewTransition.startedTypes).toStrictEqual([["push"], ["pop"]]);
 
+  click(linkTo(`/chats/${thread.id}`));
+
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeInTheDocument();
+  expect(viewTransition.startedTypes).toStrictEqual([
+    ["push"],
+    ["pop"],
+    ["push"],
+  ]);
+
+  act(() => {
+    window.history.back();
+  });
+
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("textbox", { name: "Message" }),
+    ).not.toBeInTheDocument();
+  });
+  await screen.findByText("Draft the brief");
+  expect(window.location.pathname).toBe(CHAT_LIST_PATH);
+  expect(viewTransition.startedTypes).toStrictEqual([
+    ["push"],
+    ["pop"],
+    ["push"],
+    ["pop"],
+  ]);
+
   click(
     linkTo("/me", screen.getByRole("navigation", { name: "Main navigation" })),
   );
@@ -473,7 +502,12 @@ test("Slide conversations in from the mobile chat list and out back to the tabs"
   await expect(
     screen.findByRole("heading", { name: "Me" }),
   ).resolves.toBeInTheDocument();
-  expect(viewTransition.startedTypes).toStrictEqual([["push"], ["pop"]]);
+  expect(viewTransition.startedTypes).toStrictEqual([
+    ["push"],
+    ["pop"],
+    ["push"],
+    ["pop"],
+  ]);
 });
 
 test("Change desktop pages without a slide", async () => {

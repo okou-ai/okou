@@ -243,10 +243,13 @@ const transitionRoute$ = command(
 
     const { resolve: startCommit, promise: commitStartedPromise } =
       createDeferredPromise<void>(signal);
+    // Armed while the current page is still on screen; the next page that
+    // React commits completes the update.
+    const pageCommit = set(waitNextPageCommit$, signal);
     const transition = document.startViewTransition({
       update: () => {
         startCommit();
-        return set(waitNextPageCommit$, signal);
+        return pageCommit.promise;
       },
       types: [direction],
     });
@@ -263,7 +266,7 @@ const transitionRoute$ = command(
       throw load.reason;
     }
     // A setup that ends without rendering a page releases the update.
-    set(releasePageCommit$);
+    set(releasePageCommit$, pageCommit);
     await transition.updateCallbackDone;
     signal.throwIfAborted();
   },
