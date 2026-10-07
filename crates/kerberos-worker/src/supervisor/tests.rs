@@ -35,6 +35,81 @@ fn allocation_drop_before_exec_closes_files_cleans_then_releases() {
 }
 
 #[test]
+fn expired_or_cancelled_start_never_opens_the_actual_helper_and_releases_resources() {
+    use rustix::fs::inotify::{self, CreateFlags, ReadFlags, Reader, WatchFlags};
+    use std::mem::MaybeUninit;
+
+    for reason in ["expired", "aborted", "closed-ready"] {
+        let (root, semaphore, resources) = allocation();
+        let helper = resources.tree.path().join("helper");
+        let watcher = inotify::init(CreateFlags::CLOEXEC | CreateFlags::NONBLOCK).unwrap();
+        inotify::add_watch(
+            &watcher,
+            &helper,
+            WatchFlags::OPEN | WatchFlags::DELETE_SELF,
+        )
+        .unwrap();
+        let mut buffer = [MaybeUninit::uninit(); 1024];
+        let mut events = Reader::new(&watcher, &mut buffer);
+        // Prove this kernel watch observes a real open, then drain it before
+        // the refusal. No fake process/status or helper replacement is used.
+        drop(File::open(&helper).unwrap());
+        assert!(events.next().unwrap().events().contains(ReadFlags::OPEN));
+        assert_eq!(events.next().unwrap_err(), rustix::io::Errno::AGAIN);
+
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let (ready, mut waiter) = oneshot::channel();
+        if reason == "closed-ready" {
+            waiter.close();
+        }
+        let aborted = Arc::new(AtomicBool::new(reason == "aborted"));
+        let deadline = if reason == "expired" {
+            WallInstant::now() - Duration::from_millis(1)
+        } else {
+            WallInstant::now() + Duration::from_secs(10)
+        };
+        supervise(
+            resources,
+            (1, Zeroizing::new(Vec::new())),
+            receiver,
+            ready,
+            aborted,
+            deadline,
+        )
+        .unwrap();
+        drop(sender);
+        let mut deleted = false;
+        loop {
+            match events.next() {
+                Ok(event) => {
+                    assert!(
+                        !event.events().contains(ReadFlags::OPEN),
+                        "{reason}: native exec opened helper"
+                    );
+                    assert!(!event.events().contains(ReadFlags::QUEUE_OVERFLOW));
+                    deleted |= event.events().contains(ReadFlags::DELETE_SELF);
+                }
+                Err(rustix::io::Errno::AGAIN) => break,
+                Err(error) => panic!("real helper watch failed: {error}"),
+            }
+        }
+        assert!(deleted, "real fixed-file cleanup was not observed");
+        if reason != "closed-ready" {
+            assert_eq!(
+                waiter.blocking_recv().unwrap().unwrap_err(),
+                if reason == "expired" {
+                    Error::Deadline
+                } else {
+                    Error::Unavailable
+                }
+            );
+        }
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+        assert_eq!(semaphore.available_permits(), 1);
+    }
+}
+
+#[test]
 fn actual_os_thread_spawn_failure_cleans_unstarted_resources() {
     let (root, semaphore, resources) = allocation();
     let result = thread::Builder::new()

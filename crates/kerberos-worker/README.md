@@ -22,6 +22,8 @@ The supplied root must be absolute, canonical, nonsymlinked, owned by the curren
 
 After Ready, the parent unlinks **all names before writing any secret** into the held readonly-bind input inodes. Native cache handles are explicit MEMORY caches; the GSS service-only handle is separate from online TGT/renewal state. No secret argv/environment/log/diagnostic causes are emitted. Every native process has finite memory/FD/CPU (12 seconds) and absolute wall (30 seconds, including admission) bounds. Queue <=16 and actual workers <=2. Cancelled bootstrap/authority/KDC/native futures stop actual work, not only a waiter. Slots remain held through kill/wait/pipe closure/verified cleanup. Unknown cleanup retains fail-closed capacity; restoring a path does not prove cleanup or authorize clearing it.
 
+Fixed-file materialization is still synchronous and may exhaust a short caller deadline; startup rechecks that absolute bound after materialization. The reaper also checks cancellation, a closed Ready waiter and expiry before native spawn, so already-refused work cannot begin after a scheduling delay. A real inode-bound inotify regression observes helper opens and checked unlink/capacity release on those three pre-spawn refusal paths; it is not a general execution-attribution controller or proof of every concurrent cancellation window.
+
 `Context::close` confirms resource completion. `Drop` signals an independently owned reaper; it is not a synchronous completion receipt. Owned Rust buffers/tokens are zeroized, but upstream/compiler/kernel copies cannot all be guaranteed erased. No writable native cache directory or global kernel/credential configuration workaround is allowed.
 
 ## KDC and expiry

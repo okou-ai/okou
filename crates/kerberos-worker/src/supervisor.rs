@@ -442,6 +442,11 @@ pub(crate) async fn start(
             reaped: Arc::new(AtomicBool::new(true)),
         },
     )?;
+    // Synchronous fixed-file materialization can consume the remaining budget.
+    // Refuse before assigning any native/thread work after that absolute bound.
+    if deadline <= Instant::now() {
+        return Err(Error::Deadline);
+    }
     let (sender, receiver) = mpsc::sync_channel(1);
     let (ready_tx, ready_rx) = oneshot::channel();
     let (terminal_tx, terminal_rx) = oneshot::channel();
@@ -868,6 +873,17 @@ fn supervise(
     aborted: Arc<AtomicBool>,
     deadline: WallInstant,
 ) -> Result<(), Error> {
+    // A scheduler-delayed reaper must not start a native process for a caller
+    // that already cancelled or expired. Cleanup still owns the allocated files
+    // and permit; no secret is provisioned on any of these refusal paths.
+    if aborted.load(Ordering::Acquire) || ready.is_closed() {
+        let _ = ready.send(Err(Error::Unavailable));
+        return resources.cleanup();
+    }
+    if WallInstant::now() >= deadline {
+        let _ = ready.send(Err(Error::Deadline));
+        return resources.cleanup();
+    }
     let (mode, bytes) = source;
     let binary: PathBuf = resources.tree.path().join("helper");
     let spawn = Command::new(binary)
