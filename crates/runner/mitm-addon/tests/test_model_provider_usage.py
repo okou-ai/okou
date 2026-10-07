@@ -381,7 +381,7 @@ class TestReportModelProviderUsage:
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
-            firewall_name="model-provider:vm0",
+            firewall_name="model-provider:openrouter-codex",
             usage={
                 "message_id": "msg-built-in-usage-1",
                 "tokens.input": 100,
@@ -404,7 +404,7 @@ class TestReportModelProviderUsage:
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
-            firewall_name="model-provider:vm0",
+            firewall_name="model-provider:openrouter-codex",
             model_usage_provider=None,
             usage={
                 "model": "claude-sonnet-4-6",

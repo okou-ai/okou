@@ -28,270 +28,275 @@ import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { testWorkflowSkillStoragePresignedUrlCacheStateRoutes } from "../test-workflow-skill-storage-presigned-url-cache-state";
 
-const context = testContext();
-const BUCKET = "test-user-storages";
-
-interface CacheRow {
-  readonly cache_key: string;
-  readonly bucket: string;
-  readonly object_key: string;
-  readonly storage_version_id: string;
-  readonly resolved_org_id: string;
-  readonly public_endpoint: boolean;
-  readonly ttl_seconds: number;
-  readonly presigned_url: string;
-  readonly expires_at: string;
-  readonly refresh_after: string;
-  readonly last_requested_at: string;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function stateRequest(
-  body: TestWorkflowSkillStoragePresignedUrlCacheStateActionBody,
-): Promise<Response> {
-  const app = createAppWithRoutes({
-    signal: context.signal,
-    routes: testWorkflowSkillStoragePresignedUrlCacheStateRoutes,
-  });
-  return Promise.resolve(
-    app.request(
-      "/api/test/workflow-skill-storage-presigned-url-cache-state/action",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      },
-    ),
-  );
-}
-
-async function stateAction(
-  body: TestWorkflowSkillStoragePresignedUrlCacheStateActionBody,
-): Promise<TestWorkflowSkillStoragePresignedUrlCacheStateActionResponse> {
-  const response = await stateRequest(body);
-  if (!response.ok) {
-    throw new Error(`Workflow cache state action ${body.action} failed`);
-  }
-  return (await response.json()) as TestWorkflowSkillStoragePresignedUrlCacheStateActionResponse;
-}
-
-type CacheScope = "workflow_skill_storage" | "readonly_storage";
-
-async function cleanupCacheState(
-  objectKeyPrefix: string,
-  scope?: CacheScope,
-): Promise<void> {
-  await stateAction({
-    action: "cleanup",
-    object_key_prefix: objectKeyPrefix,
-    ...(scope ? { scope } : {}),
-  });
-}
-
-async function withCacheCleanup(
-  objectKeyPrefix: string,
-  run: () => Promise<void>,
-  scope?: CacheScope,
-): Promise<void> {
-  await cleanupCacheState(objectKeyPrefix, scope);
-  await run().then(
-    async () => {
-      await cleanupCacheState(objectKeyPrefix, scope);
-    },
-    async (error: unknown) => {
-      await cleanupCacheState(objectKeyPrefix, scope);
-      throw error;
-    },
-  );
-}
-
-async function readCacheRowsByObjectKeyPrefix(
-  objectKeyPrefix: string,
-  scope?: CacheScope,
-): Promise<readonly CacheRow[]> {
-  const response = await stateAction({
-    action: "read-cache-by-object-key-prefix",
-    object_key_prefix: objectKeyPrefix,
-    ...(scope ? { scope } : {}),
-  });
-  return response.rows ?? [];
-}
-
-function mockUniquePresignedUrls(): void {
-  let count = 0;
-  context.mocks.s3.getSignedUrl.mockImplementation(
-    (_client: unknown, command: unknown, options: unknown) => {
-      if (!isRecord(options) || typeof options.expiresIn !== "number") {
-        throw new Error("Expected a presigned URL expiration");
-      }
-      count += 1;
-      const input = (command as { readonly input?: { readonly Key?: string } })
-        .input;
-      return Promise.resolve(
-        `https://r2.example.com/${encodeURIComponent(input?.Key ?? "unknown")}?sig=${count}&X-Amz-Expires=${options.expiresIn}`,
-      );
-    },
-  );
-}
-
-async function entitledWorkflowActor(): Promise<{
-  readonly actor: ApiTestUser;
-  readonly agentId: string;
-  readonly runnerGroup: string;
-}> {
-  const bdd = createBddApi(context);
-  const api = createRunsApi(context);
-  createMiscRoutesApi(context);
-  const actor = bdd.user();
-  api.acceptStorageDownloads();
-  api.acceptTelemetryIngest();
-  const runnerGroup = api.configureRunnerGroup();
-  await api.grantProEntitlement(actor);
-  await api.ensurePersonalSubscriptionModel(actor, {
-    model: "claude-fable-5-1",
-  });
-  const agent = await bdd.createAgent(actor, {
-    displayName: "Workflow skill storage cache agent",
-    visibility: "private",
-  });
-  return { actor, agentId: agent.agentId, runnerGroup };
-}
-
-async function createWorkflowSkillRunFixture(): Promise<{
-  readonly actor: ApiTestUser;
-  readonly agentId: string;
-  readonly runnerGroup: string;
-  readonly workflowId: string;
-  readonly workflowName: string;
-  readonly storageName: string;
-  readonly objectKeyPrefix: string;
-}> {
-  const { actor, agentId, runnerGroup } = await entitledWorkflowActor();
-  const workflowName = `cache-${randomUUID().slice(0, 8)}`;
-  const misc = createMiscRoutesApi(context);
-  const workflow = await misc.createWorkflow(
-    actor,
-    agentId,
-    workflowName,
-    {
-      content: "# Cache test workflow\nUse this workflow for cache tests.",
-    },
-    [201],
-  );
-  if (workflow.status !== 201) {
-    throw new Error("Expected workflow creation to succeed");
-  }
-  const workflowId = workflow.body.id;
-  const storageName = getCustomSkillStorageName(workflowId);
-  if (!actor.orgId) {
-    throw new Error("Expected workflow cache test actor to have an org");
-  }
-  const objectKeyPrefix = await readStorageS3PrefixFixture({
-    orgId: actor.orgId,
-    userId: VOLUME_ORG_USER_ID,
-    name: storageName,
-  });
-  return {
-    actor,
-    agentId,
-    runnerGroup,
-    workflowId,
-    workflowName,
-    storageName,
-    objectKeyPrefix,
-  };
-}
-
-async function createReadOnlySkillRunFixture(): Promise<{
-  readonly actor: ApiTestUser;
-  readonly agentId: string;
-  readonly runnerGroup: string;
-  readonly storageName: string;
-  readonly objectKeyPrefix: string;
-}> {
-  const fixture = await entitledWorkflowActor();
-  if (!fixture.actor.orgId) {
-    throw new Error("Expected an organization-scoped read-only cache actor");
-  }
-  const storages = createStoragesBddApi(context);
-  storages.mockStorageObjectsExist(2048);
-  const connectors = createConnectorBddApi(context);
-  const custom = await connectors.createCustomConnector(fixture.actor, {
-    displayName: "Read-only lifetime margin connector",
-    prefixTemplates: [
-      `https://readonly-margin-${randomUUID()}.example.test/api/`,
-    ],
-    fields: [
-      { key: "secret", label: "API token", kind: "secret", required: true },
-    ],
-    headerInjections: [
-      { name: "Authorization", valueTemplate: "Bearer {{secrets.secret}}" },
-    ],
-    queryInjections: [],
-    authMode: "manual",
-    skillMarkdown: "Use the read-only lifetime margin connector.",
-  });
-  onTestFinished(async () => {
-    await connectors.deleteCustomConnector(fixture.actor, custom.id);
-  });
-  await connectors.updateAgentCustomConnectors(fixture.actor, fixture.agentId, [
-    custom.id,
-  ]);
-  const storageName = getCustomConnectorSkillStorageName(custom.id);
-  const objectKeyPrefix = await readStorageS3PrefixFixture({
-    orgId: fixture.actor.orgId,
-    userId: VOLUME_ORG_USER_ID,
-    name: storageName,
-  });
-  return { ...fixture, storageName, objectKeyPrefix };
-}
-
-async function createRunAndClaimStorageSkill(args: {
-  readonly actor: ApiTestUser;
-  readonly agentId: string;
-  readonly runnerGroup: string;
-  readonly storageName: string;
-  readonly prompt: string;
-}): Promise<{
-  readonly runId: string;
-  readonly archiveUrl: string;
-  readonly versionId: string;
-}> {
-  const { sendChatRun, claimChatRun, cancelChatRun } =
-    createChatEventsFixture(context);
-  const run = await sendChatRun(args.actor, {
-    agentId: args.agentId,
-    prompt: args.prompt,
-  });
-  const { claim, sandboxHeaders } = await claimChatRun(
-    args.runnerGroup,
-    run.runId,
-  );
-  const entry = expectCanonicalStorageManifest(
-    claim.storageManifest,
-  )?.storageMounts.find((storage) => {
-    return storage.name === args.storageName;
-  });
-  if (!entry?.archiveUrl) {
-    throw new Error(`Missing storage skill manifest entry ${args.storageName}`);
-  }
-  await cancelChatRun(args.actor, run.runId, sandboxHeaders);
-  return {
-    runId: run.runId,
-    archiveUrl: entry.archiveUrl,
-    versionId: entry.versionId,
-  };
-}
-
-beforeEach(() => {
-  mockEnv("R2_USER_STORAGES_BUCKET_NAME", BUCKET);
-  mockUniquePresignedUrls();
-});
-
 describe("workflow skill storage presigned URL cache", () => {
+  const context = testContext();
+  const BUCKET = "test-user-storages";
+
+  interface CacheRow {
+    readonly cache_key: string;
+    readonly bucket: string;
+    readonly object_key: string;
+    readonly storage_version_id: string;
+    readonly resolved_org_id: string;
+    readonly public_endpoint: boolean;
+    readonly ttl_seconds: number;
+    readonly presigned_url: string;
+    readonly expires_at: string;
+    readonly refresh_after: string;
+    readonly last_requested_at: string;
+  }
+
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+
+  function stateRequest(
+    body: TestWorkflowSkillStoragePresignedUrlCacheStateActionBody,
+  ): Promise<Response> {
+    const app = createAppWithRoutes({
+      signal: context.signal,
+      routes: testWorkflowSkillStoragePresignedUrlCacheStateRoutes,
+    });
+    return Promise.resolve(
+      app.request(
+        "/api/test/workflow-skill-storage-presigned-url-cache-state/action",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      ),
+    );
+  }
+
+  async function stateAction(
+    body: TestWorkflowSkillStoragePresignedUrlCacheStateActionBody,
+  ): Promise<TestWorkflowSkillStoragePresignedUrlCacheStateActionResponse> {
+    const response = await stateRequest(body);
+    if (!response.ok) {
+      throw new Error(`Workflow cache state action ${body.action} failed`);
+    }
+    return (await response.json()) as TestWorkflowSkillStoragePresignedUrlCacheStateActionResponse;
+  }
+
+  type CacheScope = "workflow_skill_storage" | "readonly_storage";
+
+  async function cleanupCacheState(
+    objectKeyPrefix: string,
+    scope?: CacheScope,
+  ): Promise<void> {
+    await stateAction({
+      action: "cleanup",
+      object_key_prefix: objectKeyPrefix,
+      ...(scope ? { scope } : {}),
+    });
+  }
+
+  async function withCacheCleanup(
+    objectKeyPrefix: string,
+    run: () => Promise<void>,
+    scope?: CacheScope,
+  ): Promise<void> {
+    await cleanupCacheState(objectKeyPrefix, scope);
+    await run().then(
+      async () => {
+        await cleanupCacheState(objectKeyPrefix, scope);
+      },
+      async (error: unknown) => {
+        await cleanupCacheState(objectKeyPrefix, scope);
+        throw error;
+      },
+    );
+  }
+
+  async function readCacheRowsByObjectKeyPrefix(
+    objectKeyPrefix: string,
+    scope?: CacheScope,
+  ): Promise<readonly CacheRow[]> {
+    const response = await stateAction({
+      action: "read-cache-by-object-key-prefix",
+      object_key_prefix: objectKeyPrefix,
+      ...(scope ? { scope } : {}),
+    });
+    return response.rows ?? [];
+  }
+
+  function mockUniquePresignedUrls(): void {
+    let count = 0;
+    context.mocks.s3.getSignedUrl.mockImplementation(
+      (_client: unknown, command: unknown, options: unknown) => {
+        if (!isRecord(options) || typeof options.expiresIn !== "number") {
+          throw new Error("Expected a presigned URL expiration");
+        }
+        count += 1;
+        const input = (
+          command as { readonly input?: { readonly Key?: string } }
+        ).input;
+        return Promise.resolve(
+          `https://r2.example.com/${encodeURIComponent(input?.Key ?? "unknown")}?sig=${count}&X-Amz-Expires=${options.expiresIn}`,
+        );
+      },
+    );
+  }
+
+  async function entitledWorkflowActor(): Promise<{
+    readonly actor: ApiTestUser;
+    readonly agentId: string;
+    readonly runnerGroup: string;
+  }> {
+    const bdd = createBddApi(context);
+    const api = createRunsApi(context);
+    createMiscRoutesApi(context);
+    const actor = bdd.user();
+    api.acceptStorageDownloads();
+    api.acceptTelemetryIngest();
+    const runnerGroup = api.configureRunnerGroup();
+    await api.grantProEntitlement(actor);
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Workflow skill storage cache agent",
+      visibility: "private",
+    });
+    return { actor, agentId: agent.agentId, runnerGroup };
+  }
+
+  async function createWorkflowSkillRunFixture(): Promise<{
+    readonly actor: ApiTestUser;
+    readonly agentId: string;
+    readonly runnerGroup: string;
+    readonly workflowId: string;
+    readonly workflowName: string;
+    readonly storageName: string;
+    readonly objectKeyPrefix: string;
+  }> {
+    const { actor, agentId, runnerGroup } = await entitledWorkflowActor();
+    const workflowName = `cache-${randomUUID().slice(0, 8)}`;
+    const misc = createMiscRoutesApi(context);
+    const workflow = await misc.createWorkflow(
+      actor,
+      agentId,
+      workflowName,
+      {
+        content: "# Cache test workflow\nUse this workflow for cache tests.",
+      },
+      [201],
+    );
+    if (workflow.status !== 201) {
+      throw new Error("Expected workflow creation to succeed");
+    }
+    const workflowId = workflow.body.id;
+    const storageName = getCustomSkillStorageName(workflowId);
+    if (!actor.orgId) {
+      throw new Error("Expected workflow cache test actor to have an org");
+    }
+    const objectKeyPrefix = await readStorageS3PrefixFixture({
+      orgId: actor.orgId,
+      userId: VOLUME_ORG_USER_ID,
+      name: storageName,
+    });
+    return {
+      actor,
+      agentId,
+      runnerGroup,
+      workflowId,
+      workflowName,
+      storageName,
+      objectKeyPrefix,
+    };
+  }
+
+  async function createReadOnlySkillRunFixture(): Promise<{
+    readonly actor: ApiTestUser;
+    readonly agentId: string;
+    readonly runnerGroup: string;
+    readonly storageName: string;
+    readonly objectKeyPrefix: string;
+  }> {
+    const fixture = await entitledWorkflowActor();
+    if (!fixture.actor.orgId) {
+      throw new Error("Expected an organization-scoped read-only cache actor");
+    }
+    const storages = createStoragesBddApi(context);
+    storages.mockStorageObjectsExist(2048);
+    const connectors = createConnectorBddApi(context);
+    const custom = await connectors.createCustomConnector(fixture.actor, {
+      displayName: "Read-only lifetime margin connector",
+      prefixTemplates: [
+        `https://readonly-margin-${randomUUID()}.example.test/api/`,
+      ],
+      fields: [
+        { key: "secret", label: "API token", kind: "secret", required: true },
+      ],
+      headerInjections: [
+        { name: "Authorization", valueTemplate: "Bearer {{secrets.secret}}" },
+      ],
+      queryInjections: [],
+      authMode: "manual",
+      skillMarkdown: "Use the read-only lifetime margin connector.",
+    });
+    onTestFinished(async () => {
+      await connectors.deleteCustomConnector(fixture.actor, custom.id);
+    });
+    await connectors.updateAgentCustomConnectors(
+      fixture.actor,
+      fixture.agentId,
+      [custom.id],
+    );
+    const storageName = getCustomConnectorSkillStorageName(custom.id);
+    const objectKeyPrefix = await readStorageS3PrefixFixture({
+      orgId: fixture.actor.orgId,
+      userId: VOLUME_ORG_USER_ID,
+      name: storageName,
+    });
+    return { ...fixture, storageName, objectKeyPrefix };
+  }
+
+  async function createRunAndClaimStorageSkill(args: {
+    readonly actor: ApiTestUser;
+    readonly agentId: string;
+    readonly runnerGroup: string;
+    readonly storageName: string;
+    readonly prompt: string;
+  }): Promise<{
+    readonly runId: string;
+    readonly archiveUrl: string;
+    readonly versionId: string;
+  }> {
+    const { sendChatRun, claimChatRun, cancelChatRun } =
+      createChatEventsFixture(context);
+    const run = await sendChatRun(args.actor, {
+      agentId: args.agentId,
+      prompt: args.prompt,
+    });
+    const { claim, sandboxHeaders } = await claimChatRun(
+      args.runnerGroup,
+      run.runId,
+    );
+    const entry = expectCanonicalStorageManifest(
+      claim.storageManifest,
+    )?.storageMounts.find((storage) => {
+      return storage.name === args.storageName;
+    });
+    if (!entry?.archiveUrl) {
+      throw new Error(
+        `Missing storage skill manifest entry ${args.storageName}`,
+      );
+    }
+    await cancelChatRun(args.actor, run.runId, sandboxHeaders);
+    return {
+      runId: run.runId,
+      archiveUrl: entry.archiveUrl,
+      versionId: entry.versionId,
+    };
+  }
+
+  beforeEach(() => {
+    mockEnv("R2_USER_STORAGES_BUCKET_NAME", BUCKET);
+    mockUniquePresignedUrls();
+  });
+
   it("keeps complete runner URLs when the cache write fails after pending commit", async () => {
     const fixture = await createWorkflowSkillRunFixture();
     const api = createRunsApi(context);

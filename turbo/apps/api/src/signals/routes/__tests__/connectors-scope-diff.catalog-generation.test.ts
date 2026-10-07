@@ -8,6 +8,7 @@ import {
 } from "./helpers/public-connector-catalog";
 
 const context = testContext();
+
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
 
@@ -17,7 +18,7 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
     if (actor.orgId === null) {
       throw new Error("Expected test actor organization");
     }
-    const catalog = createPublicConnectorCatalog(context);
+    const catalog = createPublicConnectorCatalog(context, { isolatePg: true });
     const available = catalogWithAuthMethod(
       { connectorSlug: "openai", authMethodId: "api-token" },
       (method) => {
@@ -33,10 +34,6 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
         apiKey: "unavailable-method-secret",
       },
     );
-    catalog.onCleanup(async () => {
-      await catalog.publish(available);
-      await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "openai");
-    });
     await catalog.publish(API_TEST_CONNECTOR_CATALOG);
 
     const response = await connectorsApi.requestScopeDiff(
@@ -47,6 +44,5 @@ describe("GET /api/connectors/:connectorSlug/scope-diff", () => {
 
     expectApiError(response.body);
     expect(response.body.error.code).toBe("NOT_FOUND");
-    await catalog.cleanup();
   });
 });

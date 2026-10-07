@@ -19,6 +19,7 @@ import { createPublicAutomaticCatalog } from "./helpers/public-automatic-catalog
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+
 const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const routes = Object.freeze([
@@ -124,7 +125,7 @@ function receipt(f: Fixture, attemptId: string) {
 
 describe("builtin MCP automatic authentication", () => {
   it("rejects an in-flight callback when its catalog storage contract changes", async () => {
-    const f = createPublicAutomaticCatalog(context);
+    const f = createPublicAutomaticCatalog(context, { isolatePg: true });
     await f.run(async () => {
       await f.publish();
       const provider = mockAutomaticMcpOAuthProvider(context, {

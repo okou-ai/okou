@@ -1,196 +1,20 @@
 import { defineConfig } from "vitest/config";
-
-export const realDatabaseSetupFiles = [
-  "./src/__tests__/env-stub.ts",
-  "./src/__tests__/setup.ts",
-];
-
-// Retired Native intents are globally purged by owner cleanup. These fixtures
-// must run after all other projects finish their lifecycle transactions.
-const emailLifecycleTests = ["src/signals/routes/__tests__/email.test.ts"];
-
-const immutableCatalogTests = [
-  "src/signals/routes/__tests__/connector-catalog-immutable.test.ts",
-];
-
-const isolatedDatabaseTests = [
-  "src/signals/routes/__tests__/test-runtime-state.test.ts",
-];
-const databaseLifecycleTests = [
-  "src/test-fixtures/__tests__/pglite-database.test.ts",
-];
-
-// Fixed-catalog readers retain their existing isolated business scheduling.
-const catalogTests = [
-  "src/signals/routes/__tests__/official-automation-result-email.test.ts",
-  "src/signals/routes/__tests__/chat-run-finished-automations.bdd.test.ts",
-  "src/signals/routes/__tests__/official-workflows.test.ts",
-  "src/signals/routes/__tests__/official-workflows-schedule-claims.test.ts",
-  "src/signals/routes/__tests__/cron-official-workflow-catalog.test.ts",
-];
-
-// Only generation-changing contracts belong here, never their former sibling
-// fixed-catalog cases. Each contract publishes its own prerequisite generation.
-const catalogGenerationTests = [
-  "src/signals/routes/__tests__/*.catalog-generation.test.ts",
-];
-
-// These suites intentionally publish restricted complete manifests. They run
-// after every fixed reader (including bootstrap) and generation contract.
-const catalogPublisherTests = [
-  "src/signals/routes/__tests__/cron-connector-catalog.test.ts",
-  "src/signals/routes/__tests__/cron-connector-catalog-v4.test.ts",
-];
-
-// PostgreSQL cancellation fixtures temporarily replace Client.prototype.query.
-// Keep their owning files and cases serial in an explicitly isolated project.
-const bootstrapFailureTests = [
-  "src/signals/routes/__tests__/chat-events-bootstrap-prefetch.test.ts",
-  "src/signals/routes/__tests__/chat-events-model-source-context.test.ts",
-];
+import { apiTestEnvironment } from "./src/__tests__/test-environment";
 
 export default defineConfig({
   test: {
+    name: "api",
     globals: true,
     environment: "node",
-    env: {
-      TZ: "UTC",
-    },
-    exclude: [
-      "node_modules/**",
-      "dist/**",
-      "**/__benches__/**",
-      "**/*.boundary.test.ts",
+    env: { ...apiTestEnvironment, TZ: "UTC" },
+    globalSetup: ["./src/__tests__/global-setup.ts"],
+    setupFiles: [
+      "./src/__tests__/env-stub.ts",
+      "./src/__tests__/mocks.ts",
+      "./src/__tests__/setup.ts",
     ],
-    // These suites mutate the same real catalog authority. Vitest owns their
-    // scheduling; no database session or production lock is a test resource.
-    projects: [
-      {
-        // Root setupFiles would be inherited even without extends. Real-DB
-        // setup is assigned only to the ordinary PostgreSQL projects below.
-        test: {
-          name: "api-immutable-catalog",
-          globals: true,
-          environment: "node",
-          env: { TZ: "UTC" },
-          include: immutableCatalogTests,
-          // Complete shared SDK mock registration before collecting any
-          // production import in the native suite; do not load real-PG setup.
-          setupFiles: [
-            "./src/__tests__/env-stub.ts",
-            "./src/__tests__/mocks.ts",
-          ],
-          sequence: { setupFiles: "list" },
-          benchmark: { enabled: false, include: [], exclude: ["**/*"] },
-        },
-      },
-      {
-        test: {
-          name: "api-database-lifecycle",
-          globals: true,
-          environment: "node",
-          env: { TZ: "UTC" },
-          include: databaseLifecycleTests,
-          setupFiles: [
-            "./src/__tests__/env-stub.ts",
-            "./src/__tests__/mocks.ts",
-            "./src/__tests__/pglite-schema-setup.ts",
-          ],
-          sequence: { setupFiles: "list" },
-          benchmark: { enabled: false, include: [], exclude: ["**/*"] },
-        },
-      },
-      {
-        test: {
-          name: "api-isolated-database",
-          globals: true,
-          environment: "node",
-          env: { TZ: "UTC" },
-          include: isolatedDatabaseTests,
-          setupFiles: [
-            "./src/__tests__/env-stub.ts",
-            "./src/__tests__/mocks.ts",
-            "./src/__tests__/pglite-schema-setup.ts",
-            "./src/__tests__/pglite-setup.ts",
-          ],
-          sequence: { setupFiles: "list" },
-          benchmark: { enabled: false, include: [], exclude: ["**/*"] },
-        },
-      },
-      {
-        extends: true,
-        test: {
-          name: "api",
-          setupFiles: realDatabaseSetupFiles,
-          exclude: [
-            ...catalogTests,
-            ...catalogPublisherTests,
-            ...catalogGenerationTests,
-            ...bootstrapFailureTests,
-            ...immutableCatalogTests,
-            ...isolatedDatabaseTests,
-            ...databaseLifecycleTests,
-            ...emailLifecycleTests,
-          ],
-        },
-      },
-      {
-        extends: true,
-        test: {
-          name: "api-catalog",
-          setupFiles: realDatabaseSetupFiles,
-          include: catalogTests,
-          benchmark: { enabled: false },
-          fileParallelism: false,
-          sequence: { groupOrder: 1 },
-        },
-      },
-      {
-        extends: true,
-        test: {
-          name: "api-bootstrap-failure",
-          setupFiles: realDatabaseSetupFiles,
-          include: bootstrapFailureTests,
-          benchmark: { enabled: false },
-          isolate: true,
-          fileParallelism: false,
-          sequence: { groupOrder: 2, concurrent: false },
-        },
-      },
-      {
-        extends: true,
-        test: {
-          name: "api-catalog-generation",
-          setupFiles: realDatabaseSetupFiles,
-          include: catalogGenerationTests,
-          benchmark: { enabled: false },
-          fileParallelism: false,
-          sequence: { groupOrder: 3 },
-        },
-      },
-      {
-        extends: true,
-        test: {
-          name: "api-catalog-publisher",
-          setupFiles: realDatabaseSetupFiles,
-          include: catalogPublisherTests,
-          benchmark: { enabled: false },
-          fileParallelism: false,
-          sequence: { groupOrder: 4 },
-        },
-      },
-      {
-        extends: true,
-        test: {
-          name: "api-email-lifecycle",
-          setupFiles: realDatabaseSetupFiles,
-          include: emailLifecycleTests,
-          benchmark: { enabled: false },
-          fileParallelism: false,
-          sequence: { groupOrder: 5 },
-        },
-      },
-    ],
+    sequence: { setupFiles: "list" },
+    exclude: ["node_modules/**", "dist/**", "**/__benches__/**"],
     benchmark: {
       include: ["src/**/__benches__/**/*.bench.ts"],
       retainSamples: true,

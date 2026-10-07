@@ -25,7 +25,7 @@ interface RunFixture {
   readonly authorization: string;
 }
 
-const context = testContext({});
+const context = testContext();
 const bdd = createBddApi(context);
 const runs = createRunsApi(context);
 const DAY_MS = 86_400_000;

@@ -14,11 +14,6 @@ export const testOfficialWorkflowCatalogStateActionBodySchema =
   z.discriminatedUnion("action", [
     z
       .object({
-        action: z.literal("cleanup"),
-      })
-      .strict(),
-    z
-      .object({
         action: z.literal("seed-previous-schema-release"),
       })
       .strict(),
@@ -172,7 +167,7 @@ export const testOfficialWorkflowCatalogStateContract = c.router({
       400: z.object({ error: z.string() }),
       404: z.string(),
     },
-    summary: "Inspect and clean Official Workflow catalog API test state",
+    summary: "Inspect Official Workflow catalog API test state",
   },
 });
 

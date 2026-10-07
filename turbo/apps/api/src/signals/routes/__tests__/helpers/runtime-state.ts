@@ -2,14 +2,16 @@ import { randomUUID } from "node:crypto";
 
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 
-import type {
-  TestRuntimeStateActionBody,
-  TestRuntimeStateActionResponse,
+import {
+  testRuntimeStateContract,
+  type TestRuntimeStateActionBody,
+  type TestRuntimeStateActionResponse,
 } from "@okouai/api-contracts/contracts/test-runtime-state";
 import { onTestFinished } from "vitest";
 
 import { createAppWithRoutes } from "../../../../app-factory-core";
-import type { TestContext } from "../../../../__tests__/test-context";
+import { accept, type TestContext } from "../../../../__tests__/test-context";
+import { setupApp } from "../../../../__tests__/test-helpers";
 import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 
 import { testRuntimeStateRoutes } from "../../test-runtime-state";
@@ -141,16 +143,27 @@ export async function seedBuiltInModelKey(
   context: TestContext,
   selectedModel: string,
   registerCleanup?: (cleanup: () => Promise<void>) => void,
+  options: { readonly isolatePg?: boolean } = {},
 ): Promise<BuiltInModelKeyFixture> {
   const fixtureId = randomUUID();
   const release = registerCleanup
     ? registerBuiltInModelKeyCleanup(context, fixtureId, registerCleanup)
     : undefined;
-  const response = await postAction(context, {
-    action: "seed-built-in-model-key",
-    fixture_id: fixtureId,
-    selected_model: selectedModel,
+  const app = await setupApp({
+    context,
+    routes: testRuntimeStateRoutes,
+    isolatePg: options.isolatePg,
   });
+  const { body: response } = await accept(
+    app(testRuntimeStateContract).action({
+      body: {
+        action: "seed-built-in-model-key",
+        fixture_id: fixtureId,
+        selected_model: selectedModel,
+      },
+    }),
+    [200],
+  );
   if (!response.selected_model) {
     throw new Error("seedBuiltInModelKey missing selected_model");
   }

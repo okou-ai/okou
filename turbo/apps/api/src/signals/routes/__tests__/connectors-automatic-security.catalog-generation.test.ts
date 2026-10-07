@@ -19,6 +19,7 @@ import { createPublicAutomaticCatalog } from "./helpers/public-automatic-catalog
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
+
 const mocks = createRouteMocks(context);
 const headers = { authorization: "Bearer clerk-session" } as const;
 const routes = [
@@ -122,7 +123,7 @@ function receipt(f: Fixture, attemptId: string) {
 
 describe("builtin Automatic account and consent ownership", () => {
   it("rejects consent frozen for an endpoint that changes without a storage version change", async () => {
-    const f = createPublicAutomaticCatalog(context);
+    const f = createPublicAutomaticCatalog(context, { isolatePg: true });
     await f.run(async () => {
       await f.publish();
       const provider = mockAutomaticMcpOAuthProvider(context, {

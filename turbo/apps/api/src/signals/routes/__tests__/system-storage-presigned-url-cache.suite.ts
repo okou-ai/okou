@@ -33,376 +33,381 @@ import {
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 
-const context = testContext();
-const BUCKET = "test-user-storages";
-const CACHE_TTL_SECONDS = 2 * 24 * 60 * 60;
-
-interface CacheRow {
-  readonly cache_key: string;
-  readonly bucket: string;
-  readonly object_key: string;
-  readonly storage_version_id: string;
-  readonly public_endpoint: boolean;
-  readonly ttl_seconds: number;
-  readonly presigned_url: string;
-  readonly expires_at: string;
-  readonly refresh_after: string;
-  readonly last_requested_at: string;
-}
-
-interface CacheRowSnapshot {
-  readonly cache_key: string;
-  readonly bucket: string;
-  readonly object_key: string;
-  readonly storage_version_id: string;
-  readonly public_endpoint: boolean;
-  readonly ttl_seconds: number;
-  readonly presigned_url: string;
-}
-
-interface StorageState {
-  readonly s3_prefix: string;
-  readonly size: number;
-  readonly file_count: number;
-  readonly head_version_id: string | null;
-}
-
-interface OwnedSystemStorageFixture {
-  readonly storageId: string;
-  readonly storageName: string;
-  readonly s3Prefix: string;
-  readonly mountPath: string;
-}
-
-interface ClaimedStorageMount {
-  readonly name: string;
-  readonly mountPath: string;
-  readonly versionId: string;
-  readonly archiveSize: number;
-  readonly archiveUrl: string;
-}
-
-function stateRequest(
-  body: TestSystemStoragePresignedUrlCacheStateActionBody,
-): Promise<Response> {
-  const app = createAppWithRoutes({
-    signal: context.signal,
-    routes: testSystemStoragePresignedUrlCacheStateRoutes,
-  });
-  return Promise.resolve(
-    app.request("/api/test/system-storage-presigned-url-cache-state/action", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    }),
-  );
-}
-
-async function stateAction(
-  body: TestSystemStoragePresignedUrlCacheStateActionBody,
-): Promise<TestSystemStoragePresignedUrlCacheStateActionResponse> {
-  const response = await stateRequest(body);
-  if (!response.ok) {
-    throw new Error(`Cache state action ${body.action} failed`);
-  }
-  return (await response.json()) as TestSystemStoragePresignedUrlCacheStateActionResponse;
-}
-
-/**
- * Every run mounts the seed system skills from the system organization. The
- * request-owned resolution points one seed skill at the synthetic storage.
- */
-const SYSTEM_SKILL = "gen";
-const SYSTEM_SKILL_MOUNT_PATH = `/home/user/.claude/skills/${SYSTEM_SKILL}`;
-
-function createOwnedSystemStorageFixture(
-  label: string,
-): OwnedSystemStorageFixture {
-  const storageId = randomUUID();
-  const suffix = storageId.replaceAll("-", "");
-  return {
-    storageId,
-    storageName: `system-cache-${label}-${suffix}`,
-    s3Prefix: `${SYSTEM_ORG_ID}/${storageId}`,
-    mountPath: SYSTEM_SKILL_MOUNT_PATH,
-  };
-}
-
-function createVersionId(label: string): string {
-  return createHash("sha256").update(`${label}:${randomUUID()}`).digest("hex");
-}
-
-function storageVersionKey(
-  fixture: OwnedSystemStorageFixture,
-  versionId: string,
-): string {
-  return `${fixture.s3Prefix}/${versionId}`;
-}
-
-function storageArchiveKey(
-  fixture: OwnedSystemStorageFixture,
-  versionId: string,
-): string {
-  return `${storageVersionKey(fixture, versionId)}/archive.tar.gz`;
-}
-
-async function claimOwnedStorage(
-  fixture: OwnedSystemStorageFixture,
-): Promise<void> {
-  await stateAction({
-    action: "claim-owned-storages",
-    storages: [
-      {
-        storage_id: fixture.storageId,
-        org_id: SYSTEM_ORG_ID,
-        user_id: VOLUME_ORG_USER_ID,
-        storage_name: fixture.storageName,
-        s3_prefix: fixture.s3Prefix,
-      },
-    ],
-  });
-}
-
-async function cleanupOwnedStorage(
-  fixture: OwnedSystemStorageFixture,
-): Promise<void> {
-  await stateAction({
-    action: "cleanup-owned-storage-cache",
-    storage_id: fixture.storageId,
-  });
-  await stateAction({
-    action: "cleanup-owned-storages",
-    storage_ids: [fixture.storageId],
-  });
-}
-
-function registerOwnedStorageCleanup(fixture: OwnedSystemStorageFixture): void {
-  onTestFinished(async () => {
-    await cleanupOwnedStorage(fixture);
-  });
-}
-
-async function readOwnedStorageState(
-  fixture: OwnedSystemStorageFixture,
-): Promise<StorageState | null> {
-  const response = await stateAction({
-    action: "read-owned-storage-state",
-    storage_id: fixture.storageId,
-  });
-  return response.storage_state ?? null;
-}
-
-async function seedOwnedStorageVersion(args: {
-  readonly fixture: OwnedSystemStorageFixture;
-  readonly versionId: string;
-  readonly archiveSize: number;
-}): Promise<void> {
-  await stateAction({
-    action: "seed-owned-storage-version",
-    storage_id: args.fixture.storageId,
-    version_id: args.versionId,
-    s3_key: storageVersionKey(args.fixture, args.versionId),
-    archive_size: args.archiveSize,
-  });
-}
-
-async function readOwnedStorageCache(
-  fixture: OwnedSystemStorageFixture,
-): Promise<readonly CacheRow[]> {
-  const response = await stateAction({
-    action: "read-owned-storage-cache",
-    storage_id: fixture.storageId,
-  });
-  return response.rows ?? [];
-}
-
-async function seedOwnedStorageCacheRow(args: {
-  readonly fixture: OwnedSystemStorageFixture;
-  readonly versionId: string;
-  readonly presignedUrl: string;
-  readonly expiresAt: Date;
-  readonly refreshAfter: Date;
-  readonly lastRequestedAt?: Date;
-}): Promise<void> {
-  await stateAction({
-    action: "seed-owned-storage-cache-row",
-    storage_id: args.fixture.storageId,
-    storage_version_id: args.versionId,
-    bucket: BUCKET,
-    public_endpoint: true,
-    ttl_seconds: CACHE_TTL_SECONDS,
-    presigned_url: args.presignedUrl,
-    expires_at: args.expiresAt.toISOString(),
-    refresh_after: args.refreshAfter.toISOString(),
-    ...(args.lastRequestedAt
-      ? { last_requested_at: args.lastRequestedAt.toISOString() }
-      : {}),
-  });
-}
-
-async function pruneOwnedStorageCache(
-  fixture: OwnedSystemStorageFixture,
-): Promise<{
-  readonly pruned: number;
-}> {
-  const response = await stateAction({
-    action: "prune-owned-storage-cache",
-    storage_id: fixture.storageId,
-  });
-  if (!response.cache_prune) {
-    throw new Error("Owned system storage cache prune result is missing");
-  }
-  return response.cache_prune;
-}
-
-function cacheKey(objectKey: string, storageVersionId: string): string {
-  return createHash("sha256")
-    .update(
-      JSON.stringify([
-        "system-storage-url-v1",
-        BUCKET,
-        objectKey,
-        storageVersionId,
-        "public",
-        CACHE_TTL_SECONDS,
-      ]),
-    )
-    .digest("hex");
-}
-
-function cacheRowSnapshot(row: CacheRow): CacheRowSnapshot {
-  return {
-    cache_key: row.cache_key,
-    bucket: row.bucket,
-    object_key: row.object_key,
-    storage_version_id: row.storage_version_id,
-    public_endpoint: row.public_endpoint,
-    ttl_seconds: row.ttl_seconds,
-    presigned_url: row.presigned_url,
-  };
-}
-
-function expectedCacheRow(args: {
-  readonly fixture: OwnedSystemStorageFixture;
-  readonly versionId: string;
-  readonly presignedUrl: string;
-}): CacheRowSnapshot {
-  const objectKey = storageArchiveKey(args.fixture, args.versionId);
-  return {
-    cache_key: cacheKey(objectKey, args.versionId),
-    bucket: BUCKET,
-    object_key: objectKey,
-    storage_version_id: args.versionId,
-    public_endpoint: true,
-    ttl_seconds: CACHE_TTL_SECONDS,
-    presigned_url: args.presignedUrl,
-  };
-}
-
-function sortedCacheSnapshots(
-  rows: readonly CacheRow[],
-): readonly CacheRowSnapshot[] {
-  return rows.map(cacheRowSnapshot).sort((left, right) => {
-    return left.object_key.localeCompare(right.object_key);
-  });
-}
-
-async function entitledDirectRunActor(): Promise<{
-  readonly actor: ApiTestUser;
-  readonly agentId: string;
-  readonly runnerGroup: string;
-}> {
-  const bdd = createBddApi(context);
-  const api = createRunsApi(context);
-  const actor = bdd.user();
-  bdd.acceptAgentStorageWrites();
-  api.acceptStorageDownloads();
-  api.acceptTelemetryIngest();
-  const runnerGroup = api.configureRunnerGroup();
-  await api.grantProEntitlement(actor);
-  // The Claude Code route mounts skills under /home/user/.claude/skills.
-  await api.ensurePersonalSubscriptionModel(actor, {
-    model: "claude-fable-5-1",
-  });
-  const agent = await bdd.createAgent(actor, {
-    displayName: "System storage cache agent",
-    visibility: "private",
-  });
-  return { actor, agentId: agent.agentId, runnerGroup };
-}
-
-async function createAndClaimOwnedSystemStorage(args: {
-  readonly actor: ApiTestUser;
-  readonly agentId: string;
-  readonly runnerGroup: string;
-  readonly fixture: OwnedSystemStorageFixture;
-  readonly prompt: string;
-}): Promise<{
-  readonly mount: ClaimedStorageMount;
-}> {
-  const api = createRunsApi(context, {
-    [SYSTEM_SKILL]: args.fixture.storageName,
-  });
-  const run = await api.createThreadRun(args.actor, {
-    agentId: args.agentId,
-    prompt: args.prompt,
-  });
-  onTestFinished(async () => {
-    await api.requestCancelRun(args.actor, run.runId, [200, 404]);
-  });
-  await api.heartbeatRunner(args.runnerGroup);
-  const claim = await api.claimRunnerJob(run.runId);
-  const mounts =
-    expectCanonicalStorageManifest(claim.storageManifest)?.storageMounts.filter(
-      (storage) => {
-        return storage.name === args.fixture.storageName;
-      },
-    ) ?? [];
-  if (mounts.length !== 1) {
-    throw new Error("Expected one owned system storage mount");
-  }
-  const mount = mounts[0];
-  if (!mount?.archiveUrl || mount.archiveSize === undefined) {
-    throw new Error("Owned system storage mount is incomplete");
-  }
-  await api.requestCancelRun(args.actor, run.runId, [200]);
-  return {
-    mount: {
-      name: mount.name,
-      mountPath: mount.mountPath,
-      versionId: mount.versionId,
-      archiveSize: mount.archiveSize,
-      archiveUrl: mount.archiveUrl,
-    },
-  };
-}
-
-function expectedPresignedUrl(objectKey: string, count: number): string {
-  return `https://r2.example.com/${encodeURIComponent(objectKey)}?sig=${count}`;
-}
-
-function mockUniquePresignedUrls(): (objectKey: string) => number {
-  const counts = new Map<string, number>();
-  context.mocks.s3.getSignedUrl.mockImplementation(
-    (_client: unknown, command: unknown) => {
-      const input = (command as { readonly input?: { readonly Key?: string } })
-        .input;
-      const objectKey = input?.Key ?? "unknown";
-      const count = (counts.get(objectKey) ?? 0) + 1;
-      counts.set(objectKey, count);
-      return Promise.resolve(expectedPresignedUrl(objectKey, count));
-    },
-  );
-  return (objectKey: string) => {
-    return counts.get(objectKey) ?? 0;
-  };
-}
-
-beforeEach(() => {
-  mockEnv("R2_USER_STORAGES_BUCKET_NAME", BUCKET);
-});
-
 describe("system storage presigned URL cache", () => {
+  const context = testContext();
+  const BUCKET = "test-user-storages";
+  const CACHE_TTL_SECONDS = 2 * 24 * 60 * 60;
+
+  interface CacheRow {
+    readonly cache_key: string;
+    readonly bucket: string;
+    readonly object_key: string;
+    readonly storage_version_id: string;
+    readonly public_endpoint: boolean;
+    readonly ttl_seconds: number;
+    readonly presigned_url: string;
+    readonly expires_at: string;
+    readonly refresh_after: string;
+    readonly last_requested_at: string;
+  }
+
+  interface CacheRowSnapshot {
+    readonly cache_key: string;
+    readonly bucket: string;
+    readonly object_key: string;
+    readonly storage_version_id: string;
+    readonly public_endpoint: boolean;
+    readonly ttl_seconds: number;
+    readonly presigned_url: string;
+  }
+
+  interface StorageState {
+    readonly s3_prefix: string;
+    readonly size: number;
+    readonly file_count: number;
+    readonly head_version_id: string | null;
+  }
+
+  interface OwnedSystemStorageFixture {
+    readonly storageId: string;
+    readonly storageName: string;
+    readonly s3Prefix: string;
+    readonly mountPath: string;
+  }
+
+  interface ClaimedStorageMount {
+    readonly name: string;
+    readonly mountPath: string;
+    readonly versionId: string;
+    readonly archiveSize: number;
+    readonly archiveUrl: string;
+  }
+
+  function stateRequest(
+    body: TestSystemStoragePresignedUrlCacheStateActionBody,
+  ): Promise<Response> {
+    const app = createAppWithRoutes({
+      signal: context.signal,
+      routes: testSystemStoragePresignedUrlCacheStateRoutes,
+    });
+    return Promise.resolve(
+      app.request("/api/test/system-storage-presigned-url-cache-state/action", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    );
+  }
+
+  async function stateAction(
+    body: TestSystemStoragePresignedUrlCacheStateActionBody,
+  ): Promise<TestSystemStoragePresignedUrlCacheStateActionResponse> {
+    const response = await stateRequest(body);
+    if (!response.ok) {
+      throw new Error(`Cache state action ${body.action} failed`);
+    }
+    return (await response.json()) as TestSystemStoragePresignedUrlCacheStateActionResponse;
+  }
+
+  /**
+   * Every run mounts the seed system skills from the system organization. The
+   * request-owned resolution points one seed skill at the synthetic storage.
+   */
+  const SYSTEM_SKILL = "gen";
+  const SYSTEM_SKILL_MOUNT_PATH = `/home/user/.claude/skills/${SYSTEM_SKILL}`;
+
+  function createOwnedSystemStorageFixture(
+    label: string,
+  ): OwnedSystemStorageFixture {
+    const storageId = randomUUID();
+    const suffix = storageId.replaceAll("-", "");
+    return {
+      storageId,
+      storageName: `system-cache-${label}-${suffix}`,
+      s3Prefix: `${SYSTEM_ORG_ID}/${storageId}`,
+      mountPath: SYSTEM_SKILL_MOUNT_PATH,
+    };
+  }
+
+  function createVersionId(label: string): string {
+    return createHash("sha256")
+      .update(`${label}:${randomUUID()}`)
+      .digest("hex");
+  }
+
+  function storageVersionKey(
+    fixture: OwnedSystemStorageFixture,
+    versionId: string,
+  ): string {
+    return `${fixture.s3Prefix}/${versionId}`;
+  }
+
+  function storageArchiveKey(
+    fixture: OwnedSystemStorageFixture,
+    versionId: string,
+  ): string {
+    return `${storageVersionKey(fixture, versionId)}/archive.tar.gz`;
+  }
+
+  async function claimOwnedStorage(
+    fixture: OwnedSystemStorageFixture,
+  ): Promise<void> {
+    await stateAction({
+      action: "claim-owned-storages",
+      storages: [
+        {
+          storage_id: fixture.storageId,
+          org_id: SYSTEM_ORG_ID,
+          user_id: VOLUME_ORG_USER_ID,
+          storage_name: fixture.storageName,
+          s3_prefix: fixture.s3Prefix,
+        },
+      ],
+    });
+  }
+
+  async function cleanupOwnedStorage(
+    fixture: OwnedSystemStorageFixture,
+  ): Promise<void> {
+    await stateAction({
+      action: "cleanup-owned-storage-cache",
+      storage_id: fixture.storageId,
+    });
+    await stateAction({
+      action: "cleanup-owned-storages",
+      storage_ids: [fixture.storageId],
+    });
+  }
+
+  function registerOwnedStorageCleanup(
+    fixture: OwnedSystemStorageFixture,
+  ): void {
+    onTestFinished(async () => {
+      await cleanupOwnedStorage(fixture);
+    });
+  }
+
+  async function readOwnedStorageState(
+    fixture: OwnedSystemStorageFixture,
+  ): Promise<StorageState | null> {
+    const response = await stateAction({
+      action: "read-owned-storage-state",
+      storage_id: fixture.storageId,
+    });
+    return response.storage_state ?? null;
+  }
+
+  async function seedOwnedStorageVersion(args: {
+    readonly fixture: OwnedSystemStorageFixture;
+    readonly versionId: string;
+    readonly archiveSize: number;
+  }): Promise<void> {
+    await stateAction({
+      action: "seed-owned-storage-version",
+      storage_id: args.fixture.storageId,
+      version_id: args.versionId,
+      s3_key: storageVersionKey(args.fixture, args.versionId),
+      archive_size: args.archiveSize,
+    });
+  }
+
+  async function readOwnedStorageCache(
+    fixture: OwnedSystemStorageFixture,
+  ): Promise<readonly CacheRow[]> {
+    const response = await stateAction({
+      action: "read-owned-storage-cache",
+      storage_id: fixture.storageId,
+    });
+    return response.rows ?? [];
+  }
+
+  async function seedOwnedStorageCacheRow(args: {
+    readonly fixture: OwnedSystemStorageFixture;
+    readonly versionId: string;
+    readonly presignedUrl: string;
+    readonly expiresAt: Date;
+    readonly refreshAfter: Date;
+    readonly lastRequestedAt?: Date;
+  }): Promise<void> {
+    await stateAction({
+      action: "seed-owned-storage-cache-row",
+      storage_id: args.fixture.storageId,
+      storage_version_id: args.versionId,
+      bucket: BUCKET,
+      public_endpoint: true,
+      ttl_seconds: CACHE_TTL_SECONDS,
+      presigned_url: args.presignedUrl,
+      expires_at: args.expiresAt.toISOString(),
+      refresh_after: args.refreshAfter.toISOString(),
+      ...(args.lastRequestedAt
+        ? { last_requested_at: args.lastRequestedAt.toISOString() }
+        : {}),
+    });
+  }
+
+  async function pruneOwnedStorageCache(
+    fixture: OwnedSystemStorageFixture,
+  ): Promise<{
+    readonly pruned: number;
+  }> {
+    const response = await stateAction({
+      action: "prune-owned-storage-cache",
+      storage_id: fixture.storageId,
+    });
+    if (!response.cache_prune) {
+      throw new Error("Owned system storage cache prune result is missing");
+    }
+    return response.cache_prune;
+  }
+
+  function cacheKey(objectKey: string, storageVersionId: string): string {
+    return createHash("sha256")
+      .update(
+        JSON.stringify([
+          "system-storage-url-v1",
+          BUCKET,
+          objectKey,
+          storageVersionId,
+          "public",
+          CACHE_TTL_SECONDS,
+        ]),
+      )
+      .digest("hex");
+  }
+
+  function cacheRowSnapshot(row: CacheRow): CacheRowSnapshot {
+    return {
+      cache_key: row.cache_key,
+      bucket: row.bucket,
+      object_key: row.object_key,
+      storage_version_id: row.storage_version_id,
+      public_endpoint: row.public_endpoint,
+      ttl_seconds: row.ttl_seconds,
+      presigned_url: row.presigned_url,
+    };
+  }
+
+  function expectedCacheRow(args: {
+    readonly fixture: OwnedSystemStorageFixture;
+    readonly versionId: string;
+    readonly presignedUrl: string;
+  }): CacheRowSnapshot {
+    const objectKey = storageArchiveKey(args.fixture, args.versionId);
+    return {
+      cache_key: cacheKey(objectKey, args.versionId),
+      bucket: BUCKET,
+      object_key: objectKey,
+      storage_version_id: args.versionId,
+      public_endpoint: true,
+      ttl_seconds: CACHE_TTL_SECONDS,
+      presigned_url: args.presignedUrl,
+    };
+  }
+
+  function sortedCacheSnapshots(
+    rows: readonly CacheRow[],
+  ): readonly CacheRowSnapshot[] {
+    return rows.map(cacheRowSnapshot).sort((left, right) => {
+      return left.object_key.localeCompare(right.object_key);
+    });
+  }
+
+  async function entitledDirectRunActor(): Promise<{
+    readonly actor: ApiTestUser;
+    readonly agentId: string;
+    readonly runnerGroup: string;
+  }> {
+    const bdd = createBddApi(context);
+    const api = createRunsApi(context);
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    api.acceptStorageDownloads();
+    api.acceptTelemetryIngest();
+    const runnerGroup = api.configureRunnerGroup();
+    await api.grantProEntitlement(actor);
+    // The Claude Code route mounts skills under /home/user/.claude/skills.
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
+    const agent = await bdd.createAgent(actor, {
+      displayName: "System storage cache agent",
+      visibility: "private",
+    });
+    return { actor, agentId: agent.agentId, runnerGroup };
+  }
+
+  async function createAndClaimOwnedSystemStorage(args: {
+    readonly actor: ApiTestUser;
+    readonly agentId: string;
+    readonly runnerGroup: string;
+    readonly fixture: OwnedSystemStorageFixture;
+    readonly prompt: string;
+  }): Promise<{
+    readonly mount: ClaimedStorageMount;
+  }> {
+    const api = createRunsApi(context, {
+      [SYSTEM_SKILL]: args.fixture.storageName,
+    });
+    const run = await api.createThreadRun(args.actor, {
+      agentId: args.agentId,
+      prompt: args.prompt,
+    });
+    onTestFinished(async () => {
+      await api.requestCancelRun(args.actor, run.runId, [200, 404]);
+    });
+    await api.heartbeatRunner(args.runnerGroup);
+    const claim = await api.claimRunnerJob(run.runId);
+    const mounts =
+      expectCanonicalStorageManifest(
+        claim.storageManifest,
+      )?.storageMounts.filter((storage) => {
+        return storage.name === args.fixture.storageName;
+      }) ?? [];
+    if (mounts.length !== 1) {
+      throw new Error("Expected one owned system storage mount");
+    }
+    const mount = mounts[0];
+    if (!mount?.archiveUrl || mount.archiveSize === undefined) {
+      throw new Error("Owned system storage mount is incomplete");
+    }
+    await api.requestCancelRun(args.actor, run.runId, [200]);
+    return {
+      mount: {
+        name: mount.name,
+        mountPath: mount.mountPath,
+        versionId: mount.versionId,
+        archiveSize: mount.archiveSize,
+        archiveUrl: mount.archiveUrl,
+      },
+    };
+  }
+
+  function expectedPresignedUrl(objectKey: string, count: number): string {
+    return `https://r2.example.com/${encodeURIComponent(objectKey)}?sig=${count}`;
+  }
+
+  function mockUniquePresignedUrls(): (objectKey: string) => number {
+    const counts = new Map<string, number>();
+    context.mocks.s3.getSignedUrl.mockImplementation(
+      (_client: unknown, command: unknown) => {
+        const input = (
+          command as { readonly input?: { readonly Key?: string } }
+        ).input;
+        const objectKey = input?.Key ?? "unknown";
+        const count = (counts.get(objectKey) ?? 0) + 1;
+        counts.set(objectKey, count);
+        return Promise.resolve(expectedPresignedUrl(objectKey, count));
+      },
+    );
+    return (objectKey: string) => {
+      return counts.get(objectKey) ?? 0;
+    };
+  }
+
+  beforeEach(() => {
+    mockEnv("R2_USER_STORAGES_BUCKET_NAME", BUCKET);
+  });
+
   it.each([undefined, "Bearer wrong"])(
     "rejects cache pruning with invalid authorization %s",
     async (authorization) => {

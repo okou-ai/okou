@@ -544,50 +544,43 @@ async function persistClaimedConnector(
   },
   signal: AbortSignal,
 ): Promise<CompleteSuccess | ReturnType<typeof conflict>> {
-  return await args.writeDb.transaction(async (tx) => {
-    if (
-      !(await claimStillCurrent(
-        {
-          writeDb: tx,
-          sessionId: args.session.id,
-          claimStartedAt: args.claimStartedAt,
-        },
-        signal,
-      ))
-    ) {
-      throw new Error(
-        "External-code authorization session is no longer active",
-      );
-    }
-
-    const persisted = await args.persistConnector(
-      { token: args.token },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!persisted.ok) {
-      await markClaimError(
-        {
-          writeDb: tx,
-          session: args.session,
-          claimStartedAt: args.claimStartedAt,
-          errorMessage: persisted.message,
-        },
-        signal,
-      );
-      return conflict(persisted.message);
-    }
-
-    return await markClaimComplete(
+  if (
+    !(await claimStillCurrent(
       {
-        writeDb: tx,
+        writeDb: args.writeDb,
+        sessionId: args.session.id,
+        claimStartedAt: args.claimStartedAt,
+      },
+      signal,
+    ))
+  ) {
+    throw new Error("External-code authorization session is no longer active");
+  }
+
+  const persisted = await args.persistConnector({ token: args.token }, signal);
+  signal.throwIfAborted();
+  if (!persisted.ok) {
+    await markClaimError(
+      {
+        writeDb: args.writeDb,
         session: args.session,
         claimStartedAt: args.claimStartedAt,
-        connector: persisted.connector,
+        errorMessage: persisted.message,
       },
       signal,
     );
-  });
+    return conflict(persisted.message);
+  }
+
+  return await markClaimComplete(
+    {
+      writeDb: args.writeDb,
+      session: args.session,
+      claimStartedAt: args.claimStartedAt,
+      connector: persisted.connector,
+    },
+    signal,
+  );
 }
 
 function terminalErrorResponse(

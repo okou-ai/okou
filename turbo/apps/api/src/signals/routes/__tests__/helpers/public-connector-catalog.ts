@@ -25,7 +25,10 @@ export { API_TEST_CONNECTOR_CATALOG };
 /** Publish external artifacts through the real, source-scoped catalog route. */
 export function createPublicConnectorCatalog(
   context: TestContext,
-  options: { readonly cleanupOwnership?: "caller" } = {},
+  options: {
+    readonly cleanupOwnership?: "caller";
+    readonly isolatePg?: boolean;
+  } = {},
 ) {
   const previousBucket = env("R2_USER_STORAGES_BUCKET_NAME");
   const previousCronSecret = env("CRON_SECRET");
@@ -130,10 +133,15 @@ export function createPublicConnectorCatalog(
 
   async function publish(catalog: ConnectorCatalogArtifact) {
     stage(catalog);
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: options.isolatePg,
+    });
     const synced = await accept(
-      setupApp({ context, routes: cronConnectorCatalogRoutes })(
-        cronConnectorCatalogContract,
-      ).sync({ headers: { authorization: `Bearer ${cronSecret}` } }),
+      app(cronConnectorCatalogContract).sync({
+        headers: { authorization: `Bearer ${cronSecret}` },
+      }),
       [200],
     );
     if (synced.body.outcome !== "accepted") {

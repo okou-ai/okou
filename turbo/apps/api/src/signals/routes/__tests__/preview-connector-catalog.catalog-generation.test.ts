@@ -20,6 +20,7 @@ import { connectorCatalogRoutes } from "../connector-catalog";
 import { runnersRoutes } from "../runners";
 
 const context = testContext();
+
 const mocks = createRouteMocks(context);
 const OFFICIAL_RUNNER_AUTHORIZATION =
   "Bearer vm0_official_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
@@ -28,14 +29,17 @@ const OFFICIAL_RUNNER_AUTHORIZATION =
 // matching the ~4,600-entry official publication size.
 const MULTI_BATCH_EXTRA_COUNT = 250;
 
-function seedClient() {
-  return setupApp({ context, routes: cronConnectorCatalogRoutes })(
-    cronConnectorCatalogContract,
-  );
+async function seedClient() {
+  const app = await setupApp({
+    context,
+    routes: cronConnectorCatalogRoutes,
+    isolatePg: true,
+  });
+  return app(cronConnectorCatalogContract);
 }
 
-function seed() {
-  return seedClient().seedPreview({
+async function seed() {
+  return (await seedClient()).seedPreview({
     headers: { authorization: `Bearer ${env("CRON_SECRET")}` },
   });
 }
@@ -205,7 +209,7 @@ test.each(["production", "development"] as const)(
 test("preview seed requires the cron secret", async () => {
   mockEnv("ENV", "preview");
   const response = await accept(
-    seedClient().seedPreview({
+    (await seedClient()).seedPreview({
       headers: { authorization: "Bearer wrong-secret" },
     }),
     [401],

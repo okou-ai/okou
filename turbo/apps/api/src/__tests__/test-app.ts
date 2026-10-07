@@ -69,19 +69,18 @@ function createAppFetcher({
   usagePricingResolution,
   systemSkillStorageResolution,
 }: SetupAppWithRoutesOptions): ApiFetcher {
-  const app = createAppWithRoutes({
-    signal: signal ?? context.signal,
-    routes,
-    usagePricingResolution,
-    systemSkillStorageResolution,
-  });
-  if (rethrowErrors) {
-    app.onError((error) => {
-      throw error;
-    });
-  }
-
   return (args) => {
+    const app = createAppWithRoutes({
+      signal: signal ?? context.signal,
+      routes,
+      usagePricingResolution,
+      systemSkillStorageResolution,
+    });
+    if (rethrowErrors) {
+      app.onError((error) => {
+        throw error;
+      });
+    }
     return requestApp(app, args);
   };
 }
@@ -96,15 +95,14 @@ export function setupRawAppRequestWithRoutes({
   routes,
   signal,
 }: TestAppWithRoutesOptions) {
-  const app = createAppWithRoutes({
-    signal: signal ?? context.signal,
-    routes,
-  });
-
   return async (
     path: string,
     init: RequestInit,
   ): Promise<{ readonly status: number; readonly body: unknown }> => {
+    const app = createAppWithRoutes({
+      signal: signal ?? context.signal,
+      routes,
+    });
     const response = await app.request(path, init);
     return { status: response.status, body: await parseResponseBody(response) };
   };

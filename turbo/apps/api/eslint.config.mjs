@@ -629,7 +629,12 @@ export default [
   },
   {
     files: ["src/**/*.ts"],
-    ignores: ["src/lib/env.ts", "src/lib/time.ts", "src/__tests__/env-stub.ts"],
+    ignores: [
+      "src/lib/env.ts",
+      "src/lib/time.ts",
+      "src/__tests__/env-stub.ts",
+      "src/__tests__/global-setup-env.ts",
+    ],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -649,7 +654,7 @@ export default [
       "src/**/*.test.ts",
       ...promiseChainAllowlist,
     ],
-    ignores: ["src/__tests__/env-stub.ts"],
+    ignores: ["src/__tests__/env-stub.ts", "src/__tests__/global-setup-env.ts"],
     rules: {
       "no-restricted-syntax": ["error", ...restrictedSyntax],
     },
@@ -723,7 +728,6 @@ export default [
       // endpoint can produce fits the cache columns, so only the command's
       // data parameter can carry a row PostgreSQL rejects.
       "src/signals/services/__tests__/execution-storage.service.test.ts",
-      // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
       // The Morning Brief source budget is a deployed 20-second constant, not
       // a request input, and shortening it through the preview endpoint would
       // ship a debug parameter. This suite drives the route's own admission
@@ -895,7 +899,6 @@ export default [
       // endpoint can produce fits the cache columns, so only the command's
       // data parameter can carry a row PostgreSQL rejects.
       "src/signals/services/__tests__/execution-storage.service.test.ts",
-      // #31937 requires the real Guest/CLI and PostgreSQL control boundary.
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
       "src/signals/services/__tests__/pi-memory-phase2-job.test-fixture.ts",
       // Bounded job ownership needs row locks, expired leases, handler-version
@@ -991,6 +994,7 @@ export default [
       // Bootstrap-only module: it owns the process.env and vi.stubEnv usage
       // that `restrictedSyntax` bans everywhere else.
       "src/__tests__/env-stub.ts",
+      "src/__tests__/global-setup-env.ts",
       // Service-directory tests are answered by their own blocks above: the
       // file is either banned outright or is a named exception that carries
       // these selectors alongside the shared ones.

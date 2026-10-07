@@ -1,19 +1,9 @@
-/* eslint-disable no-restricted-imports, api/no-package-variable, api/no-test-vi-mocks -- Only this N lifecycle process binds the existing DB module to per-case real PGlite; all ordinary suites retain node-postgres (target-state v5). */
-/* oxlint-disable vitest/warn-todo -- N1 belongs to the later publisher pointer stage. */
-import { syncBuiltinESMExports } from "node:module";
-import { createApiTestKmsClient } from "../../../__tests__/secret-kms";
-import { withSecretKmsClientForTest } from "../../../lib/secret-kms-client";
 import { HttpResponse, http } from "msw";
 import { server } from "../../../mocks/server";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import {
-  customConnectorByIdContract,
-  customConnectorsContract,
-} from "@okouai/api-contracts/contracts/custom-connectors";
+import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
 import { connectorAccountRoutes } from "../connector-accounts";
-import { customConnectorsRoutes } from "../custom-connectors";
-import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
-import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
+import { mcpConnectorsRoutes } from "../mcp-connectors";
 import { createBddApi } from "./helpers/api-bdd";
 import {
   createConnectorBddApi,
@@ -24,13 +14,7 @@ import {
   catalogWithManualConnector,
   createPublicConnectorCatalog,
 } from "./helpers/public-connector-catalog";
-import { readFile, readdir } from "node:fs/promises";
-import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
-import { signSandboxJwtForTests } from "../../auth/tokens";
-import { mcpConnectorsRoutes } from "../mcp-connectors";
-import { immutableConnectorRuntimeSelection } from "../../services/connector-catalog-entries.service";
 import {
   builtinConnectorsSearchContract,
   builtinConnectorManualGrantContract,
@@ -45,310 +29,36 @@ import { connectorCatalogRoutes } from "../connector-catalog";
 import { connectorOverviewRoutes } from "../connector-overview";
 import { onboardingSourcesRoutes } from "../onboarding-sources";
 import { onboardingWorkflowConnectorsRoutes } from "../onboarding-workflow-connectors";
-import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
-import { PGlite } from "@electric-sql/pglite";
-import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
-import { btree_gin } from "@electric-sql/pglite/contrib/btree_gin";
-import { drizzle } from "drizzle-orm/pglite";
-import {
-  afterAll,
-  afterEach,
-  aroundEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import {
-  runnersJobClaimContract,
-  storedExecutionContextSchema,
-} from "@okouai/api-contracts/contracts/runners";
-import { runnersRoutes } from "../runners";
-import { OFFICIAL_RUNNER_TOKEN_PREFIX } from "@okouai/api-contracts/contracts/runner-primitives";
-import { connectorCatalogExecutableCapabilityDigest } from "../../services/connector-catalog-compatibility.service";
-import { connectorCatalogSource } from "../../services/connector-catalog-source";
-import { currentConnectorCatalogValidatorIdentity } from "../../services/connector-catalog-validator-authority";
-import {
-  connectorCatalogArtifactConnectorSchema,
   connectorCatalogArtifactSchema,
   CONNECTOR_CATALOG_ACTIVE_KEY,
   type ConnectorCatalogArtifact,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/connector-catalog-artifact";
-import { getApiTestMocks, resetApiTestMocks } from "../../../__tests__/mocks";
+import { getApiTestMocks } from "../../../__tests__/mocks";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { accept, testContext } from "../../../__tests__/test-context";
-import { clearMockedEnv, mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
-import { flushWaitUntilForTest, waitUntil } from "../../context/wait-until";
-import { db$, writeDb$ } from "../../external/db";
-import type {
-  ClerkOrganizationMembership,
-  ClerkPaginated,
-} from "../../external/clerk";
-import { createStore } from "ccstate";
-import { createDeferredPromise, settle } from "../../utils";
 import { builtinConnectorsRoutes } from "../connectors";
-import { createRouteMocks, createFixtureTracker } from "./helpers/route-test";
-import { createExecutionStorageObjects } from "../../services/execution-storage.service";
+import { createRouteMocks } from "./helpers/route-test";
 import {
   API_TEST_CONNECTOR_CATALOG,
-  mockApiTestConnectorProviderConfiguration,
+  useLegacyConnectorCatalogPayloadFixture,
 } from "../../../test-fixtures/connector-catalog";
 
-const binding = vi.hoisted(() => {
-  return {
-    database: undefined as ReturnType<typeof drizzle> | undefined,
-  };
-});
-vi.mock("../../../lib/db", () => {
-  return {
-    db: () => {
-      if (!binding.database) {
-        throw new Error("Lifecycle DB is not bound");
-      }
-      return binding.database;
-    },
-    closeDbPool: () => {
-      return Promise.resolve();
-    },
-  };
-});
-let engine: PGlite | undefined;
-let statements: string[] = [];
-interface EngineTrace {
-  readonly name: string;
-  readonly engine: PGlite;
-  readonly signal: AbortSignal;
-  readonly events: string[];
-  setupFailureObserved: boolean;
-}
-const engineTraces: EngineTrace[] = [];
-let caseTrace: EngineTrace | undefined;
+import { describe, expect, it } from "vitest";
+import { replaceRunnerJobWithLegacyConnectorBaselineFixture } from "../../../test-fixtures/legacy-runner-job-context";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 
-// Register FIRST: locked Vitest's stack order runs this AFTER testContext's
-// owner abort/shared detached cleanup. Never flush abort-dependent work first.
-afterEach(async () => {
-  const ownedEngine = engine;
-  const trace = caseTrace;
-  const drained = await settle(
-    (async () => {
-      const beforeFlush = [...(trace?.events ?? [])];
-      await flushWaitUntilForTest();
-      trace?.events.push("waitUntil-drained");
-      // Diagnostics must not skip drainage if their own assertion fails.
-      if (trace) {
-        assert.equal(trace.signal.aborted, true);
-        assert.deepEqual(beforeFlush, ["owner-aborted", "native-drained"]);
-      }
-    })(),
-  );
-  binding.database = undefined;
-  const released = await settle(ownedEngine?.close() ?? Promise.resolve());
-  if (released.ok) {
-    trace?.events.push("closed");
-  }
-  engine = undefined;
-  caseTrace = undefined;
-  clearMockedEnv();
-  resetApiTestMocks();
-  server.resetHandlers();
-  if (!drained.ok) {
-    throw drained.error;
-  }
-  if (!released.ok) {
-    throw released.error;
-  }
-});
 const context = testContext();
 const routeMocks = createRouteMocks(context);
 
-const migrationDir = new URL(
-  "../../../../../../packages/db/src/migrations/",
-  import.meta.url,
-);
-
-beforeAll(() => {
-  server.listen({ onUnhandledRequest: "error" });
-  syncBuiltinESMExports();
-});
-
-aroundEach(async (runTest) => {
-  await withSecretKmsClientForTest(createApiTestKmsClient(), runTest);
-});
-
-beforeEach(async () => {
-  resetApiTestMocks();
-  mockEnv("SECRETS_KMS_KEY_ID", "alias/okou-secrets-test");
-  engine = new PGlite({ extensions: { pgcrypto, btree_gin } });
-  const ownedEngine = engine;
-  const signal = context.signal;
-  const trace: EngineTrace = {
-    name: expect.getState().currentTestName ?? "Missing test name",
-    engine: ownedEngine,
-    signal,
-    events: [],
-    setupFailureObserved: false,
-  };
-  caseTrace = trace;
-  engineTraces.push(trace);
-  const aborted = createDeferredPromise<void>(signal);
-  // Existing shared trackers own real work that cannot finish until abort.
-  // Native SQL must finish while this case's engine is still alive.
-  waitUntil(
-    aborted.promise.then(
-      () => {
-        throw new Error("Cleanup probe unexpectedly resolved before abort");
-      },
-      async (error: unknown) => {
-        assert.equal(signal.aborted, true);
-        assert.equal(error, signal.reason);
-        trace.events.push("owner-aborted");
-        assert.deepEqual((await ownedEngine.query("SELECT 1 AS alive")).rows, [
-          { alive: 1 },
-        ]);
-        trace.events.push("native-drained");
-      },
-    ),
-  );
-  if (trace.name.endsWith("engine closes after initial SQL failure")) {
-    const failure = await settle(
-      ownedEngine.exec("CREATE TABLE invalid_initial_sql ("),
-    );
-    if (!failure.ok) {
-      trace.setupFailureObserved = true;
-      throw failure.error;
-    }
-    throw new Error("The invalid initial SQL unexpectedly succeeded");
-  }
-  const files = (await readdir(migrationDir))
-    .filter((name) => {
-      return /^\d+.*\.sql$/.test(name);
-    })
-    .sort();
-  const journal = JSON.parse(
-    await readFile(new URL("meta/_journal.json", migrationDir), "utf8"),
-  ) as { entries: { tag: string; when: number }[] };
-  await engine.exec(
-    "CREATE SCHEMA drizzle; CREATE TABLE drizzle.__drizzle_migrations (id serial PRIMARY KEY, hash text NOT NULL, created_at bigint)",
-  );
-  for (const name of files) {
-    let sql = await readFile(new URL(name, migrationDir), "utf8");
-    // The baseline declares vector but has no vector columns or indexes. The
-    // unused extension declaration is the only omitted baseline statement;
-    // all table, index, FK and CHECK DDL and subsequent migrations run intact.
-    if (name === "1078_baseline.sql") {
-      sql = sql
-        .replace(
-          "CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;",
-          "",
-        )
-        .replace(
-          "COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access methods';",
-          "",
-        );
-    }
-    // pgstattuple is metadata inspection only (1178), absent in PGlite; no
-    // table/index/constraint or lifecycle operation depends on that extension.
-    sql = sql.replace(
-      "CREATE EXTENSION IF NOT EXISTS pgstattuple WITH SCHEMA public;",
-      "",
-    );
-    if (sql.includes("-- vm0:non-transactional")) {
-      for (const statement of sql.split("--> statement-breakpoint")) {
-        await engine.exec(statement);
-      }
-    } else if (/\b(?:CREATE|DROP) (?:UNIQUE )?INDEX CONCURRENTLY\b/.test(sql)) {
-      if (sql.includes("$$")) {
-        throw new Error(
-          "Concurrent migration requires SQL-aware statement boundaries",
-        );
-      }
-      for (const statement of sql.split(";")) {
-        if (statement.trim()) {
-          await engine.exec(statement);
-        }
-      }
-    } else {
-      const migration = await settle(engine.exec(sql));
-      if (!migration.ok) {
-        throw new Error(`Lifecycle migration failed: ${name}`, {
-          cause: migration.error,
-        });
-      }
-    }
-    const metadata = journal.entries.find((entry) => {
-      return `${entry.tag}.sql` === name;
-    });
-    if (!metadata) {
-      throw new Error(`Missing migration journal entry: ${name}`);
-    }
-    await engine.query(
-      "INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)",
-      [
-        createHash("sha256")
-          .update(await readFile(new URL(name, migrationDir)))
-          .digest("hex"),
-        metadata.when,
-      ],
-    );
-  }
-  await engine.exec("SET search_path TO public");
-  statements = [];
-  binding.database = drizzle(engine, {
-    logger: {
-      logQuery(query) {
-        statements.push(query);
-      },
-    },
-  });
-  mockApiTestConnectorProviderConfiguration();
-});
-
-afterAll(() => {
-  server.close();
-  syncBuiltinESMExports();
-  for (const trace of engineTraces) {
-    assert.deepEqual(trace.events, [
-      "owner-aborted",
-      "native-drained",
-      "waitUntil-drained",
-      "closed",
-    ]);
-    assert.equal(trace.engine.closed, true);
-  }
-  const failedSetup = engineTraces.find((trace) => {
-    return trace.name.endsWith("engine closes after initial SQL failure");
-  });
-  if (failedSetup) {
-    assert.equal(failedSetup.setupFailureObserved, true);
-  }
-});
-
-function release(
-  version: string,
-  label: string,
-  runtimeChange = false,
-  entrySlug?: string,
-  skillMetadataChange = false,
-) {
+function release(version: string, label: string, entrySlug?: string) {
   const artifact = connectorCatalogArtifactSchema.parse(
     structuredClone(API_TEST_CONNECTOR_CATALOG_ARTIFACT),
   );
   artifact.catalogVersion = version;
-  if (skillMetadataChange) {
-    for (const entry of artifact.connectors) {
-      if (entry.skill.kind === "bundled") {
-        entry.skill.size += 1;
-        entry.skill.archiveSize += 1;
-        entry.skill.fileCount += 1;
-      }
-    }
-  }
   const first =
     entrySlug === undefined
       ? artifact.connectors[0]
@@ -359,13 +69,6 @@ function release(
     throw new Error("Missing fixed catalog connector");
   }
   first.label = label;
-  const method = first.authMethods[0];
-  if (!method) {
-    throw new Error("Missing runtime method");
-  }
-  if (runtimeChange) {
-    method.label = label;
-  }
   return publication(artifact);
 }
 
@@ -430,787 +133,166 @@ async function directory(candidate: ReturnType<typeof release>) {
 }
 
 async function sync() {
-  return await setupApp({ context, routes: cronConnectorCatalogRoutes })(
-    cronConnectorCatalogContract,
-  ).sync({ headers: { authorization: "Bearer test-cron-secret" } });
-}
-
-// Only this per-case engine can construct missing immutable rows/captured
-// generations. Exercise the real authenticated MCP consumer, not a test route.
-async function ownedMcpRun(candidate: ReturnType<typeof release>) {
-  if (!engine) {
-    throw new Error("Missing case engine");
-  }
-  const connector = candidate.artifact.connectors[0];
-  const method = connector?.authMethods[0];
-  if (!connector?.mcp || !method) {
-    throw new Error("Missing fixed MCP connector");
-  }
-  const userId = `catalog-user-${randomUUID()}`;
-  const orgId = `catalog-org-${randomUUID()}`;
-  const agentId = randomUUID();
-  const sessionId = randomUUID();
-  const runId = randomUUID();
-  const connectionId = randomUUID();
-  await engine.query(
-    "INSERT INTO agents (id, org_id, owner, name) VALUES ($1, $2, $3, 'catalog-mcp')",
-    [agentId, orgId, userId],
-  );
-  await engine.query(
-    "INSERT INTO agent_sessions (id, user_id, org_id, agent_id) VALUES ($1, $2, $3, $4)",
-    [sessionId, userId, orgId, agentId],
-  );
-  await engine.query(
-    "INSERT INTO agent_runs (id, status, prompt, user_id, org_id, runner_group, session_id) VALUES ($1, 'running', 'catalog lifecycle', $2, $3, 'catalog-n4', $4)",
-    [runId, userId, orgId, sessionId],
-  );
-  await engine.query(
-    "INSERT INTO connectors (id, auth_method, user_id, org_id, storage_version, connector_slug) VALUES ($1, $2, $3, $4, 1, $5)",
-    [connectionId, method.id, userId, orgId, connector.slug],
-  );
-  return { userId, orgId, runId, connectionId, connectorSlug: connector.slug };
-}
-
-async function mcpDirectory(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
-  // Real agent tokens still resolve the owner's organization membership.
-  // Bound only this owned actor; unrelated users receive a valid empty list.
-  context.mocks.clerk.users.getOrganizationMembershipList.mockImplementation(
-    (params: unknown): Promise<ClerkPaginated<ClerkOrganizationMembership>> => {
-      const matches =
-        typeof params === "object" &&
-        params !== null &&
-        "userId" in params &&
-        params.userId === actor.userId;
-      return Promise.resolve({
-        totalCount: matches ? 1 : 0,
-        data: matches
-          ? [
-              {
-                id: `membership-${actor.userId}`,
-                role: "org:member",
-                createdAt: now(),
-                organization: {
-                  id: actor.orgId,
-                  name: "Owned catalog organization",
-                  slug: null,
-                  imageUrl: "",
-                  hasImage: false,
-                  createdAt: now(),
-                },
-                publicUserData: { userId: actor.userId },
-              },
-            ]
-          : [],
-      });
-    },
-  );
-  const seconds = Math.floor(now() / 1000);
-  const token = signSandboxJwtForTests({
-    scope: "okou",
-    userId: actor.userId,
-    orgId: actor.orgId,
-    runId: actor.runId,
-    capabilities: ["connector:read"],
-    builtinConnectorSourceIds: { [actor.connectorSlug]: actor.connectionId },
-    iat: seconds,
-    exp: seconds + 3600,
+  const app = await setupApp({
+    context,
+    routes: cronConnectorCatalogRoutes,
+    isolatePg: true,
   });
-  return await setupApp({ context, routes: mcpConnectorsRoutes })(
+  return await app(cronConnectorCatalogContract).sync({
+    headers: { authorization: "Bearer test-cron-secret" },
+  });
+}
+
+async function admittedMcpRun() {
+  const bdd = createBddApi(context);
+  const connectors = createConnectorBddApi(context);
+  const runs = createRunsApi(context);
+  const actor = bdd.user();
+  bdd.acceptAgentStorageWrites();
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  const runnerGroup = runs.configureRunnerGroup();
+  await runs.grantProEntitlement(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
+  const agent = await bdd.createAgent(actor, {
+    displayName: "Catalog MCP reader",
+  });
+  const connection = await connectors.connectManualGrant(
+    actor,
+    "manual-mcp",
+    "api-token",
+    { apiKey: "catalog-mcp-key" },
+    agent.agentId,
+  );
+  await runs.enableAgentConnectors(actor, agent.agentId, ["manual-mcp"]);
+  const run = await runs.createThreadRun(actor, {
+    agentId: agent.agentId,
+    prompt: "Discover the admitted MCP connection",
+  });
+  await runs.heartbeatRunner(runnerGroup);
+  const claim = await runs.claimRunnerJob(run.runId);
+  const token = claim.platformEnvironment.OKOU_TOKEN;
+  if (!token) {
+    throw new Error("Expected a claimed Run's Okou token");
+  }
+  const client = setupApp({ context, routes: mcpConnectorsRoutes })(
     mcpConnectorsContract,
-  ).list({
-    headers: { authorization: `Bearer ${token}` },
-  });
+  );
+  const headers = { authorization: `Bearer ${token}` };
+  return { actor, connection, run, runs, client, headers };
 }
 
-describe("immutable connector catalog real-entry lifecycle", () => {
-  it.fails("engine closes after initial SQL failure", () => {
-    expect.unreachable(
-      "The deliberately failing initial SQL must prevent the body",
-    );
-  });
-  it.todo("n1: rejects downloaded bytes whose hash differs from the pointer");
-  it("n2: binds all existing gateways to the case engine and accepts the publisher-shaped digest through cron", async () => {
-    if (!engine || !binding.database) {
-      throw new Error("Missing case engine");
-    }
-    const owner = createStore();
-    expect(owner.get(db$)).toBe(binding.database);
-    expect(owner.set(writeDb$)).toBe(binding.database);
+describe("immutable connector catalog publication", () => {
+  it("publishes the supplied catalog and keeps repeated publication idempotent", async () => {
     const first = release("2099-01-01.first", "First lifecycle catalog");
     serve(first);
-    statements = [];
-    const started = performance.now();
-    const response = await sync();
-    const durationMs = performance.now() - started;
-    process.stdout.write(
-      `P3_PGLITE_FULL_SYNC ${JSON.stringify({
-        source: "real cron / per-case PGlite / controlled full catalog",
-        connectors: first.artifact.connectors.length,
-        statements: statements.length,
-        durationMs,
-        entryInserts: statements.filter((query) => {
-          return query.startsWith('insert into "connector_catalog_entries"');
-        }).length,
-        entrySelects: statements.filter((query) => {
-          return query.includes('from "connector_catalog_entries"');
-        }).length,
-      })}\n`,
-    );
-    expect(response.status).toBe(200);
+    const response = await accept(sync(), [200]);
     expect(response.body).toStrictEqual({
       outcome: "accepted",
       failureCode: null,
     });
-    expect(
-      (await engine.query("SELECT hash FROM connector_catalog")).rows,
-    ).toStrictEqual([{ hash: first.hash }]);
-    const expectedColumns = first.artifact.connectors
-      .map((entry) => {
-        return { slug: entry.slug, payload: entry };
-      })
-      .sort((a, b) => {
-        return a.slug.localeCompare(b.slug);
-      });
-    const readColumns = async () => {
-      if (!engine) {
-        throw new Error("Missing case engine");
-      }
-      return (
-        await engine.query(
-          "SELECT slug, payload FROM connector_catalog_entries WHERE hash = $1 ORDER BY slug",
-          [first.hash],
-        )
-      ).rows;
-    };
-    await expect(readColumns()).resolves.toStrictEqual(expectedColumns);
-    // A retry trusts previously published entries instead of rewriting them.
-    await engine.exec("DELETE FROM connector_catalog");
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    await expect(readColumns()).resolves.toStrictEqual(expectedColumns);
     await directory(first);
+    const repeated = await accept(sync(), [200]);
+    expect(repeated.body).toStrictEqual({
+      outcome: "unchanged",
+      failureCode: null,
+    });
     const next = release("2099-01-01.next", "Next lifecycle catalog");
     serve(next);
-    const changed = await sync();
-    expect(changed.status).toBe(200);
+    const changed = await accept(sync(), [200]);
     expect(changed.body).toStrictEqual({
       outcome: "accepted",
       failureCode: null,
     });
-    expect(
-      (await engine.query("SELECT hash FROM connector_catalog")).rows,
-    ).toStrictEqual([{ hash: next.hash }]);
-    expect(
-      (
-        await engine.query(
-          "SELECT DISTINCT hash FROM connector_catalog_entries WHERE hash = $1",
-          [next.hash],
-        )
-      ).rows,
-    ).toStrictEqual([{ hash: next.hash }]);
     await directory(next);
-    const mcpActor = await ownedMcpRun(next);
-    expect((await mcpDirectory(mcpActor)).body).toMatchObject({
-      connectors: [{ displayName: "Next lifecycle catalog" }],
-    });
-    expect((await sync()).body).toMatchObject({ outcome: "unchanged" });
-    // A database without a pointer or entries republishes the current
-    // publication. This is per-case fixture state, never a preview write.
-    await engine.exec(
-      "DELETE FROM connector_catalog; DELETE FROM connector_catalog_entries",
-    );
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    expect(
-      (await engine.query("SELECT hash FROM connector_catalog")).rows,
-    ).toStrictEqual([{ hash: next.hash }]);
-    expect((await sync()).body).toMatchObject({ outcome: "unchanged" });
-    const failed = release("2099-01-01.failed", "Prepared retry catalog");
-    const blocked = failed.artifact.connectors[1];
-    if (!blocked) {
-      throw new Error("Missing partial preparation fixture");
-    }
-    await engine.exec(
-      `ALTER TABLE connector_catalog_entries ADD CONSTRAINT preparation_failure CHECK (hash <> '${failed.hash}' OR slug <> '${blocked.slug}')`,
-    );
-    serve(failed);
-    await expect(sync()).rejects.toThrow(
-      "Unknown response status 500 for GET /api/cron/sync-connector-catalog",
-    );
-    await directory(next);
-    expect((await mcpDirectory(mcpActor)).body).toMatchObject({
-      connectors: [{ displayName: "Next lifecycle catalog" }],
-    });
-    expect(
-      (await engine.query("SELECT hash FROM connector_catalog")).rows,
-    ).toStrictEqual([{ hash: next.hash }]);
-    expect(
-      (
-        await engine.query(
-          "SELECT count(*)::integer AS count FROM connector_catalog_entries WHERE hash = $1",
-          [failed.hash],
-        )
-      ).rows,
-      // Entries are written in bounded multi-row batches; the failing batch
-      // (this whole small catalog) publishes no entry.
-    ).toStrictEqual([{ count: 0 }]);
-    await engine.exec(
-      "ALTER TABLE connector_catalog_entries DROP CONSTRAINT preparation_failure",
-    );
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    expect(
-      (await engine.query("SELECT hash FROM connector_catalog")).rows,
-    ).toStrictEqual([{ hash: failed.hash }]);
-    await directory(failed);
-    expect((await mcpDirectory(mcpActor)).body).toMatchObject({
-      connectors: [{ displayName: "Prepared retry catalog" }],
-    });
-    expect(
-      (await engine.query("SELECT hash FROM connector_catalog")).rows,
-    ).toStrictEqual([{ hash: failed.hash }]);
-    const skill = failed.artifact.connectors.flatMap((entry) => {
-      return entry.skill.kind === "bundled" ? [entry.skill] : [];
-    })[0];
-    if (!skill) {
-      throw new Error("Missing fixed bundled skill");
-    }
-    const storage = (
-      await engine.query<{ id: string; head_version_id: string | null }>(
-        "SELECT id, head_version_id FROM storages WHERE org_id = $1 AND user_id = $2 AND name = $3",
-        [SYSTEM_ORG_ID, VOLUME_ORG_USER_ID, skill.storageName],
-      )
-    ).rows[0];
-    if (!storage) {
-      throw new Error("Cron did not register skill storage");
-    }
-    expect(storage.head_version_id).toBeNull();
-    const mounted = createExecutionStorageObjects([
-      {
-        orgId: SYSTEM_ORG_ID,
-        userId: VOLUME_ORG_USER_ID,
-        storageId: storage.id,
-        versionId: skill.versionId,
-        name: skill.storageName,
-        mountPath: "/skills/catalog-lifecycle",
-        mode: "readonly",
-      },
-    ]);
-    const prepared = await createStore().get(mounted.preparedMounts$);
-    expect(prepared).toHaveLength(1);
-    expect(prepared[0]).toMatchObject({
-      storageId: storage.id,
-      versionId: skill.versionId,
-      writeback: false,
-      archiveSize: skill.archiveSize,
-    });
-    const mount = prepared[0];
-    if (!mount || mount.writeback) {
-      throw new Error("Expected read-only exact skill mount");
-    }
-    expect(mount.archiveUrl).toStrictEqual(expect.any(String));
-    // Already prepared entries are the receipt. This constraint rejects any
-    // attempted reinsertion while allowing existing rows to remain untouched.
-    await engine.exec(`
-      ALTER TABLE connector_catalog_entries ADD CONSTRAINT no_reprepare
-        CHECK (hash <> '${failed.hash}') NOT VALID;
-      DELETE FROM connector_catalog;
-    `);
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    await directory(failed);
-    expect(
-      (await engine.query("SELECT hash FROM connector_catalog")).rows,
-    ).toStrictEqual([{ hash: failed.hash }]);
   });
-  it("keeps serving the previous generation when a later entry batch fails and completes the partial generation on retry", async () => {
-    if (!engine) {
-      throw new Error("Missing case engine");
-    }
-    const previous = release("2099-01-04.previous", "Previous generation");
-    serve(previous);
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    const mcpActor = await ownedMcpRun(previous);
 
-    // Entries are inserted in batches of at most 100. Clones of one connector,
-    // each owning renamed storage, push the generation past a single batch so
-    // a failure can strike the second.
-    const base = release("2099-01-04.partial", "Partial generation");
-    const template = base.artifact.connectors.find((entry) => {
-      return entry.skill.kind === "none" && entry.mcp === undefined;
+  it("serves a complete catalog after concurrent publication requests", async () => {
+    const released = release("2099-01-01.competitors", "Concurrent catalog");
+    // Use public methods with no platform OAuth configuration or feature gate.
+    const candidate = publication({
+      ...released.artifact,
+      connectors: released.artifact.connectors.filter((connector) => {
+        return ["public-mcp", "manual-mcp", "openai"].includes(connector.slug);
+      }),
     });
-    if (!template) {
-      throw new Error("Missing skill-free HTTP catalog connector");
-    }
-    const storageNames = [
-      ...new Set(
-        template.authMethods.flatMap((method) => {
-          return [...method.storage.secrets, ...method.storage.variables];
-        }),
-      ),
-    ];
-    const artifact = structuredClone(base.artifact);
-    while (artifact.connectors.length <= 110) {
-      const suffix = artifact.connectors.length;
-      let serialized = JSON.stringify({
-        ...template,
-        firewall: { kind: "none" },
-      });
-      for (const name of storageNames) {
-        serialized = serialized.replaceAll(
-          new RegExp(`\\b${name}\\b`, "gu"),
-          `${name}_CLONE_${suffix}`,
-        );
-      }
-      artifact.connectors.push(
-        connectorCatalogArtifactConnectorSchema.parse({
-          ...JSON.parse(serialized),
-          slug: `partial-clone-${suffix}`,
-        }),
-      );
-    }
-    const candidate = publication(artifact);
-    const firstBatch = artifact.connectors.slice(0, 100).map((entry) => {
-      return entry.slug;
-    });
-    const blocked = artifact.connectors[105]?.slug;
-    if (!blocked) {
-      throw new Error("Missing second-batch entry");
-    }
-    const readCandidateEntries = async () => {
-      if (!engine) {
-        throw new Error("Missing case engine");
-      }
-      return (
-        await engine.query<{ slug: string; payload: unknown }>(
-          'SELECT slug, payload FROM connector_catalog_entries WHERE hash = $1 ORDER BY slug COLLATE "C"',
-          [candidate.hash],
-        )
-      ).rows;
-    };
-    await engine.exec(
-      `ALTER TABLE connector_catalog_entries ADD CONSTRAINT second_batch_failure CHECK (hash <> '${candidate.hash}' OR slug <> '${blocked}')`,
-    );
     serve(candidate);
-    await expect(sync()).rejects.toThrow(
-      "Unknown response status 500 for GET /api/cron/sync-connector-catalog",
-    );
-    // Only the first batch exists, unreferenced; readers keep the previous one.
-    const partial = await readCandidateEntries();
-    expect(
-      partial.map((entry) => {
-        return entry.slug;
-      }),
-    ).toStrictEqual([...firstBatch].sort());
-    expect(
-      (await engine.query("SELECT hash FROM connector_catalog")).rows,
-    ).toStrictEqual([{ hash: previous.hash }]);
-    await directory(previous);
-    expect((await mcpDirectory(mcpActor)).body).toMatchObject({
-      connectors: [{ displayName: "Previous generation" }],
+    // Initialize the selected database before issuing competing requests.
+    const app = await setupApp({
+      context,
+      routes: cronConnectorCatalogRoutes,
+      isolatePg: true,
     });
-
-    // The retry reuses the prepared first batch: any reinsertion of those
-    // slugs would violate this constraint, which existing rows bypass.
-    const firstBatchList = firstBatch
-      .map((slug) => {
-        return `'${slug}'`;
-      })
-      .join(", ");
-    await engine.exec(`
-      ALTER TABLE connector_catalog_entries DROP CONSTRAINT second_batch_failure;
-      ALTER TABLE connector_catalog_entries ADD CONSTRAINT no_reprepare
-        CHECK (hash <> '${candidate.hash}' OR slug NOT IN (${firstBatchList})) NOT VALID;
-    `);
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    expect(
-      (await engine.query("SELECT hash FROM connector_catalog")).rows,
-    ).toStrictEqual([{ hash: candidate.hash }]);
-    const completed = await readCandidateEntries();
-    expect(completed).toStrictEqual(
-      artifact.connectors
-        .map((entry) => {
-          return { slug: entry.slug, payload: entry };
-        })
-        .sort((left, right) => {
-          return left.slug < right.slug ? -1 : 1;
-        }),
-    );
-    expect(
-      completed.filter((entry) => {
-        return firstBatch.includes(entry.slug);
-      }),
-    ).toStrictEqual(partial);
-    expect(
-      (await engine.query("SELECT hash FROM connector_catalog")).rows,
-    ).toStrictEqual([{ hash: candidate.hash }]);
-    await directory(candidate);
-    expect((await mcpDirectory(mcpActor)).body).toMatchObject({
-      connectors: [{ displayName: "Partial generation" }],
-    });
-  });
-  it("reuses registered skill metadata without comparing the catalog copy", async () => {
-    if (!engine) {
-      throw new Error("Missing case engine");
-    }
-    const first = release("2099-01-02.first", "Original skill metadata");
-    serve(first);
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    const skill = first.artifact.connectors.flatMap((entry) => {
-      return entry.skill.kind === "bundled" ? [entry.skill] : [];
-    })[0];
-    if (!skill) {
-      throw new Error("Missing bundled skill");
-    }
-    const changed = release(
-      "2099-01-02.changed",
-      "Reused storage metadata",
-      false,
-      undefined,
-      true,
-    );
-    serve(changed);
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    await directory(changed);
-    const storage = (
-      await engine.query<{ id: string }>(
-        "SELECT id FROM storages WHERE org_id = $1 AND user_id = $2 AND name = $3",
-        [SYSTEM_ORG_ID, VOLUME_ORG_USER_ID, skill.storageName],
-      )
-    ).rows[0];
-    if (!storage) {
-      throw new Error("Missing registered skill storage");
-    }
-    const mounted = createExecutionStorageObjects([
-      {
-        orgId: SYSTEM_ORG_ID,
-        userId: VOLUME_ORG_USER_ID,
-        storageId: storage.id,
-        versionId: skill.versionId,
-        name: skill.storageName,
-        mountPath: "/skills/registered-metadata",
-        mode: "readonly",
-      },
+    const client = app(cronConnectorCatalogContract);
+    const responses = await Promise.all([
+      accept(
+        client.sync({ headers: { authorization: "Bearer test-cron-secret" } }),
+        [200],
+      ),
+      accept(
+        client.sync({ headers: { authorization: "Bearer test-cron-secret" } }),
+        [200],
+      ),
     ]);
-    const mounts = await createStore().get(mounted.preparedMounts$);
-    expect(mounts).toMatchObject([
-      { versionId: skill.versionId, archiveSize: skill.archiveSize },
-    ]);
-    // The owning engine can construct corruption that no public API permits.
-    // Wrong storage identity must still fail at the registration boundary.
-    await engine.query(
-      "UPDATE storage_versions SET s3_key = 'wrong-storage-path' WHERE id = $1",
-      [skill.versionId],
-    );
-    const wrongIdentity = release("2099-01-02.wrong", "Wrong identity");
-    serve(wrongIdentity);
-    const rejected = await sync();
-    expect(rejected.body).toMatchObject({ outcome: "rejected" });
-    await directory(changed);
-  });
-  it("n3: real cron competitors publish one complete generation with switch-only wakeups", async () => {
-    if (!engine) {
-      throw new Error("Missing case engine");
-    }
-    const first = release("2099-01-01.competitors", "Concurrent catalog");
-    const connector = first.artifact.connectors[0];
-    if (!connector) {
-      throw new Error("Missing fixed connector");
-    }
-    const agentId = randomUUID();
-    const sessionId = randomUUID();
-    const runId = randomUUID();
-    await engine.query(
-      "INSERT INTO agents (id, org_id, owner, name) VALUES ($1, 'catalog-lifecycle-org', 'catalog-lifecycle-user', 'catalog-lifecycle')",
-      [agentId],
-    );
-    await engine.query(
-      "INSERT INTO agent_sessions (id, user_id, org_id, agent_id) VALUES ($1, 'catalog-lifecycle-user', 'catalog-lifecycle-org', $2)",
-      [sessionId, agentId],
-    );
-    await engine.query(
-      "INSERT INTO agent_runs (id, status, prompt, user_id, org_id, runner_group, session_id) VALUES ($1, 'running', 'catalog lifecycle', 'catalog-lifecycle-user', 'catalog-lifecycle-org', 'catalog-n3', $2)",
-      [runId, sessionId],
-    );
-    await engine.query(
-      "INSERT INTO connectors (auth_method, user_id, org_id, storage_version, connector_slug) VALUES ('token', 'catalog-lifecycle-user', 'catalog-lifecycle-org', 1, $1)",
-      [connector.slug],
-    );
-    const caseEngine = engine;
-    let switchedHash: string | undefined;
-    context.mocks.ably.batchPublish.mockImplementation(async (spec) => {
-      const current = (
-        await caseEngine.query<{ hash: string }>(
-          "SELECT hash FROM connector_catalog",
-        )
-      ).rows[0];
-      // Wakeups follow the committed pointer switch of their own attempt.
-      if (!current || current.hash !== switchedHash) {
-        throw new Error("Notification preceded committed acceptance");
-      }
-      expect(spec.channels).toStrictEqual(["runner-group:catalog-n3"]);
-      expect(spec.messages).toHaveLength(1);
-      expect(JSON.parse(String(spec.messages[0]?.data))).toStrictEqual({
-        runId,
-        target: { kind: "builtin", connectorSlug: connector.slug },
-      });
-      return {
-        successCount: spec.channels.length,
-        failureCount: 0,
-        results: spec.channels.map((channel) => {
-          return {
-            channel,
-            messageId: "catalog-n3-ack",
-            serials: spec.messages.map(() => {
-              return null;
-            }),
-          };
-        }),
-      };
-    });
-    // Both competitors complete. The last writer wins, so the later one either
-    // republishes the same generation without switching or observes it.
-    function expectCompetitorsComplete(
-      responses: readonly Awaited<ReturnType<typeof sync>>[],
-    ): void {
-      const outcomes = responses.map((response) => {
-        if (response.status !== 200) {
-          throw new Error("Concurrent cron request failed");
-        }
+    expect(
+      responses.map((response) => {
         return response.body.outcome;
-      });
-      expect(outcomes).toContain("accepted");
-      for (const outcome of outcomes) {
-        expect(["accepted", "unchanged"]).toContain(outcome);
-      }
+      }),
+    ).toContain("accepted");
+    for (const response of responses) {
+      expect(["accepted", "unchanged"]).toContain(response.body.outcome);
+      expect(response.body.failureCode).toBeNull();
     }
-    async function readEntryCount(hash: string): Promise<number> {
-      const rows = (
-        await caseEngine.query<{ count: number }>(
-          "SELECT count(*)::integer AS count FROM connector_catalog_entries WHERE hash = $1",
-          [hash],
-        )
-      ).rows;
-      return rows[0]?.count ?? 0;
-    }
-    serve(first);
-    switchedHash = first.hash;
-    const accepted = await Promise.all([sync(), sync()]);
-    expectCompetitorsComplete(accepted);
-    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(1);
-    expect(
-      (await engine.query("SELECT hash FROM connector_catalog")).rows,
-    ).toStrictEqual([{ hash: first.hash }]);
-    await expect(readEntryCount(first.hash)).resolves.toBe(
-      first.artifact.connectors.length,
-    );
-    // Same-hash idempotence: a repeated publication is unchanged, rewrites no
-    // entry and repeats no wakeups.
-    await engine.exec(
-      `ALTER TABLE connector_catalog_entries ADD CONSTRAINT no_rewrite CHECK (hash <> '${first.hash}') NOT VALID`,
-    );
-    expect((await sync()).body).toMatchObject({ outcome: "unchanged" });
-    await engine.exec(
-      "ALTER TABLE connector_catalog_entries DROP CONSTRAINT no_rewrite",
-    );
-    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(1);
-    const concurrent = release(
-      "2099-01-01.same-baseline",
-      "Competing runtime update",
-      true,
-    );
-    serve(concurrent);
-    switchedHash = concurrent.hash;
-    const competed = await Promise.all([sync(), sync()]);
-    expectCompetitorsComplete(competed);
-    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(2);
-    expect(
-      (await engine.query("SELECT hash FROM connector_catalog")).rows,
-    ).toStrictEqual([{ hash: concurrent.hash }]);
-    await expect(readEntryCount(concurrent.hash)).resolves.toBe(
-      concurrent.artifact.connectors.length,
-    );
-    const next = release(
-      "2099-01-01.changed",
-      "Changed concurrent catalog",
-      true,
-    );
-    serve(next);
-    switchedHash = next.hash;
-    // A pointer-transaction failure leaves the previous pointer serving, with
-    // the new entries prepared but unreferenced.
-    await engine.exec(
-      `ALTER TABLE connector_catalog ADD CONSTRAINT pointer_failure CHECK (hash <> '${next.hash}') NOT VALID`,
-    );
-    await expect(sync()).rejects.toThrow(
-      "Unknown response status 500 for GET /api/cron/sync-connector-catalog",
+    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+    const listed = await accept(
+      setupApp({ context, routes: connectorCatalogRoutes })(
+        connectorCatalogContract,
+      ).list({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
     );
     expect(
-      (await engine.query("SELECT hash FROM connector_catalog")).rows,
-    ).toStrictEqual([{ hash: concurrent.hash }]);
-    await expect(readEntryCount(next.hash)).resolves.toBe(
-      next.artifact.connectors.length,
+      listed.body.connectors
+        .map((connector) => {
+          return connector.slug;
+        })
+        .sort(),
+    ).toStrictEqual(
+      candidate.artifact.connectors
+        .map((connector) => {
+          return connector.slug;
+        })
+        .sort(),
     );
-    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(2);
-    await engine.exec(
-      "ALTER TABLE connector_catalog DROP CONSTRAINT pointer_failure",
-    );
-    context.mocks.ably.batchPublish.mockRejectedValueOnce(
-      new Error("Controlled realtime boundary unavailable"),
-    );
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    expect(
-      (await engine.query("SELECT hash FROM connector_catalog")).rows,
-    ).toStrictEqual([{ hash: next.hash }]);
-    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(3);
-    expect((await sync()).body).toMatchObject({ outcome: "unchanged" });
-    expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(3);
+    await directory(candidate);
   });
-  it("n4: real MCP consumer follows hash switches while captured entries retain their hash", async () => {
-    const first = release("2099-01-02.old", "Old MCP catalog");
-    const next = release("2099-01-02.new", "New MCP catalog");
+
+  it("serves the current MCP descriptor to an admitted Run after publication changes", async () => {
+    const first = release("2099-01-02.old", "Old MCP catalog", "manual-mcp");
     serve(first);
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    const actor = await ownedMcpRun(first);
-    expect((await mcpDirectory(actor)).body).toMatchObject({
-      connectors: [
-        { displayName: "Old MCP catalog", connectionId: actor.connectionId },
-      ],
-    });
-    const slug = first.artifact.connectors[0]?.slug;
-    if (!slug) {
-      throw new Error("Missing MCP connector");
-    }
-    statements = [];
-    const captured = await createStore().get(
-      immutableConnectorRuntimeSelection({
-        requestedConnectorSlugs: [slug],
+    await accept(sync(), [200]);
+    const { actor, connection, run, runs, client, headers } =
+      await admittedMcpRun();
+    const original = await accept(client.list({ headers }), [200]);
+    expect(original.body.connectors).toContainEqual(
+      expect.objectContaining({
+        displayName: "Old MCP catalog",
+        connectionId: connection.id,
       }),
     );
-    expect(statements).toHaveLength(1);
-    expect(captured.catalogIdentity.hash).toBe(first.hash);
+    const next = release("2099-01-02.new", "New MCP catalog", "manual-mcp");
     serve(next);
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    expect((await mcpDirectory(actor)).body).toMatchObject({
-      connectors: [
-        { displayName: "New MCP catalog", connectionId: actor.connectionId },
-      ],
-    });
-    statements = [];
-    const retained = await createStore().get(
-      immutableConnectorRuntimeSelection({
-        requestedConnectorSlugs: [slug],
-        capturedCatalog: captured.capturedCatalog,
+    await accept(sync(), [200]);
+    const current = await accept(client.list({ headers }), [200]);
+    expect(current.body.connectors).toContainEqual(
+      expect.objectContaining({
+        displayName: "New MCP catalog",
+        connectionId: connection.id,
       }),
     );
-    expect(retained.connectors.get(slug)?.catalogConnector.label).toBe(
-      "Old MCP catalog",
-    );
-    expect(retained.catalogIdentity.hash).toBe(first.hash);
-    expect(statements).toHaveLength(1);
-    expect(statements[0]).not.toContain('from "connector_catalog"');
-    // A slug missing from the generation is omitted, as if never authorized.
-    const omitted = await createStore().get(
-      immutableConnectorRuntimeSelection({
-        requestedConnectorSlugs: [slug, "missing-entry"],
-        capturedCatalog: captured.capturedCatalog,
-      }),
-    );
-    expect([...omitted.connectors.keys()]).toStrictEqual([slug]);
-    serve(first);
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    expect((await mcpDirectory(actor)).body).toMatchObject({
-      connectors: [
-        { displayName: "Old MCP catalog", connectionId: actor.connectionId },
-      ],
-    });
-    const metadata = await createStore().get(
-      immutableConnectorRuntimeSelection({
-        requestedConnectorSlugs: [],
-        metadataConnectorSlugs: [slug],
-      }),
-    );
-    expect(metadata.connectors.size).toBe(0);
-    expect(metadata.serverFirewalls.has(slug)).toBeFalsy();
-    expect(metadata.serverFirewallMetadata.has(slug)).toBeTruthy();
-    expect(metadata.catalogIdentity.hash).toBe(first.hash);
-    const configured = await createStore().get(
-      immutableConnectorRuntimeSelection({
-        requestedConnectorSlugs: ["github"],
-      }),
-    );
-    clearMockedEnv();
-    const unconfigured = await createStore().get(
-      immutableConnectorRuntimeSelection({
-        requestedConnectorSlugs: ["github"],
-      }),
-    );
-    expect(unconfigured.catalogIdentity.hash).toBe(
-      configured.catalogIdentity.hash,
-    );
-    expect(unconfigured.catalogIdentity.capabilityDigest).not.toBe(
-      configured.catalogIdentity.capabilityDigest,
-    );
-    expect(unconfigured.connectors.get("github")?.methods.size).toBeLessThan(
-      configured.connectors.get("github")?.methods.size ?? 0,
-    );
-  });
-  it("n5: real MCP consumer omits a missing admitted entry, ignores unadmitted slugs and rejects a missing pointer", async () => {
-    if (!engine) {
-      throw new Error("Missing case engine");
-    }
-    const candidate = release("2099-01-03.missing", "Missing-row catalog");
-    serve(candidate);
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    const actor = await ownedMcpRun(candidate);
-    expect((await mcpDirectory(actor)).status).toBe(200);
-    const slug = candidate.artifact.connectors[0]?.slug;
-    if (!slug) {
-      throw new Error("Missing MCP connector");
-    }
-    const unknown = "unknown-catalog-connector";
-    const unknownActor = { ...actor, connectorSlug: unknown };
-    expect((await mcpDirectory(unknownActor)).body).toStrictEqual({
-      connectors: [],
-    });
-    const empty = await createStore().get(
-      immutableConnectorRuntimeSelection({
-        requestedConnectorSlugs: [],
-      }),
-    );
-    expect(empty.catalogIdentity.hash).toBe(candidate.hash);
-    expect(empty.connectors.size).toBe(0);
-    context.mocks.s3.send.mockClear();
-    statements = [];
-    await engine.query(
-      "DELETE FROM connector_catalog_entries WHERE hash = $1 AND slug = $2",
-      [candidate.hash, slug],
-    );
-    // A delisted connector cannot be disconnected; omit it like an
-    // unauthorized one instead of failing the directory.
-    expect((await mcpDirectory(actor)).body).toStrictEqual({
-      connectors: [],
-    });
-    expect((await mcpDirectory(unknownActor)).body).toStrictEqual({
-      connectors: [],
-    });
-    await engine.exec("DELETE FROM connector_catalog");
-    expect((await mcpDirectory(actor)).status).toBe(500);
-    await expect(
-      createStore().get(
-        immutableConnectorRuntimeSelection({
-          requestedConnectorSlugs: [],
-        }),
-      ),
-    ).rejects.toThrow("Immutable connector catalog current is missing");
-    expect(context.mocks.s3.send).not.toHaveBeenCalled();
-    const catalogReads = statements.filter((query) => {
-      return query.includes("connector_catalog");
-    });
-    // An unadmitted slug has no matching account row and reads no catalog.
-    expect(catalogReads).toHaveLength(3);
+    await runs.requestCancelRun(actor, run.runId, [200]);
   });
 });
 
-// These seven cases replace the old projection-reader suite. Only this lifecycle
-// project may publish/fault immutable current: every case owns its PGlite engine.
-// Storage corruption cannot be constructed through a production user endpoint.
 describe("slug-first current catalog business readers", () => {
   const headers = { authorization: "Bearer clerk-session" };
   function catalogClient() {
@@ -1267,14 +349,14 @@ describe("slug-first current catalog business readers", () => {
   });
 
   it("serves payload-only entries written by an outgoing API after the column backfill", async () => {
-    if (!engine) {
-      throw new Error("Missing case engine");
-    }
     const artifact = release(
       `2099-02-01.${randomUUID()}`,
       "Outgoing writer catalog",
+      "manual-mcp",
     ).artifact;
-    const mcpConnector = artifact.connectors[0];
+    const mcpConnector = artifact.connectors.find((connector) => {
+      return connector.slug === "manual-mcp";
+    });
     if (!mcpConnector?.mcp) {
       throw new Error("Missing fixed MCP connector");
     }
@@ -1282,25 +364,22 @@ describe("slug-first current catalog business readers", () => {
     mcpConnector.generation = [];
     const candidate = publication(artifact);
     serve(candidate);
-    expect((await sync()).body).toMatchObject({ outcome: "accepted" });
-    routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+    await accept(sync(), [200]);
+    const {
+      actor,
+      connection,
+      run,
+      runs,
+      client,
+      headers: runHeaders,
+    } = await admittedMcpRun();
+    routeMocks.clerk.session(actor.userId, actor.orgId);
     const expectedHttp = await accept(
       catalogClient().get({ headers, params: { connectorSlug: "notion" } }),
       [200],
     );
-    const actor = await ownedMcpRun(candidate);
 
-    // Only the owned lifecycle engine can reproduce an old API's insert
-    // after migrations have run. New APIs must serve these retained rows
-    // until the outgoing writer and rollback window have drained.
-    await engine.query(
-      "DELETE FROM connector_catalog_entries WHERE hash = $1",
-      [candidate.hash],
-    );
-    await engine.query(
-      "INSERT INTO connector_catalog_entries (hash, slug, payload) SELECT $1, entry ->> 'slug', entry FROM jsonb_array_elements($2::jsonb) AS entry",
-      [candidate.hash, JSON.stringify(candidate.artifact.connectors)],
-    );
+    await useLegacyConnectorCatalogPayloadFixture(candidate.hash);
 
     const listed = await accept(catalogClient().list({ headers }), [200]);
     expect(listed.body.connectors).toContainEqual(
@@ -1323,117 +402,74 @@ describe("slug-first current catalog business readers", () => {
       [200],
     );
     expect(actualHttp.body).toStrictEqual(expectedHttp.body);
-    await directory(candidate);
-    expect((await mcpDirectory(actor)).body).toMatchObject({
-      connectors: [
-        {
-          displayName: "Outgoing writer catalog",
-          connectionId: actor.connectionId,
-        },
-      ],
-    });
+    const search = await accept(
+      setupApp({ context, routes: builtinConnectorsRoutes })(
+        builtinConnectorsSearchContract,
+      ).search({ headers, query: { keyword: mcpConnector.slug } }),
+      [200],
+    );
+    expect(search.body.connectors).toContainEqual(
+      expect.objectContaining({
+        slug: mcpConnector.slug,
+        label: "Outgoing writer catalog",
+      }),
+    );
+    const discovered = await accept(
+      client.list({ headers: runHeaders }),
+      [200],
+    );
+    expect(discovered.body.connectors).toContainEqual(
+      expect.objectContaining({
+        displayName: "Outgoing writer catalog",
+        connectionId: connection.id,
+      }),
+    );
+    await runs.requestCancelRun(actor, run.runId, [200]);
   });
 
-  it.each(["claude-code", "pi"])(
+  it.each(["claude-code", "pi"] as const)(
     "claims an old %s execution context and v1 permission baseline",
     async (cliAgentType) => {
       const candidate = await publishedCatalog();
-      if (!engine) {
-        throw new Error("Missing case engine");
-      }
-      const actor = await ownedMcpRun(candidate);
-      const validator = currentConnectorCatalogValidatorIdentity();
-      const storedContext = storedExecutionContextSchema.parse({
-        storageMounts: [],
-        environment: null,
-        platformEnvironment: {},
-        secretValueEnvironmentKeys: null,
-        resumeSession: null,
-        encryptedSecrets: null,
-        cliAgentType,
-        connectorRuntimeTargets: [{ kind: "builtin", connectorSlug: "github" }],
-        networkPolicies: {
-          github: {
-            allow: [],
-            deny: ["user:read"],
-            ask: [],
-            unknownPolicy: "deny",
-          },
-        },
-        connectorPermissionBaseline: {
-          version: 1,
-          catalogIdentity: {
-            sourceId: connectorCatalogSource().sourceId,
-            schemaVersion: 4,
-            // Pre-migration contexts have a publication version, not the hash alias.
-            catalogVersion: candidate.artifact.catalogVersion,
-            catalogDigest: candidate.hash,
-            capabilityDigest: connectorCatalogExecutableCapabilityDigest(),
-          },
-          validationAuthority: {
-            backendVersion: validator.validatorVersion,
-            buildCommitSha: validator.buildCommitSha,
-          },
-          connectors: {
-            github: {
-              permissionNames: ["user:read"],
-              defaultPolicy: {
-                permissionDefault: "deny",
-                unknownPolicy: "deny",
-              },
-            },
-          },
-        },
-        ...(cliAgentType === "pi"
-          ? {
-              piSessionId: randomUUID(),
-              piLaunchConfig: { schemaVersion: 2 },
-              piModelConfig: {
-                provider: "openrouter",
-                baseUrl: "https://openrouter.ai/api/v1",
-                model: "@preset/okou-1-0",
-                apiKeyEnv: "OPENAI_API_KEY",
-                credentialSecretName: "OPENROUTER_API_KEY",
-              },
-            }
-          : {}),
+      const bdd = createBddApi(context);
+      const runs = createRunsApi(context);
+      const actor = bdd.user();
+      bdd.acceptAgentStorageWrites();
+      runs.acceptStorageDownloads();
+      runs.acceptTelemetryIngest();
+      const runnerGroup = runs.configureRunnerGroup();
+      await runs.grantProEntitlement(actor);
+      await runs.ensurePersonalSubscriptionModel(actor);
+      const agent = await bdd.createAgent(actor, {
+        displayName: "Legacy context compatibility",
       });
-      await engine.query(
-        "UPDATE agent_runs SET status = 'pending', runner_group = 'vm0/default' WHERE id = $1",
-        [actor.runId],
-      );
-      await engine.query(
-        "INSERT INTO runner_job_queue (run_id, runner_group, execution_context, expires_at) VALUES ($1, 'vm0/default', $2, now() + interval '1 hour')",
-        [actor.runId, JSON.stringify(storedContext)],
-      );
-      const claim = await accept(
-        setupApp({ context, routes: runnersRoutes })(
-          runnersJobClaimContract,
-        ).claim({
-          headers: {
-            authorization: `Bearer ${OFFICIAL_RUNNER_TOKEN_PREFIX}${"abcdef0123456789".repeat(4)}`,
-          },
-          params: { id: actor.runId },
-          body: {
-            runnerIdentity: { runnerId: randomUUID(), heartbeatGeneration: 1 },
-            capabilities: { piModelConfigGenerations: [1] },
-          },
-        }),
-        [200],
-      );
-      expect(claim.body.cliAgentType).toBe(cliAgentType);
-      expect(claim.body.networkPolicies?.github).toStrictEqual({
+      const run = await runs.createThreadRun(actor, {
+        agentId: agent.agentId,
+        prompt: "Claim a queued context from an older API",
+      });
+      const storedContext =
+        await replaceRunnerJobWithLegacyConnectorBaselineFixture({
+          runId: run.runId,
+          cliAgentType,
+          catalogVersion: candidate.artifact.catalogVersion,
+          catalogDigest: candidate.hash,
+        });
+      await runs.heartbeatRunner(runnerGroup);
+      const claim = await runs.claimRunnerJob(run.runId);
+      expect(claim.cliAgentType).toBe(cliAgentType);
+      expect(claim.networkPolicies?.github).toStrictEqual({
         allow: [],
         deny: ["user:read"],
         ask: [],
         unknownPolicy: "deny",
       });
       if (cliAgentType === "pi") {
-        expect(claim.body.piSessionId).toBe(storedContext.piSessionId);
-        expect(claim.body.piLaunchConfig).toStrictEqual(
+        expect(claim.piSessionId).toBe(storedContext.piSessionId);
+        expect(claim.piLaunchConfig).toStrictEqual(
           storedContext.piLaunchConfig,
         );
       }
+      await runs.requestCancelRun(actor, run.runId, [200]);
     },
   );
 
@@ -1490,62 +526,8 @@ describe("slug-first current catalog business readers", () => {
     const listed = await accept(client.list({ headers }), [200]);
     expect(listed.body.connectors.length).toBeGreaterThan(0);
   });
-  it("reports a missing entry as not found and a missing pointer as unavailable", async () => {
-    const candidate = await publishedCatalog();
-    if (!engine) {
-      throw new Error("Missing case engine");
-    }
-    // Keep the accepted full snapshot intact: substitution would return 200.
-    await engine.query(
-      "DELETE FROM connector_catalog_entries WHERE hash = $1 AND slug = 'openai'",
-      [candidate.hash],
-    );
-    const result = await accept(
-      catalogClient().get({ headers, params: { connectorSlug: "openai" } }),
-      [404],
-    );
-    expect(result.body.error.code).toBe("NOT_FOUND");
-    await accept(
-      catalogClient().get({ headers, params: { connectorSlug: "github" } }),
-      [200],
-    );
-    await accept(
-      catalogClient().get({
-        headers,
-        params: { connectorSlug: "missing-catalog-slug" },
-      }),
-      [404],
-    );
-    await engine.query(
-      "DELETE FROM connector_catalog_entries WHERE hash = $1",
-      [candidate.hash],
-    );
-    const listUnavailable = await accept(
-      catalogClient().list({ headers }),
-      [503],
-    );
-    expect(listUnavailable.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-    await engine.exec("DELETE FROM connector_catalog");
-    const detailUnavailable = await accept(
-      catalogClient().get({ headers, params: { connectorSlug: "github" } }),
-      [503],
-    );
-    const permissionsUnavailable = await accept(
-      catalogClient().permissions({
-        headers,
-        params: { connectorSlug: "github" },
-      }),
-      [503],
-    );
-    for (const unavailable of [detailUnavailable, permissionsUnavailable]) {
-      expect(unavailable.body.error).toMatchObject({
-        code: "PROVIDER_UNAVAILABLE",
-        message: "Connector catalog is temporarily unavailable",
-      });
-    }
-  });
   it("a later slug request follows current publication without a retained version", async () => {
-    const first = release("2099-02-02.first", "First OpenAI", false, "openai");
+    const first = release("2099-02-02.first", "First OpenAI", "openai");
     serve(first);
     expect((await sync()).body).toMatchObject({ outcome: "accepted" });
     routeMocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
@@ -1557,7 +539,7 @@ describe("slug-first current catalog business readers", () => {
         )
       ).body.connector.label,
     ).toBe("First OpenAI");
-    const next = release("2099-02-02.next", "Next OpenAI", false, "openai");
+    const next = release("2099-02-02.next", "Next OpenAI", "openai");
     serve(next);
     expect((await sync()).body).toMatchObject({ outcome: "accepted" });
     expect(
@@ -1576,15 +558,7 @@ describe("current-publication account readers", () => {
   const routes = Object.freeze([
     ...connectorAccountRoutes,
     ...builtinConnectorsRoutes,
-    ...customConnectorsRoutes,
-    ...customConnectorsDeleteRoutes,
-    ...customConnectorsValuesSetRoutes,
   ]);
-
-  interface AccountCatalogFixture {
-    readonly orgId: string;
-    readonly userId: string;
-  }
 
   function authHeaders() {
     return { authorization: "Bearer clerk-session" };
@@ -1594,130 +568,13 @@ describe("current-publication account readers", () => {
     return setupApp({ context, routes })(connectorAccountsContract);
   }
 
-  function customConnectorClient() {
-    return setupApp({ context, routes })(customConnectorsContract);
-  }
-
-  function customConnectorByIdClient() {
-    return setupApp({ context, routes })(customConnectorByIdContract);
-  }
-
-  async function deleteBuiltinAccountPage(
-    connectorSlug: "openai" | "github",
-    connections: readonly { readonly id: string }[],
-  ): Promise<void> {
-    const accountsApi = accountClient();
-    for (let offset = 0; offset < connections.length; offset += 4) {
-      const deleted = await Promise.allSettled(
-        connections.slice(offset, offset + 4).map(async (account) => {
-          await accept(
-            accountsApi.delete({
-              headers: authHeaders(),
-              params: { connectionId: account.id },
-              body: { target: { kind: "builtin", connectorSlug } },
-            }),
-            [200, 404],
-          );
-        }),
-      );
-      for (const result of deleted) {
-        if (result.status === "rejected") {
-          throw result.reason;
-        }
-      }
-    }
-  }
-
-  async function cleanupFixture(fixture: AccountCatalogFixture): Promise<void> {
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-    const accountsApi = accountClient();
-    for (const connectorSlug of ["openai", "github"] as const) {
-      let hasBuiltinAccounts = true;
-      while (hasBuiltinAccounts) {
-        const accounts = await accept(
-          accountsApi.connections({
-            headers: authHeaders(),
-            query: { kind: "builtin", connectorSlug, limit: 100 },
-          }),
-          [200, 404],
-        );
-        hasBuiltinAccounts =
-          accounts.status === 200 && accounts.body.connections.length > 0;
-        if (accounts.status !== 200) {
-          break;
-        }
-        await deleteBuiltinAccountPage(
-          connectorSlug,
-          accounts.body.connections,
-        );
-      }
-    }
-    const customConnectors = await accept(
-      customConnectorClient().list({ headers: authHeaders() }),
-      [200],
-    );
-    for (const definition of customConnectors.body.connectors) {
-      const customAccounts = await accept(
-        accountClient().connections({
-          headers: authHeaders(),
-          query: {
-            kind: "custom",
-            customConnectorId: definition.id,
-            limit: 100,
-          },
-        }),
-        [200, 404],
-      );
-      if (customAccounts.status === 200) {
-        for (const account of customAccounts.body.connections) {
-          await accept(
-            accountClient().delete({
-              headers: authHeaders(),
-              params: { connectionId: account.id },
-              body: {
-                target: {
-                  kind: "custom",
-                  customConnectorId: definition.id,
-                },
-              },
-            }),
-            [200, 404],
-          );
-        }
-      }
-      await accept(
-        customConnectorByIdClient().delete({
-          headers: authHeaders(),
-          params: { id: definition.id },
-        }),
-        [204, 404],
-      );
-    }
-  }
-
   describe("connector account lifecycle routes", () => {
-    const track = createFixtureTracker<AccountCatalogFixture>(cleanupFixture);
-
-    async function seedFixture(
-      overrides: Partial<AccountCatalogFixture> = {},
-    ): Promise<AccountCatalogFixture> {
-      const fixture = await track(
-        Promise.resolve({
-          orgId: overrides.orgId ?? `org_${randomUUID()}`,
-          userId: overrides.userId ?? `user_${randomUUID()}`,
-        }),
-      );
-      mocks.clerk.session(fixture.userId, fixture.orgId);
-      return fixture;
-    }
-
     it("reviews requested scopes for one exact account across default changes", async () => {
-      const fixture = await seedFixture();
+      const actor = createBddApi(context).user();
       const currentScopes = ["repo", "project", "workflow"] as const;
-      const actor = createBddApi(context).user(fixture);
       const connectors = createConnectorBddApi(context);
       const catalog = createPublicConnectorCatalog(context, {
-        cleanupOwnership: "caller",
+        isolatePg: true,
       });
       const staleCatalog = catalogWithAuthMethod(
         { connectorSlug: "github", authMethodId: "oauth" },
@@ -1728,22 +585,6 @@ describe("current-publication account readers", () => {
           return { ...method, grant: { ...method.grant, scopes: ["repo"] } };
         },
       );
-      const accountIds: string[] = [];
-      catalog.onCleanup(async () => {
-        const accounts = await connectors.listBuiltinConnectorAccounts(
-          actor,
-          "github",
-        );
-        for (const account of accounts) {
-          if (accountIds.includes(account.id)) {
-            await connectors.deleteBuiltinConnectorAccount(
-              actor,
-              "github",
-              account.id,
-            );
-          }
-        }
-      });
       const connectAccount = async (userId: number) => {
         mockGitHubConnectorOAuth({ userId, login: `scope-review-${userId}` });
         // Grants can be narrower than the selected catalog's requested scopes.
@@ -1776,7 +617,6 @@ describe("current-publication account readers", () => {
         if (!account) {
           throw new Error("Expected the exact GitHub provider identity");
         }
-        accountIds.push(account.id);
         return account.id;
       };
       await catalog.publish(staleCatalog);
@@ -1905,7 +745,8 @@ describe("current-publication account readers", () => {
         }),
         [404],
       );
-      await seedFixture();
+      const otherActor = createBddApi(context).user();
+      mocks.clerk.session(otherActor.userId, otherActor.orgId);
       await accept(
         accountClient().scopeDiff({
           headers: authHeaders(),
@@ -1915,7 +756,7 @@ describe("current-publication account readers", () => {
         [404],
       );
 
-      mocks.clerk.session(fixture.userId, fixture.orgId);
+      mocks.clerk.session(actor.userId, actor.orgId);
       await accept(
         accountClient().delete({
           headers: authHeaders(),
@@ -1932,15 +773,13 @@ describe("current-publication account readers", () => {
         }),
         [404],
       );
-      await catalog.cleanup();
     });
 
     it("treats a removed built-in catalog target as absent", async () => {
-      const fixture = await seedFixture();
-      const actor = createBddApi(context).user(fixture);
+      const actor = createBddApi(context).user();
       const connectors = createConnectorBddApi(context);
       const catalog = createPublicConnectorCatalog(context, {
-        cleanupOwnership: "caller",
+        isolatePg: true,
       });
       const available = catalogWithManualConnector({
         connectorSlug: "retired-connector",
@@ -1956,13 +795,6 @@ describe("current-publication account readers", () => {
         },
       );
       const accountId = account.id;
-      catalog.onCleanup(async () => {
-        await catalog.publish(available);
-        await connectors.deleteDefaultBuiltinConnectorAccount(
-          actor,
-          "retired-connector",
-        );
-      });
       await catalog.publish(API_TEST_CONNECTOR_CATALOG);
 
       const summary = await accept(
@@ -2007,7 +839,6 @@ describe("current-publication account readers", () => {
         }),
         [404],
       );
-      await catalog.cleanup();
     });
   });
 });

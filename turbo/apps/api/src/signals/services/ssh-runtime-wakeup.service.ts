@@ -1,6 +1,5 @@
 import { command } from "ccstate";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
 import { and, eq, isNotNull } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
@@ -28,7 +27,6 @@ const loadSshInvalidationRecipients$ = command(
       db
         .select({ runId: agentRuns.id, runnerGroup: agentRuns.runnerGroup })
         .from(agentRuns)
-        .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
         .where(
           and(
             eq(agentRuns.orgId, scope.orgId),

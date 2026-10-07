@@ -6,7 +6,6 @@ RuleTester.afterAll = afterAll;
 RuleTester.describe = describe;
 RuleTester.it = it;
 const tester = new RuleTester();
-const suite = "src/signals/routes/__tests__/test-runtime-state.test.ts";
 
 tester.run("no-test-database-binding", noTestDatabaseBinding, {
   valid: [
@@ -15,21 +14,16 @@ tester.run("no-test-database-binding", noTestDatabaseBinding, {
       code: 'import { PGlite } from "@electric-sql/pglite"; new PGlite();',
     },
     {
-      filename:
-        "/api/src/signals/routes/__tests__/connector-catalog-immutable.test.ts",
-      code: 'import { drizzle } from "drizzle-orm/pglite";',
-    },
-    {
-      code: 'import { withPgliteDatabase } from "../test-fixtures/pglite-database";',
-    },
-    {
-      code: `const isolated = ["${suite}"]; defineConfig({test: {include: isolated}});`,
-    },
-    {
-      code: 'defineConfig({test: {include: ["native-locks.test.ts"], fileParallelism: false}});',
+      code: 'import { setupApp } from "../__tests__/test-helpers";',
     },
   ],
   invalid: [
+    {
+      filename:
+        "/api/src/signals/routes/__tests__/connector-catalog-immutable.test.ts",
+      code: 'import { drizzle } from "drizzle-orm/pglite";',
+      errors: [{ messageId: "harnessOnly" }],
+    },
     {
       code: 'import { PGlite } from "@electric-sql/pglite";',
       errors: [{ messageId: "harnessOnly" }],
@@ -47,17 +41,5 @@ tester.run("no-test-database-binding", noTestDatabaseBinding, {
       errors: [{ messageId: "harnessOnly" }],
     },
     { code: "new PGlite();", errors: [{ messageId: "harnessOnly" }] },
-    {
-      code: `const catalog = ["${suite}"]; defineConfig({test: {include: catalog, fileParallelism: false}});`,
-      errors: [{ messageId: "serialization" }],
-    },
-    {
-      code: `defineConfig({test: {include: ["${suite}"], sequence: {concurrent: false}}});`,
-      errors: [{ messageId: "serialization" }],
-    },
-    {
-      code: `const owned = ["${suite}"]; const combined = [...owned]; defineConfig({test: {include: combined, fileParallelism: false}});`,
-      errors: [{ messageId: "serialization" }],
-    },
   ],
 });

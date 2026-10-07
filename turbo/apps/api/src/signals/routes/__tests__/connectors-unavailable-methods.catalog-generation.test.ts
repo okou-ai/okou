@@ -10,6 +10,7 @@ import {
 import { createPublicConnectorCatalog } from "./helpers/public-connector-catalog";
 
 const context = testContext();
+
 const connectorsApi = createConnectorBddApi(context);
 
 // Each case publishes the generation whose on-demand compatibility it reads.
@@ -28,7 +29,9 @@ async function publishWithUnavailableMethod(
 
 describe("CONN-02: OAuth device authorization", () => {
   it("returns 403 when the selected device-auth runtime method is unavailable", async () => {
-    const publisher = createPublicConnectorCatalog(context);
+    const publisher = createPublicConnectorCatalog(context, {
+      isolatePg: true,
+    });
     await publishWithUnavailableMethod(publisher, "test-oauth-device", "oauth");
     const actor = createBddApi(context).user();
 
@@ -48,7 +51,9 @@ describe("CONN-02: OAuth device authorization", () => {
   });
 
   it("returns 403 when a device-auth runtime becomes unavailable before polling", async () => {
-    const publisher = createPublicConnectorCatalog(context);
+    const publisher = createPublicConnectorCatalog(context, {
+      isolatePg: true,
+    });
     await publisher.publish(API_TEST_CONNECTOR_CATALOG_ARTIFACT);
     mockTestOAuthDeviceConnectorProvider({ deviceCode: "pending" });
     const actor = createBddApi(context).user();
@@ -77,7 +82,9 @@ describe("CONN-02: OAuth device authorization", () => {
 
 describe("CONN-02: external-code authorization", () => {
   it("returns 403 when the external-code runtime method is unavailable", async () => {
-    const publisher = createPublicConnectorCatalog(context);
+    const publisher = createPublicConnectorCatalog(context, {
+      isolatePg: true,
+    });
     await publishWithUnavailableMethod(publisher, "aws", "cli");
     const actor = createBddApi(context).user();
 
@@ -96,7 +103,9 @@ describe("CONN-02: external-code authorization", () => {
   });
 
   it("returns 403 when an external-code runtime becomes unavailable before completion", async () => {
-    const publisher = createPublicConnectorCatalog(context);
+    const publisher = createPublicConnectorCatalog(context, {
+      isolatePg: true,
+    });
     await publisher.publish(API_TEST_CONNECTOR_CATALOG_ARTIFACT);
     const actor = createBddApi(context).user();
     const session = await connectorsApi.startExternalCode(actor, "aws", "cli");

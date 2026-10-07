@@ -8,6 +8,7 @@ import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createPublicConnectorCatalog } from "./helpers/public-connector-catalog";
 
 const context = testContext();
+
 const {
   chat,
   connectors,
@@ -25,7 +26,9 @@ function selectionsClient() {
 
 describe("thread connector selection across catalog generations", () => {
   it("starts the run when the runtime catalog no longer contains the selected built-in", async () => {
-    const publisher = createPublicConnectorCatalog(context);
+    const publisher = createPublicConnectorCatalog(context, {
+      isolatePg: true,
+    });
     await publisher.publish(API_TEST_CONNECTOR_CATALOG_ARTIFACT);
     const { actor, agentId } = await entitledNativeChatActor();
     const connection = await connectors.connectManualGrant(

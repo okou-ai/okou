@@ -152,6 +152,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     "admits the exact builtin Automatic %s account and injects auth outside the sandbox",
     async (resolution) => {
       const catalog = createPublicAutomaticCatalog(context, {
+        isolatePg: true,
         firewallAuth: resolution,
       });
       await catalog.run(async () => {
@@ -162,7 +163,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           initialExpiresIn: 3600,
         });
         const api = createRunsApi(context);
-        const connectors = createConnectorBddApi(context);
         const fw = createFirewallApi(context);
         const { actor, agentId, runnerGroup } = await catalog.prepareRuntime();
         const connectionId = await connectAutomaticRuntime({
@@ -171,7 +171,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           ...catalog,
           issuer: provider.issuer,
         });
-        catalog.registerAccount(connectionId);
         if (resolution === "none") {
           await catalog.publish(
             buildAutomaticMcpCatalog({
@@ -297,12 +296,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           });
         }
         await api.requestCancelRun(actor, run.runId, [200]);
-        catalog.registerAccountDeletion(connectionId);
-        await connectors.deleteBuiltinConnectorAccount(
-          actor,
-          catalog.slug,
-          connectionId,
-        );
       });
     },
   );
@@ -311,6 +304,7 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
     "keeps catalog auth when reconnecting builtin Automatic to %s",
     async (authMode) => {
       const catalog = createPublicAutomaticCatalog(context, {
+        isolatePg: true,
         slug: "manual-mcp",
         additionalNoAuthMethodId: "public-connect",
       });
@@ -330,7 +324,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
           ...catalog,
           issuer: provider.issuer,
         });
-        catalog.registerAccount(connectionId);
         const run = await api.createThreadRun(actor, {
           agentId,
           prompt: "change the connected builtin MCP authentication method",
@@ -440,12 +433,6 @@ describe("RUN-02: custom connectors, grants, and network policies", () => {
             : { headers: { Authorization: "Bearer reconnected-manual-token" } },
         );
         await api.requestCancelRun(actor, run.runId, [200]);
-        catalog.registerAccountDeletion(connectionId);
-        await connectors.deleteBuiltinConnectorAccount(
-          actor,
-          catalog.slug,
-          connectionId,
-        );
       });
     },
   );

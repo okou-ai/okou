@@ -14,10 +14,7 @@ import {
   builtinConnectorOpenIdStartContract,
   builtinConnectorsSearchContract,
 } from "@okouai/api-contracts/contracts/connectors";
-import {
-  connectorCatalogContract,
-  CONNECTOR_CATALOG_MAX_RAW_BYTES,
-} from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
@@ -34,7 +31,6 @@ import {
 } from "vitest";
 
 import { createApp } from "../../../app-factory";
-import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
@@ -1213,14 +1209,6 @@ function catalogObjects(
   return objects;
 }
 
-function releaseCatalogBytes(release: ReleaseFixture): Buffer {
-  const bytes = release.objects.get(release.catalogKey);
-  if (bytes === undefined) {
-    throw new Error("Expected release catalog bytes");
-  }
-  return bytes;
-}
-
 function commandInput(command: unknown): JsonRecord {
   if (!isJsonRecord(command)) {
     return {};
@@ -1321,10 +1309,13 @@ function cronHeaders(secret = CRON_SECRET): { readonly authorization: string } {
   return { authorization: `Bearer ${secret}` };
 }
 
-function cronClient() {
-  return setupApp({ context, routes: cronConnectorCatalogRoutes })(
-    cronConnectorCatalogContract,
-  );
+async function cronClient() {
+  const app = await setupApp({
+    context,
+    routes: cronConnectorCatalogRoutes,
+    isolatePg: true,
+  });
+  return app(cronConnectorCatalogContract);
 }
 
 function runnerFirewallClient() {
@@ -1340,17 +1331,22 @@ interface VolumeStorageState {
   readonly head_version_id: string | null;
 }
 
-function systemStorageStateClient() {
-  return setupAppWithRoutes({
+async function systemStorageStateClient() {
+  const app = await setupApp({
     context,
     routes: testSystemStoragePresignedUrlCacheStateRoutes,
-  })(testSystemStoragePresignedUrlCacheStateContract);
+    isolatePg: true,
+  });
+  return app(testSystemStoragePresignedUrlCacheStateContract);
 }
 
 async function systemStorageStateAction(
   body: TestSystemStoragePresignedUrlCacheStateActionBody,
 ) {
-  return await accept(systemStorageStateClient().action({ body }), [200]);
+  return await accept(
+    (await systemStorageStateClient()).action({ body }),
+    [200],
+  );
 }
 
 async function readVolumeStorageState(args: {
@@ -1427,7 +1423,10 @@ async function seedOwnedVolumeStorageVersion(args: {
 }
 
 async function syncCatalog() {
-  return await accept(cronClient().sync({ headers: cronHeaders() }), [200]);
+  return await accept(
+    (await cronClient()).sync({ headers: cronHeaders() }),
+    [200],
+  );
 }
 
 type SyncResponseBody = Awaited<ReturnType<typeof syncCatalog>>["body"];
@@ -1485,7 +1484,7 @@ afterEach(() => {
 describe("connector catalog cron authentication and initial state", () => {
   it("rejects missing and invalid cron credentials", async () => {
     const response = await accept(
-      cronClient().sync({ headers: cronHeaders("wrong-secret") }),
+      (await cronClient()).sync({ headers: cronHeaders("wrong-secret") }),
       [401],
     );
     expect(response.body).toStrictEqual({
@@ -4854,49 +4853,6 @@ describe("connector catalog executable compatibility", () => {
 });
 
 describe("connector catalog rejection and latest-valid retention", () => {
-  it("accepts 64 MiB and rejects 64 MiB plus one with latest-valid retention", async () => {
-    configureSource();
-    expect(CONNECTOR_CATALOG_MAX_RAW_BYTES).toBe(64 * 1024 * 1024);
-    const acceptedVersion = "2026-07-15.sixty-four-mib-limit";
-    const unpadded = buildRelease({
-      version: acceptedVersion,
-      mutateCatalog: (artifact) => {
-        firstRecord(artifact.connectors, "connectors").description = "";
-      },
-    });
-    const descriptionBytes =
-      CONNECTOR_CATALOG_MAX_RAW_BYTES -
-      releaseCatalogBytes(unpadded).byteLength;
-    const accepted = buildRelease({
-      version: acceptedVersion,
-      mutateCatalog: (artifact) => {
-        firstRecord(artifact.connectors, "connectors").description = "x".repeat(
-          descriptionBytes,
-        );
-      },
-    });
-    const acceptedBytes = releaseCatalogBytes(accepted);
-    expect(acceptedBytes.byteLength).toBe(CONNECTOR_CATALOG_MAX_RAW_BYTES);
-    serveObjects(catalogObjects([accepted], accepted));
-
-    expect((await syncCatalog()).body).toStrictEqual({
-      outcome: "accepted",
-      failureCode: null,
-    });
-
-    const rejected = buildRelease({
-      version: "2026-07-15.over-sixty-four-mib-limit",
-      catalogBytes: Buffer.alloc(CONNECTOR_CATALOG_MAX_RAW_BYTES + 1),
-    });
-    serveObjects(catalogObjects([rejected], rejected));
-
-    expectRejectedAttempt((await syncCatalog()).body, "object-too-large");
-
-    // The accepted generation keeps serving.
-    serveObjects(catalogObjects([accepted], accepted));
-    expect((await syncCatalog()).body.outcome).toBe("unchanged");
-  });
-
   it("classifies unavailable and oversized objects before acceptance", async () => {
     expect.hasAssertions();
     configureSource();

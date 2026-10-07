@@ -2,6 +2,7 @@ import { connectorCatalogEntryColumns } from "@okouai/connectors/connector-catal
 import { createHash } from "node:crypto";
 
 import { createStore } from "ccstate";
+import { eq } from "drizzle-orm";
 import { getConnectorAuthProviderRegistrationCapabilities } from "@okouai/connectors/auth-providers";
 import {
   connectorCatalog,
@@ -9,7 +10,7 @@ import {
 } from "@okouai/db/schema/connector-catalog";
 
 import { mockOptionalEnv } from "../lib/env";
-import type { Tx } from "../lib/db-types";
+import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { closeDbPool } from "../lib/db";
 import { settleIncludingAbort } from "../signals/utils";
 import { writeDb$ } from "../signals/external/db";
@@ -75,48 +76,55 @@ export function mockApiTestConnectorProviderConfiguration(): void {
   }
 }
 
-async function publishFixtureGeneration(args: {
-  readonly tx: Tx;
+async function publishFixtureGeneration<
+  TQueryResult extends PgQueryResultHKT,
+>(args: {
+  readonly database: PgDatabase<TQueryResult>;
   readonly catalog: ConnectorCatalogArtifact;
   readonly hash: string;
   readonly ifAbsent: boolean;
 }): Promise<void> {
-  // The same entries-then-pointer order as the production writer.
-  await args.tx
-    .insert(connectorCatalogEntries)
-    .values(
-      args.catalog.connectors.map((connector) => {
-        return {
-          hash: args.hash,
-          slug: connector.slug,
-          payload: connector,
-          ...connectorCatalogEntryColumns(connector),
-        };
-      }),
-    )
-    .onConflictDoNothing();
-  const pointer = {
-    schemaVersion: args.catalog.artifactSchemaVersion,
-    hash: args.hash,
-  };
-  // Shared installation never replaces a pointer that another suite owns;
-  // concurrent workers wait on the conflicting insert instead.
-  await (args.ifAbsent
-    ? args.tx.insert(connectorCatalog).values(pointer).onConflictDoNothing()
-    : args.tx
-        .insert(connectorCatalog)
-        .values(pointer)
-        .onConflictDoUpdate({
-          target: connectorCatalog.schemaVersion,
-          set: { hash: args.hash },
-        }));
+  await args.database.transaction(async (tx) => {
+    // The same entries-then-pointer order as the production writer.
+    await tx
+      .insert(connectorCatalogEntries)
+      .values(
+        args.catalog.connectors.map((connector) => {
+          return {
+            hash: args.hash,
+            slug: connector.slug,
+            payload: connector,
+            ...connectorCatalogEntryColumns(connector),
+          };
+        }),
+      )
+      .onConflictDoNothing();
+    const pointer = {
+      schemaVersion: args.catalog.artifactSchemaVersion,
+      hash: args.hash,
+    };
+    // Shared installation never replaces a pointer that another suite owns;
+    // concurrent workers wait on the conflicting insert instead.
+    await (args.ifAbsent
+      ? tx.insert(connectorCatalog).values(pointer).onConflictDoNothing()
+      : tx
+          .insert(connectorCatalog)
+          .values(pointer)
+          .onConflictDoUpdate({
+            target: connectorCatalog.schemaVersion,
+            set: { hash: args.hash },
+          }));
+  });
 }
 
-export async function installApiTestConnectorCatalog(
+export async function installApiTestConnectorCatalog<
+  TQueryResult extends PgQueryResultHKT,
+>(
   options: {
     readonly catalogVersion?: string;
     readonly catalog?: ConnectorCatalogArtifact;
     readonly ifAbsent?: boolean;
+    readonly database?: PgDatabase<TQueryResult>;
   } = {},
 ): Promise<void> {
   const catalogVersion =
@@ -134,14 +142,54 @@ export async function installApiTestConnectorCatalog(
   validateConnectorCatalogArtifact(catalog);
   const rawBytes = Buffer.from(`${JSON.stringify(catalog)}\n`);
   const hash = sha256Digest(rawBytes);
-  await store.set(writeDb$).transaction(async (tx) => {
+  const publication = {
+    catalog,
+    hash,
+    ifAbsent: options.ifAbsent ?? false,
+  };
+  if (options.database) {
     await publishFixtureGeneration({
-      tx,
-      catalog,
-      hash,
-      ifAbsent: options.ifAbsent ?? false,
+      database: options.database,
+      ...publication,
     });
-  });
+  } else {
+    await publishFixtureGeneration({
+      database: store.set(writeDb$),
+      ...publication,
+    });
+  }
+}
+
+/**
+ * Release 1 still reads entries from outgoing payload-only writers. Scope this
+ * historical shape to a catalog already published through the API in the case.
+ */
+export async function useLegacyConnectorCatalogPayloadFixture(
+  hash: string,
+): Promise<void> {
+  const updated = await store
+    .set(writeDb$)
+    .update(connectorCatalogEntries)
+    .set({
+      label: null,
+      description: null,
+      category: null,
+      icon: null,
+      tags: null,
+      generation: null,
+      authMethods: null,
+      mcp: null,
+      skill: null,
+      firewall: null,
+      permissionSummary: null,
+    })
+    .where(eq(connectorCatalogEntries.hash, hash))
+    .returning({ slug: connectorCatalogEntries.slug });
+  if (updated.length === 0) {
+    throw new Error(
+      "Expected the case's published catalog before replacing its columns",
+    );
+  }
 }
 
 const UNAVAILABLE_PLATFORM_SECRET = "API_TEST_UNAVAILABLE_PLATFORM_SECRET";

@@ -21,6 +21,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { mailRoutes } from "../mail";
 
 const context = testContext();
+
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const connectors = createConnectorBddApi(context);
@@ -30,9 +31,7 @@ const mocks = createRouteMocks(context);
 const GMAIL_MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
 const GMAIL_DRAFT_ID = "r-test-draft";
 
-async function seedGmailMailCardFixture(
-  registerCleanup?: (cleanup: () => Promise<void>) => void,
-) {
+async function seedGmailMailCardFixture() {
   const actor = bdd.user();
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped actor");
@@ -42,9 +41,6 @@ async function seedGmailMailCardFixture(
   const agent = await bdd.createAgent(actor, {
     displayName: "Nova Mail agent",
     visibility: "private",
-  });
-  registerCleanup?.(async () => {
-    await bdd.deleteAgent(actor, agent.agentId);
   });
   const thread = await chat.createThread(actor, {
     agentId: agent.agentId,
@@ -63,9 +59,6 @@ async function seedGmailMailCardFixture(
     code: "okou-mail-code",
     state,
   });
-  registerCleanup?.(async () => {
-    await connectors.deleteDefaultBuiltinConnectorAccount(actor, "gmail");
-  });
   const gmail = await connectors.readConnectorBySlug(actor, "gmail");
   await runs.enableAgentConnectors(actor, agent.agentId, ["gmail"]);
   mocks.clerk.session(actor.userId, actorWithOrg.orgId);
@@ -81,12 +74,8 @@ function authHeaders() {
 }
 
 describe("POST /api/mail/drafts/link", () => {
-  // Connector credential storage exception: no public flow leaves Gmail
-  // accounts without a default, so this unchanged case keeps the documented
-  // test-state boundary.
-
   it("does not refresh a known mismatched Gmail storage version", async () => {
-    const catalog = createPublicConnectorCatalog(context);
+    const catalog = createPublicConnectorCatalog(context, { isolatePg: true });
     const versionTwo = catalogWithAuthMethod(
       { connectorSlug: "gmail", authMethodId: "oauth" },
       (method) => {
@@ -94,10 +83,7 @@ describe("POST /api/mail/drafts/link", () => {
       },
     );
     await catalog.publish(versionTwo);
-    const fixture = await seedGmailMailCardFixture(catalog.onCleanup);
-    catalog.onCleanup(async () => {
-      await catalog.publish(versionTwo);
-    });
+    const fixture = await seedGmailMailCardFixture();
     server.use(
       http.post("https://oauth2.googleapis.com/token", () => {
         return HttpResponse.json({
@@ -156,6 +142,5 @@ describe("POST /api/mail/drafts/link", () => {
       "Connect and authorize Gmail for this agent first",
     );
     expect(refreshCalls).toBe(0);
-    await catalog.cleanup();
   });
 });

@@ -318,7 +318,7 @@ describe("builtin MCP account surfaces", () => {
       "R2_USER_STORAGES_BUCKET_NAME",
       `test-mcp-selection-${randomUUID()}`,
     );
-    await installApiTestConnectorCatalog();
+    await installApiTestConnectorCatalog({ ifAbsent: true });
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
     const actor = bdd.user();

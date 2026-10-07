@@ -14,6 +14,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { builtinConnectorsRoutes } from "../connectors";
@@ -270,10 +271,13 @@ function serveObjects(objects: ReadonlyMap<string, Buffer>): void {
   });
 }
 
-function cronClient() {
-  return setupApp({ context, routes: cronConnectorCatalogRoutes })(
-    cronConnectorCatalogContract,
-  );
+async function cronClient() {
+  const app = await setupApp({
+    context,
+    routes: cronConnectorCatalogRoutes,
+    isolatePg: true,
+  });
+  return app(cronConnectorCatalogContract);
 }
 
 function catalogClient() {
@@ -283,7 +287,10 @@ function catalogClient() {
 }
 
 async function sync() {
-  return await accept(cronClient().sync({ headers: cronHeaders }), [200]);
+  return await accept(
+    (await cronClient()).sync({ headers: cronHeaders }),
+    [200],
+  );
 }
 
 async function publicCatalog() {
@@ -472,6 +479,7 @@ describe("connector catalog v4 preparation", () => {
       context.mocks.s3.send.mockResolvedValue({ Contents: [] });
       if (created.runId) {
         await runs.requestCancelRun(actor, created.runId, [200, 404]);
+        await flushWaitUntilForTest();
       }
       if (created.connectionId) {
         await connectorsApi.deleteBuiltinConnectorAccount(
@@ -518,9 +526,12 @@ describe("connector catalog v4 preparation", () => {
           return connector.slug;
         }),
       ).toStrictEqual(["catalog-service"]);
-      const features = setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      );
+      const featuresApp = await setupApp({
+        context,
+        routes: featureSwitchesRoutes,
+        isolatePg: true,
+      });
+      const features = featuresApp(featureSwitchesContract);
       await accept(
         features.update({
           headers: sessionHeaders,

@@ -54,7 +54,7 @@ import {
   postUsageAllowanceInvoicePaid,
 } from "./helpers/stripe-billing-webhook";
 
-const context = testContext({});
+const context = testContext();
 const TERMINAL_RUN_STATUSES = [
   "completed",
   "failed",

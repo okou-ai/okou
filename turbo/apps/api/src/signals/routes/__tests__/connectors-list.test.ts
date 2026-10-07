@@ -245,7 +245,7 @@ describe("GET /api/connectors", () => {
       "R2_USER_STORAGES_BUCKET_NAME",
       `legacy-list-unavailable-${randomUUID()}`,
     );
-    await installApiTestConnectorCatalog();
+    await installApiTestConnectorCatalog({ ifAbsent: true });
     const fixture = seedAuthenticatedFixture();
     seededFixtures.push(fixture);
     await connectGitlab(fixture);
@@ -290,7 +290,7 @@ describe("GET /api/connectors", () => {
       }),
     ]);
     mockOptionalEnv("BOX_OAUTH_CLIENT_ID", undefined);
-    await installApiTestConnectorCatalog();
+    await installApiTestConnectorCatalog({ ifAbsent: true });
     mocks.clerk.session(fixture.userId, fixture.orgId);
 
     const response = await accept(

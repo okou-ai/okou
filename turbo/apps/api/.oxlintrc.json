@@ -24,9 +24,7 @@
         "scripts/bench-p90-reporter.ts",
         "src/index.ts",
         "vite.config.ts",
-        "vitest.config.ts",
-        "vitest.maintenance.config.ts",
-        "vitest.run-time-budget.config.ts"
+        "vitest.config.ts"
       ],
       "rules": {
         "import/no-default-export": "off"

@@ -1,12 +1,12 @@
-import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
+import { once } from "node:events";
 import { readFile, readdir } from "node:fs/promises";
-import { PGlite } from "@electric-sql/pglite";
+import { MemoryFS, PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { btree_gin } from "@electric-sql/pglite/contrib/btree_gin";
-import { drizzle } from "drizzle-orm/pglite";
+import { drizzle, type PgliteDatabase } from "drizzle-orm/pglite";
+import { Parser } from "tar";
 import { singleton } from "../lib/singleton";
-import { abortTestCaseOwner, withTestCaseOwner } from "./case-owner";
 import { settleIncludingAbort } from "../signals/utils";
 
 /** Cleanup always finishes; preserve both failures rather than masking work. */
@@ -31,19 +31,6 @@ async function releaseAfter<T>(
   return result.value;
 }
 
-const databaseScope = singleton(() => {
-  return new AsyncLocalStorage<ReturnType<typeof drizzle>>();
-});
-
-/** No shared-PG fallback: all route, fixture and detached reads own this case. */
-export function pgliteDatabase() {
-  const database = databaseScope().getStore();
-  if (!database) {
-    throw new Error("PGlite database accessed outside its test owner");
-  }
-  return database;
-}
-
 // node-postgres returns int8/numeric as text. Match that real driver contract
 // before Drizzle maps fields, without losing precision or changing SQL results.
 const driverParsers = Object.freeze({
@@ -55,7 +42,10 @@ const driverParsers = Object.freeze({
   },
 });
 
-async function migratedImage(): Promise<Blob> {
+/** Build the migrated, seeded baseline once in the run's global setup. */
+export async function createPgliteSnapshot(
+  seed: (database: PgliteDatabase) => Promise<void>,
+): Promise<Blob> {
   const engine = new PGlite({
     extensions: { pgcrypto, btree_gin },
     parsers: driverParsers,
@@ -81,7 +71,7 @@ async function migratedImage(): Promise<Blob> {
       );
       for (const name of files) {
         const original = await readFile(new URL(name, directory), "utf8");
-        // Match the existing immutable-catalog harness: these two unsupported
+        // These two unsupported
         // extension declarations have no dependent table/constraint behavior.
         let sql = original;
         if (name === "1078_baseline.sql") {
@@ -131,6 +121,9 @@ async function migratedImage(): Promise<Blob> {
         );
       }
       await engine.exec("SET search_path TO public; SET timezone TO 'UTC'");
+      await seed(drizzle(engine));
+      // Checkpoint the seeded baseline to reduce WAL recovery when restoring cases.
+      await engine.exec("CHECKPOINT");
       return await engine.dumpDataDir();
     })(),
     async () => {
@@ -139,54 +132,142 @@ async function migratedImage(): Promise<Blob> {
   );
 }
 
-// Only immutable migrated baseline bytes are reused. Each case loads a private
-// copy; no connections, transactions or mutable case data are shared.
-const migrationImage = singleton(migratedImage);
-
-/** Build immutable schema bytes during worker setup, not a case's hook. */
-export async function preparePgliteDatabase(): Promise<void> {
-  await migrationImage();
+interface SnapshotFile {
+  readonly path: string;
+  readonly data: Uint8Array;
+  readonly modifiedAt: number;
 }
 
-export interface PgliteTestOwner {
-  readonly engine: PGlite;
-  readonly signal: AbortSignal;
+interface SnapshotFiles {
+  readonly directories: readonly string[];
+  readonly files: readonly SnapshotFile[];
 }
 
-export async function withPgliteDatabase<T>(
-  work: (owner: PgliteTestOwner) => Promise<T>,
-  drain: () => Promise<void> = async () => {},
-): Promise<T> {
+// Decode immutable files once. Each engine still owns separate writable copies.
+const snapshots = singleton(() => {
+  return new Map<string, Promise<SnapshotFiles>>();
+});
+
+async function readSnapshotFiles(path: string): Promise<SnapshotFiles> {
+  const bytes = await readFile(path);
+  const directories: string[] = [];
+  const files: SnapshotFile[] = [];
+  const parser = new Parser({
+    strict: true,
+    onReadEntry(entry) {
+      const relativePath = entry.path.replace(/^\/+/, "");
+      if (relativePath.split("/").includes("..")) {
+        parser.abort(new Error(`Invalid snapshot path: ${entry.path}`));
+        return;
+      }
+      const target = `/pglite/data/${relativePath}`;
+      if (entry.type === "Directory") {
+        directories.push(target);
+        entry.resume();
+        return;
+      }
+      if (entry.type !== "File") {
+        parser.abort(new Error(`Unsupported snapshot entry: ${entry.type}`));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      entry.on("data", (chunk: Buffer) => {
+        chunks.push(chunk);
+      });
+      entry.on("error", (error: unknown) => {
+        parser.abort(
+          new Error(`Cannot read snapshot entry: ${entry.path}`, {
+            cause: error,
+          }),
+        );
+      });
+      entry.on("end", () => {
+        if (!entry.mtime) {
+          parser.abort(
+            new Error(`Missing snapshot modification time: ${entry.path}`),
+          );
+          return;
+        }
+        files.push({
+          path: target,
+          // MEMFS copies with .slice(); Buffer.slice() would alias the cache.
+          data: new Uint8Array(Buffer.concat(chunks)),
+          modifiedAt: Math.floor(entry.mtime.getTime() / 1000),
+        });
+      });
+    },
+  });
+  parser.on("error", (error: Error) => {
+    parser.abort(error);
+  });
+  const completed = once(parser, "end");
+  parser.end(bytes);
+  await completed;
+  return { directories, files };
+}
+
+function snapshotFiles(path: string): Promise<SnapshotFiles> {
+  const images = snapshots();
+  let files = images.get(path);
+  if (!files) {
+    files = readSnapshotFiles(path);
+    images.set(path, files);
+  }
+  return files;
+}
+
+class SnapshotMemoryFS extends MemoryFS {
+  constructor(private readonly snapshot: SnapshotFiles) {
+    super();
+  }
+
+  override async initialSyncFs(): Promise<void> {
+    await super.initialSyncFs();
+    if (!this.pg) {
+      throw new Error("Snapshot filesystem has not been initialized");
+    }
+    const filesystem = this.pg.Module.FS;
+    filesystem.mkdirTree("/pglite/data");
+    for (const directory of this.snapshot.directories) {
+      filesystem.mkdirTree(directory);
+    }
+    for (const file of this.snapshot.files) {
+      filesystem.writeFile(file.path, file.data);
+      filesystem.utime(file.path, file.modifiedAt, file.modifiedAt);
+    }
+  }
+}
+
+export interface PgliteTestDatabase {
+  readonly database: PgliteDatabase;
+  readonly close: () => Promise<void>;
+}
+
+/** Fork the run's seeded image; cleanup belongs to the enclosing case owner. */
+export async function createPgliteDatabase(
+  snapshotPath: string,
+): Promise<PgliteTestDatabase> {
   const engine = new PGlite({
     extensions: { pgcrypto, btree_gin },
-    loadDataDir: await migrationImage(),
+    fs: new SnapshotMemoryFS(await snapshotFiles(snapshotPath)),
     parsers: driverParsers,
   });
-  const controller = new AbortController();
-  return await withTestCaseOwner(controller, async () => {
-    return await databaseScope().run(drizzle(engine), async () => {
-      return await releaseAfter(
-        (async () => {
-          await engine.waitReady;
-          return await work({ engine, signal: controller.signal });
-        })(),
-        async () => {
-          const finished = new DOMException(
-            "PGlite test owner finished",
-            "AbortError",
-          );
-          controller.abort(finished);
-          abortTestCaseOwner(finished);
-          await releaseAfter(
-            (async () => {
-              await drain();
-            })(),
-            async () => {
-              await engine.close();
-            },
-          );
-        },
-      );
-    });
+  const database = drizzle(engine);
+  const ready = await settleIncludingAbort(async () => {
+    await engine.waitReady;
+    // Session settings are not carried by filesystem snapshots. Keep UTC
+    // timestamp-without-time-zone columns consistent with PostgreSQL tests.
+    await engine.exec("SET search_path TO public; SET timezone TO 'UTC'");
   });
+  if (!ready.ok) {
+    return await releaseAfter(Promise.reject(ready.error), async () => {
+      await engine.close();
+    });
+  }
+  return {
+    database,
+    close: async () => {
+      await engine.close();
+    },
+  };
 }

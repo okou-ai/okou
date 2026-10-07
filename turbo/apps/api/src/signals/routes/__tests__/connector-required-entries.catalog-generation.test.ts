@@ -44,7 +44,9 @@ function withoutConnector(connectorSlug: string): ConnectorCatalogArtifact {
 
 describe("connector catalog entries missing for authorized connectors", () => {
   it("launches without an enabled connector that has no entry at the captured hash", async () => {
-    const publisher = createPublicConnectorCatalog(context);
+    const publisher = createPublicConnectorCatalog(context, {
+      isolatePg: true,
+    });
     await publisher.publish(API_TEST_CONNECTOR_CATALOG_ARTIFACT);
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     const connection = await connectors.connectManualGrant(
@@ -83,7 +85,9 @@ describe("connector catalog entries missing for authorized connectors", () => {
   });
 
   it("omits an admitted account from the Run MCP list like every other read", async () => {
-    const publisher = createPublicConnectorCatalog(context);
+    const publisher = createPublicConnectorCatalog(context, {
+      isolatePg: true,
+    });
     await publisher.publish(API_TEST_CONNECTOR_CATALOG_ARTIFACT);
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     const connection = await connectors.connectManualGrant(
