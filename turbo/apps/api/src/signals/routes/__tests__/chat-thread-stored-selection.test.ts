@@ -131,7 +131,7 @@ describe("thread stored selection that is neither Auto nor an available subscrip
       after.events.some((event) => {
         return event.id === clientEventId || event.runId !== undefined;
       }),
-    ).toBe(false);
+    ).toBeFalsy();
   }, 90_000);
 
   it("enqueues a webhook automation input, rejects it at pick, and creates no run", async () => {
@@ -192,7 +192,7 @@ describe("thread stored selection that is neither Auto nor an available subscrip
       events.some((event) => {
         return event.runId !== undefined;
       }),
-    ).toBe(false);
+    ).toBeFalsy();
 
     await runsApi.heartbeatRunner(runnerGroup);
     expect((await runsApi.pollRunner(runnerGroup)).body.job).toBeNull();

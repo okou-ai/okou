@@ -18,7 +18,6 @@ import {
   modelProviderCredentialScopeSchema,
   modelProviderTypeSchema,
   type ModelProviderCredentialScope,
-  type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   type HostedArtifactKind,
