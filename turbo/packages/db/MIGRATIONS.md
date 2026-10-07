@@ -289,6 +289,14 @@ target) is built from the commit that adds it. The production rollback
 resolver enforces this as a floor on the first-parent `main` commit that adds 1333. `test-model-catalog-permanent.ts` and `test-model-catalog-seed.ts` cover
 the surviving catalog and route invariants.
 
+Migration `1334_retire_ultrafast_data` clears stored Ultrafast selections from
+`chat_threads.codex_service_tier`, `org_members_metadata.service_tier` and
+`model_routes` service tiers. `1335_tighten_model_route_service_tiers` limits
+route tiers to `priority` and adds the thread and member service tier checks
+`NOT VALID` with a separate `VALIDATE`, per the online constraint rule below.
+See
+[deployment compatibility](../../../docs/deployment-compatibility.md#ultrafast-service-tier-retired-2026-10-07).
+
 Migration `1336_drop_built_in_model_candidate_cooldown` drops
 `built_in_model_candidate_cooldown`; Auto no longer cools its route down after a
 provider failure. There is no data conversion. Every API built before 1336

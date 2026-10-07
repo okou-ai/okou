@@ -1,5 +1,26 @@
 # Deployment Compatibility
 
+## Ultrafast service tier retired (2026-10-07)
+
+Ultrafast is retired across the App, API, contracts, runner and proxy pricing.
+Migration `1334_retire_ultrafast_data` clears stored Ultrafast selections:
+`chat_threads.codex_service_tier`, `org_members_metadata.service_tier`, and the
+`model_routes.service_tiers` / `default_service_tier` values. Migration
+`1335_tighten_model_route_service_tiers` then limits route tiers to `priority`
+and adds `chk_chat_threads_codex_service_tier` (NULL or `fast`) and
+`chk_org_members_metadata_service_tier` (NULL or `priority`). The two new checks
+are added `NOT VALID` and validated in a separate statement, so new writes are
+enforced without holding a blocking lock while existing rows are scanned.
+
+New requests that send `ultrafast` are rejected with 400. Immutable history
+(thread events, snapshots, client caches and queued chat input model
+selections) still reads a stored Ultrafast value as Standard (null) instead of
+failing; `agent_runs.codex_service_tier` and usage `.ultrafast` categories stay
+readable for historical runs and billing. An API built before 1335 that is
+still draining can only fail when it writes `ultrafast`, which the current
+catalog no longer offers. Rolling back below this change restores no Ultrafast
+offering because 1334 removed it from the catalog data.
+
 ## Built-in model candidate cooldown removed (2026-10-07)
 
 Owner decision (Ethan, 2026-10-07): Auto has one platform route, so a provider
@@ -964,6 +985,9 @@ sweep. No grace period or complete orphan-GC guarantee is introduced here. The
 details canonical election, empty-parent recovery and bounded cleanup.
 
 ## Astra Ultrafast temporarily disabled (2026-09-30)
+
+> Superseded: Ultrafast was retired on 2026-10-07 (see "Ultrafast service tier
+> retired"); this section is a historical record and is not a re-enablement path.
 
 Ultrafast is no longer advertised in model run options. Both model pickers hide
 its entry. The API rejects new Ultrafast thread selections, member preferences,

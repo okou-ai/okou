@@ -469,7 +469,8 @@ the threshold. The API captures this value from the assigned catalog route:
 | `0`              | Single-tier pricing.                    |
 
 See [deployment requirements](deployment-compatibility.md#long-context-threshold-in-the-runner-payload-2026-10-01).
-The `.fast` and `.ultrafast` suffixes follow the observed service tier.
+The `.fast` suffix follows the observed service tier; `.ultrafast` is retired and
+remains only in historical usage categories.
 See [model catalog](model-catalog.md#billing-and-history).
 
 ## Managed credential method boundary
