@@ -15,12 +15,7 @@ tester.run("no-test-database-binding", noTestDatabaseBinding, {
       code: 'import { PGlite } from "@electric-sql/pglite"; new PGlite();',
     },
     {
-      filename:
-        "/api/src/signals/routes/__tests__/connector-catalog-immutable.test.ts",
-      code: 'import { drizzle } from "drizzle-orm/pglite";',
-    },
-    {
-      code: 'import { withPgliteDatabase } from "../test-fixtures/pglite-database";',
+      code: 'import { setupApp } from "../__tests__/test-helpers";',
     },
     {
       code: `const isolated = ["${suite}"]; defineConfig({test: {include: isolated}});`,
@@ -30,6 +25,12 @@ tester.run("no-test-database-binding", noTestDatabaseBinding, {
     },
   ],
   invalid: [
+    {
+      filename:
+        "/api/src/signals/routes/__tests__/connector-catalog-immutable.test.ts",
+      code: 'import { drizzle } from "drizzle-orm/pglite";',
+      errors: [{ messageId: "harnessOnly" }],
+    },
     {
       code: 'import { PGlite } from "@electric-sql/pglite";',
       errors: [{ messageId: "harnessOnly" }],

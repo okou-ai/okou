@@ -15,6 +15,7 @@ import { usagePricing } from "@okouai/db/schema/usage-pricing";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
+import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import { env } from "../lib/env";
 import { USAGE_PRICING } from "../scripts/dev-seed";
@@ -186,7 +187,7 @@ const TEST_ONLY_MODEL_PRICING = [
 /**
  * Built-in run admission requires usage_pricing for every category a route
  * can bill, but API tests migrate without the development seed. Seed the
- * development model pricing into the test database once per test file; rows
+ * development model pricing into the test database once per run; rows
  * a test already owns are left untouched.
  *
  * Runs in global setup, so it uses its own short-lived client instead of the
@@ -194,8 +195,10 @@ const TEST_ONLY_MODEL_PRICING = [
  * rely on their first app DB access creating the pool from that stub.
  */
 /** The isolated harness uses the exact same pricing seed on its owned DB. */
-export async function seedIsolatedModelPricingForTests(): Promise<void> {
-  await fixtureDb()
+export async function seedIsolatedModelPricingForTests<
+  TQueryResult extends PgQueryResultHKT,
+>(database: PgDatabase<TQueryResult>): Promise<void> {
+  await database
     .insert(usagePricing)
     .values([
       ...USAGE_PRICING.filter((row) => {

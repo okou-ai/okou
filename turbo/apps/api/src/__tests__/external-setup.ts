@@ -13,6 +13,9 @@ import {
   mockApiTestConnectorProviderConfiguration,
 } from "../test-fixtures/connector-catalog";
 
+// Install the same defaults for the first case as afterEach installs thereafter.
+resetApiTestMocks();
+
 aroundEach(async (runTest) => {
   await withSecretKmsClientForTest(createApiTestKmsClient(), runTest);
 });

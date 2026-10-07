@@ -1,8 +1,5 @@
-/* eslint-disable no-restricted-imports, api/no-package-variable, api/no-test-vi-mocks -- Only this N lifecycle process binds the existing DB module to per-case real PGlite; all ordinary suites retain node-postgres (target-state v5). */
+/* eslint-disable no-restricted-imports, api/no-package-variable -- Catalog corruption fixtures and query assertions use this case's isolated database. */
 /* oxlint-disable vitest/warn-todo -- N1 belongs to the later publisher pointer stage. */
-import { syncBuiltinESMExports } from "node:module";
-import { createApiTestKmsClient } from "../../../__tests__/secret-kms";
-import { withSecretKmsClientForTest } from "../../../lib/secret-kms-client";
 import { HttpResponse, http } from "msw";
 import { server } from "../../../mocks/server";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -24,8 +21,6 @@ import {
   catalogWithManualConnector,
   createPublicConnectorCatalog,
 } from "./helpers/public-connector-catalog";
-import { readFile, readdir } from "node:fs/promises";
-import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
 import { signSandboxJwtForTests } from "../../auth/tokens";
@@ -51,21 +46,8 @@ import { connectorOverviewRoutes } from "../connector-overview";
 import { onboardingSourcesRoutes } from "../onboarding-sources";
 import { onboardingWorkflowConnectorsRoutes } from "../onboarding-workflow-connectors";
 import { SYSTEM_ORG_ID, VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
-import { PGlite } from "@electric-sql/pglite";
-import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
-import { btree_gin } from "@electric-sql/pglite/contrib/btree_gin";
-import { drizzle } from "drizzle-orm/pglite";
-import {
-  afterAll,
-  afterEach,
-  aroundEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import type { PgliteTestDatabase } from "../../../test-fixtures/pglite-database";
+import { beforeEach, describe, expect, it } from "vitest";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import {
   runnersJobClaimContract,
@@ -83,255 +65,42 @@ import {
   type ConnectorCatalogArtifact,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/connector-catalog-artifact";
-import { getApiTestMocks, resetApiTestMocks } from "../../../__tests__/mocks";
+import { getApiTestMocks } from "../../../__tests__/mocks";
+import { isolatedCaseDatabase } from "../../../test-fixtures/case-database";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { accept, testContext } from "../../../__tests__/test-context";
-import { clearMockedEnv, mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { clearMockedEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
-import { flushWaitUntilForTest, waitUntil } from "../../context/wait-until";
-import { db$, writeDb$ } from "../../external/db";
 import type {
   ClerkOrganizationMembership,
   ClerkPaginated,
 } from "../../external/clerk";
 import { createStore } from "ccstate";
-import { createDeferredPromise, settle } from "../../utils";
 import { builtinConnectorsRoutes } from "../connectors";
 import { createRouteMocks, createFixtureTracker } from "./helpers/route-test";
 import { createExecutionStorageObjects } from "../../services/execution-storage.service";
-import {
-  API_TEST_CONNECTOR_CATALOG,
-  mockApiTestConnectorProviderConfiguration,
-} from "../../../test-fixtures/connector-catalog";
+import { API_TEST_CONNECTOR_CATALOG } from "../../../test-fixtures/connector-catalog";
 
-const binding = vi.hoisted(() => {
-  return {
-    database: undefined as ReturnType<typeof drizzle> | undefined,
-  };
-});
-vi.mock("../../../lib/db", () => {
-  return {
-    db: () => {
-      if (!binding.database) {
-        throw new Error("Lifecycle DB is not bound");
-      }
-      return binding.database;
-    },
-    closeDbPool: () => {
-      return Promise.resolve();
-    },
-  };
-});
-let engine: PGlite | undefined;
+let engine: PgliteTestDatabase["engine"] | undefined;
 let statements: string[] = [];
-interface EngineTrace {
-  readonly name: string;
-  readonly engine: PGlite;
-  readonly signal: AbortSignal;
-  readonly events: string[];
-  setupFailureObserved: boolean;
-}
-const engineTraces: EngineTrace[] = [];
-let caseTrace: EngineTrace | undefined;
-
-// Register FIRST: locked Vitest's stack order runs this AFTER testContext's
-// owner abort/shared detached cleanup. Never flush abort-dependent work first.
-afterEach(async () => {
-  const ownedEngine = engine;
-  const trace = caseTrace;
-  const drained = await settle(
-    (async () => {
-      const beforeFlush = [...(trace?.events ?? [])];
-      await flushWaitUntilForTest();
-      trace?.events.push("waitUntil-drained");
-      // Diagnostics must not skip drainage if their own assertion fails.
-      if (trace) {
-        assert.equal(trace.signal.aborted, true);
-        assert.deepEqual(beforeFlush, ["owner-aborted", "native-drained"]);
-      }
-    })(),
-  );
-  binding.database = undefined;
-  const released = await settle(ownedEngine?.close() ?? Promise.resolve());
-  if (released.ok) {
-    trace?.events.push("closed");
-  }
-  engine = undefined;
-  caseTrace = undefined;
-  clearMockedEnv();
-  resetApiTestMocks();
-  server.resetHandlers();
-  if (!drained.ok) {
-    throw drained.error;
-  }
-  if (!released.ok) {
-    throw released.error;
-  }
-});
 const context = testContext();
 const routeMocks = createRouteMocks(context);
 
-const migrationDir = new URL(
-  "../../../../../../packages/db/src/migrations/",
-  import.meta.url,
-);
-
-beforeAll(() => {
-  server.listen({ onUnhandledRequest: "error" });
-  syncBuiltinESMExports();
-});
-
-aroundEach(async (runTest) => {
-  await withSecretKmsClientForTest(createApiTestKmsClient(), runTest);
-});
-
 beforeEach(async () => {
-  resetApiTestMocks();
-  mockEnv("SECRETS_KMS_KEY_ID", "alias/okou-secrets-test");
-  engine = new PGlite({ extensions: { pgcrypto, btree_gin } });
-  const ownedEngine = engine;
-  const signal = context.signal;
-  const trace: EngineTrace = {
-    name: expect.getState().currentTestName ?? "Missing test name",
-    engine: ownedEngine,
-    signal,
-    events: [],
-    setupFailureObserved: false,
-  };
-  caseTrace = trace;
-  engineTraces.push(trace);
-  const aborted = createDeferredPromise<void>(signal);
-  // Existing shared trackers own real work that cannot finish until abort.
-  // Native SQL must finish while this case's engine is still alive.
-  waitUntil(
-    aborted.promise.then(
-      () => {
-        throw new Error("Cleanup probe unexpectedly resolved before abort");
-      },
-      async (error: unknown) => {
-        assert.equal(signal.aborted, true);
-        assert.equal(error, signal.reason);
-        trace.events.push("owner-aborted");
-        assert.deepEqual((await ownedEngine.query("SELECT 1 AS alive")).rows, [
-          { alive: 1 },
-        ]);
-        trace.events.push("native-drained");
-      },
-    ),
-  );
-  if (trace.name.endsWith("engine closes after initial SQL failure")) {
-    const failure = await settle(
-      ownedEngine.exec("CREATE TABLE invalid_initial_sql ("),
-    );
-    if (!failure.ok) {
-      trace.setupFailureObserved = true;
-      throw failure.error;
-    }
-    throw new Error("The invalid initial SQL unexpectedly succeeded");
-  }
-  const files = (await readdir(migrationDir))
-    .filter((name) => {
-      return /^\d+.*\.sql$/.test(name);
-    })
-    .sort();
-  const journal = JSON.parse(
-    await readFile(new URL("meta/_journal.json", migrationDir), "utf8"),
-  ) as { entries: { tag: string; when: number }[] };
+  await setupApp({ context, routes: [], isolatePg: true });
+  const owned = isolatedCaseDatabase();
+  engine = owned.engine;
+  // These lifecycle cases deliberately begin without a current publication.
   await engine.exec(
-    "CREATE SCHEMA drizzle; CREATE TABLE drizzle.__drizzle_migrations (id serial PRIMARY KEY, hash text NOT NULL, created_at bigint)",
+    "DELETE FROM connector_catalog; DELETE FROM connector_catalog_entries",
   );
-  for (const name of files) {
-    let sql = await readFile(new URL(name, migrationDir), "utf8");
-    // The baseline declares vector but has no vector columns or indexes. The
-    // unused extension declaration is the only omitted baseline statement;
-    // all table, index, FK and CHECK DDL and subsequent migrations run intact.
-    if (name === "1078_baseline.sql") {
-      sql = sql
-        .replace(
-          "CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;",
-          "",
-        )
-        .replace(
-          "COMMENT ON EXTENSION vector IS 'vector data type and ivfflat and hnsw access methods';",
-          "",
-        );
-    }
-    // pgstattuple is metadata inspection only (1178), absent in PGlite; no
-    // table/index/constraint or lifecycle operation depends on that extension.
-    sql = sql.replace(
-      "CREATE EXTENSION IF NOT EXISTS pgstattuple WITH SCHEMA public;",
-      "",
-    );
-    if (sql.includes("-- vm0:non-transactional")) {
-      for (const statement of sql.split("--> statement-breakpoint")) {
-        await engine.exec(statement);
-      }
-    } else if (/\b(?:CREATE|DROP) (?:UNIQUE )?INDEX CONCURRENTLY\b/.test(sql)) {
-      if (sql.includes("$$")) {
-        throw new Error(
-          "Concurrent migration requires SQL-aware statement boundaries",
-        );
-      }
-      for (const statement of sql.split(";")) {
-        if (statement.trim()) {
-          await engine.exec(statement);
-        }
-      }
-    } else {
-      const migration = await settle(engine.exec(sql));
-      if (!migration.ok) {
-        throw new Error(`Lifecycle migration failed: ${name}`, {
-          cause: migration.error,
-        });
-      }
-    }
-    const metadata = journal.entries.find((entry) => {
-      return `${entry.tag}.sql` === name;
-    });
-    if (!metadata) {
-      throw new Error(`Missing migration journal entry: ${name}`);
-    }
-    await engine.query(
-      "INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)",
-      [
-        createHash("sha256")
-          .update(await readFile(new URL(name, migrationDir)))
-          .digest("hex"),
-        metadata.when,
-      ],
-    );
-  }
-  await engine.exec("SET search_path TO public");
   statements = [];
-  binding.database = drizzle(engine, {
-    logger: {
-      logQuery(query) {
-        statements.push(query);
-      },
+  owned.setLogger({
+    logQuery(query) {
+      statements.push(query);
     },
   });
-  mockApiTestConnectorProviderConfiguration();
-});
-
-afterAll(() => {
-  server.close();
-  syncBuiltinESMExports();
-  for (const trace of engineTraces) {
-    assert.deepEqual(trace.events, [
-      "owner-aborted",
-      "native-drained",
-      "waitUntil-drained",
-      "closed",
-    ]);
-    assert.equal(trace.engine.closed, true);
-  }
-  const failedSetup = engineTraces.find((trace) => {
-    return trace.name.endsWith("engine closes after initial SQL failure");
-  });
-  if (failedSetup) {
-    assert.equal(failedSetup.setupFailureObserved, true);
-  }
 });
 
 function release(
@@ -528,19 +297,11 @@ async function mcpDirectory(actor: Awaited<ReturnType<typeof ownedMcpRun>>) {
 }
 
 describe("immutable connector catalog real-entry lifecycle", () => {
-  it.fails("engine closes after initial SQL failure", () => {
-    expect.unreachable(
-      "The deliberately failing initial SQL must prevent the body",
-    );
-  });
   it.todo("n1: rejects downloaded bytes whose hash differs from the pointer");
-  it("n2: binds all existing gateways to the case engine and accepts the publisher-shaped digest through cron", async () => {
-    if (!engine || !binding.database) {
+  it("n2: accepts the publisher-shaped digest through cron", async () => {
+    if (!engine) {
       throw new Error("Missing case engine");
     }
-    const owner = createStore();
-    expect(owner.get(db$)).toBe(binding.database);
-    expect(owner.set(writeDb$)).toBe(binding.database);
     const first = release("2099-01-01.first", "First lifecycle catalog");
     serve(first);
     statements = [];
@@ -1010,7 +771,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
           "SELECT generation FROM pi_stable_context_generations",
         )
       ).rows,
-    ).toStrictEqual([{ generation: 2 }]);
+    ).toStrictEqual([{ generation: "2" }]);
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(1);
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,
@@ -1033,7 +794,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
           "SELECT generation FROM pi_stable_context_generations",
         )
       ).rows,
-    ).toStrictEqual([{ generation: 2 }]);
+    ).toStrictEqual([{ generation: "2" }]);
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(1);
     const concurrent = release(
       "2099-01-01.same-baseline",
@@ -1050,7 +811,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
           "SELECT generation FROM pi_stable_context_generations",
         )
       ).rows,
-    ).toStrictEqual([{ generation: 3 }]);
+    ).toStrictEqual([{ generation: "3" }]);
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(2);
     expect(
       (await engine.query("SELECT hash FROM connector_catalog")).rows,
@@ -1096,7 +857,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
           "SELECT generation FROM pi_stable_context_generations",
         )
       ).rows,
-    ).toStrictEqual([{ generation: 4 }]);
+    ).toStrictEqual([{ generation: "4" }]);
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(3);
     expect(
       (
@@ -1104,7 +865,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
           "SELECT generation, status FROM pi_stable_context_heads",
         )
       ).rows,
-    ).toStrictEqual([{ generation: 4, status: "missing" }]);
+    ).toStrictEqual([{ generation: "4", status: "missing" }]);
     expect((await sync()).body).toMatchObject({ outcome: "unchanged" });
     expect(
       (
@@ -1112,7 +873,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
           "SELECT generation FROM pi_stable_context_generations",
         )
       ).rows,
-    ).toStrictEqual([{ generation: 4 }]);
+    ).toStrictEqual([{ generation: "4" }]);
     expect(context.mocks.ably.batchPublish).toHaveBeenCalledTimes(3);
   });
   it("n4: real MCP consumer follows hash switches while captured entries retain their hash", async () => {
@@ -1277,7 +1038,7 @@ describe("immutable connector catalog real-entry lifecycle", () => {
 });
 
 // These seven cases replace the old projection-reader suite. Only this lifecycle
-// project may publish/fault immutable current: every case owns its PGlite engine.
+// suite may publish/fault immutable current: every case owns its PGlite engine.
 // Storage corruption cannot be constructed through a production user endpoint.
 describe("slug-first current catalog business readers", () => {
   const headers = { authorization: "Bearer clerk-session" };

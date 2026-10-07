@@ -1472,7 +1472,7 @@ function staffDiagnosticsFromSync(body: SyncResponseBody) {
   const { outcome: _outcome, failureCode: _failureCode, ...diagnostics } = body;
   return {
     ...diagnostics,
-    state: diagnostics.pointer === null ? "never-synced" : "current",
+    state: "current",
   };
 }
 
@@ -1500,23 +1500,29 @@ async function rawCronRequest(path: string): Promise<Response> {
   });
 }
 
-// The pointer is shared by every case in this suite, so a rejection reports
-// whichever generation already serves: `stale` with a pointer, `never-synced`
-// without one. A rejected candidate itself never serves.
+// Each case starts with a seeded serving pointer. Rejection retains that
+// generation, or a generation published by the case, and never serves the
+// rejected candidate.
 function expectRejectedRetainingServingPointer(
   body: SyncResponseBody,
   failureCode: string,
   rejected?: ReleaseFixture,
 ): void {
   expect(body).toMatchObject({ outcome: "rejected", failureCode });
-  expect(body.state).toBe(body.pointer === null ? "never-synced" : "stale");
+  expect(body.state).toBe("stale");
+  expect(body.pointer).not.toBeNull();
   expect(body.active?.catalogDigest ?? null).toBe(body.pointer?.hash ?? null);
   if (rejected !== undefined) {
     expect(body.pointer?.hash).not.toBe(rejected.digest);
   }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await setupApp({
+    context,
+    routes: cronConnectorCatalogRoutes,
+    isolatePg: true,
+  });
   mockEnv("CRON_SECRET", CRON_SECRET);
   mockNow(new Date(FIRST_SYNC_TIME));
 });
@@ -1539,8 +1545,8 @@ describe("connector catalog cron authentication and initial state", () => {
     expect(missing.status).toBe(401);
   });
 
-  // The pointer is global, so a fresh test source still sees the current
-  // publication; never-synced is covered by the case-owned immutable suite.
+  // The snapshot contains a seeded publication; never-synced is covered by
+  // the immutable catalog cases that explicitly remove that publication.
   it("reports staff diagnostics without sync history or storage reads", async () => {
     configureSource();
     const body = (await readStatus()).body;
@@ -1552,7 +1558,7 @@ describe("connector catalog cron authentication and initial state", () => {
       "schemaVersion",
       "state",
     ]);
-    expect(body.state).not.toBe("stale");
+    expect(body.state).toBe("current");
     expect(context.mocks.s3.send).not.toHaveBeenCalled();
   });
 

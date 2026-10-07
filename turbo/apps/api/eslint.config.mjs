@@ -629,7 +629,12 @@ export default [
   },
   {
     files: ["src/**/*.ts"],
-    ignores: ["src/lib/env.ts", "src/lib/time.ts", "src/__tests__/env-stub.ts"],
+    ignores: [
+      "src/lib/env.ts",
+      "src/lib/time.ts",
+      "src/__tests__/env-stub.ts",
+      "src/__tests__/global-setup-env.ts",
+    ],
     rules: {
       "no-restricted-syntax": [
         "error",
@@ -649,7 +654,7 @@ export default [
       "src/**/*.test.ts",
       ...promiseChainAllowlist,
     ],
-    ignores: ["src/__tests__/env-stub.ts"],
+    ignores: ["src/__tests__/env-stub.ts", "src/__tests__/global-setup-env.ts"],
     rules: {
       "no-restricted-syntax": ["error", ...restrictedSyntax],
     },
@@ -1016,6 +1021,7 @@ export default [
       // Bootstrap-only module: it owns the process.env and vi.stubEnv usage
       // that `restrictedSyntax` bans everywhere else.
       "src/__tests__/env-stub.ts",
+      "src/__tests__/global-setup-env.ts",
       // Service-directory tests are answered by their own blocks above: the
       // file is either banned outright or is a named exception that carries
       // these selectors alongside the shared ones.

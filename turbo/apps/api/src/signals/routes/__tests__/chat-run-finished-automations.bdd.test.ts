@@ -930,6 +930,7 @@ describe("chat-run-finished workflow automations", () => {
     "shows an error instead of firing when the watched run exhausts its budget",
     { timeout: 30_000 },
     async () => {
+      await setupApp({ context, routes: [], isolatePg: true });
       const scenario = await publicResults.setupOfficial({
         budget: 0,
         resultEmail: false,

@@ -6026,7 +6026,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const connectors = createConnectorBddApi(context);
         const catalogBucket = `test-run-lifecycle-runtime-sync-projection-${randomUUID()}`;
         mockEnv("R2_USER_STORAGES_BUCKET_NAME", catalogBucket);
-        await installApiTestConnectorCatalog();
+        await installApiTestConnectorCatalog({ ifAbsent: true });
         const { actor, agentId, runnerGroup } = await entitledRunActor();
 
         await connectors.updateFeatureSwitches(actor, {});
@@ -6064,7 +6064,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         onTestFinished(async () => {
           mockEnv("R2_USER_STORAGES_BUCKET_NAME", catalogBucket);
-          await installApiTestConnectorCatalog();
+          await installApiTestConnectorCatalog({ ifAbsent: true });
           await connectors.deleteCustomConnector(
             actor,
             permissionedCustom.id,

@@ -71,6 +71,24 @@ import {
 } from "../test-pi-memory-stage1-state";
 
 const context = testContext();
+const setupMemoryModelKey = createMemoryModelKeySetup();
+
+function createMemoryModelKeySetup() {
+  const keys = new WeakMap<
+    AbortSignal,
+    ReturnType<typeof seedBuiltInModelKey>
+  >();
+  return async () => {
+    // Initialize after the case selects its database, once across owned fixtures.
+    const signal = context.signal;
+    let key = keys.get(signal);
+    if (!key) {
+      key = seedBuiltInModelKey(context, "okou-1.0");
+      keys.set(signal, key);
+    }
+    await key;
+  };
+}
 const BUCKET = "test-user-storages";
 const CRON_SECRET = "test-pi-memory-stage1-secret";
 const INPUT_SECRET = "sk-proj-inputsecretabcdefghijklmnopqrstuvwxyz";
@@ -414,6 +432,7 @@ function createStorageFixture(
       { action: "seed" }
     >["source"];
   }): Promise<CandidateFixture> {
+    await setupMemoryModelKey();
     return await owner.run(async () => {
       // Runless background attempts obey the same source plan/credit admission.
       admissionSetup ??= seedOrgMetadata({
@@ -577,14 +596,12 @@ function stage1Client(storages: readonly ScopedStage1Fixture[]) {
   })(cronExtractPiMemoryStage1Contract);
 }
 
-beforeEach(async () => {
+beforeEach(() => {
   mockEnv("PI_MEMORY_BACKGROUND_WORKERS_ENABLED", "true");
   mockEnv("R2_USER_STORAGES_BUCKET_NAME", BUCKET);
   mockEnv("CRON_SECRET", CRON_SECRET);
   context.sessionHistoryBlobs.clear();
   installS3Objects();
-  // Auto and independent memory share the managed OpenRouter key, not chat routes.
-  await seedBuiltInModelKey(context, "okou-1.0");
 });
 
 describe("Pi memory Stage 1 worker", () => {
@@ -592,6 +609,7 @@ describe("Pi memory Stage 1 worker", () => {
   // Ordinary sources are completed native Pi Runs, selected by the real day producer.
   let publicSourceTime: number;
   async function createPublicStorageFixture() {
+    await setupMemoryModelKey();
     const chat = createChatEventsFixture(context);
     const { actor, agentId, runnerGroup } = await chat.entitledChatActor();
     const orgId = actor.orgId;
@@ -1335,6 +1353,7 @@ describe("Pi memory Stage 1 worker", () => {
   });
 
   it("bills built-in extraction at the served route's catalog long-context threshold", async () => {
+    await setupApp({ context, routes: [], isolatePg: true });
     const below = await createPublicStorageFixture();
     const atBoundary = await createPublicStorageFixture();
     await below.seed({

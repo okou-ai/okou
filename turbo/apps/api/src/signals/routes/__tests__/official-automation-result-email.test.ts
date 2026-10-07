@@ -326,6 +326,7 @@ describe("Official Automation result email callbacks", () => {
   });
 
   it("links Morning Brief management to Preferences without changing account unsubscribe", async () => {
+    await setupApp({ context, routes: [], isolatePg: true });
     const scenario = await publicResults.setupOfficial({ morningBrief: true });
     const { runId } = await publicResults.start(
       scenario.actor,
@@ -613,6 +614,7 @@ describe("Official Automation result email callbacks", () => {
   });
 
   it("falls back after pathological Markdown expansion and sends one bounded multipart email", async () => {
+    await setupApp({ context, routes: [], isolatePg: true });
     const scenario = await publicResults.setupOfficial();
     const { runId } = await publicResults.start(
       scenario.actor,
@@ -707,6 +709,7 @@ describe("Official Automation result email callbacks", () => {
   });
 
   it("keeps suppression at send and leaves a successful Run unchanged", async () => {
+    await setupApp({ context, routes: [], isolatePg: true });
     const scenario = await publicResults.setupOfficial();
     const { runId } = await publicResults.start(
       scenario.actor,
@@ -799,6 +802,7 @@ describe("Official Automation result email callbacks", () => {
 
   describe("with a real failed Official Run", () => {
     it("keeps terminal-failure Runs ineligible for result email", async () => {
+      await setupApp({ context, routes: [], isolatePg: true });
       const scenario = await publicResults.setupOfficial();
       const { runId } = await publicResults.start(
         scenario.actor,
@@ -819,6 +823,7 @@ describe("Official Automation result email callbacks", () => {
 
   describe("with a real successful Official Run", () => {
     it("honors account unsubscribe for successful result callbacks", async () => {
+      await setupApp({ context, routes: [], isolatePg: true });
       const scenario = await publicResults.setupOfficial();
       const { runId } = await publicResults.start(
         scenario.actor,

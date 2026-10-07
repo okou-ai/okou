@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { builtinConnectorsBySlugContract } from "@okouai/api-contracts/contracts/connectors";
-import { afterEach } from "vitest";
+import { beforeEach, afterEach } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -18,6 +18,11 @@ import { connectorAccountRoutes } from "../connector-accounts";
 import { builtinConnectorsRoutes } from "../connectors";
 
 const context = testContext();
+
+beforeEach(async () => {
+  await setupApp({ context, routes: builtinConnectorsRoutes, isolatePg: true });
+});
+
 const mocks = createRouteMocks(context);
 
 interface AuthenticatedFixture {

@@ -1,4 +1,6 @@
+import { beforeEach } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import {
@@ -8,6 +10,11 @@ import {
 } from "./helpers/public-connector-catalog";
 
 const context = testContext();
+
+beforeEach(async () => {
+  await setupApp({ context, routes: [], isolatePg: true });
+});
+
 const bdd = createBddApi(context);
 const connectorsApi = createConnectorBddApi(context);
 

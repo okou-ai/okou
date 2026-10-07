@@ -144,10 +144,10 @@ concurrently, even if its cleanup has not happened yet.
 
 Give every test uniquely owned, explicitly addressable users, organizations,
 providers, storage identities, external entities, cache namespaces, and rows.
-When a production cron scans a global table, keep production behavior global
-but drive correctness through a test-only route whose request names the owned
-IDs. Production-global routes may be mounted only by the focused contract
-harness for fixed missing/wrong-auth assertions. Do not isolate tests with a
+In shared PostgreSQL, drive cron behavior through a scoped test route whose
+request names the owned IDs. Cases that exercise successful global writes use
+an isolated database as described below. Keep production behavior global; do
+not change its schema or filtering solely for test isolation. Do not isolate tests with a
 global lock, test ordering, worker serialization, broad clock partitions,
 snapshot/restore of shared rows, or residue-tolerant assertions.
 
@@ -171,64 +171,99 @@ sockets/streams, detached work, and temporary files. Such cleanup bounds
 residue and resource lifetime; it must not delete, overwrite, or restore
 pre-existing shared state to make an assertion pass.
 
-API test startup idempotently installs one complete fixed connector catalog.
-`src/__tests__/setup.ts` selects its fixed legacy source and restores provider
-configuration before each case. Ordinary business tests use `testContext()`;
-they must not install, rotate, mutate, or delete catalog authority. Users,
-organizations, accounts, credential storage and encrypted values remain
-case-owned. Concurrent workers share the same committed fixture: a losing
-initialization INSERT never replaces it.
+### Case-owned Database Selection
 
-Readers use the current catalog pointer, which is keyed only by schema version
-and has no source dimension. A case that publishes another generation, such as
-an identity rotation or a catalog with unavailable auth methods, belongs to the
-serial `*.catalog-generation.test.ts` or publisher project and publishes its own
-prerequisite generation. Legacy snapshot and stored-compatibility mutations no
-longer change what business readers observe.
+All API suites run in one `api` project with one shared setup. Files execute in
+parallel; cases within each file execute serially. Database choice belongs to
+the case, not to its filename, a Vitest project, tags, or metadata.
 
-`connector-catalog-immutable.test.ts` retains its dedicated PGlite catalog
-lifecycle project and existing mechanism-specific lint exceptions. Its project
-never loads shared real-PG setup; each case owns its engine through abort and
-work drainage. Current-entry publication, missing-entry faults and account
-generation stay in that lifecycle engine. Its external KMS mock is async-local
-and shared with ordinary setup; HTTP uses MSW. N1 remains TODO and is not
-acceptance evidence. Ordinary API suites keep native PostgreSQL and the
-startup-installed fixed current catalog, except the explicitly owned SQL
-contracts described below.
+Ordinary cases use native PostgreSQL. `setupApp({ context, routes })` stays
+synchronous and returns the contract-client factory. Cases that write global
+state, such as publishing a connector or official workflow catalog or changing
+canonical model pricing, initialize an isolated PGlite through `setupApp`:
 
-New isolated
-SQL contract suites use the shared `api-isolated-database` project instead of
-copying those exceptions. `src/__tests__/pglite-setup.ts` binds only the DB
-transport to `src/test-fixtures/pglite-database.ts`; routes, services, fixture
-writers and SQL remain real. Every case owns a new engine and async-local
-binding. Only immutable migrated baseline bytes are reused. The project never
-loads shared real-PG setup or opens a `pg.Client` for its pricing seed.
+```typescript
+const context = testContext();
+
+it("lists the current catalog", async () => {
+  const client = setupApp({ context, routes: connectorCatalogRoutes })(
+    connectorCatalogContract,
+  );
+  await accept(client.list({ headers: authHeaders() }), [200]);
+});
+
+it("publishes a replacement catalog", async () => {
+  const app = await setupApp({
+    context,
+    routes: cronConnectorCatalogRoutes,
+    isolatePg: true,
+  });
+  // Prepare the external catalog through context.mocks, then call its route.
+  const client = app(cronConnectorCatalogContract);
+  await accept(client.sync({ headers: cronHeaders() }), [200]);
+});
+```
+
+Call and await isolated setup before any fixture, service, or request accesses
+the database. Switching after shared PostgreSQL was accessed throws. Repeated
+isolated setup in one case reuses its database. Later ordinary `setupApp` calls
+inherit the case's database; omitting `isolatePg` never switches an isolated case
+back to shared PostgreSQL. The same binding covers direct fixture writes,
+services, HTTP requests, and their asynchronous background work.
+
+When every case in a file or group requires isolation, its `beforeEach` may
+await `setupApp({ context, routes, isolatePg: true })`. Helper-driven suites may
+use an empty route slice for this initialization and let their API helpers mount
+the routes they need. Each case still receives a separate engine; do not create
+one database for the whole file. Keep `testContext()` at module scope.
+
+`src/__tests__/global-setup.ts` seeds the shared PostgreSQL pricing and complete
+fixed connector catalog once per run. It also migrates and seeds one PGlite,
+saves an immutable snapshot, and provides its path to workers. Workers reuse the
+snapshot bytes, and isolated cases fork a new engine from them. Cases do not
+replay migrations or reseed their isolated database. Shared fixture installation
+uses `ifAbsent: true` and must never replace an existing catalog pointer.
+
+`src/__tests__/external-setup.ts` restores the fixed source and provider
+configuration before each case. Shared PostgreSQL cases may read the seeded
+catalog but must not rotate, mutate, or delete its authority. Readers use a
+current pointer keyed only by schema version; changing the S3 bucket does not
+isolate that pointer. Catalog-generation and publisher cases therefore use
+`isolatePg: true` and publish their prerequisites into their own databases.
+Users, organizations, accounts, credential storage, and encrypted values still
+use explicit case ownership.
+
+`connector-catalog-immutable.test.ts` uses the same setup and seeded snapshot.
+Its existing mechanism-specific fixtures remove the seeded publication in that
+case's database when testing missing-current or missing-entry behavior, and
+attach their query logger to the owned engine. It has no private database mock,
+engine construction, or lifecycle project. Ordinary integration cases continue
+to assert production API responses rather than engine internals.
 
 Foreground work is aborted before API-based cleanup, which has its own live
-case-owned signal. Final teardown aborts both signals and drains detached/native
-work before engine close, including setup failures. `pglite-database.test.ts`
-verifies concurrent owner isolation, fail-closed access, cleanup-signal lifetime,
-initialization failure, failed drainage and node-postgres-compatible int8/numeric
-text decoding without precision loss.
-`api/no-test-database-binding` confines engine imports/construction to the
-harness (and the existing catalog mechanism) and prevents the migrated
-`test-runtime-state.test.ts` suite from returning to a serialized project. The
-sole central DB `vi.mock` is permitted; service mocks and case-local DB mocks
-remain forbidden. These lexical guards do not prove runtime isolation.
+case-owned signal. Final teardown aborts both signals, drains detached/native
+work, and closes the isolated engine, including when setup fails. The closed
+case binding remains attached to late asynchronous work: a late database access
+throws instead of falling back to shared PostgreSQL. Services, routes, fixture
+writers, and SQL remain real; only the centralized database transport is bound
+to the selected case database.
 
-Isolated suites use this per-case harness without serial scheduling.
-The harness uses PGlite's driver parsers to preserve int8/numeric text exactly as
-node-postgres does, rather than rewriting SQL results or weakening row schemas.
+`api/no-test-database-binding` confines PGlite engine imports and construction to
+`src/test-fixtures/pglite-database.ts`. Case-local database mocks and service
+mocks remain forbidden. The harness preserves node-postgres int8/numeric text
+decoding through PGlite's driver parsers, without rewriting query results or
+weakening schemas.
 
-PGlite still has a single PostgreSQL session. It cannot replace pool/multi-session
-contracts, protocol cancellation or real lock competition. Keep those specific
-contracts on native PostgreSQL. Do not redirect outside queries into an active
-transaction or widen timeouts to make an incompatible suite pass.
-
-Do not hold advisory locks, inspect `pg_locks`, or install internal admission
-gates to construct or assert an API scenario. Exercise concurrent requests and
-assert their responses and subsequent user-visible state. A production lock
-removal must not require preserving a test-only pause point.
+PGlite has a single PostgreSQL session. Keep contracts that require the native
+PostgreSQL protocol, such as query cancellation, on native PostgreSQL. For cases
+that write global state, use PGlite and assert business-visible transaction
+outcomes: a prepared Run retains its captured catalog, while a later Run uses
+the newly published catalog. Do not preserve a multi-connection lock-state
+assertion just to retain the previous test mechanism. Never hold advisory locks,
+inspect `pg_locks`, or install transaction barriers or internal admission gates
+to construct an API scenario. Exercise requests and assert their responses and
+subsequent user-visible state; do not redirect outside queries into an active
+transaction or increase timeouts to make an incompatible test pass.
 
 Compaction behavior tests retain
 `testContext({ dbFixtures: [usageEventCompactionDbFixture] })`. This fixture

@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import {
   getSecretKmsClient,
@@ -217,6 +218,7 @@ describe("CHAT-02: model-first routing", () => {
   }, 90_000);
 
   it("launches a model on the runtime its catalog Pi route class selects", async () => {
+    await setupApp({ context, routes: [], isolatePg: true });
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const { model, sendChatRun, claimChatRun, cancelChatRun } =
       await configureResponsesWithOwnedRuns({

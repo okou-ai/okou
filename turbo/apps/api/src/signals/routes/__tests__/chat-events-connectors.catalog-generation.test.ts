@@ -1,5 +1,5 @@
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/connector-catalog-artifact";
@@ -8,6 +8,11 @@ import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createPublicConnectorCatalog } from "./helpers/public-connector-catalog";
 
 const context = testContext();
+
+beforeEach(async () => {
+  await setupApp({ context, routes: chatThreadRoutes, isolatePg: true });
+});
+
 const {
   chat,
   connectors,

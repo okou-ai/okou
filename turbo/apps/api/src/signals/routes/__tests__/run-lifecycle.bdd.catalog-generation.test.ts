@@ -6,7 +6,7 @@ import { connectorAccountsContract } from "@okouai/api-contracts/contracts/conne
 import { connectorCheckContract } from "@okouai/api-contracts/contracts/connector-check";
 import type { ExecutionContext } from "@okouai/api-contracts/contracts/runners";
 import type { ExecutionFirewallEntry } from "@okouai/connectors/firewall-types";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { mockEnv } from "../../../lib/env";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -36,6 +36,10 @@ import { createRouteMocks } from "./helpers/route-test";
  */
 
 const context = testContext();
+
+beforeEach(async () => {
+  await setupApp({ context, routes: builtinConnectorsRoutes, isolatePg: true });
+});
 
 async function connectAutomaticRuntime(args: {
   readonly actor: ApiTestUser;

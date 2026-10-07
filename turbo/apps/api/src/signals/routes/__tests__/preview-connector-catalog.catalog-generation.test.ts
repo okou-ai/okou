@@ -3,7 +3,7 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { runnersBuiltinFirewallsResolveContract } from "@okouai/api-contracts/contracts/runners";
-import { expect, test } from "vitest";
+import { beforeEach, expect, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -20,6 +20,15 @@ import { connectorCatalogRoutes } from "../connector-catalog";
 import { runnersRoutes } from "../runners";
 
 const context = testContext();
+
+beforeEach(async () => {
+  await setupApp({
+    context,
+    routes: cronConnectorCatalogRoutes,
+    isolatePg: true,
+  });
+});
+
 const mocks = createRouteMocks(context);
 const OFFICIAL_RUNNER_AUTHORIZATION =
   "Bearer vm0_official_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";

@@ -1,6 +1,6 @@
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -21,6 +21,11 @@ import { createRouteMocks } from "./helpers/route-test";
 import { mailRoutes } from "../mail";
 
 const context = testContext();
+
+beforeEach(async () => {
+  await setupApp({ context, routes: mailRoutes, isolatePg: true });
+});
+
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const connectors = createConnectorBddApi(context);

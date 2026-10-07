@@ -45,7 +45,8 @@ async function checkWithSession(
   );
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await setupApp({ context, routes: TEST_APP_ROUTES, isolatePg: true });
   context.mocks.clerk.authenticateRequest.mockResolvedValue({
     isAuthenticated: false,
   });

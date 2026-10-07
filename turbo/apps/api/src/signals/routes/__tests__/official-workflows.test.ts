@@ -2054,6 +2054,7 @@ async function installStaleAdmissionScenario() {
 }
 
 beforeEach(async () => {
+  await setupApp({ context, routes: [], isolatePg: true });
   mockEnv("CRON_SECRET", CRON_SECRET);
   await cleanupCatalog();
 });

@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { beforeEach, afterEach, describe, expect, it } from "vitest";
 
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 
 import { testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
@@ -29,6 +30,11 @@ import {
  */
 
 const context = testContext();
+
+beforeEach(async () => {
+  await setupApp({ context, routes: [], isolatePg: true });
+});
+
 const publicConnections = createPublicFirewallConnections(context);
 
 async function exactSecretConnectorSources(

@@ -1,34 +1,36 @@
-import "./external-setup";
-import { aroundEach, vi } from "vitest";
-import { withPgliteDatabase } from "../test-fixtures/pglite-database";
-import { seedIsolatedModelPricingForTests } from "../test-fixtures/usage-pricing";
-import { installSharedApiTestConnectorCatalog } from "../test-fixtures/connector-catalog";
+import { aroundEach, inject, vi } from "vitest";
+import { API_DATABASE_SNAPSHOT } from "./database-snapshot";
+import {
+  configureCaseDatabase,
+  withCaseDatabase,
+} from "../test-fixtures/case-database";
 import { clearAllDetached } from "../signals/utils";
 import { flushWaitUntilForTest } from "../signals/context/wait-until";
 
-// Only the transport binding changes. SQL, schema, routes, services and fixture
-// writers remain real; the binding fails closed outside a case's async scope.
-vi.mock("../lib/db", async () => {
-  const { pgliteDatabase } = await import("../test-fixtures/pglite-database");
+// One transport binding for the entire API project. Production SQL and services
+// are unchanged; setupApp selects the database owned by the current case.
+vi.mock("../lib/db", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/db")>();
+  const { caseDatabase } = await import("../test-fixtures/case-database");
   return {
-    db: pgliteDatabase,
-    // testContext calls this at suite end; each case already owns engine close.
-    closeDbPool: async () => {},
+    ...original,
+    db: Object.assign(
+      () => {
+        return caseDatabase() ?? original.db();
+      },
+      {
+        peek: original.db.peek,
+        reset: original.db.reset,
+      },
+    ),
   };
 });
 
+configureCaseDatabase(inject(API_DATABASE_SNAPSHOT));
+
 aroundEach(async (runTest) => {
-  await withPgliteDatabase(
-    async () => {
-      await seedIsolatedModelPricingForTests();
-      await installSharedApiTestConnectorCatalog();
-      await runTest();
-    },
-    async () => {
-      // testContext's afterEach aborts the case signal before this outer scope
-      // drains. Keep native SQL alive until both work trackers have finished.
-      await clearAllDetached();
-      await flushWaitUntilForTest();
-    },
-  );
+  await withCaseDatabase(runTest, async () => {
+    await clearAllDetached();
+    await flushWaitUntilForTest();
+  });
 });

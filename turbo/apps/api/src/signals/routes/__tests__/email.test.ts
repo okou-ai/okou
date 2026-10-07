@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import {
   deleteUsagePricingRows,
   seedUsagePricingRows,
@@ -111,6 +112,10 @@ beforeEach(() => {
 });
 
 describe("retired Native Morning Brief email", () => {
+  beforeEach(async () => {
+    await setupApp({ context, routes: [], isolatePg: true });
+  });
+
   it("rejects a historical Native intent and clears its body without contacting the provider", async () => {
     const outbox = createEmailOutboxStateApi(context);
     const item = await outbox.seedItem({

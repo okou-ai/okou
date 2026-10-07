@@ -2,8 +2,6 @@ import { AST_NODE_TYPES, type TSESTree } from "@typescript-eslint/utils";
 import { createRule } from "../utils.ts";
 
 const nativeHarness = "/src/test-fixtures/pglite-database.ts";
-const legacyHarness =
-  "/src/signals/routes/__tests__/connector-catalog-immutable.test.ts";
 const isolatedSuites = [
   "src/signals/routes/__tests__/test-runtime-state.test.ts",
 ] as const;
@@ -29,8 +27,7 @@ export const noTestDatabaseBinding = createRule({
   },
   create(context) {
     const filename = context.filename.replaceAll("\\", "/");
-    const ownsEngine =
-      filename.endsWith(nativeHarness) || filename.endsWith(legacyHarness);
+    const ownsEngine = filename.endsWith(nativeHarness);
     const arrays = new Map<string, TSESTree.ArrayExpression>();
     function includesIsolated(
       node: TSESTree.Node | null,

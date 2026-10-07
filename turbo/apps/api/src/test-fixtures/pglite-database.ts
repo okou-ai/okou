@@ -1,12 +1,11 @@
-import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { btree_gin } from "@electric-sql/pglite/contrib/btree_gin";
-import { drizzle } from "drizzle-orm/pglite";
+import { drizzle, type PgliteDatabase } from "drizzle-orm/pglite";
+import type { Logger } from "drizzle-orm/logger";
 import { singleton } from "../lib/singleton";
-import { abortTestCaseOwner, withTestCaseOwner } from "./case-owner";
 import { settleIncludingAbort } from "../signals/utils";
 
 /** Cleanup always finishes; preserve both failures rather than masking work. */
@@ -31,19 +30,6 @@ async function releaseAfter<T>(
   return result.value;
 }
 
-const databaseScope = singleton(() => {
-  return new AsyncLocalStorage<ReturnType<typeof drizzle>>();
-});
-
-/** No shared-PG fallback: all route, fixture and detached reads own this case. */
-export function pgliteDatabase() {
-  const database = databaseScope().getStore();
-  if (!database) {
-    throw new Error("PGlite database accessed outside its test owner");
-  }
-  return database;
-}
-
 // node-postgres returns int8/numeric as text. Match that real driver contract
 // before Drizzle maps fields, without losing precision or changing SQL results.
 const driverParsers = Object.freeze({
@@ -55,7 +41,10 @@ const driverParsers = Object.freeze({
   },
 });
 
-async function migratedImage(): Promise<Blob> {
+/** Build the migrated, seeded baseline once in the run's global setup. */
+export async function createPgliteSnapshot(
+  seed: (database: PgliteDatabase) => Promise<void>,
+): Promise<Blob> {
   const engine = new PGlite({
     extensions: { pgcrypto, btree_gin },
     parsers: driverParsers,
@@ -131,6 +120,7 @@ async function migratedImage(): Promise<Blob> {
         );
       }
       await engine.exec("SET search_path TO public; SET timezone TO 'UTC'");
+      await seed(drizzle(engine));
       return await engine.dumpDataDir();
     })(),
     async () => {
@@ -139,54 +129,69 @@ async function migratedImage(): Promise<Blob> {
   );
 }
 
-// Only immutable migrated baseline bytes are reused. Each case loads a private
-// copy; no connections, transactions or mutable case data are shared.
-const migrationImage = singleton(migratedImage);
+// Cache only immutable bytes. Every case loads a fresh engine from the image.
+const snapshotImages = singleton(() => {
+  return new Map<string, Promise<Blob>>();
+});
 
-/** Build immutable schema bytes during worker setup, not a case's hook. */
-export async function preparePgliteDatabase(): Promise<void> {
-  await migrationImage();
+async function readSnapshotImage(path: string): Promise<Blob> {
+  const bytes = await readFile(path);
+  return new Blob([new Uint8Array(bytes)]);
 }
 
-export interface PgliteTestOwner {
+function snapshotImage(path: string): Promise<Blob> {
+  const images = snapshotImages();
+  let image = images.get(path);
+  if (!image) {
+    image = readSnapshotImage(path);
+    images.set(path, image);
+  }
+  return image;
+}
+
+export interface PgliteTestDatabase {
   readonly engine: PGlite;
-  readonly signal: AbortSignal;
+  readonly database: PgliteDatabase;
+  readonly setLogger: (logger: Logger) => void;
+  readonly close: () => Promise<void>;
 }
 
-export async function withPgliteDatabase<T>(
-  work: (owner: PgliteTestOwner) => Promise<T>,
-  drain: () => Promise<void> = async () => {},
-): Promise<T> {
+/** Fork the run's seeded image; cleanup belongs to the enclosing case owner. */
+export async function createPgliteDatabase(
+  snapshotPath: string,
+): Promise<PgliteTestDatabase> {
   const engine = new PGlite({
     extensions: { pgcrypto, btree_gin },
-    loadDataDir: await migrationImage(),
+    loadDataDir: await snapshotImage(snapshotPath),
     parsers: driverParsers,
   });
-  const controller = new AbortController();
-  return await withTestCaseOwner(controller, async () => {
-    return await databaseScope().run(drizzle(engine), async () => {
-      return await releaseAfter(
-        (async () => {
-          await engine.waitReady;
-          return await work({ engine, signal: controller.signal });
-        })(),
-        async () => {
-          const finished = new DOMException(
-            "PGlite test owner finished",
-            "AbortError",
-          );
-          controller.abort(finished);
-          abortTestCaseOwner(finished);
-          await releaseAfter(
-            (async () => {
-              await drain();
-            })(),
-            async () => {
-              await engine.close();
-            },
-          );
-        },
-      );
-    });
+  let logger: Logger | undefined;
+  const database = drizzle(engine, {
+    logger: {
+      logQuery(query, parameters) {
+        logger?.logQuery(query, parameters);
+      },
+    },
   });
+  const ready = await settleIncludingAbort(async () => {
+    await engine.waitReady;
+    // Session settings are not carried by dumpDataDir/loadDataDir. Keep UTC
+    // timestamp-without-time-zone columns consistent with PostgreSQL tests.
+    await engine.exec("SET search_path TO public; SET timezone TO 'UTC'");
+  });
+  if (!ready.ok) {
+    return await releaseAfter(Promise.reject(ready.error), async () => {
+      await engine.close();
+    });
+  }
+  return {
+    engine,
+    database,
+    setLogger(next) {
+      logger = next;
+    },
+    close: async () => {
+      await engine.close();
+    },
+  };
 }

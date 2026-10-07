@@ -290,7 +290,12 @@ async function publicCatalog() {
   return await accept(catalogClient().list({ headers: sessionHeaders }), [200]);
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await setupApp({
+    context,
+    routes: cronConnectorCatalogRoutes,
+    isolatePg: true,
+  });
   mockEnv("CRON_SECRET", CRON_SECRET);
   mockEnv("R2_USER_STORAGES_BUCKET_NAME", `catalog-v4-${randomUUID()}`);
   mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
@@ -721,16 +726,16 @@ describe("connector catalog v4 preparation", () => {
       [200],
     );
     expect(before.body.schemaVersion).toBe(4);
+    expect(before.body.pointer).not.toBeNull();
     expect(before.body).not.toHaveProperty("lastAttempt");
 
     serveObjects(new Map());
     const rejected = await sync();
-    // The rejected attempt reports the retained pointer as stale; without a
-    // pointer there is nothing to retain.
+    // The rejected attempt retains the seeded generation and reports it stale.
     expect(rejected.body).toMatchObject({
       outcome: "rejected",
       failureCode: "source-unavailable",
-      state: before.body.pointer === null ? "never-synced" : "stale",
+      state: "stale",
       active: before.body.active,
     });
     expect(rejected.body.pointer).toStrictEqual(before.body.pointer);

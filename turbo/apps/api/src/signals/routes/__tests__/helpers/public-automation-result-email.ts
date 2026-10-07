@@ -289,7 +289,7 @@ export function createPublicAutomationResultEmailApi(context: TestContext) {
       "R2_USER_STORAGES_BUCKET_NAME",
       `public-result-email-${randomUUID()}`,
     );
-    await installApiTestConnectorCatalog();
+    await installApiTestConnectorCatalog({ ifAbsent: true });
     installDurableUserExportStorage(context, { prefixes: [""] });
     const storage = context.mocks.s3.send.getMockImplementation();
     const signedUrl = context.mocks.s3.getSignedUrl.getMockImplementation();
@@ -320,7 +320,7 @@ export function createPublicAutomationResultEmailApi(context: TestContext) {
       }
       await cleanupCatalog();
     });
-    // The existing api-catalog project serializes this singleton operator fixture.
+    // The calling case owns an isolated database for this operator fixture.
     await cleanupCatalog();
     if (options.morningBrief) {
       // The deployed release retires connector-doctor. Establish its accepted

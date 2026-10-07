@@ -4,7 +4,7 @@ import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connec
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
 import type { ConnectorCatalogArtifact } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -20,6 +20,11 @@ import {
 import { createPublicConnectorCatalog } from "./helpers/public-connector-catalog";
 
 const context = testContext();
+
+beforeEach(async () => {
+  await setupApp({ context, routes: connectorCatalogRoutes, isolatePg: true });
+});
+
 const {
   connectors,
   entitledNativeChatActor,

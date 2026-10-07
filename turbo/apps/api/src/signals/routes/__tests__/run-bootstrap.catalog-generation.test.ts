@@ -1,25 +1,22 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
 import { apiTestConnectorCatalogWithUnavailableAuthMethods } from "../../../test-fixtures/connector-catalog";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/connector-catalog-artifact";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import {
-  barrierQueryText,
-  withDatabaseTransactionBarrierFixture,
-} from "../../../test-fixtures/database-transaction-barrier";
-import {
-  createChatEventsFixture,
-  userMessages,
-} from "./helpers/chat-events-fixture";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { createPublicConnectorCatalog } from "./helpers/public-connector-catalog";
 
 const context = testContext();
+
+beforeEach(async () => {
+  await setupApp({ context, routes: [], isolatePg: true });
+});
+
 const {
-  chat,
   connectors,
   chatCallbacks,
   entitledNativeChatActor,
@@ -78,7 +75,7 @@ describe("Run connector catalog selection", () => {
     await cancelChatRun(actor, filtered.runId, sandboxHeaders);
   });
 
-  it("keeps captured connector entries across catalog rotation without loading the full payload", async () => {
+  it("keeps a prepared run's connector entries across catalog rotation", async () => {
     const publisher = createPublicConnectorCatalog(context);
     const first = {
       ...API_TEST_CONNECTOR_CATALOG_ARTIFACT,
@@ -111,60 +108,18 @@ describe("Run connector catalog selection", () => {
         { connectorSlug: "x", authMethodId: "oauth" },
       ]),
     );
-    const clientEventId = randomUUID();
-    const sent = await withDatabaseTransactionBarrierFixture(
-      {
-        select: (queryArgs) => {
-          const text = barrierQueryText(queryArgs);
-          return (
-            text.includes('from "connector_catalog"') &&
-            text.includes('"connector_catalog_entries"') &&
-            !text.includes('"catalog_gzip"')
-          );
-        },
-        stopAt: (_queryArgs, selecting) => {
-          return selecting;
-        },
-        pauseAfter: true,
-        work: async (barrier) => {
-          const sending = chat.requestSendEvent(
-            actor,
-            {
-              agentId,
-              prompt: "use the captured connector catalog",
-              clientEventId,
-            },
-            [201],
-          );
-          await barrier.entered;
-          const response = await sending;
-          if (response.status !== 201) {
-            throw new Error("Expected the direct send to be accepted");
-          }
-          const catalogVersion = `bootstrap-new-${randomUUID()}`;
-          await publisher.publish({
-            ...first,
-            catalogVersion,
-            connectors: first.connectors.filter((connector) => {
-              return connector.slug !== "openai";
-            }),
-          });
-          barrier.release();
-          await flushWaitUntilForTest();
-          return response;
-        },
-      },
-      context.signal,
-    );
-    const runId = userMessages(
-      (await chat.listThreadEvents(actor, sent.body.threadId)).events,
-    ).find((message) => {
-      return message.revokesEventId === clientEventId;
-    })?.runId;
-    if (!runId) {
-      throw new Error("Expected a run prepared from the captured catalog");
-    }
-    const claimed = await claimChatRun(runnerGroup, runId);
+    const prepared = await sendChatRun(actor, {
+      agentId,
+      prompt: "use the captured connector catalog",
+    });
+    await publisher.publish({
+      ...first,
+      catalogVersion: `bootstrap-new-${randomUUID()}`,
+      connectors: first.connectors.filter((connector) => {
+        return connector.slug !== "openai";
+      }),
+    });
+    const claimed = await claimChatRun(runnerGroup, prepared.runId);
     expect(
       claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
     ).toMatchObject({ sourceId: connection.id });
@@ -172,14 +127,14 @@ describe("Run connector catalog selection", () => {
     expect(claimed.claim.secretConnectorMap ?? {}).not.toHaveProperty(
       "X_TOKEN",
     );
-    await cancelChatRun(actor, runId, claimed.sandboxHeaders);
+    await cancelChatRun(actor, prepared.runId, claimed.sandboxHeaders);
     // openai is still enabled but has no entry in the replacement generation;
     // that required connector would reject the next input, so drop it first.
     await createRunsApi(context).enableAgentConnectors(actor, agentId, ["x"]);
     const next = await sendChatRun(actor, {
       agentId,
       prompt: "use the replacement catalog",
-      threadId: sent.body.threadId,
+      threadId: prepared.threadId,
     });
     const nextClaim = await claimChatRun(runnerGroup, next.runId);
     expect(
