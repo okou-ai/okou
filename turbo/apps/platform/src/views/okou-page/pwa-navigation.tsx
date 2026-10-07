@@ -77,7 +77,7 @@ export function PwaBottomNavigation() {
       aria-label={t(($) => {
         return $.appShell.pwaNavigation.navigation;
       })}
-      className="grid shrink-0 grid-cols-4 gap-1 border-t border-border/50 bg-background px-2 pt-1 pb-safe [[data-keyboard-open=true]_&]:hidden"
+      className="grid shrink-0 grid-cols-4 gap-1 border-t border-border/50 bg-background px-2 pt-1 pb-safe [view-transition-name:pwa-tab-bar] [[data-keyboard-open=true]_&]:hidden"
     >
       {tabs.map(({ pathname, options, label, Icon, filledPath, active }) => {
         return (

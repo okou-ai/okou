@@ -14,11 +14,7 @@ import {
   unloadRightThread$,
 } from "./chat-thread-panes.ts";
 import { createThreadMetaLookup } from "./chat-thread-event-sourcing.ts";
-import {
-  captureNavigationTiming$,
-  markRouteSetupBegin$,
-  recordBootstrapThreadMetadataTiming$,
-} from "../../lib/posthog.ts";
+import { recordBootstrapThreadMetadataTiming$ } from "../../lib/posthog.ts";
 
 import { createChatLayoutSignals } from "./chat-layout.ts";
 
@@ -79,7 +75,6 @@ const setupResolvedRightThread$ = command(
 
 const internalSetupChatPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    set(markRouteSetupBegin$);
     const threadId = get(currentChatThreadId$);
     if (!threadId) {
       throw new Error("threadId is required to load chat page");
@@ -90,8 +85,6 @@ const internalSetupChatPage$ = command(
       createElement(ChatThreadPage, { layout: chatLayout }),
       "sidebar",
     );
-
-    set(captureNavigationTiming$);
 
     const sidebarThreadId = get(searchParams$).get(SIDEBAR_PARAM);
     const initialEventId = chatEventIdFromHash(get(hash$));
