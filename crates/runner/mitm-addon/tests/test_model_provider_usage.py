@@ -97,9 +97,9 @@ class TestReportModelProviderUsage:
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
-            host="api.openai.com",
-            original_url="https://api.openai.com/v1/responses",
-            firewall_name="model-provider:openai-api-key",
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
             model_usage_provider="catalog-model-pricing",
             usage={
                 "tokens.input": input_tokens,
@@ -127,9 +127,9 @@ class TestReportModelProviderUsage:
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
-            host="api.openai.com",
-            original_url="https://api.openai.com/v1/responses",
-            firewall_name="model-provider:openai-api-key",
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
             model_usage_provider="gpt-5.6-sol",
             usage={
                 "service_tier": "priority",
@@ -162,9 +162,9 @@ class TestReportModelProviderUsage:
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
-            host="api.openai.com",
-            original_url="https://api.openai.com/v1/responses",
-            firewall_name="model-provider:openai-api-key",
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
             model_usage_provider="gpt-6-astra",
             usage={
                 "service_tier": "ultrafast",
@@ -211,9 +211,9 @@ class TestReportModelProviderUsage:
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
-            host="api.openai.com",
-            original_url="https://api.openai.com/v1/responses",
-            firewall_name="model-provider:openai-api-key",
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
             model_usage_provider="catalog-new-model-pricing",
             usage={
                 "model": "catalog-new-upstream",
@@ -248,9 +248,9 @@ class TestReportModelProviderUsage:
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
-            host="api.openai.com",
-            original_url="https://api.openai.com/v1/responses",
-            firewall_name="model-provider:openai-api-key",
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
             model_usage_provider="gpt-6-luna",
             usage={"tokens.input": 200_001, "tokens.output": 7},
         )
@@ -281,9 +281,9 @@ class TestReportModelProviderUsage:
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
-            host="api.openai.com",
-            original_url="https://api.openai.com/v1/responses",
-            firewall_name="model-provider:openai-api-key",
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
             model_usage_provider="gpt-6-luna",
             usage={
                 **({"service_tier": service_tier} if service_tier else {}),
@@ -313,9 +313,9 @@ class TestReportModelProviderUsage:
             flow = make_model_provider_usage_reporting_flow(
                 real_flow,
                 tmp_path,
-                host="api.openai.com",
-                original_url="https://api.openai.com/v1/responses",
-                firewall_name="model-provider:openai-api-key",
+                host="openrouter.ai",
+                original_url="https://openrouter.ai/api/v1/responses",
+                firewall_name="model-provider:openrouter-codex",
                 model_usage_provider="gpt-5.5",
                 usage={"tokens.input": input_tokens},
             )
@@ -536,7 +536,7 @@ class TestReportModelProviderUsage:
         assert entry["underbilling_class"] == "confirmed"
         assert entry["component"] == "mitm_addon"
         assert entry["run_id"] == "run-abc-123"
-        assert entry["firewall_name"] == "model-provider:anthropic-api-key"
+        assert entry["firewall_name"] == "model-provider:openrouter-codex"
         assert entry["missing_sandbox_token"] is True
         assert entry["missing_api_url"] is False
 
@@ -563,7 +563,7 @@ class TestReportModelProviderUsage:
         assert entry["underbilling_class"] == "confirmed"
         assert entry["component"] == "mitm_addon"
         assert entry["run_id"] == "run-abc-123"
-        assert entry["firewall_name"] == "model-provider:anthropic-api-key"
+        assert entry["firewall_name"] == "model-provider:openrouter-codex"
         assert entry["missing_sandbox_token"] is False
         assert entry["missing_api_url"] is True
 
@@ -596,7 +596,7 @@ class TestReportModelProviderUsage:
             tmp_path,
             usage={
                 "model": "claude-sonnet-4-6",
-                "message_id": "msg_real_anthropic_id",
+                "message_id": "resp_real_provider_id",
                 "tokens.input": 10,
             },
         )
@@ -616,9 +616,9 @@ class TestReportModelProviderUsage:
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
-            host="api.openai.com",
-            original_url="https://api.openai.com/v1/responses",
-            firewall_name="model-provider:openai-api-key",
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
             model_usage_provider="gpt-5.5",
             usage_sources={
                 "resp_ws_1": {
@@ -662,9 +662,9 @@ class TestReportModelProviderUsage:
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
-            host="api.openai.com",
-            original_url="https://api.openai.com/v1/responses",
-            firewall_name="model-provider:openai-api-key",
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
             model_usage_provider=None,
             usage_sources={
                 "resp_ws_1": {
@@ -702,9 +702,9 @@ class TestReportModelProviderUsage:
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
-            host="api.openai.com",
-            original_url="https://api.openai.com/v1/responses",
-            firewall_name="model-provider:openai-api-key",
+            host="openrouter.ai",
+            original_url="https://openrouter.ai/api/v1/responses",
+            firewall_name="model-provider:openrouter-codex",
             model_usage_provider="gpt-5.5",
         )
         flow.id = "flow-uuid-xyz-123"
@@ -759,7 +759,7 @@ class TestReportModelProviderUsage:
             tmp_path,
             usage={
                 "model": "claude-sonnet-4-6",
-                "message_id": "msg_real_anthropic_id",
+                "message_id": "resp_real_provider_id",
                 "tokens.input": 10,
             },
         )
@@ -769,7 +769,7 @@ class TestReportModelProviderUsage:
             tmp_path,
             usage={
                 "model": "claude-sonnet-4-6",
-                "message_id": "msg_real_anthropic_id",
+                "message_id": "resp_real_provider_id",
                 "tokens.input": 10,
             },
         )

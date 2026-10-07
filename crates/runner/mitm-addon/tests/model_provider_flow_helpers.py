@@ -19,7 +19,7 @@ _WEBSOCKET_ACCEPT = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
 def _openai_responses_websocket_request_headers() -> http.Headers:
     return http.Headers(
         [
-            (b"Host", b"api.openai.com"),
+            (b"Host", b"openrouter.ai"),
             (b"Connection", b"keep-alive, Upgrade"),
             (b"Upgrade", b"websocket"),
             (b"Sec-WebSocket-Key", _WEBSOCKET_KEY.encode()),
@@ -34,8 +34,8 @@ def make_openai_responses_websocket_request_flow(
     return real_flow(
         with_response=False,
         client_ip="10.200.0.5",
-        host="api.openai.com",
-        path="/v1/responses",
+        host="openrouter.ai",
+        path="/api/v1/responses",
         method="GET",
         request_headers=_openai_responses_websocket_request_headers(),
     )
@@ -139,9 +139,9 @@ def make_model_provider_usage_reporting_flow(
     real_flow: RealFlowFactory,
     tmp_path: Path,
     *,
-    host: str = "api.anthropic.com",
-    original_url: str = "https://api.anthropic.com/v1/messages",
-    firewall_name: str = "model-provider:anthropic-api-key",
+    host: str = "openrouter.ai",
+    original_url: str = "https://openrouter.ai/api/v1/responses",
+    firewall_name: str = "model-provider:openrouter-codex",
     run_id: str = "run-abc-123",
     network_log_path: Path | str | None = None,
     proxy_log_path: Path | str | None = None,
@@ -178,9 +178,9 @@ def make_openai_responses_websocket_flow(
     flow = make_model_provider_flow(
         real_flow,
         tmp_path,
-        host="api.openai.com",
-        original_url="https://api.openai.com/v1/responses",
-        firewall_name="model-provider:openai-api-key",
+        host="openrouter.ai",
+        original_url="https://openrouter.ai/api/v1/responses",
+        firewall_name="model-provider:openrouter-codex",
         cli_agent_type="codex",
         model_usage_provider="gpt-5.5",
     )

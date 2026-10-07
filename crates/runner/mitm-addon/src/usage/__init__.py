@@ -42,8 +42,6 @@ from .buffer import (
     reset_usage_buffer_for_tests,
 )
 from .counters import (
-    BufferedReportLease,
-    admit_buffered_report,
     decrement_in_flight_flows,
     delivery_snapshot,
     increment_in_flight_flows,
@@ -89,7 +87,6 @@ from .providers.model_provider import (
 __all__ = [
     "DEFAULT_FLUSH_INTERVAL_SECONDS",
     "OPENAI_RESPONSES_WEBSOCKET_WORK_LIMIT_ERROR",
-    "BufferedReportLease",
     "ModelJsonResponseInspection",
     "ModelUsageProtocol",
     "OpenAIResponsesClientEvent",
@@ -97,7 +94,6 @@ __all__ = [
     "OpenAIResponsesServerEventInspection",
     "OpenAIResponsesServerFailureEvidence",
     "OpenAIResponsesServerLifecycle",
-    "admit_buffered_report",
     "buffer_source_usage_events",
     "buffer_usage_events",
     "configure_usage_buffer",

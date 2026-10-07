@@ -61,7 +61,6 @@ def test_client_inspector_classifies_late_response_create_without_retaining_payl
 
     event = inspect_openai_responses_client_event_json(body)
 
-    assert event.event_type is None
     assert event.request_kind == "create"
     assert event.is_prewarm is True
 

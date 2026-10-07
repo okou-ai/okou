@@ -54,7 +54,6 @@ import aws_sigv4_hash_executor
 import body_capture
 import builtin_host_policy
 import codex_model_catalog_cache
-import codex_output_timing
 import connector_diagnostics
 import connector_intent
 import content_length
@@ -1662,16 +1661,10 @@ def websocket_message(flow: http.HTTPFlow) -> None:
         return
     if getattr(message, "from_client", False):
         failure_client_enabled = model_provider_failure.should_observe_websocket_client_event(flow)
-        usage_enabled = model_websocket_usage.is_enabled(flow)
         usage_client_enabled = model_websocket_usage.should_observe_client_event(flow)
-        if not failure_client_enabled and not usage_enabled:
+        if not failure_client_enabled and not usage_client_enabled:
             return
         body = message.content.encode() if isinstance(message.content, str) else message.content
-        if not failure_client_enabled and not usage_client_enabled:
-            event = usage.inspect_openai_responses_event_json(body)
-            if usage.is_model_provider_usage_billable(flow):
-                codex_output_timing.observe_client_event(flow, event.event_type, message.timestamp)
-            return
         event = usage.inspect_openai_responses_client_event_json(body)
         if failure_client_enabled:
             model_provider_failure.observe_websocket_client_event(
@@ -1679,8 +1672,6 @@ def websocket_message(flow: http.HTTPFlow) -> None:
                 request_kind=event.request_kind,
                 is_prewarm=event.is_prewarm,
             )
-        if usage_enabled and usage.is_model_provider_usage_billable(flow):
-            codex_output_timing.observe_client_event(flow, event.event_type, message.timestamp)
         if usage_client_enabled:
             model_websocket_usage.observe_client_event(flow, event)
         return
@@ -1690,8 +1681,6 @@ def websocket_message(flow: http.HTTPFlow) -> None:
     if not failure_enabled and not usage_enabled:
         return
     event = usage.inspect_openai_responses_event_json(body)
-    if usage_enabled and usage.is_model_provider_usage_billable(flow):
-        codex_output_timing.observe_server_event(flow, event.event_type)
     inspection = usage.inspect_openai_responses_server_event(
         event,
         include_lifecycle=(
@@ -1742,7 +1731,6 @@ def _release_terminal_flow_state(
         websocket_framing.log_limit_violation(flow)
         websocket_retention.release_terminal_messages(flow)
         terminal_usage.release_model_websocket_terminal_state(flow)
-        codex_output_timing.release_flow_state(flow)
     request_classification.pop_cached_classification(flow)
     flow.metadata.pop(_FIREWALL_AUTH_APPLIED_IN_REQUESTHEADERS, None)
     release_aws_sigv4_request_inspection(flow)

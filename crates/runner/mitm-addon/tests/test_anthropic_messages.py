@@ -53,18 +53,6 @@ def _inspect_anthropic_json(body: bytes) -> tuple[dict | None, str | None]:
     return inspection.usage, inspection.usage_error
 
 
-def _create_parser_with_lifecycle_events():
-    lifecycle_events: list[tuple[str, str | None]] = []
-
-    def record_lifecycle_event(event_type: str, content_block_type: str | None) -> None:
-        lifecycle_events.append((event_type, content_block_type))
-
-    parse, usage = create_anthropic_messages_sse_usage_extractor(
-        on_lifecycle_event=record_lifecycle_event
-    )
-    return parse, usage, lifecycle_events
-
-
 def _create_parser_with_accounting_events():
     accounting_events: list[str] = []
     parse, usage = create_anthropic_messages_sse_usage_extractor(
@@ -304,52 +292,6 @@ class TestAnthropicSseUsageExtractor:
         assert usage == {}
         assert accounting_events == ["message_stop"]
 
-    def test_reports_content_free_lifecycle_fields_for_selected_events(self):
-        parse, usage, lifecycle_events = _create_parser_with_lifecycle_events()
-
-        parse(
-            b"event: message_start\n"
-            b'data: {"type":"message_start","message":{"model":"claude-sonnet-4-6",'
-            b'"content":[{"type":"text","text":"secret"}],'
-            b'"usage":{"input_tokens":40}}}\n\n'
-            b"event: content_block_start\n"
-            b'data: {"type":"content_block_start","index":0,'
-            b'"content_block":{"type":"thinking","thinking":"secret"}}\n\n'
-            b"event: content_block_start\n"
-            b'data: {"type":"content_block_start","index":1,'
-            b'"content_block":{"type":"tool_use","name":"secret"}}\n\n'
-            b"event: content_block_start\n"
-            b'data: {"type":"content_block_start","index":2,'
-            b'"content_block":{"type":"future_block","content":"secret"}}\n\n'
-        )
-
-        assert usage["tokens.input"] == 40
-        assert lifecycle_events == [
-            ("message_start", None),
-            ("content_block_start", "thinking"),
-            ("content_block_start", "tool_use"),
-            ("content_block_start", "future_block"),
-        ]
-
-    def test_reports_eventless_lifecycle_fields_from_data_type(self):
-        parse, usage, lifecycle_events = _create_parser_with_lifecycle_events()
-
-        parse(
-            b'data: {"type":"message_start","message":{"model":"claude-sonnet-4-6",'
-            b'"usage":{"input_tokens":41}}}\n\n'
-            b'data: {"type":"content_block_start","index":0,'
-            b'"content_block":{"type":"redacted_thinking","data":"secret"}}\n\n'
-            b'data: {"type":"content_block_start","index":1,'
-            b'"content_block":{"type":"text","text":"secret"}}\n\n'
-        )
-
-        assert usage["tokens.input"] == 41
-        assert lifecycle_events == [
-            ("message_start", None),
-            ("content_block_start", "redacted_thinking"),
-            ("content_block_start", "text"),
-        ]
-
     @pytest.mark.parametrize("prefix", [b"", b"\xef\xbb\xbf"])
     def test_leading_bom_preserves_eventless_usage_and_diagnostics(self, prefix: bytes):
         parse_errors: list[tuple[str, str]] = []
@@ -370,39 +312,6 @@ class TestAnthropicSseUsageExtractor:
             "tokens.output": 1,
         }
         assert parse_errors == []
-
-    def test_lifecycle_event_type_mismatch_is_ignored_and_parser_recovers(self):
-        parse, usage, lifecycle_events = _create_parser_with_lifecycle_events()
-
-        parse(
-            b"event: content_block_start\n"
-            b'data: {"type":"message_start","content_block":{"type":"text"}}\n\n'
-            b"event: content_block_start\n"
-            b'data: {"type":"content_block_start",'
-            b'"content_block":{"type":"text","text":"secret"}}\n\n'
-        )
-
-        assert usage == {}
-        assert lifecycle_events == [("content_block_start", "text")]
-
-    def test_malformed_or_oversized_lifecycle_events_do_not_report(self):
-        parse, usage, lifecycle_events = _create_parser_with_lifecycle_events()
-        oversized_type = b"x" * 1025
-
-        parse(b'event: message_start\ndata: {"type":"message_start"\n\n')
-        parse(
-            b"event: content_block_start\n"
-            b'data: {"type":"content_block_start","content_block":{"type":"'
-            + oversized_type
-            + b'"}}\n\n'
-        )
-        parse(
-            b"event: content_block_delta\n"
-            b'data: {"type":"content_block_delta","delta":{"text":"secret"}}\n\n'
-        )
-
-        assert usage == {}
-        assert lifecycle_events == []
 
     @pytest.mark.parametrize("event_type", ["message_start", "message_delta"])
     def test_data_only_malformed_usage_event_reports_parse_error(self, event_type):
@@ -575,13 +484,9 @@ class TestAnthropicSseUsageExtractor:
 
     def test_work_limit_discards_partial_event_and_recovers(self):
         parse_errors: list[tuple[str, str]] = []
-        lifecycle_events: list[tuple[str, str | None]] = []
         accounting_events: list[str] = []
         parse, usage = create_anthropic_messages_sse_usage_extractor(
             on_parse_error=lambda event, error: parse_errors.append((event, error)),
-            on_lifecycle_event=lambda event, block_type: lifecycle_events.append(
-                (event, block_type)
-            ),
             on_accounting_event=accounting_events.append,
         )
         dense_object_first_line = b",".join([b'"x":0'] * 10_000) + b","
@@ -596,7 +501,6 @@ class TestAnthropicSseUsageExtractor:
         parse(b"data: " + dense_object_second_line + b"}}\n\n")
 
         assert usage == {}
-        assert lifecycle_events == []
         assert accounting_events == []
         assert parse_errors == [("message_start", "work limit exceeded")]
 
@@ -611,7 +515,6 @@ class TestAnthropicSseUsageExtractor:
             "model": "claude-sonnet-4-6",
             "tokens.input": 9,
         }
-        assert lifecycle_events == [("message_start", None)]
         assert accounting_events == ["message_start"]
         assert parse_errors == [("message_start", "work limit exceeded")]
 

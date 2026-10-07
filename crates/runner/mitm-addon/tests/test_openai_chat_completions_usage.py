@@ -29,16 +29,16 @@ def _chat_completions_flow(
     content_type: str,
     billable: bool = True,
     cli_agent_type: str = "codex",
-    original_url: str = "https://api.openai.com/v1/chat/completions",
+    original_url: str = "https://openrouter.ai/api/v1/chat/completions",
 ) -> http.HTTPFlow:
     flow = make_model_provider_flow(
         real_flow,
         tmp_path,
-        host="api.openai.com",
-        path="/v1/chat/completions",
+        host="openrouter.ai",
+        path="/api/v1/chat/completions",
         method="POST",
         original_url=original_url,
-        firewall_name="model-provider:openai-api-key",
+        firewall_name="model-provider:openrouter-codex",
         firewall_billable=billable,
         cli_agent_type=cli_agent_type,
         model_usage_provider="gpt-5.5",
@@ -430,7 +430,7 @@ class TestOpenAIChatCompletionsUsage:
             real_flow,
             content_type="text/event-stream",
             cli_agent_type="claude-code",
-            original_url="https://api.openai.com/v1/chat/completions/?trace=1",
+            original_url="https://openrouter.ai/api/v1/chat/completions/?trace=1",
         )
         payload = {
             "id": "chatcmpl_1",

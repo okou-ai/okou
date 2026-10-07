@@ -3,8 +3,6 @@
 CLIENT_CREATE_EVENT = "response.create"
 SERVER_CREATED_EVENT = "response.created"
 SERVER_ERROR_EVENT = "error"
-OUTPUT_ITEM_ADDED_EVENT = "response.output_item.added"
-OUTPUT_TEXT_DELTA_EVENT = "response.output_text.delta"
 
 # Terminal Responses events whose Response object may carry usage. WebSocket
 # source eviction relies on these events being final for the logical response id;
@@ -59,10 +57,10 @@ KNOWN_NON_USAGE_EVENTS = frozenset(
         "response.mcp_list_tools.completed",
         "response.mcp_list_tools.failed",
         "response.mcp_list_tools.in_progress",
-        OUTPUT_ITEM_ADDED_EVENT,
+        "response.output_item.added",
         "response.output_item.done",
         "response.output_text.annotation.added",
-        OUTPUT_TEXT_DELTA_EVENT,
+        "response.output_text.delta",
         "response.output_text.done",
         "response.queued",
         "response.reasoning_summary_part.added",
