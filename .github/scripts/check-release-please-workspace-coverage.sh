@@ -24,10 +24,10 @@ release_config=$(jq -ce '
   select(
     type == "object" and
     (.packages | type == "object" and length > 0) and
-    (.packages | all(to_entries[]; .value["release-type"] == "node" or .value["release-type"] == "rust" or (.key == "ios" and .value["release-type"] == "simple")))
+    (.packages | all(to_entries[]; .value["release-type"] == "node" or .value["release-type"] == "rust" or ((.key == "ios" or .key == "desktop") and .value["release-type"] == "simple")))
   )
 ' "$release_config_path" 2>/dev/null) ||
-  fail "Release Please config must contain Node, Rust, or the standalone iOS package entries"
+  fail "Release Please config must contain Node, Rust, or standalone native package entries"
 release_manifest=$(jq -ce '
   select(type == "object" and all(to_entries[]; .value | type == "string" and length > 0))
 ' "$release_manifest_path" 2>/dev/null) ||
@@ -80,6 +80,12 @@ jq -r 'keys[]' <<<"$exclusions" | sort -u >"$excluded_paths"
 comm -23 "$managed_paths" "$manifest_paths" >"$difference_paths"
 if [ -s "$difference_paths" ]; then
   fail "Release Please manifest is missing configured packages: $(paste -sd, "$difference_paths")"
+fi
+
+if jq -e '.packages | has("desktop")' <<<"$release_config" >/dev/null; then
+  desktop_version=$(cat desktop/version.txt) || fail "missing Desktop version file"
+  desktop_manifest_version=$(jq -r '.desktop' <<<"$release_manifest")
+  [ "$desktop_version" = "$desktop_manifest_version" ] || fail "Desktop manifest and version.txt must agree"
 fi
 comm -13 "$managed_paths" "$manifest_paths" >"$difference_paths"
 if [ -s "$difference_paths" ]; then

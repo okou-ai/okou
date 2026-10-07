@@ -1,7 +1,0 @@
-{
-  "appIconBaseName": "icon",
-  "appIconFileName": "icon.png",
-  "trayIconFileName": "tray-iconTemplate.png",
-  "trayIconDisabledFileName": "tray-iconDisabled.png",
-  "trayIconRunningFileName": "tray-iconRunning.png"
-}

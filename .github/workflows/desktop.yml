@@ -12,7 +12,7 @@ on:
       - ".github/scripts/resolve-app-preview-url.sh"
       - ".github/scripts/resolve-desktop-version-change.sh"
       - ".github/scripts/verify-okou-desktop-artifact.sh"
-      - "turbo/apps/desktop/**"
+      - "desktop/**"
       - "turbo/package.json"
       - "turbo/pnpm-lock.yaml"
       - "turbo/turbo.json"
@@ -27,7 +27,7 @@ on:
       - ".github/scripts/resolve-app-preview-url.sh"
       - ".github/scripts/resolve-desktop-version-change.sh"
       - ".github/scripts/verify-okou-desktop-artifact.sh"
-      - "turbo/apps/desktop/**"
+      - "desktop/**"
       - "turbo/package.json"
       - "turbo/pnpm-lock.yaml"
       - "turbo/turbo.json"
@@ -40,8 +40,9 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  npm_config_audit: "false"
+defaults:
+  run:
+    shell: bash
 
 jobs:
   detect-desktop-version:
@@ -69,7 +70,7 @@ jobs:
             push) base_sha="$PUSH_BEFORE_SHA" ;;
             *)
               echo "changed=false" >> "$GITHUB_OUTPUT"
-              echo "version=$(jq -r .version turbo/apps/desktop/package.json)" >> "$GITHUB_OUTPUT"
+              echo "version=$(cat desktop/version.txt)" >> "$GITHUB_OUTPUT"
               exit 0
               ;;
           esac
@@ -85,516 +86,55 @@ jobs:
   build-macos:
     name: build-macos-arm64
     needs: detect-desktop-version
-    if: >-
-      ${{
-        github.event_name != 'merge_group' &&
-        (github.event_name != 'push' || needs.detect-desktop-version.outputs.changed != 'true')
-      }}
+    if: ${{ github.event_name != 'merge_group' || needs.detect-desktop-version.outputs.changed != 'true' }}
     runs-on: macos-latest
-    timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: turbo
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7.0.1
 
-      - uses: pnpm/action-setup@v6
+      - name: Test native Desktop runtime
+        run: swift test --package-path desktop -j 4
+
+      - name: Test Computer Use helper
+        run: swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution
+
+      - name: Build production-configured native app
+        env:
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY_PROD }}
+          SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
+        run: python3 desktop/scripts/build.py --package
+
+      - name: Upload production-configured unsigned artifact
+        uses: actions/upload-artifact@v7.0.0
         with:
-          version: 10.33.4
+          name: okou-desktop-macos-arm64-unsigned
+          path: desktop/out/*.zip
+          if-no-files-found: error
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: turbo/pnpm-lock.yaml
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --strict-peer-dependencies
-
-      - name: Type check desktop
-        run: pnpm -F @okouai/desktop check-types
-
-      - name: Lint desktop
-        run: pnpm -F @okouai/desktop lint
-
-      - name: Test desktop
-        run: pnpm -F @okouai/desktop test
-
-      - name: Test native helper
-        run: pnpm -F @okouai/desktop test:native
-
-      - name: Resolve PR preview desktop URL
+      - name: Resolve PR preview URL
         id: preview
         if: github.event_name == 'pull_request'
         env:
           CF_WORKERS_SUBDOMAIN: ${{ vars.CF_WORKERS_SUBDOMAIN }}
         run: |
-          platform_url="$(bash ../.github/scripts/resolve-app-preview-url.sh \
-            "pr-${{ github.event.pull_request.number }}" \
-            "$CF_WORKERS_SUBDOMAIN")"
-          echo "platform-url=${platform_url}" >> "$GITHUB_OUTPUT"
-          echo "PR preview desktop URL: ${platform_url}"
+          url="$(bash .github/scripts/resolve-app-preview-url.sh "pr-${{ github.event.pull_request.number }}" "$CF_WORKERS_SUBDOMAIN")"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
 
-      # This build selects no product and writes no runtime config, so it is
-      # what an unconfigured build produces and the only packaged evidence
-      # that the default product is Okou.
-      - name: Build unsigned default-configuration macOS artifact
-        id: build-prod
-        env:
-          SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
-          SENTRY_PROJECT_DESKTOP: ${{ vars.SENTRY_PROJECT_DESKTOP }}
-          SENTRY_ENVIRONMENT: production
-        run: |
-          rm -f apps/desktop/desktop-runtime-config.json
-          rm -rf apps/desktop/out
-
-          pnpm -F @okouai/desktop build
-          pnpm -F @okouai/desktop upload:sentry
-          node apps/desktop/scripts/run-forge-make-with-retry.js \
-            --platform darwin \
-            --arch arm64 \
-            --targets @electron-forge/maker-zip
-
-          desktop_dir="$PWD/apps/desktop"
-          version=$(node -p "require('./apps/desktop/package.json').version")
-          forge_zip="$desktop_dir/out/make/zip/darwin/arm64/Okou-darwin-arm64-$version.zip"
-          artifact_path="apps/desktop/out/Okou-default-darwin-arm64.zip"
-
-          if [ ! -f "$forge_zip" ]; then
-            echo "No Forge zip artifact found: $forge_zip"
-            find "$desktop_dir/out" -maxdepth 6 -type f -print || true
-            exit 1
-          fi
-
-          cp "$forge_zip" "$artifact_path"
-          echo "path=$artifact_path" >> "$GITHUB_OUTPUT"
-
-      - name: Verify default-configuration artifact
-        run: |
-          artifact_path="apps/desktop/out/Okou-default-darwin-arm64.zip"
-          app_dir="apps/desktop/out/Okou-darwin-arm64/Okou.app"
-          plist="$app_dir/Contents/Info.plist"
-          if [ ! -f "$artifact_path" ]; then
-            echo "No desktop zip artifact found"
-            find apps/desktop/out -maxdepth 5 -type f -print || true
-            exit 1
-          fi
-          if [ ! -d "$app_dir" ]; then
-            echo "No packaged app found: $app_dir"
-            find apps/desktop/out -maxdepth 4 -type d -print || true
-            exit 1
-          fi
-          if [ ! -f "$app_dir/Contents/Resources/app/dist/main.js" ]; then
-            echo "No packaged app main process bundle found"
-            find "$app_dir/Contents/Resources" -maxdepth 2 -print || true
-            exit 1
-          fi
-          if [ ! -f "$app_dir/Contents/Resources/app/dist/bootstrap.js" ]; then
-            echo "No packaged app bootstrap bundle found"
-            find "$app_dir/Contents/Resources" -maxdepth 2 -print || true
-            exit 1
-          fi
-          if [ ! -x "$app_dir/Contents/Resources/native/computer-use-helper" ]; then
-            echo "No executable native Computer Use helper found"
-            find "$app_dir/Contents/Resources" -maxdepth 3 -print || true
-            exit 1
-          fi
-          test -x "$app_dir/Contents/Helpers/Okou.app/Contents/MacOS/Okou"
-          if [ -e "$app_dir/Contents/Resources/app/src" ]; then
-            echo "Packaged app should not contain desktop source files"
-            find "$app_dir/Contents/Resources/app/src" -maxdepth 2 -print || true
-            exit 1
-          fi
-          if [ -e "$app_dir/Contents/Resources/app/native" ]; then
-            echo "Packaged app should not contain native helper source files"
-            find "$app_dir/Contents/Resources/app/native" -maxdepth 3 -print || true
-            exit 1
-          fi
-          if [ -e "$app_dir/Contents/Resources/app/desktop-runtime-config.json" ]; then
-            echo "Default-configuration artifact should not contain desktop runtime config"
-            exit 1
-          fi
-
-          minimum_system_version=$(/usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "$plist" 2>/dev/null || true)
-          if [ "$minimum_system_version" != "14.0" ]; then
-            echo "::error::Expected LSMinimumSystemVersion 14.0, found ${minimum_system_version:-missing}"
-            exit 1
-          fi
-          /usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$plist" | grep -qx "Okou"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleName" "$plist" | grep -qx "Okou"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$plist" | grep -qx "Okou"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$plist" | grep -qx "ai.okou.desktop"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleIconFile" "$plist" | grep -qx "icon.icns"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:0:CFBundleURLName" "$plist" | grep -qx "Okou Auth"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:0:CFBundleURLSchemes:0" "$plist" | grep -qx "ai.okou.desktop"
-          auth_plist="$app_dir/Contents/Helpers/Okou.app/Contents/Info.plist"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$auth_plist" | grep -qx "Okou"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$auth_plist" | grep -qx "Okou"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$auth_plist" | grep -qx "ai.okou.desktop"
-          file "$app_dir/Contents/MacOS/Okou" | grep -q "arm64"
-          file "$app_dir/Contents/Helpers/Okou.app/Contents/MacOS/Okou" | grep -q "arm64"
-          file "$app_dir/Contents/Resources/native/computer-use-helper" | grep -q "arm64"
-          cmp -s apps/desktop/assets/icon.icns "$app_dir/Contents/Resources/icon.icns"
-          cmp -s apps/desktop/assets/icon.png "$app_dir/Contents/Resources/app/assets/icon.png"
-
-          unzip -l "$artifact_path" | grep -q "Okou.app/Contents/MacOS/Okou"
-          unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Helpers/Okou.app/Contents/MacOS/Okou"
-          unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/icon.icns"
-          unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/native/computer-use-helper"
-          unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/app/dist/main.js"
-          unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/app/dist/bootstrap.js"
-          unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/app/assets/icon.png"
-
-      - name: Smoke test default-configuration artifact launch
-        env:
-          OKOU_DESKTOP_SMOKE_EVIDENCE_PATH: ${{ runner.temp }}/desktop-smoke-evidence/default/startup.json
-        run: node apps/desktop/scripts/smoke-test-packaged-app.js --signed
-
-      - name: Upload unsigned default-configuration macOS artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: okou-desktop-macos-arm64-default-unsigned
-          path: turbo/${{ steps.build-prod.outputs.path }}
-          if-no-files-found: error
-          retention-days: 3
-
-      # The shipping configuration: the same product selected explicitly,
-      # through the runtime config that the release build bakes in.
-      - name: Build unsigned Okou production macOS artifact
-        id: build-okou-prod
-        env:
-          OKOU_DESKTOP_PRODUCT: okou
-          OKOU_DESKTOP_PLATFORM_URL: https://app.okou.ai
-          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY_PROD }}
-          SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
-          SENTRY_PROJECT_DESKTOP: ${{ vars.SENTRY_PROJECT_DESKTOP }}
-          SENTRY_ENVIRONMENT: production
-        run: |
-          cleanup_runtime_config() {
-            rm -f apps/desktop/desktop-runtime-config.json
-          }
-          trap cleanup_runtime_config EXIT
-
-          # Both builds now package the same identity into
-          # out/Okou-darwin-arm64, so start from an empty output directory to
-          # keep this artifact's runtime-config assertions unambiguous.
-          rm -rf apps/desktop/out
-
-          node <<'NODE'
-          const fs = require("node:fs");
-
-          if (!process.env.CLERK_PUBLISHABLE_KEY?.startsWith("pk_live_")) {
-            throw new Error("Production Desktop requires a Clerk live publishable key");
-          }
-
-          fs.writeFileSync(
-            "apps/desktop/desktop-runtime-config.json",
-            `${JSON.stringify(
-              {
-                platformUrl: process.env.OKOU_DESKTOP_PLATFORM_URL,
-                product: process.env.OKOU_DESKTOP_PRODUCT,
-                clerkPublishableKey: process.env.CLERK_PUBLISHABLE_KEY,
-              },
-              null,
-              2,
-            )}\n`,
-          );
-          NODE
-
-          pnpm -F @okouai/desktop build
-          node apps/desktop/scripts/run-forge-make-with-retry.js \
-            --platform darwin \
-            --arch arm64 \
-            --targets @electron-forge/maker-zip
-
-          desktop_dir="$PWD/apps/desktop"
-          version=$(node -p "require('./apps/desktop/package.json').version")
-          forge_zip="$desktop_dir/out/make/zip/darwin/arm64/Okou-darwin-arm64-$version.zip"
-          artifact_path="apps/desktop/out/Okou-darwin-arm64.zip"
-
-          if [ ! -f "$forge_zip" ]; then
-            echo "No Forge Okou zip artifact found: $forge_zip"
-            find "$desktop_dir/out" -maxdepth 6 -type f -print || true
-            exit 1
-          fi
-
-          cp "$forge_zip" "$artifact_path"
-          echo "path=$artifact_path" >> "$GITHUB_OUTPUT"
-
-      - name: Verify Okou production artifact
-        run: |
-          artifact_path="apps/desktop/out/Okou-darwin-arm64.zip"
-          app_dir="apps/desktop/out/Okou-darwin-arm64/Okou.app"
-          plist="$app_dir/Contents/Info.plist"
-          runtime_config="$app_dir/Contents/Resources/app/desktop-runtime-config.json"
-          if [ ! -f "$artifact_path" ]; then
-            echo "No Okou desktop zip artifact found"
-            find apps/desktop/out -maxdepth 5 -type f -print || true
-            exit 1
-          fi
-          if [ ! -d "$app_dir" ]; then
-            echo "No packaged Okou app found: $app_dir"
-            find apps/desktop/out -maxdepth 4 -type d -print || true
-            exit 1
-          fi
-          if [ ! -f "$runtime_config" ]; then
-            echo "Okou production artifact should contain Desktop runtime config"
-            exit 1
-          fi
-          RUNTIME_CONFIG="$runtime_config" node <<'NODE'
-          const fs = require("node:fs");
-
-          const config = JSON.parse(
-            fs.readFileSync(process.env.RUNTIME_CONFIG, "utf8"),
-          );
-          if (
-            config.product !== "okou" ||
-            config.platformUrl !== "https://app.okou.ai" ||
-            !config.clerkPublishableKey?.startsWith("pk_live_")
-          ) {
-            console.error("Unexpected Okou Desktop runtime config", config);
-            process.exit(1);
-          }
-          NODE
-
-          minimum_system_version=$(/usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "$plist" 2>/dev/null || true)
-          if [ "$minimum_system_version" != "14.0" ]; then
-            echo "::error::Expected LSMinimumSystemVersion 14.0, found ${minimum_system_version:-missing}"
-            exit 1
-          fi
-          /usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$plist" | grep -qx "Okou"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleName" "$plist" | grep -qx "Okou"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$plist" | grep -qx "Okou"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$plist" | grep -qx "ai.okou.desktop"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleIconFile" "$plist" | grep -qx "icon.icns"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:0:CFBundleURLName" "$plist" | grep -qx "Okou Auth"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:0:CFBundleURLSchemes:0" "$plist" | grep -qx "ai.okou.desktop"
-          auth_plist="$app_dir/Contents/Helpers/Okou.app/Contents/Info.plist"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$auth_plist" | grep -qx "Okou"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$auth_plist" | grep -qx "Okou"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$auth_plist" | grep -qx "ai.okou.desktop"
-          file "$app_dir/Contents/MacOS/Okou" | grep -q "arm64"
-          file "$app_dir/Contents/Helpers/Okou.app/Contents/MacOS/Okou" | grep -q "arm64"
-          file "$app_dir/Contents/Resources/native/computer-use-helper" | grep -q "arm64"
-          cmp -s apps/desktop/assets/icon.icns "$app_dir/Contents/Resources/icon.icns"
-          cmp -s apps/desktop/assets/icon.png "$app_dir/Contents/Resources/app/assets/icon.png"
-
-          jq -e '.okou.production.userDataDirectoryName == "Okou"
-            and .okou.development.userDataDirectoryName == "Okou Dev"' \
-            apps/desktop/src/desktop-identities.json >/dev/null
-          for asset in tray-iconTemplate.png tray-iconTemplate@2x.png tray-iconDisabled.png tray-iconDisabled@2x.png tray-iconRunning.png tray-iconRunning@2x.png; do
-            cmp -s "apps/desktop/assets/$asset" "$app_dir/Contents/Resources/app/assets/$asset"
-          done
-
-          unzip -l "$artifact_path" | grep -q "Okou.app/Contents/MacOS/Okou"
-          unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Helpers/Okou.app/Contents/MacOS/Okou"
-          unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/icon.icns"
-          unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/native/computer-use-helper"
-          unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/app/dist/main.js"
-          unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/app/dist/bootstrap.js"
-          unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/app/assets/icon.png"
-          unzip -l "$artifact_path" | grep -q "Okou.app/Contents/Resources/app/desktop-runtime-config.json"
-
-      - name: Smoke test Okou production artifact launch
-        env:
-          OKOU_DESKTOP_SMOKE_EVIDENCE_PATH: ${{ runner.temp }}/desktop-smoke-evidence/production/startup.json
-          OKOU_DESKTOP_PRODUCT: okou
-          OKOU_DESKTOP_PLATFORM_URL: https://app.okou.ai
-        run: node apps/desktop/scripts/smoke-test-packaged-app.js --signed
-
-      - name: Upload unsigned Okou macOS artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: okou-desktop-macos-arm64-unsigned
-          path: turbo/${{ steps.build-okou-prod.outputs.path }}
-          if-no-files-found: error
-          retention-days: 3
-
-      - name: Build unsigned PR preview macOS artifact
-        id: build-preview
+      - name: Build isolated preview app
         if: github.event_name == 'pull_request'
         env:
-          OKOU_DESKTOP_PLATFORM_URL: ${{ steps.preview.outputs.platform-url }}
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY_PREVIEW }}
-          SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
-          SENTRY_PROJECT_DESKTOP: ${{ vars.SENTRY_PROJECT_DESKTOP }}
-          SENTRY_ENVIRONMENT: preview
-        run: |
-          cleanup_runtime_config() {
-            rm -f apps/desktop/desktop-runtime-config.json
-          }
-          trap cleanup_runtime_config EXIT
+          OKOU_DESKTOP_PLATFORM_URL: ${{ steps.preview.outputs.url }}
+        run: python3 desktop/scripts/build.py --development --package
 
-          rm -rf apps/desktop/out
-          node <<'NODE'
-          const fs = require("node:fs");
-
-          if (!process.env.CLERK_PUBLISHABLE_KEY?.startsWith("pk_test_")) {
-            throw new Error("Preview Desktop requires a Clerk test publishable key");
-          }
-
-          fs.writeFileSync(
-            "apps/desktop/desktop-runtime-config.json",
-            `${JSON.stringify(
-              {
-                platformUrl: process.env.OKOU_DESKTOP_PLATFORM_URL,
-                clerkPublishableKey: process.env.CLERK_PUBLISHABLE_KEY,
-              },
-              null,
-              2,
-            )}\n`,
-          );
-          NODE
-
-          pnpm -F @okouai/desktop build
-          pnpm -F @okouai/desktop upload:sentry
-          node apps/desktop/scripts/run-forge-make-with-retry.js \
-            --platform darwin \
-            --arch arm64 \
-            --targets @electron-forge/maker-zip
-
-          desktop_dir="$PWD/apps/desktop"
-          version=$(node -p "require('./apps/desktop/package.json').version")
-          forge_zip="$desktop_dir/out/make/zip/darwin/arm64/Okou Dev-darwin-arm64-$version.zip"
-          artifact_path="apps/desktop/out/OkouDev-darwin-arm64-preview.zip"
-
-          if [ ! -f "$forge_zip" ]; then
-            echo "No Forge preview zip artifact found: $forge_zip"
-            find "$desktop_dir/out" -maxdepth 6 -type f -print || true
-            exit 1
-          fi
-
-          cp "$forge_zip" "$artifact_path"
-          echo "path=$artifact_path" >> "$GITHUB_OUTPUT"
-
-      - name: Verify PR preview artifact
+      - name: Upload preview artifact
         if: github.event_name == 'pull_request'
-        env:
-          EXPECTED_PLATFORM_URL: ${{ steps.preview.outputs.platform-url }}
-        run: |
-          artifact_path="apps/desktop/out/OkouDev-darwin-arm64-preview.zip"
-          app_dir="apps/desktop/out/Okou Dev-darwin-arm64/Okou Dev.app"
-          plist="$app_dir/Contents/Info.plist"
-          runtime_config="$app_dir/Contents/Resources/app/desktop-runtime-config.json"
-          if [ ! -f "$artifact_path" ]; then
-            echo "No desktop preview zip artifact found"
-            find apps/desktop/out -maxdepth 5 -type f -print || true
-            exit 1
-          fi
-          if [ ! -d "$app_dir" ]; then
-            echo "No packaged preview app found: $app_dir"
-            find apps/desktop/out -maxdepth 4 -type d -print || true
-            exit 1
-          fi
-          if [ ! -f "$app_dir/Contents/Resources/app/dist/main.js" ]; then
-            echo "No packaged preview app main process bundle found"
-            find "$app_dir/Contents/Resources" -maxdepth 2 -print || true
-            exit 1
-          fi
-          if [ ! -f "$app_dir/Contents/Resources/app/dist/bootstrap.js" ]; then
-            echo "No packaged preview app bootstrap bundle found"
-            find "$app_dir/Contents/Resources" -maxdepth 2 -print || true
-            exit 1
-          fi
-          if [ ! -x "$app_dir/Contents/Resources/native/computer-use-helper" ]; then
-            echo "No executable native Computer Use helper found"
-            find "$app_dir/Contents/Resources" -maxdepth 3 -print || true
-            exit 1
-          fi
-          test -x "$app_dir/Contents/Helpers/Okou.app/Contents/MacOS/Okou"
-          if [ -e "$app_dir/Contents/Resources/app/src" ]; then
-            echo "Packaged preview app should not contain desktop source files"
-            find "$app_dir/Contents/Resources/app/src" -maxdepth 2 -print || true
-            exit 1
-          fi
-          if [ -e "$app_dir/Contents/Resources/app/native" ]; then
-            echo "Packaged preview app should not contain native helper source files"
-            find "$app_dir/Contents/Resources/app/native" -maxdepth 3 -print || true
-            exit 1
-          fi
-          if [ ! -f "$runtime_config" ]; then
-            echo "Packaged preview app should contain desktop runtime config"
-            exit 1
-          fi
-
-          RUNTIME_CONFIG="$runtime_config" node <<'NODE'
-          const fs = require("node:fs");
-
-          const config = JSON.parse(
-            fs.readFileSync(process.env.RUNTIME_CONFIG, "utf8"),
-          );
-          if (config.platformUrl !== process.env.EXPECTED_PLATFORM_URL) {
-            console.error(
-              `Expected ${process.env.EXPECTED_PLATFORM_URL}, received ${config.platformUrl}`,
-            );
-            process.exit(1);
-          }
-          NODE
-
-          minimum_system_version=$(/usr/libexec/PlistBuddy -c "Print :LSMinimumSystemVersion" "$plist" 2>/dev/null || true)
-          if [ "$minimum_system_version" != "14.0" ]; then
-            echo "::error::Expected LSMinimumSystemVersion 14.0, found ${minimum_system_version:-missing}"
-            exit 1
-          fi
-          /usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$plist" | grep -qx "Okou Dev"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleName" "$plist" | grep -qx "Okou Dev"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$plist" | grep -qx "Okou Dev"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$plist" | grep -qx "ai.okou.desktop.dev"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleIconFile" "$plist" | grep -qx "icon.icns"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:0:CFBundleURLName" "$plist" | grep -qx "Okou Dev Auth"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:0:CFBundleURLSchemes:0" "$plist" | grep -qx "ai.okou.desktop.dev"
-          auth_plist="$app_dir/Contents/Helpers/Okou.app/Contents/Info.plist"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$auth_plist" | grep -qx "Okou"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$auth_plist" | grep -qx "Okou"
-          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$auth_plist" | grep -qx "ai.okou.desktop.dev"
-          file "$app_dir/Contents/MacOS/Okou Dev" | grep -q "arm64"
-          file "$app_dir/Contents/Helpers/Okou.app/Contents/MacOS/Okou" | grep -q "arm64"
-          file "$app_dir/Contents/Resources/native/computer-use-helper" | grep -q "arm64"
-          cmp -s apps/desktop/assets/icon.icns "$app_dir/Contents/Resources/icon.icns"
-          cmp -s apps/desktop/assets/icon.png "$app_dir/Contents/Resources/app/assets/icon.png"
-
-          unzip -l "$artifact_path" | grep -q "Okou Dev.app/Contents/MacOS/Okou Dev"
-          unzip -l "$artifact_path" | grep -q "Okou Dev.app/Contents/Helpers/Okou.app/Contents/MacOS/Okou"
-          unzip -l "$artifact_path" | grep -q "Okou Dev.app/Contents/Resources/icon.icns"
-          unzip -l "$artifact_path" | grep -q "Okou Dev.app/Contents/Resources/native/computer-use-helper"
-          unzip -l "$artifact_path" | grep -q "Okou Dev.app/Contents/Resources/app/dist/main.js"
-          unzip -l "$artifact_path" | grep -q "Okou Dev.app/Contents/Resources/app/dist/bootstrap.js"
-          unzip -l "$artifact_path" | grep -q "Okou Dev.app/Contents/Resources/app/assets/icon.png"
-          unzip -l "$artifact_path" | grep -q "Okou Dev.app/Contents/Resources/app/desktop-runtime-config.json"
-
-      - name: Smoke test PR preview artifact launch
-        if: github.event_name == 'pull_request'
-        env:
-          OKOU_DESKTOP_SMOKE_EVIDENCE_PATH: ${{ runner.temp }}/desktop-smoke-evidence/preview/startup.json
-          OKOU_DESKTOP_PLATFORM_URL: ${{ steps.preview.outputs.platform-url }}
-        run: node apps/desktop/scripts/smoke-test-packaged-app.js --signed
-
-      - name: Upload unsigned PR preview macOS artifact
-        if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: okou-desktop-macos-arm64-preview-unsigned
-          path: turbo/${{ steps.build-preview.outputs.path }}
+          path: desktop/out/Okou Dev-*.zip
           if-no-files-found: error
-          retention-days: 3
 
-      - name: Upload Desktop smoke verification evidence
-        continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: okou-desktop-smoke-verification
-          path: ${{ runner.temp }}/desktop-smoke-evidence/
-          if-no-files-found: error
-          retention-days: 14
-
-  # Release PR merge groups build the exact commit that GitHub will merge and
-  # tag. The matching main push reuses the immutable R2 artifact by commit SHA.
   deploy-desktop:
     name: deploy-desktop-macos-arm64
     needs: detect-desktop-version
@@ -604,7 +144,7 @@ jobs:
         github.event_name == 'merge_group'
       }}
     runs-on: macos-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     concurrency:
       group: deploy-desktop-${{ github.sha }}
       cancel-in-progress: false
@@ -679,112 +219,19 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+      - name: Verify native runtime and helper
         if: steps.existing.outputs.exists != 'true'
-        with:
-          version: 10.33.4
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        if: steps.existing.outputs.exists != 'true'
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: turbo/pnpm-lock.yaml
-
-      - name: Install dependencies
-        if: steps.existing.outputs.exists != 'true'
-        working-directory: turbo
-        run: pnpm install --frozen-lockfile --strict-peer-dependencies
+        run: |
+          swift test --package-path desktop -j 4
+          swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution
 
       - name: Build canonical unsigned Desktop app
         if: steps.existing.outputs.exists != 'true'
         env:
-          SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
-          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
-          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
-          SENTRY_PROJECT_DESKTOP: ${{ vars.SENTRY_PROJECT_DESKTOP }}
-          SENTRY_ENVIRONMENT: production
-          OKOU_DESKTOP_SKIP_SIGNING: "true"
-          OKOU_DESKTOP_PRODUCT: okou
-          OKOU_DESKTOP_PLATFORM_URL: https://app.okou.ai
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY_PROD }}
-        working-directory: turbo
-        run: |
-          cleanup_runtime_config() {
-            rm -f apps/desktop/desktop-runtime-config.json
-          }
-          trap cleanup_runtime_config EXIT
-
-          cleanup_runtime_config
-          rm -rf apps/desktop/out
-
-          node <<'NODE'
-          const fs = require("node:fs");
-
-          if (!process.env.CLERK_PUBLISHABLE_KEY?.startsWith("pk_live_")) {
-            throw new Error("Canonical Desktop requires a Clerk live publishable key");
-          }
-
-          fs.writeFileSync(
-            "apps/desktop/desktop-runtime-config.json",
-            `${JSON.stringify(
-              {
-                platformUrl: process.env.OKOU_DESKTOP_PLATFORM_URL,
-                product: process.env.OKOU_DESKTOP_PRODUCT,
-                clerkPublishableKey: process.env.CLERK_PUBLISHABLE_KEY,
-              },
-              null,
-              2,
-            )}\n`,
-          );
-          NODE
-
-          pnpm -F @okouai/desktop build
-          pnpm -F @okouai/desktop upload:sentry
-          pnpm --dir apps/desktop exec electron-forge package \
-            --platform darwin \
-            --arch arm64
-
-          app_dir="$PWD/apps/desktop/out/Okou-darwin-arm64/Okou.app"
-          if [ ! -d "$app_dir" ]; then
-            echo "No packaged Okou app found: $app_dir"
-            find apps/desktop/out -maxdepth 4 -type d -print || true
-            exit 1
-          fi
-          runtime_config="$app_dir/Contents/Resources/app/desktop-runtime-config.json"
-          if [ ! -f "$runtime_config" ]; then
-            echo "Canonical Okou artifact must contain Desktop runtime config"
-            exit 1
-          fi
-
-          # The published artifact must carry no runtime config beyond the one
-          # written above: exactly one file, holding exactly the canonical
-          # product and platform URL. Anything else is a configuration baked in
-          # somewhere other than this step.
-          runtime_config_count="$(find "$app_dir" -name desktop-runtime-config.json | wc -l | tr -d '[:space:]')"
-          if [ "$runtime_config_count" != "1" ]; then
-            echo "Canonical Okou artifact must contain exactly one Desktop runtime config, found $runtime_config_count"
-            find "$app_dir" -name desktop-runtime-config.json -print || true
-            exit 1
-          fi
-          RUNTIME_CONFIG="$runtime_config" node <<'NODE'
-          const fs = require("node:fs");
-
-          const config = JSON.parse(
-            fs.readFileSync(process.env.RUNTIME_CONFIG, "utf8"),
-          );
-          if (
-            Object.keys(config).sort().join(",") !== "clerkPublishableKey,platformUrl,product" ||
-            config.product !== process.env.OKOU_DESKTOP_PRODUCT ||
-            config.platformUrl !== process.env.OKOU_DESKTOP_PLATFORM_URL ||
-            config.clerkPublishableKey !== process.env.CLERK_PUBLISHABLE_KEY
-          ) {
-            console.error("Unexpected canonical Desktop runtime config", config);
-            process.exit(1);
-          }
-          NODE
-
-          node apps/desktop/scripts/smoke-test-packaged-app.js
+          SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
+          OKOU_DESKTOP_PLATFORM_URL: https://app.okou.ai
+        run: python3 desktop/scripts/build.py
 
       - name: Create canonical Desktop artifact
         if: steps.existing.outputs.exists != 'true'
@@ -796,7 +243,7 @@ jobs:
           bash .github/scripts/build-okou-desktop-artifact.sh \
             "$ARTIFACT_SHA" \
             "$DESKTOP_VERSION" \
-            "turbo/apps/desktop/out/Okou-darwin-arm64/Okou.app" \
+            "desktop/out/Okou-darwin-arm64/Okou.app" \
             /tmp/okou-desktop-artifact
 
       - name: Upload canonical Desktop artifact

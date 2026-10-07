@@ -107,6 +107,65 @@ describe("desktop update routes", () => {
     await accept(manifestStateClient().reset({ body: {} }), [200]);
   });
 
+  it("serves the same blocked-version selection to Sparkle and installed Electron clients", async () => {
+    mockDesktopUpdateManifest(
+      stableManifest(
+        "0.50.1",
+        {
+          "0.50.0": darwinArm64Release("0.50.0", okouZipUrl("0.50.0")),
+          "0.50.1": darwinArm64Release("0.50.1", okouZipUrl("0.50.1")),
+        },
+        ["0.50.1"],
+      ),
+    );
+    const path = "/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/";
+    const electron = await appRequest(`${path}RELEASES.json`);
+    expect(electron.status).toBe(200);
+    expect(await electron.json()).toMatchObject({ currentRelease: "0.50.0" });
+    const native = await appRequest(`${path}appcast.xml`);
+    expect(native.status).toBe(200);
+    expect(native.headers.get("content-type")).toContain("application/rss+xml");
+    expect(native.headers.get("cache-control")).toBe("no-store");
+    const xml = await native.text();
+    expect(xml).toContain('<enclosure url="' + okouZipUrl("0.50.0") + '"');
+    expect(xml).toContain("<sparkle:version>0.50.0</sparkle:version>");
+    expect(xml).not.toContain("0.50.1");
+  });
+
+  it("escapes release text in the native XML feed", async () => {
+    const release = darwinArm64Release("0.50.0", okouZipUrl("0.50.0"));
+    mockDesktopUpdateManifest(
+      stableManifest("0.50.0", {
+        "0.50.0": {
+          ...release,
+          name: "Okou & <native>",
+          notes: 'Text "quoted" <script>',
+        },
+      }),
+    );
+    const response = await appRequest(
+      "/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/appcast.xml",
+    );
+    expect(response.status).toBe(200);
+    const xml = await response.text();
+    expect(xml).toContain("Okou &amp; &lt;native&gt;");
+    expect(xml).toContain("Text &quot;quoted&quot; &lt;script&gt;");
+  });
+
+  it("lets native clients retry when the release manifest is unavailable", async () => {
+    server.use(
+      http.get(OKOU_DESKTOP_UPDATE_MANIFEST_URL, () => {
+        return new HttpResponse(null, { status: 503 });
+      }),
+    );
+    const response = await appRequest(
+      "/api/desktop/updates/ai-okou-desktop/stable/darwin/arm64/appcast.xml",
+    );
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("60");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
   it("serves the no-store hard Zero migration policy", async () => {
     const response = await appRequest(
       "http://api.test/api/desktop/migration-policy",

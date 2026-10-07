@@ -38,6 +38,9 @@ const DESKTOP_UPDATE_RETRY_AFTER_SECONDS = "60";
 const releasePageParams$ = pathParamsOf(desktopUpdatesContract.releasePage);
 const dmgDownloadParams$ = pathParamsOf(desktopUpdatesContract.dmgDownload);
 const productFeedParams$ = pathParamsOf(desktopUpdatesContract.productFeed);
+const productAppcastParams$ = pathParamsOf(
+  desktopUpdatesContract.productAppcast,
+);
 const productReleasePageParams$ = pathParamsOf(
   desktopUpdatesContract.productReleasePage,
 );
@@ -226,7 +229,7 @@ const getDesktopDmgDownload$ = command(
   },
 );
 
-// All three `:product` handlers below reject the same retired lines. `okou` is
+// The `:product` handlers below reject the same retired lines. `okou` is
 // the pre-adoption Okou line. `zero` joined it in #31475: its manifest had been
 // frozen since the `hard` migration policy went live, and the only clients left
 // polling it were Squirrel auto-updaters that cannot cross from the Zero bundle
@@ -304,6 +307,75 @@ const getProductDesktopUpdateFeed$ = command(
   },
 );
 
+function xmlText(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => {
+    switch (character) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      case "'":
+        return "&apos;";
+      default:
+        throw new Error("Unexpected XML character");
+    }
+  });
+}
+
+const getProductDesktopAppcast$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const { product, ...params } = get(productAppcastParams$);
+    if (product !== DESKTOP_UPDATE_LINE_OKOU) {
+      return notFound("This desktop update line is retired.");
+    }
+    const loaded = await settleManifestLoad(
+      loadDesktopUpdateFeed({ line: product, ...params }, signal),
+      signal,
+    );
+    if (!loaded.ok) {
+      return set(desktopUpdateUnavailable$, {
+        line: product,
+        route: desktopUpdatesContract.productAppcast.path,
+        unavailable: loaded.unavailable,
+      });
+    }
+    signal.throwIfAborted();
+    if (!loaded.value)
+      return notFound("No desktop update is available for this feed.");
+    // Both generations receive the same channel and blocked-version decisions.
+    // ZIP bundles are authenticated by Sparkle against the installed app's
+    // Developer ID designated requirement (same trust boundary as Squirrel).
+    const items = loaded.value.releases
+      .map(({ updateTo }) => {
+        return `<item>
+      <title>${xmlText(updateTo.name)}</title>
+      <pubDate>${xmlText(new Date(updateTo.pub_date).toUTCString())}</pubDate>
+      <description>${xmlText(updateTo.notes)}</description>
+      <sparkle:version>${xmlText(updateTo.version)}</sparkle:version>
+      <sparkle:shortVersionString>${xmlText(updateTo.version)}</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <enclosure url="${xmlText(updateTo.url)}" type="application/octet-stream"/>
+    </item>`;
+      })
+      .join("\n");
+    return new Response(
+      `<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel>
+<title>Okou Desktop</title>${items}</channel></rss>`,
+      {
+        headers: {
+          "Content-Type": "application/rss+xml; charset=utf-8",
+          "Cache-Control": "no-store",
+        },
+      },
+    );
+  },
+);
+
 const getProductDesktopDmgDownload$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const { product, ...params } = get(productDmgDownloadParams$);
@@ -342,6 +414,10 @@ const getProductDesktopDmgDownload$ = command(
 );
 
 export const desktopUpdateRoutes: readonly RouteEntry[] = [
+  {
+    route: desktopUpdatesContract.productAppcast,
+    handler: getProductDesktopAppcast$,
+  },
   {
     route: desktopUpdatesContract.migrationPolicy,
     handler: getDesktopMigrationPolicy$,

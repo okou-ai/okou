@@ -202,7 +202,11 @@ tmp/
 *.sarif
 junit.xml
 e2e/results/
-turbo/apps/desktop/desktop-runtime-config.json
+desktop/Resources/desktop-runtime-config.json
+desktop/.build/
+desktop/.build-app/
+desktop/ComputerUse/.build/
+desktop/out/
 .codex
 codex-work/
 .agents/

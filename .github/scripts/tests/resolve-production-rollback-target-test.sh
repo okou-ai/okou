@@ -761,8 +761,8 @@ ruby -e '
     raise "release tag projection mismatch: missing=#{missing_paths.sort}, unknown=#{unknown_paths.sort}, duplicates=#{duplicate_paths.sort}"
   end
 
-  desktop_release_created = "$" + "{{ steps.release.outputs[\x27turbo/apps/desktop--release_created\x27] }}"
-  desktop_version = "$" + "{{ steps.release.outputs[\x27turbo/apps/desktop--version\x27] }}"
+  desktop_release_created = "$" + "{{ steps.release.outputs[\x27desktop--release_created\x27] }}"
+  desktop_version = "$" + "{{ steps.release.outputs[\x27desktop--version\x27] }}"
   unless resolver_env.fetch("DESKTOP_RELEASE_CREATED") == desktop_release_created &&
       resolver_env.fetch("DESKTOP_VERSION") == desktop_version
     raise "release tag resolver must derive the Okou Desktop tag from the Desktop release outputs"

@@ -1,159 +1,61 @@
 # Desktop Testing Patterns
 
-This guide defines the integration-test boundaries for
-`turbo/apps/desktop`. It extends the project-wide rule: write tests at entry
-points, keep internal code real, and mock only external system boundaries.
+Okou Desktop is a native Swift application under `desktop/`. Exercise production
+entry points and mock only external operating-system, helper-process, and HTTP
+boundaries. Keep host lifecycle, preferences, command budgets, and native
+transport real.
 
-Desktop has more than one entry point. It is an Electron app, a renderer UI, a
-preload bridge, and a native macOS helper. Tests should
-choose the smallest entry point that matches the behavior being protected.
-
-## Entry Points
-
-### Renderer App
-
-Renderer tests should enter through the Desktop UI, not through extracted
-formatters or internal helpers.
-
-Use this boundary for behavior in:
-
-- `src/renderer/App.tsx`
-- `src/renderer/computer-use-state.ts`
-- `src/desktop-bridge.ts`
-
-Mock the external bridge objects on `window`:
-
-- `window.okouDesktopComputerUse`
-- `window.vm0DesktopAuth`
-
-Keep renderer modules real. Assert visible user behavior and bridge outcomes:
-
-- Signed-out users can start sign-in.
-- Signed-in users without an active workspace can select one.
-- Missing Accessibility or Screen Recording permissions show request/settings
-  actions.
-- Ready/offline, online, recovering, and error states expose the expected
-  controls.
-- Command history, app state, screenshots, and runtime errors render through the
-  UI.
-
-Do not export display helpers from the renderer just to unit-test them.
-
-### Preload And IPC Bridge
-
-Preload and IPC tests should exercise the bridge boundary between the renderer
-and Electron main process.
-
-Use this boundary for behavior in:
-
-- `src/preload.ts`
-- `src/computer-use-electron.ts`
-- `src/desktop-auth-electron.ts`
-
-Mock `electron` as the external runtime. Keep Desktop channel modules and
-validation logic real.
-
-Useful assertions include:
-
-- Computer Use IPC rejects calls from non-Desktop renderer URLs.
-- Desktop auth completion is accepted only from configured app origins.
-- Invalid bridge payloads are rejected, such as empty auth tokens or non-boolean
-  keep-awake values.
-- Subscribe and unsubscribe attach and detach the expected channels.
-- Change notifications are sent only to live windows.
-
-### Native Helper Protocol
-
-The JavaScript native backend should be tested at the helper process protocol
-boundary. A fake helper process is the right test double because the helper is
-external to the JavaScript runtime.
-
-The Swift helper itself should keep using SwiftPM tests for native policy and
-algorithm behavior under `native/computer-use-helper/Tests`.
-
-### App Lifecycle And Packaged Artifacts
-
-Avoid wholesale unit tests for `src/main.ts`. Main process behavior should be
-covered through stable external boundaries:
-
-- Electron lifecycle events when a focused event harness exists.
-- IPC and preload bridge tests.
-- URL callback and second-instance behavior.
-- Packaged artifact verification in `.github/workflows/desktop.yml`.
-
-Keep artifact checks focused on observable package contents and platform
-configuration: bundled main/preload files, native helper executable presence,
-bundle identifiers, URL schemes, icons, runtime config inclusion or exclusion,
-and release/update packaging rules.
-
-## Mock Boundary
-
-Desktop tests may mock:
-
-- `electron`, because it is the external app runtime.
-- Fake native helper executables, because the helper is outside the JS process.
-- External HTTP/API boundaries when a test exercises network behavior.
-- Node process execution only when the behavior being tested is not the CLI
-  process boundary.
-
-Desktop tests should keep real:
-
-- Desktop source modules.
-- The filesystem, using temp directories.
-- Channel constants, URL policy, payload validation, state machines, and bridge
-  wiring.
-
-Do not use relative internal `vi.mock()` paths for Desktop implementation
-modules.
-
-## Timer Policy
-
-Desktop's main-process host tests currently have a narrow exception to the
-project-wide ban on Vitest fake timers. `computer-use-host.test.ts` and
-`desktop-computer-use-autostart.test.ts` exercise production timeout, retry,
-and periodic scheduling through Electron and native-helper boundaries. Those
-paths do not yet expose an owned clock, and advancing Vitest's clock keeps the
-tests from waiting for minutes of production time. Keep fake timers confined
-to these two files, restore real timers after each test, and assert host or
-bridge outcomes at the deadline boundary. New Desktop tests should use an
-owned clock or an observable result instead of extending this exception.
-
-The isolated child-process test in
-`desktop-computer-use-permission-stall.test.ts` is a separate real-deadline
-exception: it verifies that a native helper reply survives a blocked parent
-event loop and an actual request timeout. Its timing assertions establish the
-fixture's ordering across processes; replacing that stall with a mocked timer
-would remove the behavior under test.
-
-`computer-use-native.test.ts` also holds replies in an external helper process
-to make concurrent protocol requests observable. The short helper response
-delays belong to that external boundary; they should not become sleeps in the
-parent test process.
-
-## Narrow Exceptions
-
-Pure or matrix-style tests are allowed only when the integration boundary would
-make the test much larger without adding equivalent confidence.
-
-Accepted examples:
-
-- Security and navigation policy matrices such as `window-policy.test.ts`.
-- Tray menu state matrices such as `desktop-tray-menu.test.ts`.
-- Native helper policy and algorithm tests in Swift.
-
-New exceptions should be justified by security risk, algorithmic complexity, or
-state-matrix size. Do not add unit tests just to raise coverage percentages.
-
-## CI Expectations
-
-Desktop PRs should use workspace-scoped checks:
+## Automated Checks
 
 ```bash
-pnpm -F @okouai/desktop check-types
-pnpm -F @okouai/desktop lint
-pnpm -F @okouai/desktop test
-pnpm -F @okouai/desktop test:native
+swift test --package-path desktop -j 4
+swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution
 ```
 
-Use narrower focused commands while iterating, then run the relevant full
-Desktop checks before opening or updating a PR.
+Core tests exercise existing Electron preferences, service-origin compatibility,
+server claim deadlines, stdio protocol retirement, and the host HTTP lifecycle.
+Verify that a late claim is completed without dispatch after admission closes,
+that host requests use their independent host token, and that input cannot be
+replayed after helper retirement. Native helper tests cover Accessibility policy,
+window targeting, screenshots, and input recovery in the existing backend.
+
+Build each affected packaged configuration with `desktop/scripts/build.py`.
+Use `--development` for preview isolation. Packaging must retain the Clerk
+resource bundle, native backend, same production bundle ID, and legacy Swift
+ShipIt relaunch bridge. `--smoke-test` checks startup without touching account
+state or registering a host. It does not prove login, permissions, or remote
+command execution.
+
+## Native Acceptance
+
+Use the actual packaged app for these cases:
+
+- Signed-out users complete native sign-in and workspace selection.
+- Existing native sessions and the installation ID survive migration.
+- Accessibility, Screen Recording, and browser Automation display their actual
+  state and expose request/settings actions.
+- Online, offline, recovery, disabled, and error states show the expected controls.
+- Computer Use returns a target-window screenshot and indexed Accessibility
+  state, and delivers input only to the selected app/window.
+- Closing the window retains the menu-bar host; reopening restores the window.
+- Stop, workspace changes, sign-out, quit, and updates drain work and report
+  completion before retiring authority.
+- Developer Tools and command diagnostics remain gated by the server switch.
+
+For distribution changes, test signed ZIP and mounted DMG startup, validate
+Developer ID and notarization, and exercise the actual old Squirrel replacement
+and relaunch path in an isolated installation. A fabricated feed alone does not
+prove that an installed updater can start the native app. Preserve the real
+production feed and installation while using the isolated updater harness.
+
+## Release Workflow Contracts
+
+The `.github/scripts/tests/` Desktop tests protect version-file migration,
+immutable SHA-addressed R2 artifacts, exact-artifact promotion, signing inputs,
+and publishing the mutable manifest only after notarized assets succeed. Run
+them when changing Desktop workflow or release ownership. Release Please
+workspace coverage must recognize the standalone `desktop` component.
+
+The API's Desktop update-route tests protect both legacy `RELEASES.json` and
+native `appcast.xml` responses, shared blocked-version selection, retired lines,
+XML escaping, and manifest-unavailable behavior.
