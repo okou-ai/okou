@@ -61,15 +61,42 @@ inventory still needs a separately reviewed exact immutable/mutable mount
 contract; repository/proc/device/ephemeral mounts cannot be equated with the
 pre-mount extracted tree or excluded by broad pathname prefixes.
 Archive hashes are checked against signed metadata before collision/path-safe
-extraction. Package tar headers are read incrementally: at most 50,000 payload
-entries and 50,001 raw entries including the ordinary root header. Skipped root
-headers also consume the raw budget. The first excess entry refuses before the
-whole header list can exhaust memory; no prefix is silently truncated or extracted.
-Public ar/tar format canaries exercise the real installed data decoder and parser,
-including child-local memory limits, exact entry capacity and skipped-root refusal.
-They contain no package programs or maintainer scripts and prove neither signatures,
-original input provenance nor native admission. The decoded-payload byte/time
-checks and complete bootstrap/parser/IO TCB obligations remain separate.
+extraction. Package tar members are read incrementally: at most 50,000 non-root
+entries and 50,001 yielded logical entries, including skipped root headers. These
+are not physical extension-header counts. Separate parser guards precede GNU/PAX
+payload reads and recursive interpretation: 200,001 physical headers per package,
+64 KiB per extension, eight-MiB aggregate extension bytes, chain depth eight,
+128 MiB per effective file, 4096-byte effective name/link/user/group strings,
+32 MiB aggregate name bytes and 100,000 retained PAX-key applications. Old GNU
+and PAX sparse maps remain supported under explicit block/extent/logical-byte
+bounds and physical-data accounting; they are not blanket-rejected. No excess
+prefix is silently truncated or extracted.
+
+The exact `/usr/bin/dpkg-deb` filesystem decoder runs under `/usr/bin/prlimit`
+with an empty controlled environment, closed stdin, discarded stderr (not an
+unbounded PIPE), core-off and at most 256 MiB address space, 32 FDs and 30 CPU
+seconds. Inherited smaller limits are preserved. The existing 512 MiB stdout
+ceiling is enforced by the kernel before file growth, not after decoding. The
+30-second wait remains; interruption kills the owned process group and bounds
+the leader reap to five seconds. This is not proof of grandchild reaping or an
+external source seal. Both borrowed executable hashes enter bootstrap metadata;
+a pathname/hash record is not race-free executed-inode or loader attestation.
+
+One provision-wide ledger charges every physical header, including skipped roots
+and extensions, before interpretation (400,000 total), decoded output (four GiB),
+regular-header logical bytes (four GiB) and path/link strings (64 MiB) before
+extraction. Repeated identical collisions still consume these work budgets;
+collision hashing uses bounded chunks and checks sizes rather than an eager
+whole-file read. These work limits do not replace the existing final-tree limits
+or prove complete implicit-parent/hardlink-name/output reservations. Control
+metadata parsing, archive admission order, complete parser/bootstrap TCB,
+descendant ownership and whole-provision timing remain separate obligations.
+
+Public ar/tar canaries exercise the real installed data decoder and parser,
+including inherited memory/file limits, exact logical-entry capacity, skipped
+roots, PAX/GNU/sparse positives and refusals, cross-package quotas and streamed
+collision behavior. They contain no package programs or maintainer scripts and
+prove neither signatures, original input provenance nor native admission.
 No package installation or maintainer script runs. Declared usrmerge,
 compiler/rmt/UTC aliases and a bundle of signed public CA certificates replace
 only their normal maintainer-generated inputs. Dangling package documentation
@@ -79,8 +106,12 @@ its contained `usr/lib64` target; ARM creates no `lib64` alias when the signed
 inputs supply no target. Existing wrong/escaping aliases are refused, not ignored.
 
 QEMU9.2 source and VNC hashes are unchanged. Exact source admission requires
-81,379 members, 647,679,574 declared bytes and epoch 1733874468, still below the
-one-GiB ceiling. The archive-covered EDK2 macOS development alias
+81,379 logical members, 647,679,574 declared bytes and epoch 1733874468, still below
+the one-GiB ceiling. Incremental admission and the bounded parser precede the
+complete member list; the separate source physical-header ceiling is 325,517.
+The exact pinned release remains a mandatory real extraction test, without source
+execution. This does not attest the XZ decoder's complete dependency/IO boundary.
+The archive-covered EDK2 macOS development alias
 `roms/edk2/EmulatorPkg/Unix/Host/X11IncludeHack` → `/opt/X11/include` is explicitly
 excluded as a nonbuild input; it is never extracted, followed or rewritten to a
 host path. Every other selected entry retains the path/type/data-filter checks.

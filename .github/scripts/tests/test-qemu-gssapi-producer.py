@@ -121,6 +121,263 @@ if list(pathlib.Path(sys.argv[3]).iterdir()):
             self.assertEqual((destination / 'public-parser-canary').stat().st_mode & 0o777, 0o600)
             self.assertEqual(set(path.name for path in base.iterdir()), {'root', archive.name})
 
+    def public_payload_deb(self, base, payload):
+        # Inert format input only, decoded by the real installed dpkg-deb.
+        archive = base / 'public-payload-canary.deb'
+        with archive.open('xb') as output:
+            output.write(b'!<arch>\n')
+            for name, data in [('debian-binary', b'2.0\n'),
+                               ('control.tar.gz', gzip.compress(b'\0' * 10240, mtime=0)),
+                               ('data.tar.gz', gzip.compress(payload, mtime=0))]:
+                fields = ((name + '/').ljust(16) + '0'.ljust(12) + '0'.ljust(6)
+                          + '0'.ljust(6) + '100600'.ljust(8) + str(len(data)).ljust(10) + '`\n')
+                output.write(fields.encode())
+                output.write(data)
+                if len(data) % 2:
+                    output.write(b'\n')
+        return archive
+
+    def test_package_oversized_pax_is_refused_before_parser_allocation_or_writes(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            extension = tarfile.TarInfo('././@PaxHeader')
+            extension.type = tarfile.XHDTYPE
+            extension.size = 128 * 1024
+            payload = extension.tobuf(format=tarfile.USTAR_FORMAT) + b'0' * extension.size + b'\0' * 1024
+            archive = self.public_payload_deb(base, payload)
+            root = base / 'root'
+            root.mkdir()
+            with self.assertRaisesRegex(ValueError, 'archive extension budget refused'):
+                self.producer.extract_deb(archive, root)
+            self.assertEqual(list(root.iterdir()), [])
+
+    def test_package_pax_logical_size_is_bounded_before_extraction(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            member = tarfile.TarInfo('oversized-logical-file')
+            member.pax_headers = {'size': str(128 * 1024 * 1024 + 1)}
+            payload = member.tobuf(format=tarfile.PAX_FORMAT) + b'\0' * 1024
+            archive = self.public_payload_deb(base, payload)
+            root = base / 'root'
+            root.mkdir()
+            with self.assertRaisesRegex(ValueError, 'archive file byte budget refused'):
+                self.producer.extract_deb(archive, root)
+            self.assertEqual(list(root.iterdir()), [])
+
+    def test_package_nested_extensions_are_bounded_before_recursive_parser_work(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            extension = tarfile.TarInfo('././@LongLink')
+            extension.type = tarfile.GNUTYPE_LONGNAME
+            extension.size = 7
+            member = tarfile.TarInfo('public')
+            payload = (extension.tobuf(format=tarfile.GNU_FORMAT) + b'public\0' + b'\0' * 505) * 32
+            payload += member.tobuf(format=tarfile.USTAR_FORMAT) + b'\0' * 1024
+            archive = self.public_payload_deb(base, payload)
+            root = base / 'root'
+            root.mkdir()
+            with self.assertRaisesRegex(ValueError, 'archive extension depth refused'):
+                self.producer.extract_deb(archive, root)
+            self.assertEqual(list(root.iterdir()), [])
+
+    def test_package_sparse_logical_size_is_bounded_before_sparse_expansion(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            member = tarfile.TarInfo('sparse-public-canary')
+            member.type = tarfile.GNUTYPE_SPARSE
+            header = bytearray(member.tobuf(format=tarfile.GNU_FORMAT))
+            header[483:495] = tarfile.itn(128 * 1024 * 1024 + 1, 12)
+            header[148:156] = b' ' * 8
+            header[148:156] = bytes('%06o\0 ' % sum(header), 'ascii')
+            archive = self.public_payload_deb(base, bytes(header) + b'\0' * 1024)
+            root = base / 'root'
+            root.mkdir()
+            with self.assertRaisesRegex(ValueError, 'archive file byte budget refused'):
+                self.producer.extract_deb(archive, root)
+            self.assertEqual(list(root.iterdir()), [])
+
+    def test_decoder_output_is_kernel_bounded_and_all_descriptors_are_closed(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            member = tarfile.TarInfo('public-data')
+            member.size = 8192
+            payload = member.tobuf(format=tarfile.USTAR_FORMAT) + b'x' * member.size + b'\0' * 1024
+            archive = self.public_payload_deb(base, payload)
+            root = base / 'root'
+            root.mkdir()
+            budget = self.producer.PackageExtractionBudget(payload_bytes=4096)
+            before = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+            with self.assertRaisesRegex(ValueError, 'package payload refused'):
+                self.producer.extract_deb(archive, root, budget)
+            self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), before)
+            self.assertEqual(list(root.iterdir()), [])
+            self.assertEqual(set(path.name for path in base.iterdir()), {'root', archive.name})
+            # Real inherited limits, not a fabricated decoder: the held output
+            # never exceeds its smaller admitted cap, including on child failure.
+            with tempfile.TemporaryFile(dir=base) as decoded:
+                with self.assertRaisesRegex(ValueError, 'package payload refused'):
+                    self.producer.decode_package_payload(archive, decoded, 4096)
+                self.assertEqual(os.fstat(decoded.fileno()).st_size, 4096)
+
+    def test_cross_package_byte_entry_and_path_quotas_reserve_before_writes(self):
+        for limit in ('bytes', 'entries', 'names'):
+            with self.subTest(limit=limit), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                base = pathlib.Path(directory)
+                member = tarfile.TarInfo('public-quota-file')
+                member.mode = 0o600
+                member.size = 3
+                payload = member.tobuf(format=tarfile.USTAR_FORMAT) + b'xyz' + b'\0' * 509 + b'\0' * 1024
+                archive = self.public_payload_deb(base, payload)
+                root = base / 'root'
+                root.mkdir()
+                kwargs = {'total_bytes': 3} if limit == 'bytes' else (
+                    {'entries': 1} if limit == 'entries' else {'name_bytes': len(member.name)})
+                budget = self.producer.PackageExtractionBudget(**kwargs)
+                self.producer.extract_deb(archive, root, budget)
+                self.assertEqual((root / member.name).read_bytes(), b'xyz')
+                with self.assertRaisesRegex(ValueError, 'aggregate extraction budget refused'):
+                    self.producer.extract_deb(archive, root, budget)
+                self.assertEqual((root / member.name).read_bytes(), b'xyz')
+                self.assertEqual(len(list(root.iterdir())), 1)
+        for kwargs in ({'payload_bytes': 512 * 1024 * 1024 + 1}, {'entries': 400001},
+                       {'total_bytes': 4 * 1024 * 1024 * 1024 + 1}, {'name_bytes': 64 * 1024 * 1024 + 1}):
+            with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                self.producer.PackageExtractionBudget(**kwargs)
+
+    def test_bounded_pax_and_gnu_names_preserve_real_file_and_alias_semantics(self):
+        for format in (tarfile.PAX_FORMAT, tarfile.GNU_FORMAT):
+            with self.subTest(format=format), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                base = pathlib.Path(directory)
+                payload = io.BytesIO()
+                name = '/'.join(['public-component'] * 10)
+                with tarfile.open(fileobj=payload, mode='w', format=format) as stream:
+                    member = tarfile.TarInfo(name)
+                    member.size = 3
+                    member.mode = 0o640
+                    stream.addfile(member, io.BytesIO(b'xyz'))
+                    alias = tarfile.TarInfo('public-alias')
+                    alias.type = tarfile.SYMTYPE
+                    alias.linkname = name
+                    stream.addfile(alias)
+                    hardlink = tarfile.TarInfo('public-hardlink')
+                    hardlink.type = tarfile.LNKTYPE
+                    hardlink.mode = 0o640  # Hardlink metadata applies to the same inode.
+                    hardlink.linkname = name
+                    stream.addfile(hardlink)
+                archive = self.public_payload_deb(base, payload.getvalue())
+                root = base / 'root'
+                root.mkdir()
+                self.producer.extract_deb(archive, root)
+                self.assertEqual((root / name).read_bytes(), b'xyz')
+                self.assertEqual((root / name).stat().st_mode & 0o777, 0o640)
+                self.assertEqual((root / 'public-alias').read_bytes(), b'xyz')
+                self.assertEqual((root / 'public-hardlink').stat().st_ino, (root / name).stat().st_ino)
+                self.producer.extract_deb(archive, root)  # Real streamed collision validation.
+                self.assertEqual((root / name).read_bytes(), b'xyz')
+
+    def test_supported_old_gnu_sparse_file_is_retained_without_dense_input(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            member = tarfile.TarInfo('sparse-public-canary')
+            member.type = tarfile.GNUTYPE_SPARSE
+            member.mode = 0o600
+            member.size = 1
+            header = bytearray(member.tobuf(format=tarfile.GNU_FORMAT))
+            header[386:398] = tarfile.itn(9, 12)
+            header[398:410] = tarfile.itn(1, 12)
+            header[483:495] = tarfile.itn(10, 12)
+            header[148:156] = b' ' * 8
+            header[148:156] = bytes('%06o\0 ' % sum(header), 'ascii')
+            archive = self.public_payload_deb(base, bytes(header) + b'x' + b'\0' * 511 + b'\0' * 1024)
+            root = base / 'root'
+            root.mkdir()
+            self.producer.extract_deb(archive, root)
+            self.assertEqual((root / member.name).read_bytes(), b'\0' * 9 + b'x')
+
+    def test_supported_pax_sparse_maps_preserve_bytes_and_refuse_extent_mismatch(self):
+        for format in ('0.1', '1.0', 'mismatched'):
+            with self.subTest(format=format), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                base = pathlib.Path(directory)
+                member = tarfile.TarInfo('pax-sparse-public')
+                member.mode = 0o600
+                if format == '1.0':
+                    member.size = 513
+                    member.pax_headers = {'GNU.sparse.major': '1', 'GNU.sparse.minor': '0',
+                                          'GNU.sparse.realsize': '10'}
+                    data = b'1\n9\n1\n' + b'\0' * 506 + b'x' + b'\0' * 511
+                else:
+                    member.size = 1
+                    member.pax_headers = {'GNU.sparse.map': '9,1' if format == '0.1' else '9,2',
+                                          'GNU.sparse.realsize': '10'}
+                    data = b'x' + b'\0' * 511
+                archive = self.public_payload_deb(base, member.tobuf(format=tarfile.PAX_FORMAT) + data + b'\0' * 1024)
+                root = base / 'root'
+                root.mkdir()
+                if format == 'mismatched':
+                    with self.assertRaisesRegex(ValueError, 'archive sparse extent refused'):
+                        self.producer.extract_deb(archive, root)
+                    self.assertEqual(list(root.iterdir()), [])
+                else:
+                    self.producer.extract_deb(archive, root)
+                    self.assertEqual((root / member.name).read_bytes(), b'\0' * 9 + b'x')
+
+    def test_streamed_collision_fits_bounded_parent_memory_and_preserves_mismatches(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            member = tarfile.TarInfo('large-public-collision')
+            member.size = 64 * 1024 * 1024
+            packed = io.BytesIO()
+            with gzip.GzipFile(fileobj=packed, mode='wb', compresslevel=1, mtime=0) as output:
+                output.write(member.tobuf(format=tarfile.USTAR_FORMAT))
+                chunk = b'x' * (1024 * 1024)
+                for _ in range(64):
+                    output.write(chunk)
+                output.write(b'\0' * 1024)
+            archive = base / 'large-inert.deb'
+            with archive.open('xb') as output:
+                output.write(b'!<arch>\n')
+                for name, data in [('debian-binary', b'2.0\n'),
+                                   ('control.tar.gz', gzip.compress(b'\0' * 10240, mtime=0)),
+                                   ('data.tar.gz', packed.getvalue())]:
+                    fields = ((name + '/').ljust(16) + '0'.ljust(12) + '0'.ljust(6)
+                              + '0'.ljust(6) + '100600'.ljust(8) + str(len(data)).ljust(10) + '`\n')
+                    output.write(fields.encode())
+                    output.write(data)
+                    if len(data) % 2:
+                        output.write(b'\n')
+            root = base / 'root'
+            root.mkdir()
+            script = '''
+import importlib.util, pathlib, resource, sys
+resource.setrlimit(resource.RLIMIT_AS, (64 * 1024 * 1024, 64 * 1024 * 1024))
+spec = importlib.util.spec_from_file_location('producer', sys.argv[1])
+producer = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(producer)
+archive, root = map(pathlib.Path, sys.argv[2:])
+producer.extract_deb(archive, root)
+producer.extract_deb(archive, root)
+path = root / 'large-public-collision'
+with path.open('r+b') as output:
+    output.seek(-1, 2)
+    output.write(b'y')
+try:
+    producer.extract_deb(archive, root)
+except ValueError as error:
+    if 'file collision refused' not in str(error):
+        raise
+else:
+    raise AssertionError('changed collision accepted')
+with path.open('rb') as output:
+    output.seek(-1, 2)
+    assert output.read(1) == b'y'
+'''
+            result = subprocess.run([sys.executable, '-I', '-S', '-B', '-c', script,
+                                     str(ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py'), str(archive), str(root)],
+                                    text=True, capture_output=True, timeout=30,
+                                    env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(set(path.name for path in base.iterdir()), {'root', archive.name})
+
     def test_native_elf_machine_is_bound_to_selected_architecture(self):
         for arch, machine in (("x86_64", 62), ("aarch64", 183)):
             # Header-only nonexecutable parser canary, never a fake native image.

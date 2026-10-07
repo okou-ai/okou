@@ -9,11 +9,14 @@ import argparse
 import contextlib
 import hashlib
 import json
+import lzma
 import os
 import pathlib
 import platform
 import pwd
+import resource
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -299,17 +302,218 @@ def inventory(root):
     return tree, digest
 
 
-def extract_deb(archive, root):
+class PackageExtractionBudget:
+    """One provision-wide budget; lower test limits cannot widen production caps."""
+    def __init__(self, *, payload_bytes=512 * 1024 * 1024,
+                 total_bytes=4 * 1024 * 1024 * 1024, entries=400000, name_bytes=64 * 1024 * 1024):
+        for value, maximum in ((payload_bytes, 512 * 1024 * 1024),
+                               (total_bytes, 4 * 1024 * 1024 * 1024),
+                               (entries, 400000), (name_bytes, 64 * 1024 * 1024)):
+            if type(value) is not int or not 0 < value <= maximum:
+                raise ValueError("package extraction budget refused")
+        self.payload_bytes = payload_bytes
+        self.remaining_bytes = total_bytes
+        self.remaining_payload_bytes = 4 * 1024 * 1024 * 1024
+        self.remaining_entries = entries
+        self.remaining_names = name_bytes
+
+    def reserve_header(self):
+        if self.remaining_entries == 0:
+            raise ValueError("package aggregate extraction budget refused")
+        self.remaining_entries -= 1
+
+    def reserve(self, members):
+        size = sum(member.size for member in members if member.isfile())
+        names = sum(len(member.name.encode("utf-8", "surrogateescape"))
+                    + len(member.linkname.encode("utf-8", "surrogateescape")) for member in members)
+        if size > self.remaining_bytes or names > self.remaining_names:
+            raise ValueError("package aggregate extraction budget refused")
+        # Charge repeated/colliding files too; never deduplicate to bypass caps.
+        self.remaining_bytes -= size
+        self.remaining_names -= names
+
+
+def bounded_archive(fileobj, *, headers, member_bytes, entry_error, package_budget=None):
+    """Guard raw headers and extensions before the maintained tar parser consumes them."""
+    counts = {"headers": 0, "depth": 0, "extensions": 0, "names": 0, "bytes": 0, "pax": 0}
+
+    def size_allowed(size):
+        if type(size) is not int or not 0 <= size <= 128 * 1024 * 1024:
+            raise ValueError("archive file byte budget refused")
+
+    class BoundedInfo(tarfile.TarInfo):
+        def _proc_member(self, archive):
+            if counts["headers"] == headers:
+                raise ValueError(entry_error)
+            counts["headers"] += 1
+            if package_budget is not None:
+                package_budget.reserve_header()
+            if counts["depth"] == 8:
+                raise ValueError("archive extension depth refused")
+            counts["depth"] += 1
+            try:
+                if self.type in (tarfile.XHDTYPE, tarfile.XGLTYPE, tarfile.SOLARIS_XHDTYPE,
+                                 tarfile.GNUTYPE_LONGNAME, tarfile.GNUTYPE_LONGLINK):
+                    if not 0 <= self.size <= 64 * 1024 or counts["extensions"] + self.size > 8 * 1024 * 1024:
+                        raise ValueError("archive extension budget refused")
+                    counts["extensions"] += self.size
+                else:
+                    size_allowed(self.size)
+                self._physical_size = self.size
+                self._physical_data_start = archive.fileobj.tell()
+                result = super()._proc_member(archive)
+                size_allowed(result.size)
+                if counts["depth"] == 1:
+                    names = [result.name, result.linkname, result.uname, result.gname]
+                    lengths = [len(name.encode("utf-8", "surrogateescape")) for name in names]
+                    if max(lengths) > 4096 or counts["names"] + sum(lengths) > 32 * 1024 * 1024:
+                        raise ValueError("archive path byte budget refused")
+                    counts["names"] += sum(lengths)
+                    counts["pax"] += len(result.pax_headers)
+                    if counts["pax"] > 100000:
+                        raise ValueError("archive retained metadata budget refused")
+                    counts["bytes"] += result.size if result.isfile() else 0
+                    if counts["bytes"] > member_bytes:
+                        raise ValueError("archive total file byte budget refused")
+                return result
+            finally:
+                counts["depth"] -= 1
+
+        def _proc_sparse(self, archive):
+            # GNU old sparse metadata is read by the maintained parser. Each
+            # extra block would allocate 21 more entries; cap BEFORE that read.
+            size_allowed(self._sparse_structs[2])
+            original = archive.fileobj
+            class SparseBlocks:
+                remaining = 48
+                def read(self, size):
+                    if self.remaining == 0:
+                        raise ValueError("archive sparse metadata budget refused")
+                    self.remaining -= 1
+                    return original.read(size)
+                def tell(self):
+                    return original.tell()
+            archive.fileobj = SparseBlocks()
+            try:
+                result = super()._proc_sparse(archive)
+            finally:
+                archive.fileobj = original
+            self.check_sparse(result, self._physical_size)
+            return result
+
+        def _proc_gnusparse_00(self, next_member, pax_headers, buf):
+            if buf.count(b"GNU.sparse.offset=") > 1024 or buf.count(b"GNU.sparse.numbytes=") > 1024:
+                raise ValueError("archive sparse metadata budget refused")
+            super()._proc_gnusparse_00(next_member, pax_headers, buf)
+
+        def _proc_gnusparse_01(self, next_member, pax_headers):
+            if pax_headers["GNU.sparse.map"].count(",") >= 2048:
+                raise ValueError("archive sparse metadata budget refused")
+            super()._proc_gnusparse_01(next_member, pax_headers)
+
+        def _proc_gnusparse_10(self, next_member, pax_headers, archive):
+            original = archive.fileobj
+            class SparseBlocks:
+                remaining = 64
+                first = True
+                def read(self, size):
+                    if self.remaining == 0:
+                        raise ValueError("archive sparse metadata budget refused")
+                    self.remaining -= 1
+                    data = original.read(size)
+                    if self.first:
+                        self.first = False
+                        count = data.split(b"\n", 1)[0]
+                        if len(count) > 10 or not count.isdigit() or int(count) > 1024:
+                            raise ValueError("archive sparse metadata budget refused")
+                    return data
+                def tell(self):
+                    return original.tell()
+            archive.fileobj = SparseBlocks()
+            try:
+                super()._proc_gnusparse_10(next_member, pax_headers, archive)
+            finally:
+                archive.fileobj = original
+
+        @staticmethod
+        def check_sparse(member, physical_size):
+            if member.sparse is None:
+                return
+            size_allowed(member.size)
+            end, dense_bytes = 0, 0
+            for offset, length in member.sparse:
+                if offset == 0 and length == 0:
+                    continue  # Unused slots in the old GNU fixed sparse header.
+                if offset < end or length < 0 or offset + length > member.size:
+                    raise ValueError("archive sparse extent refused")
+                end = offset + length
+                dense_bytes += length
+            if dense_bytes != physical_size:
+                raise ValueError("archive sparse physical byte accounting refused")
+            if len(member.sparse) > 1024:
+                raise ValueError("archive sparse metadata budget refused")
+
+        def _proc_pax(self, archive):
+            result = super()._proc_pax(archive)
+            physical_size = result._physical_size
+            if result.type != tarfile.GNUTYPE_SPARSE:
+                # PAX1.0 map blocks are included in the raw file size; old GNU
+                # continuation blocks and PAX0.x metadata are not dense data.
+                physical_size -= result.offset_data - result._physical_data_start
+            self.check_sparse(result, physical_size)
+            return result
+
+    return tarfile.open(fileobj=fileobj, mode="r:", tarinfo=BoundedInfo)
+
+
+def decode_package_payload(archive, payload, limit):
+    # The kernel bounds output before write, including decoder subprocesses.
+    # Fixed exact executable identities, no PATH-selected borrowed decoder.
+    argv = ["/usr/bin/prlimit"]
+    for name, kind, cap in (("fsize", resource.RLIMIT_FSIZE, limit),
+                            ("as", resource.RLIMIT_AS, 256 * 1024 * 1024),
+                            ("cpu", resource.RLIMIT_CPU, 30), ("nofile", resource.RLIMIT_NOFILE, 32),
+                            ("core", resource.RLIMIT_CORE, 0)):
+        inherited = [value for value in resource.getrlimit(kind) if value != resource.RLIM_INFINITY]
+        actual = min([cap, *inherited])
+        argv.append("--" + name + "=" + str(actual) + ":" + str(actual))
+    argv += ["/usr/bin/dpkg-deb", "--fsys-tarfile", str(archive)]
+    process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=payload, stderr=subprocess.DEVNULL, start_new_session=True,
+                               env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"})
+    try:
+        status = process.wait(timeout=30)
+    except BaseException:
+        # Hold the unreaped leader identity until its whole group is killed.
+        # Popen's context manager would wait without a deadline on error.
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass  # The unreaped child may already have exited.
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError("package decoder cleanup unavailable") from error
+        raise
+    if status or payload.tell() > limit:
+        raise ValueError("source-pinned fixture package payload refused")
+
+
+def extract_deb(archive, root, budget=None):
     # Check/normalize every payload entry before extraction. Absolute in-root
     # Debian aliases become equivalent relative aliases; they can never cause
     # the host extractor to follow an absolute target outside this private root.
     with tempfile.TemporaryFile(dir=archive.parent) as payload:
-        result = subprocess.run(["dpkg-deb", "--fsys-tarfile", str(archive)], stdout=payload,
-                                stderr=subprocess.PIPE, timeout=30)
-        if result.returncode or payload.tell() > 512 * 1024 * 1024:
-            raise ValueError("source-pinned fixture package payload refused")
+        if budget is None:
+            budget = PackageExtractionBudget()
+        limit = min(budget.payload_bytes, budget.remaining_payload_bytes)
+        if limit <= 0:
+            raise ValueError("package aggregate extraction budget refused")
+        decode_package_payload(archive, payload, limit)
+        budget.remaining_payload_bytes -= payload.tell()
         payload.seek(0)
-        with tarfile.open(fileobj=payload, mode="r:") as stream:
+        with bounded_archive(payload, headers=200001, member_bytes=512 * 1024 * 1024,
+                             entry_error="source-pinned fixture package entry budget refused",
+                             package_budget=budget) as stream:
             members = []
             raw_members = 0
             # getmembers() allocates the entire untrusted header list before
@@ -324,6 +528,7 @@ def extract_deb(archive, root):
                 if len(members) == 50000:
                     raise ValueError("source-pinned fixture package entry budget refused")
                 members.append(member)
+            budget.reserve(members)
             for member in members:
                 relative = pathlib.PurePosixPath(member.name)
                 if relative.is_absolute() or ".." in relative.parts or not (member.isfile() or member.isdir() or member.issym() or member.islnk()):
@@ -338,7 +543,14 @@ def extract_deb(archive, root):
                     if not target.resolve().is_relative_to(root):
                         raise ValueError("source-pinned fixture package alias escaped")
                 if member.isfile() and destination.exists():
-                    if destination.is_symlink() or not destination.is_file() or hashlib.sha256(stream.extractfile(member).read()).hexdigest() != sha(destination):
+                    if (destination.is_symlink() or not destination.is_file()
+                            or destination.stat().st_size != member.size):
+                        raise ValueError("source-pinned fixture package file collision refused")
+                    digest = hashlib.sha256()
+                    with stream.extractfile(member) as source:
+                        for data in iter(lambda: source.read(1024 * 1024), b""):
+                            digest.update(data)
+                    if digest.hexdigest() != sha(destination):
                         raise ValueError("source-pinned fixture package file collision refused")
             stream.extractall(root, members=members, filter="data")
 
@@ -441,10 +653,11 @@ def provision(base, arch, multiarch, origin):
     archives = sorted((base / "cache/archives").glob("*.deb"))
     if not archives or len(archives) > 200:
         raise ValueError("source-pinned fixture package closure refused")
+    extraction_budget = PackageExtractionBudget()
     for archive in archives:
         if archive.is_symlink() or not archive.is_file():
             raise ValueError("source-pinned fixture archive refused")
-        fields = call(["dpkg-deb", "-f", archive, "Package", "Version", "Architecture"])
+        fields = call(["/usr/bin/dpkg-deb", "-f", archive, "Package", "Version", "Architecture"])
         record = dict(line.split(": ", 1) for line in fields.splitlines())
         name, version, package_arch = record["Package"], record["Version"], record["Architecture"]
         if package_arch not in (arch, "all") or name in packages or (name in pins and version != pins[name]):
@@ -457,7 +670,7 @@ def provision(base, arch, multiarch, origin):
                 candidates.append(candidate)
         if len(candidates) != 1 or candidates[0].get("Origin") != "Ubuntu" or sha(archive) != candidates[0]["SHA256"]:
             raise ValueError("source-pinned fixture signed archive digest refused")
-        extract_deb(archive, root)
+        extract_deb(archive, root, extraction_budget)
         packages[name] = {"version": version, "architecture": package_arch, "archiveSha256": sha(archive),
                           "archiveSizeBytes": archive.stat().st_size, "repositoryPath": candidates[0]["Filename"],
                           "depends": candidates[0].get("Depends", ""),
@@ -497,7 +710,7 @@ def provision(base, arch, multiarch, origin):
             "requiredBuildInputs": required_build_inputs(root, {"amd64": "x86_64", "arm64": "aarch64"}[arch]),
             "bootstrapInputs": {str(path): sha(path.resolve(strict=True)) for path in
                                 (keyring, pathlib.Path("/usr/bin/apt-get"), pathlib.Path("/usr/bin/apt-cache"),
-                                 pathlib.Path("/usr/bin/gpgv"), pathlib.Path("/usr/bin/dpkg-deb"),
+                                 pathlib.Path("/usr/bin/gpgv"), pathlib.Path("/usr/bin/dpkg-deb"), pathlib.Path("/usr/bin/prlimit"),
                                  pathlib.Path("/usr/lib/apt/apt-helper"))},
             "transformations": ["contained absolute package aliases", {"usrmergeLayout": layout}, "archive-provided Dash sh alias", "compiler aliases",
                                 "rmt alias", "UTC alias", "signed public CA concatenation"],
@@ -508,8 +721,14 @@ def provision(base, arch, multiarch, origin):
 def extract_source(archive, source):
     if archive.is_symlink() or sha(archive) != QEMU_SHA256:
         raise ValueError("source-pinned QEMU archive digest refused")
-    with tarfile.open(archive, "r:xz") as stream:
-        members = stream.getmembers()
+    with lzma.open(archive, "rb") as decoded, bounded_archive(
+            decoded, headers=QEMU_MEMBER_COUNT * 4 + 1, member_bytes=QEMU_MEMBER_BYTES,
+            entry_error="source-pinned QEMU archive header budget refused") as stream:
+        members = []
+        for member in stream:
+            if len(members) == QEMU_MEMBER_COUNT:
+                raise ValueError("source-pinned QEMU archive budget refused")
+            members.append(member)
         # The pinned official release was independently inspected: exact
         # cardinality/size/epoch are part of this source admission profile.
         # Retain finite budgets and fail any other shape, even after hashing.
