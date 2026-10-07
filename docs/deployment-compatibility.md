@@ -90,7 +90,8 @@ is described under
 every reader omits an agent-enabled connector that is missing from the
 captured generation, as if the user had never authorized it, and Runner
 runtime sync reports the target `unresolved`. A dedicated test covers
-recapture: it publishes the stable context with the connector dropped.
+recapture: it publishes a stable context that launch can read while the
+connector stays enabled.
 
 **Known, accepted behavior: brief pointer regression between two writers.**
 Two callers run the writer: the hourly cron and the release workflow's
@@ -350,7 +351,8 @@ is:
 - Run capture at launch, Pi stable-context recapture and the Run MCP connector
   list omit an agent-enabled connector or admitted account whose entry is
   missing at the captured hash. The Run launches without it, the stable
-  context publishes with the reduced scope, and the MCP list leaves it out.
+  context publishes without that connector's skill mount (its cache identity
+  keeps the stored scope, matching launch), and the MCP list leaves it out.
   The agent keeps its enabled-connector setting, and the connector returns
   once a later generation contains it again (the catalog switch invalidates
   Pi stable contexts).
