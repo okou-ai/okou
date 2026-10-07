@@ -30,9 +30,16 @@ Database ordering: migrations run before API promotion. Every API built before
 1336 queries the table while resolving the Auto route for run claims and Pi
 memory maintenance, and writes it from runner failure reports, so it receives
 `42P01` on those paths until it drains. This drop is not rolling-compatible.
-Owner acceptance of that rollout interruption is pending and is not recorded
-here; do not deploy 1336 while an older API serves without it. A new API
-against the old schema is compatible because it never names the table.
+A new API against the old schema is compatible because it never names the
+table.
+
+**Accepted rollout interruption (1336):** Ethan explicitly accepted
+(2026-10-07) a brief unavailability during deployment while the outgoing API
+drains, so Auto run claims, Pi memory maintenance and runner failure reports
+handled by a pre-1336 API may receive `42P01` in that window. No preparatory
+release or old-table compatibility branch is required. Prefer the same rollout
+as 1332/1333 or low traffic. Acceptance of that risk is not an instruction to
+deploy.
 
 Rollback floor: the rollback resolver resolves the first-parent `main` commit
 that added `1336_drop_built_in_model_candidate_cooldown.sql` and rejects earlier

@@ -293,10 +293,10 @@ Migration `1336_drop_built_in_model_candidate_cooldown` drops
 `built_in_model_candidate_cooldown`; Auto no longer cools its route down after a
 provider failure. There is no data conversion. Every API built before 1336
 reads the table on the run claim path, so this is not a rolling-compatible
-contraction: apply it only after every serving API (and any rollback target) is
-built from the commit that adds it, or under an explicitly owner-accepted
-interruption, which this document does not record. The production rollback
-resolver enforces this as a floor on the first-parent `main` commit that adds 1336. The permanent `test-built-in-model-cooldown-permanent.ts` validator is
+contraction; Ethan explicitly accepted (2026-10-07) the bounded interruption
+while a pre-1336 API drains, recorded in deployment compatibility. The
+production rollback resolver enforces this as a floor on the first-parent
+`main` commit that adds 1336. The permanent `test-built-in-model-cooldown-permanent.ts` validator is
 deleted with the table it checked. See
 [deployment compatibility](../../../docs/deployment-compatibility.md#built-in-model-candidate-cooldown-removed-2026-10-07).
 
