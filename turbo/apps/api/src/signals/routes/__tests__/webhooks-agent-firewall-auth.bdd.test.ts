@@ -136,7 +136,7 @@ async function withPublicFirewallRun(
     bdd.acceptAgentStorageWrites();
     runsApi.acceptStorageDownloads();
     runsApi.acceptTelemetryIngest();
-    runsApi.configureRunnerGroup();
+    const runnerGroup = runsApi.configureRunnerGroup();
     const subscription = await fixture.fund();
     await runsApi.ensurePersonalSubscriptionModel(fixture.actor);
     const agent = await bdd.createAgent(fixture.actor, {
@@ -150,8 +150,9 @@ async function withPublicFirewallRun(
       prompt: "resolve firewall auth",
     });
     fixture.registerRun(run.runId);
-    await runsApi.heartbeatRunner();
+    await runsApi.heartbeatRunner(runnerGroup);
     const claim = await runsApi.claimRunnerJob(run.runId);
+    fixture.registerClaim(run.runId, claim.sandboxToken);
     await scenario(
       { authorization: `Bearer ${claim.sandboxToken}` },
       fixture,

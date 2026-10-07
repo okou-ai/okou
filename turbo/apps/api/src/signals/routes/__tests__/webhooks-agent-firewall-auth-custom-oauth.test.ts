@@ -81,6 +81,7 @@ async function setupCustomOAuthFirewall(
   publicFixture.registerRun(run.runId);
   await runs.heartbeatRunner(runnerGroup);
   const claim = await runs.claimRunnerJob(run.runId);
+  publicFixture.registerClaim(run.runId, claim.sandboxToken);
   const headers = { authorization: `Bearer ${claim.sandboxToken}` };
   const connector = await connectors.createCustomConnector(
     actor,
