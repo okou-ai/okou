@@ -98,7 +98,7 @@ describe("route effort preferences", () => {
       efforts: CODEX_EFFORTS,
       defaultEffort: "max",
       piExecution: true,
-      runtimeProviderType: "openai-api-key",
+      runtimeProviderType: "codex-oauth-token",
       expected: "max",
     },
     {
@@ -107,7 +107,7 @@ describe("route effort preferences", () => {
       efforts: CODEX_EFFORTS,
       defaultEffort: "max",
       piExecution: false,
-      runtimeProviderType: "openai-api-key",
+      runtimeProviderType: "codex-oauth-token",
       expected: "ultra",
     },
     {
@@ -158,7 +158,7 @@ describe("route effort preferences", () => {
       model: "gpt-6-luna",
       effort: "medium",
       piExecution: false,
-      runtimeProviderType: "openai-api-key",
+      runtimeProviderType: "codex-oauth-token",
     } as const;
     expect(
       resolveRouteReasoningEffort({

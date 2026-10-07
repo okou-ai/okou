@@ -1517,7 +1517,7 @@ mod tests {
                 source_id: None,
             },
             FirewallEntry::Builtin {
-                name: "model-provider:openai".to_string(),
+                name: "model-provider:openrouter-codex".to_string(),
                 base_url_vars: None,
                 source_id: None,
             },
@@ -2875,7 +2875,7 @@ mod tests {
     #[tokio::test]
     async fn registry_serializes_billable_firewalls() {
         let harness = RegistryHarness::new().await;
-        let billable = ["model-provider:vm0".to_string()];
+        let billable = ["model-provider:openrouter-codex".to_string()];
         let registration = SandboxRegistration {
             cli_agent_type: "codex",
             billable_firewalls: &billable,
@@ -2897,7 +2897,7 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(
             value["sandboxes"]["10.200.0.9"]["billableFirewalls"],
-            serde_json::json!(["model-provider:vm0"])
+            serde_json::json!(["model-provider:openrouter-codex"])
         );
         assert_eq!(
             value["sandboxes"]["10.200.0.9"]["cliAgentType"],

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 use api_contracts::generated::constants::model_provider_env::placeholders as model_provider_placeholders;
 use api_contracts::generated::types::runners::{
@@ -45,7 +45,6 @@ fn codex_runtime_config_for_test(model_catalog: Option<serde_json::Value>) -> Co
         name: "OpenRouter".into(),
         base_url: "https://openrouter.ai/api/v1".into(),
         env_key: "OPENAI_API_KEY".into(),
-        http_headers: None,
         requires_openai_auth: None,
         wire_api: "responses".into(),
         supports_websockets: false,
@@ -143,16 +142,6 @@ fn effective_cli_framework_matches_guest_agent_fallback_semantics() {
 #[test]
 fn model_provider_env_placeholder_validation_accepts_env_without_protected_keys() {
     let ctx = context_with_env(HashMap::from([("PROJECT_ID".into(), "vm0".into())]));
-
-    assert!(validate_model_provider_env_placeholders(&ctx).is_ok());
-}
-
-#[test]
-fn model_provider_env_placeholder_validation_accepts_anthropic_api_key_placeholder() {
-    let ctx = context_with_env(HashMap::from([(
-        "ANTHROPIC_API_KEY".into(),
-        model_provider_placeholders::ANTHROPIC_API_KEY.into(),
-    )]));
 
     assert!(validate_model_provider_env_placeholders(&ctx).is_ok());
 }
@@ -1026,10 +1015,6 @@ fn build_run_payload_for_run_serializes_codex_runtime_config() {
     let mut config = codex_runtime_config_for_test(Some(json!({
         "models": [{ "slug": "openai/gpt-6-luna" }],
     })));
-    config.http_headers = Some(BTreeMap::from([(
-        "x-api-key".to_string(),
-        "__VM0_OPENAI_API_KEY_PLACEHOLDER__".to_string(),
-    )]));
     config.requires_openai_auth = Some(false);
     ctx.codex_runtime_config = Some(config);
 
@@ -1039,10 +1024,6 @@ fn build_run_payload_for_run_serializes_codex_runtime_config() {
     assert_eq!(value["providerId"], "openrouter");
     assert_eq!(value["baseUrl"], "https://openrouter.ai/api/v1");
     assert_eq!(value["envKey"], "OPENAI_API_KEY");
-    assert_eq!(
-        value["httpHeaders"]["x-api-key"],
-        "__VM0_OPENAI_API_KEY_PLACEHOLDER__"
-    );
     assert_eq!(value["requiresOpenaiAuth"], false);
     assert_eq!(value["wireApi"], "responses");
     assert_eq!(value["supportsWebsockets"], false);

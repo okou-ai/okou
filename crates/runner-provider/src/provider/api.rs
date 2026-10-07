@@ -5373,41 +5373,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn api_client_claim_decode_path_redacts_codex_header_keys() {
-        let server = MockServer::start_async().await;
-        let run_id = RunId::from(uuid::Uuid::nil());
-        let error = claim_decode_error(
-            &server,
-            run_id,
-            serde_json::json!({
-                "runId": run_id,
-                "prompt": "hello",
-                "sandboxToken": "claim-sandbox-token",
-                "cliAgentType": "claude_code",
-                "platformEnvironment": {},
-                "connectorRuntimeTargets": [],
-                "codexRuntimeConfig": {
-                    "providerId": "provider",
-                    "name": "provider",
-                    "baseUrl": "https://api.example.com",
-                    "envKey": "OPENAI_API_KEY",
-                    "httpHeaders": {"secret-header-name": 123},
-                    "wireApi": "responses",
-                    "supportsWebsockets": false
-                }
-            }),
-        )
-        .await;
-
-        assert!(
-            error.contains("failed at codexRuntimeConfig.httpHeaders.<map-key>"),
-            "unexpected Codex header decode error: {error}"
-        );
-        assert!(!error.contains("secret-header-name"));
-        assert!(!error.contains("claim-sandbox-token"));
-    }
-
-    #[tokio::test]
     async fn api_client_poll_decode_path_uses_poll_response_schema() {
         let server = MockServer::start_async().await;
         let mock = server

@@ -320,14 +320,6 @@ describe("Pi sandbox execution contract", () => {
         credentialSecretName: "OPENROUTER_API_KEY",
       }).success,
     ).toBe(false);
-    for (const provider of ["deepseek", "openai", "vercel-ai-gateway"]) {
-      expect(
-        piModelConfigSchema.safeParse({
-          ...piStoredContext.piModelConfig,
-          provider,
-        }).success,
-      ).toBe(false);
-    }
   });
 
   it.each([
@@ -892,7 +884,7 @@ describe("connector runtime synchronization contract", () => {
       connectorRuntimeSyncResultSchema.safeParse({
         target: {
           kind: "builtin",
-          connectorSlug: "model-provider:anthropic-api-key",
+          connectorSlug: "model-provider:openrouter-codex",
         },
         state: "absent",
         reason: "connector-unavailable",
@@ -2074,7 +2066,7 @@ describe("runner builtin firewall resolve contract", () => {
   it("accepts connector and model-provider names", () => {
     const result =
       runnersBuiltinFirewallsResolveContract.resolve.body.safeParse({
-        names: ["github", "model-provider:openai-api-key"],
+        names: ["github", "model-provider:openrouter-codex"],
       });
 
     expect(result.success).toBe(true);
@@ -2090,7 +2082,7 @@ describe("runner builtin firewall resolve contract", () => {
     ).toBe(false);
     expect(
       runnersBuiltinFirewallsResolveContract.resolve.body.safeParse({
-        names: ["ModelProvider:openai-api-key"],
+        names: ["ModelProvider:openrouter-codex"],
       }).success,
     ).toBe(false);
     expect(

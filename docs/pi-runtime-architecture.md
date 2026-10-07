@@ -23,9 +23,6 @@ rollout rules.
   actual local-tool consumers, backpressure, interruption, and verification.
 - [Deployment compatibility](./deployment-compatibility.md): independently
   deployed API/Runner/Sandbox, commit-addressed CLI, history, and memory readers.
-- [Native provider preparation](./pi-native-provider-preparation.md): historical
-  record of the removed generation 4 native transport, credential/billing
-  ownership, and activation gates. No native route remains.
 - [Preparation timing](./pi-preparation-timing.md): bounded Sandbox session
   initialization observations, launch transaction/activation boundaries, and
   transport correlation.

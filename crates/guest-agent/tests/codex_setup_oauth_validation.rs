@@ -49,7 +49,6 @@ fn oauth_config(
         name: "Codex".to_string(),
         base_url: "https://api.example.test/v1".to_string(),
         env_key: "OPENAI_API_KEY".to_string(),
-        http_headers: None,
         requires_openai_auth: Some(true),
         wire_api: "responses".to_string(),
         supports_websockets: false,
