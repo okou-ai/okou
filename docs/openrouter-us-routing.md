@@ -2,10 +2,9 @@
 
 Platform OpenRouter routing selects `https://us.openrouter.ai` for all users,
 but only for platform-owned keys and the product-approved non-DeepSeek
-model/API pairs in `openrouter-routing.ts`. The former `openRouterUsRouting`
-feature switch was fully rolled out and removed; there is no per-user or staff
-override. It does not change the built-in provider, any DeepSeek endpoint,
-personal subscription endpoints, or model defaults.
+model/API pairs in `openrouter-routing.ts`. It does not change the built-in
+provider, any DeepSeek endpoint, personal subscription endpoints, or model
+defaults.
 
 Auto (`okou-1.0`) runs only through the built-in `openrouter-codex` provider
 with the upstream preset `@preset/okou-1-0`. That preset is not in the US
