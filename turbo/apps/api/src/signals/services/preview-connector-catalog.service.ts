@@ -1,19 +1,12 @@
 import {
-  ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
-  ONBOARDING_WORKFLOW_CONNECTOR_SLUGS,
-} from "@okouai/api-contracts/contracts/onboarding";
-import {
   connectorCatalog,
-  connectorCatalogEntries,
   connectorCatalogActiveSnapshot,
   connectorCatalogSyncState,
   connectorCatalogCompatibilityEvaluation,
 } from "@okouai/db/schema/connector-catalog";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
 import {
   CONNECTOR_CATALOG_ACTIVE_KEY,
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-  type ConnectorCatalogArtifact,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import {
   CONNECTOR_CATALOG_ACTIVE_MAX_BYTES,
@@ -24,15 +17,15 @@ import {
 } from "@okouai/connectors/connector-catalog/artifacts/loader";
 import { CONNECTOR_CATALOG_MAX_RAW_BYTES } from "@okouai/connectors/connector-catalog/contracts";
 import { command } from "ccstate";
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { downloadS3BufferWithMaxBytes } from "../external/s3";
 import {
-  immutableCatalogEntryColumns,
   immutableCatalogValues,
+  prepareImmutableCatalogEntries$,
 } from "./connector-catalog-immutable.service";
 import {
   connectorCatalogSource,
@@ -49,10 +42,6 @@ import {
   currentConnectorCatalogValidatorIdentity,
   type ConnectorCatalogValidatorIdentity,
 } from "./connector-catalog-validator-authority";
-import {
-  connectorCatalogSkillRegistrationValues,
-  registerPreparedConnectorCatalogSkills$,
-} from "./connector-catalog-skill-registration.service";
 
 const loadPreviewCatalogCandidate$ = command(
   async ({ get }, source: ConnectorCatalogSource, signal: AbortSignal) => {
@@ -79,67 +68,14 @@ const loadPreviewCatalogCandidate$ = command(
   },
 );
 
-const preparePreviewCatalogSkills$ = command(
-  async ({ get }, artifact: ConnectorCatalogArtifact, signal: AbortSignal) => {
-    const versionIds = artifact.connectors.flatMap((entry) => {
-      return entry.skill.kind === "bundled" ? [entry.skill.versionId] : [];
-    });
-    if (versionIds.length === 0) {
-      return [];
-    }
-    const rows = await get(db$)
-      .select({
-        id: storageVersions.id,
-        storageId: storageVersions.storageId,
-        orgId: storages.orgId,
-        userId: storages.userId,
-        name: storages.name,
-        s3Prefix: storages.s3Prefix,
-        s3Key: storageVersions.s3Key,
-      })
-      .from(storageVersions)
-      .innerJoin(storages, eq(storageVersions.storageId, storages.id))
-      .where(inArray(storageVersions.id, [...new Set(versionIds)]));
-    signal.throwIfAborted();
-    return connectorCatalogSkillRegistrationValues(artifact, rows);
-  },
-);
-
-function previewCatalogProjection(artifact: ConnectorCatalogArtifact) {
-  const slugs = new Set<string>([
-    ...ONBOARDING_RECOMMENDATION_CONNECTOR_SLUGS,
-    ...ONBOARDING_WORKFLOW_CONNECTOR_SLUGS,
-    // Existing Runner E2E exercises these official manual connectors;
-    // replicate backs its unconfigured-connector firewall diagnostic.
-    "algolia",
-    "bentoml",
-    "discord-webhook",
-    "replicate",
-    "serpapi",
-    "twilio",
-    "zendesk",
-  ]);
-  const connectors = artifact.connectors.filter((entry) => {
-    return slugs.has(entry.slug);
-  });
-  if (connectors.length !== slugs.size) {
-    throw new Error(
-      "Published catalog is missing preview onboarding/E2E connectors",
-    );
-  }
-  return { ...artifact, connectors };
-}
-
 function previewCatalogWriteValues(args: {
   readonly candidate: ValidatedConnectorCatalogCandidate;
-  readonly projection: ConnectorCatalogArtifact;
   readonly sourceId: string;
   readonly timestamp: Date;
   readonly validator: ConnectorCatalogValidatorIdentity;
   readonly capability: ExecutableCapabilityState;
 }) {
-  const { candidate, projection, sourceId, timestamp, validator, capability } =
-    args;
+  const { candidate, sourceId, timestamp, validator, capability } = args;
   const compatibility = connectorCatalogCompatibilityValues({
     sourceId,
     identity: candidate.identity,
@@ -148,7 +84,7 @@ function previewCatalogWriteValues(args: {
     evaluatedAt: timestamp,
     payload: connectorCatalogCompatibilityEvaluationSchema.parse({
       filteredAuthMethods: evaluateConnectorCatalogCompatibility({
-        artifact: projection,
+        artifact: candidate.artifact,
         capability,
       }),
     }),
@@ -167,7 +103,7 @@ function previewCatalogWriteValues(args: {
     ),
     compatibility,
     current: immutableCatalogValues(
-      projection,
+      candidate.artifact,
       candidate.identity.catalogDigest,
       timestamp,
     ),
@@ -202,23 +138,29 @@ function previewCatalogWriteValues(args: {
   };
 }
 
-// Preview materialization, not a new publication. The full validated official
-// snapshot/digest remains the source; only its onboarding/E2E rows are installed.
-export const seedPreviewOnboardingCatalog$ = command(
+// Preview initialization of the complete validated official publication, not
+// a new publication. Entry preparation is the production synchronizer's: it
+// registers bundled skills for, then writes, every entry missing at this hash.
+// The pointer switches only after that whole generation exists.
+export const seedPreviewConnectorCatalog$ = command(
   async ({ set }, signal: AbortSignal) => {
     if (env("ENV") !== "preview") {
-      throw new Error("Onboarding catalog seed is restricted to preview");
+      throw new Error(
+        "Preview connector catalog seed is restricted to preview",
+      );
     }
     const source = connectorCatalogSource();
     const candidate = await set(loadPreviewCatalogCandidate$, source, signal);
     signal.throwIfAborted();
-    const projection = previewCatalogProjection(candidate.artifact);
-    const registrations = await set(
-      preparePreviewCatalogSkills$,
-      projection,
+    await set(
+      prepareImmutableCatalogEntries$,
+      {
+        artifact: candidate.artifact,
+        hash: candidate.identity.catalogDigest,
+      },
       signal,
     );
-    await set(registerPreparedConnectorCatalogSkills$, registrations, signal);
+    signal.throwIfAborted();
     const {
       compatibilityDeleteWhere,
       compatibility,
@@ -227,7 +169,6 @@ export const seedPreviewOnboardingCatalog$ = command(
       snapshot,
     } = previewCatalogWriteValues({
       candidate,
-      projection,
       sourceId: source.sourceId,
       timestamp: nowDate(),
       validator: currentConnectorCatalogValidatorIdentity(),
@@ -264,23 +205,6 @@ export const seedPreviewOnboardingCatalog$ = command(
           ],
           set: snapshot,
         });
-      signal.throwIfAborted();
-      // Replace this preview generation atomically, including inherited rows.
-      // No per-connector SQL or readback; published-byte validation is retained.
-      await tx
-        .delete(connectorCatalogEntries)
-        .where(eq(connectorCatalogEntries.hash, current.hash));
-      signal.throwIfAborted();
-      await tx.insert(connectorCatalogEntries).values(
-        projection.connectors.map((entry) => {
-          return {
-            hash: current.hash,
-            slug: entry.slug,
-            payload: entry,
-            ...immutableCatalogEntryColumns(entry),
-          };
-        }),
-      );
       signal.throwIfAborted();
       await tx.insert(connectorCatalog).values(current).onConflictDoUpdate({
         target: connectorCatalog.schemaVersion,

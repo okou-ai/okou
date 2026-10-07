@@ -15,6 +15,8 @@ import {
   registerPreparedConnectorCatalogSkills$,
 } from "./connector-catalog-skill-registration.service";
 
+const IMMUTABLE_CATALOG_ENTRY_INSERT_BATCH_SIZE = 100;
+
 export const immutableCatalogHash$ = command(
   async ({ get }, signal: AbortSignal): Promise<string | null> => {
     signal.throwIfAborted();
@@ -68,22 +70,35 @@ export const prepareImmutableCatalogEntries$ = command(
     );
     await set(registerPreparedConnectorCatalogSkills$, registrations, signal);
     signal.throwIfAborted();
-    for (const connector of missing) {
+    // Bounded multi-row statements keep a cold ~4,600-entry generation from
+    // paying one database round trip per entry. Each batch is independently
+    // idempotent; batches follow publication order for every preparer.
+    for (
+      let offset = 0;
+      offset < missing.length;
+      offset += IMMUTABLE_CATALOG_ENTRY_INSERT_BATCH_SIZE
+    ) {
       await db
         .insert(connectorCatalogEntries)
-        .values({
-          hash: args.hash,
-          slug: connector.slug,
-          payload: { ...connector },
-          ...immutableCatalogEntryColumns(connector),
-        })
+        .values(
+          missing
+            .slice(offset, offset + IMMUTABLE_CATALOG_ENTRY_INSERT_BATCH_SIZE)
+            .map((connector) => {
+              return {
+                hash: args.hash,
+                slug: connector.slug,
+                payload: { ...connector },
+                ...immutableCatalogEntryColumns(connector),
+              };
+            }),
+        )
         .onConflictDoNothing();
       signal.throwIfAborted();
     }
   },
 );
 
-// Shared by full sync, bounded preview initialization and fixture writers.
+// Shared by full sync, preview initialization and fixture writers.
 // The complete publisher payload remains the immutable source of truth.
 export function immutableCatalogEntryColumns(
   connector: ConnectorCatalogArtifactConnector,

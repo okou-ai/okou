@@ -24,7 +24,7 @@ import { optionalEnv } from "../lib/env";
 import { nowDate } from "../lib/time";
 import { reconcileConnectorCatalogCompatibility$ } from "../signals/services/connector-catalog-compatibility.service";
 import { syncConnectorCatalog$ } from "../signals/services/connector-catalog-sync.service";
-import { seedPreviewOnboardingCatalog$ } from "../signals/services/preview-onboarding-catalog.service";
+import { seedPreviewConnectorCatalog$ } from "../signals/services/preview-connector-catalog.service";
 import { onRejection } from "../signals/utils";
 import rawDevSeedSkillVolumes from "./dev-seed-skill-volumes.json";
 
@@ -831,10 +831,12 @@ async function devSeed() {
   // --- connector catalog (validated R2 snapshot + compatibility state) ---
   const store = createStore();
   const signal = new AbortController().signal;
+  // The flag keeps its historical name because the CI preview workflow passes
+  // it; it initializes the complete official catalog.
   if (process.argv.includes("--preview-onboarding-catalog")) {
-    const projection = await store.set(seedPreviewOnboardingCatalog$, signal);
+    const seeded = await store.set(seedPreviewConnectorCatalog$, signal);
     writeLine(
-      `Seeded ${projection.connectorSlugs.length} preview onboarding connectors from ${projection.catalogVersion}`,
+      `Seeded ${seeded.connectorSlugs.length} preview connectors from ${seeded.catalogVersion}`,
     );
     return;
   }
@@ -864,7 +866,7 @@ async function runDevSeed(): Promise<void> {
     process.argv.includes("--preview-onboarding-catalog") &&
     optionalEnv("ENV") !== "preview"
   ) {
-    throw new Error("Onboarding catalog seed is restricted to preview");
+    throw new Error("Preview connector catalog seed is restricted to preview");
   }
   await onRejection(devSeed(), closeDbPool);
   await closeDbPool();

@@ -755,7 +755,9 @@ describe("immutable connector catalog real-entry lifecycle", () => {
           [failed.hash],
         )
       ).rows,
-    ).toStrictEqual([{ count: 1 }]);
+      // Entries are written in bounded multi-row batches; the failing batch
+      // (this whole small catalog) publishes no entry.
+    ).toStrictEqual([{ count: 0 }]);
     await engine.exec(
       "ALTER TABLE connector_catalog_entries DROP CONSTRAINT preparation_failure",
     );

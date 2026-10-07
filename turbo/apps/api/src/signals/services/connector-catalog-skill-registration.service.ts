@@ -144,7 +144,7 @@ async function readExistingVersions(
   );
 }
 
-export function connectorCatalogSkillRegistrationValues(
+function connectorCatalogSkillRegistrationValues(
   artifact: ConnectorCatalogArtifact,
   existingVersions: readonly ExistingStorageVersion[],
 ): readonly PreparedConnectorSkillRegistration[] {
