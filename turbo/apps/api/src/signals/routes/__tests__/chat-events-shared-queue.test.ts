@@ -23,6 +23,7 @@ import {
 
 const context = testContext();
 const {
+  bdd,
   api,
   chat,
   chatCallbacks,
@@ -324,6 +325,7 @@ describe("CHAT-02: shared user message queue", () => {
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped chat actor");
     }
+    await bdd.readMe(actor);
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     // Thirty-two public delegation hops exhaust the source. Human forwarding is
