@@ -192,7 +192,7 @@ jq -e '
     .with["r2-account-id"] == "${{ vars.R2_ACCOUNT_ID }}" and
     .with["r2-bucket-name"] == "${{ vars.R2_USER_STORAGES_BUCKET_NAME }}"
   ) and
-  any(.jobs.compile.steps[]; .uses == "Swatinem/rust-cache@v2") and
+  any(.jobs.compile.steps[]; (.uses // "") | startswith("Swatinem/rust-cache@")) and
   any(.jobs.compile.steps[]; .run == ".github/scripts/runner-binary-build/build.sh build") and
   any(.jobs.compile.steps[];
     .run == ".github/scripts/runner-binary-transport.sh publish" and
@@ -315,7 +315,7 @@ jq -e '
     select(any(.value.steps[]?; .uses == "mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba")) |
     .key] == []) and
   ([.jobs | to_entries[] |
-    select(any(.value.steps[]?; .uses == "Swatinem/rust-cache@v2")) |
+    select(any(.value.steps[]?; (.uses // "") | startswith("Swatinem/rust-cache@"))) |
     .key] == ["compile"])
 ' <<<"$workflow_json" >/dev/null || fail "compiler caches must exist only in the miss-only compile job"
 
@@ -349,7 +349,7 @@ jq -e '
   ) and
   any(.jobs.build.steps[];
     .name == "Upload runner image manifest" and
-    .uses == "actions/upload-artifact@v7" and
+    ((.uses // "") | startswith("actions/upload-artifact@")) and
     .with.name == "${{ steps.artifact.outputs.artifact-name }}" and
     .with.path == "runner-image-manifest/manifest.json" and
     .with.overwrite == true and

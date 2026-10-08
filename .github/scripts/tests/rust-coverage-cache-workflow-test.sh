@@ -35,7 +35,7 @@ jq -e '
     .with["r2-bucket-name"] == "${{ vars.R2_USER_STORAGES_BUCKET_NAME }}"
   ) and
   any($coverage.steps[];
-    .uses == "Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae" and
+    ((.uses // "") | startswith("Swatinem/rust-cache@")) and
     .with.workspaces == "crates -> target" and
     .with["shared-key"] == "coverage-line-tables-only" and
     .with["save-if"] == "${{ github.ref == '\''refs/heads/main'\'' }}"
@@ -127,9 +127,17 @@ step_index() {
   ' <<<"$workflow_json"
 }
 
-checkout_index=$(step_index "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1")
+action_index() {
+  jq -r --arg action "$1@" '
+    .jobs.coverage.steps | to_entries[] |
+    select((.value.uses // "") | startswith($action)) |
+    .key
+  ' <<<"$workflow_json"
+}
+
+checkout_index=$(action_index "actions/checkout")
 sccache_index=$(step_index "Setup R2 sccache")
-rust_cache_index=$(step_index "Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae")
+rust_cache_index=$(action_index "Swatinem/rust-cache")
 install_index=$(step_index "Install cargo-llvm-cov")
 coverage_index=$(step_index "Run tests with coverage")
 report_index=$(step_index "Validate coverage report")

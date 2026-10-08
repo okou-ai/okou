@@ -1,6 +1,7 @@
 # Balanced from successful PR runs 35555773756 and 35558264546, plus
 # merge-group run 35555833634.
 # The shard runner rejects missing, unknown, or duplicate test assignments.
+1 action-pins-test.sh
 1 aws-audit-target-setup-test.sh
 1 changed-test.sh
 1 check-workflow-shell-compatibility-test.sh
