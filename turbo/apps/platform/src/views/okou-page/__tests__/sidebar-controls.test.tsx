@@ -106,6 +106,7 @@ test("Navigate pinned agents from the mobile sidebar", async () => {
     context,
     path: `/agents/${AGENT_ID}/chat`,
   });
+  click(screen.getByLabelText("Open menu"));
 
   await waitFor(() => {
     expect(
@@ -113,7 +114,6 @@ test("Navigate pinned agents from the mobile sidebar", async () => {
     ).toBeInTheDocument();
   });
 
-  click(screen.getByLabelText("Open menu"));
   await waitFor(() => {
     expect(mobileSidebar()).toHaveAttribute("data-sidebar-expanded", "true");
   });
@@ -126,7 +126,7 @@ test("Navigate pinned agents from the mobile sidebar", async () => {
   click(pinnedAgentLink(mobileSidebar(), "Nova"));
   await waitFor(() => {
     expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
-    expect(mobileSidebar()).not.toHaveAttribute("data-sidebar-expanded");
+    expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
   });
 
   click(screen.getByLabelText("Open menu"));
@@ -137,7 +137,7 @@ test("Navigate pinned agents from the mobile sidebar", async () => {
   click(pinnedAgentLink(mobileSidebar(), "Research Agent"));
   await waitFor(() => {
     expect(pathname()).toBe(`/agents/${RESEARCH_AGENT_ID}/chat`);
-    expect(mobileSidebar()).not.toHaveAttribute("data-sidebar-expanded");
+    expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
   });
 });
 
@@ -167,7 +167,7 @@ test.each([
     click(link);
     await waitFor(() => {
       expect(pathname()).toBe(route);
-      expect(mobileSidebar()).not.toHaveAttribute("data-sidebar-expanded");
+      expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
     });
   },
 );
@@ -458,6 +458,7 @@ test.each(["agent", "thread"] as const)(
       path: "/agents",
       sharedWorkerTestTransport: "message-port",
     });
+    click(screen.getByLabelText("Open menu"));
 
     await waitFor(() => {
       const current = mobileSidebar();
@@ -516,6 +517,7 @@ test.each(["thread list", "read cursor"] as const)(
       path: "/agents",
       sharedWorkerTestTransport: "message-port",
     });
+    click(screen.getByLabelText("Open menu"));
     const threadLink = () => {
       return threadLinkByTitle("Remote running conversation", mobileSidebar());
     };
@@ -589,6 +591,7 @@ test.each([false, true])(
     // The direct transport runs the production Worker handler synchronously,
     // so the entire burst is delivered before releasing the in-flight fetch.
     await setupSidebarPage({ context, path: "/agents" });
+    click(screen.getByLabelText("Open menu"));
     const threadLink = () => {
       return threadLinkByTitle("Burst conversation", mobileSidebar());
     };
