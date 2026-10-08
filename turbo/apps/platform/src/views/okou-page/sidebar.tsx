@@ -230,7 +230,6 @@ function ExpandedSidebar() {
   return (
     <SheetContent
       side="left"
-      keepMounted
       showCloseButton={false}
       aria-label={t(($) => {
         return $.appShell.sidebar.ariaLabel;

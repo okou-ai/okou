@@ -71,8 +71,8 @@ test("The existing collapse control and backdrop close the drawer without losing
   });
 
   await user.keyboard(" ");
-  expect(screen.getByRole("dialog", { name: "Sidebar" })).toBeInTheDocument();
-  expect(buttonByText("Manage", drawer)).toHaveAttribute(
+  const reopened = screen.getByRole("dialog", { name: "Sidebar" });
+  expect(buttonByText("Manage", reopened)).toHaveAttribute(
     "aria-expanded",
     "false",
   );

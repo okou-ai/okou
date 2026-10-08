@@ -48,57 +48,68 @@ test.each(["horizontal", "vertical"] as const)(
     if (layout === "vertical") {
       click(screen.getByLabelText("Open menu"));
     }
-    const pinned =
-      layout === "horizontal"
-        ? await screen.findByTestId("pinned-agents-grid")
+    const pinned = () => {
+      return layout === "horizontal"
+        ? screen.getByTestId("pinned-agents-grid")
         : mobileSidebar();
-    const current = await waitFor(() => {
-      const link = pinnedAgentLink(pinned, "Nova");
-      expect(within(pinned).getByLabelText("Unread")).toBeInTheDocument();
-      return link;
-    });
-    const other = pinnedAgentLink(pinned, "Research Agent");
-    const list = layout === "horizontal" ? sidebar() : mobileSidebar();
-    await within(list).findByText("Read conversation");
-
-    click(current);
+    };
+    const current = () => {
+      return pinnedAgentLink(pinned(), "Nova");
+    };
+    const other = () => {
+      return pinnedAgentLink(pinned(), "Research Agent");
+    };
+    const list = () => {
+      return layout === "horizontal" ? sidebar() : mobileSidebar();
+    };
     await waitFor(() => {
-      expect(
-        within(list).queryByText("Read conversation"),
-      ).not.toBeInTheDocument();
-      expect(within(list).getByText("Unread conversation")).toBeInTheDocument();
+      expect(within(pinned()).getByLabelText("Unread")).toBeInTheDocument();
+    });
+    await within(list()).findByText("Read conversation");
+
+    click(current());
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
     });
     if (layout === "vertical") {
       click(screen.getByLabelText("Open menu"));
     }
     await waitFor(() => {
-      expect(pinned.dataset.sidebarExpanded).toBe(
+      expect(
+        within(list()).queryByText("Read conversation"),
+      ).not.toBeInTheDocument();
+      expect(
+        within(list()).getByText("Unread conversation"),
+      ).toBeInTheDocument();
+      expect(pinned().dataset.sidebarExpanded).toBe(
         layout === "vertical" ? "true" : undefined,
       );
     });
 
     for (const modifier of ["Alt", "Control", "Meta", "Shift"]) {
       await user.keyboard(`{${modifier}>}`);
-      await user.click(current);
-      await user.click(other);
+      await user.click(current());
+      await user.click(other());
       await user.keyboard(`{/${modifier}}`);
       expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
-      expect(current).toHaveAttribute("aria-current", "page");
+      expect(current()).toHaveAttribute("aria-current", "page");
       expect(
-        within(list).queryByText("Read conversation"),
+        within(list()).queryByText("Read conversation"),
       ).not.toBeInTheDocument();
-      expect(within(list).getByText("Unread conversation")).toBeInTheDocument();
-      expect(pinned.dataset.sidebarExpanded).toBe(
+      expect(
+        within(list()).getByText("Unread conversation"),
+      ).toBeInTheDocument();
+      expect(pinned().dataset.sidebarExpanded).toBe(
         layout === "vertical" ? "true" : undefined,
       );
     }
     for (const keys of ["[MouseMiddle]", "[MouseRight]"]) {
-      await user.pointer({ target: other, keys });
+      await user.pointer({ target: other(), keys });
       expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
       expect(
-        within(list).queryByText("Read conversation"),
+        within(list()).queryByText("Read conversation"),
       ).not.toBeInTheDocument();
-      expect(pinned.dataset.sidebarExpanded).toBe(
+      expect(pinned().dataset.sidebarExpanded).toBe(
         layout === "vertical" ? "true" : undefined,
       );
       if (screen.queryByRole("menu")) {
@@ -106,15 +117,17 @@ test.each(["horizontal", "vertical"] as const)(
       }
     }
 
-    current.focus();
+    current().focus();
     await user.keyboard("{Enter}");
-    await within(list).findByText("Read conversation");
-    expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
-    expect(pinned).not.toHaveAttribute("data-sidebar-expanded");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
+    });
     if (layout === "vertical") {
       click(screen.getByLabelText("Open menu"));
     }
-    other.focus();
+    await within(list()).findByText("Read conversation");
+    expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+    other().focus();
     await user.keyboard("{Enter}");
     await waitFor(() => {
       expect(pathname()).toBe(`/agents/${RESEARCH_AGENT_ID}/chat`);

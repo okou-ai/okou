@@ -59,7 +59,6 @@ SheetOverlay.displayName = "SheetOverlay";
 interface SheetContentProps extends SheetPrimitive.Popup.Props {
   overlayClassName?: string;
   side?: "top" | "bottom" | "left" | "right";
-  keepMounted?: SheetPrimitive.Portal.Props["keepMounted"];
   showCloseButton?: boolean;
 }
 
@@ -70,14 +69,13 @@ const SheetContent = React.forwardRef<HTMLDivElement, SheetContentProps>(
       className,
       overlayClassName,
       side = "right",
-      keepMounted,
       showCloseButton = true,
       ...props
     },
     ref,
   ) => {
     return (
-      <SheetPortal keepMounted={keepMounted}>
+      <SheetPortal>
         <SheetOverlay className={overlayClassName} forceRender />
         <SheetPrimitive.Popup
           ref={ref}

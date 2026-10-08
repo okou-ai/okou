@@ -1502,8 +1502,8 @@ the `-z-1` layer inside this element instead of letting it fall behind the page.
 
 The shell mounts the Sheet only below the shared `48rem` desktop breakpoint
 and outside the PWA navigation path. Sheet owns the portal, backdrop, modal
-focus boundary, and trigger/close relationship; the sidebar retains its width,
-safe-area padding, and section state through the portal's `keepMounted` prop.
+focus boundary, and trigger/close relationship. Closed drawers unmount; existing
+sidebar signals retain section state and restore the chat-list scroll position.
 
 ### The onboarding workflow diagram canvas
 
