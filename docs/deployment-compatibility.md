@@ -1,5 +1,29 @@
 # Deployment Compatibility
 
+## SEO partial SERP results (issue #36799)
+
+`POST /api/seo/serp` returns HTTP 200 for DataForSEO task status `40106`
+when the successful single-task envelope contains non-empty SERP items.
+The response includes optional `partialResults: true` and retains the full raw
+provider response in `result`, including the task status and completeness
+message. Billing uses the provider-reported cost, not the requested depth, and
+completed partial results are not retried. HTTP/provider/envelope failures,
+invalid partial results, and `40106` outside SERP remain failures. Full success
+and `40102` no-search-results responses are unchanged and omit the new field.
+
+- **Old CLI → new API:** the additive property does not invalidate the old
+  response schema. Raw task status/message and available items are still
+  returned; the old human formatter does not add a dedicated partial-result
+  warning.
+- **New CLI → old API:** ordinary responses without the optional property
+  render as before. An old API still returns 502 for `40106`, which the CLI
+  continues to surface as an error; the CLI does not invent partial data.
+- **New CLI → new API:** human output explicitly warns about incomplete
+  results; `--json` preserves the marker, raw provider metadata, and billing.
+
+No database or Runner protocol changes, rollout fallback, or version floor are
+required. This change does not deploy or activate production changes.
+
 ## Connector catalog column reads (expand release)
 
 Migrations `1339_expand_connector_catalog_entry_columns` and

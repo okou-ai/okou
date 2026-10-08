@@ -118,6 +118,89 @@ describe("okou seo command", () => {
     expect(mockConsoleLog).toHaveBeenCalledWith(JSON.stringify(response));
   });
 
+  it.each(["human", "json"] as const)(
+    "reports partial SERP results in %s output without failing",
+    async (format) => {
+      const result = {
+        status_code: 20_000,
+        status_message: "Ok.",
+        cost: 0.002,
+        tasks_count: 1,
+        tasks_error: 0,
+        tasks: [
+          {
+            status_code: 40_106,
+            status_message: "Task completed with partial results.",
+            cost: 0.002,
+            result: [{ items: [{ title: "Technical SEO guide" }] }],
+          },
+        ],
+      };
+      const response = {
+        ...dataForSeoResponse("serp", result),
+        billingQuantity: 2000,
+        providerCostUsd: 0.002,
+        creditsCharged: 3,
+        partialResults: true,
+      };
+      server.use(
+        http.post("http://localhost:3000/api/seo/serp", () => {
+          return HttpResponse.json(response);
+        }),
+      );
+
+      await seoCommand.parseAsync([
+        "node",
+        "okou",
+        "serp",
+        "technical seo",
+        ...(format === "json" ? ["--json"] : []),
+      ]);
+
+      if (format === "json") {
+        expect(mockConsoleLog.mock.calls).toStrictEqual([
+          [JSON.stringify(response)],
+        ]);
+      } else {
+        const output = mockConsoleLog.mock.calls.flat().join("\n");
+        expect(output).toContain("completed with partial results");
+        expect(output).toContain("some requested pages could not be retrieved");
+        expect(output).toContain("Technical SEO guide");
+        expect(output).toContain("Provider cost: $0.002000");
+        expect(output).toContain("Credits charged: 3");
+        expect(output).not.toContain("✓ SEO serp completed");
+      }
+      expect(mockConsoleError).not.toHaveBeenCalled();
+      expect(mockExit).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps provider failures unsuccessful instead of reporting partial success", async () => {
+    server.use(
+      http.post("http://localhost:3000/api/seo/serp", () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "DATAFORSEO_UPSTREAM_ERROR",
+              message: "DataForSEO upstream request failed",
+            },
+          },
+          { status: 502 },
+        );
+      }),
+    );
+
+    await expect(
+      seoCommand.parseAsync(["node", "okou", "serp", "technical seo"]),
+    ).rejects.toThrow("process.exit called");
+
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "DataForSEO upstream request failed",
+    );
+    expect(mockConsoleLog).not.toHaveBeenCalled();
+    expect(mockExit).toHaveBeenCalledWith(1);
+  });
+
   it("posts DataForSEO keyword defaults and renders billing metadata", async () => {
     let requestBody: unknown;
     const response = dataForSeoResponse("keyword-ideas", {
@@ -151,6 +234,7 @@ describe("okou seo command", () => {
     expect(output).toContain("Provider: dataforseo");
     expect(output).toContain("Provider cost: $0.024000");
     expect(output).toContain("Credits charged: 30");
+    expect(output).not.toContain("partial results");
   });
 
   it("posts supported DataForSEO search engines", async () => {
