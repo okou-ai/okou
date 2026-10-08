@@ -111,6 +111,9 @@ export function createPublicDiscordBinding(
   const accessToken = `discord-access-${randomUUID()}`;
   const base = "https://discord.com/api/v10";
   let active = true;
+  const oauthResponses = new Set(["token", "authorization", "user"]);
+  // Grant/identity responses are one-use for this exact code/bearer identity.
+  // Bot responses remain live for final revalidation and welcome delivery.
   // These handlers own only this finite OAuth exchange. They fall through for
   // unrelated bearer identities and all later native bot requests. Central
   // test-context cleanup resets registration after the case.
@@ -120,7 +123,7 @@ export function createPublicDiscordBinding(
         return;
       }
       const body = new URLSearchParams(await request.text());
-      if (body.get("code") !== code) {
+      if (body.get("code") !== code || !oauthResponses.delete("token")) {
         return;
       }
       return HttpResponse.json({
@@ -138,7 +141,8 @@ export function createPublicDiscordBinding(
     http.get(`${base}/oauth2/@me`, ({ request }) => {
       if (
         !active ||
-        request.headers.get("authorization") !== `Bearer ${accessToken}`
+        request.headers.get("authorization") !== `Bearer ${accessToken}` ||
+        !oauthResponses.delete("authorization")
       ) {
         return;
       }
@@ -169,7 +173,10 @@ export function createPublicDiscordBinding(
         return;
       }
       const authorization = request.headers.get("authorization");
-      if (authorization === `Bearer ${accessToken}`) {
+      if (
+        authorization === `Bearer ${accessToken}` &&
+        oauthResponses.delete("user")
+      ) {
         return HttpResponse.json({
           id: identity.discordUserId,
           username: "member",
@@ -275,6 +282,9 @@ export function createPublicDiscordBinding(
           return;
         }
         const id = String(params.userId);
+        if (id !== identity.discordUserId && id !== identity.botUserId) {
+          return;
+        }
         return HttpResponse.json({
           user: { id, username: "member", bot: id === identity.botUserId },
           roles: [],
