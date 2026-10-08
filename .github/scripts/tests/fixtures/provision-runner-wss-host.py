@@ -114,7 +114,19 @@ runtime.mkdir()
 local.mkdir()
 mount(etc, "/etc")
 mount(runtime, "/run")
-mount(local, "/usr/local")
+# Hosted runners may install Ansible/Python under /usr/local. Preserve those
+# tools read-only while keeping the managed libexec namespace isolated.
+for name in ("bin", "lib"):
+    original = Path("/usr/local") / name
+    if original.is_dir():
+        preserved = local / name
+        preserved.mkdir()
+        mount(original, str(preserved))
+        subprocess.run(["mount", "-o", "remount,bind,ro", str(preserved)], check=True)
+subprocess.run(["mount", "--rbind", str(local), "/usr/local"], check=True)
+assert Path(ANSIBLE).is_file(), (
+    "private fixtures must preserve the provided Ansible tool"
+)
 
 fake_bin = WORK / "bin"
 fake_bin.mkdir()
