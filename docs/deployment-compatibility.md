@@ -1,5 +1,35 @@
 # Deployment Compatibility
 
+## PWA foreground push suppression
+
+Web Push delivery checks Ably Presence on
+`user-org-foreground:<userId>:<orgId>` for the notification owner's user and
+organization. Each SharedWorker aggregates tab visibility and enters this
+channel while any of its registered tabs is visible. Push subscriptions remain
+user-scoped; foreground activity in another organization does not suppress the
+notification. Successful and failed Run notifications share the check.
+
+Deploy the API before the Platform: platform realtime tokens now grant
+`presence` only on the authenticated user's active-org foreground channel.
+Old Platform clients do not enter it, so the new API continues sending their
+notifications. A new Platform against an old API cannot enter the channel;
+this mixed version is not the supported rollout order. API rollback therefore
+requires rolling back the Platform as well. No permission-denial fallback or
+new feature switch is added for this fix to existing notifications.
+
+Tab visibility messages stay within the page/SharedWorker protocol. Worker
+asset URLs are versioned, so old pages keep their old Worker protocol while new
+pages connect to the new Worker. The ServiceWorker Push protocol, subscription
+storage, and database schema are unchanged.
+
+Presence query errors propagate to the existing terminal side-effect boundary;
+they do not fall back to sending Push. There is no application-level query
+budget or message-ACK delay. Normal hidden/pagehide/disconnect events clear
+foreground state, but this change adds no tab-expiry timer: a crashed visible
+tab can remain recorded while other tabs keep its Worker alive. Ably owns
+cleanup of a failed Worker connection and reconnect restoration; abnormal
+connection cleanup is not instantaneous.
+
 ## Pi OpenRouter Chat Completions route (generation 5, default off)
 
 Pi model configuration gains generation 5 (`dialect: "openai-completions"`,

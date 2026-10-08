@@ -32,6 +32,44 @@ export const installedSharedDatabaseBridge$ = computed(
   },
 );
 
+const reportTabVisibility$ = command(({ get }): void => {
+  get(installedSharedDatabaseBridge$).setTabVisibility(
+    document.visibilityState,
+  );
+});
+
+const reportTabHidden$ = command(({ get }): void => {
+  get(installedSharedDatabaseBridge$).setTabVisibility("hidden");
+});
+
+export const setupTabVisibilityReport$ = command(
+  ({ set }, signal: AbortSignal): void => {
+    signal.throwIfAborted();
+    document.addEventListener(
+      "visibilitychange",
+      () => {
+        set(reportTabVisibility$);
+      },
+      { signal },
+    );
+    window.addEventListener(
+      "pageshow",
+      () => {
+        set(reportTabVisibility$);
+      },
+      { signal },
+    );
+    window.addEventListener(
+      "pagehide",
+      () => {
+        set(reportTabHidden$);
+      },
+      { signal },
+    );
+    set(reportTabVisibility$);
+  },
+);
+
 export const installSharedDatabaseBridge$ = command(
   async (
     { set },
@@ -41,5 +79,6 @@ export const installSharedDatabaseBridge$ = command(
     await bridge.registerTab(signal);
     signal.throwIfAborted();
     set(sharedDatabaseBridgeState$, bridge);
+    set(setupTabVisibilityReport$, signal);
   },
 );

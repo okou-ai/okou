@@ -77,6 +77,7 @@ export class MessagePortSharedDatabaseBridge implements SharedDatabaseBridge {
   private readonly handleBridgeAbort: () => void;
   private registration: Promise<void> | null = null;
   private registered = false;
+  private visibility: DocumentVisibilityState = "hidden";
   private closed = false;
   private closeReason: unknown = new Error("Shared database bridge is closed");
 
@@ -178,9 +179,16 @@ export class MessagePortSharedDatabaseBridge implements SharedDatabaseBridge {
       this.emit({ type: "register-tab" });
       this.heartbeatLoop(() => {
         this.emit({ type: "heartbeat" });
+        this.emit({ type: "tab-visibility", visibility: this.visibility });
       }, this.bridgeSignal);
     }
     return this.registration;
+  }
+
+  setTabVisibility(visibility: DocumentVisibilityState): void {
+    this.requireRegistration();
+    this.visibility = visibility;
+    this.emit({ type: "tab-visibility", visibility });
   }
 
   fail(reason: unknown): void {
