@@ -7618,27 +7618,24 @@ function VoiceDraftFooter({
 
 function ComposerAttachButton({ signals }: { signals: ComposerSignals }) {
   const { t } = useTranslation();
-  const fileInput = useGet(signals.draft.composerFileInput$);
   return (
     <TooltipProvider delay={300}>
       <Tooltip>
         <TooltipTrigger
           render={
-            <Button
-              type="button"
-              variant="quiet"
-              size="icon-sm"
-              iconSize="md"
-              className="shrink-0"
-              aria-label={t(($) => {
-                return $.chat.attachments.attach;
-              })}
-              onClick={() => {
-                fileInput?.click();
-              }}
+            <label
+              className={cn(
+                buttonVariants({
+                  variant: "quiet",
+                  size: "icon-sm",
+                  iconSize: "md",
+                }),
+                "shrink-0 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2",
+              )}
             >
-              <Paperclip size={18} />
-            </Button>
+              <ComposerFileInput signals={signals} />
+              <Paperclip size={18} aria-hidden />
+            </label>
           }
         />
         <TooltipContent side="top" className="text-xs">
@@ -7677,7 +7674,7 @@ function useComposerAddMenuGroups(
           return $.chat.attachments.attach;
         }),
         onSelect: () => {
-          fileInput?.click();
+          fileInput?.showPicker();
         },
       },
       {
@@ -7708,7 +7705,15 @@ function useComposerAddMenuGroups(
  * template picker's signals just to build rows it will not render.
  */
 function ComposerAddMenuSlot({ signals }: { signals: ComposerSignals }) {
-  return <ComposerAddMenu groups={useComposerAddMenuGroups(signals)} />;
+  const groups = useComposerAddMenuGroups(signals);
+  return (
+    <>
+      <ComposerAddMenu groups={groups} />
+      {/* Menu.Item owns keyboard activation through showPicker(). Keep its
+          input outside the popup so selection survives the menu closing. */}
+      <ComposerFileInput signals={signals} hidden />
+    </>
+  );
 }
 
 function ComposerAddSlot({ signals }: { signals: ComposerSignals }) {
@@ -8616,7 +8621,14 @@ function resolveComposerConnectorCollections({
   };
 }
 
-function ComposerFileInput({ signals }: { signals: ComposerSignals }) {
+function ComposerFileInput({
+  signals,
+  hidden = false,
+}: {
+  signals: ComposerSignals;
+  hidden?: boolean;
+}) {
+  const { t } = useTranslation();
   const setFileInput = useSet(signals.draft.setComposerFileInput$);
   const uploadFile = useComposerFileUpload(signals);
   const notifyDraftChanged = useComposerDraftChange(signals);
@@ -8625,7 +8637,10 @@ function ComposerFileInput({ signals }: { signals: ComposerSignals }) {
     <input
       ref={setFileInput}
       type="file"
-      className="hidden"
+      className={hidden ? "hidden" : "sr-only"}
+      aria-label={t(($) => {
+        return $.chat.attachments.attach;
+      })}
       multiple
       onChange={(event) => {
         const files = event.target.files;
@@ -9216,7 +9231,6 @@ export function ChatComposer({
   );
   return (
     <>
-      <ComposerFileInput signals={signals} />
       {/* The composer group's width, named once. The card is not the container
           itself: the model-scope notice and the pending-items strip are its
           siblings at exactly this width, and a control that reads a width it is
