@@ -109,14 +109,17 @@ test.each([false, true])(
       expect(within(current).getByText("Release plan")).toBeInTheDocument();
       return current;
     });
+    const mobileTitle = buttonByText("Chats with Okou", drawer);
     if (savedCollapsed) {
-      const mobileTitle = buttonByText("Chats with Okou", drawer);
       click(mobileTitle);
-      expect(mobileTitle).toHaveAttribute("aria-expanded", "false");
-      expect(
-        within(drawer).queryByText("Release plan"),
-      ).not.toBeInTheDocument();
     }
+    expect(mobileTitle).toHaveAttribute(
+      "aria-expanded",
+      String(!savedCollapsed),
+    );
+    expect(within(drawer).queryByText("Release plan") !== null).toBe(
+      !savedCollapsed,
+    );
     act(() => {
       viewport.setMatches((query) => {
         return query === "(min-width: 48rem)";
@@ -130,7 +133,7 @@ test.each([false, true])(
       queryAllByRoleFast("button", list).some((button) => {
         return button.textContent?.includes("Chats with Okou");
       }),
-    ).toBe(false);
+    ).toBeFalsy();
     expect(thread).toBeVisible();
 
     click(title);
