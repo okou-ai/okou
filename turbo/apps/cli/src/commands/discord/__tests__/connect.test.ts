@@ -5,10 +5,6 @@ import { server } from "../../../mocks/server";
 import { registerRequestedCommand } from "../../../okou";
 import { connectCommand } from "../connect";
 
-const endpoint = "http://localhost:3000/api/integrations/discord/oauth/start";
-const authorizationUrl =
-  "https://discord.com/oauth2/authorize?client_id=123456789012345678&state=opaque-one-use-state&scope=identify";
-
 async function run(args: string[] = []) {
   const argv = ["node", "okou", "discord", "connect", ...args];
   const program = new Command();
@@ -24,53 +20,84 @@ describe("okou discord connect", () => {
   });
 
   beforeEach(() => {
-    vi.stubEnv("OKOU_TOKEN", "test-token");
-    vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
+    vi.stubEnv("OKOU_TOKEN", "private-run-token");
+    vi.stubEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
+    vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
     for (const option of ["install", "guildId", "json"]) {
       connectCommand.setOptionValue(option, undefined);
     }
   });
 
-  it("starts authenticated member consent and prints the exact URL without reporting a connection", async () => {
-    let body: unknown;
-    let authorization: string | null = null;
-    let query: string | undefined;
+  it("hands off to independently authenticated App Works without creating a browser-correlated attempt in the CLI", async () => {
+    const attempts: unknown[] = [];
     server.use(
-      http.post(endpoint, async ({ request }) => {
-        body = await request.json();
-        authorization = request.headers.get("Authorization");
-        query = new URL(request.url).search;
-        return HttpResponse.json({ authorizationUrl });
-      }),
+      http.post(
+        "*/api/integrations/discord/oauth/start",
+        async ({ request }) => {
+          attempts.push(await request.json());
+          return HttpResponse.json({
+            authorizationUrl:
+              "https://discord.com/oauth2/authorize?state=unusable-cli-attempt",
+          });
+        },
+      ),
     );
     await run();
-    expect(body).toStrictEqual({ flow: "connect" });
-    expect(authorization).toBe("Bearer test-token");
-    expect(query).toBe("");
     const text = output.mock.calls.flat().join("\n");
-    expect(text).toContain(authorizationUrl);
-    expect(text).toContain("complete official Discord browser consent");
-    expect(text).toContain("Authorization has not completed");
+    expect(text).toContain("https://app.okou.ai/works");
+    expect(text).toContain("sign in, and select the intended organization");
+    expect(text).toContain("Choose Connect");
+    expect(text).toContain("Complete official Discord browser consent");
+    expect(text).toContain(
+      "Authorization has not started or completed in this CLI",
+    );
+    expect(text).not.toContain("private-run-token");
+    expect(text).not.toContain("discord.com/oauth2");
+    expect(attempts).toStrictEqual([]);
   });
 
-  it("starts an admin install with an exact large snowflake and exposes the URL in JSON", async () => {
+  it("returns configured App origin with install and exact guild guidance, without owner or credential query parameters", async () => {
     const guildId = "18446744073709551615";
-    let body: unknown;
-    server.use(
-      http.post(endpoint, async ({ request }) => {
-        body = await request.json();
-        return HttpResponse.json({ authorizationUrl });
-      }),
+    vi.stubEnv(
+      "OKOU_APP_URL",
+      "https://app.custom.test/ignored?state=do-not-transfer",
     );
     await run(["--install", "--guild-id", guildId, "--json"]);
-    expect(body).toStrictEqual({ flow: "install", guildId });
     expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toStrictEqual({
-      authorizationUrl,
+      url: "https://app.custom.test/works",
+      flow: "install",
+      guildId,
     });
   });
 
-  it.each(["0", "1e18", "18446744073709551616"])(
-    "rejects invalid guild ID %s before authorization",
+  it.each([
+    { api: "https://api.okou.ai", app: "https://app.okou.ai" },
+    { api: "https://staging-api.vm6.ai", app: "https://staging-app.omby.ai" },
+    { api: "https://pr-123-api.vm6.ai", app: "https://pr-123-app.omby.ai" },
+  ])("reuses canonical API-to-App mapping for $api", async ({ api, app }) => {
+    vi.stubEnv("OKOU_APP_URL", "");
+    vi.stubEnv("OKOU_API_BACKEND_URL", api);
+    await run(["--json"]);
+    expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toStrictEqual({
+      url: `${app}/works`,
+      flow: "connect",
+    });
+  });
+
+  it("guides an admin to actual installation without claiming any binding", async () => {
+    await run(["--install", "--guild-id", "123456789012345678"]);
+    const text = output.mock.calls.flat().join("\n");
+    expect(text).toContain(
+      "Choose Install to Discord as an organization admin",
+    );
+    expect(text).toContain(
+      "Select Discord server 123456789012345678 during consent",
+    );
+    expect(text).toContain("guidance, not a verified binding");
+  });
+
+  it.each(["", "0", "1e18", "18446744073709551616"])(
+    "rejects invalid guild ID %s rather than pretending it selected a server",
     async (guildId) => {
       await expect(run(["--guild-id", guildId])).rejects.toThrow(
         "process.exit",
@@ -79,31 +106,4 @@ describe("okou discord connect", () => {
       expect(output).not.toHaveBeenCalled();
     },
   );
-
-  it.each([
-    { status: 403, message: "Organization admin required" },
-    { status: 503, message: "Discord OAuth is not configured" },
-  ])(
-    "surfaces $status and does not print a consent URL",
-    async ({ status, message }) => {
-      server.use(
-        http.post(endpoint, () => {
-          return HttpResponse.json(
-            { error: { code: "FORBIDDEN", message } },
-            { status },
-          );
-        }),
-      );
-      await expect(run(["--install"])).rejects.toThrow("process.exit");
-      expect(errors.mock.calls.flat().join("\n")).toContain(message);
-      expect(output).not.toHaveBeenCalled();
-    },
-  );
-
-  it("guides an unauthenticated caller to OKOU_TOKEN setup", async () => {
-    vi.stubEnv("OKOU_TOKEN", "");
-    await expect(run()).rejects.toThrow("process.exit");
-    expect(errors.mock.calls.flat().join("\n")).toContain("Set OKOU_TOKEN");
-    expect(output).not.toHaveBeenCalled();
-  });
 });

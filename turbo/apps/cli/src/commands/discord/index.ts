@@ -29,7 +29,7 @@ Examples:
   Download a file:  okou discord download-file <attachment-id> --channel <id> --message <id> --out report.pdf
 
 Notes:
-  - Start onboarding with okou discord connect, then complete official Discord browser consent.
+  - Use okou discord connect to open App Works, sign in, and start official Discord consent in your browser.
   - Read, send, and file commands require a verified binding resolved from the current organization. Their optional --guild-id must match that binding's guild.
   - Attachment URLs are not returned; use download-file with the attachment ID.
   - All Discord IDs are decimal strings. Copy IDs from Discord with Developer Mode enabled.`,

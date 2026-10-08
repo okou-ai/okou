@@ -1,14 +1,17 @@
 import { Command } from "commander";
 import { discordSnowflakeSchema } from "@okouai/api-contracts/contracts/integrations-discord-read";
-import { startDiscordAuthorization } from "../../lib/api/domains/integrations-discord";
+import { getPlatformOrigin } from "../../lib/platform-url";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 
 export const connectCommand = new Command()
   .name("connect")
-  .description("Start Discord browser consent for your current organization")
-  .option("--install", "Install Okou to a server as an organization admin")
-  .option("--guild-id <id>", "Discord server to install or connect to")
-  .option("--json", "Print the authorization URL as JSON")
+  .description("Open App Works to install Okou or connect your Discord account")
+  .option("--install", "Show server-install guidance for an organization admin")
+  .option(
+    "--guild-id <id>",
+    "Server to select during browser consent (guidance only)",
+  )
+  .option("--json", "Print the App Works URL and requested flow as JSON")
   .addHelpText(
     "after",
     `
@@ -17,10 +20,11 @@ Examples:
   Install to a server:   okou discord connect --install --guild-id <id>
 
 Notes:
-  - Open the returned URL and complete official Discord browser consent.
-  - This command starts authorization; it does not complete installation or account binding.
-  - Installation requires an Okou organization admin and permission to manage the selected Discord server.
-  - Identity, membership, and server access are verified by the API. No manual token or user ID is needed.`,
+  - Open App Works, sign in independently, and select the intended Okou organization.
+  - Choose Install to Discord as an organization admin, or Connect after installation.
+  - The App starts authorization in your browser; complete official Discord consent there.
+  - --install and --guild-id provide guidance only. They do not create an OAuth attempt, install Okou, or bind an account.
+  - No manual token or user ID is needed. The API verifies identity and server membership.`,
   )
   .action(
     withErrorHandler(
@@ -33,20 +37,31 @@ Notes:
           options.guildId === undefined
             ? undefined
             : discordSnowflakeSchema.parse(options.guildId);
-        const result = await startDiscordAuthorization({
+        const result = {
+          url: new URL("/works", await getPlatformOrigin()).toString(),
           flow: options.install ? "install" : "connect",
           ...(guildId ? { guildId } : {}),
-        });
+        };
         if (options.json) {
           console.log(JSON.stringify(result, null, 2));
           return;
         }
         console.log(
-          "Open this URL and complete official Discord browser consent:",
+          "Open App Works, sign in, and select the intended organization:",
         );
-        console.log(result.authorizationUrl);
+        console.log(result.url);
         console.log(
-          "Authorization has not completed. Check Discord in App Works after consent.",
+          options.install
+            ? "Choose Install to Discord as an organization admin."
+            : "Choose Connect on the Discord card after your admin installs Okou.",
+        );
+        if (guildId) {
+          console.log(
+            `Select Discord server ${guildId} during consent. This is guidance, not a verified binding.`,
+          );
+        }
+        console.log(
+          "Complete official Discord browser consent. Authorization has not started or completed in this CLI.",
         );
       },
     ),
