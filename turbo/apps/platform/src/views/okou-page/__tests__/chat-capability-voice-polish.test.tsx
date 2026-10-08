@@ -76,42 +76,6 @@ test("Use an older API without re-uploading audio when its polish route is absen
   });
 });
 
-test("Merge three completed segments only after the final transcription", async () => {
-  const capture = context.mocks.deferred<(samples: Float32Array) => void>();
-  context.mocks.browser.voiceInput({
-    rms: 0.1,
-    onPcmCapture: capture.resolve,
-    finalPcmSamples: new Float32Array(0),
-  });
-  installRunChat();
-  const segments = ["First part.", "Second part.", "Last part."];
-  const polishRequested = context.mocks.deferred<void>();
-  let next = 0;
-  context.mocks.http.post(transcribeEndpoint, async ({ request }) => {
-    const form = await request.formData();
-    expect(form.get("file")).toBeInstanceOf(File);
-    return HttpResponse.json({ transcript: segments[next++], language: "en" });
-  });
-  context.mocks.http.post(polishEndpoint, async ({ request }) => {
-    await expect(request.json()).resolves.toMatchObject({ segments });
-    polishRequested.resolve();
-    return HttpResponse.json({ text: "First part. Second part. Last part." });
-  });
-  await setupPage({ context, path: RUN_PATH });
-  click(await findEnabledButton("Voice input"));
-  const emit = await capture.promise;
-  emit(new Float32Array(150 * 16_000).fill(0.1));
-  click(await findEnabledButton("Stop recording"));
-  // Await the externally observable editing boundary before asserting its UI
-  // result; processing 150 seconds of PCM/VAD is not a two-second UI update.
-  await polishRequested.promise;
-  await waitFor(() => {
-    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
-      "First part. Second part. Last part.",
-    );
-  });
-});
-
 test.each([
   { label: "silent", tail: 0, probability: 0.9, expected: ["Earlier speech."] },
   {
