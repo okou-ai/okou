@@ -71,8 +71,6 @@ def ansible(playbook="provision-runner.yml", success=True, tagged=True):
         "ansible_python_interpreter=/usr/bin/python3",
         "-e",
         "runner_version=999.0.0",
-        "-e",
-        "rollback_mode=emergency",
         str(REPO / "ansible/playbooks" / playbook),
     ]
     if tagged:
@@ -214,9 +212,11 @@ for mode, owner, group in [
         # boundary: neither may reach cutover or touch an existing endpoint.
         failed = ansible(success=False)
         assert "refusing repair" in failed.stdout
-        for playbook in ("promote-runner.yml", "rollback-runner.yml"):
-            failed = ansible(playbook, success=False, tagged=False)
-            assert "refusing repair" in failed.stdout
+        failed = ansible("promote-runner.yml", success=False, tagged=False)
+        assert "refusing repair" in failed.stdout
+        # Rollback must not acquire a tagged WSS provisioning/preflight stage.
+        rollback = ansible("rollback-runner.yml")
+        assert "Runner WSS" not in rollback.stdout, rollback.stdout
         assert snapshot(NAMESPACE) == before
         assert snapshot(endpoint) == endpoint_before
     os.chown(NAMESPACE, 0, GROUP_ID)

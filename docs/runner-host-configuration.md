@@ -10,8 +10,8 @@ ordinary login users receive no membership. The optional ingress slice owns
 any later narrowly scoped membership for its dedicated Caddy user.
 
 `ansible/playbooks/provision-runner.yml` imports shared `runner_wss_host` tasks.
-The same prerequisite runs before promotion/rollback lifecycle changes and
-before cached preview/staging reconciliation retires or starts services. The
+The same prerequisite runs before promotion lifecycle changes and before
+cached preview/staging reconciliation retires or starts services. The
 provision action executes it even when the Ansible-tree hash permits skipping
 expensive package/monitoring setup. Shared Runner Image and behavior consumers
 therefore do not depend on an operator running a Caddy playbook first.
@@ -67,9 +67,11 @@ socket-FD ownership defect.
 With valid local prerequisites, absent/stopped/unqueryable Caddy must not block
 ordinary startup, claims or heartbeats; inactive ingress only denies new WSS
 tickets. Preparing the namespace never installs, enables, starts or probes Caddy.
-Rolling back a Runner release keeps these shared host prerequisites and must not
-remove another release's endpoints or reset the directory. Removing host policy
-or activating production ingress requires separate operational authorization.
+The rollback playbook does not provision or add a WSS preflight; its existing
+release lifecycle remains unchanged. Already-installed shared systemd policy
+still applies when rollback starts a Runner service. Rollback must not remove
+another release's endpoints or reset the directory. Removing host policy or
+activating production ingress requires separate operational authorization.
 
 ## Diagnostic Host Attribution
 
