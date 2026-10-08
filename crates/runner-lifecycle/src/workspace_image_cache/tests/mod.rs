@@ -3,6 +3,7 @@ mod inspection;
 mod lifecycle;
 mod metadata;
 mod promotion;
+mod routine_gc;
 mod sidecar;
 mod state;
 mod storage;

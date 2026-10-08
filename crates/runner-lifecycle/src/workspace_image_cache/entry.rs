@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use runner_host::paths::{
     scoped_workspace_image_cache_key, workspace_image_cache_capacity_lock_path,
-    workspace_image_cache_lock_path,
+    workspace_image_cache_lock_path, workspace_image_cache_routine_gc_lock_path,
 };
 use runner_types::ids::RunId;
 
@@ -174,6 +174,10 @@ impl WorkspaceImageCache {
 
     pub(super) fn capacity_lock_path(&self) -> PathBuf {
         workspace_image_cache_capacity_lock_path(&self.inner.lock_dir)
+    }
+
+    pub(super) fn routine_gc_lock_path(&self) -> PathBuf {
+        workspace_image_cache_routine_gc_lock_path(&self.inner.lock_dir)
     }
 }
 

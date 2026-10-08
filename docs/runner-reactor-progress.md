@@ -28,13 +28,51 @@ Persistence timeouts do not bound a wait that happens before persistence starts.
 | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Heartbeat                  | One independently scheduled task; triggers coalesce into at most one pending request. The next send uses live state and lifecycle mode. Shared immutable configuration is allocated once per controller. | Natural drain flushes a Stopping snapshot. Common teardown joins the active send before provider shutdown. Abnormal controller drop aborts the task; dropping a client request does not retract a remote request, so snapshot generation/sequence fencing remains required.                                                       |
 | Status retry               | One independently scheduled task. State generations, ordered persistence, and atomic-write continuation remain authoritative.                                                                            | Join the retry before final status publication. If the reactor itself is cancelled, the task retains ownership until it finishes.                                                                                                                                                                                                 |
-| Routine workspace-cache GC | One independently scheduled task, with host-global cadence and exclusion enforced by the capacity lock.                                                                                                  | Join before dependent teardown. Do not abort the task during normal shutdown: filesystem deletion may outlive a dropped async future. If the reactor itself is cancelled, the task retains its locks through completion rather than releasing them over unfinished I/O. Process/runtime termination remains an abnormal boundary. |
+| Routine workspace-cache GC | One independently scheduled task, with a host-global routine flock owning inventory/entry cleanup; capacity protects completion cadence and budget collection.                                           | Join before dependent teardown. Do not abort the task during normal shutdown: filesystem deletion may outlive a dropped async future. If the reactor itself is cancelled, the task retains its locks through completion rather than releasing them over unfinished I/O. Process/runtime termination remains an abnormal boundary. |
 | Poll wakeups               | Short synchronous mutex sections protect only in-memory scheduling state. No I/O, await, or long nested work is permitted under this lock.                                                               | Notification registration before state recheck, generation fencing, deferred-poll caps, and cancellation remain unchanged.                                                                                                                                                                                                        |
 
 Task join failures stop the reactor through its existing lifecycle and common
 teardown path and are returned as terminal errors. Ordinary optional GC or status
 retry errors remain warnings. Runtime task ownership does not make an individual
 filesystem or network operation infinitely fast or cancellation-safe.
+
+## Routine GC and promotion capacity
+
+Updated runners serialize routine maintenance with
+`workspace-image-cache-routine-gc.lock`. They briefly acquire capacity to check
+its existing nonempty completion-file mtime, then release capacity during the
+inventory and entry-local stale/temp cleanup. Every such mutation still requires
+that entry's nonblocking exclusive flock, so active checkout, sidecar staging and
+publication cannot be cleaned concurrently. No entry flock survives inventory.
+
+Afterward routine GC attempts capacity nonblockingly, rechecks the completion
+interval and reads fresh filesystem stats. Byte/count pressure observed in the
+unlocked inventory, or current free-space pressure, invokes the existing full
+collector with a **fresh inventory under capacity**. Unlocked candidates never
+authorize budget eviction. Failed work or busy final capacity admission writes no
+new completion marker and is eligible for a later retry.
+
+Old runners still use capacity throughout their scans and preserve the original
+opaque completion marker. They can overlap an updated runner's unlocked pass;
+shared entry flocks protect mutations, and the second interval check observes an
+old runner's intervening completion. Manual and promotion-triggered pressure GC
+retain their existing capacity ownership. Those collectors can still contend
+with promotion; this change removes the updated routine inventory/entry-cleanup
+collision window, not contention under genuine pressure or mixed-version scans.
+Cache byte/count targets remain periodic GC policy, not a strict per-promotion
+whole-cache admission bound. Promotion's free-space/copy and image checks are
+unchanged.
+
+Successful routine completion emits `entry_count` (the unlocked candidate
+count), `inventory_us`, cumulative `capacity_lock_held_us` (both held phases,
+excluding acquisition waits), `budget_gc` and `freed_bytes`. Deferred final
+admission reports the inventory and initial held durations. Pressure collection
+includes its fresh scan in the held duration. These are phase observations, not
+production cold-start savings or wall-clock performance guarantees. The ignored
+`measure_routine_gc_inventory_and_capacity_hold` owner test prints representative
+local measurements without latency thresholds. It uses temporary files and the
+owner tests' injected filesystem budget, so it does not measure production
+`statvfs` latency or pressure collection.
 
 ## Other retained-work audit
 
