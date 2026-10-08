@@ -78,6 +78,7 @@ export const readDiscordUserExportPage$ = command(
                 orgId: discordOauthStates.orgId,
                 userId: discordOauthStates.userId,
                 flow: discordOauthStates.flow,
+                phase: discordOauthStates.phase,
                 guildId: discordOauthStates.guildId,
                 createdAt: discordOauthStates.createdAt,
                 expiresAt: discordOauthStates.expiresAt,
