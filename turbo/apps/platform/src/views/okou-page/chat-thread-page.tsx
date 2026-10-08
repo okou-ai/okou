@@ -4264,22 +4264,19 @@ function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
     <footer
       data-chat-composer
       ref={composerLayoutRef}
-      className="relative shrink-0 pb-safe-or-2"
+      className="relative shrink-0"
     >
-      {/* `overflow-y-auto` clips at this element's padding box. The composer's
-          focus veil is offset down and blurred well past the gap the footer
-          leaves, so it is still painting at that boundary and gets sliced off in
-          a hard line across the card's full width. Pad out far enough for
-          `--okou-composer-focus-veil` to finish and take the same amount back
-          with a negative margin, so the veil fades out instead of ending in a
-          seam while the footer keeps its height. */}
+      {/* Keep both the content gutter and safe-area padding inside this
+          scrollport, so the focus veil fades within the real bottom gap.
+          Negative margins would extend its box beyond the footer and make
+          the workspace itself scrollable. */}
       <div
         className={cn(
-          "-mb-8 overflow-y-auto [scrollbar-gutter:stable] pb-10 pl-4 pr-4 pt-3 sm:pl-6 sm:pr-6",
+          "overflow-y-auto [scrollbar-gutter:stable] pb-safe-or-2 pl-4 pr-4 pt-3 sm:pl-6 sm:pr-6",
           standalonePwa && "overscroll-contain",
         )}
       >
-        <div className="mx-auto max-w-[900px]">
+        <div className="mx-auto max-w-[900px] pb-2">
           <ChatComposer signals={thread.composer} />
           <PersonalClaudeCodeDeviceAuthDialog />
           <PersonalCodexDeviceAuthDialog />

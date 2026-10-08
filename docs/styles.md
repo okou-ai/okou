@@ -316,6 +316,11 @@ still painting when it meets a clipping ancestor or the pane edge ends in a
 visible straight seam instead of fading out, and the gap is not a place to
 absorb an arbitrarily wide shadow.
 
+The chat footer keeps both its 8px content gutter and `pb-safe-or-2` padding
+inside the composer's scrollport. Both take real layout space; negative margins
+must not offset them. This preserves the 16px desktop gap, lets the veil fade
+inside the clipping boundary, and keeps the scrollport inside the footer.
+
 Standalone selectable controls use the shared `ToggleButton` and its required
 `selected` prop. Its default `inline` layout keeps compact icon/text choices;
 `layout="tile"` fills a grid cell with centered text and 12px horizontal / 10px
@@ -1222,6 +1227,10 @@ through `bg-workspace-canvas` and `bg-workspace-canvas-image`, registered as
 `@theme inline` entries over `--okou-workspace-canvas-fill` and
 `--okou-workspace-canvas-image`. `inline` keeps the reference, so the theme and
 palette attributes decide at use time.
+
+At desktop sizes the pane uses `overflow-clip` to frame its children without
+becoming a scroll container. Messages, editors and page content own their
+scrolling; focus reveal must not scroll the pane and displace its header.
 
 The four variants — default and gradient palette, each in Light and Dark —
 differ only in a fill color and a gradient, so they are two runtime values
