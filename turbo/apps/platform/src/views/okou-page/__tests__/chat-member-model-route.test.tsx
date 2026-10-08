@@ -32,12 +32,9 @@ function runModel(
   });
 }
 
-test.each([
-  { modelLabel: "GPT 5.6 Sol", source: "ChatGPT (Codex)" },
-  { modelLabel: "Claude Sonnet 5", source: "Claude Code (OAuth Token)" },
-])(
-  "Shows $modelLabel in the model panel without a credential source column",
-  async ({ modelLabel, source }) => {
+test.each([{ modelLabel: "GPT 5.6 Sol" }, { modelLabel: "Claude Sonnet 5" }])(
+  "Shows $modelLabel in the model panel as just its model name",
+  async ({ modelLabel }) => {
     installRunChat({ selectedModel: "gpt-5.6-sol" });
     context.mocks.data.availableRunModels([
       runModel("available"),
@@ -58,9 +55,7 @@ test.each([
     }, panel);
     expect(option).not.toHaveAttribute("aria-disabled", "true");
     expect(option).not.toBeDisabled();
-    expect(option).toHaveTextContent(modelLabel);
-    expect(option).not.toHaveTextContent("$");
-    expect(option).not.toHaveTextContent(source);
+    expect(option.textContent?.trim()).toBe(modelLabel);
   },
 );
 
