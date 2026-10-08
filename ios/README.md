@@ -175,9 +175,10 @@ On September 17, 2026:
 Wide-code/table scrolling, link opening, image rendering, and further
 long-history performance checks remain outside the completed interactive sample.
 
-The transcript now uses a separate native `List` row for each message, instead
-of eagerly laying out the entire history in a `VStack`. Markdown, message
-grouping, context-menu copying, and the composer remain unchanged. Initial
+The transcript uses a native `UICollectionView` cell for each message, with
+SwiftUI message content and measured row heights. A bounded batch of temporary
+hosts settles Markdown layout before a snapshot is applied. Cell reuse keeps
+these heights, and pending content changes wait until scrolling ends. Initial
 positioning targets the latest prepared messages; starting a manual scroll stops
 automatic following. Incoming messages preserve the reading position, while a
 local send or the bottom button requests bottom positioning. Keep these behaviors

@@ -1,12 +1,11 @@
 import SwiftUI
 
-/// Supplements native List reuse with point-accurate reading-position restoration.
-/// It neither replaces the scroll delegate nor depends on private List implementation classes.
+/// Restores a message and its viewport offset after explicit presentation changes.
+/// Uses public scroll APIs without replacing the container's delegate.
 @MainActor
 final class ConversationScrollAnchor {
   private let markers = NSMapTable<NSString, ConversationRowMarker>.strongToWeakObjects()
   private weak var scrollView: UIScrollView?
-  private var viewportChanged = false
   private var position: ConversationReadingPosition?
   private var displayLink: CADisplayLink?
   private var settlingFrames = 0
@@ -41,7 +40,7 @@ final class ConversationScrollAnchor {
   }
 
   func restore(_ position: ConversationReadingPosition) {
-    // List can keep old cell measurements after a prepend, even while the marker is attached.
+    // A snapshot can recycle the anchor cell even while its old marker is attached.
     needsReveal = true
     preserve(position)
   }
@@ -49,7 +48,6 @@ final class ConversationScrollAnchor {
   func followBottom() {
     position = nil
     needsReveal = false
-    viewportChanged = false
     followsBottom = true
     layoutDidChange()
   }
@@ -58,22 +56,21 @@ final class ConversationScrollAnchor {
     position = nil
     followsBottom = false
     needsReveal = false
-    viewportChanged = false
     displayLink?.invalidate()
     displayLink = nil
     settlingFrames = 0
   }
 
   func layoutDidChange() {
-    // A correction can briefly match an estimate before the native cell transaction settles.
+    // Verify the correction after the native cell transaction settles.
     settlingFrames = 2
     scheduleFrame()
   }
 
   private func scheduleFrame() {
-    guard position != nil || followsBottom || viewportChanged, !isScrolling, displayLink == nil
+    guard position != nil || followsBottom, !isScrolling, displayLink == nil
     else { return }
-    // A main-queue yield can precede List's native cell transaction. Correct on the next frame.
+    // A main-queue yield can precede the native cell transaction. Correct on the next frame.
     let target = ConversationAnchorFrameTarget(anchor: self)
     let link = CADisplayLink(
       target: target, selector: #selector(ConversationAnchorFrameTarget.tick(_:)))
@@ -81,19 +78,10 @@ final class ConversationScrollAnchor {
     link.add(to: .main, forMode: .common)
   }
 
-  fileprivate func viewportLayoutDidChange() {
-    viewportChanged = true
-    layoutDidChange()
-  }
-
   fileprivate func correctOnFrame(_ link: CADisplayLink) {
     guard displayLink === link else { return }
     link.invalidate()
     displayLink = nil
-    if viewportChanged {
-      viewportChanged = false
-      viewportDidChange?()
-    }
     correctPosition()
     if settlingFrames > 0 {
       settlingFrames -= 1
@@ -120,7 +108,7 @@ final class ConversationScrollAnchor {
     guard let scrollView, !isScrolling, !scrollView.isTracking, !scrollView.isDragging,
       !scrollView.isDecelerating
     else { return }
-    // Commit pending native self-sizing before measuring mounted row positions.
+    // Commit pending native layout before measuring mounted row positions.
     scrollView.layoutIfNeeded()
     if followsBottom {
       let y = max(
@@ -145,10 +133,10 @@ final class ConversationScrollAnchor {
     guard let marker = markers.object(forKey: position.messageID as NSString), marker.window != nil,
       marker.enclosingScrollView === scrollView
     else {
-      // A large prepend can recycle the anchor cell. Let List materialize it before correcting points.
+      // Materialize a recycled anchor cell before correcting its viewport offset.
       if let revealRow {
         revealRow(position.messageID)
-        // The ID is in the render window, but List may not have committed its cell transaction yet.
+        // The ID is in the render window, but its cell transaction may not have committed yet.
         layoutDidChange()
       }
       return
@@ -164,39 +152,8 @@ final class ConversationScrollAnchor {
     let y = min(maximum, max(minimum, scrollView.contentOffset.y + offset - position.offset))
     guard abs(y - scrollView.contentOffset.y) > 0.5 else { return }
     scrollView.setContentOffset(CGPoint(x: scrollView.contentOffset.x, y: y), animated: false)
-    // Native List may adjust estimates in response to this move; verify the resulting frame.
+    // Verify the resulting frame after native layout responds to this move.
     layoutDidChange()
-  }
-}
-
-struct ConversationViewportAnchor: UIViewRepresentable {
-  let anchor: ConversationScrollAnchor
-  func makeUIView(context: Context) -> ConversationViewportMarker {
-    let view = ConversationViewportMarker()
-    view.isUserInteractionEnabled = false
-    return view
-  }
-  func updateUIView(_ view: ConversationViewportMarker, context: Context) {
-    view.anchor = anchor
-  }
-  static func dismantleUIView(_ view: ConversationViewportMarker, coordinator: ()) {
-    view.anchor = nil
-  }
-}
-
-final class ConversationViewportMarker: UIView {
-  fileprivate weak var anchor: ConversationScrollAnchor?
-  private var lastBounds: CGRect = .zero
-  override func safeAreaInsetsDidChange() {
-    super.safeAreaInsetsDidChange()
-    anchor?.viewportLayoutDidChange()
-  }
-  override func layoutSubviews() {
-    super.layoutSubviews()
-    if lastBounds != bounds {
-      lastBounds = bounds
-      anchor?.viewportLayoutDidChange()
-    }
   }
 }
 

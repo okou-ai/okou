@@ -5,6 +5,74 @@ import XCTest
 
 @MainActor
 final class ConversationListTests: XCTestCase {
+  func testConversationKeepsMeasuredSizesAcrossReusedMarkdownRows() async throws {
+    let fixture = ConversationHistoryFixture(count: 30)
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    await conversation.refresh()
+    while conversation.hasEarlierMessages { await conversation.loadEarlierMessages() }
+    conversation.rememberReadingPosition(
+      ConversationReadingPosition(
+        messageID: ConversationHistoryFixture.id(25), offset: -42))
+    let host = UIHostingController(rootView: ChatDetailView(conversation: conversation))
+    let window = try await mount(host)
+    defer { unmount(window) }
+    let scroll = try XCTUnwrap(markers(in: host.view).first?.enclosingScrollView)
+    XCTAssertTrue(scroll.accessibilityScroll(.up))
+    try await eventually {
+      conversation.readingPosition?.messageID != ConversationHistoryFixture.id(25)
+    }
+    await stableHostingGeometry(host.view)
+    let height = scroll.contentSize.height
+    var measured: [String: CGFloat] = [:]
+    let directions: [UIAccessibilityScrollDirection] = [
+      .up, .up, .up, .up, .down, .down, .down, .down, .up,
+    ]
+    for direction in directions {
+      let before = scroll.contentOffset.y
+      XCTAssertTrue(scroll.accessibilityScroll(direction))
+      try await eventually { abs(scroll.contentOffset.y - before) > 1 }
+      await stableHostingGeometry(host.view)
+      XCTAssertEqual(scroll.contentSize.height, height, accuracy: 1)
+      for row in markers(in: host.view) where row.window != nil {
+        guard let cell = enclosingCell(row), cell.frame.intersects(scroll.bounds) else { continue }
+        if let previous = measured[row.messageID] {
+          XCTAssertEqual(cell.bounds.height, previous, accuracy: 1, row.messageID)
+        }
+        measured[row.messageID] = cell.bounds.height
+      }
+    }
+    XCTAssertGreaterThan(measured.count, 10)
+
+    let position = try XCTUnwrap(conversation.readingPosition)
+    let originalWidth = scroll.bounds.width
+    window.frame.size.width = 520
+    host.view.setNeedsLayout()
+    host.view.layoutIfNeeded()
+    try await eventually {
+      scroll.bounds.width != originalWidth && scroll.contentSize.height != height
+    }
+    await stableHostingGeometry(host.view)
+    try await eventually {
+      abs((offset(of: position.messageID, in: host.view) ?? .infinity) - position.offset) < 1
+    }
+    XCTAssertEqual(
+      offset(of: position.messageID, in: host.view) ?? .infinity, position.offset, accuracy: 1)
+    let resizedHeight = scroll.contentSize.height
+    XCTAssertNotEqual(resizedHeight, height)
+    XCTAssertTrue(scroll.accessibilityScroll(.up))
+    await stableHostingGeometry(host.view)
+    XCTAssertEqual(scroll.contentSize.height, resizedHeight, accuracy: 1)
+
+    let resizedPosition = try XCTUnwrap(conversation.readingPosition)
+    host.traitOverrides.preferredContentSizeCategory = .extraExtraExtraLarge
+    try await eventually { scroll.contentSize.height != resizedHeight }
+    await stableHostingGeometry(host.view)
+    XCTAssertEqual(
+      offset(of: resizedPosition.messageID, in: host.view) ?? .infinity,
+      resizedPosition.offset, accuracy: 1)
+  }
+
   func testNativeListPreservesPartialRowAcrossPrependAndHeightChanges() async throws {
     let model = ListProbeModel()
     let anchor = ConversationScrollAnchor()
@@ -110,6 +178,15 @@ final class ConversationListTests: XCTestCase {
       return scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.maxY
         <= 20
     }
+    let scroll = try XCTUnwrap(markers(in: reopened.view).first?.enclosingScrollView)
+    let viewportHeight = scroll.bounds.height
+    reopenedWindow.frame.size.height = 620
+    reopened.view.setNeedsLayout()
+    reopened.view.layoutIfNeeded()
+    try await eventually {
+      scroll.bounds.height < viewportHeight
+        && scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.maxY <= 20
+    }
     conversation.resetRenderWindowToLatest()
     XCTAssertEqual(
       conversation.visibleMessages.map(\.id),
@@ -119,6 +196,16 @@ final class ConversationListTests: XCTestCase {
       return y >= 0 && y < reopened.view.bounds.height
     }
   }
+}
+
+@MainActor
+private func enclosingCell(_ view: UIView) -> UICollectionViewCell? {
+  var ancestor = view.superview
+  while let parent = ancestor {
+    if let cell = parent as? UICollectionViewCell { return cell }
+    ancestor = parent.superview
+  }
+  return nil
 }
 
 @MainActor
