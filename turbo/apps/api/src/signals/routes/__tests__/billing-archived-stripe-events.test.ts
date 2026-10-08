@@ -124,6 +124,12 @@ describe("Stripe billing purpose isolation", () => {
         "retrieved expanded",
         "retrieved unexpanded",
         "modern unexpanded",
+        "inline deleted",
+        "retrieved deleted",
+        "missing Price",
+        "missing Product",
+        "transient Price",
+        "invalid fetched Price",
       ].map((source) => {
         return { priceId, source };
       });
@@ -137,11 +143,38 @@ describe("Stripe billing purpose isolation", () => {
         name: "Archived Allowance",
         metadata: { purpose: "usage_allowance" },
       };
+      const inlineProduct =
+        source === "inline deleted"
+          ? { id: product.id, deleted: true }
+          : product;
       context.mocks.stripe.prices.retrieve.mockResolvedValue({
         id: priceId,
-        product: source === "retrieved expanded" ? product : product.id,
+        product:
+          source === "retrieved expanded"
+            ? product
+            : source === "retrieved deleted"
+              ? { id: product.id, deleted: true }
+              : product.id,
       });
       context.mocks.stripe.products.retrieve.mockResolvedValue(product);
+      const missing = Object.assign(
+        new Error("Referenced Stripe resource is unavailable"),
+        { code: "resource_missing" },
+      );
+      if (source === "missing Price") {
+        context.mocks.stripe.prices.retrieve.mockRejectedValue(missing);
+      }
+      if (source === "missing Product") {
+        context.mocks.stripe.products.retrieve.mockRejectedValue(missing);
+      }
+      if (source === "transient Price") {
+        context.mocks.stripe.prices.retrieve.mockRejectedValue(
+          new Error("Stripe temporarily unavailable"),
+        );
+      }
+      if (source === "invalid fetched Price") {
+        context.mocks.stripe.prices.retrieve.mockResolvedValue({ id: priceId });
+      }
       context.mocks.stripe.subscriptions.retrieve.mockClear();
       context.mocks.stripe.subscriptions.update.mockClear();
       const invoice = {
@@ -167,7 +200,10 @@ describe("Stripe billing purpose isolation", () => {
                 : {
                     price: {
                       id: priceId,
-                      ...(source === "inline expanded" ? { product } : {}),
+                      ...(source === "inline expanded" ||
+                      source === "inline deleted"
+                        ? { product: inlineProduct }
+                        : {}),
                     },
                   }),
               period: {
@@ -180,7 +216,12 @@ describe("Stripe billing purpose isolation", () => {
         },
       };
       for (let replay = 0; replay < 2; replay++) {
-        await webhook.postStripeEvent(event("invoice.paid", invoice), [200]);
+        await webhook.postStripeEvent(
+          event("invoice.paid", invoice),
+          source === "transient Price" || source === "invalid fetched Price"
+            ? [500]
+            : [200],
+        );
       }
       await expect(billing.readBillingStatus(actor)).resolves.toStrictEqual(
         before,
@@ -202,6 +243,11 @@ describe("Stripe billing purpose isolation", () => {
     "price binding",
     "unmarked price",
     "Product metadata",
+    "missing Price",
+    "missing Product",
+    "transient Price",
+    "credit purchase header",
+    "auto recharge header",
   ])(
     "grants only Plan and concurrency benefits from a mixed invoice using %s",
     async (identity) => {
@@ -221,6 +267,37 @@ describe("Stripe billing purpose isolation", () => {
             },
           });
         });
+      }
+      if (
+        identity === "missing Price" ||
+        identity === "missing Product" ||
+        identity === "transient Price"
+      ) {
+        const missing = Object.assign(
+          new Error("Referenced Stripe resource is unavailable"),
+          { code: "resource_missing" },
+        );
+        context.mocks.stripe.prices.retrieve.mockImplementation((id) => {
+          if (id === retiredPrice && identity !== "missing Product") {
+            return Promise.reject(
+              identity === "transient Price"
+                ? new Error("Stripe temporarily unavailable")
+                : missing,
+            );
+          }
+          return Promise.resolve({
+            id,
+            product:
+              id === retiredPrice
+                ? "prod_missing_archive"
+                : {
+                    id: `prod_${String(id)}`,
+                    name: "Live product",
+                    metadata: {},
+                  },
+          });
+        });
+        context.mocks.stripe.products.retrieve.mockRejectedValue(missing);
       }
       const subscription = {
         id: plan.subscriptionId,
@@ -256,9 +333,20 @@ describe("Stripe billing purpose isolation", () => {
         id: `in_mixed_${randomUUID()}`,
         customer: plan.customerId,
         amount_paid: 0,
+        subtotal: 900_000,
         metadata:
-          identity === "price binding"
-            ? { allowancePriceId: retiredPrice }
+          identity === "price binding" ||
+          identity === "credit purchase header" ||
+          identity === "auto recharge header"
+            ? {
+                allowancePriceId: retiredPrice,
+                orgId: actor.orgId,
+                ...(identity === "credit purchase header"
+                  ? { type: "credit_purchase" }
+                  : identity === "auto recharge header"
+                    ? { type: "auto_recharge", creditsAmount: "900000" }
+                    : {}),
+              }
             : {},
         parent: {
           subscription_details: {
@@ -295,6 +383,13 @@ describe("Stripe billing purpose isolation", () => {
           ],
         },
       };
+      if (identity === "transient Price") {
+        await webhook.postStripeEvent(event("invoice.paid", invoice), [500]);
+        await expect(billing.readBillingStatus(actor)).resolves.toStrictEqual(
+          before,
+        );
+        return;
+      }
       for (let replay = 0; replay < 2; replay++) {
         await webhook.postStripeEvent(event("invoice.paid", invoice), [200]);
       }

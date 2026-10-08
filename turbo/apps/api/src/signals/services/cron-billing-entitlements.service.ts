@@ -63,7 +63,10 @@ import {
 } from "./webhooks-stripe.service";
 import type { Tx } from "../../lib/db-types";
 import { concurrencySubscriptionUpdatedAt } from "./concurrency-subscription-write";
-import { isArchivedUsageAllowanceMetadata } from "./archived-allowance";
+import {
+  archivedSubscriptionHasSurvivingComponents,
+  archivedSubscriptionHasSurvivingPlan,
+} from "./archived-allowance";
 
 const L = logger("CronBillingEntitlements");
 const PAID_TIERS = ["pro", "team", "custom"] as const;
@@ -227,7 +230,7 @@ function stripeSubscriptionLooksBillingRelated(
   subscription: StripeSubscription,
 ): boolean {
   return (
-    !isArchivedUsageAllowanceMetadata(subscription.metadata) &&
+    archivedSubscriptionHasSurvivingComponents(subscription) &&
     (Boolean(subscription.metadata?.orgId) ||
       knownBillingPlanPriceItem(subscription.items.data) !== undefined)
   );
@@ -887,7 +890,7 @@ async function reconcileBillingCandidate(
   )) as SubscriptionInput;
   signal.throwIfAborted();
 
-  if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
+  if (!archivedSubscriptionHasSurvivingPlan(subscription)) {
     return [];
   }
   const stripePeriodEnd = subscriptionPeriodEnd(subscription);
@@ -1055,9 +1058,7 @@ async function reconcileConcurrencyCandidate(
   );
   signal.throwIfAborted();
 
-  if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
-    return [];
-  }
+  // This candidate is already bound to a genuine live concurrency component.
   const item = concurrencySubscriptionItem(subscription);
   const periodEnd = concurrencySubscriptionPeriodEnd(subscription);
   const slots = concurrencySubscriptionSlots(subscription);

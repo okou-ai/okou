@@ -18,7 +18,13 @@ import {
   type StripeSubscription,
 } from "../external/stripe-client";
 import { settle } from "../utils";
-import { isArchivedUsageAllowanceMetadata } from "./archived-allowance";
+import {
+  archivedSubscriptionHasSurvivingComponents,
+  isArchivedUsageAllowanceMetadata,
+  isExcludedStripeBillingPrice,
+  survivingStripeBillingInvoiceLines,
+} from "./archived-allowance";
+import { isConcurrencyPriceId } from "./org-concurrency-entitlements.service";
 
 const ORG_DELETE_ORG_METADATA_KEY = "vm0_org_delete_org_id";
 const ORG_DELETE_AT_METADATA_KEY = "vm0_org_delete_at";
@@ -150,9 +156,41 @@ async function loadOrgSubscriptions(
       subscriptions.set(subscription.id, subscription);
     }
   }
-  return [...subscriptions.values()].filter((subscription) => {
+  const live: StripeSubscription[] = [];
+  for (const subscription of subscriptions.values()) {
+    if (await subscriptionHasLiveBillingItems(stripe, subscription, signal)) {
+      live.push(subscription);
+    }
+  }
+  return live;
+}
+
+async function subscriptionHasLiveBillingItems(
+  stripe: StripeClient,
+  subscription: StripeSubscription,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (!archivedSubscriptionHasSurvivingComponents(subscription)) {
+    return false;
+  }
+  if (subscription.items.data.length === 0) {
     return !isArchivedUsageAllowanceMetadata(subscription.metadata);
-  });
+  }
+  for (const item of subscription.items.data) {
+    if (subscription.metadata?.allowancePriceId === item.price.id) {
+      continue;
+    }
+    if (
+      isArchivedUsageAllowanceMetadata(subscription.metadata) &&
+      !isConcurrencyPriceId(item.price.id)
+    ) {
+      continue;
+    }
+    if (!(await isExcludedStripeBillingPrice(item.price, signal, stripe))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function markedDeletionTimestamp(
@@ -568,6 +606,7 @@ async function refundSubscriptionProration(
   args: {
     readonly orgId: string;
     readonly subscriptionId: string;
+    readonly subscriptionMetadata: StripeSubscription["metadata"];
     readonly deletionTimestamp: number;
   },
   signal: AbortSignal,
@@ -579,7 +618,21 @@ async function refundSubscriptionProration(
   );
   const prorations: InvoiceProration[] = [];
   for (const invoice of invoices) {
-    const lines = await listCompleteInvoiceLines(stripe, invoice, signal);
+    const completeLines = await listCompleteInvoiceLines(
+      stripe,
+      invoice,
+      signal,
+    );
+    const lines = await survivingStripeBillingInvoiceLines(
+      completeLines,
+      [
+        invoice.metadata,
+        invoice.parent?.subscription_details?.metadata,
+        args.subscriptionMetadata,
+      ],
+      signal,
+      stripe,
+    );
     prorations.push({
       invoice,
       amount: proratedInvoiceAdjustment(invoice, lines, args.deletionTimestamp),
@@ -633,6 +686,7 @@ async function cancelAndRefundSubscription(
     {
       orgId: args.orgId,
       subscriptionId: args.subscription.id,
+      subscriptionMetadata: args.subscription.metadata,
       deletionTimestamp,
     },
     signal,

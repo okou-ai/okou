@@ -8,7 +8,7 @@ import { getStripeClient } from "../external/stripe-client";
 import { nowDate } from "../../lib/time";
 import { logger } from "../../lib/log";
 import { knownBillingPlanPriceItem } from "./billing-checkout.service";
-import { isArchivedUsageAllowanceMetadata } from "./archived-allowance";
+import { archivedSubscriptionHasSurvivingPlan } from "./archived-allowance";
 
 const L = logger("OrgBillingPeriod");
 
@@ -108,7 +108,7 @@ export const getOrgBillingPeriod$ = command(
         orgRow.stripeSubscriptionId,
       );
       signal.throwIfAborted();
-      if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
+      if (!archivedSubscriptionHasSurvivingPlan(subscription)) {
         return null;
       }
       const itemPeriodEnd = knownBillingPlanPriceItem(

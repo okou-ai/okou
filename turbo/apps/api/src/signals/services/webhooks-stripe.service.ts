@@ -106,8 +106,10 @@ import {
 
 import { concurrencySubscriptionUpdatedAt } from "./concurrency-subscription-write";
 import {
+  archivedSubscriptionHasSurvivingComponents,
+  archivedSubscriptionHasSurvivingPlan,
   isArchivedUsageAllowanceMetadata,
-  isArchivedUsageAllowancePrice,
+  survivingStripeBillingInvoiceLines,
 } from "./archived-allowance";
 
 const L = logger("WebhookStripe");
@@ -231,6 +233,7 @@ interface SubscriptionInput {
 interface SubscriptionDeletedInput {
   readonly id: string;
   readonly metadata?: Record<string, string> | null;
+  readonly items?: SubscriptionInput["items"];
 }
 
 interface SubscriptionPreviousAttributes {
@@ -635,13 +638,6 @@ function invoiceAtomGrantLine(invoice: InvoiceInput): InvoiceLineInput | null {
   );
 }
 
-function invoiceMergedMetadata(invoice: InvoiceInput): Record<string, string> {
-  return {
-    ...invoice.parent?.subscription_details?.metadata,
-    ...invoice.metadata,
-  };
-}
-
 function isArchivedUsageAllowanceInvoice(invoice: InvoiceInput): boolean {
   return (
     isArchivedUsageAllowanceMetadata(invoice.metadata) ||
@@ -655,39 +651,57 @@ async function invoiceWithoutArchivedAllowanceLines(
   invoice: InvoiceInput,
   signal: AbortSignal,
 ): Promise<InvoiceInput | null> {
-  if (isArchivedUsageAllowanceInvoice(invoice)) {
-    return null;
-  }
-  const allowancePriceId = invoiceMergedMetadata(invoice).allowancePriceId;
-  const lines: InvoiceLineInput[] = [];
-  for (const line of invoice.lines.data) {
-    const priceId = invoiceLinePriceId(line);
-    if (
-      isArchivedUsageAllowanceMetadata(line.metadata) ||
-      (allowancePriceId && priceId === allowancePriceId)
-    ) {
-      continue;
-    }
-    const modernPrice = line.pricing?.price_details?.price;
-    const expandedModernPrice =
-      modernPrice && typeof modernPrice !== "string" ? modernPrice : null;
-    const product =
-      line.price?.product ??
-      expandedModernPrice?.product ??
-      line.pricing?.price_details?.product;
-    if (
-      priceId &&
-      (await isArchivedUsageAllowancePrice({ id: priceId, product }, signal))
-    ) {
-      continue;
-    }
-    lines.push(line);
-  }
+  const archivalHeader = isArchivedUsageAllowanceInvoice(invoice);
+  const lines = await survivingStripeBillingInvoiceLines(
+    invoice.lines.data,
+    [invoice.metadata, invoice.parent?.subscription_details?.metadata],
+    signal,
+  );
   // Do not allow invoice-level grant metadata to resurrect an excluded line.
-  if (invoice.lines.data.length > 0 && lines.length === 0) {
+  if ((archivalHeader || invoice.lines.data.length > 0) && lines.length === 0) {
     return null;
   }
-  return { ...invoice, lines: { ...invoice.lines, data: lines } };
+  return {
+    ...invoice,
+    metadata: survivingInvoiceGrantMetadata(invoice, lines),
+    lines: { ...invoice.lines, data: lines },
+  };
+}
+
+function survivingInvoiceGrantMetadata(
+  invoice: InvoiceInput,
+  lines: readonly InvoiceLineInput[],
+): Record<string, string> | null {
+  if (
+    !isArchivedUsageAllowanceInvoice(invoice) &&
+    lines.length === invoice.lines.data.length
+  ) {
+    return invoice.metadata;
+  }
+  const metadata = { ...invoice.metadata };
+  // Header-only credit amounts/subtotals are not attributable to the surviving components.
+  if (
+    metadata.type === "auto_recharge" ||
+    metadata.type === "credit_purchase"
+  ) {
+    delete metadata.type;
+  }
+  if (metadata.purpose === "credit_purchase") {
+    delete metadata.purpose;
+  }
+  if (
+    !lines.some((line) => {
+      return invoiceLinePriceId(line) === atomGrantPriceId();
+    })
+  ) {
+    if (metadata.type === ATOM_GRANT_PURPOSE) {
+      delete metadata.type;
+    }
+    if (metadata.purpose === ATOM_GRANT_PURPOSE) {
+      delete metadata.purpose;
+    }
+  }
+  return metadata;
 }
 
 function isAtomGrantInvoice(invoice: InvoiceInput): boolean {
@@ -1049,9 +1063,7 @@ function shouldHandleStripeBillingEvent(event: StripeWebhookEvent): boolean {
   if (metadataCandidates === null) {
     return true;
   }
-  if (metadataCandidates.some(isArchivedUsageAllowanceMetadata)) {
-    return false;
-  }
+  // Archival identity is isolated by billing component, not by whole event.
   return metadataCandidates.some((metadata) => {
     return isCurrentStripePreviewMetadata(metadata);
   });
@@ -2780,6 +2792,9 @@ async function bindSubscriptionToCustomerOrg(
   db: Db,
   args: BindSubscriptionToCustomerOrgArgs,
 ): Promise<readonly string[]> {
+  if (!archivedSubscriptionHasSurvivingPlan(args.subscription)) {
+    return [];
+  }
   if (
     args.source === "customer.subscription.created" &&
     !(await bindStripeCustomerFromMetadata(db, args.getClerk, {
@@ -2790,9 +2805,6 @@ async function bindSubscriptionToCustomerOrg(
     return [];
   }
 
-  if (isArchivedUsageAllowanceMetadata(args.subscription.metadata)) {
-    return [];
-  }
   const planItem = knownBillingPlanPriceItem(args.subscription.items.data);
   const tier = planItem ? tierForKnownPlanPrice(planItem.price) : null;
   if (!planItem || !tier) {
@@ -2841,7 +2853,7 @@ async function bindSubscriptionToCustomerOrg(
 }
 
 function tierFromSubscription(subscription: StripeSubscription) {
-  if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
+  if (!archivedSubscriptionHasSurvivingPlan(subscription)) {
     return null;
   }
   const planItem = knownBillingPlanPriceItem(subscription.items.data);
@@ -3110,7 +3122,7 @@ async function subscriptionInvoiceDetails(
 ): Promise<SubscriptionInvoiceDetails | null> {
   const stripe = getStripeClient();
   const subscription = await stripe.subscriptions.retrieve(args.subscriptionId);
-  if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
+  if (!archivedSubscriptionHasSurvivingPlan(subscription)) {
     return null;
   }
   const planItem = knownBillingPlanPriceItem(subscription.items.data);
@@ -3933,6 +3945,9 @@ const handleSubscriptionUpdatedLegacy$ = command(
       subscription,
     );
     signal.throwIfAborted();
+    if (!archivedSubscriptionHasSurvivingPlan(subscription)) {
+      return concurrencyOrgIds;
+    }
     const scheduledEnd = await subscriptionScheduledEnd(
       getStripeClient(),
       subscription,
@@ -3968,10 +3983,15 @@ const handleSubscriptionUpdated$ = command(
     previousAttributes: SubscriptionPreviousAttributes | undefined,
     signal: AbortSignal,
   ): Promise<readonly string[]> => {
-    if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
+    if (!archivedSubscriptionHasSurvivingComponents(subscription)) {
       return [];
     }
     const db = set(writeDb$);
+    if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
+      const orgIds = await set(publishConcurrencySubscription$, subscription);
+      signal.throwIfAborted();
+      return orgIds;
+    }
     const migrationOutcome = await set(
       handleUsagePackMigrationSubscriptionUpdated$,
       subscription,
@@ -4091,6 +4111,11 @@ async function handleSubscriptionDeletedLegacy(
     )
     .returning({ orgId: orgConcurrencySubscriptions.orgId });
 
+  if (!archivedSubscriptionHasSurvivingPlan(subscription)) {
+    return concurrencyRows.map((row) => {
+      return row.orgId;
+    });
+  }
   const planRows = await db.transaction(async (tx) => {
     const downgraded = await writeOrgMetadataWithPlanEntitlements(tx, {
       writeOrgMetadata: async (writeTx) => {
@@ -4175,8 +4200,9 @@ async function handleSubscriptionDeleted(
   db: Db,
   subscription: SubscriptionDeletedInput,
 ): Promise<readonly string[]> {
+  // Existing concurrency bindings, not an Allowance/Plan price overlap, own archive-root deletion.
   if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
-    return [];
+    return await handleSubscriptionDeletedLegacy(db, subscription);
   }
   const usagePackOutcome = await handleUsagePackSubscriptionDeleted(
     db,
@@ -4260,7 +4286,7 @@ export const reconcileStripeSubscriptionSnapshot$ = command(
     subscription: StripeSubscription,
     signal: AbortSignal,
   ): Promise<StripeSubscriptionSnapshotReconciliation> => {
-    if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
+    if (!archivedSubscriptionHasSurvivingComponents(subscription)) {
       return { orgIds: [], downgradedOrgIds: [], paidInvoiceId: null };
     }
     const db = set(writeDb$);
@@ -4272,10 +4298,9 @@ export const reconcileStripeSubscriptionSnapshot$ = command(
       subscription.status === "ended" ||
       subscription.status === "incomplete_expired";
     if (terminal) {
-      const downgradedOrgId = await paidPlanOrgIdForSubscription(
-        db,
-        subscription.id,
-      );
+      const downgradedOrgId = archivedSubscriptionHasSurvivingPlan(subscription)
+        ? await paidPlanOrgIdForSubscription(db, subscription.id)
+        : null;
       signal.throwIfAborted();
       const orgIds = await handleSubscriptionDeleted(db, subscription);
       signal.throwIfAborted();

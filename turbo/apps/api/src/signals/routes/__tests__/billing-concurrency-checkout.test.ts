@@ -69,6 +69,191 @@ describe("POST /api/billing/concurrency-checkout", () => {
     };
   }
 
+  async function postArchivedSharedEvent(
+    type: string,
+    object: Readonly<Record<string, unknown>>,
+  ) {
+    const event = { type, data: { object } };
+    context.mocks.stripe.webhooks.constructEvent.mockReturnValueOnce(event);
+    await accept(
+      setupApp({ context, routes: webhooksStripeRoutes })(
+        webhookStripeContract,
+      ).post({
+        body: JSON.stringify(event),
+        extraHeaders: { "stripe-signature": "t=1,v1=checkout-test" },
+      }),
+      [200],
+    );
+  }
+
+  async function createArchivedSharedConcurrency(fixture: {
+    readonly customerId: string;
+    readonly orgId: string;
+  }) {
+    const periodEnd = Math.floor(
+      new Date("2099-05-20T00:00:00Z").getTime() / 1000,
+    );
+    const metadata = {
+      type: "usage_allowance",
+      purpose: "usage_allowance",
+      source: "atom_usage_allowance",
+      orgId: fixture.orgId,
+    };
+    const subscription = {
+      id: `sub_shared_archive_${randomUUID()}`,
+      customer: fixture.customerId,
+      status: "active",
+      metadata,
+      cancel_at_period_end: false,
+      schedule: null,
+      items: {
+        data: [
+          { price: { id: TEST_PRICE_USAGE_ALLOWANCE }, quantity: 1 },
+          {
+            price: { id: TEST_PRICE_CONCURRENCY },
+            quantity: 3,
+            current_period_end: periodEnd,
+          },
+        ],
+      },
+    };
+    context.mocks.stripe.customers.retrieve.mockResolvedValue({
+      id: fixture.customerId,
+      metadata: { orgId: fixture.orgId },
+    });
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(subscription);
+    const invoice = {
+      id: `in_shared_archive_${randomUUID()}`,
+      customer: fixture.customerId,
+      amount_paid: 0,
+      metadata,
+      parent: {
+        subscription_details: { subscription: subscription.id, metadata },
+      },
+      lines: {
+        has_more: false,
+        data: [
+          {
+            price: { id: TEST_PRICE_USAGE_ALLOWANCE },
+            quantity: 1,
+            period: { start: currentSecond(), end: periodEnd },
+            parent: { type: "subscription_item_details" },
+          },
+          {
+            price: { id: TEST_PRICE_CONCURRENCY },
+            quantity: 3,
+            period: { start: currentSecond(), end: periodEnd },
+            parent: { type: "subscription_item_details" },
+          },
+        ],
+      },
+    };
+    await postArchivedSharedEvent("invoice.paid", invoice);
+    return { subscription, invoice, periodEnd };
+  }
+
+  it("activates and renews genuine concurrency on an archived shared subscription without changing the Custom plan", async () => {
+    const owned = createOwnedBillingOrg({ foreverCustom: true });
+    await owned.run(async () => {
+      await owned.initialize();
+      const before = await readBillingStatus(owned);
+      const { subscription, invoice, periodEnd } =
+        await createArchivedSharedConcurrency(owned);
+      const active = await readBillingStatus(owned);
+      expect(active.tier).toBe("custom");
+      expect(active.credits).toBe(before.credits);
+      expect(active.concurrencySubscriptions).toStrictEqual([
+        expect.objectContaining({
+          id: subscription.id,
+          quantity: 3,
+          currentPeriodEnd: new Date(periodEnd * 1000).toISOString(),
+        }),
+      ]);
+      const renewedEnd = periodEnd + 30 * 86_400;
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+        ...subscription,
+        items: {
+          data: [
+            subscription.items.data[0],
+            { ...subscription.items.data[1], current_period_end: renewedEnd },
+          ],
+        },
+      });
+      const renewed = {
+        ...invoice,
+        id: `in_shared_renewal_${randomUUID()}`,
+        lines: {
+          data: invoice.lines.data.map((line) => {
+            return {
+              ...line,
+              period: { start: periodEnd, end: renewedEnd },
+            };
+          }),
+        },
+      };
+      await postArchivedSharedEvent("invoice.paid", renewed);
+      const after = await readBillingStatus(owned);
+      expect(after.credits).toBe(before.credits);
+      expect(after.concurrencySubscriptions[0]?.currentPeriodEnd).toBe(
+        new Date(renewedEnd * 1000).toISOString(),
+      );
+    });
+  });
+
+  it("updates genuine concurrency from an archive-root shared event without changing the Custom plan", async () => {
+    const owned = createOwnedBillingOrg({ foreverCustom: true });
+    await owned.run(async () => {
+      await owned.initialize();
+      const before = await readBillingStatus(owned);
+      const { subscription, periodEnd } =
+        await createArchivedSharedConcurrency(owned);
+      const updated = {
+        ...subscription,
+        status: "past_due",
+        cancel_at_period_end: true,
+        items: {
+          data: [
+            subscription.items.data[0],
+            { ...subscription.items.data[1], quantity: 5 },
+          ],
+        },
+      };
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(updated);
+      await postArchivedSharedEvent("customer.subscription.updated", updated);
+      const after = await readBillingStatus(owned);
+      expect(after.tier).toBe(before.tier);
+      expect(after.credits).toBe(before.credits);
+      expect(after.subscriptionStatus).toBe(before.subscriptionStatus);
+      expect(after.concurrencySubscriptions[0]).toStrictEqual(
+        expect.objectContaining({
+          id: subscription.id,
+          quantity: 5,
+          cancelAtPeriodEnd: true,
+          currentPeriodEnd: new Date(periodEnd * 1000).toISOString(),
+        }),
+      );
+    });
+  });
+
+  it("ends genuine shared concurrency from a thin archived deletion without ending the Custom plan", async () => {
+    const owned = createOwnedBillingOrg({ foreverCustom: true });
+    await owned.run(async () => {
+      await owned.initialize();
+      const before = await readBillingStatus(owned);
+      const { subscription } = await createArchivedSharedConcurrency(owned);
+      await postArchivedSharedEvent("customer.subscription.deleted", {
+        id: subscription.id,
+        metadata: subscription.metadata,
+      });
+      const after = await readBillingStatus(owned);
+      expect(after.tier).toBe(before.tier);
+      expect(after.credits).toBe(before.credits);
+      expect(after.subscriptionStatus).toBe(before.subscriptionStatus);
+      expect(after.hasSubscription).toBeFalsy();
+      expect(after.concurrencySubscriptions).toStrictEqual([]);
+    });
+  });
+
   it("requires an active Plan subscription for a concurrency purchase", async () => {
     const fixture = await createUsagePackAtomGrantOrg("team");
     await fixture.run(async () => {
