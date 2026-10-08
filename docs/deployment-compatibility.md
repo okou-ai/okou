@@ -21,6 +21,42 @@ server-side signing-key ownership are unchanged.
 No database migration, client version floor, feature switch or deployment-order
 fallback is required. This change does not deploy or verify production recovery.
 
+## Pi memory Luna routing (2026-10-08)
+
+New Stage 1 extractions and Phase 2 maintenance runs use `gpt-6-luna`.
+Both select the memory owner's current active, connected Codex account that
+does not require reconnect; otherwise they use the managed OpenRouter key and
+`openai/gpt-6-luna`. Source Runs remain evidence and ownership references,
+without selecting the current credential or payer. Once selected, refresh,
+quota, provider and validation failures retain the existing error/retry paths;
+an attempt does not switch to another credential route after failure.
+
+Migration `1347_pi_memory_luna_route` restores the internal OpenRouter Luna
+catalog route removed by 1326, with the existing Luna pricing identity,
+272001-token long-context threshold and xhigh catalog ceiling. Deploy it before
+the new API. Maintenance explicitly requests low for Stage 1 and medium for
+Phase 2, independently of foreground defaults. The existing OpenRouter
+Responses/Chat Completions firewall, credentials and Runner accounting apply.
+This change does not activate the Chat Completions feature switch or change
+foreground Auto selection.
+
+Old API with the expanded catalog still selects DeepSeek for Built-in memory.
+New API with a compatible existing Runner dispatches the existing Pi launch
+shape with Luna and preserves the claim capability gates. Both old and new
+CLI artifacts already resolve personal/OpenRouter Luna and historical DeepSeek.
+API/CLI deployment order does not rewrite captured Runs or queued launch
+contexts. In-flight Stage 1 API invocations keep their resolved request.
+Historical DeepSeek and GPT-5.6 Luna maintenance models remain recognizable to
+cleanup and settlement, and the DeepSeek route and all prices remain intact.
+Rolling back the API restores its previous selection policy. No stored Run,
+candidate, session, checkpoint or usage row is rewritten.
+
+DeepSeek is never selected by the new memory admission code. Remove its
+retained catalog route/runtime support only after older API writers and all
+captured DeepSeek maintenance Runs have drained, late proxy/callback usage has
+settled, and supported rollback versions no longer select or execute it.
+Historical model recognition and pricing remain required for retained usage.
+
 ## Maps oversized-response error (issue #36791)
 
 `POST /api/maps/search` continues to return HTTP 502 when the Google Maps
@@ -291,7 +327,7 @@ serving/rollback drain. See [the full contract](desktop-session-auth.md).
 
 ## Connector catalog payload-independent API (preparatory release)
 
-Migration `1347_connector_catalog_payload_independent_api` keeps the physical
+Migration `1348_connector_catalog_payload_independent_api` keeps the physical
 `connector_catalog_entries.payload` column but drops its NOT NULL constraint.
 The ten required projections become NOT NULL; `mcp` remains nullable for
 non-MCP connectors. The migration performs no backfill, summary recomputation,
@@ -308,7 +344,7 @@ schema equivalence; it must not be imported by API queries.
 outgoing #37900-or-later dual writer supplies every required projection, so it
 can continue reading and writing while the column is retained. A payload-only
 writer cannot insert after the constraint change and must already be excluded
-from serving. The new API needs migration 1347 before writing without payload;
+from serving. The new API needs migration 1348 before writing without payload;
 its readers accept projected rows regardless of whether payload is populated.
 App/CLI/Runner responses and current/captured generation lookup are unchanged.
 Entry preparation receipts, same-hash retries, skill registration and
@@ -316,7 +352,7 @@ complete-generation pointer publication retain their existing ownership/order.
 Permission-summary derivation is unchanged.
 
 **Rollback floor.** The resolver loaded from main resolves the first-parent
-commit introducing migration 1347 and requires every target to contain it,
+commit introducing migration 1348 and requires every target to contain it,
 failing closed on missing/invalid history before artifact or host access. This
 excludes payload-dependent API versions without pinning a branch-only SHA.
 Merging this preparation advances the official rollback floor; until a release

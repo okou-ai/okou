@@ -15,6 +15,10 @@ import { eq } from "drizzle-orm";
 import type { Db } from "../external/db";
 import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
 import { resolvePiMemoryBuiltinRoute } from "./pi-memory-builtin-config";
+import {
+  selectPiMemoryCurrentCredential,
+  type PiMemoryCurrentCredential,
+} from "./pi-memory-current-credential.service";
 import { piOpenRouterChatCompletionsEnabled } from "./pi-sandbox-config";
 import {
   featureSwitchContextFromRows,
@@ -36,14 +40,12 @@ import {
 export type PiMemoryStage1CredentialSkip =
   | "source_missing"
   | "source_owner_mismatch"
-  | "source_binding_invalid"
-  | "source_scope_mismatch"
   | "credential_unavailable"
   | "provider_model_unsupported";
 
 export class PiMemoryStage1CredentialError extends Error {
   constructor(readonly errorClass: PiMemoryStage1CredentialSkip) {
-    super("Pi memory Stage 1 source credential unavailable");
+    super("Pi memory Stage 1 credential unavailable");
     this.name = "PiMemoryStage1CredentialError";
   }
 }
@@ -51,7 +53,7 @@ export class PiMemoryStage1CredentialError extends Error {
 export class PiMemoryStage1CredentialRefreshError extends Error {
   readonly errorClass = "credential_refresh_failed";
   constructor() {
-    super("Pi memory Stage 1 source credential refresh failed");
+    super("Pi memory Stage 1 credential refresh failed");
     this.name = "PiMemoryStage1CredentialRefreshError";
   }
 }
@@ -93,9 +95,6 @@ async function sourceBinding(db: Db, source: SourceIdentity) {
     .select({
       orgId: agentRuns.orgId,
       userId: agentRuns.userId,
-      type: agentRuns.modelProvider,
-      id: agentRuns.modelProviderId,
-      scope: agentRuns.modelProviderCredentialScope,
     })
     .from(agentRuns)
     .where(eq(agentRuns.id, source.sourceRunId))
@@ -106,9 +105,8 @@ async function sourceBinding(db: Db, source: SourceIdentity) {
 interface ResolutionContext {
   readonly db: Db;
   readonly source: SourceIdentity;
-  readonly binding: NonNullable<Awaited<ReturnType<typeof sourceBinding>>> & {
-    readonly type: string;
-  };
+  readonly binding: NonNullable<Awaited<ReturnType<typeof sourceBinding>>>;
+  readonly selected: PiMemoryCurrentCredential;
   readonly context: Awaited<ReturnType<typeof featureSwitchContextFromRows>>;
   readonly catalog: ModelCatalog;
 }
@@ -174,7 +172,7 @@ function availableCredential(
     status: "available",
     model,
     selectedModel: selection.selectedModel,
-    modelProviderType: binding.type,
+    modelProviderType: args.selected.type,
     longContextMinTotalInputTokens: selection.longContextMinTotalInputTokens,
     quota,
     billing: {
@@ -189,7 +187,7 @@ function availableCredential(
         throw new PiMemoryStage1CredentialError("source_missing");
       }
       if (JSON.stringify(current) !== JSON.stringify(binding)) {
-        throw new PiMemoryStage1CredentialError("source_binding_invalid");
+        throw new PiMemoryStage1CredentialError("source_owner_mismatch");
       }
       if (!(await validateCredential(validationSignal))) {
         throw new PiMemoryStage1CredentialError("credential_unavailable");
@@ -202,16 +200,8 @@ async function builtinCredential(
   args: ResolutionContext,
   signal: AbortSignal,
 ): Promise<PiMemoryStage1CredentialResult> {
-  const { db, binding } = args;
-  // Model-first Chat pins use org scope; direct built-in launches leave it null.
-  if (
-    binding.id !== null ||
-    (binding.scope !== null && binding.scope !== "org")
-  ) {
-    return skip("source_binding_invalid");
-  }
-  // Maintenance has a fixed internal binding, independent of chat admission.
-  // Pricing still uses the held snapshot of the actual served route.
+  const { db } = args;
+  // Hold the fixed Luna binding independently of foreground model settings.
   const route = await resolvePiMemoryBuiltinRoute(db, signal);
   signal.throwIfAborted();
   if (route?.providerType !== "openrouter-codex") {
@@ -280,11 +270,11 @@ async function codexCredential(
   id: string,
   signal: AbortSignal,
 ): Promise<PiMemoryStage1CredentialResult> {
-  const { db, source, binding, context } = args;
+  const { db, source, context } = args;
   const accountArgs = { db, id, orgId: source.orgId, userId: source.userId };
   const account = await personalModelProviderAccountById(accountArgs);
   signal.throwIfAborted();
-  if (!account || account.type !== binding.type) {
+  if (!account || account.type !== "codex-oauth-token") {
     return skip("credential_unavailable");
   }
   const lookup = {
@@ -346,7 +336,7 @@ async function codexCredential(
       validationSignal.throwIfAborted();
       if (
         !current ||
-        current.type !== binding.type ||
+        current.type !== "codex-oauth-token" ||
         current.needsReconnect ||
         current.externalAccountId !== accountId
       ) {
@@ -372,7 +362,7 @@ async function codexCredential(
   );
 }
 
-/** Source identity is authority; defaults and foreground settings never participate. */
+/** Source ownership is authority; current owner credentials choose the route. */
 export async function resolvePiMemoryStage1Credential(
   catalogSnapshot: ModelCatalog,
   db: Db,
@@ -387,9 +377,6 @@ export async function resolvePiMemoryStage1Credential(
   if (binding.orgId !== source.orgId || binding.userId !== source.userId) {
     return skip("source_owner_mismatch");
   }
-  if (!binding.type) {
-    return skip("source_binding_invalid");
-  }
   const featureSwitchContextRows0 = await db
     .select({
       userId: userFeatureSwitches.userId,
@@ -403,30 +390,22 @@ export async function resolvePiMemoryStage1Credential(
     featureSwitchContextRows0,
   );
   signal.throwIfAborted();
-  const catalog = await catalogSnapshot;
+  const catalog = catalogSnapshot;
   signal.throwIfAborted();
   const args = {
     db,
     source,
-    binding: { ...binding, type: binding.type },
+    binding,
+    selected: await selectPiMemoryCurrentCredential(db, source),
     context,
     catalog,
   };
-  if (binding.type === "built-in") {
+  signal.throwIfAborted();
+  if (args.selected.type === "built-in") {
     return await builtinCredential(args, signal);
   }
-  if (!binding.id) {
-    return skip("source_binding_invalid");
+  if (!args.selected.id) {
+    return skip("credential_unavailable");
   }
-  if (binding.scope !== "member") {
-    return skip("source_scope_mismatch");
-  }
-  switch (binding.type) {
-    case "codex-oauth-token": {
-      return await codexCredential(args, binding.id, signal);
-    }
-    default: {
-      return skip("provider_model_unsupported");
-    }
-  }
+  return await codexCredential(args, args.selected.id, signal);
 }

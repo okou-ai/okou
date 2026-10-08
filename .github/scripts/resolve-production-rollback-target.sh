@@ -63,7 +63,7 @@ readonly CONNECTOR_CATALOG_RELEASE_2_PATH=turbo/packages/db/src/migrations/1334_
 readonly MODEL_ROUTE_STATE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1338_retire_model_route_state.sql
 readonly PI_STABLE_CONTEXT_RETIREMENT_PATH=turbo/packages/db/src/migrations/1343_retire_pi_stable_context.sql
 readonly PI_DEBUG_TRACE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1345_outstanding_the_hood.sql
-readonly CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_PATH=turbo/packages/db/src/migrations/1347_connector_catalog_payload_independent_api.sql
+readonly CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_PATH=turbo/packages/db/src/migrations/1348_connector_catalog_payload_independent_api.sql
 
 fail() {
   echo "::error::$*" >&2

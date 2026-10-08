@@ -37,7 +37,7 @@ const backfill = await readFile(
 );
 const preparation = await readFile(
   new URL(
-    "../src/migrations/1347_connector_catalog_payload_independent_api.sql",
+    "../src/migrations/1348_connector_catalog_payload_independent_api.sql",
     import.meta.url,
   ),
   "utf8",

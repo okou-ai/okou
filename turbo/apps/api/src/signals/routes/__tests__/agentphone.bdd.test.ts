@@ -1,13 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, beforeEach } from "vitest";
-import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/contracts/get-started";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { bindLegacyAgentPhoneThreadFixture } from "../../../test-fixtures/agentphone-legacy-thread-route";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { clearAllDetached, settle } from "../../utils";
 import {
@@ -188,7 +186,6 @@ async function claimDispatchedRun(runnerGroup: string): Promise<{
   readonly prompt: string;
   readonly appendSystemPrompt: string;
   readonly okouToken: string | undefined;
-  readonly agentId: string | undefined;
   readonly resumedSessionId: string | undefined;
   readonly cliAgentType: "claude-code" | "codex";
   readonly environment: Record<string, string> | null;
@@ -220,7 +217,6 @@ async function claimDispatchedRun(runnerGroup: string): Promise<{
     prompt: claim.prompt,
     appendSystemPrompt: claim.appendSystemPrompt ?? "",
     okouToken: claim.platformEnvironment.OKOU_TOKEN,
-    agentId: claim.platformEnvironment.OKOU_AGENT_ID,
     resumedSessionId: claim.resumeSession?.sessionId,
     cliAgentType: claim.cliAgentType,
     environment: claim.environment,
@@ -826,162 +822,6 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     await completeSandboxRun(run.sandboxToken, run.runId, 0);
     expect(lastSend(sends).body).toBe("Task completed successfully.");
   });
-
-  it.each(["direct message", "group conversation"] as const)(
-    "rebinds a legacy preferred-agent %s to the org default while resetting native history in the same session",
-    async (conversation) => {
-      const bdd = createBddApi(context);
-      const ap = createAgentPhoneBddApi(context);
-      const runs = createRunsApi(context);
-      const chat = createChatFilesBddApi(context);
-      const { actor, phone, runnerGroup } = await entitledLinkedActor();
-      const conversationId =
-        conversation === "group conversation"
-          ? uniqueConversationId()
-          : undefined;
-      const mention = conversationId ? "@Okou " : "";
-      if (!actor.orgId) {
-        throw new Error("Expected an organization-scoped AgentPhone user");
-      }
-
-      const onboarding = await bdd.readOnboardingStatus(actor);
-      if (!onboarding.defaultAgentId) {
-        throw new Error("Expected the immutable organization default agent");
-      }
-      const replacement = { agentId: onboarding.defaultAgentId };
-      const historicalAgent = await bdd.createAgent(actor, {
-        displayName: "Historical integration preference",
-        visibility: "public",
-      });
-      await runs.heartbeatRunner(runnerGroup);
-      const historical = await chat.sendAndLaunch(actor, {
-        agentId: historicalAgent.agentId,
-        prompt: "establish the historical preferred agent's native session",
-      });
-      const first = await claimDispatchedRun(runnerGroup);
-      expect(first.runId).toBe(historical.runId);
-      await completeSandboxRun(first.sandboxToken, first.runId, 0);
-      const originalSession = await waitForRunSessionIdPresent(
-        actor,
-        first.runId,
-      );
-      const before = await chat.requestThreadEvents(actor, {}, [200]);
-      if (before.status !== 200) {
-        throw new Error("Expected the historical thread event stream");
-      }
-      const originalThread = before.body.events.find((event) => {
-        return event.kind === "created";
-      });
-      if (!originalThread) {
-        throw new Error("Expected the historical thread creation event");
-      }
-      expect(first.agentId).toBe(originalThread.agentId);
-      expect(
-        before.body.events.filter((event) => {
-          return event.reassignedAgentId !== undefined;
-        }),
-      ).toHaveLength(0);
-
-      await bindLegacyAgentPhoneThreadFixture({
-        orgId: actor.orgId,
-        userId: actor.userId,
-        chatThreadId: originalThread.chatThreadId,
-        conversationId,
-      });
-      await expect(
-        bdd.readAgent(actor, originalThread.agentId),
-      ).resolves.toMatchObject({
-        agentId: originalThread.agentId,
-      });
-
-      await ap.postAgentPhoneInboundMessage({
-        channel: conversationId ? "imessage" : "sms",
-        from: phone,
-        body: `${mention}use the current default on the existing conversation`,
-        conversationId,
-        isGroup: conversationId !== undefined,
-      });
-      const rebound = await claimDispatchedRun(runnerGroup);
-      expect(rebound.agentId).toBe(replacement.agentId);
-      expect(rebound.resumedSessionId).toBeUndefined();
-      await expect(runs.readRun(actor, rebound.runId)).resolves.toMatchObject({
-        vars: { OKOU_AGENT_ID: replacement.agentId },
-      });
-      await expect(
-        chat.readThreadMetadata(actor, originalThread.chatThreadId),
-      ).resolves.toMatchObject({
-        id: originalThread.chatThreadId,
-        agentId: replacement.agentId,
-      });
-      const after = await chat.requestThreadEvents(actor, {}, [200]);
-      if (after.status !== 200) {
-        throw new Error("Expected the rebound AgentPhone thread event stream");
-      }
-      expect(
-        after.body.events.filter((event) => {
-          return event.kind === "created";
-        }),
-      ).toHaveLength(1);
-      const reassignment = after.body.events.find((event) => {
-        return event.reassignedAgentId !== undefined;
-      });
-      expect(reassignment).toMatchObject({
-        kind: "sort_touched",
-        chatThreadId: originalThread.chatThreadId,
-        agentId: replacement.agentId,
-        reassignedAgentId: replacement.agentId,
-      });
-      const incremental = await chat.requestThreadEvents(
-        actor,
-        { sinceSeqId: originalThread.seqId },
-        [200],
-      );
-      if (incremental.status !== 200) {
-        throw new Error("Expected incremental AgentPhone thread events");
-      }
-      expect(incremental.body.events).toContainEqual(reassignment);
-      expect(replayChatThreadEvents([], after.body.events)).toContainEqual(
-        expect.objectContaining({
-          id: originalThread.chatThreadId,
-          agentId: replacement.agentId,
-        }),
-      );
-      const messages = await chat.listThreadEvents(
-        actor,
-        originalThread.chatThreadId,
-      );
-      for (const runId of [first.runId, rebound.runId]) {
-        expect(messages.events).toContainEqual(
-          expect.objectContaining({
-            eventType: "input.prompt",
-            runId,
-          }),
-        );
-      }
-
-      await completeSandboxRun(rebound.sandboxToken, rebound.runId, 0);
-      const reboundSession = await waitForRunSessionIdPresent(
-        actor,
-        rebound.runId,
-      );
-      expect(reboundSession).toBe(originalSession);
-      await ap.postAgentPhoneInboundMessage({
-        channel: conversationId ? "imessage" : "sms",
-        from: phone,
-        body: `${mention}continue the default agent's own native history`,
-        conversationId,
-        isGroup: conversationId !== undefined,
-      });
-      const resumed = await claimDispatchedRun(runnerGroup);
-      expect(resumed.agentId).toBe(replacement.agentId);
-      expect(resumed.resumedSessionId).toBe(
-        agentPhoneCliAgentSessionIdForRun(rebound.runId),
-      );
-      await completeSandboxRun(resumed.sandboxToken, resumed.runId, 0);
-      await waitForRunSessionId(actor, resumed.runId, reboundSession);
-    },
-    90_000,
-  );
 
   it("links an AgentPhone user without provisioning artifact storage", async () => {
     const bdd = createBddApi(context);

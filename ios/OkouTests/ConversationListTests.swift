@@ -5,6 +5,159 @@ import XCTest
 
 @MainActor
 final class ConversationListTests: XCTestCase {
+  func testReadingPositionUpdatesWhenMarkersAppearAfterScrollingSettles() async throws {
+    let anchor = ConversationScrollAnchor()
+    let model = LateMarkerProbeModel()
+    let host = UIHostingController(rootView: LateMarkerProbe(model: model, anchor: anchor))
+    let window = try await mount(host)
+    defer {
+      anchor.readingPositionDidChange = nil
+      anchor.cancel()
+      unmount(window)
+    }
+    let scroll = try XCTUnwrap(markers(in: host.view).first?.enclosingScrollView)
+    let initialBounds = scroll.bounds
+    let initialSize = scroll.contentSize
+    var reportedPosition = anchor.capture()
+    XCTAssertEqual(reportedPosition?.messageID, "1")
+    XCTAssertNil(anchor.preservedPosition)
+    anchor.readingPositionDidChange = { reportedPosition = $0 }
+    model.showsFirstMarker = true
+    try await eventually { reportedPosition?.messageID == "0" }
+    XCTAssertEqual(scroll.bounds, initialBounds)
+    XCTAssertEqual(scroll.contentSize, initialSize)
+    XCTAssertEqual(reportedPosition, anchor.capture())
+  }
+
+  func testReadingCaptureWaitsForMeasurementsMatchingTheNativeViewport() async throws {
+    let anchor = ConversationScrollAnchor()
+    let scroll = ConversationCollectionScroll()
+    let rows = (0..<6).map { index in
+      ConversationCollectionRow.message(
+        ChatMessage(
+          id: "viewport-\(index)", role: .user, text: "Message \(index)", createdAt: .distantPast,
+          runID: nil, isQueued: false, isError: false),
+        showsAvatar: false, topSpacing: 0, pendingRetry: nil, isSending: false)
+    }
+    let markdown = MessageMarkdownCache(
+      baseURL: try XCTUnwrap(URL(string: "https://app.example.invalid")))
+    let host = UIHostingController(
+      rootView: ConversationCollectionView(
+        rows: rows, markdown: markdown, anchor: anchor, scroll: scroll, followsBottom: false,
+        phaseChanged: { _ in }, metricsChanged: { _ in }, refresh: {}
+      ) { row, anchor in
+        if let message = row.message {
+          Text(message.text)
+            .frame(maxWidth: .infinity, minHeight: 180, maxHeight: 180)
+            .background {
+              if let anchor { ConversationRowAnchor(messageID: message.id, anchor: anchor) }
+            }
+        }
+      })
+    let window = try await mount(host)
+    defer { unmount(window) }
+    let collection = try XCTUnwrap(
+      markers(in: host.view).first?.enclosingScrollView as? UICollectionView)
+    XCTAssertNotNil(anchor.capture())
+    // Native bounds can update before the controller commits measured rows for
+    // the new width. That intermediate geometry must not become a saved reading.
+    let originalBounds = collection.bounds
+    collection.bounds.size.width = 520
+    XCTAssertNil(anchor.capture())
+    collection.bounds = originalBounds
+    window.frame.size.width = 520
+    host.view.setNeedsLayout()
+    host.view.layoutIfNeeded()
+    try await eventually { anchor.capture() != nil }
+    XCTAssertEqual(collection.bounds.width, 520)
+  }
+
+  func testConversationKeepsMeasuredSizesAcrossReusedMarkdownRows() async throws {
+    let fixture = ConversationHistoryFixture(count: 30)
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    await conversation.refresh()
+    while conversation.hasEarlierMessages { await conversation.loadEarlierMessages() }
+    conversation.rememberReadingPosition(
+      ConversationReadingPosition(
+        messageID: ConversationHistoryFixture.id(25), offset: -42))
+    let host = UIHostingController(rootView: ChatDetailView(conversation: conversation))
+    let window = try await mount(host)
+    defer { unmount(window) }
+    let scroll = try XCTUnwrap(markers(in: host.view).first?.enclosingScrollView)
+    XCTAssertTrue(scroll.accessibilityScroll(.up))
+    try await eventually {
+      conversation.readingPosition?.messageID != ConversationHistoryFixture.id(25)
+    }
+    await stableHostingGeometry(host.view)
+    let height = scroll.contentSize.height
+    var measured: [String: CGFloat] = [:]
+    let directions: [UIAccessibilityScrollDirection] = [
+      .up, .up, .up, .up, .down, .down, .down, .down, .up,
+    ]
+    for direction in directions {
+      let before = scroll.contentOffset.y
+      XCTAssertTrue(scroll.accessibilityScroll(direction))
+      try await eventually { abs(scroll.contentOffset.y - before) > 1 }
+      await stableHostingGeometry(host.view)
+      // Stable geometry can precede the scroll delegate's completion on a cold
+      // renderer. Wait for the saved reading position to match the viewport
+      // before starting another action or changing its width/font.
+      try await savedReadingPositionMatchesViewport(conversation, in: host.view)
+      XCTAssertEqual(scroll.contentSize.height, height, accuracy: 1)
+      for row in markers(in: host.view) where row.window != nil {
+        guard let cell = enclosingCell(row), cell.frame.intersects(scroll.bounds) else { continue }
+        if let previous = measured[row.messageID] {
+          XCTAssertEqual(cell.bounds.height, previous, accuracy: 1, row.messageID)
+        }
+        measured[row.messageID] = cell.bounds.height
+      }
+    }
+    XCTAssertGreaterThan(measured.count, 10)
+
+    let position = try XCTUnwrap(conversation.readingPosition)
+    let originalWidth = scroll.bounds.width
+    window.frame.size.width = 520
+    host.view.setNeedsLayout()
+    host.view.layoutIfNeeded()
+    try await eventually {
+      scroll.bounds.width != originalWidth && scroll.contentSize.height != height
+    }
+    await stableHostingGeometry(host.view)
+    try await eventually(
+      message: readingDescription(position.messageID, conversation: conversation, view: host.view)
+    ) {
+      abs((offset(of: position.messageID, in: host.view) ?? .infinity) - position.offset) < 1
+    }
+    XCTAssertEqual(
+      offset(of: position.messageID, in: host.view) ?? .infinity, position.offset, accuracy: 1)
+    let resizedHeight = scroll.contentSize.height
+    XCTAssertNotEqual(resizedHeight, height)
+    let before = scroll.contentOffset.y
+    XCTAssertTrue(scroll.accessibilityScroll(.up))
+    try await eventually { abs(scroll.contentOffset.y - before) > 1 }
+    await stableHostingGeometry(host.view)
+    try await savedReadingPositionMatchesViewport(conversation, in: host.view)
+    XCTAssertEqual(scroll.contentSize.height, resizedHeight, accuracy: 1)
+
+    let resizedPosition = try XCTUnwrap(conversation.readingPosition)
+    host.traitOverrides.preferredContentSizeCategory = .extraExtraExtraLarge
+    try await eventually { scroll.contentSize.height != resizedHeight }
+    await stableHostingGeometry(host.view)
+    try await eventually(
+      message: readingDescription(
+        resizedPosition.messageID, conversation: conversation, view: host.view)
+    ) {
+      abs(
+        (offset(of: resizedPosition.messageID, in: host.view) ?? .infinity) - resizedPosition.offset
+      )
+        < 1
+    }
+    XCTAssertEqual(
+      offset(of: resizedPosition.messageID, in: host.view) ?? .infinity,
+      resizedPosition.offset, accuracy: 1)
+  }
+
   func testNativeListPreservesPartialRowAcrossPrependAndHeightChanges() async throws {
     let model = ListProbeModel()
     let anchor = ConversationScrollAnchor()
@@ -110,6 +263,15 @@ final class ConversationListTests: XCTestCase {
       return scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.maxY
         <= 20
     }
+    let scroll = try XCTUnwrap(markers(in: reopened.view).first?.enclosingScrollView)
+    let viewportHeight = scroll.bounds.height
+    reopenedWindow.frame.size.height = 620
+    reopened.view.setNeedsLayout()
+    reopened.view.layoutIfNeeded()
+    try await eventually {
+      scroll.bounds.height < viewportHeight
+        && scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.maxY <= 20
+    }
     conversation.resetRenderWindowToLatest()
     XCTAssertEqual(
       conversation.visibleMessages.map(\.id),
@@ -119,6 +281,32 @@ final class ConversationListTests: XCTestCase {
       return y >= 0 && y < reopened.view.bounds.height
     }
   }
+}
+
+@MainActor
+private func savedReadingPositionMatchesViewport(_ conversation: ConversationStore, in view: UIView)
+  async throws
+{
+  try await eventually(
+    message: readingDescription(
+      conversation.readingPosition?.messageID ?? "<missing>", conversation: conversation, view: view
+    )
+  ) {
+    guard let saved = conversation.readingPosition,
+      let actual = offset(of: saved.messageID, in: view)
+    else { return false }
+    return abs(actual - saved.offset) < 1
+  }
+}
+
+@MainActor
+private func enclosingCell(_ view: UIView) -> UICollectionViewCell? {
+  var ancestor = view.superview
+  while let parent = ancestor {
+    if let cell = parent as? UICollectionViewCell { return cell }
+    ancestor = parent.superview
+  }
+  return nil
 }
 
 @MainActor
@@ -184,12 +372,37 @@ private func unmount(_ window: UIWindow) {
 
 @MainActor
 private func markers(in view: UIView) -> [ConversationRowMarker] {
-  (view as? ConversationRowMarker).map { [$0] } ?? view.subviews.flatMap { markers(in: $0) }
+  allMarkers(in: view).filter(isPresentedRow)
+}
+
+@MainActor
+private func allMarkers(in view: UIView) -> [ConversationRowMarker] {
+  (view as? ConversationRowMarker).map { [$0] } ?? view.subviews.flatMap { allMarkers(in: $0) }
+}
+
+@MainActor
+private func isPresentedRow(_ row: ConversationRowMarker) -> Bool {
+  guard row.window != nil else { return false }
+  guard let collection = row.enclosingScrollView as? UICollectionView else { return true }
+  // Reconfiguration can retain an old hosting cell in the hierarchy after its
+  // replacement is presented. Sample the cell currently owned by the collection.
+  guard let cell = enclosingCell(row), let indexPath = collection.indexPath(for: cell) else {
+    return false
+  }
+  guard collection.cellForItem(at: indexPath) === cell,
+    collection.visibleCells.contains(where: { $0 === cell }),
+    row.convert(row.bounds, to: cell).intersects(cell.bounds)
+  else { return false }
+  if let dataSource = collection.dataSource as? UICollectionViewDiffableDataSource<Int, String> {
+    return dataSource.itemIdentifier(for: indexPath) == row.messageID
+  }
+  return true
 }
 
 @MainActor
 private func offset(of id: String, in view: UIView) -> CGFloat? {
-  guard let row = markers(in: view).first(where: { $0.messageID == id }),
+  let matching = markers(in: view).filter { $0.messageID == id }
+  guard matching.count == 1, let row = matching.first,
     let scroll = row.enclosingScrollView
   else { return nil }
   return row.convert(row.bounds, to: scroll).minY - scroll.bounds.minY
@@ -201,8 +414,24 @@ private func readingDescription(_ id: String, conversation: ConversationStore, v
   -> String
 {
   let scroll = markers(in: view).first?.enclosingScrollView
-  let matching = markers(in: view).filter { $0.messageID == id }.map { row in
-    "\(row.bounds); window: \(row.window != nil); hidden: \(row.isHidden); "
+  let matching = allMarkers(in: view).filter { $0.messageID == id }.map { row in
+    let cell = enclosingCell(row)
+    let collection = row.enclosingScrollView as? UICollectionView
+    let item: String? =
+      if let collection, let cell, let indexPath = collection.indexPath(for: cell),
+        let dataSource = collection.dataSource as? UICollectionViewDiffableDataSource<Int, String>
+      {
+        dataSource.itemIdentifier(for: indexPath)
+      } else { nil }
+    let visible =
+      cell.map { candidate in
+        collection?.visibleCells.contains(where: { $0 === candidate }) ?? false
+      } ?? false
+    return "\(row.bounds); window: \(row.window != nil); hidden: \(row.isHidden); "
+      + "presented cell: \(isPresentedRow(row)); "
+      + "visible cell: \(visible); cell frame: \(String(describing: cell?.frame)); "
+      + "native item: \(String(describing: item)); "
+      + "cell rect: \(String(describing: cell.map { row.convert(row.bounds, to: $0) })); "
       + "rect: \(String(describing: scroll.map { row.convert(row.bounds, to: $0) }))"
   }
   return "Reading position: \(String(describing: conversation.readingPosition)); "
@@ -223,6 +452,32 @@ private func eventually(
     await hostingPresentationFrame()
   }
   XCTAssertTrue(predicate(), message(), file: file, line: line)
+}
+
+@MainActor @Observable
+private final class LateMarkerProbeModel {
+  var showsFirstMarker = false
+}
+
+private struct LateMarkerProbe: View {
+  let model: LateMarkerProbeModel
+  let anchor: ConversationScrollAnchor
+
+  var body: some View {
+    ScrollView {
+      VStack(spacing: 0) {
+        ForEach(0..<10) { index in
+          Text("Message \(index)")
+            .frame(maxWidth: .infinity, minHeight: 100, maxHeight: 100)
+            .background {
+              if index != 0 || model.showsFirstMarker {
+                ConversationRowAnchor(messageID: String(index), anchor: anchor)
+              }
+            }
+        }
+      }
+    }
+  }
 }
 
 @MainActor @Observable

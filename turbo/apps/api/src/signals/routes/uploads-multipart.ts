@@ -13,7 +13,7 @@ import {
 } from "../external/s3";
 import {
   resolveUploadedMultipart$,
-  uploadedArtifactObject,
+  uploadedArtifactObject$,
 } from "../services/uploaded-artifact.service";
 import { rejectSuspendedOrg$ } from "../services/org-suspension.service";
 import type { RouteEntry } from "../route-entry";
@@ -64,8 +64,10 @@ const completeMultipartInner$ = command(
     await get(completeMultipartS3Upload(bucket, key, uploadId, parts));
     signal.throwIfAborted();
 
-    const completed = await get(
-      uploadedArtifactObject({ userId: auth.userId, orgId: auth.orgId, id }),
+    const completed = await set(
+      uploadedArtifactObject$,
+      { userId: auth.userId, orgId: auth.orgId, id },
+      signal,
     );
     signal.throwIfAborted();
     if (!completed) {

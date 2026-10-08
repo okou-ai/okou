@@ -1648,6 +1648,7 @@ export function registerFeishuIntegrationTests(
       removeFeishuInstallation,
       expectRunSource,
       expectFeishuResourceDownloads,
+      startFeishuDmSession,
     } = createFeishuIntegrationFixture(platform);
     beforeEach(reset);
 
@@ -5558,6 +5559,84 @@ export function registerFeishuIntegrationTests(
 
     // oxlint-disable-next-line vitest/no-conditional-tests -- The entrypoint selects this group before collection.
     if (group === "conversation") {
+      it("retains platform run history when a model change starts a fresh session", async () => {
+        const fixture = await setupFeishuRunFixture();
+        const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
+          fixture;
+        const providerThreadId = `omt_${randomUUID()}`;
+        await startFeishuDmSession(fixture, providerThreadId);
+        await createBddIntegrationApi(
+          context,
+        ).configureNativeSubscriptionModels(actor);
+        mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
+        const threads = await accept(
+          setupApp({ context, routes: chatThreadRoutes })(
+            chatThreadsContract,
+          ).events({
+            headers: { authorization: "Bearer clerk-session" },
+            query: {},
+          }),
+          [200],
+        );
+        const thread = requireValue(
+          threads.body.events.find((event) => {
+            return event.kind === "created" && event.agentId === defaultAgentId;
+          }),
+          "Expected the integration chat thread",
+        );
+        await accept(
+          setupApp({ context, routes: chatThreadRoutes })(
+            chatThreadModelSelectionContract,
+          ).update({
+            headers: { authorization: "Bearer clerk-session" },
+            params: { id: thread.chatThreadId },
+            body: { model: "gpt-6-astra" },
+          }),
+          [204],
+        );
+        const prompt = "continue after changing model family";
+        await postEvent(
+          callbackUrl,
+          directMessage(appId, prompt, "ou_feishu_user", {
+            threadId: providerThreadId,
+          }),
+          { encrypted: true },
+        );
+        await flushWaitUntilForTest();
+        const run = await findRun(actor, prompt);
+        await expectRunSource(actor, run.id);
+        await runsApi.heartbeatRunner(runnerGroup);
+        const claim = await runsApi.claimRunnerJob(run.id);
+        expect(claim.resumeSession).toBeNull();
+        const events = await readProjectedChatEvents(context, {
+          threadId: thread.chatThreadId,
+          headers: { authorization: "Bearer clerk-session" },
+        });
+        expect(events).toContainEqual(
+          expect.objectContaining({
+            eventType: "input.prompt",
+            runId: run.id,
+            userMessage: expect.objectContaining({
+              parts: expect.arrayContaining([
+                expect.objectContaining({ type: "source", kind: platform }),
+              ]),
+            }),
+          }),
+        );
+        expect(claim.appendSystemPrompt).toContain(
+          `# ${provider.name} Run Context`,
+        );
+        expect(claim.appendSystemPrompt).toContain(
+          "User: start the Feishu DM session",
+        );
+        expect(claim.appendSystemPrompt).toContain(
+          "Assistant: Initial Feishu DM answer",
+        );
+        await runsApi.requestCancelRun(actor, run.id, [200]);
+        await flushWaitUntilForTest();
+        await removeFeishuInstallation(fixture);
+      });
+
       it("builds Feishu DM context and canonical response metadata", async () => {
         const fixture = await setupFeishuRunFixture({
           useAlternateInstallationDefault: true,
@@ -6389,7 +6468,6 @@ export function registerSharedFeishuConversationTests(): void {
   describe("shared Feishu/Lark conversation and queue behavior", () => {
     const platform = "feishu";
     const {
-      provider,
       connectContract,
       reset,
       fixtureState,
@@ -6440,67 +6518,6 @@ export function registerSharedFeishuConversationTests(): void {
         }),
         [200],
       );
-    });
-
-    it("retains platform run history when a model change starts a fresh session", async () => {
-      const fixture = await setupFeishuRunFixture();
-      const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =
-        fixture;
-      const providerThreadId = `omt_${randomUUID()}`;
-      await startFeishuDmSession(fixture, providerThreadId);
-      await allowFeishuGptModel(actor);
-      mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
-      const threads = await accept(
-        setupApp({ context, routes: chatThreadRoutes })(
-          chatThreadsContract,
-        ).events({
-          headers: { authorization: "Bearer clerk-session" },
-          query: {},
-        }),
-        [200],
-      );
-      const thread = requireValue(
-        threads.body.events.find((event) => {
-          return event.kind === "created" && event.agentId === defaultAgentId;
-        }),
-        "Expected the integration chat thread",
-      );
-      await accept(
-        setupApp({ context, routes: chatThreadRoutes })(
-          chatThreadModelSelectionContract,
-        ).update({
-          headers: { authorization: "Bearer clerk-session" },
-          params: { id: thread.chatThreadId },
-          body: { model: "gpt-6-astra" },
-        }),
-        [204],
-      );
-      const prompt = "continue after changing model family";
-      await postEvent(
-        callbackUrl,
-        directMessage(appId, prompt, "ou_feishu_user", {
-          threadId: providerThreadId,
-        }),
-        { encrypted: true },
-      );
-      await flushWaitUntilForTest();
-      const run = await findRun(actor, prompt);
-      await expectRunSource(actor, run.id);
-      await runsApi.heartbeatRunner(runnerGroup);
-      const claim = await runsApi.claimRunnerJob(run.id);
-      expect(claim.resumeSession).toBeNull();
-      expect(claim.appendSystemPrompt).toContain(
-        `# ${provider.name} Run Context`,
-      );
-      expect(claim.appendSystemPrompt).toContain(
-        "User: start the Feishu DM session",
-      );
-      expect(claim.appendSystemPrompt).toContain(
-        "Assistant: Initial Feishu DM answer",
-      );
-      await runsApi.requestCancelRun(actor, run.id, [200]);
-      await flushWaitUntilForTest();
-      await removeFeishuInstallation(fixture);
     });
 
     async function allowFeishuGptModel(actor: ApiTestUser): Promise<void> {

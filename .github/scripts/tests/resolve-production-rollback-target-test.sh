@@ -127,7 +127,7 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_PI_STABLE_CONTEXT_COMMIT-3838383838383838383838383838383838383838}"
     elif [[ "$*" == *1345_outstanding_the_hood.sql* ]]; then
       printf '%s\n' "${MOCK_PI_DEBUG_TRACE_COMMIT-3939393939393939393939393939393939393939}"
-    elif [[ "$*" == *1347_connector_catalog_payload_independent_api.sql* ]]; then
+    elif [[ "$*" == *1348_connector_catalog_payload_independent_api.sql* ]]; then
       printf '%s\n' "${MOCK_CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_COMMIT-4040404040404040404040404040404040404040}"
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
