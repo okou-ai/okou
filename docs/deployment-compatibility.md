@@ -995,6 +995,36 @@ from the stored version; the new API accepts it and retains the storage-owned
 metadata. Rolling back restores that stricter catalog acceptance behavior.
 No production migration, deployment or storage write is executed by this PR.
 
+## Connector permission baseline retirement
+
+New API writers no longer persist `connectorPermissionBaseline` in Runner job
+execution contexts, including memory-maintenance jobs. Claim resolves the
+current connector catalog by the queued builtin slugs in one pointer/entry
+query, then overlays current user grants. Connector targets, captured credentials,
+custom connector policies, model-provider policies and Runner wire fields retain
+their existing owners. The immutable catalog entry key remains `(hash, slug)`;
+this change does not garbage-collect catalog generations or remove OAuth
+`contract_hash` identities.
+
+Stored-context readers strip the retired field, including malformed and future
+baseline values, without changing Pi-generation negotiation or invalid-context
+failure handling. Migration `1349_retire_connector_permission_baseline` removes
+existing queue baselines without changing the rest of each execution context.
+
+- **Old writer / new reader:** an old queued baseline is ignored; claim always
+  refreshes permissions against the current catalog and current grants.
+- **New writer / old reader:** the field was optional. The old reader takes its
+  existing missing-baseline current-catalog path.
+- **Old / new Runner:** the baseline was API-only and never part of the claim
+  response, so there is no Runner or CLI version floor.
+
+The migration may run before API promotion. Outgoing API writers can still add
+baselines after it runs; those rows drain through claim, terminal deletion or
+queue expiry (two hours). Therefore absence from every queue row is only true
+once outgoing writers and their queued jobs have drained. Rolling back the API
+restores baseline writes but can still claim new baseline-free jobs. No release
+or production activation is performed by this change.
+
 ## Connector catalog business readers on pointer and immutable entries
 
 > Superseded by the [Release 2 contraction](#connector-catalog-release-2-contraction-migration-1334):

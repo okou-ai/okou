@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.220.24](https://github.com/okou-ai/okou/compare/runner-rs-v0.220.23...runner-rs-v0.220.24) (2026-10-08)
+
+
+### Bug Fixes
+
+* **python:** detect metadata keys through nested mapping constructors ([#38112](https://github.com/okou-ai/okou/issues/38112)) ([c6ef07b](https://github.com/okou-ai/okou/commit/c6ef07b3845d26216b9c0c79e270a705e431d3a0))
+* **python:** preserve aliases across optional comprehension walrus bindings ([#38067](https://github.com/okou-ai/okou/issues/38067)) ([da7304f](https://github.com/okou-ai/okou/commit/da7304f9eff8b2bfb403cf0097bf94b9649e3b08))
+
+
+### Documentation
+
+* clarify custom connector eligibility before route precedence ([#38141](https://github.com/okou-ai/okou/issues/38141)) ([9342f47](https://github.com/okou-ai/okou/commit/9342f470f5fb73437977fd5b9b7854268363bfce))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.220.23](https://github.com/okou-ai/okou/compare/runner-rs-v0.220.22...runner-rs-v0.220.23) (2026-10-08)
 
 ### Release Dependencies

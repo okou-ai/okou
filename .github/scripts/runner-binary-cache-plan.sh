@@ -102,6 +102,7 @@ while IFS= read -r encoded_entry; do
 done < <(jq -cr '.[] | @base64' <<<"$RUNNER_HOST_GROUPS_MATRIX")
 
 miss_matrix='[]'
+hit_matrix='[]'
 hit_targets='[]'
 hit_references='{}'
 resolution_json='[]'
@@ -151,6 +152,7 @@ for index in "${!targets[@]}"; do
       hard_failure=true
       continue
     fi
+    hit_matrix=$(jq -c --argjson entry "$entry" '. + [$entry]' <<<"$hit_matrix")
     hit_targets=$(jq -c --arg target "$target" '. + [$target]' <<<"$hit_targets")
     hit_references=$(jq -c --arg target "$target" \
       --slurpfile reference "${RESOLVE_OUTPUT_DIR}/${target}/reference.json" \
@@ -191,6 +193,7 @@ if [ $((hit_count + miss_count)) -ne "${#targets[@]}" ]; then
 fi
 
 emit "compile-matrix" "$miss_matrix"
+emit "hit-matrix" "$hit_matrix"
 emit "hit-targets" "$hit_targets"
 emit "hit-references" "$hit_references"
 emit "hit-count" "$hit_count"

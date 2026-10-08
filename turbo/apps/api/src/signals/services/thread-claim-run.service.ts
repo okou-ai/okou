@@ -45,7 +45,6 @@ import {
   type PiModelConfig,
   type SecretConnectorMetadata,
   type StorageMountEntry,
-  type StoredConnectorPermissionBaseline,
   type StoredExecutionContext,
   type StoredStorageMountEntry,
 } from "@okouai/api-contracts/contracts/runners";
@@ -522,7 +521,6 @@ import {
   chatThreadRequestSelection,
 } from "./chat-thread-request-facts";
 import { isWebChatTriggerSource } from "./chat-trigger-source.service";
-import { currentConnectorCatalogValidatorIdentity } from "./connector-catalog-validator-authority";
 import {
   builtinConnectorRuntimeCredentialStatusWithMethod,
   type ConnectorCredentialStatus,
@@ -12238,7 +12236,6 @@ function buildStoredExecutionContextDraft(
       firewalls: permissions?.firewalls,
       networkPolicies: permissions?.networkPolicies,
       connectorRuntimeTargets,
-      connectorPermissionBaseline: permissions?.connectorPermissionBaseline,
       disallowedTools: args.body.disallowedTools,
       tools: args.body.tools,
       settings: args.body.settings,
@@ -14459,52 +14456,6 @@ interface BuiltinConnectorManifestSource {
   readonly isMcp: boolean;
 }
 
-function buildConnectorPermissionBaseline(
-  snapshot: ConnectorRuntimeSelection,
-  sources: readonly BuiltinConnectorManifestSource[],
-): StoredConnectorPermissionBaseline {
-  const validationAuthority = currentConnectorCatalogValidatorIdentity();
-  return {
-    version: 1,
-    catalogIdentity: snapshot.catalogIdentity,
-    validationAuthority: {
-      backendVersion: validationAuthority.validatorVersion,
-      buildCommitSha: validationAuthority.buildCommitSha,
-    },
-    connectors: Object.fromEntries(
-      sources.map((source) => {
-        const defaultPolicy = source.permissionIndex.defaultPolicy;
-        const permissionOverrides = defaultPolicy.permissionOverrides;
-        return [
-          source.metadata.connectorSlug,
-          {
-            permissionNames: [...source.permissionIndex.permissionNames],
-            defaultPolicy: {
-              permissionDefault: defaultPolicy.permissionDefault,
-              ...(permissionOverrides
-                ? {
-                    permissionOverrides: {
-                      ...(permissionOverrides.allow
-                        ? { allow: [...permissionOverrides.allow] }
-                        : {}),
-                      ...(permissionOverrides.deny
-                        ? { deny: [...permissionOverrides.deny] }
-                        : {}),
-                      ...(permissionOverrides.ask
-                        ? { ask: [...permissionOverrides.ask] }
-                        : {}),
-                    },
-                  }
-                : {}),
-              unknownPolicy: defaultPolicy.unknownPolicy,
-            },
-          },
-        ];
-      }),
-    ),
-  };
-}
-
 function applyBuiltinConnectorMetadataPolicies(
   sources: readonly BuiltinConnectorManifestSource[],
   policies: FirewallPolicies | undefined,
@@ -14572,8 +14523,6 @@ function builtinRuntimeTargetRegistration(
 }
 
 function mergePermissionManifests(args: {
-  readonly connectorCatalogSelection: RunConnectorCatalogSelection;
-  readonly builtinSources: readonly BuiltinConnectorManifestSource[];
   readonly connectorManifest: PermissionManifest;
   readonly customConnectorManifest: Pick<
     PermissionManifest,
@@ -14595,23 +14544,9 @@ function mergePermissionManifests(args: {
     return undefined;
   }
 
-  const connectorPermissionBaseline = (() => {
-    if (args.builtinSources.length === 0) {
-      return undefined;
-    }
-    if (args.connectorCatalogSelection.kind === "empty") {
-      throw new Error("Builtin connector sources require a catalog selection");
-    }
-    return buildConnectorPermissionBaseline(
-      args.connectorCatalogSelection.selection,
-      args.builtinSources,
-    );
-  })();
-
   return {
     firewalls,
     builtinRuntimeTargets,
-    ...(connectorPermissionBaseline ? { connectorPermissionBaseline } : {}),
     environmentSecretPlaceholders: mergeRecords(
       args.providerManifest?.environmentSecretPlaceholders,
       args.connectorManifest.environmentSecretPlaceholders,
@@ -14745,8 +14680,6 @@ async function buildPermissionManifest(
     () => {
       return Promise.resolve(
         mergePermissionManifests({
-          connectorCatalogSelection: args.connectorCatalogSelection,
-          builtinSources,
           connectorManifest,
           customConnectorManifest,
           providerManifest,

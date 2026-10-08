@@ -73,6 +73,7 @@ jobs:
       runner-host-groups-matrix: ${{ steps.host-groups.outputs.matrix }}
       runner-host-groups-configured: ${{ steps.host-group-presence.outputs.configured }}
       runner-binary-compile-matrix: ${{ steps.binary-plan.outputs.compile-matrix }}
+      runner-binary-hit-matrix: ${{ steps.binary-plan.outputs.hit-matrix }}
       runner-binary-hit-targets: ${{ steps.binary-plan.outputs.hit-targets }}
       runner-binary-hit-references: ${{ steps.binary-plan.outputs.hit-references }}
       runner-binary-miss-count: ${{ steps.binary-plan.outputs.miss-count }}
@@ -432,6 +433,117 @@ jobs:
           PRODUCER_PR_NUMBER: ${{ needs.prepare.outputs.pr-number }}
           PRODUCER_RUN_ATTEMPT: ${{ github.run_attempt }}
         run: .github/scripts/runner-binary-transport.sh publish
+
+      - name: Report peak memory
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/report-memory-peak
+
+  # Main normally reuses PR/queue binaries, so its miss-only compiler cannot
+  # seed dependency caches. Warm only binary-hit targets; actual main compiler
+  # misses already save their own cache. No image consumer waits for this job.
+  prewarm-rust-cache:
+    name: Prewarm runner dependency cache (${{ matrix.label }})
+    runs-on: ubuntu-latest-8-cores
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+    permissions:
+      actions: read
+      contents: read
+    needs: [prepare]
+    if: >-
+      ${{
+        !cancelled() &&
+        github.event_name == 'push' &&
+        github.ref == 'refs/heads/main' &&
+        needs.prepare.result == 'success' &&
+        needs.prepare.outputs.current-runner-image-needed == 'true' &&
+        needs.prepare.outputs.runner-binary-hit-matrix != '[]'
+      }}
+    # Cache warming is an optional optimization, not a required compiler gate.
+    continue-on-error: true
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.prepare.outputs.runner-binary-hit-matrix) }}
+    env:
+      TARGET_TRIPLE: ${{ matrix.target }}
+      RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261008
+      RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.source-head-sha }}
+      GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
+      GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.source-head-sha }}
+
+      - name: Configure git safe directory
+        shell: bash
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # Set the same compiler environment before deriving either cache key.
+      - name: Setup R2 sccache
+        uses: ./.github/actions/setup-r2-sccache
+        with:
+          architecture: ${{ matrix.id }}
+          r2-access-key-id: ${{ secrets.R2_ACCESS_KEY_ID }}
+          r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
+          r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+
+      - name: Lookup runner dependency cache
+        id: cache-lookup
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: crates -> target
+          shared-key: ${{ matrix.cacheSuffix }}-ci
+          lookup-only: true
+          # A lookup miss must never save an empty dependency cache.
+          save-if: false
+
+      - name: Restore runner dependency cache
+        id: cache-restore
+        if: steps.cache-lookup.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          workspaces: crates -> target
+          shared-key: ${{ matrix.cacheSuffix }}-ci
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Download private CLI build input
+        if: steps.cache-lookup.outputs.cache-hit != 'true' && steps.cache-restore.outputs.cache-hit != 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: runner-cli-${{ github.run_id }}
+          path: runner-cli-intermediate
+
+      - name: Build runner dependency cache
+        id: prewarm
+        if: steps.cache-lookup.outputs.cache-hit != 'true' && steps.cache-restore.outputs.cache-hit != 'true'
+        env:
+          RUNNER_BINARY_METADATA_PATH: runner-rust-cache-prewarm/metadata.json
+        # Reuse the canonical ci build, but publish none of its runner outputs.
+        run: .github/scripts/runner-binary-build/build.sh build
+
+      - name: Summarize dependency cache prewarm
+        if: always()
+        env:
+          LOOKUP_OUTCOME: ${{ steps.cache-lookup.outcome }}
+          LOOKUP_HIT: ${{ steps.cache-lookup.outputs.cache-hit }}
+          RESTORE_OUTCOME: ${{ steps.cache-restore.outcome }}
+          RESTORE_HIT: ${{ steps.cache-restore.outputs.cache-hit }}
+          PREWARM_OUTCOME: ${{ steps.prewarm.outcome }}
+        run: |
+          {
+            echo "### Runner dependency cache prewarm"
+            echo
+            echo "- Target: \`${TARGET_TRIPLE}\`"
+            echo "- Lookup step: \`${LOOKUP_OUTCOME}\`; exact hit: \`${LOOKUP_HIT}\`"
+            echo "- Restore step: \`${RESTORE_OUTCOME}\`; exact hit: \`${RESTORE_HIT}\`"
+            echo "- Prewarm build: \`${PREWARM_OUTCOME}\`"
+            echo "- Runner outputs are not published or deployed."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Report peak memory
         if: always()

@@ -10430,12 +10430,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ).resolves.toBe("bad_request");
       });
 
-      it("refreshes queued connector grants from the stored permission baseline", async () => {
+      it("refreshes queued connector grants from current permissions", async () => {
         const oauth = createOrdinaryOAuthRunApi();
         const api = oauth.api;
         const { actor, runnerGroup } = await oauth.entitledRunActor();
         const agent = await oauth.createAgent(actor, {
-          displayName: "BDD queued permission baseline agent",
+          displayName: "BDD queued permission refresh agent",
         });
         const agentId = agent.agentId;
         await oauth.connect(actor, {
@@ -10490,7 +10490,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(revokedClaim.networkPolicies?.slack?.allow).not.toContain(
           "chat:write",
         );
-        expect(revokedClaim).not.toHaveProperty("connectorPermissionBaseline");
         await api.requestCancelRun(actor, revokedRun.runId, [200]);
       });
 
@@ -10499,7 +10498,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const api = createRunsApi(context);
         const { actor, runnerGroup } = await entitledRunActor();
         const agent = await bdd.createAgent(actor, {
-          displayName: "BDD empty permission baseline agent",
+          displayName: "BDD no built-in connectors agent",
         });
         await api.heartbeatRunner(runnerGroup);
 
@@ -10513,7 +10512,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           CLAUDE_CODE_OAUTH_TOKEN: expect.any(String),
         });
         expect(claim.billableFirewalls).toStrictEqual([]);
-        expect(claim).not.toHaveProperty("connectorPermissionBaseline");
         await api.requestCancelRun(actor, run.runId, [200]);
       });
 
