@@ -23,11 +23,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  unsigned-archive:
-    runs-on: macos-26
-    timeout-minutes: 15
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+  script-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -37,6 +35,17 @@ jobs:
           bash -n ios/scripts/build-archive-proof.sh ios/scripts/release-testflight.sh
           shellcheck ios/scripts/build-archive-proof.sh ios/scripts/release-testflight.sh
           python3 ios/scripts/archive-proof.test.py
+
+  unsigned-archive:
+    needs: script-checks
+    runs-on: macos-26
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
       - name: Build unsigned device archive and prove metadata-only preparation
         run: bash ios/scripts/build-archive-proof.sh
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
