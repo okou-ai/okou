@@ -8,6 +8,29 @@ root = ARGV[0]
 desktop = YAML.safe_load(File.read("#{root}/.github/workflows/desktop.yml"), aliases: true).fetch("jobs")
 release = YAML.safe_load(File.read("#{root}/.github/workflows/release-please.yml"), aliases: true).fetch("jobs")
 deploy = desktop.fetch("deploy-desktop")
+# Evaluate the actual job conditions across event contexts, including release PRs.
+build_condition = desktop.fetch("build-macos").fetch("if")
+deploy_condition = deploy.fetch("if")
+evaluate = lambda do |condition, event_name, head_ref, changed|
+  expression = condition.strip.delete_prefix('${{').delete_suffix('}}')
+    .gsub("startsWith(github.head_ref, 'release-please--branches--')", "head_ref.start_with?('release-please--branches--')")
+    .gsub("github.event_name", "event_name")
+    .gsub("needs.detect-desktop-version.outputs.changed", "changed")
+  eval(expression, binding)
+end
+[
+  ["pull_request", "release-please--branches--main", "false", false, false],
+  ["pull_request", "fix/desktop", "false", true, false],
+  ["pull_request", "release-please-imitation", "false", true, false],
+  ["merge_group", "", "true", false, true],
+  ["merge_group", "", "false", true, false],
+  ["merge_group", "release-please--branches--main", "true", false, true],
+  ["push", "", "true", true, false],
+  ["workflow_dispatch", "", "false", true, false]
+].each do |event_name, head_ref, changed, build_expected, deploy_expected|
+  raise "unexpected Desktop build selection for #{event_name}/#{head_ref}" unless evaluate.call(build_condition, event_name, head_ref, changed) == build_expected
+  raise "unexpected Desktop artifact selection for #{event_name}/#{head_ref}" unless evaluate.call(deploy_condition, event_name, head_ref, changed) == deploy_expected
+end
 raise "canonical artifacts must remain merge-group only" unless deploy.fetch("if").include?("github.event_name == 'merge_group'")
 raise "canonical artifacts must follow version detection" unless deploy.fetch("needs") == "detect-desktop-version"
 raise "artifact construction must not require production approval" if deploy.key?("environment")
