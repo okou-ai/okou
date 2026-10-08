@@ -276,8 +276,8 @@ function AccountUsageGroup({
 }
 
 /**
- * Administrators see the workspace balance combined with their member package
- * credits; members only see their own package credits.
+ * Administrators see available workspace and member package credits without
+ * offsetting debt between the wallets; members see their signed package balance.
  */
 export function useCreditBalance(combined: boolean): {
   readonly creditLabel: string | null;
@@ -291,7 +291,8 @@ export function useCreditBalance(combined: boolean): {
       : null;
   const usagePackCredits =
     usagePackLoadable.state === "hasData"
-      ? usagePackLoadable.data.totalCredits
+      ? (usagePackLoadable.data.netCredits ??
+        usagePackLoadable.data.totalCredits)
       : null;
   const waitingForOrganization =
     combined &&
@@ -302,7 +303,7 @@ export function useCreditBalance(combined: boolean): {
   const credits = !combined
     ? usagePackCredits
     : organizationCredits !== null && !waitingForUsagePack
-      ? organizationCredits + (usagePackCredits ?? 0)
+      ? Math.max(organizationCredits, 0) + Math.max(usagePackCredits ?? 0, 0)
       : null;
   return {
     creditLabel: credits !== null ? formatCreditBalance(credits) : null,

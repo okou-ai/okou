@@ -217,6 +217,49 @@ test("The growth menu credit balance opens Usage settings", async () => {
   ).resolves.toBeVisible();
 });
 
+test.each([
+  { orgCredits: -23, totalCredits: 50, netCredits: undefined, expected: "50" },
+  { orgCredits: 50, totalCredits: 0, netCredits: -23, expected: "50" },
+  { orgCredits: 0, totalCredits: 50, netCredits: 27, expected: "27" },
+  { orgCredits: -23, totalCredits: 0, netCredits: -23, expected: "0" },
+  { orgCredits: 0, totalCredits: 50, netCredits: 0, expected: "0" },
+])(
+  "Show available growth credits for independent org $orgCredits and pack net $netCredits (legacy $totalCredits)",
+  async ({ orgCredits, totalCredits, netCredits, expected }) => {
+    configureGrowthPage(context, {
+      role: "admin",
+      slack: slackStatus({
+        connected: true,
+        installed: true,
+        workspaceAdmin: true,
+      }),
+    });
+    context.mocks.api(billingStatusContract.get, ({ respond }) => {
+      return respond(200, { ...billingStatus(), credits: orgCredits });
+    });
+    context.mocks.api(billingUsagePackCreditsContract.get, ({ respond }) => {
+      return respond(200, {
+        totalCredits,
+        netCredits,
+        purchasedCredits: totalCredits,
+        bonusCredits: 0,
+        creditGrants: [],
+      });
+    });
+
+    await setupPage({ context, path: growthChatPath() });
+    const moreActions = await waitFor(() => {
+      return actionNamed("button", "More actions");
+    });
+    click(moreActions);
+    const menu = await screen.findByRole("menu");
+    const credits = await within(menu).findByTestId("growth-credits");
+    await expect(
+      within(credits).findByText(expected),
+    ).resolves.toBeInTheDocument();
+  },
+);
+
 test("Installed Slack shifts the growth entry to inviting people", async () => {
   configureGrowthPage(context, {
     role: "admin",

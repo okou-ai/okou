@@ -421,6 +421,68 @@ test("Combine workspace and member-package credits for administrators", async ()
   expect(within(menu).queryByText("20,400 credits")).toBeNull();
 });
 
+test.each([
+  { orgCredits: -23, totalCredits: 50, netCredits: undefined, expected: "50" },
+  { orgCredits: 50, totalCredits: 0, netCredits: -23, expected: "50" },
+  { orgCredits: 0, totalCredits: 50, netCredits: 27, expected: "27" },
+  { orgCredits: -23, totalCredits: 0, netCredits: -23, expected: "0" },
+  { orgCredits: 0, totalCredits: 50, netCredits: 0, expected: "0" },
+])(
+  "Keep administrator wallets independent for org $orgCredits and pack net $netCredits (legacy $totalCredits)",
+  async ({ orgCredits, totalCredits, netCredits, expected }) => {
+    mockAdminAccountSidebar();
+    mockAdminBillingStatus(orgCredits);
+    context.mocks.api(billingUsagePackCreditsContract.get, ({ respond }) => {
+      return respond(200, {
+        totalCredits,
+        netCredits,
+        purchasedCredits: totalCredits,
+        bonusCredits: 0,
+        creditGrants: [],
+      });
+    });
+
+    await setupAddAccountPage();
+    const menu = await openAccountMenu();
+    const creditItem = await within(menu).findByTestId(
+      "account-menu-credit-balance",
+    );
+    await expect(
+      within(creditItem).findByText(`${expected} credits`),
+    ).resolves.toBeInTheDocument();
+  },
+);
+
+test.each([
+  { totalCredits: 0, netCredits: -23, expected: "-23" },
+  { totalCredits: 50, netCredits: 27, expected: "27" },
+  { totalCredits: 50, netCredits: 0, expected: "0" },
+])(
+  "Show a member's signed pack net $netCredits rather than legacy $totalCredits",
+  async ({ totalCredits, netCredits, expected }) => {
+    mockMemberAccountSidebar();
+    context.mocks.api(billingUsagePackCreditsContract.get, ({ respond }) => {
+      return respond(200, {
+        totalCredits,
+        netCredits,
+        debtCredits: Math.max(-netCredits, 0),
+        purchasedCredits: totalCredits,
+        bonusCredits: 0,
+        creditGrants: [],
+      });
+    });
+
+    await setupAddAccountPage();
+    const menu = await openAccountMenu();
+    const creditItem = await within(menu).findByTestId(
+      "account-menu-credit-balance",
+    );
+    await expect(
+      within(creditItem).findByText(`${expected} credits`),
+    ).resolves.toBeInTheDocument();
+  },
+);
+
 test("Export account data from the account menu", async () => {
   mockAdminAccountSidebar();
   const openMock = context.mocks.browser.open(null);

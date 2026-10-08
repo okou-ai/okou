@@ -218,7 +218,12 @@ const usagePackCatalogResponseSchema = z.object({
 });
 
 const usagePackCreditBalanceSchema = z.object({
+  // Spendable balances stay nonnegative for older clients. The signed member
+  // wallet balance includes purchased and bonus debt, independently of the org.
   totalCredits: z.number().int().nonnegative(),
+  // Optional while newer clients can still reach an older API during rollout.
+  netCredits: z.number().int().optional(),
+  debtCredits: z.number().int().nonnegative().optional(),
   purchasedCredits: z.number().int().nonnegative(),
   bonusCredits: z.number().int().nonnegative(),
   creditGrants: z.array(

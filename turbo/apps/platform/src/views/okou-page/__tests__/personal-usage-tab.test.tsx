@@ -348,6 +348,38 @@ test("Review your member-package credit balance and grant rows", async () => {
   ).toBeFalsy();
 });
 
+test.each([
+  { totalCredits: 0, netCredits: -23, expected: "-23" },
+  { totalCredits: 50, netCredits: 27, expected: "27" },
+  { totalCredits: 50, netCredits: 0, expected: "0" },
+])(
+  "Show signed member-package net $netCredits in Credit balance rather than legacy $totalCredits",
+  async ({ totalCredits, netCredits, expected }) => {
+    mockPersonalUsageStory(usageRows(), "pro", false, "member");
+    context.mocks.api(billingUsagePackCreditsContract.get, ({ respond }) => {
+      return respond(200, {
+        totalCredits,
+        netCredits,
+        debtCredits: Math.max(-netCredits, 0),
+        purchasedCredits: totalCredits,
+        bonusCredits: 0,
+        creditGrants: [],
+        hasUsagePack: true,
+      });
+    });
+
+    await openUsageSettings();
+    const card = await screen.findByTestId("usage-pack-credit-card");
+    await expect(
+      within(card).findByText(expected),
+    ).resolves.toBeInTheDocument();
+    expect(screen.queryByTestId("credit-balance-info")).not.toBeInTheDocument();
+    expect(within(card).queryAllByTestId("usage-pack-credit-bar")).toHaveLength(
+      totalCredits > 0 ? 1 : 0,
+    );
+  },
+);
+
 test("Show an illustrated empty credit balance when a member has no usage pack", async () => {
   mockPersonalUsageStory(usageRows(), "limited-free-1", false, "member");
 
@@ -657,6 +689,86 @@ test("Review every workspace member’s package balance", async () => {
   const orgCredits = await screen.findByTestId("credit-balance-info");
   expect(within(orgCredits).getByText("Org credits")).toBeInTheDocument();
   expect(within(orgCredits).getByText("12,500")).toBeInTheDocument();
+});
+
+test("Review signed net balances for each member without offsetting their wallets", async () => {
+  mockPersonalUsageStory(usageRows(), "pro", false, "admin");
+  context.mocks.data.orgMembers({
+    name: "Test Org",
+    role: "admin",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    members: [
+      {
+        userId: "test-user-123",
+        email: "linghan@example.com",
+        firstName: "Linghan",
+        lastName: "Hu",
+        imageUrl: "",
+        role: "admin",
+        joinedAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        userId: "member-yuma",
+        email: "yuma@example.com",
+        firstName: "Yuma",
+        lastName: null,
+        imageUrl: "",
+        role: "member",
+        joinedAt: "2026-01-02T00:00:00.000Z",
+      },
+    ],
+  });
+  context.mocks.api(billingUsagePackCreditsContract.get, ({ respond }) => {
+    return respond(200, {
+      totalCredits: 50,
+      netCredits: 27,
+      debtCredits: 0,
+      purchasedCredits: 50,
+      bonusCredits: 0,
+      creditGrants: [],
+      hasUsagePack: true,
+      memberCredits: [
+        {
+          memberId: "test-user-123",
+          totalCredits: 50,
+          netCredits: 27,
+          debtCredits: 0,
+          purchasedCredits: 50,
+          bonusCredits: 0,
+          creditGrants: [],
+        },
+        {
+          memberId: "member-yuma",
+          totalCredits: 0,
+          netCredits: -23,
+          debtCredits: 23,
+          purchasedCredits: 0,
+          bonusCredits: 0,
+          creditGrants: [],
+        },
+      ],
+    });
+  });
+
+  await openUsageSettings();
+  const card = await screen.findByTestId("usage-pack-credit-card");
+  await expect(within(card).findByText("27")).resolves.toBeInTheDocument();
+  click(buttonByAriaLabel("View member balances", card));
+  const memberDialog = await screen.findByRole("dialog", {
+    name: "Member usage pack credits",
+  });
+  const positiveCard = within(memberDialog).getByTestId(
+    "usage-pack-member-credit-test-user-123",
+  );
+  const debtCard = within(memberDialog).getByTestId(
+    "usage-pack-member-credit-member-yuma",
+  );
+  expect(within(positiveCard).getByText("27")).toBeInTheDocument();
+  expect(within(positiveCard).queryByText("50")).not.toBeInTheDocument();
+  expect(within(debtCard).getByText("-23")).toBeInTheDocument();
+  expect(
+    within(debtCard).queryByTestId("usage-pack-member-member-yuma-bar"),
+  ).not.toBeInTheDocument();
 });
 
 test("Review personal credit-usage records by date range", async () => {

@@ -295,7 +295,7 @@ function UsagePackMemberHeader({
         </div>
       </div>
       <p className="shrink-0 text-xl font-medium tabular-nums text-foreground">
-        {formatLocalizedNumber(credits.totalCredits)}
+        {formatLocalizedNumber(credits.netCredits ?? credits.totalCredits)}
       </p>
     </div>
   );
@@ -591,7 +591,7 @@ function UsagePackCreditCard({ isAdmin }: { isAdmin: boolean }) {
                 />
               ) : undefined
             }
-            totalCredits={data.totalCredits}
+            totalCredits={data.netCredits ?? data.totalCredits}
           />
           <UsagePackCreditDetails data={data} />
           {isAdmin ? (

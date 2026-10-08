@@ -45,12 +45,15 @@ function useCombinedCreditLabel(): string | null {
     billingLoadable.state === "hasData" ? billingLoadable.data.credits : null;
   const packCredits =
     usagePackLoadable.state === "hasData"
-      ? usagePackLoadable.data.totalCredits
+      ? (usagePackLoadable.data.netCredits ??
+        usagePackLoadable.data.totalCredits)
       : null;
   if (orgCredits === null || packCredits === null) {
     return null;
   }
-  return formatLocalizedNumber(orgCredits + packCredits);
+  return formatLocalizedNumber(
+    Math.max(orgCredits, 0) + Math.max(packCredits, 0),
+  );
 }
 
 function GrowthCreditMenuItem({ openCredits }: { openCredits: () => void }) {

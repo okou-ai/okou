@@ -287,6 +287,15 @@ test("Review workspace credit allowances", async () => {
   expect(within(allowance).getAllByRole("progressbar")).toHaveLength(2);
 });
 
+test("Preserve a signed workspace debt in Credit balance details", async () => {
+  mockUsageStory();
+  mockBillingStatus({ credits: -23, creditBreakdown: [], creditGrants: [] });
+  await openCreditBalance();
+
+  const card = await screen.findByTestId("credit-balance-info");
+  await expect(within(card).findByText("-23")).resolves.toBeInTheDocument();
+});
+
 test("Review workspace credit additions", async () => {
   await setupCreditBalanceReview();
   const grants = screen.getByTestId("credit-grants-section");
