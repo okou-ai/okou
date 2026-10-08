@@ -105,7 +105,8 @@ describe("Custom OAuth state preview", () => {
         state,
       });
     expect(completed.body).toStrictEqual({
-      redirectUrl: "https://app.okou.ai/connectors/custom/callback/success",
+      status: "success",
+      username: null,
     });
     const accounts = await connectors.listCustomConnectorAccounts(
       actor,
