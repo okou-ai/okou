@@ -22,6 +22,7 @@ import {
   type ImagesBinding,
 } from "./artifact-thumbnail";
 import { PRIVATE_VIDEO_POSTER_PATH } from "@okouai/api-contracts/contracts/artifact-video-preview";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
 import {
   servePrivateVideoPoster,
   type MediaBinding,
@@ -53,6 +54,8 @@ interface Env {
   readonly PUBLIC_ARTIFACT_HOST?: string;
   readonly HOST_DOMAIN: string;
   readonly OKOU_HOST_DOMAIN: string;
+  /** Activate only after all serving API instances support owner validation. */
+  readonly HOSTED_SITE_API_ORIGIN?: string;
 }
 
 interface ExecutionContext {
@@ -803,6 +806,16 @@ async function serveLegacyHostedSite(
     return notFoundResponse();
   }
   const { pointer, layout } = pointers[0]!;
+  if (env.HOSTED_SITE_API_ORIGIN) {
+    const allowed = await authorizeHostedSiteDelivery(
+      request,
+      env.HOSTED_SITE_API_ORIGIN,
+      target.publicSlug,
+      pointer,
+      layout,
+    );
+    if (!allowed) return privateResponse(notFoundResponse());
+  }
   const manifest = await readJson<HostedSiteManifest>(
     env.HOSTED_SITES_BUCKET,
     pointer.manifestKey,
@@ -820,7 +833,48 @@ async function serveLegacyHostedSite(
     return notFoundResponse();
   }
 
-  return serveManifestFile(request, env, pathname, pointer, manifest);
+  const response = await serveManifestFile(
+    request,
+    env,
+    pathname,
+    pointer,
+    manifest,
+  );
+  if (env.HOSTED_SITE_API_ORIGIN) {
+    response.headers.set("Cache-Control", PRIVATE_NO_STORE_CACHE_CONTROL);
+  }
+  return response;
+}
+
+async function authorizeHostedSiteDelivery(
+  request: Request,
+  origin: string,
+  alias: string,
+  pointer: ActiveSitePointer,
+  layout: StorageLayout,
+): Promise<boolean> {
+  const url = new URL(
+    `/api/host/delivery/${encodeURIComponent(pointer.siteId)}/${encodeURIComponent(pointer.deploymentId)}`,
+    origin,
+  );
+  url.search = new URLSearchParams({
+    alias,
+    publicSlug: pointer.publicSlug,
+    publicBrand: LAYOUT_SEGMENT[layout],
+    prefix: pointer.prefix,
+    manifestKey: pointer.manifestKey,
+  }).toString();
+  const response = await fetch(url, {
+    cache: "no-store",
+    redirect: "error",
+    signal: AbortSignal.any([request.signal, AbortSignal.timeout(3_000)]),
+  });
+  if (response.status !== 200) {
+    throw new Error("Hosted deployment authority is unavailable");
+  }
+  return hostContract.deliveryAuthorization.responses[200].parse(
+    await response.json(),
+  ).allowed;
 }
 
 async function serveManifestFile(

@@ -98,6 +98,12 @@ surface; the index does not replace their detailed rules.
   version registration, DB-only reuse, and durable reference-first Clerk cleanup.
 - [Artifact share publication](./artifact-share-publication.md): initial
   revocation, conditional R2 authority and the transaction-removal deployment gate.
+- [Hosted-site transaction boundary](./database/hosted-site-transaction-boundary.md):
+  deletion/publication ownership preparation, concurrent effects, and unresolved
+  prerequisites for SQL-only transactions.
+- [Hosted-site status reader candidate](./database/hosted-site-status-reader-candidate.md):
+  inactive API/Worker ownership enforcement, preserved mutations, activation
+  prerequisites, delivery windows, query cost and the compatibility matrix.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, rejection log records, retained serving generations and
   recovered publication-order evidence.

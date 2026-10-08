@@ -54,10 +54,11 @@ import {
 import {
   nullableDriverValueDecoder,
   pgIntegerDecoder,
+  zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { executeRawRows } from "../../lib/db-raw-rows";
 import type { HostedSitePointer } from "../../lib/hosted-site-pointer";
-import { type Db, writeDb$ } from "../external/db";
+import { type Db, db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import type { Tx } from "../../lib/db-types";
 import {
@@ -101,6 +102,87 @@ const MAX_HOSTED_SITE_FILE_BYTES = 100 * 1024 * 1024;
 const MAX_PUBLIC_SLUG_ATTEMPTS = 5;
 const IMMUTABLE_DEPLOYMENT_HOST_PATTERN =
   /^dpl-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/u;
+
+/** R2 references do not carry authority over a deployment's current lifecycle. */
+export const authorizeHostedSiteDelivery$ = command(
+  async (
+    { get },
+    args: {
+      readonly siteId: string;
+      readonly deploymentId: string;
+      readonly alias: string;
+      readonly publicSlug: string;
+      readonly publicBrand: "vm0" | "okou";
+      readonly prefix: string;
+      readonly manifestKey: string;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = get(db$);
+    const [owned] = await db
+      .select({
+        prefix: hostedDeployments.r2Prefix,
+        activeDeploymentId: hostedSites.activeDeploymentId,
+        userId: hostedDeployments.userId,
+        orgId: hostedDeployments.orgId,
+        siteUserId: hostedSites.userId,
+        siteOrgId: hostedSites.orgId,
+        identity: sql`jsonb_build_object(
+          'deploymentId', ${hostedDeployments.manifest}->'deploymentId',
+          'siteId', ${hostedDeployments.manifest}->'siteId',
+          'publicSlug', ${hostedDeployments.manifest}->'publicSlug',
+          'access', ${hostedDeployments.manifest}->'access',
+          'hasAccess', ${hostedDeployments.manifest} ? 'access'
+        )`.mapWith(
+          zodDriverValueDecoder(
+            z.object({
+              deploymentId: z.string().uuid(),
+              siteId: z.string().uuid(),
+              publicSlug: z.string(),
+              access: z.literal("owner-private-v1").nullable(),
+              hasAccess: z.boolean(),
+            }),
+          ),
+        ),
+      })
+      .from(hostedDeployments)
+      .innerJoin(hostedSites, eq(hostedSites.id, hostedDeployments.siteId))
+      .where(
+        and(
+          eq(hostedDeployments.id, args.deploymentId),
+          eq(hostedSites.id, args.siteId),
+          eq(hostedSites.publicSlug, args.publicSlug),
+          eq(hostedSites.linkLayoutSegment, args.publicBrand),
+          eq(hostedDeployments.linkLayoutSegment, args.publicBrand),
+          eq(hostedDeployments.status, "ready"),
+          isNull(hostedSites.deletedAt),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!owned) {
+      return false;
+    }
+    if (
+      owned.userId !== owned.siteUserId ||
+      owned.orgId !== owned.siteOrgId ||
+      owned.identity.deploymentId !== args.deploymentId ||
+      owned.identity.siteId !== args.siteId ||
+      owned.identity.publicSlug !== args.publicSlug ||
+      (owned.identity.hasAccess && owned.identity.access === null)
+    ) {
+      throw new Error("Hosted deployment has an invalid publication identity");
+    }
+    return (
+      !owned.identity.hasAccess &&
+      owned.prefix === args.prefix &&
+      args.manifestKey === `${args.prefix}/manifest.json` &&
+      (args.alias === `dpl-${args.deploymentId}` ||
+        (args.alias === args.publicSlug &&
+          owned.activeDeploymentId === args.deploymentId))
+    );
+  },
+);
 
 interface PrepareDeploymentArgs {
   readonly orgId: string;
@@ -1975,35 +2057,37 @@ type DeleteHostedSiteResult =
   | { readonly status: "config_error"; readonly message: string };
 
 /** Only the creator may take a site offline, as only the creator may redeploy it. */
-async function findOwnedHostedSite(
-  db: Db | Tx,
-  args: DeleteHostedSiteArgs,
-  lock: boolean,
-): Promise<HostedSiteRow | undefined> {
-  const query = db
-    .select()
-    .from(hostedSites)
-    .where(
-      and(
-        eq(hostedSites.publicSlug, args.publicSlug),
-        eq(hostedSites.orgId, args.orgId),
-        eq(hostedSites.userId, args.userId),
-        isNull(hostedSites.deletedAt),
-      ),
-    );
-  const [site] = lock
-    ? await query.for("update").limit(1)
-    : await query.limit(1);
-  return site;
-}
+const ownedHostedSiteForDeletion$ = command(
+  async (
+    { get },
+    args: DeleteHostedSiteArgs,
+    signal: AbortSignal,
+  ): Promise<HostedSiteRow | undefined> => {
+    const db = get(db$);
+    const [site] = await db
+      .select()
+      .from(hostedSites)
+      .where(
+        and(
+          eq(hostedSites.publicSlug, args.publicSlug),
+          eq(hostedSites.orgId, args.orgId),
+          eq(hostedSites.userId, args.userId),
+          isNull(hostedSites.deletedAt),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return site;
+  },
+);
 
 /**
  * Historical private publications may carry a share link served from its own
  * snapshot. Revoke it before the private versions stop being share targets.
  */
 const revokeHostedSiteShare$ = command(
-  async ({ set }, site: HostedSiteRow, signal: AbortSignal) => {
-    const db = set(writeDb$);
+  async ({ get, set }, site: HostedSiteRow, signal: AbortSignal) => {
+    const db = get(db$);
     const [share] = await db
       .select({ id: artifactShares.id })
       .from(artifactShares)
@@ -2102,12 +2186,11 @@ export const deleteHostedSite$ = command(
     if (hostedR2.status === "config_error") {
       return hostedR2;
     }
-    const writeDb = set(writeDb$);
     const notFound = {
       status: "not_found",
       message: "Hosted site not found",
     } as const;
-    const candidate = await findOwnedHostedSite(writeDb, args, false);
+    const candidate = await set(ownedHostedSiteForDeletion$, args, signal);
     signal.throwIfAborted();
     if (!candidate) {
       return notFound;
@@ -2123,10 +2206,22 @@ export const deleteHostedSite$ = command(
     await set(revokeHostedSiteShare$, candidate, signal);
     signal.throwIfAborted();
 
-    const deleted = await writeDb.transaction(async (tx) => {
+    const deleted = await set(writeDb$).transaction(async (tx) => {
       // The publisher binds under this lock, so a completion cannot reactivate
       // a version after deletion commits.
-      const site = await findOwnedHostedSite(tx, args, true);
+      const [site] = await tx
+        .select()
+        .from(hostedSites)
+        .where(
+          and(
+            eq(hostedSites.publicSlug, args.publicSlug),
+            eq(hostedSites.orgId, args.orgId),
+            eq(hostedSites.userId, args.userId),
+            isNull(hostedSites.deletedAt),
+          ),
+        )
+        .for("update")
+        .limit(1);
       if (!site) {
         return null;
       }
