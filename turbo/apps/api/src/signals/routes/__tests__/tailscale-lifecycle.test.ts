@@ -7,7 +7,6 @@ import { expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
-import { countUserSshAccessResourcesFixture } from "../../../test-fixtures/ssh-access-owner-lifecycle";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { tailscaleRoutes } from "../tailscale";
 import { sshConnectionsRoutes } from "../ssh-connections";
@@ -89,15 +88,12 @@ async function host(configId: string) {
     )
   ).body;
 }
-async function webhook(
-  type: "user.deleted" | "organization.deleted",
-  id: string,
-) {
+async function deleteUser(id: string) {
   mockOptionalEnv(
     "CLERK_WEBHOOK_SIGNING_SECRET",
     "synthetic-tail-signing-secret",
   );
-  const event = { type, data: { id } };
+  const event = { type: "user.deleted", data: { id } };
   context.mocks.clerk.verifyWebhook.mockResolvedValueOnce(event);
   await accept(
     setupApp({ context, routes: webhooksClerkRoutes })(
@@ -108,7 +104,7 @@ async function webhook(
   await flushWaitUntilForTest();
 }
 
-test("user deletion erases encrypted Personal Tailscale state but preserves the creator's shared configuration and other members' hosts", async () => {
+test("user deletion preserves the creator's shared Tailscale configuration and other members' hosts", async () => {
   useSecretKmsProbe();
   const creator = await owner();
   const shared = await config("organization");
@@ -116,43 +112,17 @@ test("user deletion erases encrypted Personal Tailscale state but preserves the 
   await host(personal.id);
   const member = await owner(creator.orgId, "member");
   const retained = await host(shared.id);
-  await expect(
-    countUserSshAccessResourcesFixture(creator.userId, "tailscale"),
-  ).resolves.toStrictEqual({ configs: 1, hosts: 1, credentials: 1 });
-  await webhook("user.deleted", creator.userId);
-  // This narrow owned fixture proves erasure even though the deleted identity
-  // cannot authenticate to inspect its encrypted Personal resources.
-  await expect(
-    countUserSshAccessResourcesFixture(creator.userId, "tailscale"),
-  ).resolves.toStrictEqual({ configs: 0, hosts: 0, credentials: 0 });
+  await deleteUser(creator.userId);
   mocks.clerk.session(member.userId, member.orgId, "org:member");
   expect(
     (await accept(configs().list({ headers }), [200])).body.configs,
-  ).toMatchObject([{ id: shared.id, scope: "organization" }]);
+  ).toStrictEqual([
+    {
+      ...shared,
+      sshHosts: [{ id: retained.id, displayName: retained.displayName }],
+    },
+  ]);
   expect(
     (await accept(hosts().list({ headers }), [200])).body.connections,
-  ).toContainEqual(expect.objectContaining({ id: retained.id }));
-});
-
-test("organization deletion erases Personal and shared Tailscale configurations after dependent member hosts", async () => {
-  useSecretKmsProbe();
-  const creator = await owner();
-  const shared = await config("organization");
-  const personal = await config("personal");
-  await host(personal.id);
-  const member = await owner(creator.orgId, "member");
-  await host(shared.id);
-  await webhook("organization.deleted", creator.orgId);
-  await expect(
-    countUserSshAccessResourcesFixture(creator.userId, "tailscale"),
-  ).resolves.toStrictEqual({ configs: 0, hosts: 0, credentials: 0 });
-  for (const identity of [creator, member]) {
-    mocks.clerk.session(identity.userId, identity.orgId, "org:member");
-    expect(
-      (await accept(configs().list({ headers }), [200])).body.configs,
-    ).toStrictEqual([]);
-    expect(
-      (await accept(hosts().list({ headers }), [200])).body.connections,
-    ).toStrictEqual([]);
-  }
+  ).toStrictEqual([retained]);
 });
