@@ -1,5 +1,46 @@
 # Deployment Compatibility
 
+## Discord OAuth, consent-browser approval and private-seed retirement (2026-10-08)
+
+PR #37968 supersedes the earlier OAuth-deferred implementation boundary. The
+integration and Gateway remain default-off; code/schema delivery does not authorize
+production configuration, deployment, command registration or activation.
+
+The additive OAuth attempt/Discord identity schema requires the normal generated
+migrations before the new API. Attempt state and independent opener/consent-browser
+proof hashes expire after ten minutes. No provider OAuth token or authorization
+code is persisted. Global verified Discord ownership must participate in account
+export/deletion through its owning catalogue; disconnect/uninstall remain distinct.
+
+Deploy schema and compatible API/contracts before the App/CLI consumers. The new
+product routes are authenticated OAuth start, consent-browser approval and opener
+completion, plus the fixed-destination provider callback. The callback itself does
+not bind accounts. The actual consent browser authenticates as the originating
+Okou user/org before approval; opener proof alone is insufficient. Provider callback
+approval proof travels only in the configured App's fragment and is removed before
+analytics; no cross-site cookie assumption, mixed-flow fallback or arbitrary owner/
+redirect query is introduced. Status now declares `onboarding: "oauth"` rather than
+`"oauth_deferred"`. App/API revisions must agree on this discriminator and lifecycle.
+
+`DISCORD_OAUTH_CLIENT_SECRET`, registered environment-specific callback URI and
+Discord's OAuth2 Code Grant bot setting are required for onboarding. The shared bot
+credential remains application-wide; no per-guild OAuth-token migration occurs.
+CLI connect enters configured authenticated `/works` settings, not a CLI-created
+browser nonce attempt. Existing messages, persisted canonical sources, Runner
+launch contracts and Gateway envelopes are unchanged by onboarding.
+
+`/api/test/discord-state`, its contract/registration and private binding/history
+construction are removed without a compatibility alias. Tests and manual acceptance
+must use product authorization. Earlier preview-only procedures are not supported
+fallbacks. Account-link conflict/idempotence, expired/replayed proof, approval in a
+wrong browser/account, permission revocation and current App transport need their
+own verification; old cookie-flow test passes do not prove this final flow.
+
+Old APIs do not expose the new lifecycle and old Apps may reject the new status
+literal; rollback must be coordinated rather than silently downgrade consent or
+relax ownership. Preserve canonical Discord readers/source data after feature-off.
+Live guild/browser/Gateway acceptance remains separately authorized and unclaimed.
+
 ## Pi OpenRouter Chat Completions route (generation 5, default off)
 
 Pi model configuration gains generation 5 (`dialect: "openai-completions"`,

@@ -1,73 +1,84 @@
-# Discord parity #37968 coverage decision
+# Discord parity #37968 coverage and public lifecycle
 
-This ledger resolves the test-construction finding on PR #37968. Apply
-[API testing](../testing/api-testing.md#external-behavior-boundary) and
-[external behavior](../testing/testing-external-behavior.md#cases-without-public-construction):
-construct, drive and observe the whole lifecycle through production interfaces.
-A guarded preview-only endpoint is not a production constructor. No fixture
-exception, internal service test, replacement DB seed or new product endpoint
-is introduced.
+Apply [API testing](../testing/api-testing.md#external-behavior-boundary) and
+[external behavior](../testing/testing-external-behavior.md#cases-without-public-construction)
+to the complete construction, drive and observation chain, including helpers.
+External Clerk/Discord mocking is permitted; inserting Okou binding/history
+business rows is not.
 
-Discord binding onboarding remains deferred. These new cases cannot construct
-that prerequisite through the existing production endpoints, which expose
-status, disconnect/uninstall and DM selection but not a binding constructor.
-The protected preview interface is retained for separately authorized manual
-non-production setup; it is not automated API acceptance evidence.
+## Historical finding and scope change
 
-## Removed unsupported additions
+The original nine new declarations depended on `seedDiscordFixture` ->
+`POST /api/test/discord-state`, directly or through `setupConnectedDiscordActor`.
+They were removed in the initial review repair. That removed **nine declarations /
+ten executions** of meaningful success/privacy/revocation behavior, not redundant
+copies or already-proven coverage. Request/admission validation did not replace
+those execution paths.
 
-All nine declarations below were added by #37968 and depended on
-`seedDiscordFixture` -> `POST /api/test/discord-state`. The endpoint inserts
-installation/connection business rows and returns 404 in production. Ingress
-reaches it through `connected()` -> `setupConnectedDiscordActor`; native cases
-reach it through `fixture()`. Clerk identity/membership mocks themselves remain
-valid external-provider infrastructure, not application business-row seeds.
+On 2026-10-08, the owner authorized genuine Discord OAuth authorization, server
+installation and member linking, and expressly retired the preview constructor.
+The route, contract, registration and private construction helpers are removed;
+there is no renamed privileged replacement. Product authorization, consent-browser
+approval and authenticated completion now establish the prerequisite binding.
+The original parity cases are restored in
+`turbo/apps/api/src/signals/routes/__tests__/discord-conversation-parity.test.ts`
+through that public lifecycle.
 
-| Exact new declaration                                                                                                        | Decision                                                            | Behavioral coverage lost or deferred                                               |
-| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| combines parent context, the thread starter, an older quoted message and attachment-only history within one bounded snapshot | Delete unsupported case                                             | Authorized context selection, bounds, attachment metadata and signed-URL exclusion |
-| omits unavailable parent history and never follows a reference into another channel                                          | Delete unsupported case                                             | Optional-parent omission and cross-channel reference isolation                     |
-| keeps an explicit DM reference out of the Agent's context                                                                    | Delete unsupported case                                             | Shared physical bot-DM privacy                                                     |
-| adds run attribution once to a split native send                                                                             | Delete unsupported case                                             | Run-scoped Discord attribution and split placement                                 |
-| references the same-channel message only on the first long-message chunk                                                     | Delete unsupported case                                             | Authorized first-segment reply and full-text preservation                          |
-| does not deliver a reply to a %s message                                                                                     | Delete one declaration, both `deleted` and `other-channel` branches | Missing/cross-channel target rejection                                             |
-| revalidates write access after reading a reply target                                                                        | Delete unsupported case                                             | Permission revocation between reference read and delivery                          |
-| requires shared history access for a guild reply without restricting ordinary writes                                         | Delete unsupported case                                             | Sender/bot history permission versus ordinary writes                               |
-| references the sender's own bot DM without reading its content                                                               | Delete unsupported case                                             | Own-DM referenced sending without content reads                                    |
+| Exact declaration                                                                                                            | Meaningful behavior restored                                                            |
+| ---------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| combines parent context, the thread starter, an older quoted message and attachment-only history within one bounded snapshot | Authorized context selection/bounds, attachment-only metadata and signed-URL exclusion. |
+| omits unavailable parent history and never follows a reference into another channel                                          | Optional-parent omission and cross-channel reference isolation.                         |
+| keeps an explicit DM reference out of the Agent's context                                                                    | Shared physical bot-DM privacy.                                                         |
+| adds run attribution once to a split native send                                                                             | Genuine Run-scoped attribution and one footer before splitting.                         |
+| references the same-channel message only on the first long-message chunk                                                     | Exact target, first-segment-only reference and complete text.                           |
+| does not deliver a reply to a %s message                                                                                     | Both `deleted` and `other-channel` branches reject without delivery.                    |
+| revalidates write access after reading a reply target                                                                        | Revocation between authorized target read and delivery.                                 |
+| requires shared history access for a guild reply without restricting ordinary writes                                         | History permission for referenced guild sends, not ordinary writes.                     |
+| references the sender's own bot DM without reading its content                                                               | Own-DM referenced send without reading private content.                                 |
 
-This removes nine declarations / ten executed cases, not nine equivalent copies
-of already-proven behavior. Their coverage is not claimed to overlap: the named
-success/privacy/revocation paths remain an explicit acceptance gap. Removing
-them follows the required construction policy, not a change to production
-permission or privacy behavior.
+Restored construction is `setupConnectedDiscordActor` -> real authenticated
+OAuth start -> signed provider callback -> consent-browser approval ->
+authenticated completion -> public status. Provider mocks control only external
+Discord responses. Connection IDs come from product status. Cleanup uses the
+actual caller's personal disconnect and administrator uninstall.
 
-Orphaned support removed with them: `claimMessage`, its contract/route/JWT/Zod
-imports, and the native fixture's newly added reply-reference request/receipt
-emulation. Existing Discord suites and shared fixture infrastructure are not
-rewritten or newly endorsed by this focused change; broader retirement belongs
-to the repository's existing test-boundary work.
+Native ordinary sends use a device-issued CLI token. Attribution/context cases
+admit work through the signed production Gateway, observe canonical Chat events,
+heartbeat/claim through the real Runner interface, and use its issued
+`platformEnvironment.OKOU_TOKEN`; they do not sign a random-Run JWT. Context is
+observed in the genuine Runner claim and messages through public native reads
+or external provider requests/receipts.
 
-## Retained and reachable verification
+**Execution status:** all ten restored executions passed against the final uniform
+start/callback/consent-browser approval/opener completion implementation. The
+focused command was `pnpm --filter api exec vitest run
+src/signals/routes/__tests__/discord-conversation-parity.test.ts --maxWorkers=2`.
+The first integration run exposed a test environment override mismatch; aligning
+the registered OAuth client-secret mock with the production `env` reader resolved
+it without changing product configuration or weakening checks. Admission validation and
+Slack regressions were not substituted for these ten execution paths. The separate
+[legacy retirement ledger](discord-public-test-lifecycle.md) records other deleted
+private-only cases/phases and genuine rewrites without calling lost coverage
+redundant.
 
-- `discord-message-admission.test.ts` uses only Clerk identity mocks and the real
-  send route/contract. It rejects malformed, zero, fractional, negative and
-  out-of-range reply IDs, and verifies default-off rejection with and without
-  the optional reference, including the maximum unsigned 64-bit ID. It creates
-  no Discord binding, business row, fabricated Run or privileged preview state.
-- Discord CLI tests enter through Commander and MSW; subprocess cases read actual
-  piped stdin. They retain exact reply IDs, destination preservation, multiline
-  stdin, explicit-text precedence, empty/oversized input guidance, history
-  reference presentation and snowflake validation.
-- Existing Slack native-send regressions exercise the shared attribution
-  extraction. Their result is reported separately from the public-construction
-  status of pre-existing test helpers; no new private fixture dependency is added.
-- Production source review verifies bounded context, exact target resolution,
-  independent parent access, connection checks, post-reference write
-  revalidation, DM-history early exits and mention-notification suppression.
-  Source review is not a substitute for executing the deferred acceptance paths.
+## Independently reachable verification
 
-No live Discord/Slack, Gateway deployment or production activation is authorized
-or established by this ledger. The integration remains default-off. Before an
-explicit test rollout, execute the authorized acceptance checklist and record
-its exact revision, environment, authorization and outcome. A future production
-binding lifecycle permits new complete API tests without a fixture exception.
+- `discord-message-admission.test.ts` still exercises malformed/out-of-range reply
+  IDs and default-off rejection through the real send route, with Clerk identity
+  mocks only and no binding/Run construction.
+- CLI Commander/MSW tests and actual piped-stdin subprocesses retain exact reply
+  IDs, multiline input, explicit-text precedence, bounds, destination and history
+  reference presentation. `discord connect` enters authenticated App settings;
+  no CLI process tries to plant its own nonce cookie in the consent browser.
+- Existing Slack send regressions test shared attribution separately. No new
+  Slack private business setup is introduced or presented as Discord acceptance.
+- Product OAuth tests must independently cover application/scopes/identity/guild
+  proof, current membership/admin/gate, wrong consent-browser owner, state/proof
+  mismatch, expiration/replay/concurrent claims, identity/org exclusivity,
+  legitimate idempotence and welcome once. Anonymous callback success or a URL
+  status cannot grant a binding.
+
+No live Slack/Discord, production configuration, Gateway deployment or activation
+is established. Both feature and Gateway remain default-off. Record exact revision,
+commands/results and limits before claiming automated or separately authorized
+real-guild acceptance.

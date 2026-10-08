@@ -84,7 +84,6 @@ import { desktopAuthRoutes } from "./routes/desktop-auth";
 import { desktopUpdateRoutes } from "./routes/desktop-updates";
 import { discordGatewayRoutes } from "./routes/discord-gateway";
 import { discordInteractionsRoutes } from "./routes/discord-interactions";
-import { discordStatePreviewRoutes } from "./routes/discord-state-preview";
 import { discordOauthRoutes } from "./routes/discord-oauth";
 import { emailInboundRoutes } from "./routes/email-inbound";
 import { emailSubscriptionRoutes } from "./routes/email-subscription";
@@ -437,7 +436,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...integrationsDiscordFileRoutes,
   ...integrationsSlackRoutes,
   ...integrationsDiscordRoutes,
-  ...discordStatePreviewRoutes,
   ...integrationsSlackMessageRoutes,
   ...integrationsSlackReadRoutes,
   ...integrationsDiscordReadRoutes,
