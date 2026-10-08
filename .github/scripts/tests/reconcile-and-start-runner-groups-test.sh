@@ -110,6 +110,17 @@ exec "$@"
 SH
 chmod +x "${tmp_dir}/bin/sudo"
 
+cat >"${tmp_dir}/bin/ansible-playbook" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "$#" -eq 7 ] && [ "$1" = -i ] && [ "$4" = --tags ] &&
+  [ "$5" = runner_wss_host ] && [ "$6" = -e ] && [ "$7" = ansible_user=ci ]
+[[ "$3" == */ansible/playbooks/provision-runner.yml ]]
+printf '%s\tprerequisites\n' "${2%,}" >>"$MOCK_SERVICE_LOG"
+[ "${MOCK_FAILURE:-none}" != preflight ]
+SH
+chmod +x "${tmp_dir}/bin/ansible-playbook"
+
 cat >"${tmp_dir}/bin/gh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -229,6 +240,21 @@ run_case() {
     GITHUB_OUTPUT="${case_dir}/github-output" \
     bash "${tmp_dir}/run-deployment" "$script" >"${case_dir}/output" 2>&1 || status=$?
 
+  if [ "$failure" = preflight ]; then
+    [ "$status" -ne 0 ] || fail "${case_name}: failed host preparation must fail deployment"
+    [ "$(cat "${case_dir}/service.log")" = "$(printf '%s\tprerequisites' "$selected_host")" ] ||
+      fail "${case_name}: failed preflight reached service operations"
+    host_index=0
+    for host in arm-1 x86-1 x86-2; do
+      host_index=$((host_index + 1))
+      [ "$(cat "${case_dir}/${host}/${service_ref}-${host_index}")" = existing-service ] ||
+        fail "${case_name}: failed preflight retired an existing service"
+      [ "$(cat "${case_dir}/${host}/pr-999-${host_index}")" = unrelated-service ] ||
+        fail "${case_name}: failed preflight changed another namespace"
+    done
+    return
+  fi
+
   if [ "$failure" != none ]; then
     [ "$status" -ne 0 ] || fail "${case_name}: ${failure} failure must fail deployment"
     if [ "$failure" = cancel ]; then
@@ -285,6 +311,7 @@ run_case x86 pr-1 x86-1 2 none
 run_case x86 pr-1 x86-1 2 none
 run_case arm pr-2 arm-1 1 none
 run_case recovered-binary pr-1 x86-1 2 none true
+run_case failed-preflight pr-1 x86-1 2 preflight
 run_case failed-start pr-9 x86-2 3 readiness
 run_case invalid-identity pr-9 x86-2 3 identity
 run_case failed-retirement pr-1 x86-1 2 retire

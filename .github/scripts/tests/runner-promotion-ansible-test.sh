@@ -215,6 +215,9 @@ if grep -Fq -- "flock" "$gc_task"; then
   exit 1
 fi
 
+# Root-owned host preparation and its pre-cutover failure gate run separately
+# in provision-runner-wss-host-test.sh's private mount namespace. These existing
+# two-host fixtures retain the Runner lifecycle boundary and synthetic paths.
 run_promotion() {
   local output=$1
   local warning_dir=$2
@@ -225,6 +228,7 @@ run_promotion() {
     ansible-playbook \
       -i "$inventory" \
       --forks 2 \
+      --skip-tags runner_wss_host \
       -e "data_dir=$data_dir" \
       -e "runner_host_env_file=$tmp/host.env" \
       -e "runner_version=999.0.0" \

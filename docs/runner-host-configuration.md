@@ -1,5 +1,63 @@
 # Runner Host Configuration
 
+## Protected WSS Socket Namespace
+
+Normal host preparation owns the persistent `okou-wss-caddy` system group and
+`/run/okou-ws` namespace independently of optional Caddy installation. The
+namespace must be a real directory owned by `root:okou-wss-caddy`, exact mode
+`0710`, without setgid. Only trusted root/Runner writers may create entries;
+ordinary login users receive no membership. The optional ingress slice owns
+any later narrowly scoped membership for its dedicated Caddy user.
+
+`ansible/playbooks/provision-runner.yml` imports shared `runner_wss_host` tasks.
+The same prerequisite runs before promotion/rollback lifecycle changes and
+before cached preview/staging reconciliation retires or starts services. The
+provision action executes it even when the Ansible-tree hash permits skipping
+expensive package/monitoring setup. Shared Runner Image and behavior consumers
+therefore do not depend on an operator running a Caddy playbook first.
+
+Provisioning installs the root-owned helper
+`/usr/local/libexec/okou-runner-wss-host-prepare.py` and the prefix drop-in
+`/etc/systemd/system/vm0-runner-.service.d/10-wss-host.conf`. Systemd applies its
+`ExecStartPre` to every `vm0-runner-<suffix>.service`, including release, preview
+and behavior units. It restores a missing volatile namespace **before each
+Runner process**, including boot, and a preparation failure prevents that
+process from starting. Updating this policy only reloads systemd configuration;
+it does not restart or drain already-running Runners.
+
+The helper requires root, accepts no path/group overrides, validates root-owned
+non-group/world-writable `/` and `/run`, and uses no-follow directory descriptors.
+Concurrent preparers serialize on the opened `/run` directory. Only a directory
+newly created by the helper receives ownership/mode changes; existing state must
+already match the exact contract. Symlinks, non-directories, unsafe parents and
+conflicting metadata fail rather than being followed, replaced or repaired.
+Namespace POSIX ACLs and parent default ACLs are also rejected: numeric mode
+alone can hide named-user access or inherited grants on future sockets.
+The helper never traverses, removes, chowns or chmods existing child endpoints.
+If creation fails partway, preparation remains failed; operators must investigate
+rather than widen permissions or automatically remove the namespace.
+
+A plain tmpfiles `d` rule is deliberately not used: it converges existing
+metadata at boot, and create-only mode/owner/group modifiers are unavailable in
+the Ubuntu 22.04/systemd 249 baseline. The guarded pre-start drop-in preserves
+the same fail-closed contract without a separate readiness service.
+
+Deliver these prerequisites before the listener-capable Runner in #37027, then
+optional Caddy ingress in #37028, and coordinate physical-host reboot and real
+path acceptance in #37030. The Runner owns each `<runner_id>.sock` endpoint,
+which must be `root:okou-wss-caddy 0660` even when that GID differs from the
+Runner's effective GID. Namespace preparation does not fix pathname socket
+ownership, implement the listener/Guest channel, or prove WSS capability/public
+reachability. Never add directory setgid or weaken the group check to mask a
+socket-FD ownership defect.
+
+With valid local prerequisites, absent/stopped/unqueryable Caddy must not block
+ordinary startup, claims or heartbeats; inactive ingress only denies new WSS
+tickets. Preparing the namespace never installs, enables, starts or probes Caddy.
+Rolling back a Runner release keeps these shared host prerequisites and must not
+remove another release's endpoints or reset the directory. Removing host policy
+or activating production ingress requires separate operational authorization.
+
 ## Diagnostic Host Attribution
 
 `runner.yaml` may contain an optional `hostname` used to identify the physical

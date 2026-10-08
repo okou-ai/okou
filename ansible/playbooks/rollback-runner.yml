@@ -91,6 +91,10 @@
           Missing or invalid `rollback_mode` (graceful | emergency). Got
           rollback_mode='{{ rollback_mode | default('<undefined>') }}'.
 
+    - name: Prepare Runner WSS prerequisites before rollback lifecycle changes
+      ansible.builtin.import_tasks: ../tasks/provision-runner-wss-host.yml
+      tags: runner_wss_host
+
     - name: Validate runner architecture
       include_tasks: ../tasks/validate-runner-architecture.yml
 

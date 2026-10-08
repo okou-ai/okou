@@ -339,6 +339,8 @@ jobs:
             .github/scripts/tests/neon-connection-string-ssl-test.sh \
             .github/scripts/tests/okou-desktop-artifact-test.sh \
             .github/scripts/tests/provision-runner-kvm-test.sh \
+            .github/scripts/tests/provision-runner-wss-host-test.sh \
+            .github/scripts/tests/provision-runner-wss-action-test.sh \
             .github/scripts/tests/release-tool-downloads-test.sh \
             .github/scripts/tests/resolve-desktop-version-change-test.sh \
             .github/scripts/tests/runner-attribution-ansible-test.sh \

@@ -1,8 +1,8 @@
 # Provision Runner Host Dependencies
 #
 # Idempotent playbook that installs all system-level dependencies required by
-# the Okou runner on runner hosts. Safe to run repeatedly — all tasks use
-# idempotent operations (apt state=present, group append, file metadata convergence).
+# the Okou runner on runner hosts. Safe to run repeatedly; ordinary dependencies
+# converge, while the protected WSS namespace rejects conflicting existing state.
 #
 # Usage:
 #   ansible-playbook -i "host1,host2," playbooks/provision-runner.yml \
@@ -12,6 +12,10 @@
   hosts: all
 
   tasks:
+    - name: Provision protected Runner WSS host prerequisites
+      ansible.builtin.import_tasks: ../tasks/provision-runner-wss-host.yml
+      tags: runner_wss_host
+
     - name: Wait for apt lock to be released
       shell: |
         while fuser \
@@ -55,7 +59,7 @@
           # Managed by ansible/playbooks/provision-runner.yml - do not edit.
           fs.inotify.max_user_instances = 8192
           fs.inotify.max_user_watches = 1048576
-        mode: '0644'
+        mode: "0644"
       become: true
 
     - name: Apply runner sysctl limits
@@ -92,7 +96,7 @@
       file:
         path: /etc/needrestart/conf.d
         state: directory
-        mode: '0755'
+        mode: "0755"
       become: true
 
     - name: Exempt vm0-runner services from needrestart auto-restart
@@ -108,7 +112,7 @@
           # needrestart that drops one layer still leaves the other intact.
           $nrconf{override_rc}->{qr(^vm0-runner-)} = 0;
           push(@{$nrconf{blacklist_rc}}, qr(^vm0-runner-));
-        mode: '0644'
+        mode: "0644"
       become: true
 
     - name: Add user to kvm group
@@ -125,7 +129,7 @@
         path: /dev/kvm
         owner: root
         group: kvm
-        mode: '0660'
+        mode: "0660"
       become: true
 
     # Write options BEFORE enabling auto-load so that a reboot between
@@ -134,14 +138,14 @@
       copy:
         dest: /etc/modprobe.d/nbd.conf
         content: "options nbd nbds_max=4096\n"
-        mode: '0644'
+        mode: "0644"
       become: true
 
     - name: Persist nbd module across reboots
       copy:
         dest: /etc/modules-load.d/nbd.conf
         content: "nbd\n"
-        mode: '0644'
+        mode: "0644"
       become: true
 
     - name: Load nbd kernel module with correct nbds_max

@@ -38,6 +38,10 @@
     runner_dir: "{{ data_dir }}/runners/{{ runner_release }}"
 
   tasks:
+    - name: Prepare Runner WSS prerequisites before traffic cutover
+      ansible.builtin.import_tasks: ../tasks/provision-runner-wss-host.yml
+      tags: runner_wss_host
+
     - name: Validate runner architecture
       include_tasks: ../tasks/validate-runner-architecture.yml
 

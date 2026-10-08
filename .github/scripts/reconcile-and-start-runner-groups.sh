@@ -45,6 +45,13 @@ SELECTED_HOST=$(jq -r '.host' <<<"$SELECTED_CONTEXT")
 export SELECTED_HOST
 echo "Selected runner service host: ${SELECTED_HOST}"
 
+# Cached image/binary receipts do not prove host prerequisites. Prepare before
+# retirement or partial-start cleanup is armed so failure preserves live units.
+ANSIBLE_CONFIG="${SCRIPT_DIR}/../../ansible/ansible.cfg" \
+  ansible-playbook -i "${SELECTED_HOST}," \
+    "${SCRIPT_DIR}/../../ansible/playbooks/provision-runner.yml" \
+    --tags runner_wss_host -e "ansible_user=${METAL_USER}"
+
 work_dir=$(mktemp -d "${RUNNER_TEMP:-/tmp}/runner-reconcile-start.XXXXXX")
 export RUNNER_RECEIPT_FILE="${work_dir}/receipt.json"
 trap 'rm -rf "$work_dir"' EXIT

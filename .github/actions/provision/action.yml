@@ -44,6 +44,18 @@ runs:
           exit 1
         fi
 
+        if ! command -v ansible-playbook &>/dev/null; then
+          if ! command -v pip3 &>/dev/null; then
+            rm -rf /var/lib/apt/lists/* && apt-get update && apt-get install -y python3 python3-pip
+          fi
+          pip3 install ansible-core
+        fi
+
+        # Volatile namespace and boot policy are prerequisites even when the
+        # expensive package/monitoring provisioning hash is already current.
+        ansible-playbook -i "${HOSTS}," ansible/playbooks/provision-runner.yml \
+          --tags runner_wss_host -e "ansible_user=${METAL_USER}" -v
+
         ANSIBLE_HASH=$(git rev-parse HEAD:ansible)
         STALE_HOSTS=""
         for HOST in $(echo "$HOSTS" | tr ',' ' '); do
@@ -60,13 +72,6 @@ runs:
         fi
 
         echo "=== Provisioning: ${STALE_HOSTS} ==="
-        if ! command -v ansible-playbook &>/dev/null; then
-          if ! command -v pip3 &>/dev/null; then
-            rm -rf /var/lib/apt/lists/* && apt-get update && apt-get install -y python3 python3-pip
-          fi
-          pip3 install ansible-core
-        fi
-
         ansible-playbook -i "${STALE_HOSTS}," ansible/playbooks/provision-runner.yml \
           -e "ansible_user=${METAL_USER}" -v
 

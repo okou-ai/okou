@@ -100,6 +100,8 @@
 4 kms-production-retirement-test.sh
 4 neon-connection-string-ssl-test.sh
 4 provision-runner-kvm-test.sh
+3 provision-runner-wss-host-test.sh
+3 provision-runner-wss-action-test.sh
 4 prune-runner-idle-test.sh
 4 reconcile-runner-binary-groups-test.sh
 4 resolve-app-preview-alias-test.sh
