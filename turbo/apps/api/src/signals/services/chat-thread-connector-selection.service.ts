@@ -287,7 +287,7 @@ export const prepareChatThreadConnectorSelections$ = command(
       if (!targetIsAuthorized(scope, selection.target)) {
         return {
           kind: "invalid",
-          message: "Connector target is not authorized for this chat thread",
+          message: "Connector target is not authorized for this agent",
         };
       }
     }
