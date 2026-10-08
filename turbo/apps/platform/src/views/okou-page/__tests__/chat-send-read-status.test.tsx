@@ -151,7 +151,7 @@ test("Unread refresh failure ends submission without cancelling the pending POST
   expect(composer).toHaveTextContent("Keep the follow-up ready");
 });
 
-test("Forwarding dismisses its composer before unread refresh or POST completes", async () => {
+test("Forwarding waits for prompt acceptance without waiting for unread refresh", async () => {
   const indicatorsRequested = context.mocks.deferred<void>();
   const indicatorsResponse = context.mocks.deferred<void>();
   const sendRequested = context.mocks.deferred<void>();
@@ -210,17 +210,20 @@ test("Forwarding dismisses its composer before unread refresh or POST completes"
   await indicatorsRequested.promise;
   click(await findEnabledButton("Send", dialog));
 
-  await expect(
-    screen.findByText("Forwarded successfully"),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  expect(originalComposer).toHaveTextContent("Keep the existing notes.");
   await sendRequested.promise;
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  expect(screen.queryByText("Forwarded successfully")).not.toBeInTheDocument();
+  expect(originalComposer).toHaveTextContent("Keep the existing notes.");
   expect(sendResponse.settled()).toBeFalsy();
   expect(indicatorsResponse.settled()).toBeFalsy();
 
   sendResponse.resolve();
   await runStarted.promise;
+  await expect(
+    screen.findByText("Forwarded successfully"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(indicatorsResponse.settled()).toBeFalsy();
   lifecycle.setRunOutput("The agent received the forwarded stages.");
   await expect(
     screen.findByText("The agent received the forwarded stages."),

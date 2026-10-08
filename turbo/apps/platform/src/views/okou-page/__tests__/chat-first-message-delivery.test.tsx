@@ -99,6 +99,7 @@ function presentThreadMetadata(threadId: string) {
       serviceTier: null,
       pinnedAt: null,
       archived: false,
+      muted: false,
       computerUseHostId: null,
       cloudBrowserEnabled: false,
     });

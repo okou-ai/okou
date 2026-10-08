@@ -236,48 +236,41 @@ function createSendInputChatEvent({
         clientEventId,
       });
       const send = async (): Promise<boolean> => {
-        if (navigator.locks) {
-          const sent = await withDeliveryLock(
+        const request = navigator.locks
+          ? withDeliveryLock(identity, clientEventId, "prompt", signal, () => {
+              return sendChatEvent(get(apiClient$), intent.body, signal);
+            })
+          : sendChatEvent(get(apiClient$), intent.body, signal);
+        const outcome = await settle(request);
+        signal.throwIfAborted();
+        if (!outcome.ok || outcome.value === null) {
+          updateDeliveryIntent(
             identity,
             clientEventId,
-            "prompt",
-            signal,
-            () => {
-              return sendChatEvent(get(apiClient$), intent.body, signal);
-            },
+            outcome.ok
+              ? { status: "uncertain", rejection: null }
+              : classifyDeliveryFailure(outcome.error),
           );
-          return sent !== null;
+          set(deliveryIntentsChanged$);
+          return false;
         }
-        await sendChatEvent(get(apiClient$), intent.body, signal);
+        updateDeliveryIntent(identity, clientEventId, {
+          status: "accepted",
+          rejection: null,
+        });
+        set(deliveryIntentsChanged$);
+        await Promise.resolve(input.onOptimisticSend?.());
+        signal.throwIfAborted();
+        L.debug("send input accepted", {
+          traceTime: chatEventTraceTime(),
+          threadId,
+          clientEventId,
+        });
         return true;
       };
-      const outcome = await settle(
-        Promise.all([optimisticEventChanged, send()]),
-      );
+      const [, sent] = await Promise.all([optimisticEventChanged, send()]);
       signal.throwIfAborted();
-      if (!outcome.ok || !outcome.value[1]) {
-        updateDeliveryIntent(
-          identity,
-          clientEventId,
-          outcome.ok
-            ? { status: "uncertain", rejection: null }
-            : classifyDeliveryFailure(outcome.error),
-        );
-        set(deliveryIntentsChanged$);
-        return false;
-      }
-      updateDeliveryIntent(identity, clientEventId, {
-        status: "accepted",
-        rejection: null,
-      });
-      set(deliveryIntentsChanged$);
-      input.onOptimisticSend?.();
-      L.debug("send input accepted", {
-        traceTime: chatEventTraceTime(),
-        threadId,
-        clientEventId,
-      });
-      return true;
+      return sent;
     },
   );
 }
