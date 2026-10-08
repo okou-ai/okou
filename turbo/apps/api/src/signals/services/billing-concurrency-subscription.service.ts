@@ -1462,7 +1462,10 @@ function concurrencyRecurringPreviewParams(
       subscription_details: { items, proration_behavior: "none" },
     };
   }
-  if (scheduledPreview.kind === "shared") {
+  if (
+    scheduledPreview.kind === "shared" ||
+    (scheduledPreview.kind === "neutral" && scheduledPreview.item === null)
+  ) {
     if (targetQuantity >= currentQuantity) {
       return {
         schedule: scheduledPreview.id,
