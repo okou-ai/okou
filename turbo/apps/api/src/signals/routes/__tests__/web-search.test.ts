@@ -8,7 +8,6 @@ import {
   billingUsagePackCreditsContract,
 } from "@okouai/api-contracts/contracts/billing";
 import { getStartedContract } from "@okouai/api-contracts/contracts/get-started";
-import { testUsageSettlementContract } from "@okouai/api-contracts/contracts/test-usage-settlement";
 import {
   WEB_SEARCH_MAX_SNIPPET_CHARS,
   WEB_SEARCH_MAX_TITLE_CHARS,
@@ -21,7 +20,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { env, mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import {
   createUsagePricingFixture,
@@ -36,7 +35,6 @@ import { createDeferredPromise } from "../../utils";
 import { billingStatusRoutes } from "../billing-status";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { getStartedRoutes } from "../get-started";
-import { testUsageSettlementRoutes } from "../test-usage-settlement";
 import { webSearchRoutes } from "../web-search";
 import {
   createBddApi,
@@ -206,7 +204,10 @@ async function cleanupFundedWebSearchActor(
   ).toStrictEqual([]);
 }
 
-async function fundActorWithSubscription(actor: ApiTestUser): Promise<void> {
+async function fundActorWithSubscription(
+  actor: ApiTestUser,
+  includeTopUp = true,
+): Promise<void> {
   if (!actor.orgId) {
     throw new Error("Web Search test actor must belong to an organization");
   }
@@ -273,6 +274,9 @@ async function fundActorWithSubscription(actor: ApiTestUser): Promise<void> {
       credits: 0,
     });
 
+    if (!includeTopUp) {
+      return;
+    }
     await webhooks.postStripeEvent(
       {
         id: `evt_web_search_paid_${suffix}`,
@@ -385,98 +389,75 @@ function providerResponse() {
 }
 
 describe("okou web-search route", () => {
-  it.each([
-    { packageCredits: 8, orgCredits: 5, expectedOrg: -7 },
-    { packageCredits: 8, orgCredits: 0, expectedOrg: -12 },
-    { packageCredits: 8, orgCredits: -5, expectedOrg: -17 },
-    { packageCredits: 0, orgCredits: 5, expectedOrg: -15 },
-  ])(
-    "settles four concurrent five-credit searches with package $packageCredits and organization $orgCredits without member overdraft",
-    async ({ packageCredits, orgCredits, expectedOrg }) => {
-      const actor = createBddApi(context).user();
-      configureProvider();
-      const pricing = await setupConfiguredWebSearchPricing();
-      await fundActor(actor);
-      const fixture = setupApp({ context, routes: testUsageSettlementRoutes })(
-        testUsageSettlementContract,
-      );
-      await accept(
-        fixture.setup({ body: { org_id: actor.orgId!, credits: orgCredits } }),
-        [200],
-      );
-      if (packageCredits > 0) {
-        await accept(
-          fixture.createGrant({
-            body: {
-              org_id: actor.orgId!,
-              user_id: actor.userId,
-              grant_type: "bonus",
-              idempotency_key: `pack-no-overdraft:${randomUUID()}`,
-              amount: packageCredits,
-              expires_at: "2099-01-01T00:00:00.000Z",
-            },
-          }),
+  it("settles concurrent check-in searches into organization debt, rejects unfunded work and keeps a new package independent", async () => {
+    const actor = createBddApi(context).user();
+    configureProvider();
+    await fundActorWithSubscription(actor, false);
+    const headers = authenticate(actor);
+    const checkin = setupApp({ context, routes: getStartedRoutes })(
+      getStartedContract,
+    );
+    const packages = setupApp({
+      context,
+      routes: billingUsagePackCreditsRoutes,
+    })(billingUsagePackCreditsContract);
+    await accept(checkin.checkin({ headers }), [200]);
+    expect(
+      (await accept(packages.get({ headers }), [200])).body.totalCredits,
+    ).toBe(100);
+    await expect(credits(actor)).resolves.toBe(0);
+    const providerRelease = createDeferredPromise<void>(context.signal);
+    let admitted = 0;
+    server.use(
+      http.post(PERPLEXITY_SEARCH_URL, async () => {
+        admitted++;
+        if (admitted === 22) {
+          providerRelease.resolve();
+        }
+        await providerRelease.promise;
+        return HttpResponse.json(providerResponse());
+      }),
+    );
+    const search = client()(webSearchContract);
+    const responses = await Promise.all(
+      Array.from({ length: 22 }, () => {
+        return accept(
+          search.search({ headers, body: defaultRequest() }),
           [200],
         );
-      }
-      const before = (
-        await accept(fixture.state({ body: { org_id: actor.orgId! } }), [200])
-      ).body;
-      expect(before.org_credits).toBe(orgCredits);
-      const providerRelease = createDeferredPromise<void>(context.signal);
-      let admitted = 0;
-      server.use(
-        http.post(PERPLEXITY_SEARCH_URL, async () => {
-          admitted++;
-          if (admitted === 4) {
-            providerRelease.resolve();
-          }
-          await providerRelease.promise;
-          return HttpResponse.json(providerResponse());
-        }),
-      );
-      const headers = authenticate(actor);
-      const responses = await Promise.all(
-        Array.from({ length: 4 }, () => {
-          return accept(
-            client(pricing.resolution)(webSearchContract).search({
-              headers,
-              body: defaultRequest(),
-            }),
-            [200],
-          );
-        }),
-      );
-      expect(
-        responses.map((response) => {
-          return response.body.creditsCharged;
-        }),
-      ).toStrictEqual([5, 5, 5, 5]);
-      const after = (
-        await accept(fixture.state({ body: { org_id: actor.orgId! } }), [200])
-      ).body;
-      expect(after.org_credits).toBe(expectedOrg);
-      expect(
-        after.grants.map((grant) => {
-          return grant.remaining_amount;
-        }),
-      ).toStrictEqual(packageCredits > 0 ? [0] : []);
-      // The incurred charge can overdraw org; zero available balance rejects new work.
-      const rejected = await client(pricing.resolution)(
-        webSearchContract,
-      ).search({ headers: authenticate(actor), body: defaultRequest() });
-      expect(rejected.status).toBe(402);
-      expect(
-        (await accept(fixture.state({ body: { org_id: actor.orgId! } }), [200]))
-          .body,
-      ).toStrictEqual(after);
-    },
-  );
+      }),
+    );
+    expect(
+      responses.every((response) => {
+        return response.body.creditsCharged === 5;
+      }),
+    ).toBeTruthy();
+    const depleted = (await accept(packages.get({ headers }), [200])).body;
+    expect(depleted.totalCredits).toBe(0);
+    expect(depleted.creditGrants).toStrictEqual([]);
+    await expect(credits(actor)).resolves.toBe(-10);
+    await accept(search.search({ headers, body: defaultRequest() }), [402]);
+    expect((await accept(packages.get({ headers }), [200])).body).toStrictEqual(
+      depleted,
+    );
+    await expect(credits(actor)).resolves.toBe(-10);
+
+    mockNow(now() + 24 * 60 * 60 * 1000);
+    await accept(checkin.checkin({ headers }), [200]);
+    expect(
+      (await accept(packages.get({ headers }), [200])).body.totalCredits,
+    ).toBe(100);
+    await expect(credits(actor)).resolves.toBe(-10);
+    await accept(search.search({ headers, body: defaultRequest() }), [200]);
+    expect(
+      (await accept(packages.get({ headers }), [200])).body.totalCredits,
+    ).toBe(95);
+    await expect(credits(actor)).resolves.toBe(-10);
+  });
 
   it("exhausts a check-in package once across concurrent searches and charges the remainder to the organization", async () => {
     const actor = createBddApi(context).user();
     configureProvider();
-    const pricing = await setupConfiguredWebSearchPricing();
     await fundActorWithSubscription(actor);
     const headers = authenticate(actor);
     await accept(
@@ -497,7 +478,7 @@ describe("okou web-search route", () => {
         return HttpResponse.json(providerResponse());
       }),
     );
-    const search = client(pricing.resolution)(webSearchContract);
+    const search = client()(webSearchContract);
     const responses = await Promise.all(
       Array.from({ length: 22 }, () => {
         return accept(
