@@ -178,12 +178,61 @@ describe("Codex structured retry classification", () => {
     expect(piModelFailureReason(final)).toBe("provider_server_error");
   });
 
-  it.each([200, 503])(
-    "keeps the full cybersecurity refusal terminal behind HTTP %s",
-    async (status) => {
-      const message = cyberSafetyRefusal.errorMessage.slice(
-        "Codex error: ".length,
-      );
+  it("keeps native text retries for an unclassified HTTP-200 failure", async () => {
+    let requests = 0;
+    server.use(
+      http.post(endpoint, () => {
+        requests++;
+        return requests === 1
+          ? new HttpResponse(
+              `data: ${JSON.stringify({ type: "error", message: "socket hang up" })}`,
+              { headers: { "content-type": "text/event-stream" } },
+            )
+          : successResponse();
+      }),
+    );
+    const { created, retries, answers } = await session();
+    await created.session.prompt("hello");
+    expect(requests).toBe(2);
+    expect(retries).toStrictEqual([{ attempt: 1, maxAttempts: 2 }]);
+    expect(answers).toHaveLength(2);
+    const first = answers[0];
+    if (!first) throw new Error("Missing first assistant answer");
+    expect(first).toMatchObject({
+      stopReason: "error",
+      diagnostics: [
+        {
+          type: "okou_model_request",
+          details: { httpStatus: 200, transportAttempts: 1 },
+        },
+      ],
+    });
+    expect(piModelFailureReason(first)).toBeUndefined();
+    expect(answers.at(-1)).toMatchObject({ stopReason: "stop" });
+  });
+
+  it.each(
+    [200, 503].flatMap((status) => {
+      return [
+        "https://example.invalid/policy",
+        "https://example.invalid/503",
+        "https://example.invalid/policy?request=500",
+        "<redacted:url>",
+      ].map((link) => {
+        return { status, link };
+      });
+    }),
+  )(
+    "keeps the full cybersecurity refusal terminal behind HTTP $status with $link",
+    async ({ status, link }) => {
+      const refusal = {
+        ...cyberSafetyRefusal,
+        errorMessage: cyberSafetyRefusal.errorMessage.replace(
+          "https://example.invalid/policy",
+          link,
+        ),
+      };
+      const message = refusal.errorMessage.slice("Codex error: ".length);
       let requests = 0;
       server.use(
         http.post(endpoint, () => {
@@ -217,7 +266,8 @@ describe("Codex structured retry classification", () => {
         ],
       });
       expect(piModelFailureReason(final)).toBe("safety_policy_refusal");
-      if (status === 200) expect(final).toMatchObject(cyberSafetyRefusal);
+      expect(final.errorMessage).toContain(message);
+      if (status === 200) expect(final).toMatchObject(refusal);
     },
   );
 

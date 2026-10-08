@@ -34,7 +34,7 @@ patchedDependencies:
     hash: ef1d9f76dcbb7bf4a4786c3651170af05dc5b22a301a05646d90c87f0374ad7f
     path: patches/@earendil-works__pi-agent-core@0.87.1.patch
   '@earendil-works/pi-ai@0.87.1':
-    hash: 2f07bdd6c337b5a6d83b18a3f870b68ab92dc8f97e8624f8f06330936f154e12
+    hash: 3330e8df5a68c98e8b2bd45d1ab1cd1607bebbde7b349127fe48018a8ea71229
     path: patches/@earendil-works__pi-ai@0.87.1.patch
   '@earendil-works/pi-coding-agent@0.87.1':
     hash: a0554bc5a7417b6b8695bfcbd5c87a0eb7304d9387b79a3d23173557bb0d707a
@@ -1108,7 +1108,7 @@ importers:
     dependencies:
       '@earendil-works/pi-ai':
         specifier: 0.87.1
-        version: 0.87.1(patch_hash=2f07bdd6c337b5a6d83b18a3f870b68ab92dc8f97e8624f8f06330936f154e12)(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
+        version: 0.87.1(patch_hash=3330e8df5a68c98e8b2bd45d1ab1cd1607bebbde7b349127fe48018a8ea71229)(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
       '@earendil-works/pi-coding-agent':
         specifier: 0.87.1
         version: 0.87.1(patch_hash=a0554bc5a7417b6b8695bfcbd5c87a0eb7304d9387b79a3d23173557bb0d707a)(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
@@ -10179,7 +10179,7 @@ snapshots:
   '@earendil-works/pi-agent-core@0.87.1(patch_hash=ef1d9f76dcbb7bf4a4786c3651170af05dc5b22a301a05646d90c87f0374ad7f)(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)':
     dependencies:
       '@earendil-works/chord': 0.87.1
-      '@earendil-works/pi-ai': 0.87.1(patch_hash=2f07bdd6c337b5a6d83b18a3f870b68ab92dc8f97e8624f8f06330936f154e12)(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
+      '@earendil-works/pi-ai': 0.87.1(patch_hash=3330e8df5a68c98e8b2bd45d1ab1cd1607bebbde7b349127fe48018a8ea71229)(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
       '@earendil-works/pi-telemetry': 0.87.1
       diff: 8.0.4
       ignore: 7.0.8
@@ -10194,7 +10194,7 @@ snapshots:
       - ws
       - zod
 
-  '@earendil-works/pi-ai@0.87.1(patch_hash=2f07bdd6c337b5a6d83b18a3f870b68ab92dc8f97e8624f8f06330936f154e12)(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)':
+  '@earendil-works/pi-ai@0.87.1(patch_hash=3330e8df5a68c98e8b2bd45d1ab1cd1607bebbde7b349127fe48018a8ea71229)(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)':
     dependencies:
       '@anthropic-ai/sdk': 0.124.0(zod@4.5.4)
       '@aws-sdk/client-bedrock-runtime': 3.1127.0
@@ -10219,7 +10219,7 @@ snapshots:
     dependencies:
       '@earendil-works/chord': 0.87.1
       '@earendil-works/pi-agent-core': 0.87.1(patch_hash=ef1d9f76dcbb7bf4a4786c3651170af05dc5b22a301a05646d90c87f0374ad7f)(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
-      '@earendil-works/pi-ai': 0.87.1(patch_hash=2f07bdd6c337b5a6d83b18a3f870b68ab92dc8f97e8624f8f06330936f154e12)(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
+      '@earendil-works/pi-ai': 0.87.1(patch_hash=3330e8df5a68c98e8b2bd45d1ab1cd1607bebbde7b349127fe48018a8ea71229)(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.5.4)
       '@earendil-works/pi-tui': 0.87.1
       '@silvia-odwyer/photon-node': 0.3.4
       chalk: 6.0.0
