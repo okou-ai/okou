@@ -296,20 +296,32 @@ mod tests {
 
     #[test]
     fn rejects_decompression_beyond_the_archive_budget() {
-        let encoder = GzEncoder::new(Vec::new(), Compression::fast());
-        let mut archive = tar::Builder::new(encoder);
-        let mut header = tar::Header::new_gnu();
-        header.set_size(MAX_ARCHIVE_BYTES + 1);
-        header.set_mode(0o644);
-        header.set_cksum();
-        archive
-            .append_data(
-                &mut header,
-                "package/padding",
-                io::repeat(0).take(MAX_ARCHIVE_BYTES + 1),
-            )
-            .unwrap();
-        let bytes = archive.into_inner().unwrap().finish().unwrap();
+        let package_with_padding = |padding_size| {
+            let encoder = GzEncoder::new(Vec::new(), Compression::fast());
+            let mut archive = tar::Builder::new(encoder);
+            let metadata = metadata();
+            let mut header = tar::Header::new_gnu();
+            header.set_size(metadata.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            archive
+                .append_data(&mut header, "package/package.json", metadata.as_slice())
+                .unwrap();
+            header.set_size(padding_size);
+            header.set_cksum();
+            archive
+                .append_data(
+                    &mut header,
+                    "package/padding",
+                    io::repeat(0).take(padding_size),
+                )
+                .unwrap();
+            archive.into_inner().unwrap().finish().unwrap()
+        };
+        // The same valid metadata must succeed without oversized padding, so
+        // missing identity cannot mask a decompression-budget regression.
+        assert!(read_identity(&package_with_padding(1)).is_ok());
+        let bytes = package_with_padding(MAX_ARCHIVE_BYTES + 1);
         assert!(bytes.len() < MAX_PACKAGE_BYTES);
         assert!(read_identity(&bytes).is_err());
     }
