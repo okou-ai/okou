@@ -128,52 +128,6 @@ export function withAgentRunSourceAnnotation(
   };
 }
 
-/**
- * Keep retired template identities readable by previous readers on new writes.
- * Request decoding and historical reads remain lossless; no generation rules
- * are retained here.
- */
-export function normalizeRetiredTemplateSelections(
-  message: UserMessageInputDocument,
-): UserMessageInputDocument;
-export function normalizeRetiredTemplateSelections(
-  message: UserMessageDocument,
-): UserMessageDocument;
-export function normalizeRetiredTemplateSelections(
-  message: UserMessageDocument,
-): UserMessageDocument {
-  const normalizeTemplate = (
-    part: Extract<UserMessagePart, { type: "template" }>,
-  ): Extract<UserMessagePart, { type: "template" }> => {
-    return part.template.type === "video"
-      ? {
-          ...part,
-          template: {
-            type: "video",
-            selection: { stylePresetId: part.template.selection.stylePresetId },
-          },
-        }
-      : part;
-  };
-  return {
-    ...message,
-    parts: message.parts.map((part) => {
-      if (part.type === "template") {
-        return normalizeTemplate(part);
-      }
-      if (part.type === "feedback") {
-        return {
-          ...part,
-          note: part.note.map((note) => {
-            return note.type === "template" ? normalizeTemplate(note) : note;
-          }),
-        };
-      }
-      return part;
-    }),
-  };
-}
-
 /** Replace any prior run-model annotation with the model persisted for the run. */
 export function withRunModelAnnotation(
   document: UserMessageDocument,

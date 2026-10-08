@@ -7,7 +7,6 @@ import {
   chatThreadComputerUseHostContract,
   chatThreadModelSelectionContract,
   chatThreadDraftSchema,
-  chatThreadDraftContract,
   chatThreadArtifactGoogleDriveSyncSchema,
   chatThreadsContract,
   chatEventSchema,
@@ -642,9 +641,9 @@ describe("chat thread generation template contract", () => {
     expect(parsed.success).toBe(true);
   });
 
-  it.each([
-    {
-      shape: "flat",
+  it("accepts avatar snapshots in the compatible video template envelope", () => {
+    const parsed = generationTemplateRequestSchema.safeParse({
+      type: "video",
       selection: {
         stylePresetId: "avatar-template:81",
         titleSnapshot: "Ada",
@@ -652,125 +651,20 @@ describe("chat thread generation template contract", () => {
         voiceId: "en-US-ChristopherNeural",
         aspectRatio: "landscape",
       },
-    },
-    {
-      shape: "nested",
-      selection: {
-        stylePresetId: "avatar-template:81",
-        avatarOptions: {
+    });
+
+    expect(parsed).toMatchObject({
+      success: true,
+      data: {
+        type: "video",
+        selection: {
+          stylePresetId: "avatar-template:81",
           titleSnapshot: "Ada",
           previewUrl: "https://example.com/ada.jpg",
           voiceId: "en-US-ChristopherNeural",
           aspectRatio: "landscape",
         },
       },
-    },
-    {
-      shape: "opaque",
-      selection: {
-        stylePresetId: "avatar-template:81",
-        titleSnapshot: "  Ada  ",
-        previewUrl: "retired-preview-reference",
-        voiceId: "legacy/provider/voice",
-        aspectRatio: "16:9",
-        avatarOptions: {
-          voiceId: "legacy/provider/voice",
-          aspectRatio: "16:9",
-        },
-        providerOptions: { screenStyle: 3, caption: false },
-      },
-    },
-  ])(
-    "reads a historical avatar message with $shape options",
-    ({ selection }) => {
-      const userMessage = {
-        version: 1,
-        parts: [
-          { type: "text", text: "Explain the product" },
-          {
-            type: "template",
-            titleSnapshot: "Ada",
-            template: { type: "video", selection },
-          },
-        ],
-      };
-
-      expect(userMessageDocumentSchema.parse(userMessage)).toStrictEqual(
-        userMessage,
-      );
-    },
-  );
-
-  describe("retired template read and request boundaries", () => {
-    const retiredTemplate = {
-      type: "template",
-      titleSnapshot: "Ada",
-      template: {
-        type: "video",
-        selection: {
-          stylePresetId: "avatar-template:81",
-          voiceId: "legacy/provider/voice",
-          aspectRatio: "16:9",
-          avatarOptions: { voiceId: "legacy/provider/voice" },
-          providerOptions: { caption: false },
-        },
-      },
-    };
-    const currentTemplate = {
-      type: "template",
-      titleSnapshot: "Paper cut",
-      template: {
-        type: "illustration",
-        selection: { illustrationStyleId: "paper-cut" },
-      },
-    };
-    const userMessage = {
-      version: 1,
-      parts: [
-        { type: "text", text: "Explain the product" },
-        retiredTemplate,
-        {
-          type: "feedback",
-          quote: "Previous answer",
-          note: [
-            { type: "text", text: "Use " },
-            retiredTemplate,
-            currentTemplate,
-          ],
-        },
-        currentTemplate,
-      ],
-    };
-    it.each(["send", "draft"])(
-      "decodes %s requests without rewriting retired selections",
-      (surface) => {
-        const decoded =
-          surface === "send"
-            ? chatEventsContract.send.body.parse({
-                agentId: "agent-1",
-                prompt: "Explain the product",
-                hasTextContent: true,
-                userMessage,
-              }).userMessage
-            : chatThreadByIdContract.patch.body.parse({
-                draftUserMessage: userMessage,
-              }).draftUserMessage;
-
-        expect(decoded).toStrictEqual(userMessage);
-      },
-    );
-
-    it("preserves existing message and draft parameters, including feedback", () => {
-      expect(userMessageDocumentSchema.parse(userMessage)).toStrictEqual(
-        userMessage,
-      );
-      const draft = {
-        draftUserMessage: userMessage,
-        draftAttachments: null,
-      };
-      expect(
-        chatThreadDraftContract.get.responses[200].parse(draft),
-      ).toStrictEqual(draft);
     });
   });
 

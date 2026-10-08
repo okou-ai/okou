@@ -557,7 +557,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelChatRun(actor, source.runId);
   }, 90_000);
 
-  it("keeps live template numbering and readable messages with retired selections", async () => {
+  it("ignores retired video and intro-video templates and keeps live template numbering", async () => {
     const { actor, agentId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
@@ -574,12 +574,7 @@ describe("CHAT-02: generation templates and attachments", () => {
           titleSnapshot: "Epic grandeur",
           template: {
             type: "video",
-            selection: {
-              stylePresetId: "video-template:epic-grandeur",
-              voiceId: "legacy/provider/voice",
-              aspectRatio: "16:9",
-              providerOptions: { caption: false },
-            },
+            selection: { stylePresetId: "video-template:epic-grandeur" },
           },
         },
         { type: "text", text: " and introduce " },
@@ -604,36 +599,6 @@ describe("CHAT-02: generation templates and attachments", () => {
           template: { type: "intro-video", selection: {} },
         },
         { type: "text", text: "\n\nThen caption" },
-        {
-          type: "feedback",
-          quote: "Previous answer",
-          note: [
-            { type: "text", text: "Keep the explanation " },
-            {
-              type: "template",
-              titleSnapshot: "Ada",
-              template: {
-                type: "video",
-                selection: {
-                  stylePresetId: "avatar-template:81",
-                  avatarOptions: {
-                    voiceId: "legacy/provider/voice",
-                    aspectRatio: "16:9",
-                  },
-                },
-              },
-            },
-            { type: "text", text: " and use " },
-            {
-              type: "template",
-              titleSnapshot: style.title,
-              template: {
-                type: "illustration",
-                selection: { illustrationStyleId: style.illustrationStyleId },
-              },
-            },
-          ],
-        },
       ],
     };
 
@@ -646,57 +611,10 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(run.prompt).toContain(
       `Animate and introduce then draw with [Template #1: ${style.title} (illustration)] and describe \n\nThen caption`,
     );
-    expect(run.prompt).toContain("Keep the explanation");
-    expect(run.prompt).toContain(
-      `[Template #2: ${style.title} (illustration)]`,
-    );
 
     const systemPrompt = run.appendSystemPrompt ?? "";
     expect(systemPrompt).toContain("## Template #1 (illustration)");
     expect(systemPrompt).toContain(style.illustrationStyleId);
-
-    const messages = await chat.listThreadEvents(actor, sent.threadId);
-    const message = userMessages(messages.events).find(
-      (event): event is PromptMessage => {
-        return event.eventType === "input.prompt" && event.runId === sent.runId;
-      },
-    );
-    expect(message?.userMessage?.parts[1]).toStrictEqual({
-      type: "template",
-      titleSnapshot: "Epic grandeur",
-      template: {
-        type: "video",
-        selection: { stylePresetId: "video-template:epic-grandeur" },
-      },
-    });
-    expect(
-      message?.userMessage?.parts.find((part) => {
-        return part.type === "feedback";
-      }),
-    ).toStrictEqual({
-      type: "feedback",
-      quote: "Previous answer",
-      note: [
-        { type: "text", text: "Keep the explanation " },
-        {
-          type: "template",
-          titleSnapshot: "Ada",
-          template: {
-            type: "video",
-            selection: { stylePresetId: "avatar-template:81" },
-          },
-        },
-        { type: "text", text: " and use " },
-        {
-          type: "template",
-          titleSnapshot: style.title,
-          template: {
-            type: "illustration",
-            selection: { illustrationStyleId: style.illustrationStyleId },
-          },
-        },
-      ],
-    });
 
     await cancelChatRun(actor, sent.runId);
   });

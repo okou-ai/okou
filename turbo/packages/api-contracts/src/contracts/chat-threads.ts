@@ -427,15 +427,58 @@ const presentationGenerationTemplateRequestSchema = z.object({
     .strict(),
 });
 
+const avatarVideoAspectRatioSchema = z.enum([
+  "portrait",
+  "landscape",
+  "square",
+]);
+const avatarVideoVoiceIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .regex(/^[A-Za-z0-9._:-]+$/);
+
 /**
- * Video and talking-avatar selections written before generation was retired.
- * History classification still reads the preset ID. All other retired parameters
- * are opaque: preserve them as written instead of validating or stripping them.
+ * Talking-avatar parameters. Unrelated to text-to-video despite sharing the
+ * "video" envelope.
+ *
+ * What keeps this envelope shared is persisted data, not client parsing: avatar
+ * selections have always been stored as `type: "video"` with the product
+ * encoded in `stylePresetId`, and those rows are customer data. Splitting them
+ * apart would need the backfill and phasing in
+ * `docs/deployment-compatibility.md` first.
  */
-const retiredVideoGenerationTemplateRequestSchema = z.object({
+const avatarGenerationOptionsSchema = z
+  .object({
+    titleSnapshot: z.string().trim().min(1),
+    previewUrl: z.url(),
+    voiceId: avatarVideoVoiceIdSchema,
+    aspectRatio: avatarVideoAspectRatioSchema,
+  })
+  .partial();
+
+const videoGenerationTemplateRequestSchema = z.object({
   type: z.literal("video"),
-  selection: z.looseObject({
+  selection: z.object({
     stylePresetId: z.string().min(1),
+    avatarOptions: avatarGenerationOptionsSchema.optional(),
+
+    /**
+     * Historical flat fields stay parseable because messages and persisted
+     * drafts written before avatarOptions was introduced only carry this
+     * shape. Dropping them here would strip those selections on parse;
+     * retaining the nested schema alone does not preserve those values.
+     *
+     * @deprecated Read-only fallback; write avatarOptions.titleSnapshot.
+     */
+    titleSnapshot: z.string().trim().min(1).optional(),
+    /** @deprecated Read-only fallback; write avatarOptions.previewUrl. */
+    previewUrl: z.url().optional(),
+    /** @deprecated Read-only fallback; write avatarOptions.voiceId. */
+    voiceId: avatarVideoVoiceIdSchema.optional(),
+    /** @deprecated Read-only fallback; write avatarOptions.aspectRatio. */
+    aspectRatio: avatarVideoAspectRatioSchema.optional(),
   }),
 });
 
@@ -498,7 +541,7 @@ const customGenerationTemplateRequestSchema = z.object({
 const generationTemplateRequestSchema = z.discriminatedUnion("type", [
   presentationGenerationTemplateRequestSchema,
   customGenerationTemplateRequestSchema,
-  retiredVideoGenerationTemplateRequestSchema,
+  videoGenerationTemplateRequestSchema,
   retiredIntroVideoGenerationTemplateRequestSchema,
   illustrationGenerationTemplateRequestSchema,
   workflowGenerationTemplateRequestSchema,
@@ -1998,6 +2041,7 @@ export {
   userMessagePartSchema,
   userMessageDocumentSchema,
   presentationGenerationTemplateRequestSchema,
+  videoGenerationTemplateRequestSchema,
   illustrationGenerationTemplateRequestSchema,
   websiteGenerationTemplateRequestSchema,
   chatEventSchema,
@@ -2048,6 +2092,12 @@ export type ThreadGenerationTemplates = Partial<
 >;
 export type PresentationGenerationTemplateRequest = z.infer<
   typeof presentationGenerationTemplateRequestSchema
+>;
+export type AvatarGenerationOptions = z.infer<
+  typeof avatarGenerationOptionsSchema
+>;
+export type VideoGenerationTemplateRequest = z.infer<
+  typeof videoGenerationTemplateRequestSchema
 >;
 export type IllustrationGenerationTemplateRequest = z.infer<
   typeof illustrationGenerationTemplateRequestSchema

@@ -109,7 +109,6 @@ import {
 import {
   agentRunSourceTitleSnapshot,
   hasAgentRunSourceAnnotation,
-  normalizeRetiredTemplateSelections,
   projectUserMessage,
   userMessagePhysicalFiles,
   withAgentRunSourceAnnotation,
@@ -1171,15 +1170,14 @@ function normalSendUserMessage(
   args: NormalSendArgs,
   agentRunSource: ChatAgentRunSourceAnnotation | null,
 ): UserMessageDocument {
-  const userMessage = normalizeRetiredTemplateSelections(args.body.userMessage);
   if (agentRunSource !== null) {
-    return withAgentRunSourceAnnotation(userMessage, agentRunSource);
+    return withAgentRunSourceAnnotation(args.body.userMessage, agentRunSource);
   }
   return args.mcpSource === undefined
-    ? userMessage
+    ? args.body.userMessage
     : {
-        ...userMessage,
-        parts: [...userMessage.parts, args.mcpSource],
+        ...args.body.userMessage,
+        parts: [...args.body.userMessage.parts, args.mcpSource],
       };
 }
 /**

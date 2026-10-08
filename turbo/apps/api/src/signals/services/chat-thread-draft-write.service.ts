@@ -7,7 +7,6 @@ import { and, eq, sql } from "drizzle-orm";
 
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
-import { normalizeRetiredTemplateSelections } from "./chat-user-message.service";
 
 interface ChatThreadDraftWrite {
   readonly chatThreadId: string;
@@ -46,21 +45,18 @@ export const persistChatThreadDraft$ = command(
       signal.throwIfAborted();
       return;
     }
-    const draftUserMessage = normalizeRetiredTemplateSelections(
-      draft.draftUserMessage,
-    );
     await db
       .insert(chatThreadDrafts)
       .values({
         chatThreadId: draft.chatThreadId,
         userId: draft.userId,
-        draftUserMessage,
+        draftUserMessage: draft.draftUserMessage,
         draftAttachments: draft.draftAttachments,
       })
       .onConflictDoUpdate({
         target: [chatThreadDrafts.chatThreadId, chatThreadDrafts.userId],
         set: {
-          draftUserMessage,
+          draftUserMessage: draft.draftUserMessage,
           draftAttachments: draft.draftAttachments,
           updatedAt: sql`now()`,
         },

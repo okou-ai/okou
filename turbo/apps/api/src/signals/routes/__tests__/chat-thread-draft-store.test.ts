@@ -126,63 +126,6 @@ describe("thread drafts", () => {
     );
   });
 
-  it("saves readable retired selections alongside text and feedback", async () => {
-    const fixture = await createDraftFixture();
-    const retiredTemplate = {
-      type: "template",
-      titleSnapshot: "Ada",
-      template: {
-        type: "video",
-        selection: {
-          stylePresetId: "avatar-template:81",
-          voiceId: "legacy/provider/voice",
-          aspectRatio: "16:9",
-          avatarOptions: { voiceId: "legacy/provider/voice" },
-        },
-      },
-    } as const;
-    await chat.patchThread(fixture.actor, fixture.threadId, {
-      draftUserMessage: {
-        version: 1,
-        parts: [
-          { type: "text", text: "Resume the explanation" },
-          retiredTemplate,
-          {
-            type: "feedback",
-            quote: "Previous answer",
-            note: [retiredTemplate],
-          },
-        ],
-      },
-      draftAttachments: null,
-    });
-
-    const minimalRetiredTemplate = {
-      ...retiredTemplate,
-      template: {
-        type: "video",
-        selection: { stylePresetId: "avatar-template:81" },
-      },
-    };
-    await expect(
-      chat.readThreadDraft(fixture.actor, fixture.threadId),
-    ).resolves.toStrictEqual({
-      draftUserMessage: {
-        version: 1,
-        parts: [
-          { type: "text", text: "Resume the explanation" },
-          minimalRetiredTemplate,
-          {
-            type: "feedback",
-            quote: "Previous answer",
-            note: [minimalRetiredTemplate],
-          },
-        ],
-      },
-      draftAttachments: null,
-    });
-  });
-
   it("keeps drafts separate per thread and per user", async () => {
     const fixture = await createDraftFixture();
     const sibling = await chat.createThread(fixture.actor, {
