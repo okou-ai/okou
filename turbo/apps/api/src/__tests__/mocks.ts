@@ -310,6 +310,9 @@ export interface ApiTestMocks {
       readonly retrieve: AsyncMock;
       readonly create: AsyncMock;
     };
+    readonly products: {
+      readonly retrieve: AsyncMock;
+    };
   };
   readonly webpush: {
     readonly sendNotification: AsyncMock;
@@ -528,6 +531,17 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
         resolveDefaultStripePrice,
       ),
       create: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+    },
+    products: {
+      retrieve: vi
+        .fn<(...args: unknown[]) => Promise<unknown>>()
+        .mockImplementation((id) => {
+          return Promise.resolve({
+            id,
+            name: "Live billing product",
+            metadata: {},
+          });
+        }),
     },
   };
 
@@ -1178,6 +1192,9 @@ vi.mock("stripe", async (importOriginal) => {
           retrieve: apiTestMocks.stripe.prices.retrieve,
           create: apiTestMocks.stripe.prices.create,
         },
+        products: {
+          retrieve: apiTestMocks.stripe.products.retrieve,
+        },
       };
     }),
     { errors: actual.default.errors },
@@ -1602,6 +1619,14 @@ export function resetApiTestMocks(): void {
     resolveDefaultStripePrice,
   );
   apiTestMocks.stripe.prices.create.mockReset();
+  apiTestMocks.stripe.products.retrieve.mockReset();
+  apiTestMocks.stripe.products.retrieve.mockImplementation((id) => {
+    return Promise.resolve({
+      id,
+      name: "Live billing product",
+      metadata: {},
+    });
+  });
   apiTestMocks.webpush.sendNotification.mockReset();
   apiTestMocks.webpush.sendNotification.mockResolvedValue(undefined);
   // Re-install the Stripe client override so getStripeClient() returns

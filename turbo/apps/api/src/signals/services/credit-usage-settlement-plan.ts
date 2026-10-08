@@ -38,14 +38,10 @@ export function settlementObservation(pricingRows: number) {
   };
 }
 
-export function planUsageCharges(
-  events: readonly PricedUsageEvent[],
-  allowance: ReadonlyMap<string, number>,
-) {
+export function planUsageCharges(events: readonly PricedUsageEvent[]) {
   const byUser = new Map<string, number>();
   const outcomes = events.map((event) => {
-    const creditsCharged =
-      event.grossCredits - (allowance.get(event.record.id) ?? 0);
+    const creditsCharged = event.grossCredits;
     byUser.set(
       event.record.userId,
       (byUser.get(event.record.userId) ?? 0) + creditsCharged,

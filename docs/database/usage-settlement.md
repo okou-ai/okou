@@ -2,12 +2,11 @@
 
 ## Accepted concurrency policy
 
-Prepare the price, allowance allocation, member-credit split and expiry-lot split
-before the standalone settlement transaction. Commit the following together:
+Prepare the price, member-credit split and expiry-lot split before the standalone
+settlement transaction. New usage is credit-only. Commit the following together:
 
 1. Claim the prepared usage rows with `status = 'pending'`.
-2. Increment allowance consumption and decrement the selected credits using
-   database arithmetic.
+2. Decrement member grants, shared credits and expiry lots using database arithmetic.
 3. Persist charges and processed receipts.
 
 The pending claim, not a credit-row version, prevents duplicate charging. A
@@ -15,25 +14,30 @@ partially claimed batch rolls back rather than applying a plan for unclaimed
 usage. A competing successful settlement can supply the existing receipt.
 
 Normal concurrent changes do not reject a prepared financial split. Two requests
-may both prepare against the same available allowance or credit package. Allowance
-consumption can exceed its limit and a selected package or expiry lot can become
-negative. This is an explicitly accepted business trade-off. Preparation and
+may both prepare against the same available credit package. A selected package
+or expiry lot can become negative. This is an explicitly accepted business trade-off. Preparation and
 spendable-balance reads select only positive, unexpired credits; expiration also
 clears only positive remainders, so a negative remainder is not credited back.
 There is no compensation cron in this change.
 
-Source priority, FEFO and free allowance are evaluated when preparing the plan,
-not enforced against all concurrent changes at commit. Missing financial rows,
-invalid pricing and database failures remain billing errors. Existing background
-Social job ownership/lease checks and expiration admission remain intact. Social
-jobs publish a new usage identity within their transaction, so their allowance
-allocation is still prepared there; their credit debits use the same atomic
-arithmetic policy.
+Source priority and FEFO are evaluated when preparing the plan, not enforced
+against all concurrent changes at commit. Missing financial rows, invalid pricing
+and database failures remain billing errors. Existing background Social job
+ownership/lease checks and expiration admission remain intact. Social jobs
+publish and claim a new usage identity within their transaction; their credit
+debits use the same atomic arithmetic policy.
 
-Concurrent creation of an allowance window is resolved by its unique
-`(entitlement_id, kind, starts_at)` identity. After `INSERT ... ON CONFLICT DO
-NOTHING`, allocations use the persisted window ID instead of a losing creator's
-proposed UUID.
+## Retired Allowance history
+
+No serving code creates or refreshes Allowance entitlements or windows, reserves
+Allowance at launch, or writes allocations. Settlement never reprices or replays
+processed history. Archived allocations and hourly rollups remain readable:
+reported gross usage is `creditsCharged + allowanceUnits`, while wallet deductions
+remain the originally recorded credits. Compaction still carries both window IDs
+and checks quantity, credits, allowance units and each window's conservation before
+committing. Privacy deletion continues to erase the owned historical rows.
+See [deployment compatibility](../deployment-compatibility.md#organization-usage-allowance-retired)
+for mixed-version and Stripe boundaries.
 
 ## Provider-result delivery
 

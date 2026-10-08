@@ -24,6 +24,7 @@ interface FinalizedUsageBounds {
  * start it never knew.
  */
 
+/** Read archived Allowance coverage without issuing or consuming an entitlement. */
 export function buildFinalizedUsageRelation(bounds?: FinalizedUsageBounds) {
   const queryBuilder = new QueryBuilder();
   const rawRows = queryBuilder

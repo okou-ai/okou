@@ -68,11 +68,6 @@ export const prepareUsageSettlementBatch$ = command(
     const events = snapshots.filter(({ event }) => {
       return event.status === "pending";
     });
-    const hasSocialReceipt =
-      Boolean(args.social) &&
-      snapshots.some(({ event }) => {
-        return event.status === "processed";
-      });
     const pricingKeys = settlementPricingKeys(
       events,
       get(usagePricingResolution$),
@@ -110,7 +105,6 @@ export const prepareUsageSettlementBatch$ = command(
     return {
       events,
       social,
-      hasSocialReceipt,
       prices,
       records,
       priced,

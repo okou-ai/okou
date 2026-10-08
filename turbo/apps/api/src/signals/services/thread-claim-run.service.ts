@@ -75,10 +75,7 @@ import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
-import {
-  recordBillingOperationTimings,
-  recordSandboxOperation,
-} from "../external/sandbox-op-log";
+import { recordSandboxOperation } from "../external/sandbox-op-log";
 import type { SlackUserInfo } from "../external/slack-message-client";
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import { safeSync, settle, tapError } from "../utils";
@@ -180,11 +177,6 @@ import {
   OfficialWorkflowRunAdmissionError,
   type OfficialWorkflowRunObservation,
 } from "./official-workflow-run.service";
-import {
-  pendingRunAllowancePlan,
-  pendingRunAllowanceWindowsPlan,
-  allowanceSnapshotSchema as snapshotRow,
-} from "./pending-launch-allowance-plan";
 import { pendingLaunchBillingAttributionSql } from "./pending-launch-billing-plan";
 import {
   type PendingLaunchClaim,
@@ -220,12 +212,6 @@ import {
   isFreePlanForCreditAdmission,
   type RunAdmissionInput,
 } from "./run-admission.service";
-import { requireRunAllowanceWindowPair } from "./usage-allowance-run-plan";
-import { entitlementQuery } from "./usage-allowance-settlement-plan";
-import {
-  type PreparedUsageAllowanceRefresh,
-  refreshUsageAllowanceAvailability$,
-} from "./usage-allowance.service";
 
 import { BEFORE_DISPATCH_CANCELLED_ERROR } from "./agent-run-cancellation";
 import {
@@ -1870,7 +1856,6 @@ interface ClaimRunTiming {
 
 export interface ThreadRunContext {
   readonly kind: "prepared";
-  readonly allowanceRefresh?: PreparedUsageAllowanceRefresh;
   readonly planCapabilities: OrgPlanCapabilities | null;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly input: {
@@ -2549,7 +2534,7 @@ async function resolveQueuedProviderAdmission(params: {
       effectiveModelProvider,
       cliAgentType,
       error,
-      needsAllowance: false,
+      hasSpendableCredits: true,
     };
   }
   const balance = await params.creditBalance();
@@ -2557,10 +2542,9 @@ async function resolveQueuedProviderAdmission(params: {
     effectiveModelProvider,
     cliAgentType,
     error: balance ? undefined : pickChatRunModelInsufficientCredits(),
-    needsAllowance:
+    hasSpendableCredits:
       balance !== null &&
-      balance.usagePackCredits <= 0 &&
-      balance.spendableCredits <= 0,
+      (balance.usagePackCredits > 0 || balance.spendableCredits > 0),
   };
 }
 
@@ -2627,11 +2611,6 @@ export function createThreadClaimRunObjects(
   requestFacts?: ChatThreadRequestFacts,
 ): ThreadClaimRunObjects {
   // Re-resolve the queued pin against one current catalog snapshot per claim.
-  // Stripe entitlement refresh for an allowance window runs outside the
-  // admission and pending transactions, in the same parallel preparation.
-  const preparedAllowanceRefresh$ = computed(async (get) => {
-    return (await get(context.allowance$)).refresh;
-  });
   const orgModels$ = context.modelFacts$;
   const claimCatalog$ = computed(async (get) => {
     return (await get(orgModels$)).catalog;
@@ -3017,9 +2996,6 @@ export function createThreadClaimRunObjects(
       return get((await get(queuedIdentityContext$)).credits$);
     }),
   };
-  const allowanceSnapshot$ = computed(async (get) => {
-    return (await get(context.allowance$)).availability;
-  });
   const { input$: queuedProviderAdmissionInput$ } = queuedModelSources;
   const { modelPin$: queuedProviderAdmissionModelPin$ } = routing;
   const { creditBalance$: queuedProviderAdmissionCreditBalance$ } = credits;
@@ -3066,45 +3042,6 @@ export function createThreadClaimRunObjects(
   const admission = {
     providerAdmission$: queuedProviderAdmissionProviderAdmission$,
   };
-  const queuedModelCommandsInput$ = queuedModelSources.input$;
-  const allowanceInput$ = computed(async (get) => {
-    return { orgId: (await get(queuedModelCommandsInput$)).orgId };
-  });
-  const resolveUsageAllowance$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const startedAt = performance.now();
-      const [input, snapshot] = await Promise.all([
-        get(allowanceInput$),
-        get(allowanceSnapshot$),
-      ]);
-      signal.throwIfAborted();
-      let availability = snapshot;
-      if (availability === "allowance_refresh_required") {
-        const refresh = await get(preparedAllowanceRefresh$);
-        signal.throwIfAborted();
-        availability = await set(
-          refreshUsageAllowanceAvailability$,
-          { orgId: input.orgId, refresh },
-          signal,
-        );
-      }
-      safeSync(() => {
-        recordBillingOperationTimings([
-          {
-            actionType: "api_billing_allowance_availability",
-            durationMs: Math.round(performance.now() - startedAt),
-            success: true,
-            dimensions: { available: availability !== null },
-          },
-        ]);
-      });
-      return availability;
-    },
-  );
-  const queuedModelCommandsRefreshUsageAllowance$ = resolveUsageAllowance$;
-  const commands = {
-    refreshUsageAllowance$: queuedModelCommandsRefreshUsageAllowance$,
-  };
   const { selection$, capabilities$ } = queuedModelSources;
   const { modelPin$ } = routing;
   const { memberAccountSnapshot$: queuedModelMemberAccountSnapshot$ } = member;
@@ -3113,33 +3050,6 @@ export function createThreadClaimRunObjects(
     builtInRuntimeRoute$,
   } = runtime;
   const { providerAdmission$ } = admission;
-  const { refreshUsageAllowance$ } = commands;
-  // The usage-allowance refresh is the resolution's only write; its result is
-  // the state the resolution reads (docs/api-ccstate.md, Allowed State).
-  const queuedAllowanceWriteResult$ = state<{
-    readonly remainingUnits: number;
-  } | null>(null);
-  const refreshQueuedUsageAllowance$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const selection = await get(selection$);
-      signal.throwIfAborted();
-      if (!selection) {
-        return;
-      }
-      const pin = await get(modelPin$);
-      signal.throwIfAborted();
-      if ("status" in pin) {
-        return;
-      }
-      const admission = await get(providerAdmission$);
-      signal.throwIfAborted();
-      if (admission.needsAllowance) {
-        const allowance = await set(refreshUsageAllowance$, signal);
-        signal.throwIfAborted();
-        set(queuedAllowanceWriteResult$, allowance);
-      }
-    },
-  );
   const queuedModelResolveQueuedModel$ = computed(async (get) => {
     const [selection] = await Promise.all([
       get(selection$),
@@ -3164,9 +3074,6 @@ export function createThreadClaimRunObjects(
       get(builtInRuntimeRoute$),
       get(queuedModelMemberAccountSnapshot$),
     ]);
-    const allowance = admission.needsAllowance
-      ? get(queuedAllowanceWriteResult$)
-      : null;
     // `null`: a Built-in pin with no available route.
     const unpriced =
       builtInModelRuntimeRoute === null && pin.selectedModel
@@ -3190,10 +3097,9 @@ export function createThreadClaimRunObjects(
         error:
           admission.error ??
           unpriced ??
-          (admission.needsAllowance &&
-          (!allowance || allowance.remainingUnits <= 0)
-            ? pickChatRunModelInsufficientCredits()
-            : undefined),
+          (admission.hasSpendableCredits
+            ? undefined
+            : pickChatRunModelInsufficientCredits()),
       },
       featureSwitchContext,
       runCodexServiceTier:
@@ -5697,12 +5603,9 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  /**
-   * The automation's model resolution: its one write is the usage-allowance
-   * refresh; the model context itself is derived.
-   */
+  /** Resolve the automation's captured model context before launch preparation. */
   const resolveAutomationModelSnapshot$ = command(
-    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    async ({ get }, signal: AbortSignal): Promise<void> => {
       const args = await get(automationExecutionInput$);
       signal.throwIfAborted();
       if (!args) {
@@ -5713,8 +5616,6 @@ export function createThreadClaimRunObjects(
         "api_dispatch_pre_create_agent_workflow_automation_resolve_model_context",
         "nested",
         async () => {
-          await set(refreshQueuedUsageAllowance$, signal);
-          signal.throwIfAborted();
           await get(workflowAutomationLaunchModel$);
         },
       );
@@ -8354,38 +8255,8 @@ export function createThreadClaimRunObjects(
     }
     return undefined;
   });
-  const resolveAdmissionUsageAllowance$ = command(
-    async ({ get, set }, input: RunAdmissionInput, signal: AbortSignal) => {
-      const startedAt = performance.now();
-      const selected = await get(executionContext$);
-      signal.throwIfAborted();
-      const snapshot = (await get(selected.allowance$)).availability;
-      signal.throwIfAborted();
-      let availability = snapshot;
-      if (availability === "allowance_refresh_required") {
-        const refresh = await get(preparedAllowanceRefresh$);
-        signal.throwIfAborted();
-        availability = await set(
-          refreshUsageAllowanceAvailability$,
-          { orgId: input.orgId, refresh },
-          signal,
-        );
-      }
-      safeSync(() => {
-        recordBillingOperationTimings([
-          {
-            actionType: "api_billing_allowance_availability",
-            durationMs: Math.round(performance.now() - startedAt),
-            success: true,
-            dimensions: { available: availability !== null },
-          },
-        ]);
-      });
-      return availability;
-    },
-  );
   const runAdmissionCheckCheckAdmission$ = command(
-    async ({ get, set }, input: RunAdmissionInput, signal: AbortSignal) => {
+    async ({ get }, input: RunAdmissionInput, signal: AbortSignal) => {
       signal.throwIfAborted();
       const identity = await get(queuedIdentityContext$);
       signal.throwIfAborted();
@@ -8436,15 +8307,7 @@ export function createThreadClaimRunObjects(
       ) {
         return null;
       }
-      const allowance = await set(
-        resolveAdmissionUsageAllowance$,
-        input,
-        signal,
-      );
-      signal.throwIfAborted();
-      return allowance && allowance.remainingUnits > 0
-        ? null
-        : insufficientCredits();
+      return insufficientCredits();
     },
   );
 
@@ -9277,14 +9140,8 @@ export function createThreadClaimRunObjects(
     };
   });
   const authorizeClaimIdentity$ = command(
-    async ({ get, set }, resolvePromptInputs: boolean, signal: AbortSignal) => {
-      // A prompt head's only launch-input write is its allowance refresh.
-      const [, authorized] = await Promise.all([
-        resolvePromptInputs
-          ? set(refreshQueuedUsageAllowance$, signal)
-          : undefined,
-        get(authorizeIdentity$),
-      ]);
+    async ({ get }, signal: AbortSignal) => {
+      const authorized = await get(authorizeIdentity$);
       signal.throwIfAborted();
       return authorized;
     },
@@ -9297,14 +9154,14 @@ export function createThreadClaimRunObjects(
       if (!head) {
         return null;
       }
-      const resolvePromptInputs =
-        head.contextType === "automation"
-          ? await set(initializeAutomationExecution$, head, timing.run, signal)
-          : await set(initializeQueuedPrompt$, head, signal);
+      if (head.contextType === "automation") {
+        await set(initializeAutomationExecution$, head, timing.run, signal);
+      } else {
+        await set(initializeQueuedPrompt$, head, signal);
+      }
       signal.throwIfAborted();
       const { identityInput, authorization } = await set(
         authorizeClaimIdentity$,
-        resolvePromptInputs,
         signal,
       );
       signal.throwIfAborted();
@@ -9415,18 +9272,16 @@ export function createThreadClaimRunObjects(
       }
       // Storage mounts and runtime-secret KMS do not read reconciled
       // automation configuration, so they start before launch preparation.
-      const [encrypted, admission, launch, allowanceRefresh] =
-        await Promise.all([
-          set(prepareEncryptedSecrets$, signal),
-          set(checkClaimAdmission$, signal),
-          set(prepareLaunchResources$, head, signal),
-          get(preparedAllowanceRefresh$),
-          get(storageMounts$),
-          // Connector reads start independently of prompt/model material. A
-          // prefetch miss joins the same loader once for this selected identity.
-          get((await get(executionContext$)).connectors$),
-          get(runThreadSelectionRow$),
-        ]);
+      const [encrypted, admission, launch] = await Promise.all([
+        set(prepareEncryptedSecrets$, signal),
+        set(checkClaimAdmission$, signal),
+        set(prepareLaunchResources$, head, signal),
+        get(storageMounts$),
+        // Connector reads start independently of prompt/model material. A
+        // prefetch miss joins the same loader once for this selected identity.
+        get((await get(executionContext$)).connectors$),
+        get(runThreadSelectionRow$),
+      ]);
       signal.throwIfAborted();
       if (launch.kind === "rejected") {
         return { kind: "rejected" as const, assembly: launch.assembly };
@@ -9443,7 +9298,6 @@ export function createThreadClaimRunObjects(
           launch.assembly,
           launch.identity,
           admission,
-          allowanceRefresh,
         ] as const,
       };
     },
@@ -9533,7 +9387,6 @@ export function createThreadClaimRunObjects(
         assembly,
         identity,
         admission,
-        allowanceRefresh,
       ] = resources.value.resources;
       if (assembly.kind !== "assembled") {
         await set(
@@ -9593,7 +9446,6 @@ export function createThreadClaimRunObjects(
             finalizeClaimRunContext(
               {
                 kind: "prepared",
-                allowanceRefresh,
                 ...admissionFacts,
                 input: claimCommitInput(input),
                 identity,
@@ -9726,7 +9578,6 @@ export function createThreadClaimRunObjects(
       const preparedCommit: PreparedCommitPreparedLaunchArgs = {
         ...commit,
         persistence: context.persistence,
-        allowanceRefresh: context.allowanceRefresh,
         planCapabilities: context.planCapabilities,
         featureSwitchContext: context.featureSwitchContext,
         admissionTiming,
@@ -12039,7 +11890,6 @@ interface PreparedAtomicLaunchPersistence {
 }
 
 export interface PreparedCommitPreparedLaunchArgs extends CommitPreparedLaunchArgs {
-  readonly allowanceRefresh?: PreparedUsageAllowanceRefresh;
   readonly planCapabilities: OrgPlanCapabilities | null;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly persistence: PreparedAtomicLaunchPersistence;
@@ -17734,19 +17584,6 @@ function tailFacts(
   };
 }
 
-function pendingLaunchAllowanceInput(
-  args: PreparedCommitPreparedLaunchArgs,
-  run: RunRecord,
-) {
-  return {
-    orgId: args.createArgs.orgId,
-    runId: run.id,
-    runCreatedAt: run.createdAt,
-    refresh: args.allowanceRefresh,
-    action: "api_dispatch_activate_usage_allowance_windows" as const,
-  };
-}
-
 function assertPendingLaunchClaim(
   args: PreparedCommitPreparedLaunchArgs,
   claim: PendingLaunchClaim | undefined,
@@ -18036,32 +17873,6 @@ export const commitPreparedPendingLaunch$ = command(
             return { ...rowsPersisted, threadSessionBinding: tail.binding };
           },
         );
-        if (isBuiltInModelProviderType(args.context.modelProvider?.type)) {
-          const startedAt = now();
-          const activation = pendingLaunchAllowanceInput(args, persisted.run);
-          const [owned] = await tx
-            .select()
-            .from(entitlementQuery(activation.orgId));
-          signal.throwIfAborted();
-          const planned = pendingRunAllowancePlan(owned, activation, nowDate());
-          const [published] = planned.publication
-            ? parseRawRows(snapshotRow, await tx.execute(planned.publication))
-            : [];
-          signal.throwIfAborted();
-          const windows = pendingRunAllowanceWindowsPlan(
-            planned,
-            activation,
-            published,
-          );
-          if (windows) {
-            await tx.execute(windows.insert);
-            signal.throwIfAborted();
-            const issued = await tx.select().from(windows.windows);
-            signal.throwIfAborted();
-            requireRunAllowanceWindowPair(issued);
-          }
-          timing.recordElapsed(activation.action, "nested", startedAt);
-        }
         // Keep this unique insertion last: do not acquire another row after it.
         await tx.execute(pendingActiveRunInsertSql(args, persisted.run));
         signal.throwIfAborted();

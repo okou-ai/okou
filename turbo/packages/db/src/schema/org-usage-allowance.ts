@@ -14,6 +14,11 @@ import { sql } from "drizzle-orm";
 import { agentRuns } from "./agent-run";
 import { usageEvent } from "./usage-event";
 
+/**
+ * Retired Allowance archive. Keep issuance, window and allocation records for
+ * historical accounting and privacy deletion; serving code never grants,
+ * refreshes or consumes these entitlements. No destructive migration is planned.
+ */
 export const orgUsageAllowanceEntitlements = pgTable(
   "org_usage_allowance_entitlements",
   {

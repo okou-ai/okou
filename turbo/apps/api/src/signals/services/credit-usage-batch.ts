@@ -113,7 +113,6 @@ export function reportCommittedSettlementPricing(
 }
 
 export interface PreparedUsageBatch {
-  readonly hasSocialReceipt: boolean;
   readonly grants: PreparedUsageGrantPrefix;
   readonly lots: PreparedUsageExpiryPrefix;
   readonly social?: PreparedSocialSettlement;
@@ -122,26 +121,6 @@ export interface PreparedUsageBatch {
   readonly records: (typeof usageEvent.$inferSelect)[];
   readonly priced: PricedUsageEvent[];
 }
-export function usageAllowanceRefreshArgs(
-  args: { readonly orgId: string; readonly social?: unknown },
-  batch: PreparedUsageBatch,
-) {
-  const { orgId } = args;
-  if (args.social) {
-    return batch.social &&
-      batch.social.grossCredits > 0 &&
-      !batch.hasSocialReceipt
-      ? { orgId }
-      : undefined;
-  }
-  const idempotencyKeys = batch.priced.flatMap((event) => {
-    return event.grossCredits > 0 ? [event.record.idempotencyKey] : [];
-  });
-  return idempotencyKeys.length > 0
-    ? { orgId, requirePendingUsage: true, idempotencyKeys }
-    : undefined;
-}
-
 export function requiredSettlementDebit<T>(value: T | undefined): T {
   if (!value) {
     throw new Error("Organization debit returned no metadata row");

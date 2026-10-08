@@ -1261,10 +1261,7 @@ describe("POST /api/billing/downgrade", () => {
             { price: TEST_PRICE_TEAM, quantity: 1 },
             { price: TEST_PRICE_CONCURRENCY, quantity: 5 },
           ],
-          metadata: {
-            allowanceStatus: "canceled",
-            allowanceCancelAt,
-          },
+          metadata: { allowanceStatus: "active" },
           proration_behavior: "none",
         },
       ],

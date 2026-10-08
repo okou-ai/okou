@@ -286,10 +286,17 @@ export interface StripeInvoiceLine {
   readonly subtotal?: number | null;
   readonly metadata?: Record<string, string> | null;
   readonly quantity?: number | null;
-  readonly price?: { readonly id: string } | null;
+  readonly price?: {
+    readonly id: string;
+    readonly product?: StripeProductRef | null;
+  } | null;
   readonly pricing?: {
     readonly price_details?: {
-      readonly price?: StripeRef;
+      readonly price?:
+        | string
+        | { readonly id: string; readonly product?: StripeProductRef | null }
+        | null;
+      readonly product?: StripeProductRef | null;
     } | null;
   } | null;
   readonly proration?: boolean;
@@ -505,6 +512,10 @@ export interface StripeCustomersApi {
       invoice_settings?: { default_payment_method?: string };
     },
   ): Promise<StripeCustomer>;
+}
+
+export interface StripeProductsApi {
+  retrieve(id: string): Promise<StripeProduct | StripeDeletedProduct>;
 }
 
 export interface StripePricesApi {
@@ -738,6 +749,7 @@ export interface StripeClient {
   readonly subscriptionSchedules: StripeSubscriptionSchedulesApi;
   readonly customers: StripeCustomersApi;
   readonly prices: StripePricesApi;
+  readonly products: StripeProductsApi;
   readonly coupons: StripeCouponsApi;
   readonly invoices: StripeInvoicesApi;
   readonly invoiceItems: StripeInvoiceItemsApi;

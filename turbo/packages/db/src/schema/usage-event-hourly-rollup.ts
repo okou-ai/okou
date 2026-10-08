@@ -18,8 +18,9 @@ import { orgUsageAllowanceWindows } from "./org-usage-allowance";
  * Hourly rollups of finalized usage events.
  *
  * Product readers regroup across the nullable allowance-window pair. The pair
- * identifies only the allowance portion of a row and supports reconciliation
- * with retained source allocations before any later physical cleanup.
+ * identifies only the archived Allowance portion of a row and supports
+ * reconciliation with retained source allocations. New credit-only usage has
+ * zero allowance units and no window pair; these historical fields stay intact.
  */
 export const usageEventHourlyRollup = pgTable(
   "usage_event_hourly_rollup",

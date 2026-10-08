@@ -238,6 +238,70 @@ and never acquires a host token. Existing installation and chat host identities
 are preserved. Legacy contraction requires the Desktop version floor and API
 serving/rollback drain. See [the full contract](desktop-session-auth.md).
 
+## Organization Usage Allowance retired
+
+Organization Usage Allowance is retired from the App, API contracts, run and
+managed-operation admission, pending launch, Pi memory reserves, settlement,
+billing status, billing reconciliation and Stripe entitlement publication. New
+usage consumes member credit grants and shared credits, retaining the existing
+launch fence, pending-event claim, attribution, atomic debit/expiry writes, Social
+publication and idempotency. A partial pending-event claim still rolls back and
+defers the batch; a missing financial row remains an error. No processed event is
+repriced or charged again.
+
+**Deployment ordering.** Stop vm0-atom Allowance issuance before promoting this
+API retirement. The companion change can be reviewed concurrently; it is an
+issuance/deployment dependency, not a prerequisite for creating this PR. Drain
+older API instances before treating retirement as effective: older APIs can still
+publish entitlements, refresh windows and apply Allowance. No DB migration is
+required, and no historical table, field, index, foreign key, executed migration
+or snapshot is dropped or rewritten. New API/old DB and old API/retained DB are
+schema-compatible. Rolling back the API restores the old ability to consume
+retained rights; rollback is not a neutral enforcement of retirement.
+
+**App/API.** The old billing schema used a plain Zod object with nullable optional
+`usageAllowance`, so omission by the new API is valid. Old App code conditionally
+renders its card only when the field exists. The new App ignores the old API's
+extra field; response validation strips unknown fields when enabled. Production
+Platform transport does not normally validate responses, but the new view never
+reads that extra field. The new billing response never emits `usageAllowance`.
+Credit balances, usage reporting and personal Claude/Codex subscription
+limits/Fast semantics are unchanged. Runner usage
+protocols and billing attribution are unchanged; no Runner deployment is needed.
+
+**Stripe.** Retired `purpose = usage_allowance` subscriptions/invoices remain
+excluded from ordinary Plan, Atom and purchased-credit grants, even when a price
+ID overlaps a configured grant/Plan price. The existing independently identified
+concurrency add-on on an archive-root subscription still reconciles without
+reactivating Allowance. This does not normalize away the archival root marker or
+invent a live Plan/usage-pack grant under it. Allowance lines mixed into a normal
+main subscription are not a Plan, usage-pack or concurrency line. Surviving line
+processing retains its existing scope and shared subscription operations preserve
+unrelated items/discounts/schedules.
+The API no longer renews, projects, schedules or cancels an Allowance entitlement.
+This code removal does not cancel any existing Stripe subscription, refund a
+payment or convert unused rights to credits. Those are separate owner/operator
+decisions; no production or Stripe writes are part of this PR.
+
+**Archived accounting.** `org_usage_allowance_entitlements`,
+`org_usage_allowance_windows`, `usage_allowance_allocations` and
+`usage_event_hourly_rollup.allowance_units` / its window pair remain archives, not
+live entitlements. `buildFinalizedUsageRelation` keeps the raw allocation LEFT
+JOIN and the hourly allowance units; member, organization and chat-run reporting
+keep gross usage as `creditsCharged + allowanceUnits`. Compaction still copies
+historical units/window pairs and rejects quantity/credits/units/per-window
+conservation failures. Organization/user privacy deletion retains its required
+historical cleanup. Historical changelogs, design records and permanent
+migrations document previous behavior and do not reactivate it.
+
+**Preflight limit.** Parent read-only observations on 2026-10-08 around 03:07 UTC
+found no raw allocation rows and no positive hourly Allowance bucket after
+2026-08-21 03:00 UTC, while new usage events were present on October 8. MaskDB did
+not expose the entitlement/window tables: this is not proof of zero unused
+entitlements or zero Stripe items. Before production rollout, an authorized
+operator must reconcile any remaining billed rights and stop issuance. This PR
+does not claim that rollout preflight or a production activation has occurred.
+
 ## Connector catalog column reads (expand release)
 
 Migrations `1339_expand_connector_catalog_entry_columns` and

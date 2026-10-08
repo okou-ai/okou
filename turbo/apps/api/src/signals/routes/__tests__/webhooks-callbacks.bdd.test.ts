@@ -11,7 +11,7 @@ import { describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
+import { mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { deleteOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -48,11 +48,6 @@ import {
   readThreadConnectorSelectionState,
   seedCustomThreadConnectorSelection,
 } from "./helpers/connector-credential-storage-state";
-import {
-  generatedStripeCustomerId,
-  generatedStripeSubscriptionId,
-  postUsageAllowanceInvoicePaid,
-} from "./helpers/stripe-billing-webhook";
 
 const context = testContext();
 const TERMINAL_RUN_STATUSES = [
@@ -337,73 +332,6 @@ function expectExpiresAboutThirtyDaysFromNow(value: unknown): void {
   const expiresInMs = Date.parse(value) - now();
   expect(expiresInMs).toBeGreaterThan(THIRTY_DAYS_MS - 60_000);
   expect(expiresInMs).toBeLessThanOrEqual(THIRTY_DAYS_MS + 5000);
-}
-
-interface UsageAllowanceLimits {
-  readonly shortWindowSeconds: number;
-  readonly shortWindowUnits: number;
-  readonly weeklyWindowSeconds: number;
-  readonly weeklyWindowUnits: number;
-}
-
-function expectUsageAllowanceLimits(
-  usageAllowance: unknown,
-  limits: UsageAllowanceLimits,
-): void {
-  expect(usageAllowance).toMatchObject({
-    windows: [
-      {
-        kind: "short",
-        windowSeconds: limits.shortWindowSeconds,
-        unitLimit: limits.shortWindowUnits,
-      },
-      {
-        kind: "weekly",
-        windowSeconds: limits.weeklyWindowSeconds,
-        unitLimit: limits.weeklyWindowUnits,
-      },
-    ],
-  });
-}
-
-async function readUsageAllowanceAt(
-  actor: ApiTestUser,
-  at: number,
-): Promise<unknown> {
-  mockNow(at);
-  const status = await createBillingMediaApi(context).readBillingStatus(actor);
-  return status.usageAllowance ?? null;
-}
-
-/**
- * Reads the public usage allowance on both sides of its expiry (and
- * optionally its effective start), then restores the real clock.
- */
-async function expectUsageAllowanceActiveWindow(
-  actor: ApiTestUser,
-  args: {
-    readonly effectiveAtUnix?: number;
-    readonly expiresAtUnix: number;
-    readonly limits: UsageAllowanceLimits;
-  },
-): Promise<void> {
-  if (args.effectiveAtUnix !== undefined) {
-    await expect(
-      readUsageAllowanceAt(actor, args.effectiveAtUnix * 1000 - 1),
-    ).resolves.toBeNull();
-    expectUsageAllowanceLimits(
-      await readUsageAllowanceAt(actor, args.effectiveAtUnix * 1000),
-      args.limits,
-    );
-  }
-  expectUsageAllowanceLimits(
-    await readUsageAllowanceAt(actor, args.expiresAtUnix * 1000 - 1),
-    args.limits,
-  );
-  await expect(
-    readUsageAllowanceAt(actor, args.expiresAtUnix * 1000),
-  ).resolves.toBeNull();
-  clearMockNow();
 }
 
 async function waitForExpectation(
@@ -3238,292 +3166,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect(renewed).toMatchObject(TEAM_BILLING_CAPABILITIES);
   });
 
-  it("upserts usage allowance entitlements from Atom subscription invoices", async () => {
-    const bdd = createBddApi(context);
-    const actor = bdd.user();
-    const orgId = orgOf(actor);
-    const suffix = randomUUID().slice(0, 8);
-    const effectiveAtUnix = epochSeconds(0);
-    const expiresAtUnix = epochSeconds(14);
-    api.configureStripeBillingEnv();
-
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "invoice.paid",
-        object: {
-          id: `in_bdd_usage_allowance_${suffix}`,
-          customer: `cus_bdd_allowance_${suffix}`,
-          metadata: {
-            type: "usage_allowance",
-            purpose: "usage_allowance",
-            source: "atom_usage_allowance",
-            orgId,
-            shortWindowSeconds: "3600",
-            shortWindowUnits: "5000",
-            weeklyWindowSeconds: "604800",
-            weeklyWindowUnits: "50000",
-          },
-          parent: {
-            subscription_details: {
-              subscription: `sub_bdd_allowance_${suffix}`,
-              metadata: {},
-            },
-          },
-          lines: {
-            has_more: false,
-            data: [
-              {
-                id: `il_bdd_usage_allowance_${suffix}`,
-                quantity: 1,
-                price: { id: "price_bdd_atom_grant" },
-                period: {
-                  start: effectiveAtUnix,
-                  end: expiresAtUnix,
-                },
-                parent: { type: "invoice_item_details" },
-              },
-            ],
-          },
-        },
-      }),
-      [200],
-    );
-
-    const billing = createBillingMediaApi(context);
-    const invoiced = await billing.readBillingStatus(actor);
-    expect(invoiced.hasSubscription).toBeTruthy();
-    expectUsageAllowanceLimits(invoiced.usageAllowance, {
-      shortWindowSeconds: 3600,
-      shortWindowUnits: 5000,
-      weeklyWindowSeconds: 604_800,
-      weeklyWindowUnits: 50_000,
-    });
-    await expectUsageAllowanceActiveWindow(actor, {
-      effectiveAtUnix,
-      expiresAtUnix,
-      limits: {
-        shortWindowSeconds: 3600,
-        shortWindowUnits: 5000,
-        weeklyWindowSeconds: 604_800,
-        weeklyWindowUnits: 50_000,
-      },
-    });
-
-    const subscriptionPeriodEndUnix = epochSeconds(21);
-    const cancelAtUnix = epochSeconds(60);
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "customer.subscription.updated",
-        object: {
-          id: `sub_bdd_allowance_${suffix}`,
-          status: "active",
-          cancel_at: cancelAtUnix,
-          cancel_at_period_end: false,
-          metadata: {
-            type: "usage_allowance",
-            purpose: "usage_allowance",
-            orgId,
-            shortWindowUnits: "9000",
-            weeklyWindowUnits: "90000",
-          },
-          items: {
-            data: [{ current_period_end: subscriptionPeriodEndUnix }],
-          },
-        },
-      }),
-      [200],
-    );
-
-    const canceledAtPeriod = await billing.readBillingStatus(actor);
-    expect(canceledAtPeriod.hasSubscription).toBeTruthy();
-    await expectUsageAllowanceActiveWindow(actor, {
-      expiresAtUnix: subscriptionPeriodEndUnix,
-      limits: {
-        shortWindowSeconds: 3600,
-        shortWindowUnits: 9000,
-        weeklyWindowSeconds: 604_800,
-        weeklyWindowUnits: 90_000,
-      },
-    });
-
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "customer.subscription.updated",
-        object: {
-          id: `sub_bdd_allowance_${suffix}`,
-          status: "canceled",
-          items: {
-            data: [{ current_period_end: epochSeconds(30) }],
-          },
-        },
-      }),
-      [200],
-    );
-
-    const canceled = await billing.readBillingStatus(actor);
-    expect(canceled.usageAllowance ?? null).toBeNull();
-    expect(canceled.hasSubscription).toBeFalsy();
-  });
-
-  it("ignores a canceled usage allowance invoice from an obsolete subscription", async () => {
-    const bdd = createBddApi(context);
-    const actor = bdd.user();
-    const orgId = orgOf(actor);
-    const suffix = randomUUID().slice(0, 8);
-    const customerId = `cus_bdd_allowance_stale_${suffix}`;
-    const currentSubscriptionId = `sub_bdd_allowance_current_${suffix}`;
-    const staleSubscriptionId = `sub_bdd_allowance_stale_${suffix}`;
-    const effectiveAtUnix = epochSeconds(-1);
-    const expiresAtUnix = epochSeconds(30);
-
-    await postUsageAllowanceInvoicePaid(context.signal, {
-      orgId,
-      userId: actor.userId,
-      customerId,
-      subscriptionId: currentSubscriptionId,
-      effectiveAt: new Date(effectiveAtUnix * 1000),
-      expiresAt: new Date(expiresAtUnix * 1000),
-      shortWindowSeconds: 3600,
-      shortWindowUnits: 5000,
-      weeklyWindowSeconds: 604_800,
-      weeklyWindowUnits: 50_000,
-    });
-
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "invoice.paid",
-        object: {
-          id: `in_bdd_allowance_stale_${suffix}`,
-          customer: customerId,
-          metadata: {
-            type: "usage_allowance",
-            purpose: "usage_allowance",
-            source: "atom_usage_allowance",
-            orgId,
-            allowanceStatus: "canceled",
-            shortWindowSeconds: "3600",
-            shortWindowUnits: "1000",
-            weeklyWindowSeconds: "604800",
-            weeklyWindowUnits: "10000",
-          },
-          parent: {
-            subscription_details: {
-              subscription: staleSubscriptionId,
-              metadata: {},
-            },
-          },
-          lines: {
-            has_more: false,
-            data: [
-              {
-                id: `il_bdd_allowance_stale_${suffix}`,
-                quantity: 1,
-                price: { id: `price_bdd_allowance_stale_${suffix}` },
-                period: {
-                  start: epochSeconds(-30),
-                  end: epochSeconds(0),
-                },
-                parent: { type: "subscription_item_details" },
-              },
-            ],
-          },
-        },
-      }),
-      [200],
-    );
-
-    const status =
-      await createBillingMediaApi(context).readBillingStatus(actor);
-    expect(status.hasSubscription).toBeTruthy();
-    expectUsageAllowanceLimits(status.usageAllowance, {
-      shortWindowSeconds: 3600,
-      shortWindowUnits: 5000,
-      weeklyWindowSeconds: 604_800,
-      weeklyWindowUnits: 50_000,
-    });
-    await expectUsageAllowanceActiveWindow(actor, {
-      expiresAtUnix,
-      limits: {
-        shortWindowSeconds: 3600,
-        shortWindowUnits: 5000,
-        weeklyWindowSeconds: 604_800,
-        weeklyWindowUnits: 50_000,
-      },
-    });
-  });
-
-  it("cancels usage allowance entitlements when their Stripe subscription is deleted", async () => {
-    const bdd = createBddApi(context);
-    const actor = bdd.user();
-    const orgId = orgOf(actor);
-    const suffix = randomUUID().slice(0, 8);
-    const subscriptionId = `sub_bdd_allowance_delete_${suffix}`;
-    api.configureStripeBillingEnv();
-
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "invoice.paid",
-        object: {
-          id: `in_bdd_usage_allowance_delete_${suffix}`,
-          customer: `cus_bdd_allowance_delete_${suffix}`,
-          metadata: {
-            type: "usage_allowance",
-            purpose: "usage_allowance",
-            orgId,
-            shortWindowSeconds: "3600",
-            shortWindowUnits: "5000",
-            weeklyWindowSeconds: "604800",
-            weeklyWindowUnits: "50000",
-          },
-          parent: {
-            subscription_details: {
-              subscription: subscriptionId,
-              metadata: {},
-            },
-          },
-          lines: {
-            has_more: false,
-            data: [
-              {
-                id: `il_bdd_usage_allowance_delete_${suffix}`,
-                quantity: 1,
-                price: { id: "price_bdd_atom_grant" },
-                period: {
-                  start: epochSeconds(0),
-                  end: epochSeconds(30),
-                },
-                parent: { type: "invoice_item_details" },
-              },
-            ],
-          },
-        },
-      }),
-      [200],
-    );
-
-    const billing = createBillingMediaApi(context);
-    const active = await billing.readBillingStatus(actor);
-    expect(active.hasSubscription).toBeTruthy();
-    expectUsageAllowanceLimits(active.usageAllowance, {
-      shortWindowSeconds: 3600,
-      shortWindowUnits: 5000,
-      weeklyWindowSeconds: 604_800,
-      weeklyWindowUnits: 50_000,
-    });
-
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "customer.subscription.deleted",
-        object: { id: subscriptionId },
-      }),
-      [200],
-    );
-
-    const deleted = await billing.readBillingStatus(actor);
-    expect(deleted.usageAllowance ?? null).toBeNull();
-    expect(deleted.hasSubscription).toBeFalsy();
-  });
-
   it("expires Atom day-grant subscription credits at the Atom grant end", async () => {
     const bdd = createBddApi(context);
     const runs = createRunsApi(context);
@@ -3719,171 +3361,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
     expect((await billing.readUsageMembers(actor)).body.period).toStrictEqual({
       start: isoOf(grantStartsAtUnix),
       end: isoOf(grantExpiresAtUnix),
-    });
-  });
-
-  it("reads the usage allowance subscription period for a forever Custom plan", async () => {
-    const bdd = createBddApi(context);
-    const billing = createBillingMediaApi(context);
-    const actor = bdd.user();
-    const orgId = orgOf(actor);
-    const suffix = randomUUID().slice(0, 8);
-    const customerId = `cus_bdd_custom_allowance_${suffix}`;
-    const sharedSubscriptionId = `sub_bdd_custom_allowance_${suffix}`;
-    const previousAllowanceSubscriptionId = `sub_bdd_custom_allowance_previous_${suffix}`;
-    const customPriceId = `price_bdd_custom_main_${suffix}`;
-    const allowancePriceId = `price_bdd_allowance_${suffix}`;
-    const allowanceStartsAtUnix = epochSeconds(-1);
-    const allowanceEndsAtUnix = epochSeconds(29);
-    api.configureStripeBillingEnv();
-    mockEnv("OKOU_PRICE_CUSTOM", customPriceId);
-    context.mocks.stripe.subscriptions.list.mockResolvedValue({ data: [] });
-    await completeOnboardingWithoutCredits(actor);
-
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "invoice.paid",
-        object: {
-          id: `in_bdd_atom_custom_forever_${suffix}`,
-          customer: customerId,
-          metadata: {
-            type: "atom_grant",
-            purpose: "atom_grant",
-            source: "atom_entitlement",
-            orgId,
-            tier: "custom",
-            duration: "forever",
-          },
-          parent: null,
-          lines: {
-            has_more: false,
-            data: [
-              {
-                id: `il_bdd_atom_custom_forever_${suffix}`,
-                quantity: 1,
-                price: { id: "price_bdd_atom_grant" },
-                period: {
-                  start: epochSeconds(0),
-                  end: epochSeconds(30),
-                },
-                parent: { type: "invoice_item_details" },
-              },
-            ],
-          },
-        },
-      }),
-      [200],
-    );
-
-    await postUsageAllowanceInvoicePaid(context.signal, {
-      orgId,
-      userId: actor.userId,
-      customerId,
-      subscriptionId: previousAllowanceSubscriptionId,
-      effectiveAt: new Date(allowanceStartsAtUnix * 1000),
-      expiresAt: new Date(allowanceEndsAtUnix * 1000),
-      shortWindowSeconds: 5 * 60 * 60,
-      shortWindowUnits: 625_000,
-      weeklyWindowSeconds: 7 * 86_400,
-      weeklyWindowUnits: 5_000_000,
-    });
-    mockEnv("OKOU_PRICE_CUSTOM", customPriceId);
-
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "customer.subscription.updated",
-        object: {
-          id: sharedSubscriptionId,
-          customer: customerId,
-          status: "active",
-          cancel_at: null,
-          cancel_at_period_end: false,
-          schedule: null,
-          metadata: {
-            orgId,
-            purpose: "custom_plan_subscription",
-            tier: "custom",
-            allowanceStatus: "active",
-            allowancePriceId,
-            allowanceCancelAt: isoOf(allowanceEndsAtUnix),
-            shortWindowSeconds: String(5 * 60 * 60),
-            shortWindowUnits: "625000",
-            weeklyWindowSeconds: String(7 * 86_400),
-            weeklyWindowUnits: "5000000",
-          },
-          items: {
-            data: [
-              {
-                id: `si_custom_${suffix}`,
-                price: { id: customPriceId },
-                current_period_start: allowanceStartsAtUnix,
-                current_period_end: allowanceEndsAtUnix,
-              },
-              {
-                id: `si_allowance_${suffix}`,
-                price: { id: allowancePriceId },
-                current_period_start: allowanceStartsAtUnix,
-                current_period_end: allowanceEndsAtUnix,
-              },
-            ],
-          },
-        },
-      }),
-      [200],
-    );
-
-    const status = await billing.readBillingStatus(actor);
-    expect(status.tier).toBe("custom");
-    expect(status.hasSubscription).toBeTruthy();
-    expect((await billing.readUsageMembers(actor)).body.period).toStrictEqual({
-      start: isoOf(allowanceStartsAtUnix),
-      end: isoOf(allowanceEndsAtUnix),
-    });
-
-    const staleSubscriptionId = `sub_bdd_custom_allowance_stale_${suffix}`;
-    await api.postStripeEvent(
-      stripeEvent({
-        type: "customer.subscription.updated",
-        object: {
-          id: staleSubscriptionId,
-          customer: customerId,
-          status: "active",
-          cancel_at: null,
-          cancel_at_period_end: false,
-          schedule: null,
-          metadata: {
-            orgId,
-            purpose: "usage_allowance",
-            allowanceStatus: "active",
-            allowancePriceId,
-            shortWindowSeconds: String(5 * 60 * 60),
-            shortWindowUnits: "1000",
-            weeklyWindowSeconds: String(7 * 86_400),
-            weeklyWindowUnits: "10000",
-          },
-          items: {
-            data: [
-              {
-                id: `si_stale_allowance_${suffix}`,
-                price: { id: allowancePriceId },
-                current_period_start: allowanceStartsAtUnix,
-                current_period_end: epochSeconds(60),
-              },
-            ],
-          },
-        },
-      }),
-      [200],
-    );
-
-    await expectUsageAllowanceActiveWindow(actor, {
-      expiresAtUnix: allowanceEndsAtUnix,
-      limits: {
-        shortWindowSeconds: 5 * 60 * 60,
-        shortWindowUnits: 625_000,
-        weeklyWindowSeconds: 7 * 86_400,
-        weeklyWindowUnits: 5_000_000,
-      },
     });
   });
 
@@ -4711,21 +4188,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         ],
       },
     };
-    context.mocks.stripe.prices.retrieve.mockResolvedValueOnce({
-      id: allowancePriceId,
-      product: {
-        metadata: {
-          type: "usage_allowance",
-          purpose: "usage_allowance",
-          source: "atom_usage_allowance",
-          orgId,
-          shortWindowSeconds: "3600",
-          shortWindowUnits: "5000",
-          weeklyWindowSeconds: "604800",
-          weeklyWindowUnits: "50000",
-        },
-      },
-    });
+    mockEnv("ATOM_GRANT_PRICE", allowancePriceId);
     context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
       customSubscription,
     );
@@ -4763,6 +4226,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
               },
               {
                 price: { id: allowancePriceId },
+                metadata: { purpose: "usage_allowance" },
                 period: { start: epochSeconds(0), end: periodEnd },
                 parent: { type: "subscription_item_details" },
               },
@@ -4793,12 +4257,6 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         quantity: 3,
       }),
     ]);
-    expectUsageAllowanceLimits(customStatus.usageAllowance, {
-      shortWindowSeconds: 3600,
-      shortWindowUnits: 5000,
-      weeklyWindowSeconds: 604_800,
-      weeklyWindowUnits: 50_000,
-    });
     expect(customStatus).toMatchObject({
       status: "active",
       subscriptionStatus: "active",
@@ -6655,20 +6113,6 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
 
     const actor = bdd.user();
     const granted = await runs.grantProEntitlement(actor);
-    const allowanceCustomerId = generatedStripeCustomerId();
-    const allowanceSubscriptionId = generatedStripeSubscriptionId();
-    await postUsageAllowanceInvoicePaid(context.signal, {
-      orgId: orgOf(actor),
-      userId: actor.userId,
-      customerId: allowanceCustomerId,
-      subscriptionId: allowanceSubscriptionId,
-      effectiveAt: new Date(now() - 60_000),
-      expiresAt: new Date(now() + 365 * 86_400_000),
-      shortWindowSeconds: 3600,
-      shortWindowUnits: 100,
-      weeklyWindowSeconds: 7 * 86_400,
-      weeklyWindowUnits: 100,
-    });
     await runs.ensurePersonalSubscriptionModel(actor);
     await connectors.connectManualGrant(actor, "openai", "api-token", {
       apiKey: "org-teardown-connector-token",
@@ -6740,27 +6184,8 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       .mockResolvedValueOnce({
         data: [
           proSubscription({
-            id: allowanceSubscriptionId,
-            customerId: allowanceCustomerId,
-          }),
-        ],
-        has_more: false,
-      })
-      .mockResolvedValueOnce({
-        data: [
-          proSubscription({
             id: granted.subscriptionId,
             customerId: granted.customerId,
-            status: "canceled",
-          }),
-        ],
-        has_more: false,
-      })
-      .mockResolvedValueOnce({
-        data: [
-          proSubscription({
-            id: allowanceSubscriptionId,
-            customerId: allowanceCustomerId,
             status: "canceled",
           }),
         ],

@@ -1,19 +1,13 @@
 import { OrgCreditExpirationConflict } from "./org-credit-expiration";
 import { expireOrgCreditsInTransaction } from "./org-credit-expiration.service";
 import {
-  prepareUsageFinancialPlan$,
   usageFinancialPlan,
   type PreparedUsageFinancialPlan,
 } from "./credit-usage-financial-plan.service";
-import {
-  allowanceSettlementWrites,
-  issuedAllowanceWindowsQuery,
-} from "./usage-allowance-settlement-writes";
 import { settle } from "../utils";
 import { prepareUsageSettlementBatch$ } from "./credit-usage-batch-prepare.service";
 import {
   requireCompleteUsageClaim,
-  usageAllowanceRefreshArgs,
   UsageSettlementSnapshotConflict,
   requiredSettlementDebit,
   type PreparedUsageBatch,
@@ -63,20 +57,6 @@ import {
   settlementDefaultPlan,
   settlementReceipt,
 } from "./credit-usage-settlement-plan";
-import {
-  entitlementQuery,
-  allocationQuery,
-  anchorQuery,
-  planAllowanceCandidates,
-  windowQuery,
-  planAllowanceWrites,
-  requireAllowanceWrite,
-  insertWindowsSql,
-} from "./usage-allowance-settlement-plan";
-import {
-  prepareUsageAllowanceRefresh$,
-  type PreparedUsageAllowanceRefresh,
-} from "./usage-allowance.service";
 
 const L = logger("CreditUsageSettlement");
 
@@ -100,7 +80,6 @@ interface UsageSettlementArgs {
 }
 
 interface SettlementBatchArgs extends UsageSettlementArgs {
-  readonly refresh?: PreparedUsageAllowanceRefresh;
   readonly batch: PreparedUsageBatch;
   readonly financial?: PreparedUsageFinancialPlan;
   readonly at: Date;
@@ -108,13 +87,13 @@ interface SettlementBatchArgs extends UsageSettlementArgs {
 
 /**
  * All financial rows commit together; only plain values leave this command.
- * The pending claim prevents duplicate charging. Prepared allowance and credit
- * splits use atomic arithmetic without old-version or balance checks; concurrent
+ * The pending claim prevents duplicate charging. Prepared credit splits
+ * use atomic arithmetic without old-version or balance checks; concurrent
  * overuse is accepted. No external I/O runs inside this transaction.
  */
 const commitUsageBatch$ = command(
   async ({ set }, args: SettlementBatchArgs, signal: AbortSignal) => {
-    const { orgId, refresh, batch } = args;
+    const { orgId, batch } = args;
     const { startedAt, work } = settlementObservation(batch.prices.length);
     const result = await set(writeDb$).transaction(async (tx) => {
       work.lockWaitMs = 0;
@@ -159,37 +138,12 @@ const commitUsageBatch$ = command(
       }
       let financial = args.financial;
       if (!financial) {
-        // Background Social jobs publish their usage in this transaction. Their
-        // newly created event identity is required for allowance allocations.
+        // Background Social jobs publish and claim their usage atomically.
+        // Their newly created event identity receives the prepared price.
         const priced = preparedSettlementPrices(args, batch, events);
-        const [entitlement] = await tx.select().from(entitlementQuery(orgId));
-        const allocations = await tx.select().from(allocationQuery(priced));
-        const anchors = await tx.select().from(anchorQuery(orgId, priced));
-        const plan = planAllowanceCandidates(priced, allocations, anchors);
-        const windows = await tx.select().from(windowQuery(orgId, plan));
-        const allowance = planAllowanceWrites(
-          { orgId, refresh, at },
-          plan,
-          windows,
-          entitlement,
-        );
-        financial = usageFinancialPlan(batch, priced, allowance, at);
+        financial = usageFinancialPlan(batch, priced, at);
       }
-      const { priced, allowance, charges, deduction, expiry } = financial;
-      if (allowance.refresh) {
-        await tx.execute(allowance.refresh);
-      }
-      await tx.execute(insertWindowsSql(allowance.inserted));
-      const canonicalWindows = allowance.inserted.length
-        ? await tx.select().from(issuedAllowanceWindowsQuery(allowance))
-        : [];
-      for (const write of allowanceSettlementWrites(
-        allowance,
-        canonicalWindows,
-      )) {
-        const { rowCount } = await tx.execute(write.sql);
-        requireAllowanceWrite(write.kind, write.planned, rowCount);
-      }
+      const { priced, charges, deduction, expiry } = financial;
       await tx.execute(settledEventsSql(charges, at));
       const grantSql = memberGrantDeductionsSql(deduction.updates);
       const granted = (await tx.execute(grantSql)).rowCount;
@@ -251,21 +205,13 @@ const commitUsageBatch$ = command(
 export const settleOrgUsage$ = command(
   async ({ get, set }, args: UsageSettlementArgs, signal: AbortSignal) => {
     const batch = await set(prepareUsageSettlementBatch$, args, signal);
-    const refreshArgs = usageAllowanceRefreshArgs(args, batch);
-    const refresh = refreshArgs
-      ? await set(prepareUsageAllowanceRefresh$, refreshArgs, signal)
-      : undefined;
     const financial = args.social
       ? undefined
-      : await set(
-          prepareUsageFinancialPlan$,
-          { orgId: args.orgId, batch, refresh },
-          signal,
-        );
+      : usageFinancialPlan(batch, batch.priced, nowDate());
     const outcome = await settle(
       set(
         commitUsageBatch$,
-        { ...args, batch, refresh, financial, at: financial?.at ?? nowDate() },
+        { ...args, batch, financial, at: financial?.at ?? nowDate() },
         signal,
       ),
     );

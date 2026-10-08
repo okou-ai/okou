@@ -32,6 +32,7 @@ export function usageCleanupTargets({ scope, id }: UsageCleanupScope) {
         id,
       ),
     },
+    // Privacy erasure only: retired issuance and its cascading windows/allocations.
     ...(org
       ? [
           {
@@ -56,7 +57,7 @@ export const deleteUsageData$ = command(
       // Actual raw deletion precedes the rollup deletion. If compaction won
       // those raw rows, this next statement sees and deletes its committed
       // rollups; if cleanup won, compaction consumes no source facts.
-      // A user cleanup leaves the organization's entitlement.
+      // A user cleanup leaves the organization's archived issuance.
       for (const target of targets) {
         await tx.delete(target.table).where(target.condition);
       }

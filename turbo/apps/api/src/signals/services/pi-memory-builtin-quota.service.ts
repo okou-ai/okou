@@ -1,14 +1,9 @@
-import {
-  orgUsageAllowanceEntitlements,
-  orgUsageAllowanceWindows,
-} from "@okouai/db/schema/org-usage-allowance";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
+import { command } from "ccstate";
 import {
   and,
-  desc,
   eq,
   gt,
-  gte,
   inArray,
   isNull,
   lt,
@@ -17,18 +12,10 @@ import {
   sql,
   sum,
 } from "drizzle-orm";
-import {
-  pgInt8ToBigIntDecoder,
-  pgBooleanDecoder,
-} from "../../lib/db-structured-result";
-import { command } from "ccstate";
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
 import { settle } from "../utils";
 import type { PiMemoryQuotaDecision } from "./pi-memory-quota.service";
-import {
-  ACTIVE_ALLOWANCE_STATUSES,
-  activeAllowanceCutoff,
-} from "./usage-allowance-policy";
 
 function reserve(
   bucket: PiMemoryQuotaDecision["bucket"],
@@ -48,105 +35,9 @@ function reserve(
   };
 }
 
-const allowanceReserves$ = command(
-  async (
-    { get },
-    orgId: string,
-    at: Date,
-    signal: AbortSignal,
-  ): Promise<PiMemoryQuotaDecision[]> => {
-    signal.throwIfAborted();
-    const db = get(db$);
-    const [entitlement] = await db
-      .select({
-        id: orgUsageAllowanceEntitlements.id,
-        status: orgUsageAllowanceEntitlements.status,
-        effectiveAt: orgUsageAllowanceEntitlements.effectiveAt,
-        expiresAt: orgUsageAllowanceEntitlements.expiresAt,
-        subscriptionId: orgUsageAllowanceEntitlements.stripeSubscriptionId,
-        short: sql`${orgUsageAllowanceEntitlements.shortWindowUnits}`.mapWith(
-          pgInt8ToBigIntDecoder,
-        ),
-        weekly: sql`${orgUsageAllowanceEntitlements.weeklyWindowUnits}`.mapWith(
-          pgInt8ToBigIntDecoder,
-        ),
-      })
-      .from(orgUsageAllowanceEntitlements)
-      .where(eq(orgUsageAllowanceEntitlements.orgId, orgId));
-    signal.throwIfAborted();
-    if (
-      !entitlement ||
-      entitlement.effectiveAt > at ||
-      !ACTIVE_ALLOWANCE_STATUSES.some((status) => {
-        return status === entitlement.status;
-      })
-    ) {
-      return [];
-    }
-    const expired =
-      entitlement.expiresAt !== null && entitlement.expiresAt <= at;
-    if (expired && !entitlement.subscriptionId) {
-      return [];
-    }
-    if (
-      entitlement.expiresAt &&
-      entitlement.expiresAt <= activeAllowanceCutoff(entitlement.status, at)
-    ) {
-      // Ordinary admission owns external reconciliation. This reader never refreshes Stripe.
-      return [{ decision: "unknown", reason: "entitlement_stale" }];
-    }
-    const results: PiMemoryQuotaDecision[] = [];
-    for (const kind of ["short", "weekly"] as const) {
-      // Match current entitlement identity and canonical issued-window time rules.
-      // In payment grace, an expired entitlement has no applicable issued window.
-      const [window] = expired
-        ? []
-        : await db
-            .select({
-              original: sql`${orgUsageAllowanceWindows.unitLimit}`.mapWith(
-                pgInt8ToBigIntDecoder,
-              ),
-              consumed: sql`${orgUsageAllowanceWindows.consumedUnits}`.mapWith(
-                pgInt8ToBigIntDecoder,
-              ),
-            })
-            .from(orgUsageAllowanceWindows)
-            .where(
-              and(
-                eq(orgUsageAllowanceWindows.orgId, orgId),
-                eq(orgUsageAllowanceWindows.entitlementId, entitlement.id),
-                eq(orgUsageAllowanceWindows.kind, kind),
-                gte(orgUsageAllowanceWindows.startsAt, entitlement.effectiveAt),
-                lte(orgUsageAllowanceWindows.startsAt, at),
-                gt(orgUsageAllowanceWindows.expiresAt, at),
-              ),
-            )
-            .orderBy(desc(orgUsageAllowanceWindows.startsAt))
-            .limit(1);
-      signal.throwIfAborted();
-      if (window && window.consumed < 0n) {
-        results.push({
-          decision: "unavailable",
-          reason: "quota_unavailable",
-          bucket: kind,
-        });
-      } else {
-        const original = window?.original ?? entitlement[kind];
-        const remaining = window
-          ? window.consumed >= original
-            ? 0n
-            : original - window.consumed
-          : original;
-        results.push(reserve(kind, original, remaining));
-      }
-    }
-    return results;
-  },
-);
-
 const readBuiltinQuota$ = command(
   async (
-    { get, set },
+    { get },
     owner: { readonly orgId: string; readonly userId: string },
     at: Date,
     signal: AbortSignal,
@@ -184,8 +75,7 @@ const readBuiltinQuota$ = command(
     if (!pool || pool.invalid) {
       return { decision: "unavailable", reason: "quota_unavailable" };
     }
-    const decisions = await set(allowanceReserves$, owner.orgId, at, signal);
-    signal.throwIfAborted();
+    let memberPool: PiMemoryQuotaDecision | undefined;
     if (pool.original !== null || pool.remaining !== null) {
       if (
         pool.original === null ||
@@ -195,36 +85,23 @@ const readBuiltinQuota$ = command(
       ) {
         return { decision: "unavailable", reason: "quota_unavailable" };
       }
-      decisions.push(
-        reserve("member_pool", BigInt(pool.original), BigInt(pool.remaining)),
+      memberPool = reserve(
+        "member_pool",
+        BigInt(pool.original),
+        BigInt(pool.remaining),
       );
     }
-    const blocking =
-      decisions.find((d) => {
-        return d.decision === "unavailable";
-      }) ??
-      decisions.find((d) => {
-        return d.decision === "denied";
-      });
-    if (blocking) {
-      return blocking;
+    if (
+      memberPool?.decision === "unavailable" ||
+      memberPool?.decision === "denied"
+    ) {
+      return memberPool;
     }
-    // Cash has no original-budget denominator, even alongside known healthy reserves.
-    const limiting = decisions
-      .filter((d) => {
-        return d.remainingPercent !== undefined;
-      })
-      .sort((a, b) => {
-        return (a.remainingPercent ?? 100) - (b.remainingPercent ?? 100);
-      })[0];
+    // Cash has no original-budget denominator, even alongside a healthy member pool.
     return {
-      ...limiting,
+      ...memberPool,
       decision: "unknown",
-      reason: decisions.some((d) => {
-        return d.reason === "entitlement_stale";
-      })
-        ? "entitlement_stale"
-        : "cash_percentage_unknown",
+      reason: "cash_percentage_unknown",
     };
   },
 );

@@ -112,7 +112,6 @@
     "src/signals/services/morning-brief-schedule-claim.service.ts",
     "src/signals/services/official-workflow-reconciliation-dispatch.service.ts",
     "src/signals/services/pending-launch-admission-plan.ts",
-    "src/signals/services/pending-launch-allowance-plan.ts",
     "src/signals/services/pending-launch-claim-plan.ts",
     "src/signals/services/pending-launch-credit-plan.ts",
     "src/signals/services/pending-launch-official-plan.ts",
