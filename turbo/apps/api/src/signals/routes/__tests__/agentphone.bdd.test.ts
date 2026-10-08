@@ -1165,6 +1165,115 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
   });
 
+  it("keeps the phone conversation usable after the provider rejects a completion reply", async () => {
+    const { ap, phone, runnerGroup, sends } = await entitledLinkedActor();
+    const webhooks = createWebhookCallbackApi(context);
+    async function complete(runId: string, sandboxToken: string) {
+      await webhooks.requestAgentComplete(
+        {
+          runId,
+          exitCode: 0,
+          checkpoint: {
+            cliAgentType: "claude-code",
+            cliAgentSessionId: agentPhoneCliAgentSessionIdForRun(runId),
+            cliAgentSessionHistoryHash: createHash("sha256")
+              .update(`bdd agentphone history ${runId}`)
+              .digest("hex"),
+          },
+        },
+        { authorization: `Bearer ${sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+    }
+    const conversationId = uniqueConversationId();
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "first phone request",
+      conversationId,
+    });
+    const firstRun = await claimDispatchedRun(runnerGroup);
+    const beforeCompletion = sends.messages.length;
+    server.use(
+      http.post(
+        "https://api.agentphone.test/v1/messages",
+        () => {
+          return HttpResponse.json(
+            { detail: "Recipient is temporarily unavailable" },
+            { status: 422 },
+          );
+        },
+        { once: true },
+      ),
+    );
+
+    await complete(firstRun.runId, firstRun.sandboxToken);
+    expect(sends.messages).toHaveLength(beforeCompletion);
+    await webhooks.requestAgentComplete(
+      { runId: firstRun.runId, exitCode: 0 },
+      { authorization: `Bearer ${firstRun.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(sends.messages).toHaveLength(beforeCompletion);
+
+    const nextMessageId = await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "try the next phone request",
+      conversationId,
+    });
+    const nextRun = await claimDispatchedRun(runnerGroup);
+    expect(nextRun.prompt).toBe("try the next phone request");
+    await complete(nextRun.runId, nextRun.sandboxToken);
+    expect(sends.messages).toHaveLength(beforeCompletion + 1);
+    expect(lastSend(sends)).toMatchObject({
+      toNumber: phone,
+      replyToMessageId: nextMessageId,
+      body: "Task completed successfully.",
+    });
+  });
+
+  it("does not send a phone reply after the user deletes the running thread", async () => {
+    const { actor, ap, phone, runnerGroup, sends } =
+      await entitledLinkedActor();
+    const chat = createChatFilesBddApi(context);
+    const webhooks = createWebhookCallbackApi(context);
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "delete this phone conversation",
+      conversationId: uniqueConversationId(),
+    });
+    const run = await claimDispatchedRun(runnerGroup);
+    const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    if (lifecycle.status !== 200) {
+      throw new Error("Expected AgentPhone thread lifecycle events");
+    }
+    const thread = lifecycle.body.events.find((event) => {
+      return event.kind === "created";
+    });
+    if (!thread) {
+      throw new Error("Expected the phone conversation's thread");
+    }
+    const beforeDeletion = sends.messages.length;
+
+    await chat.deleteThread(actor, thread.chatThreadId);
+    await webhooks.requestAgentComplete(
+      {
+        runId: run.runId,
+        exitCode: 1,
+        error: "Run ended after its thread was deleted",
+      },
+      { authorization: `Bearer ${run.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(sends.messages).toHaveLength(beforeDeletion);
+    await chat.requestListThreadEvents(actor, thread.chatThreadId, {}, [404]);
+  });
+
   describe.each(modelResumeScenarios)(
     "switches the $model $channel DM thread with /model (conversation: $withConversation)",
     (scenario) => {
