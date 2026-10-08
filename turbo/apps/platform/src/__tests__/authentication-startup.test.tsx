@@ -110,6 +110,44 @@ test("The SharedWorker owns realtime", async () => {
   expect(context.mocks.ably.getAuthTokenHistory()).toHaveLength(1);
 });
 
+test("Foreground presence follows tab visibility without stopping realtime", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  await setupPage({
+    context,
+    host: "app.okou.ai",
+    path: "/agents",
+    sharedWorkerTestTransport: "message-port",
+    auth: {
+      user: { id: "foreground-user", fullName: "Foreground User" },
+      organization: {
+        activeOrg: { id: "foreground-org", name: "Foreground org" },
+        memberships: [{ id: "foreground-org" }],
+      },
+    },
+  });
+  await screen.findByRole("heading", { name: "Agents" });
+  const channel = "user-org-foreground:foreground-user:foreground-org";
+  await vi.waitFor(() => {
+    expect(context.mocks.ably.getPresenceCount(channel)).toBe(1);
+  });
+
+  visibility.changeTo("hidden");
+  await vi.waitFor(() => {
+    expect(context.mocks.ably.getPresenceCount(channel)).toBe(0);
+  });
+  expect(
+    context.mocks.ably.hasSubscriptionOnChannel(
+      "user:foreground-user",
+      "connectorPermissionUpdated",
+    ),
+  ).toBeTruthy();
+
+  visibility.changeTo("visible");
+  await vi.waitFor(() => {
+    expect(context.mocks.ably.getPresenceCount(channel)).toBe(1);
+  });
+});
+
 test.each(["setupPage", "startPage"])(
   "%s does not report cancelled authentication startup as ready",
   async (entryPoint) => {

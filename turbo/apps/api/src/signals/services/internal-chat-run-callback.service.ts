@@ -1983,16 +1983,20 @@ const runCompletedChatCallbackSideEffects$ = command(
       }
 
       signal.throwIfAborted();
-      await sendUserPushNotifications({
-        db: args.db,
-        userId: args.chatThread.userId,
-        threadId: args.chatThread.chatThreadId,
-        notification: {
-          title: args.run.prompt.slice(0, 60),
-          body: summary ?? "Your task is complete",
-          url: `/chats/${args.chatThread.chatThreadId}`,
+      await sendUserPushNotifications(
+        {
+          db: args.db,
+          userId: args.chatThread.userId,
+          orgId: args.chatThread.orgId,
+          threadId: args.chatThread.chatThreadId,
+          notification: {
+            title: args.run.prompt.slice(0, 60),
+            body: summary ?? "Your task is complete",
+            url: `/chats/${args.chatThread.chatThreadId}`,
+          },
         },
-      });
+        signal,
+      );
     })();
 
     const results = await Promise.allSettled([
@@ -2075,26 +2079,33 @@ const handleFailedChatCallback$ = command(
   },
 );
 
-async function runFailedChatCallbackSideEffects(args: {
-  readonly db: Db;
-  readonly run: ChatRunInfo;
-  readonly chatThread: ChatThreadForRunRow;
-  readonly displayErrorMessage: string;
-  readonly sendWebPush: boolean;
-}): Promise<void> {
+async function runFailedChatCallbackSideEffects(
+  args: {
+    readonly db: Db;
+    readonly run: ChatRunInfo;
+    readonly chatThread: ChatThreadForRunRow;
+    readonly displayErrorMessage: string;
+    readonly sendWebPush: boolean;
+  },
+  signal: AbortSignal,
+): Promise<void> {
   if (!args.sendWebPush) {
     return;
   }
-  await sendUserPushNotifications({
-    db: args.db,
-    userId: args.chatThread.userId,
-    threadId: args.chatThread.chatThreadId,
-    notification: {
-      title: args.run.prompt.slice(0, 60),
-      body: `Task failed: ${args.displayErrorMessage.slice(0, 80)}`,
-      url: `/chats/${args.chatThread.chatThreadId}`,
+  await sendUserPushNotifications(
+    {
+      db: args.db,
+      userId: args.chatThread.userId,
+      orgId: args.chatThread.orgId,
+      threadId: args.chatThread.chatThreadId,
+      notification: {
+        title: args.run.prompt.slice(0, 60),
+        body: `Task failed: ${args.displayErrorMessage.slice(0, 80)}`,
+        url: `/chats/${args.chatThread.chatThreadId}`,
+      },
     },
-  });
+    signal,
+  );
 }
 
 async function runTerminalChatCallbackSideEffects(args: {
@@ -3376,13 +3387,17 @@ const finishTerminalChatCallbackAfterProjection$ = command(
                   },
                   backgroundSignal,
                 )
-              : runFailedChatCallbackSideEffects({
-                  db: args.callback.db,
-                  run: deferredSideEffects.run,
-                  chatThread: args.chatThread,
-                  displayErrorMessage: deferredSideEffects.displayErrorMessage,
-                  sendWebPush,
-                }),
+              : runFailedChatCallbackSideEffects(
+                  {
+                    db: args.callback.db,
+                    run: deferredSideEffects.run,
+                    chatThread: args.chatThread,
+                    displayErrorMessage:
+                      deferredSideEffects.displayErrorMessage,
+                    sendWebPush,
+                  },
+                  backgroundSignal,
+                ),
         }),
       );
     }

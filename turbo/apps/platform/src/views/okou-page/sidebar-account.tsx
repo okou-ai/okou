@@ -276,8 +276,8 @@ function AccountUsageGroup({
 }
 
 /**
- * Administrators see the workspace balance combined with their member package
- * credits; members only see their own package credits.
+ * Administrators see available credits from each wallet independently;
+ * organization debt cannot cancel a member's prepaid package.
  */
 export function useCreditBalance(combined: boolean): {
   readonly creditLabel: string | null;
@@ -302,7 +302,7 @@ export function useCreditBalance(combined: boolean): {
   const credits = !combined
     ? usagePackCredits
     : organizationCredits !== null && !waitingForUsagePack
-      ? organizationCredits + (usagePackCredits ?? 0)
+      ? Math.max(organizationCredits, 0) + (usagePackCredits ?? 0)
       : null;
   return {
     creditLabel: credits !== null ? formatCreditBalance(credits) : null,

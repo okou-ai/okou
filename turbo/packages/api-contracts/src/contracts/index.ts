@@ -1639,19 +1639,23 @@ export {
 } from "./built-in-generation";
 export {
   voiceIoPolishContract,
+  voiceIoPolishSegmentsContract,
   voiceIoPolishRequestSchema,
+  voiceIoPolishSegmentsRequestSchema,
   voiceIoPolishResponseSchema,
   VOICE_IO_POLISH_MAX_TEXT_CHARS,
   type VoiceIoPolishContract,
   type VoiceIoPolishRequest,
+  type VoiceIoPolishSegmentsRequest,
+  type VoiceIoPolishSegmentsContract,
   type VoiceIoPolishResponse,
 } from "./voice-io-polish";
 export {
   voiceIoTranscribeContract,
-  voiceIoTranscribeResponseSchema,
+  voiceIoTranscribeSegmentResponseSchema,
   VOICE_IO_TRANSCRIBE_MAX_CONTEXT_CHARS,
   type VoiceIoTranscribeContract,
-  type VoiceIoTranscribeResponse,
+  type VoiceIoTranscribeSegmentResponse,
 } from "./voice-io-transcribe";
 export {
   voiceIoQuotaContract,

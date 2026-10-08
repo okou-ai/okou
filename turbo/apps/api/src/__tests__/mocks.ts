@@ -130,6 +130,7 @@ export interface ApiTestMocks {
     readonly batchPublish: Mock<AblyBatchPublish>;
     readonly useRealBatchPublish: Mock<() => boolean>;
     readonly publish: AsyncMock;
+    readonly presenceGet: AsyncMock;
     readonly createTokenRequest: AsyncMock;
   };
   readonly clerk: {
@@ -553,6 +554,7 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
       batchPublish: vi.fn<AblyBatchPublish>(),
       useRealBatchPublish: vi.fn<() => boolean>(),
       publish: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+      presenceGet: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       createTokenRequest: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     },
     axiom,
@@ -1068,7 +1070,14 @@ vi.mock("ably", async (importOriginal) => {
     readonly channels = {
       get: (channelName: string) => {
         apiTestMocks.ably.channelGet(channelName);
-        return { publish: apiTestMocks.ably.publish };
+        return {
+          publish: apiTestMocks.ably.publish,
+          presence: {
+            get: (params: unknown) => {
+              return apiTestMocks.ably.presenceGet(channelName, params);
+            },
+          },
+        };
       },
     };
     readonly auth = {
@@ -1459,6 +1468,8 @@ export function resetApiTestMocks(): void {
   apiTestMocks.ably.useRealBatchPublish.mockReset();
   apiTestMocks.ably.publish.mockReset();
   apiTestMocks.ably.publish.mockResolvedValue(undefined);
+  apiTestMocks.ably.presenceGet.mockReset();
+  apiTestMocks.ably.presenceGet.mockResolvedValue({ items: [] });
   apiTestMocks.ably.createTokenRequest.mockReset();
   apiTestMocks.axiom.useRealTelemetry.mockReset();
   apiTestMocks.axiom.useRealTelemetry.mockReturnValue(false);

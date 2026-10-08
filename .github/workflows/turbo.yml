@@ -152,10 +152,33 @@ env:
   npm_config_audit: "false"
 
 jobs:
+  ci-admission:
+    name: Check PR CI limits
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Check PR CI limits
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          CI_MAX_OPEN_PRS: ${{ vars.CI_MAX_OPEN_PRS }}
+          CI_MAX_OPEN_PRS_PER_AUTHOR: ${{ vars.CI_MAX_OPEN_PRS_PER_AUTHOR }}
+          CI_PR_ADMISSION_BYPASS_LIST: ${{ vars.CI_PR_ADMISSION_BYPASS_LIST }}
+        run: bash .github/scripts/check-pr-ci-capacity.sh
+
   # Detect release-please context across all event types (PR, push, merge queue).
   # github.head_ref is empty in merge_group events, so we extract the PR number
   # from the merge queue head_ref and check via GitHub API.
   detect-release:
+    needs: [ci-admission]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -2876,6 +2899,7 @@ jobs:
     timeout-minutes: 5
     # Runner cleanup is handled by cleanup.yml (pull_request_target:closed).
     needs:
+      - ci-admission
       - detect-release
       - validate-release-presence
       - detect-turbo-ts-checks
@@ -2912,12 +2936,18 @@ jobs:
     steps:
       - name: Validate CI results
         env:
+          CI_ADMISSION_RESULT: ${{ needs.ci-admission.result }}
           EVENT_NAME: ${{ github.event_name }}
           IS_RELEASE: ${{ needs.detect-release.outputs.skip }}
           RELEASE_PRESENCE_RESULT: ${{ needs.validate-release-presence.result }}
           RELEASE_DEPLOY_APP_RESULT: ${{ needs.deploy-app.result }}
           RELEASE_DEPLOY_CLI_RESULT: ${{ needs.deploy-cli.result }}
         run: |
+          if [[ "$CI_ADMISSION_RESULT" != "success" ]]; then
+            echo "::error::CI admission did not pass ($CI_ADMISSION_RESULT). See the Check PR CI limits job and workflow summary for the reason and retry instructions."
+            exit 1
+          fi
+
           # Auto-pass for release-please PRs, commits, and merge queue entries
           if [[ "$IS_RELEASE" == "true" ]]; then
             if [[ "$EVENT_NAME" == "merge_group" && "$RELEASE_PRESENCE_RESULT" != "success" ]]; then

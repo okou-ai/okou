@@ -269,6 +269,7 @@ jobs:
             .github/scripts/cancel-superseded-merge-group-runs.sh \
             .github/scripts/check-release-please-component-releases.sh \
             .github/scripts/check-release-please-workspace-coverage.sh \
+            .github/scripts/check-pr-ci-capacity.sh \
             .github/scripts/check-workflow-shell-compatibility.sh \
             .github/scripts/cleanup-pr-runner-namespace.sh \
             .github/scripts/discover-runner-pr-namespaces.sh \
@@ -303,6 +304,7 @@ jobs:
             .github/scripts/tests/codeql-cache-workflow-test.sh \
             .github/scripts/tests/pass-release-pr-ci-gates-test.sh \
             .github/scripts/tests/check-workflow-shell-compatibility-test.sh \
+            .github/scripts/tests/check-pr-ci-capacity-test.sh \
             .github/scripts/tests/checkout-depth-test.sh \
             .github/scripts/tests/cleanup-pr-runner-test.sh \
             .github/scripts/tests/cleanup-stale-runners-test.sh \

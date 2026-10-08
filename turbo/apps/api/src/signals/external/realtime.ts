@@ -1,6 +1,7 @@
 import Ably, { type CapabilityOp } from "ably";
 import type { RunnerSshInvalidate } from "@okouai/api-contracts/contracts/runner-ssh";
 import {
+  foregroundChannelName,
   sessionOutputChannelName,
   type BrowserSessionChangedPayload,
   type HomeTaskRecommendationsChangedPayload,
@@ -26,6 +27,20 @@ const ablyClient = singleton((): Ably.Rest => {
   L.debug("Ably client initialised");
   return client;
 });
+
+export async function isUserInForeground(
+  userId: string,
+  orgId: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  signal.throwIfAborted();
+  const channel = ablyClient().channels.get(
+    foregroundChannelName(userId, orgId),
+  );
+  const members = await channel.presence.get({ clientId: userId, limit: 1 });
+  signal.throwIfAborted();
+  return members.items.length > 0;
+}
 
 function getUserChannelName(userId: string): string {
   return `user:${userId}`;
@@ -68,6 +83,7 @@ export async function createPlatformRealtimeToken(
     [getUserChannelName(userId)]: ["subscribe"],
   };
   if (orgId !== undefined) {
+    capability[foregroundChannelName(userId, orgId)] = ["presence"];
     capability[getOrgChannelName(orgId)] = ["subscribe"];
     capability[getUserOrgChannelName(userId, orgId)] = ["subscribe"];
     capability[sessionOutputChannelName(userId, orgId, "*")] = ["subscribe"];

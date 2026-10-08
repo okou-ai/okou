@@ -345,8 +345,13 @@ def resolve_firewall_entries(
     resolved firewall and each dictionary API entry. An optional inline
     `customConnectorId` must also be a UUID string and is copied to the resolved
     firewall and each dictionary API entry. The registry-owned runtime marker is
-    consumed by request matching: a registered custom candidate can shadow a
-    registered builtin candidate when they match the same base. Auth resolution
+    consumed by request matching: when a registered custom candidate's base matches
+    a request, registered builtin candidates are excluded before base/rule specificity
+    unless present intent identifies a matching registered builtin. Bases need not
+    be equal; a broader custom base can exclude a narrower builtin base. Intent
+    retains eligibility, not an override of specificity or authorization. A matching
+    custom denial or malformed configuration does not reconsider excluded builtins.
+    Unclassified entries are not excluded by this rule. Auth resolution
     carries the propagated connector and source identities into the auth request
     context. If resolution raises `FirewallEntryResolutionError`, the registry
     loader records the affected sandbox as `invalid_firewalls` instead of

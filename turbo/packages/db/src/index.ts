@@ -51,6 +51,7 @@ import * as usageEventSchema from "./schema/usage-event";
 import * as xResourceUsageSchema from "./schema/x-resource-usage";
 import * as usageEventHourlyRollupSchema from "./schema/usage-event-hourly-rollup";
 import * as usagePackCreditGrantSchema from "./schema/usage-pack-credit-grant";
+import * as usagePackOverdraftTransferSchema from "./schema/usage-pack-overdraft-transfer";
 import * as usagePackCreditRefundSchema from "./schema/usage-pack-credit-refund";
 import * as usagePackSubscriptionSchema from "./schema/usage-pack-subscription";
 import * as runBuiltInAdmissionSchema from "./schema/run-built-in-admission";
@@ -229,6 +230,7 @@ export const schema = {
   ...xResourceUsageSchema,
   ...usageEventHourlyRollupSchema,
   ...usagePackCreditGrantSchema,
+  ...usagePackOverdraftTransferSchema,
   ...usagePackCreditRefundSchema,
   ...usagePackSubscriptionSchema,
   ...runBuiltInAdmissionSchema,

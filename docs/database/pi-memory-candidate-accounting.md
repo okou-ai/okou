@@ -49,13 +49,13 @@ existing live PiMemory gate and explicit C accounting.
 | `webhooks-clerk-cleanup.service.ts`                                              | User/org cleanup calls `deleteStoragesWithPiMemoryCandidates` inside the storage/candidate/reference transaction; external work stays outside.                                                                             |
 | `webhooks-clerk.ts`                                                              | Cleanup remains asynchronous after HTTP 200. Failure needs investigation/provider redelivery; this is not a durable retry mechanism.                                                                                       |
 | Stage 1 worker; Phase 2 job, maintenance and usage services                      | Status, output, lease, selection and usage updates only; no new source ownership. Existing fencing/parent locks remain.                                                                                                    |
-| Candidate fixtures, Phase 2 fixture, `test-pi-memory-stage1-state.ts`            | These remaining private test consumers use internal candidate/parent writers. They are unprocessed under #37440; using the canonical service does not establish public scenario construction or authorize preserving them. |
+| Remaining candidate state fixtures (`test-pi-memory-stage1-state.ts`)            | These remaining private test consumers use internal candidate/parent writers. They are unprocessed under #37440; using the canonical service does not establish public scenario construction or authorize preserving them. |
 | Workflow deletion, agent-instruction storage, registry sync and development seed | Their raw storage deletion targets custom-skill, instruction or system volumes, not canonical user-owned `memory`.                                                                                                         |
 | Test system-storage/cache/catalog/usage cleanup                                  | Owns explicitly constructed system/usage fixtures, not a supported candidate repair writer.                                                                                                                                |
 | External migrations `006`, `007`, `008`, `015`                                   | Permanent historical records. `006` targets retired tables, `007`/`008` own skill volumes, and `015` builds version indexes. None is a current candidate repair command.                                                   |
 | DB validators                                                                    | Historical baseline supplies the original function fingerprint. The transition validator replays the guarded migration; permanent schema inventory requires its absence.                                                   |
 
-`insertPiMemoryStage1Candidates`, `deletePiMemoryStage1Candidates` and
+`admitPiMemoryStage1Candidate`, `deletePiMemoryStage1Candidates` and
 `deleteStoragesWithPiMemoryCandidates` are internal transaction-owned writers.
 They are not construction, execution or observation boundaries for API tests.
 Tests must use existing normal user APIs, genuine provider webhooks or
@@ -202,8 +202,15 @@ history/corruption, transaction faults, direct worker admission and lock timing.
 [#37440 batch 004](../implementation/issue-37440-batches/batch-004.md) retires its
 15 declarations (20 expanded executions), including the raw operator-audit
 fixture. Those SQL/internal guarantees are no longer claimed as API coverage.
-Other completion/admission, worker and Clerk fixtures require their own scenario
-review; this batch does not certify their complete chains. Public storage
+[#37440 batch 005](../implementation/issue-37440-batches/batch-005.md) also retires
+the private Stage1 scheduling/usage and Phase2 job/selection suites and their
+last billing/Phase2 fixture consumers. Exact day/slot/lease/revision matrices,
+forged legacy usage and raw ledger/constraint observations are no longer API
+coverage. The genuine shared selection-digest contract remains in its owning
+Pi runtime package. Production admission, accounting, global cron execution and
+owner fences remain; unused fixture-only insertion and selection controls are
+removed. Other completion/admission, worker and Clerk fixtures still require
+their own scenario review; these batches do not certify their complete chains. Public storage
 publication followed by genuine Clerk deletion still checks external provider
 failure effects through the ordinary Runner lifecycle.
 
