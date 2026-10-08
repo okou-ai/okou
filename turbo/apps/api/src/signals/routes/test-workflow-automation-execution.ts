@@ -3,7 +3,6 @@ import { command } from "ccstate";
 
 import { request$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
-import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { dispatchRunCallbacks$ } from "../services/agent-run-callback.service";
 import {
@@ -26,13 +25,11 @@ const dispatchTestWorkflowAutomationCallbacks$ = command(
       return bodyResult.response;
     }
     const body = bodyResult.data;
-    const db = set(writeDb$);
     const dispatches = await Promise.all(
       Array.from({ length: body.dispatch_count }, async () => {
         return await set(
           dispatchRunCallbacks$,
           {
-            db,
             runId: body.run_id,
             status: body.status,
             error: body.status === "failed" ? body.error : undefined,
