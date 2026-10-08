@@ -75,8 +75,11 @@ prefix is silently truncated or extracted.
 Original package collection is incremental and bounded before any package decoder:
 200 archives, 202 physical directory entries, 128 MiB per regular original and
 512 MiB aggregate compressed bytes, using the existing custody limits. Hashing
-reads a held readonly original FD under the remaining compressed budget. The
-basename is only an untrusted private-APT selector; the signed record's exact
+reads a held readonly original FD under the remaining compressed budget.
+Acquisition uses nonblocking/no-follow open followed by immediate held-FD
+regular/owner/size checks: replacing a collected regular pathname with a FIFO
+without a writer refuses rather than blocking before the decoder deadline.
+The basename is only an untrusted private-APT selector; the signed record's exact
 SHA256, size, native-or-all architecture, origin and pinned version must match
 before control parsing. Control and data decode that same held inode, not a
 later pathname replacement. Stat-change detection does not stop external writers
@@ -109,18 +112,41 @@ and extensions, before interpretation (400,000 total), decoded output (four GiB)
 regular-header logical bytes (four GiB) and path/link strings (64 MiB) before
 extraction. Repeated identical collisions still consume these work budgets;
 collision hashing uses bounded chunks and checks sizes rather than an eager
-whole-file read. These work limits do not replace the existing final-tree limits
-or prove complete implicit-parent/hardlink-name/output reservations. Control
-member/inflation accounting, complete parser/bootstrap TCB, final-tree reservations,
-descendant ownership and whole-provision timing remain separate obligations.
+whole-file read. Separate monotonic output reservations now precede each maintained
+extraction write: at most 20,000 root/entry/implicit-parent nodes, eight MiB of
+initial-plus-rescan child-name bytes, 128 path components, 4096 path bytes and
+two GiB over regular filenames. Every hardlink filename charges its target's
+logical size, not just newly allocated disk blocks. Existing entries are scanned
+incrementally without following aliases; reservations use the current resolved
+parent after prior real writes, so changing a directory alias cannot reuse a
+stale archive-name charge. Collision checks run again before each real write;
+a later header cannot resize an inode already shared by hardlinks or write
+through a newly created dangling leaf alias. Deleted/replaced entries do not
+reclaim reservations.
+The production ledger conservatively reserves 128 MiB each for the future QEMU
+binary, two BIOS copies and CA bundle, plus declared aliases/mountpoint names;
+CA concatenation is streamed under its reserved ceiling. The maintained extractor
+still owns GNU/PAX/sparse/link semantics and delayed directory attributes.
+
+These bounds are not a filesystem/source/writer seal or complete future-output
+admission. Failed extraction can leave its bounded earlier prefix; the provision
+attempt terminates, not retries that ledger. Control member/inflation accounting,
+complete parser/bootstrap TCB, externally mutable paths/inodes, all future
+transformations, descendant ownership and whole-provision timing remain separate
+obligations; the complete final-tree measurement is still mandatory.
 
 Public ar/tar canaries exercise the real installed data decoder and parser,
 including inherited memory/file limits, exact logical-entry capacity, skipped
 roots, PAX/GNU/sparse positives and refusals, cross-package quotas and streamed
 collision behavior. Additional real-control cases check held-original decoding
 and oversized physical control refusal; ordinary IO cases check incremental
-compressed quotas, FD closure and a real writer change. An AST ordering check
-is structural evidence only, not a signed-provider execution receipt. Real-data cancellation regressions inject actual SIGINT
+compressed quotas, FD closure and a real writer change. Output cases check
+implicit parents before writes, exact node/name/byte edges, repeated equal files,
+changing real aliases, pre-existing entries and reserved future capacity. A genuine
+sparse file plus hardlinks reaches the exact two-GiB filename sum without dense
+input; the next name refuses. Over-depth input refuses before any directory is
+created. An AST ordering check is structural evidence only, not a signed-provider
+execution receipt. Real-data cancellation regressions inject actual SIGINT
 after kernel-confirmed unreaped completion and immediately after actual
 `waitpid`, before maintained `Popen.wait` return-code bookkeeping. Observers
 preserve real decoder/status syscalls; a possible unsafe signal attempt in the

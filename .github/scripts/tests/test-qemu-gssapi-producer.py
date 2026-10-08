@@ -139,6 +139,190 @@ if list(pathlib.Path(sys.argv[3]).iterdir()):
                     output.write(b'\n')
         return archive
 
+    def test_default_output_depth_refuses_before_creating_any_implicit_parent(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            packed = io.BytesIO()
+            with tarfile.open(fileobj=packed, mode='w') as stream:
+                member = tarfile.TarInfo('/'.join(['d'] * 128 + ['public']))
+                member.size = 4
+                stream.addfile(member, io.BytesIO(b'data'))
+            archive = self.public_payload_deb(base, packed.getvalue())
+            root = base / 'root'
+            root.mkdir()
+            with self.assertRaisesRegex(ValueError, 'output path/byte budget refused'):
+                self.producer.extract_deb(archive, root)
+            self.assertEqual(list(root.iterdir()), [])
+
+    def test_default_output_hardlink_name_total_refuses_logical_expansion(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            size = 128 * 1024 * 1024
+            member = tarfile.TarInfo('sparse-public')
+            member.type = tarfile.GNUTYPE_SPARSE
+            member.mode = 0o600
+            member.size = 1
+            header = bytearray(member.tobuf(format=tarfile.GNU_FORMAT))
+            header[386:398] = tarfile.itn(size - 1, 12)
+            header[398:410] = tarfile.itn(1, 12)
+            header[483:495] = tarfile.itn(size, 12)
+            header[148:156] = b' ' * 8
+            header[148:156] = bytes('%06o\0 ' % sum(header), 'ascii')
+            payload = bytes(header) + b'x' + b'\0' * 511
+            for index in range(1, 18):
+                alias = tarfile.TarInfo('alias-' + str(index))
+                alias.type = tarfile.LNKTYPE
+                alias.linkname = member.name
+                payload += alias.tobuf(format=tarfile.GNU_FORMAT)
+            archive = self.public_payload_deb(base, payload + b'\0' * 1024)
+            root = base / 'root'
+            root.mkdir()
+            with self.assertRaisesRegex(ValueError, 'output aggregate budget refused'):
+                self.producer.extract_deb(archive, root)
+            self.assertEqual((root / member.name).stat().st_size, size)
+            self.assertEqual((root / member.name).stat().st_ino, (root / 'alias-15').stat().st_ino)
+            self.assertFalse((root / 'alias-16').exists())
+            self.assertEqual(sum(path.stat().st_size for path in root.iterdir()), 2 * 1024 * 1024 * 1024)
+
+    def test_output_late_collisions_cannot_resize_hardlinks_or_follow_dangling_leaf_aliases(self):
+        for kind in ('hardlink', 'dangling'):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                base = pathlib.Path(directory)
+                packed = io.BytesIO()
+                with tarfile.open(fileobj=packed, mode='w') as stream:
+                    if kind == 'hardlink':
+                        member = tarfile.TarInfo('original')
+                        member.size = 4
+                        stream.addfile(member, io.BytesIO(b'data'))
+                        member = tarfile.TarInfo('second')
+                        member.type = tarfile.LNKTYPE
+                        member.linkname = 'original'
+                        stream.addfile(member)
+                    else:
+                        member = tarfile.TarInfo('original')
+                        member.type = tarfile.SYMTYPE
+                        member.linkname = 'missing'
+                        stream.addfile(member)
+                    member = tarfile.TarInfo('original')
+                    member.size = 5
+                    stream.addfile(member, io.BytesIO(b'other'))
+                archive = self.public_payload_deb(base, packed.getvalue())
+                root = base / 'root'
+                root.mkdir()
+                with self.assertRaisesRegex(ValueError, 'file collision refused'):
+                    self.producer.extract_deb(archive, root)
+                if kind == 'hardlink':
+                    self.assertEqual((root / 'original').read_bytes(), b'data')
+                    self.assertEqual((root / 'second').read_bytes(), b'data')
+                    self.assertEqual((root / 'original').stat().st_ino, (root / 'second').stat().st_ino)
+                else:
+                    self.assertEqual(os.readlink(root / 'original'), 'missing')
+                    self.assertFalse((root / 'missing').exists())
+
+    def test_output_nodes_include_implicit_parents_and_refuse_before_their_writes(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            packed = io.BytesIO()
+            with tarfile.open(fileobj=packed, mode='w') as stream:
+                member = tarfile.TarInfo('a/b/public')
+                member.size = 4
+                stream.addfile(member, io.BytesIO(b'data'))
+            archive = self.public_payload_deb(base, packed.getvalue())
+            root = base / 'root'
+            root.mkdir()
+            with self.assertRaisesRegex(ValueError, 'output aggregate budget refused'):
+                self.producer.extract_deb(archive, root, self.producer.PackageExtractionBudget(output_nodes=3))
+            self.assertEqual(list(root.iterdir()), [])
+            self.producer.extract_deb(archive, root, self.producer.PackageExtractionBudget(output_nodes=4))
+            self.assertEqual((root / 'a/b/public').read_bytes(), b'data')
+            for limits in ({'output_nodes': True}, {'output_nodes': 20001}, {'output_bytes': 0}, {'output_names': 0}):
+                with self.assertRaisesRegex(ValueError, 'extraction budget refused'):
+                    self.producer.PackageExtractionBudget(**limits)
+
+    def test_output_regular_bytes_charge_every_actual_hardlink_name(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            packed = io.BytesIO()
+            with tarfile.open(fileobj=packed, mode='w') as stream:
+                member = tarfile.TarInfo('original')
+                member.size = 4
+                stream.addfile(member, io.BytesIO(b'data'))
+                for name in ('second', 'third'):
+                    member = tarfile.TarInfo(name)
+                    member.type = tarfile.LNKTYPE
+                    member.linkname = 'original'
+                    stream.addfile(member)
+            archive = self.public_payload_deb(base, packed.getvalue())
+            root = base / 'root'
+            root.mkdir()
+            with self.assertRaisesRegex(ValueError, 'output aggregate budget refused'):
+                self.producer.extract_deb(archive, root, self.producer.PackageExtractionBudget(output_bytes=11))
+            self.assertFalse((root / 'third').exists())
+            self.assertEqual((root / 'original').read_bytes(), b'data')
+            self.assertEqual((root / 'original').stat().st_ino, (root / 'second').stat().st_ino)
+            self.producer.extract_deb(archive, root, self.producer.PackageExtractionBudget(output_bytes=12))
+            self.assertEqual((root / 'original').stat().st_ino, (root / 'third').stat().st_ino)
+
+    def test_output_budget_uses_current_alias_parent_not_reused_archive_name(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            packed = io.BytesIO()
+            with tarfile.open(fileobj=packed, mode='w') as stream:
+                for name in ('first', 'second'):
+                    member = tarfile.TarInfo(name)
+                    member.type = tarfile.DIRTYPE
+                    stream.addfile(member)
+                for target in ('first', 'second'):
+                    member = tarfile.TarInfo('route')
+                    member.type = tarfile.SYMTYPE
+                    member.linkname = target
+                    stream.addfile(member)
+                    member = tarfile.TarInfo('route/public')
+                    member.size = 4
+                    stream.addfile(member, io.BytesIO(b'data'))
+            archive = self.public_payload_deb(base, packed.getvalue())
+            root = base / 'root'
+            root.mkdir()
+            with self.assertRaisesRegex(ValueError, 'output aggregate budget refused'):
+                self.producer.extract_deb(archive, root, self.producer.PackageExtractionBudget(output_nodes=5))
+            self.assertEqual((root / 'first/public').read_bytes(), b'data')
+            self.assertEqual(os.readlink(root / 'route'), 'second')
+            self.assertFalse((root / 'second/public').exists())
+            other = base / 'other'
+            other.mkdir()
+            self.producer.extract_deb(archive, other, self.producer.PackageExtractionBudget(output_nodes=6, output_bytes=8))
+            self.assertEqual((other / 'second/public').read_bytes(), b'data')
+            self.assertNotEqual((other / 'first/public').stat().st_ino, (other / 'second/public').stat().st_ino)
+
+    def test_output_existing_tree_shared_packages_names_and_future_capacity_are_bounded(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            packed = io.BytesIO()
+            with tarfile.open(fileobj=packed, mode='w') as stream:
+                member = tarfile.TarInfo('public')
+                member.size = 4
+                stream.addfile(member, io.BytesIO(b'data'))
+            archive = self.public_payload_deb(base, packed.getvalue())
+            root = base / 'root'
+            root.mkdir()
+            budget = self.producer.PackageExtractionBudget(output_nodes=2, output_names=12, output_bytes=4)
+            self.producer.extract_deb(archive, root, budget)
+            # Equal collisions retain the existing node but still consume the
+            # separate archive/decoded/header/regular-work budgets.
+            self.producer.extract_deb(archive, root, budget)
+            self.assertEqual(list(path.name for path in root.iterdir()), ['public'])
+            for limits in ({'output_nodes': 1}, {'output_names': 11}, {'output_bytes': 3}):
+                with self.assertRaisesRegex(ValueError, 'output aggregate budget refused'):
+                    self.producer.extract_deb(archive, root, self.producer.PackageExtractionBudget(**limits))
+            future = base / 'future'
+            future.mkdir()
+            with self.assertRaisesRegex(ValueError, 'output aggregate budget refused'):
+                self.producer.PackageExtractionBudget(output_bytes=128 * 1024 * 1024).reserve_future_outputs(future)
+            self.assertEqual(list(future.iterdir()), [])
+            with self.assertRaisesRegex(ValueError, 'output root changed'):
+                self.producer.extract_deb(archive, future, budget)
+            self.assertEqual(list(future.iterdir()), [])
+
     def public_control_archive(self, *, package='public-canary', version='1'):
         fields = ('Package: ' + package + '\nVersion: ' + version + '\nArchitecture: all\n'
                   'Maintainer: Public Fixture <nobody@issue37612.invalid>\n'
@@ -170,6 +354,55 @@ if list(pathlib.Path(sys.argv[3]).iterdir()):
             (archives / 'extra').write_bytes(b'unexpected')
             with self.assertRaisesRegex(ValueError, 'fixture archive refused'):
                 self.producer.collect_package_archives(archives)
+
+    def test_collected_original_replaced_by_real_fifo_refuses_without_waiting_for_writer(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            archive = base / 'public.deb'
+            archive.write_bytes(b'public original bytes')
+            collected = self.producer.collect_package_archives(base)
+            self.assertEqual(collected, [archive])
+            archive.unlink()
+            os.mkfifo(archive, mode=0o600)  # No writer is ever opened.
+            script = '''
+import importlib.util, os, pathlib, sys
+spec = importlib.util.spec_from_file_location('actual_producer', sys.argv[1])
+producer = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(producer)
+archive = pathlib.Path(sys.argv[2])
+fd_count = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+try:
+    with producer.opened_package_archive(archive):
+        raise AssertionError('FIFO admitted as regular original')
+except ValueError as error:
+    assert str(error) == 'package compressed archive budget refused'
+assert len(list(pathlib.Path('/proc/self/fd').iterdir())) == fd_count
+assert pathlib.Path('/proc/self/task/' + str(os.getpid()) + '/children').read_text().strip() == ''
+print('held FIFO refused; no descriptor or decoder child remains')
+'''
+            child = subprocess.Popen([sys.executable, '-I', '-S', '-B', '-c', script,
+                                      str(ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py'), str(collected[0])],
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                     env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
+            try:
+                output, error = child.communicate(timeout=3)
+            finally:
+                if child.poll() is None:
+                    child.kill()
+                child.wait(timeout=3)
+                child.stdout.close()
+                child.stderr.close()
+            self.assertEqual(child.returncode, 0, error)
+            self.assertIn('held FIFO refused', output)
+            self.assertFalse(pathlib.Path('/proc/' + str(child.pid)).exists())
+            self.assertEqual(set(path.name for path in base.iterdir()), {'public.deb'})
+            archive.unlink()
+            archive.write_bytes(b'public original bytes')
+            descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+            with self.producer.opened_package_archive(archive) as (fd, digest, size, _):
+                self.assertEqual(os.pread(fd, size, 0), b'public original bytes')
+                self.assertEqual(digest, hashlib.sha256(b'public original bytes').hexdigest())
+            self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
 
     def test_opened_archive_bounds_reads_closes_fd_and_detects_actual_writer_change(self):
         with tempfile.TemporaryDirectory(dir=self.parent) as directory:

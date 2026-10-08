@@ -307,10 +307,14 @@ def inventory(root):
 class PackageExtractionBudget:
     """One provision-wide budget; lower test limits cannot widen production caps."""
     def __init__(self, *, payload_bytes=512 * 1024 * 1024,
-                 total_bytes=4 * 1024 * 1024 * 1024, entries=400000, name_bytes=64 * 1024 * 1024):
+                 total_bytes=4 * 1024 * 1024 * 1024, entries=400000, name_bytes=64 * 1024 * 1024,
+                 output_nodes=20000, output_bytes=2 * 1024 * 1024 * 1024,
+                 output_names=8 * 1024 * 1024):
         for value, maximum in ((payload_bytes, 512 * 1024 * 1024),
                                (total_bytes, 4 * 1024 * 1024 * 1024),
-                               (entries, 400000), (name_bytes, 64 * 1024 * 1024)):
+                               (entries, 400000), (name_bytes, 64 * 1024 * 1024),
+                               (output_nodes, 20000), (output_bytes, 2 * 1024 * 1024 * 1024),
+                               (output_names, 8 * 1024 * 1024)):
             if type(value) is not int or not 0 < value <= maximum:
                 raise ValueError("package extraction budget refused")
         self.payload_bytes = payload_bytes
@@ -318,6 +322,98 @@ class PackageExtractionBudget:
         self.remaining_payload_bytes = 4 * 1024 * 1024 * 1024
         self.remaining_entries = entries
         self.remaining_names = name_bytes
+        self.output_node_limit = output_nodes
+        self.output_byte_limit = output_bytes
+        self.output_name_limit = output_names
+        self.output_root = None
+        self.output_sizes = {}
+        self.output_bytes = 0
+        self.output_names = 0
+
+    def reserve_output_path(self, relative, size):
+        # A monotonic high-water reservation, not a source/writer seal. Count
+        # each regular NAME separately, including names sharing one inode.
+        parts = pathlib.PurePosixPath(relative).parts
+        if (type(size) is not int or not 0 <= size <= 128 * 1024 * 1024
+                or len(parts) > 128 or len(os.fsencode(relative)) > 4096):
+            raise ValueError("package output path/byte budget refused")
+        for index in range(len(parts) + 1):
+            name = "/".join(parts[:index])
+            requested = size if index == len(parts) else 0
+            previous = self.output_sizes.get(name, 0)
+            new_node = name not in self.output_sizes
+            # The eventual complete-tree measurement enumerates every child
+            # name twice (initial scan and rescan); reserve both before writes.
+            width = 2 * len(os.fsencode(parts[index - 1])) if new_node and index else 0
+            growth = max(0, requested - previous)
+            if (len(self.output_sizes) + new_node > self.output_node_limit
+                    or self.output_names + width > self.output_name_limit
+                    or self.output_bytes + growth > self.output_byte_limit):
+                raise ValueError("package output aggregate budget refused")
+            self.output_sizes[name] = max(previous, requested)
+            self.output_names += width
+            self.output_bytes += growth
+
+    def bind_output_root(self, root):
+        if root.is_symlink() or root.resolve(strict=True) != root:
+            raise ValueError("package output root refused")
+        metadata = root.stat()
+        identity = (str(root), metadata.st_dev, metadata.st_ino)
+        if self.output_root is not None:
+            if self.output_root != identity:
+                raise ValueError("package output root changed")
+            return
+        self.output_root = identity
+        self.reserve_output_path("", 0)
+        pending = [root]
+        while pending:
+            parent = pending.pop()
+            # Refuse each discovered excess node before collecting a directory
+            # list. Do not follow aliases or omit an existing output prefix.
+            with os.scandir(parent) as entries:
+                for entry in entries:
+                    info = entry.stat(follow_symlinks=False)
+                    if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode)):
+                        raise ValueError("package output node refused")
+                    path = parent / entry.name
+                    self.reserve_output_path(str(path.relative_to(root)), info.st_size if stat.S_ISREG(info.st_mode) else 0)
+                    if stat.S_ISDIR(info.st_mode):
+                        pending.append(path)
+
+    def reserve_output(self, root, member, stream):
+        self.bind_output_root(root)
+        # Use the maintained filter before reserving, then let extractall apply
+        # it again immediately before its write. Resolve the current parent,
+        # not a stale archive-name ledger: earlier headers can change aliases.
+        tarfile.data_filter(member, str(root))
+        destination = root / member.name
+        destination = destination.parent.resolve() / destination.name
+        if not destination.is_relative_to(root):
+            raise ValueError("package output parent escaped")
+        size = member.size if member.isfile() else 0
+        if member.islnk():
+            target = root / member.linkname
+            if os.path.lexists(target):
+                info = target.lstat()
+                size = info.st_size if stat.S_ISREG(info.st_mode) else 0
+            else:
+                # Maintained tar can materialize an earlier archived link
+                # target. Seek its bounded logical stream; never read it all.
+                with stream.extractfile(member) as source:
+                    size = source.seek(0, os.SEEK_END)
+        self.reserve_output_path(str(destination.relative_to(root)), size)
+
+    def reserve_future_outputs(self, root):
+        self.bind_output_root(root)
+        # Conservative maxima for the later native binary, both pinned BIOS
+        # copies and CA bundle; this reserves capacity, not their admission.
+        for name in ("usr/bin/qemu-system-x86_64", "usr/share/seabios/bios.bin",
+                     "usr/share/seabios/vgabios-stdvga.bin", "etc/ssl/certs/ca-certificates.crt"):
+            self.reserve_output_path(name, 128 * 1024 * 1024)
+        for name in ("bin", "sbin", "lib", "lib64", "usr/bin/cc", "usr/bin/c++", "usr/bin/awk",
+                     "usr/bin/pkg-config", "usr/sbin/rmt", "etc/localtime", "usr/share/qemu",
+                     "proc", "dev", "run", "repo", "contract", "build", "source", "tmp"):
+            self.reserve_output_path(name, 0)
 
     def reserve_header(self):
         if self.remaining_entries == 0:
@@ -510,7 +606,9 @@ def opened_package_archive(archive, *, maximum_bytes=128 * 1024 * 1024):
     fields = ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink",
               "st_size", "st_mtime_ns", "st_ctime_ns")
     with contextlib.ExitStack() as owned:
-        descriptor = os.open(archive, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        # A collected pathname can be replaced before acquisition. Nonblocking
+        # open reaches the held-inode checks even for a FIFO with no writer.
+        descriptor = os.open(archive, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC)
         owned.callback(os.close, descriptor)
         metadata = os.fstat(descriptor)
         if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid()
@@ -680,6 +778,18 @@ def extract_deb(archive, root, budget=None, *, descriptor=None):
                     raise ValueError("source-pinned fixture package entry budget refused")
                 members.append(member)
             budget.reserve(members)
+            def validate_file_collision(member):
+                destination = root / member.name
+                if member.isfile() and (destination.is_symlink() or destination.exists()):
+                    if (destination.is_symlink() or not destination.is_file()
+                            or destination.stat().st_size != member.size):
+                        raise ValueError("source-pinned fixture package file collision refused")
+                    digest = hashlib.sha256()
+                    with stream.extractfile(member) as source:
+                        for data in iter(lambda: source.read(1024 * 1024), b""):
+                            digest.update(data)
+                    if digest.hexdigest() != sha(destination):
+                        raise ValueError("source-pinned fixture package file collision refused")
             for member in members:
                 relative = pathlib.PurePosixPath(member.name)
                 if relative.is_absolute() or ".." in relative.parts or not (member.isfile() or member.isdir() or member.issym() or member.islnk()):
@@ -693,17 +803,19 @@ def extract_deb(archive, root, budget=None, *, descriptor=None):
                     target = destination.parent / member.linkname
                     if not target.resolve().is_relative_to(root):
                         raise ValueError("source-pinned fixture package alias escaped")
-                if member.isfile() and destination.exists():
-                    if (destination.is_symlink() or not destination.is_file()
-                            or destination.stat().st_size != member.size):
-                        raise ValueError("source-pinned fixture package file collision refused")
-                    digest = hashlib.sha256()
-                    with stream.extractfile(member) as source:
-                        for data in iter(lambda: source.read(1024 * 1024), b""):
-                            digest.update(data)
-                    if digest.hexdigest() != sha(destination):
-                        raise ValueError("source-pinned fixture package file collision refused")
-            stream.extractall(root, members=members, filter="data")
+                validate_file_collision(member)
+            def reserved_members():
+                for member in members:
+                    # Earlier entries may have created hardlinks or a dangling
+                    # leaf alias. Never resize an already-shared inode or write
+                    # through that alias under a stale per-name reservation.
+                    validate_file_collision(member)
+                    budget.reserve_output(root, member, stream)
+                    yield member
+            # Preserve maintained extraction and delayed directory attributes.
+            # Each reservation runs after the preceding actual write and before
+            # this member can create its file or implicit parent directories.
+            stream.extractall(root, members=reserved_members(), filter="data")
 
 
 def required_build_inputs(root, native):
@@ -803,6 +915,7 @@ def provision(base, arch, multiarch, origin):
     root = base / "runtime"
     archives = collect_package_archives(base / "cache/archives")
     extraction_budget = PackageExtractionBudget()
+    extraction_budget.reserve_future_outputs(root)
     compressed_remaining = 512 * 1024 * 1024
     for archive in archives:
         with opened_package_archive(archive, maximum_bytes=min(128 * 1024 * 1024, compressed_remaining)) as (descriptor, digest, size, identity):
@@ -847,8 +960,18 @@ def provision(base, arch, multiarch, origin):
         certificates = sorted((root / "usr/share/ca-certificates").rglob("*.crt"))
         if not certificates:
             raise ValueError("signed public CA input bundle missing")
+        if sum(path.stat().st_size for path in certificates) > 128 * 1024 * 1024:
+            raise ValueError("signed public CA output budget refused")
         ca_bundle.parent.mkdir(parents=True, exist_ok=True)
-        ca_bundle.write_bytes(b"".join(path.read_bytes() for path in certificates))
+        with ca_bundle.open("xb") as output:
+            copied = 0
+            for path in certificates:
+                with path.open("rb") as source:
+                    for data in iter(lambda: source.read(1024 * 1024), b""):
+                        copied += len(data)
+                        if copied > 128 * 1024 * 1024:
+                            raise ValueError("signed public CA output budget refused")
+                        output.write(data)
     for name in ("proc", "dev", "run", "repo", "contract", "build", "source", "tmp"):
         (root / name).mkdir(exist_ok=True)
     return {"mitVersion": MIT, "multiarch": multiarch, "architecture": arch,
