@@ -92,7 +92,8 @@ def _usage_event(source_key: str) -> usage_buffer.UsageEvent:
 
 
 @pytest.fixture
-def addon_control_cleanup():
+def addon_control_cleanup(fresh_usage_executor):
+    """Finish real addon shutdown before the executor owner restores the original."""
     yield
     mitm_addon.done()
 
