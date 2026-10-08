@@ -25,6 +25,7 @@ const publishStripeCustomer$ = command(
     signal: AbortSignal,
   ): Promise<string> => {
     const db = set(writeDb$);
+    // New metadata and its default Plan entitlement must publish together.
     const publication = await settle(
       db.transaction(async (tx) => {
         signal.throwIfAborted();

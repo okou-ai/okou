@@ -1398,24 +1398,54 @@ async function admitClaimedPlanPurchase(
   return { kind: "create", paymentMethod: route };
 }
 
+interface ClaimedPlanPurchaseArgs {
+  readonly stripe: StripeClient;
+  readonly orgId: string;
+  readonly preview: PlanPurchasePreviewToken;
+  readonly previousStatus: string | null;
+}
+
+const prepareClaimedPlanPurchaseAdmission$ = command(
+  async (
+    { set },
+    args: ClaimedPlanPurchaseArgs,
+    signal: AbortSignal,
+  ): Promise<ClaimedPlanPurchaseAdmission> => {
+    const admission = await admitClaimedPlanPurchase(
+      args.stripe,
+      args.orgId,
+      args.preview,
+      signal,
+    );
+    if (admission.kind === "release") {
+      await set(
+        releasePlanPurchaseClaim$,
+        args.orgId,
+        args.preview,
+        args.previousStatus,
+        signal,
+      );
+      signal.throwIfAborted();
+    }
+    return admission;
+  },
+);
+
 const admitClaimedPlanPurchase$ = command(
   async (
     { set },
-    args: {
-      readonly stripe: StripeClient;
-      readonly orgId: string;
-      readonly preview: PlanPurchasePreviewToken;
-      readonly previousStatus: string | null;
-    },
+    args: ClaimedPlanPurchaseArgs,
     signal: AbortSignal,
   ): Promise<ClaimedPlanPurchaseAdmission> => {
-    const { stripe, orgId, preview, previousStatus } = args;
+    const { orgId, preview, previousStatus } = args;
+    // Preserve rejection cleanup for the whole admission, including a failed
+    // normal release, without passing a database/accessor closure to a helper.
     const admitted = await settleIncludingAbort(
-      admitClaimedPlanPurchase(stripe, orgId, preview, signal),
+      set(prepareClaimedPlanPurchaseAdmission$, args, signal),
     );
     if (signal.aborted) {
-      // Rejections and explicit release outcomes must finish their cleanup.
-      if (admitted.ok && admitted.value.kind !== "release") {
+      // A rejected admission still owns cleanup before its error propagates.
+      if (admitted.ok) {
         signal.throwIfAborted();
       }
     }
@@ -1429,18 +1459,8 @@ const admitClaimedPlanPurchase$ = command(
       );
       throw admitted.error;
     }
-    const admission = admitted.value;
-    if (admission.kind === "release") {
-      await set(
-        releasePlanPurchaseClaim$,
-        orgId,
-        preview,
-        previousStatus,
-        signal,
-      );
-    }
     signal.throwIfAborted();
-    return admission;
+    return admitted.value;
   },
 );
 
