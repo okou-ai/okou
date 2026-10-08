@@ -36,7 +36,7 @@ import {
   publicAttachmentUrl,
 } from "./attachment-url.ts";
 import { ArtifactImageNavigationRegion } from "./artifact-image-navigation-region.tsx";
-import { MarkdownEventBody } from "../components/markdown.tsx";
+import { ArtifactMarkdownDocument } from "../components/artifact-markdown-document.tsx";
 import { jsonParseOr } from "../../signals/utils.ts";
 import type { TextPreviewComputed } from "../../signals/text-preview.ts";
 import type { MarkdownPreviewTreeComputed } from "../../signals/markdown-preview-tree.ts";
@@ -921,9 +921,7 @@ function ArtifactMarkdownBody({
   return (
     <ArtifactStageShell>
       <ArtifactStageCard>
-        <div className="h-full overflow-auto p-6">
-          <MarkdownEventBody tree={loadable.data} mediaPreview={false} />
-        </div>
+        <ArtifactMarkdownDocument tree={loadable.data} />
       </ArtifactStageCard>
     </ArtifactStageShell>
   );

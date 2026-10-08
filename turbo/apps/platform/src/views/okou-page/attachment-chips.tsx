@@ -61,7 +61,7 @@ import {
 import type { ImageLoadSignals } from "../../signals/image-load.ts";
 import type { TextPreviewComputed } from "../../signals/text-preview.ts";
 import type { MarkdownPreviewTreeComputed } from "../../signals/markdown-preview-tree.ts";
-import { MarkdownEventBody } from "../components/markdown.tsx";
+import { ArtifactMarkdownDocument } from "../components/artifact-markdown-document.tsx";
 import {
   attachmentSidebarRef,
   attachmentLightboxImageCanvasSignals,
@@ -526,9 +526,7 @@ function ArtifactDialogMarkdownBody({
   return (
     <ArtifactDialogStage>
       <ArtifactDialogCard>
-        <div className="h-full overflow-auto p-6">
-          <MarkdownEventBody tree={loadable.data} mediaPreview={false} />
-        </div>
+        <ArtifactMarkdownDocument tree={loadable.data} />
       </ArtifactDialogCard>
     </ArtifactDialogStage>
   );

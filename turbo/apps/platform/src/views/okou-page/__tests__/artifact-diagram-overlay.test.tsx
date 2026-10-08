@@ -139,7 +139,8 @@ test.each([false, true])(
       ).not.toBeInTheDocument();
     });
     expect(documentDialog).toBeInTheDocument();
-    click(getNamedButton("Close", documentDialog));
+    expect(trigger).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
     await waitFor(() => {
       return expect(
         screen.queryByTestId("attachment-lightbox"),

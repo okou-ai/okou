@@ -704,4 +704,15 @@ test("a shared note opens its Markdown body in the conversation", async () => {
   expect(dialog).toHaveAttribute("data-mode", "fullscreen");
   expect(within(dialog).getByText("Launch notes")).toBeInTheDocument();
   expect(expand).toHaveFocus();
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    return expect(dialog).toHaveAttribute("data-mode", "windowed");
+  });
+  expect(within(dialog).getByRole("document")).toHaveFocus();
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    return expect(
+      screen.queryByTestId("public-artifact-lightbox"),
+    ).not.toBeInTheDocument();
+  });
 });

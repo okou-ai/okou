@@ -9,6 +9,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -583,6 +584,9 @@ test("Expand a diagram from a Markdown artifact", async () => {
   expect(trigger).toHaveFocus();
   expect(browser.revokedUrls).toContain(expandedUrl);
   expect(browser.revokedUrls).not.toContain(inlineUrl);
+  await userEvent.keyboard("{Escape}");
+  expect(within(artifactPreview()).getByRole("document")).toHaveFocus();
+  expect(buttonNamed("Exit fullscreen", artifactPreview())).toBeInTheDocument();
 });
 
 test("Preview a hosted site artifact in the thread sidebar", async () => {

@@ -9,7 +9,6 @@ import type {
 } from "../../signals/mermaid-diagram.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { CodeBlockCopyButton } from "./code-block-copy-button.tsx";
-import { IconTooltipButton } from "./icon-tooltip.tsx";
 
 function MermaidCodeBlock({ signals }: { signals: MermaidDiagramSignals }) {
   return (
@@ -67,6 +66,9 @@ export function MermaidDiagramView({
   const pageSignal = useGet(pageSignal$);
   const loadable = useLoadable(signals.diagram$);
   const image = loadable.state === "hasData" ? loadable.data : null;
+  const expandLabel = t(($) => {
+    return $.shared.mermaid.expand;
+  });
 
   if (loadable.state !== "loading" && image === null) {
     return withChatScrollLayout(<MermaidCodeBlock signals={signals} />);
@@ -77,23 +79,21 @@ export function MermaidDiagramView({
       className="mb-4"
       data-mermaid-status={image ? "rendered" : "rendering"}
     >
-      <IconTooltipButton
+      <button
         type="button"
         // The box is reserved at this size before the render starts, so every
         // diagram in a thread is the same height and none of them changes the
         // height of the message it sits in once it appears. Below the max width
-        // the box keeps its ratio, so diagrams stay equally tall as the column
-        // narrows — hence the same three utilities on the tooltip trigger,
-        // which wraps this button while the diagram is still rendering.
+        // the box keeps its ratio as the column narrows.
         //
         // `border-[1px]` names the width on purpose: this edge is a 1px
         // line, and the shared `border` hairline token is 0.5px.
         className="relative block w-full max-w-[420px] aspect-4/3 my-1 p-2 border-[1px] border-[hsl(var(--foreground)/0.1)] rounded-lg bg-[hsl(var(--muted)/0.3)] overflow-hidden cursor-zoom-in disabled:cursor-default"
-        wrapperClassName="block w-full max-w-[420px]"
         disabled={image === null}
-        aria-label={t(($) => {
-          return $.shared.mermaid.expand;
-        })}
+        aria-label={expandLabel}
+        // Restoring focus must not open a tooltip that consumes the next Escape.
+        title={expandLabel}
+        data-slot="mermaid-diagram-trigger"
         onClick={(event) => {
           if (image === null) {
             return;
@@ -113,7 +113,7 @@ export function MermaidDiagramView({
             <Loader2 size={18} className="animate-spin" />
           </span>
         )}
-      </IconTooltipButton>
+      </button>
       <details data-slot="mermaid-diagram-source">
         <summary className="cursor-pointer text-muted-foreground text-[0.8125rem]">
           {t(($) => {

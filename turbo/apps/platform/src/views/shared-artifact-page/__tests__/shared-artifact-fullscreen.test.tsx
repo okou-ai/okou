@@ -259,8 +259,50 @@ test.each(["native", "unsupported"] as const)(
     expect(document.fullscreenElement?.contains(trigger) ?? false).toBe(
       mode === "native",
     );
+    if (mode === "native") {
+      await act(async () => {
+        await document.exitFullscreen();
+      });
+    } else {
+      await userEvent.keyboard("{Escape}");
+    }
+    await waitFor(() => {
+      return expect(button("Enter fullscreen")).toHaveFocus();
+    });
+    expect(screen.getByRole("banner")).toBeVisible();
   },
 );
+
+test("Escape leaves the inline diagram and returns to reading without scrolling", async () => {
+  await openMarkdownViewer();
+  const viewport = screen.getByTestId("artifact-dialog-stage");
+  const source = screen.getByText("Diagram source");
+  click(source);
+  viewport.scrollTop = 120;
+  const trigger = button("Expand diagram");
+  click(trigger);
+  const diagram = await screen.findByTestId("artifact-diagram-lightbox");
+  await waitFor(() => {
+    return expect(diagram.contains(document.activeElement)).toBeTruthy();
+  });
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    return expect(
+      screen.queryByTestId("artifact-diagram-lightbox"),
+    ).not.toBeInTheDocument();
+  });
+  expect(trigger).toHaveFocus();
+  await userEvent.keyboard("{Escape}");
+  expect(screen.getByRole("document")).toHaveFocus();
+  expect(viewport.scrollTop).toBe(120);
+  expect(source.closest("details")).toHaveAttribute("open");
+  trigger.focus();
+  expect(trigger).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+  await expect(
+    screen.findByTestId("artifact-diagram-lightbox"),
+  ).resolves.toBeInTheDocument();
+});
 
 test("browser fullscreen exit leaves the diagram open and focused without restoring fullscreen on close", async () => {
   mockFullscreen("native");
