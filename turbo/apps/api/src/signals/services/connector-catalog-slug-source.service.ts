@@ -186,7 +186,7 @@ export interface ConnectorRuntimeAuthSelection extends ConnectorRuntimeAuthLooku
  * read only for `firewallConnectorSlugs`. Missing entries are omitted, as they
  * are absent from a whole-catalog snapshot.
  */
-function connectorRuntimeAuthSelectionReadPlan(args: {
+export function connectorRuntimeAuthSelectionReadPlan(args: {
   readonly connectorSlugs: readonly string[];
   readonly firewallConnectorSlugs?: readonly ConnectorSlug[];
 }) {
@@ -226,7 +226,7 @@ function connectorRuntimeAuthSelectionReadPlan(args: {
   };
 }
 
-function connectorRuntimeAuthSelectionFromRows(
+export function connectorRuntimeAuthSelectionFromRows(
   rows: readonly {
     readonly current: { readonly schemaVersion: number; readonly hash: string };
     readonly entry: {

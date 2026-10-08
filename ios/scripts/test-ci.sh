@@ -19,7 +19,7 @@ commit() {
   git commit --quiet -m "$1"
 }
 detect() {
-  env -u EVENT_NAME -u CHECKOUT_REF -u PULL_REQUEST_BASE_SHA \
+  env -u EVENT_NAME -u HEAD_REF -u CHECKOUT_REF -u PULL_REQUEST_BASE_SHA \
     -u MERGE_GROUP_BASE_SHA -u PUSH_BEFORE_SHA "$@" bash "$script_dir/ci-changed.sh"
 }
 expect() {
@@ -63,6 +63,14 @@ git switch --quiet -c ios-pr "$base"
 echo ios-change > ios/App.swift
 commit ios-change
 expect true EVENT_NAME=pull_request CHECKOUT_REF=refs/heads/ios-pr PULL_REQUEST_BASE_SHA="$base"
+
+# Only release PRs skip native checks, even when version metadata touches ios/.
+expect false EVENT_NAME=pull_request HEAD_REF=release-please--branches--main CHECKOUT_REF=refs/heads/ios-pr PULL_REQUEST_BASE_SHA="$base"
+expect true EVENT_NAME=pull_request HEAD_REF=fix/ios-build CHECKOUT_REF=refs/heads/ios-pr PULL_REQUEST_BASE_SHA="$base"
+expect true EVENT_NAME=pull_request HEAD_REF=release-please-imitation CHECKOUT_REF=refs/heads/ios-pr PULL_REQUEST_BASE_SHA="$base"
+expect true EVENT_NAME=merge_group HEAD_REF=release-please--branches--main MERGE_GROUP_BASE_SHA="$base"
+expect true EVENT_NAME=push HEAD_REF=release-please--branches--main PUSH_BEFORE_SHA="$base"
+expect true EVENT_NAME=workflow_dispatch HEAD_REF=release-please--branches--main
 
 # An iOS change earlier in a multi-entry merge group/main push must not disappear.
 echo later > turbo/app.ts
