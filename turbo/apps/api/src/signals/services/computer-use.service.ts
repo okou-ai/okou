@@ -6,6 +6,7 @@ import {
   asc,
   desc,
   eq,
+  exists,
   inArray,
   isNotNull,
   isNull,
@@ -45,7 +46,6 @@ import {
   computerUseHosts,
 } from "@okouai/db/schema/computer-use-host";
 
-import { pgTextDecoder } from "../../lib/db-structured-result";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -54,6 +54,14 @@ import { writeDb$, type Db } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { downloadS3Buffer, putS3Object } from "../external/s3";
 import { settle } from "../utils";
+import { clerk$ } from "../external/clerk";
+import {
+  computerUseHostAuthorityCondition,
+  resolveComputerUseHost,
+  verifyComputerUseSession,
+  type ComputerUseHostAuthority,
+  type ComputerUseSessionIdentity,
+} from "./computer-use-host-auth.service";
 
 const COMPUTER_USE_HOST_CLOSED_AFTER_MS = 90 * 1000;
 const COMPUTER_USE_HOSTS_CHANGED_TOPIC = "computerUseHostsChanged";
@@ -146,7 +154,8 @@ type ResolveComputerUseCommandTargetsResult =
 interface StartComputerUseHostResult {
   readonly status: "started";
   readonly hostId: string;
-  readonly hostToken: string;
+  readonly hostToken: string | null;
+  readonly connectionGeneration: number;
 }
 
 type HeartbeatComputerUseHostResult =
@@ -165,19 +174,19 @@ type ClaimNextComputerUseHostCommandResult =
       readonly command: ReturnType<typeof serializeCommand>;
     };
 
-type CompleteComputerUseHostCommandParams =
-  | {
-      readonly hostToken: string;
-      readonly commandId: string;
-      readonly status: "succeeded";
-      readonly result: ComputerUseCommandResult;
-    }
-  | {
-      readonly hostToken: string;
-      readonly commandId: string;
-      readonly status: "failed";
-      readonly error: ComputerUseCommandError;
-    };
+type CompleteComputerUseHostCommandParams = ComputerUseHostAuthority &
+  (
+    | {
+        readonly commandId: string;
+        readonly status: "succeeded";
+        readonly result: ComputerUseCommandResult;
+      }
+    | {
+        readonly commandId: string;
+        readonly status: "failed";
+        readonly error: ComputerUseCommandError;
+      }
+  );
 
 type CompleteComputerUseHostCommandResult =
   | { readonly status: "completed" }
@@ -1092,11 +1101,12 @@ function resolveComputerUseCommandTargets(params: {
  */
 export const startComputerUseHost$ = command(
   async (
-    { set },
+    { get, set },
     params: {
       readonly orgId: string;
       readonly userId: string;
       readonly installationId: string;
+      readonly session?: ComputerUseSessionIdentity;
       readonly hostName: string;
       readonly appVersion: string;
       readonly osVersion: string;
@@ -1104,7 +1114,9 @@ export const startComputerUseHost$ = command(
       readonly permissions: ComputerUseHostRow["permissions"];
     },
     signal: AbortSignal,
-  ): Promise<StartComputerUseHostResult> => {
+  ): Promise<
+    StartComputerUseHostResult | { readonly status: "invalid_session" }
+  > => {
     signal.throwIfAborted();
     const db = set(writeDb$);
     const displayName = normalizeHostName(params.hostName);
@@ -1114,8 +1126,16 @@ export const startComputerUseHost$ = command(
       params.supportedCapabilities,
     );
     const now = nowDate();
-    const hostToken = generateOpaqueToken("vm0_computer_use_host");
-    const tokenHash = hashSecret(hostToken);
+    if (
+      params.session &&
+      !(await verifyComputerUseSession(get(clerk$), params.session, signal))
+    ) {
+      return { status: "invalid_session" };
+    }
+    const hostToken = params.session
+      ? null
+      : generateOpaqueToken("vm0_computer_use_host");
+    const tokenHash = hostToken ? hashSecret(hostToken) : null;
     const [host] = await db
       .insert(computerUseHosts)
       .values({
@@ -1124,6 +1144,9 @@ export const startComputerUseHost$ = command(
         installationId: params.installationId,
         displayName,
         tokenHash,
+        sessionId: params.session?.sessionId ?? null,
+        sessionValidatedAt: params.session ? now : null,
+        connectionGeneration: 1,
         appVersion,
         osVersion,
         supportedCapabilities,
@@ -1146,6 +1169,9 @@ export const startComputerUseHost$ = command(
         set: {
           displayName,
           tokenHash,
+          sessionId: params.session?.sessionId ?? null,
+          sessionValidatedAt: params.session ? now : null,
+          connectionGeneration: sql`${computerUseHosts.connectionGeneration} + 1`,
           appVersion,
           osVersion,
           supportedCapabilities,
@@ -1155,14 +1181,22 @@ export const startComputerUseHost$ = command(
           updatedAt: now,
         },
       })
-      .returning({ id: computerUseHosts.id });
+      .returning({
+        id: computerUseHosts.id,
+        connectionGeneration: computerUseHosts.connectionGeneration,
+      });
     signal.throwIfAborted();
     if (!host) {
       throw new Error("Failed to start computer-use host");
     }
     await publishComputerUseHostsChanged(params.userId);
     signal.throwIfAborted();
-    return { status: "started", hostId: host.id, hostToken };
+    return {
+      status: "started",
+      hostId: host.id,
+      hostToken,
+      connectionGeneration: host.connectionGeneration,
+    };
   },
 );
 
@@ -1200,9 +1234,8 @@ function computerUseHostLivenessIsFresh(
  */
 export const heartbeatComputerUseHost$ = command(
   async (
-    { set },
-    params: {
-      readonly hostToken: string;
+    { get, set },
+    params: ComputerUseHostAuthority & {
       readonly hostName: string;
       readonly appVersion: string;
       readonly osVersion: string;
@@ -1212,7 +1245,6 @@ export const heartbeatComputerUseHost$ = command(
     signal: AbortSignal,
   ): Promise<HeartbeatComputerUseHostResult> => {
     const db = set(writeDb$);
-    const tokenHash = hashSecret(params.hostToken);
     const displayName = normalizeHostName(params.hostName);
     const appVersion = normalizeVersion(params.appVersion);
     const osVersion = normalizeOsVersion(params.osVersion);
@@ -1220,28 +1252,7 @@ export const heartbeatComputerUseHost$ = command(
       params.supportedCapabilities,
     );
 
-    const [host] = await db
-      .select({
-        id: computerUseHosts.id,
-        userId: computerUseHosts.userId,
-        displayName: computerUseHosts.displayName,
-        appVersion: computerUseHosts.appVersion,
-        osVersion: computerUseHosts.osVersion,
-        supportedCapabilities: computerUseHosts.supportedCapabilities,
-        permissions: computerUseHosts.permissions,
-        status: computerUseHosts.status,
-        lastSeenAt: computerUseHosts.lastSeenAt,
-        revokedAt: computerUseHosts.revokedAt,
-        rowVersion: sql`${computerUseHosts}.xmin::text`.mapWith(pgTextDecoder),
-      })
-      .from(computerUseHosts)
-      .where(
-        and(
-          eq(computerUseHosts.tokenHash, tokenHash),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
-      .limit(1);
+    const host = await resolveComputerUseHost(db, get(clerk$), params, signal);
     signal.throwIfAborted();
     if (!host) {
       return { status: "invalid_token" };
@@ -1272,7 +1283,7 @@ export const heartbeatComputerUseHost$ = command(
       })
       .where(
         and(
-          eq(computerUseHosts.id, host.id),
+          computerUseHostAuthorityCondition(params),
           sql`${computerUseHosts}.xmin = ${host.rowVersion}::xid`,
         ),
       )
@@ -1296,28 +1307,24 @@ export const heartbeatComputerUseHost$ = command(
  */
 export const stopComputerUseHost$ = command(
   async (
-    { set },
-    params: {
-      readonly hostToken: string;
-    },
+    { get, set },
+    params: ComputerUseHostAuthority,
     signal: AbortSignal,
   ): Promise<StopComputerUseHostResult> => {
     const db = set(writeDb$);
-    const tokenHash = hashSecret(params.hostToken);
+    if (!(await resolveComputerUseHost(db, get(clerk$), params, signal))) {
+      return { status: "invalid_token" };
+    }
     const now = nowDate();
     const [stopped] = await db
       .update(computerUseHosts)
       .set({
         status: "offline",
-        tokenHash: invalidatedHostTokenHash(),
+        tokenHash: "hostToken" in params ? invalidatedHostTokenHash() : null,
+        connectionGeneration: sql`${computerUseHosts.connectionGeneration} + 1`,
         updatedAt: now,
       })
-      .where(
-        and(
-          eq(computerUseHosts.tokenHash, tokenHash),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
+      .where(computerUseHostAuthorityCondition(params))
       .returning({
         id: computerUseHosts.id,
         userId: computerUseHosts.userId,
@@ -1675,25 +1682,15 @@ async function hostHasRunningComputerUseCommand(
  */
 export const claimNextComputerUseHostCommand$ = command(
   async (
-    { set },
-    params: {
-      readonly hostToken: string;
+    { get, set },
+    params: ComputerUseHostAuthority & {
       readonly supportedCapabilities: readonly string[];
     },
     signal: AbortSignal,
   ): Promise<ClaimNextComputerUseHostCommandResult> => {
     const db = set(writeDb$);
     const capabilities = normalizeCapabilities(params.supportedCapabilities);
-    const [host] = await db
-      .select()
-      .from(computerUseHosts)
-      .where(
-        and(
-          eq(computerUseHosts.tokenHash, hashSecret(params.hostToken)),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
-      .limit(1);
+    const host = await resolveComputerUseHost(db, get(clerk$), params, signal);
     signal.throwIfAborted();
     if (!host) {
       return { status: "invalid_token" };
@@ -1714,12 +1711,7 @@ export const claimNextComputerUseHostCommand$ = command(
           lastSeenAt: now,
           updatedAt: now,
         })
-        .where(
-          and(
-            eq(computerUseHosts.id, host.id),
-            isNull(computerUseHosts.revokedAt),
-          ),
-        );
+        .where(computerUseHostAuthorityCondition(params));
       signal.throwIfAborted();
     }
 
@@ -1767,12 +1759,20 @@ export const claimNextComputerUseHostCommand$ = command(
           hostId: host.id,
           status: "running",
           claimedAt: now,
+          claimedConnectionGeneration:
+            "hostToken" in params ? null : params.connectionGeneration,
           updatedAt: now,
         })
         .where(
           and(
             eq(computerUseCommands.id, row.id),
             eq(computerUseCommands.status, "queued"),
+            exists(
+              db
+                .select({ id: computerUseHosts.id })
+                .from(computerUseHosts)
+                .where(computerUseHostAuthorityCondition(params)),
+            ),
           ),
         )
         .returning(),
@@ -1810,7 +1810,12 @@ async function refreshComputerUseHostLiveness(
     .update(computerUseHosts)
     .set({ status: "online", lastSeenAt: now, updatedAt: now })
     .where(
-      and(eq(computerUseHosts.id, host.id), isNull(computerUseHosts.revokedAt)),
+      and(
+        eq(computerUseHosts.id, host.id),
+        isNull(computerUseHosts.revokedAt),
+        eq(computerUseHosts.connectionGeneration, host.connectionGeneration),
+        eq(computerUseHosts.status, "online"),
+      ),
     );
   signal.throwIfAborted();
 }
@@ -1912,16 +1917,7 @@ export const completeComputerUseHostCommand$ = command(
     signal: AbortSignal,
   ): Promise<CompleteComputerUseHostCommandResult> => {
     const db = set(writeDb$);
-    const [host] = await db
-      .select()
-      .from(computerUseHosts)
-      .where(
-        and(
-          eq(computerUseHosts.tokenHash, hashSecret(params.hostToken)),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
-      .limit(1);
+    const host = await resolveComputerUseHost(db, get(clerk$), params, signal);
     signal.throwIfAborted();
     if (!host) {
       return { status: "invalid_token" };
@@ -1933,6 +1929,12 @@ export const completeComputerUseHostCommand$ = command(
         and(
           eq(computerUseCommands.id, params.commandId),
           eq(computerUseCommands.hostId, host.id),
+          "hostToken" in params
+            ? undefined
+            : eq(
+                computerUseCommands.claimedConnectionGeneration,
+                params.connectionGeneration,
+              ),
         ),
       )
       .limit(1);
@@ -2005,6 +2007,12 @@ export const completeComputerUseHostCommand$ = command(
           eq(computerUseCommands.id, params.commandId),
           eq(computerUseCommands.hostId, host.id),
           eq(computerUseCommands.status, "running"),
+          exists(
+            db
+              .select({ id: computerUseHosts.id })
+              .from(computerUseHosts)
+              .where(computerUseHostAuthorityCondition(params)),
+          ),
         ),
       )
       .returning();

@@ -134,6 +134,7 @@ export interface ApiTestMocks {
     readonly requestToken: AsyncMock;
   };
   readonly clerk: {
+    readonly sessions: { readonly getSession: AsyncMock };
     readonly authenticateRequest: AsyncMock;
     readonly verifyWebhook: AsyncMock;
     readonly organizations: {
@@ -372,6 +373,7 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
   };
 
   const clerk = {
+    sessions: { getSession: vi.fn<(...args: unknown[]) => Promise<unknown>>() },
     authenticateRequest: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     verifyWebhook: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     organizations: {
@@ -1488,6 +1490,7 @@ export function resetApiTestMocks(): void {
   apiTestMocks.console.warn.mockReset();
   apiTestMocks.browserUseCdp.connect.mockReset();
   apiTestMocks.browserUseCdp.command.mockReset();
+  apiTestMocks.clerk.sessions.getSession.mockReset();
   apiTestMocks.clerk.authenticateRequest.mockReset();
   apiTestMocks.clerk.verifyWebhook.mockReset();
   apiTestMocks.clerk.organizations.createOrganizationInvitation.mockReset();

@@ -33,6 +33,7 @@ import {
   stopComputerUseHost$,
 } from "../services/computer-use.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
+import { computerUseSessionHostRoutes } from "./computer-use-session-hosts";
 import type { RouteEntry } from "../route-entry";
 
 const computerUseHostNotAuthorized = Object.freeze({
@@ -115,6 +116,9 @@ const hostStartInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
 
+  if (result.status !== "started" || result.hostToken === null) {
+    throw new Error("Legacy host START did not issue its credential");
+  }
   return {
     status: 200 as const,
     body: { hostId: result.hostId, hostToken: result.hostToken },
@@ -623,6 +627,7 @@ const computerUseHostListAuthOptions = {
 } as const;
 
 export const computerUseRoutes: readonly RouteEntry[] = [
+  ...computerUseSessionHostRoutes,
   {
     route: computerUseHostsContract.start,
     handler: authRoute(computerUseAuthOptions, hostStartInner$),

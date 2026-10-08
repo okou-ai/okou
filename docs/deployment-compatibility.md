@@ -20,6 +20,18 @@ such as `message_end` remain fatal above the 16 MiB line limit. Rolling back
 both components restores the previous oversized-turn failure. No stored data
 migration or API change is required.
 
+## Native Desktop session authentication (expand release)
+
+Native Desktop uses additive session-authenticated host routes. Migration
+`1344_computer_use_session_auth` adds session binding, provider-validation time,
+connection generation, and command-claim generation; `token_hash` becomes nullable
+for new Native hosts. Legacy writes remain valid. Deploy the expanded API fully
+before releasing the Native client. Old installed clients retain their host-token
+protocol during the upgrade window; new Native against an old API stays offline
+and never acquires a host token. Existing installation and chat host identities
+are preserved. Legacy contraction requires the Desktop version floor and API
+serving/rollback drain. See [the full contract](desktop-session-auth.md).
+
 ## Connector catalog column reads (expand release)
 
 Migrations `1339_expand_connector_catalog_entry_columns` and

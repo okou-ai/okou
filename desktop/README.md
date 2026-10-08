@@ -90,3 +90,20 @@ publishes `okou-desktop-v*` ZIP/DMG assets, and updates the existing manifest on
 after both Desktop promotion and API deployment succeed. This keeps the first
 native ZIP behind deployment of its appcast route. Both updater formats share
 channel/blocked-version selection in the canonical API service.
+
+## Session authentication
+
+Native Desktop uses the Clerk SDK's current session token for registration,
+heartbeats, command claims, completion, and stop. The API binds each host to the
+verified user, organization, Clerk session ID, and connection generation. A JWT
+refresh preserves that connection; a different session requires registration.
+The host ID and generation are ordinary identifiers, not bearer credentials.
+
+SDK reads and HTTP share a bounded deadline. A rejected bearer gets one forced
+SDK refresh; an unavailable provider pauses execution without clearing Keychain.
+Local sign-out drains claimed work before ending the SDK session. Remote
+revocation can prevent result reporting: the local command log retains the
+execution result, the server command times out, and native input is never replayed.
+
+See [the authentication contract](../docs/desktop-session-auth.md) for remote
+revocation, mixed-version behavior, and acceptance steps.

@@ -52,6 +52,10 @@ final class DesktopModel: ObservableObject {
   let deviceName = Host.current().localizedName ?? ProcessInfo.processInfo.hostName
   private var host: HostRuntime!
   private var identity: String?
+  private var verifiedUserId: String?
+  private var verifiedOrganizationId: String?
+  private var verifiedSessionId: String?
+  private var identityRefreshTask: Task<Void, Never>?
   private var identityGeneration = 0
   private var authTask: Task<Void, Never>?
   private var refreshTask: Task<Void, Never>?
@@ -98,9 +102,9 @@ final class DesktopModel: ObservableObject {
     host = HostRuntime(
       api: api, executor: executor, installationId: installationId, hostName: deviceName,
       version: version,
-      tokenProvider: { [weak self] in
+      tokenProvider: { [weak self] forceRefresh in
         guard let self else { throw CancellationError() }
-        return try await self.registrationToken()
+        return try await self.sessionToken(forceRefresh: forceRefresh)
       },
       onChange: { [weak self] state in
         self?.runtime = state
@@ -127,22 +131,45 @@ final class DesktopModel: ObservableObject {
       didChange?()
       if ready { Task { await host.start() } }
       refreshTask = Task {
-        var iteration = 0
         while !Task.isCancelled {
           do {
             try await Task.sleep(for: .seconds(5))
-            iteration += 1
             if !runtime.busy && !busy { try await refreshPermissions() }
-            if iteration % 9 == 0 && !busy { try await refreshIdentity() }
           } catch is CancellationError { return } catch { self.error = error.localizedDescription }
+        }
+      }
+      identityRefreshTask = Task {
+        while !Task.isCancelled {
+          do {
+            try await Task.sleep(for: .seconds(15))
+            try await refreshIdentity()
+          } catch is CancellationError { if Task.isCancelled { return } } catch {
+            self.error = error.localizedDescription
+          }
         }
       }
     }
   }
-  private func registrationToken() async throws -> String {
-    try await refreshIdentity()
-    guard signedIn, organization != nil, let token = try await Clerk.shared.auth.getToken() else {
+  private func sessionToken(forceRefresh: Bool) async throws -> String {
+    let expected = identityGeneration
+    guard let verifiedUserId, let verifiedOrganizationId, let verifiedSessionId,
+      signedIn, organization != nil,
+      Clerk.shared.user?.id == verifiedUserId,
+      Clerk.shared.session?.id == verifiedSessionId,
+      Clerk.shared.session?.lastActiveOrganizationId == verifiedOrganizationId
+    else {
       throw DesktopFailure("unauthenticated", "Sign in and select a workspace before going online")
+    }
+    let token = try await Clerk.shared.auth.getToken(.init(skipCache: forceRefresh))
+    try checkIdentityGeneration(expected)
+    guard Clerk.shared.user?.id == verifiedUserId,
+      Clerk.shared.session?.id == verifiedSessionId,
+      Clerk.shared.session?.lastActiveOrganizationId == verifiedOrganizationId
+    else {
+      throw DesktopFailure("unauthenticated", "Desktop account changed. Go offline and reconnect.")
+    }
+    guard let token else {
+      throw DesktopFailure("unauthenticated", "Desktop session is no longer signed in")
     }
     return token
   }
@@ -184,7 +211,14 @@ final class DesktopModel: ObservableObject {
       orgName = name
     }
     try checkIdentityGeneration(expected)
+    guard Clerk.shared.user?.id == userId,
+      Clerk.shared.session?.id == me.body["sessionId"].string,
+      Clerk.shared.session?.lastActiveOrganizationId == orgId
+    else { throw CancellationError() }
     identity = currentIdentity
+    verifiedUserId = userId
+    verifiedOrganizationId = orgId
+    verifiedSessionId = me.body["sessionId"].string
     signedIn = true
     email = me.body["email"].string ?? "Signed in"
     organization = orgName
@@ -208,6 +242,9 @@ final class DesktopModel: ObservableObject {
     if signedIn || online { await host.stop() }
     if let expected, expected != identityGeneration { return }
     identity = nil
+    verifiedUserId = nil
+    verifiedOrganizationId = nil
+    verifiedSessionId = nil
     signedIn = false
     organization = nil
     email = ""
@@ -338,6 +375,7 @@ final class DesktopModel: ObservableObject {
   func shutdown() async {
     identityGeneration += 1
     authTask?.cancel()
+    identityRefreshTask?.cancel()
     refreshTask?.cancel()
     await host.stop()
     if awakeAssertion != 0 {

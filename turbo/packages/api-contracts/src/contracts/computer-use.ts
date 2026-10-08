@@ -859,3 +859,89 @@ export type ComputerUseWriteCommandContract =
   typeof computerUseWriteCommandContract;
 export type ComputerUsePluginCommandContract =
   typeof computerUsePluginCommandContract;
+
+// Session-only Native Desktop protocol. Legacy routes are retained until the
+// installed Desktop version floor and API rollback window exclude them.
+const sessionHostPathParamsSchema = z.object({ hostId: z.string().uuid() });
+const sessionHostGenerationSchema = z.object({
+  connectionGeneration: z.number().int().positive(),
+});
+const sessionHostResponses = {
+  401: apiErrorSchema,
+  403: apiErrorSchema,
+  409: apiErrorSchema,
+  429: apiErrorSchema,
+  503: apiErrorSchema,
+};
+export const computerUseSessionHostsContract = c.router({
+  register: {
+    method: "POST",
+    path: "/api/computer-use/hosts/register",
+    headers: authHeadersSchema,
+    body: computerUseHostStartBodySchema,
+    responses: {
+      200: sessionHostGenerationSchema.extend({ hostId: z.string().uuid() }),
+      ...sessionHostResponses,
+    },
+    summary: "Register a computer-use host bound to the current Clerk session",
+  },
+  heartbeat: {
+    method: "POST",
+    path: "/api/computer-use/hosts/:hostId/heartbeat",
+    headers: authHeadersSchema,
+    pathParams: sessionHostPathParamsSchema,
+    body: computerUseRuntimeBodySchema.extend(
+      sessionHostGenerationSchema.shape,
+    ),
+    responses: {
+      200: computerUseHeartbeatResponseSchema,
+      ...sessionHostResponses,
+    },
+    summary: "Refresh the current session's computer-use host",
+  },
+  stop: {
+    method: "POST",
+    path: "/api/computer-use/hosts/:hostId/stop",
+    headers: authHeadersSchema,
+    pathParams: sessionHostPathParamsSchema,
+    body: sessionHostGenerationSchema,
+    responses: {
+      200: computerUseHostStopResponseSchema,
+      ...sessionHostResponses,
+    },
+    summary: "Stop the current session's computer-use host connection",
+  },
+  next: {
+    method: "POST",
+    path: "/api/computer-use/hosts/:hostId/commands/next",
+    headers: authHeadersSchema,
+    pathParams: sessionHostPathParamsSchema,
+    body: computerUseHostCommandNextBodySchema.extend(
+      sessionHostGenerationSchema.shape,
+    ),
+    responses: {
+      200: computerUseHostCommandNextResponseSchema,
+      ...sessionHostResponses,
+    },
+    summary: "Claim a command using the current Clerk session",
+  },
+  complete: {
+    method: "POST",
+    path: "/api/computer-use/hosts/:hostId/commands/:commandId/complete",
+    headers: authHeadersSchema,
+    pathParams: sessionHostPathParamsSchema.extend(
+      commandIdPathParamsSchema.shape,
+    ),
+    body: z.intersection(
+      computerUseHostCommandCompleteBodySchema,
+      sessionHostGenerationSchema,
+    ),
+    responses: {
+      200: computerUseCommandCompleteResponseSchema,
+      400: apiErrorSchema,
+      404: apiErrorSchema,
+      ...sessionHostResponses,
+    },
+    summary: "Report a claimed command using the current Clerk session",
+  },
+});

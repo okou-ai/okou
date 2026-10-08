@@ -28,7 +28,11 @@ export const computerUseHosts = pgTable(
     userId: text("user_id").notNull(),
     installationId: uuid("installation_id"),
     displayName: text("display_name").notNull(),
-    tokenHash: text("token_hash").notNull(),
+    // Legacy Desktop credentials remain during the client upgrade window.
+    tokenHash: text("token_hash"),
+    sessionId: text("session_id"),
+    sessionValidatedAt: timestamp("session_validated_at"),
+    connectionGeneration: integer("connection_generation").default(0).notNull(),
     appVersion: text("app_version").notNull(),
     osVersion: text("os_version").notNull(),
     supportedCapabilities: jsonb("supported_capabilities")
@@ -78,6 +82,7 @@ export const computerUseCommands = pgTable(
     error: text("error"),
     timeoutMs: integer("timeout_ms").notNull(),
     claimedAt: timestamp("claimed_at"),
+    claimedConnectionGeneration: integer("claimed_connection_generation"),
     completedAt: timestamp("completed_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
