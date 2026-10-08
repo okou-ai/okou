@@ -418,8 +418,7 @@
         "invite": "초대",
         "openArtifacts": "모바일 아티팩트 열기",
         "openAutomations": "모바일 자동화 열기",
-        "openMenu": "메뉴 열기",
-        "overlay": "사이드바 오버레이"
+        "openMenu": "메뉴 열기"
       },
       "navigation": {
         "agents": "에이전트",

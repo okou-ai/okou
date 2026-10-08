@@ -418,8 +418,7 @@
         "invite": "邀請",
         "openArtifacts": "開啟成果面板",
         "openAutomations": "開啟自動化面板",
-        "openMenu": "開啟選單",
-        "overlay": "側邊欄遮罩"
+        "openMenu": "開啟選單"
       },
       "navigation": {
         "agents": "智能體",

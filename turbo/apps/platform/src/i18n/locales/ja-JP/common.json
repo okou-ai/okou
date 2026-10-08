@@ -418,8 +418,7 @@
         "invite": "招待する",
         "openArtifacts": "モバイルでアーティファクトを開く",
         "openAutomations": "モバイルでオートメーションを開く",
-        "openMenu": "メニューを開く",
-        "overlay": "サイドバーのオーバーレイ"
+        "openMenu": "メニューを開く"
       },
       "navigation": {
         "agents": "エージェント",

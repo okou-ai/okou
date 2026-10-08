@@ -418,8 +418,7 @@
         "invite": "Einladen",
         "openArtifacts": "Artefakte auf dem Mobilgerät öffnen",
         "openAutomations": "Automatisierungen auf dem Mobilgerät öffnen",
-        "openMenu": "Menü öffnen",
-        "overlay": "Seitenleisten-Overlay"
+        "openMenu": "Menü öffnen"
       },
       "navigation": {
         "agents": "Agenten",

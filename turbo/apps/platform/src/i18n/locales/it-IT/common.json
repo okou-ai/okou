@@ -432,8 +432,7 @@
         "invite": "Invita",
         "openArtifacts": "Apri gli artefatti su mobile",
         "openAutomations": "Apri le automazioni su mobile",
-        "openMenu": "Apri il menu",
-        "overlay": "Sovrapposizione della barra laterale"
+        "openMenu": "Apri il menu"
       },
       "navigation": {
         "agents": "Agenti",
