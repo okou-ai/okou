@@ -21,6 +21,42 @@ server-side signing-key ownership are unchanged.
 No database migration, client version floor, feature switch or deployment-order
 fallback is required. This change does not deploy or verify production recovery.
 
+## Pi memory Luna routing (2026-10-08)
+
+New Stage 1 extractions and Phase 2 maintenance runs use `gpt-6-luna`.
+Both select the memory owner's current active, connected Codex account that
+does not require reconnect; otherwise they use the managed OpenRouter key and
+`openai/gpt-6-luna`. Source Runs remain evidence and ownership references,
+without selecting the current credential or payer. Once selected, refresh,
+quota, provider and validation failures retain the existing error/retry paths;
+an attempt does not switch to another credential route after failure.
+
+Migration `1347_pi_memory_luna_route` restores the internal OpenRouter Luna
+catalog route removed by 1326, with the existing Luna pricing identity,
+272001-token long-context threshold and xhigh catalog ceiling. Deploy it before
+the new API. Maintenance explicitly requests low for Stage 1 and medium for
+Phase 2, independently of foreground defaults. The existing OpenRouter
+Responses/Chat Completions firewall, credentials and Runner accounting apply.
+This change does not activate the Chat Completions feature switch or change
+foreground Auto selection.
+
+Old API with the expanded catalog still selects DeepSeek for Built-in memory.
+New API with a compatible existing Runner dispatches the existing Pi launch
+shape with Luna and preserves the claim capability gates. Both old and new
+CLI artifacts already resolve personal/OpenRouter Luna and historical DeepSeek.
+API/CLI deployment order does not rewrite captured Runs or queued launch
+contexts. In-flight Stage 1 API invocations keep their resolved request.
+Historical DeepSeek and GPT-5.6 Luna maintenance models remain recognizable to
+cleanup and settlement, and the DeepSeek route and all prices remain intact.
+Rolling back the API restores its previous selection policy. No stored Run,
+candidate, session, checkpoint or usage row is rewritten.
+
+DeepSeek is never selected by the new memory admission code. Remove its
+retained catalog route/runtime support only after older API writers and all
+captured DeepSeek maintenance Runs have drained, late proxy/callback usage has
+settled, and supported rollback versions no longer select or execute it.
+Historical model recognition and pricing remain required for retained usage.
+
 ## Maps oversized-response error (issue #36791)
 
 `POST /api/maps/search` continues to return HTTP 502 when the Google Maps

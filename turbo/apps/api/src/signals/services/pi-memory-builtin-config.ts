@@ -66,7 +66,7 @@ export async function readPiMemoryBuiltinPricing(
 export const PI_MEMORY_BUILTIN_BINDING = {
   selectedModel: PI_MEMORY_STAGE1_BUILT_IN_MODEL,
   providerType: "openrouter-codex",
-  upstreamModel: `deepseek/${PI_MEMORY_STAGE1_BUILT_IN_MODEL}`,
+  upstreamModel: `openai/${PI_MEMORY_STAGE1_BUILT_IN_MODEL}`,
 } as const;
 
 export async function resolvePiMemoryBuiltinRoute(

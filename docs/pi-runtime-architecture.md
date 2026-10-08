@@ -287,6 +287,14 @@ projects/redacts/truncates within its existing bounds, runs
 commits a candidate under its claim fence. Its work unit and usage owner are
 separate from a foreground response and a Phase 2 storage consolidation.
 
+Both stages use GPT-6 Luna and resolve the memory owner's current connected
+Codex subscription before starting an attempt; without an active account that
+does not require reconnect they use the fixed OpenRouter Luna memory binding.
+Source Run credentials are provenance only. An admitted attempt keeps its
+credential/model snapshot and existing errors/retries. Stage 1 requests low
+reasoning and Phase 2 requests medium. Historical maintenance snapshots still
+drain unchanged; see [deployment compatibility](deployment-compatibility.md#pi-memory-luna-routing-2026-10-08).
+
 The Phase 2 API worker claims a storage revision/base/selection and dispatches a
 private maintenance run. It renews the **real database lease** against the
 maintenance run/token. The local engine has no fabricated user/org identity,
