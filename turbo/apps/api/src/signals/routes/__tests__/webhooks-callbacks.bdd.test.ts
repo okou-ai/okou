@@ -2735,6 +2735,43 @@ describe("WHCB-09: sandbox storage writes and checkpoint history blobs land in t
 });
 
 describe("WHCB-10: timeout closes sandbox storage write authority", () => {
+  it("rejects prepare when its owner cancels the run during upload URL signing", async () => {
+    const fixture = await sandboxStorageWriteFixture("cancel during prepare");
+    const runs = createRunsApi(context);
+    const signingStarted = createDeferredPromise<void>(context.signal);
+    const releaseSigning = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!releaseSigning.settled()) {
+        releaseSigning.resolve(undefined);
+      }
+    });
+    context.mocks.s3.getSignedUrl.mockImplementationOnce(async () => {
+      signingStarted.resolve(undefined);
+      await releaseSigning.promise;
+      return "https://r2.example.test/cancelled-storage-upload";
+    });
+    const preparation = api.requestAgentStoragePrepare(
+      {
+        runId: fixture.runId,
+        storageId: fixture.mount.storageId,
+        files: [{ path: "cancelled.txt", hash: "a".repeat(64), size: 1 }],
+      },
+      fixture.headers,
+      [404],
+    );
+    await signingStarted.promise;
+    await runs.requestCancelRun(fixture.actor, fixture.runId, [200]);
+    releaseSigning.resolve(undefined);
+    const prepared = await preparation;
+    expectApiError(prepared.body);
+    expect(prepared.body.error.message).toBe("Active agent run not found");
+    await expect(
+      runs.readRun(fixture.actor, fixture.runId),
+    ).resolves.toMatchObject({
+      status: "cancelled",
+    });
+  });
+
   it.each(TERMINAL_RUN_STATUSES)(
     "rejects prepare before issuing upload URLs after %s",
     async (status) => {
