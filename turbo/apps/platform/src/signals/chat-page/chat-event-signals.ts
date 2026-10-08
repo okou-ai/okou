@@ -131,7 +131,7 @@ function createSendInputChatEvent({
         agentId: input.agentId,
         createdAt,
       });
-      await set(
+      set(
         appendOptimisticEvent$,
         {
           threadId,
@@ -151,7 +151,7 @@ function createSendInputChatEvent({
         signal,
       );
       signal.throwIfAborted();
-      L.debug("send input optimistic change notified", {
+      L.debug("send input optimistic event appended", {
         traceTime: chatEventTraceTime(),
         threadId,
         clientEventId,
@@ -206,7 +206,7 @@ function createSendRevokeChatEvent({
   return command(
     async ({ get, set }, input: SendRevokeChatEvent, signal: AbortSignal) => {
       const clientEventId = crypto.randomUUID();
-      await set(
+      set(
         appendOptimisticEvent$,
         {
           threadId,
@@ -250,7 +250,7 @@ function createSendInterruptChatEvent({
       signal: AbortSignal,
     ) => {
       const clientEventId = crypto.randomUUID();
-      await set(
+      set(
         appendOptimisticEvent$,
         {
           threadId,
