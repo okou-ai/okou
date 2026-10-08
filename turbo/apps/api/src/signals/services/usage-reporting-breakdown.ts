@@ -60,7 +60,7 @@ export function usageDisplayProviderExpr(usage: FinalizedUsageRelation) {
 }
 
 export function usageCreditsExpr(usage: FinalizedUsageRelation) {
-  return sql`${usage.creditsCharged} + ${usage.allowanceUnits}::bigint`.mapWith(
+  return sql`${usage.creditsCharged}::bigint`.mapWith(
     pgInt8ToSafeIntegerDecoder,
   );
 }

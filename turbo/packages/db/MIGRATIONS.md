@@ -112,6 +112,19 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-usage-allowance-retirement.ts` protects migration
+  `1345_drop_organization_usage_allowance`: positive team Allowance rows are
+  discarded while ordinary usage quantities, original credit charges and wallets
+  remain unchanged; lock timeout and journal failures roll back all DDL/data,
+  new credit-only hourly writes work, and a completed retry is a no-op. The owner
+  explicitly requested removal of team-only history, not production deployment.
+  The API/DB cutover is not rolling-compatible and separately authorized rollout
+  is required. The production rollback resolver enforces the canonical migration
+  commit as its API floor. Keep the validator until the production contraction
+  and serving/rollback drain satisfy the transition gates above. Shipped SQL and
+  snapshots remain immutable. See
+  [deployment compatibility](../../../docs/deployment-compatibility.md#organization-usage-allowance-retired).
+
 - `scripts/test-connector-catalog-entry-columns.ts` protects migrations
   `1339_expand_connector_catalog_entry_columns` and
   `1340_backfill_connector_catalog_entry_columns`: historical/current hashes

@@ -84,6 +84,8 @@ case "${1:-}" in
       [ "${MOCK_MODEL_ROUTE_STATE_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "3838383838383838383838383838383838383838" ]; then
       [ "${MOCK_PI_STABLE_CONTEXT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "3939393939393939393939393939393939393939" ]; then
+      [ "${MOCK_USAGE_ALLOWANCE_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -121,6 +123,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_MODEL_ROUTE_STATE_COMMIT-3737373737373737373737373737373737373737}"
     elif [[ "$*" == *1343_retire_pi_stable_context.sql* ]]; then
       printf '%s\n' "${MOCK_PI_STABLE_CONTEXT_COMMIT-3838383838383838383838383838383838383838}"
+    elif [[ "$*" == *1345_drop_organization_usage_allowance.sql* ]]; then
+      printf '%s\n' "${MOCK_USAGE_ALLOWANCE_COMMIT-3939393939393939393939393939393939393939}"
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
@@ -255,6 +259,8 @@ grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/m
 grep -Fxq "git merge-base --is-ancestor 3737373737373737373737373737373737373737 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the model route state floor"
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1343_retire_pi_stable_context.sql" "${tmp_dir}/boundaries.log" || fail "Pi stable-context retirement floor must resolve the canonical main migration"
 grep -Fxq "git merge-base --is-ancestor 3838383838383838383838383838383838383838 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi stable-context retirement floor"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1345_drop_organization_usage_allowance.sql" "${tmp_dir}/boundaries.log" || fail "Usage Allowance floor must resolve the canonical main migration"
+grep -Fxq "git merge-base --is-ancestor 3939393939393939393939393939393939393939 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Usage Allowance retirement floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
 grep -qx "runner_version=1.2.3" "$output_file" || fail "missing Runner version output"
@@ -529,6 +535,24 @@ grep -Fq '3838383838383838383838383838383838383838' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/pi-stable-context-floor.output" ] || fail "pre-retirement API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Pi stable-context retirement floor must fail before artifact or host access"
+fi
+
+for drop_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged organization Usage Allowance retirement" \
+    run_resolver "${tmp_dir}/usage-allowance-history.output" "MOCK_USAGE_ALLOWANCE_COMMIT=${drop_commit}"
+  [ ! -s "${tmp_dir}/usage-allowance-history.output" ] || fail "invalid Allowance retirement history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid Allowance retirement history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the organization Usage Allowance retirement" \
+  run_resolver "${tmp_dir}/usage-allowance-floor.output" MOCK_USAGE_ALLOWANCE_FLOOR_VALID=0
+grep -Fq '3939393939393939393939393939393939393939' "${tmp_dir}/failure.err" || fail "Allowance retirement rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/usage-allowance-floor.output" ] || fail "pre-retirement API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Allowance retirement floor must fail before artifact or host access"
 fi
 
 for v8_commit in "" invalid; do

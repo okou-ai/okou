@@ -27,17 +27,19 @@ ownership/lease checks and expiration admission remain intact. Social jobs
 publish and claim a new usage identity within their transaction; their credit
 debits use the same atomic arithmetic policy.
 
-## Retired Allowance history
+## Allowance data removed
 
-No serving code creates or refreshes Allowance entitlements or windows, reserves
-Allowance at launch, or writes allocations. Settlement never reprices or replays
-processed history. Archived allocations and hourly rollups remain readable:
-reported gross usage is `creditsCharged + allowanceUnits`, while wallet deductions
-remain the originally recorded credits. Compaction still carries both window IDs
-and checks quantity, credits, allowance units and each window's conservation before
-committing. Privacy deletion continues to erase the owned historical rows.
+The owner confirmed that only the Okou team received Allowance and requested
+complete deletion of that history. Migration 1345 drops the entitlement, window
+and allocation tables and the hourly Allowance columns. No serving code issues,
+reads, refreshes, reserves or consumes Allowance. Reports sum only recorded
+`creditsCharged`; wallets and ordinary usage facts are not changed, and processed
+history is never repriced or replayed. Compaction conserves quantity and credits
+and preserves billing identity fences and transactional rollback without any
+window reconciliation. Privacy deletion still erases owned raw/hourly usage;
+there is no separate Allowance archive cleanup.
 See [deployment compatibility](../deployment-compatibility.md#organization-usage-allowance-retired)
-for mixed-version and Stripe boundaries.
+for the coordinated DB/API cutover, rollback floor and external Stripe isolation.
 
 ## Provider-result delivery
 

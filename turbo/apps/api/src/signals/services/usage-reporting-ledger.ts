@@ -121,9 +121,7 @@ function finalizedUsageTokenSum(
 }
 
 function usageCreditsSum(usage: FinalizedUsageRelation, alias: string) {
-  return sql`COALESCE(${sum(
-    sql`${usage.creditsCharged} + ${usage.allowanceUnits}`,
-  )}, 0)::bigint`
+  return sql`COALESCE(${sum(usage.creditsCharged)}, 0)::bigint`
     .mapWith(pgInt8ToSafeIntegerDecoder)
     .as(alias);
 }
