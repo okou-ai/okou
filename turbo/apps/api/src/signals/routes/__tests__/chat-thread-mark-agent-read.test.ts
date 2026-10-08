@@ -21,6 +21,8 @@ const runs = createRunsApi(context);
 const chatCallbacks = createChatCallbacksApi(context);
 /** The route's notification budget; one more id than this overflows it. */
 const NOTIFIED_THREAD_ID_BUDGET = 100;
+/** Below both the normal Team admission capacity and the API pool size. */
+const PUBLIC_REQUEST_BATCH_SIZE = 8;
 
 interface AgentReadFixture {
   /** Owns the threads and calls the endpoint; never owns the Agent. */
@@ -56,6 +58,7 @@ async function appendCancelledRun(args: {
   const { runId, threadId } = await chat.sendAndLaunch(args.actor, {
     agentId: args.agentId,
     prompt: `agent read ${randomUUID()}`,
+    model: "claude-fable-5-1",
     ...(args.threadId === undefined ? {} : { threadId: args.threadId }),
   });
   await runs.requestCancelRun(args.actor, runId, [200]);
@@ -66,6 +69,19 @@ async function appendCancelledRun(args: {
     threadId,
   );
   return threadId;
+}
+
+/** Drain every request before propagating an error or advancing the lifecycle. */
+async function completeRequests<T>(
+  requests: readonly Promise<T>[],
+): Promise<T[]> {
+  const results = await Promise.allSettled(requests);
+  return results.map((result) => {
+    if (result.status === "rejected") {
+      throw result.reason;
+    }
+    return result.value;
+  });
 }
 
 /**
@@ -80,7 +96,10 @@ async function createUnreadAgentThreads(
   const orgId = `org_${randomUUID()}`;
   const owner = bdd.user({ orgId });
   const actor = bdd.user({ orgId });
-  await runs.grantProEntitlement(actor);
+  await runs.grantProEntitlement(actor, { tier: "team" });
+  await expect(runs.readBillingStatus(actor)).resolves.toMatchObject({
+    concurrencyLimit: 10,
+  });
   await runs.ensurePersonalSubscriptionModel(actor, {
     model: "claude-fable-5-1",
   });
@@ -89,8 +108,60 @@ async function createUnreadAgentThreads(
     visibility: "public",
   });
   const threadIds: string[] = [];
-  for (let index = 0; index < threadCount; index += 1) {
-    threadIds.push(await appendCancelledRun({ actor, agentId: agent.agentId }));
+  for (let start = 0; start < threadCount; start += PUBLIC_REQUEST_BATCH_SIZE) {
+    context.signal.throwIfAborted();
+    const sent = await completeRequests(
+      Array.from(
+        { length: Math.min(PUBLIC_REQUEST_BATCH_SIZE, threadCount - start) },
+        async () => {
+          const clientEventId = randomUUID();
+          const response = await chat.requestSendEvent(
+            actor,
+            {
+              agentId: agent.agentId,
+              prompt: `agent read ${clientEventId}`,
+              clientEventId,
+              model: "claude-fable-5-1",
+            },
+            [201],
+          );
+          if (response.status !== 201) {
+            throw new Error("Expected the chat send to be accepted");
+          }
+          return { threadId: response.body.threadId, clientEventId };
+        },
+      ),
+    );
+    // One owner drains the production work after all sends have returned.
+    // Concurrent sendAndLaunch calls would compete for the shared tracker.
+    await flushWaitUntilForTest();
+    const launched = await completeRequests(
+      sent.map(async ({ threadId, clientEventId }) => {
+        const { events } = await chat.listThreadEvents(actor, threadId);
+        const event = events.find((candidate) => {
+          return (
+            candidate.eventType === "input.prompt" &&
+            candidate.revokesEventId === clientEventId &&
+            candidate.runId !== undefined
+          );
+        });
+        if (!event?.runId) {
+          throw new Error("Expected the public event feed to identify the run");
+        }
+        return { threadId, runId: event.runId };
+      }),
+    );
+    await completeRequests(
+      launched.map(({ runId }) => {
+        return runs.requestCancelRun(actor, runId, [200]);
+      }),
+    );
+    await flushWaitUntilForTest();
+    const unread = await chat.listUnreadChatThreadIds(actor);
+    for (const { threadId } of launched) {
+      expect(unread).toContain(threadId);
+      threadIds.push(threadId);
+    }
   }
   return { actor, owner, agentId: agent.agentId, orgId, threadIds };
 }
@@ -100,9 +171,22 @@ async function readCursors(
   fixture: AgentReadFixture,
 ): Promise<ReadonlyMap<string, string | null>> {
   const cursors = new Map<string, string | null>();
-  for (const threadId of fixture.threadIds) {
-    const detail = await chat.readThread(fixture.actor, threadId);
-    cursors.set(threadId, detail.lastReadAt);
+  for (
+    let start = 0;
+    start < fixture.threadIds.length;
+    start += PUBLIC_REQUEST_BATCH_SIZE
+  ) {
+    const entries = await completeRequests(
+      fixture.threadIds
+        .slice(start, start + PUBLIC_REQUEST_BATCH_SIZE)
+        .map(async (threadId) => {
+          const detail = await chat.readThread(fixture.actor, threadId);
+          return [threadId, detail.lastReadAt] as const;
+        }),
+    );
+    for (const [threadId, cursor] of entries) {
+      cursors.set(threadId, cursor);
+    }
   }
   return cursors;
 }
