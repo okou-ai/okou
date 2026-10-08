@@ -28,6 +28,8 @@ const HISTORY: &[u8] = b"{\"type\":\"init\"}\n";
 #[derive(Clone, Copy, Eq, PartialEq)]
 enum PublicationExpectation {
     Published,
+    ExistingCodexTarget,
+    ExistingCodexTargetSerialRecovery,
     SerialRecovery,
     SerialRecoveryCleanupFailure,
     AmbiguousFailure,
@@ -109,6 +111,16 @@ async fn workspace_history_staging_overlaps_storage_and_preserves_restore() {
         (
             CliFramework::Codex,
             ResumeSessionHistoryEncoding::Zstd,
+            PublicationExpectation::ExistingCodexTarget,
+        ),
+        (
+            CliFramework::Codex,
+            ResumeSessionHistoryEncoding::Zstd,
+            PublicationExpectation::ExistingCodexTargetSerialRecovery,
+        ),
+        (
+            CliFramework::Codex,
+            ResumeSessionHistoryEncoding::Zstd,
             PublicationExpectation::DestinationFailure,
         ),
         (
@@ -127,7 +139,7 @@ async fn workspace_history_staging_overlaps_storage_and_preserves_restore() {
             PublicationExpectation::SerialRecoveryCleanupFailure,
         ),
     ] {
-        let (framework, history, session_id, expected_path, storage_root): (
+        let (framework, history, session_id, mut expected_path, storage_root): (
             &str,
             &[u8],
             &str,
@@ -176,6 +188,33 @@ async fn workspace_history_staging_overlaps_storage_and_preserves_restore() {
         let overrides = Arc::new(MockSandboxOverrides::new());
         match publication {
             PublicationExpectation::Published | PublicationExpectation::DestinationCancelled => {}
+            PublicationExpectation::ExistingCodexTarget
+            | PublicationExpectation::ExistingCodexTargetSerialRecovery => {
+                let logical_path = format!(
+                    "/home/user/.codex/sessions/2026/06/04/rollout-2026-06-04T07-18-08-{session_id}.jsonl"
+                );
+                expected_path = format!("{logical_path}.zst");
+                overrides.push_codex_session_cleanup_result(Ok(sandbox::ExecResult::new(
+                    0,
+                    format!("{logical_path}\n").into_bytes(),
+                    Vec::new(),
+                )));
+                if publication == PublicationExpectation::ExistingCodexTargetSerialRecovery {
+                    overrides.push_finalize_staged_file_result(Ok(
+                        StagedFileFinalizeOutcome::NotPublished {
+                            reason: StagedFileNotPublishedReason::CopyFailed,
+                            measurements: StagedFileFinalizeMeasurements::default(),
+                        },
+                    ));
+                    // The first cleanup removed the selected candidate. A second scan can be
+                    // empty, but serial recovery must preserve its already validated target.
+                    overrides.push_codex_session_cleanup_result(Ok(sandbox::ExecResult::new(
+                        0,
+                        Vec::new(),
+                        Vec::new(),
+                    )));
+                }
+            }
             PublicationExpectation::DestinationFailure => {
                 overrides.push_codex_session_cleanup_result(Ok(sandbox::ExecResult::new(
                     1,
@@ -372,7 +411,12 @@ async fn workspace_history_staging_overlaps_storage_and_preserves_restore() {
             publication,
             PublicationExpectation::SerialRecovery
                 | PublicationExpectation::SerialRecoveryCleanupFailure
+                | PublicationExpectation::ExistingCodexTargetSerialRecovery
         ) {
+            if publication == PublicationExpectation::ExistingCodexTargetSerialRecovery {
+                cleanup_gate.wait_entered(2, WAIT).await.unwrap();
+                cleanup_gate.release_one();
+            }
             write_gate.wait_entered(2, WAIT).await.unwrap();
             let writes = overrides.write_file_calls();
             assert_eq!(writes.len(), 2);

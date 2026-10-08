@@ -167,7 +167,8 @@ impl FreshSessionRestorePlan {
     ) -> RunnerResult<()> {
         if effective_cli_framework(&context.cli_agent_type) == EffectiveCliFramework::Codex {
             self.final_path =
-                codex::prepare_codex_session_target(sandbox, context, session).await?;
+                codex::prepare_codex_session_target(sandbox, context, session, &self.final_path)
+                    .await?;
         }
         Ok(())
     }
@@ -198,12 +199,13 @@ impl FreshSessionRestorePlan {
         context: &ExecutionContext,
         session: &MaterializedResumeSession,
     ) -> RunnerResult<SessionRestoreDiagnostics> {
-        let final_path =
-            if effective_cli_framework(&context.cli_agent_type) == EffectiveCliFramework::Codex {
-                codex::prepare_codex_session_target(sandbox, context, session).await?
-            } else {
-                self.final_path.clone()
-            };
+        let final_path = if effective_cli_framework(&context.cli_agent_type)
+            == EffectiveCliFramework::Codex
+        {
+            codex::prepare_codex_session_target(sandbox, context, session, &self.final_path).await?
+        } else {
+            self.final_path.clone()
+        };
         let transfer = self.write_to(sandbox, &final_path, session).await?;
         Ok(self.complete(context, session, transfer))
     }

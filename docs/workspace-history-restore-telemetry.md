@@ -57,6 +57,9 @@ is correct but may be slower. An existing regular destination's mode is retained
 an ownership mismatch is proven non-publication and uses the serial path. A
 normally completed helper can report a bounded
 `not_published` result, in which case Runner performs the existing serial restore.
+Codex recovery scans and cleans again, retaining the already validated logical
+transfer target when that scan is empty because the first cleanup removed its
+candidate. It does not derive a new timestamp path after a proven non-publication.
 A timeout, cancellation, transport failure or malformed result leaves publication
 ambiguous, so Runner fails closed and does not retry the write.
 
