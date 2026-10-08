@@ -64,6 +64,21 @@ That means:
    too. Use the production endpoint appropriate to that actor and mock only its
    external dependencies. Thin API helpers must preserve that boundary.
 
+An external storage mock does not authorize inventing application-owned records.
+Returning S3 unavailability for an upload created through the normal API is a
+provider failure; injecting an artifact alias with invented target identities
+to force a collision is private application-state construction. Observe share
+publication and revocation through the resulting access and catalog responses.
+External byte transfers and emitted documents consumed by another production
+component can still be meaningful boundary effects.
+
+The observer must also be a real surviving caller. After a verified account
+deletion, mocking the deleted session back into existence does not establish a
+public observation path. Unrelated owners can still verify their own files; that
+proves isolation, not the erased owner's physical row deletion. Likewise, an
+overlapping request may use a caller-supplied ID or an already returned ID, not
+one learned only by inspecting an internal write.
+
 For API tests, the database is not the external interface. DB schema is internal
 implementation.
 

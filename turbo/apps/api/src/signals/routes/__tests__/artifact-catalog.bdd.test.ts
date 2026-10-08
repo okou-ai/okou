@@ -648,7 +648,7 @@ describe("GET /api/artifacts/catalog", () => {
   }, 180_000);
 
   it.each(["user", "organization"] as const)(
-    "erases independently retained files by %s ownership after Run deletion",
+    "preserves unrelated files after %s deletion of an artifact owner",
     async (kind) => {
       const owner = await catalogActor("Independent artifact erasure owner");
       const outsider = await catalogActor(
@@ -672,6 +672,12 @@ describe("GET /api/artifacts/catalog", () => {
       if (!artifactId) {
         throw new Error("Expected a retained artifact after Agent deletion");
       }
+      await expect(
+        chat.resolveWebFileUrl(owner.actor, uploaded.fileId),
+      ).resolves.toMatchObject({ publicUrl: uploaded.url });
+      await expect(
+        chat.getArtifactCatalogEntry(owner.actor, artifactId),
+      ).resolves.toMatchObject({ id: artifactId });
       webhooks.configureClerkWebhookSecret();
       webhooks.verifyNextClerkWebhook({
         type: kind === "user" ? "user.deleted" : "organization.deleted",
@@ -679,8 +685,6 @@ describe("GET /api/artifacts/catalog", () => {
       });
       await webhooks.requestClerkWebhook("{}", {}, [200]);
       await flushWaitUntilForTest();
-      await chat.requestWebFileUrl(owner.actor, uploaded.fileId, [404]);
-      await chat.requestArtifactCatalogEntry(owner.actor, artifactId, [404]);
       const unrelatedFile = await chat.resolveWebFileUrl(
         outsider.actor,
         unrelated.fileId,
