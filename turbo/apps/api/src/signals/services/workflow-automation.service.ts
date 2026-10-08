@@ -125,8 +125,8 @@ import {
 } from "./google-forms-automation-event.service";
 import { resolveGoogleMeetAutomationConnectorId } from "./google-meet-automation-account.service";
 import {
-  ensureGoogleMeetTranscriptGeneratedSubscriptionForUser,
-  hasEnabledGoogleMeetConsumer,
+  ensureGoogleMeetTranscriptGeneratedSubscriptionForUser$,
+  hasEnabledGoogleMeetConsumer$,
 } from "./google-meet-automation-event.service";
 import { persistMorningBriefAutomationToggle$ } from "./morning-brief-automation-toggle.service";
 import { officialAutomationLifecycleCondition } from "./workflow-automation-write-condition";
@@ -3270,9 +3270,9 @@ const createGoogleMeetEventAutomationForWorkflow$ = command(
     };
     // eslint-disable-next-line api/signal-check-await -- Observe provider failure and finish the owned rollback before propagating cancellation.
     const subscriptionResult = await onRejection(
-      ensureGoogleMeetTranscriptGeneratedSubscriptionForUser(
+      set(
+        ensureGoogleMeetTranscriptGeneratedSubscriptionForUser$,
         {
-          db: db,
           orgId: args.input.orgId,
           userId: args.input.member.userId,
           connectorId,
@@ -5776,7 +5776,6 @@ const enabledWatchHadConsumer$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
     if (supportedGmailEventType(args.automation.eventType)) {
       if (args.automation.eventConnectorId === null) {
         return false;
@@ -5795,9 +5794,9 @@ const enabledWatchHadConsumer$ = command(
       if (args.automation.eventConnectorId === null) {
         return false;
       }
-      return await hasEnabledGoogleMeetConsumer(
+      return await set(
+        hasEnabledGoogleMeetConsumer$,
         {
-          db: db,
           orgId: args.automation.orgId,
           userId: args.automation.ownerUserId,
           connectorId: args.automation.eventConnectorId,
@@ -5852,7 +5851,6 @@ const ensureEnabledAutomationEventWatch$ = command(
     },
     signal: AbortSignal,
   ): Promise<AutomationActionFailure | null> => {
-    const db = set(writeDb$);
     if (supportedGmailEventType(args.automation.eventType)) {
       if (args.automation.eventConnectorId === null) {
         return {
@@ -5882,16 +5880,15 @@ const ensureEnabledAutomationEventWatch$ = command(
             "Connect Google Meet before using Google Meet event automations",
         };
       }
-      const result =
-        await ensureGoogleMeetTranscriptGeneratedSubscriptionForUser(
-          {
-            db: db,
-            orgId: args.automation.orgId,
-            userId: args.automation.ownerUserId,
-            connectorId: args.automation.eventConnectorId,
-          },
-          signal,
-        );
+      const result = await set(
+        ensureGoogleMeetTranscriptGeneratedSubscriptionForUser$,
+        {
+          orgId: args.automation.orgId,
+          userId: args.automation.ownerUserId,
+          connectorId: args.automation.eventConnectorId,
+        },
+        signal,
+      );
       return result.kind === "ok"
         ? null
         : { kind: "bad-request", message: result.message };

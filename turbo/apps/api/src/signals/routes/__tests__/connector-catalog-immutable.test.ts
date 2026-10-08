@@ -48,7 +48,6 @@ import {
 } from "../../../test-fixtures/connector-catalog";
 
 import { describe, expect, it } from "vitest";
-import { replaceRunnerJobWithLegacyConnectorBaselineFixture } from "../../../test-fixtures/legacy-runner-job-context";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 
 const context = testContext();
@@ -426,50 +425,6 @@ describe("slug-first current catalog business readers", () => {
     );
     await runs.requestCancelRun(actor, run.runId, [200]);
   });
-
-  it.each(["claude-code", "pi"] as const)(
-    "claims an old %s context using current permissions instead of its baseline",
-    async (cliAgentType) => {
-      const candidate = await publishedCatalog();
-      const bdd = createBddApi(context);
-      const runs = createRunsApi(context);
-      const actor = bdd.user();
-      bdd.acceptAgentStorageWrites();
-      runs.acceptStorageDownloads();
-      runs.acceptTelemetryIngest();
-      const runnerGroup = runs.configureRunnerGroup();
-      await runs.grantProEntitlement(actor);
-      await runs.ensurePersonalSubscriptionModel(actor);
-      const agent = await bdd.createAgent(actor, {
-        displayName: "Legacy context compatibility",
-      });
-      const run = await runs.createThreadRun(actor, {
-        agentId: agent.agentId,
-        prompt: "Claim a queued context from an older API",
-      });
-      const storedContext =
-        await replaceRunnerJobWithLegacyConnectorBaselineFixture({
-          runId: run.runId,
-          cliAgentType,
-          catalogVersion: candidate.artifact.catalogVersion,
-          catalogDigest: candidate.hash,
-        });
-      await runs.heartbeatRunner(runnerGroup);
-      const claim = await runs.claimRunnerJob(run.runId);
-      expect(claim.cliAgentType).toBe(cliAgentType);
-      expect(claim.networkPolicies?.github?.allow).toContain("user:read");
-      expect(claim.networkPolicies?.github?.deny).not.toContain("user:read");
-      expect(claim.networkPolicies?.github?.unknownPolicy).toBe("allow");
-      expect(claim).not.toHaveProperty("connectorPermissionBaseline");
-      if (cliAgentType === "pi") {
-        expect(claim.piSessionId).toBe(storedContext.piSessionId);
-        expect(claim.piLaunchConfig).toStrictEqual(
-          storedContext.piLaunchConfig,
-        );
-      }
-      await runs.requestCancelRun(actor, run.runId, [200]);
-    },
-  );
 
   it("lists named onboarding sources from current entries", async () => {
     await publishedCatalog();

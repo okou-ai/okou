@@ -38,11 +38,10 @@ import {
   loadBuiltinConnectorCredentialConnection$,
   loadBuiltinConnectorCredentialValues$,
   refreshBuiltinConnectorCredentialAccess$,
-} from "./builtin-connector-credential-command.service";
-import {
   builtinConnectorCredentialRuntimeValueRef,
   type BuiltinConnectorCredentialConnection,
 } from "./builtin-connector-credential-runtime.service";
+
 import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 import { loadConnectorRuntimeSlugSelection } from "./connector-catalog-slug-source.service";
 import { builtinConnectorList } from "./connector-data.service";

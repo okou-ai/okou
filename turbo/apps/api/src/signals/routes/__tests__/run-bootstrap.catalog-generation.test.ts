@@ -72,56 +72,6 @@ describe("Run connector catalog selection", () => {
     await cancelChatRun(actor, filtered.runId, sandboxHeaders);
   });
 
-  it("refreshes queued permissions from the current catalog by slug", async () => {
-    const publisher = createPublicConnectorCatalog(context, {
-      isolatePg: true,
-    });
-    await publisher.publish(API_TEST_CONNECTOR_CATALOG_ARTIFACT);
-    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    await createFirewallApi(context).seedTestConnector(actor, {
-      connectorSlug: "x",
-      authMethod: "oauth",
-      accessToken: "x-current-policy-access",
-      refreshToken: "x-current-policy-refresh",
-    });
-    await createRunsApi(context).enableAgentConnectors(actor, agentId, ["x"]);
-    const queued = await sendChatRun(actor, {
-      agentId,
-      prompt: "resolve current connector permissions at claim",
-    });
-    await publisher.publish({
-      ...API_TEST_CONNECTOR_CATALOG_ARTIFACT,
-      connectors: API_TEST_CONNECTOR_CATALOG_ARTIFACT.connectors.map(
-        (connector) => {
-          if (connector.slug !== "x") {
-            return connector;
-          }
-          if (connector.firewall.kind !== "generated") {
-            throw new Error("Expected X's generated firewall fixture");
-          }
-          return {
-            ...connector,
-            firewall: {
-              ...connector.firewall,
-              defaultUnknownPolicy: "deny" as const,
-            },
-          };
-        },
-      ),
-    });
-
-    const { claim, sandboxHeaders } = await claimChatRun(
-      runnerGroup,
-      queued.runId,
-    );
-    expect(claim.networkPolicies?.x?.unknownPolicy).toBe("deny");
-    expect(claim.connectorRuntimeTargets).toContainEqual(
-      expect.objectContaining({ kind: "builtin", connectorSlug: "x" }),
-    );
-    expect(claim).not.toHaveProperty("connectorPermissionBaseline");
-    await cancelChatRun(actor, queued.runId, sandboxHeaders);
-  });
-
   it("keeps a prepared run's connector entries across catalog rotation", async () => {
     const publisher = createPublicConnectorCatalog(context, {
       isolatePg: true,

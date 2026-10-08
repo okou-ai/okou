@@ -3,7 +3,8 @@ import {
   loadBuiltinConnectorCredentialConnection$,
   loadBuiltinConnectorCredentialValues$,
   refreshBuiltinConnectorCredentialAccess$,
-} from "./builtin-connector-credential-command.service";
+  builtinConnectorCredentialRuntimeValueRef,
+} from "./builtin-connector-credential-runtime.service";
 
 import { connectors } from "@okouai/db/schema/connector";
 import { command } from "ccstate";
@@ -17,7 +18,7 @@ import {
   startUntrackedBestEffortCleanup,
 } from "../utils";
 import { loadAgentConnectorScope$ } from "./agent-connector-scope.service";
-import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-credential-runtime.service";
+
 import { connectorUrlPermission$ } from "./connector-url-permission.service";
 import {
   loadConnectorRuntimeAuthSelection,

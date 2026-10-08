@@ -160,12 +160,12 @@ function labelledButton(name: string, container: ParentNode = document.body) {
   return button;
 }
 
-function exactMenuItem(name: string) {
-  const item = queryAllByRoleFast("menuitem").find((candidate) => {
+function exactDurationOption(name: string) {
+  const item = queryAllByRoleFast("menuitemradio").find((candidate) => {
     return candidate.textContent?.trim() === name;
   });
   if (!item) {
-    throw new Error(`Menu item not found: ${name}`);
+    throw new Error(`Duration option not found: ${name}`);
   }
   return item;
 }
@@ -216,7 +216,7 @@ function expectPolicy(
 
 function chooseDuration(permission: string, option: string): void {
   click(labelledButton(`${permission} allow options`));
-  click(exactMenuItem(option));
+  click(exactDurationOption(option));
 }
 
 async function openPermissions(connectorName: string): Promise<void> {
@@ -264,7 +264,26 @@ async function setupAppliedAxiomPermission() {
   await openPermissions("Axiom");
   const annotation = permissionRow("annotations|create");
   click(policyButton(annotation, "Allow"));
-  chooseDuration("annotations|create", "Allow for 24h");
+  click(labelledButton("annotations|create allow options"));
+  expect(exactDurationOption("Allow always")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  expect(exactDurationOption("Allow for 24h")).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+  click(exactDurationOption("Allow for 24h"));
+  click(labelledButton("annotations|create allow options"));
+  expect(exactDurationOption("Allow for 24h")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  expect(exactDurationOption("Allow always")).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+  click(exactDurationOption("Allow for 24h"));
   click(exactButton("Apply"));
   await waitFor(() => {
     expect(screen.getByText("Permissions updated")).toBeVisible();
@@ -521,7 +540,13 @@ test("A user can change one connector permission from temporary to permanent", a
   await openPermissions("Axiom");
   const annotation = permissionRow("annotations|create");
   expect(annotation).toHaveTextContent("1 hour");
-  chooseDuration("annotations|create", "Allow always");
+  click(labelledButton("annotations|create allow options"));
+  const durationOptions = queryAllByRoleFast("menuitemradio");
+  expect(durationOptions).toHaveLength(4);
+  for (const option of durationOptions) {
+    expect(option).toHaveAttribute("aria-checked", "false");
+  }
+  click(exactDurationOption("Allow always"));
   click(exactButton("Apply"));
   await waitFor(() => {
     expect(requests).toHaveLength(1);

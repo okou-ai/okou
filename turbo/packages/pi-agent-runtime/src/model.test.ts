@@ -326,6 +326,97 @@ describe("Pi agent model adapter", () => {
     }
   });
 
+  it("sends Gen5 Okou routes to OpenRouter Chat Completions with Preset-owned policy", async () => {
+    const provider = await retryableCodexProvider();
+    try {
+      const materialized = await materializePiAgentModelConfig({
+        config: {
+          schemaVersion: 5,
+          dialect: "openai-completions",
+          transport: "sse",
+          provider: "openrouter",
+          baseUrl: provider.baseUrl,
+          model: "@preset/okou-1-0",
+          catalogModel: "okou-1.0",
+          credentialBindings: [
+            {
+              kind: "api-key",
+              environment: "OPENAI_API_KEY",
+              secretName: "OPENROUTER_API_KEY",
+            },
+          ],
+        },
+        resolveCredential: () => {
+          return "selected-public-key";
+        },
+      });
+      const config = { ...materialized, sessionAffinityKey: "thread-1" };
+      const model = resolvePiAgentModel(config);
+      if (!model) throw new Error("Expected an Okou model");
+      expect(model).toMatchObject({
+        api: "openai-completions",
+        reasoning: false,
+        contextWindow: 1_000_000,
+        compat: {
+          thinkingFormat: "openrouter",
+          cacheControlFormat: "anthropic",
+          sendSessionAffinityHeaders: true,
+          sessionAffinityFormat: "openrouter",
+        },
+      });
+
+      await piAgentStreamForConfig(config)(
+        model,
+        normalizeContext({
+          systemPrompt: "You are Okou.",
+          messages: [{ role: "user", content: "hello", timestamp: 1 }],
+        }),
+        { apiKey: config.apiKey, sessionId: "pi-session" },
+      ).result();
+
+      expect(provider.requests.length).toBeGreaterThan(0);
+      const request = provider.requests[0];
+      expect(request).toMatchObject({
+        url: "/chat/completions",
+        headers: {
+          authorization: "Bearer selected-public-key",
+          "x-session-id": "thread-1",
+        },
+        body: {
+          model: "@preset/okou-1-0",
+          stream: true,
+          messages: [
+            {
+              role: "system",
+              content: [
+                {
+                  type: "text",
+                  text: "You are Okou.",
+                  cache_control: { type: "ephemeral" },
+                },
+              ],
+            },
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text: "hello",
+                  cache_control: { type: "ephemeral" },
+                },
+              ],
+            },
+          ],
+        },
+      });
+      expect(request?.body).not.toHaveProperty("reasoning");
+      expect(request?.body).not.toHaveProperty("reasoning_effort");
+      expect(request?.body).not.toHaveProperty("input");
+    } finally {
+      await provider.close();
+    }
+  });
+
   it.each([["okou-1.0", "@preset/okou-1-0", "Auto", 0.2, 1.2]] as const)(
     "resolves independent %s metadata for request preset %s",
     (catalogModel, model, name, input, output) => {
@@ -345,7 +436,7 @@ describe("Pi agent model adapter", () => {
         provider: "openrouter",
         api: "openai-responses",
         reasoning: false,
-        contextWindow: 1_050_000,
+        contextWindow: 1_000_000,
         maxTokens: 128_000,
         cost: { input, output },
       });

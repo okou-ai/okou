@@ -47,6 +47,14 @@ const OKOU_BACKING_MODELS = {
 
 type OkouBackingModel = keyof typeof OKOU_BACKING_MODELS;
 
+/**
+ * Pi context window for Okou aliases. An OpenRouter Preset may route to any of
+ * its candidate backends, so Pi uses the smallest window among them (GPT-6
+ * Luna, Claude Haiku 5.5 and DeepSeek V4.1 Flash; some Flash providers serve
+ * 1,000,000 tokens).
+ */
+const OKOU_PI_CONTEXT_WINDOW = 1_000_000;
+
 type OkouModelMetadata = {
   readonly displayName: string;
   readonly backingModel: OkouBackingModel;
@@ -83,7 +91,10 @@ function defineOkouModel(definition: OkouModelDefinition): OkouModelMetadata {
     inputModalities: OKOU_INPUT_MODALITIES,
     openRouterModelId: backingModel.openRouterModelId,
     pi: {
-      contextWindow: backingModel.contextLength,
+      contextWindow: Math.min(
+        backingModel.contextLength,
+        OKOU_PI_CONTEXT_WINDOW,
+      ),
       maxTokens: backingModel.maxCompletionTokens,
     },
     codex: {

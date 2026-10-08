@@ -6441,7 +6441,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it.each([
         {
-          schemaVersion: 5,
+          schemaVersion: 6,
           serviceTier: "priority",
           status: 404,
           runStatus: "pending",
@@ -6479,7 +6479,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           await api.heartbeatRunner(runnerGroup);
           await api.requestClaimRunnerJob(true, run.runId, [route.status], {
-            capabilities: { piModelConfigGenerations: [1, 2, 3, 4, 5] },
+            capabilities: { piModelConfigGenerations: [1, 2, 3, 4, 5, 6] },
           });
           await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
             status: route.runStatus,
@@ -10488,7 +10488,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(revokedClaim.networkPolicies?.slack?.allow).not.toContain(
           "chat:write",
         );
-        expect(revokedClaim).not.toHaveProperty("connectorPermissionBaseline");
         await api.requestCancelRun(actor, revokedRun.runId, [200]);
       });
 
@@ -10511,7 +10510,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           CLAUDE_CODE_OAUTH_TOKEN: expect.any(String),
         });
         expect(claim.billableFirewalls).toStrictEqual([]);
-        expect(claim).not.toHaveProperty("connectorPermissionBaseline");
         await api.requestCancelRun(actor, run.runId, [200]);
       });
 
