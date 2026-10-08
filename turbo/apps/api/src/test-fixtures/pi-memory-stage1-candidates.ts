@@ -6,10 +6,8 @@ import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-can
 import { storages } from "@okouai/db/schema/storage";
 
 import { db } from "../lib/db";
-import {
-  admitPiMemoryStage1Candidate,
-  type AdmitPiMemoryStage1CandidateArgs,
-} from "../signals/services/pi-memory-stage1-candidate.service";
+import { admitPiMemoryStage1Candidate } from "../signals/services/pi-memory-stage1-candidate.service";
+import type { AdmitPiMemoryStage1CandidateArgs } from "../signals/services/pi-memory-stage1-admission-plan";
 
 export async function readPiMemoryStage1CandidateFixture(args: {
   readonly orgId: string;

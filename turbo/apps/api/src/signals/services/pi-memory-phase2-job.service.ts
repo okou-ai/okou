@@ -29,7 +29,6 @@ import {
   sql,
 } from "drizzle-orm";
 
-import type { Tx } from "../../lib/db-types";
 import { writeDb$ } from "../external/db";
 
 export const PI_MEMORY_PHASE2_LEASE_DURATION_MS = 60 * 60 * 1000;
@@ -127,13 +126,11 @@ function selectionMetadata(
   };
 }
 
-export async function advancePiMemoryPhase2InputRevision(
-  tx: Tx,
+export function piMemoryPhase2InputRevisionPlan(
   args: PiMemoryPhase2OwnerScope & { readonly enqueuedAt: Date },
-): Promise<void> {
-  const [advanced] = await tx
-    .insert(piMemoryPhase2Jobs)
-    .values({
+) {
+  return {
+    values: {
       memoryStorageId: args.memoryStorageId,
       orgId: args.orgId,
       userId: args.userId,
@@ -142,8 +139,8 @@ export async function advancePiMemoryPhase2InputRevision(
       completedRevision: 0,
       retryCount: 0,
       updatedAt: args.enqueuedAt,
-    })
-    .onConflictDoUpdate({
+    },
+    conflict: {
       target: piMemoryPhase2Jobs.memoryStorageId,
       set: {
         orgId: args.orgId,
@@ -207,11 +204,8 @@ export async function advancePiMemoryPhase2InputRevision(
         END`,
         updatedAt: args.enqueuedAt,
       },
-    })
-    .returning({ memoryStorageId: piMemoryPhase2Jobs.memoryStorageId });
-  if (!advanced) {
-    throw new Error("Pi memory Phase 2 input revision did not advance");
-  }
+    },
+  } as const;
 }
 
 function claimScopeCondition(scope: PiMemoryPhase2OwnerScope) {

@@ -1,3 +1,4 @@
+import { getPiMemoryStage1AdmissionPrerequisiteSkipReason } from "./pi-memory-stage1-admission-plan";
 import {
   featureSwitchContextFromRows,
   userFeatureSwitchRowCondition,
@@ -34,10 +35,9 @@ import { nowDate } from "../../lib/time";
 
 import {
   admitPiMemoryStage1Candidate,
-  getPiMemoryStage1AdmissionPrerequisiteSkipReason,
   lockPiMemoryCandidateStorage,
 } from "./pi-memory-stage1-candidate.service";
-import { advancePiMemoryStage1Watermark } from "./pi-memory-stage1-watermark.service";
+import { piMemoryStage1WatermarkPlan } from "./pi-memory-stage1-watermark.service";
 
 const log = logger("PiMemoryStage1Schedule");
 const PI_MEMORY_STAGE1_IDLE_MS = 6 * 60 * 60 * 1000;
@@ -322,7 +322,7 @@ async function commitSelectedPiMemoryStage1Day(
         continue;
       }
       for (const previous of evidence) {
-        await advancePiMemoryStage1Watermark(tx, {
+        const watermark = piMemoryStage1WatermarkPlan({
           memoryStorageId: admission.memoryStorageId,
           orgId: day.orgId,
           userId: day.userId,
@@ -330,6 +330,10 @@ async function commitSelectedPiMemoryStage1Day(
           sourceActivityAt: previous.activityAt,
           sourceHistoryHash: previous.hash,
         });
+        await tx
+          .insert(piMemoryStage1Watermarks)
+          .values(watermark.values)
+          .onConflictDoUpdate(watermark.conflict);
       }
       count += 1;
       await tx.insert(piMemoryStage1Selections).values({

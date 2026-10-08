@@ -105,6 +105,8 @@
     "src/signals/services/pi-memory-phase2-publication.service.ts",
     "src/signals/services/pi-memory-phase2-job.service.ts",
     "src/signals/services/pi-memory-phase2-maintenance.service.ts",
+    "src/signals/services/pi-memory-stage1-admission-plan.ts",
+    "src/signals/services/pi-memory-stage1-selection-plan.ts",
     "src/signals/services/pi-memory-stage1-candidate.service.ts",
     "src/signals/services/pi-memory-stage1-schedule.service.ts",
     "src/signals/services/pi-memory-stage1-watermark.service.ts",
