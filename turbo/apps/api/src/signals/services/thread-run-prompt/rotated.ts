@@ -32,9 +32,13 @@ import {
 import {
   isWebChatContextType,
   queuedUserMessageTriggerSource,
-  type QueuedUserMessageTriggerSource,
 } from "../chat-queued-event.service";
-import type { ChatThreadSessionResolution } from "../chat-session-continuity.service";
+import {
+  resolveChatThreadSessionSnapshot,
+  type ChatThreadSessionQuerySnapshot,
+  type ChatThreadSessionResolution,
+  type ChatThreadSessionRoute,
+} from "../chat-session-continuity.service";
 import {
   buildChatPriorRunsContext,
   type PriorRunEvent,
@@ -44,9 +48,19 @@ import type { PickedThreadInputEvent } from "./types";
 export interface RotatedPromptInput {
   readonly event: PickedThreadInputEvent;
   readonly chatThreadId: string;
-  /** Share the native-session decision used by execution and commit. */
-  readonly session: Pick<ChatThreadSessionResolution, "action"> | null;
-  readonly triggerSource: QueuedUserMessageTriggerSource;
+  readonly selectedAgentId: string;
+  readonly route: ChatThreadSessionRoute;
+  readonly sessionSnapshot: ChatThreadSessionQuerySnapshot;
+}
+
+/** Prompt and execution derive the same decision from one captured snapshot. */
+export function resolveRotatedPromptSession(
+  input: RotatedPromptInput,
+): ChatThreadSessionResolution {
+  return resolveChatThreadSessionSnapshot(input.sessionSnapshot, {
+    agentId: input.selectedAgentId,
+    route: input.route,
+  });
 }
 
 export function createRotatedPrompt(
@@ -54,7 +68,11 @@ export function createRotatedPrompt(
 ): Computed<Promise<string>> {
   return computed(async (get) => {
     const input = await get(input$);
-    if (!input || input.session?.action !== "rotated") {
+    if (!input) {
+      return "";
+    }
+    const session = resolveRotatedPromptSession(input);
+    if (session.action !== "rotated") {
       return "";
     }
     const contextType = input.event.contextType;
@@ -150,12 +168,20 @@ export function createRotatedPrompt(
       });
       grouped.set(event.runId, runEvents);
     }
+    const triggerSource =
+      contextType === "feishu"
+        ? input.event.userMessage?.parts.some((part) => {
+            return part.type === "source" && part.kind === "lark";
+          })
+          ? "lark"
+          : "feishu"
+        : queuedUserMessageTriggerSource(contextType);
     return buildChatPriorRunsContext(
       runs.map((run) => {
         return { ...run, events: grouped.get(run.runId) ?? [] };
       }),
       contextType,
-      input.triggerSource,
+      triggerSource,
     );
   });
 }

@@ -6,6 +6,7 @@ import { createFeishuThreadPrompt } from "./thread-run-prompt/feishu";
 import { renderThreadPrompt } from "./thread-run-prompt/render";
 import {
   createRotatedPrompt,
+  resolveRotatedPromptSession,
   type RotatedPromptInput,
 } from "./thread-run-prompt/rotated";
 import { createSlackThreadPrompt } from "./thread-run-prompt/slack";
@@ -2932,39 +2933,53 @@ export function createThreadClaimRunObjects(
   const promptModelModel$ = computed(async (get) => {
     return await get(promptResolvePromptModelResolvePromptModel$);
   });
-  const promptSessionSession$ = computed(async (get) => {
-    const [args, model] = await Promise.all([
-      get(promptArgsArgs$),
-      get(promptModelModel$),
-    ]);
-    if ("error" in model) {
-      return null;
-    }
-    const { routedModel } = routeQueuedMessagePiExecution({
-      input: args,
-      modelRoute: model.route,
-    });
-    const thread = await get(threadRow$);
-    if (
-      !thread ||
-      thread.id !== args.threadId ||
-      thread.userId !== args.userId ||
-      thread.agentId !== (args.expectedThreadAgentId ?? args.agent.id)
-    ) {
-      throw new Error("Chat thread not found while resolving session binding");
-    }
-    const agent = await get((await get(promptExecutionContext$)).agent$);
-    return resolveChatThreadSessionSnapshot(
-      capturedChatThreadSessionSnapshot(thread, await get(sessionRead$), agent),
-      {
-        agentId: args.agent.id,
+  const rotatedPromptInput$ = computed(
+    async (get): Promise<RotatedPromptInput | null> => {
+      const [args, model, event] = await Promise.all([
+        get(promptArgsArgs$),
+        get(promptModelModel$),
+        get(pickedEvent$),
+      ]);
+      if (!event || "error" in model) {
+        return null;
+      }
+      const { routedModel } = routeQueuedMessagePiExecution({
+        input: args,
+        modelRoute: model.route,
+      });
+      const thread = await get(threadRow$);
+      if (
+        !thread ||
+        thread.id !== args.threadId ||
+        thread.userId !== args.userId ||
+        thread.agentId !== (args.expectedThreadAgentId ?? args.agent.id)
+      ) {
+        throw new Error(
+          "Chat thread not found while resolving session binding",
+        );
+      }
+      const agent = await get((await get(promptExecutionContext$)).agent$);
+      return {
+        event,
+        chatThreadId: args.threadId,
+        selectedAgentId: args.agent.id,
         route: {
           selectedModel: routedModel.modelPin.selectedModel,
           cliAgentType: routedModel.cliAgentType,
         },
-      },
-    );
+        sessionSnapshot: capturedChatThreadSessionSnapshot(
+          thread,
+          await get(sessionRead$),
+          agent,
+        ),
+      };
+    },
+  );
+  const promptSessionSession$ = computed(async (get) => {
+    const input = await get(rotatedPromptInput$);
+    return input ? resolveRotatedPromptSession(input) : null;
   });
+  const rotatedPrompt$ = createRotatedPrompt(rotatedPromptInput$);
   const incompleteRoundAnchors$ = computed(async (get) => {
     const { db, threadId } = await get(promptArgsArgs$);
     const anchors = [undefined, sql`incomplete_frontier.seq_id`].map(
@@ -3187,25 +3202,6 @@ export function createThreadClaimRunObjects(
       await get(promptIncompleteRoundsIncompleteRounds$),
     );
   });
-  const rotatedPromptInput$ = computed(
-    async (get): Promise<RotatedPromptInput | null> => {
-      const [event, session, launch] = await Promise.all([
-        get(pickedEvent$),
-        get(promptSessionSession$),
-        get(promptMaterialMaterial$),
-      ]);
-      if (!event) {
-        return null;
-      }
-      return {
-        event,
-        chatThreadId: claim.chatThreadId,
-        session,
-        triggerSource: launch.triggerSource,
-      };
-    },
-  );
-  const rotatedPrompt$ = createRotatedPrompt(rotatedPromptInput$);
   const promptPresentationTemplatesPresentationTemplates$ = computed(
     async (get) => {
       const [args, projection] = await Promise.all([
