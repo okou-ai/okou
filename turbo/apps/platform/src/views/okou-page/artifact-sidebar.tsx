@@ -1,3 +1,4 @@
+import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
 import type { ReactNode } from "react";
 import {
   ArrowLeft,
@@ -153,25 +154,28 @@ export function ArtifactSidebar({
   };
 
   return (
-    <ArtifactSidebarContent
-      agentId={agentId}
-      artifactRef={artifactRef}
-      fullscreenState={fullscreenState}
-      imageCanvasSignals={thread.sidebar.imageCanvas}
-      imageNavigation={{
-        onNext: imageNavigationAction(imageNavigation.next),
-        onPrevious: imageNavigationAction(imageNavigation.previous),
-      }}
-      item={item}
-      markdownTree$={markdownTree$}
-      onBack={onBack}
-      onClose={onClose}
-      onSyncSuccess={() => {
-        reloadArtifacts();
-      }}
-      text$={text$}
-      threadId={thread.threadId}
-    />
+    <>
+      <ArtifactSidebarContent
+        agentId={agentId}
+        artifactRef={artifactRef}
+        fullscreenState={fullscreenState}
+        imageCanvasSignals={thread.sidebar.imageCanvas}
+        imageNavigation={{
+          onNext: imageNavigationAction(imageNavigation.next),
+          onPrevious: imageNavigationAction(imageNavigation.previous),
+        }}
+        item={item}
+        markdownTree$={markdownTree$}
+        onBack={onBack}
+        onClose={onClose}
+        onSyncSuccess={() => {
+          reloadArtifacts();
+        }}
+        text$={text$}
+        threadId={thread.threadId}
+      />
+      <ArtifactDiagramLightbox signals={thread.sidebar.diagram} />
+    </>
   );
 }
 

@@ -1,5 +1,13 @@
 import type { ReactNode } from "react";
-import { Button, Dialog, DialogBody, DialogContent, cn } from "@okouai/ui";
+import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
+import {
+  PreserveScrollAnchor,
+  Button,
+  Dialog,
+  DialogBody,
+  DialogContent,
+  cn,
+} from "@okouai/ui";
 import {
   useGet,
   useLastLoadable,
@@ -57,6 +65,7 @@ import { MarkdownEventBody } from "../components/markdown.tsx";
 import {
   attachmentSidebarRef,
   attachmentLightboxImageCanvasSignals,
+  attachmentDiagramPreview,
   lightboxUrl$,
   closeLightboxImmediately$,
   closeLightboxWithDialogExit$,
@@ -1443,47 +1452,60 @@ function ArtifactPreviewDialogContent({
         )}
         data-testid="attachment-lightbox"
       >
-        <div
-          ref={registerConnectionDialog}
-          className="relative flex min-h-0 flex-1 flex-col overflow-hidden text-foreground"
-          data-testid="attachment-lightbox-panel"
+        <PreserveScrollAnchor
+          layoutKey={fullscreen}
+          anchor={
+            preview.kind === "markdown"
+              ? {
+                  viewportSelector: '[data-testid="artifact-dialog-stage"]',
+                  anchorSelector: "h1, h2, h3, h4, h5, h6, p, pre, li, tr",
+                }
+              : undefined
+          }
         >
-          <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 pl-4 pr-3">
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium">
-                <ArtifactTitle filename={filename} link={titleLink} />
+          <div
+            ref={registerConnectionDialog}
+            className="relative flex min-h-0 flex-1 flex-col overflow-hidden text-foreground"
+            data-testid="attachment-lightbox-panel"
+          >
+            <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border/70 pl-4 pr-3">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">
+                  <ArtifactTitle filename={filename} link={titleLink} />
+                </div>
+                <div className="truncate text-xs text-muted-foreground">
+                  {subtitle}
+                </div>
               </div>
-              <div className="truncate text-xs text-muted-foreground">
-                {subtitle}
-              </div>
+              {connectionProgressActive ? (
+                <ArtifactPreviewCloseButton />
+              ) : (
+                <ArtifactPreviewDialogActions
+                  artifact={artifact}
+                  fullscreen={fullscreen}
+                  preview={preview}
+                />
+              )}
             </div>
-            {connectionProgressActive ? (
-              <ArtifactPreviewCloseButton />
-            ) : (
-              <ArtifactPreviewDialogActions
-                artifact={artifact}
-                fullscreen={fullscreen}
-                preview={preview}
-              />
-            )}
+            <DialogBody className="overflow-hidden bg-background">
+              {connectionProgressActive ? (
+                <div className="flex h-full items-center justify-center p-6">
+                  <ConnectorConnectionStatus />
+                </div>
+              ) : (
+                <ArtifactPreviewBody
+                  artifact={artifact}
+                  fullscreen={fullscreen}
+                  imageCanvasSignals={attachmentLightboxImageCanvasSignals}
+                  imageNavigation={imageNavigation}
+                  preview={preview}
+                />
+              )}
+            </DialogBody>
           </div>
-          <DialogBody className="overflow-hidden bg-background">
-            {connectionProgressActive ? (
-              <div className="flex h-full items-center justify-center p-6">
-                <ConnectorConnectionStatus />
-              </div>
-            ) : (
-              <ArtifactPreviewBody
-                artifact={artifact}
-                fullscreen={fullscreen}
-                imageCanvasSignals={attachmentLightboxImageCanvasSignals}
-                imageNavigation={imageNavigation}
-                preview={preview}
-              />
-            )}
-          </DialogBody>
-        </div>
+        </PreserveScrollAnchor>
       </DialogContent>
+      <ArtifactDiagramLightbox signals={attachmentDiagramPreview} />
     </Dialog>
   );
 }

@@ -7,7 +7,10 @@ import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  testContext,
+  warmMermaidParser,
+} from "../../../signals/__tests__/test-helpers.ts";
 import {
   getLinkByName,
   setupSharedThreadPage,
@@ -15,6 +18,7 @@ import {
 } from "./shared-thread-test-helpers.ts";
 
 const context = testContext();
+warmMermaidParser();
 const FILE_ID = "f0000000-0000-4000-a000-000000000942";
 const SITE = "https://app.okou.ai/artifacts/lightsite1.html#slide-2";
 const VIDEO = "https://app.okou.ai/artifacts/lightvid01.mp4#t=2";
@@ -657,7 +661,7 @@ test("a shared note opens its Markdown body in the conversation", async () => {
   });
   context.mocks.http.get(`${R2_ORIGIN}/snapshots/notes.md`, () => {
     return HttpResponse.text(
-      "Ship on Friday, once the rollout window closes.",
+      "Ship on Friday, once the rollout window closes.\n\n```mermaid\nflowchart LR\n  Draft --> Ship\n```",
       {
         headers: { "Content-Type": "text/markdown" },
       },
@@ -679,4 +683,25 @@ test("a shared note opens its Markdown body in the conversation", async () => {
     ),
   ).resolves.toBeInTheDocument();
   expect(within(dialog).getByText("Launch notes")).toBeInTheDocument();
+  await within(dialog).findByRole("img", { name: "Diagram" });
+  click(getButtonByName("Enter fullscreen", dialog));
+  await waitFor(() => {
+    return expect(dialog).toHaveAttribute("data-mode", "fullscreen");
+  });
+  const expand = getButtonByName("Expand diagram", dialog);
+  click(expand);
+  const diagram = await screen.findByTestId("artifact-diagram-lightbox");
+  expect(within(diagram).getByAltText("diagram.svg")).toBeInTheDocument();
+  await waitFor(() => {
+    return expect(diagram.contains(document.activeElement)).toBeTruthy();
+  });
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    return expect(
+      screen.queryByTestId("artifact-diagram-lightbox"),
+    ).not.toBeInTheDocument();
+  });
+  expect(dialog).toHaveAttribute("data-mode", "fullscreen");
+  expect(within(dialog).getByText("Launch notes")).toBeInTheDocument();
+  expect(expand).toHaveFocus();
 });

@@ -5175,6 +5175,8 @@
     "mermaid": {
       "diagramLabel": "Diagram",
       "expand": "Perbesar diagram",
+      "fillView": "Perluas tampilan",
+      "restoreView": "Pulihkan tampilan",
       "viewSource": "Sumber diagram"
     },
     "notFound": {

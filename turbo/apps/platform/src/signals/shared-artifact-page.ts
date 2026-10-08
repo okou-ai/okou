@@ -5,7 +5,7 @@ import { clerk$ } from "./auth.ts";
 import { classifyChatAttachment } from "./chat-page/parse-body-blocks.ts";
 import { createMarkdownPreviewTree } from "./markdown-preview-tree.ts";
 import type { MermaidDiagramPreviewCommand } from "./mermaid-diagram.ts";
-import { createPublicArtifactPreviewSignals } from "./public-artifact-preview.ts";
+import { createArtifactDiagramPreviewSignals } from "./artifact-diagram-preview.ts";
 import type { AttachmentLightboxState } from "./okou-page/attachment-chips.ts";
 import {
   createTextPreviewComputed,
@@ -87,12 +87,13 @@ export function createSharedArtifactPreview(
 }
 
 export function createSharedArtifactViewerSignals() {
+  const diagram = createArtifactDiagramPreviewSignals();
   return {
     imageCanvas: createZoomableImageCanvasSignals(),
-    fullscreen: createArtifactViewerFullscreenSignals(),
+    fullscreen: createArtifactViewerFullscreenSignals(diagram.visible$),
     // A Markdown artifact can embed a diagram, which this page presents in a
     // dialog over the artifact it belongs to.
-    diagram: createPublicArtifactPreviewSignals(),
+    diagram,
   };
 }
 

@@ -546,30 +546,43 @@ test("Expand a diagram from a Markdown artifact", async () => {
     throw new Error("Expected the Markdown diagram image URL");
   }
   const inlineSvg = await browser.blobForUrl(inlineUrl)?.text();
-  click(buttonNamed("Expand diagram", artifactPreview()));
+  click(buttonNamed("Enter fullscreen", artifactPreview()));
   await waitFor(() => {
-    const expanded = within(artifactPreview()).getByAltText("diagram.svg");
-    expect(expanded).toBeVisible();
-    expect(expanded).toHaveAttribute(
-      "data-testid",
-      "artifact-sidebar-body-image",
-    );
-    expect(
-      artifactPreview().querySelector('[data-mermaid-status="rendered"]'),
-    ).not.toBeInTheDocument();
+    return expect(
+      buttonNamed("Exit fullscreen", artifactPreview()),
+    ).toBeInTheDocument();
   });
-  const expandedUrl = within(artifactPreview())
-    .getByAltText("diagram.svg")
-    .getAttribute("src");
+  click(within(artifactPreview()).getByText("Diagram source"));
+  const trigger = buttonNamed("Expand diagram", artifactPreview());
+  click(trigger);
+  const diagram = await screen.findByTestId("artifact-diagram-lightbox");
+  const expanded = await within(diagram).findByAltText("diagram.svg");
+  const expandedUrl = expanded.getAttribute("src");
+  expect(
+    within(artifactPreview()).getByText("Deployment flow"),
+  ).toBeInTheDocument();
+  expect(expandedUrl).not.toBe(inlineUrl);
+  expect(browser.revokedUrls).not.toContain(inlineUrl);
+  expect(browser.revokedUrls).not.toContain(expandedUrl);
   if (!expandedUrl) {
     throw new Error("Expected the expanded diagram image URL");
   }
-  expect(expandedUrl).not.toBe(inlineUrl);
-  expect(browser.revokedUrls).toContain(inlineUrl);
-  expect(browser.revokedUrls).not.toContain(expandedUrl);
   await expect(browser.blobForUrl(expandedUrl)?.text()).resolves.toBe(
     inlineSvg,
   );
+  click(buttonNamed("Close", diagram));
+  await waitFor(() => {
+    return expect(
+      screen.queryByTestId("artifact-diagram-lightbox"),
+    ).not.toBeInTheDocument();
+  });
+  expect(buttonNamed("Exit fullscreen", artifactPreview())).toBeInTheDocument();
+  expect(
+    within(artifactPreview()).getByText("Diagram source").closest("details"),
+  ).toHaveAttribute("open");
+  expect(trigger).toHaveFocus();
+  expect(browser.revokedUrls).toContain(expandedUrl);
+  expect(browser.revokedUrls).not.toContain(inlineUrl);
 });
 
 test("Preview a hosted site artifact in the thread sidebar", async () => {

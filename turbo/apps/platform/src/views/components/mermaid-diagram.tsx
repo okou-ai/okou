@@ -94,13 +94,13 @@ export function MermaidDiagramView({
         aria-label={t(($) => {
           return $.shared.mermaid.expand;
         })}
-        onClick={() => {
+        onClick={(event) => {
           if (image === null) {
             return;
           }
           // File metadata lets each preview surface present the diagram as
           // diagram.svg with download support.
-          openPreview(image.file, pageSignal);
+          openPreview(image.file, event.currentTarget, pageSignal);
         }}
       >
         {image ? (

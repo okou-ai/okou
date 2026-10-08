@@ -97,11 +97,7 @@ test("a diagram in a shared conversation expands in the conversation", async () 
   expect(within(dialog).getByText("diagram.svg")).toBeInTheDocument();
   // The diagram was drawn in this browser, so its address is dead anywhere
   // else and the dialog offers the copy that is worth something instead.
-  expect(actionNames(dialog)).toStrictEqual([
-    "Close",
-    "Download",
-    "Enter fullscreen",
-  ]);
+  expect(actionNames(dialog)).toStrictEqual(["Close", "Download", "Fill view"]);
 
   click(getButtonByName("Download", dialog));
 

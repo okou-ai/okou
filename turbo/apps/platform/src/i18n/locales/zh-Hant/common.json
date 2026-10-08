@@ -5175,6 +5175,8 @@
     "mermaid": {
       "diagramLabel": "圖表",
       "expand": "放大圖表",
+      "fillView": "鋪滿視圖",
+      "restoreView": "還原視圖",
       "viewSource": "圖表原始碼"
     },
     "notFound": {
