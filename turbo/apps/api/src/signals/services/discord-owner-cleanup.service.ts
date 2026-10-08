@@ -1,10 +1,12 @@
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
-import { and, eq, inArray } from "drizzle-orm";
 import { discordUserIdentities } from "@okouai/db/schema/discord-user-identity";
-import { releaseUnusedDiscordIdentities } from "./discord-identity-ownership.service";
-
+import { and, asc, eq, inArray, or } from "drizzle-orm";
+import {
+  lockDiscordIdentities,
+  releaseUnusedDiscordIdentities,
+} from "./discord-identity-ownership.service";
 import type { Db } from "../external/db";
 
 /** Remove local authorization only; the bot credential is shared by all guilds. */
@@ -21,21 +23,42 @@ export async function deleteDiscordOrgMemberData(
           eq(discordOauthStates.orgId, args.orgId),
         ),
       );
+    const installations = await tx
+      .select({ guildId: discordOrgInstallations.guildId })
+      .from(discordOrgInstallations)
+      .where(eq(discordOrgInstallations.orgId, args.orgId))
+      .orderBy(asc(discordOrgInstallations.guildId))
+      .for("update");
+    const guildIds = installations.map((installation) => {
+      return installation.guildId;
+    });
+    if (guildIds.length === 0) {
+      return;
+    }
+    const connections = await tx
+      .select({ discordUserId: discordOrgConnections.discordUserId })
+      .from(discordOrgConnections)
+      .where(
+        and(
+          eq(discordOrgConnections.userId, args.userId),
+          inArray(discordOrgConnections.guildId, guildIds),
+        ),
+      );
+    const identities = await lockDiscordIdentities(
+      tx,
+      connections.map((connection) => {
+        return connection.discordUserId;
+      }),
+    );
     await tx
       .delete(discordOrgConnections)
       .where(
         and(
           eq(discordOrgConnections.userId, args.userId),
-          inArray(
-            discordOrgConnections.guildId,
-            tx
-              .select({ guildId: discordOrgInstallations.guildId })
-              .from(discordOrgInstallations)
-              .where(eq(discordOrgInstallations.orgId, args.orgId)),
-          ),
+          inArray(discordOrgConnections.guildId, guildIds),
         ),
       );
-    await releaseUnusedDiscordIdentities(tx, [args.userId]);
+    await releaseUnusedDiscordIdentities(tx, identities);
   });
 }
 
@@ -47,23 +70,32 @@ export async function deleteDiscordOrgData(
     await tx
       .delete(discordOauthStates)
       .where(eq(discordOauthStates.orgId, orgId));
-    const owners = await tx
-      .select({ userId: discordOrgConnections.userId })
+    const installations = await tx
+      .select({ guildId: discordOrgInstallations.guildId })
+      .from(discordOrgInstallations)
+      .where(eq(discordOrgInstallations.orgId, orgId))
+      .orderBy(asc(discordOrgInstallations.guildId))
+      .for("update");
+    const guildIds = installations.map((installation) => {
+      return installation.guildId;
+    });
+    if (guildIds.length === 0) {
+      return;
+    }
+    const connections = await tx
+      .select({ discordUserId: discordOrgConnections.discordUserId })
       .from(discordOrgConnections)
-      .innerJoin(
-        discordOrgInstallations,
-        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
-      )
-      .where(eq(discordOrgInstallations.orgId, orgId));
+      .where(inArray(discordOrgConnections.guildId, guildIds));
+    const identities = await lockDiscordIdentities(
+      tx,
+      connections.map((connection) => {
+        return connection.discordUserId;
+      }),
+    );
     await tx
       .delete(discordOrgInstallations)
       .where(eq(discordOrgInstallations.orgId, orgId));
-    await releaseUnusedDiscordIdentities(
-      tx,
-      owners.map((owner) => {
-        return owner.userId;
-      }),
-    );
+    await releaseUnusedDiscordIdentities(tx, identities);
   });
 }
 
@@ -75,20 +107,40 @@ export async function deleteDiscordUserData(
     await tx
       .delete(discordOauthStates)
       .where(eq(discordOauthStates.userId, userId));
-    // A surviving organization's installation is not the installer's account
-    // data. Keep it usable by the remaining members and remove the association.
+    const connectionGuilds = tx
+      .select({ guildId: discordOrgConnections.guildId })
+      .from(discordOrgConnections)
+      .where(eq(discordOrgConnections.userId, userId));
+    // Stable installation -> identity -> connection ordering also applies to
+    // account cleanup. The surviving org installation is not account data.
+    await tx
+      .select({ guildId: discordOrgInstallations.guildId })
+      .from(discordOrgInstallations)
+      .where(
+        or(
+          inArray(discordOrgInstallations.guildId, connectionGuilds),
+          eq(discordOrgInstallations.installedByUserId, userId),
+        ),
+      )
+      .orderBy(asc(discordOrgInstallations.guildId))
+      .for("update");
+    const owned = await tx
+      .select({ discordUserId: discordUserIdentities.discordUserId })
+      .from(discordUserIdentities)
+      .where(eq(discordUserIdentities.userId, userId));
+    const identities = await lockDiscordIdentities(
+      tx,
+      owned.map((identity) => {
+        return identity.discordUserId;
+      }),
+    );
     await tx
       .update(discordOrgInstallations)
       .set({ installedByUserId: null })
       .where(eq(discordOrgInstallations.installedByUserId, userId));
-    // Match guild uninstall: lock installations before their connections.
-    // Connections are the enforced parent for routes, ingress, DM selection,
-    // and chat context, including accepted ingress not yet attached to a route.
     await tx
       .delete(discordOrgConnections)
       .where(eq(discordOrgConnections.userId, userId));
-    await tx
-      .delete(discordUserIdentities)
-      .where(eq(discordUserIdentities.userId, userId));
+    await releaseUnusedDiscordIdentities(tx, identities);
   });
 }

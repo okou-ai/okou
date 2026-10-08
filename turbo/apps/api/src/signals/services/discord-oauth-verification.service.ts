@@ -1,5 +1,7 @@
 import { now } from "../../lib/time";
 import type { DiscordAppConfig } from "./discord-config";
+import type { DiscordOauthEvidence } from "./discord-oauth-binding.service";
+import { loadDiscordGuildAccess } from "./discord-provider-access";
 import {
   discordClient,
   discordSnowflakeSchema,
@@ -95,10 +97,8 @@ async function verifyBot(
   if (!application.ok) {
     return application;
   }
-  if (
-    application.data.id !== config.applicationId ||
-    application.data.bot.bot !== true
-  ) {
+  // This endpoint is the current BOT application's authority for this exact token.
+  if (application.data.id !== config.applicationId) {
     return failed("invalid_authorization");
   }
   const bot = await discordClient.fetchDiscordCurrentUser(config, signal);
@@ -107,7 +107,11 @@ async function verifyBot(
       bot.kind === "unavailable" ? "bot_missing" : "provider_error",
     );
   }
-  if (bot.data.bot !== true || bot.data.id !== application.data.bot.id) {
+  if (
+    bot.data.bot !== true ||
+    (application.data.bot !== undefined &&
+      bot.data.id !== application.data.bot.id)
+  ) {
     return failed("invalid_authorization");
   }
   return { ok: true, data: bot.data.id };
@@ -146,6 +150,54 @@ async function verifyGuild(
     return failed("guild_unverified");
   }
   return { ok: true, data: present.data.name };
+}
+
+/** Revalidate native provider authority at completion without retaining user tokens. */
+export async function revalidateDiscordOauthEvidence(
+  config: DiscordAppConfig,
+  evidence: DiscordOauthEvidence,
+  flow: "install" | "connect",
+  signal: AbortSignal,
+): Promise<Result<undefined>> {
+  const bot = await verifyBot(config, signal);
+  if (!bot.ok) {
+    return bot;
+  }
+  if (bot.data !== evidence.botUserId) {
+    return failed("invalid_authorization");
+  }
+  const resolved = await loadDiscordGuildAccess(
+    { botToken: config.botToken, ...evidence },
+    signal,
+  );
+  if (resolved.kind !== "allowed") {
+    return failed(
+      resolved.response.status === 404 ? "guild_unverified" : "provider_error",
+    );
+  }
+  const { guild, roles, user } = resolved.access;
+  if (flow === "install" && guild.owner_id !== evidence.discordUserId) {
+    const everyone = roles.find((role) => {
+      return role.id === guild.id;
+    });
+    if (!everyone) {
+      return failed("guild_unverified");
+    }
+    let permissions = BigInt(everyone.permissions);
+    for (const roleId of user.roles) {
+      const role = roles.find((candidate) => {
+        return candidate.id === roleId;
+      });
+      if (!role) {
+        return failed("guild_unverified");
+      }
+      permissions |= BigInt(role.permissions);
+    }
+    if ((permissions & 40n) === 0n) {
+      return failed("guild_unverified");
+    }
+  }
+  return { ok: true, data: undefined };
 }
 
 /** Token endpoint and current provider authority prove identities, never callback metadata. */

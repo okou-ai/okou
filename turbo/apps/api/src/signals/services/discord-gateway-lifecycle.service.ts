@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
+import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
+import {
+  lockDiscordIdentities,
+  releaseUnusedDiscordIdentities,
+} from "./discord-identity-ownership.service";
 import { discordGatewayReceipts } from "@okouai/db/schema/discord-gateway-receipt";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
@@ -36,6 +41,15 @@ async function uninstallDiscordGuild(
     if (!receipt) {
       return { outcome: "duplicate" as const, userIds: [] };
     }
+    await tx
+      .delete(discordOauthStates)
+      .where(
+        or(
+          eq(discordOauthStates.guildId, args.guildId),
+          eq(discordOauthStates.verifiedGuildId, args.guildId),
+        ),
+      );
+    signal.throwIfAborted();
     const [installation] = await tx
       .select({ orgId: discordOrgInstallations.orgId })
       .from(discordOrgInstallations)
@@ -46,9 +60,19 @@ async function uninstallDiscordGuild(
       return { outcome: "accepted" as const, userIds: [] };
     }
     const connections = await tx
-      .select({ userId: discordOrgConnections.userId })
+      .select({
+        userId: discordOrgConnections.userId,
+        discordUserId: discordOrgConnections.discordUserId,
+      })
       .from(discordOrgConnections)
       .where(eq(discordOrgConnections.guildId, args.guildId));
+    signal.throwIfAborted();
+    const identities = await lockDiscordIdentities(
+      tx,
+      connections.map((connection) => {
+        return connection.discordUserId;
+      }),
+    );
     signal.throwIfAborted();
     const userIds = await discordOrgChangedUserIds(
       tx,
@@ -61,6 +85,8 @@ async function uninstallDiscordGuild(
     await tx
       .delete(discordOrgInstallations)
       .where(eq(discordOrgInstallations.guildId, args.guildId));
+    signal.throwIfAborted();
+    await releaseUnusedDiscordIdentities(tx, identities);
     signal.throwIfAborted();
     return { outcome: "accepted" as const, userIds };
   });

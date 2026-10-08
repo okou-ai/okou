@@ -13,7 +13,11 @@ import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { db$, writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import { publishDiscordChanged } from "./discord-realtime.service";
-import { releaseUnusedDiscordIdentities } from "./discord-identity-ownership.service";
+import {
+  lockDiscordIdentities,
+  releaseUnusedDiscordIdentities,
+} from "./discord-identity-ownership.service";
+import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import {
   discordIntegrationEnabledForOwner,
   discordIntegrationEnabledForOwner$,
@@ -354,12 +358,63 @@ async function deleteDiscordBinding(
 ): Promise<boolean> {
   const rows = await db.transaction(async (tx) => {
     signal.throwIfAborted();
+    const [candidate] = await tx
+      .select({
+        guildId: discordOrgConnections.guildId,
+        userId: discordOrgConnections.userId,
+        orgId: discordOrgInstallations.orgId,
+      })
+      .from(discordOrgConnections)
+      .innerJoin(
+        discordOrgInstallations,
+        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+      )
+      .where(
+        and(
+          eq(discordOrgConnections.id, args.connectionId),
+          eq(discordOrgConnections.discordUserId, args.discordUserId),
+          args.orgId
+            ? eq(discordOrgInstallations.orgId, args.orgId)
+            : undefined,
+        ),
+      );
+    signal.throwIfAborted();
+    if (!candidate) {
+      return [];
+    }
+    await tx
+      .delete(discordOauthStates)
+      .where(
+        and(
+          eq(discordOauthStates.userId, candidate.userId),
+          eq(discordOauthStates.orgId, candidate.orgId),
+        ),
+      );
+    signal.throwIfAborted();
+    const [installation] = await tx
+      .select({ guildId: discordOrgInstallations.guildId })
+      .from(discordOrgInstallations)
+      .where(
+        and(
+          eq(discordOrgInstallations.guildId, candidate.guildId),
+          eq(discordOrgInstallations.orgId, candidate.orgId),
+        ),
+      )
+      .for("update");
+    signal.throwIfAborted();
+    if (!installation) {
+      return [];
+    }
+    const identities = await lockDiscordIdentities(tx, [args.discordUserId]);
+    signal.throwIfAborted();
     const removed = await tx
       .delete(discordOrgConnections)
       .where(
         and(
           eq(discordOrgConnections.id, args.connectionId),
           eq(discordOrgConnections.discordUserId, args.discordUserId),
+          eq(discordOrgConnections.userId, candidate.userId),
+          eq(discordOrgConnections.guildId, candidate.guildId),
           args.orgId
             ? eq(
                 discordOrgConnections.guildId,
@@ -373,12 +428,7 @@ async function deleteDiscordBinding(
       )
       .returning({ userId: discordOrgConnections.userId });
     signal.throwIfAborted();
-    await releaseUnusedDiscordIdentities(
-      tx,
-      removed.map((row) => {
-        return row.userId;
-      }),
-    );
+    await releaseUnusedDiscordIdentities(tx, identities);
     signal.throwIfAborted();
     return removed;
   });

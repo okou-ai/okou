@@ -1,11 +1,12 @@
 import { z } from "zod";
-
+import { discordSnowflakeSchema } from "@okouai/api-contracts/contracts/integrations-discord-read";
 import { safeJsonParse, settle } from "../utils";
+
+export { discordSnowflakeSchema };
 
 const DISCORD_API_ORIGIN = "https://discord.com/api/v10";
 const REQUEST_TIMEOUT_MS = 15_000;
 
-export const discordSnowflakeSchema = z.string().regex(/^[1-9]\d{0,19}$/u);
 const permissionsSchema = z.string().regex(/^\d+$/u);
 
 export const discordUserSchema = z.object({

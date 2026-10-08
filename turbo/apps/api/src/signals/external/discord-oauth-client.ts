@@ -11,27 +11,30 @@ export const DISCORD_INSTALL_SCOPES = Object.freeze([
 ]);
 
 export const discordOauthTokenSchema = z.object({
-  access_token: z.string().min(1).regex(/^\S+$/u),
+  access_token: z.string().min(1).max(4096).regex(/^\S+$/u),
   token_type: z.literal("Bearer"),
   expires_in: z.number().int().positive(),
-  scope: z.string(),
-  guild: z.object({ id: discordSnowflakeSchema, name: z.string() }).optional(),
+  scope: z.string().max(2048),
+  guild: z
+    .object({ id: discordSnowflakeSchema, name: z.string().max(255) })
+    .optional(),
 });
 export const discordOauthAuthorizationSchema = z.object({
   application: z.object({ id: discordSnowflakeSchema }),
-  scopes: z.array(z.string()),
+  scopes: z.array(z.string().max(128)).max(32),
   expires: z.iso.datetime({ offset: true }),
   user: discordUserSchema,
 });
 export const discordOauthGuildSchema = z.object({
   id: discordSnowflakeSchema,
-  name: z.string(),
+  name: z.string().max(255),
   owner: z.boolean(),
   permissions: z.string().regex(/^\d+$/u),
 });
 export const discordOauthBotApplicationSchema = z.object({
   id: discordSnowflakeSchema,
-  bot: discordUserSchema,
+  // Discord's Application structure explicitly makes this partial user optional.
+  bot: z.object({ id: discordSnowflakeSchema }).optional(),
 });
 export type DiscordOauthGuild = z.infer<typeof discordOauthGuildSchema>;
 export type DiscordOauthResult<T> =
