@@ -8,7 +8,7 @@ import {
 import { createStore } from "ccstate";
 
 import { accept, testContext } from "../../../__tests__/test-context";
-import { setupApp } from "../../../__tests__/test-helpers";
+import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import {
   deleteInvoicesOrg$,
@@ -23,6 +23,12 @@ import { billingStatusRoutes } from "../billing-status";
 const context = testContext();
 const store = createStore();
 const mocks = createRouteMocks(context);
+const adminRequiredResponse = Object.freeze({
+  error: Object.freeze({
+    message: "Only org admins can manage billing",
+    code: "FORBIDDEN",
+  }),
+});
 
 function mockSubscriptionWithPaymentMethod(
   subId: string,
@@ -115,6 +121,77 @@ describe("POST /api/billing/restore", () => {
         code: "FORBIDDEN",
       },
     });
+  });
+
+  it("keeps body validation behind configuration, authentication, and admin checks for each request", async () => {
+    const request = setupRawAppRequest({
+      context,
+      routes: billingRestoreRoutes,
+    });
+    const malformedRequest = {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{",
+    };
+    mockOptionalEnv("STRIPE_SECRET_KEY", undefined);
+    const unconfigured = await request(
+      "/api/billing/restore",
+      malformedRequest,
+    );
+    expect(unconfigured).toStrictEqual({
+      status: 503,
+      body: {
+        error: {
+          message: "Billing not configured",
+          code: "PROVIDER_UNAVAILABLE",
+        },
+      },
+    });
+
+    mockOptionalEnv("STRIPE_SECRET_KEY", "sk_test_fake");
+    const anonymous = await request("/api/billing/restore", malformedRequest);
+    expect(anonymous.status).toBe(401);
+
+    const userId = `user_restore_auth_${randomUUID()}`;
+    const orgId = `org_restore_auth_${randomUUID()}`;
+    mocks.clerk.session(userId, orgId, "org:member");
+    const authenticatedRequest = {
+      ...malformedRequest,
+      headers: {
+        ...malformedRequest.headers,
+        authorization: "Bearer clerk-session",
+      },
+    };
+    const member = await request("/api/billing/restore", authenticatedRequest);
+    expect(member).toStrictEqual({
+      status: 403,
+      body: adminRequiredResponse,
+    });
+
+    mocks.clerk.session(userId, orgId, "org:admin");
+    const admin = await request("/api/billing/restore", authenticatedRequest);
+    expect(admin).toStrictEqual({
+      status: 400,
+      body: {
+        error: {
+          message: "Invalid JSON in request body",
+          code: "BAD_REQUEST",
+        },
+      },
+    });
+
+    const client = setupApp({ context, routes: billingRestoreRoutes })(
+      billingRestoreContract,
+    );
+    mocks.clerk.session(userId, orgId, "org:member");
+    const nextMember = await accept(
+      client.create({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {},
+      }),
+      [403],
+    );
+    expect(nextMember.body).toStrictEqual(adminRequiredResponse);
   });
 
   it("returns 409 when org has no subscription", async () => {
