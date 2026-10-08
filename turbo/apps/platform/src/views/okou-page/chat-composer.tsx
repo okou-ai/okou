@@ -6787,8 +6787,6 @@ function ConnectorsPopoverButton({
   onOpenAddDialog: () => void;
 }) {
   const { t } = useTranslation();
-  const panelRef = useSet(signals.connector.searchFocus.panelRef$);
-  const initialFocus = useSet(signals.connector.searchFocus.initialFocus$);
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
   const remoteMenuOpen = useGet(
     signals.connector.connectorUiState$,
@@ -6866,8 +6864,7 @@ function ConnectorsPopoverButton({
         </Tooltip>
       </TooltipProvider>
       <PopoverContent
-        ref={panelRef}
-        initialFocus={initialFocus}
+        initialFocus={isMobileTextInputDevice() ? false : undefined}
         side="top"
         align="start"
         aria-label={t(($) => {
@@ -6897,6 +6894,19 @@ function ConnectorsPopoverButton({
   );
 }
 
+function focusComposerConnectorSearch(element: HTMLElement | null) {
+  const panel = element?.closest("[data-connector-panel]");
+  if (
+    panel?.closest("[data-slot='popover-content'][data-open]") &&
+    panel.ownerDocument.activeElement === panel &&
+    !isMobileTextInputDevice()
+  ) {
+    panel
+      .querySelector<HTMLInputElement>("[data-connector-search]")
+      ?.focus({ preventScroll: true });
+  }
+}
+
 /**
  * The open popover. Mounted only while the popover is open, so it is the
  * component that asks for the agent's connectors and their access.
@@ -6919,7 +6929,6 @@ function ComposerConnectorsPopoverBody({
   onOpenDownloadDialog: () => void;
 }) {
   const { t } = useTranslation();
-  const inputRef = useSet(signals.connector.searchFocus.inputRef$);
   const agentId = signals.agentId;
   const connectorData = useLastResolved(signals.connector.data$);
   const connectorsLoading = connectorData === undefined;
@@ -6982,7 +6991,18 @@ function ComposerConnectorsPopoverBody({
   };
 
   return (
-    <div className={cn("flex min-h-0 flex-col", showSearch && "h-100")}>
+    <div
+      data-connector-panel
+      // Base UI focuses this while loading; once ready, search is first.
+      tabIndex={connectorsLoading ? 0 : -1}
+      onFocus={(event) => {
+        focusComposerConnectorSearch(event.currentTarget);
+      }}
+      className={cn(
+        "flex min-h-0 flex-col outline-none",
+        showSearch && "h-100",
+      )}
+    >
       {(connectorItems.length > 0 || connectorsLoading) && (
         <div className="flex min-h-0 flex-1 flex-col py-1">
           {showSearch && (
@@ -6993,7 +7013,7 @@ function ComposerConnectorsPopoverBody({
                 className="pointer-events-none shrink-0 text-muted-foreground"
               />
               <input
-                ref={inputRef}
+                ref={focusComposerConnectorSearch}
                 data-connector-search
                 type="text"
                 aria-label={t(($) => {

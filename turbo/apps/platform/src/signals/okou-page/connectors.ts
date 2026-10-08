@@ -32,10 +32,6 @@ import {
   type ComposerConnectorAccountSignals,
 } from "./composer-connector-accounts.ts";
 import { resetBuiltinManualGrantForm$ } from "./settings/connectors.ts";
-import {
-  createComposerConnectorSearchFocusSignals,
-  type ComposerConnectorSearchFocusSignals,
-} from "./composer-connector-search-focus.ts";
 
 export interface ComposerConnectorAuthorizationState {
   readonly agentId: string;
@@ -84,7 +80,6 @@ export interface ComposerConnectorData {
 }
 
 export interface ComposerConnectorSignals {
-  readonly searchFocus: ComposerConnectorSearchFocusSignals;
   readonly data$: Computed<Promise<ComposerConnectorData>>;
   readonly connectorAuthorization$: Computed<
     Promise<ComposerConnectorAuthorizationState>
@@ -378,7 +373,6 @@ export function createComposerConnectorSignals(
   );
 
   return {
-    searchFocus: createComposerConnectorSearchFocusSignals(),
     data$,
     connectorAuthorization$: authorization$,
     addDialogCatalog$,

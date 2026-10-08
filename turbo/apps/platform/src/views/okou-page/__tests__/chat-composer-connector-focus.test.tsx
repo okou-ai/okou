@@ -47,7 +47,7 @@ test("Focus connector search when the first connector list finishes loading", as
   const { user, authorization, trigger, dialog } =
     await openLoadingConnectors();
   await waitFor(() => {
-    expect(dialog).toHaveFocus();
+    expect(dialog.contains(document.activeElement)).toBeTruthy();
   });
 
   authorization.resolve(undefined);
@@ -77,8 +77,9 @@ test("Focus connector search when the first connector list finishes loading", as
 test("A delayed connector search does not take focus after keyboard navigation", async () => {
   const { user, authorization, dialog, add } = await openLoadingConnectors();
   await waitFor(() => {
-    expect(dialog).toHaveFocus();
+    expect(dialog.contains(document.activeElement)).toBeTruthy();
   });
+  expect(add).not.toHaveFocus();
   await user.keyboard("{Tab}");
   expect(add).toHaveFocus();
 
