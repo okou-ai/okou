@@ -362,6 +362,82 @@ test.each([false, true])(
   },
 );
 
+test("Leaving Works after consent opens cancels the retained opener proof without completing", async () => {
+  const { popup } = authorizationWindow();
+  const completions: unknown[] = [];
+  context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
+    return respond(200, status({ isConnected: false, discordUserId: null }));
+  });
+  context.mocks.api(discordOauthContract.start, ({ respond }) => {
+    return respond(200, { authorizationUrl, completionToken });
+  });
+  context.mocks.api(discordOauthContract.complete, ({ body, respond }) => {
+    completions.push(body);
+    return respond(200, { status: "connected" });
+  });
+  await setupDiscordPage();
+  await expect(
+    screen.findByText("Server: Design team"),
+  ).resolves.toBeInTheDocument();
+  click(getAction("button", "Connect", getIntegrationCard("Discord")));
+  await waitFor(() => {
+    expect(popup.location.href).toBe(authorizationUrl);
+  });
+  click(
+    getAction(
+      "link",
+      "Chat",
+      screen.getByRole("navigation", { name: "Sidebar" }),
+    ),
+  );
+  await waitFor(() => {
+    expect(screen.queryByText("Discord")).toBeNull();
+    expect(popup.closed).toBeTruthy();
+  });
+  expect(completions).toStrictEqual([]);
+});
+
+test("Leaving Works aborts an in-flight authenticated completion request", async () => {
+  const { popup } = authorizationWindow();
+  const completing = context.mocks.deferred<void>();
+  let completionSignal: AbortSignal | undefined;
+  context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
+    return respond(200, status({ isConnected: false, discordUserId: null }));
+  });
+  context.mocks.api(discordOauthContract.start, ({ respond }) => {
+    return respond(200, { authorizationUrl, completionToken });
+  });
+  context.mocks.api(discordOauthContract.complete, ({ request, never }) => {
+    completionSignal = request.signal;
+    completing.resolve();
+    return never();
+  });
+  await setupDiscordPage();
+  await expect(
+    screen.findByText("Server: Design team"),
+  ).resolves.toBeInTheDocument();
+  click(getAction("button", "Connect", getIntegrationCard("Discord")));
+  await waitFor(() => {
+    expect(popup.location.href).toBe(authorizationUrl);
+  });
+  popup.close();
+  await completing.promise;
+  expect(
+    getAction("button", "Authorizing…", getIntegrationCard("Discord")),
+  ).toBeDisabled();
+  click(
+    getAction(
+      "link",
+      "Chat",
+      screen.getByRole("navigation", { name: "Sidebar" }),
+    ),
+  );
+  await waitFor(() => {
+    expect(screen.queryByText("Discord")).toBeNull();
+    expect(completionSignal?.aborted).toBeTruthy();
+  });
+});
+
 test("Leaving Works cancels a pending authorization request and closes its blank tab", async () => {
   const { popup } = authorizationWindow();
   const started = context.mocks.deferred<void>();
@@ -475,6 +551,35 @@ test("Consent browser clears its fragment and approves with current authenticati
   expect(within(card).queryByText("Connected")).toBeNull();
   expect(queryAction("button", "Confirm Discord consent", card)).toBeNull();
 });
+
+test.each(["", "invalid-proof"])(
+  "Malformed approval fragment %s is cleared and cannot authorize from callback markers",
+  async (invalidProof) => {
+    const approvals: unknown[] = [];
+    context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
+      return respond(200, status({ isConnected: false, discordUserId: null }));
+    });
+    context.mocks.api(discordOauthContract.approve, ({ body, respond }) => {
+      approvals.push(body);
+      return respond(200, { approved: true });
+    });
+    await setupPage({
+      context,
+      path: `/works?discord=pending#discord_oauth=approve&state=${attemptState}&approval_proof=${invalidProof}`,
+      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
+    });
+    await expect(
+      screen.findByText(
+        "This tab has no authorization proof. Close it and restart authorization from the original Works tab.",
+      ),
+    ).resolves.toBeInTheDocument();
+    expect(window.location.hash).toBe("");
+    const card = getIntegrationCard("Discord");
+    expect(queryAction("button", "Confirm Discord consent", card)).toBeNull();
+    expect(within(card).queryByText("Connected")).toBeNull();
+    expect(approvals).toStrictEqual([]);
+  },
+);
 
 test("A rejected consent-browser owner or proof shows restart guidance without connected state", async () => {
   context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {

@@ -1,4 +1,5 @@
 import { command, computed, state } from "ccstate";
+import type { z } from "zod";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../../lib/accept.ts";
@@ -7,10 +8,7 @@ import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 
-interface DiscordApprovalProof {
-  state: string;
-  approvalProof: string;
-}
+type DiscordApprovalProof = z.infer<typeof discordOauthContract.approve.body>;
 
 // Private, ephemeral consent-browser memory. Nothing is exposed to the opener,
 // browser storage, logging, analytics, or a callback query parameter.
@@ -38,19 +36,15 @@ export const captureDiscordApprovalFragment$ = command(
       `${window.location.pathname}${window.location.search}`,
     );
     set(approvalSucceeded$, false);
-    const attemptState = fragment.get("state");
-    const proof = fragment.get("approval_proof");
-    const valid =
+    const parsed =
       window.location.pathname === "/works" &&
-      fragment.get("discord_oauth") === "approve" &&
-      attemptState !== null &&
-      proof !== null &&
-      /^[A-Za-z0-9_-]{43}$/u.test(attemptState) &&
-      /^[A-Za-z0-9_-]{43}$/u.test(proof);
-    set(
-      approvalProof$,
-      valid ? { state: attemptState, approvalProof: proof } : null,
-    );
+      fragment.get("discord_oauth") === "approve"
+        ? discordOauthContract.approve.body.safeParse({
+            state: fragment.get("state"),
+            approvalProof: fragment.get("approval_proof"),
+          })
+        : null;
+    set(approvalProof$, parsed?.success ? parsed.data : null);
     signal.addEventListener(
       "abort",
       () => {
