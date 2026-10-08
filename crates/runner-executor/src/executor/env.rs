@@ -2,10 +2,14 @@ use std::collections::HashMap;
 
 use api_contracts::generated::constants::model_provider_env::placeholders as model_provider_placeholders;
 use api_contracts::generated::constants::runners::{
-    PI_MODEL_CONFIG_CURRENT_GENERATION, PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
+    PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION, PI_MODEL_CONFIG_CURRENT_GENERATION,
+    PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
 };
 use api_contracts::generated::types::runners::{
-    runs::{CodexRuntimeConfig, PiLaunchConfig, PiModelConfig, PiModelConfigV2, PiModelConfigV3},
+    runs::{
+        CodexRuntimeConfig, PiLaunchConfig, PiModelConfig, PiModelConfigV2, PiModelConfigV3,
+        PiModelConfigV5,
+    },
     storage::ArtifactEntryMissingRootPolicy,
 };
 use guest_contracts::cli_agent_session_id::is_valid_cli_agent_session_id;
@@ -296,7 +300,7 @@ fn validate_pi_v2_credential_bindings(
         }
     }
     let valid_dialect_bindings = match dialect {
-        "openai-responses" => kinds.as_slice() == ["api-key"],
+        "openai-responses" | "openai-completions" => kinds.as_slice() == ["api-key"],
         "openai-codex-responses" => {
             kinds.len() == 2 && kinds.contains(&"access-token") && kinds.contains(&"account-id")
         }
@@ -338,6 +342,17 @@ fn validate_pi_model_config_v3(value: &serde_json::Value) -> Result<(), String> 
     )
 }
 
+fn validate_pi_model_config_v5(value: &serde_json::Value) -> Result<(), String> {
+    let model: PiModelConfigV5 = serde_json::from_value(value.clone())
+        .map_err(|error| format!("Pi model config v5 is invalid: {error}"))?;
+    validate_pi_versioned_model_config(
+        value,
+        &model.base_url,
+        &model.model,
+        PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION,
+    )
+}
+
 fn validate_pi_versioned_model_config(
     value: &serde_json::Value,
     base_url: &str,
@@ -361,30 +376,34 @@ fn validate_pi_versioned_model_config(
     let Some(object) = value.as_object() else {
         return Err(format!("Pi model config v{generation} is invalid"));
     };
-    if !has_exact_object_fields(
-        object,
-        &[
-            "schemaVersion",
-            "dialect",
-            "transport",
-            "provider",
-            "baseUrl",
-            "model",
-            "credentialBindings",
-        ],
-        &[
-            "schemaVersion",
-            "dialect",
-            "transport",
-            "provider",
-            "baseUrl",
-            "model",
-            "catalogModel",
-            "thinkingLevel",
-            "serviceTier",
-            "credentialBindings",
-        ],
-    ) {
+    // Chat Completions has no service-tier surface, so its generation omits the field.
+    let allows_service_tier = generation != PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION;
+    if (!allows_service_tier && object.contains_key("serviceTier"))
+        || !has_exact_object_fields(
+            object,
+            &[
+                "schemaVersion",
+                "dialect",
+                "transport",
+                "provider",
+                "baseUrl",
+                "model",
+                "credentialBindings",
+            ],
+            &[
+                "schemaVersion",
+                "dialect",
+                "transport",
+                "provider",
+                "baseUrl",
+                "model",
+                "catalogModel",
+                "thinkingLevel",
+                "serviceTier",
+                "credentialBindings",
+            ],
+        )
+    {
         return Err(format!("Pi model config v{generation} fields are invalid"));
     }
     if object.get("transport").and_then(serde_json::Value::as_str) != Some("sse") {
@@ -412,7 +431,16 @@ fn validate_pi_model_config_dialect(
         .get("provider")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| "Pi model config provider is invalid".to_string())?;
+    // Chat Completions is exclusive to its own generation, which carries no other dialect.
+    if (dialect == "openai-completions")
+        != (generation == PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION)
+    {
+        return Err("Pi model config dialect is unsupported".to_string());
+    }
     match dialect {
+        "openai-completions" if provider != "openrouter" => {
+            return Err("Pi Chat Completions provider is invalid".to_string());
+        }
         "openai-responses" if provider == "openai-codex" => {
             return Err("Pi public Responses provider is invalid".to_string());
         }
@@ -424,11 +452,14 @@ fn validate_pi_model_config_dialect(
         {
             return Err("Pi Codex Responses route is invalid".to_string());
         }
-        "openai-responses" | "openai-codex-responses" => {}
+        "openai-responses" | "openai-codex-responses" | "openai-completions" => {}
         _ => return Err("Pi model config dialect is unsupported".to_string()),
     }
     // Serde Option accepts null; the new wire contract permits omission only.
-    if generation == PI_MODEL_CONFIG_DIALECT_TIER_GENERATION {
+    if matches!(
+        generation,
+        PI_MODEL_CONFIG_DIALECT_TIER_GENERATION | PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION
+    ) {
         for field in ["thinkingLevel", "serviceTier"] {
             if object.get(field).is_some_and(serde_json::Value::is_null) {
                 return Err(format!("Pi model config {field} is invalid"));
@@ -455,6 +486,12 @@ fn validate_pi_model_config(value: &serde_json::Value) -> Result<(), String> {
             if generation.as_u64() == Some(u64::from(PI_MODEL_CONFIG_DIALECT_TIER_GENERATION)) =>
         {
             validate_pi_model_config_v3(value)
+        }
+        Some(serde_json::Value::Number(generation))
+            if generation.as_u64()
+                == Some(u64::from(PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION)) =>
+        {
+            validate_pi_model_config_v5(value)
         }
         Some(_) => Err("Pi model config generation is unsupported".to_string()),
     }

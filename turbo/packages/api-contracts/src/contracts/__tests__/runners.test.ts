@@ -24,6 +24,7 @@ import {
   piModelConfigSchema,
   piModelConfigV2Schema,
   piModelConfigV3Schema,
+  piModelConfigV5Schema,
   RUNNER_CANCELLATION_RECOVERY_GRACE_MS,
   RUNNER_BUILTIN_FIREWALL_RESOLVE_NAMES_MAX,
   RUNNER_POLL_EXCLUDED_RUN_IDS_MAX,
@@ -345,6 +346,55 @@ describe("Pi sandbox execution contract", () => {
       ).toBe(false);
     },
   );
+
+  it("accepts only the exact generation 5 Chat Completions route", () => {
+    const chatCompletions = {
+      schemaVersion: 5,
+      dialect: "openai-completions",
+      transport: "sse",
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "@preset/okou-1-0",
+      catalogModel: "okou-1.0",
+      credentialBindings: [
+        {
+          kind: "api-key",
+          environment: "OPENAI_API_KEY",
+          secretName: "OPENROUTER_API_KEY",
+        },
+      ],
+    } as const;
+    expect(piModelConfigV5Schema.parse(chatCompletions)).toEqual(
+      chatCompletions,
+    );
+    expect(piModelConfigSchema.parse(chatCompletions)).toEqual(chatCompletions);
+    for (const candidate of [
+      { ...chatCompletions, serviceTier: "priority" },
+      { ...chatCompletions, provider: "openai-codex" },
+      { ...chatCompletions, dialect: "openai-responses" },
+      { ...chatCompletions, schemaVersion: 3 },
+      { ...chatCompletions, schemaVersion: 4 },
+      { ...chatCompletions, credentialBindings: [] },
+      {
+        ...chatCompletions,
+        credentialBindings: [
+          {
+            kind: "access-token",
+            environment: "CHATGPT_ACCESS_TOKEN",
+            secretName: "CHATGPT_ACCESS_TOKEN",
+          },
+        ],
+      },
+    ]) {
+      expect(piModelConfigSchema.safeParse(candidate).success).toBe(false);
+    }
+    for (const schemaVersion of [2, 3] as const) {
+      expect(
+        piModelConfigSchema.safeParse({ ...chatCompletions, schemaVersion })
+          .success,
+      ).toBe(false);
+    }
+  });
 
   it.each([2, 3] as const)(
     "accepts only exact generation %s dialect-aware credential binding sets",
