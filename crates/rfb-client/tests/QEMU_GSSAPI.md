@@ -126,7 +126,17 @@ hardlink destination, the maintained EEXIST copy fallback's archived bytes—not
 the zero-sized link header—must match the existing regular file. Each potential
 hardlink copy also consumes the same four-GiB work capacity before late collision
 hashing or writing, even when its filename was already reserved; only regular
-preflight collisions are hashed before that per-member reservation.
+preflight collisions are hashed before that per-member reservation. Reservations
+and collision checks run at the actual maintained `_extract_member` entry, not
+only a top-level member iterator. EEXIST/missing-target fallbacks can materialize
+an archived entry at a different destination: that actual type/link/metadata is
+filtered at its new location before its own unlink/truncate/attribute operation.
+The original archive name/offset is retained for maintained recursive lookup;
+contained relocated symlinks remain supported, while a relative link that would
+escape only after relocation refuses. This is not an atomic whole-archive write
+barrier: earlier bounded entries or enclosing implicit parents can remain after
+refusal. Private CPython extraction methods still require complete version/TCB
+admission independently of these scoped guards.
 Deleted/replaced entries do not reclaim reservations.
 The production ledger conservatively reserves 128 MiB each for the future QEMU
 binary, two BIOS copies and CA bundle, plus declared aliases/mountpoint names;

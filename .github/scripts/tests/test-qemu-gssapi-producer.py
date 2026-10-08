@@ -294,6 +294,148 @@ if list(pathlib.Path(sys.argv[3]).iterdir()):
                 self.assertEqual((root / 'source').read_bytes(), b'data')
                 self.assertEqual(set(path.name for path in base.iterdir()), {'root', archive.name})
 
+    def test_hardlink_fallback_filters_relocated_symlink_before_unlinking_destination(self):
+        for destination, accepted in (('route', False), ('dir/sub/copy', True)):
+            with self.subTest(destination=destination), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                base = pathlib.Path(directory)
+                packed = io.BytesIO()
+                with tarfile.open(fileobj=packed, mode='w') as stream:
+                    member = tarfile.TarInfo('value')
+                    member.size = 4
+                    stream.addfile(member, io.BytesIO(b'data'))
+                    member = tarfile.TarInfo('dir/sub/link')
+                    member.type = tarfile.SYMTYPE
+                    member.linkname = '../../value'
+                    stream.addfile(member)
+                    member = tarfile.TarInfo(destination)
+                    member.size = 4
+                    stream.addfile(member, io.BytesIO(b'data'))
+                    member = tarfile.TarInfo(destination)
+                    member.type = tarfile.LNKTYPE
+                    member.linkname = 'dir/sub/link'
+                    stream.addfile(member)
+                archive = self.public_payload_deb(base, packed.getvalue())
+                root = base / 'root'
+                root.mkdir()
+                descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+                if accepted:
+                    self.producer.extract_deb(archive, root)
+                    self.assertTrue((root / destination).is_symlink())
+                    self.assertEqual(os.readlink(root / destination), '../../value')
+                else:
+                    with self.assertRaises(tarfile.LinkOutsideDestinationError):
+                        self.producer.extract_deb(archive, root)
+                    self.assertFalse((root / destination).is_symlink())
+                self.assertEqual((root / destination).read_bytes(), b'data')
+                self.assertEqual((root / 'value').read_bytes(), b'data')
+                self.assertEqual(os.readlink(root / 'dir/sub/link'), '../../value')
+                self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
+                self.assertEqual(set(path.name for path in base.iterdir()), {'root', archive.name})
+
+    def test_nested_hardlink_fallback_filters_actual_archive_entry_at_its_destination(self):
+        for destination, accepted in (('route', False), ('dir/sub/copy', True)):
+            with self.subTest(destination=destination), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                base = pathlib.Path(directory)
+                packed = io.BytesIO()
+                with tarfile.open(fileobj=packed, mode='w') as stream:
+                    member = tarfile.TarInfo('value')
+                    member.size = 4
+                    stream.addfile(member, io.BytesIO(b'data'))
+                    member = tarfile.TarInfo('dir/sub/link')
+                    member.type = tarfile.SYMTYPE
+                    member.linkname = '../../value'
+                    stream.addfile(member)
+                    member = tarfile.TarInfo('dir/sub/hop')
+                    member.type = tarfile.LNKTYPE
+                    member.linkname = 'dir/sub/link'
+                    stream.addfile(member)
+                    member = tarfile.TarInfo(destination)
+                    member.size = 4
+                    stream.addfile(member, io.BytesIO(b'data'))
+                    member = tarfile.TarInfo(destination)
+                    member.type = tarfile.LNKTYPE
+                    member.linkname = 'dir/sub/hop'
+                    stream.addfile(member)
+                archive = self.public_payload_deb(base, packed.getvalue())
+                root = base / 'root'
+                root.mkdir()
+                descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+                if accepted:
+                    self.producer.extract_deb(archive, root)
+                    self.assertEqual(os.readlink(root / destination), '../../value')
+                else:
+                    with self.assertRaises(tarfile.LinkOutsideDestinationError):
+                        self.producer.extract_deb(archive, root)
+                    self.assertFalse((root / destination).is_symlink())
+                self.assertEqual((root / destination).read_bytes(), b'data')
+                self.assertEqual((root / 'value').read_bytes(), b'data')
+                self.assertEqual(os.readlink(root / 'dir/sub/hop'), '../../value')
+                self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
+                self.assertEqual(set(path.name for path in base.iterdir()), {'root', archive.name})
+
+    def test_missing_hardlink_target_filters_actual_dangling_symlink_at_new_location(self):
+        # The archived link target exists as an entry but its ultimate regular
+        # file appears later. Real makelink therefore takes its missing-target
+        # copy branch, independently of the existing-destination/EEXIST branch.
+        for destination, accepted in (('route', False), ('dir/sub/copy', True)):
+            with self.subTest(destination=destination), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                base = pathlib.Path(directory)
+                packed = io.BytesIO()
+                with tarfile.open(fileobj=packed, mode='w') as stream:
+                    member = tarfile.TarInfo('dir/sub/link')
+                    member.type = tarfile.SYMTYPE
+                    member.linkname = '../../value'
+                    stream.addfile(member)
+                    member = tarfile.TarInfo(destination)
+                    member.type = tarfile.LNKTYPE
+                    member.linkname = 'dir/sub/link'
+                    stream.addfile(member)
+                    member = tarfile.TarInfo('value')
+                    member.size = 4
+                    stream.addfile(member, io.BytesIO(b'data'))
+                archive = self.public_payload_deb(base, packed.getvalue())
+                root = base / 'root'
+                root.mkdir()
+                descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+                if accepted:
+                    self.producer.extract_deb(archive, root)
+                    self.assertEqual(os.readlink(root / destination), '../../value')
+                    self.assertEqual((root / destination).read_bytes(), b'data')
+                    self.assertEqual((root / 'value').read_bytes(), b'data')
+                else:
+                    with self.assertRaises(tarfile.LinkOutsideDestinationError):
+                        self.producer.extract_deb(archive, root)
+                    self.assertFalse(os.path.lexists(root / destination))
+                    self.assertFalse((root / 'value').exists())
+                self.assertEqual(os.readlink(root / 'dir/sub/link'), '../../value')
+                self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
+                self.assertEqual(set(path.name for path in base.iterdir()), {'root', archive.name})
+
+    def test_hardlink_fallback_reapplies_data_filter_to_actual_regular_metadata(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            packed = io.BytesIO()
+            with tarfile.open(fileobj=packed, mode='w') as stream:
+                for name in ('source', 'route'):
+                    member = tarfile.TarInfo(name)
+                    member.size = 4
+                    member.mode = 0o666
+                    stream.addfile(member, io.BytesIO(b'data'))
+                member = tarfile.TarInfo('route')
+                member.type = tarfile.LNKTYPE
+                member.linkname = 'source'
+                member.mode = 0o644
+                stream.addfile(member)
+            archive = self.public_payload_deb(base, packed.getvalue())
+            root = base / 'root'
+            root.mkdir()
+            self.producer.extract_deb(archive, root)
+            self.assertEqual((root / 'route').read_bytes(), b'data')
+            self.assertEqual((root / 'source').read_bytes(), b'data')
+            self.assertEqual((root / 'route').stat().st_mode & 0o777, 0o644)
+            self.assertEqual((root / 'source').stat().st_mode & 0o777, 0o644)
+            self.assertEqual(set(path.name for path in base.iterdir()), {'root', archive.name})
+
     def test_repeated_hardlink_copy_work_consumes_capacity_without_name_deduplication(self):
         for capacity, accepted in ((11, False), (12, True)):
             with self.subTest(capacity=capacity), tempfile.TemporaryDirectory(dir=self.parent) as directory:

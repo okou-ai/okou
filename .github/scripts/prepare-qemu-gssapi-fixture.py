@@ -438,7 +438,8 @@ class PackageExtractionBudget:
         self.remaining_names -= names
 
 
-def bounded_archive(fileobj, *, headers, member_bytes, entry_error, package_budget=None):
+def bounded_archive(fileobj, *, headers, member_bytes, entry_error, package_budget=None,
+                    archive_class=tarfile.TarFile):
     """Guard raw headers and extensions before the maintained tar parser consumes them."""
     counts = {"headers": 0, "depth": 0, "extensions": 0, "names": 0, "bytes": 0, "pax": 0}
 
@@ -568,7 +569,7 @@ def bounded_archive(fileobj, *, headers, member_bytes, entry_error, package_budg
             self.check_sparse(result, physical_size)
             return result
 
-    return tarfile.open(fileobj=fileobj, mode="r:", tarinfo=BoundedInfo)
+    return archive_class.open(fileobj=fileobj, mode="r:", tarinfo=BoundedInfo)
 
 
 def collect_package_archives(directory, *, files=200, file_bytes=128 * 1024 * 1024,
@@ -749,6 +750,22 @@ def decode_package_payload(archive, payload, limit, *, descriptor=None, control_
 
 
 def extract_deb(archive, root, budget=None, *, descriptor=None):
+    class PackageArchive(tarfile.TarFile):
+        def _extract_member(self, member, targetpath, set_attrs=True, numeric_owner=False):
+            # Maintained makelink can recurse here with an ARCHIVED target at a
+            # DIFFERENT path after EEXIST/missing-target copy fallback. Filter
+            # the actual type/link/metadata at that destination BEFORE even an
+            # implicit parent, symlink unlink, file truncate or attribute write.
+            relative = str(pathlib.Path(targetpath).relative_to(root))
+            actual = self._get_extract_tarinfo(
+                member, lambda entry, path: tarfile.data_filter(entry.replace(name=relative), path), str(root))
+            budget.reserve_output(root, actual, self)
+            validate_file_collision(actual)
+            # Archive-relative link lookup must retain the original source
+            # name/offset; only destination admission uses the relocated name.
+            actual.name = member.name
+            super()._extract_member(actual, targetpath, set_attrs, numeric_owner)
+
     # Check/normalize every payload entry before extraction. Absolute in-root
     # Debian aliases become equivalent relative aliases; they can never cause
     # the host extractor to follow an absolute target outside this private root.
@@ -769,7 +786,7 @@ def extract_deb(archive, root, budget=None, *, descriptor=None):
         payload.seek(0)
         with bounded_archive(payload, headers=200001, member_bytes=512 * 1024 * 1024,
                              entry_error="source-pinned fixture package entry budget refused",
-                             package_budget=budget) as stream:
+                             package_budget=budget, archive_class=PackageArchive) as stream:
             members = []
             raw_members = 0
             # getmembers() allocates the entire untrusted header list before
@@ -818,18 +835,10 @@ def extract_deb(archive, root, budget=None, *, descriptor=None):
                         raise ValueError("source-pinned fixture package alias escaped")
                 if member.isfile():
                     validate_file_collision(member)
-            def reserved_members():
-                for member in members:
-                    # Earlier entries may have created hardlinks or a dangling
-                    # leaf alias. Never resize an already-shared inode or write
-                    # through that alias under a stale per-name reservation.
-                    budget.reserve_output(root, member, stream)
-                    validate_file_collision(member)
-                    yield member
             # Preserve maintained extraction and delayed directory attributes.
-            # Each reservation runs after the preceding actual write and before
-            # this member can create its file or implicit parent directories.
-            stream.extractall(root, members=reserved_members(), filter="data")
+            # The actual extraction-entry guard reserves after preceding writes,
+            # including recursive link fallbacks omitted by a top-level iterator.
+            stream.extractall(root, members=members, filter="data")
 
 
 def required_build_inputs(root, native):
