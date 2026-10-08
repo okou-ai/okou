@@ -72,7 +72,7 @@ open_pr_count=$(jq -r '.[0].data.repository.pullRequests.totalCount' <<<"$respon
 author=$(jq -r '.[0].data.repository.pullRequest.author.login' <<<"$response")
 author_pr_count=$(jq --arg author "$author" '[.[].data.repository.pullRequests.nodes[] | select(.author.login == $author)] | length' <<<"$response")
 in_merge_queue=$(jq -r '.[0].data.repository.pullRequest.mergeQueueEntry != null' <<<"$response")
-author_count_command="gh api --paginate --slurp 'repos/${repository}/pulls?state=open&per_page=100' --jq 'add | map(select(.user.login == \"${author}\")) | length'"
+author_count_command="gh api --paginate --slurp 'repos/${repository}/pulls?state=open&per_page=100' | jq 'add | map(select(.user.login == \"${author}\")) | length'"
 echo "Open PRs: ${open_pr_count}; limit: ${limit}; author ${author}: ${author_pr_count} open PRs; author limit: ${author_limit}; PR #${pr_number} in merge queue: ${in_merge_queue}"
 
 reasons=()
