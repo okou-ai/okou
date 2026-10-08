@@ -110,6 +110,24 @@ export function effectiveChatReasoningEffort(
   });
 }
 
+/**
+ * The saved effort a new thread may request: only one the selected route
+ * still offers. Otherwise the server applies the route default and keeps the
+ * saved preference.
+ */
+export function requestedNewThreadReasoningEffort(
+  selection: ModelProviderSelection | null | undefined,
+  runModel: AvailableRunModel | undefined,
+  catalog: ModelCatalog | null | undefined,
+): ReasoningEffort | undefined {
+  const model = selection?.selectedModel;
+  const saved = model ? selection.modelSettings?.[model]?.effort : undefined;
+  return saved !== undefined &&
+    availableChatReasoningEfforts(selection, runModel, catalog).includes(saved)
+    ? saved
+    : undefined;
+}
+
 /** Preserve the map across model and Fast changes; never copy one model's effort. */
 export function withChatModelSettings(
   selection: ModelProviderSelection | null,

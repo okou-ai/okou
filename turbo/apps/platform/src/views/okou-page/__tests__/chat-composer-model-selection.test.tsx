@@ -285,6 +285,37 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
   });
 });
 
+test("Start a new chat on the route default when the saved effort is no longer offered", async () => {
+  const user = userEvent.setup({ delay: null });
+  const creates: { reasoningEffort?: string | null }[] = [];
+  installRunChat({
+    selectedModel: "claude-sonnet-5",
+    onThreadCreate: (body) => {
+      creates.push(body);
+    },
+  });
+  configureRunModels(["claude-sonnet-5"]);
+  context.mocks.data.userModelPreference({
+    ...preference("claude-sonnet-5"),
+    modelSettings: { "claude-sonnet-5": { effort: "xhigh" } },
+  });
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+  });
+  const composer = await readyComposer();
+  await expect(
+    composerModelTrigger("Claude Sonnet 5, High"),
+  ).resolves.toBeVisible();
+  await user.click(composer);
+  await fillComposer(composer, "Run on the default effort");
+  click(await findButton("Send"));
+  await waitFor(() => {
+    expect(creates).toHaveLength(1);
+  });
+  expect(creates[0]?.reasoningEffort).toBeUndefined();
+});
+
 test("Select the default effort on an existing thread without changing Fast", async () => {
   const user = userEvent.setup({ delay: null });
   const updates: {
