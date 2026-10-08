@@ -3,11 +3,11 @@ import { createHmac, randomUUID } from "node:crypto";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { HttpResponse, http } from "msw";
+import { beforeEach } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { server } from "../../../mocks/server";
-import { resetNotionWebhookVerification } from "../../../test-fixtures/workflow-notion";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
@@ -26,6 +26,10 @@ const TEST_APP_ROUTES = Object.freeze([
 ]);
 
 const context = testContext();
+
+beforeEach(async () => {
+  await setupApp({ context, routes: TEST_APP_ROUTES, isolatePg: true });
+});
 const mocks = createRouteMocks(context);
 const wf = createWorkflowsBddApi(context);
 const runsApi = createRunsApi(context);
@@ -44,8 +48,8 @@ interface WorkflowsFixture {
 
 /**
  * Per-test Notion entity ids. The webhook fans out to every automation in the
- * database watching the same Notion page, so ids must be unique per test to
- * stay isolated on the shared persistent database.
+ * database watching the same Notion page; distinct ids model separate provider
+ * entities inside each case-owned database.
  */
 interface NotionEntities {
   readonly parentPageId: string;
@@ -336,13 +340,8 @@ async function postNotionWebhook(args: {
   return { status: response.status, body: await response.json() };
 }
 
-/**
- * Runs the Notion verification handshake from a clean slate. Verification is
- * a global one-shot, so the pre-verification state is constructed through the
- * narrow fixture before the public handshake request.
- */
+/** Exercise Notion's one-time provider handshake in the case-owned database. */
 async function verifyNotionWebhook(): Promise<void> {
-  await resetNotionWebhookVerification();
   const verification = await postNotionWebhook({
     rawBody: JSON.stringify({ verification_token: NOTION_WEBHOOK_TOKEN }),
   });

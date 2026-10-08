@@ -102,7 +102,7 @@ function writerSystemPrompt(language: string): string {
   ].join("\n");
 }
 
-export interface HomeTaskScope {
+interface HomeTaskScope {
   readonly userId: string;
   readonly orgId: string;
   readonly agentId: string;
@@ -1017,13 +1017,10 @@ export interface HomeTaskRecommendationCronResult {
 
 /**
  * Refresh due caches recently requested by a home page and notify that member.
- * The optional scope exists only so route-bound integration tests can isolate
- * one owner while exercising the production cron implementation.
  */
 export const refreshDueHomeTaskRecommendations$ = command(
   async (
     { set },
-    onlyScope: HomeTaskScope | undefined,
     signal: AbortSignal,
   ): Promise<HomeTaskRecommendationCronResult> => {
     const db = set(writeDb$);
@@ -1057,13 +1054,6 @@ export const refreshDueHomeTaskRecommendations$ = command(
             isNull(homeTaskRecommendations.claimExpiresAt),
             lte(homeTaskRecommendations.claimExpiresAt, at),
           ),
-          onlyScope === undefined
-            ? undefined
-            : and(
-                eq(homeTaskRecommendations.userId, onlyScope.userId),
-                eq(homeTaskRecommendations.orgId, onlyScope.orgId),
-                eq(homeTaskRecommendations.agentId, onlyScope.agentId),
-              ),
         ),
       )
       .orderBy(asc(homeTaskRecommendations.nextRefreshAt))

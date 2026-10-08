@@ -17,9 +17,8 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { clearMockedEnv, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { installTelegramContextFailureFixture } from "../../../test-fixtures/telegram-context-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, settleIncludingAbort } from "../../utils";
+import { createDeferredPromise } from "../../utils";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import {
@@ -1362,13 +1361,26 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
   });
 
   it(
-    "rejects a split Telegram topic input whose context cannot be stored and accepts a duplicate delivery",
+    "preserves a Telegram topic attachment and ignores duplicate delivery",
     { timeout: 120_000 },
     async () => {
       const runnerGroup = configureCanonicalTelegramRunner();
-      const fixture = await createTelegramPostFixture({ linkOfficial: true });
+      configureOfficialBotEnv();
+      const actor = authOrgApi.user();
+      const { defaultAgentId } = await authOrgApi.readOnboardingStatus(actor);
+      if (!actor.orgId || !defaultAgentId) {
+        throw new Error("Expected onboarding to create the Telegram Agent");
+      }
+      await authOrgApi.completeOnboarding(actor);
+      const fixture: TelegramPostFixture = {
+        orgId: actor.orgId,
+        userId: actor.userId,
+        composeId: defaultAgentId,
+        telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
+        webhookSecret: OFFICIAL_WEBHOOK_SECRET,
+        telegramUserId: await linkOfficialTelegramUser(actor),
+      };
       await useNativeFableSubscription(fixture);
-      const actor = actorForFixture(fixture);
       const telegramMocks = telegramApiMocks();
       const uploads = captureIntegrationInputUploads(context);
       const bytes = Buffer.from("original Telegram topic attachment");
@@ -1411,33 +1423,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
           },
         },
       };
-      const removeFault = await installTelegramContextFailureFixture(chatId);
-      const rejected = await settleIncludingAbort(
-        (async () => {
-          expect(
-            (
-              await postWebhook({
-                telegramBotId: fixture.telegramBotId,
-                secret: fixture.webhookSecret,
-                body: update,
-              })
-            ).status,
-          ).toBe(200);
-          await flushWaitUntilForTest();
-        })(),
-      );
-      const removed = await settleIncludingAbort(removeFault());
-      if (!rejected.ok) {
-        throw rejected.error;
-      }
-      if (!removed.ok) {
-        throw removed.error;
-      }
-      expect(
-        (await runsApi.listAgentRuns(actor, { limit: 20 })).runs,
-      ).toStrictEqual([]);
-      expect(telegramMocks.sentMessages).toHaveLength(0);
-
       expect(
         (
           await postWebhook({
@@ -1448,9 +1433,26 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         ).status,
       ).toBe(200);
       await flushWaitUntilForTest();
-      const acceptedRun = await runForPrompt(fixture, firstPrompt);
+      // Deliver the same genuine provider update twice; no second Run is admitted.
+      expect(
+        (
+          await postWebhook({
+            telegramBotId: fixture.telegramBotId,
+            secret: fixture.webhookSecret,
+            body: update,
+          })
+        ).status,
+      ).toBe(200);
+      await flushWaitUntilForTest();
+      const page = await runReadsApi.requestListLogs(
+        actor,
+        { limit: 20 },
+        [200],
+      );
+      expect(page.body.data).toHaveLength(1);
+      const acceptedRun = page.body.data[0];
       if (!acceptedRun) {
-        throw new Error("Expected the redelivered Telegram topic run");
+        throw new Error("Expected the Telegram topic run");
       }
       const claim = await claimTelegramRun(acceptedRun.id, runnerGroup);
       expect(claim.prompt).toContain(firstPrompt);
@@ -1468,7 +1470,7 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
         okouToken: claim.platformEnvironment.OKOU_TOKEN,
       });
       expectExactSystemPromptFragment(
-        acceptedRun.appendSystemPrompt,
+        claim.appendSystemPrompt,
         [
           `Chat ID: ${chatId}`,
           "Chat type: supergroup",

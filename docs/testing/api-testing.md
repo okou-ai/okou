@@ -582,3 +582,21 @@ Also validate clean/incremental checks, source and declaration edits, file
 addition/deletion/rename, and representative seeded errors across the declaration
 boundary and in all three test groups. Inspect compiler `--listFilesOnly` output to
 confirm downstream programs consume upstream declarations.
+
+For one-time provider verification, `webhooks-notion.test.ts` initializes the
+existing case-owned database with `setupApp({ isolatePg: true })` before any
+application access, then posts the real Notion verification token and signed
+events. Isolation is opt-in; `testContext()` alone does not enable it. Resetting
+verification-secret rows is unnecessary and would control application state.
+Its normal OAuth/Workflow setup and signature, debounce and account-selection
+assertions stay at the production boundary.
+
+For an operator-generated cache, distinguish the user's read/touch contract from
+the generator. `home-task-recommendations.test.ts` uses ordinary onboarding,
+GET, POST touch and GET to verify the cold response remains unchanged. It does
+not prove generated-card selection, lease expiry, corrupt-cache recovery or
+permission changes during a cron run. An owner-scoped test version of the cron
+is still a private driver. Batch 011 removes that driver while preserving the
+production cron. Likewise, the public Workflow A-B-A content case keeps normal
+create/update/GET and external storage effects; it does not claim exact index
+rows, storage-version identity or internal worker queue counts.
