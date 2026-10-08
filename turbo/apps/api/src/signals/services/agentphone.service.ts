@@ -45,7 +45,6 @@ import {
   type AgentPhoneMessageVisibilityRecipient,
   type AgentPhoneUserLink,
 } from "./agentphone-shared.service";
-import { InputFileImportError } from "./canonical-asset.service";
 import { createChatEventSourcePart } from "./chat-event-annotation.service";
 import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { chatQueueWaitNotice } from "./chat-queue-wait-notice";
@@ -1422,15 +1421,7 @@ function agentPhoneInputFiles(
             messageId: event.messageId,
             externalFileId: createHash("sha256").update(mediaUrl).digest("hex"),
           },
-          download: (downloadSignal) => {
-            if (safeUrlParse(mediaUrl)?.protocol !== "https:") {
-              throw new InputFileImportError(
-                "invalid-url",
-                "Phone media URL must use HTTPS",
-              );
-            }
-            return fetch(mediaUrl, { signal: downloadSignal });
-          },
+          resource: { provider: "agentphone", url: mediaUrl },
         },
       ]
     : [];

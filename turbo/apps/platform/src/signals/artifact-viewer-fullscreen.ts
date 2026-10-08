@@ -1,4 +1,4 @@
-import { command, computed, state } from "ccstate";
+import { command, computed, state, type Computed } from "ccstate";
 import { animationFrame } from "signal-timers";
 import { onRef, settle } from "./utils.ts";
 
@@ -10,7 +10,9 @@ const focusExitButtonRef$ = onRef(
   }),
 );
 
-export function createArtifactViewerFullscreenSignals() {
+export function createArtifactViewerFullscreenSignals(
+  overlayOpen$: Computed<boolean>,
+) {
   const internalMode$ = state<FullscreenMode>("windowed");
   const internalContainer$ = state<HTMLElement | null>(null);
   const internalTrigger$ = state<HTMLElement | null>(null);
@@ -28,7 +30,9 @@ export function createArtifactViewerFullscreenSignals() {
     set(internalMode$, "windowed");
     animationFrame(
       () => {
-        get(internalTrigger$)?.focus({ preventScroll: true });
+        if (!get(overlayOpen$)) {
+          get(internalTrigger$)?.focus({ preventScroll: true });
+        }
       },
       { signal },
     );
@@ -58,6 +62,7 @@ export function createArtifactViewerFullscreenSignals() {
           if (
             event.key === "Escape" &&
             !event.defaultPrevented &&
+            !get(overlayOpen$) &&
             get(internalMode$) === "immersive"
           ) {
             event.preventDefault();
@@ -109,6 +114,12 @@ export function createArtifactViewerFullscreenSignals() {
 
   return {
     containerRef$,
+    container$: computed((get) => {
+      return get(internalContainer$);
+    }),
+    mode$: computed((get) => {
+      return get(internalMode$);
+    }),
     enterButtonRef$,
     enter$,
     exit$,

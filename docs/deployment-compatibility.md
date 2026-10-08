@@ -21,6 +21,42 @@ server-side signing-key ownership are unchanged.
 No database migration, client version floor, feature switch or deployment-order
 fallback is required. This change does not deploy or verify production recovery.
 
+## Pi memory Luna routing (2026-10-08)
+
+New Stage 1 extractions and Phase 2 maintenance runs use `gpt-6-luna`.
+Both select the memory owner's current active, connected Codex account that
+does not require reconnect; otherwise they use the managed OpenRouter key and
+`openai/gpt-6-luna`. Source Runs remain evidence and ownership references,
+without selecting the current credential or payer. Once selected, refresh,
+quota, provider and validation failures retain the existing error/retry paths;
+an attempt does not switch to another credential route after failure.
+
+Migration `1347_pi_memory_luna_route` restores the internal OpenRouter Luna
+catalog route removed by 1326, with the existing Luna pricing identity,
+272001-token long-context threshold and xhigh catalog ceiling. Deploy it before
+the new API. Maintenance explicitly requests low for Stage 1 and medium for
+Phase 2, independently of foreground defaults. The existing OpenRouter
+Responses/Chat Completions firewall, credentials and Runner accounting apply.
+This change does not activate the Chat Completions feature switch or change
+foreground Auto selection.
+
+Old API with the expanded catalog still selects DeepSeek for Built-in memory.
+New API with a compatible existing Runner dispatches the existing Pi launch
+shape with Luna and preserves the claim capability gates. Both old and new
+CLI artifacts already resolve personal/OpenRouter Luna and historical DeepSeek.
+API/CLI deployment order does not rewrite captured Runs or queued launch
+contexts. In-flight Stage 1 API invocations keep their resolved request.
+Historical DeepSeek and GPT-5.6 Luna maintenance models remain recognizable to
+cleanup and settlement, and the DeepSeek route and all prices remain intact.
+Rolling back the API restores its previous selection policy. No stored Run,
+candidate, session, checkpoint or usage row is rewritten.
+
+DeepSeek is never selected by the new memory admission code. Remove its
+retained catalog route/runtime support only after older API writers and all
+captured DeepSeek maintenance Runs have drained, late proxy/callback usage has
+settled, and supported rollback versions no longer select or execute it.
+Historical model recognition and pricing remain required for retained usage.
+
 ## Maps oversized-response error (issue #36791)
 
 `POST /api/maps/search` continues to return HTTP 502 when the Google Maps
@@ -41,6 +77,36 @@ unchanged.
 
 No database, Runner protocol, version floor, or rollout fallback is required.
 This change does not deploy or activate production changes.
+
+## PWA foreground push suppression
+
+Web Push delivery checks Ably Presence on
+`user-org-foreground:<userId>:<orgId>` for the notification owner's user and
+organization. Each SharedWorker aggregates tab visibility and enters this
+channel while any of its registered tabs is visible. Push subscriptions remain
+user-scoped; foreground activity in another organization does not suppress the
+notification. Successful and failed Run notifications share the check.
+
+Deploy the API before the Platform: platform realtime tokens now grant
+`presence` only on the authenticated user's active-org foreground channel.
+Old Platform clients do not enter it, so the new API continues sending their
+notifications. A new Platform against an old API cannot enter the channel;
+this mixed version is not the supported rollout order. API rollback therefore
+requires rolling back the Platform as well. No permission-denial fallback or
+new feature switch is added for this fix to existing notifications.
+
+Tab visibility messages stay within the page/SharedWorker protocol. Worker
+asset URLs are versioned, so old pages keep their old Worker protocol while new
+pages connect to the new Worker. The ServiceWorker Push protocol, subscription
+storage, and database schema are unchanged.
+
+Presence query errors propagate to the existing terminal side-effect boundary;
+they do not fall back to sending Push. There is no application-level query
+budget or message-ACK delay. Normal hidden/pagehide/disconnect events clear
+foreground state, but this change adds no tab-expiry timer: a crashed visible
+tab can remain recorded while other tabs keep its Worker alive. Ably owns
+cleanup of a failed Worker connection and reconnect restoration; abnormal
+connection cleanup is not instantaneous.
 
 ## Pi OpenRouter Chat Completions route (generation 5, default off)
 
@@ -8536,15 +8602,26 @@ discovery. None/manual and Automatic methods are executable. Plaud's Automatic
 method defaults off in auth-method discovery through `plaudConnector`; this
 switch does not gate existing account callbacks or execution.
 
-Outside the platform API admission path, connector intent is an owner-disambiguation
-hint, not a credential-identity lock. The addon matches active firewall URLs and
-applies route precedence first. One eligible owner governs the request even when
-intent is absent, malformed, mismatched, or names an absent owner. Removing a builtin
-at an overlapping destination can therefore leave a sole eligible custom owner whose
-credentials may be injected, subject to its authorization checks. Multiple eligible
-owners require valid intent selecting one of them; unresolved ambiguity is blocked.
-With no active firewall match, ordinary network fallback applies without resolving
-or injecting managed connector credentials. See
+Outside the platform API admission path, connector intent affects registered
+builtin eligibility and final owner disambiguation; it is not a credential-identity
+lock. After gathering active firewall base matches, the addon excludes registered
+builtin candidates when a registered custom candidate matches, unless present intent
+identifies a matching registered builtin. This filter precedes base/rule specificity,
+even for a broader custom base and narrower builtin base. Classification comes from
+registry-owned `connectorRuntimeTargets`; unclassified firewall entries are not
+excluded by this rule. A matching custom denial or malformed configuration does not
+reconsider excluded builtin candidates.
+
+The remaining candidates undergo base specificity, matching rule specificity, then
+owner disambiguation. The builtin-intent exception retains eligibility, not an
+override of specificity or authorization. One eligible owner governs the request even
+when intent is absent, malformed, mismatched, or names an absent owner. Removing a
+builtin at an overlapping destination can therefore leave a sole eligible custom
+owner whose credentials may be injected, subject to its authorization checks.
+Multiple eligible owners require valid intent selecting one of them; unresolved
+ambiguity is blocked. With no active firewall match, ordinary network fallback
+applies without resolving or injecting managed connector credentials. See the staged
+contract and broader-custom/narrower-builtin example in
 [ordinary connector firewall owner selection](mitm-addon-contracts.md#ordinary-connector-firewall-owner-selection).
 
 This ordinary selection rule does not relax the separate
@@ -9419,7 +9496,7 @@ this change does not garbage-collect catalog generations or remove OAuth
 
 Stored-context readers strip the retired field, including malformed and future
 baseline values, without changing Pi-generation negotiation or invalid-context
-failure handling. Migration `1347_retire_connector_permission_baseline` removes
+failure handling. Migration `1348_retire_connector_permission_baseline` removes
 existing queue baselines without changing the rest of each execution context.
 
 - **Old writer / new reader:** an old queued baseline is ignored; claim always

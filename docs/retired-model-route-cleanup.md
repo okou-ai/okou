@@ -14,7 +14,7 @@ still serving. The retirement API is the rollback floor.
   `@preset/okou-1-0`, with no subscription marker.
 - Internal memory: `deepseek-v4.1-flash` / `built-in` /
   `openrouter-codex` / `deepseek/deepseek-v4.1-flash`, with no subscription
-  marker. Both Stage 1 and Phase 2 still use this independent binding.
+  marker. This was the independent memory binding at the cleanup boundary.
 - Personal Claude and Codex subscription routes whose provider, concrete
   provider and subscription marker agree. Disabled routes and future model
   additions in these two subscription families remain unchanged.
@@ -55,6 +55,11 @@ and route constraints.
 
 The former #37758 is closed; its complete cleanup shipped through the unified
 #37746.
+
+Migration `1347_pi_memory_luna_route` subsequently restores the existing
+OpenRouter Luna route for new Stage 1 and Phase 2 memory work. The retained
+DeepSeek route still supports captured
+maintenance runs; see [the rollout contract](deployment-compatibility.md#pi-memory-luna-routing-2026-10-08).
 
 ## Personal subscription launch defaults
 

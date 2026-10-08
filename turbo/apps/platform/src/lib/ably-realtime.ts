@@ -1,6 +1,7 @@
 import {
   BaseRealtime,
   FetchRequest,
+  RealtimePresence,
   WebSocketTransport,
   XHRPolling,
 } from "ably/modular";
@@ -17,6 +18,7 @@ export function createAblyRealtime(options: AblyRealtimeOptions): AblyRealtime {
     ...options,
     plugins: {
       FetchRequest,
+      RealtimePresence,
       WebSocketTransport,
       XHRPolling,
     },

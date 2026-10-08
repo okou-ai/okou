@@ -12,6 +12,7 @@
     "tsBuildInfoFile": "./.typecheck/foundation.tsbuildinfo"
   },
   "include": [
+    "src/lib/desktop-compatibility.ts",
     "src/lib/db-instrumentation.ts",
     "src/lib/db-raw-rows.ts",
     "src/lib/db-structured-result.ts",
@@ -109,7 +110,6 @@
     "src/signals/services/billing-reconciliation-scope.ts",
     "src/signals/services/billing-redeem.service.ts",
     "src/signals/services/billing-restore.service.ts",
-    "src/signals/services/billing-run-fixture.ts",
     "src/signals/services/billing-status.service.ts",
     "src/signals/services/credit-low-balance-email-renderer.ts",
     "src/signals/services/credit-recharge.service.ts",

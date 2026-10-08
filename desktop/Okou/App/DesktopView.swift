@@ -17,7 +17,9 @@ struct DesktopView: View {
           Rectangle().fill(foreground.opacity(0.1)).frame(height: 1 / displayScale)
         }
       Group {
-        if model.preparing {
+        if model.compatibility.required {
+          requiredUpgrade
+        } else if model.preparing {
           VStack(spacing: 18) {
             BrandImage(name: "symbol").frame(width: 92, height: 92)
             ProgressView().controlSize(.small)
@@ -71,6 +73,41 @@ struct DesktopView: View {
     .preferredColorScheme(.light)
     .sheet(isPresented: $model.showWorkspaces) { WorkspacePicker(model: model) }
     .sheet(isPresented: $model.showDiagnostics) { diagnostics }
+  }
+  private var requiredUpgrade: some View {
+    VStack(spacing: 20) {
+      BrandImage(name: "symbol").frame(width: 76, height: 76)
+      VStack(spacing: 10) {
+        Text("Update Okou to continue").font(.system(size: 28, weight: .semibold))
+        Text(
+          "Computer Use is paused on this version. Okou will finish any current command, then install the update and restart automatically."
+        )
+        .foregroundStyle(muted).multilineTextAlignment(.center).lineSpacing(4)
+        if let minimum = model.compatibility.minimumSupportedVersion {
+          Text("Installed \(model.version) · Requires \(minimum) or later")
+            .font(.system(size: 12)).foregroundStyle(muted)
+        }
+      }
+      VStack(spacing: 12) {
+        if !model.upgradePhase.failed {
+          if let progress = model.upgradePhase.progress {
+            ProgressView(value: progress).tint(brand)
+          } else {
+            ProgressView().controlSize(.small)
+          }
+        }
+        Text(model.upgradePhase.label).font(.system(size: 13))
+          .foregroundStyle(muted).multilineTextAlignment(.center)
+        if model.upgradePhase.failed {
+          HStack(spacing: 12) {
+            Button("Retry update") { model.retryRequiredUpgrade() }
+              .buttonStyle(BrandButtonStyle()).disabled(model.compatibilityChecking)
+            Button("Download latest") { model.downloadLatest() }
+              .buttonStyle(WorkspaceButtonStyle(primary: false))
+          }
+        }
+      }.padding(20).frame(maxWidth: .infinity).card()
+    }.frame(maxWidth: 460).padding(40).frame(maxWidth: .infinity, maxHeight: .infinity)
   }
   private var accountCard: some View {
     VStack(alignment: .leading, spacing: 12) {

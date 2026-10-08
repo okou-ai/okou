@@ -110,12 +110,18 @@ export const setupSharedArtifact$ = command(
     );
     referenceUrl.hash = location.hash;
     const viewer = get(sharedArtifactViewer$);
-    set(viewer.diagram.initialize$, signal);
+    signal.addEventListener(
+      "abort",
+      () => {
+        set(viewer.diagram.dispose$);
+      },
+      { once: true },
+    );
     const artifact = content
       ? createSharedArtifactPreview(
           content,
           referenceUrl.href,
-          viewer.diagram.openDiagram$,
+          viewer.diagram.open$,
         )
       : null;
     set(

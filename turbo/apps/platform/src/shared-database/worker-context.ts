@@ -3,7 +3,11 @@ import { command, computed, state } from "ccstate";
 import { now } from "../lib/time.ts";
 import { logger } from "../signals/log.ts";
 import { rootSignal$ } from "../signals/root-signal.ts";
-import { resetSignal } from "../signals/utils.ts";
+import {
+  createDeferredPromise,
+  resetSignal,
+  withCleanup,
+} from "../signals/utils.ts";
 import type {
   SharedDatabasePortLike,
   SharedDatabaseTokenProvider,
@@ -62,12 +66,10 @@ const connectionLifetimesState$ = state<
   ReadonlyMap<ConnectionId, ConnectionLifetime>
 >(new Map());
 
-interface ConnectionRegistration {
+interface RegisteredConnection {
   readonly getToken: SharedDatabaseTokenProvider;
   readonly port: SharedDatabasePortLike;
-}
-
-interface RegisteredConnection extends ConnectionRegistration {
+  readonly visibility: DocumentVisibilityState;
   readonly heartbeatOrder: number | null;
   readonly lastHeartbeatAt: number | null;
   readonly signal: AbortSignal;
@@ -77,6 +79,68 @@ const connectionsState$ = state<
   ReadonlyMap<ConnectionId, RegisteredConnection>
 >(new Map());
 const lastHeartbeatOrderState$ = state(0);
+const visibleTabChangeState$ = state<ReturnType<
+  typeof createDeferredPromise<void>
+> | null>(null);
+
+const notifyVisibleTabChange$ = command(({ get, set }): void => {
+  const changed = get(visibleTabChangeState$);
+  set(visibleTabChangeState$, null);
+  if (changed && !changed.settled()) {
+    changed.resolve();
+  }
+});
+
+export const hasVisibleTab$ = computed((get): boolean => {
+  return [...get(connectionsState$).values()].some((connection) => {
+    return connection.visibility === "visible";
+  });
+});
+
+export const recordTabVisibility$ = command(
+  (
+    { get, set },
+    connectionId: ConnectionId,
+    visibility: DocumentVisibilityState,
+  ): void => {
+    const connections = get(connectionsState$);
+    const connection = connections.get(connectionId);
+    if (!connection) {
+      throw new Error("Shared database connection is not registered");
+    }
+    if (connection.visibility === visibility) {
+      return;
+    }
+    set(
+      connectionsState$,
+      new Map(connections).set(connectionId, {
+        ...connection,
+        visibility,
+      }),
+    );
+    set(notifyVisibleTabChange$);
+  },
+);
+
+export const waitForVisibleTabChange$ = command(
+  async (
+    { get, set },
+    visible: boolean,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    if (get(hasVisibleTab$) !== visible) {
+      return;
+    }
+    const changed = createDeferredPromise<void>(signal);
+    set(visibleTabChangeState$, changed);
+    await withCleanup(changed.promise, () => {
+      if (get(visibleTabChangeState$) === changed) {
+        set(visibleTabChangeState$, null);
+      }
+    });
+  },
+);
 
 function deleteMapKey<TKey, TValue>(
   current: ReadonlyMap<TKey, TValue>,
@@ -122,6 +186,7 @@ export const closeConnection$ = command(
       deleteMapKey(get(connectionLifetimesState$), connectionId),
     );
     set(connectionsState$, deleteMapKey(get(connectionsState$), connectionId));
+    set(notifyVisibleTabChange$);
     set(lifetime.graph.resetConnection$);
   },
 );
@@ -169,7 +234,8 @@ export const registerConnection$ = command(
   (
     { get, set },
     connectionId: ConnectionId,
-    connection: ConnectionRegistration,
+    port: SharedDatabasePortLike,
+    getToken: SharedDatabaseTokenProvider,
     connectionSignal: AbortSignal,
   ): AbortSignal => {
     connectionSignal.throwIfAborted();
@@ -189,7 +255,9 @@ export const registerConnection$ = command(
     set(
       connectionsState$,
       new Map(get(connectionsState$)).set(connectionId, {
-        ...connection,
+        port,
+        getToken,
+        visibility: "hidden",
         heartbeatOrder: null,
         lastHeartbeatAt: null,
         signal,

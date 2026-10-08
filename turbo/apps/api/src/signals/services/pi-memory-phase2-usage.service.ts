@@ -5,12 +5,16 @@ import {
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { and, eq, isNull, isNotNull, or } from "drizzle-orm";
+import {
+  PI_MEMORY_STAGE1_BUILT_IN_MODEL,
+  PI_MEMORY_STAGE1_PERSONAL_MODEL,
+} from "@okouai/pi-agent-runtime/api";
 
 import type { Db } from "../external/db";
 import { piMemoryPhase2MaintenanceCallbackPayloadSchema } from "./pi-memory-phase2-maintenance.service";
 
-export const PI_MEMORY_PHASE2_BUILT_IN_MODEL = "deepseek-v4.1-flash";
-export const PI_MEMORY_PHASE2_PERSONAL_MODEL = "gpt-6-luna";
+export const PI_MEMORY_PHASE2_BUILT_IN_MODEL = PI_MEMORY_STAGE1_BUILT_IN_MODEL;
+export const PI_MEMORY_PHASE2_PERSONAL_MODEL = PI_MEMORY_STAGE1_PERSONAL_MODEL;
 
 /**
  * Every model a private maintenance run may legitimately carry.
@@ -23,6 +27,7 @@ export const PI_MEMORY_PHASE2_MODELS = [
   PI_MEMORY_PHASE2_PERSONAL_MODEL,
   // Immutable pre-retirement maintenance runs still drain and settle by their
   // captured model. This identifier is never selected for a new dispatch.
+  "deepseek-v4.1-flash",
   "gpt-5.6-luna",
 ] as const;
 

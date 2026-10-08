@@ -421,12 +421,10 @@ type ResolvedPiAgentModel = NonNullable<ReturnType<typeof resolvePiAgentModel>>;
 /**
  * Consolidation effort for the model this maintenance run actually resolved.
  *
- * Maintenance is pinned to the source run's own binding, so the sandbox sees
- * the binding only through its resolved model. `null` in the published map
- * means the level is unsupported, and only the built-in binding's DeepSeek
- * model reports that for `medium`; the personal Codex binding's GPT model publishes it
- * and therefore keeps the unchanged effort. A missing key is a provider
- * default, not an unsupported level.
+ * The sandbox keeps the admitted run's model snapshot. Both Luna routes publish
+ * `medium`. Historical DeepSeek runs still map that step to
+ * `null` and use their supported stronger neighbour. A missing key is a
+ * provider default, not an unsupported level.
  */
 function maintenanceThinkingLevel(
   model: ResolvedPiAgentModel,
