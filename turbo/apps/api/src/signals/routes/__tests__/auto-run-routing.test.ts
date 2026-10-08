@@ -44,9 +44,14 @@ describe("fixed Auto through public admission and runner claim", () => {
   it("claims fixed Auto as an OpenRouter Chat Completions route when enabled", async () => {
     await seedBuiltInModelKey("okou-1.0");
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.PiOpenRouterChatCompletions]: true,
-    });
+    if (!actor.orgId) {
+      throw new Error("Expected an org-scoped actor");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.PiOpenRouterChatCompletions]: true },
+    );
     const run = await sendChatRun(actor, {
       agentId,
       model: null,

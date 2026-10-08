@@ -6442,7 +6442,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it.each([
         {
-          schemaVersion: 5,
+          schemaVersion: 6,
           serviceTier: "priority",
           status: 404,
           runStatus: "pending",
@@ -6480,7 +6480,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           await api.heartbeatRunner(runnerGroup);
           await api.requestClaimRunnerJob(true, run.runId, [route.status], {
-            capabilities: { piModelConfigGenerations: [1, 2, 3, 4, 5] },
+            capabilities: { piModelConfigGenerations: [1, 2, 3, 4, 5, 6] },
           });
           await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
             status: route.runStatus,
