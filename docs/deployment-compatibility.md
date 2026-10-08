@@ -1,5 +1,56 @@
 # Deployment Compatibility
 
+## Automatic OAuth contract hash retirement (migration 1350)
+
+Builtin Automatic OAuth no longer computes, writes, reads or compares a local
+configuration fingerprint. Migration `1350_retire_oauth_contract_hash` physically
+removes `contract_hash` from account bindings and DCR registrations and removes
+`contractHash` only from builtin Automatic authorization contexts. Existing
+accounts, encrypted credentials, DCR client IDs and exact registration references
+are unchanged; migration does not mark accounts for reconnect. Registrations
+formerly distinguished by hash are retained rather than deduplicated. Issuer
+lookup uses the newest issuance with an ID tie-breaker, without a hash-dependent
+unique key; provider rejection and expiration retain their recovery paths.
+
+Trusted catalog configuration supplies the current builtin method and MCP
+endpoint. A callback does not reject consent because catalog storage or endpoint
+configuration changed. Credential resolution does not compare the current
+configuration against the account's historical endpoint or storage version.
+Automatic refresh/reauthorization uses current discovery metadata, without
+requiring issuer, resource or token endpoint to equal a historical binding.
+Verified refresh identity updates account labels and identity, including a
+changed principal, for both builtin and custom OAuth; absent or unusable optional
+identity preserves the previous labels. No replacement configuration hash is
+introduced.
+
+Discovery still requires the metadata issuer to match the requested issuer
+(RFC 8414 section 3.3). Authorization callbacks still verify the response issuer
+against the issuer captured for that specific authorization request (RFC 9207 /
+RFC 9700 section 4.4.2). State ownership, expiry and single use, PKCE S256,
+provider protocol validation, safe outbound URL handling, account ownership,
+credential encryption and real invalid-client/invalid-grant recovery remain.
+
+**This is a schema contraction, not a rolling-compatible additive migration.**
+Old APIs reference the removed columns and require the old context fingerprint;
+they cannot serve after migration or consume new authorization contexts. The
+current automatic migrate-before-promote pipeline is therefore **not sufficient**
+for this change. Do not release it through that pipeline unchanged. A controlled
+cutover must prevent outgoing APIs from starting or finishing database work,
+apply the migration, promote the new API and then resume API traffic. Alternatively,
+ship and verify hash-independent readers and optional outgoing writers as a
+separate preparation release before enabling this contraction. This PR does not
+implement or authorize that production orchestration.
+
+The new reader accepts pending old authorization contexts through ordinary
+unknown-field stripping, whether or not the migration already removed the
+fingerprint. New API writes require the contracted schema; new API plus old DB
+can read accounts but cannot insert hash-free bindings or registrations into old
+NOT NULL columns. New API plus new DB supports existing and new accounts. App,
+CLI and Runner wire shapes are unchanged. After contraction, rollback must retain
+hash-independent API readers and writers; restoring an older API alone is not
+supported. PR merge and local validation do not establish production cutover or
+migration completion.
+
 ## Platform realtime token exchange (#37143)
 
 `POST /api/realtime/token` now always returns a fresh signed Ably `TokenRequest`.
@@ -8738,7 +8789,7 @@ HTTP/custom cache policy is introduced.
 Automatic authentication adds separate builtin OAuth bindings and DCR
 registrations, plus a nullable account auth-resolution field. Apply this
 additive migration before deploying the API. The shared MCP protocol supports
-CIMD/DCR, PKCE, exact issuer/resource binding and optional refresh tokens.
+CIMD/DCR, PKCE, validated issuer discovery and authorization responses, and optional refresh tokens.
 Builtin callbacks are owned by the API and completion receipts identify the
 exact account and attempt. Stored catalog method IDs remain unchanged.
 
@@ -8755,10 +8806,10 @@ reject it. Builtin runtime-sync updates remain policy-only. There is no MCP-spec
 client or Runner capability negotiation. A rollback after Automatic accounts exist
 must retain their schema and credential readers.
 The addon sends `matchedFirewall.base` when resolving builtin credentials.
-Automatic OAuth resolution requires this destination to match the current
-catalog and the locked account binding. Missing or stale destinations fail closed;
-HTTP/custom and no-auth resolution do not require this field. Best-effort runtime
-sync cannot authorize credentials for a changed endpoint.
+The contract hash retirement described above removes the Automatic-specific
+comparison against current and historically bound destinations. Catalog and
+ordinary Run/account authorization still determine the selected account; no
+configuration fingerprint or historical destination lock is applied.
 
 The current connector catalog reader is v4-only as described above. This
 execution change adds no environment variable, release workflow change or

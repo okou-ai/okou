@@ -393,7 +393,6 @@ async function discoverAutomaticOAuthAuthority(
     readonly endpoint: string;
     readonly resourceMetadataUrl: URL | null;
     readonly challengeScope?: string;
-    readonly expectedIssuer?: string;
   },
   signal: AbortSignal,
 ): Promise<DiscoveredAutomaticOAuthAuthority> {
@@ -422,17 +421,11 @@ async function discoverAutomaticOAuthAuthority(
     );
   }
   const advertisedIssuers = protectedResourceMetadata.authorization_servers;
-  const advertisedIssuer = args.expectedIssuer
-    ? advertisedIssuers?.find((candidate) => {
-        return candidate === args.expectedIssuer;
-      })
-    : advertisedIssuers?.[0];
+  const advertisedIssuer = advertisedIssuers?.[0];
   if (!advertisedIssuer) {
     throw new McpAutomaticOAuthError(
       { kind: "incompatible", reason: "invalid-discovery-metadata" },
-      args.expectedIssuer
-        ? "MCP OAuth protected resource metadata no longer advertises the bound authorization server"
-        : "MCP OAuth protected resource metadata does not advertise an authorization server",
+      "MCP OAuth protected resource metadata does not advertise an authorization server",
     );
   }
   const issuer = requiredHttpsUrl(advertisedIssuer, "issuer");
@@ -817,62 +810,25 @@ export interface McpAutomaticOAuthAuthorization {
   readonly context: McpAutomaticOAuthContext;
 }
 
-async function discoverBoundAutomaticOAuthAuthority(
-  args: {
-    readonly binding: McpAutomaticOAuthBinding;
-    readonly endpoint: string;
-  },
+async function discoverCurrentAutomaticOAuthAuthority(
+  endpoint: string,
   signal: AbortSignal,
 ): Promise<DiscoveredAutomaticOAuthAuthority> {
-  const discovered = await settle(
-    discoverAutomaticOAuthAuthority(
-      {
-        endpoint: args.endpoint,
-        resourceMetadataUrl: args.binding.resourceMetadataUrl
-          ? new URL(args.binding.resourceMetadataUrl)
-          : null,
-        expectedIssuer: args.binding.issuer,
-      },
-      signal,
-    ),
+  const probe = await automaticOAuthRemote(
+    "MCP authorization challenge",
+    signal,
+    async () => {
+      return await probeAutomaticOAuthChallenge(endpoint, signal);
+    },
+  );
+  const parameters =
+    probe.kind === "none"
+      ? null
+      : extractWWWAuthenticateParams(probe.context.response);
+  return await discoverAutomaticOAuthAuthority(
+    { endpoint, resourceMetadataUrl: parameters?.resourceMetadataUrl ?? null },
     signal,
   );
-  if (!discovered.ok) {
-    const error = discovered.error;
-    if (error instanceof McpAutomaticOAuthError && error.kind === "temporary") {
-      throw error;
-    }
-    if (error instanceof McpAutomaticOAuthError) {
-      throw new McpAutomaticOAuthError(
-        { kind: "binding-drift", reason: "binding-drift" },
-        "MCP OAuth authority changed",
-        error,
-      );
-    }
-    throw error;
-  }
-  const authority = discovered.value;
-  if (
-    authority.issuer !== args.binding.issuer ||
-    authority.resource !== args.binding.resource ||
-    authority.tokenEndpoint !== args.binding.tokenEndpoint ||
-    (args.binding.registrationMethod === "cimd" &&
-      authority.authorizationServerMetadata
-        .client_id_metadata_document_supported !== true) ||
-    !(
-      supportedTokenAuthMethods(authority.authorizationServerMetadata)
-        .length === 0 ||
-      supportedTokenAuthMethods(authority.authorizationServerMetadata).includes(
-        args.binding.tokenEndpointAuthMethod,
-      )
-    )
-  ) {
-    throw new McpAutomaticOAuthError(
-      { kind: "binding-drift", reason: "binding-drift" },
-      "MCP OAuth authority changed",
-    );
-  }
-  return authority;
 }
 
 export async function prepareMcpAutomaticOAuthReauthorization(
@@ -887,7 +843,10 @@ export async function prepareMcpAutomaticOAuthReauthorization(
   },
   signal: AbortSignal,
 ): Promise<McpAutomaticOAuthAuthorization> {
-  const authority = await discoverBoundAutomaticOAuthAuthority(args, signal);
+  const authority = await discoverCurrentAutomaticOAuthAuthority(
+    args.endpoint,
+    signal,
+  );
   const clientInformation = await boundClientInformation({
     ...args,
     context: boundClientContext(args.binding),
@@ -897,22 +856,22 @@ export async function prepareMcpAutomaticOAuthReauthorization(
     "authorization request",
     signal,
     async () => {
-      return await startAuthorization(args.binding.issuer, {
+      return await startAuthorization(authority.issuer, {
         metadata: authority.authorizationServerMetadata,
         clientInformation,
         redirectUrl: args.redirectUri,
         scope: args.requestedScope,
         state: args.state,
-        resource: new URL(args.binding.resource),
+        resource: new URL(authority.resource),
       });
     },
   );
   const contextBase = {
-    issuer: args.binding.issuer,
-    resource: args.binding.resource,
-    resourceMetadataUrl: args.binding.resourceMetadataUrl,
+    issuer: authority.issuer,
+    resource: authority.resource,
+    resourceMetadataUrl: authority.resourceMetadataUrl,
     authorizationEndpoint: authority.authorizationEndpoint,
-    tokenEndpoint: args.binding.tokenEndpoint,
+    tokenEndpoint: authority.tokenEndpoint,
     authorizationResponseIssParameterSupported:
       authority.authorizationResponseIssParameterSupported,
     clientId: args.binding.clientId,
@@ -1070,15 +1029,6 @@ async function boundClientInformation(args: {
   readonly cimdClientId: string;
 }): Promise<OAuthClientInformationMixed> {
   if (args.context.registrationMethod === "cimd") {
-    if (
-      args.context.clientId !== args.cimdClientId ||
-      args.context.tokenEndpointAuthMethod !== "none"
-    ) {
-      throw new McpAutomaticOAuthError(
-        { kind: "binding-drift", reason: "binding-drift" },
-        "MCP OAuth client binding changed",
-      );
-    }
     return { client_id: args.context.clientId };
   }
   const registration = await args.dcrStore.readBoundClient(
@@ -1086,11 +1036,6 @@ async function boundClientInformation(args: {
   );
   if (
     !registration ||
-    registration.issuer !== args.context.issuer ||
-    registration.clientId !== args.context.clientId ||
-    registration.redirectUri !== args.redirectUri ||
-    registration.tokenEndpointAuthMethod !==
-      args.context.tokenEndpointAuthMethod ||
     (registration.expiresAt !== null && registration.expiresAt <= nowDate())
   ) {
     throw new McpAutomaticOAuthError(
@@ -1231,25 +1176,28 @@ export async function refreshMcpAutomaticOAuthToken(
   },
   signal: AbortSignal,
 ): Promise<McpAutomaticOAuthTokenResult> {
-  const authority = await discoverBoundAutomaticOAuthAuthority(args, signal);
+  const authority = await discoverCurrentAutomaticOAuthAuthority(
+    args.endpoint,
+    signal,
+  );
   const clientInformation = await boundClientInformation({
     ...args,
     context: boundClientContext(args.binding),
   });
   signal.throwIfAborted();
   const refreshed = await settle(
-    refreshAuthorization(args.binding.issuer, {
+    refreshAuthorization(authority.issuer, {
       metadata: frozenAuthorizationServerMetadata({
-        issuer: args.binding.issuer,
+        issuer: authority.issuer,
         authorizationEndpoint: authority.authorizationEndpoint,
-        tokenEndpoint: args.binding.tokenEndpoint,
+        tokenEndpoint: authority.tokenEndpoint,
         tokenEndpointAuthMethod: args.binding.tokenEndpointAuthMethod,
         authorizationResponseIssParameterSupported:
           authority.authorizationResponseIssParameterSupported,
       }),
       clientInformation,
       refreshToken: args.refreshToken,
-      resource: new URL(args.binding.resource),
+      resource: new URL(authority.resource),
       fetchFn: fetchWithSignal(signal),
     }),
     signal,
@@ -1285,9 +1233,9 @@ export async function refreshMcpAutomaticOAuthToken(
     userInfo: await discoverMcpAutomaticOAuthUserInfo(
       {
         context: {
-          issuer: args.binding.issuer,
+          issuer: authority.issuer,
           authorizationEndpoint: authority.authorizationEndpoint,
-          tokenEndpoint: args.binding.tokenEndpoint,
+          tokenEndpoint: authority.tokenEndpoint,
           clientId: args.binding.clientId,
         },
         accessToken: result.accessToken,

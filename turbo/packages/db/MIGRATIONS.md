@@ -112,6 +112,17 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-oauth-contract-hash-retirement.ts` protects migration
+  `1350_retire_oauth_contract_hash`: both physical hash columns disappear,
+  multiple historical registrations for the same method/issuer and their exact
+  account references survive, encrypted secrets and account metadata are
+  unchanged, builtin authorization context cleanup is idempotent, and unrelated,
+  malformed and absent contexts remain byte-identical. The permanent Automatic
+  OAuth constraints in `test-migration-consistency-schema.ts` retain method and
+  account ownership, client-auth validation and account-deletion cascades.
+  Retain the transition validator until the controlled API/schema cutover is
+  verified and its migration passes the journal squash frontier.
+
 - `scripts/test-connector-catalog-entry-columns.ts` protects migrations
   `1339_expand_connector_catalog_entry_columns` and
   `1340_backfill_connector_catalog_entry_columns`: historical/current hashes

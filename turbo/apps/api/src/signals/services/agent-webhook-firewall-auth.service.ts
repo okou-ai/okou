@@ -5612,7 +5612,6 @@ async function resolveFirewallAuthMaterial(args: {
           connectorId: args.prepared.connectorId,
           connectorSlug: args.prepared.connectorSlug,
           authMethodId: args.prepared.authMethodId,
-          expectedEndpoint: args.body.matchedFirewall?.base,
           forceRefresh: args.body.forceRefresh,
         },
         refreshSignal,

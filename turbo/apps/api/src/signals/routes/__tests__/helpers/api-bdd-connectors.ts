@@ -429,6 +429,7 @@ interface AutomaticMcpOAuthProviderOptions {
   readonly endpoint?: string;
   readonly initialAccessToken?: string;
   readonly resource?: string;
+  readonly issuer?: string;
   readonly authorizationEndpoint?: string;
   readonly metadataIssuer?: string;
   readonly userInfoEndpoint?: string;
@@ -497,6 +498,12 @@ function automaticOAuthTokenResponse(args: {
   };
 }
 
+function automaticOAuthProviderIssuer(
+  options: AutomaticMcpOAuthProviderOptions,
+): string {
+  return options.issuer ?? "https://automatic-issuer.example.test";
+}
+
 export function mockAutomaticMcpOAuthProvider(
   context: TestContext,
   options: AutomaticMcpOAuthProviderOptions,
@@ -505,7 +512,7 @@ export function mockAutomaticMcpOAuthProvider(
     options.endpoint ?? "https://automatic-mcp.example.test/server";
   const endpointUrl = new URL(endpoint);
   const resourceMetadataUrl = new URL("/oauth-resource", endpoint).href;
-  const issuer = "https://automatic-issuer.example.test";
+  const issuer = automaticOAuthProviderIssuer(options);
   const authorizationUrl = `${issuer}/authorize`;
   const tokenUrl = `${issuer}/token`;
   const registrationUrl = `${issuer}/register`;
@@ -546,10 +553,7 @@ export function mockAutomaticMcpOAuthProvider(
       ? { registration_endpoint: registrationUrl }
       : {}),
   };
-  for (const hostname of [
-    endpointUrl.hostname,
-    "automatic-issuer.example.test",
-  ]) {
+  for (const hostname of [endpointUrl.hostname, new URL(issuer).hostname]) {
     context.mocks.dns.lookupOverrides.set(hostname, [
       { address: "93.184.216.34", family: 4 },
     ]);

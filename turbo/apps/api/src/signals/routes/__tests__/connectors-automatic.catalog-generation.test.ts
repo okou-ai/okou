@@ -124,33 +124,51 @@ function receipt(f: Fixture, attemptId: string) {
 }
 
 describe("builtin MCP automatic authentication", () => {
-  it("rejects an in-flight callback when its catalog storage contract changes", async () => {
-    const f = createPublicAutomaticCatalog(context, { isolatePg: true });
-    await f.run(async () => {
-      await f.publish();
-      const provider = mockAutomaticMcpOAuthProvider(context, {
-        registration: "cimd",
+  it.each(["cimd", "dcr"] as const)(
+    "completes %s callbacks and reuses clients across catalog storage changes",
+    async (registration) => {
+      const f = createPublicAutomaticCatalog(context, { isolatePg: true });
+      await f.run(async () => {
+        await f.publish();
+        const provider = mockAutomaticMcpOAuthProvider(context, {
+          registration,
+        });
+        const started = await beginOAuth(f);
+        await f.publish(
+          buildAutomaticMcpCatalog({
+            slug: f.slug,
+            methodId: f.methodId,
+            storageVersion: 2,
+          }).catalog,
+        );
+        expect(
+          (await callback(started.state, provider.issuer)).body.status,
+        ).toBe("success");
+        const completion = await accept(
+          receipt(f, started.oauthAttemptId),
+          [200],
+        );
+        expect(
+          (
+            await accept(
+              accounts().connections({ headers, query: f.target }),
+              [200],
+            )
+          ).body.connections,
+        ).toContainEqual(
+          expect.objectContaining({
+            id: completion.body.connectionId,
+            connectionStatus: "connected",
+          }),
+        );
+        const reconnect = await beginOAuth(f, completion.body.connectionId);
+        expect(
+          (await callback(reconnect.state, provider.issuer)).body.status,
+        ).toBe("success");
+        expect(provider.registrationBodies).toHaveLength(
+          registration === "dcr" ? 1 : 0,
+        );
       });
-      const started = await beginOAuth(f);
-      await f.publish(
-        buildAutomaticMcpCatalog({
-          slug: f.slug,
-          methodId: f.methodId,
-          storageVersion: 2,
-        }).catalog,
-      );
-      expect((await callback(started.state, provider.issuer)).body.status).toBe(
-        "error",
-      );
-      await accept(receipt(f, started.oauthAttemptId), [404]);
-      expect(
-        (
-          await accept(
-            accounts().connections({ headers, query: f.target }),
-            [200],
-          )
-        ).body.connections,
-      ).toStrictEqual([]);
-    });
-  });
+    },
+  );
 });

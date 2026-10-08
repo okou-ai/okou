@@ -122,7 +122,7 @@ function receipt(f: Fixture, attemptId: string) {
 }
 
 describe("builtin Automatic account and consent ownership", () => {
-  it("rejects consent frozen for an endpoint that changes without a storage version change", async () => {
+  it("completes consent after a trusted catalog endpoint changes", async () => {
     const f = createPublicAutomaticCatalog(context, { isolatePg: true });
     await f.run(async () => {
       await f.publish();
@@ -138,9 +138,9 @@ describe("builtin Automatic account and consent ownership", () => {
         }).catalog,
       );
       expect((await callback(started.state, provider.issuer)).body.status).toBe(
-        "error",
+        "success",
       );
-      await accept(receipt(f, started.attemptId), [404]);
+      const completion = await accept(receipt(f, started.attemptId), [200]);
       expect(
         (
           await accept(
@@ -148,7 +148,12 @@ describe("builtin Automatic account and consent ownership", () => {
             [200],
           )
         ).body.connections,
-      ).toStrictEqual([]);
+      ).toContainEqual(
+        expect.objectContaining({
+          id: completion.body.connectionId,
+          connectionStatus: "connected",
+        }),
+      );
     });
   });
 });
