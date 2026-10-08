@@ -85,6 +85,7 @@ test("Merge three completed segments only after the final transcription", async 
   });
   installRunChat();
   const segments = ["First part.", "Second part.", "Last part."];
+  const polishRequested = context.mocks.deferred<void>();
   let next = 0;
   context.mocks.http.post(transcribeEndpoint, async ({ request }) => {
     const form = await request.formData();
@@ -93,6 +94,7 @@ test("Merge three completed segments only after the final transcription", async 
   });
   context.mocks.http.post(polishEndpoint, async ({ request }) => {
     await expect(request.json()).resolves.toMatchObject({ segments });
+    polishRequested.resolve();
     return HttpResponse.json({ text: "First part. Second part. Last part." });
   });
   await setupPage({ context, path: RUN_PATH });
@@ -100,6 +102,9 @@ test("Merge three completed segments only after the final transcription", async 
   const emit = await capture.promise;
   emit(new Float32Array(150 * 16_000).fill(0.1));
   click(await findEnabledButton("Stop recording"));
+  // Await the externally observable editing boundary before asserting its UI
+  // result; processing 150 seconds of PCM/VAD is not a two-second UI update.
+  await polishRequested.promise;
   await waitFor(() => {
     expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
       "First part. Second part. Last part.",
