@@ -6,6 +6,7 @@ import { ChevronRight, Globe, Image, Presentation, Route } from "lucide-react";
 import { cn, Popover, PopoverContent } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { SlashWorkflowName } from "./slash-workflow.tsx";
+import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { i18n } from "../../i18n/index.ts";
 import type { ComposerSlashWorkflowMatch } from "../../signals/okou-page/workflow-composer-domain.ts";
 import {
@@ -398,7 +399,12 @@ export function SlashTemplatePanel({
   const markedIndex = previewIndex ?? selectedIndex;
   // A workflow row indexes past the categories, so it previews nothing and the
   // flyout closes.
-  const detailCategory = categories[markedIndex] ?? null;
+  // Touch devices have no hover, so a tap's pointer move would open a cover
+  // flyout the user cannot dismiss by moving away. There the category row goes
+  // straight to its picker instead.
+  const detailCategory = isMobileTextInputDevice()
+    ? null
+    : (categories[markedIndex] ?? null);
   return (
     <div
       className="flex h-full w-full flex-col overflow-hidden"

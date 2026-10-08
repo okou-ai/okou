@@ -113,6 +113,20 @@ test("The slash panel initially previews the keyboard-selected type's covers", a
   expect(within(pane).getByText(first.title)).toBeInTheDocument();
 });
 
+test("Touch devices pick a type directly without opening a cover flyout", async () => {
+  const user = userEvent.setup({ delay: null });
+  context.mocks.browser.matchMedia((query) => {
+    return query === "(pointer: coarse)";
+  });
+  await openSlashMenu();
+
+  // A tap moves the pointer onto the row first; that must not open covers.
+  await user.hover(slashButton("Illustration"));
+  expect(flyout()).toBeNull();
+  expect(detailPane()).toBeNull();
+  expect(slashButton("Illustration")).toBeInTheDocument();
+});
+
 test("Illustration covers keep their own proportion; decks keep the 16:9 tile", async () => {
   const user = userEvent.setup();
   await openSlashMenu();
