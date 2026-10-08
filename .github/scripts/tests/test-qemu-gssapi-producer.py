@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Public inert input tests; no QEMU/helper/signature/runtime is impersonated."""
 import ast
+import errno
 import gzip
 import hashlib
 import importlib.util
@@ -14,7 +15,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
-from unittest import mock
+import unittest.mock as mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 SPEC = importlib.util.spec_from_file_location("qemu_producer", ROOT / ".github/scripts/prepare-qemu-gssapi-fixture.py")
@@ -666,6 +667,33 @@ print('held FIFO refused; no descriptor or decoder child remains')
                     with archive.open('r+b') as writer:
                         writer.write(b'changed')
                     self.assertNotEqual(os.fstat(fd).st_ctime_ns, identity[-1])
+            self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
+
+    def test_opened_archive_closes_borrowed_descriptor_when_body_raises(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            archive = pathlib.Path(directory) / 'public.deb'
+            archive.write_bytes(b'public borrower-exception canary; not a package')
+            descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+            with self.assertRaisesRegex(RuntimeError, 'inert borrower failed'):
+                with self.producer.opened_package_archive(archive) as (fd, _, _, _):
+                    self.assertTrue(os.fstat(fd))
+                    raise RuntimeError('inert borrower failed')
+            with self.assertRaises(OSError) as closed:
+                os.fstat(fd)
+            self.assertEqual(closed.exception.errno, errno.EBADF)
+            self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
+
+    def test_opened_archive_closes_borrowed_descriptor_after_real_sigint(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            archive = pathlib.Path(directory) / 'public.deb'
+            archive.write_bytes(b'public interruption canary; not a package')
+            descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+            with self.assertRaises(KeyboardInterrupt):
+                with self.producer.opened_package_archive(archive) as (fd, _, _, _):
+                    signal.raise_signal(signal.SIGINT)
+            with self.assertRaises(OSError) as closed:
+                os.fstat(fd)
+            self.assertEqual(closed.exception.errno, errno.EBADF)
             self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
 
     def test_real_control_and_data_decoders_use_held_original_not_replaced_name(self):
@@ -1336,6 +1364,64 @@ with path.open('rb') as output:
                     self.producer.retain_public_inputs(base, 'provision-complete', {'packages': packages})
                 self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), before)
                 self.assertFalse((base / 'public-evidence/provision-complete.json').exists())
+
+    def test_retention_partial_directory_acquisition_closes_real_predecessors(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            (base / 'cache').mkdir()
+            # A real O_DIRECTORY failure after base and cache were opened.
+            (base / 'cache/archives').write_bytes(b'public non-directory canary')
+            data = b'public retention canary; no provider authenticity'
+            packages = {'canary': {'archiveSha256': hashlib.sha256(data).hexdigest(),
+                                   'archiveSizeBytes': len(data)}}
+            descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+            with self.assertRaisesRegex(ValueError, 'public package archive custody refused'):
+                self.producer.retain_public_inputs(base, 'provision-complete', {'packages': packages})
+            self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
+            self.assertFalse((base / 'public-evidence/provision-complete.json').exists())
+
+    def test_retention_real_partial_write_failure_closes_fds_without_completion_record(self):
+        with tempfile.TemporaryDirectory(dir=self.parent) as directory:
+            base = pathlib.Path(directory)
+            cache = base / 'cache/archives'
+            cache.mkdir(parents=True)
+            data = b'public kernel-limited copy canary; no provider authenticity'
+            original = cache / 'canary.deb'
+            original.write_bytes(data)
+            script = '''
+import errno, hashlib, importlib.util, pathlib, resource, sys
+spec = importlib.util.spec_from_file_location('actual_producer', sys.argv[1])
+producer = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(producer)
+base = pathlib.Path(sys.argv[2])
+original = base / 'cache/archives/canary.deb'
+data = original.read_bytes()
+digest = hashlib.sha256(data).hexdigest()
+packages = {'canary': {'archiveSha256': digest, 'archiveSizeBytes': len(data)}}
+fd_count = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+resource.setrlimit(resource.RLIMIT_FSIZE, (4, 4))
+try:
+    producer.retain_public_inputs(base, 'provision-complete', {'packages': packages})
+except ValueError as error:
+    assert str(error) == 'public package archive custody refused'
+    assert isinstance(error.__cause__, OSError)
+    assert error.__cause__.errno == errno.EFBIG  # Actual retained write/flush.
+else:
+    raise AssertionError('kernel-limited retention write unexpectedly succeeded')
+assert len(list(pathlib.Path('/proc/self/fd').iterdir())) == fd_count
+assert original.read_bytes() == data
+assert not (base / 'public-evidence/provision-complete.json').exists()
+retained = base / 'public-evidence/package-archives' / (digest + '.deb')
+assert retained.is_file() and retained.stat().st_size == 4
+print('actual partial copy refused; descriptors closed; completion record absent')
+'''
+            result = subprocess.run([sys.executable, '-I', '-S', '-B', '-c', script,
+                                     str(ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py'), str(base)],
+                                    capture_output=True, text=True, timeout=10,
+                                    env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('actual partial copy refused', result.stdout)
+            self.assertEqual(original.read_bytes(), data)
 
     def test_actual_pinned_release_is_admitted_without_execution(self):
         archive = ROOT / "crates/target/qemu-full-fixture-source/qemu-9.2.0.tar.xz"

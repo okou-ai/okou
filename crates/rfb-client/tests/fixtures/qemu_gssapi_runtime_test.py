@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest import mock
+import unittest.mock as mock
 
 import qemu_gssapi
 
@@ -578,7 +578,7 @@ class TestProcessOwnership(unittest.TestCase):
                     # A negative control records the unsafe request, NEVER sends
                     # an actual signal after the leader identity was released.
                     released.append((group, value))
-                    return
+                    return None
                 retained.append((group, value, event))
             return real_signal(group, value)
 

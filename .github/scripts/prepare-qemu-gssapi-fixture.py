@@ -731,6 +731,8 @@ def decode_package_payload(archive, payload, limit, *, descriptor=None, control_
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
                 except ProcessLookupError:
+                    # No signalable group was found; still reap the retained
+                    # leader below. Other signal errors must propagate.
                     pass
                 try:
                     process.wait(timeout=5)
