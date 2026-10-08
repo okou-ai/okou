@@ -10,10 +10,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
-import {
-  seedOrgMetadata,
-  setOnboardingPaymentPendingFixture,
-} from "../../../test-fixtures/system-config-seeds";
+import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import {
   deleteOrgPlanEntitlementFixture,
   upsertOrgPlanEntitlementFixture,
@@ -779,42 +776,6 @@ describe("GET /api/billing/status", () => {
 
     expect(response.body.concurrencyLimit).toBe(10);
     expect(response.body.concurrencySubscriptions).toStrictEqual([]);
-  });
-
-  it("returns onboarding payment pending state", async () => {
-    const fixture = {
-      orgId: `org_${randomUUID()}`,
-      userId: `user_${randomUUID()}`,
-      expiresRecordIds: [],
-    };
-    const completed = await createBddApi(context).completeOnboarding({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-      orgRole: "org:admin",
-      email: `${fixture.userId}@example.test`,
-    });
-    expect(completed.status).toBe(200);
-    await seedOrgMetadata({
-      orgId: fixture.orgId,
-      tier: "limited-free-1",
-      credits: 0,
-    });
-    await setOnboardingPaymentPendingFixture({
-      orgId: fixture.orgId,
-      onboardingPaymentPending: true,
-    });
-    mocks.clerk.session(fixture.userId, fixture.orgId);
-
-    const client = setupApp({ context, routes: billingStatusRoutes })(
-      billingStatusContract,
-    );
-
-    const response = await accept(
-      client.get({ headers: { authorization: "Bearer clerk-session" } }),
-      [200],
-    );
-
-    expect(response.body.onboardingPaymentPending).toBeTruthy();
   });
 
   it("returns cancelAtPeriodEnd true when set", async () => {

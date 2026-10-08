@@ -1,27 +1,6 @@
 import { createStore } from "ccstate";
 
-import { blobs } from "@okouai/db/schema/blob";
-import { eq } from "drizzle-orm";
-import { db } from "../lib/db";
 import { agentRunList } from "../signals/services/agent-runs.service";
-/**
- * Test fixtures for agent-run state that no public route reads or seeds
- * directly. Runs themselves start through the real Thread or Pi entries.
- */
-
-export async function readSessionHistoryBlobRefCountFixture(
-  hash: string,
-): Promise<number> {
-  const [blob] = await db()
-    .select({ refCount: blobs.refCount })
-    .from(blobs)
-    .where(eq(blobs.hash, hash))
-    .limit(1);
-  if (!blob) {
-    throw new Error("Expected the Session history Blob fixture to exist");
-  }
-  return blob.refCount;
-}
 
 export async function listAgentRunsFixture(args: {
   readonly userId: string;

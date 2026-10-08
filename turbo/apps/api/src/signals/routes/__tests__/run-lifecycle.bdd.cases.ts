@@ -63,8 +63,6 @@ import {
 } from "../../../lib/secret-kms-client";
 import { clearMockNow, mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import { readSessionHistoryBlobRefCountFixture } from "../../../test-fixtures/agent-runs";
-import { timeoutRunWithoutCallbacksFixture } from "../../../test-fixtures/chat-events";
 import {
   API_TEST_CONNECTOR_CATALOG,
   API_TEST_CONNECTOR_FIREWALL_CONFIGS,
@@ -123,7 +121,6 @@ import {
 import { setPaidToolDisabled } from "./helpers/paid-tools";
 import {
   clearRunApiStart,
-  readRunFailureReasonFixture,
   seedBuiltInDefaultModelKey as seedBuiltInDefaultModelKeyState,
   seedBuiltInModelKey as seedBuiltInModelKeyState,
   setRunnerJobContextProfileAsPreviousApi,
@@ -12436,7 +12433,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       });
     });
 
-    describe("RUN-03: timed-out run webhook admission", () => {
+    describe("RUN-03: terminal run webhook admission", () => {
       it("rejects heartbeats after ordinary terminal transitions", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
@@ -12480,139 +12477,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           );
           expect(heartbeat.status).toBe(404);
         }
-      });
-
-      it("rejects runtime mutations while accepting reporting webhooks", async () => {
-        const api = createRunsApi(context);
-        const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId, runnerGroup } = await entitledRunActor(
-          {},
-          NATIVE_RUNNER_ROUTE,
-        );
-        const created = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "ignore runtime webhooks after timeout",
-        });
-        await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(created.runId);
-        const sandboxHeaders = {
-          authorization: `Bearer ${claim.sandboxToken}`,
-        };
-        await timeoutRunWithoutCallbacksFixture({ runId: created.runId });
-
-        const heartbeat = await webhooks.requestAgentHeartbeat(
-          { runId: created.runId },
-          sandboxHeaders,
-          [404],
-        );
-        expect(heartbeat.status).toBe(404);
-
-        let eventTraceRequests = 0;
-        server.use(
-          http.post(
-            "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
-            () => {
-              eventTraceRequests += 1;
-              return HttpResponse.json({
-                ingested: 1,
-                failed: 0,
-                processedBytes: 1,
-                blocksCreated: 1,
-                walLength: 1,
-              });
-            },
-          ),
-        );
-        const events = await webhooks.requestAgentEvents(
-          {
-            runId: created.runId,
-            events: [
-              {
-                type: "result",
-                sequenceNumber: 0,
-                result: "late result after timeout",
-              },
-            ],
-          },
-          sandboxHeaders,
-          [200],
-        );
-        expect(events.body).toStrictEqual({
-          received: 1,
-          firstSequence: 0,
-          lastSequence: 0,
-        });
-        await flushWaitUntilForTest();
-        expect(eventTraceRequests).toBe(0);
-
-        const historyHash = createHash("sha256")
-          .update(`timed-out history ${created.runId}`)
-          .digest("hex");
-        const s3CallCount = context.mocks.s3.send.mock.calls.length;
-        const history = await webhooks.requestAgentCheckpointPrepareHistory(
-          {
-            runId: created.runId,
-            hash: historyHash,
-            rawSize: 32,
-            encodedSize: 32,
-            encoding: "identity",
-          },
-          sandboxHeaders,
-          [400],
-        );
-        expect(JSON.stringify(history.body)).toContain(
-          "[RUN_HISTORY_TERMINAL]",
-        );
-        expect(context.mocks.s3.send.mock.calls).toHaveLength(s3CallCount);
-
-        const lateCompletion = await webhooks.requestAgentRunOutputs(
-          {
-            runId: created.runId,
-            cliAgentType: "claude-code",
-            cliAgentSessionId: `timed-out-${created.runId}`,
-            cliAgentSessionHistoryDisposition: "unavailable",
-          },
-          sandboxHeaders,
-          [200],
-        );
-        expect(lateCompletion.body).toStrictEqual({
-          success: true,
-          status: "failed",
-        });
-
-        const usage = await webhooks.requestAgentUsageEvent(
-          {
-            runId: created.runId,
-            events: [
-              {
-                idempotencyKey: randomUUID(),
-                kind: "connector",
-                provider: "github",
-                category: "api_request",
-                quantity: 1,
-              },
-            ],
-          },
-          sandboxHeaders,
-          [200],
-        );
-        expect(usage.body).toStrictEqual({ success: true });
-
-        const telemetry = await webhooks.requestAgentTelemetry(
-          {
-            runId: created.runId,
-            systemLog: "late teardown log",
-          },
-          sandboxHeaders,
-          [200],
-        );
-        expect(telemetry.body).toStrictEqual({
-          success: true,
-          id: created.runId,
-        });
-        await expect(api.readRun(actor, created.runId)).resolves.toMatchObject({
-          status: "timeout",
-        });
       });
     });
 
@@ -13127,7 +12991,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       );
 
       it.each(["claude-code", "codex"] as const)(
-        "atomically completes a run with a %s checkpoint",
+        "completes and resumes a run with a %s checkpoint",
         async (cliAgentType) => {
           const api = createRunsApi(context);
           const webhooks = createWebhookCallbackApi(context);
@@ -13158,10 +13022,21 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             .update(history)
             .digest("hex");
           const cliAgentSessionId = `bdd-combined-${cliAgentType}-${run.runId}`;
-          mockSessionHistoryBlob(historyHash, history);
           const sandboxHeaders = {
             authorization: `Bearer ${claim.sandboxToken}`,
           };
+          await webhooks.requestAgentCheckpointPrepareHistory(
+            {
+              runId: run.runId,
+              hash: historyHash,
+              rawSize: Buffer.byteLength(history),
+              encodedSize: Buffer.byteLength(history),
+              encoding: "identity",
+            },
+            sandboxHeaders,
+            [200],
+          );
+          mockSessionHistoryBlob(historyHash, history);
           const body = {
             runId: run.runId,
             exitCode: 0,
@@ -13189,9 +13064,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             agentSessionId: expect.any(String),
             conversationId: expect.any(String),
           });
-          await expect(
-            readRunFailureReasonFixture(context, run.runId),
-          ).resolves.toBeNull();
 
           const repeated = await webhooks.requestAgentComplete(
             body,
@@ -13199,9 +13071,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             [200],
           );
           expect(repeated.body).toStrictEqual(completed.body);
-          await expect(
-            readSessionHistoryBlobRefCountFixture(historyHash),
-          ).resolves.toBe(1);
           const conflictingExitDuplicate = await webhooks.requestAgentComplete(
             {
               ...body,
@@ -13227,9 +13096,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(conflictingCheckpoint.body.error.message).toContain(
             "Final output does not exactly match",
           );
-          await expect(
-            readSessionHistoryBlobRefCountFixture(historyHash),
-          ).resolves.toBe(1);
           const runnerDuplicate = await webhooks.requestAgentComplete(
             {
               runId: run.runId,
@@ -13261,6 +13127,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             .update(successorHistory)
             .digest("hex");
           const successorCliAgentSessionId = `bdd-successor-${cliAgentType}-${continued.runId}`;
+          await webhooks.requestAgentCheckpointPrepareHistory(
+            {
+              runId: continued.runId,
+              hash: successorHistoryHash,
+              rawSize: Buffer.byteLength(successorHistory),
+              encodedSize: Buffer.byteLength(successorHistory),
+              encoding: "identity",
+            },
+            { authorization: `Bearer ${continuedClaim.sandboxToken}` },
+            [200],
+          );
           mockSessionHistoryBlob(successorHistoryHash, successorHistory);
           await webhooks.requestAgentComplete(
             {
@@ -13356,69 +13233,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           historyRef: { kind: "blob", hash: historyHash },
         });
         await api.requestCancelRun(actor, continued.runId, [200]);
-      });
-
-      it("acknowledges completion after timeout without partial persistence", async () => {
-        const api = createRunsApi(context);
-        const webhooks = createWebhookCallbackApi(context);
-        const { actor, agentId } = await entitledRunActor();
-        const run = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "time out before combined completion",
-        });
-        const claim = await api.claimRunnerJob(run.runId);
-        const historyHash = createHash("sha256")
-          .update(`bdd timed out combined history ${run.runId}`)
-          .digest("hex");
-        const sandboxHeaders = {
-          authorization: `Bearer ${claim.sandboxToken}`,
-        };
-        await timeoutRunWithoutCallbacksFixture({ runId: run.runId });
-        const timedOut = await api.readRun(actor, run.runId);
-        const runnerMetadata = await api.requestRunRunner(
-          actor,
-          run.runId,
-          [200],
-        );
-
-        const completion = await webhooks.requestAgentComplete(
-          {
-            runId: run.runId,
-            exitCode: 0,
-            sandboxReuseResult: "poolMiss",
-            workspaceReuseResult: "diskPressure",
-            checkpoint: {
-              cliAgentType: "claude-code",
-              cliAgentSessionId: `bdd-timeout-combined-${run.runId}`,
-              cliAgentSessionHistoryHash: historyHash,
-            },
-          },
-          sandboxHeaders,
-          [200],
-        );
-        expect(completion.body).toStrictEqual({
-          success: true,
-          status: "failed",
-        });
-        await expect(api.readRun(actor, run.runId)).resolves.toStrictEqual(
-          timedOut,
-        );
-        await expect(
-          api.requestRunRunner(actor, run.runId, [200]),
-        ).resolves.toStrictEqual(runnerMetadata);
-
-        const fallback = await webhooks.requestAgentComplete(
-          { runId: run.runId, exitCode: 0 },
-          sandboxHeaders,
-          [200],
-        );
-        expect(fallback.body).toStrictEqual({
-          success: true,
-          status: "failed",
-        });
-        await expect(api.readRun(actor, run.runId)).resolves.toStrictEqual(
-          timedOut,
-        );
       });
 
       it("keeps claim auth valid through timeout completion and final telemetry", async () => {
@@ -13858,7 +13672,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
     });
 
     describe("HOOK-02/CHAT-02: assistant events reach optional chat consumers", () => {
-      it("acknowledges and ignores assistant output after timeout", async () => {
+      it("publishes authenticated assistant output to its chat thread", async () => {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
         const webhooks = createWebhookCallbackApi(context);
@@ -13868,7 +13682,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         const { runId, threadId } = await sendChatRunMessage(actor, {
           agentId,
-          prompt: "ignore chat output after timeout",
+          prompt: "publish ordinary assistant output",
         });
         await api.heartbeatRunner(runnerGroup);
         const claim = await api.claimRunnerJob(runId);
@@ -13885,7 +13699,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                 message: {
                   id: `msg_${randomUUID()}`,
                   content: [
-                    { type: "text", text: "retained pre-timeout output" },
+                    { type: "text", text: "authenticated assistant output" },
                   ],
                 },
               },
@@ -13901,70 +13715,13 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           events: expect.arrayContaining([
             expect.objectContaining({
               runId,
-              content: "retained pre-timeout output",
+              content: "authenticated assistant output",
             }),
           ]),
         });
 
-        await timeoutRunWithoutCallbacksFixture({ runId });
+        await api.requestCancelRun(actor, runId, [200]);
         await flushWaitUntilForTest();
-        context.mocks.ably.publish.mockClear();
-
-        let eventTraceRequests = 0;
-        server.use(
-          http.post(
-            "https://api.axiom.co/v1/datasets/agent-run-events/ingest",
-            () => {
-              eventTraceRequests += 1;
-              return HttpResponse.json({
-                ingested: 1,
-                failed: 0,
-                processedBytes: 1,
-                blocksCreated: 1,
-                walLength: 1,
-              });
-            },
-          ),
-        );
-        const response = await webhooks.requestAgentEvents(
-          {
-            runId,
-            events: [
-              {
-                type: "assistant",
-                sequenceNumber: 1,
-                message: {
-                  id: `msg_${randomUUID()}`,
-                  content: [{ type: "text", text: "ignored timed-out output" }],
-                },
-              },
-            ],
-          },
-          sandboxHeaders,
-          [200],
-        );
-        expect(response.body).toStrictEqual({
-          received: 1,
-          firstSequence: 1,
-          lastSequence: 1,
-        });
-        await flushWaitUntilForTest();
-
-        const messages = await chat.listThreadEvents(actor, threadId);
-        expect(messages.events).toContainEqual(
-          expect.objectContaining({
-            runId,
-            content: "retained pre-timeout output",
-          }),
-        );
-        expect(messages.events).not.toContainEqual(
-          expect.objectContaining({
-            runId,
-            content: "ignored timed-out output",
-          }),
-        );
-        expect(eventTraceRequests).toBe(0);
-        expect(context.mocks.ably.publish).not.toHaveBeenCalled();
       });
 
       it("uses DB output acknowledged before completion and ignores a late duplicate", async () => {

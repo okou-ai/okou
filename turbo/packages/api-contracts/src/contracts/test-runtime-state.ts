@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { initContract } from "./base";
-import { runFailureReasonTokenSchema } from "./run-failure-reasons";
 
 const c = initContract();
 
@@ -30,10 +29,6 @@ export const testRuntimeStateActionBodySchema = z.discriminatedUnion("action", [
   }),
   z.object({
     action: z.literal("read-run-autonomy-budget"),
-    run_id: z.uuid(),
-  }),
-  z.object({
-    action: z.literal("read-run-failure-reason"),
     run_id: z.uuid(),
   }),
   // Test-only read boundary for the internal WSS target resolver. The public
@@ -132,7 +127,6 @@ export const testRuntimeStateActionResponseSchema = z.object({
   processed: z.int().nonnegative().optional(),
   selected_model: z.string().optional(),
   autonomy_budget: z.int().min(0).max(32).nullable().optional(),
-  failure_reason: runFailureReasonTokenSchema.nullable().optional(),
   wss_target: z
     .object({
       runId: z.uuid(),

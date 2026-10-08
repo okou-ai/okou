@@ -284,6 +284,23 @@ This proves normal issuance and reuse, not an injected four-hour refresh thresho
 or an exact SQL lookup count. A benchmark that seeds API-owned cache rows and
 calls private services does not become an owning-package library contract.
 
+For mixed Runner checkpoint cases, `chat-events-pi-handoff.test.ts` preserves the
+identity/gzip/zstd resume-reference matrix through personal subscription OAuth,
+chat send, authenticated Runner claim, checkpoint prepare and completion. It no
+longer forces private Pi memory admission or checks candidate rows. The native
+checkpoint matrix in `run-lifecycle.bdd.cases.ts` similarly observes completion,
+duplicates, conflicts and resumed references; those public responses do not prove
+physical blob reference counts or private failure-reason columns. A manufactured
+timeout that skips normal terminal effects is not an external failure trigger.
+
+For billing, `billing-checkout-complete.test.ts` creates its customer through a
+normal checkout and models Stripe-owned trialing, incomplete and open-session
+responses. A legacy application-owned onboarding-payment flag is not a Stripe
+mock: setting it privately to enable a retired trial path is unsupported. Likewise,
+a test-selected pricing alias with no configured row is application state, not an
+external provider failure. Deleting those cases does not establish missing-price
+fail-closed coverage; neighboring pricing fixtures remain unprocessed.
+
 ## Shared Persistent State
 
 Teardown cannot establish correctness for shared persistent state. Another

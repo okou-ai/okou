@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
-
 import {
   testRuntimeStateContract,
   type TestRuntimeStateActionBody,
@@ -184,20 +182,6 @@ export async function readRunAutonomyBudgetFixture(
     throw new Error("readRunAutonomyBudgetFixture missing autonomy_budget");
   }
   return response.autonomy_budget ?? null;
-}
-
-export async function readRunFailureReasonFixture(
-  context: TestContext,
-  runId: string,
-): Promise<RunFailureReasonToken | null> {
-  const response = await postAction(context, {
-    action: "read-run-failure-reason",
-    run_id: runId,
-  });
-  if (!("failure_reason" in response)) {
-    throw new Error("readRunFailureReasonFixture missing failure_reason");
-  }
-  return response.failure_reason ?? null;
 }
 
 /**
