@@ -243,6 +243,7 @@
     "src/signals/services/morning-brief-migration-state.service.ts",
     "src/signals/services/notion-automation-account.service.ts",
     "src/signals/services/official-automation-result-email-renderer.ts",
+    "src/lib/agent-notification-email-renderer.ts",
     "src/signals/services/official-workflow-catalog-read.service.ts",
     "src/signals/services/official-workflow-context.signals.ts",
     "src/signals/services/official-workflow-run.service.ts",

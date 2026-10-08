@@ -9599,3 +9599,34 @@ grant or the new personal grant; the other writer cannot award both. Existing
 clients use their unchanged billing endpoints. No database migration, client
 version floor, or Runner protocol change is required. This change does not deploy
 or activate production changes.
+
+## Agent mail notifications stage one
+
+`okou notify mail` adds `POST /api/notifications/mail`, a workspace/user-scoped
+receipt read, the `notify:write` capability gated by `notifyMail`, and the
+`agent-notification` email-outbox template. The additive `mail_notifications`
+migration must precede the API deployment. Old APIs ignore this table and
+continue processing the existing email templates.
+
+| Combination                         | Behavior / requirement                                                                                                                                |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Old CLI / new API                   | Existing commands and Official result-email callbacks retain their behavior.                                                                          |
+| New CLI / old API                   | New notification calls fail with an HTTP error; the CLI must not report a send or try a second transport.                                             |
+| Old token / new API                 | Tokens without `notify:write` cannot send; start a new run after enabling the switch.                                                                 |
+| New API / old Runner                | The additive capability is carried in the trusted `OKOU_TOKEN` overlay; no Runner protocol change is needed. The installed CLI must include `notify`. |
+| New producer / old outbox drainer   | Unsupported. Keep `notifyMail` disabled until every drain instance recognizes `agent-notification`, including old deployments reached by cron.        |
+| Receipt / expired or deleted outbox | A receipt keeps its ID, content hash, and final status; replay never inserts another email.                                                           |
+
+Deploy migration and all template readers before enabling notification
+producers. A rollback after enabling must first stop new production and drain
+pending/sending notification rows with the compatible worker; do not route an
+existing new template to an old reader. Feature switches are user-overridable
+rollout controls, so operational readiness must precede any enablement.
+Membership/user/organization cleanup removes these receipts and their outbox
+content. In-flight provider calls cannot be recalled.
+
+Morning Brief retains `resultEmail: true` and its existing accepted callback
+snapshots throughout stage one. The later Official revision must change the
+instructions and `resultEmail` together, update Morning Brief readiness checks,
+and let old runs complete their accepted delivery contract. See
+[agent mail notifications](agent-mail-notifications.md) for acceptance gates.

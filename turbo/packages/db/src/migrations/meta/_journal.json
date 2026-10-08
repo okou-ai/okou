@@ -1905,6 +1905,13 @@
       "when": 1791466652113,
       "tag": "1349_retire_connector_permission_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1350,
+      "version": "7",
+      "when": 1791469279706,
+      "tag": "1350_acoustic_adam_warlock",
+      "breakpoints": true
     }
   ]
 }
