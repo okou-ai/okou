@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -50,9 +51,9 @@ describe("hosted artifact previews", () => {
     site = join(root, "site");
     cover = join(root, "cover.png");
     mkdirSync(site);
-    writeFileSync(
+    copyFileSync(
+      new URL("./fixtures/preview.html", import.meta.url),
       join(site, "index.html"),
-      '<main>Final bundle</main><script src="/app-12345678.js"></script>',
     );
     writeFileSync(join(site, "app-12345678.js"), 'console.log("bundle asset")');
     writeFileSync(cover, png);
