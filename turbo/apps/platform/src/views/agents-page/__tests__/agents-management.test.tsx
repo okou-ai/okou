@@ -10,7 +10,6 @@ import {
 } from "@okouai/api-contracts/contracts/agents";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { parseAvatarComposerUrl } from "@okouai/core/agent-avatar";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   fireEvent,
   screen,
@@ -217,6 +216,41 @@ function configureCatalog(
   };
 }
 
+function configureSetupThread(): void {
+  context.mocks.api(agentSetupPromptsContract.create, ({ body, respond }) => {
+    return respond(200, {
+      prompt: `Hi ${body.agentName}, adopt this responsibility and update your description and instructions: ${body.responsibility}`,
+    });
+  });
+  mockChatLifecycle(context);
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(404, {
+      error: {
+        code: "BROWSER_NOT_FOUND",
+        message: "Managed browser not found",
+      },
+    });
+  });
+}
+
+async function returnToCreatedAgent(
+  displayName: string,
+): Promise<HTMLAnchorElement> {
+  await expect(
+    screen.findByText(`${displayName} created successfully`),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toMatch(/^\/chats\/[^/]+$/u);
+  expect(pinnedAgentCard(CREATED_AGENT_ID)).toHaveTextContent(displayName);
+  const agentsLink = queryAllByRoleFast("link").find((link) => {
+    return link.getAttribute("href") === "/agents";
+  });
+  if (!agentsLink) {
+    throw new Error("Agents navigation link not found");
+  }
+  click(agentsLink);
+  return await waitForAgentCard(CREATED_AGENT_ID);
+}
+
 function configureResearchAgent(): void {
   configureCatalog(
     [
@@ -283,6 +317,7 @@ test.each([
         });
       }),
     );
+    configureSetupThread();
     await setupPage({ context, path: "/agents" });
     const dialog = await openCreateDialog(tab);
     expect(
@@ -290,10 +325,14 @@ test.each([
     ).toHaveTextContent("Private");
     const name = within(dialog).getByLabelText("Name");
 
+    await fill(
+      within(dialog).getByLabelText(RESPONSIBILITY_LABEL),
+      "Summarize our pipeline every Monday.",
+    );
     await fill(name, "  Private Analyst  ");
     await user.keyboard("{Enter}");
 
-    const createdCard = await waitForAgentCard(CREATED_AGENT_ID);
+    const createdCard = await returnToCreatedAgent("Private Analyst");
     expect(createdCard).toHaveTextContent("Private Analyst");
     expect(agentCardsNamed("Private Analyst")).toHaveLength(1);
     expect(visibilityTab("Private")).toHaveAttribute("aria-checked", "true");
@@ -322,9 +361,14 @@ test.each([
     configureCatalog([
       agent(CORE_AGENT_ID, { displayName: "Core Agent", visibility: "public" }),
     ]);
+    configureSetupThread();
     await setupPage({ context, path: "/agents" });
     const dialog = await openCreateDialog("Private");
     const name = within(dialog).getByLabelText("Name");
+    await fill(
+      within(dialog).getByLabelText(RESPONSIBILITY_LABEL),
+      "Summarize our pipeline every Monday.",
+    );
 
     fireEvent.compositionStart(name);
     await fill(name, candidate);
@@ -349,7 +393,7 @@ test.each([
     }
     await user.keyboard("{Enter}");
 
-    await expect(waitForAgentCard(CREATED_AGENT_ID)).resolves.toHaveTextContent(
+    await expect(returnToCreatedAgent(candidate)).resolves.toHaveTextContent(
       candidate,
     );
     expect(agentCardsNamed(candidate)).toHaveLength(1);
@@ -366,6 +410,10 @@ test("Blank Enter and cancelling a named draft do not create an agent", async ()
   const dialog = await openCreateDialog("Private");
   const name = within(dialog).getByLabelText("Name");
 
+  await fill(
+    within(dialog).getByLabelText(RESPONSIBILITY_LABEL),
+    "Summarize our pipeline every Monday.",
+  );
   await fill(name, "   ");
   await user.keyboard("{Enter}");
   expect(buttonByText("Create", dialog)).toBeDisabled();
@@ -383,6 +431,7 @@ test("Blank Enter and cancelling a named draft do not create an agent", async ()
   expect(agentCardsNamed("Discard this draft")).toHaveLength(0);
   const reopened = await openCreateDialog("Private");
   expect(within(reopened).getByLabelText("Name")).toHaveValue("");
+  expect(within(reopened).getByLabelText(RESPONSIBILITY_LABEL)).toHaveValue("");
   expect(
     within(reopened).getByRole("combobox", { name: "Visibility" }),
   ).toHaveTextContent("Private");
@@ -399,23 +448,27 @@ test("A pending create disables submission and adds only one agent card", async 
       },
     },
   );
+  configureSetupThread();
   await setupPage({ context, path: "/agents" });
   const dialog = await openCreateDialog("Private");
   const name = within(dialog).getByLabelText("Name");
+  const responsibility = within(dialog).getByLabelText(RESPONSIBILITY_LABEL);
 
+  await fill(responsibility, "Summarize our pipeline every Monday.");
   await fill(name, "Pending analyst");
   click(buttonByText("Create", dialog));
   const pending = await within(dialog).findByText("Creating…");
   expect(name).toBeDisabled();
+  expect(responsibility).toBeDisabled();
   expect(buttonByText("Cancel", dialog)).toBeDisabled();
   expect(pending.closest("button")).toBeDisabled();
   await user.keyboard("{Enter}");
   click(pending);
   response.resolve(undefined);
 
-  await expect(waitForAgentCard(CREATED_AGENT_ID)).resolves.toHaveTextContent(
-    "Pending analyst",
-  );
+  await expect(
+    returnToCreatedAgent("Pending analyst"),
+  ).resolves.toHaveTextContent("Pending analyst");
   expect(agentCardsNamed("Pending analyst")).toHaveLength(1);
 });
 
@@ -424,11 +477,16 @@ test("Create a public agent with a customized avatar", async () => {
   const catalog = configureCatalog([
     agent(CORE_AGENT_ID, { displayName: "Core Agent", visibility: "public" }),
   ]);
+  configureSetupThread();
   await setupPage({
     context,
     path: "/agents",
   });
   const creationDialog = await openCreateDialog("Public");
+  await fill(
+    within(creationDialog).getByLabelText(RESPONSIBILITY_LABEL),
+    "Coordinate our marketing campaigns.",
+  );
   await fill(within(creationDialog).getByLabelText("Name"), "Marketing Bot");
   await user.click(
     within(creationDialog).getByRole("combobox", { name: "Visibility" }),
@@ -453,7 +511,7 @@ test("Create a public agent with a customized avatar", async () => {
   await waitForElementToBeRemoved(avatarDialog);
   click(buttonByText("Create", creationDialog));
 
-  const createdCard = await waitForAgentCard(CREATED_AGENT_ID);
+  const createdCard = await returnToCreatedAgent("Marketing Bot");
   expect(createdCard).toHaveTextContent("Marketing Bot");
   expect(agentCardsNamed("Marketing Bot")).toHaveLength(1);
   expect(
@@ -464,16 +522,12 @@ test("Create a public agent with a customized avatar", async () => {
   ).toBeVisible();
 });
 
-test("Creating an agent with setup requires a multi-line responsibility", async () => {
+test("Creating an agent requires a multi-line responsibility", async () => {
   const user = userEvent.setup({ delay: null });
   configureCatalog([
     agent(CORE_AGENT_ID, { displayName: "Core Agent", visibility: "public" }),
   ]);
-  await setupPage({
-    context,
-    path: "/agents",
-    featureSwitches: { [FeatureSwitchKey.AgentResponsibilitySetup]: true },
-  });
+  await setupPage({ context, path: "/agents" });
   const dialog = await openCreateDialog("Private");
   const responsibility =
     await within(dialog).findByLabelText(RESPONSIBILITY_LABEL);
@@ -500,7 +554,7 @@ test("Creating an agent with setup requires a multi-line responsibility", async 
   expect(dialog).toBeInTheDocument();
 });
 
-test("Creating an agent with setup pins it and sends its setup prompt in a new thread", async () => {
+test("Creating an agent pins it and sends its setup prompt in a new thread", async () => {
   const user = userEvent.setup({ delay: null });
   const setupPrompt =
     "Please adopt this responsibility: every Monday, summarize last week's pipeline and flag stalled deals. Update your description and instructions to match.";
@@ -527,11 +581,7 @@ test("Creating an agent with setup pins it and sends its setup prompt in a new t
       },
     });
   });
-  await setupPage({
-    context,
-    path: "/agents",
-    featureSwitches: { [FeatureSwitchKey.AgentResponsibilitySetup]: true },
-  });
+  await setupPage({ context, path: "/agents" });
   const dialog = await openCreateDialog("Private");
   await fill(within(dialog).getByLabelText("Name"), "  Pipeline Analyst ");
   await fill(
@@ -574,11 +624,7 @@ test("A failed setup request after creation leaves the Agent visible without a r
       error: { code: "FORBIDDEN", message: "Setup temporarily unavailable" },
     });
   });
-  await setupPage({
-    context,
-    path: "/agents",
-    featureSwitches: { [FeatureSwitchKey.AgentResponsibilitySetup]: true },
-  });
+  await setupPage({ context, path: "/agents" });
   const dialog = await openCreateDialog("Private");
   await fill(within(dialog).getByLabelText("Name"), "Pipeline Analyst");
   await fill(
