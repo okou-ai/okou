@@ -28,7 +28,7 @@ packageExtensionsChecksum: sha256-pIE0Os0Euwl0py2OjpqWgejwY4MKO7vYrYee9T5h+bs=
 
 patchedDependencies:
   '@base-ui/react@1.7.0':
-    hash: 025b884fddd56e019980b91478c7caa3bc97c340d33390515812e1b85e87ed6e
+    hash: d42895527c59749f3f45c3d6629493f134abfa3b5afe045ad93ca025466841c6
     path: patches/@base-ui__react@1.7.0.patch
   '@earendil-works/pi-agent-core@0.87.1':
     hash: ef1d9f76dcbb7bf4a4786c3651170af05dc5b22a301a05646d90c87f0374ad7f
@@ -542,7 +542,7 @@ importers:
         version: 1.5.0
       '@base-ui/react':
         specifier: ^1.7.0
-        version: 1.7.0(patch_hash=025b884fddd56e019980b91478c7caa3bc97c340d33390515812e1b85e87ed6e)(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        version: 1.7.0(patch_hash=d42895527c59749f3f45c3d6629493f134abfa3b5afe045ad93ca025466841c6)(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@clerk/localizations':
         specifier: ^4.17.1
         version: 4.17.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -1167,7 +1167,7 @@ importers:
     dependencies:
       '@base-ui/react':
         specifier: ^1.7.0
-        version: 1.7.0(patch_hash=025b884fddd56e019980b91478c7caa3bc97c340d33390515812e1b85e87ed6e)(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        version: 1.7.0(patch_hash=d42895527c59749f3f45c3d6629493f134abfa3b5afe045ad93ca025466841c6)(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -9902,7 +9902,7 @@ snapshots:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
 
-  '@base-ui/react@1.7.0(patch_hash=025b884fddd56e019980b91478c7caa3bc97c340d33390515812e1b85e87ed6e)(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@base-ui/react@1.7.0(patch_hash=d42895527c59749f3f45c3d6629493f134abfa3b5afe045ad93ca025466841c6)(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@babel/runtime': 7.29.7
       '@base-ui/utils': 0.3.2(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)

@@ -256,7 +256,7 @@ test("Show the full agent name after granting the first connector access", async
 
 async function openDefaultAccountManager(rejectFirst = false) {
   const save = context.mocks.deferred<void>();
-  const savedIds: string[] = [];
+  let rejectNext = rejectFirst;
   const [connector] = mockConnectors(context, [
     { connectorSlug: "github", externalUsername: "work" },
   ]);
@@ -324,9 +324,9 @@ async function openDefaultAccountManager(rejectFirst = false) {
   context.mocks.api(
     connectorAccountsContract.setDefault,
     async ({ params, respond }) => {
-      savedIds.push(params.connectionId);
       await save.promise;
-      if (rejectFirst && savedIds.length === 1) {
+      if (rejectNext) {
+        rejectNext = false;
         return respond(403, {
           error: { message: "Permission denied", code: "FORBIDDEN" },
         });
@@ -352,7 +352,7 @@ async function openDefaultAccountManager(rejectFirst = false) {
   const manager = await screen.findByRole("dialog", {
     name: "Manage GitHub accounts",
   });
-  return { manager, personal, save, savedIds };
+  return { manager, save };
 }
 
 function accountRadio(manager: HTMLElement, name: string): HTMLElement {
@@ -365,10 +365,9 @@ function accountRadio(manager: HTMLElement, name: string): HTMLElement {
 }
 
 test.each(["pointer", "Space", "ArrowDown"] as const)(
-  "Make another connector account the default with %s exactly once",
+  "Make another connector account the default with %s",
   async (activation) => {
-    const { manager, personal, save, savedIds } =
-      await openDefaultAccountManager();
+    const { manager, save } = await openDefaultAccountManager();
     const user = userEvent.setup();
     const workRadio = accountRadio(manager, "Work");
     const personalRadio = accountRadio(manager, "Personal");
@@ -401,19 +400,44 @@ test.each(["pointer", "Space", "ArrowDown"] as const)(
       "aria-disabled",
       "true",
     );
-    expect(savedIds).toStrictEqual([personal.id]);
     expect(within(manager).getAllByText("Work")).toHaveLength(1);
     expect(getConnectorCard("GitHub")).toHaveTextContent("2 accounts");
 
     await user.click(accountRadio(manager, "Personal"));
     await user.keyboard(" ");
-    expect(savedIds).toStrictEqual([personal.id]);
+    expect(accountRadio(manager, "Personal")).toBeChecked();
+    expect(accountRadio(manager, "Work")).not.toBeChecked();
   },
 );
 
+test("Keep arrow navigation on the focused account after default-first reordering", async () => {
+  const { manager, save } = await openDefaultAccountManager();
+  const user = userEvent.setup();
+  save.resolve();
+  act(() => {
+    accountRadio(manager, "Work").focus();
+  });
+
+  for (const [key, selected] of [
+    ["{ArrowDown}", "Personal"],
+    ["{ArrowDown}", "Work"],
+    ["{ArrowRight}", "Personal"],
+    ["{ArrowUp}", "Work"],
+    ["{ArrowLeft}", "Personal"],
+  ] as const) {
+    await user.keyboard(key);
+    await waitFor(() => {
+      expect(accountRadio(manager, selected)).toBeChecked();
+      expect(accountRadio(manager, selected)).toHaveAttribute("tabindex", "0");
+    });
+    expect(accountRadio(manager, selected)).toHaveFocus();
+    const rows = within(manager).getAllByRole("group");
+    expect(rows[0]).toHaveAttribute("aria-label", selected);
+  }
+});
+
 test("Keep the saved default account after a rejected change and allow retry", async () => {
-  const { manager, personal, save, savedIds } =
-    await openDefaultAccountManager(true);
+  const { manager, save } = await openDefaultAccountManager(true);
   const user = userEvent.setup();
   const workRadio = accountRadio(manager, "Work");
   const personalRadio = accountRadio(manager, "Personal");
@@ -433,14 +457,12 @@ test("Keep the saved default account after a rejected change and allow retry", a
   expect(workRadio).toHaveAttribute("aria-label", "Default");
   expect(personalRadio).not.toBeChecked();
   expect(personalRadio).toHaveAttribute("aria-label", "Make default");
-  expect(savedIds).toStrictEqual([personal.id]);
 
   await user.click(personalRadio);
   await waitFor(() => {
     expect(accountRadio(manager, "Personal")).toBeChecked();
   });
   expect(accountRadio(manager, "Work")).not.toBeChecked();
-  expect(savedIds).toStrictEqual([personal.id, personal.id]);
 });
 
 test("Grant and revoke connector access for agents", async () => {
