@@ -13,7 +13,7 @@ skips to 5 and 4 stays unsupported everywhere.
 **Readers ship first.** Runners advertise `[1, 2, 3, 5]` on claim and
 validate the generation 5 shape. The API claim gate, the CLI launch reader,
 the Pi runtime and the guest-agent request diagnostics accept it. Writers are
-gated by the `_piOpenRouterChatCompletions` feature switch, off by default;
+gated by the `piOpenRouterChatCompletions` feature switch, off by default;
 with it off every captured route is unchanged.
 
 **Activation.** Enable the switch only after every serving Runner advertises
