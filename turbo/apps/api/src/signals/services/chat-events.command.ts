@@ -124,10 +124,7 @@ import {
   shouldDispatchCancelSideEffects,
 } from "./run-cancel.service";
 import { uploadedArtifactObject } from "./uploaded-artifact.service";
-import {
-  officialWorkflowQueueContextId,
-  webChatContextId,
-} from "./web-chat-queue-context.service";
+import { webChatContextId } from "./web-chat-queue-context.service";
 /** Canonical ChatEvent write commands. */
 type SendBody = z.infer<typeof chatEventsContract.send.body>;
 interface NormalSendBody {
@@ -1217,10 +1214,7 @@ function normalSendEvent(params: {
     ...(params.triggerSource === "web"
       ? {
           contextType: "web",
-          contextId:
-            params.requiredOfficialWorkflowIds === undefined
-              ? webChatContextId()
-              : officialWorkflowQueueContextId(),
+          contextId: webChatContextId(),
         }
       : {}),
     ...(params.triggerSource === "agent" && params.agentRunSource
@@ -1234,7 +1228,7 @@ function normalSendEvent(params: {
           }
         : {
             contextType: "agent_run",
-            contextId: officialWorkflowQueueContextId(),
+            contextId: webChatContextId(),
           }
       : {}),
   };

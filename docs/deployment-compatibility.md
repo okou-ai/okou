@@ -40,6 +40,41 @@ Haiku 5.5, DeepSeek V4.1 Flash). The Codex projection is unchanged.
 the Runner back below this release while the switch is on leaves generation 5
 jobs queued; disable the switch first.
 
+## Official Workflow canonical queue contexts (#29908, writer cutover)
+
+Official `input.prompt` events from both Web and Agent callers now use the
+normal Web context ID. Their `context_type` remains `web` or `agent_run`, and
+the server-private `required_official_workflow_ids` claim is unchanged. Ordinary
+Agent inputs still point to their source Run. Official Agent inputs recover
+their source Run and inherited autonomy budget from the server-owned document
+annotation, as before. Final Official admission and exact artifact mounts are
+unchanged; the private claim stays out of public event and snapshot payloads.
+
+- **Prepared reader with new writer:** the reader preparation in #32533 accepts
+  the normal Web ID plus a strict Official claim for both origins. New and
+  prepared-reader APIs can consume each other's queued inputs.
+- **New reader with previous writer:** both reserved Official marker IDs remain
+  readable. The writer helper is removed, but marker constants and decoding
+  remain until the later retirement release.
+- **API before reader preparation:** it cannot safely consume canonical Official
+  inputs. Exclude it from serving and supported rollback before promoting this
+  writer. The current rollback resolver requires the unified chat queue commit
+  `553fc566b7e9be2cd4a8c1de314d55939b99490a`, which contains #32533. Refresh the
+  actual serving and rollback inventory before production promotion; source
+  ancestry alone does not prove deployed enforcement or outgoing-instance drain.
+
+This stage needs no migration or historical event rewrite. Retained context IDs
+remain opaque in raw events, snapshots and archives. After promotion, record
+canonical Official writes and successful admission from both origins, including
+Agent source and budget preservation, and record the last marker-writing API
+cutoff. An origin without traffic remains unverified.
+
+The later decoder retirement in #29908 requires excluding every marker writer
+from serving and supported rollback, a complete census of all unrevoked runless
+legacy-marker prompts across both IDs and every queue position, and current
+queue recovery evidence. Keep strict claim validation and immutable history;
+this writer cutover does not complete the parent issue.
+
 ## SEO partial SERP results (issue #36799)
 
 `POST /api/seo/serp` returns HTTP 200 for DataForSEO task status `40106`
@@ -2145,8 +2180,9 @@ Kept compatibility, with the unmet condition:
   is a separate Runner/Guest protocol change without a documented deadline.
 - `GET /api/integrations/telegram/bots` for older CLIs: deployed CLIs have no
   version floor.
-- Official Workflow queue marker decoding (#29908): its writers still write the
-  markers.
+- Official Workflow queue marker decoding (#29908): previous APIs can still
+  write markers, and pending marker inputs have not been proven drained. See
+  the [canonical writer cutover](#official-workflow-canonical-queue-contexts-29908-writer-cutover).
 
 ## Direct PUT checksum removal and Browser file uploads (#37241)
 
