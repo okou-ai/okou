@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.379.0](https://github.com/okou-ai/okou/compare/cli-v9.378.26...cli-v9.379.0) (2026-10-08)
+
+
+### Features
+
+* **notify:** add agent-controlled mail notifications ([#38093](https://github.com/okou-ai/okou/issues/38093)) ([702c270](https://github.com/okou-ai/okou/commit/702c270169c8de738aa9f47ed5480ed377edcfda))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.541.0
+    * @okouai/core bumped to 8.736.0
+    * @okouai/pi-agent-runtime bumped to 1.46.27
+
 ## [9.378.26](https://github.com/okou-ai/okou/compare/cli-v9.378.25...cli-v9.378.26) (2026-10-08)
 
 
