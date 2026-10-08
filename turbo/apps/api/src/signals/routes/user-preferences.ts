@@ -13,59 +13,21 @@ import { publishUserPreferenceChangedForUserSafely } from "../external/realtime"
 import { synchronizeMorningBriefTimezone$ } from "../services/morning-brief-timezone.service";
 
 import { badRequestMessage, conflict } from "../../lib/error";
-import { logger } from "../../lib/log";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { waitUntil } from "../context/wait-until";
 import type { RouteEntry } from "../route-entry";
 import { initializeMemberMemory$ } from "../services/member-memory-initialization.service";
-import { prepareMorningBriefEnrollment$ } from "../services/morning-brief-enrollment-retry.service";
-import {
-  ensureMorningBriefDefaultEnabled$,
-  type EnsureMorningBriefDefaultEnabledResult,
-} from "../services/morning-brief-preference.service";
 import {
   updateUserPreferences$,
   userPreferences,
 } from "../services/user-data.service";
-
-import { settle, tapError } from "../utils";
-
-const L = logger("user-preferences");
 
 function isValidUserLocale(locale: string | null): locale is UserLocale {
   return locale !== null && userLocaleSchema.safeParse(locale).success;
 }
 
 const updateUserPreferencesBody$ = bodyResultOf(userPreferencesContract.update);
-
-async function observeMorningBriefProvisioning(
-  task: Promise<EnsureMorningBriefDefaultEnabledResult>,
-  context: { readonly orgId: string; readonly userId: string },
-): Promise<void> {
-  const provisioning = await task;
-  const details = { ...context, provisioning };
-  if (provisioning.outcome === "failed") {
-    L.warn("Morning Brief timezone provisioning outcome", details);
-    return;
-  }
-  L.info("Morning Brief timezone provisioning outcome", details);
-}
-
-function enqueueMorningBriefProvisioning(
-  task: Promise<EnsureMorningBriefDefaultEnabledResult>,
-  context: { readonly orgId: string; readonly userId: string },
-): void {
-  waitUntil(
-    tapError(observeMorningBriefProvisioning(task, context), (error) => {
-      L.error("Morning Brief timezone provisioning failed", {
-        ...context,
-        error,
-      });
-    }),
-  );
-}
 
 const getUserPreferencesInner$ = computed(async (get): Promise<unknown> => {
   const auth = get(organizationAuthContext$);
@@ -135,20 +97,6 @@ const updateUserPreferencesInner$ = command(
           "Morning Brief schedule changed concurrently. Retry the time zone update.",
         );
       }
-      enqueueMorningBriefProvisioning(
-        set(
-          ensureMorningBriefDefaultEnabled$,
-          {
-            orgId: auth.orgId,
-            member: {
-              userId: auth.userId,
-              role: auth.orgRole ?? "member",
-            },
-          },
-          signal,
-        ),
-        { orgId: auth.orgId, userId: auth.userId },
-      );
     }
     return {
       status: 200 as const,
@@ -264,31 +212,6 @@ const initializeUserPreferencesInner$ = command(
         },
       };
     }
-    await set(prepareMorningBriefEnrollment$, identity, signal);
-
-    signal.throwIfAborted();
-    const enrollment = await settle(
-      set(
-        ensureMorningBriefDefaultEnabled$,
-        {
-          orgId: auth.orgId,
-          member: { userId: auth.userId, role: auth.orgRole ?? "member" },
-        },
-        signal,
-      ),
-      signal,
-    );
-    const details = {
-      ...identity,
-      outcome: enrollment.ok ? enrollment.value : "failed",
-      ...(!enrollment.ok ? { error: enrollment.error } : {}),
-    };
-    if (!enrollment.ok || enrollment.value.outcome === "failed") {
-      L.warn("Morning Brief initialization deferred", details);
-    } else {
-      L.info("Morning Brief initialization outcome", details);
-    }
-    signal.throwIfAborted();
     const [stored] = await db
       .select({
         timezone: orgMembersMetadata.timezone,

@@ -191,6 +191,9 @@ test("The growth menu credit balance opens Usage settings", async () => {
     }),
     withCreditBalance: true,
   });
+  context.mocks.api(billingStatusContract.get, ({ respond }) => {
+    return respond(200, { ...billingStatus(), credits: -23_000 });
+  });
   await setupPage({ context, path: growthChatPath() });
 
   const primaryEntry = await waitFor(() => {

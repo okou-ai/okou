@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.6](https://github.com/okou-ai/okou/compare/runner-executor-v0.5.5...runner-executor-v0.5.6) (2026-10-08)
+
+
+### Bug Fixes
+
+* **guest-storage-apply:** fail run preparation on injection errors ([#38070](https://github.com/okou-ai/okou/issues/38070)) ([496599f](https://github.com/okou-ai/okou/commit/496599f7faf42b8c0ae425c7af3eea457a571fd0))
+
 ## [0.5.5](https://github.com/okou-ai/okou/compare/runner-executor-v0.5.4...runner-executor-v0.5.5) (2026-10-08)
 
 

@@ -40,12 +40,18 @@ import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChanged,
 } from "../external/realtime";
-import { safeJsonParse, settle } from "../utils";
+import { safeJsonParse, settle, settleIncludingAbort } from "../utils";
 import { waitUntil } from "../context/wait-until";
 import {
   canonicalInputContentType,
   canonicalInputMessageFiles,
-  createCanonicalInputFileCommands,
+  canonicalInputImportSignals,
+  canonicalInputImportOutcome,
+  prepareCanonicalInputFile$,
+  storeCanonicalInputFile$,
+  completeCanonicalInputFile$,
+  type CanonicalInputImportPlan,
+  type CanonicalInputImportReady,
   InputFileImportError,
   type CanonicalInputAsset,
 } from "./canonical-asset.service";
@@ -222,30 +228,18 @@ const downloadInputAttachment$ = command(
   },
 );
 
-const downloadIngressAttachment$ = command(
+const importDiscordInputFile$ = command(
   async (
     { set },
-    args: {
-      readonly attachment: InputAttachmentDownload;
-      readonly onError: (error: unknown) => void;
-    },
+    plan: CanonicalInputImportPlan,
+    attachment: InputAttachmentDownload,
     signal: AbortSignal,
-  ): Promise<Response> => {
-    const downloaded = await settle(
-      set(downloadInputAttachment$, args.attachment, signal),
-      signal,
-    );
-    if (!downloaded.ok) {
-      args.onError(downloaded.error);
-      // The canonical importer must still persist the original failure.
-      throw downloaded.error;
-    }
-    return downloaded.value;
+  ): Promise<CanonicalInputImportReady> => {
+    const response = await set(downloadInputAttachment$, attachment, signal);
+    signal.throwIfAborted();
+    return await set(storeCanonicalInputFile$, plan, response, signal);
   },
 );
-
-const { materializeCanonicalInputFile$: materializeDiscordInputFile$ } =
-  createCanonicalInputFileCommands(downloadIngressAttachment$);
 
 function discordResult<T>(result: DiscordApiResult<T>): T {
   if (result.kind === "ok") {
@@ -536,8 +530,8 @@ const materializeIngressAttachment$ = command(
   ): Promise<DiscordInputAsset> => {
     const { accessArgs, message, attachment, chatThreadId } = args;
     let retryAfterMs = 0;
-    const asset = await set(
-      materializeDiscordInputFile$,
+    const prepared = await set(
+      prepareCanonicalInputFile$,
       {
         userId: accessArgs.userId,
         orgId: accessArgs.orgId,
@@ -560,8 +554,21 @@ const materializeIngressAttachment$ = command(
         ),
         size: attachment.size,
         maxBytes: MAX_DISCORD_FILE_SIZE_BYTES,
-        download: {
-          attachment: {
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    let asset: CanonicalInputAsset;
+    if (prepared.kind === "complete") {
+      asset = prepared.asset;
+    } else {
+      const { importController, importSignal } =
+        canonicalInputImportSignals(signal);
+      const imported = await settleIncludingAbort(
+        set(
+          importDiscordInputFile$,
+          prepared.plan,
+          {
             ...accessArgs,
             discordUserId: message.author.id,
             messageId: message.id,
@@ -574,15 +581,29 @@ const materializeIngressAttachment$ = command(
               url: attachment.url,
             },
           },
-          onError: (error) => {
-            if (error instanceof DiscordAttachmentImportError) {
-              retryAfterMs = error.retryAfterMs;
-            }
-          },
-        },
-      },
-      signal,
-    );
+          importSignal,
+        ),
+      );
+      signal.throwIfAborted();
+      if (
+        !imported.ok &&
+        !importSignal.aborted &&
+        imported.error instanceof DiscordAttachmentImportError
+      ) {
+        retryAfterMs = imported.error.retryAfterMs;
+      }
+      const outcome = canonicalInputImportOutcome(imported, importSignal);
+      if (!imported.ok) {
+        importController.abort();
+      }
+      asset = await set(
+        completeCanonicalInputFile$,
+        prepared.plan,
+        outcome,
+        signal,
+      );
+      signal.throwIfAborted();
+    }
     if (asset.status === "failed" && asset.error?.retryable) {
       throw new DiscordIngressFailure(
         `attachment:${asset.error.code}`,

@@ -6,7 +6,10 @@ import ast
 from enum import Enum, auto
 from pathlib import Path
 
-from flow_metadata_linter.ast_helpers import _static_first_call_argument_nodes
+from flow_metadata_linter.ast_helpers import (
+    _static_first_call_argument_nodes,
+    _static_mapping_input_key_outcomes,
+)
 from flow_metadata_linter.paths import ADDON_ROOT as _ADDON_ROOT
 from flow_metadata_linter.registry import REGISTERED_METADATA_KEYS as _REGISTERED_METADATA_KEYS
 
@@ -187,7 +190,11 @@ def _metadata_collection_call_violations(
     path: Path, node: ast.Call, mode: _MetadataCollectionMode
 ) -> list[str]:
     if mode is _MetadataCollectionMode.MAPPING_PAIR_KEYS:
-        return []
+        # Project constructor input to resulting keys before consuming those keys as pairs.
+        mapping_pair_violations: list[str] = []
+        for key in _static_mapping_input_key_outcomes(node, include_all=True).nodes:
+            mapping_pair_violations.extend(_metadata_pair_element_violations(path, key))
+        return mapping_pair_violations
     if isinstance(node.func, ast.Attribute):
         if (
             isinstance(node.func.value, ast.Name)

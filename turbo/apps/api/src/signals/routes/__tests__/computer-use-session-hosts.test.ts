@@ -10,6 +10,7 @@ import {
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockEnv } from "../../../lib/env";
 import { mockNow } from "../../../lib/time";
 import { computerUseRoutes } from "../computer-use";
 
@@ -64,6 +65,176 @@ async function app() {
 }
 
 describe("Native Computer Use session authentication", () => {
+  it("requires an upgrade at registration, including legacy clients that claim a supported version", async () => {
+    const api = await app();
+    authenticate(identity());
+    mockEnv("OKOU_DESKTOP_MINIMUM_SUPPORTED_VERSION", "0.51.0");
+    const old = await accept(
+      api(contract).register({ headers, body: runtimeBody }),
+      [426],
+    );
+    expect(old.body).toMatchObject({
+      error: { code: "DESKTOP_UPDATE_REQUIRED" },
+      minimumSupportedVersion: "0.51.0",
+    });
+    await accept(
+      api(computerUseHostsContract).start({
+        headers,
+        body: { ...runtimeBody, appVersion: "99.0.0" },
+      }),
+      [426],
+    );
+    await accept(
+      api(contract).register({
+        headers,
+        body: { ...runtimeBody, appVersion: "0.51.0" },
+      }),
+      [200],
+    );
+  });
+
+  it("closes admission for existing old hosts but lets their claimed command finish and stop", async () => {
+    const api = await app();
+    authenticate(identity());
+    const client = api(contract);
+    const registered = (
+      await accept(client.register({ headers, body: runtimeBody }), [200])
+    ).body;
+    const params = { hostId: registered.hostId };
+    const body = { connectionGeneration: registered.connectionGeneration };
+    const created = (
+      await accept(
+        api(computerUseCommandContract).create({
+          headers,
+          body: { kind: "apps.list", timeoutMs: 10_000 },
+        }),
+        [200],
+      )
+    ).body;
+    await accept(
+      client.next({
+        headers,
+        params,
+        body: { ...body, supportedCapabilities: ["apps.list"] },
+      }),
+      [200],
+    );
+    mockEnv("OKOU_DESKTOP_MINIMUM_SUPPORTED_VERSION", "0.51.0");
+    await accept(
+      client.next({
+        headers,
+        params,
+        body,
+        extraHeaders: { "X-Client-Version": "99.0.0" },
+      }),
+      [426],
+    );
+    const listed = (
+      await accept(api(computerUseHostsContract).list({ headers }), [200])
+    ).body;
+    expect(listed.hosts).toContainEqual(
+      expect.objectContaining({ id: params.hostId, status: "offline" }),
+    );
+    await accept(
+      api(computerUseCommandContract).create({
+        headers,
+        body: { kind: "apps.list" },
+      }),
+      [409],
+    );
+    await accept(
+      client.heartbeat({ headers, params, body: { ...runtimeBody, ...body } }),
+      [200],
+    );
+    await accept(
+      client.complete({
+        headers,
+        params: { ...params, commandId: created.commandId },
+        body: { ...body, status: "succeeded", result: { apps: [] } },
+      }),
+      [200],
+    );
+    const observed = (
+      await accept(
+        api(computerUseCommandContract).get({
+          headers,
+          params: { commandId: created.commandId },
+        }),
+        [200],
+      )
+    ).body;
+    expect(observed).toMatchObject({
+      status: "succeeded",
+      result: { apps: [] },
+    });
+    await accept(client.stop({ headers, params, body }), [200]);
+  });
+
+  it("drains legacy work after activation even when its stored version claims to be current", async () => {
+    const api = await app();
+    authenticate(identity());
+    const runtime = { ...runtimeBody, appVersion: "99.0.0" };
+    const legacy = (
+      await accept(
+        api(computerUseHostsContract).start({ headers, body: runtime }),
+        [200],
+      )
+    ).body;
+    const legacyHeaders = { authorization: `Bearer ${legacy.hostToken}` };
+    const created = (
+      await accept(
+        api(computerUseCommandContract).create({
+          headers,
+          body: { kind: "apps.list" },
+        }),
+        [200],
+      )
+    ).body;
+    await accept(
+      api(computerUseHostCommandsContract).next({
+        headers: legacyHeaders,
+        body: {},
+      }),
+      [200],
+    );
+    mockEnv("OKOU_DESKTOP_MINIMUM_SUPPORTED_VERSION", "0.51.0");
+    await accept(
+      api(computerUseHostCommandsContract).next({
+        headers: legacyHeaders,
+        body: {},
+      }),
+      [426],
+    );
+    const listed = (
+      await accept(api(computerUseHostsContract).list({ headers }), [200])
+    ).body;
+    expect(listed.hosts).toContainEqual(
+      expect.objectContaining({ id: legacy.hostId, status: "offline" }),
+    );
+    await accept(
+      api(computerUseHeartbeatContract).heartbeat({
+        headers: legacyHeaders,
+        body: runtime,
+      }),
+      [200],
+    );
+    await accept(
+      api(computerUseHostCommandsContract).complete({
+        headers: legacyHeaders,
+        params: { commandId: created.commandId },
+        body: { status: "succeeded", result: { apps: [] } },
+      }),
+      [200],
+    );
+    await accept(
+      api(computerUseHeartbeatContract).stop({
+        headers: legacyHeaders,
+        body: {},
+      }),
+      [200],
+    );
+  });
+
   it("registers, claims, reports, and stops using only a Clerk session", async () => {
     const api = await app();
     const client = api(contract);

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.104.6](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.5...guest-agent-v0.104.6) (2026-10-08)
+
+
+### Bug Fixes
+
+* classify codex cybersecurity safety refusals ([#37945](https://github.com/okou-ai/okou/issues/37945)) ([5693b80](https://github.com/okou-ai/okou/commit/5693b806ad5a55154a8e9f3d7b3bb5de727624e2))
+
 ## [0.104.5](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.4...guest-agent-v0.104.5) (2026-10-08)
 
 ## [0.104.4](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.3...guest-agent-v0.104.4) (2026-10-08)

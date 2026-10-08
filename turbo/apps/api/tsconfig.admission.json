@@ -12,7 +12,6 @@
     "src/lib/feishu-message-content.ts",
     "src/lib/generation-template-prompt.ts",
     "src/lib/integration-dm-session.ts",
-    "src/lib/pi-langfuse-debug.ts",
     "src/lib/pi-model-config-observation.ts",
     "src/lib/preview-automation-bypass.ts",
     "src/lib/slack-blocks.ts",

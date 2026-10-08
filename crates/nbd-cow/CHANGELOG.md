@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.2...nbd-cow-v0.5.3) (2026-10-08)
+
+
+### CI
+
+* use 20261008 toolchain images ([#37988](https://github.com/okou-ai/okou/issues/37988)) ([367fd6b](https://github.com/okou-ai/okou/commit/367fd6b83334f5b8f0f833e255854e1a3927c6bb))
+
 ## [0.5.2](https://github.com/vm0-ai/vm0/compare/nbd-cow-v0.5.1...nbd-cow-v0.5.2) (2026-09-15)
 
 

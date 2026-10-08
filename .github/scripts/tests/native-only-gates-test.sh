@@ -67,6 +67,14 @@ def gate(jobs, name, values, expected):
     assert (result.returncode == 0) == expected, result.stdout + result.stderr
 
 native = context()
+for result in ['failure', 'cancelled', 'skipped']:
+    blocked = context(ios=False, ts=True) | {'needs.ci-admission.result': result}
+    assert not condition(turbo['detect-release'], blocked)
+    assert condition(turbo['ci-gate-turbo'], blocked)
+    gate(turbo, 'ci-gate-turbo', blocked, False)
+    # Release classification cannot turn a rejected admission into a pass.
+    gate(turbo, 'ci-gate-turbo', blocked | {'needs.detect-release.outputs.skip': 'true'}, False)
+
 for job in ts_jobs + ['lint-runtime-api-compat'] + artifacts:
     assert not condition(turbo[job], native), job
 for job in ['bench-api', 'bench-app']:
