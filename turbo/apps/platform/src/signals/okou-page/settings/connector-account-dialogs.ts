@@ -436,6 +436,8 @@ const saveConnectorAccountRenameCommand$ = command(
 export const saveConnectorAccountRename$ = command(
   ({ get, set }, target: ConnectorAccountTarget, pageSignal: AbortSignal) => {
     const signal = set(resetConnectorAccountRenameSave$, pageSignal);
+    // Save becomes disabled while pending; keep its focus in the mounted form.
+    get(internalAccountRenameInput$)?.focus();
     return onRejection(
       set(saveConnectorAccountRenameCommand$, target, signal),
       () => {

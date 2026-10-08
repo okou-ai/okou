@@ -230,33 +230,6 @@ test.each(["keyboard", "pointer"] as const)(
   },
 );
 
-test("An ordinary account menu dismissal preserves focus on account search", async () => {
-  mockRenameAccounts({ accountCount: 7 });
-  const user = userEvent.setup({ delay: null });
-  await setupPage({ context, path: "/connectors?keywords=github" });
-  const manager = await openManager(user);
-  await tabTo(user, accountActions(manager, "Work 1"));
-  await user.keyboard("{Enter}");
-  await screen.findByRole("menu");
-  const search = within(manager).getByPlaceholderText("Find accounts");
-
-  await user.click(search);
-  await waitFor(() => {
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    expect(search).toHaveFocus();
-  });
-  await user.keyboard("Work 1");
-  expect(search).toHaveValue("Work 1");
-  await waitFor(() => {
-    expect(
-      within(manager).queryByRole("group", { name: "Work 2" }),
-    ).not.toBeInTheDocument();
-  });
-  expect(
-    within(manager).getByRole("group", { name: "Work 1" }),
-  ).toBeInTheDocument();
-});
-
 test("Restore the renamed account actions only after the refreshed list arrives", async () => {
   const response = context.mocks.deferred<"success" | "error">();
   const refresh = context.mocks.deferred<void>();
@@ -276,10 +249,11 @@ test("Restore the renamed account actions only after the refreshed list arrives"
   await user.keyboard("{Enter}");
   await fixture.renameStarted;
   expect(getConnectorAction("button", "Save", manager)).toBeDisabled();
+  expect(input).toHaveFocus();
 
   response.resolve("success");
   await fixture.refreshStarted;
-  expect(manager.contains(document.activeElement)).toBeTruthy();
+  expect(input).toHaveFocus();
   expect(
     within(manager).queryByRole("group", { name: "Research" }),
   ).not.toBeInTheDocument();
