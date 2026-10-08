@@ -1,11 +1,15 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
+import { http, HttpResponse } from "msw";
 import { z } from "zod";
-import { testDiscordStateContract } from "@okouai/api-contracts/contracts/test-discord-state";
+import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
+import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { mockEnv } from "../../../../lib/env";
-import { discordStatePreviewRoutes } from "../../discord-state-preview";
+import { server } from "../../../../mocks/server";
+import { discordOauthRoutes } from "../../discord-oauth";
+import { integrationsDiscordRoutes } from "../../integrations-discord";
 import { createRouteMocks } from "./route-test";
 
 export interface DiscordActor {
@@ -20,6 +24,7 @@ export interface DiscordFixture extends DiscordActor {
   readonly botUserId: string;
   readonly discordUserId: string;
   readonly connectionId: string;
+  readonly flow: "install" | "connect";
 }
 
 export function uniqueDiscordSnowflake(): string {
@@ -70,71 +75,202 @@ export function mockDiscordMemberships(
   );
 }
 
-export async function seedDiscordFixture(
+/** IDs configure Discord's external responses, never proof sent to Okou. */
+export async function createPublicDiscordBinding(
   context: TestContext,
   args: DiscordActor & {
+    readonly flow: "install" | "connect";
     readonly guildId?: string;
     readonly guildName?: string;
     readonly botUserId?: string;
     readonly discordUserId?: string;
-    readonly history?: {
-      readonly chatThreadId: string;
-      readonly channelId: string;
-      readonly messageId: string;
-      readonly messageText: string;
-    };
   },
 ): Promise<DiscordFixture> {
-  mockEnv("ENV", "development");
   createRouteMocks(context).clerk.session(
     args.userId,
     args.orgId,
     args.orgRole,
   );
-  const fixture = {
+  const identity = {
     orgId: args.orgId,
     userId: args.userId,
     orgRole: args.orgRole,
+    flow: args.flow,
     guildId: args.guildId ?? uniqueDiscordSnowflake(),
     guildName: args.guildName ?? "Discord test guild",
     botUserId: args.botUserId ?? "123456789012345678",
     discordUserId: args.discordUserId ?? uniqueDiscordSnowflake(),
   };
-  const response = await accept(
-    setupApp({ context, routes: discordStatePreviewRoutes })(
-      testDiscordStateContract,
-    ).post({
-      headers: { authorization: "Bearer clerk-session" },
-      body: {
-        guildId: fixture.guildId,
-        guildName: fixture.guildName,
-        botUserId: fixture.botUserId,
-        discordUserId: fixture.discordUserId,
-        ...(args.history ? { history: args.history } : {}),
-      },
+  const code = randomUUID();
+  const accessToken = `discord-access-${randomUUID()}`;
+  const base = "https://discord.com/api/v10";
+  let active = true;
+  // These handlers own only this finite OAuth exchange. They fall through for
+  // unrelated bearer identities and all later native bot requests. Central
+  // test-context cleanup resets registration after the case.
+  server.use(
+    http.post(`${base}/oauth2/token`, async ({ request }) => {
+      if (!active) {
+        return;
+      }
+      const body = new URLSearchParams(await request.text());
+      if (body.get("code") !== code) {
+        return;
+      }
+      return HttpResponse.json({
+        access_token: accessToken,
+        token_type: "Bearer",
+        expires_in: 3600,
+        refresh_token: `discord-refresh-${randomUUID()}`,
+        scope:
+          args.flow === "install"
+            ? "identify guilds bot applications.commands"
+            : "identify guilds",
+        guild: { id: identity.guildId, name: identity.guildName },
+      });
     }),
-    [200],
+    http.get(`${base}/users/@me`, ({ request }) => {
+      if (!active) {
+        return;
+      }
+      const authorization = request.headers.get("authorization");
+      if (authorization === `Bearer ${accessToken}`) {
+        return HttpResponse.json({
+          id: identity.discordUserId,
+          username: "member",
+        });
+      }
+      if (authorization?.startsWith("Bot ")) {
+        return HttpResponse.json({
+          id: identity.botUserId,
+          username: "Okou",
+          bot: true,
+        });
+      }
+    }),
+    http.get(`${base}/users/@me/guilds`, ({ request }) => {
+      if (
+        !active ||
+        request.headers.get("authorization") !== `Bearer ${accessToken}`
+      ) {
+        return;
+      }
+      const after = new URL(request.url).searchParams.get("after");
+      return HttpResponse.json(
+        after
+          ? []
+          : [
+              {
+                id: identity.guildId,
+                name: identity.guildName,
+                owner: args.flow === "install",
+                permissions: args.flow === "install" ? "8" : "0",
+                features: [],
+              },
+            ],
+      );
+    }),
+    http.get(`${base}/guilds/${identity.guildId}`, () => {
+      if (!active) {
+        return;
+      }
+      return HttpResponse.json({
+        id: identity.guildId,
+        name: identity.guildName,
+        owner_id: identity.discordUserId,
+      });
+    }),
+    http.get(
+      `${base}/guilds/${identity.guildId}/members/:userId`,
+      ({ params }) => {
+        if (!active) {
+          return;
+        }
+        const id = String(params.userId);
+        return HttpResponse.json({
+          user: { id, username: "member", bot: id === identity.botUserId },
+          roles: [],
+        });
+      },
+    ),
   );
-  return { ...fixture, connectionId: response.body.connectionId };
+  try {
+    const oauth = setupApp({ context, routes: discordOauthRoutes })(
+      discordOauthContract,
+    );
+    const started = await accept(
+      oauth.start({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { flow: args.flow, guildId: identity.guildId },
+      }),
+      [200],
+    );
+    const state = new URL(started.body.authorizationUrl).searchParams.get(
+      "state",
+    );
+    if (!state) {
+      throw new Error("Discord OAuth start did not issue state");
+    }
+    const cookie = started.headers.get("set-cookie")?.split(";")[0];
+    await accept(
+      oauth.callback({
+        headers: cookie ? { cookie } : {},
+        query: {
+          code,
+          state,
+          ...(args.flow === "install" ? { guild_id: identity.guildId } : {}),
+        },
+      }),
+      [307],
+    );
+    const status = await accept(
+      setupApp({ context, routes: integrationsDiscordRoutes })(
+        integrationsDiscordContract,
+      ).getStatus({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    const connection = status.body.dmBindings.find((binding) => {
+      return binding.guildId === identity.guildId;
+    });
+    if (
+      !status.body.isConnected ||
+      status.body.discordUserId !== identity.discordUserId ||
+      !connection
+    ) {
+      throw new Error(
+        `Discord OAuth did not expose the connected binding: ${JSON.stringify(status.body)}`,
+      );
+    }
+    return { ...identity, connectionId: connection.connectionId };
+  } finally {
+    active = false;
+  }
 }
 
-export async function deleteDiscordFixture(
+/** Disconnect as the actual member; only the installer may uninstall. */
+export async function removePublicDiscordBinding(
   context: TestContext,
   fixture: DiscordFixture,
 ): Promise<void> {
-  mockEnv("ENV", "development");
   createRouteMocks(context).clerk.session(
     fixture.userId,
     fixture.orgId,
-    "org:admin",
+    fixture.orgRole,
   );
+  const client = setupApp({ context, routes: integrationsDiscordRoutes })(
+    integrationsDiscordContract,
+  );
+  const headers = { authorization: "Bearer clerk-session" };
   await accept(
-    setupApp({ context, routes: discordStatePreviewRoutes })(
-      testDiscordStateContract,
-    ).delete({
-      headers: { authorization: "Bearer clerk-session" },
-      query: { guildId: fixture.guildId },
-    }),
-    [200],
+    client.disconnect({ headers, query: { action: "disconnect" } }),
+    [200, 403, 404],
   );
+  if (fixture.flow === "install") {
+    await accept(
+      client.disconnect({ headers, query: { action: "uninstall" } }),
+      [200, 403, 404],
+    );
+  }
 }

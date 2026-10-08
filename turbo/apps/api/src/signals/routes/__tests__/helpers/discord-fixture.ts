@@ -31,7 +31,7 @@ import { createRunsApi } from "./api-bdd-runs";
 import {
   configureDiscordApp,
   mockDiscordMemberships,
-  seedDiscordFixture,
+  createPublicDiscordBinding,
   uniqueDiscordSnowflake,
 } from "./discord";
 import { updateFeatureSwitchesForUser } from "./feature-switches";
@@ -42,7 +42,7 @@ export const DISCORD_TEST_GATEWAY_SECRET = randomBytes(32).toString("hex");
 
 export interface ConnectedDiscordActor {
   readonly actor: ApiTestUser;
-  readonly fixture: Awaited<ReturnType<typeof seedDiscordFixture>>;
+  readonly fixture: Awaited<ReturnType<typeof createPublicDiscordBinding>>;
   readonly userId: string;
   readonly orgId: string;
   readonly guildId: string;
@@ -105,7 +105,8 @@ export async function setupConnectedDiscordActor(
     { userId, orgId, orgRole: "org:admin" },
     { [FeatureSwitchKey.DiscordIntegration]: true },
   );
-  const fixture = await seedDiscordFixture(context, {
+  const fixture = await createPublicDiscordBinding(context, {
+    flow: options.reuseOrganization ? "connect" : "install",
     userId,
     orgId,
     orgRole: "org:admin",
