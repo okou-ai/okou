@@ -623,6 +623,15 @@ describe("CHAT-02: generation templates and attachments", () => {
                 },
               },
             },
+            { type: "text", text: " and use " },
+            {
+              type: "template",
+              titleSnapshot: style.title,
+              template: {
+                type: "illustration",
+                selection: { illustrationStyleId: style.illustrationStyleId },
+              },
+            },
           ],
         },
       ],
@@ -638,6 +647,9 @@ describe("CHAT-02: generation templates and attachments", () => {
       `Animate and introduce then draw with [Template #1: ${style.title} (illustration)] and describe \n\nThen caption`,
     );
     expect(run.prompt).toContain("Keep the explanation");
+    expect(run.prompt).toContain(
+      `[Template #2: ${style.title} (illustration)]`,
+    );
 
     const systemPrompt = run.appendSystemPrompt ?? "";
     expect(systemPrompt).toContain("## Template #1 (illustration)");
@@ -672,6 +684,15 @@ describe("CHAT-02: generation templates and attachments", () => {
           template: {
             type: "video",
             selection: { stylePresetId: "avatar-template:81" },
+          },
+        },
+        { type: "text", text: " and use " },
+        {
+          type: "template",
+          titleSnapshot: style.title,
+          template: {
+            type: "illustration",
+            selection: { illustrationStyleId: style.illustrationStyleId },
           },
         },
       ],

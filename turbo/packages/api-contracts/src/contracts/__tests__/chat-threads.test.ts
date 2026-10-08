@@ -701,7 +701,7 @@ describe("chat thread generation template contract", () => {
     },
   );
 
-  describe("retired template read and write boundaries", () => {
+  describe("retired template read and request boundaries", () => {
     const retiredTemplate = {
       type: "template",
       titleSnapshot: "Ada",
@@ -741,35 +741,10 @@ describe("chat thread generation template contract", () => {
         currentTemplate,
       ],
     };
-    const minimalRetiredTemplate = {
-      ...retiredTemplate,
-      template: {
-        type: "video",
-        selection: { stylePresetId: "avatar-template:81" },
-      },
-    };
-    const expectedWrite = {
-      version: 1,
-      parts: [
-        { type: "text", text: "Explain the product" },
-        minimalRetiredTemplate,
-        {
-          type: "feedback",
-          quote: "Previous answer",
-          note: [
-            { type: "text", text: "Use " },
-            minimalRetiredTemplate,
-            currentTemplate,
-          ],
-        },
-        currentTemplate,
-      ],
-    };
-
     it.each(["send", "draft"])(
-      "keeps newly written %s selections readable without generation parameters",
+      "decodes %s requests without rewriting retired selections",
       (surface) => {
-        const written =
+        const decoded =
           surface === "send"
             ? chatEventsContract.send.body.parse({
                 agentId: "agent-1",
@@ -781,7 +756,7 @@ describe("chat thread generation template contract", () => {
                 draftUserMessage: userMessage,
               }).draftUserMessage;
 
-        expect(written).toStrictEqual(expectedWrite);
+        expect(decoded).toStrictEqual(userMessage);
       },
     );
 
