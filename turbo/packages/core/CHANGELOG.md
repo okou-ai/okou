@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.735.2](https://github.com/okou-ai/okou/compare/core-v8.735.1...core-v8.735.2) (2026-10-08)
+
+
+### Refactoring
+
+* **api:** encapsulate continuation and template preparation ([#38155](https://github.com/okou-ai/okou/issues/38155)) ([207088f](https://github.com/okou-ai/okou/commit/207088f19c5df05553c233d8a0ccbaf195fb0314))
+* remove pi openrouter chat completions feature switch ([#38096](https://github.com/okou-ai/okou/issues/38096)) ([a635ec3](https://github.com/okou-ai/okou/commit/a635ec3afa20cdb5df9c8125afe6cec24ef53e16))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.540.0
+
 ## [8.735.1](https://github.com/okou-ai/okou/compare/core-v8.735.0...core-v8.735.1) (2026-10-08)
 
 
