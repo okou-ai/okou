@@ -24,6 +24,10 @@
       "import": "./src/operations/org-metadata-canonical-write.ts",
       "types": "./src/operations/org-metadata-canonical-write.ts"
     },
+    "./operations/usage-pack-overdraft-transfer": {
+      "import": "./src/operations/usage-pack-overdraft-transfer.ts",
+      "types": "./src/operations/usage-pack-overdraft-transfer.ts"
+    },
     "./types": {
       "import": "./src/types.ts",
       "types": "./src/types.ts"

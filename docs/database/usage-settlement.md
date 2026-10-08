@@ -29,7 +29,9 @@ all debits commit together. No external I/O runs inside the financial transactio
 
 The wallet lock serializes cash allocation within an organization. Concurrent
 requests therefore cannot spend the same package remainder twice. Source order
-and FEFO use the locked rows. Organization expiration acquires the wallet first
+and FEFO use PostgreSQL ordering of the locked rows, retaining timestamp precision.
+Shared cash queries and debt-transfer SQL are pure builders; the owning transaction
+executes them without passing its database handle into domain helpers. Organization expiration acquires the wallet first
 as well. Allowance consumption retains its accepted atomic-increment overuse
 policy; this change does not promise a strict allowance cap. Missing rows,
 invalid pricing and database failures remain billing errors. Background Social
@@ -50,6 +52,10 @@ cannot transfer the same cleared remainder twice.
 During the old/new API overlap, an old writer can still generate negative grants.
 New settlement lazily performs the same locked, audited transfer before cash
 allocation; member-removal refund preparation does so before clearing grants.
+The shared repair statement clears expired lots and negative grants, appends
+receipts and updates the wallet once, with expiration applied before the transferred
+debit. A missing wallet leaves actual liabilities untouched and fails closed;
+no wallet with no negative grant remains a valid unfunded member cleanup.
 Organization expiration runs before this lazy transfer, never after it in the
 same settlement, so its existing clamp cannot erase the newly moved liability.
 There is no debt forgiveness, cross-member spending or compensation cron.

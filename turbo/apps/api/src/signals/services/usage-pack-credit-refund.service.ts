@@ -8,7 +8,12 @@ import { and, asc, eq, gt, inArray, like, lt, or } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { transferUsagePackOverdraftsInTransaction } from "./usage-pack-overdraft-transfer.service";
+import { usagePackOverdraftTransferSql } from "@okouai/db/operations/usage-pack-overdraft-transfer";
+import {
+  requireUsagePackOverdraftTransfer,
+  usagePackOverdraftTransferOutcomeRow,
+} from "./usage-pack-overdraft-transfer.service";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import type { Db } from "../external/db";
 import {
   getStripeClient,
@@ -248,7 +253,12 @@ export async function prepareUsagePackMemberCreditRefunds(
   args: { readonly orgId: string; readonly userId: string },
 ): Promise<number> {
   const at = nowDate();
-  await transferUsagePackOverdraftsInTransaction(db, args, at);
+  requireUsagePackOverdraftTransfer(
+    parseRawRows(
+      usagePackOverdraftTransferOutcomeRow,
+      await db.execute(usagePackOverdraftTransferSql(args, at)),
+    ),
+  );
   const grants = await db
     .select()
     .from(usagePackCreditGrants)

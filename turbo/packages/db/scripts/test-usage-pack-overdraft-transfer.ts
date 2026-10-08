@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Client } from "pg";
+import { PgDialect } from "drizzle-orm/pg-core";
+import { usagePackOverdraftTransferSql } from "../src/operations/usage-pack-overdraft-transfer";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
@@ -131,6 +133,94 @@ try {
   );
   await assert.rejects(client.query(repair), /no organization wallet/);
   await client.query("ROLLBACK TO SAVEPOINT missing_wallet");
+
+  // Exercise the current repair statement against retained outgoing-writer data.
+  const runtimeRepair = (orgId: string, userId?: string) => {
+    const query = new PgDialect().sqlToQuery(
+      usagePackOverdraftTransferSql(
+        { orgId, userId },
+        new Date("2026-10-08T00:00:00Z"),
+      ),
+    );
+    return client.query(query.sql, query.params);
+  };
+  await client.query(`
+    INSERT INTO org_metadata (org_id, credits) VALUES ('runtime_expired', 10);
+    INSERT INTO credit_expires_record VALUES ('00000000-0000-4000-a000-000000000011', 'runtime_expired', 20, '2020-01-01');
+    INSERT INTO usage_pack_credit_grants VALUES
+      ('00000000-0000-4000-a000-000000000007', 'positive', 'alice', 'bonus', 10, -2, '2099-01-01', 'runtime-alice'),
+      ('00000000-0000-4000-a000-000000000008', 'positive', 'bob', 'bonus', 10, -3, '2020-01-01', 'runtime-bob'),
+      ('00000000-0000-4000-a000-000000000009', 'runtime_expired', 'dana', 'bonus', 10, -3, '2020-01-01', 'runtime-expired');
+  `);
+  assert.deepEqual((await runtimeRepair("positive", "alice")).rows, [
+    { has_wallet: true, negative_grants: "1", amount: "2" },
+  ]);
+  assert.equal(
+    (
+      await client.query(
+        "SELECT credits::text FROM org_metadata WHERE org_id = 'positive'",
+      )
+    ).rows[0]?.credits,
+    "11",
+  );
+  assert.equal(
+    (
+      await client.query(
+        "SELECT remaining_amount::text FROM usage_pack_credit_grants WHERE idempotency_key = 'runtime-bob'",
+      )
+    ).rows[0]?.remaining_amount,
+    "-3",
+  );
+  assert.deepEqual((await runtimeRepair("positive", "alice")).rows, [
+    { has_wallet: true, negative_grants: "0", amount: "0" },
+  ]);
+  assert.deepEqual((await runtimeRepair("positive")).rows, [
+    { has_wallet: true, negative_grants: "1", amount: "3" },
+  ]);
+  assert.equal(
+    (
+      await client.query(
+        "SELECT credits::text FROM org_metadata WHERE org_id = 'positive'",
+      )
+    ).rows[0]?.credits,
+    "8",
+  );
+  assert.deepEqual((await runtimeRepair("runtime_expired")).rows, [
+    { has_wallet: true, negative_grants: "1", amount: "3" },
+  ]);
+  assert.equal(
+    (
+      await client.query(
+        "SELECT credits::text FROM org_metadata WHERE org_id = 'runtime_expired'",
+      )
+    ).rows[0]?.credits,
+    "-3",
+  );
+  assert.equal(
+    (
+      await client.query(
+        "SELECT remaining::text FROM credit_expires_record WHERE org_id = 'runtime_expired'",
+      )
+    ).rows[0]?.remaining,
+    "0",
+  );
+  assert.deepEqual((await runtimeRepair("no_wallet")).rows, [
+    { has_wallet: false, negative_grants: "0", amount: "0" },
+  ]);
+  await client.query(
+    `INSERT INTO usage_pack_credit_grants VALUES ('00000000-0000-4000-a000-000000000012', 'no_wallet', 'eve', 'bonus', 10, -3, '2099-01-01', 'runtime-orphan')`,
+  );
+  assert.deepEqual((await runtimeRepair("no_wallet")).rows, [
+    { has_wallet: false, negative_grants: "1", amount: "0" },
+  ]);
+  assert.equal(
+    (
+      await client.query(
+        "SELECT remaining_amount::text FROM usage_pack_credit_grants WHERE idempotency_key = 'runtime-orphan'",
+      )
+    ).rows[0]?.remaining_amount,
+    "-3",
+  );
   await client.query("DELETE FROM usage_pack_credit_grants");
   assert.equal(
     (
@@ -138,10 +228,10 @@ try {
         "SELECT count(*)::text AS count FROM usage_pack_overdraft_transfers",
       )
     ).rows[0]?.count,
-    "4",
+    "7",
   );
   console.log(
-    "Legacy package overdraft transfer: conservation, expired debt, provenance, replay and retained audit passed",
+    "Legacy and current package overdraft transfer: conservation, expired debt, member scope, missing wallet, replay and retained audit passed",
   );
 } finally {
   await client.query("ROLLBACK");
