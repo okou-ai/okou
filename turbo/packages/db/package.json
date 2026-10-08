@@ -83,8 +83,8 @@
     "test:connector-permission-baseline-retirement": "tsx scripts/test-connector-permission-baseline-retirement.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-kms": "^3.1136.0",
-    "@aws-sdk/client-s3": "^3.1136.0",
+    "@aws-sdk/client-kms": "^3.1144.0",
+    "@aws-sdk/client-s3": "^3.1144.0",
     "@clerk/backend": "^3.13.1",
     "@okouai/api-contracts": "workspace:*",
     "@okouai/connectors": "workspace:*",
