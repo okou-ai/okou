@@ -1,7 +1,4 @@
-import {
-  createPublicRunnerMemory,
-  memoryArchive,
-} from "./helpers/public-runner-memory";
+import { memoryArchive } from "./helpers/public-runner-memory";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -9,21 +6,31 @@ import {
   HeadObjectCommand,
   ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
+import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { testStorageObjectCleanupContract } from "@okouai/api-contracts/contracts/test-storage-object-cleanup";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { seedLegacyExportCleanupReferenceFixture } from "../../../test-fixtures/storage-object-cleanup";
+import { mockOptionalEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { billingStatusRoutes } from "../billing-status";
 import { testStorageObjectCleanupRoutes } from "../test-storage-object-cleanup";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createFirewallApi } from "./helpers/api-bdd-firewall";
+import {
+  createRunsApi,
+  expectCanonicalStorageManifest,
+} from "./helpers/api-bdd-runs";
+import { configureNativeCliArtifact } from "./helpers/chat-events-fixture";
+import { createRouteMocks } from "./helpers/route-test";
 import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
 const context = testContext();
 const bdd = createBddApi(context);
+const runs = createRunsApi(context);
 const storages = createStoragesBddApi(context);
 const webhooks = createWebhookCallbackApi(context);
 
@@ -163,26 +170,68 @@ async function publish(actor: ApiTestUser, objects: Map<string, Buffer>) {
   };
 }
 
-function publicCleanupFixture() {
-  const fixture = createPublicRunnerMemory(context);
+async function publicCleanupFixture() {
+  const actor = bdd.user();
+  // The real first request owns isolation; testContext disposes it after
+  // draining work, without authenticating a deleted user during teardown.
+  createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
+  const billing = await setupApp({
+    context,
+    routes: billingStatusRoutes,
+    isolatePg: true,
+  });
+  const initial = await accept(
+    billing(billingStatusContract).get({
+      headers: { authorization: "Bearer clerk-session" },
+    }),
+    [200],
+  );
+  expect(initial.body.credits).toBe(0);
   // This directory member keeps user deletion from implicitly deleting the org.
-  const peer = bdd.user({ orgId: fixture.actor.orgId });
-  fixture.registerOwnedUserDeletion();
-  fixture.registerOwnedUserDeletion(peer.userId);
-  return { ...fixture, peer };
+  const peer = bdd.user({ orgId: actor.orgId });
+  return { actor, peer };
 }
 
 async function publishOwnedCleanupMemory(
-  fixture: ReturnType<typeof publicCleanupFixture>,
+  fixture: Awaited<ReturnType<typeof publicCleanupFixture>>,
 ) {
-  const agentId = await fixture.initializeNative();
-  const carrier = await fixture.claim(agentId, "Publish the deletion fixture");
+  bdd.acceptAgentStorageWrites();
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  runs.configureRunnerGroup();
+  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  configureNativeCliArtifact();
+  createFirewallApi(context).seedClerkDirectory(fixture.actor);
+  await runs.grantProEntitlement(fixture.actor);
+  await runs.ensurePersonalSubscriptionModel(fixture.actor, {
+    model: "claude-fable-5-1",
+  });
+  const agent = await bdd.createAgent(fixture.actor, {
+    displayName: "Owned Memory carrier",
+    visibility: "private",
+  });
+  const run = await runs.createThreadRun(fixture.actor, {
+    agentId: agent.agentId,
+    prompt: "Publish the deletion fixture",
+    model: "claude-fable-5-1",
+  });
+  const execution = await runs.claimRunnerJob(run.runId);
+  const manifest = expectCanonicalStorageManifest(execution.storageManifest);
+  const memories =
+    manifest?.storageMounts.filter((mount) => {
+      return mount.name === "memory";
+    }) ?? [];
+  const memory = memories[0];
+  if (memories.length !== 1 || !memory?.storageId) {
+    throw new Error("Expected exactly one real Memory mount");
+  }
+  const headers = { authorization: `Bearer ${execution.sandboxToken}` };
   const s3 = objectStore();
   storages.mockStoragePresignedUrls();
   const files = [storageTextFile("content.txt", "retained storage content")];
-  const prepared = await fixture.webhooks.requestAgentStoragePrepare(
-    { runId: carrier.run.runId, storageId: carrier.memory.storageId, files },
-    carrier.headers,
+  const prepared = await webhooks.requestAgentStoragePrepare(
+    { runId: run.runId, storageId: memory.storageId, files },
+    headers,
     [200],
   );
   if (prepared.status !== 200 || !prepared.body.uploads) {
@@ -204,30 +253,29 @@ async function publishOwnedCleanupMemory(
       }),
     ),
   );
-  await fixture.webhooks.requestAgentStorageCommit(
+  await webhooks.requestAgentStorageCommit(
     {
-      runId: carrier.run.runId,
-      storageId: carrier.memory.storageId,
+      runId: run.runId,
+      storageId: memory.storageId,
       versionId: prepared.body.versionId,
       files,
     },
-    carrier.headers,
+    headers,
     [200],
   );
-  await fixture.api.requestCancelRun(fixture.actor, carrier.run.runId, [200]);
-  await fixture.webhooks.requestAgentComplete(
+  await runs.requestCancelRun(fixture.actor, run.runId, [200]);
+  await webhooks.requestAgentComplete(
     {
-      runId: carrier.run.runId,
+      runId: run.runId,
       exitCode: 1,
       error: "Owned deletion carrier cancelled",
     },
-    carrier.headers,
+    headers,
     [200],
   );
   await flushWaitUntilForTest();
   return {
     s3,
-    runId: carrier.run.runId,
     target: {
       archiveKey,
       manifestKey,
@@ -240,10 +288,8 @@ async function publishOwnedCleanupMemory(
 }
 
 async function deletePublicCleanupOwner(
-  fixture: ReturnType<typeof publicCleanupFixture>,
-  runId: string,
+  fixture: Awaited<ReturnType<typeof publicCleanupFixture>>,
 ) {
-  fixture.registerRunDeletion(runId);
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
     {
       data: [
@@ -333,68 +379,45 @@ describe("Clerk Storage cleanup after reference deletion", () => {
     },
   );
 
-  it("retains an exact legacy export key for retry after its source row is deleted", async () => {
-    const actor = bdd.user();
-    const peer = bdd.user();
-    if (!actor.orgId || !peer.orgId) {
-      throw new Error("Expected organization-scoped export owners");
-    }
-    const s3 = objectStore();
-    const key = `exports/${randomUUID()}.zip`;
-    const peerKey = `exports/${randomUUID()}.zip`;
-    // The production endpoint no longer creates legacy one-call export rows.
-    // Only this historical setup crosses the fixture boundary.
-    await seedLegacyExportCleanupReferenceFixture(
-      {
-        userId: actor.userId,
-        orgId: actor.orgId,
-        s3Key: key,
-      },
-      context.signal,
-    );
-    await seedLegacyExportCleanupReferenceFixture(
-      {
-        userId: peer.userId,
-        orgId: peer.orgId,
-        s3Key: peerKey,
-      },
-      context.signal,
-    );
-    s3.objects.set(key, Buffer.from("legacy export"));
-    s3.objects.set(peerKey, Buffer.from("peer export"));
+  it("retains owned objects when R2 deletion fails during public user deletion", async () => {
+    const fixture = await publicCleanupFixture();
+    const { s3, target } = await publishOwnedCleanupMemory(fixture);
     s3.failNext("delete");
-    await deleteOwner(actor, "user");
-    expect(s3.objects.has(key)).toBeTruthy();
-    await expect(retry(actor, "user")).resolves.toMatchObject({
-      body: { processed: 1 },
-    });
-    expect(s3.objects.has(key)).toBeFalsy();
-    expect(s3.objects.has(peerKey)).toBeTruthy();
-    await deleteOwner(peer, "user");
+    await deletePublicCleanupOwner(fixture);
+    expect(context.mocks.s3.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          Delete: expect.objectContaining({
+            Objects: expect.arrayContaining([
+              { Key: target.archiveKey },
+              { Key: target.manifestKey },
+            ]),
+          }),
+        }),
+      }),
+    );
+    expect(s3.objects.has(target.archiveKey)).toBeTruthy();
+    expect(s3.objects.has(target.manifestKey)).toBeTruthy();
   });
 
   it("retains the object rejected by R2 during public user deletion", async () => {
-    const fixture = publicCleanupFixture();
-    await fixture.run(async () => {
-      const { s3, target, runId } = await publishOwnedCleanupMemory(fixture);
-      s3.failNext("partial-delete");
-      await deletePublicCleanupOwner(fixture, runId);
-      expect(
-        [...s3.objects.keys()].filter((key) => {
-          return key.startsWith(`${target.prefix}/`);
-        }),
-      ).toHaveLength(1);
-    });
+    const fixture = await publicCleanupFixture();
+    const { s3, target } = await publishOwnedCleanupMemory(fixture);
+    s3.failNext("partial-delete");
+    await deletePublicCleanupOwner(fixture);
+    expect(
+      [...s3.objects.keys()].filter((key) => {
+        return key.startsWith(`${target.prefix}/`);
+      }),
+    ).toHaveLength(1);
   });
 
   it("deletes owned objects when the R2 response is lost during public user deletion", async () => {
-    const fixture = publicCleanupFixture();
-    await fixture.run(async () => {
-      const { s3, target, runId } = await publishOwnedCleanupMemory(fixture);
-      s3.failNext("lost-delete-receipt");
-      await deletePublicCleanupOwner(fixture, runId);
-      expect(s3.objects.has(target.archiveKey)).toBeFalsy();
-      expect(s3.objects.has(target.manifestKey)).toBeFalsy();
-    });
+    const fixture = await publicCleanupFixture();
+    const { s3, target } = await publishOwnedCleanupMemory(fixture);
+    s3.failNext("lost-delete-receipt");
+    await deletePublicCleanupOwner(fixture);
+    expect(s3.objects.has(target.archiveKey)).toBeFalsy();
+    expect(s3.objects.has(target.manifestKey)).toBeFalsy();
   });
 });
