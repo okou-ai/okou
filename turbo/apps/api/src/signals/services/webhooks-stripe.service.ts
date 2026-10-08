@@ -3438,9 +3438,32 @@ const handlePlanSubscriptionInvoicePaid$ = command(
   },
 );
 
-const handleInvoicePaid$ = command(
+const handleConcurrencyInvoicePaid$ = command(
   async (
     { get, set },
+    invoice: InvoiceInput,
+    signal: AbortSignal,
+  ): Promise<PaidWebhookOutcome> => {
+    const prepared = await prepareConcurrencyInvoiceEntitlements(
+      set(writeDb$),
+      () => {
+        return get(clerk$);
+      },
+      invoice,
+    );
+    signal.throwIfAborted();
+    return "handled" in prepared
+      ? prepared
+      : await set(reconcileConcurrencyInvoice$, {
+          ...prepared,
+          invoiceId: invoice.id,
+        });
+  },
+);
+
+const handleInvoicePaid$ = command(
+  async (
+    { set },
     invoice: InvoiceInput,
     signal: AbortSignal,
   ): Promise<string | null> => {
@@ -3453,10 +3476,12 @@ const handleInvoicePaid$ = command(
       return null;
     }
     invoice = liveInvoice;
-    const db = set(writeDb$);
-    const getClerk = (): ClerkClient => {
-      return get(clerk$);
-    };
+    // Definitive archive roots own only the proven independent concurrency path.
+    // Correlation handlers can re-fetch an unfiltered invoice, so never enter them.
+    if (isArchivedUsageAllowanceInvoice(invoice)) {
+      return (await set(handleConcurrencyInvoicePaid$, invoice, signal))
+        .drainOrgId;
+    }
     const migrationResult = await set(
       handleUsagePackMigrationInvoicePaid$,
       invoice,
@@ -3491,19 +3516,11 @@ const handleInvoicePaid$ = command(
         : false;
     });
     if (usagePackResult.handled && !hasCustomPlanInvoiceLine) {
-      const prepared = await prepareConcurrencyInvoiceEntitlements(
-        db,
-        getClerk,
+      const concurrencyResult = await set(
+        handleConcurrencyInvoicePaid$,
         invoice,
+        signal,
       );
-      signal.throwIfAborted();
-      const concurrencyResult =
-        "handled" in prepared
-          ? prepared
-          : await set(reconcileConcurrencyInvoice$, {
-              ...prepared,
-              invoiceId: invoice.id,
-            });
       return concurrencyResult.drainOrgId ?? usagePackResult.orgId;
     }
     if (!usagePackResult.handled) {
@@ -3557,19 +3574,11 @@ const handleInvoicePaid$ = command(
           signal,
         )
       : componentDrainOrgId;
-    const prepared = await prepareConcurrencyInvoiceEntitlements(
-      db,
-      getClerk,
+    const concurrencyResult = await set(
+      handleConcurrencyInvoicePaid$,
       invoice,
+      signal,
     );
-    signal.throwIfAborted();
-    const concurrencyResult =
-      "handled" in prepared
-        ? prepared
-        : await set(reconcileConcurrencyInvoice$, {
-            ...prepared,
-            invoiceId: invoice.id,
-          });
     return concurrencyResult.drainOrgId ?? planDrainOrgId;
   },
 );
