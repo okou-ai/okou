@@ -8,6 +8,7 @@ import "../polyfill.ts";
 import { createRoot } from "react-dom/client";
 import { createStore } from "ccstate";
 import { bootstrap$ } from "../signals/bootstrap.ts";
+import { captureDiscordApprovalFragment$ } from "../signals/okou-page/discord-oauth-approval.ts";
 import { ASSISTANT_NAME } from "../signals/branding.ts";
 import { detach, Reason, resetSignal } from "../signals/utils.ts";
 import { setupRouter } from "../views/main.tsx";
@@ -15,7 +16,10 @@ import { renderUnsupportedBrowserPage } from "../views/unsupported-browser-page.
 
 // (no-op Platform release marker refreshed for production delivery on 2026-09-21)
 
-function startApplication(rootSignal: AbortSignal): void {
+function startApplication(
+  rootSignal: AbortSignal,
+  store: ReturnType<typeof createStore>,
+): void {
   rootSignal.throwIfAborted();
   const resetViewportSettleSignal$ = resetSignal();
 
@@ -25,7 +29,6 @@ function startApplication(rootSignal: AbortSignal): void {
   captureFirstSkeletonPaint();
 
   async function main() {
-    const store = createStore();
     setupVisualViewportKeyboardState(rootSignal, () => {
       return store.set(resetViewportSettleSignal$, rootSignal);
     });
@@ -59,6 +62,8 @@ export function startPlatformEntrypoint(): void {
     throw new Error("Platform lifecycle was not initialized");
   }
   rootSignal.throwIfAborted();
+  const store = createStore();
+  store.set(captureDiscordApprovalFragment$, rootSignal);
   window.__appBootstrapModuleReady = performance.now();
   const browserUpgrade = browserUpgradeRequired();
   if (browserUpgrade) {
@@ -73,6 +78,6 @@ export function startPlatformEntrypoint(): void {
       rootSignal,
     );
   } else {
-    startApplication(rootSignal);
+    startApplication(rootSignal, store);
   }
 }
