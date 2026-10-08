@@ -1,58 +1,57 @@
 import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
-import { and, eq, gt } from "drizzle-orm";
-import { parse, serialize } from "hono/utils/cookie";
+import { and, eq, gt, lte } from "drizzle-orm";
+import { z } from "zod";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
-import { discordUserIdentities } from "@okouai/db/schema/discord-user-identity";
-import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
-import { env, optionalEnv } from "../../lib/env";
+import { env } from "../../lib/env";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
 import { now, nowDate } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { request$, setResHeader$ } from "../context/hono";
+import { request$, requestSignal$, setResHeader$ } from "../context/hono";
 import { bodyResultOf, queryOf } from "../context/request";
 import { writeDb$ } from "../external/db";
 import {
   DISCORD_CONNECT_SCOPES,
   DISCORD_INSTALL_SCOPES,
 } from "../external/discord-oauth-client";
+import { discordSnowflakeSchema } from "../external/discord-client";
 import { discordMemberRole } from "../services/discord-data.service";
 import {
   discordIntegrationEnabledForOwner$,
   getDiscordAppConfig,
 } from "../services/discord-config";
+import { DiscordPermission } from "../services/discord-permissions";
 import {
-  discordOrgChangedUserIds,
-  publishDiscordChanged,
-} from "../services/discord-realtime.service";
-import { verifyDiscordOauthGrant } from "../services/discord-oauth-verification.service";
-import { notifyDiscordConnection$ } from "../services/discord-oauth-welcome.service";
+  verifyDiscordOauthGrant,
+  revalidateDiscordOauthEvidence,
+} from "../services/discord-oauth-verification.service";
+import {
+  persistDiscordOauth$,
+  type DiscordOauthAttempt,
+} from "../services/discord-oauth-binding.service";
 import type { RouteEntry } from "../route-entry";
-import { settle } from "../utils";
 
 const CALLBACK = "/api/integrations/discord/oauth/callback";
-const COOKIE = "okou-discord-oauth";
-const COOKIE_PATH = "/api/integrations/discord/oauth";
 const TTL_SECONDS = 600;
-// View/send/history/thread/file permissions only. Never ADMINISTRATOR.
-const BOT_PERMISSIONS = "397284477952";
-type Attempt = typeof discordOauthStates.$inferSelect;
-type CallbackError =
-  | "invalid_state"
-  | "cancelled"
-  | "unavailable"
-  | "forbidden"
-  | "provider_error"
-  | "invalid_authorization"
-  | "guild_unverified"
-  | "bot_missing"
-  | "conflict";
+const PROOF = /^[A-Za-z0-9_-]{43}$/u;
+const BOT_PERMISSIONS = (
+  DiscordPermission.ViewChannel |
+  DiscordPermission.SendMessages |
+  DiscordPermission.ReadMessageHistory |
+  DiscordPermission.AttachFiles |
+  DiscordPermission.CreatePublicThreads |
+  DiscordPermission.SendMessagesInThreads
+).toString();
+type Failure = NonNullable<DiscordOauthAttempt["failureCode"]>;
 
 function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+function secret(): string {
+  return randomBytes(32).toString("base64url");
 }
 function apiError<S extends 400 | 403 | 404 | 409 | 503>(
   status: S,
@@ -61,15 +60,20 @@ function apiError<S extends 400 | 403 | 404 | 409 | 503>(
 ) {
   return { status, body: { error: { code, message } } };
 }
-function redirect(
-  status: "installed" | "connected" | "error",
-  error?: CallbackError,
-): Response {
+function invalidAttempt() {
+  return apiError(
+    400,
+    "DISCORD_OAUTH_INVALID_ATTEMPT",
+    "This Discord authorization attempt is invalid or expired. Start again from Works.",
+  );
+}
+function callbackError(error: Failure | "invalid_state"): Response {
   const url = new URL("/works", env("APP_URL"));
-  url.searchParams.set("discord", status);
-  if (error) {
-    url.searchParams.set("discord_error", error);
-  }
+  url.searchParams.set("discord", "error");
+  url.searchParams.set("discord_error", error);
+  return callbackRedirect(url);
+}
+function callbackRedirect(url: URL): Response {
   return new Response(null, {
     status: 307,
     headers: {
@@ -79,9 +83,46 @@ function redirect(
     },
   });
 }
+function callbackApproval(state: string, approvalProof: string): Response {
+  const url = new URL("/works", env("APP_URL"));
+  url.searchParams.set("discord", "pending");
+  // Only the consent browser receives this proof. It is not a provider code,
+  // completion token, query parameter, cookie or message to the opener.
+  url.hash = new URLSearchParams({
+    discord_oauth: "approve",
+    state,
+    approval_proof: approvalProof,
+  }).toString();
+  return callbackRedirect(url);
+}
+
+const ownerAuthorized$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly flow: "install" | "connect";
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const role = await get(discordMemberRole(args));
+    signal.throwIfAborted();
+    if (!role || (args.flow === "install" && role !== "admin")) {
+      return false;
+    }
+    return await set(
+      discordIntegrationEnabledForOwner$,
+      args.orgId,
+      args.userId,
+      signal,
+    );
+  },
+);
 
 const startDiscordOauth$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async ({ get, set }, rootSignal: AbortSignal) => {
+    const signal = AbortSignal.any([rootSignal, get(requestSignal$)]);
     const auth = get(organizationAuthContext$);
     const body = await get(bodyResultOf(discordOauthContract.start));
     signal.throwIfAborted();
@@ -89,30 +130,20 @@ const startDiscordOauth$ = command(
       return body.response;
     }
     if (
-      !(await set(
-        discordIntegrationEnabledForOwner$,
-        auth.orgId,
-        auth.userId,
-        signal,
-      ))
+      !(await set(ownerAuthorized$, { ...auth, flow: body.data.flow }, signal))
     ) {
-      return apiError(403, "FORBIDDEN", "Discord integration is not enabled");
-    }
-    const role = await get(discordMemberRole(auth));
-    signal.throwIfAborted();
-    if (!role || (body.data.flow === "install" && role !== "admin")) {
       return apiError(
         403,
         "FORBIDDEN",
-        "Current workspace admin membership is required to install Discord",
+        "Discord requires current workspace membership, an enabled integration, and admin access to install.",
       );
     }
     const config = getDiscordAppConfig();
-    if (!config || !optionalEnv("DISCORD_OAUTH_CLIENT_SECRET")) {
+    if (!config || !env("DISCORD_OAUTH_CLIENT_SECRET")) {
       return apiError(
         503,
         "DISCORD_NOT_CONFIGURED",
-        "Discord OAuth is not configured; ask an administrator to configure the application and OAuth client secret",
+        "Discord OAuth is not configured; ask an administrator to configure the application and OAuth client secret.",
       );
     }
     const db = set(writeDb$);
@@ -122,58 +153,52 @@ const startDiscordOauth$ = command(
       .where(eq(discordOrgInstallations.orgId, auth.orgId));
     signal.throwIfAborted();
     let guildId = body.data.guildId ?? null;
-    if (body.data.flow === "connect") {
-      if (!installation) {
-        return apiError(
-          404,
-          "NOT_FOUND",
-          "Install Discord for this workspace first",
-        );
-      }
+    if (body.data.flow === "connect" && !installation) {
+      return apiError(
+        404,
+        "NOT_FOUND",
+        "Install Discord for this workspace first.",
+      );
+    }
+    if (installation) {
       if (guildId && guildId !== installation.guildId) {
         return apiError(
           409,
           "CONFLICT",
-          "This workspace is installed in a different Discord server",
-        );
-      }
-      guildId = installation.guildId;
-    } else if (installation) {
-      if (guildId && guildId !== installation.guildId) {
-        return apiError(
-          409,
-          "CONFLICT",
-          "Uninstall the current Discord server before choosing another",
+          "Uninstall the current Discord server before choosing another.",
         );
       }
       guildId = installation.guildId;
     }
-    const state = randomBytes(32).toString("base64url");
-    const browser = randomBytes(32).toString("base64url");
+    const state = secret();
+    const completionToken = secret();
     const redirectUri = `${getOAuthApiOrigin(get(request$).raw)}${CALLBACK}`;
-    await db.insert(discordOauthStates).values({
-      stateHash: hash(state),
-      browserHash: hash(browser),
-      userId: auth.userId,
-      orgId: auth.orgId,
-      flow: body.data.flow,
-      guildId,
-      redirectUri,
-      createdAt: nowDate(),
-      expiresAt: new Date(now() + TTL_SECONDS * 1000),
+    await db.transaction(async (tx) => {
+      // Normal starts clean only this owner's expired attempts, never other users.
+      await tx
+        .delete(discordOauthStates)
+        .where(
+          and(
+            eq(discordOauthStates.userId, auth.userId),
+            eq(discordOauthStates.orgId, auth.orgId),
+            lte(discordOauthStates.expiresAt, nowDate()),
+          ),
+        );
+      signal.throwIfAborted();
+      await tx.insert(discordOauthStates).values({
+        stateHash: hash(state),
+        completionTokenHash: hash(completionToken),
+        userId: auth.userId,
+        orgId: auth.orgId,
+        flow: body.data.flow,
+        guildId,
+        redirectUri,
+        createdAt: nowDate(),
+        expiresAt: new Date(now() + TTL_SECONDS * 1000),
+      });
+      signal.throwIfAborted();
     });
     signal.throwIfAborted();
-    set(
-      setResHeader$,
-      "Set-Cookie",
-      serialize(COOKIE, browser, {
-        httpOnly: true,
-        secure: new URL(redirectUri).protocol === "https:",
-        sameSite: "Lax",
-        path: COOKIE_PATH,
-        maxAge: TTL_SECONDS,
-      }),
-    );
     set(setResHeader$, "Cache-Control", "no-store");
     const url = new URL("https://discord.com/oauth2/authorize");
     url.searchParams.set("client_id", config.applicationId);
@@ -196,147 +221,56 @@ const startDiscordOauth$ = command(
       url.searchParams.set("integration_type", "0");
       url.searchParams.set("permissions", BOT_PERMISSIONS);
     }
-    return { status: 200 as const, body: { authorizationUrl: url.toString() } };
+    return {
+      status: 200 as const,
+      body: { authorizationUrl: url.toString(), completionToken },
+    };
   },
 );
 
-class BindingConflict extends Error {
-  constructor() {
-    super("Discord binding conflict");
-  }
-}
-
-const persistDiscordOauth$ = command(
+const failCallback$ = command(
   async (
     { set },
-    args: {
-      readonly attempt: Attempt;
-      readonly guildId: string;
-      readonly guildName: string;
-      readonly discordUserId: string;
-      readonly botUserId: string;
-    },
+    attempt: DiscordOauthAttempt,
+    failure: Failure,
     signal: AbortSignal,
   ) => {
-    const { attempt } = args;
-    const result = await settle(
-      set(writeDb$).transaction(async (tx) => {
-        if (attempt.flow === "install") {
-          await tx
-            .insert(discordOrgInstallations)
-            .values({
-              guildId: args.guildId,
-              guildName: args.guildName,
-              orgId: attempt.orgId,
-              botUserId: args.botUserId,
-              installedByUserId: attempt.userId,
-              createdAt: nowDate(),
-              updatedAt: nowDate(),
-            })
-            .onConflictDoNothing();
-          signal.throwIfAborted();
-        }
-        const [installation] = await tx
-          .select()
-          .from(discordOrgInstallations)
-          .where(
-            and(
-              eq(discordOrgInstallations.guildId, args.guildId),
-              eq(discordOrgInstallations.orgId, attempt.orgId),
-            ),
-          )
-          .for("share");
-        signal.throwIfAborted();
-        if (!installation || installation.botUserId !== args.botUserId) {
-          throw new BindingConflict();
-        }
-        // A constrained identity row serializes claims across all guilds.
-        await tx
-          .insert(discordUserIdentities)
-          .values({ discordUserId: args.discordUserId, userId: attempt.userId })
-          .onConflictDoNothing();
-        signal.throwIfAborted();
-        const [owner] = await tx
-          .select({ userId: discordUserIdentities.userId })
-          .from(discordUserIdentities)
-          .where(eq(discordUserIdentities.discordUserId, args.discordUserId))
-          .for("share");
-        signal.throwIfAborted();
-        if (owner?.userId !== attempt.userId) {
-          throw new BindingConflict();
-        }
-        const [inserted] = await tx
-          .insert(discordOrgConnections)
-          .values({
-            guildId: args.guildId,
-            userId: attempt.userId,
-            discordUserId: args.discordUserId,
-            createdAt: nowDate(),
-          })
-          .onConflictDoNothing()
-          .returning({ id: discordOrgConnections.id });
-        signal.throwIfAborted();
-        const [connection] = await tx
-          .select({ id: discordOrgConnections.id })
-          .from(discordOrgConnections)
-          .where(
-            and(
-              eq(discordOrgConnections.guildId, args.guildId),
-              eq(discordOrgConnections.userId, attempt.userId),
-              eq(discordOrgConnections.discordUserId, args.discordUserId),
-            ),
-          );
-        signal.throwIfAborted();
-        if (!connection) {
-          throw new BindingConflict();
-        }
-        const recipients = await discordOrgChangedUserIds(tx, attempt.orgId, [
-          attempt.userId,
-        ]);
-        signal.throwIfAborted();
-        return {
-          connectionId: connection.id,
-          inserted: inserted?.id === connection.id,
-          recipients,
-        };
-      }),
-      signal,
-    );
-    if (!result.ok) {
-      if (result.error instanceof BindingConflict) {
-        return null;
-      }
-      throw result.error;
-    }
-    await publishDiscordChanged(result.value.recipients);
-    signal.throwIfAborted();
-    if (result.value.inserted) {
-      await set(
-        notifyDiscordConnection$,
-        {
-          connectionId: result.value.connectionId,
-          orgId: attempt.orgId,
-          userId: attempt.userId,
-        },
-        signal,
+    await set(writeDb$)
+      .update(discordOauthStates)
+      .set({ phase: "failed", failureCode: failure })
+      .where(
+        and(
+          eq(discordOauthStates.id, attempt.id),
+          eq(discordOauthStates.phase, "processing"),
+        ),
       );
-    }
-    return result.value;
+    signal.throwIfAborted();
+    return callbackError(failure);
   },
 );
 
-const completeDiscordOauth$ = command(
+const verifyCallback$ = command(
   async (
-    { get, set },
-    attempt: Attempt,
-    code: string,
-    guildHint: string | undefined,
+    { set },
+    attempt: DiscordOauthAttempt,
+    query: {
+      readonly code?: string;
+      readonly error?: string;
+      readonly guild_id?: string;
+    },
+    state: string,
     signal: AbortSignal,
   ) => {
+    if (query.error) {
+      return await set(failCallback$, attempt, "cancelled", signal);
+    }
+    if (!query.code || query.code.length > 2048) {
+      return await set(failCallback$, attempt, "invalid_authorization", signal);
+    }
     const config = getDiscordAppConfig();
-    const clientSecret = optionalEnv("DISCORD_OAUTH_CLIENT_SECRET");
+    const clientSecret = env("DISCORD_OAUTH_CLIENT_SECRET");
     if (!config || !clientSecret) {
-      return redirect("error", "unavailable");
+      return await set(failCallback$, attempt, "unavailable", signal);
     }
     const verified = await verifyDiscordOauthGrant(
       {
@@ -345,123 +279,298 @@ const completeDiscordOauth$ = command(
         flow: attempt.flow,
         guildId: attempt.guildId,
         redirectUri: attempt.redirectUri,
-        code,
-        guildHint,
+        code: query.code,
+        guildHint: query.guild_id,
       },
       signal,
     );
     if (!verified.ok) {
-      return redirect("error", verified.error);
+      return await set(failCallback$, attempt, verified.error, signal);
     }
-    // Re-read authority after all provider work, immediately before conditional writes.
-    const role = await get(discordMemberRole(attempt));
+    const approvalProof = secret();
+    const [saved] = await set(writeDb$)
+      .update(discordOauthStates)
+      .set({
+        phase: "verified",
+        approvalTokenHash: hash(approvalProof),
+        verifiedGuildId: verified.data.guildId,
+        verifiedGuildName: verified.data.guildName,
+        verifiedDiscordUserId: verified.data.discordUserId,
+        verifiedBotUserId: verified.data.botUserId,
+      })
+      .where(
+        and(
+          eq(discordOauthStates.id, attempt.id),
+          eq(discordOauthStates.phase, "processing"),
+          gt(discordOauthStates.expiresAt, nowDate()),
+        ),
+      )
+      .returning({ id: discordOauthStates.id });
     signal.throwIfAborted();
-    if (!role || (attempt.flow === "install" && role !== "admin")) {
-      return redirect("error", "forbidden");
-    }
-    if (
-      !(await set(
-        discordIntegrationEnabledForOwner$,
-        attempt.orgId,
-        attempt.userId,
-        signal,
-      ))
-    ) {
-      return redirect("error", "unavailable");
-    }
-    const saved = await set(
-      persistDiscordOauth$,
-      {
-        attempt,
-        ...verified.data,
-      },
-      signal,
-    );
     return saved
-      ? redirect(attempt.flow === "install" ? "installed" : "connected")
-      : redirect("error", "conflict");
+      ? callbackApproval(state, approvalProof)
+      : callbackError("invalid_state");
   },
 );
 
 const callbackDiscordOauth$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async ({ get, set }, rootSignal: AbortSignal) => {
+    const signal = AbortSignal.any([rootSignal, get(requestSignal$)]);
     const query = get(queryOf(discordOauthContract.callback));
-    const cookie = parse(get(request$).header("cookie") ?? "")[COOKIE];
-    if (
-      !query.state ||
-      !/^[A-Za-z0-9_-]{43}$/u.test(query.state) ||
-      !cookie ||
-      !/^[A-Za-z0-9_-]{43}$/u.test(cookie)
-    ) {
-      return redirect("error", "invalid_state");
+    if (!query.state || !PROOF.test(query.state)) {
+      return callbackError("invalid_state");
     }
+    // One-use provider state; it grants only bounded pending evidence, never a
+    // connection. Current App identity is independently required for approval.
     const [attempt] = await set(writeDb$)
-      .delete(discordOauthStates)
+      .update(discordOauthStates)
+      .set({ phase: "processing" })
       .where(
         and(
           eq(discordOauthStates.stateHash, hash(query.state)),
-          eq(discordOauthStates.browserHash, hash(cookie)),
+          eq(discordOauthStates.phase, "pending"),
           gt(discordOauthStates.expiresAt, nowDate()),
         ),
       )
       .returning();
     signal.throwIfAborted();
     if (!attempt) {
-      return redirect("error", "invalid_state");
+      return callbackError("invalid_state");
     }
-    set(
-      setResHeader$,
-      "Set-Cookie",
-      serialize(COOKIE, "", {
-        httpOnly: true,
-        secure: new URL(attempt.redirectUri).protocol === "https:",
-        sameSite: "Lax",
-        path: COOKIE_PATH,
-        maxAge: 0,
-      }),
-    );
-    if (query.error) {
-      return redirect("error", "cancelled");
-    }
-    if (!query.code || query.code.length > 2048) {
-      return redirect("error", "invalid_authorization");
-    }
-    if (
-      !(await set(
-        discordIntegrationEnabledForOwner$,
-        attempt.orgId,
-        attempt.userId,
-        signal,
-      ))
-    ) {
-      return redirect("error", "unavailable");
-    }
-    const role = await get(discordMemberRole(attempt));
-    signal.throwIfAborted();
-    if (!role || (attempt.flow === "install" && role !== "admin")) {
-      return redirect("error", "forbidden");
-    }
-    return await set(
-      completeDiscordOauth$,
-      attempt,
-      query.code,
-      query.guild_id,
-      signal,
-    );
+    return await set(verifyCallback$, attempt, query, query.state, signal);
   },
 );
 
+const approveDiscordOauth$ = command(
+  async ({ get, set }, rootSignal: AbortSignal) => {
+    const signal = AbortSignal.any([rootSignal, get(requestSignal$)]);
+    const auth = get(organizationAuthContext$);
+    const body = await get(bodyResultOf(discordOauthContract.approve));
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
+    if (!PROOF.test(body.data.state) || !PROOF.test(body.data.approvalProof)) {
+      return invalidAttempt();
+    }
+    const db = set(writeDb$);
+    const [attempt] = await db
+      .select()
+      .from(discordOauthStates)
+      .where(
+        and(
+          eq(discordOauthStates.stateHash, hash(body.data.state)),
+          eq(
+            discordOauthStates.approvalTokenHash,
+            hash(body.data.approvalProof),
+          ),
+          eq(discordOauthStates.phase, "verified"),
+          gt(discordOauthStates.expiresAt, nowDate()),
+        ),
+      );
+    signal.throwIfAborted();
+    if (!attempt) {
+      return invalidAttempt();
+    }
+    if (
+      attempt.userId !== auth.userId ||
+      attempt.orgId !== auth.orgId ||
+      !(await set(ownerAuthorized$, attempt, signal))
+    ) {
+      return apiError(
+        403,
+        "FORBIDDEN",
+        "Sign in as the starting Okou account in its original workspace, or restart Discord authorization.",
+      );
+    }
+    const [approved] = await db
+      .update(discordOauthStates)
+      .set({ phase: "approved", approvalTokenHash: null })
+      .where(
+        and(
+          eq(discordOauthStates.id, attempt.id),
+          eq(discordOauthStates.userId, auth.userId),
+          eq(discordOauthStates.orgId, auth.orgId),
+          eq(
+            discordOauthStates.approvalTokenHash,
+            hash(body.data.approvalProof),
+          ),
+          eq(discordOauthStates.phase, "verified"),
+          gt(discordOauthStates.expiresAt, nowDate()),
+        ),
+      )
+      .returning({ id: discordOauthStates.id });
+    signal.throwIfAborted();
+    if (!approved) {
+      return invalidAttempt();
+    }
+    set(setResHeader$, "Cache-Control", "no-store");
+    return { status: 200 as const, body: { approved: true as const } };
+  },
+);
+
+const evidenceSchema = z.object({
+  guildId: discordSnowflakeSchema,
+  guildName: z.string(),
+  discordUserId: discordSnowflakeSchema,
+  botUserId: discordSnowflakeSchema,
+});
+const completeApproved$ = command(
+  async ({ set }, attempt: DiscordOauthAttempt, signal: AbortSignal) => {
+    const config = getDiscordAppConfig();
+    if (!config) {
+      return apiError(
+        503,
+        "DISCORD_NOT_CONFIGURED",
+        "The Discord application is not configured.",
+      );
+    }
+    // The phase check and DB constraints own this persisted shape. Malformed
+    // local evidence is an invariant error, not a fabricated provider identity.
+    const evidence = evidenceSchema.parse({
+      guildId: attempt.verifiedGuildId,
+      guildName: attempt.verifiedGuildName,
+      discordUserId: attempt.verifiedDiscordUserId,
+      botUserId: attempt.verifiedBotUserId,
+    });
+    const live = await revalidateDiscordOauthEvidence(
+      config,
+      evidence,
+      attempt.flow,
+      signal,
+    );
+    if (!live.ok) {
+      return apiError(
+        503,
+        "DISCORD_OAUTH_UNAVAILABLE",
+        "Discord could not verify current bot and sender server presence. Restart authorization.",
+      );
+    }
+    if (!(await set(ownerAuthorized$, attempt, signal))) {
+      return apiError(
+        403,
+        "FORBIDDEN",
+        "Current workspace membership and Discord integration access are required.",
+      );
+    }
+    const saved = await set(
+      persistDiscordOauth$,
+      { attempt, evidence },
+      signal,
+    );
+    if (saved === "invalid") {
+      return invalidAttempt();
+    }
+    if (saved === "conflict") {
+      return apiError(
+        409,
+        "CONFLICT",
+        "This Discord server or identity is already bound. Disconnect or uninstall before changing it.",
+      );
+    }
+    return {
+      status: 200 as const,
+      body: {
+        status:
+          attempt.flow === "install"
+            ? ("installed" as const)
+            : ("connected" as const),
+      },
+    };
+  },
+);
+
+const completeDiscordOauth$ = command(
+  async ({ get, set }, rootSignal: AbortSignal) => {
+    const signal = AbortSignal.any([rootSignal, get(requestSignal$)]);
+    const auth = get(organizationAuthContext$);
+    const body = await get(bodyResultOf(discordOauthContract.complete));
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
+    if (
+      !PROOF.test(body.data.state) ||
+      !PROOF.test(body.data.completionToken)
+    ) {
+      return invalidAttempt();
+    }
+    const db = set(writeDb$);
+    const [attempt] = await db
+      .select()
+      .from(discordOauthStates)
+      .where(
+        and(
+          eq(discordOauthStates.stateHash, hash(body.data.state)),
+          eq(
+            discordOauthStates.completionTokenHash,
+            hash(body.data.completionToken),
+          ),
+          gt(discordOauthStates.expiresAt, nowDate()),
+        ),
+      );
+    signal.throwIfAborted();
+    if (!attempt) {
+      return invalidAttempt();
+    }
+    if (
+      attempt.userId !== auth.userId ||
+      attempt.orgId !== auth.orgId ||
+      !(await set(ownerAuthorized$, attempt, signal))
+    ) {
+      return apiError(
+        403,
+        "FORBIDDEN",
+        "Sign in as the starting Okou account in its original workspace, or restart Discord authorization.",
+      );
+    }
+    if (attempt.phase === "failed") {
+      await db
+        .delete(discordOauthStates)
+        .where(
+          and(
+            eq(discordOauthStates.id, attempt.id),
+            eq(discordOauthStates.userId, auth.userId),
+            eq(discordOauthStates.orgId, auth.orgId),
+            eq(discordOauthStates.phase, "failed"),
+          ),
+        );
+      signal.throwIfAborted();
+      return apiError(
+        400,
+        "DISCORD_OAUTH_FAILED",
+        "Discord authorization was cancelled or failed. Start again from Works.",
+      );
+    }
+    if (attempt.phase !== "approved") {
+      return apiError(
+        409,
+        "DISCORD_OAUTH_APPROVAL_REQUIRED",
+        "Approve this Discord authorization in the consent browser before completing it.",
+      );
+    }
+    set(setResHeader$, "Cache-Control", "no-store");
+    return await set(completeApproved$, attempt, signal);
+  },
+);
+
+const sessionAuth = Object.freeze({
+  requireOrganization: true,
+  missingOrganizationStatus: 401,
+  accept: Object.freeze(["session"] as const),
+});
 export const discordOauthRoutes: readonly RouteEntry[] = [
   {
     route: discordOauthContract.start,
-    handler: authRoute(
-      {
-        requireOrganization: true,
-        missingOrganizationStatus: 401,
-        accept: ["session"],
-      },
-      startDiscordOauth$,
-    ),
+    handler: authRoute(sessionAuth, startDiscordOauth$),
   },
   { route: discordOauthContract.callback, handler: callbackDiscordOauth$ },
+  {
+    route: discordOauthContract.approve,
+    handler: authRoute(sessionAuth, approveDiscordOauth$),
+  },
+  {
+    route: discordOauthContract.complete,
+    handler: authRoute(sessionAuth, completeDiscordOauth$),
+  },
 ];

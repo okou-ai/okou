@@ -15,7 +15,11 @@ import {
   discordMemberRole,
   disconnectDiscordBinding$,
 } from "../services/discord-data.service";
-import { releaseUnusedDiscordIdentities } from "../services/discord-identity-ownership.service";
+import {
+  lockDiscordIdentities,
+  releaseUnusedDiscordIdentities,
+} from "../services/discord-identity-ownership.service";
+import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import {
   discordOrgChangedUserIds,
   publishDiscordChanged,
@@ -43,6 +47,10 @@ async function uninstallDiscordOrganization(
   signal: AbortSignal,
 ): Promise<boolean> {
   const recipients = await db.transaction(async (tx) => {
+    await tx
+      .delete(discordOauthStates)
+      .where(eq(discordOauthStates.orgId, auth.orgId));
+    signal.throwIfAborted();
     const [installation] = await tx
       .select({ guildId: discordOrgInstallations.guildId })
       .from(discordOrgInstallations)
@@ -53,9 +61,19 @@ async function uninstallDiscordOrganization(
       return null;
     }
     const connections = await tx
-      .select({ userId: discordOrgConnections.userId })
+      .select({
+        userId: discordOrgConnections.userId,
+        discordUserId: discordOrgConnections.discordUserId,
+      })
       .from(discordOrgConnections)
       .where(eq(discordOrgConnections.guildId, installation.guildId));
+    signal.throwIfAborted();
+    const identities = await lockDiscordIdentities(
+      tx,
+      connections.map((connection) => {
+        return connection.discordUserId;
+      }),
+    );
     signal.throwIfAborted();
     const userIds = await discordOrgChangedUserIds(tx, auth.orgId, [
       auth.userId,
@@ -68,12 +86,7 @@ async function uninstallDiscordOrganization(
       .delete(discordOrgInstallations)
       .where(eq(discordOrgInstallations.guildId, installation.guildId));
     signal.throwIfAborted();
-    await releaseUnusedDiscordIdentities(
-      tx,
-      connections.map((connection) => {
-        return connection.userId;
-      }),
-    );
+    await releaseUnusedDiscordIdentities(tx, identities);
     signal.throwIfAborted();
     return userIds;
   });

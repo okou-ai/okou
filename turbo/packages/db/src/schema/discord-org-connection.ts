@@ -38,7 +38,7 @@ export const discordOrgConnections = pgTable(
           discordUserIdentities.discordUserId,
           discordUserIdentities.userId,
         ],
-      }).onDelete("cascade"),
+      }).onDelete("restrict"),
       unique("uq_discord_org_connections_guild_sender").on(
         table.guildId,
         table.discordUserId,
