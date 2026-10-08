@@ -46,13 +46,15 @@ interface CatalogActor {
 }
 
 /**
- * Stage an uploadable object. The object-storage mock is global, so the store
- * is re-accepted per upload to keep tests with more than one actor working.
+ * Stage uploaded bytes at the external object-storage boundary. Callers that
+ * observe several uploads together supply one store so earlier bytes survive.
  */
-function stageUploadObject(key: string, size: number): void {
-  chatCallbacks
-    .acceptChatObjectStorage()
-    .addObject({ bucket: "test-user-artifacts", key, size });
+function stageUploadObject(
+  key: string,
+  size: number,
+  storage = chatCallbacks.acceptChatObjectStorage(),
+): void {
+  storage.addObject({ bucket: "test-user-artifacts", key, size });
 }
 
 async function catalogActor(
@@ -281,6 +283,9 @@ async function uploadFile(args: {
   readonly contentType: string;
   readonly sizeBytes?: number;
   readonly fileId?: string;
+  readonly objectStorage?: ReturnType<
+    typeof chatCallbacks.acceptChatObjectStorage
+  >;
 }): Promise<{
   readonly fileId: string;
   readonly url: string;
@@ -299,6 +304,7 @@ async function uploadFile(args: {
   stageUploadObject(
     `artifacts/${args.owner.actor.userId}/${fileId}/${args.filename}`,
     args.sizeBytes ?? 1024,
+    args.objectStorage,
   );
   const completed = await chat.completeUploadWithBearer(
     bearer,
@@ -654,17 +660,20 @@ describe("GET /api/artifacts/catalog", () => {
       const outsider = await catalogActor(
         "Independent artifact erasure outsider",
       );
+      const objectStorage = chatCallbacks.acceptChatObjectStorage();
       const uploaded = await uploadFile({
         owner,
         prompt: "publish a report before account erasure",
         filename: "account-report.txt",
         contentType: "text/plain",
+        objectStorage,
       });
       const unrelated = await uploadFile({
         owner: outsider,
         prompt: "publish an unrelated report",
         filename: "unrelated-report.txt",
         contentType: "text/plain",
+        objectStorage,
       });
       await bdd.deleteAgent(owner.actor, owner.agentId);
       const catalog = await chat.listArtifactCatalog(owner.actor);

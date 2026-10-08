@@ -205,12 +205,7 @@ async function fixture() {
       return Promise.resolve({});
     }
     if (cmd instanceof GetObjectCommand) {
-      // Host fixtures treat presigned uploads as complete, as does HEAD above.
-      const body =
-        objects.get(cmd.input.Key!) ??
-        (cmd.input.Key?.startsWith("private-sites/")
-          ? "Hosted fixture"
-          : undefined);
+      const body = objects.get(cmd.input.Key!);
       if (body === undefined) {
         return Promise.reject(
           Object.assign(new Error("Missing"), { name: "NoSuchKey" }),
