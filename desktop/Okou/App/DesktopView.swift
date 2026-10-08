@@ -7,61 +7,66 @@ private let muted = Color(red: 0.40, green: 0.44, blue: 0.52)
 private let brand = Color(red: 1, green: 0.647, blue: 0)
 
 struct DesktopView: View {
+  @Environment(\.displayScale) private var displayScale
   @ObservedObject var model: DesktopModel
   var body: some View {
     VStack(spacing: 0) {
-      HStack {
-        BrandImage(name: "wordmark").frame(width: 64, height: 22)
-        Spacer()
-      }
-      .padding(.leading, 92).padding(.trailing, 16).frame(height: 52)
-      .background(Color(red: 0.973, green: 0.977, blue: 0.984).opacity(0.82))
-      .overlay(alignment: .bottom) { Rectangle().fill(foreground.opacity(0.1)).frame(height: 1) }
-      if model.preparing {
-        VStack(spacing: 18) {
-          BrandImage(name: "symbol").frame(width: 92, height: 92)
-          ProgressView().controlSize(.small)
-          Text("Preparing").font(.system(size: 18, weight: .semibold))
-        }.frame(maxWidth: .infinity, maxHeight: .infinity)
-      } else {
-        ScrollView {
-          VStack(spacing: 16) {
-            if model.ready {
-              hero
-            } else {
-              accountCard
-              permissionCard
+      Color(nsColor: .windowBackgroundColor).frame(height: 4)
+        .overlay(alignment: .bottom) {
+          Rectangle().fill(foreground.opacity(0.1)).frame(height: 1 / displayScale)
+        }
+      Group {
+        if model.preparing {
+          VStack(spacing: 18) {
+            BrandImage(name: "symbol").frame(width: 92, height: 92)
+            ProgressView().controlSize(.small)
+            Text("Preparing").font(.system(size: 18, weight: .semibold))
+          }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+          GeometryReader { geometry in
+            ScrollView {
+              VStack(spacing: 16) {
+                if model.ready {
+                  hero.frame(
+                    height: model.developerToolsEnabled ? 370 : max(628, geometry.size.height - 20))
+                } else {
+                  accountCard
+                  permissionCard
+                }
+                if let error = model.error ?? model.runtime.lastError {
+                  HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.circle")
+                    Text(error).frame(maxWidth: .infinity, alignment: .leading)
+                    Button("Details") { model.showDiagnostics = true }
+                  }.font(.system(size: 13)).padding(10)
+                    .foregroundStyle(Color(red: 0.57, green: 0.25, blue: 0.05))
+                    .background(
+                      Color(red: 1, green: 0.984, blue: 0.922),
+                      in: RoundedRectangle(cornerRadius: 7))
+                }
+                if model.developerToolsAvailable && model.developerToolsEnabled {
+                  runtimePanel
+                  commandPanel
+                }
+              }
+              .padding(.horizontal, 20).padding(.top, 20)
+              .padding(.bottom, model.ready ? 0 : 20)
+              .frame(
+                minHeight: model.ready && !model.developerToolsEnabled ? geometry.size.height : 0,
+                alignment: .top)
             }
-            if let error = model.error ?? model.runtime.lastError {
-              HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.circle")
-                Text(error).frame(maxWidth: .infinity, alignment: .leading)
-                Button("Details") { model.showDiagnostics = true }
-              }.font(.system(size: 13)).padding(10)
-                .foregroundStyle(Color(red: 0.57, green: 0.25, blue: 0.05))
-                .background(
-                  Color(red: 1, green: 0.984, blue: 0.922), in: RoundedRectangle(cornerRadius: 7))
-            }
-            if model.developerToolsAvailable && model.developerToolsEnabled {
-              runtimePanel
-              commandPanel
-            }
-          }.padding(.horizontal, 20).padding(.top, 20)
-            .padding(.bottom, model.ready ? 0 : 20)
-            .frame(
-              minHeight: model.ready && !model.developerToolsEnabled ? 648 : 0, alignment: .top)
+          }
         }
       }
+      .background(
+        LinearGradient(
+          colors: [
+            Color(red: 0.998, green: 0.997, blue: 0.996),
+            Color(red: 0.980, green: 0.961, blue: 0.953),
+          ], startPoint: .top, endPoint: .bottom)
+      )
     }
     .font(.system(size: 14)).foregroundStyle(foreground)
-    .background(
-      LinearGradient(
-        colors: [
-          Color(red: 0.998, green: 0.997, blue: 0.996),
-          Color(red: 0.980, green: 0.961, blue: 0.953),
-        ], startPoint: .top, endPoint: .bottom)
-    )
-    .ignoresSafeArea(.container, edges: .top)
     .preferredColorScheme(.light)
     .sheet(isPresented: $model.showWorkspaces) { workspacePicker }
     .sheet(isPresented: $model.showDiagnostics) { diagnostics }
@@ -225,7 +230,7 @@ struct DesktopView: View {
       }.frame(height: 52).overlay(alignment: .top) {
         Rectangle().fill(foreground.opacity(0.08)).frame(height: 1)
       }
-    }.frame(height: model.developerToolsEnabled ? 370 : 628)
+    }
   }
   private var runtimePanel: some View {
     VStack(alignment: .leading, spacing: 14) {

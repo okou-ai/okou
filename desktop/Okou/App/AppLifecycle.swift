@@ -5,7 +5,10 @@ import Sparkle
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, SPUUpdaterDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSToolbarDelegate,
+  SPUUpdaterDelegate
+{
+  private static let wordmarkItem = NSToolbarItem.Identifier("okou.wordmark")
   private var window: NSWindow!
   private var model: DesktopModel!
   private var statusItem: NSStatusItem!
@@ -48,12 +51,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, SPUU
         defer: false)
       window.title = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Okou"
       window.titleVisibility = .hidden
+      window.toolbarStyle = .unifiedCompact
       window.titlebarAppearsTransparent = true
+      let toolbar = NSToolbar(identifier: "okou.main")
+      toolbar.delegate = self
+      toolbar.displayMode = .iconOnly
+      window.toolbar = toolbar
       window.isReleasedWhenClosed = false
       window.isMovableByWindowBackground = true
       window.collectionBehavior = [.fullScreenNone]
       window.delegate = self
       window.contentView = NSHostingView(rootView: DesktopView(model: model))
+      window.titlebarSeparatorStyle = .none
       window.center()
       showWindow()
       statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -86,6 +95,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, SPUU
       alert.runModal()
       NSApplication.shared.terminate(nil)
     }
+  }
+  func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+    [Self.wordmarkItem, .flexibleSpace]
+  }
+  func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+    toolbarDefaultItemIdentifiers(toolbar)
+  }
+  func toolbar(
+    _ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+    willBeInsertedIntoToolbar flag: Bool
+  ) -> NSToolbarItem? {
+    guard itemIdentifier == Self.wordmarkItem,
+      let url = Bundle.main.url(forResource: "wordmark", withExtension: "png"),
+      let image = NSImage(contentsOf: url)
+    else { return nil }
+    let view = NSImageView()
+    view.image = image
+    view.imageScaling = .scaleProportionallyUpOrDown
+    view.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      view.widthAnchor.constraint(equalToConstant: 64),
+      view.heightAnchor.constraint(equalToConstant: 22),
+    ])
+    view.setAccessibilityElement(false)
+    let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+    item.label = "Okou"
+    item.view = view
+    return item
   }
   private func smokeTest(configuration: DesktopConfiguration) throws {
     guard Bundle.main.bundleIdentifier != nil, configuration.product == "okou",
