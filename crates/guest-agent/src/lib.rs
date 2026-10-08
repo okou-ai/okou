@@ -221,10 +221,11 @@
 //!
 //! The fixed-role launcher is
 //! `crates/guest-control-server/src/agent_command.rs::spawn_codex_session_cleanup_with_pipes`.
-//! The runner invokes the operation only for an actually reused sandbox from
+//! The runner invokes the operation before every actual Codex history replacement,
+//! independently of VM provenance. Serial restoration and post-storage staged destination
+//! preparation share
 //! `crates/runner-executor/src/executor/session_restore/codex.rs::cleanup_existing_codex_session_files`
-//! before writing replacement history, and independently validates the output in
-//! `parse_codex_cleanup_output`
+//! and independently validate the output in `parse_codex_cleanup_output`
 //! before using a returned path as the restore destination. Keep these source
 //! references in sync with the shared contract when changing this protocol.
 
