@@ -78,6 +78,12 @@ function providerError(error: unknown): MapsErrorResponse {
         "MAPS_PROVIDER_UNAVAILABLE",
       );
     }
+    if (error.reason === "response_too_large") {
+      return badGateway(
+        "Google Maps grounding response exceeded Okou's response size limit. Narrow the search area, request fewer places, or split the query before trying again.",
+        "MAPS_RESPONSE_TOO_LARGE",
+      );
+    }
     if (error.reason === "blocked") {
       return badGateway(
         "Google Maps grounding could not answer this request",

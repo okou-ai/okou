@@ -30,6 +30,27 @@ once outgoing writers and their queued jobs have drained. Rolling back the API
 restores baseline writes but can still claim new baseline-free jobs. No release
 or production activation is performed by this change.
 
+## Maps oversized-response error (issue #36791)
+
+`POST /api/maps/search` continues to return HTTP 502 when the Google Maps
+provider response exceeds Okou's 512 KiB response limit. Its error code is now
+`MAPS_RESPONSE_TOO_LARGE` rather than `MAPS_GROUNDING_ERROR`; the message explains
+that the provider response exceeded Okou's size limit and recommends narrowing
+the search area, requesting fewer places, or splitting the query before retrying.
+The error includes no query or provider response content. The size protection,
+failed-query billing behavior, success envelope, and other failure codes are
+unchanged.
+
+- **Old CLI → new API:** the existing string error code/message envelope is
+  compatible; the CLI displays the actionable server message and exits 1.
+- **New CLI → old API:** the old generic error remains visible and exits 1; the
+  CLI does not infer an oversized response from an undifferentiated 502.
+- **New CLI → new API:** the actionable server message is displayed for normal
+  and `--json` invocations. Errors continue to use stderr rather than success JSON.
+
+No database, Runner protocol, version floor, or rollout fallback is required.
+This change does not deploy or activate production changes.
+
 ## Pi OpenRouter Chat Completions route (generation 5, default off)
 
 Pi model configuration gains generation 5 (`dialect: "openai-completions"`,
@@ -69,6 +90,41 @@ Haiku 5.5, DeepSeek V4.1 Flash). The Codex projection is unchanged.
 **Rollback.** Disabling the switch returns new launches to Responses. Rolling
 the Runner back below this release while the switch is on leaves generation 5
 jobs queued; disable the switch first.
+
+## Official Workflow canonical queue contexts (#29908, writer cutover)
+
+Official `input.prompt` events from both Web and Agent callers now use the
+normal Web context ID. Their `context_type` remains `web` or `agent_run`, and
+the server-private `required_official_workflow_ids` claim is unchanged. Ordinary
+Agent inputs still point to their source Run. Official Agent inputs recover
+their source Run and inherited autonomy budget from the server-owned document
+annotation, as before. Final Official admission and exact artifact mounts are
+unchanged; the private claim stays out of public event and snapshot payloads.
+
+- **Prepared reader with new writer:** the reader preparation in #32533 accepts
+  the normal Web ID plus a strict Official claim for both origins. New and
+  prepared-reader APIs can consume each other's queued inputs.
+- **New reader with previous writer:** both reserved Official marker IDs remain
+  readable. The writer helper is removed, but marker constants and decoding
+  remain until the later retirement release.
+- **API before reader preparation:** it cannot safely consume canonical Official
+  inputs. Exclude it from serving and supported rollback before promoting this
+  writer. The current rollback resolver requires the unified chat queue commit
+  `553fc566b7e9be2cd4a8c1de314d55939b99490a`, which contains #32533. Refresh the
+  actual serving and rollback inventory before production promotion; source
+  ancestry alone does not prove deployed enforcement or outgoing-instance drain.
+
+This stage needs no migration or historical event rewrite. Retained context IDs
+remain opaque in raw events, snapshots and archives. After promotion, record
+canonical Official writes and successful admission from both origins, including
+Agent source and budget preservation, and record the last marker-writing API
+cutoff. An origin without traffic remains unverified.
+
+The later decoder retirement in #29908 requires excluding every marker writer
+from serving and supported rollback, a complete census of all unrevoked runless
+legacy-marker prompts across both IDs and every queue position, and current
+queue recovery evidence. Keep strict claim validation and immutable history;
+this writer cutover does not complete the parent issue.
 
 ## SEO partial SERP results (issue #36799)
 
@@ -154,6 +210,31 @@ retain their captured launch inputs; the new selection policy applies to newly
 prepared Runs. Rolling back the API restores the previous selection policy.
 Thread-owned network storage and retirement of those persisted entities are
 later deliveries in the Epic.
+
+## Dynamic storage preparation fails before CLI launch
+
+The next delivery of [#37970](https://github.com/okou-ai/okou/issues/37970)
+makes required stale-input cleanup and instruction normalization part of storage
+preparation success. Unreadable cleanup mount information, unsafe cleanup paths,
+failed removals, missing instruction sources, invalid filenames, and failed
+instruction writes now return failure. Later preparation phases stop, and
+`guest-storage-apply` exits with code 1. The existing Runner failure path then
+rejects preparation before starting the CLI.
+
+Missing stale paths remain successful cleanup. Atomic instruction replacement,
+cached-child preservation, and symlink protections remain in place. Permission
+failures for the `lost+found` directory directly at a mountpoint root may leave
+that filesystem metadata intact; other removal failures are fatal. Temporary
+staging cleanup remains best effort. Completed filesystem changes are not rolled
+back, and already running parallel downloads still finish before aggregate
+failure is returned.
+
+The storage manifest, decoded-file framing, and process exit-code contracts are
+unchanged. Old API with new Runner/Guest works with existing valid inputs. New
+API with old Runner/Guest retains the old best-effort cleanup behavior until the
+Runner image is upgraded; deploying the API alone does not enforce this policy.
+Runner and Guest are shipped together, and both stdin and fallback-file callers
+already reject nonzero helper exits. This change requires no database migration.
 
 ## Pi turn-end stdout boundaries (2026-10-08)
 
@@ -2175,8 +2256,9 @@ Kept compatibility, with the unmet condition:
   is a separate Runner/Guest protocol change without a documented deadline.
 - `GET /api/integrations/telegram/bots` for older CLIs: deployed CLIs have no
   version floor.
-- Official Workflow queue marker decoding (#29908): its writers still write the
-  markers.
+- Official Workflow queue marker decoding (#29908): previous APIs can still
+  write markers, and pending marker inputs have not been proven drained. See
+  the [canonical writer cutover](#official-workflow-canonical-queue-contexts-29908-writer-cutover).
 
 ## Direct PUT checksum removal and Browser file uploads (#37241)
 
@@ -7931,12 +8013,23 @@ production migration journal completion; record it only after the real release.
 
 ### Cloudflare SSH concurrency repair (#37941)
 
-Configuration rename/token update, deletion, Personal-to-Organization promotion
-and Organization-to-Personal adoption acquire current referencing hosts in UUID
+Credential rotation, deletion, Personal-to-Organization promotion and
+Organization-to-Personal adoption acquire current referencing hosts in UUID
 order with `FOR NO KEY UPDATE`, then the configuration `FOR UPDATE`. The weaker
 host lock remains compatible with implicit `FOR KEY SHARE` checks from restrictive
 parent-login deletion. Runner pin/observation continues to acquire its host
 before shared login/configuration authority.
+
+The local optimization in #37975 separates metadata-only rename from that
+fanout protocol. Rename locks only the visible configuration `FOR UPDATE`,
+revalidates current-scope management permission, expected revision and revision
+exhaustion, and updates name/revision/time without changing config generation.
+Its owner-filtered host-ID/name response is a nonlocking MVCC read, not an impact
+or authority check. It never follows configuration authority with a host row
+lock or host write, so it adds no reverse host-lock edge. Host generations,
+learned pins, independent login, endpoint, binding and rebind state remain
+unchanged; only the existing configuration metadata invalidation runs after
+commit.
 
 Selected host create/edit rechecks same-organization Organization or same-owner
 Personal visibility with `FOR SHARE` inside the write transaction, before inline
@@ -7946,21 +8039,39 @@ check rejects a bad selection before preparing a new login; it is not commit
 authority. Configuration existence and the same-org FK do not prove Personal
 visibility, and `FOR KEY SHARE` does not fence a non-key scope change.
 
-After the exclusive configuration fence, each mutation rescans references. A
-new reference outside the locked set ends an explicitly unwritten attempt;
-there is at most one fresh host-first transaction with the same prepared values.
-A second expansion conflicts. No transaction acquires a new host in reverse
-order after the configuration fence, and no exception/deadlock or ambiguous
-write is replayed. Current revision, management/scope, exhaustion and exact
-impact checks precede business writes. An empty-set preview cannot authorize
-affecting a newly bound member host. Encryption stays outside transactions;
-identifier-only best-effort notices and existing batching/cache windows stay
-post-commit. Login, target, learned trust, atomic generations and explicit
-protected `needs_rebind` behavior are preserved.
+After the exclusive configuration fence, each authority-changing mutation
+counts current references with the same org/config predicate and reuses its
+first locked metadata result, instead of loading all host metadata again.
+Under PostgreSQL READ COMMITTED, the locking reader rechecks a concurrently
+changed tuple before returning it: deleted/rebound nonmatches are omitted, and
+updated matches are returned locked. Every actually returned member therefore
+remains in the fresh count's set; its retained lock prevents deletion, rebinding
+and relevant metadata changes. Config `FOR SHARE` admission prevents later
+incoming bindings from escaping the exclusive configuration fence. The locked
+set is a subset of the counted set, so equal counts prove equal identities under
+these premises, not for arbitrary sets. A smaller count or missing aggregate row
+fails as an invariant violation. Impact, exhaustion and incompatible-owner
+checks use the complete retained records, including their current generations.
 
-No schema, migration, App/Runner DTO or provider changes are introduced. Old
-API configuration-first/unlocked writers retain the original concurrency risks
-while serving; code merge or green CI does not prove that they have drained.
+A larger count ends an explicitly unwritten attempt; there is at most one fresh
+host-first transaction with the same prepared values. A second expansion
+conflicts. No transaction acquires a new host in reverse order after the
+configuration fence, and no exception/deadlock or ambiguous write is replayed.
+Current revision, management/scope, exhaustion and exact impact checks precede
+business writes. An empty-set preview cannot authorize affecting a newly bound
+member host. Encryption stays outside transactions; identifier-only best-effort
+notices and existing batching/cache windows stay post-commit. Login, target,
+learned trust, atomic generations and explicit protected `needs_rebind` behavior
+are preserved. Counting still scans references and token rotation still advances
+N persisted host generations synchronously; no measured latency/throughput gain
+is established by the structural optimization.
+
+No schema, migration, App/Runner DTO or provider changes are introduced. The
+#37955 host-first writers and #37975 optimized writers can coexist with the same
+authority and generation contracts; no new migration or client cutover is
+required for the optimization. Older pre-#37955 API configuration-first/unlocked
+writers retain the original concurrency risks while serving; code merge or
+green CI does not prove that they have drained.
 This change does not authorize production drain, deployment or activation.
 Independent SSH-login revision semantics are unchanged. Writer inventory found
 login rotation host-before-login and Clerk cleanup host-before-login-before-config,
@@ -8364,9 +8475,25 @@ Queued Runs retain their captured CLI package and exact account mapping.
 Builtin MCP admission requires the Run's Okou token for authenticated MCP
 discovery. None/manual and Automatic methods are executable. Plaud's Automatic
 method defaults off in auth-method discovery through `plaudConnector`; this
-switch does not gate existing account callbacks or execution. The addon honors explicit
-owner intent and never injects another owner's credentials when the requested
-owner is absent, including overlapping builtin/custom destinations.
+switch does not gate existing account callbacks or execution.
+
+Outside the platform API admission path, connector intent is an owner-disambiguation
+hint, not a credential-identity lock. The addon matches active firewall URLs and
+applies route precedence first. One eligible owner governs the request even when
+intent is absent, malformed, mismatched, or names an absent owner. Removing a builtin
+at an overlapping destination can therefore leave a sole eligible custom owner whose
+credentials may be injected, subject to its authorization checks. Multiple eligible
+owners require valid intent selecting one of them; unresolved ambiguity is blocked.
+With no active firewall match, ordinary network fallback applies without resolving
+or injecting managed connector credentials. See
+[ordinary connector firewall owner selection](mitm-addon-contracts.md#ordinary-connector-firewall-owner-selection).
+
+This ordinary selection rule does not relax the separate
+[platform connector authorization path policy](mitm-addon-contracts.md#platform-connector-authorization-path-policy),
+including the `/mcp` intent-admission gate, or the HTTP 409
+`connector_auth_owner_conflict` guard for confirmed authentication on a unique
+inactive route. The selected owner's permission, network-policy, destination,
+credential-resolution, and current-owner revalidation checks still apply.
 
 No-auth builtin and custom MCP requests skip credential validity checks and
 proxy auth resolution, including Automatic builtin and custom MCP resolved to no

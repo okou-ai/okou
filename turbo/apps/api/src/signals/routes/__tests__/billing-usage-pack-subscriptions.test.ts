@@ -2531,10 +2531,22 @@ describe("usage pack allocation management", () => {
   function mockUsagePackChangePreviews(
     immediateAmountCents: number,
     nextRecurringAmountCents: number,
+    scheduledSubscriptionId?: string,
   ): void {
     context.mocks.stripe.invoices.createPreview.mockImplementation((input) => {
       if (typeof input !== "object" || input === null) {
         throw new Error("Expected Stripe invoice preview input");
+      }
+      if (
+        scheduledSubscriptionId &&
+        "preview_mode" in input &&
+        input.preview_mode === "recurring" &&
+        "subscription" in input &&
+        input.subscription === scheduledSubscriptionId
+      ) {
+        throw new Error(
+          "Recurring estimates do not support subscription schedules",
+        );
       }
       if (
         "preview_mode" in input &&
@@ -3666,6 +3678,101 @@ describe("usage pack allocation management", () => {
       );
     }
   });
+
+  it.each([
+    [20, 50],
+    [50, 20],
+  ] as const)(
+    "previews a member Usage Pack change from %s to %s with a neutral schedule",
+    async (sourceUsd, targetUsd) => {
+      const userId = `user_${randomUUID()}`;
+      const otherUserId = `user_${randomUUID()}`;
+      const fixture = await purchaseManagedUsagePack([
+        { userId, usagePackUsd: sourceUsd },
+        { userId: otherUserId, usagePackUsd: sourceUsd },
+      ]);
+      const sourcePriceId =
+        sourceUsd === 20 ? TEST_PRICE_USAGE_PACK_20 : TEST_PRICE_USAGE_PACK_50;
+      const targetPriceId =
+        targetUsd === 20 ? TEST_PRICE_USAGE_PACK_20 : TEST_PRICE_USAGE_PACK_50;
+      const scheduleId = `sub_sched_${randomUUID()}`;
+      const discountId = `di_${randomUUID()}`;
+      const subscription = {
+        ...managedUsagePackSubscription(
+          fixture,
+          new Map([[sourcePriceId, 2]]),
+          fixture.billingPeriod,
+          { scheduleId },
+        ),
+        discounts: [{ id: discountId }],
+      };
+      const items = subscription.items.data.map((item) => {
+        return { price: item.price.id, quantity: item.quantity };
+      });
+      context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+        subscription,
+      );
+      context.mocks.stripe.subscriptionSchedules.retrieve.mockResolvedValue({
+        id: scheduleId,
+        end_behavior: "release",
+        current_phase: {
+          start_date: fixture.billingPeriod.start,
+          end_date: fixture.billingPeriod.end,
+        },
+        phases: [
+          {
+            start_date: fixture.billingPeriod.start,
+            end_date: fixture.billingPeriod.end,
+            items,
+            discounts: [{ discount: discountId }],
+          },
+          {
+            start_date: fixture.billingPeriod.end,
+            end_date: fixture.billingPeriod.end + 30 * 86_400,
+            items,
+            discounts: [{ discount: discountId }],
+          },
+        ],
+      });
+      mockUsagePackChangePreviews(1500, 8000, fixture.subscriptionId);
+      const preview = await accept(
+        setupApp({ context, routes: billingCheckoutRoutes })(
+          billingUsagePackManagementContract,
+        ).previewChange({
+          headers: { authorization: "Bearer clerk-session" },
+          body: { memberId: userId, targetUsagePackUsd: targetUsd },
+        }),
+        [200],
+      );
+      expect(preview.body).toMatchObject({
+        kind: targetUsd > sourceUsd ? "upgrade" : "downgrade",
+        sourceUsagePackUsd: sourceUsd,
+        targetUsagePackUsd: targetUsd,
+        immediateAmountCents: targetUsd > sourceUsd ? 1500 : 0,
+        nextRecurringAmountCents: 8000,
+        currency: "usd",
+      });
+      expect(context.mocks.stripe.invoices.createPreview).toHaveBeenCalledWith({
+        customer: fixture.customerId,
+        preview_mode: "recurring",
+        discounts: [{ discount: discountId }],
+        subscription_details: {
+          items: [
+            { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
+            { price: sourcePriceId, quantity: 1 },
+            { price: targetPriceId, quantity: 1 },
+          ],
+        },
+      });
+      expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
+      expect(
+        context.mocks.stripe.subscriptionSchedules.release,
+      ).not.toHaveBeenCalled();
+      expect(
+        context.mocks.stripe.subscriptionSchedules.update,
+      ).not.toHaveBeenCalled();
+    },
+  );
 
   it("previews an immediate usage pack upgrade while the Plan is ending", async () => {
     const userId = `user_${randomUUID()}`;

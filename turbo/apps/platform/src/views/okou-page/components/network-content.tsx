@@ -1,6 +1,13 @@
-import { Check, ChevronDown, Filter, Loader2 } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Filter,
+  Loader2,
+} from "lucide-react";
 import { useGet, useSet } from "ccstate-react";
 import {
+  Button,
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuCheckboxItemIndicator,
@@ -645,32 +652,30 @@ function NetworkLogRowDetail({ entry }: { entry: NetworkLogEntry }) {
   }
 
   return (
-    <TableRow>
-      <td colSpan={7} className="bg-muted/30 px-8 py-2">
-        <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
-          {details.map(([label, value]) => {
-            return (
-              <div key={label} className="contents">
-                <span className="text-muted-foreground font-medium">
-                  {label}
-                </span>
-                <span className="font-mono break-all">{value}</span>
-              </div>
-            );
-          })}
-        </div>
-        <CapturedBodySections entry={entry} />
-      </td>
-    </TableRow>
+    <td colSpan={7} className="bg-muted/30 px-8 py-2">
+      <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
+        {details.map(([label, value]) => {
+          return (
+            <div key={label} className="contents">
+              <span className="text-muted-foreground font-medium">{label}</span>
+              <span className="font-mono break-all">{value}</span>
+            </div>
+          );
+        })}
+      </div>
+      <CapturedBodySections entry={entry} />
+    </td>
   );
 }
 
 function NetworkLogRow({
   entry,
   rowKey,
+  detailsId,
 }: {
   entry: NetworkLogEntry;
   rowKey: string;
+  detailsId: string;
 }) {
   const { t } = useTranslation();
   const expandedRows = useGet(networkLogExpandedRows$);
@@ -683,12 +688,7 @@ function NetworkLogRow({
 
   return (
     <>
-      <TableRow
-        className="cursor-pointer hover:bg-state-hover"
-        onClick={() => {
-          toggleExpanded(rowKey);
-        }}
-      >
+      <TableRow>
         <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
           {formatTime(entry.timestamp)}
         </TableCell>
@@ -698,8 +698,24 @@ function NetworkLogRow({
         <TableCell className="font-mono text-xs whitespace-nowrap">
           {isHttp ? (entry.method ?? "—") : "—"}
         </TableCell>
-        <TableCell className="font-mono text-xs truncate max-w-[400px]">
-          {target}
+        <TableCell className="max-w-[400px] py-2.5">
+          <Button
+            type="button"
+            variant="quiet"
+            size="xs"
+            className="w-full justify-start px-0 font-mono text-xs font-normal text-foreground"
+            aria-expanded={expanded}
+            aria-controls={detailsId}
+            onClick={() => {
+              toggleExpanded(rowKey);
+            }}
+          >
+            <ChevronRight
+              aria-hidden="true"
+              className={expanded ? "rotate-90" : undefined}
+            />
+            <span className="truncate">{target}</span>
+          </Button>
         </TableCell>
         <TableCell
           className={`font-mono text-xs whitespace-nowrap ${statusColor(entry.status)}`}
@@ -728,7 +744,9 @@ function NetworkLogRow({
           </div>
         </TableCell>
       </TableRow>
-      {expanded && <NetworkLogRowDetail entry={entry} />}
+      <TableRow id={detailsId} hidden={!expanded}>
+        {expanded && <NetworkLogRowDetail entry={entry} />}
+      </TableRow>
     </>
   );
 }
@@ -825,7 +843,14 @@ export function NetworkContent({
           ) : (
             filteredNetworkLogs.map((entry, idx) => {
               const key = `${entry.timestamp}-${entry.type}-${entry.host}-${entry.port}-${entry.url}-${idx}`;
-              return <NetworkLogRow key={key} rowKey={key} entry={entry} />;
+              return (
+                <NetworkLogRow
+                  key={key}
+                  rowKey={key}
+                  entry={entry}
+                  detailsId={`network-log-details-${idx}`}
+                />
+              );
             })
           )}
         </TableBody>

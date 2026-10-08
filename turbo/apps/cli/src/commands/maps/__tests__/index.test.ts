@@ -121,6 +121,41 @@ describe("okou maps command", () => {
     expect(lines.join("\n")).toContain("Credits charged: 32");
   });
 
+  it.each([
+    { mode: "human", options: [] },
+    { mode: "--json", options: ["--json"] },
+  ])(
+    "shows the oversized response cause and recovery guidance in $mode mode",
+    async ({ options }) => {
+      const message =
+        "Google Maps grounding response exceeded Okou's response size limit. Narrow the search area, request fewer places, or split the query before trying again.";
+      server.use(
+        http.post("http://localhost:3000/api/maps/search", () => {
+          return HttpResponse.json(
+            { error: { code: "MAPS_RESPONSE_TOO_LARGE", message } },
+            { status: 502 },
+          );
+        }),
+      );
+
+      await expect(
+        mapsCommand.parseAsync([
+          "node",
+          "cli",
+          "search",
+          "coffee near Union Square",
+          ...options,
+        ]),
+      ).rejects.toThrow("process.exit called");
+
+      expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+        `✗ 502: ${message}`,
+      );
+      expect(mockExit).toHaveBeenCalledWith(1);
+      expect(mockConsoleLog).not.toHaveBeenCalled();
+    },
+  );
+
   it("requires latitude and longitude together", async () => {
     await expect(
       mapsCommand.parseAsync([

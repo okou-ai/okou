@@ -2,7 +2,6 @@ import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { AGENT_SETUP_RESPONSIBILITY_MAX_CHARS } from "@okouai/api-contracts/contracts/agent-setup-prompts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { Loader2, Plus, Wand } from "lucide-react";
 import {
@@ -29,10 +28,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@okouai/ui";
-import {
-  createSubagent$,
-  createSubagentWithSetupThread$,
-} from "../../signals/okou-page/agents.ts";
+import { createSubagentWithSetupThread$ } from "../../signals/okou-page/agents.ts";
 import {
   defaultAgentId$,
   defaultAgentName$,
@@ -43,7 +39,6 @@ import {
   type OrgMember,
 } from "../../signals/external/org-members.ts";
 import { unreadAgentIds$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { onDomEventFn, onRejection } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
@@ -93,25 +88,17 @@ export function AgentsPageTabs() {
   const setVisibility = useSet(setJobsVisibility$);
   const activeTab = useGet(jobsActiveTab$);
   const setActiveTab = useSet(setJobsActiveTab$);
-  const [createLoadable, createSubagentFn] = useLoadableSet(createSubagent$);
-  const [setupCreateLoadable, createSubagentWithSetupThreadFn] = useLoadableSet(
+  const [createLoadable, createSubagentWithSetupThreadFn] = useLoadableSet(
     createSubagentWithSetupThread$,
   );
-  const creating =
-    createLoadable.state === "loading" ||
-    setupCreateLoadable.state === "loading";
+  const creating = createLoadable.state === "loading";
   const resetDialog = useSet(resetJobsDialog$);
   const pageSignal = useGet(pageSignal$);
   const defaultAgentName = useLastResolved(defaultAgentName$);
-  const features = useLastResolved(featureSwitch$);
-  const responsibilitySetupEnabled =
-    features?.[FeatureSwitchKey.AgentResponsibilitySetup] ?? false;
   const trimmedName = newName.trim();
   const trimmedResponsibility = responsibility.trim();
   const canCreate =
-    trimmedName !== "" &&
-    (!responsibilitySetupEnabled || trimmedResponsibility !== "") &&
-    !creating;
+    trimmedName !== "" && trimmedResponsibility !== "" && !creating;
 
   const openCreateDialog = () => {
     resetDialog();
@@ -123,17 +110,15 @@ export function AgentsPageTabs() {
       return;
     }
     await createWithErrorToast(
-      responsibilitySetupEnabled
-        ? createSubagentWithSetupThreadFn(
-            {
-              displayName: trimmedName,
-              avatarUrl,
-              visibility,
-              responsibility: trimmedResponsibility,
-            },
-            pageSignal,
-          )
-        : createSubagentFn(trimmedName, avatarUrl, visibility, pageSignal),
+      createSubagentWithSetupThreadFn(
+        {
+          displayName: trimmedName,
+          avatarUrl,
+          visibility,
+          responsibility: trimmedResponsibility,
+        },
+        pageSignal,
+      ),
       t(($) => {
         return $.list.create.setupFailed;
       }),
@@ -194,7 +179,7 @@ export function AgentsPageTabs() {
         onOpenChange={setDialogOpen}
         newName={newName}
         onNameChange={setNewName}
-        responsibility={responsibilitySetupEnabled ? responsibility : null}
+        responsibility={responsibility}
         onResponsibilityChange={setResponsibility}
         onConfirm={handleCreateTeammate}
         canCreate={canCreate}
@@ -396,8 +381,7 @@ function CreateTeammateDialog({
   onOpenChange: (open: boolean) => void;
   newName: string;
   onNameChange: (name: string) => void;
-  /** `null` hides the responsibility field. */
-  responsibility: string | null;
+  responsibility: string;
   onResponsibilityChange: (responsibility: string) => void;
   onConfirm: (avatarUrl: string) => void;
   canCreate: boolean;
@@ -574,7 +558,7 @@ function CreateAgentFields({
 }: {
   newName: string;
   onNameChange: (name: string) => void;
-  responsibility: string | null;
+  responsibility: string;
   onResponsibilityChange: (responsibility: string) => void;
   creating: boolean;
   visibility: Visibility;
@@ -627,33 +611,31 @@ function CreateAgentFields({
           disabled={creating}
         />
       </div>
-      {responsibility !== null && (
-        <div className="flex flex-col gap-1.5">
-          <label
-            htmlFor="new-agent-responsibility"
-            className="text-sm font-medium text-foreground"
-          >
-            {t(($) => {
-              return $.list.create.responsibilityLabel;
-            })}
-          </label>
-          <Textarea
-            id="new-agent-responsibility"
-            value={responsibility}
-            onChange={(e) => {
-              return onResponsibilityChange(e.target.value);
-            }}
-            placeholder={t(($) => {
-              return $.list.create.responsibilityPlaceholder;
-            })}
-            maxLength={AGENT_SETUP_RESPONSIBILITY_MAX_CHARS}
-            rows={4}
-            className="min-h-[96px] resize-y"
-            required
-            disabled={creating}
-          />
-        </div>
-      )}
+      <div className="flex flex-col gap-1.5">
+        <label
+          htmlFor="new-agent-responsibility"
+          className="text-sm font-medium text-foreground"
+        >
+          {t(($) => {
+            return $.list.create.responsibilityLabel;
+          })}
+        </label>
+        <Textarea
+          id="new-agent-responsibility"
+          value={responsibility}
+          onChange={(e) => {
+            return onResponsibilityChange(e.target.value);
+          }}
+          placeholder={t(($) => {
+            return $.list.create.responsibilityPlaceholder;
+          })}
+          maxLength={AGENT_SETUP_RESPONSIBILITY_MAX_CHARS}
+          rows={4}
+          className="min-h-[96px] resize-y"
+          required
+          disabled={creating}
+        />
+      </div>
       <AgentVisibilitySelect
         visibility={visibility}
         onVisibilityChange={onVisibilityChange}
@@ -677,7 +659,7 @@ function CreateTeammateDialogContent({
 }: {
   newName: string;
   onNameChange: (name: string) => void;
-  responsibility: string | null;
+  responsibility: string;
   onResponsibilityChange: (responsibility: string) => void;
   onConfirm: (avatarUrl: string) => void;
   onCancel: () => void;

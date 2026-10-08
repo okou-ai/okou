@@ -124,7 +124,6 @@ export const dispatchCancelSideEffects$ = command(
         set(
           dispatchRunCallbacks$,
           {
-            db,
             runId: result.runId,
             status: "failed",
             error: "Run cancelled",

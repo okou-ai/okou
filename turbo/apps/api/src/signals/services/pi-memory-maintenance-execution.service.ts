@@ -142,7 +142,7 @@ import type { ClaimedPiMemoryPhase2Job } from "./pi-memory-phase2-job.service";
 import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance.service";
 import {
   PiMemoryQuotaError,
-  checkPiMemoryQuota,
+  checkPiMemoryQuota$,
 } from "./pi-memory-quota.service";
 import {
   checkOrgCreditsForRunAdmission$,
@@ -329,8 +329,8 @@ const admitMaintenance$ = command(
     if (admission) {
       throw new PiMaintenanceDispositionError("source_admission_denied");
     }
-    await checkPiMemoryQuota(
-      db,
+    await set(
+      checkPiMemoryQuota$,
       {
         orgId: job.orgId,
         userId: job.userId,

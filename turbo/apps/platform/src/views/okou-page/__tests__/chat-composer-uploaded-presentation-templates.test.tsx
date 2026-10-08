@@ -530,6 +530,74 @@ test("Rename an uploaded template", async () => {
   });
 });
 
+test.each([
+  { mode: "composing", isComposing: true, keyCode: 13 },
+  { mode: "Safari final Enter", isComposing: false, keyCode: 229 },
+])(
+  "Confirming an IME candidate ($mode) keeps an imported title editable until submission",
+  async ({ isComposing, keyCode }) => {
+    mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
+    mockTemplateChat();
+    const uploaded = createUploadedTemplate({
+      id: UPLOADED_TEMPLATE_ID,
+      title: "Quarterly Board Review",
+      canManage: true,
+    });
+    mockPresentationTemplateLibrary([uploaded]);
+    const user = userEvent.setup({ delay: null });
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      host: "app.okou.ai",
+    });
+    await openTemplatePicker(user, "Presentation");
+    await screen.findByText(uploaded.title);
+    click(buttonNamed(`Preview ${uploaded.title} at current slide`));
+    await screen.findByRole("group", {
+      name: `${uploaded.title} slide preview`,
+    });
+
+    const input = renameField();
+    const draft = "  季度   报告  ";
+    fireEvent.compositionStart(input);
+    await fill(input, draft);
+    // Model Safari's compositionend-before-keydown boundary; this does not
+    // replace acceptance with a real Safari input method.
+    if (!isComposing) {
+      fireEvent.compositionEnd(input, { data: "报告" });
+    }
+    fireEvent.keyDown(input, {
+      key: "Enter",
+      code: "Enter",
+      isComposing,
+      keyCode,
+    });
+
+    expect(input).toHaveFocus();
+    expect(input).toBeEnabled();
+    expect(input).toHaveValue(draft);
+    expect(
+      screen.getByRole("group", { name: `${uploaded.title} slide preview` }),
+    ).toBeInTheDocument();
+
+    if (isComposing) {
+      fireEvent.compositionEnd(input, { data: "报告" });
+    }
+    await user.keyboard("{Shift>}{Enter}{/Shift}FY26  ");
+    expect(input).toHaveFocus();
+    expect(input).toHaveValue(`${draft}\nFY26  `);
+    expect(
+      screen.getByRole("group", { name: `${uploaded.title} slide preview` }),
+    ).toBeInTheDocument();
+
+    await user.keyboard("{Enter}");
+    await screen.findByRole("group", { name: "季度 报告 FY26 slide preview" });
+    expect(renameField()).toHaveValue("季度 报告 FY26");
+    expect(renameField()).not.toHaveFocus();
+    expect(renameField()).toBeEnabled();
+  },
+);
+
 test("Imported visibility saves once and closes even on the current value", async () => {
   const key = "{Enter}";
   mockTemplateChat();

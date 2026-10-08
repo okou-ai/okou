@@ -18,23 +18,29 @@ import type {
   OfficialWorkflowInstallationDefinition,
 } from "@okouai/api-contracts/contracts/official-workflows";
 import { isValidTimeZone, parseScheduledAtTime } from "@okouai/core/timezone";
+import {
+  officialWorkflowCatalogState,
+  officialWorkflowCatalogReleases,
+} from "@okouai/db/schema/official-workflow-catalog";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, asc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
-import { onRejection, safeSync, settle } from "../utils";
+import { db$, writeDb$, type ReadonlyDb } from "../external/db";
+import { safeSync, settle, settleIncludingAbort } from "../utils";
 import { INITIAL_AUTONOMY_BUDGET } from "./autonomy-budget.constants";
 import { deleteWorkflow$ } from "./workflow-delete.service";
 import {
-  lockAcceptedOfficialWorkflowCatalog,
-  readAcceptedOfficialWorkflowCatalog,
-  readAcceptedOfficialWorkflowRevision,
+  acceptedCatalogFromRow,
+  OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+  readAcceptedOfficialWorkflowCatalog$,
+  readAcceptedOfficialWorkflowRevision$,
+  type AcceptedOfficialWorkflowCatalog,
 } from "./official-workflow-catalog-read.service";
 import {
   createWorkflowAutomation$,
@@ -99,99 +105,107 @@ function catalogSummary(
   };
 }
 
-async function catalogDetail(
-  db: ReadonlyDb,
-  definition: OfficialWorkflowAcceptedDefinition,
-  signal: AbortSignal,
-): Promise<OfficialWorkflowCatalogDetail> {
-  const revision = await readAcceptedOfficialWorkflowRevision(
-    db,
-    { name: definition.name, revision: definition.revision },
-    signal,
-  );
-  if (!revision) {
-    throw new Error(
-      `Accepted Official Workflow revision is missing: ${definition.name}@${definition.revision}`,
+const catalogDetail$ = command(
+  async (
+    { set },
+    definition: OfficialWorkflowAcceptedDefinition,
+    signal: AbortSignal,
+  ): Promise<OfficialWorkflowCatalogDetail> => {
+    const revision = await set(
+      readAcceptedOfficialWorkflowRevision$,
+      { name: definition.name, revision: definition.revision },
+      signal,
     );
-  }
-  return {
-    name: definition.name,
-    revision: definition.revision,
-    lifecycle: definition.lifecycle,
-    displayName: revision.definition.workflow.displayName,
-    description: revision.definition.workflow.description,
-    workflow: revision.definition.workflow,
-    blueprints: revision.definition.blueprints,
-    presentation: definition.presentation,
-  };
-}
+    if (!revision) {
+      throw new Error(
+        `Accepted Official Workflow revision is missing: ${definition.name}@${definition.revision}`,
+      );
+    }
+    return {
+      name: definition.name,
+      revision: definition.revision,
+      lifecycle: definition.lifecycle,
+      displayName: revision.definition.workflow.displayName,
+      description: revision.definition.workflow.description,
+      workflow: revision.definition.workflow,
+      blueprints: revision.definition.blueprints,
+      presentation: definition.presentation,
+    };
+  },
+);
 
-export async function listActiveOfficialWorkflows(
-  db: ReadonlyDb,
-  signal: AbortSignal,
-): Promise<readonly OfficialWorkflowCatalogSummary[]> {
-  const catalog = await readAcceptedOfficialWorkflowCatalog(db, signal);
-  if (!catalog) {
-    return [];
-  }
-  const active = catalog.payload.definitions.filter((definition) => {
-    return definition.lifecycle === "active";
-  });
-  const details = await Promise.all(
-    active.map(async (definition) => {
-      const detail = await catalogDetail(db, definition, signal);
-      return catalogSummary(definition, detail);
-    }),
-  );
-  signal.throwIfAborted();
-  return details.sort((left, right) => {
-    const leftOrder = left.presentation.order ?? Number.MAX_SAFE_INTEGER;
-    const rightOrder = right.presentation.order ?? Number.MAX_SAFE_INTEGER;
-    return leftOrder - rightOrder || left.name.localeCompare(right.name);
-  });
-}
-
-export async function getOfficialWorkflow(
-  db: ReadonlyDb,
-  name: string,
-  signal: AbortSignal,
-): Promise<OfficialWorkflowCatalogDetail | null> {
-  const catalog = await readAcceptedOfficialWorkflowCatalog(db, signal);
-  const definition = catalog?.payload.definitions.find((entry) => {
-    return entry.name === name;
-  });
-  return definition ? await catalogDetail(db, definition, signal) : null;
-}
-
-export async function getOfficialWorkflowInstallationDefinition(
-  db: ReadonlyDb,
-  name: string,
-  signal: AbortSignal,
-): Promise<OfficialWorkflowInstallationDefinition | null> {
-  const catalog = await readAcceptedOfficialWorkflowCatalog(db, signal);
-  const definition = catalog?.payload.definitions.find((entry) => {
-    return entry.name === name;
-  });
-  if (!definition) {
-    return null;
-  }
-  const revision = await readAcceptedOfficialWorkflowRevision(
-    db,
-    { name: definition.name, revision: definition.revision },
-    signal,
-  );
-  if (!revision) {
-    throw new Error(
-      `Accepted Official Workflow revision is missing: ${definition.name}@${definition.revision}`,
+export const listActiveOfficialWorkflows$ = command(
+  async (
+    { set },
+    signal: AbortSignal,
+  ): Promise<readonly OfficialWorkflowCatalogSummary[]> => {
+    const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
+    if (!catalog) {
+      return [];
+    }
+    const active = catalog.payload.definitions.filter((definition) => {
+      return definition.lifecycle === "active";
+    });
+    const details = await Promise.all(
+      active.map(async (definition) => {
+        const detail = await set(catalogDetail$, definition, signal);
+        return catalogSummary(definition, detail);
+      }),
     );
-  }
-  return {
-    name: definition.name,
-    revision: definition.revision,
-    lifecycle: definition.lifecycle,
-    blueprints: revision.definition.blueprints,
-  };
-}
+    signal.throwIfAborted();
+    return details.sort((left, right) => {
+      const leftOrder = left.presentation.order ?? Number.MAX_SAFE_INTEGER;
+      const rightOrder = right.presentation.order ?? Number.MAX_SAFE_INTEGER;
+      return leftOrder - rightOrder || left.name.localeCompare(right.name);
+    });
+  },
+);
+
+export const getOfficialWorkflow$ = command(
+  async (
+    { set },
+    name: string,
+    signal: AbortSignal,
+  ): Promise<OfficialWorkflowCatalogDetail | null> => {
+    const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
+    const definition = catalog?.payload.definitions.find((entry) => {
+      return entry.name === name;
+    });
+    return definition ? await set(catalogDetail$, definition, signal) : null;
+  },
+);
+
+export const getOfficialWorkflowInstallationDefinition$ = command(
+  async (
+    { set },
+    name: string,
+    signal: AbortSignal,
+  ): Promise<OfficialWorkflowInstallationDefinition | null> => {
+    const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
+    const definition = catalog?.payload.definitions.find((entry) => {
+      return entry.name === name;
+    });
+    if (!definition) {
+      return null;
+    }
+    const revision = await set(
+      readAcceptedOfficialWorkflowRevision$,
+      { name: definition.name, revision: definition.revision },
+      signal,
+    );
+    if (!revision) {
+      throw new Error(
+        `Accepted Official Workflow revision is missing: ${definition.name}@${definition.revision}`,
+      );
+    }
+    return {
+      name: definition.name,
+      revision: definition.revision,
+      lifecycle: definition.lifecycle,
+      blueprints: revision.definition.blueprints,
+    };
+  },
+);
 
 function isParameterReference(
   value: unknown,
@@ -605,35 +619,39 @@ function resolveAllBlueprints(
   return { ok: true, blueprints: resolved };
 }
 
-async function loadConfigurableAgent(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly member: WorkflowMember;
+const loadConfigurableAgent$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly agentId: string;
+      readonly member: WorkflowMember;
+    },
+    signal: AbortSignal,
+  ): Promise<ConfigurableAgent | OfficialWorkflowFailure> => {
+    const [agent] = await get(db$)
+      .select({
+        id: agents.id,
+        owner: agents.owner,
+        visibility: agents.visibility,
+      })
+      .from(agents)
+      .where(and(eq(agents.orgId, args.orgId), eq(agents.id, args.agentId)))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!agent) {
+      return { kind: "not-found", message: `Agent not found: ${args.agentId}` };
+    }
+    if (agent.visibility === "private" && agent.owner !== args.member.userId) {
+      return {
+        kind: "forbidden",
+        message:
+          "Only the private agent owner can install Official Workflows on this agent",
+      };
+    }
+    return agent;
   },
-): Promise<ConfigurableAgent | OfficialWorkflowFailure> {
-  const [agent] = await db
-    .select({
-      id: agents.id,
-      owner: agents.owner,
-      visibility: agents.visibility,
-    })
-    .from(agents)
-    .where(and(eq(agents.orgId, args.orgId), eq(agents.id, args.agentId)))
-    .limit(1);
-  if (!agent) {
-    return { kind: "not-found", message: `Agent not found: ${args.agentId}` };
-  }
-  if (agent.visibility === "private" && agent.owner !== args.member.userId) {
-    return {
-      kind: "forbidden",
-      message:
-        "Only the private agent owner can install Official Workflows on this agent",
-    };
-  }
-  return agent;
-}
+);
 
 function isFailure(
   value: ConfigurableAgent | OfficialWorkflowFailure,
@@ -658,71 +676,78 @@ export async function loadOfficialWorkflowUserTimezone(
   return row?.timezone ?? null;
 }
 
-async function recoverOrRejectExistingInstallation(
-  db: Db,
-  cleanup: (workflowId: string) => Promise<boolean>,
-  args: {
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly userId: string;
-    readonly definitionName: string;
-    readonly currentTime: Date;
-  },
-): Promise<OfficialWorkflowFailure | null> {
-  const [existing] = await db
-    .select({
-      id: workflows.id,
-      officialDefinitionName: workflows.officialDefinitionName,
-      officialInstallationState: workflows.officialInstallationState,
-      createdAt: workflows.createdAt,
-    })
-    .from(workflows)
-    .where(
-      and(
-        eq(workflows.orgId, args.orgId),
-        eq(workflows.agentId, args.agentId),
-        eq(workflows.ownerUserId, args.userId),
-        eq(workflows.visibility, "private"),
-        eq(workflows.name, args.definitionName),
-      ),
-    )
-    .limit(1);
-  if (!existing) {
-    return null;
-  }
-  if (
-    existing.officialDefinitionName === args.definitionName &&
-    existing.officialInstallationState === "installing" &&
-    args.currentTime.getTime() - existing.createdAt.getTime() >=
-      STALE_INSTALLATION_AGE_MS
-  ) {
-    return (await cleanup(existing.id))
-      ? null
-      : {
-          kind: "conflict",
-          message:
-            "Official Workflow installation changed during recovery; retry",
-        };
-  }
-  if (existing.officialInstallationState === "installing") {
+const recoverOrRejectExistingInstallation$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly orgId: string;
+      readonly agentId: string;
+      readonly userId: string;
+      readonly definitionName: string;
+      readonly currentTime: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<OfficialWorkflowFailure | null> => {
+    const [existing] = await get(db$)
+      .select({
+        id: workflows.id,
+        officialDefinitionName: workflows.officialDefinitionName,
+        officialInstallationState: workflows.officialInstallationState,
+        createdAt: workflows.createdAt,
+      })
+      .from(workflows)
+      .where(
+        and(
+          eq(workflows.orgId, args.orgId),
+          eq(workflows.agentId, args.agentId),
+          eq(workflows.ownerUserId, args.userId),
+          eq(workflows.visibility, "private"),
+          eq(workflows.name, args.definitionName),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!existing) {
+      return null;
+    }
+    if (
+      existing.officialDefinitionName === args.definitionName &&
+      existing.officialInstallationState === "installing" &&
+      args.currentTime.getTime() - existing.createdAt.getTime() >=
+        STALE_INSTALLATION_AGE_MS
+    ) {
+      return (await set(
+        cleanupInstallation$,
+        { orgId: args.orgId, workflowId: existing.id },
+        signal,
+      ))
+        ? null
+        : {
+            kind: "conflict",
+            message:
+              "Official Workflow installation changed during recovery; retry",
+          };
+    }
+    if (existing.officialInstallationState === "installing") {
+      return {
+        kind: "conflict",
+        message: "Official Workflow installation is in progress",
+      };
+    }
     return {
       kind: "conflict",
-      message: "Official Workflow installation is in progress",
+      message:
+        existing.officialDefinitionName === args.definitionName
+          ? "Official Workflow is already installed on this agent"
+          : `A private workflow named "${args.definitionName}" already exists on this agent`,
     };
-  }
-  return {
-    kind: "conflict",
-    message:
-      existing.officialDefinitionName === args.definitionName
-        ? "Official Workflow is already installed on this agent"
-        : `A private workflow named "${args.definitionName}" already exists on this agent`,
-  };
-}
+  },
+);
 
 function sameAcceptedDefinition(
   expectedReleaseId: string,
   expected: OfficialWorkflowAcceptedDefinition,
-  current: Awaited<ReturnType<typeof readAcceptedOfficialWorkflowCatalog>>,
+  current: AcceptedOfficialWorkflowCatalog | null,
 ): boolean {
   if (!current || current.releaseId !== expectedReleaseId) {
     return false;
@@ -754,106 +779,116 @@ interface InstallOfficialWorkflowArgs {
 }
 
 interface ResolvedInstallation {
-  readonly catalog: NonNullable<
-    Awaited<ReturnType<typeof readAcceptedOfficialWorkflowCatalog>>
-  >;
+  readonly catalog: AcceptedOfficialWorkflowCatalog;
   readonly definition: OfficialWorkflowAcceptedDefinition;
   readonly resolved: Extract<ResolveResult, { readonly ok: true }>;
 }
 
-async function resolveInstallation(
-  db: ReadonlyDb,
-  args: InstallOfficialWorkflowArgs,
-  signal: AbortSignal,
-): Promise<ResolvedInstallation | OfficialWorkflowFailure> {
-  const catalog = await readAcceptedOfficialWorkflowCatalog(db, signal);
-  const definition = catalog?.payload.definitions.find((entry) => {
-    return entry.name === args.definitionName;
-  });
-  if (!catalog || !definition) {
-    return {
-      kind: "not-found",
-      message: `Official Workflow not found: ${args.definitionName}`,
-    };
-  }
-  if (definition.lifecycle !== "active") {
-    return {
-      kind: "conflict",
-      message: `Official Workflow is retired: ${args.definitionName}`,
-    };
-  }
-  const revision = await readAcceptedOfficialWorkflowRevision(
-    db,
-    { name: definition.name, revision: definition.revision },
-    signal,
-  );
-  if (!revision) {
-    throw new Error("Accepted Official Workflow revision is missing");
-  }
-  const userTimezone = await loadOfficialWorkflowUserTimezone(db, {
-    orgId: args.orgId,
-    userId: args.member.userId,
-  });
-  signal.throwIfAborted();
-  const resolved = resolveAllBlueprints(
-    revision.definition.blueprints,
-    args.blueprints,
-    userTimezone,
-  );
-  return resolved.ok
-    ? { catalog, definition, resolved }
-    : { kind: "bad-request", message: resolved.message };
-}
-
-async function insertInstallingWorkflow(
-  db: Db,
-  args: {
-    readonly installation: InstallOfficialWorkflowArgs;
-    readonly agentId: string;
-    readonly definition: OfficialWorkflowAcceptedDefinition;
-    readonly currentTime: Date;
-  },
-  signal: AbortSignal,
-): Promise<
-  { readonly kind: "ok"; readonly workflowId: string } | OfficialWorkflowFailure
-> {
-  const inserted = await settle(
-    db
-      .insert(workflows)
-      .values({
-        orgId: args.installation.orgId,
-        agentId: args.agentId,
-        name: args.definition.name,
-        visibility: "private",
-        instruction: null,
-        ownerUserId: args.installation.member.userId,
-        displayName: null,
-        description: null,
-        officialDefinitionName: args.definition.name,
-        officialInstallationState: "installing",
-        createdBy: args.installation.member.userId,
-        updatedBy: args.installation.member.userId,
-        createdAt: args.currentTime,
-        updatedAt: args.currentTime,
-      })
-      .returning({ id: workflows.id }),
-    signal,
-  );
-  if (!inserted.ok) {
-    if (isUniqueViolation(inserted.error)) {
+const resolveInstallation$ = command(
+  async (
+    { get, set },
+    args: InstallOfficialWorkflowArgs,
+    signal: AbortSignal,
+  ): Promise<ResolvedInstallation | OfficialWorkflowFailure> => {
+    const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
+    const definition = catalog?.payload.definitions.find((entry) => {
+      return entry.name === args.definitionName;
+    });
+    if (!catalog || !definition) {
       return {
-        kind: "conflict",
-        message: `A private workflow named "${args.definition.name}" already exists on this agent`,
+        kind: "not-found",
+        message: `Official Workflow not found: ${args.definitionName}`,
       };
     }
-    throw inserted.error;
-  }
-  const workflow = inserted.value[0];
-  if (!workflow) {
-    throw new Error("Failed to create Official Workflow installation");
-  }
-  return { kind: "ok", workflowId: workflow.id };
-}
+    if (definition.lifecycle !== "active") {
+      return {
+        kind: "conflict",
+        message: `Official Workflow is retired: ${args.definitionName}`,
+      };
+    }
+    const revision = await set(
+      readAcceptedOfficialWorkflowRevision$,
+      { name: definition.name, revision: definition.revision },
+      signal,
+    );
+    if (!revision) {
+      throw new Error("Accepted Official Workflow revision is missing");
+    }
+    const [metadata] = await get(db$)
+      .select({ timezone: orgMembersMetadata.timezone })
+      .from(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, args.orgId),
+          eq(orgMembersMetadata.userId, args.member.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    const userTimezone = metadata?.timezone ?? null;
+    const resolved = resolveAllBlueprints(
+      revision.definition.blueprints,
+      args.blueprints,
+      userTimezone,
+    );
+    return resolved.ok
+      ? { catalog, definition, resolved }
+      : { kind: "bad-request", message: resolved.message };
+  },
+);
+
+const insertInstallingWorkflow$ = command(
+  async (
+    { set },
+    args: {
+      readonly installation: InstallOfficialWorkflowArgs;
+      readonly agentId: string;
+      readonly definition: OfficialWorkflowAcceptedDefinition;
+      readonly currentTime: Date;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | { readonly kind: "ok"; readonly workflowId: string }
+    | OfficialWorkflowFailure
+  > => {
+    const inserted = await settle(
+      set(writeDb$)
+        .insert(workflows)
+        .values({
+          orgId: args.installation.orgId,
+          agentId: args.agentId,
+          name: args.definition.name,
+          visibility: "private",
+          instruction: null,
+          ownerUserId: args.installation.member.userId,
+          displayName: null,
+          description: null,
+          officialDefinitionName: args.definition.name,
+          officialInstallationState: "installing",
+          createdBy: args.installation.member.userId,
+          updatedBy: args.installation.member.userId,
+          createdAt: args.currentTime,
+          updatedAt: args.currentTime,
+        })
+        .returning({ id: workflows.id }),
+      signal,
+    );
+    if (!inserted.ok) {
+      if (isUniqueViolation(inserted.error)) {
+        return {
+          kind: "conflict",
+          message: `A private workflow named "${args.definition.name}" already exists on this agent`,
+        };
+      }
+      throw inserted.error;
+    }
+    const workflow = inserted.value[0];
+    if (!workflow) {
+      throw new Error("Failed to create Official Workflow installation");
+    }
+    return { kind: "ok", workflowId: workflow.id };
+  },
+);
 
 function automationFailure(
   automation: Exclude<AutomationResult, { readonly kind: "ok" }>,
@@ -874,110 +909,174 @@ function automationFailure(
   };
 }
 
-async function completeInstallation(
-  args: {
-    readonly db: Db;
-    readonly installation: InstallOfficialWorkflowArgs;
-    readonly resolved: ResolvedInstallation;
-    readonly workflowId: string;
-    readonly createAutomation: (
-      input: CreateAutomationInput,
-    ) => Promise<AutomationResult>;
-    readonly cleanup: () => Promise<void>;
-  },
-  signal: AbortSignal,
-): Promise<OfficialWorkflowInstallResult> {
-  for (const resolvedBlueprint of args.resolved.resolved.blueprints) {
-    const input: CreateAutomationInput = {
-      ...resolvedBlueprint.createRequest,
-      orgId: args.installation.orgId,
-      member: args.installation.member,
-      workflowId: args.workflowId,
-      enabled: true,
-      ...(resolvedBlueprint.autonomyBudget === undefined
-        ? {}
-        : { autonomyBudget: resolvedBlueprint.autonomyBudget }),
-      officialInstallation: {
-        definitionName: args.resolved.definition.name,
-        blueprintKey: resolvedBlueprint.blueprint.key,
-        appliedFingerprint: resolvedBlueprint.blueprint.fingerprint,
-        parameterBindings: resolvedBlueprint.bindings,
-        resultEmailEnabled: resolvedBlueprint.blueprint.runtime.resultEmail,
-      },
-    };
-    const automation = await args.createAutomation(input);
-    signal.throwIfAborted();
-    if (automation.kind !== "ok") {
-      await args.cleanup();
-      return automationFailure(automation);
-    }
-  }
-  const activation = await args.db.transaction(async (tx) => {
-    await lockAcceptedOfficialWorkflowCatalog(tx);
-    // The installing -> installed CAS below owns activation. Run admission,
-    // reconciliation, and Copy only lock installed rows, so no org lock.
-    const [agent] = await tx
-      .select({ id: agents.id })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.id, args.installation.agentId),
-          eq(agents.orgId, args.installation.orgId),
-        ),
-      )
-      .for("key share")
-      .limit(1);
-    if (!agent) {
-      return "lost" as const;
-    }
-    signal.throwIfAborted();
-    const currentCatalog = await readAcceptedOfficialWorkflowCatalog(
-      tx,
-      signal,
-    );
-    if (
-      !sameAcceptedDefinition(
-        args.resolved.catalog.releaseId,
-        args.resolved.definition,
-        currentCatalog,
-      )
-    ) {
-      return "stale" as const;
-    }
-    const [installed] = await tx
-      .update(workflows)
-      .set({ officialInstallationState: "installed", updatedAt: nowDate() })
-      .where(
-        and(
-          eq(workflows.id, args.workflowId),
-          eq(workflows.officialInstallationState, "installing"),
-        ),
-      )
-      .returning({
-        id: workflows.id,
-        agentId: workflows.agentId,
-        ownerUserId: workflows.ownerUserId,
-      });
-    signal.throwIfAborted();
-    return installed ? ("installed" as const) : ("lost" as const);
-  });
-  signal.throwIfAborted();
-  if (activation === "stale") {
-    await args.cleanup();
-    return {
-      kind: "conflict",
-      message: "Official Workflow changed during installation; retry",
-    };
-  }
-  if (activation === "lost") {
-    await args.cleanup();
-    return {
-      kind: "conflict",
-      message: "Official Workflow installation lost ownership; retry",
-    };
-  }
-  return { kind: "ok", workflowId: args.workflowId };
+interface InstallationCompletion {
+  readonly installation: InstallOfficialWorkflowArgs;
+  readonly resolved: ResolvedInstallation;
+  readonly workflowId: string;
 }
+const activateInstallation$ = command(
+  async ({ set }, args: InstallationCompletion, signal: AbortSignal) => {
+    return await set(writeDb$).transaction(async (tx) => {
+      // SHARE conflicts with catalog pointer publication until activation commits.
+      await tx
+        .select({ authority: officialWorkflowCatalogState.authority })
+        .from(officialWorkflowCatalogState)
+        .where(
+          eq(
+            officialWorkflowCatalogState.authority,
+            OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+          ),
+        )
+        .for("share");
+      signal.throwIfAborted();
+      // The installing -> installed CAS below owns activation. Run admission,
+      // reconciliation, and Copy only lock installed rows, so no org lock.
+      const [agent] = await tx
+        .select({ id: agents.id })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.id, args.installation.agentId),
+            eq(agents.orgId, args.installation.orgId),
+          ),
+        )
+        .for("key share")
+        .limit(1);
+      if (!agent) {
+        return "lost" as const;
+      }
+      signal.throwIfAborted();
+      const [catalogRow] = await tx
+        .select({
+          releaseId: officialWorkflowCatalogState.acceptedReleaseId,
+          payload: officialWorkflowCatalogReleases.payload,
+        })
+        .from(officialWorkflowCatalogState)
+        .innerJoin(
+          officialWorkflowCatalogReleases,
+          eq(
+            officialWorkflowCatalogReleases.id,
+            officialWorkflowCatalogState.acceptedReleaseId,
+          ),
+        )
+        .where(
+          eq(
+            officialWorkflowCatalogState.authority,
+            OFFICIAL_WORKFLOW_CATALOG_AUTHORITY,
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      const currentCatalog = acceptedCatalogFromRow(catalogRow);
+      if (
+        !sameAcceptedDefinition(
+          args.resolved.catalog.releaseId,
+          args.resolved.definition,
+          currentCatalog,
+        )
+      ) {
+        return "stale" as const;
+      }
+      const [installed] = await tx
+        .update(workflows)
+        .set({ officialInstallationState: "installed", updatedAt: nowDate() })
+        .where(
+          and(
+            eq(workflows.id, args.workflowId),
+            eq(workflows.officialInstallationState, "installing"),
+          ),
+        )
+        .returning({
+          id: workflows.id,
+          agentId: workflows.agentId,
+          ownerUserId: workflows.ownerUserId,
+        });
+      signal.throwIfAborted();
+      return installed ? ("installed" as const) : ("lost" as const);
+    });
+  },
+);
+const cleanupInstallation$ = command(
+  async (
+    { set },
+    args: { readonly orgId: string; readonly workflowId: string },
+    _signal: AbortSignal,
+  ) => {
+    // Cleanup owns an independent lifetime after installation has reserved resources.
+    const cleanupSignal = new AbortController().signal;
+    return await set(
+      deleteWorkflow$,
+      {
+        ...args,
+        allowOfficialInstallationDeletion: true,
+        requiredOfficialInstallationState: "installing",
+      },
+      cleanupSignal,
+    );
+  },
+);
+const completeInstallation$ = command(
+  async (
+    { set },
+    args: InstallationCompletion,
+    signal: AbortSignal,
+  ): Promise<OfficialWorkflowInstallResult> => {
+    for (const resolvedBlueprint of args.resolved.resolved.blueprints) {
+      const input: CreateAutomationInput = {
+        ...resolvedBlueprint.createRequest,
+        orgId: args.installation.orgId,
+        member: args.installation.member,
+        workflowId: args.workflowId,
+        enabled: true,
+        ...(resolvedBlueprint.autonomyBudget === undefined
+          ? {}
+          : { autonomyBudget: resolvedBlueprint.autonomyBudget }),
+        officialInstallation: {
+          definitionName: args.resolved.definition.name,
+          blueprintKey: resolvedBlueprint.blueprint.key,
+          appliedFingerprint: resolvedBlueprint.blueprint.fingerprint,
+          parameterBindings: resolvedBlueprint.bindings,
+          resultEmailEnabled: resolvedBlueprint.blueprint.runtime.resultEmail,
+        },
+      };
+      const automation = await set(createWorkflowAutomation$, input, signal);
+      signal.throwIfAborted();
+      if (automation.kind !== "ok") {
+        await set(
+          cleanupInstallation$,
+          { orgId: args.installation.orgId, workflowId: args.workflowId },
+          signal,
+        );
+        return automationFailure(automation);
+      }
+    }
+    const activation = await set(activateInstallation$, args, signal);
+    signal.throwIfAborted();
+    if (activation === "stale") {
+      await set(
+        cleanupInstallation$,
+        { orgId: args.installation.orgId, workflowId: args.workflowId },
+        signal,
+      );
+      return {
+        kind: "conflict",
+        message: "Official Workflow changed during installation; retry",
+      };
+    }
+    if (activation === "lost") {
+      await set(
+        cleanupInstallation$,
+        { orgId: args.installation.orgId, workflowId: args.workflowId },
+        signal,
+      );
+      return {
+        kind: "conflict",
+        message: "Official Workflow installation lost ownership; retry",
+      };
+    }
+    return { kind: "ok", workflowId: args.workflowId };
+  },
+);
 
 export const installOfficialWorkflow$ = command(
   async (
@@ -985,43 +1084,33 @@ export const installOfficialWorkflow$ = command(
     args: InstallOfficialWorkflowArgs,
     signal: AbortSignal,
   ): Promise<OfficialWorkflowInstallResult> => {
-    const db = set(writeDb$);
-    const cleanup = async (workflowId: string): Promise<boolean> => {
-      const cleanupSignal = new AbortController().signal;
-      return await set(
-        deleteWorkflow$,
-        {
-          orgId: args.orgId,
-          workflowId,
-          allowOfficialInstallationDeletion: true,
-          requiredOfficialInstallationState: "installing",
-        },
-        cleanupSignal,
-      );
-    };
-    const agent = await loadConfigurableAgent(db, args);
+    const agent = await set(loadConfigurableAgent$, args, signal);
     signal.throwIfAborted();
     if (isFailure(agent)) {
       return agent;
     }
-    const resolved = await resolveInstallation(db, args, signal);
+    const resolved = await set(resolveInstallation$, args, signal);
     if ("kind" in resolved) {
       return resolved;
     }
     const currentTime = nowDate();
-    const existing = await recoverOrRejectExistingInstallation(db, cleanup, {
-      orgId: args.orgId,
-      agentId: agent.id,
-      userId: args.member.userId,
-      definitionName: args.definitionName,
-      currentTime,
-    });
+    const existing = await set(
+      recoverOrRejectExistingInstallation$,
+      {
+        orgId: args.orgId,
+        agentId: agent.id,
+        userId: args.member.userId,
+        definitionName: args.definitionName,
+        currentTime,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (existing) {
       return existing;
     }
-    const inserted = await insertInstallingWorkflow(
-      db,
+    const inserted = await set(
+      insertInstallingWorkflow$,
       {
         installation: args,
         agentId: agent.id,
@@ -1033,39 +1122,41 @@ export const installOfficialWorkflow$ = command(
     if (inserted.kind !== "ok") {
       return inserted;
     }
-    const removeInserted = async (): Promise<void> => {
-      await cleanup(inserted.workflowId);
-    };
-    return await onRejection(
-      completeInstallation(
+    const completed = await settleIncludingAbort(
+      set(
+        completeInstallation$,
         {
-          db,
           installation: args,
           resolved,
           workflowId: inserted.workflowId,
-          createAutomation: async (input) => {
-            return await set(createWorkflowAutomation$, input, signal);
-          },
-          cleanup: removeInserted,
         },
         signal,
       ),
-      removeInserted,
     );
+    if (signal.aborted) {
+      await set(
+        cleanupInstallation$,
+        { orgId: args.orgId, workflowId: inserted.workflowId },
+        signal,
+      );
+      if (!completed.ok) {
+        throw completed.error;
+      }
+      signal.throwIfAborted();
+    }
+    if (!completed.ok) {
+      await set(
+        cleanupInstallation$,
+        { orgId: args.orgId, workflowId: inserted.workflowId },
+        signal,
+      );
+      throw completed.error;
+    }
+    return completed.value;
   },
 );
 
-async function loadOfficialAutomationRows(db: ReadonlyDb, workflowId: string) {
-  return await db
-    .select()
-    .from(workflowAutomations)
-    .where(eq(workflowAutomations.workflowId, workflowId))
-    .orderBy(asc(workflowAutomations.officialBlueprintKey));
-}
-
-export type OfficialAutomationRow = Awaited<
-  ReturnType<typeof loadOfficialAutomationRows>
->[number];
+export type OfficialAutomationRow = typeof workflowAutomations.$inferSelect;
 
 export interface OfficialAutomationPatch {
   readonly kind: "schedule" | "event";

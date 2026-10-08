@@ -5,6 +5,24 @@ import type { ApiDb, Tx } from "../../lib/db-types";
 
 type CheckpointReceipt = typeof piMemoryPhase2Checkpoints.$inferInsert;
 
+export function piMemoryPhase2CheckpointCondition(
+  binding: Omit<CheckpointReceipt, "versionId" | "createdAt">,
+) {
+  return and(
+    eq(piMemoryPhase2Checkpoints.runId, binding.runId),
+    eq(piMemoryPhase2Checkpoints.memoryStorageId, binding.memoryStorageId),
+    eq(piMemoryPhase2Checkpoints.orgId, binding.orgId),
+    eq(piMemoryPhase2Checkpoints.userId, binding.userId),
+    eq(piMemoryPhase2Checkpoints.leaseToken, binding.leaseToken),
+    eq(piMemoryPhase2Checkpoints.claimedRevision, binding.claimedRevision),
+    eq(
+      piMemoryPhase2Checkpoints.claimedBaseVersionId,
+      binding.claimedBaseVersionId,
+    ),
+    eq(piMemoryPhase2Checkpoints.selectionDigest, binding.selectionDigest),
+  );
+}
+
 export async function findPiMemoryPhase2Checkpoint(
   db: ApiDb | Tx,
   binding: Omit<CheckpointReceipt, "versionId" | "createdAt">,
@@ -12,21 +30,7 @@ export async function findPiMemoryPhase2Checkpoint(
   const [receipt] = await db
     .select()
     .from(piMemoryPhase2Checkpoints)
-    .where(
-      and(
-        eq(piMemoryPhase2Checkpoints.runId, binding.runId),
-        eq(piMemoryPhase2Checkpoints.memoryStorageId, binding.memoryStorageId),
-        eq(piMemoryPhase2Checkpoints.orgId, binding.orgId),
-        eq(piMemoryPhase2Checkpoints.userId, binding.userId),
-        eq(piMemoryPhase2Checkpoints.leaseToken, binding.leaseToken),
-        eq(piMemoryPhase2Checkpoints.claimedRevision, binding.claimedRevision),
-        eq(
-          piMemoryPhase2Checkpoints.claimedBaseVersionId,
-          binding.claimedBaseVersionId,
-        ),
-        eq(piMemoryPhase2Checkpoints.selectionDigest, binding.selectionDigest),
-      ),
-    )
+    .where(piMemoryPhase2CheckpointCondition(binding))
     .limit(1);
   return receipt;
 }

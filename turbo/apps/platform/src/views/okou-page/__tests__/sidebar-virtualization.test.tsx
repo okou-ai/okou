@@ -119,6 +119,33 @@ function selectChatListFilter(sidebar: HTMLElement, filter: "Unread"): void {
   click(item);
 }
 
+test("Restore the mobile chat-list scroll position after reopening the sidebar", async () => {
+  context.mocks.browser.matchMedia(false);
+  mockThreads(120);
+  mockViewportHeight(() => {
+    return 5 * ROW_HEIGHT;
+  });
+  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  click(screen.getByLabelText("Open menu"));
+  const drawer = screen.getByRole("dialog", { name: "Sidebar" });
+  await within(drawer).findByText("History 1");
+  const viewport = within(drawer).getByTestId("sidebar-scroll-area");
+  fireEvent.scroll(viewport, { target: { scrollTop: 50 * ROW_HEIGHT } });
+  await within(drawer).findByText("History 51");
+
+  click(within(drawer).getByLabelText("Collapse sidebar"));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
+  });
+  click(screen.getByLabelText("Open menu"));
+  const reopened = screen.getByRole("dialog", { name: "Sidebar" });
+  await within(reopened).findByText("History 51");
+  expect(within(reopened).getByTestId("sidebar-scroll-area").scrollTop).toBe(
+    50 * ROW_HEIGHT,
+  );
+  expect(within(reopened).queryByText("History 1")).not.toBeInTheDocument();
+});
+
 test("Resize and navigate a loaded virtual viewport", async () => {
   const threadCount = 6406;
   mockThreads(threadCount);

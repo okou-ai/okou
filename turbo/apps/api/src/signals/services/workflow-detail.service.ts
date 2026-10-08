@@ -1,4 +1,7 @@
-import { computed, type Computed } from "ccstate";
+import { agents } from "@okouai/db/schema/agent";
+import { workflows } from "@okouai/db/schema/workflow";
+import { and, eq } from "drizzle-orm";
+import { command } from "ccstate";
 import type {
   WorkflowFileEntry,
   WorkflowFileMetadata,
@@ -7,57 +10,86 @@ import type {
 
 import { db$ } from "../external/db";
 import {
-  loadWorkflowShadowWinner,
-  loadVisibleWorkflowById,
+  visibleWorkflowCondition,
   workflowSummary,
   type WorkflowMember,
+  readWorkflowShadowWinner$,
 } from "./workflow-data.service";
 import {
   loadWorkflowVolumeFiles,
   SKILL_FILENAME,
 } from "./workflow-volume.service";
-import { loadWorkflowAutomations } from "./workflow-automation.service";
+import { loadWorkflowAutomations$ } from "./workflow-automation.service";
 import {
-  readAcceptedOfficialWorkflowDefinition,
-  readAcceptedOfficialWorkflowRevision,
+  readAcceptedOfficialWorkflowCatalog$,
+  readAcceptedOfficialWorkflowRevision$,
 } from "./official-workflow-catalog-read.service";
 
-export function workflowDetail(args: {
-  readonly orgId: string;
-  readonly member: WorkflowMember;
-  readonly workflowId: string;
-}): Computed<Promise<WorkflowDetailResponse | null>> {
-  return computed(async (get): Promise<WorkflowDetailResponse | null> => {
+export const workflowDetail$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly orgId: string;
+      readonly member: WorkflowMember;
+      readonly workflowId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<WorkflowDetailResponse | null> => {
     const db = get(db$);
-    const visible = await loadVisibleWorkflowById(db, {
-      orgId: args.orgId,
-      member: args.member,
-      workflowId: args.workflowId,
-    });
+    const [visible] = await db
+      .select({
+        workflow: workflows,
+        agent: {
+          id: agents.id,
+          owner: agents.owner,
+          visibility: agents.visibility,
+          name: agents.name,
+          displayName: agents.displayName,
+        },
+      })
+      .from(workflows)
+      .innerJoin(agents, eq(workflows.agentId, agents.id))
+      .where(
+        and(
+          eq(workflows.orgId, args.orgId),
+          eq(workflows.id, args.workflowId),
+          visibleWorkflowCondition(args.member),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
 
     if (!visible) {
       return null;
     }
     const { workflow, agent } = visible;
 
-    const shadowedBy = await loadWorkflowShadowWinner(db, {
-      orgId: args.orgId,
-      member: args.member,
-      workflow,
-    });
+    const shadowedBy = await set(
+      readWorkflowShadowWinner$,
+      { orgId: args.orgId, member: args.member, workflow },
+      signal,
+    );
+    signal.throwIfAborted();
 
-    const officialDefinition = workflow.officialDefinitionName
-      ? await readAcceptedOfficialWorkflowDefinition(
-          db,
-          workflow.officialDefinitionName,
+    const acceptedCatalog = workflow.officialDefinitionName
+      ? await set(readAcceptedOfficialWorkflowCatalog$, signal)
+      : null;
+    signal.throwIfAborted();
+    const officialDefinition =
+      acceptedCatalog?.payload.definitions.find((definition) => {
+        return definition.name === workflow.officialDefinitionName;
+      }) ?? null;
+    const officialRevision = officialDefinition
+      ? await set(
+          readAcceptedOfficialWorkflowRevision$,
+          {
+            name: officialDefinition.name,
+            revision: officialDefinition.revision,
+          },
+          signal,
         )
       : null;
-    const officialRevision = officialDefinition
-      ? await readAcceptedOfficialWorkflowRevision(db, {
-          name: officialDefinition.name,
-          revision: officialDefinition.revision,
-        })
-      : null;
+    signal.throwIfAborted();
 
     const baseSummary = workflowSummary({
       workflow,
@@ -87,6 +119,7 @@ export function workflowDetail(args: {
             }),
           )
         : null;
+    signal.throwIfAborted();
     const volumeFiles = officialRevision
       ? officialRevision.definition.workflow.files.map((file) => {
           return {
@@ -107,11 +140,16 @@ export function workflowDetail(args: {
         return { path: file.path, content: file.content };
       }) ?? null;
 
-    const automations = await loadWorkflowAutomations(db, {
-      orgId: args.orgId,
-      workflowId: workflow.id,
-      userId: args.member.userId,
-    });
+    const automations = await set(
+      loadWorkflowAutomations$,
+      {
+        orgId: args.orgId,
+        workflowId: workflow.id,
+        userId: args.member.userId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
 
     return {
       ...summary,
@@ -126,5 +164,5 @@ export function workflowDetail(args: {
       fileContents,
       automations: [...automations],
     };
-  });
-}
+  },
+);

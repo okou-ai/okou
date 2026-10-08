@@ -26,9 +26,11 @@ import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { createRouteMocks } from "./helpers/route-test";
 import { agentsRoutes } from "../agents";
 
 const context = testContext();
+const mocks = createRouteMocks(context);
 
 function authHeaders() {
   return { authorization: "Bearer clerk-session" };
@@ -40,7 +42,7 @@ function apiClient() {
 
 describe("GET /api/agents", () => {
   it("returns an agent created through POST /api/agents", async () => {
-    context.mocks.clerk.session("user_api_test", "org_api_test");
+    mocks.clerk.session("user_api_test", "org_api_test");
     context.mocks.s3.send.mockResolvedValue({});
 
     const created = await accept(
@@ -107,7 +109,7 @@ Only mock external services. API tests use the shared mock registry in
 Good examples:
 
 ```typescript
-context.mocks.clerk.session(userId, orgId);
+createRouteMocks(context).clerk.session(userId, orgId);
 context.mocks.slack.chat.postMessage.mockResolvedValue({ ok: true });
 context.mocks.axiom.query.mockResolvedValue({ buckets: [] });
 ```
@@ -189,6 +191,15 @@ would grant the test knowledge its caller does not have. Observe publication
 through the public shared response/catalog and revocation through access denial,
 not application-owned policy JSON stored behind those APIs.
 
+When a private writer test submits input the request contract rejects, preserve
+its actual client behavior at that earlier boundary. In
+[`agent-draft.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/agent-draft.test.ts),
+a normal PATCH saves a draft, an attachment-only PATCH returns 400, and GET
+confirms the saved draft is unchanged. This covers client validation and
+preservation; it does not claim the SQL 23514 rollback or selectable physical/view
+schema guarantees of the removed service case. The existing simultaneous PATCH
+case remains meaningful public concurrency without a private row-count probe.
+
 For the full reasoning, see
 [Testing External Behavior](./testing-external-behavior.md).
 
@@ -243,7 +254,10 @@ agent create/list lifecycle above can use an isolated database like this:
 const context = testContext();
 
 it("lists an agent created in this case", async () => {
-  context.mocks.clerk.session("user_isolated_agent", "org_isolated_agent");
+  createRouteMocks(context).clerk.session(
+    "user_isolated_agent",
+    "org_isolated_agent",
+  );
   context.mocks.s3.send.mockResolvedValue({});
   const app = await setupApp({
     context,

@@ -6,15 +6,26 @@ import {
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { pathname } from "../../../signals/location.ts";
 
 const context = testContext();
 
 const AGENT_ID = "c0000000-0000-4000-a000-000000000030";
+const DEFAULT_AGENT_ID = "c0000000-0000-4000-a000-000000000031";
 const IDEAS_PATH = `/agents/${AGENT_ID}/ideas`;
+
+const STANDUP_PROMPT =
+  "Set up a daily standup report that pulls data from GitHub, Sentry, Axiom, and Plausible every morning, generates a pptx, and posts it to #team-updates";
 
 const REVENUECAT_PROMPT =
   "Set up a daily RevenueCat digest that tracks new subscriptions, renewals, and cancellations in Google Sheets and alerts on Slack for churn spikes";
@@ -97,6 +108,59 @@ async function findComposer(name = "Message"): Promise<HTMLElement> {
   return await screen.findByRole("textbox", { name });
 }
 
+test("Category filters expose one persistent selection and preserve search", async () => {
+  configureAgent();
+  mockCatalog([catalogItem("github", "GitHub")]);
+
+  await setupPage({ context, path: IDEAS_PATH });
+  const group = await screen.findByRole("group", {
+    name: "Filter by category",
+  });
+  const filters = queryAllByRoleFast("button", group);
+  const all = filters.find((button) => {
+    return button.textContent === "All";
+  });
+  const engineering = filters.find((button) => {
+    return button.textContent === "Engineering";
+  });
+  if (!all || !engineering) {
+    throw new Error("Expected All and Engineering category filters");
+  }
+  expect(all).toHaveAttribute("aria-pressed", "true");
+  expect(engineering).toHaveAttribute("aria-pressed", "false");
+  expect(screen.getByText("Browser screenshots")).toBeInTheDocument();
+
+  click(all);
+  expect(all).toHaveAttribute("aria-pressed", "true");
+
+  click(engineering);
+  expect(engineering).toHaveAttribute("aria-pressed", "true");
+  expect(all).toHaveAttribute("aria-pressed", "false");
+  expect(screen.getByText("GitHub progress weekly")).toBeInTheDocument();
+  expect(screen.queryByText("Browser screenshots")).not.toBeInTheDocument();
+
+  click(engineering);
+  expect(engineering).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByText("GitHub progress weekly")).toBeInTheDocument();
+
+  await fill(screen.getByLabelText("Search use cases"), "Browser screenshots");
+  expect(
+    screen.getByText("No use cases match your search."),
+  ).toBeInTheDocument();
+  expect(engineering).toHaveAttribute("aria-pressed", "true");
+
+  click(all);
+  expect(screen.getByText("Browser screenshots")).toBeInTheDocument();
+  expect(screen.getByLabelText("Search use cases")).toHaveValue(
+    "Browser screenshots",
+  );
+  expect(
+    filters.filter((button) => {
+      return button.getAttribute("aria-pressed") === "true";
+    }),
+  ).toStrictEqual([all]);
+});
+
 test("The ideas catalog still offers connector-free use cases", async () => {
   configureAgent();
   mockCatalog([]);
@@ -149,6 +213,65 @@ test("A use case is hidden when any required connector is unavailable", async ()
 
   expect(screen.queryByText("Daily standup report")).not.toBeInTheDocument();
 });
+
+test.each([
+  { path: "/ideas", destination: "/", targetAgent: DEFAULT_AGENT_ID },
+  {
+    path: IDEAS_PATH,
+    destination: `/agents/${AGENT_ID}/chat`,
+    targetAgent: AGENT_ID,
+  },
+])(
+  "A card on $path exposes its prompt link and opens by keyboard",
+  async ({ path, destination, targetAgent }) => {
+    const user = userEvent.setup({ delay: null });
+    context.mocks.data.agents([
+      {
+        ...agentFixture(),
+        agentId: DEFAULT_AGENT_ID,
+        isDefaultAgent: true,
+        displayName: "General",
+      },
+      agentFixture(),
+    ]);
+    context.mocks.data.onboardingStatus({ defaultAgentId: DEFAULT_AGENT_ID });
+    mockCatalog([
+      catalogItem("github", "GitHub"),
+      catalogItem("sentry", "Sentry"),
+      catalogItem("axiom", "Axiom"),
+      catalogItem("plausible", "Plausible"),
+      catalogItem("slack", "Slack"),
+    ]);
+
+    await setupPage({ context, path });
+    const search = await screen.findByLabelText("Search use cases");
+    await fill(search, "Daily standup report");
+
+    const title = await screen.findByText("Daily standup report");
+    const idea = queryAllByRoleFast("link", screen.getByRole("main")).find(
+      (link) => {
+        return link.contains(title);
+      },
+    );
+    if (!idea) {
+      throw new Error("Expected the use-case card to expose a link");
+    }
+    expect(idea).toHaveAttribute(
+      "href",
+      `${destination}?${new URLSearchParams({ prompt: STANDUP_PROMPT })}`,
+    );
+
+    await user.keyboard("{Tab}");
+    expect(idea).toHaveFocus();
+    await user.keyboard("{Enter}");
+
+    const composer = await findComposer();
+    await waitFor(() => {
+      expect(composer.textContent).toBe(STANDUP_PROMPT);
+    });
+    expect(pathname()).toBe(`/agents/${targetAgent}/chat`);
+  },
+);
 
 test("Search for a use case and start it with the agent", async () => {
   configureAgent();

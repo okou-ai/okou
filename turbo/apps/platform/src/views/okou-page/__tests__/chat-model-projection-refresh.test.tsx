@@ -233,10 +233,9 @@ test("A local active-account change refreshes the member projection", async () =
   const initial = await findModelOption(/GPT 5\.6 Sol/u, initialPanel);
   expect(initial).not.toBeDisabled();
   await closeModelPanel();
-  const rail = screen.queryByTestId("labeled-nav-rail");
-  const trigger = rail
-    ? within(rail).getByLabelText("Test User")
-    : (await screen.findByText("Test User")).closest("button");
+  click(screen.getByLabelText("Open menu"));
+  const drawer = await screen.findByRole("dialog", { name: "Sidebar" });
+  const trigger = within(drawer).getByText("Test User").closest("button");
   expect(trigger).not.toBeNull();
   click(trigger!);
   const menu = await screen.findByRole("menu");
