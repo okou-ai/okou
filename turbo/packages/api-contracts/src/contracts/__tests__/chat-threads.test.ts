@@ -664,6 +664,21 @@ describe("chat thread generation template contract", () => {
         },
       },
     },
+    {
+      shape: "opaque",
+      selection: {
+        stylePresetId: "avatar-template:81",
+        titleSnapshot: "  Ada  ",
+        previewUrl: "retired-preview-reference",
+        voiceId: "legacy/provider/voice",
+        aspectRatio: "16:9",
+        avatarOptions: {
+          voiceId: "legacy/provider/voice",
+          aspectRatio: "16:9",
+        },
+        providerOptions: { screenStyle: 3, caption: false },
+      },
+    },
   ])(
     "reads a historical avatar message with $shape options",
     ({ selection }) => {

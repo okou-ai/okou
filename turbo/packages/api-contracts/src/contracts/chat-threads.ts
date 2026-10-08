@@ -427,48 +427,15 @@ const presentationGenerationTemplateRequestSchema = z.object({
     .strict(),
 });
 
-const retiredAvatarAspectRatioSchema = z.enum([
-  "portrait",
-  "landscape",
-  "square",
-]);
-const retiredAvatarVoiceIdSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(200)
-  .regex(/^[A-Za-z0-9._:-]+$/);
-
-/** Read-only talking-avatar parameters stored in historical video selections. */
-const retiredAvatarGenerationOptionsSchema = z
-  .object({
-    titleSnapshot: z.string().trim().min(1),
-    previewUrl: z.url(),
-    voiceId: retiredAvatarVoiceIdSchema,
-    aspectRatio: retiredAvatarAspectRatioSchema,
-  })
-  .partial();
-
 /**
  * Video and talking-avatar selections written before generation was retired.
- * Keep the historical envelope and fields for message readers; current clients
- * do not produce these selections and the prompt builder ignores them.
+ * History classification still reads the preset ID. All other retired parameters
+ * are opaque: preserve them as written instead of validating or stripping them.
  */
 const retiredVideoGenerationTemplateRequestSchema = z.object({
   type: z.literal("video"),
-  selection: z.object({
+  selection: z.looseObject({
     stylePresetId: z.string().min(1),
-    avatarOptions: retiredAvatarGenerationOptionsSchema.optional(),
-
-    /**
-     * Messages and persisted drafts written before avatarOptions was introduced
-     * carry these flat fields. Keep them to avoid stripping saved selections
-     * when parsing historical documents.
-     */
-    titleSnapshot: z.string().trim().min(1).optional(),
-    previewUrl: z.url().optional(),
-    voiceId: retiredAvatarVoiceIdSchema.optional(),
-    aspectRatio: retiredAvatarAspectRatioSchema.optional(),
   }),
 });
 
