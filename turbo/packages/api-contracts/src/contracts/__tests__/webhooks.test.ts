@@ -478,6 +478,45 @@ describe("Pi memory citation event transport", () => {
   });
 });
 
+describe("Run completion metadata generations", () => {
+  const completion = {
+    cliAgentType: "codex",
+    cliAgentSessionId: "native-session",
+    cliAgentSessionHistoryHash: manifestHash,
+  };
+  const body = { runId: "run", exitCode: 0 };
+  it("accepts current and draining Guests and metadata-free Runner fallback", () => {
+    for (const metadata of [{ completion }, { checkpoint: completion }, {}]) {
+      expect(
+        webhookCompleteContract.complete.body.parse({ ...body, ...metadata }),
+      ).toStrictEqual({ ...body, ...metadata });
+    }
+  });
+  it("rejects ambiguous metadata and preserves native history authority", () => {
+    expect(
+      webhookCompleteContract.complete.body.safeParse({
+        ...body,
+        completion,
+        checkpoint: completion,
+      }).success,
+    ).toBe(false);
+    for (const field of ["completion", "checkpoint"]) {
+      for (const invalid of [
+        { ...completion, runId: "other-run" },
+        { ...completion, cliAgentSessionHistoryDisposition: "unavailable" },
+        { ...completion, cliAgentSessionHistoryHash: "A".repeat(64) },
+      ]) {
+        expect(
+          webhookCompleteContract.complete.body.safeParse({
+            ...body,
+            [field]: invalid,
+          }).success,
+        ).toBe(false);
+      }
+    }
+  });
+});
+
 describe("agent checkpoint session history", () => {
   const runId = "00000000-0000-4000-8000-000000000000";
   const checkpointMetadata = {

@@ -250,7 +250,6 @@ export function storageMaintenanceCompletionValues(
     lastMaintenanceRevision: payload.claimedRevision,
     lastMaintenanceBaseVersionId: payload.claimedBaseVersionId,
     lastMaintenanceSelectionDigest: payload.selectionDigest,
-    lastMaintenanceCheckpointId: null,
     lastMaintenanceCheckpointVersionId: versionId,
     lastMaintenanceOutcome: published
       ? ("published" as const)

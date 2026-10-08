@@ -23,7 +23,7 @@ pub(crate) fn telemetry_url(base_url: &str) -> String {
 }
 
 pub(crate) fn checkpoint_prepare_history_url(base_url: &str) -> String {
-    routes::webhooks::agent::checkpoints::prepare_history::PREPARE.url(base_url)
+    routes::webhooks::agent::session_history::prepare::PREPARE.url(base_url)
 }
 
 pub(crate) fn storage_prepare_url(base_url: &str) -> String {

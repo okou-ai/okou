@@ -208,7 +208,7 @@ import { weatherRoutes } from "./routes/weather";
 import { webDownloadRoutes } from "./routes/web-download";
 import { webFileUrlRoutes } from "./routes/web-file-url";
 import { webSearchRoutes } from "./routes/web-search";
-import { webhooksAgentCheckpointsRoutes } from "./routes/webhooks-agent-checkpoints";
+import { webhooksAgentSessionHistoryRoutes } from "./routes/webhooks-agent-session-history";
 import { webhooksAgentCompleteRoutes } from "./routes/webhooks-agent-complete";
 import { webhooksAgentEventsRoutes } from "./routes/webhooks-agent-events";
 import { webhooksAgentFirewallAuthRoutes } from "./routes/webhooks-agent-firewall-auth";
@@ -253,7 +253,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...webhooksStripeRoutes,
   ...webhooksStripeAutomationEventsRoutes,
   ...webhooksAgentHealthUsageTelemetryRoutes,
-  ...webhooksAgentCheckpointsRoutes,
+  ...webhooksAgentSessionHistoryRoutes,
   ...webhooksAgentCompleteRoutes,
   ...webhooksAgentEventsRoutes,
   ...webhooksAgentSessionOutputRoutes,

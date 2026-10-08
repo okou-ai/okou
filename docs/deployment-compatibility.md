@@ -254,6 +254,71 @@ and screenshot retention remain intact; this change performs no historical
 command or object-storage deletion. Retired switch overrides already pass through
 the general registry-key filtering.
 
+## Generic Run checkpoint retirement: release 1 (#38124)
+
+Run completion now saves native CLI history in Conversation, writeback outputs
+in `agent_runs.result.storageOutputs`, and the terminal transition together.
+Only writeback names, mount paths, versions and missing-root policies are added
+to the existing result JSON. They provide exact retry evidence for successful,
+failed and cancelled recovery reports, including two mounts with the same name.
+Read-only versions remain owned by immutable Run launch mounts; there is no new
+recovery snapshot or checkpoint entity. Historical result `checkpointId` values
+remain readable and opaque. No historical results or blobs are rewritten.
+
+Pi memory publication remains owned by the generic Storage commit transaction
+and its validated, lease/revision/base/selection-bound publication receipt
+(`pi_memory_phase2_checkpoints`, whose physical name is retained). The observer
+uses that receipt alone, including no-diff publications; a successful CLI exit
+without a receipt cannot advance watermarks. Already settled callbacks are
+idempotent without generic checkpoint ID backfill. Runtime code no longer reads
+or writes `lastMaintenanceCheckpointId` or the generic `checkpoints` table.
+The physical table, ID columns and indexes remain for release 2. Migration
+`1352_detach_memory_history_from_run_checkpoints` removes only the old ID's
+participation in the memory job history CHECK constraint. Existing IDs remain
+untouched; outgoing writers continue to satisfy the relaxed constraint, while
+new failure updates no longer need to clear an obsolete ID. Publication version,
+revision, lease and selection constraints remain enforced. Apply this migration
+before promoting the table-independent API.
+
+### Serving combinations and activation
+
+- **Current old Guest -> new API:** the combined `/complete.checkpoint` payload
+  is normalized into the same Run completion path. The old
+  `/api/webhooks/agent/checkpoints/prepare-history` upload URL remains an adapter.
+  Neither adapter accesses the generic checkpoint table or returns a fake ID.
+- **New Guest -> new API:** native uploads use
+  `/api/webhooks/agent/session-history/prepare`; `/complete.completion` carries
+  native identity and writeback outputs. Both metadata fields together are
+  rejected. Failed/cancelled recovery and metadata-free Runner fallback retain
+  their terminal-state rules; Pi history promotes its Session only on success.
+- **New Guest -> pre-transition API:** unsupported. The new presign URL is absent
+  and the old API cannot commit checkpoint-free output results. Deploy and verify
+  the prepared API on every serving instance before promoting new Guest images.
+- **Pre-transition API -> new persisted results:** unsupported because clean
+  completion still queries the generic table. Exclude those instances from
+  serving and supported rollback before enabling new writes. Rollback must stay
+  at this table-independent API generation or a descendant.
+
+The current Guest has no standalone checkpoint-create caller: finalization sends
+only the combined completion request. Repository callers outside tests do not
+use `/api/webhooks/agent/checkpoints`. Its API handler is retired in this release;
+legacy contract declarations remain for the release 2 protocol cleanup. Verify
+that the deployed producer inventory matches before promotion; any external
+standalone producer must upgrade or drain, not receive a synthetic checkpoint ID.
+Drain pre-transition in-flight completion/recovery reports before API cutover:
+old terminal Runs may have Conversation + checkpoint rows but no Run-owned exact
+output evidence. Metadata-free terminal acknowledgements and historical reads
+remain supported; conflicting or unverifiable included outputs are rejected.
+
+Record serving/rollback inventory and outgoing API drain, then verify completion,
+exact retries, failed/cancelled recovery, next-run native resume, file HEADs and
+memory publication/no-diff/lost-or-repeated acknowledgement with old and new
+Guest producers. A merge or green CI does not establish production acceptance.
+After acceptance, drain old Guest images, uploads and queued callbacks before
+release 2 removes adapters and drops the generic table and obsolete ID columns.
+The outgoing release 1 API is already independent of the dropped table, matching
+the repository's migration-before-API-promotion deployment order.
+
 ## Dynamic Run inputs without Agent execution configuration
 
 The first delivery of [#37970](https://github.com/okou-ai/okou/issues/37970)

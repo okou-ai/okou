@@ -133,6 +133,12 @@ const expectedBindings = [
   },
   {
     method: "POST",
+    path: "/api/webhooks/agent/session-history/prepare",
+    rustModulePath: ["webhooks", "agent", "session_history", "prepare"],
+    rustConstName: "PREPARE",
+  },
+  {
+    method: "POST",
     path: "/api/webhooks/agent/complete",
     rustModulePath: ["webhooks", "agent", "complete"],
     rustConstName: "COMPLETE",

@@ -3,10 +3,10 @@ import { and, eq } from "drizzle-orm";
 
 import type { ApiDb, Tx } from "../../lib/db-types";
 
-type CheckpointReceipt = typeof piMemoryPhase2Checkpoints.$inferInsert;
+type PublicationReceipt = typeof piMemoryPhase2Checkpoints.$inferInsert;
 
-export function piMemoryPhase2CheckpointCondition(
-  binding: Omit<CheckpointReceipt, "versionId" | "createdAt">,
+export function piMemoryPhase2PublicationCondition(
+  binding: Omit<PublicationReceipt, "versionId" | "createdAt">,
 ) {
   return and(
     eq(piMemoryPhase2Checkpoints.runId, binding.runId),
@@ -23,14 +23,14 @@ export function piMemoryPhase2CheckpointCondition(
   );
 }
 
-export async function findPiMemoryPhase2Checkpoint(
+export async function findPiMemoryPhase2Publication(
   db: ApiDb | Tx,
-  binding: Omit<CheckpointReceipt, "versionId" | "createdAt">,
+  binding: Omit<PublicationReceipt, "versionId" | "createdAt">,
 ): Promise<typeof piMemoryPhase2Checkpoints.$inferSelect | undefined> {
   const [receipt] = await db
     .select()
     .from(piMemoryPhase2Checkpoints)
-    .where(piMemoryPhase2CheckpointCondition(binding))
+    .where(piMemoryPhase2PublicationCondition(binding))
     .limit(1);
   return receipt;
 }

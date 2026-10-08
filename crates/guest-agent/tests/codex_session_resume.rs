@@ -205,7 +205,7 @@ fn recovery_checkpoint_resolves_history_from_codex_sessions_root() -> TestResult
     let server = MockServer::start();
     let prepare_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/checkpoints/prepare-history");
+            .path("/api/webhooks/agent/session-history/prepare");
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({
@@ -223,7 +223,7 @@ fn recovery_checkpoint_resolves_history_from_codex_sessions_root() -> TestResult
         when.method(POST)
             .path("/api/webhooks/agent/complete")
             .json_body_includes(format!(
-                r#"{{"exitCode":1,"checkpoint":{{"cliAgentSessionId":"{thread_id}"}}}}"#
+                r#"{{"exitCode":1,"completion":{{"cliAgentSessionId":"{thread_id}"}}}}"#
             ));
         then.status(200)
             .header("Content-Type", "application/json")
@@ -252,12 +252,12 @@ fn recovery_checkpoint_resolves_history_from_codex_sessions_root() -> TestResult
         ),
     );
     runtime.block_on(async {
-        let checkpoint = guest_agent::checkpoint::prepare_recovery_checkpoint_for_runtime(
+        let checkpoint = guest_agent::finalization::prepare_recovery_finalization_for_runtime(
             &guest_runtime,
             &session_metadata,
         )
         .await?;
-        guest_agent::complete::report_checkpoint_for_run(
+        guest_agent::complete::report_finalization_for_run(
             &guest_runtime,
             1,
             None,

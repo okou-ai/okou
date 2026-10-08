@@ -112,6 +112,14 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-run-checkpoint-retirement-preparation.ts` protects migration
+  `1352_detach_memory_history_from_run_checkpoints`: historical memory checkpoint
+  IDs survive, outgoing writers remain valid, new failure updates omit the old
+  ID, and publication version/revision constraints remain enforced. It stops at
+  that journal frontier so the later physical ID contraction does not rewrite
+  this transition's historical evidence. Retain it through #38124's two-release
+  retirement cycle.
+
 - `scripts/test-connector-catalog-entry-columns.ts` protects migrations
   `1339_expand_connector_catalog_entry_columns` and
   `1340_backfill_connector_catalog_entry_columns`: historical/current hashes

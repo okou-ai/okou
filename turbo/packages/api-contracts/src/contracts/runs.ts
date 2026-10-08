@@ -197,10 +197,21 @@ const runEventSchema = z.object({
 });
 
 /**
- * Run result schema (present when status = 'completed')
+ * Published writeback versions retained as exact Run completion retry evidence.
  */
+export const runStorageOutputSchema = z.object({
+  name: z.string(),
+  version: z.string(),
+  mountPath: z.string(),
+  missingRootPolicy: z.enum(["fail", "preserveParentVersion"]).optional(),
+});
+
+/** Completion outputs, including those saved after failure/cancellation recovery. */
 const runResultSchema = z.object({
-  checkpointId: z.string(),
+  // Historical results may retain this opaque field.
+  checkpointId: z.string().optional(),
+  // Only writeback outputs are persisted. Read-only versions belong to launch mounts.
+  storageOutputs: z.array(runStorageOutputSchema).optional(),
   agentSessionId: z.string(),
   conversationId: z.string(),
   artifact: z.record(z.string(), z.string()).optional(), // optional when run has no artifact

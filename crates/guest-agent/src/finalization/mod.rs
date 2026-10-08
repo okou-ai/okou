@@ -1,4 +1,4 @@
-//! Checkpoint preparation and post-completion local reconciliation.
+//! Prepare native history and published file outputs, then reconcile local history after completion acknowledgement.
 
 mod artifact;
 mod session_history;
@@ -18,22 +18,22 @@ use std::time::{Duration, Instant};
 const LOG_TAG: &str = "sandbox:guest-agent";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum CheckpointMode {
+enum FinalizationMode {
     Success,
     Recovery,
 }
 
-impl CheckpointMode {
+impl FinalizationMode {
     fn total_op(self) -> &'static str {
         match self {
-            Self::Success => "checkpoint_total",
-            Self::Recovery => "recovery_checkpoint_total",
+            Self::Success => "finalization_total",
+            Self::Recovery => "recovery_finalization_total",
         }
     }
 
     fn log_label(self) -> &'static str {
         match self {
-            Self::Success => "checkpoint",
+            Self::Success => "completion",
             Self::Recovery => "recovery checkpoint",
         }
     }
@@ -43,7 +43,7 @@ impl CheckpointMode {
     }
 }
 
-struct CheckpointInputs<'a> {
+struct FinalizationInputs<'a> {
     run_id: &'a str,
     framework: env::Framework,
     session_history_limits: session_history::CheckpointSessionHistoryLimits,
@@ -54,7 +54,7 @@ struct CheckpointInputs<'a> {
     pi_launch_payload_file: &'a str,
 }
 
-impl<'a> CheckpointInputs<'a> {
+impl<'a> FinalizationInputs<'a> {
     fn from_runtime(
         runtime: &'a GuestRuntime,
         session_metadata: &'a CapturedSessionMetadata,
@@ -75,24 +75,24 @@ impl<'a> CheckpointInputs<'a> {
 }
 
 /// Checkpoint metadata and local state awaiting atomic completion acknowledgement.
-pub struct PreparedCheckpoint {
-    request: complete::RequestCheckpoint,
-    mode: CheckpointMode,
+pub struct PreparedFinalization {
+    request: complete::RequestCompletion,
+    mode: FinalizationMode,
     uploaded_history: Option<session_history::UploadedCheckpointSessionHistory>,
     framework: env::Framework,
     final_session_history_identity_file: String,
     total_started_at: Instant,
 }
 
-impl PreparedCheckpoint {
-    pub(crate) fn request(&self) -> &complete::RequestCheckpoint {
+impl PreparedFinalization {
+    pub(crate) fn request(&self) -> &complete::RequestCompletion {
         &self.request
     }
 
     pub(crate) fn acknowledge(self, api_elapsed: Duration) {
-        record_sandbox_op("checkpoint_api_call", api_elapsed, true, None);
+        record_sandbox_op("completion_api_call", api_elapsed, true, None);
         if let Some(uploaded_history) = self.uploaded_history
-            && session_history::reconcile_live_history_after_checkpoint(
+            && session_history::reconcile_live_history_after_finalization(
                 uploaded_history.live_history,
             )
         {
@@ -116,7 +116,7 @@ impl PreparedCheckpoint {
     }
 
     pub(crate) fn record_persistence_failure(self, api_elapsed: Duration) {
-        record_sandbox_op("checkpoint_api_call", api_elapsed, false, None);
+        record_sandbox_op("completion_api_call", api_elapsed, false, None);
         record_sandbox_op(
             self.mode.total_op(),
             self.total_started_at.elapsed(),
@@ -127,82 +127,82 @@ impl PreparedCheckpoint {
 }
 
 /// Prepare a checkpoint after a successful run using the explicit runtime snapshot.
-pub async fn prepare_checkpoint_for_runtime(
+pub async fn prepare_finalization_for_runtime(
     runtime: &GuestRuntime,
     session_metadata: &CapturedSessionMetadata,
-) -> Result<PreparedCheckpoint, AgentError> {
-    let inputs = CheckpointInputs::from_runtime(runtime, session_metadata);
-    prepare_checkpoint_with_inputs(&runtime.http, &inputs).await
+) -> Result<PreparedFinalization, AgentError> {
+    let inputs = FinalizationInputs::from_runtime(runtime, session_metadata);
+    prepare_finalization_with_inputs(&runtime.http, &inputs).await
 }
 
 /// Prepare a checkpoint with bounded session-history limits for integration tests.
 #[doc(hidden)]
-pub async fn prepare_checkpoint_for_runtime_with_history_limits_for_test(
+pub async fn prepare_finalization_for_runtime_with_history_limits_for_test(
     runtime: &GuestRuntime,
     session_metadata: &CapturedSessionMetadata,
     candidate_max_bytes: u64,
     checkpoint_max_bytes: u64,
-) -> Result<PreparedCheckpoint, AgentError> {
-    let mut inputs = CheckpointInputs::from_runtime(runtime, session_metadata);
+) -> Result<PreparedFinalization, AgentError> {
+    let mut inputs = FinalizationInputs::from_runtime(runtime, session_metadata);
     inputs.session_history_limits =
         session_history::CheckpointSessionHistoryLimits::BoundedForTest {
             candidate_max_bytes,
             checkpoint_max_bytes,
         };
-    prepare_checkpoint_with_inputs(&runtime.http, &inputs).await
+    prepare_finalization_with_inputs(&runtime.http, &inputs).await
 }
 
 /// Prepare a best-effort recovery checkpoint using the explicit runtime snapshot.
-pub async fn prepare_recovery_checkpoint_for_runtime(
+pub async fn prepare_recovery_finalization_for_runtime(
     runtime: &GuestRuntime,
     session_metadata: &CapturedSessionMetadata,
-) -> Result<PreparedCheckpoint, AgentError> {
-    let inputs = CheckpointInputs::from_runtime(runtime, session_metadata);
-    prepare_recovery_checkpoint_with_inputs(&runtime.http, &inputs).await
+) -> Result<PreparedFinalization, AgentError> {
+    let inputs = FinalizationInputs::from_runtime(runtime, session_metadata);
+    prepare_recovery_finalization_with_inputs(&runtime.http, &inputs).await
 }
 
 /// Prepare a recovery checkpoint with bounded session-history limits for integration tests.
 #[doc(hidden)]
-pub async fn prepare_recovery_checkpoint_for_runtime_with_history_limits_for_test(
+pub async fn prepare_recovery_finalization_for_runtime_with_history_limits_for_test(
     runtime: &GuestRuntime,
     session_metadata: &CapturedSessionMetadata,
     candidate_max_bytes: u64,
     checkpoint_max_bytes: u64,
-) -> Result<PreparedCheckpoint, AgentError> {
-    let mut inputs = CheckpointInputs::from_runtime(runtime, session_metadata);
+) -> Result<PreparedFinalization, AgentError> {
+    let mut inputs = FinalizationInputs::from_runtime(runtime, session_metadata);
     inputs.session_history_limits =
         session_history::CheckpointSessionHistoryLimits::BoundedForTest {
             candidate_max_bytes,
             checkpoint_max_bytes,
         };
-    prepare_recovery_checkpoint_with_inputs(&runtime.http, &inputs).await
+    prepare_recovery_finalization_with_inputs(&runtime.http, &inputs).await
 }
 
-async fn prepare_checkpoint_with_inputs(
+async fn prepare_finalization_with_inputs(
     http: &HttpClient,
-    inputs: &CheckpointInputs<'_>,
-) -> Result<PreparedCheckpoint, AgentError> {
-    prepare_checkpoint_for_mode(http, CheckpointMode::Success, inputs).await
+    inputs: &FinalizationInputs<'_>,
+) -> Result<PreparedFinalization, AgentError> {
+    prepare_finalization_for_mode(http, FinalizationMode::Success, inputs).await
 }
 
-async fn prepare_recovery_checkpoint_with_inputs(
+async fn prepare_recovery_finalization_with_inputs(
     http: &HttpClient,
-    inputs: &CheckpointInputs<'_>,
-) -> Result<PreparedCheckpoint, AgentError> {
-    prepare_checkpoint_for_mode(http, CheckpointMode::Recovery, inputs).await
+    inputs: &FinalizationInputs<'_>,
+) -> Result<PreparedFinalization, AgentError> {
+    prepare_finalization_for_mode(http, FinalizationMode::Recovery, inputs).await
 }
 
-async fn prepare_checkpoint_for_mode(
+async fn prepare_finalization_for_mode(
     http: &HttpClient,
-    mode: CheckpointMode,
-    inputs: &CheckpointInputs<'_>,
-) -> Result<PreparedCheckpoint, AgentError> {
+    mode: FinalizationMode,
+    inputs: &FinalizationInputs<'_>,
+) -> Result<PreparedFinalization, AgentError> {
     let total_started_at = Instant::now();
-    let result = prepare_checkpoint_impl(http, mode, inputs).await;
+    let result = prepare_finalization_impl(http, mode, inputs).await;
     if result.is_err() {
         record_sandbox_op(mode.total_op(), total_started_at.elapsed(), false, None);
     }
-    result.map(|prepared| PreparedCheckpoint {
+    result.map(|prepared| PreparedFinalization {
         request: prepared.request,
         mode,
         uploaded_history: prepared.uploaded_history,
@@ -212,41 +212,41 @@ async fn prepare_checkpoint_for_mode(
     })
 }
 
-struct PreparedCheckpointParts {
-    request: complete::RequestCheckpoint,
+struct PreparedFinalizationParts {
+    request: complete::RequestCompletion,
     uploaded_history: Option<session_history::UploadedCheckpointSessionHistory>,
 }
 
 fn completion_history_disposition(
     disposition: checkpoints::RequestCliAgentSessionHistoryDisposition,
-) -> complete::RequestCheckpointCliAgentSessionHistoryDisposition {
+) -> complete::RequestCompletionCliAgentSessionHistoryDisposition {
     match disposition {
         checkpoints::RequestCliAgentSessionHistoryDisposition::DiscardedOversized => {
-            complete::RequestCheckpointCliAgentSessionHistoryDisposition::DiscardedOversized
+            complete::RequestCompletionCliAgentSessionHistoryDisposition::DiscardedOversized
         }
         checkpoints::RequestCliAgentSessionHistoryDisposition::Unavailable => {
-            complete::RequestCheckpointCliAgentSessionHistoryDisposition::Unavailable
+            complete::RequestCompletionCliAgentSessionHistoryDisposition::Unavailable
         }
     }
 }
 
 fn completion_missing_root_policy(
     policy: ArtifactEntryMissingRootPolicy,
-) -> complete::RequestCheckpointArtifactSnapshotMissingRootPolicy {
+) -> complete::RequestCompletionArtifactSnapshotMissingRootPolicy {
     match policy {
         ArtifactEntryMissingRootPolicy::Fail => {
-            complete::RequestCheckpointArtifactSnapshotMissingRootPolicy::Fail
+            complete::RequestCompletionArtifactSnapshotMissingRootPolicy::Fail
         }
         ArtifactEntryMissingRootPolicy::PreserveParentVersion => {
-            complete::RequestCheckpointArtifactSnapshotMissingRootPolicy::PreserveParentVersion
+            complete::RequestCompletionArtifactSnapshotMissingRootPolicy::PreserveParentVersion
         }
     }
 }
 
 fn completion_artifact_snapshot(
     snapshot: checkpoints::ArtifactSnapshot,
-) -> complete::RequestCheckpointArtifactSnapshot {
-    complete::RequestCheckpointArtifactSnapshot {
+) -> complete::RequestCompletionArtifactSnapshot {
+    complete::RequestCompletionArtifactSnapshot {
         name: snapshot.name,
         version: snapshot.version,
         mount_path: snapshot.mount_path,
@@ -256,11 +256,11 @@ fn completion_artifact_snapshot(
     }
 }
 
-async fn prepare_checkpoint_impl(
+async fn prepare_finalization_impl(
     http: &HttpClient,
-    mode: CheckpointMode,
-    inputs: &CheckpointInputs<'_>,
-) -> Result<PreparedCheckpointParts, AgentError> {
+    mode: FinalizationMode,
+    inputs: &FinalizationInputs<'_>,
+) -> Result<PreparedFinalizationParts, AgentError> {
     log_info!(LOG_TAG, "Preparing {}...", mode.log_label());
 
     // History upload and artifact snapshots are independent pre-requisites
@@ -318,7 +318,7 @@ async fn prepare_checkpoint_impl(
             None,
         ),
     };
-    let request = complete::RequestCheckpoint {
+    let request = complete::RequestCompletion {
         cli_agent_type: cli_agent_type.to_string(),
         cli_agent_session_id,
         cli_agent_session_history_hash,
@@ -331,7 +331,7 @@ async fn prepare_checkpoint_impl(
         }),
         volume_versions_snapshot: None,
     };
-    Ok(PreparedCheckpointParts {
+    Ok(PreparedFinalizationParts {
         request,
         uploaded_history,
     })
@@ -406,7 +406,7 @@ mod tests {
 
         let _history_prepare = server.mock(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/checkpoints/prepare-history");
+                .path("/api/webhooks/agent/session-history/prepare");
             then.status(200).json_body(json!({"existing": true}));
         });
         let prepare = server.mock(|when, then| {
@@ -438,7 +438,7 @@ mod tests {
         let session_metadata =
             CapturedSessionMetadata::for_test("session-checkpoint-missing-mount", None);
 
-        let inputs = CheckpointInputs {
+        let inputs = FinalizationInputs {
             run_id: "checkpoint-missing-mount",
             framework: env::Framework::ClaudeCode,
             session_history_limits: session_history::CheckpointSessionHistoryLimits::Production,
@@ -451,7 +451,7 @@ mod tests {
             pi_launch_payload_file: guest_paths.pi_launch_payload_file(),
         };
 
-        let err = prepare_checkpoint_impl(&http, CheckpointMode::Success, &inputs)
+        let err = prepare_finalization_impl(&http, FinalizationMode::Success, &inputs)
             .await
             .err()
             .expect("missing artifact mount should fail checkpoint preparation");
@@ -515,7 +515,7 @@ mod tests {
         }];
         let session_metadata = CapturedSessionMetadata::for_test("maintenance-run-success", None);
         let launch_json = launch.to_string();
-        let inputs = CheckpointInputs {
+        let inputs = FinalizationInputs {
             run_id: "maintenance-run-success",
             framework: env::Framework::Pi,
             session_history_limits: session_history::CheckpointSessionHistoryLimits::Production,
@@ -528,7 +528,7 @@ mod tests {
             pi_launch_payload_file: guest_paths.pi_launch_payload_file(),
         };
 
-        let error = prepare_checkpoint_with_inputs(&http, &inputs)
+        let error = prepare_finalization_with_inputs(&http, &inputs)
             .await
             .err()
             .expect("success checkpoint without a validation marker must fail");
@@ -642,7 +642,7 @@ printf late > "$1/memory_summary.md""#,
         }];
         let session_metadata = CapturedSessionMetadata::for_test("maintenance-run-recovery", None);
         let launch_json = launch.to_string();
-        let inputs = CheckpointInputs {
+        let inputs = FinalizationInputs {
             run_id: "maintenance-run-recovery",
             framework: env::Framework::Pi,
             session_history_limits: session_history::CheckpointSessionHistoryLimits::Production,
@@ -655,7 +655,7 @@ printf late > "$1/memory_summary.md""#,
             pi_launch_payload_file: guest_paths.pi_launch_payload_file(),
         };
 
-        let prepared = prepare_recovery_checkpoint_with_inputs(&http, &inputs)
+        let prepared = prepare_recovery_finalization_with_inputs(&http, &inputs)
             .await
             .unwrap();
         let snapshots = prepared
@@ -706,7 +706,7 @@ printf late > "$1/memory_summary.md""#,
             missing_root_policy: None,
         }];
         let session_metadata = CapturedSessionMetadata::for_test("ordinary-recovery-run", None);
-        let inputs = CheckpointInputs {
+        let inputs = FinalizationInputs {
             run_id: "ordinary-recovery-run",
             framework: env::Framework::ClaudeCode,
             session_history_limits: session_history::CheckpointSessionHistoryLimits::Production,
@@ -719,7 +719,7 @@ printf late > "$1/memory_summary.md""#,
             pi_launch_payload_file: guest_paths.pi_launch_payload_file(),
         };
 
-        prepare_recovery_checkpoint_with_inputs(&http, &inputs)
+        prepare_recovery_finalization_with_inputs(&http, &inputs)
             .await
             .err()
             .expect("fixture intentionally rejects the ordinary upload");
@@ -755,7 +755,7 @@ printf late > "$1/memory_summary.md""#,
         let upload_url = server.url("/test/session-history-upload");
         let prepare = server.mock(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/checkpoints/prepare-history")
+                .path("/api/webhooks/agent/session-history/prepare")
                 .json_body(json!({
                     "runId": "checkpoint-codex-zstd-reuse",
                     "hash": history_hash,
@@ -795,7 +795,7 @@ printf late > "$1/memory_summary.md""#,
                 },
             ),
         );
-        let inputs = CheckpointInputs {
+        let inputs = FinalizationInputs {
             run_id: "checkpoint-codex-zstd-reuse",
             framework: env::Framework::Codex,
             session_history_limits: session_history::CheckpointSessionHistoryLimits::Production,
@@ -808,7 +808,7 @@ printf late > "$1/memory_summary.md""#,
             pi_launch_payload_file: guest_paths.pi_launch_payload_file(),
         };
 
-        let prepared = prepare_checkpoint_impl(&http, CheckpointMode::Success, &inputs)
+        let prepared = prepare_finalization_impl(&http, FinalizationMode::Success, &inputs)
             .await
             .unwrap();
 
