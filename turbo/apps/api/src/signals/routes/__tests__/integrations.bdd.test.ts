@@ -6068,7 +6068,9 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       "uploadId" in uploadInit.body
         ? uploadInit.body.uploadId
         : "33333333-3333-4333-8333-333333333333";
-    context.mocks.s3.send.mockResolvedValue({ Contents: [] });
+    context.mocks.s3.send.mockRejectedValue(
+      Object.assign(new Error("Artifact not found"), { name: "NotFound" }),
+    );
     const missingUpload = await integrations.requestPhoneUploadComplete(
       actor,
       {

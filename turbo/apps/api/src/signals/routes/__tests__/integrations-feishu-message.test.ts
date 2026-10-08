@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import { GetObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+} from "@aws-sdk/client-s3";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
@@ -559,8 +563,18 @@ describe("POST /api/integrations/feishu/message", () => {
         }),
         [200],
       );
-      const key = `artifacts/${encodeURIComponent(actor.userId)}/${initialized.body.uploadId}/report.pdf`;
+      const key = `private-artifacts/${initialized.body.uploadId}/report.pdf`;
       context.mocks.s3.send.mockImplementation((command: unknown) => {
+        if (command instanceof HeadObjectCommand) {
+          expect(command.input).toMatchObject({
+            Bucket: "test-private-artifacts",
+            Key: key,
+          });
+          return Promise.resolve({
+            ContentLength: content.length,
+            ContentType: "application/pdf",
+          });
+        }
         if (command instanceof ListObjectsV2Command) {
           return Promise.resolve({
             Contents: [
@@ -635,7 +649,10 @@ describe("POST /api/integrations/feishu/message", () => {
         mimetype: "application/pdf",
         size: content.length,
       });
-      expect(completed.body.url).toContain(initialized.body.uploadId);
+      expect(completed.body.url).toBe(initialized.body.fileUrl);
+      expect(completed.body.url).toMatch(
+        /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.pdf$/u,
+      );
       expect(captured).toStrictEqual([
         {
           kind: "send",
