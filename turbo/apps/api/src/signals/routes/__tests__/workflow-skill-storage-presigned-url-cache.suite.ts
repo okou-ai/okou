@@ -177,6 +177,7 @@ describe("workflow skill storage presigned URL cache", () => {
     });
     await connectors.updateAgentCustomConnectors(actor, agentId, [custom.id]);
     const volumeName = getCustomConnectorSkillStorageName(custom.id);
+    mockUniquePresignedUrls();
     const createAndClaim = async (prompt: string) => {
       const run = await api.createThreadRun(actor, {
         agentId,
@@ -208,6 +209,7 @@ describe("workflow skill storage presigned URL cache", () => {
 
   it("reuses cached workflow skill storage URLs", async () => {
     const fixture = await createWorkflowSkillRunFixture();
+    mockUniquePresignedUrls();
     const first = await createRunAndClaimStorageSkill({
       ...fixture,
       prompt: "warm the workflow skill URL cache",
