@@ -12,6 +12,7 @@ import {
 } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -21,6 +22,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { now } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { pathname, search } from "../../../signals/location.ts";
 
 const context = testContext();
 
@@ -232,6 +234,75 @@ test("The empty workflow list offers the import", async () => {
   const dialog = await findDialog();
   await expect(findCopyPrompt(dialog)).resolves.toBeVisible();
 });
+
+test("Browser-owned View workflows activations keep the dialog listening for imports", async () => {
+  const workflows = mockWorkflows();
+  mockSessions();
+  // Happy DOM cannot choose native tabs/windows; keep its anchor default
+  // isolated while observing the original dialog and arriving skills.
+  context.mocks.browser.open();
+  const user = userEvent.setup({ delay: null });
+  await openWorkflowsPage();
+  click(getButtonNamed("Import skills"));
+  const dialog = await findDialog();
+  await findCopyPrompt(dialog);
+  const link = within(dialog).getByText("View workflows");
+  expect(link).toHaveAttribute("href", "/workflows");
+
+  for (const modifier of ["Control", "Meta", "Shift", "Alt"]) {
+    await user.keyboard(`{${modifier}>}`);
+    await user.click(link);
+    await user.keyboard(`{/${modifier}}`);
+    expect(screen.getByRole("dialog", { name: DIALOG_TITLE })).toBeVisible();
+  }
+  for (const keys of ["[MouseMiddle]", "[MouseRight]"]) {
+    await user.pointer({ target: link, keys });
+    expect(screen.getByRole("dialog", { name: DIALOG_TITLE })).toBeVisible();
+  }
+
+  workflows.write([
+    workflow({
+      id: "d0000000-0000-4000-a000-000000000431",
+      name: "weekly-report",
+      displayName: "Weekly report",
+      importSource: "claudeCode",
+    }),
+  ]);
+  await expect(
+    within(dialog).findByText("Weekly report"),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).getByRole("status")).toHaveTextContent(
+    "1 imported · listening for more",
+  );
+});
+
+test.each(["click", "Enter"])(
+  "View workflows %s closes the import dialog and navigates in the current tab",
+  async (activation) => {
+    mockWorkflows();
+    mockSessions();
+    const user = userEvent.setup({ delay: null });
+    await setupPage({ context, path: "/workflows?source=skill-import" });
+    await screen.findByRole("heading", { name: "Workflows" });
+    click(getButtonNamed("Import skills"));
+    const dialog = await findDialog();
+    await findCopyPrompt(dialog);
+    const link = within(dialog).getByText("View workflows");
+
+    if (activation === "Enter") {
+      link.focus();
+      await user.keyboard("{Enter}");
+    } else {
+      click(link);
+    }
+
+    await waitFor(() => {
+      expect(pathname()).toBe("/workflows");
+      expect(search()).toBe("");
+      expect(screen.queryByRole("dialog", { name: DIALOG_TITLE })).toBeNull();
+    });
+  },
+);
 
 test("An imported workflow is tagged with the tool it came from", async () => {
   mockWorkflows([

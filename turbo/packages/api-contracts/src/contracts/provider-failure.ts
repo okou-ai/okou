@@ -91,7 +91,8 @@ function providerTextFailureReason(
     ) ||
     semanticMessage.startsWith(
       "this content was flagged for possible biological risk. if this seems wrong, try rephrasing your request. we are continuously refining our work in detecting biological risk, and you can read more about our approach in our blog post: ",
-    )
+    ) ||
+    isDaybreakCyberSafetyRefusal(semanticMessage)
   )
     return "safety_policy_refusal";
   if (
@@ -126,6 +127,18 @@ function providerTextFailureReason(
     return "context_window_exceeded";
   }
   return undefined;
+}
+
+function isDaybreakCyberSafetyRefusal(message: string): boolean {
+  // The link is incidental; require the full provider prose on both sides.
+  const prefix =
+    "this content was flagged for possible cybersecurity risk. " +
+    "if this seems wrong, try rephrasing your request. " +
+    "if you’re doing authorized security work that requires more cyber permissive safeguards, apply for daybreak access via ";
+  const suffix = " before retrying.";
+  if (!message.startsWith(prefix) || !message.endsWith(suffix)) return false;
+  const link = message.slice(prefix.length, -suffix.length);
+  return link.length > 0 && !/\p{White_Space}/u.test(link);
 }
 
 export function classifyProviderHttpFailure(

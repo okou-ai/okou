@@ -12,7 +12,7 @@ import {
   observePiMemoryStage1MissingUsage,
 } from "./pi-memory-stage1-cost.service";
 import {
-  checkPiMemoryQuota,
+  checkPiMemoryQuota$,
   PiMemoryQuotaError,
 } from "./pi-memory-quota.service";
 import { checkOrgCreditsForRunAdmission$ } from "./run-admission.service";
@@ -938,8 +938,8 @@ const checkPreparedStage1Request$ = command(
       throw new RetryableWorkError("source_admission_denied");
     }
     const db = set(writeDb$);
-    await checkPiMemoryQuota(
-      db,
+    await set(
+      checkPiMemoryQuota$,
       {
         ...prepared.credential.billing,
         stage: "stage1",

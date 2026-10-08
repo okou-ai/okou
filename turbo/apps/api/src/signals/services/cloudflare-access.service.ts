@@ -13,7 +13,7 @@ import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/c
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { sshConnections } from "@okouai/db/schema/ssh-connection";
-import { and, asc, eq, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, ne, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -259,8 +259,16 @@ export const createCloudflareAccessConfig$ = command(
     return config;
   },
 );
-function referencingHostsQuery(owner: Owner, configId: string, lock: boolean) {
-  const query = new QueryBuilder()
+function referencingHosts(owner: Owner, configId: string) {
+  return and(
+    eq(sshConnections.orgId, owner.orgId),
+    eq(sshConnections.cloudflareAccessId, configId),
+  );
+}
+function referencingHostsQuery(owner: Owner, configId: string) {
+  // Parent-login RESTRICT checks take KEY SHARE on hosts. Do not conflict with
+  // those implicit locks while holding hosts and waiting for configuration.
+  return new QueryBuilder()
     .select({
       id: sshConnections.id,
       userId: sshConnections.userId,
@@ -268,31 +276,27 @@ function referencingHostsQuery(owner: Owner, configId: string, lock: boolean) {
       generation: sshConnections.generation,
     })
     .from(sshConnections)
-    .where(
-      and(
-        eq(sshConnections.orgId, owner.orgId),
-        eq(sshConnections.cloudflareAccessId, configId),
-      ),
-    )
-    .orderBy(asc(sshConnections.id));
-  // Parent-login RESTRICT checks take KEY SHARE on hosts. Do not conflict with
-  // those implicit locks while holding hosts and waiting for configuration.
-  return (lock ? query.for("no key update") : query).as(
-    "cloudflare_referencing_hosts",
-  );
+    .where(referencingHosts(owner, configId))
+    .orderBy(asc(sshConnections.id))
+    .for("no key update")
+    .as("cloudflare_referencing_hosts");
 }
 function referenceSetExpanded(
-  locked: readonly { readonly id: string }[],
-  current: readonly { readonly id: string }[],
+  lockedCount: number,
+  current: { readonly count: number } | undefined,
 ) {
-  const ids = new Set(
-    locked.map(({ id }) => {
-      return id;
-    }),
-  );
-  return current.some(({ id }) => {
-    return !ids.has(id);
-  });
+  if (!current) {
+    throw new Error("Cloudflare Access reference count returned no row");
+  }
+  // READ COMMITTED locking readers recheck changed tuples before returning them.
+  // Every returned host remains a matching, unchanged member under its retained
+  // lock. After the config fence, SHARE admission blocks further additions. The
+  // locked set is therefore a subset of this fresh count's set: equal cardinality
+  // proves equal identities here, not for arbitrary sets. Reuse its metadata.
+  if (current.count < lockedCount) {
+    throw new Error("Locked Cloudflare Access references disappeared");
+  }
+  return current.count > lockedCount;
 }
 function managementFailure(config: Metadata, actor: Actor) {
   return config.scope === "organization" && actor.orgRole !== "admin"
@@ -337,6 +341,75 @@ const publishUpdateInvalidation$ = command(
     }
   },
 );
+interface RenameCloudflareAccessConfigArgs {
+  readonly owner: Actor;
+  readonly configId: string;
+  readonly body: Pick<
+    UpdateCloudflareAccessRequest,
+    "name" | "expectedRevision"
+  >;
+}
+const renameCloudflareAccessConfig$ = command(
+  async ({ set }, args: RenameCloudflareAccessConfigArgs) => {
+    const db = set(writeDb$);
+    const result = await db.transaction(async (tx) => {
+      // Metadata-only: never follow configuration authority with a host lock or
+      // write. The owner-filtered response below is a nonlocking MVCC read.
+      const [config] = await tx
+        .select(metadata)
+        .from(cloudflareAccessConfigs)
+        .where(visibleConfig(args.owner, args.configId))
+        .for("update");
+      if (!config) {
+        return cloudflareAccessFailure("notFound");
+      }
+      const denied = managementFailure(config, args.owner);
+      if (denied) {
+        return denied;
+      }
+      if (config.revision !== args.body.expectedRevision) {
+        return cloudflareAccessFailure("conflict");
+      }
+      if (config.revision === 2_147_483_647) {
+        return cloudflareAccessFailure("exhausted");
+      }
+      const [updated] = await tx
+        .update(cloudflareAccessConfigs)
+        .set({
+          name: args.body.name,
+          revision: config.revision + 1,
+          updatedAt: nowDate(),
+        })
+        .where(visibleConfig(args.owner, args.configId))
+        .returning(metadata);
+      if (!updated) {
+        throw new Error("Cloudflare Access rename returned no row");
+      }
+      const hosts = await tx
+        .select({
+          id: sshConnections.id,
+          displayName: sshConnections.displayName,
+        })
+        .from(sshConnections)
+        .where(
+          and(
+            referencingHosts(args.owner, args.configId),
+            eq(sshConnections.userId, args.owner.userId),
+          ),
+        )
+        .orderBy(asc(sshConnections.id));
+      return {
+        ok: true as const,
+        value: response(updated, hosts),
+        scope: config.scope,
+      };
+    });
+    if (result.ok) {
+      await publishCloudflareAccessClientInvalidation(args.owner, result.scope);
+    }
+    return result;
+  },
+);
 interface UpdateCloudflareAccessConfigArgs {
   readonly owner: Actor;
   readonly configId: string;
@@ -345,6 +418,13 @@ interface UpdateCloudflareAccessConfigArgs {
 }
 export const updateCloudflareAccessConfig$ = command(
   async ({ set }, args: UpdateCloudflareAccessConfigArgs) => {
+    if (args.body.credentials === undefined) {
+      return await set(renameCloudflareAccessConfig$, {
+        owner: args.owner,
+        configId: args.configId,
+        body: args.body,
+      });
+    }
     const db = set(writeDb$);
 
     const [current] = await db
@@ -361,17 +441,17 @@ export const updateCloudflareAccessConfig$ = command(
     if (current.revision !== args.body.expectedRevision) {
       return cloudflareAccessFailure("conflict");
     }
-    const encrypted =
-      args.body.credentials === undefined
-        ? undefined
-        : await encryptCredentials(args.body.credentials, args.featureContext);
+    const encrypted = await encryptCredentials(
+      args.body.credentials,
+      args.featureContext,
+    );
     // Only an explicitly unwritten reference-set expansion can start a second
     // transaction. Exceptions and successful/ambiguous effects are never replayed.
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const result = await db.transaction(async (tx) => {
-        const lockedHosts = await tx
+        const hosts = await tx
           .select()
-          .from(referencingHostsQuery(args.owner, args.configId, true));
+          .from(referencingHostsQuery(args.owner, args.configId));
         const [config] = await tx
           .select(metadata)
           .from(cloudflareAccessConfigs)
@@ -384,23 +464,22 @@ export const updateCloudflareAccessConfig$ = command(
         if (denied) {
           return denied;
         }
-        const hosts = await tx
-          .select()
-          .from(referencingHostsQuery(args.owner, args.configId, false));
-        if (referenceSetExpanded(lockedHosts, hosts)) {
+        const [references] = await tx
+          .select({ count: count() })
+          .from(sshConnections)
+          .where(referencingHosts(args.owner, args.configId));
+        if (referenceSetExpanded(hosts.length, references)) {
           return null;
         }
         if (config.revision !== args.body.expectedRevision) {
           return cloudflareAccessFailure("conflict");
         }
-        const effective = encrypted !== undefined;
         if (
           config.revision === 2_147_483_647 ||
-          (effective &&
-            (config.generation === 2_147_483_647 ||
-              hosts.some((host) => {
-                return host.generation === 2_147_483_647;
-              })))
+          config.generation === 2_147_483_647 ||
+          hosts.some((host) => {
+            return host.generation === 2_147_483_647;
+          })
         ) {
           return cloudflareAccessFailure("exhausted");
         }
@@ -410,7 +489,7 @@ export const updateCloudflareAccessConfig$ = command(
             name: args.body.name,
             ...encrypted,
             revision: config.revision + 1,
-            generation: config.generation + (effective ? 1 : 0),
+            generation: config.generation + 1,
             updatedAt: nowDate(),
           })
           .where(visibleConfig(args.owner, args.configId))
@@ -418,7 +497,7 @@ export const updateCloudflareAccessConfig$ = command(
         if (!updated) {
           throw new Error("Cloudflare Access update returned no row");
         }
-        if (effective && hosts.length > 0) {
+        if (hosts.length > 0) {
           await tx
             .update(sshConnections)
             .set({
@@ -447,7 +526,7 @@ export const updateCloudflareAccessConfig$ = command(
                 return { id, displayName };
               }),
           ),
-          affectedHosts: effective ? hosts : [],
+          affectedHosts: hosts,
           scope: config.scope,
         };
       });
@@ -477,9 +556,9 @@ export const deleteCloudflareAccessConfig$ = command(
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const result = await db.transaction(async (tx) => {
-        const lockedHosts = await tx
+        const hosts = await tx
           .select()
-          .from(referencingHostsQuery(args.owner, args.configId, true));
+          .from(referencingHostsQuery(args.owner, args.configId));
         const [config] = await tx
           .select(metadata)
           .from(cloudflareAccessConfigs)
@@ -492,10 +571,11 @@ export const deleteCloudflareAccessConfig$ = command(
         if (denied) {
           return denied;
         }
-        const hosts = await tx
-          .select()
-          .from(referencingHostsQuery(args.owner, args.configId, false));
-        if (referenceSetExpanded(lockedHosts, hosts)) {
+        const [references] = await tx
+          .select({ count: count() })
+          .from(sshConnections)
+          .where(referencingHosts(args.owner, args.configId));
+        if (referenceSetExpanded(hosts.length, references)) {
           return null;
         }
         if (config.revision !== args.body.expectedRevision) {
@@ -652,9 +732,9 @@ export const convertCloudflareAccessToOrganization$ = command(
     }
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const result = await db.transaction(async (tx) => {
-        const lockedHosts = await tx
+        const hosts = await tx
           .select()
-          .from(referencingHostsQuery(args.owner, args.configId, true));
+          .from(referencingHostsQuery(args.owner, args.configId));
         const [config] = await tx
           .select(metadata)
           .from(cloudflareAccessConfigs)
@@ -663,10 +743,11 @@ export const convertCloudflareAccessToOrganization$ = command(
         if (!config) {
           return cloudflareAccessFailure("notFound");
         }
-        const hosts = await tx
-          .select()
-          .from(referencingHostsQuery(args.owner, args.configId, false));
-        if (referenceSetExpanded(lockedHosts, hosts)) {
+        const [references] = await tx
+          .select({ count: count() })
+          .from(sshConnections)
+          .where(referencingHosts(args.owner, args.configId));
+        if (referenceSetExpanded(hosts.length, references)) {
           return null;
         }
         if (config.revision !== args.expectedRevision) {
@@ -681,20 +762,13 @@ export const convertCloudflareAccessToOrganization$ = command(
         ) {
           return cloudflareAccessFailure("exhausted");
         }
-        // Reject retained incompatible bindings before changing scope. Selected
-        // admission holds SHARE; the config fence now closes the reference set.
-        const [incompatible] = await tx
-          .select({ id: sshConnections.id })
-          .from(sshConnections)
-          .where(
-            and(
-              eq(sshConnections.cloudflareAccessId, args.configId),
-              eq(sshConnections.orgId, args.owner.orgId),
-              ne(sshConnections.userId, args.owner.userId),
-            ),
-          )
-          .limit(1);
-        if (incompatible) {
+        // The count fence proved these locked records are the complete set.
+        // Reject retained incompatible bindings before changing scope.
+        if (
+          hosts.some((host) => {
+            return host.userId !== args.owner.userId;
+          })
+        ) {
           return cloudflareAccessFailure("inUse");
         }
         const [converted] = await tx
@@ -829,9 +903,9 @@ export const convertCloudflareAccessToPersonal$ = command(
     }
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const result = await db.transaction(async (tx) => {
-        const lockedHosts = await tx
+        const hosts = await tx
           .select()
-          .from(referencingHostsQuery(args.owner, args.configId, true));
+          .from(referencingHostsQuery(args.owner, args.configId));
         const [config] = await tx
           .select(metadata)
           .from(cloudflareAccessConfigs)
@@ -840,10 +914,11 @@ export const convertCloudflareAccessToPersonal$ = command(
         if (!config) {
           return cloudflareAccessFailure("notFound");
         }
-        const hosts = await tx
-          .select()
-          .from(referencingHostsQuery(args.owner, args.configId, false));
-        if (referenceSetExpanded(lockedHosts, hosts)) {
+        const [references] = await tx
+          .select({ count: count() })
+          .from(sshConnections)
+          .where(referencingHosts(args.owner, args.configId));
+        if (referenceSetExpanded(hosts.length, references)) {
           return null;
         }
         if (config.revision !== args.body.expectedRevision) {

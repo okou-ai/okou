@@ -87,40 +87,53 @@ impl InstructionFilename {
     }
 }
 
-pub(crate) fn normalize_instruction_files(entries: &[InstructionNormalization]) {
+pub(crate) fn normalize_instruction_files(entries: &[InstructionNormalization]) -> bool {
     for entry in entries {
         let raw_target_filename = entry.target_filename.as_str();
         let Some(target_filename) = InstructionFilename::parse(raw_target_filename) else {
             log_warn!(LOG_TAG, "Skipping invalid instructions target filename");
             cleanup_staged_instruction_source(entry);
-            continue;
+            return false;
         };
 
-        if entry.source_path == entry.final_mount_path {
+        let success = if entry.source_path == entry.final_mount_path {
             normalize_instruction_files_in_place(
                 Path::new(&entry.final_mount_path),
                 target_filename,
-            );
+            )
         } else {
-            promote_staged_instruction_file(entry, target_filename);
-            cleanup_staged_instruction_source(entry);
+            promote_staged_instruction_file(entry, target_filename)
+        };
+        cleanup_staged_instruction_source(entry);
+        if !success {
+            return false;
         }
     }
+    true
 }
 
-pub(crate) fn cleanup_instruction_files(entries: &[InstructionCleanup]) {
+pub(crate) fn cleanup_instruction_files(entries: &[InstructionCleanup]) -> bool {
     for entry in entries {
         let Some(filenames) = cleanup_filenames(entry) else {
-            continue;
+            return false;
         };
         let mount_path = Path::new(&entry.mount_path);
-        if !existing_instruction_dir_is_safe(mount_path) {
+        if matches!(
+            lstat_instruction_path_state(mount_path),
+            InstructionPathState::Missing
+        ) {
             continue;
         }
+        if !existing_instruction_dir_is_safe(mount_path) {
+            return false;
+        }
         for filename in filenames {
-            remove_instruction_file_if_safe(&mount_path.join(filename.as_str()));
+            if !remove_instruction_file_if_safe(&mount_path.join(filename.as_str())) {
+                return false;
+            }
         }
     }
+    true
 }
 
 pub(crate) fn cleanup_staged_instruction_sources(entries: &[InstructionNormalization]) {
@@ -145,12 +158,17 @@ fn cleanup_filenames(entry: &InstructionCleanup) -> Option<Vec<InstructionFilena
     }
 }
 
-fn normalize_instruction_files_in_place(mount_path: &Path, target_filename: InstructionFilename) {
+fn normalize_instruction_files_in_place(
+    mount_path: &Path,
+    target_filename: InstructionFilename,
+) -> bool {
+    if !existing_instruction_dir_is_safe(mount_path) {
+        return false;
+    }
     let target_path = mount_path.join(target_filename.as_str());
     match lstat_instruction_path_state(&target_path) {
         InstructionPathState::RegularFile => {
-            remove_alternate_instruction_files(mount_path, target_filename);
-            return;
+            return remove_alternate_instruction_files(mount_path, target_filename);
         }
         InstructionPathState::Missing => {}
         InstructionPathState::Directory
@@ -160,17 +178,17 @@ fn normalize_instruction_files_in_place(mount_path: &Path, target_filename: Inst
                 LOG_TAG,
                 "Skipping instructions normalization because target is not a regular file"
             );
-            return;
+            return false;
         }
         InstructionPathState::MetadataError(e) => {
             log_warn!(LOG_TAG, "Failed to inspect instructions target: {}", e);
-            return;
+            return false;
         }
     }
 
     let Some(source_path) = alternate_instruction_source(mount_path, target_filename) else {
         log_warn!(LOG_TAG, "No instructions file found to normalize");
-        return;
+        return false;
     };
 
     copy_instruction_file(
@@ -178,7 +196,7 @@ fn normalize_instruction_files_in_place(mount_path: &Path, target_filename: Inst
         mount_path,
         target_filename,
         "Normalized instructions file",
-    );
+    )
 }
 
 fn promote_staged_instruction_file(
@@ -328,12 +346,7 @@ fn copy_instruction_file_with(
     match copy_instruction_file_atomically(source_path, &target_path, copy) {
         Ok(()) => {
             log_info!(LOG_TAG, "{}", success_message);
-            remove_alternates_after_successful_copy(
-                final_mount_path,
-                target_filename,
-                &target_path,
-            );
-            true
+            remove_alternates_after_successful_copy(final_mount_path, target_filename, &target_path)
         }
         Err(e) => {
             log_warn!(LOG_TAG, "Failed to copy instructions file: {}", e);
@@ -455,10 +468,10 @@ fn remove_alternates_after_successful_copy(
     mount_path: &Path,
     target_filename: InstructionFilename,
     target_path: &Path,
-) {
+) -> bool {
     match lstat_instruction_path_state(target_path) {
         InstructionPathState::RegularFile => {
-            remove_alternate_instruction_files(mount_path, target_filename);
+            return remove_alternate_instruction_files(mount_path, target_filename);
         }
         InstructionPathState::Directory => log_warn!(
             LOG_TAG,
@@ -478,9 +491,13 @@ fn remove_alternates_after_successful_copy(
             e
         ),
     }
+    false
 }
 
-fn remove_alternate_instruction_files(mount_path: &Path, target_filename: InstructionFilename) {
+fn remove_alternate_instruction_files(
+    mount_path: &Path,
+    target_filename: InstructionFilename,
+) -> bool {
     for candidate in InstructionFilename::ALL {
         if candidate == target_filename {
             continue;
@@ -489,43 +506,61 @@ fn remove_alternate_instruction_files(mount_path: &Path, target_filename: Instru
         let path = mount_path.join(candidate.as_str());
         match lstat_instruction_path_state(&path) {
             InstructionPathState::Missing => continue,
-            InstructionPathState::Directory => continue,
+            InstructionPathState::Directory | InstructionPathState::OtherNonRegular => {
+                log_warn!(
+                    LOG_TAG,
+                    "Non-runtime instructions path is not a regular file"
+                );
+                return false;
+            }
             InstructionPathState::RegularFile | InstructionPathState::Symlink => {}
-            InstructionPathState::OtherNonRegular => continue,
             InstructionPathState::MetadataError(e) => {
                 log_warn!(
                     LOG_TAG,
                     "Failed to inspect non-runtime instructions file: {}",
                     e
                 );
-                continue;
+                return false;
             }
         }
 
         match fs::remove_file(&path) {
             Ok(_) => log_info!(LOG_TAG, "Removed non-runtime instructions file"),
-            Err(e) => log_warn!(
-                LOG_TAG,
-                "Failed to remove non-runtime instructions file: {}",
-                e
-            ),
-        }
-    }
-}
-
-fn remove_instruction_file_if_safe(path: &Path) {
-    match lstat_instruction_path_state(path) {
-        InstructionPathState::Missing => {}
-        InstructionPathState::Directory => {}
-        InstructionPathState::RegularFile | InstructionPathState::Symlink => {
-            match fs::remove_file(path) {
-                Ok(_) => log_info!(LOG_TAG, "Removed stale instructions file"),
-                Err(e) => log_warn!(LOG_TAG, "Failed to remove stale instructions file: {}", e),
+            Err(e) => {
+                log_warn!(
+                    LOG_TAG,
+                    "Failed to remove non-runtime instructions file: {}",
+                    e
+                );
+                return false;
             }
         }
-        InstructionPathState::OtherNonRegular => {}
+    }
+    true
+}
+
+fn remove_instruction_file_if_safe(path: &Path) -> bool {
+    match lstat_instruction_path_state(path) {
+        InstructionPathState::Missing => true,
+        InstructionPathState::Directory | InstructionPathState::OtherNonRegular => {
+            log_warn!(LOG_TAG, "Stale instructions path is not a regular file");
+            false
+        }
+        InstructionPathState::RegularFile | InstructionPathState::Symlink => {
+            match fs::remove_file(path) {
+                Ok(_) => {
+                    log_info!(LOG_TAG, "Removed stale instructions file");
+                    true
+                }
+                Err(e) => {
+                    log_warn!(LOG_TAG, "Failed to remove stale instructions file: {}", e);
+                    false
+                }
+            }
+        }
         InstructionPathState::MetadataError(e) => {
-            log_warn!(LOG_TAG, "Failed to inspect stale instructions file: {}", e)
+            log_warn!(LOG_TAG, "Failed to inspect stale instructions file: {}", e);
+            false
         }
     }
 }
@@ -1042,7 +1077,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mount = dir.path().join(".codex");
         fs::create_dir_all(mount.join("skills").join("workflow")).unwrap();
-        fs::create_dir_all(mount.join("CLAUDE.md")).unwrap();
+        fs::write(mount.join("CLAUDE.md"), "old").unwrap();
         fs::write(mount.join("AGENTS.md"), "old").unwrap();
         fs::write(mount.join("settings.json"), "{}").unwrap();
         fs::write(
@@ -1051,13 +1086,13 @@ mod tests {
         )
         .unwrap();
 
-        cleanup_instruction_files(&[InstructionCleanup::new(
+        assert!(cleanup_instruction_files(&[InstructionCleanup::new(
             mount.to_string_lossy().into(),
             None,
-        )]);
+        )]));
 
         assert!(!mount.join("AGENTS.md").exists());
-        assert!(mount.join("CLAUDE.md").is_dir());
+        assert!(!mount.join("CLAUDE.md").exists());
         assert_eq!(
             fs::read_to_string(mount.join("settings.json")).unwrap(),
             "{}"

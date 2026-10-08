@@ -4,13 +4,15 @@ import { useGet, useLoadable, useLastResolved, useSet } from "ccstate-react";
 import { ArrowUpRight, MessageCircle, Search } from "lucide-react";
 import {
   surfaceVariants,
-  Card,
+  cardClassName,
   CardContent,
+  cn,
   Input,
   Toggle,
   ToggleGroup,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
+import { Link } from "../router/link.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { getCategories } from "./ideation-data.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -104,18 +106,6 @@ export function IdeationPage() {
           .filter((c) => {
             return c.cases.length > 0;
           });
-
-  const handleSelectPrompt = (prompt: string) => {
-    const searchParams = new URLSearchParams({ prompt });
-    if (agentId) {
-      navigate("/agents/:agentId/chat", {
-        pathParams: { agentId: agentId },
-        searchParams,
-      });
-    } else {
-      navigate("/", { searchParams });
-    }
-  };
 
   const handleBack = () => {
     navigateToChat();
@@ -243,12 +233,19 @@ export function IdeationPage() {
                                 : [];
                             }) ?? [];
                           return (
-                            <Card
+                            <Link
                               key={useCase.title}
-                              className={surfaceVariants({ interactive: true })}
-                              onClick={() => {
-                                return handleSelectPrompt(useCase.prompt);
+                              pathname={agentId ? "/agents/:agentId/chat" : "/"}
+                              options={{
+                                pathParams: agentId ? { agentId } : undefined,
+                                searchParams: new URLSearchParams({
+                                  prompt: useCase.prompt,
+                                }),
                               }}
+                              className={cn(
+                                cardClassName,
+                                surfaceVariants({ interactive: true }),
+                              )}
                             >
                               <CardContent className="p-4 group relative">
                                 <ArrowUpRight
@@ -279,7 +276,7 @@ export function IdeationPage() {
                                   </div>
                                 )}
                               </CardContent>
-                            </Card>
+                            </Link>
                           );
                         })}
                       </div>

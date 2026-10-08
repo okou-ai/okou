@@ -27,7 +27,7 @@ fn cleanup_manifest(
 }
 
 #[test]
-fn selective_cleanup_skips_symlinked_root_and_continues() {
+fn selective_cleanup_rejects_symlinked_root_and_stops() {
     let dir = tempfile::tempdir().unwrap();
     let cleanup_root = dir.path().join("cleanup");
     let later_cleanup = dir.path().join("later-cleanup-path");
@@ -46,7 +46,7 @@ fn selective_cleanup_skips_symlinked_root_and_continues() {
     let manifest = cleanup_manifest(&[&cleanup_root, &later_cleanup], Some(&preserved)).unwrap();
     let success = run_guest_storage_apply_manifest_json(&manifest);
 
-    assert!(success);
+    assert!(!success);
     assert!(
         fs::symlink_metadata(&cleanup_root)
             .unwrap()
@@ -65,11 +65,14 @@ fn selective_cleanup_skips_symlinked_root_and_continues() {
         fs::read_to_string(target.join("unrelated.txt")).unwrap(),
         "unrelated"
     );
-    assert!(!later_cleanup.exists());
+    assert_eq!(
+        fs::read(later_cleanup.join("stale.txt")).unwrap(),
+        b"remove"
+    );
 }
 
 #[test]
-fn whole_root_cleanup_skips_symlinked_intermediate_component() {
+fn whole_root_cleanup_rejects_symlinked_intermediate_component() {
     let dir = tempfile::tempdir().unwrap();
     let parent = dir.path().join("parent");
     let target = dir.path().join("target");
@@ -85,7 +88,7 @@ fn whole_root_cleanup_skips_symlinked_intermediate_component() {
     let manifest = cleanup_manifest(&[&cleanup_path], None).unwrap();
     let success = run_guest_storage_apply_manifest_json(&manifest);
 
-    assert!(success);
+    assert!(!success);
     assert!(
         fs::symlink_metadata(&alias)
             .unwrap()
@@ -227,7 +230,7 @@ fn cleanup_normalization_does_not_bypass_intermediate_symlink() {
     let manifest = cleanup_manifest(&[&cleanup_path], None).unwrap();
     let success = run_guest_storage_apply_manifest_json(&manifest);
 
-    assert!(success);
+    assert!(!success);
     assert_eq!(
         fs::read_to_string(cache.join("content.txt")).unwrap(),
         "keep"
