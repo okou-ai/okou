@@ -14,8 +14,6 @@ pr_number=${PR_NUMBER:?PR_NUMBER is required}
 run_id=${GITHUB_RUN_ID:?GITHUB_RUN_ID is required}
 owner=${repository%%/*}
 name=${repository#*/}
-limit=40
-author_limit=20
 retry_command="gh run rerun ${run_id} --repo ${repository}"
 count_query="query { repository(owner: \"${owner}\", name: \"${name}\") { pullRequests(states: OPEN) { totalCount } } }"
 count_command="gh api graphql -f query='${count_query}' --jq '.data.repository.pullRequests.totalCount'"
@@ -72,24 +70,43 @@ open_pr_count=$(jq -r '.[0].data.repository.pullRequests.totalCount' <<<"$respon
 author=$(jq -r '.[0].data.repository.pullRequest.author.login' <<<"$response")
 author_pr_count=$(jq --arg author "$author" '[.[].data.repository.pullRequests.nodes[] | select(.author.login == $author)] | length' <<<"$response")
 in_merge_queue=$(jq -r '.[0].data.repository.pullRequest.mergeQueueEntry != null' <<<"$response")
+if [[ "$in_merge_queue" == true ]]; then
+  echo "Open PRs: ${open_pr_count}; author ${author}: ${author_pr_count} open PRs; PR #${pr_number} in merge queue: true. Admission limits do not apply to queued PRs."
+  exit 0
+fi
+
+# GitHub's PR counts are GraphQL Int values. Validate configuration before Bash
+# arithmetic so missing, malformed, or overflowing values cannot grant admission.
+for variable in CI_MAX_OPEN_PRS CI_MAX_OPEN_PRS_PER_AUTHOR; do
+  value=${!variable:-}
+  if [[ ! "$value" =~ ^(0|[1-9][0-9]{0,9})$ ]] || ((value > 2147483647)); then
+    message="CI_ADMISSION_CONFIG_INVALID: ${variable} must be an integer from 0 to 2147483647. Configure the repository Actions variables at https://github.com/${repository}/settings/variables/actions."
+    printf '::error title=CI admission configuration invalid::%s\n' "$message"
+    if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+      printf '### CI admission configuration invalid\n\n%s\n' "$message" >>"$GITHUB_STEP_SUMMARY"
+    fi
+    exit 1
+  fi
+done
+limit=$CI_MAX_OPEN_PRS
+author_limit=$CI_MAX_OPEN_PRS_PER_AUTHOR
+
 author_count_command="gh api --paginate --slurp 'repos/${repository}/pulls?state=open&per_page=100' | jq 'add | map(select(.user.login == \"${author}\")) | length'"
 echo "Open PRs: ${open_pr_count}; limit: ${limit}; author ${author}: ${author_pr_count} open PRs; author limit: ${author_limit}; PR #${pr_number} in merge queue: ${in_merge_queue}"
 
 reasons=()
-if [[ "$in_merge_queue" == false ]]; then
-  if ((open_pr_count > limit)); then
-    reasons+=("CI_CAPACITY_LIMIT: ${repository} has ${open_pr_count} open PRs (limit: ${limit}).")
-  fi
-  if ((author_pr_count > author_limit)); then
-    reasons+=("CI_AUTHOR_PR_LIMIT: Author ${author} has ${author_pr_count} open PRs in ${repository} (limit: ${author_limit}).")
-  fi
+if ((open_pr_count > limit)); then
+  reasons+=("CI_CAPACITY_LIMIT: ${repository} has ${open_pr_count} open PRs (limit: ${limit}).")
+fi
+if ((author_pr_count > author_limit)); then
+  reasons+=("CI_AUTHOR_PR_LIMIT: Author ${author} has ${author_pr_count} open PRs in ${repository} (limit: ${author_limit}).")
 fi
 
 if ((${#reasons[@]} > 0)); then
   printf '::error title=PR CI admission limit::%s\n' "${reasons[@]}"
   echo "PR #${pr_number} is not in the merge queue. CI stopped before preview deployment to enforce PR concurrency limits and reserve Neon branch capacity for queued PRs."
   echo "This is a temporary admission limit, not a code or test failure. The PR cannot enter the merge queue until its required CI passes."
-  echo "PR owners and agents: check both counts later. Retry once the repository has fewer than 40 open PRs and this author has at most 20 open PRs. Do not repeatedly retry while either limit is exceeded."
+  echo "PR owners and agents: check both counts later. Retry once the repository has fewer than ${limit} open PRs and this author has at most ${author_limit} open PRs. Do not repeatedly retry while either limit is exceeded."
   printf 'Check repository open PRs:\n%s\nCheck author open PRs:\n%s\nRe-run the entire workflow after both limits recover:\n%s\n' \
     "$count_command" "$author_count_command" "$retry_command"
 
@@ -102,7 +119,7 @@ if ((${#reasons[@]} > 0)); then
       printf '%s\n\n' \
         'CI stopped before preview deployment to enforce PR concurrency limits and reserve Neon branch capacity for queued PRs.' \
         'This is a temporary admission limit, not a code or test failure. Required CI must pass before this PR can enter the merge queue.' \
-        'PR owners and agents: check both counts later. Once the repository has fewer than 40 open PRs and this author has at most 20 open PRs, re-run the entire workflow. Do not repeatedly retry while either limit is exceeded.'
+        "PR owners and agents: check both counts later. Once the repository has fewer than ${limit} open PRs and this author has at most ${author_limit} open PRs, re-run the entire workflow. Do not repeatedly retry while either limit is exceeded."
       printf "Check repository open PRs (including draft and bot PRs):\n\n\`\`\`sh\n%s\n\`\`\`\n\n" "$count_command"
       printf "Check this author's open PRs in the same repository:\n\n\`\`\`sh\n%s\n\`\`\`\n\n" "$author_count_command"
       printf "Re-run this entire workflow after both limits recover:\n\n\`\`\`sh\n%s\n\`\`\`\n" "$retry_command"

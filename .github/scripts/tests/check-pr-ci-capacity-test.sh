@@ -58,6 +58,7 @@ response() {
 
 run_admission() {
   local event=${1:-pull_request} failures=${2:-0}
+  local limit=${3-40} author_limit=${4-20}
   printf '0\n' >"${test_root}/attempts"
   : >"${test_root}/summary.md"
   status=0
@@ -68,6 +69,8 @@ run_admission() {
       GITHUB_REPOSITORY=test/repo \
       PR_NUMBER=42 \
       GITHUB_RUN_ID=123 \
+      CI_MAX_OPEN_PRS="$limit" \
+      CI_MAX_OPEN_PRS_PER_AUTHOR="$author_limit" \
       GITHUB_STEP_SUMMARY="${test_root}/summary.md" \
       MOCK_ATTEMPTS="${test_root}/attempts" \
       MOCK_RESPONSE="${test_root}/response.json" \
@@ -125,6 +128,54 @@ response 39 null 20
 run_admission
 [[ "$status" == 0 ]] || fail "a retry after both limits recover should pass: $output"
 
+# Custom repository/author limits govern admission and the recovery instructions.
+response 50 null 50
+run_admission pull_request 0 50 50
+[[ "$status" == 0 ]] || fail "the initial 50/50 configuration should admit exactly 50 PRs: $output"
+response 51 null 51
+run_admission pull_request 0 50 50
+[[ "$status" == 1 ]] || fail "the initial 50/50 configuration should reject 51 PRs"
+assert_contains "$output" 'CI_CAPACITY_LIMIT'
+assert_contains "$output" 'CI_AUTHOR_PR_LIMIT'
+assert_contains "$summary" 'fewer than 50 open PRs'
+assert_contains "$summary" 'at most 50 open PRs'
+
+response 12 null 6
+run_admission pull_request 0 12 6
+[[ "$status" == 0 ]] || fail "configured limits should allow their exact boundaries: $output"
+response 13 null 7
+run_admission pull_request 0 12 6
+[[ "$status" == 1 ]] || fail "both configured limits should reject excess PRs"
+assert_contains "$output" '13 open PRs (limit: 12)'
+assert_contains "$output" '7 open PRs in test/repo (limit: 6)'
+assert_contains "$summary" 'fewer than 12 open PRs'
+assert_contains "$summary" 'at most 6 open PRs'
+response 11 null 6
+run_admission pull_request 0 12 6
+[[ "$status" == 0 ]] || fail "a retry below configured limits should recover: $output"
+
+# A zero limit explicitly pauses unqueued admission; invalid config fails closed.
+response 1
+run_admission pull_request 0 0 20
+[[ "$status" == 1 ]] || fail "zero repository capacity should pause unqueued PRs"
+assert_contains "$output" 'CI_CAPACITY_LIMIT'
+run_admission pull_request 0 40 0
+[[ "$status" == 1 ]] || fail "zero author capacity should pause unqueued PRs"
+assert_contains "$output" 'CI_AUTHOR_PR_LIMIT'
+for invalid in '' '-1' '1.5' '01' 'bad' '2147483648' '99999999999999999999' '1+1'; do
+  for variable in CI_MAX_OPEN_PRS CI_MAX_OPEN_PRS_PER_AUTHOR; do
+    if [[ "$variable" == CI_MAX_OPEN_PRS ]]; then
+      run_admission pull_request 0 "$invalid" 20
+    else
+      run_admission pull_request 0 40 "$invalid"
+    fi
+    [[ "$status" == 1 ]] || fail "invalid $variable should fail closed"
+    assert_contains "$output" 'CI_ADMISSION_CONFIG_INVALID'
+    assert_contains "$summary" "$variable must be an integer"
+    assert_contains "$summary" 'settings/variables/actions'
+  done
+done
+
 # Count every page and report both limits when both are exceeded.
 response 101 null 21
 jq '
@@ -146,10 +197,12 @@ response 60 '{"id":"queue-entry"}' 30
 run_admission
 [[ "$status" == 0 ]] || fail "queued PRs should be admitted: $output"
 assert_contains "$output" 'in merge queue: true'
+run_admission pull_request 0 '' ''
+[[ "$status" == 0 ]] || fail "queued PRs must proceed without admission configuration"
 
 # Merge groups and staging must proceed even when GitHub lookups fail.
 for event in merge_group push; do
-  run_admission "$event" 3
+  run_admission "$event" 3 '' ''
   [[ "$status" == 0 ]] || fail "$event should be admitted: $output"
   [[ "$(cat "${test_root}/attempts")" == 0 ]] || fail "$event should not query PR admission"
 done
