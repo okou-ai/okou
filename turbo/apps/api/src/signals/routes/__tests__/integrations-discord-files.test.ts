@@ -19,10 +19,8 @@ import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
 import { sanitizeArtifactFilename } from "../../../lib/file-url";
 import { server } from "../../../mocks/server";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settle } from "../../utils";
 import { createBddApi } from "./helpers/api-bdd";
@@ -46,11 +44,12 @@ import {
 } from "./helpers/discord-file-provider";
 import {
   configureDiscordApp,
-  deleteDiscordFixture,
+  removePublicDiscordBinding,
   mockDiscordMemberships,
-  seedDiscordFixture,
+  createPublicDiscordBinding,
 } from "./helpers/discord";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { claimPublicDiscordTestRun } from "./helpers/discord-run";
 import { artifactCatalogRoutes } from "../artifact-catalog";
 import { integrationsDiscordFileRoutes } from "../integrations-discord-files";
 
@@ -98,7 +97,7 @@ async function actorSession(options: Parameters<typeof bdd.user>[0] = {}) {
 
 interface BoundFixture extends DiscordFileProviderIdentity {
   readonly actor: Awaited<ReturnType<typeof actorSession>>;
-  readonly binding: Awaited<ReturnType<typeof seedDiscordFixture>>;
+  readonly binding: Awaited<ReturnType<typeof createPublicDiscordBinding>>;
   readonly connectionId: string;
   readonly headers: { readonly authorization: string };
 }
@@ -115,7 +114,11 @@ async function boundFixture(): Promise<BoundFixture> {
   mockEnv("DISCORD_APPLICATION_ID", identity.botUserId);
   mockDiscordMemberships(context, [actor]);
   mockDiscordFileProvider(identity);
-  const binding = await seedDiscordFixture(context, {
+  await updateFeatureSwitchesForUser(context, actor, {
+    [FeatureSwitchKey.DiscordIntegration]: true,
+  });
+  const binding = await createPublicDiscordBinding(context, {
+    flow: "install",
     userId: actor.userId,
     orgId: actor.orgId,
     orgRole: "org:admin",
@@ -126,10 +129,7 @@ async function boundFixture(): Promise<BoundFixture> {
   });
   onTestFinished(async () => {
     mockDiscordMemberships(context, [actor]);
-    await deleteDiscordFixture(context, binding);
-  });
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.DiscordIntegration]: true,
+    await removePublicDiscordBinding(context, binding);
   });
   return {
     ...identity,
@@ -287,16 +287,8 @@ describe("Discord file authorization and input validation", () => {
 
   it("requires native read or write capability for sandbox requests", async () => {
     const actor = await actorSession();
-    const seconds = Math.floor(now() / 1000);
-    const token = signSandboxJwtForTests({
-      scope: "sandbox",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      runId: randomUUID(),
-      iat: seconds,
-      exp: seconds + 60,
-    });
-    const headers = { authorization: `Bearer ${token}` };
+    const { claim } = await claimPublicDiscordTestRun(context, actor);
+    const headers = { authorization: `Bearer ${claim.sandboxToken}` };
     const client = fileClients();
     const upload = await accept(
       client.init({ headers, body: uploadBody() }),
@@ -1227,13 +1219,14 @@ describe("Canonical Discord file publication and delivery", () => {
     );
     expect(initial.body.delivery.status).toBe("delivered");
 
-    await deleteDiscordFixture(context, fixture.binding);
+    await removePublicDiscordBinding(context, fixture.binding);
     const revoked = await accept(
       client.complete({ headers: fixture.headers, body: upload.operation }),
       [404],
     );
     expect(revoked.body.error.code).toBe("NOT_FOUND");
-    const replacement = await seedDiscordFixture(context, {
+    const replacement = await createPublicDiscordBinding(context, {
+      flow: "install",
       userId: fixture.actor.userId,
       orgId: fixture.actor.orgId,
       orgRole: "org:admin",
@@ -1267,16 +1260,11 @@ describe("Canonical Discord file publication and delivery", () => {
       agentId: agent.agentId,
       prompt: "Create a report for Discord",
     });
-    const seconds = Math.floor(now() / 1000);
-    const token = signSandboxJwtForTests({
-      scope: "okou",
-      userId: fixture.actor.userId,
-      orgId: fixture.actor.orgId,
-      runId: sent.runId,
-      capabilities: ["discord:write"],
-      iat: seconds,
-      exp: seconds + 60,
-    });
+    const claim = await runs.claimRunnerJob(sent.runId);
+    const token = claim.platformEnvironment.OKOU_TOKEN;
+    if (!token) {
+      throw new Error("Expected the Runner claim to issue an Okou run token");
+    }
     const headers = { authorization: `Bearer ${token}` };
     const upload = await canonicalUpload({ ...fixture, headers });
     await accept(
@@ -1310,7 +1298,7 @@ describe("Canonical Discord file publication and delivery", () => {
     onTestFinished(async () => {
       await flushWaitUntilForTest();
       mockDiscordMemberships(context, [connected]);
-      await deleteDiscordFixture(context, connected.fixture);
+      await removePublicDiscordBinding(context, connected.fixture);
     });
     runs.acceptTelemetryIngest();
     const provider = mockDiscordProvider(connected);

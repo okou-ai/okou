@@ -12,7 +12,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
-import { deleteDiscordFixture } from "./helpers/discord";
+import { removePublicDiscordBinding } from "./helpers/discord";
 import {
   discordChatThreads,
   discordMessageForTest,
@@ -30,7 +30,7 @@ const webhooks = createWebhookCallbackApi(context);
 const trackDiscordFixture = createFixtureTracker(
   async (fixture: { actor: ConnectedDiscordActor; deleted: boolean }) => {
     if (!fixture.deleted) {
-      await deleteDiscordFixture(context, fixture.actor.fixture);
+      await removePublicDiscordBinding(context, fixture.actor.fixture);
     }
   },
 );
@@ -327,7 +327,7 @@ describe("canonical Discord terminal replies", () => {
       const started = await startDiscordRun();
       const claim = await claimRun(started.actor, started.runId);
       if (revocation === "binding") {
-        await deleteDiscordFixture(context, started.actor.fixture);
+        await removePublicDiscordBinding(context, started.actor.fixture);
         started.fixture.deleted = true;
       } else {
         started.provider.deniedChannels.add(started.channelId);
@@ -459,7 +459,7 @@ describe("canonical Discord terminal replies", () => {
           "Use the confidential follow-up details.",
         );
       }
-      await deleteDiscordFixture(context, started.actor.fixture);
+      await removePublicDiscordBinding(context, started.actor.fixture);
       started.fixture.deleted = true;
       await expect(
         runs.nextSteerableInput(claim.sandboxToken, started.runId),
@@ -798,7 +798,7 @@ describe("Discord processing status", () => {
         return undefined;
       };
       if (revocation === "binding") {
-        await deleteDiscordFixture(context, started.actor.fixture);
+        await removePublicDiscordBinding(context, started.actor.fixture);
         started.fixture.deleted = true;
       } else {
         started.provider.deniedMembers.add(started.actor.discordUserId);

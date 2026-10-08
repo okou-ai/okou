@@ -76,7 +76,7 @@ export function mockDiscordMemberships(
 }
 
 /** IDs configure Discord's external responses, never proof sent to Okou. */
-export async function createPublicDiscordBinding(
+export function createPublicDiscordBinding(
   context: TestContext,
   args: DiscordActor & {
     readonly flow: "install" | "connect";
@@ -194,7 +194,7 @@ export async function createPublicDiscordBinding(
       },
     ),
   );
-  try {
+  async function completeBinding(): Promise<DiscordFixture> {
     const oauth = setupApp({ context, routes: discordOauthRoutes })(
       discordOauthContract,
     );
@@ -212,9 +212,14 @@ export async function createPublicDiscordBinding(
       throw new Error("Discord OAuth start did not issue state");
     }
     const cookie = started.headers.get("set-cookie")?.split(";")[0];
-    await accept(
+    if (!cookie) {
+      throw new Error(
+        "Discord OAuth start did not correlate the starting browser",
+      );
+    }
+    const completed = await accept(
       oauth.callback({
-        headers: cookie ? { cookie } : {},
+        extraHeaders: { cookie },
         query: {
           code,
           state,
@@ -223,6 +228,14 @@ export async function createPublicDiscordBinding(
       }),
       [307],
     );
+    const location = completed.headers.get("location");
+    if (
+      !location ||
+      new URL(location).searchParams.get("discord") !==
+        (args.flow === "install" ? "installed" : "connected")
+    ) {
+      throw new Error(`Discord OAuth callback did not complete: ${location}`);
+    }
     const status = await accept(
       setupApp({ context, routes: integrationsDiscordRoutes })(
         integrationsDiscordContract,
@@ -237,16 +250,25 @@ export async function createPublicDiscordBinding(
     if (
       !status.body.isConnected ||
       status.body.discordUserId !== identity.discordUserId ||
+      status.body.guildId !== identity.guildId ||
+      status.body.guildName === null ||
       !connection
     ) {
       throw new Error(
         `Discord OAuth did not expose the connected binding: ${JSON.stringify(status.body)}`,
       );
     }
-    return { ...identity, connectionId: connection.connectionId };
-  } finally {
-    active = false;
+    return {
+      ...identity,
+      guildId: status.body.guildId,
+      guildName: status.body.guildName,
+      discordUserId: status.body.discordUserId,
+      connectionId: connection.connectionId,
+    };
   }
+  return completeBinding().finally(() => {
+    active = false;
+  });
 }
 
 /** Disconnect as the actual member; only the installer may uninstall. */
