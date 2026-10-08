@@ -113,7 +113,7 @@ are enforced by the integration ingress tests.
 ### Active transition validators
 
 - `scripts/test-usage-allowance-retirement.ts` protects migration
-  `1346_drop_organization_usage_allowance`: positive team Allowance rows are
+  `1347_drop_organization_usage_allowance`: positive team Allowance rows are
   discarded while ordinary usage quantities, original credit charges and wallets
   remain unchanged; lock timeout and journal failures roll back all DDL/data,
   new credit-only hourly writes work, and a completed retry is a no-op. The owner

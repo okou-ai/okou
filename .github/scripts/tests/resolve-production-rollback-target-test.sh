@@ -127,7 +127,7 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_PI_STABLE_CONTEXT_COMMIT-3838383838383838383838383838383838383838}"
     elif [[ "$*" == *1345_outstanding_the_hood.sql* ]]; then
       printf '%s\n' "${MOCK_PI_DEBUG_TRACE_COMMIT-3939393939393939393939393939393939393939}"
-    elif [[ "$*" == *1346_drop_organization_usage_allowance.sql* ]]; then
+    elif [[ "$*" == *1347_drop_organization_usage_allowance.sql* ]]; then
       printf '%s\n' "${MOCK_USAGE_ALLOWANCE_COMMIT-4040404040404040404040404040404040404040}"
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
@@ -263,7 +263,7 @@ grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/m
 grep -Fxq "git merge-base --is-ancestor 3737373737373737373737373737373737373737 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the model route state floor"
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1343_retire_pi_stable_context.sql" "${tmp_dir}/boundaries.log" || fail "Pi stable-context retirement floor must resolve the canonical main migration"
 grep -Fxq "git merge-base --is-ancestor 3838383838383838383838383838383838383838 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Pi stable-context retirement floor"
-grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1346_drop_organization_usage_allowance.sql" "${tmp_dir}/boundaries.log" || fail "Usage Allowance floor must resolve the canonical main migration"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1347_drop_organization_usage_allowance.sql" "${tmp_dir}/boundaries.log" || fail "Usage Allowance floor must resolve the canonical main migration"
 grep -Fxq "git merge-base --is-ancestor 4040404040404040404040404040404040404040 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Usage Allowance retirement floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"

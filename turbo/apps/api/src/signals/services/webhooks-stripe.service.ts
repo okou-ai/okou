@@ -84,7 +84,6 @@ import {
   upsertOrgPlanEntitlement,
   writeOrgMetadataWithPlanEntitlements,
 } from "./org-plan-entitlements.service";
-import type { Tx } from "../../lib/db-types";
 import {
   handleUsagePackCheckoutCompleted$,
   handleUsagePackInvoicePaid$,
@@ -117,7 +116,6 @@ const L = logger("WebhookStripe");
 type BillingDowngradeCheckoutTargetTier = "limited-free-1" | "pro";
 const CANCELED_SUBSCRIPTION_TARGET_TIER = "limited-free-1";
 
-type WriteTx = Tx;
 type ClerkClient = ReturnType<typeof clerk$.read>;
 type ClerkClientProvider = () => ClerkClient;
 
@@ -1335,24 +1333,6 @@ function rejectAtomGrantTierReplacement(args: {
   });
 }
 
-async function insertStripeCustomerOrgMetadata(
-  tx: WriteTx,
-  args: { readonly orgId: string; readonly customerId?: string | null },
-): Promise<boolean> {
-  const rows = await tx
-    .insert(orgMetadataCanonicalWrites)
-    .values({
-      orgId: args.orgId,
-      ...(args.customerId ? { stripeCustomerId: args.customerId } : {}),
-    })
-    .onConflictDoNothing({ target: orgMetadataCanonicalWrites.orgId })
-    .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
-  for (const row of rows) {
-    await ensureOrgMetadataPlanEntitlement(tx, row);
-  }
-  return rows.length > 0;
-}
-
 function atomPlanInvoiceDisposition(args: {
   readonly invoice: InvoiceInput;
   readonly details: AtomPlanGrantInvoiceDetails;
@@ -2313,62 +2293,6 @@ async function clerkOrganizationExists(
   throw result.error;
 }
 
-async function bindStripeCustomerToOrgMetadata(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly customerId: string;
-  },
-): Promise<boolean> {
-  const rows = await db
-    .update(orgMetadata)
-    .set({ stripeCustomerId: args.customerId, updatedAt: nowDate() })
-    .where(
-      and(
-        eq(orgMetadata.orgId, args.orgId),
-        isNull(orgMetadata.stripeCustomerId),
-      ),
-    )
-    .returning({ orgId: orgMetadata.orgId });
-
-  return rows.length > 0;
-}
-
-async function insertStripeCustomerForClerkOrg(
-  db: Db,
-  getClerk: ClerkClientProvider,
-  args: {
-    readonly orgId: string;
-    readonly customerId: string;
-    readonly subscriptionId: string;
-  },
-): Promise<boolean> {
-  const existsInClerk = await clerkOrganizationExists(getClerk(), args.orgId);
-  if (!existsInClerk) {
-    L.warn("stripe customer metadata references missing Clerk org", {
-      customerId: args.customerId,
-      subscriptionId: args.subscriptionId,
-      orgId: args.orgId,
-    });
-    return false;
-  }
-
-  const inserted = await db.transaction(async (tx) => {
-    return await insertStripeCustomerOrgMetadata(tx, args);
-  });
-
-  if (inserted) {
-    L.debug("inserted org metadata from Stripe customer metadata", {
-      customerId: args.customerId,
-      subscriptionId: args.subscriptionId,
-      orgId: args.orgId,
-    });
-    return true;
-  }
-
-  return await bindStripeCustomerToOrgMetadata(db, args);
-}
-
 async function bindStripeCustomerFromMetadata(
   db: Db,
   getClerk: ClerkClientProvider,
@@ -2400,12 +2324,41 @@ async function bindStripeCustomerFromMetadata(
     return false;
   }
 
-  if (
-    await bindStripeCustomerToOrgMetadata(db, {
-      orgId,
+  const [existingOrg] = await db
+    .select({ orgId: orgMetadata.orgId })
+    .from(orgMetadata)
+    .where(eq(orgMetadata.orgId, orgId))
+    .limit(1);
+  if (!existingOrg && !(await clerkOrganizationExists(getClerk(), orgId))) {
+    L.warn("stripe customer metadata references missing Clerk org", {
       customerId: args.customerId,
-    })
-  ) {
+      subscriptionId: args.subscriptionId,
+      orgId,
+    });
+    return false;
+  }
+
+  const bound = await db.transaction(async (tx) => {
+    // Bootstrap may create the row after the existence check. Let the upsert
+    // decide binding atomically without replacing another customer's ownership.
+    const rows = await tx
+      .insert(orgMetadataCanonicalWrites)
+      .values({ orgId, stripeCustomerId: args.customerId })
+      .onConflictDoUpdate({
+        target: orgMetadataCanonicalWrites.orgId,
+        set: { stripeCustomerId: args.customerId, updatedAt: nowDate() },
+        setWhere: or(
+          isNull(orgMetadataCanonicalWrites.stripeCustomerId),
+          eq(orgMetadataCanonicalWrites.stripeCustomerId, args.customerId),
+        ),
+      })
+      .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
+    for (const row of rows) {
+      await ensureOrgMetadataPlanEntitlement(tx, row);
+    }
+    return rows.length > 0;
+  });
+  if (bound) {
     return true;
   }
 
@@ -2414,14 +2367,6 @@ async function bindStripeCustomerFromMetadata(
     .from(orgMetadata)
     .where(eq(orgMetadata.orgId, orgId))
     .limit(1);
-
-  if (!org) {
-    return await insertStripeCustomerForClerkOrg(db, getClerk, {
-      orgId,
-      customerId: args.customerId,
-      subscriptionId: args.subscriptionId,
-    });
-  }
 
   L.warn("stripe customer metadata could not bind org", {
     customerId: args.customerId,

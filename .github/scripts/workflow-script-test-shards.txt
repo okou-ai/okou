@@ -87,6 +87,7 @@
 3 workflow-script-test-shards-test.sh
 4 changed-base-ref-test.sh
 4 check-pr-title-test.sh
+4 check-pr-ci-capacity-test.sh
 4 check-release-please-component-releases-test.sh
 4 check-release-please-workspace-coverage-test.sh
 4 cleanup-stale-runners-test.sh

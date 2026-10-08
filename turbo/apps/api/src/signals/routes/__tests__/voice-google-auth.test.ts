@@ -1,4 +1,4 @@
-import { voiceIoPolishContract } from "@okouai/api-contracts/contracts/voice-io-polish";
+import { voiceIoPolishSegmentsContract } from "@okouai/api-contracts/contracts/voice-io-polish";
 import { HttpResponse, http } from "msw";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -29,12 +29,12 @@ function client() {
     context,
     routes: voiceIoPolishRoutes,
     rethrowErrors: true,
-  })(voiceIoPolishContract);
+  })(voiceIoPolishSegmentsContract);
 }
 function polish(signal?: AbortSignal) {
   return client().post({
     headers: { authorization: "Bearer clerk-session" },
-    body: { text: "Synthetic dictation." },
+    body: { segments: ["Synthetic dictation."] },
     ...(signal && { fetchOptions: { signal } }),
   });
 }
@@ -47,13 +47,14 @@ function stsToken() {
   };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   mockGoogleVoice();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   const actor = createBddApi(context).user();
   if (!actor.orgId) {
     throw new Error("Expected an organization");
   }
+  await createBddApi(context).completeOnboarding(actor);
   mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
   server.use(
     http.post(VERTEX_VOICE_URL, () => {

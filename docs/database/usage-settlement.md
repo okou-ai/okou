@@ -1,39 +1,74 @@
 # Usage settlement
 
-## Accepted concurrency policy
+## Nonnegative member packages and organization overdraft
 
-Prepare the price, member-credit split and expiry-lot split before the standalone
-settlement transaction. New usage is credit-only. Commit the following together:
+A member package is prepaid credit, not a liability account. New usage is
+credit-only: consume only the actor's unexpired purchased credits, then bonus
+credits, using earliest expiry and grant ID within each source. A grant cannot
+be debited below zero. All uncovered charges debit the organization wallet,
+including when that wallet is already zero or negative. Organization-only
+actors use the same rule; no captured organization/member funding mode is required.
 
-1. Claim the prepared usage rows with `status = 'pending'`.
-2. Decrement member grants, shared credits and expiry lots using database arithmetic.
-3. Persist charges and processed receipts.
+New package grants do not repay organization debt. Administrator available-credit
+labels sum `max(org available, 0) + member package credits`. The balance detail
+retains the signed organization balance. Admission still rejects new paid work
+without available credits or another applicable entitlement; settling incurred
+usage into organization debt does not allow unlimited new work.
 
-The pending claim, not a credit-row version, prevents duplicate charging. A
-partially claimed batch rolls back rather than applying a plan for unclaimed
-usage. A competing successful settlement can supply the existing receipt.
+## Transaction and concurrency policy
 
-Normal concurrent changes do not reject a prepared financial split. Two requests
-may both prepare against the same available credit package. A selected package
-or expiry lot can become negative. This is an explicitly accepted business trade-off. Preparation and
-spendable-balance reads select only positive, unexpired credits; expiration also
-clears only positive remainders, so a negative remainder is not credited back.
-There is no compensation cron in this change.
+Prepare prices before the standalone transaction. Claim only pending events;
+a partial claim rolls back, and a repeated event cannot charge twice. Lock the
+organization wallet before grant/expiry-lot rows, then re-read member cash under
+row locks. Recalculate the member/organization split using these current balances
+rather than a prepared positive-balance snapshot. Apply existing organization
+expiration before uncovered charges or legacy debt are debited. Grant debits
+additionally require the locked remainder to cover the deduction. Cash selection,
+processed receipts and all debits commit together. No external I/O runs inside
+the financial transaction.
 
-Source priority and FEFO are evaluated when preparing the plan, not enforced
-against all concurrent changes at commit. Missing financial rows, invalid pricing
-and database failures remain billing errors. Existing background Social job
-ownership/lease checks and expiration admission remain intact. Social jobs
-publish and claim a new usage identity within their transaction; their credit
-debits use the same atomic arithmetic policy.
+The wallet lock serializes cash allocation within an organization. Concurrent
+requests therefore cannot spend the same package remainder twice. Source order
+and FEFO use PostgreSQL ordering of the locked rows, retaining timestamp precision.
+Shared cash queries and debt-transfer SQL are pure builders; the owning transaction
+executes them without passing its database handle into domain helpers. Organization
+expiration acquires the wallet first as well. Missing rows, invalid pricing and
+database failures remain billing errors. Background Social ownership/lease checks
+remain intact and its financial writes use the same path.
+
+## Legacy package overdrafts
+
+Migration `1346_usage_pack_overdraft_transfers` moves retained negative grant
+remainders to their organization wallets and zeroes those grant remainders in
+one transaction. An append-only transfer receipt retains the organization,
+member, grant identity and amount without a cascading grant FK. Original grant
+amount, source, expiry and payment/refund provenance are unchanged. Expired
+negative grants are included; positive grants and unrelated wallets are untouched.
+Existing expired organization lots are cleared before transferring debt, so their
+clamp cannot erase the newly moved liability. No historical usage is replayed or repriced, and rerunning the repair portion
+cannot transfer the same cleared remainder twice.
+
+During the old/new API overlap, an old writer can still generate negative grants.
+New settlement lazily performs the same locked, audited transfer before cash
+allocation; member-removal refund preparation does so before clearing grants.
+The shared repair statement clears expired lots and negative grants, appends
+receipts and updates the wallet once, with expiration applied before the transferred
+debit. A missing wallet leaves actual liabilities untouched and fails closed;
+no wallet with no negative grant remains a valid unfunded member cleanup.
+Organization expiration runs before this lazy transfer, never after it in the
+same settlement, so its existing clamp cannot erase the newly moved liability.
+There is no debt forgiveness, cross-member spending or compensation cron.
+
+This independent main migration and debt policy remain intact. The following
+Allowance contraction does not transfer, forgive or otherwise alter these liabilities.
 
 ## Allowance data removed
 
 The owner confirmed that only the Okou team received Allowance and requested
-complete deletion of that history. Migration 1346 drops the entitlement, window
+complete deletion of that history. Migration 1347 drops the entitlement, window
 and allocation tables and the hourly Allowance columns. No serving code issues,
 reads, refreshes, reserves or consumes Allowance. Reports sum only recorded
-`creditsCharged`; wallets and ordinary usage facts are not changed, and processed
+`creditsCharged`; this contraction does not change wallets or ordinary usage facts, and processed
 history is never repriced or replayed. Compaction conserves quantity and credits
 and preserves billing identity fences and transactional rollback without any
 window reconciliation. Privacy deletion still erases owned raw/hourly usage;
@@ -63,12 +98,20 @@ background Social job delivery state machines are not changed.
 
 ## Deployment boundary
 
-Migration `1314_allow-concurrent-usage-pack-overdraft` relaxes the member grant's
-lower-bound check while retaining `remaining_amount <= original_amount`. Apply
-it before deploying the new settlement writer. The old writer can run against
-the relaxed constraint; it retains its older concurrency checks. On an old DB,
-an attempted overdraft rolls back, and the new synchronous API still returns
-the provider result with an unknown charge.
+Apply migration `1346_usage_pack_overdraft_transfers` before the new API. The
+new writer requires its audit table. Old APIs can still write against the expanded
+database, but retain their accepted package-overdraft behavior until drained.
+Rolling back the API does not undo transfers: the organization retains the debt,
+and the old writer can again create package negatives.
+
+Do not claim the global nonnegative invariant until outgoing writers and rollback
+targets have drained and remaining legacy negatives have been reconciled. Restore
+and validate a database `remaining_amount >= 0` check only in that subsequent
+contraction; adding it before the new writer serves would turn outgoing concurrent
+settlement into billing failures. The current relaxed lower-bound schema is
+intentional for this expand release. API/App responses and Runner protocols are
+unchanged; old App versions retain the signed-combined-label mismatch until they
+update. This PR does not authorize production release or operator writes.
 
 New contracts accept both the old numeric charge and null. Current CLI HTTP
 clients do not enable response validation: old clients still receive successful

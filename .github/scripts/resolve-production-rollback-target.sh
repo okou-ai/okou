@@ -63,7 +63,7 @@ readonly CONNECTOR_CATALOG_RELEASE_2_PATH=turbo/packages/db/src/migrations/1334_
 readonly MODEL_ROUTE_STATE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1338_retire_model_route_state.sql
 readonly PI_STABLE_CONTEXT_RETIREMENT_PATH=turbo/packages/db/src/migrations/1343_retire_pi_stable_context.sql
 readonly PI_DEBUG_TRACE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1345_outstanding_the_hood.sql
-readonly USAGE_ALLOWANCE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1346_drop_organization_usage_allowance.sql
+readonly USAGE_ALLOWANCE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1347_drop_organization_usage_allowance.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -358,7 +358,7 @@ if ! git merge-base --is-ancestor "$pi_debug_trace_retirement_commit" "$TARGET_C
   fail "Rollback target predates the Pi debug trace retirement: ${pi_debug_trace_retirement_commit}."
 fi
 
-# Migration 1346 drops Allowance history and its hourly columns. Earlier APIs
+# Migration 1347 drops Allowance history and its hourly columns. Earlier APIs
 # still read the allocation table and write the retired hourly shape, so none
 # can serve after the contraction. Resolve the canonical first-parent main
 # commit, never a branch-only implementation SHA.

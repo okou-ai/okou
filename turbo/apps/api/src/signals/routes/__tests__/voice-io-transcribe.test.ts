@@ -6,6 +6,8 @@ import {
   type VoiceIoEditorContext,
 } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { voiceIoPolishSegmentsContract } from "@okouai/api-contracts/contracts/voice-io-polish";
+import { voiceIoPolishRoutes } from "../voice-io-polish";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { billingStatusRoutes } from "../billing-status";
@@ -54,7 +56,7 @@ function recoveredVoiceResponse() {
   return vertexVoiceResponse(
     JSON.stringify({
       transcript: "Recorded speech.",
-      polishedText: "Recorded speech.",
+
       language: "en",
     }),
   );
@@ -127,7 +129,7 @@ function form(
     "options",
     JSON.stringify({
       previousTranscript: "",
-      final: true,
+
       totalDurationSeconds: files.reduce((total, file) => {
         return total + (file.size - 44) / 32_000;
       }, 0),
@@ -453,7 +455,7 @@ describe("voice input routing and reference context", () => {
         const result = await accept(
           client().segment({
             headers: { authorization: "Bearer clerk-session" },
-            body: segmentForm([wav], "", false, 75),
+            body: segmentForm([wav], "", 75),
           }),
           [200],
         );
@@ -476,7 +478,7 @@ describe("voice input routing and reference context", () => {
       const result = await accept(
         client().segment({
           headers: { authorization: "Bearer clerk-session" },
-          body: segmentForm([tooLarge], "", false, 75),
+          body: segmentForm([tooLarge], "", 75),
         }),
         [400],
       );
@@ -514,7 +516,7 @@ describe("voice input routing and reference context", () => {
               {
                 text: JSON.stringify({
                   transcript: "Hello.",
-                  polishedText: "Hello.",
+
                   language: "en",
                   unexpected: true,
                 }),
@@ -561,7 +563,7 @@ describe("voice input routing and reference context", () => {
                     {
                       text: JSON.stringify({
                         transcript: "Hello.",
-                        polishedText: "Hello.",
+
                         language: "en",
                       }),
                     },
@@ -608,16 +610,16 @@ describe("voice input routing and reference context", () => {
           expect(body.generationConfig).toMatchObject({
             thinkingConfig: { thinkingLevel: "MINIMAL" },
             temperature: 0,
-            maxOutputTokens: 8192,
+            maxOutputTokens: 4096,
             responseMimeType: "application/json",
             responseSchema: {
-              required: ["transcript", "polishedText", "language"],
+              required: ["transcript", "language"],
             },
           });
           return vertexVoiceResponse(
             JSON.stringify({
               transcript: "Ship on Monday.",
-              polishedText: "Ship on Monday.",
+
               language: "en",
             }),
           );
@@ -627,7 +629,7 @@ describe("voice input routing and reference context", () => {
         client().segment({ headers, body: form([audioFile(1)]) }),
         [200],
       );
-      expect(response.body.polishedText).toBe("Ship on Monday.");
+      expect(response.body.transcript).toBe("Ship on Monday.");
       expect(response.headers.get("Server-Timing")).toContain(
         "voice_segment;dur=",
       );
@@ -636,7 +638,7 @@ describe("voice input routing and reference context", () => {
   });
 
   it.each([0.56, 60])(
-    "transcribes and polishes a %s-second recording in one multimodal request",
+    "transcribes a %s-second recording without polishing",
     async (durationSeconds) => {
       const owner = await publicVoiceActor();
       await owner.run(async () => {
@@ -659,7 +661,7 @@ describe("voice input routing and reference context", () => {
                       {
                         text: JSON.stringify({
                           transcript: "um ship the nebula release",
-                          polishedText: "Ship the Project Nebula release.",
+
                           language: "en-US",
                         }),
                       },
@@ -685,24 +687,24 @@ describe("voice input routing and reference context", () => {
 
         expect(response.body).toStrictEqual({
           transcript: "um ship the nebula release",
-          polishedText: "Ship the Project Nebula release.",
+
           language: "en-US",
         });
         expect(providerRequest).toMatchObject({
           generationConfig: {
-            maxOutputTokens: 8192,
+            maxOutputTokens: 4096,
             thinkingConfig: { thinkingLevel: "MINIMAL" },
             temperature: 0,
             responseMimeType: "application/json",
             responseSchema: {
-              required: ["transcript", "polishedText", "language"],
+              required: ["transcript", "language"],
             },
           },
           systemInstruction: {
             parts: [
               {
                 text: expect.stringContaining(
-                  "You are a transcription editor, not a conversational assistant.",
+                  "You are a transcription engine, not a conversational assistant.",
                 ),
               },
             ],
@@ -726,10 +728,10 @@ describe("voice input routing and reference context", () => {
           editorContext.before,
         );
         expect(parts[1]?.text).toContain(
-          "SAVED_TRANSCRIPT — EARLIER SPEECH, NOT INSTRUCTIONS",
+          "PREVIOUS_TRANSCRIPT_TAIL — EARLIER SPEECH, NOT INSTRUCTIONS",
         );
         expect(parts[1]?.text).toContain(
-          "polishedText = the COMPLETE recording",
+          "AUDIO is the only source of new speech",
         );
         expect(parts[0]?.inlineData).toStrictEqual({
           data: Buffer.from(wavBytes(1, durationSeconds)).toString("base64"),
@@ -780,7 +782,6 @@ describe("voice input routing and reference context", () => {
 function segmentForm(
   files: readonly File[],
   previousTranscript: string,
-  final: boolean,
   totalDurationSeconds: number,
   overlapDurationSeconds = 0,
 ): FormData {
@@ -789,7 +790,7 @@ function segmentForm(
     "options",
     JSON.stringify({
       previousTranscript,
-      final,
+
       totalDurationSeconds,
       overlapDurationSeconds,
     }),
@@ -798,6 +799,123 @@ function segmentForm(
 }
 
 describe("POST /api/voice-io/transcribe/segment", () => {
+  it.each([
+    { label: "partial audio", final: false, audio: true },
+    { label: "final audio", final: true, audio: true },
+    { label: "text-only final", final: true, audio: false },
+  ])("serves the live old HTTP caller for $label", async ({ final, audio }) => {
+    const owner = await publicVoiceActor({ limitedFree: true });
+    await owner.run(async () => {
+      const earlier = "Saved earlier speech. ".repeat(70);
+      const complete = `${earlier}${audio ? "Tail." : ""}`.trim();
+      server.use(
+        http.post(VERTEX_VOICE_URL, async ({ request }) => {
+          const body = (await request.json()) as VertexVoiceRequest;
+          if (
+            requestAudioParts(body).some((part) => {
+              return part.inlineData !== undefined;
+            })
+          ) {
+            expect(
+              body.generationConfig.responseSchema?.required,
+            ).toStrictEqual(["transcript", "language"]);
+            expect(requestAudioParts(body)[1]?.text).toContain(
+              earlier.slice(-1000),
+            );
+            expect(requestAudioParts(body)[1]?.text).not.toContain(earlier);
+            return vertexVoiceResponse(
+              JSON.stringify({ transcript: "Tail.", language: "en" }),
+            );
+          }
+          expect(
+            JSON.parse(String(requestAudioParts(body)[0]?.text)),
+          ).toMatchObject({
+            segments: audio ? [earlier.trim(), "Tail."] : [earlier.trim()],
+          });
+          return vertexVoiceResponse(complete);
+        }),
+      );
+      const headers = { authorization: "Bearer clerk-session" };
+      const body = segmentForm(audio ? [audioFile(1, 3)] : [], earlier, 61);
+      body.set(
+        "options",
+        JSON.stringify({
+          previousTranscript: earlier,
+          final,
+          totalDurationSeconds: 61,
+          overlapDurationSeconds: 0,
+        }),
+      );
+      const response = await accept(client().segment({ headers, body }), [200]);
+      expect(response.body).toStrictEqual({
+        transcript: audio ? "Tail." : "",
+        language: audio ? "en" : "und",
+        ...(final ? { polishedText: complete } : {}),
+      });
+      const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
+        voiceIoQuotaContract,
+      );
+      expect((await accept(quota.get({ headers }), [200])).body.count).toBe(
+        final ? 1 : 0,
+      );
+    });
+  });
+
+  it("bounds two model stages inside one old-client final request", async () => {
+    const owner = await publicVoiceActor({ limitedFree: true });
+    await owner.run(async () => {
+      const deadline = new AbortController();
+      context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+        return milliseconds === 80_000 ? deadline.signal : context.signal;
+      });
+      const entered = createDeferredPromise<void>(context.signal);
+      const aborted = createDeferredPromise<void>(context.signal);
+      server.use(
+        http.post(VERTEX_VOICE_URL, async ({ request }) => {
+          const body = (await request.json()) as VertexVoiceRequest;
+          if (
+            requestAudioParts(body).some((part) => {
+              return part.inlineData !== undefined;
+            })
+          ) {
+            return vertexVoiceResponse(
+              JSON.stringify({ transcript: "Tail.", language: "en" }),
+            );
+          }
+          request.signal.addEventListener(
+            "abort",
+            () => {
+              aborted.resolve();
+            },
+            { once: true },
+          );
+          entered.resolve();
+          await aborted.promise;
+          return vertexVoiceResponse("Late completion.");
+        }),
+      );
+      const headers = { authorization: "Bearer clerk-session" };
+      const body = segmentForm([audioFile(1, 3)], "Earlier speech.", 61);
+      body.set(
+        "options",
+        JSON.stringify({
+          previousTranscript: "Earlier speech.",
+          final: true,
+          totalDurationSeconds: 61,
+        }),
+      );
+      const pending = client().segment({ headers, body });
+      await entered.promise;
+      deadline.abort();
+      const response = await accept(pending, [503]);
+      expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
+      const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
+        voiceIoQuotaContract,
+      );
+      expect((await accept(quota.get({ headers }), [200])).body.count).toBe(0);
+    });
+  });
+
   it("retains bounded failure evidence without private content or duplicate reports", async () => {
     // The single redaction check covers the incident's diagnostic contract
     // through the real endpoint; other cases assert HTTP/recovery behavior.
@@ -809,9 +927,9 @@ describe("POST /api/voice-io/transcribe/segment", () => {
     mockEnv("GIT_COMMIT_SHA", deployment);
     const output = context.mocks.console.log;
     onTestFinished(context.mocks.console.capture());
-    const native = (transcript: string, polishedText: string) => {
+    const native = (transcript: string) => {
       return vertexVoiceResponse(
-        JSON.stringify({ transcript, polishedText, language: "en" }),
+        JSON.stringify({ transcript, language: "en" }),
       );
     };
     const cases: readonly {
@@ -827,7 +945,7 @@ describe("POST /api/voice-io/transcribe/segment", () => {
       {
         name: "segment rate",
         response: () => {
-          return native(longText, "Saved speech.");
+          return native(longText);
         },
         previous: secret,
         expected: {
@@ -836,29 +954,7 @@ describe("POST /api/voice-io/transcribe/segment", () => {
           transcript_chars: longText.length,
         },
       },
-      {
-        name: "polish rate",
-        response: () => {
-          return native(secret, longText);
-        },
-        expected: {
-          stage: "output_validation",
-          reason: "polish_rate_exceeded",
-          polished_chars: longText.length,
-        },
-      },
-      {
-        name: "discarded speech",
-        response: () => {
-          return native("[NO_SPEECH]", "[NO_SPEECH]");
-        },
-        previous: secret,
-        expected: {
-          stage: "output_validation",
-          reason: "polish_discarded_speech",
-          previous_transcript_chars: secret.length,
-        },
-      },
+
       {
         name: "Google truncation with bounded provider metadata",
         response: () => {
@@ -887,10 +983,10 @@ describe("POST /api/voice-io/transcribe/segment", () => {
         },
         previous: secret,
         expected: {
-          stage: "finalization",
+          stage: "transcription",
           reason: "output_truncated",
           location: "us",
-          operation: "voice_transcript_and_polish",
+          operation: "voice_transcript",
           previous_transcript_chars: secret.length,
           prompt_tokens: 12_345,
           candidate_tokens: 65_536,
@@ -925,7 +1021,7 @@ describe("POST /api/voice-io/transcribe/segment", () => {
           });
         },
         expected: {
-          stage: "finalization",
+          stage: "transcription",
           reason: "output_truncated",
           prompt_tokens: 12,
           total_tokens: 34,
@@ -946,7 +1042,7 @@ describe("POST /api/voice-io/transcribe/segment", () => {
           return vertexVoiceResponse(secret);
         },
         expected: {
-          stage: "finalization",
+          stage: "transcription",
           reason: "invalid_output",
           candidate_chars: secret.length,
           thought_chars: 0,
@@ -966,17 +1062,17 @@ describe("POST /api/voice-io/transcribe/segment", () => {
         response: () => {
           return new HttpResponse(secret, { status: 403 });
         },
-        expected: { stage: "finalization", reason: "http" },
+        expected: { stage: "transcription", reason: "http" },
       },
       {
         name: "private correlation metadata",
         response: () => {
-          return native("[NO_SPEECH]", "[NO_SPEECH]");
+          return native(longText);
         },
         previous: secret,
         expected: {
           stage: "output_validation",
-          reason: "polish_discarded_speech",
+          reason: "transcription_rate_exceeded",
         },
         privateCorrelation: true,
       },
@@ -994,7 +1090,7 @@ describe("POST /api/voice-io/transcribe/segment", () => {
       {
         name: "accepted no speech",
         response: () => {
-          return native("[NO_SPEECH]", "[NO_SPEECH]");
+          return native("[NO_SPEECH]");
         },
         status: 204,
       },
@@ -1009,12 +1105,7 @@ describe("POST /api/voice-io/transcribe/segment", () => {
           return scenario.response();
         }),
       );
-      const body = segmentForm(
-        [audioFile(1)],
-        scenario.previous ?? "",
-        true,
-        1,
-      );
+      const body = segmentForm([audioFile(1)], scenario.previous ?? "", 1);
       body.set("lastAssistantMessage", secret);
       body.set(
         "editorContext",
@@ -1051,7 +1142,6 @@ describe("POST /api/voice-io/transcribe/segment", () => {
           ...scenario.expected,
           model: "google/gemini-3.1-flash-lite",
           provider: "vertex",
-          final: true,
           has_audio: true,
           audio_duration_seconds: 1,
           total_duration_seconds: 1,
@@ -1115,166 +1205,69 @@ describe("POST /api/voice-io/transcribe/segment", () => {
       await accept(
         client().segment({
           headers,
-          body: segmentForm([audioFile(1)], "", false, 60 * 60),
+          body: segmentForm([audioFile(1)], "", 60 * 60),
         }),
         [200],
       );
       const tooLong = await client().segment({
         headers,
-        body: segmentForm([audioFile(2)], "", false, 60 * 60 + 1),
+        body: segmentForm([audioFile(2)], "", 60 * 60 + 1),
       });
       expect(tooLong.status).toBe(400);
     });
   });
 
-  it.each([false, true])(
-    "completes silent audio without content (final: %s)",
-    async (final) => {
-      const owner = await publicVoiceActor();
-      await owner.run(async () => {
-        server.use(
-          http.post(VERTEX_VOICE_URL, () => {
-            return HttpResponse.json({
-              candidates: [
-                {
-                  finishReason: "STOP",
-                  content: {
-                    parts: [
-                      {
-                        text: JSON.stringify({
-                          transcript: "[NO_SPEECH]",
-                          ...(final ? { polishedText: "[NO_SPEECH]" } : {}),
-                          language: "und",
-                        }),
-                      },
-                    ],
-                  },
-                },
-              ],
-            });
-          }),
-        );
-        const response = await client().segment({
+  it("returns no content for silent audio without discarding client-owned earlier text", async () => {
+    const owner = await publicVoiceActor();
+    await owner.run(async () => {
+      server.use(
+        http.post(VERTEX_VOICE_URL, () => {
+          return vertexVoiceResponse(
+            JSON.stringify({ transcript: "[NO_SPEECH]", language: "und" }),
+          );
+        }),
+      );
+      const response = await accept(
+        client().segment({
           headers: { authorization: "Bearer clerk-session" },
-          body: segmentForm([audioFile(1)], "", final, 1),
-        });
-        expect(response.status).toBe(204);
-      });
-    },
-  );
-
-  const orderStatusHallucination =
-    "Hello, I am calling to inquire about the status of my recent order, number 45678. Could you please provide an update on when I might expect delivery?";
+          body: segmentForm([audioFile(1)], "Earlier speech.", 61),
+        }),
+        [204],
+      );
+      expect(response.body).toBeUndefined();
+    });
+  });
 
   it.each([
+    { transcript: "x".repeat(99), duration: 1, status: 200 },
+    { transcript: "x".repeat(100), duration: 4, status: 200 },
+    { transcript: "x".repeat(100), duration: 1, status: 502 },
     {
-      label: "keeps output below the conservative evidence floor",
-      transcript: "x".repeat(99),
-      polishedText: "x".repeat(99),
-      durationSeconds: 1,
-      status: 200,
-    },
-    {
-      label: "keeps output at the maximum plausible speech rate",
-      transcript: "x".repeat(100),
-      polishedText: "x".repeat(100),
-      durationSeconds: 4,
-      status: 200,
-    },
-    {
-      label: "drops an implausibly long segment transcript",
-      transcript: "x".repeat(100),
-      polishedText: "x".repeat(100),
-      durationSeconds: 1,
-      status: 204,
-    },
-    {
-      label: "drops an order-status hallucination from near-zero audio",
-      transcript: orderStatusHallucination,
-      polishedText: orderStatusHallucination,
-      durationSeconds: 0.1,
-      status: 204,
-    },
-    {
-      label: "rejects implausible polish while preserving a short transcript",
-      transcript: "Recorded speech.",
-      polishedText: "x".repeat(100),
-      durationSeconds: 1,
+      transcript:
+        "Hello, I am calling to inquire about the status of my recent order, number 45678. Could you please provide an update on when I might expect delivery?",
+      duration: 0.1,
       status: 502,
     },
   ])(
-    "$label",
-    async ({ transcript, polishedText, durationSeconds, status }) => {
+    "keeps plausible speech and leaves suspicious short audio retryable: %j",
+    async ({ transcript, duration, status }) => {
       const owner = await publicVoiceActor();
       await owner.run(async () => {
         server.use(
           http.post(VERTEX_VOICE_URL, () => {
-            return HttpResponse.json({
-              candidates: [
-                {
-                  finishReason: "STOP",
-                  content: {
-                    parts: [
-                      {
-                        text: JSON.stringify({
-                          transcript,
-                          polishedText,
-                          language: "en",
-                        }),
-                      },
-                    ],
-                  },
-                },
-              ],
-            });
+            return vertexVoiceResponse(
+              JSON.stringify({ transcript, language: "en" }),
+            );
           }),
         );
         const response = await client().segment({
           headers: { authorization: "Bearer clerk-session" },
-          body: segmentForm(
-            [audioFile(1, durationSeconds)],
-            "",
-            true,
-            durationSeconds,
-          ),
+          body: segmentForm([audioFile(1, duration)], "", duration),
         });
         expect(response.status).toBe(status);
       });
     },
   );
-
-  it("does not return context-derived polish without transcribed speech", async () => {
-    const owner = await publicVoiceActor();
-    await owner.run(async () => {
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          return HttpResponse.json({
-            candidates: [
-              {
-                finishReason: "STOP",
-                content: {
-                  parts: [
-                    {
-                      text: JSON.stringify({
-                        transcript: "[NO_SPEECH]",
-                        polishedText: "Use LaunchPad for this release.",
-                        language: "und",
-                      }),
-                    },
-                  ],
-                },
-              },
-            ],
-          });
-        }),
-      );
-      const response = await client().segment({
-        headers: { authorization: "Bearer clerk-session" },
-        body: segmentForm([audioFile(1)], "", true, 1),
-      });
-      expect(response.status).toBe(204);
-    });
-  });
 
   it("rejects implausible final output without discarding saved speech", async () => {
     const owner = await publicVoiceActor();
@@ -1291,7 +1284,7 @@ describe("POST /api/voice-io/transcribe/segment", () => {
                     {
                       text: JSON.stringify({
                         transcript: invented,
-                        polishedText: `Earlier speech. ${invented}`,
+
                         language: "en",
                       }),
                     },
@@ -1305,7 +1298,7 @@ describe("POST /api/voice-io/transcribe/segment", () => {
       const response = await accept(
         client().segment({
           headers: { authorization: "Bearer clerk-session" },
-          body: segmentForm([audioFile(1)], "Earlier speech.", true, 61),
+          body: segmentForm([audioFile(1)], "Earlier speech.", 61),
         }),
         [502],
       );
@@ -1313,96 +1306,72 @@ describe("POST /api/voice-io/transcribe/segment", () => {
     });
   });
 
-  it.each([
-    "unfinished segments",
-    "a failed final attempt followed by a successful retry",
-  ])("counts free-tier recordings correctly for %s", async (phase) => {
+  it("counts a recording only after independent polish succeeds", async () => {
     const owner = await publicVoiceActor({ limitedFree: true });
     await owner.run(async () => {
       const headers = { authorization: "Bearer clerk-session" };
-      const readQuota = async () => {
-        const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
-          voiceIoQuotaContract,
-        );
-        return (await accept(quota.get({ headers }), [200])).body;
-      };
-      let failFinal = true;
+      const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
+        voiceIoQuotaContract,
+      );
+      const polish = setupApp({ context, routes: voiceIoPolishRoutes })(
+        voiceIoPolishSegmentsContract,
+      );
       server.use(
-        http.post(VERTEX_VOICE_URL, async ({ request }) => {
-          const body = (await request.json()) as VertexVoiceRequest;
-          const polishing = body.contents[0]?.parts.every((part) => {
-            return part.inlineData === undefined;
-          });
-          if (polishing && failFinal) {
-            return new HttpResponse(null, { status: 503 });
-          }
-          return HttpResponse.json({
-            candidates: [
-              {
-                finishReason: "STOP",
-                content: {
-                  parts: [
-                    {
-                      text: JSON.stringify(
-                        polishing
-                          ? {
-                              polishedText: "First part. Second part.",
-                              language: "en",
-                            }
-                          : { transcript: "Recorded part.", language: "en" },
-                      ),
-                    },
-                  ],
-                },
-              },
-            ],
-          });
+        http.post(VERTEX_VOICE_URL, () => {
+          return recoveredVoiceResponse();
         }),
       );
-      if (phase === "unfinished segments") {
-        await accept(
-          client().segment({
-            headers,
-            body: segmentForm([audioFile(1, 60)], "", false, 60),
-          }),
-          [200],
-        );
-        await accept(
-          client().segment({
-            headers,
-            body: segmentForm([audioFile(2, 60)], "First part.", false, 120),
-          }),
-          [200],
-        );
-        await expect(readQuota()).resolves.toMatchObject({
-          allowed: true,
-          count: 0,
-        });
-        return;
-      }
-
-      // Finalization receives the accumulated transcript from the client; it
-      // does not depend on server-owned state from the earlier segment requests.
       await accept(
         client().segment({
           headers,
-          body: segmentForm([], "First part. Second part.", true, 120),
-        }),
-        [503],
-      );
-      await expect(readQuota()).resolves.toMatchObject({
-        allowed: true,
-        count: 0,
-      });
-      failFinal = false;
-      await accept(
-        client().segment({
-          headers,
-          body: segmentForm([], "First part. Second part.", true, 120),
+          body: segmentForm([audioFile(1, 60)], "", 60),
         }),
         [200],
       );
-      await expect(readQuota()).resolves.toMatchObject({
+      await accept(
+        client().segment({
+          headers,
+          body: segmentForm([audioFile(2, 3)], "First part.", 61, 2),
+        }),
+        [200],
+      );
+      expect((await accept(quota.get({ headers }), [200])).body).toMatchObject({
+        allowed: true,
+        count: 0,
+      });
+      server.use(
+        http.post(VERTEX_VOICE_URL, () => {
+          return new HttpResponse(null, {
+            status: 503,
+            headers: { "Retry-After": "60" },
+          });
+        }),
+      );
+      await accept(
+        polish.post({
+          headers,
+          body: { segments: ["First part.", "Second part."] },
+        }),
+        [503],
+      );
+      expect((await accept(quota.get({ headers }), [200])).body).toMatchObject({
+        allowed: true,
+        count: 0,
+      });
+      server.use(
+        http.post(VERTEX_VOICE_URL, () => {
+          return vertexVoiceResponse("First part. Second part.");
+        }),
+      );
+      const completed = await accept(
+        polish.post({
+          headers,
+          body: { segments: ["First part.", "Second part."] },
+        }),
+        [200],
+      );
+      expect(completed.body.text).toBe("First part. Second part.");
+      expect((await accept(quota.get({ headers }), [200])).body).toMatchObject({
         allowed: true,
         count: 1,
       });
@@ -1431,7 +1400,7 @@ describe("POST /api/voice-io/transcribe/segment", () => {
         await accept(
           client().segment({
             headers,
-            body: segmentForm([audioFile(index + 1)], "", false, 1),
+            body: segmentForm([audioFile(index + 1)], "", 1),
           }),
           [200],
         );
@@ -1445,7 +1414,7 @@ describe("POST /api/voice-io/transcribe/segment", () => {
       const rejected = await accept(
         client().segment({
           headers,
-          body: segmentForm([audioFile(11)], "", false, 1),
+          body: segmentForm([audioFile(11)], "", 1),
         }),
         [429],
       );
@@ -1487,7 +1456,6 @@ describe("POST /api/voice-io/transcribe/segment", () => {
             body: segmentForm(
               [audioFile(1, durationSeconds)],
               "",
-              false,
               durationSeconds,
             ),
           }),
@@ -1497,20 +1465,14 @@ describe("POST /api/voice-io/transcribe/segment", () => {
       await accept(
         client().segment({
           headers,
-          body: segmentForm([audioFile(1, 60)], "", false, 60),
+          body: segmentForm([audioFile(1, 60)], "", 60),
         }),
         [200],
       );
       await accept(
         client().segment({
           headers,
-          body: segmentForm(
-            [audioFile(2, 60)],
-            "Earlier speech.",
-            false,
-            118,
-            2,
-          ),
+          body: segmentForm([audioFile(2, 60)], "Earlier speech.", 118, 2),
         }),
         [200],
       );
@@ -1526,7 +1488,7 @@ describe("POST /api/voice-io/transcribe/segment", () => {
       const rejected = await accept(
         client().segment({
           headers,
-          body: segmentForm([audioFile(3)], "", false, 1),
+          body: segmentForm([audioFile(3)], "", 1),
         }),
         [429],
       );
@@ -1534,159 +1496,76 @@ describe("POST /api/voice-io/transcribe/segment", () => {
     });
   });
 
-  it("uses the saved prefix as context and combines only the final segment with whole-recording polish", async () => {
+  it("transcribes every segment with the same prompt and returns only new text", async () => {
     const owner = await publicVoiceActor();
     await owner.run(async () => {
       const inputs: VertexVoiceRequest[] = [];
       server.use(
         http.post(VERTEX_VOICE_URL, async ({ request }) => {
-          const body = (await request.json()) as VertexVoiceRequest;
-          inputs.push(body);
-          const finishing =
-            body.generationConfig.responseSchema?.required.includes(
-              "polishedText",
-            );
-          return HttpResponse.json({
-            candidates: [
-              {
-                finishReason: "STOP",
-                content: {
-                  parts: [
-                    {
-                      text: JSON.stringify(
-                        finishing
-                          ? {
-                              transcript: "Send it tomorrow.",
-                              polishedText:
-                                "LaunchPad is ready. Send it tomorrow.",
-                              language: "en",
-                            }
-                          : {
-                              transcript: "LaunchPad is ready.",
-                              language: "en",
-                            },
-                      ),
-                    },
-                  ],
-                },
-              },
-            ],
-          });
+          inputs.push((await request.json()) as VertexVoiceRequest);
+          return vertexVoiceResponse(
+            JSON.stringify({
+              transcript:
+                inputs.length === 1
+                  ? "LaunchPad is ready."
+                  : "Send it tomorrow.",
+              language: "en",
+            }),
+          );
         }),
       );
+      const headers = { authorization: "Bearer clerk-session" };
       const first = await accept(
         client().segment({
-          headers: { authorization: "Bearer clerk-session" },
-          body: segmentForm([audioFile(1, 60)], "", false, 60),
+          headers,
+          body: segmentForm([audioFile(1, 60)], "", 60),
         }),
         [200],
       );
-      expect(first.body).toStrictEqual({
-        transcript: "LaunchPad is ready.",
-        language: "en",
-      });
-      const final = await accept(
+      const last = await accept(
         client().segment({
-          headers: { authorization: "Bearer clerk-session" },
-          body: segmentForm(
-            [audioFile(2, 10.56)],
-            first.body.transcript,
-            true,
-            68.56,
-            2,
-          ),
+          headers,
+          body: segmentForm([audioFile(2, 3)], first.body.transcript, 61, 2),
         }),
         [200],
       );
-      expect(final.body).toStrictEqual({
+      expect(last.body).toStrictEqual({
         transcript: "Send it tomorrow.",
-        polishedText: "LaunchPad is ready. Send it tomorrow.",
         language: "en",
       });
-      expect(inputs).toHaveLength(2);
-      expect(inputs[0]?.systemInstruction.parts[0]?.text).toContain(
-        "ONLY newly spoken content",
+      expect(inputs[1]?.systemInstruction).toStrictEqual(
+        inputs[0]?.systemInstruction,
       );
-      expect(inputs[1]?.systemInstruction.parts[0]?.text).toContain(
-        "ONLY newly spoken content",
-      );
-      expect(inputs[1]?.systemInstruction.parts[0]?.text).toContain(
-        "overlapping boundary exactly once",
-      );
+      expect(inputs[1]?.generationConfig.maxOutputTokens).toBe(4096);
       expect(requestAudioParts(inputs[1]!)).toContainEqual(
         expect.objectContaining({
-          text: expect.stringContaining("LaunchPad is ready."),
+          text: expect.stringContaining(first.body.transcript),
         }),
       );
-      expect(
-        requestAudioParts(inputs[1]!).filter((part) => {
-          return part.inlineData !== undefined;
+      const oversized = await accept(
+        client().segment({
+          headers,
+          body: segmentForm([audioFile(3)], "x".repeat(262_145), 61),
         }),
-      ).toHaveLength(1);
+        [400],
+      );
+      expect(oversized.body.error.message).toBe(
+        "Invalid voice segment options",
+      );
     });
   });
 
-  it("polishes a completed prefix with no audio and preserves speech before a silent final segment", async () => {
+  it("requires audio even when an earlier transcript exists", async () => {
     const owner = await publicVoiceActor();
     await owner.run(async () => {
-      server.use(
-        http.post(VERTEX_VOICE_URL, async ({ request }) => {
-          const body = (await request.json()) as VertexVoiceRequest;
-          const textOnly = body.contents[0]?.parts.every((part) => {
-            return part.inlineData === undefined;
-          });
-          return HttpResponse.json({
-            candidates: [
-              {
-                finishReason: "STOP",
-                content: {
-                  parts: [
-                    {
-                      text: JSON.stringify(
-                        textOnly
-                          ? {
-                              polishedText: "Keep the earlier speech.",
-                              language: "en",
-                            }
-                          : {
-                              transcript: "[NO_SPEECH]",
-                              polishedText: "Keep the earlier speech.",
-                              language: "en",
-                            },
-                      ),
-                    },
-                  ],
-                },
-              },
-            ],
-          });
-        }),
-      );
-      const textOnly = await accept(
+      const result = await accept(
         client().segment({
           headers: { authorization: "Bearer clerk-session" },
-          body: segmentForm([], "Keep the earlier speech.", true, 60),
+          body: segmentForm([], "Earlier speech.", 60),
         }),
-        [200],
+        [400],
       );
-      expect(textOnly.body).toStrictEqual({
-        transcript: "",
-        polishedText: "Keep the earlier speech.",
-        language: "en",
-      });
-      const silentTail = await accept(
-        client().segment({
-          headers: { authorization: "Bearer clerk-session" },
-          body: segmentForm(
-            [audioFile(1)],
-            "Keep the earlier speech.",
-            true,
-            61,
-          ),
-        }),
-        [200],
-      );
-      expect(silentTail.body).toStrictEqual(textOnly.body);
+      expect(result.body.error.message).toBe("No audio file provided");
     });
   });
 
@@ -1703,7 +1582,6 @@ describe("POST /api/voice-io/transcribe/segment", () => {
           body: segmentForm(
             [audioFile(1, audioSeconds)],
             "Earlier speech.",
-            true,
             totalSeconds,
             overlapSeconds,
           ),
@@ -1713,119 +1591,14 @@ describe("POST /api/voice-io/transcribe/segment", () => {
     },
   );
 
-  it.each([
-    {
-      label: "a partial segment transcript",
-      files: 1,
-      previous: "Saved speech.",
-      final: false,
-      response: { transcript: "Next part.", language: "en" },
-      tokens: 4096,
-    },
-    {
-      label: "a final segment and the complete recording",
-      files: 1,
-      previous: "Saved speech.",
-      final: true,
-      response: {
-        transcript: "Next part.",
-        polishedText: "Saved speech. Next part.",
-        language: "en",
-      },
-      tokens: 8192 + "Saved speech.".length,
-    },
-    {
-      label: "polish of a saved prefix without audio",
-      files: 0,
-      previous: "Saved speech.",
-      final: true,
-      response: { polishedText: "Saved speech.", language: "en" },
-      tokens: 4096 + "Saved speech.".length,
-    },
-    {
-      label: "a saved prefix beyond the model maximum",
-      files: 0,
-      previous: "x".repeat(70_000),
-      final: true,
-      response: { polishedText: "Saved speech.", language: "en" },
-      tokens: 65_536,
-    },
-  ])(
-    "caps output tokens for $label",
-    async ({ files, previous, final, response, tokens }) => {
-      const owner = await publicVoiceActor();
-      await owner.run(async () => {
-        const requested: number[] = [];
-        server.use(
-          http.post(VERTEX_VOICE_URL, async ({ request }) => {
-            const body = (await request.json()) as VertexVoiceRequest;
-            requested.push(body.generationConfig.maxOutputTokens);
-            return vertexVoiceResponse(JSON.stringify(response));
-          }),
-        );
-        await accept(
-          client().segment({
-            headers: { authorization: "Bearer clerk-session" },
-            body: segmentForm(
-              files ? [audioFile(1)] : [],
-              previous,
-              final,
-              3600,
-            ),
-          }),
-          [200],
-        );
-        expect(requested).toStrictEqual([tokens]);
-      });
-    },
-  );
-
   it("rejects an oversized segment before invoking the provider", async () => {
     const owner = await publicVoiceActor();
     await owner.run(async () => {
       const result = await client().segment({
         headers: { authorization: "Bearer clerk-session" },
-        body: segmentForm([audioFile(1, 76)], "", false, 76),
+        body: segmentForm([audioFile(1, 76)], "", 76),
       });
       expect(result.status).toBe(400);
-    });
-  });
-
-  it("rejects a final no-speech response that would discard the saved prefix", async () => {
-    const owner = await publicVoiceActor();
-    await owner.run(async () => {
-      server.use(
-        http.post(VERTEX_VOICE_URL, () => {
-          return HttpResponse.json({
-            candidates: [
-              {
-                finishReason: "STOP",
-                content: {
-                  parts: [
-                    {
-                      text: JSON.stringify({
-                        transcript: "[NO_SPEECH]",
-                        polishedText: "[NO_SPEECH]",
-                        language: "und",
-                      }),
-                    },
-                  ],
-                },
-              },
-            ],
-          });
-        }),
-      );
-      const result = await client().segment({
-        headers: { authorization: "Bearer clerk-session" },
-        body: segmentForm(
-          [audioFile(1)],
-          "Preserve the recorded speech.",
-          true,
-          61,
-        ),
-      });
-      expect(result.status).toBe(502);
     });
   });
 });
@@ -1898,31 +1671,34 @@ describe("voice provider capacity recovery", () => {
         return new HttpResponse(null, { status: 503 });
       },
     },
-  ])("recovers $name and counts the recording once", async ({ failure }) => {
-    const owner = await publicVoiceActor({ limitedFree: true });
-    await owner.run(async () => {
-      const requests: string[] = [];
-      server.use(
-        http.post(VERTEX_VOICE_URL, async ({ request }) => {
-          requests.push(await request.text());
-          return requests.length === 1 ? failure() : recoveredVoiceResponse();
-        }),
-      );
-      const headers = { authorization: "Bearer clerk-session" };
-      const result = await accept(
-        client().segment({ headers, body: form([audioFile(1)]) }),
-        [200],
-      );
-      expect(result.body.polishedText).toBe("Recorded speech.");
-      expect(requests).toHaveLength(2);
-      expect(requests[1]).toBe(requests[0]);
-      const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
-        voiceIoQuotaContract,
-      );
-      const usage = await accept(quota.get({ headers }), [200]);
-      expect(usage.body).toMatchObject({ count: 1, allowed: true });
-    });
-  });
+  ])(
+    "recovers $name without prematurely counting a recording",
+    async ({ failure }) => {
+      const owner = await publicVoiceActor({ limitedFree: true });
+      await owner.run(async () => {
+        const requests: string[] = [];
+        server.use(
+          http.post(VERTEX_VOICE_URL, async ({ request }) => {
+            requests.push(await request.text());
+            return requests.length === 1 ? failure() : recoveredVoiceResponse();
+          }),
+        );
+        const headers = { authorization: "Bearer clerk-session" };
+        const result = await accept(
+          client().segment({ headers, body: form([audioFile(1)]) }),
+          [200],
+        );
+        expect(result.body.transcript).toBe("Recorded speech.");
+        expect(requests).toHaveLength(2);
+        expect(requests[1]).toBe(requests[0]);
+        const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
+          voiceIoQuotaContract,
+        );
+        const usage = await accept(quota.get({ headers }), [200]);
+        expect(usage.body).toMatchObject({ count: 0, allowed: true });
+      });
+    },
+  );
 
   it("ends persistent capacity failures after three attempts", async () => {
     const owner = await publicVoiceActor();
@@ -1990,7 +1766,7 @@ describe("voice provider capacity recovery", () => {
               }),
               [200],
             );
-            expect(result.body.polishedText).toBe("Recorded speech.");
+            expect(result.body.transcript).toBe("Recorded speech.");
             expect(requestedAt).toStrictEqual([
               new Date("2026-09-09T08:00:00Z").getTime(),
               new Date("2026-09-09T08:00:00Z").getTime() + wait,
