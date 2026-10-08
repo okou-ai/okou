@@ -43,6 +43,9 @@ readonly RUNNER_STEER_ENDPOINTS_COMMIT=fd5104417a0cf41116ce9cb9c1aeb2fa3b5e14da
 # the completion paths for jobs accepted before it, so an earlier API would
 # accept video jobs that can no longer complete after rolling forward.
 readonly VIDEO_GENERATION_RETIREMENT_COMMIT=45b537a596a153a91b76c3bc7223187840f52775
+# #38129 moved both memory stages to Luna. DeepSeek route retirement makes
+# earlier APIs unsafe: they would admit work with a deleted execution binding.
+readonly PI_MEMORY_LUNA_ROUTING_COMMIT=77357abdb29ce96b2caf9ee679299602757844dc
 readonly PUBLIC_BRAND_RETIREMENT_PATH=turbo/packages/db/src/migrations/1255_retire_public_brand.sql
 readonly AGENT_RUN_HEARTBEAT_DROP_PATH=turbo/packages/db/src/migrations/1259_drop_agent_runs_last_heartbeat_at.sql
 readonly PERSONAL_SUBSCRIPTION_ACCOUNT_ONLY_PATH=turbo/packages/db/src/migrations/1260_personal_subscription_account_only.sql
@@ -132,6 +135,9 @@ if ! git merge-base --is-ancestor "$RUNNER_STEER_ENDPOINTS_COMMIT" "$TARGET_COMM
 fi
 if ! git merge-base --is-ancestor "$VIDEO_GENERATION_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the video generation retirement: ${VIDEO_GENERATION_RETIREMENT_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$PI_MEMORY_LUNA_ROUTING_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates Pi memory Luna routing: ${PI_MEMORY_LUNA_ROUTING_COMMIT}."
 fi
 
 # The preparatory catalog release stops writing/reading payload and removes it

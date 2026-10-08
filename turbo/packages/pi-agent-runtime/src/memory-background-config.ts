@@ -34,14 +34,3 @@ export const PI_MEMORY_STAGE1_REASONING = "low" satisfies PiAgentThinkingLevel;
 /** Both Luna credential routes publish `medium` for consolidation. */
 export const PI_MEMORY_PHASE2_MAINTENANCE_REASONING =
   "medium" satisfies PiAgentThinkingLevel;
-
-/**
- * Consolidation effort for a maintenance model that does not publish `medium`.
- *
- * Captured historical built-in runs can still resolve DeepSeek V4.1 Flash. It
- * maps `medium` to nothing, so the request cannot carry that effort. `high` is that
- * model's documented default reasoning level, and Phase 2 owns durable memory
- * state, so it takes the stronger published neighbour rather than a weaker one.
- */
-export const PI_MEMORY_PHASE2_BUILT_IN_MAINTENANCE_REASONING =
-  "high" satisfies PiAgentThinkingLevel;

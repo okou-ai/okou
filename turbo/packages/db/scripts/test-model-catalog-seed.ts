@@ -165,8 +165,6 @@ function assertRoutes(
           route.subscription_type === null &&
           ((route.model === "okou-1.0" &&
             route.upstream_model === "@preset/okou-1-0") ||
-            (route.model === "deepseek-v4.1-flash" &&
-              route.upstream_model === "deepseek/deepseek-v4.1-flash") ||
             (route.model === "gpt-6-luna" &&
               route.upstream_model === "openai/gpt-6-luna"))),
       `${route.model}/${route.provider_type}: retired execution route`,
