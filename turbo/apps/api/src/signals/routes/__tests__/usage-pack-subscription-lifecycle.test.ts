@@ -505,6 +505,28 @@ function mockUsagePackPriceCatalog(
     if (typeof priceId !== "string") {
       throw new Error("Expected a Stripe Price ID");
     }
+    const fixedAmounts = new Map<string, number>([
+      [TEST_PRICE_PRO, 2000],
+      [TEST_PRICE_TEAM, 10_000],
+      [TEST_PRICE_PLAN_PRO, 0],
+      [TEST_PRICE_PLAN_TEAM, 0],
+      [TEST_PRICE_ATOM_GRANT, 0],
+    ]);
+    for (const customPriceId of env("OKOU_PRICE_CUSTOM") ?? []) {
+      fixedAmounts.set(customPriceId, 0);
+    }
+    const fixedAmount = fixedAmounts.get(priceId);
+    if (fixedAmount !== undefined) {
+      return Promise.resolve({
+        id: priceId,
+        active: true,
+        currency: "usd",
+        type: "recurring",
+        recurring: { interval: "month", interval_count: 1 },
+        unit_amount: fixedAmount,
+        product: { id: `prod_${priceId}`, metadata: {} },
+      });
+    }
     const configuration = usagePackForPriceId(priceId);
     return Promise.resolve({
       id: priceId,

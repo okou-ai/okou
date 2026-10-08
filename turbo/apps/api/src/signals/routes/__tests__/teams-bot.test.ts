@@ -128,7 +128,7 @@ async function deletePublicTeamsAdmissionFixture(
     id: owned.subscriptionId,
     status: "canceled",
     metadata: {},
-    items: { data: [{ price: { id: env("OKOU_PRICE_PRO") } }] },
+    items: { data: [{ price: { id: "price_bdd_pro" } }] },
   });
   context.mocks.stripe.subscriptions.update.mockResolvedValue({
     id: owned.subscriptionId,
