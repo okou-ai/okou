@@ -395,6 +395,7 @@ describe("Clerk Storage cleanup after reference deletion", () => {
           }),
         }),
       }),
+      expect.objectContaining({ abortSignal: expect.any(AbortSignal) }),
     );
     expect(s3.objects.has(target.archiveKey)).toBeTruthy();
     expect(s3.objects.has(target.manifestKey)).toBeTruthy();
