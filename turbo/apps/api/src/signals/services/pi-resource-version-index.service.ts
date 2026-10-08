@@ -19,7 +19,7 @@ import {
 import { now, nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import {
-  downloadS3BufferWithMaxBytes,
+  downloadS3BufferWithMaxBytes$,
   S3ObjectSizeLimitError,
 } from "../external/s3";
 import { safeSync, settle, settleIncludingAbort } from "../utils";
@@ -329,7 +329,7 @@ interface ResourceIndexWork {
 type ResourceIndexOutcome = "ready" | "unindexable" | "retry" | "stale";
 const materializeResourceIndexWork$ = command(
   async (
-    { get, set },
+    { set },
     item: ResourceIndexWork,
     signal: AbortSignal,
   ): Promise<ResourceIndexOutcome> => {
@@ -348,13 +348,14 @@ const materializeResourceIndexWork$ = command(
       projection = { schemaVersion: 1, files: [] };
     } else {
       const downloaded = await settle(
-        get(
-          downloadS3BufferWithMaxBytes(
-            env("R2_USER_STORAGES_BUCKET_NAME"),
-            `${item.s3Key}/archive.tar.gz`,
-            RESOURCE_ARCHIVE_MAX_BYTES,
-            signal,
-          ),
+        set(
+          downloadS3BufferWithMaxBytes$,
+          {
+            bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+            key: `${item.s3Key}/archive.tar.gz`,
+            maxBytes: RESOURCE_ARCHIVE_MAX_BYTES,
+          },
+          signal,
         ),
         signal,
       );
@@ -409,6 +410,15 @@ const materializeResourceIndexWork$ = command(
   },
 );
 
+const settleResourceIndexWork$ = command(
+  async ({ set }, item: ResourceIndexWork, signal: AbortSignal) => {
+    // Keep the original rejection as data until the batch closes its span.
+    return await settleIncludingAbort(
+      set(materializeResourceIndexWork$, item, signal),
+    );
+  },
+);
+
 export const executePiResourceIndexWork$ = command(
   async (
     { set },
@@ -429,14 +439,11 @@ export const executePiResourceIndexWork$ = command(
           "pi.attempt_count": item.attemptCount,
         },
       });
-      const outcome = await settleIncludingAbort(
-        set(materializeResourceIndexWork$, item, signal),
-      );
-      if (signal.aborted) {
-        span.end();
-        signal.throwIfAborted();
-      }
-      if (outcome.ok) {
+      const outcome = await set(settleResourceIndexWork$, item, signal);
+      const reported = safeSync(() => {
+        if (!outcome.ok) {
+          return;
+        }
         span.setAttributes({
           "pi.outcome": outcome.value,
           ...(outcome.value === "ready"
@@ -461,8 +468,11 @@ export const executePiResourceIndexWork$ = command(
             break;
           }
         }
-      }
+      });
       span.end();
+      if ("error" in reported) {
+        throw reported.error;
+      }
       if (!outcome.ok) {
         throw outcome.error;
       }

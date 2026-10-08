@@ -606,6 +606,43 @@ export function downloadS3BufferWithMaxBytes(
   );
 }
 
+const getS3Object$ = command(
+  async (
+    { get },
+    args: {
+      readonly bucket: string;
+      readonly key: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    return await get(s3ClientForBucket(args.bucket)).send(
+      new GetObjectCommand({ Bucket: args.bucket, Key: args.key }),
+      { abortSignal: signal },
+    );
+  },
+);
+
+/** Fixed reader retaining SDK failure and body validation/cancellation order. */
+export const downloadS3BufferWithMaxBytes$ = command(
+  async (
+    { set },
+    args: {
+      readonly bucket: string;
+      readonly key: string;
+      readonly maxBytes: number;
+    },
+    signal: AbortSignal,
+  ): Promise<Buffer> => {
+    const response = await set(getS3Object$, args, signal);
+    return await readS3ObjectBody(
+      response,
+      args.key,
+      { maxBytes: args.maxBytes },
+      signal,
+    );
+  },
+);
+
 function isAsyncIterableByteStream(
   value: unknown,
 ): value is AsyncIterable<Uint8Array> {
