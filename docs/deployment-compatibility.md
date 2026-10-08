@@ -21,6 +21,27 @@ stored contexts can no longer be pending.
 (off by default) returns new launches to Responses. A release before #37987
 cannot read generation 5 and leaves those jobs unclaimable.
 
+## Maps oversized-response error (issue #36791)
+
+`POST /api/maps/search` continues to return HTTP 502 when the Google Maps
+provider response exceeds Okou's 512 KiB response limit. Its error code is now
+`MAPS_RESPONSE_TOO_LARGE` rather than `MAPS_GROUNDING_ERROR`; the message explains
+that the provider response exceeded Okou's size limit and recommends narrowing
+the search area, requesting fewer places, or splitting the query before retrying.
+The error includes no query or provider response content. The size protection,
+failed-query billing behavior, success envelope, and other failure codes are
+unchanged.
+
+- **Old CLI → new API:** the existing string error code/message envelope is
+  compatible; the CLI displays the actionable server message and exits 1.
+- **New CLI → old API:** the old generic error remains visible and exits 1; the
+  CLI does not infer an oversized response from an undifferentiated 502.
+- **New CLI → new API:** the actionable server message is displayed for normal
+  and `--json` invocations. Errors continue to use stderr rather than success JSON.
+
+No database, Runner protocol, version floor, or rollout fallback is required.
+This change does not deploy or activate production changes.
+
 ## Pi OpenRouter Chat Completions route (generation 5, default off)
 
 Pi model configuration gains generation 5 (`dialect: "openai-completions"`,

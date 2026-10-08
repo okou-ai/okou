@@ -14,7 +14,7 @@ import { verifyCallbackRequest } from "../../lib/event-consumer/verify-signature
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
 import { webUrl } from "../../lib/web-url";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { safeJsonParse, settle } from "../utils";
 import {
   AutomationEventSourceTiming,
@@ -131,68 +131,82 @@ export function workflowWebhookSummaryFields(
   };
 }
 
-export async function buildWorkflowWebhookSummaryFields(
-  db: ReadonlyDb,
-  args: { readonly automation: AutomationRow } & (
-    | {
-        readonly webhookToken: string;
-        readonly webhookSecret: string;
-      }
-    | {
-        readonly webhookToken?: undefined;
-        readonly webhookSecret?: undefined;
-      }
-  ),
-): Promise<{
-  readonly webhookUrl?: string;
-  readonly secretLastFour: string;
-  readonly disabledReason: "paid_plan_required" | null;
-  readonly lastReceivedAt: string | null;
-  readonly webhookSecret?: string;
-}> {
-  const [webhook] = await db
-    .select()
-    .from(workflowWebhookAutomations)
-    .where(eq(workflowWebhookAutomations.automationId, args.automation.id))
-    .limit(1);
-  if (!webhook) {
-    throw new Error(
-      `Workflow webhook automation config missing: ${args.automation.id}`,
-    );
-  }
+export const buildWorkflowWebhookSummaryFields$ = command(
+  async (
+    { get },
+    args: { readonly automation: AutomationRow } & (
+      | {
+          readonly webhookToken: string;
+          readonly webhookSecret: string;
+        }
+      | {
+          readonly webhookToken?: undefined;
+          readonly webhookSecret?: undefined;
+        }
+    ),
+    signal: AbortSignal,
+  ): Promise<{
+    readonly webhookUrl?: string;
+    readonly secretLastFour: string;
+    readonly disabledReason: "paid_plan_required" | null;
+    readonly lastReceivedAt: string | null;
+    readonly webhookSecret?: string;
+  }> => {
+    const db = get(db$);
+    const [webhook] = await db
+      .select()
+      .from(workflowWebhookAutomations)
+      .where(eq(workflowWebhookAutomations.automationId, args.automation.id))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!webhook) {
+      throw new Error(
+        `Workflow webhook automation config missing: ${args.automation.id}`,
+      );
+    }
 
-  return workflowWebhookSummaryFields(webhook, args);
-}
-
-export async function revealWorkflowWebhookSecretFields(
-  db: ReadonlyDb,
-  args: {
-    readonly automation: AutomationRow;
+    return workflowWebhookSummaryFields(webhook, args);
   },
-): Promise<{ readonly webhookUrl: string; readonly webhookSecret: string }> {
-  const [webhook] = await db
-    .select()
-    .from(workflowWebhookAutomations)
-    .where(eq(workflowWebhookAutomations.automationId, args.automation.id))
-    .limit(1);
-  if (!webhook) {
-    throw new Error(
-      `Workflow webhook automation config missing: ${args.automation.id}`,
-    );
-  }
-  const context = {
-    orgId: args.automation.orgId,
-    userId: args.automation.ownerUserId,
-  };
-  const [token, secret] = await Promise.all([
-    decryptWorkflowWebhookToken(webhook.encryptedToken, context),
-    decryptWorkflowWebhookSecret(webhook.encryptedSecret, context),
-  ]);
-  return {
-    webhookUrl: workflowWebhookUrlForToken(token),
-    webhookSecret: secret,
-  };
-}
+);
+
+export const revealWorkflowWebhookSecretFields$ = command(
+  async (
+    { get },
+    args: {
+      readonly automation: AutomationRow;
+    },
+    signal: AbortSignal,
+  ): Promise<{
+    readonly webhookUrl: string;
+    readonly webhookSecret: string;
+  }> => {
+    const db = get(db$);
+    const [webhook] = await db
+      .select()
+      .from(workflowWebhookAutomations)
+      .where(eq(workflowWebhookAutomations.automationId, args.automation.id))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!webhook) {
+      throw new Error(
+        `Workflow webhook automation config missing: ${args.automation.id}`,
+      );
+    }
+    const context = {
+      orgId: args.automation.orgId,
+      userId: args.automation.ownerUserId,
+    };
+    const [token, secret] = await Promise.all([
+      decryptWorkflowWebhookToken(webhook.encryptedToken, context),
+      decryptWorkflowWebhookSecret(webhook.encryptedSecret, context),
+    ]);
+    signal.throwIfAborted();
+    return {
+      webhookUrl: workflowWebhookUrlForToken(token),
+      webhookSecret: secret,
+    };
+  },
+);
 
 interface WorkflowWebhookAutomationDispatchRow {
   readonly automation: AutomationRow;

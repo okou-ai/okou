@@ -12,7 +12,7 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { deleteWorkflow$ } from "../services/workflow-delete.service";
-import { workflowDetail } from "../services/workflow-detail.service";
+import { workflowDetail$ } from "../services/workflow-detail.service";
 import {
   getOfficialWorkflow$,
   getOfficialWorkflowInstallationDefinition$,
@@ -134,12 +134,14 @@ const installOfficialWorkflowInner$ = command(
     if (result.kind !== "ok") {
       return mutationFailure(result);
     }
-    const detail = await get(
-      workflowDetail({
+    const detail = await set(
+      workflowDetail$,
+      {
         orgId: auth.orgId,
         member: memberFromAuth(auth),
         workflowId: result.workflowId,
-      }),
+      },
+      signal,
     );
     signal.throwIfAborted();
     if (!detail?.official) {
@@ -161,12 +163,14 @@ const getInstallationInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const params = get(pathParamsOf(officialWorkflowInstallationsContract.get));
-    const detail = await get(
-      workflowDetail({
+    const detail = await set(
+      workflowDetail$,
+      {
         orgId: auth.orgId,
         member: memberFromAuth(auth),
         workflowId: params.workflowId,
-      }),
+      },
+      signal,
     );
     signal.throwIfAborted();
     if (!detail?.official) {
@@ -232,12 +236,14 @@ const reconfigureInstallationInner$ = command(
     if (result.kind !== "ok") {
       return mutationFailure(result);
     }
-    const detail = await get(
-      workflowDetail({
+    const detail = await set(
+      workflowDetail$,
+      {
         orgId: auth.orgId,
         member: memberFromAuth(auth),
         workflowId: result.workflowId,
-      }),
+      },
+      signal,
     );
     signal.throwIfAborted();
     if (!detail?.official) {
@@ -261,12 +267,14 @@ const uninstallInstallationInner$ = command(
     const params = get(
       pathParamsOf(officialWorkflowInstallationsContract.uninstall),
     );
-    const detail = await get(
-      workflowDetail({
+    const detail = await set(
+      workflowDetail$,
+      {
         orgId: auth.orgId,
         member: memberFromAuth(auth),
         workflowId: params.workflowId,
-      }),
+      },
+      signal,
     );
     signal.throwIfAborted();
     if (!detail?.official || detail.ownerUserId !== auth.userId) {

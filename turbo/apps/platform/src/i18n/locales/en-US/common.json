@@ -418,8 +418,7 @@
         "invite": "Invite",
         "openArtifacts": "Open mobile artifacts",
         "openAutomations": "Open mobile automations",
-        "openMenu": "Open menu",
-        "overlay": "Sidebar overlay"
+        "openMenu": "Open menu"
       },
       "navigation": {
         "agents": "Agents",
