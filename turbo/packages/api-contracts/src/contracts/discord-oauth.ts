@@ -18,7 +18,10 @@ export const discordOauthContract = c.router({
         .optional(),
     }),
     responses: {
-      200: z.object({ authorizationUrl: z.url() }),
+      200: z.object({
+        authorizationUrl: z.url(),
+        completionToken: z.string().min(1),
+      }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -27,6 +30,23 @@ export const discordOauthContract = c.router({
       503: apiErrorSchema,
     },
     summary: "Start browser-correlated Discord installation or account linking",
+  },
+  complete: {
+    method: "POST",
+    path: "/api/integrations/discord/oauth/complete",
+    headers: authHeadersSchema,
+    body: z.strictObject({ state: z.string(), completionToken: z.string() }),
+    responses: {
+      200: z.object({ status: z.enum(["installed", "connected"]) }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary:
+      "Complete an owner- and consent-browser-verified Discord OAuth attempt",
   },
   callback: {
     method: "GET",
@@ -38,7 +58,8 @@ export const discordOauthContract = c.router({
       guild_id: z.string().optional(),
     }),
     responses: { 307: c.noBody() },
-    summary: "Consume a one-use Discord OAuth attempt in its starting browser",
+    summary:
+      "Verify one-use Discord provider evidence without binding an Okou owner",
   },
 });
 
