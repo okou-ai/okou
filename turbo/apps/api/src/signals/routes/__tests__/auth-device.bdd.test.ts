@@ -471,7 +471,7 @@ describe("AUTH-02: platform realtime token", () => {
 
     const token = await authDevice.requestPlatformRealtimeToken(actor, [500]);
     expect(token.status).toBe(500);
-    expectApiError(token.body);
+    expect(token.body).toStrictEqual({ error: "Internal server error" });
   });
 });
 
