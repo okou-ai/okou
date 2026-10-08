@@ -4,7 +4,6 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-05-13",
   "images": { "binding": "IMAGES" },
-  "media": { "binding": "MEDIA" },
   "routes": [
     { "pattern": "a.okou.io/*", "zone_name": "okou.io" },
     {
@@ -38,7 +37,6 @@
   "env": {
     "test": {
       "images": { "binding": "IMAGES" },
-      "media": { "binding": "MEDIA" },
       "routes": [
         {
           "pattern": "*.sites.vm7.io/*",

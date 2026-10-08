@@ -365,7 +365,6 @@
     "src/signals/services/cloudflare-access.service.ts",
     "src/signals/services/image-generation.service.ts",
     "src/signals/services/private-artifact-storage.service.ts",
-    "src/signals/services/private-video-preview.service.ts",
     "src/signals/services/provider-usage-publication.service.ts",
     "src/signals/services/run-uploaded-files.service.ts",
     "src/signals/services/runner-dispatch.service.ts",

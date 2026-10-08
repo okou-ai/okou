@@ -21,11 +21,6 @@ import {
   syncArtifactCatalogForFile$,
 } from "./artifact-catalog.service";
 import { publishArtifactsChangedForRun$ } from "./artifact-realtime.service";
-import {
-  scheduleArtifactPreviewRender$,
-  VIDEO_POSTER_MAX_INPUT_BYTES,
-  type RenderArtifactPreviewArgs,
-} from "./artifact-preview.service";
 
 interface RecordWebUploadedFileArgs {
   readonly runId: string | undefined;
@@ -96,7 +91,6 @@ export const sourceForRun$ = command(
 interface RecordedUploadedFile {
   readonly id: string;
   readonly previewImageUrl: string | null;
-  readonly sizeBytes: number | null;
 }
 
 const L = logger("RunUploadedFiles");
@@ -162,7 +156,6 @@ const recordRunUploadedFile$ = command(
           .returning({
             id: runUploadedFiles.id,
             previewImageUrl: runUploadedFiles.previewImageUrl,
-            sizeBytes: runUploadedFiles.sizeBytes,
           });
         if (row) {
           // Capture the association at write time so lists never need Run history.
@@ -206,40 +199,6 @@ const recordRunUploadedFile$ = command(
     return undefined;
   },
 );
-
-function videoArtifactPreviewArgs(
-  args: {
-    readonly runId: string;
-    readonly userId: string;
-    readonly orgId: string | null | undefined;
-    readonly url: string | null;
-    readonly contentType: string | null;
-    readonly layout: LinkLayout;
-  },
-  row: RecordedUploadedFile | undefined,
-): RenderArtifactPreviewArgs | null {
-  if (
-    !row ||
-    row.previewImageUrl ||
-    !args.orgId ||
-    !args.url ||
-    !args.contentType?.startsWith("video/") ||
-    // An oversized input always fails with `9402`; the video element fallback
-    // covers it instead. An unknown size still gets one attempt.
-    (row.sizeBytes !== null && row.sizeBytes >= VIDEO_POSTER_MAX_INPUT_BYTES)
-  ) {
-    return null;
-  }
-  return {
-    id: row.id,
-    runId: args.runId,
-    userId: args.userId,
-    orgId: args.orgId,
-    url: args.url,
-    contentType: args.contentType,
-    layout: args.layout,
-  };
-}
 
 /**
  * Insert (or upsert) a `run_uploaded_files` row for a hosted website
@@ -363,20 +322,6 @@ export const recordWebUploadedFile$ = command(
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
     await set(publishArtifactsChangedForRun$, args.runId, signal);
-    set(
-      scheduleArtifactPreviewRender$,
-      videoArtifactPreviewArgs(
-        {
-          runId: args.runId,
-          userId: args.userId,
-          orgId: args.orgId,
-          url: args.url,
-          contentType: args.contentType,
-          layout: args.layout,
-        },
-        row,
-      ),
-    );
   },
 );
 
@@ -443,20 +388,6 @@ export const recordTelegramUploadedFile$ = command(
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
     await set(publishArtifactsChangedForRun$, args.runId, signal);
-    set(
-      scheduleArtifactPreviewRender$,
-      videoArtifactPreviewArgs(
-        {
-          runId: args.runId,
-          userId: args.userId,
-          orgId: args.orgId,
-          url: args.url,
-          contentType: args.contentType,
-          layout: args.layout,
-        },
-        row,
-      ),
-    );
   },
 );
 
@@ -565,20 +496,6 @@ export const recordGithubUploadedFile$ = command(
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
     await set(publishArtifactsChangedForRun$, args.runId, signal);
-    set(
-      scheduleArtifactPreviewRender$,
-      videoArtifactPreviewArgs(
-        {
-          runId: args.runId,
-          userId: args.userId,
-          orgId: args.orgId,
-          url: args.url,
-          contentType: args.contentType,
-          layout: args.layout,
-        },
-        row,
-      ),
-    );
   },
 );
 
@@ -622,20 +539,6 @@ export const recordFeishuUploadedFile$ = command(
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
     await set(publishArtifactsChangedForRun$, args.runId, signal);
-    set(
-      scheduleArtifactPreviewRender$,
-      videoArtifactPreviewArgs(
-        {
-          runId: args.runId,
-          userId: args.userId,
-          orgId: args.orgId,
-          url: args.url,
-          contentType: args.contentType,
-          layout: args.layout,
-        },
-        row,
-      ),
-    );
   },
 );
 
@@ -679,20 +582,6 @@ export const recordTeamsUploadedFile$ = command(
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
     await set(publishArtifactsChangedForRun$, args.runId, signal);
-    set(
-      scheduleArtifactPreviewRender$,
-      videoArtifactPreviewArgs(
-        {
-          runId: args.runId,
-          userId: args.userId,
-          orgId: args.orgId,
-          url: args.url,
-          contentType: args.contentType,
-          layout: args.layout,
-        },
-        row,
-      ),
-    );
   },
 );
 
@@ -742,20 +631,6 @@ export const recordAgentPhoneUploadedFile$ = command(
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
     await set(publishArtifactsChangedForRun$, args.runId, signal);
-    set(
-      scheduleArtifactPreviewRender$,
-      videoArtifactPreviewArgs(
-        {
-          runId: args.runId,
-          userId: args.userId,
-          orgId: args.orgId,
-          url: args.url,
-          contentType: args.contentType,
-          layout: args.layout,
-        },
-        row,
-      ),
-    );
   },
 );
 
@@ -810,19 +685,5 @@ export const recordSlackUploadedFile$ = command(
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
     await set(publishArtifactsChangedForRun$, args.runId, signal);
-    set(
-      scheduleArtifactPreviewRender$,
-      videoArtifactPreviewArgs(
-        {
-          runId: args.runId,
-          userId: args.userId,
-          orgId: args.orgId,
-          url: args.url,
-          contentType: args.contentType,
-          layout: args.layout,
-        },
-        row,
-      ),
-    );
   },
 );

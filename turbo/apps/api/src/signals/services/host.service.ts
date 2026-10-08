@@ -615,8 +615,6 @@ function artifactPreviewArgs(
     userId: deployment.userId,
     orgId: deployment.orgId,
     url: deployment.artifactUrl ?? deployment.url,
-    contentType: "text/html",
-    layout: rowLinkLayout(deployment),
     deploymentId: deployment.id,
   };
 }
