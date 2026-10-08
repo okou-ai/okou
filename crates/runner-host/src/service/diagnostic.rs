@@ -1,4 +1,4 @@
-pub(super) fn status_field_preview(value: &str) -> String {
+pub fn status_field_preview(value: &str) -> String {
     const MAX_CHARS: usize = 128;
     let mut chars = value.chars();
     let preview = chars.by_ref().take(MAX_CHARS).collect::<String>();

@@ -36,6 +36,14 @@ cargo test --manifest-path crates/Cargo.toml --profile local -p guest-agent
 cargo test --manifest-path crates/Cargo.toml --profile local \
   -j 1 -p runner-host -- --test-threads=1
 
+# Host-owned systemd primitives and retained Runner command composition
+# All 97 identity/query/config/diagnostic cases moved into runner-host/src/service.
+# Reload, stop, drain/resume, unit generation and output composition tests remain
+# in Runner. Three private state fixtures use host's non-default test-support
+# feature, requested by Runner only as a dev-dependency. No cases were removed.
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p runner-host -p runner -- --test-threads=1
+
 # Extracted Runner provider coordination and its owner tests
 cargo test --manifest-path crates/Cargo.toml --profile local --locked \
   -j 1 -p runner-provider -- --test-threads=1

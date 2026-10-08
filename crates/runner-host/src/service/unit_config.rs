@@ -1,22 +1,20 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::error::RunnerResult;
+use crate::error::HostResult;
 
 use super::target::RunnerServiceUnit;
 
 /// Read systemd's selected unit content and extract the runner `--config` path.
-pub(crate) async fn read_unit_config_path(
-    unit: &RunnerServiceUnit,
-) -> RunnerResult<Option<PathBuf>> {
+pub async fn read_unit_config_path(unit: &RunnerServiceUnit) -> HostResult<Option<PathBuf>> {
     let content = super::systemctl::cat_unit_content(unit).await?;
     Ok(parse_unit_config_path(&content))
 }
 
-pub(super) async fn read_unit_config_path_bounded(
+pub async fn read_unit_config_path_bounded(
     unit: &RunnerServiceUnit,
     duration: Duration,
-) -> RunnerResult<super::systemctl::BoundedSystemctlQuery<Option<PathBuf>>> {
+) -> HostResult<super::systemctl::BoundedSystemctlQuery<Option<PathBuf>>> {
     match super::systemctl::cat_unit_content_bounded(unit, duration).await? {
         super::systemctl::BoundedSystemctlQuery::Completed(content) => Ok(
             super::systemctl::BoundedSystemctlQuery::Completed(parse_unit_config_path(&content)),
@@ -27,7 +25,7 @@ pub(super) async fn read_unit_config_path_bounded(
     }
 }
 
-pub(crate) fn parse_unit_config_path(content: &str) -> Option<PathBuf> {
+pub fn parse_unit_config_path(content: &str) -> Option<PathBuf> {
     let mut config_path = None;
     let mut in_service_section = false;
     for line in logical_unit_lines(content) {
@@ -99,7 +97,7 @@ fn logical_unit_lines(content: &str) -> Vec<String> {
 ///
 /// Handles both quoted (`--config "/path with spaces/f.yaml"`) and unquoted
 /// (`--config /simple/path.yaml`) forms. Only the argument value is extracted.
-pub(crate) fn parse_exec_start_config(line: &str) -> Option<PathBuf> {
+fn parse_exec_start_config(line: &str) -> Option<PathBuf> {
     let tokens = tokenize_systemd_exec_start(line)?;
     for (idx, token) in tokens.iter().enumerate() {
         if token == "--config" || token == "-c" {

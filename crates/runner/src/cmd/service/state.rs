@@ -3,8 +3,7 @@ use serde::Serialize;
 
 use crate::error::{RunnerError, RunnerResult};
 
-use super::systemctl::{ServiceUnitState, read_service_unit_state};
-use super::target::RunnerServiceUnit;
+use runner_host::service::{RunnerServiceUnit, ServiceUnitState, read_service_unit_state};
 
 #[derive(Args)]
 pub(super) struct UnitStateArgs {
@@ -32,7 +31,7 @@ pub(super) async fn run(args: UnitStateArgs) -> RunnerResult<()> {
     let units = args
         .names
         .iter()
-        .map(|name| RunnerServiceUnit::from_suffix(name))
+        .map(|name| RunnerServiceUnit::from_suffix(name).map_err(RunnerError::from))
         .collect::<RunnerResult<Vec<_>>>()?;
 
     let mut services = Vec::with_capacity(units.len());
@@ -61,6 +60,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use runner_host::service::test_support;
 
     fn service_unit(suffix: &str) -> RunnerServiceUnit {
         RunnerServiceUnit::from_suffix(suffix).unwrap()
@@ -68,7 +68,9 @@ mod tests {
 
     #[test]
     fn unit_state_output_uses_stable_wrapper_shape() {
-        let state = ServiceUnitState::for_test("loaded", "deactivating", "stop-sigterm", "success");
+        let state =
+            test_support::service_unit_state("loaded", "deactivating", "stop-sigterm", "success")
+                .unwrap();
         let output = UnitStateOutput {
             services: vec![unit_state_entry(service_unit("v1.2.3"), state)],
         };
@@ -100,11 +102,13 @@ mod tests {
             services: vec![
                 unit_state_entry(
                     service_unit("v1.2.3"),
-                    ServiceUnitState::for_test("loaded", "active", "running", "success"),
+                    test_support::service_unit_state("loaded", "active", "running", "success")
+                        .unwrap(),
                 ),
                 unit_state_entry(
                     service_unit("v1.2.2"),
-                    ServiceUnitState::for_test("not-found", "inactive", "dead", "success"),
+                    test_support::service_unit_state("not-found", "inactive", "dead", "success")
+                        .unwrap(),
                 ),
             ],
         };

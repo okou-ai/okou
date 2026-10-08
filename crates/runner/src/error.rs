@@ -214,6 +214,40 @@ mod tests {
     use super::*;
 
     #[test]
+    fn host_service_errors_preserve_runner_categories_display_and_io_source() {
+        use runner_host::service::{RunnerServiceUnit, journalctl_logs_status};
+        use std::error::Error;
+        use std::os::unix::process::ExitStatusExt;
+
+        let config = RunnerServiceUnit::from_suffix("UPPER").unwrap_err();
+        let expected = config.to_string();
+        let mapped = RunnerError::from(config);
+        assert!(matches!(&mapped, RunnerError::Config(_)));
+        assert_eq!(mapped.to_string(), expected);
+
+        let internal = journalctl_logs_status(
+            "vm0-runner-test.service",
+            std::process::ExitStatus::from_raw(1 << 8),
+        )
+        .unwrap_err();
+        let expected = internal.to_string();
+        let mapped = RunnerError::from(internal);
+        assert!(matches!(&mapped, RunnerError::Internal(_)));
+        assert_eq!(mapped.to_string(), expected);
+
+        let io = std::io::Error::from_raw_os_error(libc::EACCES);
+        let expected_source = io.to_string();
+        let host = runner_host::HostError::Io(io);
+        let expected_display = host.to_string();
+        let mapped = RunnerError::from(host);
+        assert_eq!(mapped.to_string(), expected_display);
+        assert_eq!(mapped.source().unwrap().to_string(), expected_source);
+        assert!(matches!(mapped, RunnerError::Io(ref io)
+            if io.raw_os_error() == Some(libc::EACCES)
+                && io.kind() == std::io::ErrorKind::PermissionDenied));
+    }
+
+    #[test]
     fn format_short_duration_cases() {
         assert_eq!(format_short_duration(Duration::from_secs(0)), "0m");
         assert_eq!(format_short_duration(Duration::from_secs(45)), "0m");
