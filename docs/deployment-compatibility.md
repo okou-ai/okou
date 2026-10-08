@@ -1,5 +1,26 @@
 # Deployment Compatibility
 
+## Platform realtime token exchange (#37143)
+
+`POST /api/realtime/token` now always returns a fresh signed Ably `TokenRequest`.
+The browser SDK exchanges it for the connection token. The API no longer
+pre-exchanges tokens or waits for a one-second exchange budget. Subscribe-only
+user/active-organization capabilities, the one-hour TTL, authentication and
+server-side signing-key ownership are unchanged.
+
+- **Old Platform → new API:** the existing response union and Ably SDK already
+  support signed token requests, previously returned by the fallback path.
+- **New Platform → old API:** the unchanged Ably auth callback passes the response
+  to the SDK, which accepts both token details and signed requests. The production
+  realtime client uses the default API client without response-schema validation;
+  narrowing the new producer's contract does not reject old token details there.
+- **New Platform → new API:** initial connection and renewal each obtain a fresh
+  single-use signed request. The API response contract and test fixtures now use
+  only that shape; do not cache or replay a request for renewal.
+
+No database migration, client version floor, feature switch or deployment-order
+fallback is required. This change does not deploy or verify production recovery.
+
 ## Maps oversized-response error (issue #36791)
 
 `POST /api/maps/search` continues to return HTTP 502 when the Google Maps
