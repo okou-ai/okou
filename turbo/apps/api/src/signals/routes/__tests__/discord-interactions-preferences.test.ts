@@ -168,6 +168,7 @@ async function routedModelFixture(owner = actor()) {
   // The Gateway fixture configures the bot; this suite owns interaction signing.
   mockEnv("DISCORD_PUBLIC_KEY", publicKey);
   onTestFinished(async () => {
+    mockDiscordMemberships(context, [owner]);
     await removePublicDiscordBinding(context, connected.fixture);
     await deleteFeatureSwitchesForUser(context, owner);
   });
@@ -396,7 +397,7 @@ function discordHttp(fixtures: readonly Fixture[], dm?: DiscordSender) {
           {
             id: scope.binding.guildId,
             name: "@everyone",
-            permissions: "274878040064",
+            permissions: "274877975552",
             position: 0,
           },
         ]);

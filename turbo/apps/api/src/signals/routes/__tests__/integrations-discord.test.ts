@@ -536,9 +536,9 @@ describe("verified Discord integration settings", () => {
     const differentSender = actor({ userId: owner.userId });
     const wrongSenderBinding = await fixture(differentSender);
     const differentUser = actor();
-    const wrongUserBinding = await fixture(differentUser, {
-      discordUserId: current.discordUserId,
-    });
+    // A Discord account cannot be owned by another Okou user. The foreign
+    // connection is independently installed and owned by its actual caller.
+    const wrongUserBinding = await fixture(differentUser);
 
     for (const connectionId of [
       wrongSenderBinding.connectionId,
@@ -569,7 +569,7 @@ describe("verified Discord integration settings", () => {
       }),
       [200],
     );
-    await expectDiscordChanges([owner.userId, differentUser.userId]);
+    await expectDiscordChanges([owner.userId]);
   });
 
   it("always reports the organization default agent", async () => {

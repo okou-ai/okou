@@ -74,6 +74,7 @@ test("removes a departed member's binding only in the affected organization", as
     discordUserId: binding.discordUserId,
   });
   onTestFinished(async () => {
+    mockDiscordMemberships(context, [peer, elsewhere]);
     await removePublicDiscordBinding(context, peerBinding);
     await removePublicDiscordBinding(context, otherBinding);
   });
