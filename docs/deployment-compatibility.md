@@ -6436,24 +6436,33 @@ persistence constraints.
 
 ### Version-addressed CLI artifacts in the runner rootfs
 
-Every CLI artifact `manifest.json` records the release versions of what the
-bundle contains: `versions.cli` (`@okouai/cli`), `versions.piAgentRuntime`
-(`@okouai/pi-agent-runtime`), and `versions.piSdk` (the pinned upstream Pi SDK
-plus a digest of the first-party patch set). A release additionally publishes
-the release commit's artifact at `okou-cli/v<versions.cli>/`. That path is
-immutable: the publish step fails the release when the version already exists
-with different bytes, so one CLI version identifies exactly one bundle and the
-semantic version can serve as a compatibility identity.
+Every CLI package carries mandatory `okouBuildIdentity` schema 1 in its packed
+`package.json`: Pi runtime version, Pi SDK version plus the first-party patch-set
+digest, and session-construction digest. The existing package `version` identifies
+`@okouai/cli`. The artifact producer derives `manifest.json` identity from those
+packed bytes, not a later workspace read. Verification, Runner compilation and
+rootfs staging reject missing identity or disagreement with the external or
+compiled identity; there is no legacy-package reader or compatibility fallback.
+
+A release additionally publishes the release commit's artifact at
+`okou-cli/v<versions.cli>/`. That path is immutable: the publish step fails the
+release when the version already exists with different bytes. New package bytes
+require a new CLI version through the existing CLI-to-Runner release dependency;
+never overwrite a versioned object or redirect a historical package URL.
 
 A Runner compiled with an embedded CLI bundle installs its verified
 `package.tgz` into the rootfs customize layer at
-`/usr/local/lib/okou-cli/<version>/`. The compiled version, Pi SDK and session
-identity are validated against the explicitly supplied package manifest during
-compilation; only the package bytes are embedded. `runner build` stages those
-bytes alongside the embedded Guest binaries and writes `/usr/local/bin/okou`
-and `/usr/local/lib/okou-cli/installed.json`. The package bytes and installed
-manifest are part of the rootfs hash, and `verify-rootfs.sh` checks the
-installed manifest against the verified identity.
+`/usr/local/lib/okou-cli/<version>/`. Only package bytes are embedded; validated
+identity fields become compile-time constants. `runner build` verifies those
+bytes and their packed identity again before cache selection, stages them alongside
+the embedded Guest binaries, and writes `/usr/local/bin/okou` and
+`/usr/local/lib/okou-cli/installed.json`. The CLI contributes only its actual
+verified package SHA-256 to the local rootfs hash. Installed metadata remains
+determined by that package and the fixed installation recipe; `verify-rootfs.sh`
+and exact cached-sidecar comparison still validate it. Local rootfs cache version
+3 isolates this recipe. Changes to fixed installed schema, serialization or paths
+must rotate that version; shared template and snapshot versions are unchanged.
+This hash change does not remove installed metadata or change guest launch selection.
 
 New Runner binaries no longer accept `--okou-cli-artifact DIR`, and current
 release/preview orchestration does not stage a separate host CLI artifact. A
