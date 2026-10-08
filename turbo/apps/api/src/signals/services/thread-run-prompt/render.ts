@@ -15,7 +15,7 @@ export function renderThreadPrompt(
     systemPrompt: [
       [common.userIdentity, channelUserIdentity].filter(Boolean).join("\n"),
       integrationContext,
-      common.priorContext || common.incompleteContext,
+      common.continuationContext,
       common.generationTemplatePrompt,
       common.computerUseContext,
     ]

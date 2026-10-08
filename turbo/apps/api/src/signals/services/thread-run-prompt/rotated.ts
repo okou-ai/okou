@@ -55,6 +55,7 @@ import {
   canReuseSession,
   type SessionExecutionIdentity,
 } from "../session-compatibility";
+import { createIncompletePrompt } from "./incomplete";
 import type { PickedThreadInputEvent } from "./types";
 
 function currentSessionIdentity(
@@ -129,7 +130,7 @@ function groupPriorRunEvents(
   return grouped;
 }
 
-export function createRotatedPrompt(
+function createPriorRunsPrompt(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   session$: Computed<Promise<SessionExecutionIdentity | null>>,
   memberRoutes$: Computed<Promise<MemberModelRouteContext>>,
@@ -252,5 +253,28 @@ export function createRotatedPrompt(
       contextType,
       triggerSource,
     );
+  });
+}
+
+/** The continuation text for this run, including rounds absent from native history. */
+export function createRotatedPrompt(
+  pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
+  session$: Computed<Promise<SessionExecutionIdentity | null>>,
+  memberRoutes$: Computed<Promise<MemberModelRouteContext>>,
+  claimCatalog$: Computed<Promise<ModelCatalog>>,
+): Computed<Promise<string>> {
+  const prior$ = createPriorRunsPrompt(
+    pickedEvent$,
+    session$,
+    memberRoutes$,
+    claimCatalog$,
+  );
+  const incomplete$ = createIncompletePrompt(pickedEvent$);
+  return computed(async (get) => {
+    const [prior, incomplete] = await Promise.all([
+      get(prior$),
+      get(incomplete$),
+    ]);
+    return prior || incomplete;
   });
 }

@@ -46,8 +46,7 @@ export interface IntegrationPromptVariables {
 
 export interface CommonPromptVariables {
   readonly userIdentity: string;
-  readonly priorContext: string;
-  readonly incompleteContext: string;
+  readonly continuationContext: string;
   readonly generationTemplatePrompt: string;
   readonly computerUseContext: string;
 }
