@@ -265,40 +265,6 @@ export async function bindPiMemoryPhase2MaintenanceRun(
   }
 }
 
-async function updateSelectionWatermarks(
-  tx: Tx,
-  payload: PiMemoryPhase2MaintenanceCallbackPayload,
-): Promise<void> {
-  await tx
-    .update(piMemoryStage1Candidates)
-    .set({ lastSelectedSourceHistoryHash: null })
-    .where(
-      and(
-        eq(piMemoryStage1Candidates.memoryStorageId, payload.memoryStorageId),
-        eq(piMemoryStage1Candidates.orgId, payload.orgId),
-        eq(piMemoryStage1Candidates.userId, payload.userId),
-      ),
-    );
-  for (const candidate of payload.selected) {
-    await tx
-      .update(piMemoryStage1Candidates)
-      .set({ lastSelectedSourceHistoryHash: candidate.sourceHistoryHash })
-      .where(
-        and(
-          eq(piMemoryStage1Candidates.memoryStorageId, payload.memoryStorageId),
-          eq(piMemoryStage1Candidates.orgId, payload.orgId),
-          eq(piMemoryStage1Candidates.userId, payload.userId),
-          eq(piMemoryStage1Candidates.status, "succeeded"),
-          eq(piMemoryStage1Candidates.piSessionId, candidate.piSessionId),
-          eq(
-            piMemoryStage1Candidates.sourceHistoryHash,
-            candidate.sourceHistoryHash,
-          ),
-        ),
-      );
-  }
-}
-
 function maintenanceFailureValues(args: {
   readonly payload: PiMemoryPhase2MaintenanceCallbackPayload;
   readonly runId: string;
@@ -440,68 +406,6 @@ function maintenanceSuccessValues(args: {
     lastMaintenanceOutcome: published ? "published" : "no_diff",
     updatedAt: completedAt,
   } as const;
-}
-
-async function completeMaintenanceSuccess(
-  tx: Tx,
-  args: {
-    readonly payload: PiMemoryPhase2MaintenanceCallbackPayload;
-    readonly runId: string;
-    readonly checkpoint: ExactMaintenanceCheckpoint;
-  },
-): Promise<void> {
-  await updateSelectionWatermarks(tx, args.payload);
-  const [completed] = await tx
-    .update(piMemoryPhase2Jobs)
-    .set(maintenanceSuccessValues(args))
-    .where(
-      exactActiveMaintenanceCondition({
-        binding: args.payload,
-        runId: args.runId,
-      }),
-    )
-    .returning({ id: piMemoryPhase2Jobs.memoryStorageId });
-  if (!completed) {
-    throw new Error(
-      "Pi memory maintenance completion lost its exact run fence",
-    );
-  }
-}
-
-/**
- * Commit validated checkpoint control state in the publisher's transaction.
- * No completion/observer acknowledgement is needed to make the receipt true.
- * This also prevents a draining API's failed-run observer from retrying a
- * publication whose later completion report was lost.
- */
-export async function settlePiMemoryPhase2Checkpoint(
-  tx: Tx,
-  runId: string,
-  versionId: string,
-): Promise<void> {
-  const [callback] = await tx
-    .select({ payload: agentRunCallbacks.payload })
-    .from(agentRunCallbacks)
-    .where(
-      and(
-        eq(agentRunCallbacks.runId, runId),
-        eq(agentRunCallbacks.internalKind, "pi-memory:phase2"),
-      ),
-    )
-    .limit(1);
-  const payload = piMemoryPhase2MaintenanceCallbackPayloadSchema.parse(
-    callback?.payload,
-  );
-  if (
-    piMemoryPhase2SelectionDigest(payload.selected) !== payload.selectionDigest
-  ) {
-    throw new Error("Pi memory checkpoint selection mismatch");
-  }
-  await completeMaintenanceSuccess(tx, {
-    payload,
-    runId,
-    checkpoint: { id: null, versionId },
-  });
 }
 
 const maintenanceJobColumns = Object.freeze({
