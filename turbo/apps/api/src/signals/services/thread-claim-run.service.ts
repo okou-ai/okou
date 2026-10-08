@@ -8688,10 +8688,13 @@ export function createThreadClaimRunObjects(
       if (!rejected) {
         return;
       }
-      if (error.code !== "AUTONOMY_BUDGET_EXHAUSTED") {
-        const logRejection =
-          error.code === "INSUFFICIENT_CREDITS" ? log.debug : log.warn;
-        logRejection("Rejected queued chat input", {
+      // Business rejections already have durable input.rejected/output.error
+      // events. Only internal failures need an additional operational warning.
+      if (
+        error.code === "INTERNAL_ERROR" ||
+        error.code === "INTERNAL_SERVER_ERROR"
+      ) {
+        log.warn("Rejected queued chat input", {
           chatThreadId: head.chatThreadId,
           eventId: head.id,
           contextType: head.contextType,

@@ -417,7 +417,7 @@ const commitMorningBriefScheduleSettlement$ = command(
       throw result.error;
     }
     if (result.value) {
-      log.warn(
+      log.debug(
         "Morning Brief schedule auto-disabled after consecutive failures",
         { automationId: args.automationId, ...result.value },
       );
