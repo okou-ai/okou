@@ -487,7 +487,7 @@ jobs:
     name: Prewarm runner dependency cache (${{ matrix.label }})
     runs-on: ubuntu-latest-8-cores
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      image: ${{ needs.prepare.outputs.runner-toolchain-image }}
     permissions:
       actions: read
       contents: read
@@ -510,7 +510,7 @@ jobs:
         include: ${{ fromJSON(needs.prepare.outputs.runner-binary-hit-matrix) }}
     env:
       TARGET_TRIPLE: ${{ matrix.target }}
-      RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ${{ needs.prepare.outputs.runner-toolchain-image }}
       RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.head-sha }}
       GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
       GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
@@ -723,7 +723,7 @@ jobs:
           r2-secret-access-key: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           r2-account-id: ${{ vars.R2_ACCOUNT_ID }}
           r2-bucket-name: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
-      - uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: crates -> target
           shared-key: ${{ matrix.cacheSuffix }}-release
