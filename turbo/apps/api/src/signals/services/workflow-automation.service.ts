@@ -4741,34 +4741,30 @@ const persistGmailEventConfiguration$ = command(
   ): Promise<WorkflowAutomationSummary | null> => {
     const db = set(writeDb$);
     const settled = await settle(
-      db.transaction(async (tx) => {
-        // One conditional statement publishes the account only while it is
-        // still the workflow's selection/default; zero rows means it changed.
-        const [updated] = await tx
-          .update(workflowAutomations)
-          .set({
-            eventConfig: args.eventConfig,
-            eventConnectorId: args.connectorId,
-            updatedAt: nowDate(),
-          })
-          .where(
-            and(
-              eq(workflowAutomations.id, args.automationId),
-              eq(workflowAutomations.orgId, args.orgId),
-              eq(workflowAutomations.ownerUserId, args.userId),
-              gmailSelectedAccountCondition(args),
-            ),
-          )
-          .returning(workflowAutomationColumns());
-        signal.throwIfAborted();
-        return updated ?? null;
-      }),
+      // Publish the account only while it is still the workflow's
+      // selection/default; zero rows means it changed.
+      db
+        .update(workflowAutomations)
+        .set({
+          eventConfig: args.eventConfig,
+          eventConnectorId: args.connectorId,
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(workflowAutomations.id, args.automationId),
+            eq(workflowAutomations.orgId, args.orgId),
+            eq(workflowAutomations.ownerUserId, args.userId),
+            gmailSelectedAccountCondition(args),
+          ),
+        )
+        .returning(workflowAutomationColumns()),
     );
     signal.throwIfAborted();
     if (!settled.ok && !isAutomationEventConnectorMissing(settled.error)) {
       throw settled.error;
     }
-    const row = settled.ok ? settled.value : null;
+    const row = settled.ok ? settled.value[0] : null;
     if (!row) {
       return null;
     }
