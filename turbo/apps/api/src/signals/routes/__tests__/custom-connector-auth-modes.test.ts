@@ -6,7 +6,7 @@ import {
   type CreateCustomConnectorBody,
   type CustomConnectorAuthMode,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -61,37 +61,52 @@ function definition(
   };
 }
 
-async function clients() {
+function clients() {
   const userId = `user_${randomUUID()}`;
   const orgId = `org_${randomUUID()}`;
-  mocks.clerk.session(userId, orgId, "org:admin");
-  context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
-    {
-      data: [
-        {
-          role: "org:admin",
-          organization: { id: orgId },
-          publicUserData: { userId },
-        },
-      ],
-    },
-  );
-  const app = await setupApp({
+
+  function authenticate() {
+    mocks.clerk.session(userId, orgId, "org:admin");
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            role: "org:admin",
+            organization: { id: orgId },
+            publicUserData: { userId },
+          },
+        ],
+      },
+    );
+  }
+
+  authenticate();
+  const app = setupApp({
     context,
     routes: customConnectorsRoutes,
-    isolatePg: true,
   });
-  return {
+  const api = {
     collection: app(customConnectorsContract),
     connector: app(customConnectorByIdContract),
   };
+  onTestFinished(async () => {
+    authenticate();
+    const listed = await accept(api.collection.list({ headers }), [200]);
+    for (const connector of listed.body.connectors) {
+      await accept(
+        api.connector.delete({ headers, params: { id: connector.id } }),
+        [204],
+      );
+    }
+  });
+  return api;
 }
 
 describe("Custom connector authentication modes", () => {
   it.each(modes)(
     "creates and reads a %s connector through the public API",
     async (mode) => {
-      const api = await clients();
+      const api = clients();
       const endpoint = `https://${randomUUID()}.mcp.example.test/server`;
       const created = await accept(
         api.collection.create({ headers, body: definition(mode, endpoint) }),
@@ -120,7 +135,7 @@ describe("Custom connector authentication modes", () => {
   it.each(modes)(
     "changes OAuth to %s and back through public definition updates",
     async (mode) => {
-      const api = await clients();
+      const api = clients();
       const endpoint = `https://${randomUUID()}.mcp.example.test/server`;
       const created = await accept(
         api.collection.create({
@@ -158,7 +173,7 @@ describe("Custom connector authentication modes", () => {
   );
 
   it("removes an OAuth definition from public reads after deletion", async () => {
-    const api = await clients();
+    const api = clients();
     const created = await accept(
       api.collection.create({
         headers,
