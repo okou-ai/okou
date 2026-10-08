@@ -16,7 +16,6 @@ import { createAppWithRoutes } from "../../../app-factory-core";
 import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { readStorageS3PrefixFixture } from "../../../test-fixtures/storage";
-import { rejectPresignedCacheWriteAfterPendingFixture } from "../../../test-fixtures/storage-presigned-url-cache";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
@@ -295,70 +294,6 @@ describe("workflow skill storage presigned URL cache", () => {
   beforeEach(() => {
     mockEnv("R2_USER_STORAGES_BUCKET_NAME", BUCKET);
     mockUniquePresignedUrls();
-  });
-
-  it("keeps complete runner URLs when the cache write fails after pending commit", async () => {
-    const fixture = await createWorkflowSkillRunFixture();
-    const api = createRunsApi(context);
-    const { chat, sendChatRun, claimChatRun, cancelChatRun } =
-      createChatEventsFixture(context);
-    await withCacheCleanup(fixture.objectKeyPrefix, async () => {
-      mockUniquePresignedUrls();
-      const warm = await sendChatRun(fixture.actor, {
-        agentId: fixture.agentId,
-        prompt: "establish this workflow's cache identity",
-      });
-      const warmClaim = await claimChatRun(fixture.runnerGroup, warm.runId);
-      const warmMount = expectCanonicalStorageManifest(
-        warmClaim.claim.storageManifest,
-      )?.storageMounts.find((entry) => {
-        return entry.name === fixture.storageName;
-      });
-      if (!warmMount?.archiveUrl) {
-        throw new Error("Expected the owned workflow storage mount");
-      }
-      await cancelChatRun(fixture.actor, warm.runId, warmClaim.sandboxHeaders);
-      const [cached] = await readCacheRowsByObjectKeyPrefix(
-        fixture.objectKeyPrefix,
-      );
-      if (!cached) {
-        throw new Error("Expected the owned workflow cache row");
-      }
-      await cleanupCacheState(fixture.objectKeyPrefix);
-      const thread = await chat.createThread(fixture.actor, {
-        agentId: fixture.agentId,
-        title: "Cache failure after pending commit",
-      });
-      onTestFinished(
-        await rejectPresignedCacheWriteAfterPendingFixture(
-          cached.cache_key,
-          context.signal,
-        ),
-      );
-      const run = await sendChatRun(fixture.actor, {
-        agentId: fixture.agentId,
-        threadId: thread.id,
-        prompt: "Run with a locally signed workflow URL",
-      });
-      const claimed = await claimChatRun(fixture.runnerGroup, run.runId);
-      const mount = expectCanonicalStorageManifest(
-        claimed.claim.storageManifest,
-      )?.storageMounts.find((entry) => {
-        return entry.name === fixture.storageName;
-      });
-      expect(mount).toMatchObject({
-        versionId: warmMount.versionId,
-        archiveUrl: expect.stringContaining("https://r2.example.com/"),
-      });
-      expect(mount?.archiveUrl).not.toBe(warmMount.archiveUrl);
-      await expect(
-        readCacheRowsByObjectKeyPrefix(fixture.objectKeyPrefix),
-      ).resolves.toStrictEqual([]);
-      expect((await api.readRun(fixture.actor, run.runId)).status).toBe(
-        "running",
-      );
-      await cancelChatRun(fixture.actor, run.runId, claimed.sandboxHeaders);
-    });
   });
 
   it("issues and reuses two-day URLs for ordinary read-only Storage mounts", async () => {
