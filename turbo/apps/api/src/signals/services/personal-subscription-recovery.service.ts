@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import type { ReadonlyDb } from "../external/db";
 
 /** Only canonical upstream identity is hashed; credentials never enter this value. */
 export function personalSubscriptionAccountIdentity(account: {
@@ -23,28 +22,20 @@ export function personalSubscriptionAccountIdentity(account: {
     : null;
 }
 
-export async function failedRunAccountIdentity(args: {
-  readonly db: ReadonlyDb;
+export function failedRunAccountIdentityCondition(args: {
   readonly runId: string;
   readonly accountId: string;
   readonly providerType: string;
   readonly userId: string;
   readonly orgId: string;
-}): Promise<string | null> {
-  const [run] = await args.db
-    .select({ identity: agentRuns.modelProviderAccountIdentity })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.id, args.runId),
-        eq(agentRuns.userId, args.userId),
-        eq(agentRuns.orgId, args.orgId),
-        eq(agentRuns.modelProviderId, args.accountId),
-        eq(agentRuns.modelProvider, args.providerType),
-        eq(agentRuns.modelProviderCredentialScope, "member"),
-        inArray(agentRuns.status, ["failed", "timeout"]),
-      ),
-    )
-    .limit(1);
-  return run?.identity ?? null;
+}) {
+  return and(
+    eq(agentRuns.id, args.runId),
+    eq(agentRuns.userId, args.userId),
+    eq(agentRuns.orgId, args.orgId),
+    eq(agentRuns.modelProviderId, args.accountId),
+    eq(agentRuns.modelProvider, args.providerType),
+    eq(agentRuns.modelProviderCredentialScope, "member"),
+    inArray(agentRuns.status, ["failed", "timeout"]),
+  );
 }
