@@ -120,9 +120,14 @@ logical size, not just newly allocated disk blocks. Existing entries are scanned
 incrementally without following aliases; reservations use the current resolved
 parent after prior real writes, so changing a directory alias cannot reuse a
 stale archive-name charge. Collision checks run again before each real write;
-a later header cannot resize an inode already shared by hardlinks or write
-through a newly created dangling leaf alias. Deleted/replaced entries do not
-reclaim reservations.
+a later regular or hardlink header cannot resize an inode already shared by
+hardlinks or write through a newly created dangling leaf alias. For an existing
+hardlink destination, the maintained EEXIST copy fallback's archived bytes—not
+the zero-sized link header—must match the existing regular file. Each potential
+hardlink copy also consumes the same four-GiB work capacity before late collision
+hashing or writing, even when its filename was already reserved; only regular
+preflight collisions are hashed before that per-member reservation.
+Deleted/replaced entries do not reclaim reservations.
 The production ledger conservatively reserves 128 MiB each for the future QEMU
 binary, two BIOS copies and CA bundle, plus declared aliases/mountpoint names;
 CA concatenation is streamed under its reserved ceiling. The maintained extractor

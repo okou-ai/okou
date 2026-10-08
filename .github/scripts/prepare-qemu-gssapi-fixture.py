@@ -393,14 +393,21 @@ class PackageExtractionBudget:
         size = member.size if member.isfile() else 0
         if member.islnk():
             target = root / member.linkname
-            if os.path.lexists(target):
+            if destination.is_symlink():
+                raise ValueError("source-pinned fixture package file collision refused")
+            if os.path.lexists(target) and not destination.exists():
                 info = target.lstat()
                 size = info.st_size if stat.S_ISREG(info.st_mode) else 0
             else:
-                # Maintained tar can materialize an earlier archived link
-                # target. Seek its bounded logical stream; never read it all.
+                # Missing targets and EEXIST use the archived-target fallback,
+                # not necessarily the current filesystem target's bytes.
                 with stream.extractfile(member) as source:
                     size = source.seek(0, os.SEEK_END)
+            # Conservatively charge every possible hardlink copy, including
+            # repeated names, before late collision hashing or extraction.
+            if size > self.remaining_bytes:
+                raise ValueError("package aggregate extraction budget refused")
+            self.remaining_bytes -= size
         self.reserve_output_path(str(destination.relative_to(root)), size)
 
     def reserve_future_outputs(self, root):
@@ -780,12 +787,18 @@ def extract_deb(archive, root, budget=None, *, descriptor=None):
             budget.reserve(members)
             def validate_file_collision(member):
                 destination = root / member.name
-                if member.isfile() and (destination.is_symlink() or destination.exists()):
-                    if (destination.is_symlink() or not destination.is_file()
-                            or destination.stat().st_size != member.size):
+                if (member.isfile() or member.islnk()) and (destination.is_symlink() or destination.exists()):
+                    if destination.is_symlink() or not destination.is_file():
                         raise ValueError("source-pinned fixture package file collision refused")
                     digest = hashlib.sha256()
                     with stream.extractfile(member) as source:
+                        # EEXIST sends maintained hardlink extraction through
+                        # its archived-target copy fallback. Validate those
+                        # actual bytes, not the hardlink header's zero size.
+                        size = source.seek(0, os.SEEK_END) if member.islnk() else member.size
+                        if destination.stat().st_size != size:
+                            raise ValueError("source-pinned fixture package file collision refused")
+                        source.seek(0)
                         for data in iter(lambda: source.read(1024 * 1024), b""):
                             digest.update(data)
                     if digest.hexdigest() != sha(destination):
@@ -803,14 +816,15 @@ def extract_deb(archive, root, budget=None, *, descriptor=None):
                     target = destination.parent / member.linkname
                     if not target.resolve().is_relative_to(root):
                         raise ValueError("source-pinned fixture package alias escaped")
-                validate_file_collision(member)
+                if member.isfile():
+                    validate_file_collision(member)
             def reserved_members():
                 for member in members:
                     # Earlier entries may have created hardlinks or a dangling
                     # leaf alias. Never resize an already-shared inode or write
                     # through that alias under a stale per-name reservation.
-                    validate_file_collision(member)
                     budget.reserve_output(root, member, stream)
+                    validate_file_collision(member)
                     yield member
             # Preserve maintained extraction and delayed directory attributes.
             # Each reservation runs after the preceding actual write and before

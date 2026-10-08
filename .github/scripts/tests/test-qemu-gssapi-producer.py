@@ -219,6 +219,110 @@ if list(pathlib.Path(sys.argv[3]).iterdir()):
                     self.assertEqual(os.readlink(root / 'original'), 'missing')
                     self.assertFalse((root / 'missing').exists())
 
+    def test_output_hardlink_fallback_refuses_before_resizing_shared_inode(self):
+        for source_bytes, accepted in ((b'other', False), (b'data', True)):
+            with self.subTest(source=source_bytes), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                base = pathlib.Path(directory)
+                packed = io.BytesIO()
+                with tarfile.open(fileobj=packed, mode='w') as stream:
+                    member = tarfile.TarInfo('original')
+                    member.size = 4
+                    stream.addfile(member, io.BytesIO(b'data'))
+                    member = tarfile.TarInfo('second')
+                    member.type = tarfile.LNKTYPE
+                    member.linkname = 'original'
+                    stream.addfile(member)
+                    member = tarfile.TarInfo('source')
+                    member.size = len(source_bytes)
+                    stream.addfile(member, io.BytesIO(source_bytes))
+                    member = tarfile.TarInfo('original')
+                    member.type = tarfile.LNKTYPE
+                    member.linkname = 'source'
+                    stream.addfile(member)
+                archive = self.public_payload_deb(base, packed.getvalue())
+                root = base / 'root'
+                root.mkdir()
+                budget = self.producer.PackageExtractionBudget(output_bytes=12 if accepted else 14)
+                descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+                if accepted:
+                    self.producer.extract_deb(archive, root, budget)
+                else:
+                    with self.assertRaisesRegex(ValueError, 'file collision refused'):
+                        self.producer.extract_deb(archive, root, budget)
+                self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
+                self.assertEqual((root / 'original').read_bytes(), b'data')
+                self.assertEqual((root / 'second').read_bytes(), b'data')
+                self.assertEqual((root / 'source').read_bytes(), source_bytes)
+                self.assertEqual((root / 'original').stat().st_ino, (root / 'second').stat().st_ino)
+                self.assertEqual(sum(path.stat().st_size for path in root.iterdir()), 12 if accepted else 13)
+                self.assertEqual(set(path.name for path in base.iterdir()), {'root', archive.name})
+
+    def test_output_hardlink_fallback_refuses_before_following_dangling_alias(self):
+        for dangling in (True, False):
+            with self.subTest(dangling=dangling), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                base = pathlib.Path(directory)
+                packed = io.BytesIO()
+                with tarfile.open(fileobj=packed, mode='w') as stream:
+                    member = tarfile.TarInfo('source')
+                    member.size = 4
+                    stream.addfile(member, io.BytesIO(b'data'))
+                    if dangling:
+                        member = tarfile.TarInfo('route')
+                        member.type = tarfile.SYMTYPE
+                        member.linkname = 'missing'
+                        stream.addfile(member)
+                    member = tarfile.TarInfo('route')
+                    member.type = tarfile.LNKTYPE
+                    member.linkname = 'source'
+                    stream.addfile(member)
+                archive = self.public_payload_deb(base, packed.getvalue())
+                root = base / 'root'
+                root.mkdir()
+                budget = self.producer.PackageExtractionBudget(output_nodes=3, output_bytes=8)
+                descriptors = len(list(pathlib.Path('/proc/self/fd').iterdir()))
+                if dangling:
+                    with self.assertRaisesRegex(ValueError, 'file collision refused'):
+                        self.producer.extract_deb(archive, root, budget)
+                    self.assertEqual(os.readlink(root / 'route'), 'missing')
+                    self.assertFalse((root / 'missing').exists())
+                    self.assertEqual(set(path.name for path in root.iterdir()), {'source', 'route'})
+                else:
+                    self.producer.extract_deb(archive, root, budget)
+                    self.assertEqual((root / 'route').read_bytes(), b'data')
+                    self.assertEqual((root / 'source').stat().st_ino, (root / 'route').stat().st_ino)
+                self.assertEqual(len(list(pathlib.Path('/proc/self/fd').iterdir())), descriptors)
+                self.assertEqual((root / 'source').read_bytes(), b'data')
+                self.assertEqual(set(path.name for path in base.iterdir()), {'root', archive.name})
+
+    def test_repeated_hardlink_copy_work_consumes_capacity_without_name_deduplication(self):
+        for capacity, accepted in ((11, False), (12, True)):
+            with self.subTest(capacity=capacity), tempfile.TemporaryDirectory(dir=self.parent) as directory:
+                base = pathlib.Path(directory)
+                packed = io.BytesIO()
+                with tarfile.open(fileobj=packed, mode='w') as stream:
+                    member = tarfile.TarInfo('source')
+                    member.size = 4
+                    stream.addfile(member, io.BytesIO(b'data'))
+                    for _ in range(2):
+                        member = tarfile.TarInfo('route')
+                        member.type = tarfile.LNKTYPE
+                        member.linkname = 'source'
+                        stream.addfile(member)
+                archive = self.public_payload_deb(base, packed.getvalue())
+                root = base / 'root'
+                root.mkdir()
+                budget = self.producer.PackageExtractionBudget(total_bytes=capacity, output_nodes=3, output_bytes=8)
+                if accepted:
+                    self.producer.extract_deb(archive, root, budget)
+                else:
+                    with self.assertRaisesRegex(ValueError, 'aggregate extraction budget refused'):
+                        self.producer.extract_deb(archive, root, budget)
+                self.assertEqual((root / 'source').read_bytes(), b'data')
+                self.assertEqual((root / 'route').read_bytes(), b'data')
+                self.assertEqual((root / 'source').stat().st_ino, (root / 'route').stat().st_ino)
+                self.assertEqual(budget.remaining_bytes, 0 if accepted else 3)
+                self.assertEqual(budget.output_bytes, 8)
+
     def test_output_nodes_include_implicit_parents_and_refuse_before_their_writes(self):
         with tempfile.TemporaryDirectory(dir=self.parent) as directory:
             base = pathlib.Path(directory)
