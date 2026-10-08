@@ -1,5 +1,5 @@
 diff --git a/dist/core/agent-session.d.ts b/dist/core/agent-session.d.ts
-index 5620ac3..a29400f 100644
+index 5620ac326bd3885819f4dbca401522c3058a640b..a29400f61364d9ae58eda44b08231135d1adf17a 100644
 --- a/dist/core/agent-session.d.ts
 +++ b/dist/core/agent-session.d.ts
 @@ -376,6 +376,8 @@ export declare class AgentSession {
@@ -12,7 +12,7 @@ index 5620ac3..a29400f 100644
       * Apply a prompt and tool loadout for the next request. Sets the executable tools and
       * returns a system message patching the prompt sections the model currently has (replayed
 diff --git a/dist/core/agent-session.js b/dist/core/agent-session.js
-index 36fdb31..5b1900a 100644
+index 36fdb31c121d1121cebc51c6f0d61d09cf07bae0..ac60bcb280b27301c9da9347a688f0b77a691051 100644
 --- a/dist/core/agent-session.js
 +++ b/dist/core/agent-session.js
 @@ -1075,6 +1075,47 @@ export class AgentSession {
@@ -109,8 +109,20 @@ index 36fdb31..5b1900a 100644
      }
      // =========================================================================
      // Model Management
+@@ -2028,6 +2069,11 @@ export class AgentSession {
+         const settings = this.settingsManager.getCompactionSettings(this.model);
+         if (!settings.enabled)
+             return false;
++        // A diagnosed safety refusal is terminal, not input for overflow recovery
++        // or threshold summarization. Incidental link text cannot authorize replay.
++        if (assistantMessage.stopReason === "error" &&
++            assistantMessage.diagnostics?.findLast((diagnostic) => diagnostic.type === "okou_model_request")?.details?.failureReason === "safety_policy_refusal")
++            return false;
+         // Skip if message was aborted (user cancelled) - unless skipAbortedCheck is false
+         if (skipAbortedCheck && assistantMessage.stopReason === "aborted")
+             return false;
 diff --git a/dist/core/tools/bash.d.ts b/dist/core/tools/bash.d.ts
-index bc39335..4f7d0c3 100644
+index bc39335476b8424ff848364706fa5866213086c3..4f7d0c3c739ad39c1050d3042a46fde999d8f41a 100644
 --- a/dist/core/tools/bash.d.ts
 +++ b/dist/core/tools/bash.d.ts
 @@ -31,6 +31,8 @@ export interface BashOperations {
@@ -123,7 +135,7 @@ index bc39335..4f7d0c3 100644
          timeout?: number;
          env?: NodeJS.ProcessEnv;
 diff --git a/dist/core/tools/bash.js b/dist/core/tools/bash.js
-index c0dcf14..3badd60 100644
+index c0dcf1406a932bdfc1515faf0ca5f2f8f84fb2ca..3badd60dc78bc2e5f6cdc568cea61c995a325dd1 100644
 --- a/dist/core/tools/bash.js
 +++ b/dist/core/tools/bash.js
 @@ -34,7 +34,7 @@ export const bashToolSystemPromptContribution = {
@@ -372,7 +384,7 @@ index c0dcf14..3badd60 100644
          },
          ...createShellRenderers(config.prompt),
 diff --git a/dist/core/tools/output-accumulator.d.ts b/dist/core/tools/output-accumulator.d.ts
-index fbd581f..6ecae28 100644
+index fbd581f6067c98771dc6a29272a5bab2b2653dcd..6ecae286e90e6d2008ea1c8a77526f4589fe4f80 100644
 --- a/dist/core/tools/output-accumulator.d.ts
 +++ b/dist/core/tools/output-accumulator.d.ts
 @@ -3,6 +3,7 @@ export interface OutputAccumulatorOptions {
@@ -405,7 +417,7 @@ index fbd581f..6ecae28 100644
      private appendDecodedText;
      private trimTail;
 diff --git a/dist/core/tools/output-accumulator.js b/dist/core/tools/output-accumulator.js
-index 7241668..293d1f1 100644
+index 72416680b6307108ffeace36e45fa7076cc8b7e5..293d1f1509c95505c3c5ac2371eb3df9a55df038 100644
 --- a/dist/core/tools/output-accumulator.js
 +++ b/dist/core/tools/output-accumulator.js
 @@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
@@ -531,10 +543,10 @@ index 7241668..293d1f1 100644
      }
  }
 diff --git a/dist/modes/json-event.d.ts b/dist/modes/json-event.d.ts
-index d4f306e..840d2d1 100644
+index d4f306ea3918aa07a981f948c8a3cb4f687f5708..f2daabe2d23b7cb13a47cb94d9027e8e34f96007 100644
 --- a/dist/modes/json-event.d.ts
 +++ b/dist/modes/json-event.d.ts
-@@ -18,15 +18,27 @@ type JsonMessageUpdateEvent = {
+@@ -18,15 +18,35 @@ type JsonMessageUpdateEvent = {
      usage: Usage;
      assistantMessageEvent: ToJsonAssistantMessageEvent<MessageUpdateEvent["assistantMessageEvent"]>;
  };
@@ -542,13 +554,19 @@ index d4f306e..840d2d1 100644
 +    type: "agent_end";
 +}>;
 +type JsonAgentEndEvent = Omit<AgentEndEvent, "messages">;
++type TurnEndEvent = Extract<AgentSessionEvent, {
++    type: "turn_end";
++}>;
++type JsonTurnEndEvent = Omit<TurnEndEvent, "message" | "toolResults">;
  /** Session event shape emitted by the JSON and RPC stdout protocols. */
  export type JsonAgentSessionEvent = Exclude<AgentSessionEvent, {
      type: "message_update";
 -}> | JsonMessageUpdateEvent;
 +} | {
 +    type: "agent_end";
-+}> | JsonMessageUpdateEvent | JsonAgentEndEvent;
++} | {
++    type: "turn_end";
++}> | JsonMessageUpdateEvent | JsonAgentEndEvent | JsonTurnEndEvent;
  /**
   * Remove cumulative assistant snapshots from streaming wire events.
   * `message_start` provides the initial message, deltas build it, and
@@ -560,14 +578,16 @@ index d4f306e..840d2d1 100644
 + * received every message in it as an individual `message_end`, so on the wire
 + * it is a duplicate whose size grows with the run. The event itself is kept as
 + * a loop boundary, with `willRetry` intact.
++ * `turn_end` similarly drops `message` and `toolResults` on the wire only;
++ * native extension events retain the complete payload.
   */
  export declare function toJsonEvent(event: MessageUpdateEvent): JsonMessageUpdateEvent;
  export declare function toJsonEvent(event: AgentSessionEvent): JsonAgentSessionEvent;
 diff --git a/dist/modes/json-event.js b/dist/modes/json-event.js
-index b2671b8..6537158 100644
+index b2671b8e69be943b5c2918a972082eac84b38948..505c44b3c49bf4b9e771a005da8b4192357082fb 100644
 --- a/dist/modes/json-event.js
 +++ b/dist/modes/json-event.js
-@@ -14,6 +14,10 @@ function toJsonAssistantMessageEvent(event) {
+@@ -14,6 +14,16 @@ function toJsonAssistantMessageEvent(event) {
      return deltaEvent;
  }
  export function toJsonEvent(event) {
@@ -575,11 +595,17 @@ index b2671b8..6537158 100644
 +        const { messages: _messages, ...boundaryEvent } = event;
 +        return boundaryEvent;
 +    }
++    if (event.type === "turn_end") {
++        // The assistant message and tool results were already sent as message_end.
++        // Keep native extension events intact; only the JSON wire omits duplicates.
++        const { message: _message, toolResults: _toolResults, ...boundaryEvent } = event;
++        return boundaryEvent;
++    }
      if (event.type !== "message_update") {
          return event;
      }
 diff --git a/dist/utils/child-process.d.ts b/dist/utils/child-process.d.ts
-index c75b42d..a554d3e 100644
+index c75b42d9d43a0ef9000277b4ef5426443eab9a3e..a554d3e4ef12363dc903f366abb0143d68d7c950 100644
 --- a/dist/utils/child-process.d.ts
 +++ b/dist/utils/child-process.d.ts
 @@ -14,5 +14,5 @@ export declare function spawnProcessSync(command: string, args: string[], option
@@ -591,7 +617,7 @@ index c75b42d..a554d3e 100644
  //# sourceMappingURL=child-process.d.ts.map
 \ No newline at end of file
 diff --git a/dist/utils/child-process.js b/dist/utils/child-process.js
-index 48e5724..fcdd8fe 100644
+index 48e5724c50f719449e4ef4e20f3497eed779ae35..fcdd8fef93006ff9cc45ecf653127af203cbbb88 100644
 --- a/dist/utils/child-process.js
 +++ b/dist/utils/child-process.js
 @@ -20,7 +20,7 @@ export function spawnProcessSync(command, args, options) {
@@ -669,7 +695,7 @@ index 48e5724..fcdd8fe 100644
  //# sourceMappingURL=child-process.js.map
 \ No newline at end of file
 diff --git a/dist/utils/photon.js b/dist/utils/photon.js
-index 3078895..d67667b 100644
+index 3078895bedba898ce26c439b6123425834ca2586..d67667b307af07c5a001efd5f1f5849a8cba8e6a 100644
 --- a/dist/utils/photon.js
 +++ b/dist/utils/photon.js
 @@ -105,7 +105,8 @@ export async function loadPhoton() {

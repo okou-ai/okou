@@ -42,15 +42,18 @@
 //! - The shared cache root may contain entries for multiple runner groups. Reuse
 //!   is scoped by cache key metadata; global inspection and GC may scan the
 //!   shared root.
-//! - Entry locks protect one cache key. Capacity lock protects budget-sensitive
-//!   promotion and GC work across the shared cache root.
+//! - Entry locks protect one cache key, including stale and temporary cleanup.
+//!   Capacity lock protects promotion admission and budget eviction across the
+//!   shared root. Routine inventory/entry cleanup holds a separate host-global
+//!   routine GC lock, leaving capacity available to promotion while scanning.
 //! - Session-history sidecar staging inside a cache entry holds that entry's
 //!   lock from the first managed temporary-path operation through publication
 //!   or discard, so GC cannot classify active staging as orphaned state.
-//! - GC takes the capacity lock and then uses non-blocking entry lock attempts.
-//!   Promotion already holds or reacquires an entry lock and then uses a
-//!   non-blocking capacity lock attempt. Do not turn either side into blocking
-//!   nested lock acquisition.
+//! - Budget GC takes capacity and uses non-blocking entry lock attempts.
+//!   Routine GC releases all entry locks before reacquiring capacity and uses a
+//!   fresh locked inventory for budget eviction, never its unlocked snapshot.
+//!   Promotion holds or reacquires an entry lock and attempts capacity without
+//!   blocking. Do not turn either side into blocking nested lock acquisition.
 //! - A checkout hit removes `metadata.json` before returning the current image as
 //!   a move seed, so the cache entry is not reusable while the image is active.
 //! - Promotion may move the active image into the cache. Callers must stop all
@@ -128,6 +131,8 @@ pub struct WorkspaceImageCache {
     prepare_lock_test_gate: Option<WorkspaceImagePrepareLockTestGate>,
     #[cfg(any(test, feature = "test-support"))]
     routine_gc_test_gate: Option<(Arc<tokio::sync::Notify>, Arc<Semaphore>)>,
+    #[cfg(test)]
+    gc_inventory_test_gate: Option<gc::GcInventoryTestGate>,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -278,6 +283,8 @@ impl WorkspaceImageCache {
             )),
             prepare_lock_test_gate: None,
             routine_gc_test_gate: None,
+            #[cfg(test)]
+            gc_inventory_test_gate: None,
         }
     }
 

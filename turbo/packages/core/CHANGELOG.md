@@ -1,5 +1,39 @@
 # Changelog
 
+## [8.735.0](https://github.com/okou-ai/okou/compare/core-v8.734.9...core-v8.735.0) (2026-10-08)
+
+
+### Features
+
+* enable private artifacts for all users ([#37951](https://github.com/okou-ai/okou/issues/37951)) ([91e19d1](https://github.com/okou-ai/okou/commit/91e19d1e55e49ffb5822aa2a9d7fcb336b9cb9cf))
+
+
+### Refactoring
+
+* **computer-use:** remove retired desktop plugins ([#37980](https://github.com/okou-ai/okou/issues/37980)) ([8b8928c](https://github.com/okou-ai/okou/commit/8b8928cdf85d4fb2243a9326194d7cfb3936d53c))
+* **platform:** remove abandoned chat last-read marker ([#37966](https://github.com/okou-ai/okou/issues/37966)) ([d85fdca](https://github.com/okou-ai/okou/commit/d85fdcad049428b366f892a181c69e7ab61a8523))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.539.0
+
+## [8.734.9](https://github.com/okou-ai/okou/compare/core-v8.734.8...core-v8.734.9) (2026-10-08)
+
+
+### Bug Fixes
+
+* **integrations:** hide auto model attribution in message footers ([#37959](https://github.com/okou-ai/okou/issues/37959)) ([46a2d1a](https://github.com/okou-ai/okou/commit/46a2d1a044c0d48829d2879c689539ccfea64a65))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.538.1
+
 ## [8.734.8](https://github.com/okou-ai/okou/compare/core-v8.734.7...core-v8.734.8) (2026-10-08)
 
 

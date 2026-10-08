@@ -5,7 +5,11 @@ import Sparkle
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, SPUUpdaterDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSToolbarDelegate,
+  SPUUpdaterDelegate
+{
+  private static let wordmarkItem = NSToolbarItem.Identifier("okou.wordmark")
+  private var wordmarkView: NSImageView?
   private var window: NSWindow!
   private var model: DesktopModel!
   private var statusItem: NSStatusItem!
@@ -48,12 +52,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, SPUU
         defer: false)
       window.title = Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String ?? "Okou"
       window.titleVisibility = .hidden
+      window.toolbarStyle = .unifiedCompact
       window.titlebarAppearsTransparent = true
+      let toolbar = NSToolbar(identifier: "okou.main")
+      toolbar.delegate = self
+      toolbar.displayMode = .iconOnly
+      window.toolbar = toolbar
       window.isReleasedWhenClosed = false
       window.isMovableByWindowBackground = true
       window.collectionBehavior = [.fullScreenNone]
       window.delegate = self
       window.contentView = NSHostingView(rootView: DesktopView(model: model))
+      window.titlebarSeparatorStyle = .none
       window.center()
       showWindow()
       statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -85,6 +95,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, SPUU
       alert.informativeText = error.localizedDescription
       alert.runModal()
       NSApplication.shared.terminate(nil)
+    }
+  }
+  func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+    [Self.wordmarkItem, .flexibleSpace]
+  }
+  func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+    toolbarDefaultItemIdentifiers(toolbar)
+  }
+  func toolbar(
+    _ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+    willBeInsertedIntoToolbar flag: Bool
+  ) -> NSToolbarItem? {
+    guard itemIdentifier == Self.wordmarkItem,
+      let url = Bundle.main.url(forResource: "wordmark", withExtension: "png"),
+      let image = NSImage(contentsOf: url)
+    else { return nil }
+    let container = NSView(frame: NSRect(x: 0, y: 0, width: 64, height: 22))
+    container.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      container.widthAnchor.constraint(equalToConstant: 64),
+      container.heightAnchor.constraint(equalToConstant: 22),
+    ])
+    let view = NSImageView(frame: container.bounds)
+    view.image = image
+    view.imageScaling = .scaleProportionallyUpOrDown
+    view.setAccessibilityElement(false)
+    container.addSubview(view)
+    wordmarkView = view
+    let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+    item.label = "Okou"
+    item.view = container
+    return item
+  }
+  func windowDidUpdate(_ notification: Notification) {
+    guard let contentView = window?.contentView else { return }
+    let top = contentView.convert(contentView.bounds, to: nil).maxY
+    // Center within the native toolbar and its matching SwiftUI extension together.
+    let titlebarHeight = top - window.contentLayoutRect.maxY + DesktopView.titlebarExtension
+    let center = NSPoint(x: 0, y: top - titlebarHeight / 2)
+    let views: [NSView?] = [
+      window.standardWindowButton(.closeButton),
+      window.standardWindowButton(.miniaturizeButton),
+      window.standardWindowButton(.zoomButton),
+      wordmarkView,
+    ]
+    for case let view? in views {
+      guard let superview = view.superview else { continue }
+      let originY = superview.convert(center, from: nil).y - view.frame.height / 2
+      if view.frame.origin.y != originY {
+        view.setFrameOrigin(NSPoint(x: view.frame.origin.x, y: originY))
+      }
     }
   }
   private func smokeTest(configuration: DesktopConfiguration) throws {

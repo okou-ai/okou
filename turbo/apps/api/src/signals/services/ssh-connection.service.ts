@@ -362,7 +362,8 @@ const commitSshConnectionCreation$ = command(
           const [config] = await tx
             .select({ id: cloudflareAccessConfigs.id })
             .from(cloudflareAccessConfigs)
-            .where(visibleSshAccessConfig(args, accessId));
+            .where(visibleSshAccessConfig(args, accessId))
+            .for("share");
           if (!config) {
             return cloudflareAccessFailure("notFound");
           }
@@ -456,6 +457,16 @@ export const createSshConnection$ = command(
       "configId" in args.body.transport
         ? args.body.transport.configId
         : null;
+    if (accessId !== null) {
+      const db = set(writeDb$);
+      const [config] = await db
+        .select({ id: cloudflareAccessConfigs.id })
+        .from(cloudflareAccessConfigs)
+        .where(visibleSshAccessConfig(args, accessId));
+      if (!config) {
+        return cloudflareAccessFailure("notFound");
+      }
+    }
     const preparedAccess = await prepareAccessCreation(
       args.body.transport,
       args.featureContext,
@@ -488,7 +499,6 @@ export const createSshConnection$ = command(
 );
 
 interface PreparedSshConnectionUpdate extends UpdateSshConnectionArgs {
-  readonly current: SshConnectionRow;
   readonly host: string;
   readonly port: number;
   readonly accessId: string | null;
@@ -507,8 +517,38 @@ const commitSshConnectionUpdate$ = command(
     const committed = await settle(
       db.transaction<SshConnectionMutationResult<SshConnectionResponse>>(
         async (tx) => {
+          // An existing host must precede protected configuration authority,
+          // matching Runner pin/observation and configuration fanout.
+          const [current] = await tx
+            .select()
+            .from(sshConnections)
+            .where(ownedSshConnection(args))
+            .for("no key update");
+          if (!current) {
+            return failure("notFound");
+          }
+          const rejected = validateSshHostUpdate(current, {
+            body: args.body,
+            host: args.host,
+            port: args.port,
+            accessId: args.accessId,
+            creatingAccess: args.preparedAccess !== undefined,
+          });
+          if (rejected) {
+            return rejected;
+          }
+          if (args.accessId !== null) {
+            const [config] = await tx
+              .select({ id: cloudflareAccessConfigs.id })
+              .from(cloudflareAccessConfigs)
+              .where(visibleSshAccessConfig(args, args.accessId))
+              .for("share");
+            if (!config) {
+              return cloudflareAccessFailure("notFound");
+            }
+          }
           const selectedCredential = args.preparedCredential ?? {
-            id: args.current.credentialId,
+            id: current.credentialId,
           };
           const [credential] =
             selectedCredential.id !== undefined
@@ -545,7 +585,7 @@ const commitSshConnectionUpdate$ = command(
           const [updated] = await tx
             .update(sshConnections)
             .set(
-              sshHostUpdateValues(args.current, {
+              sshHostUpdateValues(current, {
                 body: args.body,
                 host: args.host,
                 port: args.port,
@@ -640,7 +680,6 @@ export const updateSshConnection$ = command(
 
     const result = await set(commitSshConnectionUpdate$, {
       ...args,
-      current,
       host,
       port,
       accessId,

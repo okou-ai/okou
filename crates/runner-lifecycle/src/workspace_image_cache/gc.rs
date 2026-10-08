@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::Write;
 use std::os::unix::fs::MetadataExt;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use nix::fcntl::Flock;
 use tokio::fs;
@@ -53,6 +53,25 @@ enum GcWholeEntryReason {
     Unusable(String),
 }
 
+#[cfg(test)]
+#[derive(Clone)]
+pub(super) struct GcInventoryTestGate {
+    after_entries: usize,
+    armed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    entered: std::sync::Arc<tokio::sync::Notify>,
+    release: std::sync::Arc<tokio::sync::Semaphore>,
+}
+
+fn routine_gc_is_due(capacity_lock: &File, minimum_interval: Duration) -> std::io::Result<bool> {
+    // Preserve the capacity-file completion marker used by older runners.
+    let marker = capacity_lock.metadata()?;
+    Ok(marker.len() == 0
+        || SystemTime::now()
+            .duration_since(marker.modified()?)
+            .unwrap_or_default()
+            >= minimum_interval)
+}
+
 impl GcCandidate {
     pub(super) fn same_current_image(&self, other: &Self) -> bool {
         self.file_dev == other.file_dev
@@ -87,22 +106,22 @@ impl WorkspaceImageCache {
     }
 
     pub async fn try_routine_gc(&self, minimum_interval: Duration) -> LifecycleResult<Option<u64>> {
-        let mut capacity_lock =
+        let _routine_lock =
+            match runner_host::lock::try_acquire_or_busy(self.routine_gc_lock_path()).await? {
+                runner_host::lock::TryLock::Acquired(lock) => lock,
+                runner_host::lock::TryLock::Busy => return Ok(None),
+            };
+        let capacity_lock =
             match runner_host::lock::try_acquire_or_busy(self.capacity_lock_path()).await? {
                 runner_host::lock::TryLock::Acquired(lock) => lock,
                 runner_host::lock::TryLock::Busy => return Ok(None),
             };
-        // The persistent lock file doubles as an opaque completion marker. Old
-        // runners ignore its contents and preserve them when opening the lock.
-        let marker = capacity_lock.metadata()?;
-        if marker.len() > 0
-            && SystemTime::now()
-                .duration_since(marker.modified()?)
-                .unwrap_or_default()
-                < minimum_interval
-        {
+        let capacity_started = Instant::now();
+        if !routine_gc_is_due(&capacity_lock, minimum_interval)? {
             return Ok(None);
         }
+        let initial_capacity_duration = capacity_started.elapsed();
+        drop(capacity_lock);
 
         #[cfg(any(test, feature = "test-support"))]
         if let Some((entered, release)) = &self.routine_gc_test_gate {
@@ -113,9 +132,81 @@ impl WorkspaceImageCache {
                 .expect("routine GC gate closed")
                 .forget();
         }
-        let freed_bytes = self.gc_locked(false).await?;
+        // Entry-local cleanup shares the publication entry lock and only frees
+        // disk space. The routine lock, not capacity, owns this potentially slow
+        // inventory so finalizers can publish while unrelated entries scan.
+        let inventory_started = Instant::now();
+        let inventory = self.gc_inventory(false).await?;
+        let inventory_duration = inventory_started.elapsed();
+        let entry_count = inventory.candidates.len();
+        let total_cache_bytes: u64 = inventory
+            .candidates
+            .iter()
+            .map(|candidate| candidate.allocated_bytes)
+            .sum();
+        let mut freed_bytes = inventory.pre_cleanup_freed_bytes;
+        drop(inventory);
+
+        // No entry lock survives inventory. Never wait for capacity here, and
+        // never evict from an unlocked observation that promotion can replace.
+        let mut capacity_lock = match runner_host::lock::try_acquire_or_busy(
+            self.capacity_lock_path(),
+        )
+        .await?
+        {
+            runner_host::lock::TryLock::Acquired(lock) => lock,
+            runner_host::lock::TryLock::Busy => {
+                info!(
+                    entry_count,
+                    inventory_us = inventory_duration.as_micros() as u64,
+                    capacity_lock_held_us = initial_capacity_duration.as_micros() as u64,
+                    "workspace image cache routine GC deferred: capacity lock busy after inventory"
+                );
+                return Ok(None);
+            }
+        };
+        let capacity_started = Instant::now();
+        if !routine_gc_is_due(&capacity_lock, minimum_interval)? {
+            return Ok(None);
+        }
+        let stats = self.fs_stats().await?;
+        let budget = CacheBudget::from_fs_stats(stats);
+        let budget_gc = entry_count > MAX_HELD_WORKSPACE_STATES
+            || total_cache_bytes > budget.max_cache_bytes
+            || stats.available_bytes < budget.min_free_bytes;
+        if budget_gc {
+            // Promotions may have added/replaced entries during inventory.
+            // Rebuild all accounting under capacity before budget collection.
+            freed_bytes = freed_bytes.saturating_add(self.gc_locked(false).await?);
+        }
         capacity_lock.write_all(b"\0")?;
+        let capacity_duration = initial_capacity_duration + capacity_started.elapsed();
+        drop(capacity_lock);
+        info!(
+            entry_count,
+            inventory_us = inventory_duration.as_micros() as u64,
+            capacity_lock_held_us = capacity_duration.as_micros() as u64,
+            budget_gc,
+            freed_bytes,
+            "workspace image cache routine GC completed"
+        );
         Ok(Some(freed_bytes))
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_gc_inventory_test_gate(
+        mut self,
+        after_entries: usize,
+        entered: std::sync::Arc<tokio::sync::Notify>,
+        release: std::sync::Arc<tokio::sync::Semaphore>,
+    ) -> Self {
+        self.gc_inventory_test_gate = Some(GcInventoryTestGate {
+            after_entries,
+            armed: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            entered,
+            release,
+        });
+        self
     }
 
     pub(super) async fn gc_locked(&self, dry_run: bool) -> LifecycleResult<u64> {
@@ -207,6 +298,8 @@ impl WorkspaceImageCache {
             return Ok(GcInventory::default());
         };
         let mut inventory = GcInventory::default();
+        #[cfg(test)]
+        let mut entries_seen = 0;
         while let Some(entry) = Self::next_gc_cache_entry(&mut entries).await? {
             let entry_inventory = match self.try_lock_gc_cache_entry(&entry).await? {
                 Some(lock) => {
@@ -224,6 +317,20 @@ impl WorkspaceImageCache {
                 .saturating_add(entry_inventory.pre_cleanup_freed_bytes);
             if let Some(candidate) = entry_inventory.candidate {
                 inventory.candidates.push(candidate);
+            }
+            #[cfg(test)]
+            if let Some(gate) = &self.gc_inventory_test_gate {
+                entries_seen += 1;
+                if entries_seen == gate.after_entries
+                    && gate.armed.swap(false, std::sync::atomic::Ordering::Relaxed)
+                {
+                    gate.entered.notify_one();
+                    gate.release
+                        .acquire()
+                        .await
+                        .expect("GC inventory gate closed")
+                        .forget();
+                }
             }
         }
         Ok(inventory)

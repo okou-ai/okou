@@ -17,7 +17,7 @@ import {
   RESOURCE_ARCHIVE_MAX_BYTES,
 } from "../../lib/pi-resource-index";
 import { now, nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   downloadS3BufferWithMaxBytes,
   S3ObjectSizeLimitError,
@@ -173,10 +173,18 @@ export async function publishPiResourceVersionIndex(
   signal?.throwIfAborted();
 }
 
-export async function readPiResourceVersionIndexes(
-  db: Pick<Db, "select">,
+interface PiResourceIndexReadRow {
+  readonly versionId: string;
+  readonly status: typeof piResourceVersionIndexes.$inferSelect.status;
+  readonly storageId: string;
+  readonly archiveSize: number | null;
+  readonly projection: typeof piResourceVersionIndexes.$inferSelect.projection;
+  readonly projectionHash: string | null;
+}
+
+export function piResourceVersionIndexesResult(
   versionIds: readonly string[],
-  signal?: AbortSignal,
+  rows: readonly PiResourceIndexReadRow[],
 ) {
   const unique = [...new Set(versionIds)];
   const indexes = new Map<
@@ -188,33 +196,6 @@ export async function readPiResourceVersionIndexes(
     }
   >();
   const misses = { pending: 0, running: 0, unindexable: 0, missing: 0 };
-  if (unique.length === 0) {
-    return { indexes, misses };
-  }
-  const rows = await db
-    .select({
-      versionId: piResourceVersionIndexes.storageVersionId,
-      status: piResourceVersionIndexes.status,
-      storageId: storageVersions.storageId,
-      archiveSize: piResourceVersionIndexes.sourceArchiveSize,
-      projection: piResourceVersionIndexes.projection,
-      projectionHash: piResourceVersionIndexes.projectionHash,
-    })
-    .from(piResourceVersionIndexes)
-    .innerJoin(
-      storageVersions,
-      eq(storageVersions.id, piResourceVersionIndexes.storageVersionId),
-    )
-    .where(
-      and(
-        inArray(piResourceVersionIndexes.storageVersionId, unique),
-        eq(
-          piResourceVersionIndexes.extractorVersion,
-          PI_RESOURCE_EXTRACTOR_VERSION,
-        ),
-      ),
-    );
-  signal?.throwIfAborted();
   misses.missing = unique.length - rows.length;
   for (const row of rows) {
     if (row.status !== "ready") {
@@ -237,21 +218,20 @@ export async function readPiResourceVersionIndexes(
   return { indexes, misses };
 }
 
-async function claimWork(
-  db: Db,
-  versionIds: readonly string[] | undefined,
-  signal: AbortSignal,
-) {
-  const currentTime = nowDate();
-  return await db.transaction(async (tx) => {
-    const rows = await tx
+export const readPiResourceVersionIndexes$ = command(
+  async ({ get }, versionIds: readonly string[], signal: AbortSignal) => {
+    const unique = [...new Set(versionIds)];
+    if (unique.length === 0) {
+      return piResourceVersionIndexesResult(unique, []);
+    }
+    const rows = await get(db$)
       .select({
         versionId: piResourceVersionIndexes.storageVersionId,
-        attemptCount: piResourceVersionIndexes.attemptCount,
-        createdAt: piResourceVersionIndexes.createdAt,
-        s3Key: storageVersions.s3Key,
-        archiveSize: storageVersions.archiveSize,
-        fileCount: storageVersions.fileCount,
+        status: piResourceVersionIndexes.status,
+        storageId: storageVersions.storageId,
+        archiveSize: piResourceVersionIndexes.sourceArchiveSize,
+        projection: piResourceVersionIndexes.projection,
+        projectionHash: piResourceVersionIndexes.projectionHash,
       })
       .from(piResourceVersionIndexes)
       .innerJoin(
@@ -260,62 +240,102 @@ async function claimWork(
       )
       .where(
         and(
+          inArray(piResourceVersionIndexes.storageVersionId, unique),
           eq(
             piResourceVersionIndexes.extractorVersion,
             PI_RESOURCE_EXTRACTOR_VERSION,
           ),
-          versionIds === undefined
-            ? undefined
-            : inArray(piResourceVersionIndexes.storageVersionId, [
-                ...versionIds,
-              ]),
-          or(
-            and(
-              eq(piResourceVersionIndexes.status, "pending"),
-              lte(piResourceVersionIndexes.availableAt, currentTime),
-            ),
-            and(
-              eq(piResourceVersionIndexes.status, "running"),
-              lte(piResourceVersionIndexes.leaseExpiresAt, currentTime),
-            ),
-          ),
         ),
-      )
-      .orderBy(
-        asc(piResourceVersionIndexes.availableAt),
-        asc(piResourceVersionIndexes.storageVersionId),
-      )
-      .limit(WORK_BATCH_SIZE)
-      .for("update", { of: piResourceVersionIndexes, skipLocked: true });
+      );
     signal.throwIfAborted();
-    const work = [];
-    for (const row of rows) {
-      const leaseId = randomUUID();
-      const attemptCount = row.attemptCount + 1;
-      await tx
-        .update(piResourceVersionIndexes)
-        .set({
-          status: "running",
-          leaseId,
-          attemptCount,
-          leaseExpiresAt: new Date(currentTime.getTime() + WORK_LEASE_MS),
-          updatedAt: currentTime,
+    return piResourceVersionIndexesResult(unique, rows);
+  },
+);
+
+const claimWork$ = command(
+  async (
+    { set },
+    versionIds: readonly string[] | undefined,
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const currentTime = nowDate();
+    // Candidate selection and lease assignment must commit together so parallel
+    // workers cannot materialize the same lease. Keep the existing claim locks.
+    return await db.transaction(async (tx) => {
+      const rows = await tx
+        .select({
+          versionId: piResourceVersionIndexes.storageVersionId,
+          attemptCount: piResourceVersionIndexes.attemptCount,
+          createdAt: piResourceVersionIndexes.createdAt,
+          s3Key: storageVersions.s3Key,
+          archiveSize: storageVersions.archiveSize,
+          fileCount: storageVersions.fileCount,
         })
+        .from(piResourceVersionIndexes)
+        .innerJoin(
+          storageVersions,
+          eq(storageVersions.id, piResourceVersionIndexes.storageVersionId),
+        )
         .where(
           and(
-            eq(piResourceVersionIndexes.storageVersionId, row.versionId),
             eq(
               piResourceVersionIndexes.extractorVersion,
               PI_RESOURCE_EXTRACTOR_VERSION,
             ),
+            versionIds === undefined
+              ? undefined
+              : inArray(piResourceVersionIndexes.storageVersionId, [
+                  ...versionIds,
+                ]),
+            or(
+              and(
+                eq(piResourceVersionIndexes.status, "pending"),
+                lte(piResourceVersionIndexes.availableAt, currentTime),
+              ),
+              and(
+                eq(piResourceVersionIndexes.status, "running"),
+                lte(piResourceVersionIndexes.leaseExpiresAt, currentTime),
+              ),
+            ),
           ),
-        );
-      work.push({ ...row, leaseId, attemptCount });
-    }
-    signal.throwIfAborted();
-    return work;
-  });
-}
+        )
+        .orderBy(
+          asc(piResourceVersionIndexes.availableAt),
+          asc(piResourceVersionIndexes.storageVersionId),
+        )
+        .limit(WORK_BATCH_SIZE)
+        .for("update", { of: piResourceVersionIndexes, skipLocked: true });
+      signal.throwIfAborted();
+      const work = [];
+      for (const row of rows) {
+        const leaseId = randomUUID();
+        const attemptCount = row.attemptCount + 1;
+        await tx
+          .update(piResourceVersionIndexes)
+          .set({
+            status: "running",
+            leaseId,
+            attemptCount,
+            leaseExpiresAt: new Date(currentTime.getTime() + WORK_LEASE_MS),
+            updatedAt: currentTime,
+          })
+          .where(
+            and(
+              eq(piResourceVersionIndexes.storageVersionId, row.versionId),
+              eq(
+                piResourceVersionIndexes.extractorVersion,
+                PI_RESOURCE_EXTRACTOR_VERSION,
+              ),
+            ),
+          );
+        work.push({ ...row, leaseId, attemptCount });
+      }
+      signal.throwIfAborted();
+      return work;
+    });
+  },
+);
 
 export const executePiResourceIndexWork$ = command(
   async (
@@ -324,7 +344,7 @@ export const executePiResourceIndexWork$ = command(
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
-    const work = await claimWork(db, versionIds, signal);
+    const work = await set(claimWork$, versionIds, signal);
     let ready = 0;
     let unindexable = 0;
     let retried = 0;

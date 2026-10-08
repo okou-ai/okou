@@ -1,3 +1,5 @@
+# (no-op Toolchain release marker refreshed for image publication on 2026-10-08)
+
 # Stage 1: Base toolchain for CI/CD and minimal development
 FROM ubuntu:24.04 AS toolchain
 

@@ -5,15 +5,8 @@ import {
   computerUseHeartbeatContract,
   computerUseHostCommandsContract,
   computerUseHostsContract,
-  computerUsePluginCommandContract,
   computerUseWriteCommandContract,
 } from "@okouai/api-contracts/contracts/computer-use";
-import {
-  COMPUTER_USE_MCP_PLUGIN,
-  COMPUTER_USE_PLUGIN_CALL_KIND,
-} from "@okouai/api-contracts/contracts/computer-use-plugins";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -24,7 +17,6 @@ import {
   completeComputerUseHostCommand$,
   createComputerUseCommand$,
   getComputerUseCommand$,
-  getComputerUseCommandPluginContent$,
   getComputerUseCommandScreenshot$,
   heartbeatComputerUseHost$,
   listComputerUseAuditEvents$,
@@ -32,7 +24,7 @@ import {
   startComputerUseHost$,
   stopComputerUseHost$,
 } from "../services/computer-use.service";
-import { userFeatureSwitchContext } from "../services/feature-switches.service";
+import { computerUseSessionHostRoutes } from "./computer-use-session-hosts";
 import type { RouteEntry } from "../route-entry";
 
 const computerUseHostNotAuthorized = Object.freeze({
@@ -79,13 +71,6 @@ function conflict(message: string) {
   };
 }
 
-function forbidden(message: string) {
-  return {
-    status: 403 as const,
-    body: { error: { message, code: "FORBIDDEN" } },
-  };
-}
-
 function parseBearerToken(authorization: string | undefined): string | null {
   const prefix = "Bearer ";
   if (!authorization?.startsWith(prefix)) {
@@ -115,6 +100,9 @@ const hostStartInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
 
+  if (result.status !== "started" || result.hostToken === null) {
+    throw new Error("Legacy host START did not issue its credential");
+  }
   return {
     status: 200 as const,
     body: { hostId: result.hostId, hostToken: result.hostToken },
@@ -304,85 +292,6 @@ const writeCommandCreateInner$ = command(
   },
 );
 
-const pluginCommandCreateBody$ = bodyResultOf(
-  computerUsePluginCommandContract.create,
-);
-const pluginCommandCreateInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
-    const featureContext = await get(
-      userFeatureSwitchContext(auth.orgId, auth.userId),
-    );
-    signal.throwIfAborted();
-    if (
-      !isFeatureEnabled(
-        FeatureSwitchKey.ComputerUseDesktopPlugins,
-        featureContext,
-      )
-    ) {
-      return forbidden("Computer Use Desktop plugins are disabled");
-    }
-
-    const bodyResult = await get(pluginCommandCreateBody$);
-    signal.throwIfAborted();
-    if (!bodyResult.ok) {
-      return bodyResult.response;
-    }
-
-    const targetHostId =
-      auth.tokenType === "agent" ? auth.computerUseHostId : undefined;
-    if (auth.tokenType === "agent" && !targetHostId) {
-      return computerUseHostNotAuthorized;
-    }
-
-    const result = await set(
-      createComputerUseCommand$,
-      {
-        orgId: auth.orgId,
-        userId: auth.userId,
-        kind: COMPUTER_USE_PLUGIN_CALL_KIND,
-        payload:
-          bodyResult.data.plugin === COMPUTER_USE_MCP_PLUGIN
-            ? {
-                plugin: bodyResult.data.plugin,
-                server: bodyResult.data.server,
-                tool: bodyResult.data.tool,
-                arguments: bodyResult.data.arguments,
-              }
-            : {
-                plugin: bodyResult.data.plugin,
-                tool: bodyResult.data.tool,
-                arguments: bodyResult.data.arguments,
-              },
-        timeoutMs: bodyResult.data.timeoutMs,
-        ...(auth.tokenType === "agent"
-          ? { runId: auth.runId, targetHostId }
-          : {}),
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-
-    if (result.status === "no_host") {
-      return notFound("No linked computer-use host found");
-    }
-    if (result.status === "host_ambiguous") {
-      return conflict("Multiple active computer-use hosts are online");
-    }
-    if (result.status === "host_offline") {
-      return conflict("No online computer-use host found");
-    }
-    if (result.status === "host_unsupported") {
-      return conflict("No online computer-use host supports this plugin tool");
-    }
-
-    return {
-      status: 200 as const,
-      body: { commandId: result.commandId, status: result.commandStatus },
-    };
-  },
-);
-
 const commandGetParams$ = pathParamsOf(computerUseCommandContract.get);
 const commandGetInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -443,49 +352,6 @@ const screenshotGetInner$ = command(
     headers.set("Content-Length", String(screenshot.buffer.length));
     headers.set("Cache-Control", "private, no-store");
     return new Response(new Uint8Array(screenshot.buffer), {
-      status: 200,
-      headers,
-    });
-  },
-);
-
-const pluginContentGetParams$ = pathParamsOf(
-  computerUseCommandContract.getPluginContent,
-);
-const pluginContentGetInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const auth = get(organizationAuthContext$);
-    const params = get(pluginContentGetParams$);
-    const hostId =
-      auth.tokenType === "agent" ? auth.computerUseHostId : undefined;
-    if (auth.tokenType === "agent" && !hostId) {
-      return computerUseHostNotAuthorized;
-    }
-    const content = await set(
-      getComputerUseCommandPluginContent$,
-      {
-        orgId: auth.orgId,
-        userId: auth.userId,
-        commandId: params.commandId,
-        ...(hostId ? { hostId } : {}),
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-
-    if (!content) {
-      return notFound("Computer-use plugin content not found");
-    }
-
-    const headers = new Headers();
-    headers.set("Content-Type", content.contentType);
-    headers.set("Content-Length", String(content.buffer.length));
-    headers.set("Cache-Control", "private, no-store");
-    headers.set(
-      "Content-Disposition",
-      `attachment; filename="${content.fileName.replaceAll('"', "")}"`,
-    );
-    return new Response(new Uint8Array(content.buffer), {
       status: 200,
       headers,
     });
@@ -623,6 +489,7 @@ const computerUseHostListAuthOptions = {
 } as const;
 
 export const computerUseRoutes: readonly RouteEntry[] = [
+  ...computerUseSessionHostRoutes,
   {
     route: computerUseHostsContract.start,
     handler: authRoute(computerUseAuthOptions, hostStartInner$),
@@ -648,23 +515,12 @@ export const computerUseRoutes: readonly RouteEntry[] = [
     handler: authRoute(computerUseCommandAuthOptions, writeCommandCreateInner$),
   },
   {
-    route: computerUsePluginCommandContract.create,
-    handler: authRoute(
-      computerUseCommandAuthOptions,
-      pluginCommandCreateInner$,
-    ),
-  },
-  {
     route: computerUseCommandContract.get,
     handler: authRoute(computerUseCommandAuthOptions, commandGetInner$),
   },
   {
     route: computerUseCommandContract.getScreenshot,
     handler: authRoute(computerUseCommandAuthOptions, screenshotGetInner$),
-  },
-  {
-    route: computerUseCommandContract.getPluginContent,
-    handler: authRoute(computerUseCommandAuthOptions, pluginContentGetInner$),
   },
   {
     route: computerUseHostCommandsContract.next,

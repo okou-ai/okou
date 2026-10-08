@@ -12,14 +12,18 @@ import { VOLUME_ORG_USER_ID } from "@okouai/core/storage-names";
 import type { PiResourceVersionIndex } from "@okouai/db/jsonb-contracts/pi-resource-version-index";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
+import { and, eq, inArray } from "drizzle-orm";
 import { create } from "tar";
 
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
-import { preparePiResourceIndex } from "../../lib/pi-resource-index";
-import { readPiResourceVersionIndexes } from "./pi-resource-version-index.service";
-import { writeDb$, type Db } from "../external/db";
+import {
+  preparePiResourceIndex,
+  PI_RESOURCE_EXTRACTOR_VERSION,
+} from "../../lib/pi-resource-index";
+import { piResourceVersionIndexesResult } from "./pi-resource-version-index.service";
+import { db$, writeDb$ } from "../external/db";
 import { putS3Object } from "../external/s3";
 import { onRejection } from "../utils";
 import { newStorageS3Location } from "./storage-s3-prefix.utils";
@@ -63,11 +67,6 @@ export interface PreparedServerSideVolume {
 export interface ServerSideVolumeStorage {
   readonly id: string;
   readonly s3Prefix: string;
-}
-
-interface PrepareVolumeServerSideWithDbInput {
-  readonly db: Db;
-  readonly input: PrepareVolumeServerSideInput;
 }
 
 interface S3StorageManifest {
@@ -243,28 +242,30 @@ const uploadVolumeObjects$ = command(
   },
 );
 
-async function readStorageVersion(
-  db: Db,
-  versionId: string,
-  signal: AbortSignal,
-): Promise<PreparedStorageVersion | undefined> {
-  const [version] = await db
-    .select({
-      storageId: storageVersions.storageId,
-      versionId: storageVersions.id,
-      s3Key: storageVersions.s3Key,
-      size: storageVersions.size,
-      archiveSize: storageVersions.archiveSize,
-      fileCount: storageVersions.fileCount,
-      message: storageVersions.message,
-      createdBy: storageVersions.createdBy,
-    })
-    .from(storageVersions)
-    .where(eq(storageVersions.id, versionId))
-    .limit(1);
-  signal.throwIfAborted();
-  return version;
-}
+const readStorageVersion$ = command(
+  async (
+    { get },
+    versionId: string,
+    signal: AbortSignal,
+  ): Promise<PreparedStorageVersion | undefined> => {
+    const [version] = await get(db$)
+      .select({
+        storageId: storageVersions.storageId,
+        versionId: storageVersions.id,
+        s3Key: storageVersions.s3Key,
+        size: storageVersions.size,
+        archiveSize: storageVersions.archiveSize,
+        fileCount: storageVersions.fileCount,
+        message: storageVersions.message,
+        createdBy: storageVersions.createdBy,
+      })
+      .from(storageVersions)
+      .where(eq(storageVersions.id, versionId))
+      .limit(1);
+    signal.throwIfAborted();
+    return version;
+  },
+);
 
 function assertServerSideVersionIdentity(
   stored: PreparedStorageVersion,
@@ -280,53 +281,68 @@ function assertServerSideVersionIdentity(
   }
 }
 
-/** DB-only container reservation; callers own any required publication locks. */
-export async function resolveCanonicalVolumeStorage(
-  db: Db,
-  args: { readonly orgId: string; readonly storageName: string },
-  signal: AbortSignal,
-): Promise<ServerSideVolumeStorage> {
-  const { storageId, s3Prefix } = newStorageS3Location(args.orgId);
-  await db
-    .insert(storages)
-    .values({
-      id: storageId,
-      userId: VOLUME_ORG_USER_ID,
-      orgId: args.orgId,
-      name: args.storageName,
-      s3Prefix,
-      size: 0,
-      fileCount: 0,
-    })
-    .onConflictDoNothing();
-  signal.throwIfAborted();
-
-  const [storage] = await db
-    .select({ id: storages.id, s3Prefix: storages.s3Prefix })
-    .from(storages)
-    .where(
-      and(
-        eq(storages.orgId, args.orgId),
-        eq(storages.userId, VOLUME_ORG_USER_ID),
-        eq(storages.name, args.storageName),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!storage) {
-    throw new Error(`Failed to create storage for ${args.storageName}`);
-  }
-  return storage;
+/** The owner executes reservation SQL alongside any source authority/fence writes. */
+export function canonicalVolumeStorageValues(args: {
+  readonly orgId: string;
+  readonly storageName: string;
+  readonly storageId: string;
+  readonly s3Prefix: string;
+}) {
+  return {
+    id: args.storageId,
+    userId: VOLUME_ORG_USER_ID,
+    orgId: args.orgId,
+    name: args.storageName,
+    s3Prefix: args.s3Prefix,
+    size: 0,
+    fileCount: 0,
+  };
 }
 
-export const prepareVolumeServerSideWithDb$ = command(
+/** DB-only container reservation; callers own any required publication locks. */
+const resolveCanonicalVolumeStorage$ = command(
   async (
     { set },
-    args: PrepareVolumeServerSideWithDbInput,
+    args: { readonly orgId: string; readonly storageName: string },
+    signal: AbortSignal,
+  ): Promise<ServerSideVolumeStorage> => {
+    const db = set(writeDb$);
+    await db
+      .insert(storages)
+      .values(
+        canonicalVolumeStorageValues({
+          ...args,
+          ...newStorageS3Location(args.orgId),
+        }),
+      )
+      .onConflictDoNothing();
+    signal.throwIfAborted();
+
+    const [storage] = await db
+      .select({ id: storages.id, s3Prefix: storages.s3Prefix })
+      .from(storages)
+      .where(
+        and(
+          eq(storages.orgId, args.orgId),
+          eq(storages.userId, VOLUME_ORG_USER_ID),
+          eq(storages.name, args.storageName),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!storage) {
+      throw new Error(`Failed to create storage for ${args.storageName}`);
+    }
+    return storage;
+  },
+);
+
+export const prepareVolumeServerSide$ = command(
+  async (
+    { get, set },
+    input: PrepareVolumeServerSideInput,
     signal: AbortSignal,
   ): Promise<PreparedServerSideVolume> => {
-    const input = args.input;
-    const writeDb = args.db;
     const files = materializeFiles(input.files);
     const totalSize = files.reduce((sum, file) => {
       return sum + file.size;
@@ -341,7 +357,7 @@ export const prepareVolumeServerSideWithDb$ = command(
     const updatedAt = nowDate();
     const storage =
       input.storage ??
-      (await resolveCanonicalVolumeStorage(writeDb, input, signal));
+      (await set(resolveCanonicalVolumeStorage$, input, signal));
 
     const versionId = computeContentHashFromHashes(storage.id, fileEntries);
     const s3Key = `${storage.s3Prefix}/${versionId}`;
@@ -354,15 +370,35 @@ export const prepareVolumeServerSideWithDb$ = command(
       message: null,
       createdBy: SERVER_SIDE_STORAGE_VERSION_CREATOR,
     };
-    const existing = await readStorageVersion(writeDb, versionId, signal);
+    const existing = await set(readStorageVersion$, versionId, signal);
     if (existing) {
       assertServerSideVersionIdentity(existing, expectedVersion);
       if (input.piResourceIndex) {
-        const { indexes } = await readPiResourceVersionIndexes(
-          writeDb,
-          [versionId],
-          signal,
-        );
+        const rows = await get(db$)
+          .select({
+            versionId: piResourceVersionIndexes.storageVersionId,
+            status: piResourceVersionIndexes.status,
+            storageId: storageVersions.storageId,
+            archiveSize: piResourceVersionIndexes.sourceArchiveSize,
+            projection: piResourceVersionIndexes.projection,
+            projectionHash: piResourceVersionIndexes.projectionHash,
+          })
+          .from(piResourceVersionIndexes)
+          .innerJoin(
+            storageVersions,
+            eq(storageVersions.id, piResourceVersionIndexes.storageVersionId),
+          )
+          .where(
+            and(
+              inArray(piResourceVersionIndexes.storageVersionId, [versionId]),
+              eq(
+                piResourceVersionIndexes.extractorVersion,
+                PI_RESOURCE_EXTRACTOR_VERSION,
+              ),
+            ),
+          );
+        signal.throwIfAborted();
+        const { indexes } = piResourceVersionIndexesResult([versionId], rows);
         const indexed = indexes.get(versionId);
         if (indexed && indexed.storageId !== storage.id) {
           throw new StorageVersionIdentityConflictError(versionId);
@@ -423,20 +459,5 @@ export const prepareVolumeServerSideWithDb$ = command(
       updatedAt,
       piResourceIndex,
     };
-  },
-);
-
-export const prepareVolumeServerSide$ = command(
-  async (
-    { set },
-    args: PrepareVolumeServerSideInput,
-    signal: AbortSignal,
-  ): Promise<PreparedServerSideVolume> => {
-    const writeDb = set(writeDb$);
-    return await set(
-      prepareVolumeServerSideWithDb$,
-      { db: writeDb, input: args },
-      signal,
-    );
   },
 );

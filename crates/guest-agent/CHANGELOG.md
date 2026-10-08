@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.104.5](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.4...guest-agent-v0.104.5) (2026-10-08)
+
+## [0.104.4](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.3...guest-agent-v0.104.4) (2026-10-08)
+
+
+### Bug Fixes
+
+* **guest-agent:** keep oversized pi record draining interruptible ([#37950](https://github.com/okou-ai/okou/issues/37950)) ([13411e8](https://github.com/okou-ai/okou/commit/13411e8ce754c5515a1ceac67422216ff8797e32))
+* let the model catalog decide which models accept reasoning effort ([#37958](https://github.com/okou-ai/okou/issues/37958)) ([abc2a1c](https://github.com/okou-ai/okou/commit/abc2a1c29edd2a840f109d36fd460aea6db3888a))
+* **pi:** bound duplicate turn-end stdout records ([#37963](https://github.com/okou-ai/okou/issues/37963)) ([77bae8a](https://github.com/okou-ai/okou/commit/77bae8a42fbda3957404b26210c57f73861c182b))
+
 ## [0.104.3](https://github.com/okou-ai/okou/compare/guest-agent-v0.104.2...guest-agent-v0.104.3) (2026-10-07)
 
 

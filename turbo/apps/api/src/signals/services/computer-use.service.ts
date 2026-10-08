@@ -6,46 +6,31 @@ import {
   asc,
   desc,
   eq,
+  exists,
   inArray,
   isNotNull,
   isNull,
   sql,
 } from "drizzle-orm";
 import {
-  isExpiredPluginContentPointer,
   isExpiredScreenshotPointer,
-  isStoredPluginContentPointer,
   isStoredScreenshotPointer,
-  type ClientPluginContentPointer,
   type ClientScreenshotPointer,
   type ComputerUseCommandError,
   type ComputerUseCommandKind,
   type ComputerUseCommandResult,
   type ComputerUseCommandStatus,
   type ComputerUseHost,
-  type ComputerUsePluginCommandKind,
   type ComputerUseReadCommandKind,
   type ComputerUseWriteCommandKind,
-  type StoredPluginContentPointer,
   type StoredScreenshotPointer,
 } from "@okouai/api-contracts/contracts/computer-use";
-import {
-  COMPUTER_USE_PLUGIN_CALL_KIND,
-  COMPUTER_USE_PLUGIN_RESULT_BLOB_MAX_BYTES,
-  COMPUTER_USE_PLUGIN_RESULT_INLINE_TEXT_MAX_BYTES,
-  computerUseFilesystemToolIsDestructive,
-  computerUseMcpPluginCallRequiredCapabilities,
-  computerUsePluginCallRequiredCapabilities,
-  isComputerUseMcpPluginCallPayload,
-  isComputerUsePluginCallPayload,
-} from "@okouai/api-contracts/contracts/computer-use-plugins";
 import {
   computerUseCommandAuditEvents,
   computerUseCommands,
   computerUseHosts,
 } from "@okouai/db/schema/computer-use-host";
 
-import { pgTextDecoder } from "../../lib/db-structured-result";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -54,6 +39,14 @@ import { writeDb$, type Db } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { downloadS3Buffer, putS3Object } from "../external/s3";
 import { settle } from "../utils";
+import { clerk$ } from "../external/clerk";
+import {
+  computerUseHostAuthorityCondition,
+  resolveComputerUseHost,
+  verifyComputerUseSession,
+  type ComputerUseHostAuthority,
+  type ComputerUseSessionIdentity,
+} from "./computer-use-host-auth.service";
 
 const COMPUTER_USE_HOST_CLOSED_AFTER_MS = 90 * 1000;
 const COMPUTER_USE_HOSTS_CHANGED_TOPIC = "computerUseHostsChanged";
@@ -72,15 +65,7 @@ const COMPUTER_USE_WRITE_COMMANDS = [
   "keyboard.type_text",
   "keyboard.press_key",
 ] as const satisfies readonly ComputerUseWriteCommandKind[];
-const COMPUTER_USE_PLUGIN_COMMANDS = [
-  COMPUTER_USE_PLUGIN_CALL_KIND,
-] as const satisfies readonly ComputerUsePluginCommandKind[];
 const COMPUTER_USE_COMMANDS = [
-  ...COMPUTER_USE_READ_COMMANDS,
-  ...COMPUTER_USE_WRITE_COMMANDS,
-  ...COMPUTER_USE_PLUGIN_COMMANDS,
-] as const satisfies readonly ComputerUseCommandKind[];
-const COMPUTER_USE_LEGACY_COMMANDS = [
   ...COMPUTER_USE_READ_COMMANDS,
   ...COMPUTER_USE_WRITE_COMMANDS,
 ] as const satisfies readonly ComputerUseCommandKind[];
@@ -116,10 +101,6 @@ interface ComputerUseCommandPayload {
   readonly text?: string;
   readonly key?: string;
   readonly action?: string;
-  readonly plugin?: string;
-  readonly server?: string;
-  readonly tool?: string;
-  readonly arguments?: Record<string, unknown>;
 }
 
 type CreateComputerUseCommandResult =
@@ -146,7 +127,8 @@ type ResolveComputerUseCommandTargetsResult =
 interface StartComputerUseHostResult {
   readonly status: "started";
   readonly hostId: string;
-  readonly hostToken: string;
+  readonly hostToken: string | null;
+  readonly connectionGeneration: number;
 }
 
 type HeartbeatComputerUseHostResult =
@@ -165,19 +147,19 @@ type ClaimNextComputerUseHostCommandResult =
       readonly command: ReturnType<typeof serializeCommand>;
     };
 
-type CompleteComputerUseHostCommandParams =
-  | {
-      readonly hostToken: string;
-      readonly commandId: string;
-      readonly status: "succeeded";
-      readonly result: ComputerUseCommandResult;
-    }
-  | {
-      readonly hostToken: string;
-      readonly commandId: string;
-      readonly status: "failed";
-      readonly error: ComputerUseCommandError;
-    };
+type CompleteComputerUseHostCommandParams = ComputerUseHostAuthority &
+  (
+    | {
+        readonly commandId: string;
+        readonly status: "succeeded";
+        readonly result: ComputerUseCommandResult;
+      }
+    | {
+        readonly commandId: string;
+        readonly status: "failed";
+        readonly error: ComputerUseCommandError;
+      }
+  );
 
 type CompleteComputerUseHostCommandResult =
   | { readonly status: "completed" }
@@ -296,53 +278,15 @@ function isComputerUseWriteCommandKind(
   );
 }
 
-function isComputerUsePluginCommandKind(
-  kind: string,
-): kind is ComputerUsePluginCommandKind {
-  return COMPUTER_USE_PLUGIN_COMMANDS.includes(
-    kind as ComputerUsePluginCommandKind,
-  );
-}
-
-function commandRequiredCapabilities(params: {
-  readonly kind: ComputerUseCommandKind;
-  readonly payload: Record<string, unknown>;
-}): readonly string[] {
-  if (params.kind === COMPUTER_USE_PLUGIN_CALL_KIND) {
-    if (isComputerUseMcpPluginCallPayload(params.payload)) {
-      return computerUseMcpPluginCallRequiredCapabilities(
-        params.payload.server,
-      );
-    }
-    if (!isComputerUsePluginCallPayload(params.payload)) {
-      return [COMPUTER_USE_PLUGIN_CALL_KIND];
-    }
-    return computerUsePluginCallRequiredCapabilities({
-      plugin: params.payload.plugin,
-      tool: params.payload.tool,
-    });
-  }
-  return [params.kind];
-}
-
 function hostSupportsCommand(params: {
   readonly host: Pick<ComputerUseHostRow, "supportedCapabilities">;
   readonly kind: ComputerUseCommandKind;
-  readonly payload: Record<string, unknown>;
 }): boolean {
-  if (params.host.supportedCapabilities.length === 0) {
-    return (
-      params.kind !== COMPUTER_USE_PLUGIN_CALL_KIND &&
-      COMPUTER_USE_LEGACY_COMMANDS.includes(params.kind)
-    );
-  }
-  const required = commandRequiredCapabilities({
-    kind: params.kind,
-    payload: params.payload,
-  });
-  return required.every((capability) => {
-    return params.host.supportedCapabilities.includes(capability);
-  });
+  // Older hosts advertise no capabilities and support the native commands.
+  return (
+    params.host.supportedCapabilities.length === 0 ||
+    params.host.supportedCapabilities.includes(params.kind)
+  );
 }
 
 function commandPayload(
@@ -391,18 +335,6 @@ function commandPayload(
   if (params.action) {
     payload.action = params.action.trim();
   }
-  if (params.plugin) {
-    payload.plugin = params.plugin.trim();
-  }
-  if (params.server) {
-    payload.server = params.server.trim();
-  }
-  if (params.tool) {
-    payload.tool = params.tool.trim();
-  }
-  if (params.arguments) {
-    payload.arguments = params.arguments;
-  }
   return payload;
 }
 
@@ -433,17 +365,6 @@ function extensionForScreenshotMime(mimeType: string): string {
     return "webp";
   }
   return "bin";
-}
-
-function extensionForPluginMime(mimeType: string): string {
-  if (mimeType === "text/plain") {
-    return "txt";
-  }
-  if (mimeType === "application/json") {
-    return "json";
-  }
-  const suffix = mimeType.includes("/") ? mimeType.split("/").at(-1) : null;
-  return suffix?.replace(/[^A-Za-z0-9._-]+/g, "-").slice(0, 16) || "bin";
 }
 
 function numberField(result: ComputerUseCommandResult, key: string): number {
@@ -575,86 +496,6 @@ function offloadScreenshotForResult(
   });
 }
 
-interface InlinePluginContent {
-  readonly dataBase64: string;
-  readonly mimeType: string;
-  readonly fileName: string;
-}
-
-function inlinePluginContent(value: unknown): InlinePluginContent | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return null;
-  }
-  const content = value as {
-    readonly dataBase64?: unknown;
-    readonly mimeType?: unknown;
-    readonly fileName?: unknown;
-  };
-  if (
-    typeof content.dataBase64 !== "string" ||
-    typeof content.mimeType !== "string" ||
-    typeof content.fileName !== "string"
-  ) {
-    return null;
-  }
-  return {
-    dataBase64: content.dataBase64,
-    mimeType: content.mimeType,
-    fileName: content.fileName,
-  };
-}
-
-function offloadPluginContentForResult(
-  params: {
-    readonly owner: ComputerUseHostOwner;
-    readonly commandId: string;
-    readonly result: ComputerUseCommandResult;
-  },
-  signal: AbortSignal,
-): Computed<Promise<ComputerUseCommandResult>> {
-  return computed(async (get): Promise<ComputerUseCommandResult> => {
-    const pluginContent = inlinePluginContent(params.result.pluginContent);
-    const inlineContent = params.result.content;
-    if (
-      typeof inlineContent === "string" &&
-      Buffer.byteLength(inlineContent, "utf8") >
-        COMPUTER_USE_PLUGIN_RESULT_INLINE_TEXT_MAX_BYTES
-    ) {
-      const error: ComputerUseCommandError = {
-        code: "result_too_large",
-        message: `Computer-use plugin inline result exceeds ${COMPUTER_USE_PLUGIN_RESULT_INLINE_TEXT_MAX_BYTES} bytes`,
-      };
-      return { error };
-    }
-    if (!pluginContent) {
-      return params.result;
-    }
-
-    const buffer = Buffer.from(pluginContent.dataBase64, "base64");
-    if (buffer.length > COMPUTER_USE_PLUGIN_RESULT_BLOB_MAX_BYTES) {
-      const error: ComputerUseCommandError = {
-        code: "result_too_large",
-        message: `Computer-use plugin result exceeds ${COMPUTER_USE_PLUGIN_RESULT_BLOB_MAX_BYTES} bytes`,
-      };
-      return { error };
-    }
-
-    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    const key = `computer-use/${params.owner.orgId}/${params.owner.userId}/${params.commandId}/plugin-content.${extensionForPluginMime(pluginContent.mimeType)}`;
-    await get(putS3Object(bucket, key, buffer, pluginContent.mimeType));
-    signal.throwIfAborted();
-    const pointer: StoredPluginContentPointer = {
-      type: "s3",
-      bucket,
-      key,
-      mimeType: pluginContent.mimeType,
-      sizeBytes: buffer.length,
-      fileName: pluginContent.fileName,
-    };
-    return { ...params.result, pluginContent: pointer };
-  });
-}
-
 /**
  * Map a stored result's screenshot pointer to its client-facing form, dropping
  * the internal `bucket`/`key` so storage layout never leaves the API.
@@ -677,20 +518,6 @@ function toClientResult(
   if (isExpiredScreenshotPointer(screenshot)) {
     const clientPointer: ClientScreenshotPointer = { type: "expired" };
     return { ...result, screenshot: clientPointer };
-  }
-  const pluginContent = result.pluginContent;
-  if (isStoredPluginContentPointer(pluginContent)) {
-    const clientPointer: ClientPluginContentPointer = {
-      type: "s3",
-      mimeType: pluginContent.mimeType,
-      sizeBytes: pluginContent.sizeBytes,
-      fileName: pluginContent.fileName,
-    };
-    return { ...result, pluginContent: clientPointer };
-  }
-  if (isExpiredPluginContentPointer(pluginContent)) {
-    const clientPointer: ClientPluginContentPointer = { type: "expired" };
-    return { ...result, pluginContent: clientPointer };
   }
   return result;
 }
@@ -775,75 +602,6 @@ function redactedResultForAudit(
     return redacted;
   }
   return result;
-}
-
-function stringArrayMetadata(value: unknown): readonly string[] | undefined {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  const strings = value.filter((entry): entry is string => {
-    return typeof entry === "string";
-  });
-  return strings.length > 0 ? strings : undefined;
-}
-
-function pluginCommandAuditMetadata(params: {
-  readonly command: ComputerUseCommandRow;
-  readonly result?: ComputerUseCommandResult | null;
-  readonly error?: ComputerUseCommandError | null;
-}): Record<string, unknown> | null {
-  if (!isComputerUsePluginCallPayload(params.command.payload)) {
-    return null;
-  }
-
-  const args = params.command.payload.arguments;
-  const metadata: Record<string, unknown> = {
-    plugin: params.command.payload.plugin,
-    tool: params.command.payload.tool,
-    status: params.error ? "failed" : "succeeded",
-    destructive: computerUseFilesystemToolIsDestructive(
-      params.command.payload.tool,
-    ),
-  };
-
-  const path = args.path;
-  if (typeof path === "string") {
-    metadata.path = path;
-  }
-  const paths = stringArrayMetadata(args.paths);
-  if (paths) {
-    metadata.paths = paths;
-  }
-  const source = args.source;
-  if (typeof source === "string") {
-    metadata.source = source;
-  }
-  const destination = args.destination;
-  if (typeof destination === "string") {
-    metadata.destination = destination;
-  }
-
-  const result = params.result;
-  if (result) {
-    if (typeof result.sizeBytes === "number") {
-      metadata.sizeBytes = result.sizeBytes;
-    }
-    if (typeof result.truncated === "boolean") {
-      metadata.truncated = result.truncated;
-    }
-    const pluginContent = result.pluginContent;
-    if (isStoredPluginContentPointer(pluginContent)) {
-      metadata.offloaded = true;
-      metadata.sizeBytes = pluginContent.sizeBytes;
-      metadata.fileName = pluginContent.fileName;
-      metadata.mimeType = pluginContent.mimeType;
-    } else if (isExpiredPluginContentPointer(pluginContent)) {
-      metadata.offloaded = true;
-      metadata.expired = true;
-    }
-  }
-
-  return metadata;
 }
 
 function errorForAudit(
@@ -962,22 +720,10 @@ async function insertComputerUseCommandAuditEvent(
     readonly createdAt: Date;
   },
 ): Promise<void> {
-  const auditPluginCommand = isComputerUsePluginCommandKind(
-    params.command.kind,
-  );
-  if (
-    !isComputerUseWriteCommandKind(params.command.kind) &&
-    !auditPluginCommand
-  ) {
+  if (!isComputerUseWriteCommandKind(params.command.kind)) {
     return;
   }
-  const redactedResult = auditPluginCommand
-    ? pluginCommandAuditMetadata({
-        command: params.command,
-        result: params.result,
-        error: params.error,
-      })
-    : redactedResultForAudit(params.result);
+  const redactedResult = redactedResultForAudit(params.result);
 
   await db.insert(computerUseCommandAuditEvents).values({
     commandId: params.command.id,
@@ -1044,7 +790,6 @@ async function failTimedOutComputerUseCommand(
 function resolveComputerUseCommandTargets(params: {
   readonly onlineHosts: readonly ComputerUseHostRow[];
   readonly kind: ComputerUseCommandKind;
-  readonly payload: Record<string, unknown>;
   readonly targetHostId?: string;
 }): ResolveComputerUseCommandTargetsResult {
   if (params.onlineHosts.length === 0) {
@@ -1064,7 +809,6 @@ function resolveComputerUseCommandTargets(params: {
     return hostSupportsCommand({
       host,
       kind: params.kind,
-      payload: params.payload,
     });
   });
   if (supported.length === 0) {
@@ -1092,11 +836,12 @@ function resolveComputerUseCommandTargets(params: {
  */
 export const startComputerUseHost$ = command(
   async (
-    { set },
+    { get, set },
     params: {
       readonly orgId: string;
       readonly userId: string;
       readonly installationId: string;
+      readonly session?: ComputerUseSessionIdentity;
       readonly hostName: string;
       readonly appVersion: string;
       readonly osVersion: string;
@@ -1104,7 +849,9 @@ export const startComputerUseHost$ = command(
       readonly permissions: ComputerUseHostRow["permissions"];
     },
     signal: AbortSignal,
-  ): Promise<StartComputerUseHostResult> => {
+  ): Promise<
+    StartComputerUseHostResult | { readonly status: "invalid_session" }
+  > => {
     signal.throwIfAborted();
     const db = set(writeDb$);
     const displayName = normalizeHostName(params.hostName);
@@ -1114,8 +861,16 @@ export const startComputerUseHost$ = command(
       params.supportedCapabilities,
     );
     const now = nowDate();
-    const hostToken = generateOpaqueToken("vm0_computer_use_host");
-    const tokenHash = hashSecret(hostToken);
+    if (
+      params.session &&
+      !(await verifyComputerUseSession(get(clerk$), params.session, signal))
+    ) {
+      return { status: "invalid_session" };
+    }
+    const hostToken = params.session
+      ? null
+      : generateOpaqueToken("vm0_computer_use_host");
+    const tokenHash = hostToken ? hashSecret(hostToken) : null;
     const [host] = await db
       .insert(computerUseHosts)
       .values({
@@ -1124,6 +879,9 @@ export const startComputerUseHost$ = command(
         installationId: params.installationId,
         displayName,
         tokenHash,
+        sessionId: params.session?.sessionId ?? null,
+        sessionValidatedAt: params.session ? now : null,
+        connectionGeneration: 1,
         appVersion,
         osVersion,
         supportedCapabilities,
@@ -1146,6 +904,9 @@ export const startComputerUseHost$ = command(
         set: {
           displayName,
           tokenHash,
+          sessionId: params.session?.sessionId ?? null,
+          sessionValidatedAt: params.session ? now : null,
+          connectionGeneration: sql`${computerUseHosts.connectionGeneration} + 1`,
           appVersion,
           osVersion,
           supportedCapabilities,
@@ -1155,14 +916,22 @@ export const startComputerUseHost$ = command(
           updatedAt: now,
         },
       })
-      .returning({ id: computerUseHosts.id });
+      .returning({
+        id: computerUseHosts.id,
+        connectionGeneration: computerUseHosts.connectionGeneration,
+      });
     signal.throwIfAborted();
     if (!host) {
       throw new Error("Failed to start computer-use host");
     }
     await publishComputerUseHostsChanged(params.userId);
     signal.throwIfAborted();
-    return { status: "started", hostId: host.id, hostToken };
+    return {
+      status: "started",
+      hostId: host.id,
+      hostToken,
+      connectionGeneration: host.connectionGeneration,
+    };
   },
 );
 
@@ -1200,9 +969,8 @@ function computerUseHostLivenessIsFresh(
  */
 export const heartbeatComputerUseHost$ = command(
   async (
-    { set },
-    params: {
-      readonly hostToken: string;
+    { get, set },
+    params: ComputerUseHostAuthority & {
       readonly hostName: string;
       readonly appVersion: string;
       readonly osVersion: string;
@@ -1212,7 +980,6 @@ export const heartbeatComputerUseHost$ = command(
     signal: AbortSignal,
   ): Promise<HeartbeatComputerUseHostResult> => {
     const db = set(writeDb$);
-    const tokenHash = hashSecret(params.hostToken);
     const displayName = normalizeHostName(params.hostName);
     const appVersion = normalizeVersion(params.appVersion);
     const osVersion = normalizeOsVersion(params.osVersion);
@@ -1220,28 +987,7 @@ export const heartbeatComputerUseHost$ = command(
       params.supportedCapabilities,
     );
 
-    const [host] = await db
-      .select({
-        id: computerUseHosts.id,
-        userId: computerUseHosts.userId,
-        displayName: computerUseHosts.displayName,
-        appVersion: computerUseHosts.appVersion,
-        osVersion: computerUseHosts.osVersion,
-        supportedCapabilities: computerUseHosts.supportedCapabilities,
-        permissions: computerUseHosts.permissions,
-        status: computerUseHosts.status,
-        lastSeenAt: computerUseHosts.lastSeenAt,
-        revokedAt: computerUseHosts.revokedAt,
-        rowVersion: sql`${computerUseHosts}.xmin::text`.mapWith(pgTextDecoder),
-      })
-      .from(computerUseHosts)
-      .where(
-        and(
-          eq(computerUseHosts.tokenHash, tokenHash),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
-      .limit(1);
+    const host = await resolveComputerUseHost(db, get(clerk$), params, signal);
     signal.throwIfAborted();
     if (!host) {
       return { status: "invalid_token" };
@@ -1272,7 +1018,7 @@ export const heartbeatComputerUseHost$ = command(
       })
       .where(
         and(
-          eq(computerUseHosts.id, host.id),
+          computerUseHostAuthorityCondition(params),
           sql`${computerUseHosts}.xmin = ${host.rowVersion}::xid`,
         ),
       )
@@ -1296,28 +1042,24 @@ export const heartbeatComputerUseHost$ = command(
  */
 export const stopComputerUseHost$ = command(
   async (
-    { set },
-    params: {
-      readonly hostToken: string;
-    },
+    { get, set },
+    params: ComputerUseHostAuthority,
     signal: AbortSignal,
   ): Promise<StopComputerUseHostResult> => {
     const db = set(writeDb$);
-    const tokenHash = hashSecret(params.hostToken);
+    if (!(await resolveComputerUseHost(db, get(clerk$), params, signal))) {
+      return { status: "invalid_token" };
+    }
     const now = nowDate();
     const [stopped] = await db
       .update(computerUseHosts)
       .set({
         status: "offline",
-        tokenHash: invalidatedHostTokenHash(),
+        tokenHash: "hostToken" in params ? invalidatedHostTokenHash() : null,
+        connectionGeneration: sql`${computerUseHosts.connectionGeneration} + 1`,
         updatedAt: now,
       })
-      .where(
-        and(
-          eq(computerUseHosts.tokenHash, tokenHash),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
+      .where(computerUseHostAuthorityCondition(params))
       .returning({
         id: computerUseHosts.id,
         userId: computerUseHosts.userId,
@@ -1441,7 +1183,6 @@ export const createComputerUseCommand$ = command(
     const target = resolveComputerUseCommandTargets({
       onlineHosts,
       kind: params.kind,
-      payload,
       targetHostId: params.targetHostId,
     });
     if (target.status !== "resolved") {
@@ -1495,6 +1236,7 @@ async function selectComputerUseCommandContent(
         eq(computerUseCommands.orgId, params.orgId),
         eq(computerUseCommands.userId, params.userId),
         eq(computerUseCommands.id, params.commandId),
+        inArray(computerUseCommands.kind, COMPUTER_USE_COMMANDS),
         ...(params.hostId
           ? [eq(computerUseCommands.hostId, params.hostId)]
           : []),
@@ -1531,6 +1273,7 @@ export const getComputerUseCommand$ = command(
           eq(computerUseCommands.orgId, params.orgId),
           eq(computerUseCommands.userId, params.userId),
           eq(computerUseCommands.id, params.commandId),
+          inArray(computerUseCommands.kind, COMPUTER_USE_COMMANDS),
           ...(params.hostId
             ? [eq(computerUseCommands.hostId, params.hostId)]
             : []),
@@ -1592,43 +1335,6 @@ export const getComputerUseCommandScreenshot$ = command(
   },
 );
 
-export const getComputerUseCommandPluginContent$ = command(
-  async (
-    { get, set },
-    params: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly commandId: string;
-      readonly hostId?: string;
-    },
-    signal: AbortSignal,
-  ): Promise<{
-    readonly buffer: Buffer;
-    readonly contentType: string;
-    readonly fileName: string;
-  } | null> => {
-    signal.throwIfAborted();
-    const row = await selectComputerUseCommandContent(set(writeDb$), params);
-    signal.throwIfAborted();
-    if (row?.status !== "succeeded" || !row.result) {
-      return null;
-    }
-    const pluginContent = row.result.pluginContent;
-    if (!isStoredPluginContentPointer(pluginContent)) {
-      return null;
-    }
-    const buffer = await get(
-      downloadS3Buffer(pluginContent.bucket, pluginContent.key, signal),
-    );
-    signal.throwIfAborted();
-    return {
-      buffer,
-      contentType: pluginContent.mimeType,
-      fileName: pluginContent.fileName,
-    };
-  },
-);
-
 /**
  * Whether this host still has a running command. A running command past its
  * timeout is failed here; a poll that loses that race still reports busy.
@@ -1675,25 +1381,15 @@ async function hostHasRunningComputerUseCommand(
  */
 export const claimNextComputerUseHostCommand$ = command(
   async (
-    { set },
-    params: {
-      readonly hostToken: string;
+    { get, set },
+    params: ComputerUseHostAuthority & {
       readonly supportedCapabilities: readonly string[];
     },
     signal: AbortSignal,
   ): Promise<ClaimNextComputerUseHostCommandResult> => {
     const db = set(writeDb$);
     const capabilities = normalizeCapabilities(params.supportedCapabilities);
-    const [host] = await db
-      .select()
-      .from(computerUseHosts)
-      .where(
-        and(
-          eq(computerUseHosts.tokenHash, hashSecret(params.hostToken)),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
-      .limit(1);
+    const host = await resolveComputerUseHost(db, get(clerk$), params, signal);
     signal.throwIfAborted();
     if (!host) {
       return { status: "invalid_token" };
@@ -1714,12 +1410,7 @@ export const claimNextComputerUseHostCommand$ = command(
           lastSeenAt: now,
           updatedAt: now,
         })
-        .where(
-          and(
-            eq(computerUseHosts.id, host.id),
-            isNull(computerUseHosts.revokedAt),
-          ),
-        );
+        .where(computerUseHostAuthorityCondition(params));
       signal.throwIfAborted();
     }
 
@@ -1753,7 +1444,6 @@ export const claimNextComputerUseHostCommand$ = command(
       return hostSupportsCommand({
         host: hostWithEffectiveCapabilities,
         kind: candidate.kind as ComputerUseCommandKind,
-        payload: candidate.payload,
       });
     });
     if (!row) {
@@ -1767,12 +1457,20 @@ export const claimNextComputerUseHostCommand$ = command(
           hostId: host.id,
           status: "running",
           claimedAt: now,
+          claimedConnectionGeneration:
+            "hostToken" in params ? null : params.connectionGeneration,
           updatedAt: now,
         })
         .where(
           and(
             eq(computerUseCommands.id, row.id),
             eq(computerUseCommands.status, "queued"),
+            exists(
+              db
+                .select({ id: computerUseHosts.id })
+                .from(computerUseHosts)
+                .where(computerUseHostAuthorityCondition(params)),
+            ),
           ),
         )
         .returning(),
@@ -1810,7 +1508,12 @@ async function refreshComputerUseHostLiveness(
     .update(computerUseHosts)
     .set({ status: "online", lastSeenAt: now, updatedAt: now })
     .where(
-      and(eq(computerUseHosts.id, host.id), isNull(computerUseHosts.revokedAt)),
+      and(
+        eq(computerUseHosts.id, host.id),
+        isNull(computerUseHosts.revokedAt),
+        eq(computerUseHosts.connectionGeneration, host.connectionGeneration),
+        eq(computerUseHosts.status, "online"),
+      ),
     );
   signal.throwIfAborted();
 }
@@ -1899,6 +1602,20 @@ function logComputerUseCompletionSanitization(
   });
 }
 
+async function resolveMissedComputerUseCompletion(
+  db: Db,
+  authority: ComputerUseHostAuthority,
+  signal: AbortSignal,
+): Promise<CompleteComputerUseHostCommandResult> {
+  const [authorized] = await db
+    .select({ id: computerUseHosts.id })
+    .from(computerUseHosts)
+    .where(computerUseHostAuthorityCondition(authority))
+    .limit(1);
+  signal.throwIfAborted();
+  return { status: authorized ? "completed" : "invalid_token" };
+}
+
 /**
  * Completion runs without a transaction or locks: plain reads of the host and
  * command, the S3 offload, then one compare-and-set on `status = 'running'`.
@@ -1912,16 +1629,7 @@ export const completeComputerUseHostCommand$ = command(
     signal: AbortSignal,
   ): Promise<CompleteComputerUseHostCommandResult> => {
     const db = set(writeDb$);
-    const [host] = await db
-      .select()
-      .from(computerUseHosts)
-      .where(
-        and(
-          eq(computerUseHosts.tokenHash, hashSecret(params.hostToken)),
-          isNull(computerUseHosts.revokedAt),
-        ),
-      )
-      .limit(1);
+    const host = await resolveComputerUseHost(db, get(clerk$), params, signal);
     signal.throwIfAborted();
     if (!host) {
       return { status: "invalid_token" };
@@ -1933,6 +1641,12 @@ export const completeComputerUseHostCommand$ = command(
         and(
           eq(computerUseCommands.id, params.commandId),
           eq(computerUseCommands.hostId, host.id),
+          "hostToken" in params
+            ? undefined
+            : eq(
+                computerUseCommands.claimedConnectionGeneration,
+                params.connectionGeneration,
+              ),
         ),
       )
       .limit(1);
@@ -1966,16 +1680,6 @@ export const completeComputerUseHostCommand$ = command(
           signal,
         ),
       );
-      storedResult = await get(
-        offloadPluginContentForResult(
-          {
-            owner: host,
-            commandId: params.commandId,
-            result: storedResult,
-          },
-          signal,
-        ),
-      );
     } else {
       const sanitizedMessage = sanitizeComputerUseJsonString(
         params.error.message,
@@ -2005,12 +1709,18 @@ export const completeComputerUseHostCommand$ = command(
           eq(computerUseCommands.id, params.commandId),
           eq(computerUseCommands.hostId, host.id),
           eq(computerUseCommands.status, "running"),
+          exists(
+            db
+              .select({ id: computerUseHosts.id })
+              .from(computerUseHosts)
+              .where(computerUseHostAuthorityCondition(params)),
+          ),
         ),
       )
       .returning();
     signal.throwIfAborted();
     if (!updated) {
-      return { status: "completed" };
+      return await resolveMissedComputerUseCompletion(db, params, signal);
     }
 
     await insertComputerUseCommandAuditEvent(db, {
@@ -2048,6 +1758,7 @@ export async function projectComputerUseAuditEvents(
   const filters = [
     eq(computerUseCommandAuditEvents.orgId, args.orgId),
     eq(computerUseCommandAuditEvents.userId, args.userId),
+    inArray(computerUseCommandAuditEvents.kind, COMPUTER_USE_COMMANDS),
   ];
   if (args.commandId) {
     filters.push(eq(computerUseCommandAuditEvents.commandId, args.commandId));

@@ -296,7 +296,20 @@ export interface ClerkMachineToMachineApi {
   }): Promise<{ readonly token?: string }>;
 }
 
+export interface ClerkSessionsApi {
+  getSession(
+    sessionId: string,
+    context?: ClerkReadContext,
+    signal?: AbortSignal,
+  ): Promise<{
+    readonly id: string;
+    readonly userId: string;
+    readonly status: string;
+  }>;
+}
+
 export interface ClerkClient {
+  readonly sessions: ClerkSessionsApi;
   readonly users: ClerkUsersApi;
   readonly organizations: ClerkOrganizationsApi;
   readonly signInTokens: ClerkSignInTokensApi;
@@ -667,6 +680,17 @@ function clerkRead<T>(
 const clerkClient = singleton((): ClerkClient => {
   const sdk = clerkSdk();
   return {
+    sessions: {
+      getSession: (sessionId, context, signal) => {
+        return clerkRead(
+          () => {
+            return sdk.sessions.getSession(sessionId);
+          },
+          context,
+          signal,
+        );
+      },
+    },
     users: {
       getUser: (userId, context, signal) => {
         return clerkRead(

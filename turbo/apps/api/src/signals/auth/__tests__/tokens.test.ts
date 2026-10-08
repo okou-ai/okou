@@ -243,10 +243,11 @@ describe("auth tokens", () => {
   ] as const)(
     "gates %s capability behind its feature switch",
     (feature, capability) => {
-      const defaultToken = generateOkouToken(
+      const disabledToken = generateOkouToken(
         "user_okou",
         "run_okou",
         "org_okou",
+        { [feature]: false },
       );
       const enabledToken = generateOkouToken(
         "user_okou",
@@ -255,10 +256,19 @@ describe("auth tokens", () => {
         { [feature]: true },
       );
 
-      expect(verifyOkouToken(defaultToken)?.capabilities).not.toContain(
+      expect(verifyOkouToken(disabledToken)?.capabilities).not.toContain(
         capability,
       );
       expect(verifyOkouToken(enabledToken)?.capabilities).toContain(capability);
+    },
+  );
+
+  it.each(["artifact:read", "artifact:write"] as const)(
+    "grants %s by default",
+    (capability) => {
+      const token = generateOkouToken("user_okou", "run_okou", "org_okou");
+
+      expect(verifyOkouToken(token)?.capabilities).toContain(capability);
     },
   );
 

@@ -1,5 +1,37 @@
 # Changelog
 
+## [9.378.24](https://github.com/okou-ai/okou/compare/cli-v9.378.23...cli-v9.378.24) (2026-10-08)
+
+
+### Bug Fixes
+
+* **seo:** preserve dataforseo partial serp results ([#37961](https://github.com/okou-ai/okou/issues/37961)) ([b5d9654](https://github.com/okou-ai/okou/commit/b5d96542a902d7cad11325c86966f49746e41172))
+
+
+### Refactoring
+
+* **computer-use:** remove retired desktop plugins ([#37980](https://github.com/okou-ai/okou/issues/37980)) ([8b8928c](https://github.com/okou-ai/okou/commit/8b8928cdf85d4fb2243a9326194d7cfb3936d53c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.539.0
+    * @okouai/core bumped to 8.735.0
+    * @okouai/pi-agent-runtime bumped to 1.46.24
+
+## [9.378.23](https://github.com/okou-ai/okou/compare/cli-v9.378.22...cli-v9.378.23) (2026-10-08)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.538.1
+    * @okouai/core bumped to 8.734.9
+    * @okouai/pi-agent-runtime bumped to 1.46.23
+
 ## [9.378.22](https://github.com/okou-ai/okou/compare/cli-v9.378.21...cli-v9.378.22) (2026-10-08)
 
 

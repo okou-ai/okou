@@ -927,7 +927,6 @@ function AgentHeader({
   isDefaultAgent: boolean | undefined;
 }) {
   const { t } = useTranslation("agents");
-  const nav = useSet(detachedNavigateTo$);
   const openMaker = useSet(openAvatarMaker$);
   const pageSignal = useGet(pageSignal$);
 
@@ -984,15 +983,13 @@ function AgentHeader({
             </p>
           </div>
         </div>
-        <Button
-          variant="neutral"
-          size="sm"
-          className="max-w-[220px] shrink-0 gap-1.5"
-          onClick={() => {
-            nav("/agents/:agentId/chat", {
-              pathParams: { agentId: agentId },
-            });
-          }}
+        <Link
+          pathname="/agents/:agentId/chat"
+          options={{ pathParams: { agentId } }}
+          className={cn(
+            buttonVariants({ variant: "neutral", size: "sm" }),
+            "max-w-[220px] shrink-0 gap-1.5",
+          )}
           aria-label={t(
             ($) => {
               return $.detail.chatWith;
@@ -1009,7 +1006,7 @@ function AgentHeader({
               { agentName: displayName },
             )}
           </span>
-        </Button>
+        </Link>
       </div>
 
       <div className="mt-4 sm:mt-6 flex items-center gap-2">

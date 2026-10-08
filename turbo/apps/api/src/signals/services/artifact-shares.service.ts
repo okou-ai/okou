@@ -460,7 +460,14 @@ export const updateArtifactShare$ = command(
       const stored = await get(policyFor(row, signal));
       const previous = stored?.policy;
       signal.throwIfAborted();
-      if (args.audience === "private" && !previous) {
+      // Files need a durable revocation even before their first publication.
+      // A delayed If-None-Match writer must not grant access after this succeeds.
+      // HTML no longer has a publication writer; absent grants remain inert.
+      if (
+        args.audience === "private" &&
+        !previous &&
+        candidate.target.kind === "html"
+      ) {
         return null;
       }
       let target: ArtifactSharePolicy["target"];

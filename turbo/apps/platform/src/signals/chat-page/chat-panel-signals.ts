@@ -32,7 +32,6 @@ import type { ChatThreadSharingSignals } from "./chat-thread-sharing.ts";
 import type { ChatThreadPinSignals } from "./chat-thread-pin.ts";
 import type { ChatForwardContext } from "./chat-forward.ts";
 import type { ChatConversationLocatorSignals } from "./chat-conversation-locator.ts";
-import type { ChatLastReadMarker } from "./chat-last-read-marker.ts";
 import type { RunDetailSignals } from "./run-detail.ts";
 
 type RecommendedFollowup = ChatRecommendedFollowup;
@@ -83,7 +82,6 @@ export interface MessageListSignals {
     Promise<ReadyScrollAfterRenderRequest | null>
   >;
   readonly initialEventsReady$: Computed<boolean>;
-  readonly lastReadMarker$: Computed<ChatLastReadMarker | null>;
   readonly assistantErrorRecovery$: Computed<
     Promise<AssistantErrorRecovery | null>
   >;
@@ -216,7 +214,6 @@ export interface ChatPanelSignals {
   readonly latestRunFinishCreatedAt$: Computed<Promise<string | undefined>>;
   readonly latestAssistantTextCreatedAt$: Computed<Promise<string | undefined>>;
   readonly initialEventsReady$: Computed<boolean>;
-  readonly lastReadMarker$: Computed<ChatLastReadMarker | null>;
   readonly visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>;
   readonly visibleRenderedChatGroupsReady$: Computed<Promise<boolean>>;
   readonly eventImageGroups$: Computed<Promise<EventImageGroupProjection[]>>;

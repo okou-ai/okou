@@ -105,6 +105,7 @@ fn record_type_label(record_type: &str) -> &'static str {
         "response" => "response",
         "agent_settled" => "agent_settled",
         "agent_end" => "agent_end",
+        "turn_end" => "turn_end",
         "extension_error" => "extension_error",
         _ => "other",
     }
@@ -319,6 +320,20 @@ mod tests {
                 item_type: "other",
             }
         );
+    }
+
+    #[test]
+    fn loop_and_turn_boundaries_keep_their_labels() {
+        for record_type in ["agent_end", "turn_end"] {
+            let record = format!(r#"{{"type":"{record_type}","messages":["#);
+            assert_eq!(
+                prefix_labels(record.as_bytes()),
+                EventLabels {
+                    event_type: record_type,
+                    item_type: UNKNOWN_LABEL,
+                }
+            );
+        }
     }
 
     #[test]

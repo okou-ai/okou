@@ -161,7 +161,7 @@ class TestReportModelProviderUsage:
             ("priority", 400_001, ".long_context.fast"),
         ],
     )
-    def test_unmapped_provider_uses_captured_route_threshold(
+    def test_catalog_provider_uses_captured_route_threshold(
         self,
         tmp_path,
         real_flow,
@@ -170,11 +170,11 @@ class TestReportModelProviderUsage:
         input_tokens,
         expected_suffix,
     ):
-        """A provider absent from the generated map classifies by the captured threshold.
+        """Catalog provider usage classifies by the API-captured route threshold.
 
-        The provider id, model and threshold are all unknown to the generated
-        map; the threshold is the one the API captured from the run's route.
-        Total input counts uncached input plus cache reads.
+        The pricing provider and upstream model have independent identities;
+        the threshold is the one the API captured from the run's route.
+        Total input counts uncached input plus cache reads in these cases.
         """
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
@@ -206,13 +206,13 @@ class TestReportModelProviderUsage:
             ("catalog-new-model-pricing", f"tokens.cache_read{expected_suffix}"): 1_000,
         }
 
-    def test_registry_threshold_overrides_generated_threshold(
+    def test_registry_threshold_selects_long_context_at_boundary(
         self,
         tmp_path,
         real_flow,
         usage_webhook_api,
     ):
-        """The API-captured threshold is authoritative for a mapped provider too."""
+        """Usage at the API-captured total-input threshold bills long-context categories."""
         flow = make_model_provider_usage_reporting_flow(
             real_flow,
             tmp_path,
@@ -237,7 +237,7 @@ class TestReportModelProviderUsage:
         ("service_tier", "expected_suffix"),
         [(None, ""), ("priority", ".fast")],
     )
-    def test_explicit_single_tier_does_not_use_generated_threshold(
+    def test_explicit_single_tier_uses_base_categories(
         self,
         tmp_path,
         real_flow,

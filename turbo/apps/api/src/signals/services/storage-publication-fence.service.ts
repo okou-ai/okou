@@ -145,19 +145,6 @@ export async function ensurePublicationGenerations(
     .onConflictDoNothing();
 }
 
-/** Whether this exact reservation still owns its publication key. */
-export async function publicationFenceIsCurrent(
-  tx: Tx,
-  fence: StoragePublicationFence,
-): Promise<boolean> {
-  const [publication] = await tx
-    .select({ token: storagePublicationTokens.token })
-    .from(storagePublicationTokens)
-    .where(publicationScopeCondition(fence))
-    .limit(1);
-  return publication !== undefined;
-}
-
 /** Whether any reservation of this key is still in flight for its scope. */
 export async function publicationIsPending(
   tx: Tx,

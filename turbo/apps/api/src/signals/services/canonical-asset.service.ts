@@ -50,11 +50,11 @@ import {
   type ArtifactObjectLocation,
 } from "./artifact-storage.service";
 import {
-  queueArtifactCatalogFile,
+  queueArtifactCatalogFileSql,
   syncArtifactCatalogForFile$,
 } from "./artifact-catalog.service";
-import { publishArtifactsChangedForRun } from "./artifact-realtime.service";
-import { sourceForRun } from "./run-uploaded-files.service";
+import { publishArtifactsChangedForRun$ } from "./artifact-realtime.service";
+import { sourceForRun$ } from "./run-uploaded-files.service";
 import {
   artifactStorageBucket,
   privateArtifactCreationEnabled,
@@ -1418,7 +1418,7 @@ export const prepareCanonicalPublishedAsset$ = command(
     const source =
       args.runId === null
         ? "discord"
-        : await sourceForRun(db, args.runId, args.provider, signal);
+        : await set(sourceForRun$, args.runId, args.provider, signal);
     let chatThreadId: string | null = null;
     if (args.runId !== null) {
       const [run] = await db
@@ -1589,6 +1589,7 @@ export const materializeCanonicalPublishedAsset$ = command(
       return { ok: false, code: error.code, message: error.message };
     }
 
+    // Materialization and the durable catalog handoff must commit together.
     await db.transaction(async (tx) => {
       await tx
         .update(runUploadedFiles)
@@ -1600,12 +1601,13 @@ export const materializeCanonicalPublishedAsset$ = command(
           updatedAt: sql`now()`,
         })
         .where(eq(runUploadedFiles.id, asset.id));
-      await queueArtifactCatalogFile(tx, asset.id, signal);
+      await tx.execute(queueArtifactCatalogFileSql(asset.id));
+      signal.throwIfAborted();
     });
     signal.throwIfAborted();
     await set(syncArtifactCatalogForFile$, asset.id, signal);
     if (args.runId !== null) {
-      await publishArtifactsChangedForRun(db, args.runId, signal);
+      await set(publishArtifactsChangedForRun$, args.runId, signal);
     }
     return { ok: true, assetId: asset.id, url };
   },

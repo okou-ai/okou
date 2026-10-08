@@ -255,11 +255,12 @@ struct ChatSidebarView: View {
       } label: {
         Label("Chat", systemImage: "square.and.pencil")
           .font(.system(size: 17, weight: .semibold))
-          .padding(.horizontal, 18)
-          .frame(height: 48)
           .foregroundStyle(Color(uiColor: .systemBackground))
-          .background(Color.primary, in: Capsule())
       }
+      .buttonStyle(.borderedProminent)
+      .buttonBorderShape(.capsule)
+      .controlSize(.large)
+      .tint(Color.primary)
       .accessibilityLabel("New chat")
       .accessibilityIdentifier("new-chat")
       Spacer()

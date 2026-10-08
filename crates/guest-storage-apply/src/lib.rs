@@ -8,21 +8,23 @@
 //!
 //! [`run`] and [`run_manifest_bytes`] apply valid manifests directly to the
 //! filesystem without a transaction. Manifest-requested stale-path and
-//! instruction-file cleanups are attempted before target preparation and
-//! downloads, and a later failure does not restore their changes.
+//! instruction-file cleanups must succeed before target preparation and
+//! downloads. A failure stops later phases; a later failure does not restore
+//! completed filesystem changes.
 //!
 //! Downloads whose targets do not overlap may run concurrently. A failed task
 //! does not cancel its siblings, so a `false` result can coexist with targets
 //! successfully materialized by other tasks. Archives extract in place, so a
 //! failed task may also leave changes written by an earlier entry.
 //!
-//! On preparation or aggregate download failure, the crate attempts to remove
-//! staged sources used to normalize instruction storage. That targeted cleanup
+//! On cleanup, preparation, download, or normalization failure, the crate
+//! attempts to remove staged sources used to normalize instruction storage. That targeted cleanup
 //! does not roll back ordinary storage or artifact targets, empty artifact
-//! directories already prepared, or earlier cleanup effects. Cleanup and
-//! instruction normalization are best-effort operations, so the result
-//! reports required target preparation and downloads rather than
-//! transaction-wide success for every filesystem change.
+//! directories already prepared, or earlier cleanup effects. Required stale-input
+//! cleanup and instruction normalization failures return `false`, preventing a
+//! caller from launching the CLI with incomplete inputs. Missing stale paths
+//! count as already cleaned. Protected mountpoint filesystem metadata and
+//! best-effort temporary-source cleanup are not managed Run inputs.
 //!
 //! Cached ordinary storages and artifacts preserve their entire mount roots.
 //! Cached instructions preserve only the managed instruction filenames needed
@@ -40,6 +42,17 @@
 //! and their padding are exempt, including unread payloads of skipped entries;
 //! sparse files retain their physical-data streaming and hole-seeking behavior.
 //! The budget resets between members.
+//!
+//! ## Skipped archive entry diagnostics
+//!
+//! Each archive attempt logs at most 32 examples across its path/link rejection
+//! checks, followed by one total skipped/suppressed-count summary when any entry
+//! was skipped. Entry, link and archive-target paths in these diagnostics are
+//! escaped and limited to 256 UTF8 bytes, including a truncation marker. No list
+//! of rejected paths is retained, and concurrent attempts have separate budgets.
+//! The summary is also emitted on an extraction error; it does not imply success
+//! or roll back accepted entries. Diagnostic truncation never changes the paths
+//! used for safety checks or extraction, and exhaustion continues safe skipping.
 
 mod archive;
 mod cleanup;
@@ -69,8 +82,9 @@ const LOG_TAG: &str = "sandbox:guest-storage-apply";
 /// Apply the manifest read from `manifest_path`.
 ///
 /// Returns `true` when the manifest can be read and parsed and all required
-/// target preparations and downloads succeed. Returns `false` otherwise. A
-/// read or parse failure occurs before manifest application; once application
+/// cleanups, target preparations, downloads, and instruction normalization
+/// succeed. Returns `false` otherwise. A read or parse failure occurs before
+/// manifest application; once application
 /// starts, `false` does not roll back completed filesystem changes. See the
 /// manifest application section in the [`crate`] documentation for details.
 pub fn run(manifest_path: &str) -> bool {
@@ -91,8 +105,9 @@ pub fn run(manifest_path: &str) -> bool {
 
 /// Apply a manifest supplied as JSON bytes.
 ///
-/// Returns `true` when the manifest parses and all required target preparations
-/// and downloads succeed. Returns `false` otherwise. A parse failure occurs
+/// Returns `true` when the manifest parses and all required cleanups, target
+/// preparations, downloads, and instruction normalization succeed. Returns
+/// `false` otherwise. A parse failure occurs
 /// before manifest application; once application starts, `false` does not roll
 /// back completed filesystem changes. See the manifest application section in
 /// the [`crate`] documentation for details.
@@ -187,18 +202,19 @@ fn run_manifest_with_files(
     // This must run before parallel downloads to avoid race conditions with
     // parent-child mount path overlaps.
     let cleanup_start = Instant::now();
-    if !cleanup_paths.is_empty() {
-        cleanup::cleanup_stale_paths(&cleanup_paths, &preserved_paths);
-    }
-    if !instruction_cleanups.is_empty() {
-        instructions::cleanup_instruction_files(&instruction_cleanups);
-    }
+    let cleanup_success = cleanup::cleanup_stale_paths(&cleanup_paths, &preserved_paths)
+        && instructions::cleanup_instruction_files(&instruction_cleanups);
     record_sandbox_op(
         "guest_storage_apply_cleanup",
         cleanup_start.elapsed(),
-        true,
+        cleanup_success,
         None,
     );
+    if !cleanup_success {
+        log_error!(LOG_TAG, "Required storage cleanup failed");
+        instructions::cleanup_staged_instruction_sources(&instruction_files);
+        return false;
+    }
 
     // Resolve all logical and physical target identities before downloads.
     // The scheduler uses both identities to serialize overlapping extraction.
@@ -238,16 +254,20 @@ fn run_manifest_with_files(
         success,
         None,
     );
-    if success {
-        let normalize_start = Instant::now();
-        instructions::normalize_instruction_files(&instruction_files);
-        record_sandbox_op(
-            "guest_storage_apply_instruction_normalize",
-            normalize_start.elapsed(),
-            true,
-            None,
-        );
-    } else {
+    if !success {
+        instructions::cleanup_staged_instruction_sources(&instruction_files);
+        return false;
+    }
+    let normalize_start = Instant::now();
+    let success = instructions::normalize_instruction_files(&instruction_files);
+    record_sandbox_op(
+        "guest_storage_apply_instruction_normalize",
+        normalize_start.elapsed(),
+        success,
+        None,
+    );
+    if !success {
+        log_error!(LOG_TAG, "Required instruction normalization failed");
         instructions::cleanup_staged_instruction_sources(&instruction_files);
     }
     success

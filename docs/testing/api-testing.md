@@ -26,9 +26,11 @@ import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { createRouteMocks } from "./helpers/route-test";
 import { agentsRoutes } from "../agents";
 
 const context = testContext();
+const mocks = createRouteMocks(context);
 
 function authHeaders() {
   return { authorization: "Bearer clerk-session" };
@@ -40,7 +42,7 @@ function apiClient() {
 
 describe("GET /api/agents", () => {
   it("returns an agent created through POST /api/agents", async () => {
-    context.mocks.clerk.session("user_api_test", "org_api_test");
+    mocks.clerk.session("user_api_test", "org_api_test");
     context.mocks.s3.send.mockResolvedValue({});
 
     const created = await accept(
@@ -107,7 +109,7 @@ Only mock external services. API tests use the shared mock registry in
 Good examples:
 
 ```typescript
-context.mocks.clerk.session(userId, orgId);
+createRouteMocks(context).clerk.session(userId, orgId);
 context.mocks.slack.chat.postMessage.mockResolvedValue({ ok: true });
 context.mocks.axiom.query.mockResolvedValue({ buckets: [] });
 ```
@@ -117,6 +119,14 @@ schemas, fixture helpers, or ccstate signals. That bypasses the behavior the
 route integration test is supposed to cover.
 
 ## External Behavior Boundary
+
+First identify the useful behavior and the real caller that can trigger it.
+Evaluate whether the case protects a normal lifecycle or overtests a contrived
+internal state or race. Delete unjustified coverage together with unused support;
+rewrite valuable behavior through an existing normal API or genuine provider
+webhook. If those interfaces cannot construct the case, reconsider its value
+instead of treating an existing test as permission to keep private setup. See
+the [scenario decision procedure](./testing-external-behavior.md#cases-without-public-construction).
 
 API route tests must construct, drive, and observe a case through production
 interfaces available to the real caller. Follow the complete chain, including
@@ -160,6 +170,35 @@ creates an agent, updates its connector grants through the authenticated API,
 and checks the returned grants. Neither path needs a private DB seed or a forced
 worker visit. Apply that same standard to usage reports, storage, and automation
 lifecycles instead of using a private driver to manufacture their prerequisites.
+
+For a mixed historical test, inspect what the current writer can actually do.
+The `preserves history and aliases across out-of-order completion [HOST-A]`
+case in
+[`host-maps.bdd.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/host-maps.bdd.test.ts)
+prepares two versions through the host API and completes the newer one first.
+It checks both versions through files/history responses and emitted S3 manifests;
+it needs no historical deployment rows. The same suite obtains a Runner's
+`OKOU_TOKEN` through normal chat send and authenticated heartbeat/claim before
+publishing. A helper that signs a token for an invented Run does not establish
+that lifecycle.
+
+When testing overlapping requests, use identifiers a real client knows. The
+pending-title matrix in
+[`shared-thread-artifacts.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/shared-thread-artifacts.test.ts)
+supplies the share ID in the normal create request before attempting deletion.
+Reading a server-selected ID from a storage key before the response arrives
+would grant the test knowledge its caller does not have. Observe publication
+through the public shared response/catalog and revocation through access denial,
+not application-owned policy JSON stored behind those APIs.
+
+When a private writer test submits input the request contract rejects, preserve
+its actual client behavior at that earlier boundary. In
+[`agent-draft.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/agent-draft.test.ts),
+a normal PATCH saves a draft, an attachment-only PATCH returns 400, and GET
+confirms the saved draft is unchanged. This covers client validation and
+preservation; it does not claim the SQL 23514 rollback or selectable physical/view
+schema guarantees of the removed service case. The existing simultaneous PATCH
+case remains meaningful public concurrency without a private row-count probe.
 
 For the full reasoning, see
 [Testing External Behavior](./testing-external-behavior.md).
@@ -215,7 +254,10 @@ agent create/list lifecycle above can use an isolated database like this:
 const context = testContext();
 
 it("lists an agent created in this case", async () => {
-  context.mocks.clerk.session("user_isolated_agent", "org_isolated_agent");
+  createRouteMocks(context).clerk.session(
+    "user_isolated_agent",
+    "org_isolated_agent",
+  );
   context.mocks.s3.send.mockResolvedValue({});
   const app = await setupApp({
     context,

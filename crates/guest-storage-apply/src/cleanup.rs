@@ -22,32 +22,44 @@ use std::path::{Component, Path, PathBuf};
 ///   the mountpoint directory and clean its contents.
 /// - Otherwise: `remove_dir_all` (clean slate).
 ///
-/// Failures are logged and cleanup continues with the remaining paths.
-pub(crate) fn cleanup_stale_paths(cleanup_paths: &[String], preserved: &[String]) {
-    cleanup_stale_paths_with_mountinfo_loader(cleanup_paths, preserved, cleanup_mountinfo);
+/// Stop at the first cleanup failure. Protected filesystem metadata at a
+/// mountpoint root may remain; it is not a managed input.
+pub(crate) fn cleanup_stale_paths(cleanup_paths: &[String], preserved: &[String]) -> bool {
+    cleanup_stale_paths_with_mountinfo_loader(cleanup_paths, preserved, cleanup_mountinfo)
 }
 
 fn cleanup_stale_paths_with_mountinfo_loader<L>(
     cleanup_paths: &[String],
     preserved: &[String],
     load_mountinfo: L,
-) where
+) -> bool
+where
     L: Fn() -> io::Result<Vec<u8>>,
 {
     let detector = CleanupMountPointDetector::new(load_mountinfo);
-    cleanup_stale_paths_with_mount_detector(cleanup_paths, preserved, |path| {
-        detector.is_mount_point(path)
-    });
+    cleanup_stale_paths_with_options(
+        cleanup_paths,
+        preserved,
+        |path| detector.is_mount_point(path),
+        remove_entry,
+    )
 }
 
+#[cfg(test)]
 fn cleanup_stale_paths_with_mount_detector<M>(
     cleanup_paths: &[String],
     preserved: &[String],
     is_mount_point: M,
-) where
+) -> bool
+where
     M: Fn(&Path) -> bool,
 {
-    cleanup_stale_paths_with_options(cleanup_paths, preserved, is_mount_point, remove_entry);
+    cleanup_stale_paths_with_options(
+        cleanup_paths,
+        preserved,
+        |path| Ok(is_mount_point(path)),
+        remove_entry,
+    )
 }
 
 fn cleanup_stale_paths_with_options<M, R>(
@@ -55,8 +67,9 @@ fn cleanup_stale_paths_with_options<M, R>(
     preserved: &[String],
     is_mount_point: M,
     remove_entry: R,
-) where
-    M: Fn(&Path) -> bool,
+) -> bool
+where
+    M: Fn(&Path) -> io::Result<bool>,
     R: Fn(&fs::DirEntry) -> io::Result<()>,
 {
     let preserved = PreservedPaths::new(preserved);
@@ -79,41 +92,51 @@ fn cleanup_stale_paths_with_options<M, R>(
 
         let preserved_child_count = preserved.count_preserved_children(&path.logical);
 
-        if preserved_child_count > 0 {
-            if let Err(e) =
-                clean_directory_contents(path.original, &path.logical, &preserved, &remove_entry)
-            {
+        let clean_contents = if preserved_child_count > 0 {
+            true
+        } else {
+            match is_mount_point(&path.logical) {
+                Ok(mount_point) => mount_point,
+                Err(e) => {
+                    log_warn!(
+                        LOG_TAG,
+                        "Failed to classify cleanup path {}: {e}",
+                        path.original.display()
+                    );
+                    return false;
+                }
+            }
+        };
+
+        if clean_contents {
+            if let Err(e) = clean_directory_contents(
+                path.original,
+                &path.logical,
+                &preserved,
+                &is_mount_point,
+                &remove_entry,
+            ) {
                 log_warn!(
                     LOG_TAG,
                     "Failed to safely clean {}: {e}",
                     path.original.display()
                 );
-                continue;
+                return false;
             }
-            log_info!(
-                LOG_TAG,
-                "Selectively cleaned {} (preserved {} children)",
-                path.original.display(),
-                preserved_child_count
-            );
-        } else if is_mount_point(&path.logical) {
-            // Removing a mounted filesystem root can fail on filesystem metadata
-            // such as ext4 lost+found. Keep the mountpoint and remove entries.
-            if let Err(e) =
-                clean_directory_contents(path.original, &path.logical, &preserved, &remove_entry)
-            {
-                log_warn!(
+            if preserved_child_count > 0 {
+                log_info!(
                     LOG_TAG,
-                    "Failed to safely clean {}: {e}",
+                    "Selectively cleaned {} (preserved {} children)",
+                    path.original.display(),
+                    preserved_child_count
+                );
+            } else {
+                log_info!(
+                    LOG_TAG,
+                    "Cleaned mountpoint contents: {}",
                     path.original.display()
                 );
-                continue;
             }
-            log_info!(
-                LOG_TAG,
-                "Cleaned mountpoint contents: {}",
-                path.original.display()
-            );
         } else {
             match remove_directory_tree(path.original) {
                 Ok(RemoveOutcome::Removed) => {
@@ -126,10 +149,12 @@ fn cleanup_stale_paths_with_options<M, R>(
                         "Failed to safely clean {}: {e}",
                         path.original.display()
                     );
+                    return false;
                 }
             }
         }
     }
+    true
 }
 
 struct CleanupPath<'a> {
@@ -137,13 +162,15 @@ struct CleanupPath<'a> {
     logical: PathBuf,
 }
 
-fn clean_directory_contents<R>(
+fn clean_directory_contents<M, R>(
     original_path: &Path,
     logical_path: &Path,
     preserved: &PreservedPaths,
+    is_mount_point: &M,
     remove_entry: &R,
 ) -> io::Result<()>
 where
+    M: Fn(&Path) -> io::Result<bool>,
     R: Fn(&fs::DirEntry) -> io::Result<()>,
 {
     let directory = match CleanupDirectory::open(original_path) {
@@ -154,17 +181,7 @@ where
     let entries = directory.read_dir()?;
 
     for entry in entries {
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(e) => {
-                log_warn!(
-                    LOG_TAG,
-                    "Failed to read entry in {}: {e}",
-                    original_path.display()
-                );
-                continue;
-            }
-        };
+        let entry = entry?;
         let entry_path = original_path.join(entry.file_name());
         let logical_entry_path = logical_path.join(entry.file_name());
 
@@ -173,7 +190,25 @@ where
         }
 
         if let Err(e) = remove_entry(&entry) {
-            log_warn!(LOG_TAG, "Failed to remove {}: {e}", entry_path.display());
+            // ext4 may expose root-owned recovery metadata on a mounted disk.
+            // Only that root entry may survive a permission failure; stale
+            // managed files must not silently survive cleanup.
+            if e.kind() == io::ErrorKind::PermissionDenied
+                && entry.file_name() == OsStr::new("lost+found")
+                && is_mount_point(logical_path)?
+                && entry.file_type()?.is_dir()
+            {
+                log_warn!(
+                    LOG_TAG,
+                    "Preserving protected filesystem metadata {}: {e}",
+                    entry_path.display()
+                );
+                continue;
+            }
+            return Err(io::Error::new(
+                e.kind(),
+                format!("failed to remove {}: {e}", entry_path.display()),
+            ));
         }
     }
 
@@ -342,7 +377,7 @@ where
     L: Fn() -> io::Result<Vec<u8>>,
 {
     load_mountinfo: L,
-    mount_points: OnceCell<Option<HashSet<PathBuf>>>,
+    mount_points: OnceCell<io::Result<HashSet<PathBuf>>>,
 }
 
 impl<L> CleanupMountPointDetector<L>
@@ -356,34 +391,22 @@ where
         }
     }
 
-    fn is_mount_point(&self, path: &Path) -> bool {
-        let path = match absolute_path_without_following_final_symlink(path) {
-            Ok(path) => path,
-            Err(e) => {
-                log_warn!(
-                    LOG_TAG,
-                    "Failed to resolve cleanup path {}: {e}",
-                    path.display()
-                );
-                return false;
-            }
-        };
-
-        self.mount_points()
-            .is_some_and(|mount_points| mount_points.contains(&path))
+    fn is_mount_point(&self, path: &Path) -> io::Result<bool> {
+        let path = absolute_path_without_following_final_symlink(path)?;
+        Ok(self.mount_points()?.contains(&path))
     }
 
-    fn mount_points(&self) -> Option<&HashSet<PathBuf>> {
+    fn mount_points(&self) -> io::Result<&HashSet<PathBuf>> {
         let load_mountinfo = &self.load_mountinfo;
-        self.mount_points
-            .get_or_init(|| match load_mountinfo() {
-                Ok(mountinfo) => Some(mount_points_from_mountinfo(&mountinfo)),
-                Err(e) => {
-                    log_warn!(LOG_TAG, "Failed to read /proc/self/mountinfo: {e}");
-                    None
-                }
-            })
-            .as_ref()
+        match self.mount_points.get_or_init(|| {
+            load_mountinfo().map(|mountinfo| mount_points_from_mountinfo(&mountinfo))
+        }) {
+            Ok(mount_points) => Ok(mount_points),
+            Err(e) => Err(io::Error::new(
+                e.kind(),
+                format!("failed to read /proc/self/mountinfo: {e}"),
+            )),
+        }
     }
 }
 
@@ -554,7 +577,7 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_mountinfo_read_failure_is_cached_for_pass() {
+    fn cleanup_mountinfo_read_failure_stops_before_removing_paths() {
         disable_system_log();
         let dir = tempfile::tempdir().unwrap();
         let first = dir.path().join("first");
@@ -563,7 +586,7 @@ mod tests {
         fs::create_dir_all(&second).unwrap();
         let load_count = Cell::new(0);
 
-        cleanup_stale_paths_with_mountinfo_loader(
+        let success = cleanup_stale_paths_with_mountinfo_loader(
             &[path_string(&first), path_string(&second)],
             &[],
             || {
@@ -576,8 +599,9 @@ mod tests {
         );
 
         assert_eq!(load_count.get(), 1);
-        assert!(!first.exists());
-        assert!(!second.exists());
+        assert!(!success);
+        assert!(first.exists());
+        assert!(second.exists());
     }
 
     #[test]
@@ -661,7 +685,7 @@ mod tests {
         cleanup_stale_paths_with_options(
             &[path_string(&path)],
             &[],
-            |candidate| candidate == path,
+            |candidate| Ok(candidate == path),
             |entry| {
                 if entry.file_name() == OsStr::new("lost+found") {
                     Err(io::Error::new(

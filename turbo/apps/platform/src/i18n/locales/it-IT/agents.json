@@ -453,6 +453,7 @@
         "title": "Supporto"
       }
     },
+    "categoryFilter": "Filtra per categoria",
     "chat": "Chatta",
     "description": "Fai clic su qualsiasi scheda per avviare una conversazione. Potrebbe diventare un'attività su richiesta, un flusso di lavoro ricorrente o un agente secondario.",
     "search": {

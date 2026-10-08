@@ -1006,6 +1006,7 @@ function FilterPills<T extends string>({
           <button
             key={option.value}
             type="button"
+            aria-pressed={active}
             onClick={() => {
               onChange(option.value);
             }}
@@ -1214,7 +1215,13 @@ function WorkflowFilterBar({
   const setAgentFilter = useSet(setWorkflowAgentFilter$);
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    <div
+      role="group"
+      aria-label={t(($) => {
+        return $.workflows.common.workflows;
+      })}
+      className="flex flex-wrap items-center gap-1.5"
+    >
       <FilterPills
         value={filter}
         onChange={setFilter}

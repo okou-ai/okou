@@ -15,6 +15,7 @@ mod input_attribution;
 mod manifest_input;
 mod redaction;
 mod runtime_paths;
+mod skipped_entries;
 
 pub(super) struct RuntimeLogPaths {
     pub(super) runtime_dir: PathBuf,

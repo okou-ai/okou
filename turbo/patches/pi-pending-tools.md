@@ -187,8 +187,28 @@ both retry owners then keep retrying an expired queue; the regression covers
 that case directly.
 
 The same patch carries the structured retry classification merged for #35819
-(`OKOU_RETRYABLE_MODEL_REQUEST_REASONS` / `isOkouRetryableModelRequest`),
-ported from the 0.85.1 patch during this upgrade.
+(`OKOU_RETRYABLE_MODEL_REQUEST_REASONS` / `okouModelRequestRetryDecision`),
+ported from the 0.85.1 patch during this upgrade. For #37937, the latest owned
+`okou_model_request` diagnostic explicitly vetoes native assistant and summary
+retries when its reason is `safety_policy_refusal`. A provider link containing
+`503` or `500` must not let the generic text matcher retry that refusal. The
+existing transient allowlist, retry budgets and terminal text guards are
+unchanged; absent or unclassified diagnostics retain native text matching.
+`model-structured-retry.test.ts` exercises enabled-budget sessions over HTTP 200
+and code-less HTTP 503 with canonical, numeric and redacted links, plus a real
+unclassified HTTP-200 transient. Original error text remains intact.
+
+The existing `pi-coding-agent@0.87.1` patch also keeps a failed assistant message
+whose latest owned diagnostic is `safety_policy_refusal` out of `_checkCompaction`.
+This applies before automatic overflow recovery and threshold summarization:
+opaque link text such as `context_length_exceeded` must not cause another model
+request or omit the refused attempt from history. The same real-session regression
+uses prior history and enabled compaction over HTTP 200 / 503, and verifies that
+the refusal creates no `context_edit` or `compaction` entry. A genuine structured
+context overflow still produces one compaction and a successful continuation.
+Manual compaction, ordinary recovery settings and failed/nonzero semantics are
+unchanged. Remove this narrow guard only when pinned upstream honors the same
+owned terminal reason at automatic recovery and these regressions stay green.
 
 Remove these hunks and their helper together only when the pinned upstream SDK
 implements the same terminal behavior at both retry owners and these boundary

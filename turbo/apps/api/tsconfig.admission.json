@@ -36,8 +36,6 @@
     "src/signals/external/teams-bot-client.ts",
     "src/signals/external/telegram-client.ts",
     "src/signals/external/telegram-official.ts",
-    "src/signals/services/agent-execution-config.ts",
-    "src/signals/services/agent-execution-plan.ts",
     "src/signals/services/agent-identity-prompt.service.ts",
     "src/signals/services/agent-run-activation.service.ts",
     "src/signals/services/agent-run-activation.types.ts",

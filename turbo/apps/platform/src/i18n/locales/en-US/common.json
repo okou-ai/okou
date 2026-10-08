@@ -1961,10 +1961,6 @@
       "newThread": "New chat",
       "reload": "Reload tasks"
     },
-    "lastReadMarker": {
-      "previouslyRead": "You last read up to here",
-      "unread": "Unread messages"
-    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",
@@ -2561,7 +2557,6 @@
         "visualMethods": "Visual methods"
       },
       "workflows": {
-        "back": "Browse workflows",
         "browse": "Browse workflows",
         "close": "Close",
         "contextPrefix": "What matters to me: {{preference}}",
@@ -2570,14 +2565,7 @@
             "cadence": "Daily or weekly",
             "description": "Track pricing, product, and messaging changes with source links.",
             "name": "Competitor updates",
-            "next": "Choose the pages to track, check frequency, and what counts as a meaningful change.",
             "prompt": "Help me track meaningful changes to competitors’ pricing, features, and messaging. Save a clear before-and-after report with source links in Notion. Help me choose the pages, check frequency, and whether to receive Slack alerts.",
-            "results": {
-              "one": "Before-and-after changes",
-              "three": "A short explanation of what changed",
-              "two": "Source links for every finding"
-            },
-            "scope": "Built-in web research for page checks and Notion for findings; Slack alerts are optional.",
             "steps": {
               "one": "Check the competitor pages you choose on a schedule",
               "three": "Save findings with sources to Notion; optionally alert Slack",
@@ -2589,14 +2577,7 @@
             "cadence": "When new email arrives",
             "description": "Sort incoming email and prepare replies for you to review.",
             "name": "Inbox sorting & reply drafts",
-            "next": "Choose an inbox and which kinds of email need a reply.",
             "prompt": "Help me organize incoming Gmail by urgency and prepare reply drafts for messages that need a response. I will review and send the replies myself. Help me choose the inbox scope and sorting rules before turning it on.",
-            "results": {
-              "one": "Emails sorted by urgency",
-              "three": "Reply drafts in Gmail",
-              "two": "Important requests surfaced"
-            },
-            "scope": "Gmail. Replies are prepared as drafts for you to review and send.",
             "steps": {
               "one": "Read incoming messages in the inbox scope you choose",
               "three": "Save suggested replies as Gmail drafts for review",
@@ -2608,14 +2589,7 @@
             "cadence": "When you label an invoice",
             "description": "File labeled invoice emails to Drive and keep a clear record.",
             "name": "Invoice filing",
-            "next": "Choose a Gmail label, a Drive folder, and whether to keep a Sheet log.",
             "prompt": "Help me file Gmail invoices in Google Drive when I apply an invoice label, with an optional Google Sheets log. Help me choose the label, destination folder, and file naming rules before turning it on.",
-            "results": {
-              "one": "Invoice files in the right folder",
-              "three": "An optional invoice log in Sheets",
-              "two": "A consistent filing record"
-            },
-            "scope": "Gmail and Google Drive; a Google Sheets log is optional.",
             "steps": {
               "one": "Use the Gmail label you choose to identify an invoice",
               "three": "Optionally record the invoice details in Google Sheets",
@@ -2627,14 +2601,7 @@
             "cadence": "When a meeting is added",
             "description": "Know who you’re meeting, their context, and what to ask.",
             "name": "Meeting preparation",
-            "next": "Choose your calendar and the kinds of meetings to include.",
             "prompt": "Help me prepare for upcoming external meetings. Research the people and companies I am meeting, include source links, and suggest useful discussion points. Help me choose which calendar and meetings to include, and when to send each brief.",
-            "results": {
-              "one": "Attendee and company context",
-              "three": "Suggested discussion points",
-              "two": "Relevant background with sources"
-            },
-            "scope": "Google Calendar; public professional research and Slack delivery are optional.",
             "steps": {
               "one": "Read the people and details in a new calendar event",
               "three": "Prepare a brief with sources and discussion points",
@@ -2646,14 +2613,7 @@
             "cadence": "Every morning",
             "description": "Visitors, signups, and activation in one readable daily snapshot.",
             "name": "Daily metrics brief",
-            "next": "Choose the site, available metrics, comparison period, and Slack destination.",
             "prompt": "Help me get a daily Slack snapshot of visitors, signups, and activation, using the PostHog data I have. Clearly label the reporting period. Help me choose the available metrics, delivery time, and Slack destination.",
-            "results": {
-              "one": "Daily visitors",
-              "three": "A clear reporting period",
-              "two": "Signup and activation numbers when available"
-            },
-            "scope": "PostHog and Slack.",
             "steps": {
               "one": "Read the agreed website and signup metrics",
               "three": "Share the snapshot in the Slack destination you choose",
@@ -2665,14 +2625,7 @@
             "cadence": "Every morning",
             "description": "Important emails, meetings, and priorities in one morning brief.",
             "name": "Morning brief",
-            "next": "Choose your inbox, calendar, delivery time, and where to receive it.",
             "prompt": "Help me set up a morning brief with important emails, today’s meetings, priorities, and follow-ups. I would like a short daily plan in Slack. Help me choose the sources and morning delivery time before turning it on.",
-            "results": {
-              "one": "Today’s priorities",
-              "three": "Replies and decisions to follow up",
-              "two": "Meetings and focus time"
-            },
-            "scope": "Gmail and Google Calendar; Notion can add project context.",
             "steps": {
               "one": "Read important email and today’s meetings",
               "three": "Deliver a concise morning plan to Slack",
@@ -2684,14 +2637,7 @@
             "cadence": "Checks for new meeting notes",
             "description": "A clear recap with decisions, action items, and owners.",
             "name": "Meeting recap",
-            "next": "Choose how often to check for new notes and where the recap should go.",
             "prompt": "Help me turn new Google Meet transcripts into a concise recap with decisions, action items, owners, and due dates. Mark details that were not stated. Help me choose how often to check for new notes and where to deliver the recap.",
-            "results": {
-              "one": "Decisions from the conversation",
-              "three": "Missing details flagged clearly",
-              "two": "Action items and stated owners"
-            },
-            "scope": "Checks Google Meet for new transcripts on a schedule. Gmail or Slack delivery is optional.",
             "steps": {
               "one": "Read a new meeting transcript",
               "three": "Deliver a concise recap to the destination you choose",
@@ -2703,14 +2649,7 @@
             "cadence": "When a matching reply arrives",
             "description": "Follow one conversation and get the reply, summary, and next steps.",
             "name": "Email reply watch",
-            "next": "Choose the email conversation, expected sender, and where you want the alert.",
             "prompt": "Help me watch one Gmail conversation for a reply from the person I am waiting for. Notify me once per new reply, summarize the key points and next steps, and prepare a follow-up draft if useful. I will send replies myself. Help me choose the conversation and where to receive the alert.",
-            "results": {
-              "one": "The incoming reply and key points",
-              "three": "A follow-up draft when useful",
-              "two": "Requested actions or deadlines"
-            },
-            "scope": "Gmail. One conversation, one alert per new incoming message; replies stay as drafts.",
             "steps": {
               "one": "Follow one email conversation and agreed sender scope",
               "three": "Notify you once; prepare a reply draft when needed",
@@ -2722,14 +2661,7 @@
             "cadence": "Every week",
             "description": "Completed work, open decisions, and next week’s priorities.",
             "name": "Weekly work recap",
-            "next": "Choose the sources to include and a day and time for the recap.",
             "prompt": "Help me create a weekly work recap with accomplishments, pending decisions, follow-ups, and upcoming commitments. Use the work sources I choose and prepare a concise Slack update. Help me choose the sources, weekly delivery time, and destination.",
-            "results": {
-              "one": "Accomplishments from the week",
-              "three": "Upcoming commitments",
-              "two": "Pending decisions and follow-ups"
-            },
-            "scope": "Slack delivery, with optional Gmail, Calendar, or GitHub context.",
             "steps": {
               "one": "Collect activity from the sources you choose",
               "three": "Share a weekly recap in your chosen Slack destination",
@@ -2738,9 +2670,6 @@
             "title": "Wrap up your week clearly"
           }
         },
-        "next": "Next workflow",
-        "ownSources": "Your workflow will use your own sources and content.",
-        "placeholder": "Optional — tell me what matters to you",
         "preview": {
           "competitors": {
             "changed": "Changed",
@@ -2834,13 +2763,10 @@
             "two": "Wrapped up the onboarding guide"
           }
         },
-        "previous": "Previous workflow",
         "sample": "Sample",
         "tailor": "Anything you’d like to tailor?",
         "use": "Use this workflow",
-        "whatHappens": "What happens each time",
-        "whatYouGet": "What you’ll get",
-        "worksWith": "Works with"
+        "whatHappens": "What happens each time"
       }
     },
     "templates": {

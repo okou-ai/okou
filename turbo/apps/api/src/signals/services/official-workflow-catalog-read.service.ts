@@ -18,7 +18,7 @@ import { command } from "ccstate";
 import { and, asc, eq, or } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
-import { writeDb$, type ReadonlyDb } from "../external/db";
+import { db$, type ReadonlyDb } from "../external/db";
 
 export const OFFICIAL_WORKFLOW_CATALOG_AUTHORITY = "official" as const;
 
@@ -139,10 +139,10 @@ export function acceptedCatalogFromRow(
 
 export const readAcceptedOfficialWorkflowCatalog$ = command(
   async (
-    { set },
+    { get },
     signal: AbortSignal,
   ): Promise<AcceptedOfficialWorkflowCatalog | null> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const [row] = await db
       .select({
         releaseId: officialWorkflowCatalogState.acceptedReleaseId,
@@ -164,27 +164,17 @@ export const readAcceptedOfficialWorkflowCatalog$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    if (
-      !row ||
-      officialWorkflowPayloadSchemaVersion(row.payload) <
-        OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION
-    ) {
-      return null;
-    }
-    return {
-      releaseId: row.releaseId,
-      payload: officialWorkflowCatalogReleasePayloadSchema.parse(row.payload),
-    };
+    return acceptedCatalogFromRow(row);
   },
 );
 
 export const readAcceptedOfficialWorkflowRevision$ = command(
   async (
-    { set },
+    { get },
     args: { readonly name: string; readonly revision: string },
     signal: AbortSignal,
   ): Promise<OfficialWorkflowAcceptedRevision | null> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const [row] = await db
       .select({
         definitionName: officialWorkflowDefinitionRevisions.definitionName,
@@ -350,64 +340,67 @@ export async function readAcceptedOfficialWorkflowRevision(
   return revision ?? null;
 }
 
-export async function readAllCurrentSchemaOfficialWorkflowRevisions(
-  db: ReadonlyDb,
-  signal?: AbortSignal,
-): Promise<readonly OfficialWorkflowAcceptedRevision[]> {
-  const rows = await db
-    .select({
-      definitionName: officialWorkflowDefinitionRevisions.definitionName,
-      revision: officialWorkflowDefinitionRevisions.revision,
-      payload: officialWorkflowDefinitionRevisions.payload,
-      storageName: officialWorkflowDefinitionRevisions.storageName,
-      storageId: officialWorkflowDefinitionRevisions.storageId,
-      storageVersion: officialWorkflowDefinitionRevisions.storageVersion,
-      verifiedStorageId: storages.id,
-      verifiedStorageVersion: storageVersions.id,
-    })
-    .from(officialWorkflowDefinitionRevisions)
-    .leftJoin(
-      storages,
-      and(
-        eq(storages.id, officialWorkflowDefinitionRevisions.storageId),
-        eq(storages.name, officialWorkflowDefinitionRevisions.storageName),
-        eq(storages.orgId, SYSTEM_ORG_ID),
-        eq(storages.userId, VOLUME_ORG_USER_ID),
-      ),
-    )
-    .leftJoin(
-      storageVersions,
-      and(
-        eq(
-          storageVersions.id,
-          officialWorkflowDefinitionRevisions.storageVersion,
+export const readAllCurrentSchemaOfficialWorkflowRevisions$ = command(
+  async (
+    { get },
+    signal: AbortSignal,
+  ): Promise<readonly OfficialWorkflowAcceptedRevision[]> => {
+    const db = get(db$);
+    const rows = await db
+      .select({
+        definitionName: officialWorkflowDefinitionRevisions.definitionName,
+        revision: officialWorkflowDefinitionRevisions.revision,
+        payload: officialWorkflowDefinitionRevisions.payload,
+        storageName: officialWorkflowDefinitionRevisions.storageName,
+        storageId: officialWorkflowDefinitionRevisions.storageId,
+        storageVersion: officialWorkflowDefinitionRevisions.storageVersion,
+        verifiedStorageId: storages.id,
+        verifiedStorageVersion: storageVersions.id,
+      })
+      .from(officialWorkflowDefinitionRevisions)
+      .leftJoin(
+        storages,
+        and(
+          eq(storages.id, officialWorkflowDefinitionRevisions.storageId),
+          eq(storages.name, officialWorkflowDefinitionRevisions.storageName),
+          eq(storages.orgId, SYSTEM_ORG_ID),
+          eq(storages.userId, VOLUME_ORG_USER_ID),
         ),
-        eq(
-          storageVersions.storageId,
-          officialWorkflowDefinitionRevisions.storageId,
+      )
+      .leftJoin(
+        storageVersions,
+        and(
+          eq(
+            storageVersions.id,
+            officialWorkflowDefinitionRevisions.storageVersion,
+          ),
+          eq(
+            storageVersions.storageId,
+            officialWorkflowDefinitionRevisions.storageId,
+          ),
         ),
-      ),
-    )
-    .orderBy(
-      asc(officialWorkflowDefinitionRevisions.definitionName),
-      asc(officialWorkflowDefinitionRevisions.revision),
-    );
-  signal?.throwIfAborted();
-  return rows.flatMap((row) => {
-    if (
-      officialWorkflowPayloadSchemaVersion(row.payload) !==
-      OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION
-    ) {
-      return [];
-    }
-    if (
-      row.verifiedStorageId !== row.storageId ||
-      row.verifiedStorageVersion !== row.storageVersion
-    ) {
-      throw new Error(
-        "Official Workflow revision artifact registration is inconsistent",
+      )
+      .orderBy(
+        asc(officialWorkflowDefinitionRevisions.definitionName),
+        asc(officialWorkflowDefinitionRevisions.revision),
       );
-    }
-    return [acceptedRevisionFromRow(row)];
-  });
-}
+    signal.throwIfAborted();
+    return rows.flatMap((row) => {
+      if (
+        officialWorkflowPayloadSchemaVersion(row.payload) !==
+        OFFICIAL_WORKFLOW_CATALOG_SCHEMA_VERSION
+      ) {
+        return [];
+      }
+      if (
+        row.verifiedStorageId !== row.storageId ||
+        row.verifiedStorageVersion !== row.storageVersion
+      ) {
+        throw new Error(
+          "Official Workflow revision artifact registration is inconsistent",
+        );
+      }
+      return [acceptedRevisionFromRow(row)];
+    });
+  },
+);

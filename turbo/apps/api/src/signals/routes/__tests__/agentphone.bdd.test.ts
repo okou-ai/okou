@@ -40,6 +40,7 @@ import { seedBuiltInModelKey } from "./helpers/runtime-state";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { readGetStartedStatus } from "./helpers/get-started";
 import { SEEDED_SYSTEM_DEFAULT_MODEL } from "./helpers/seeded-system-default";
 // INT-03 deep AgentPhone flows: linking through the webhook connect prompt,
@@ -318,11 +319,11 @@ function lastSend(sends: AgentPhoneSendCapture): AgentPhoneProviderSend {
 
 // The surface delivery rules follow the integration block as their own
 // section, so they are part of the caller-supplied tail this test pins.
-// `privateArtifacts` is off for a BDD organization, so the note is one line.
 const AGENTPHONE_INTEGRATION_NOTE = [
   "# Integration Note",
   "",
   "- Phone messaging and files: use `okou phone --help`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress is sent on its own, so phone commands are for explicit extra messages or file delivery. Use `okou phone download-file -h` for `[Phone file]` blocks. `okou phone upload-file -h` can share a local file when the phone channel supports the requested file delivery.",
+  "- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. This upload guidance applies to replies in the phone channel. If the user continues the conversation in Web chat, deliver files there and do not continue uploading to the phone channel unless the user explicitly requests it. A private `/artifacts/...` address is not openable from the phone channel, so a link alone shows the user nothing. When you judge that the phone channel can display that kind of file — a hosted website or HTML page never qualifies — upload it with `okou phone upload-file` so the user has something they can open there. If you upload it, also keep the original private `/artifacts/...` address from before the upload in the final reply, not the address returned by `okou phone upload-file`, so the owner can open the original artifact after returning to the web app.",
 ].join("\n");
 
 function expectIntegrationImmediatelyBeforeRestrictedContent(
@@ -510,74 +511,172 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     ).resolves.toMatchObject({ linked: true, phoneHandle: phone });
   });
 
-  it("sends proactive messages and files to an email-linked iMessage handle", async () => {
-    const bdd = createBddApi(context);
-    const integrations = createBddIntegrationApi(context);
-    const ap = createAgentPhoneBddApi(context);
-    const actor = bdd.user();
-    const email = `bdd-${randomUUID().slice(0, 8)}@example.com`;
-    integrations.configureAgentPhoneProvider();
-    integrations.configureAgentPhoneWebhook();
-    const sends = ap.captureAgentPhoneSends();
-    const storage = ap.acceptAgentPhoneObjectStorage();
-    context.mocks.ably.publish.mockResolvedValue(undefined);
+  it.each([true, false])(
+    "sends proactive messages and files to an email-linked iMessage handle (private: %s)",
+    async (privateFiles) => {
+      const bdd = createBddApi(context);
+      const integrations = createBddIntegrationApi(context);
+      const ap = createAgentPhoneBddApi(context);
+      const actor = bdd.user();
+      const orgId = actor.orgId;
+      if (!orgId) {
+        throw new Error(
+          "Expected an organization for phone artifact ownership",
+        );
+      }
+      if (!privateFiles) {
+        await updateFeatureSwitchesForUser(
+          context,
+          { ...actor, orgId },
+          {
+            privateArtifacts: false,
+          },
+        );
+      }
+      const email = `bdd-${randomUUID().slice(0, 8)}@example.com`;
+      integrations.configureAgentPhoneProvider();
+      integrations.configureAgentPhoneWebhook();
+      const sends = ap.captureAgentPhoneSends();
+      const storage = ap.acceptAgentPhoneObjectStorage();
+      context.mocks.ably.publish.mockResolvedValue(undefined);
 
-    const issued = await integrations.requestCreateAgentPhoneLinkCode(
-      actor,
-      [200],
-    );
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: email,
-      body: issued.body.code,
-      conversationId: uniqueConversationId(),
-      isGroup: false,
-    });
-    await expect(
-      integrations.getAgentPhoneLinkStatus(actor),
-    ).resolves.toMatchObject({ linked: true, phoneHandle: email });
+      const issued = await integrations.requestCreateAgentPhoneLinkCode(
+        actor,
+        [200],
+      );
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: email,
+        body: issued.body.code,
+        conversationId: uniqueConversationId(),
+        isGroup: false,
+      });
+      await expect(
+        integrations.getAgentPhoneLinkStatus(actor),
+      ).resolves.toMatchObject({ linked: true, phoneHandle: email });
 
-    const sent = await integrations.requestSendPhoneMessage(
-      actor,
-      { agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID, text: "proactive hello" },
-      [200],
-    );
-    expect(sent.body).toMatchObject({ ok: true, toNumber: email });
-    expect(lastSend(sends)).toMatchObject({
-      agentId: AGENTPHONE_BDD_AGENT_ID,
-      toNumber: email,
-      body: "proactive hello",
-    });
+      const sent = await integrations.requestSendPhoneMessage(
+        actor,
+        { agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID, text: "proactive hello" },
+        [200],
+      );
+      expect(sent.body).toMatchObject({ ok: true, toNumber: email });
+      expect(lastSend(sends)).toMatchObject({
+        agentId: AGENTPHONE_BDD_AGENT_ID,
+        toNumber: email,
+        body: "proactive hello",
+      });
 
-    const init = await integrations.requestPhoneUploadInit(
-      actor,
-      { filename: "note.txt", contentType: "text/plain", length: 5 },
-      [200],
-    );
-    if (!("uploadId" in init.body)) {
-      throw new Error("Expected the phone upload to initialize");
-    }
-    storage.addArtifactObject({
-      userId: actor.userId,
-      uploadId: init.body.uploadId,
-      filename: "note.txt",
-      size: 5,
-    });
-    const completed = await integrations.requestPhoneUploadComplete(
-      actor,
-      {
+      const init = await integrations.requestPhoneUploadInit(
+        actor,
+        { filename: "note.txt", contentType: "text/plain", length: 5 },
+        [200],
+      );
+      if (!("uploadId" in init.body)) {
+        throw new Error("Expected the phone upload to initialize");
+      }
+      storage.addArtifactObject({
+        userId: actor.userId,
         uploadId: init.body.uploadId,
-        agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID,
-        caption: "proactive file",
-      },
-      [200],
-    );
-    expect(completed.body).toMatchObject({ toNumber: email });
-    expect(lastSend(sends)).toMatchObject({
-      toNumber: email,
-      body: "proactive file",
-    });
-  });
+        filename: "note.txt",
+        size: 5,
+        privateFiles,
+      });
+      const completed = await integrations.requestPhoneUploadComplete(
+        actor,
+        {
+          uploadId: init.body.uploadId,
+          agentphoneAgentId: AGENTPHONE_BDD_AGENT_ID,
+          caption: "proactive file",
+        },
+        [200],
+      );
+      if (completed.status !== 200) {
+        throw new Error("Expected the phone file to be delivered");
+      }
+      expect(completed.body).toMatchObject({ toNumber: email });
+      const providerSend = lastSend(sends);
+      expect(providerSend).toMatchObject({
+        toNumber: email,
+        body: "proactive file",
+      });
+      if (!providerSend.mediaUrl) {
+        throw new Error("Expected a provider-fetchable phone file");
+      }
+      if (privateFiles) {
+        expect(completed.body.url).toBe(init.body.fileUrl);
+        expect(completed.body.url).toMatch(
+          /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.txt$/u,
+        );
+        expect(new URL(providerSend.mediaUrl).searchParams.get("object")).toBe(
+          `test-private-artifacts/private-artifacts/${init.body.uploadId}/note.txt`,
+        );
+        expect(providerSend.mediaUrl).not.toBe(completed.body.url);
+      } else {
+        expect(providerSend.mediaUrl).toBe(completed.body.url);
+      }
+      let ownerReferenceFetches = 0;
+      if (privateFiles) {
+        server.use(
+          http.get(completed.body.url, () => {
+            ownerReferenceFetches += 1;
+            return new HttpResponse(null, { status: 401 });
+          }),
+        );
+      }
+      let mediaFetches = 0;
+      const providerMediaUrl = new URL(providerSend.mediaUrl);
+      server.use(
+        http.get(
+          `${providerMediaUrl.origin}${providerMediaUrl.pathname}`,
+          ({ request }) => {
+            expect(new URL(request.url).searchParams.get("object")).toBe(
+              providerMediaUrl.searchParams.get("object"),
+            );
+            mediaFetches += 1;
+            return new HttpResponse("hello", {
+              headers: { "content-type": "text/plain", "content-length": "5" },
+            });
+          },
+        ),
+      );
+      const downloaded = await ap.downloadPhoneFileRaw(
+        "clerk-session",
+        completed.body.messageId,
+      );
+      expect(downloaded.status).toBe(200);
+      expect(downloaded.text).toBe("hello");
+      expect(downloaded.headers.get("x-file-name")).toBe("note.txt");
+      expect(mediaFetches).toBe(1);
+      expect(ownerReferenceFetches).toBe(0);
+      const foreignActor = bdd.user();
+      await integrations.requestPhoneDownloadFile(
+        foreignActor,
+        completed.body.messageId,
+        [404],
+      );
+      await integrations.requestPhoneDownloadFile(
+        { ...actor, orgId: `org_${randomUUID()}` },
+        completed.body.messageId,
+        [404],
+      );
+      expect(mediaFetches).toBe(1);
+      if (privateFiles) {
+        context.mocks.s3.send.mockRejectedValue(
+          Object.assign(new Error("Reference no longer exists"), {
+            name: "NoSuchKey",
+          }),
+        );
+        await integrations.requestPhoneDownloadFile(
+          actor,
+          completed.body.messageId,
+          [404],
+        );
+        expect(mediaFetches).toBe(1);
+        expect(ownerReferenceFetches).toBe(0);
+      }
+    },
+  );
 
   it("invalidates a previous connection code when a new one is issued", async () => {
     const bdd = createBddApi(context);
@@ -1163,6 +1262,115 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
     await flushWaitUntilForTest();
     expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
+  });
+
+  it("keeps the phone conversation usable after the provider rejects a completion reply", async () => {
+    const { ap, phone, runnerGroup, sends } = await entitledLinkedActor();
+    const webhooks = createWebhookCallbackApi(context);
+    async function complete(runId: string, sandboxToken: string) {
+      await webhooks.requestAgentComplete(
+        {
+          runId,
+          exitCode: 0,
+          checkpoint: {
+            cliAgentType: "claude-code",
+            cliAgentSessionId: agentPhoneCliAgentSessionIdForRun(runId),
+            cliAgentSessionHistoryHash: createHash("sha256")
+              .update(`bdd agentphone history ${runId}`)
+              .digest("hex"),
+          },
+        },
+        { authorization: `Bearer ${sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+    }
+    const conversationId = uniqueConversationId();
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "first phone request",
+      conversationId,
+    });
+    const firstRun = await claimDispatchedRun(runnerGroup);
+    const beforeCompletion = sends.messages.length;
+    server.use(
+      http.post(
+        "https://api.agentphone.test/v1/messages",
+        () => {
+          return HttpResponse.json(
+            { detail: "Recipient is temporarily unavailable" },
+            { status: 422 },
+          );
+        },
+        { once: true },
+      ),
+    );
+
+    await complete(firstRun.runId, firstRun.sandboxToken);
+    expect(sends.messages).toHaveLength(beforeCompletion);
+    await webhooks.requestAgentComplete(
+      { runId: firstRun.runId, exitCode: 0 },
+      { authorization: `Bearer ${firstRun.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(sends.messages).toHaveLength(beforeCompletion);
+
+    const nextMessageId = await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "try the next phone request",
+      conversationId,
+    });
+    const nextRun = await claimDispatchedRun(runnerGroup);
+    expect(nextRun.prompt).toBe("try the next phone request");
+    await complete(nextRun.runId, nextRun.sandboxToken);
+    expect(sends.messages).toHaveLength(beforeCompletion + 1);
+    expect(lastSend(sends)).toMatchObject({
+      toNumber: phone,
+      replyToMessageId: nextMessageId,
+      body: "Task completed successfully.",
+    });
+  });
+
+  it("does not send a phone reply after the user deletes the running thread", async () => {
+    const { actor, ap, phone, runnerGroup, sends } =
+      await entitledLinkedActor();
+    const chat = createChatFilesBddApi(context);
+    const webhooks = createWebhookCallbackApi(context);
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "delete this phone conversation",
+      conversationId: uniqueConversationId(),
+    });
+    const run = await claimDispatchedRun(runnerGroup);
+    const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+    if (lifecycle.status !== 200) {
+      throw new Error("Expected AgentPhone thread lifecycle events");
+    }
+    const thread = lifecycle.body.events.find((event) => {
+      return event.kind === "created";
+    });
+    if (!thread) {
+      throw new Error("Expected the phone conversation's thread");
+    }
+    const beforeDeletion = sends.messages.length;
+
+    await chat.deleteThread(actor, thread.chatThreadId);
+    await webhooks.requestAgentComplete(
+      {
+        runId: run.runId,
+        exitCode: 1,
+        error: "Run ended after its thread was deleted",
+      },
+      { authorization: `Bearer ${run.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(sends.messages).toHaveLength(beforeDeletion);
+    await chat.requestListThreadEvents(actor, thread.chatThreadId, {}, [404]);
   });
 
   describe.each(modelResumeScenarios)(
@@ -3157,7 +3365,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       size: 123,
     });
     expect(init.body.uploadUrl).toMatch(/^https?:\/\//u);
-    expect(init.body.fileUrl).toMatch(/^https:\/\/a\.okou\.io\/[^/]+\.png$/u);
+    expect(init.body.fileUrl).toMatch(
+      /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.png$/u,
+    );
 
     storage.addArtifactObject({
       userId: actor.userId,
@@ -3176,24 +3386,38 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       [200],
     );
     expect(completed.body).toMatchObject({
-      filename: "screen_shot.png",
+      filename: "screen shot.png",
       mimetype: "image/png",
       size: 456,
       toNumber: phone,
     });
     const mediaSend = lastSend(sends);
     expect(mediaSend.body).toBe("see attached");
-    expect(mediaSend.mediaUrl).toBe(completed.body.url);
+    expect(completed.body.url).toBe(init.body.fileUrl);
+    expect(mediaSend.mediaUrl).not.toBe(completed.body.url);
     expect(mediaSend.toNumber).toBe(phone);
+    if (!mediaSend.mediaUrl) {
+      throw new Error("Expected a provider-fetchable phone file");
+    }
+    expect(new URL(mediaSend.mediaUrl).searchParams.get("object")).toBe(
+      `test-private-artifacts/private-artifacts/${init.body.uploadId}/screen_shot.png`,
+    );
 
-    // The recorded outbound message is readable back as owned media.
+    // The recorded owner reference is resolved to its authorized storage URL.
+    const providerMediaUrl = new URL(mediaSend.mediaUrl);
     server.use(
-      http.get(completed.body.url, () => {
-        return new HttpResponse("png-bytes", {
-          status: 200,
-          headers: { "content-type": "image/png", "content-length": "9" },
-        });
-      }),
+      http.get(
+        `${providerMediaUrl.origin}${providerMediaUrl.pathname}`,
+        ({ request }) => {
+          expect(new URL(request.url).searchParams.get("object")).toBe(
+            providerMediaUrl.searchParams.get("object"),
+          );
+          return new HttpResponse("png-bytes", {
+            status: 200,
+            headers: { "content-type": "image/png", "content-length": "9" },
+          });
+        },
+      ),
     );
     const downloaded = await ap.downloadPhoneFileRaw(
       okouToken,
@@ -3201,7 +3425,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
     expect(downloaded.status).toBe(200);
     expect(downloaded.headers.get("content-type")).toBe("image/png");
-    expect(downloaded.headers.get("x-file-name")).toBe("screen_shot.png");
+    expect(downloaded.headers.get("x-file-name")).toBe("screen%20shot.png");
     expect(downloaded.text).toBe("png-bytes");
 
     const unauthorized = await integrations.requestPhoneDownloadFile(

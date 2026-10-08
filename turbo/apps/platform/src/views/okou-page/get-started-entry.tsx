@@ -20,6 +20,7 @@ import {
 import {
   Button,
   buttonVariants,
+  cn,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -33,8 +34,6 @@ import {
   Input,
 } from "@okouai/ui";
 import { assistantName$ } from "../../signals/branding.ts";
-import { detachedNavigateTo$ } from "../../signals/route.ts";
-import { ROUTES } from "../../signals/route-paths.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
 import {
@@ -607,21 +606,18 @@ function ShareComposeBody({
           <p className="text-[15px] leading-relaxed text-muted-foreground">
             {writingPrompt}
           </p>
-          <Button
-            type="button"
-            variant="outline"
+          <a
+            href="https://x.com/intent/post"
+            // Reuse the compose tab instead of stacking drafts.
+            target="okou-share-post"
+            className={buttonVariants({ variant: "outline" })}
             data-testid="share-open-x"
-            onClick={() => {
-              // A named target rather than `_blank`, so pressing it twice
-              // reuses the compose tab instead of stacking drafts.
-              window.open("https://x.com/intent/post", "okou-share-post");
-            }}
           >
             <XMark />
             {t(($) => {
               return $.chat.agentPage.getStarted.shareDialog.openX;
             })}
-          </Button>
+          </a>
         </div>
       </ShareStep>
       <ShareStep
@@ -745,18 +741,18 @@ function ShareReviewBody({
       </p>
       <DialogFooter className="sm:items-center">
         {claim.postUrl !== null && (
-          <Button
-            type="button"
-            variant="link"
-            className="px-0 text-muted-foreground hover:text-foreground sm:mr-auto"
-            onClick={() => {
-              window.open(claim.postUrl ?? "", "okou-share-post");
-            }}
+          <a
+            href={claim.postUrl}
+            target="okou-share-post"
+            className={cn(
+              buttonVariants({ variant: "link" }),
+              "px-0 text-muted-foreground hover:text-foreground sm:mr-auto",
+            )}
           >
             {t(($) => {
               return $.chat.agentPage.getStarted.shareDialog.reviewOpenPost;
             })}
-          </Button>
+          </a>
         )}
         <Button type="button" onClick={onClose}>
           {t(($) => {
@@ -817,31 +813,19 @@ function ShareOnXDialog() {
 }
 
 /**
- * Where a quest sends the user once they decide to do it.
- *
- * The intro dialog does not replace these; it runs the matching handoff on
- * confirm, so a quest has one destination whether or not it is introduced.
+ * Quest actions that perform work or open another dialog. Static browse
+ * destinations belong to the links in the intro dialog.
  */
 function useQuestHandoffs(
   checkIn: (signal: AbortSignal) => Promise<void>,
   connectPhone: () => void,
-): Record<GetStartedQuestKey, () => void> {
+): Record<"imessage" | "invite" | "share" | "checkin", () => void> {
   const pageSignal = useGet(pageSignal$);
   const openSettings = useSet(openSettingsDialogAt$);
-  const navigate = useSet(detachedNavigateTo$);
   const setShareDialogOpen = useSet(setShareDialogOpen$);
   const setCheckinClaimedOpen = useSet(setCheckinClaimedOpen$);
   return {
-    connector: () => {
-      navigate(ROUTES.connectors);
-    },
-    slack: () => {
-      navigate(ROUTES.works);
-    },
     imessage: connectPhone,
-    workflow: () => {
-      navigate(ROUTES.workflows);
-    },
     invite: () => {
       detach(openSettings("people", pageSignal), Reason.DomCallback);
     },
@@ -868,18 +852,24 @@ function useQuestHandoffs(
  * destination.
  */
 function useQuestActions(
-  handoffs: Record<GetStartedQuestKey, () => void>,
+  handoffs: ReturnType<typeof useQuestHandoffs>,
 ): Record<GetStartedQuestKey, () => void> {
   const setQuestIntroKey = useSet(setQuestIntroKey$);
-  const actions: Partial<Record<GetStartedQuestKey, () => void>> = {};
-  for (const key of Object.keys(handoffs) as GetStartedQuestKey[]) {
-    actions[key] = questHasIntro(key)
-      ? () => {
-          setQuestIntroKey(key);
-        }
-      : handoffs[key];
-  }
-  return actions as Record<GetStartedQuestKey, () => void>;
+  return {
+    ...handoffs,
+    connector: () => {
+      setQuestIntroKey("connector");
+    },
+    slack: () => {
+      setQuestIntroKey("slack");
+    },
+    workflow: () => {
+      setQuestIntroKey("workflow");
+    },
+    invite: () => {
+      setQuestIntroKey("invite");
+    },
+  };
 }
 
 /** The reward rules, unfolded in place rather than behind another surface. */
@@ -925,7 +915,7 @@ function GetStartedPanel({
 }: {
   quests: readonly GetStartedQuest[];
   summary: GetStartedSummary;
-  handoffs: Record<GetStartedQuestKey, () => void>;
+  handoffs: ReturnType<typeof useQuestHandoffs>;
   checkinPending: boolean;
 }) {
   const { t } = useTranslation();
@@ -1083,11 +1073,7 @@ export function GetStartedEntry() {
         />
       </DropdownMenu>
       <ShareOnXDialog />
-      <GetStartedQuestIntroDialog
-        onConfirm={(key) => {
-          handoffs[key]();
-        }}
-      />
+      <GetStartedQuestIntroDialog onInvite={handoffs.invite} />
       {/* The quest the dialog reports on is the one the panel just checked in,
           so the dialog exists exactly when that quest does. */}
       {checkinQuest && (

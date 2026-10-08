@@ -311,9 +311,9 @@ export function createCancellationRecoverySignals(threadId: string) {
   const optimisticCreateUnsettled$ =
     optimisticChatThreadCreateUnsettled(threadId);
 
-  const detail$ = computed(async (get) => {
+  const cancellationRecoveryPending$ = computed(async (get) => {
     if (get(optimisticCreateUnsettled$)) {
-      return null;
+      return false;
     }
     get(threadDetailReloadCounter$);
     const client = get(apiClient$)(chatThreadByIdContract);
@@ -321,10 +321,10 @@ export function createCancellationRecoverySignals(threadId: string) {
       client.get({ params: { id: threadId } }),
       [200, 404],
     );
-    return result.status === 404 ? null : result.body;
-  });
-  const cancellationRecoveryPending$ = computed(async (get) => {
-    return (await get(detail$))?.cancellationRecoveryPending ?? false;
+    if (result.status === 404) {
+      return false;
+    }
+    return result.body.cancellationRecoveryPending;
   });
 
   const reload$ = command(({ set }) => {
@@ -333,7 +333,7 @@ export function createCancellationRecoverySignals(threadId: string) {
     });
   });
 
-  return { detail$, pending$: cancellationRecoveryPending$, reload$ };
+  return { pending$: cancellationRecoveryPending$, reload$ };
 }
 
 export function createRemoteChatThreadDraft(threadId: string) {

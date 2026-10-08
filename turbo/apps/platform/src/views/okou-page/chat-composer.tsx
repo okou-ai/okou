@@ -4217,10 +4217,13 @@ function ImportedPresentationTemplateRenameControl({
             );
           }}
           onKeyDown={(event) => {
+            // Safari can end composition before the confirming Enter, while
+            // keyCode remains 229 for that IME-owned keystroke.
             if (
               event.key !== "Enter" ||
               event.shiftKey ||
-              event.nativeEvent.isComposing
+              event.nativeEvent.isComposing ||
+              event.nativeEvent.keyCode === 229
             ) {
               return;
             }

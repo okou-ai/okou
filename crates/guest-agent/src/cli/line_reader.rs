@@ -20,6 +20,10 @@ pub(super) enum BoundedLineError {
 /// caller that chooses to tolerate an over-limit record must drain it here
 /// before reading again, or the next read reports the same record forever.
 ///
+/// Yields after each non-final buffer so immediately-ready input cannot starve
+/// competing controls. Cancelling and recreating this future preserves progress
+/// in the reader; the caller must retain discard mode until it returns.
+///
 /// Returns `false` when the stream ends before an LF, which means the discarded
 /// record was unterminated and no further record follows.
 pub(super) async fn skip_to_line_end<R>(reader: &mut R) -> Result<bool, io::Error>
@@ -42,6 +46,7 @@ where
         if reached_line_end {
             return Ok(true);
         }
+        tokio::task::yield_now().await;
     }
 }
 
@@ -156,6 +161,31 @@ mod tests {
             .await
             .expect("eof after a drained unterminated record");
         assert_eq!(eof, None);
+    }
+
+    #[tokio::test]
+    async fn interrupted_skipping_resumes_without_consuming_the_next_record() {
+        let mut reader =
+            tokio::io::BufReader::with_capacity(4, "oversized-record\nkept\n".as_bytes());
+        let mut partial = Vec::new();
+
+        // A ready reader must yield after a non-final buffer, even when the
+        // competing control is immediately ready. Dropping the drain future
+        // must leave its consumed-byte progress available to the next call.
+        let interrupted = tokio::select! {
+            biased;
+            _ = skip_to_line_end(&mut reader) => false,
+            () = std::future::ready(()) => true,
+        };
+        assert!(
+            interrupted,
+            "ready discard buffers must not starve controls"
+        );
+        assert!(skip_to_line_end(&mut reader).await.expect("resumed drain"));
+        let next = read_bounded_utf8_line(&mut reader, &mut partial, LIMIT)
+            .await
+            .expect("record after interrupted drain");
+        assert_eq!(next.as_deref(), Some("kept"));
     }
 
     #[tokio::test]

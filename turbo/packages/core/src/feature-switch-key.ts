@@ -40,7 +40,6 @@ export enum FeatureSwitchKey {
   WorkdayConnector = "workdayConnector",
   RealAgentInPreview = "_realAgentInPreview",
   ZapierConnector = "zapierConnector",
-  ComputerUseDesktopPlugins = "computerUseDesktopPlugins",
   PrivateArtifacts = "privateArtifacts",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PwaNavigation = "pwaNavigation",
@@ -51,7 +50,6 @@ export enum FeatureSwitchKey {
   PiMemory = "piMemory",
   LangfuseTrace = "_langfuseTrace",
   ComposerTaskChips = "composerTaskChips",
-  ChatLastReadMarker = "chatLastReadMarker",
   ChatThreadArchiving = "chatThreadArchiving",
   ChatThreadMuting = "chatThreadMuting",
   ComposerAddMenu = "composerAddMenu",
@@ -61,5 +59,5 @@ export enum FeatureSwitchKey {
   GoogleSlidesConversion = "googleSlidesConversion",
   BrowserNativeInput = "browserNativeInput",
   HomeTaskRecommendations = "homeTaskRecommendations",
-  AgentResponsibilitySetup = "agentResponsibilitySetup",
+  PiOpenRouterChatCompletions = "piOpenRouterChatCompletions",
 }

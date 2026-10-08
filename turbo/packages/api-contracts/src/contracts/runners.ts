@@ -81,6 +81,9 @@ export const PI_MODEL_CONFIG_LEGACY_GENERATION = 1;
 // Existing versioned writers stay on generation 2 until their activation slice.
 export const PI_MODEL_CONFIG_CURRENT_GENERATION = 2;
 export const PI_MODEL_CONFIG_DIALECT_TIER_GENERATION = 3;
+// Generation 4 was the retired native carrier; Runners built before its
+// removal may still advertise it, so OpenRouter Chat Completions skips to 5.
+export const PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION = 5;
 export const RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX = 8;
 /**
  * Minimum `@okouai/cli` version boundary for `__agent-loop` launch-payload
@@ -643,7 +646,6 @@ export const storageMountEntrySchema = z
     archiveUrl: z.string().optional(),
     archiveSize: archiveSizeSchema.optional(),
     empty: z.boolean().optional(),
-    baselineCandidate: z.literal(true).optional(),
     instructionsTargetFilename: z.string().optional(),
     missingRootPolicy: artifactMissingRootPolicySchema.optional(),
     writeback: z.boolean().optional(),
@@ -673,13 +675,6 @@ export const storageMountEntrySchema = z
         code: z.ZodIssueCode.custom,
         path: ["instructionsTargetFilename"],
         message: "instructionsTargetFilename is not valid for writeback mounts",
-      });
-    }
-    if (writeback && mount.baselineCandidate === true) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["baselineCandidate"],
-        message: "baselineCandidate is not valid for writeback mounts",
       });
     }
     if (!writeback && mount.missingRootPolicy !== undefined) {
@@ -1130,10 +1125,37 @@ export const piModelConfigV3Schema = z
   ])
   .readonly();
 
+/**
+ * OpenRouter Chat Completions route. It has one public API-key binding and no
+ * request service tier; an OpenRouter Preset owns reasoning and routing policy.
+ */
+export const piModelConfigV5Schema = z
+  .object({
+    schemaVersion: z.literal(PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION),
+    dialect: z.literal("openai-completions"),
+    transport: z.literal("sse"),
+    provider: z.literal("openrouter"),
+    baseUrl: z.url(),
+    model: z.string().min(1).max(512),
+    catalogModel: z.string().min(1).max(512).optional(),
+    thinkingLevel: z
+      .enum(["off", "minimal", "low", "medium", "high", "xhigh", "max"])
+      .optional(),
+    credentialBindings: z
+      .array(piModelCredentialBindingSchema)
+      .length(1)
+      .refine((bindings) => {
+        return bindings[0]?.kind === "api-key";
+      }, "Chat Completions requires exactly one API-key binding"),
+  })
+  .strict()
+  .readonly();
+
 export const piModelConfigSchema = z.union([
   piModelConfigLegacySchema,
   piModelConfigV2Schema,
   piModelConfigV3Schema,
+  piModelConfigV5Schema,
 ]);
 
 const lowercaseSha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
@@ -1331,10 +1353,11 @@ const storedExecutionContextObjectSchema = z.object({
   // Total-input threshold (input + cache read + cache creation) at which
   // `modelUsageProvider` usage bills the `.long_context` categories, captured
   // by the API from the run's Built-in route
-  // (`model_routes.long_context_min_total_input_tokens`). `0` is explicit:
-  // the route bills a single tier and the proxy must not consult its generated
-  // map. Absent: an API without catalog thresholds; only then does the proxy
-  // fall back to its generated map keyed by `modelUsageProvider`.
+  // (`model_routes.long_context_min_total_input_tokens`). `0` explicitly marks
+  // a single-tier route. Without a usable positive captured threshold, the
+  // addon selects the base tier; it does not reconstruct a threshold. This
+  // is not supported pre-catalog pricing compatibility; see
+  // docs/deployment-compatibility.md for deployment order and rollback limits.
   modelUsageLongContextMinTotalInputTokens: z
     .number()
     .int()
@@ -1451,10 +1474,11 @@ const executionContextObjectSchema = z.object({
   // Total-input threshold (input + cache read + cache creation) at which
   // `modelUsageProvider` usage bills the `.long_context` categories, captured
   // by the API from the run's Built-in route
-  // (`model_routes.long_context_min_total_input_tokens`). `0` is explicit:
-  // the route bills a single tier and the proxy must not consult its generated
-  // map. Absent: an API without catalog thresholds; only then does the proxy
-  // fall back to its generated map keyed by `modelUsageProvider`.
+  // (`model_routes.long_context_min_total_input_tokens`). `0` explicitly marks
+  // a single-tier route. Without a usable positive captured threshold, the
+  // addon selects the base tier; it does not reconstruct a threshold. This
+  // is not supported pre-catalog pricing compatibility; see
+  // docs/deployment-compatibility.md for deployment order and rollback limits.
   modelUsageLongContextMinTotalInputTokens: z
     .number()
     .int()
@@ -1849,6 +1873,7 @@ export type PiModelConfig = z.infer<typeof piModelConfigSchema>;
 export type PiModelConfigLegacy = z.infer<typeof piModelConfigLegacySchema>;
 export type PiModelConfigV2 = z.infer<typeof piModelConfigV2Schema>;
 export type PiModelConfigV3 = z.infer<typeof piModelConfigV3Schema>;
+export type PiModelConfigV5 = z.infer<typeof piModelConfigV5Schema>;
 export type PiModelCredentialBinding = z.infer<
   typeof piModelCredentialBindingSchema
 >;

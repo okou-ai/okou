@@ -90,7 +90,7 @@ impl Streams {
         }
         input
             .credits
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |n| n.checked_sub(1))
             .map_err(|_| io::Error::other("stream exceeded credit"))?;
         input.bytes += msg.payload.len();
         if input.bytes > MAX_ENCODED {

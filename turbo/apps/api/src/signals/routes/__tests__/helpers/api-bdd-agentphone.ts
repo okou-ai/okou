@@ -9,6 +9,7 @@ import {
 } from "@okouai/api-contracts/contracts/integrations";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import { HttpResponse, http } from "msw";
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
 
 import { createApp } from "../../../../app-factory";
 import { env } from "../../../../lib/env";
@@ -23,6 +24,7 @@ import {
   createBddIntegrationApi,
 } from "./api-bdd-integrations";
 import { sessionHistoryBlobBodyForKey } from "./api-bdd-session-history";
+import { installArtifactReferenceStorage } from "./artifact-reference-storage";
 import { createRouteMocks } from "./route-test";
 import { integrationsPhoneUploadCompleteRoutes } from "../../integrations-phone-upload-complete";
 import { integrationsPhoneUploadInitRoutes } from "../../integrations-phone-upload-init";
@@ -484,6 +486,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
         readonly uploadId: string;
         readonly filename: string;
         readonly size: number;
+        readonly privateFiles?: boolean;
       }): void;
     } {
       const objects: {
@@ -508,6 +511,19 @@ export function createAgentPhoneBddApi(context: TestContext) {
         }
         const bucket = typeof input.Bucket === "string" ? input.Bucket : "";
         const prefix = typeof input.Prefix === "string" ? input.Prefix : "";
+        if (args[0] instanceof HeadObjectCommand) {
+          const object = objects.find((candidate) => {
+            return candidate.bucket === bucket && candidate.key === key;
+          });
+          if (!object) {
+            return Promise.reject(
+              Object.assign(new Error("Artifact not found"), {
+                name: "NotFound",
+              }),
+            );
+          }
+          return Promise.resolve({ ContentLength: object.size });
+        }
         if (prefix !== "") {
           const contents = objects
             .filter((object) => {
@@ -524,11 +540,25 @@ export function createAgentPhoneBddApi(context: TestContext) {
         }
         return Promise.resolve({});
       });
+      installArtifactReferenceStorage(context);
       return {
         addArtifactObject(object): void {
+          const bucket = env(
+            object.privateFiles === false
+              ? "R2_USER_ARTIFACTS_BUCKET_NAME"
+              : "R2_PRIVATE_ARTIFACTS_BUCKET_NAME",
+          );
+          if (!bucket) {
+            throw new Error(
+              "Expected the phone artifact bucket to be configured",
+            );
+          }
           objects.push({
-            bucket: env("R2_USER_ARTIFACTS_BUCKET_NAME"),
-            key: `artifacts/${object.userId}/${object.uploadId}/${object.filename}`,
+            bucket,
+            key:
+              object.privateFiles === false
+                ? `artifacts/${object.userId}/${object.uploadId}/${object.filename}`
+                : `private-artifacts/${object.uploadId}/${object.filename}`,
             size: object.size,
           });
         },

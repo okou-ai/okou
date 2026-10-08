@@ -12,6 +12,57 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1003.0](https://github.com/okou-ai/okou/compare/app-v0.1002.2...app-v0.1003.0) (2026-10-08)
+
+
+### Features
+
+* enable private artifacts for all users ([#37951](https://github.com/okou-ai/okou/issues/37951)) ([91e19d1](https://github.com/okou-ai/okou/commit/91e19d1e55e49ffb5822aa2a9d7fcb336b9cb9cf))
+
+
+### Bug Fixes
+
+* **platform:** restore connector account rename focus ([#37939](https://github.com/okou-ai/okou/issues/37939)) ([c40583b](https://github.com/okou-ai/okou/commit/c40583b6a0e685fa2c8c58ab657779b0804a2005))
+* **platform:** scope image navigation keys to the focused canvas ([#36527](https://github.com/okou-ai/okou/issues/36527)) ([fb921ee](https://github.com/okou-ai/okou/commit/fb921ee515fee951cfa8cc33664696f5b56c06bb))
+* **platform:** submit chat events alongside read-status effects ([#37991](https://github.com/okou-ai/okou/issues/37991)) ([0fbd917](https://github.com/okou-ai/okou/commit/0fbd91781aa4f04bc8e6a41d6242fda959917d75))
+
+
+### Refactoring
+
+* **platform:** remove abandoned chat last-read marker ([#37966](https://github.com/okou-ai/okou/issues/37966)) ([d85fdca](https://github.com/okou-ai/okou/commit/d85fdcad049428b366f892a181c69e7ab61a8523))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.539.0
+    * @okouai/core bumped to 8.735.0
+
+## [0.1002.2](https://github.com/okou-ai/okou/compare/app-v0.1002.1...app-v0.1002.2) (2026-10-08)
+
+
+### Bug Fixes
+
+* **app:** use native spotlight search filters ([#37947](https://github.com/okou-ai/okou/issues/37947)) ([6766c12](https://github.com/okou-ai/okou/commit/6766c12541fa97b0ade1ef0e5cd956df8b8a7b34))
+* let the model catalog decide which models accept reasoning effort ([#37958](https://github.com/okou-ai/okou/issues/37958)) ([abc2a1c](https://github.com/okou-ai/okou/commit/abc2a1c29edd2a840f109d36fd460aea6db3888a))
+* **platform:** preserve native pinned agent link activations ([#36523](https://github.com/okou-ai/okou/issues/36523)) ([ee36a55](https://github.com/okou-ai/okou/commit/ee36a5590a1ceca332ff1ef5d582c8e6a446507f))
+* **platform:** use native buttons for mobile sidebar disclosures ([#36514](https://github.com/okou-ai/okou/issues/36514)) ([df048aa](https://github.com/okou-ai/okou/commit/df048aa008484b05199a1606c4b68652ca1a41f7))
+
+
+### Refactoring
+
+* **ui:** use native network type checkbox menu items ([#36525](https://github.com/okou-ai/okou/issues/36525)) ([e9241d9](https://github.com/okou-ai/okou/commit/e9241d948e5a565afa081e2e44f533a545c9bb8a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.538.1
+    * @okouai/core bumped to 8.734.9
+    * @okouai/ui bumped to 1.12.3
+
 ## [0.1002.1](https://github.com/okou-ai/okou/compare/app-v0.1002.0...app-v0.1002.1) (2026-10-08)
 
 
