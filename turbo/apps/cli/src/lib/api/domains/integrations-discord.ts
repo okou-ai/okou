@@ -1,4 +1,5 @@
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
+import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
 import {
   integrationsDiscordReadContract,
   type DiscordChannelListQuery,
@@ -19,6 +20,16 @@ import {
   getClientConfig,
   handleError,
 } from "../core/client-factory";
+
+export async function startDiscordAuthorization(body: {
+  flow: "install" | "connect";
+  guildId?: string;
+}): Promise<{ authorizationUrl: string }> {
+  const client = initClient(discordOauthContract, await getClientConfig());
+  const result = await client.start({ body, headers: {} });
+  if (result.status === 200) return result.body;
+  handleError(result, "Failed to start Discord authorization");
+}
 
 export async function listDiscordChannels(
   query: DiscordChannelListQuery,
