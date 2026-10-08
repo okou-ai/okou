@@ -16,8 +16,8 @@ import {
   type CopyWorkflowDatabaseResult,
 } from "./workflow-copy-publication-plans";
 import {
-  ensurePublicationGenerations,
-  publicationIsPending,
+  publicationGenerationValues,
+  publicationKeyCondition,
   retirePublicationSql,
   lockPublicationScopeSql,
   workflowPublicationKey,
@@ -41,6 +41,10 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { storages } from "@okouai/db/schema/storage";
 import {
+  storagePublicationGenerations,
+  storagePublicationTokens,
+} from "@okouai/db/schema/storage-publication-fence";
+import {
   workflowUserAutomationThreads,
   workflows,
 } from "@okouai/db/schema/workflow";
@@ -50,7 +54,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { publishChatThreadWorkflowsChangedSafely } from "../external/realtime";
 import {
   ApiDispatchTimingCollector,
@@ -146,39 +150,6 @@ function workflowNotFound(workflowId: string) {
   return notFound(`Workflow not found: ${workflowId}`);
 }
 
-interface ConfigurableAgent {
-  readonly id: string;
-  readonly owner: string;
-  readonly visibility: "public" | "private";
-  readonly name: string;
-  readonly displayName: string | null;
-}
-
-async function loadAgentForConfiguration(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly lock?: boolean;
-  },
-): Promise<ConfigurableAgent | null> {
-  const query = db
-    .select({
-      id: agents.id,
-      owner: agents.owner,
-      visibility: agents.visibility,
-      name: agents.name,
-      displayName: agents.displayName,
-    })
-    .from(agents)
-    .where(and(eq(agents.orgId, args.orgId), eq(agents.id, args.agentId)))
-    .limit(1);
-  // Publication reads Agent permissions without changing the Agent. A shared
-  // lock keeps them stable while independent workflows publish concurrently.
-  const [agent] = await (args.lock ? query.for("share") : query);
-
-  return agent ?? null;
-}
 function requireAgentWritePermission(
   agent: {
     readonly owner: string;
@@ -206,32 +177,28 @@ function requireVisibleAgentForPrivateWorkflowCreate(
   );
 }
 
-async function publicWorkflowSlugExists(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly name: string;
-    readonly excludeWorkflowId?: string;
-  },
-): Promise<boolean> {
-  const [existing] = await db
-    .select({ id: workflows.id })
-    .from(workflows)
-    .where(
-      and(
-        eq(workflows.orgId, args.orgId),
-        eq(workflows.agentId, args.agentId),
-        eq(workflows.name, args.name),
-        eq(workflows.visibility, "public"),
-        args.excludeWorkflowId
-          ? ne(workflows.id, args.excludeWorkflowId)
-          : undefined,
-      ),
-    )
-    .limit(1);
+interface WorkflowSlugScope {
+  readonly orgId: string;
+  readonly agentId: string;
+  readonly ownerUserId: string;
+  readonly name: string;
+  readonly visibility: "public" | "private";
+  readonly excludeWorkflowId?: string;
+}
 
-  return existing !== undefined;
+function workflowSlugCondition(args: WorkflowSlugScope) {
+  return and(
+    eq(workflows.orgId, args.orgId),
+    eq(workflows.agentId, args.agentId),
+    args.visibility === "private"
+      ? eq(workflows.ownerUserId, args.ownerUserId)
+      : undefined,
+    eq(workflows.name, args.name),
+    eq(workflows.visibility, args.visibility),
+    args.excludeWorkflowId
+      ? ne(workflows.id, args.excludeWorkflowId)
+      : undefined,
+  );
 }
 
 function workflowSlugConflict(visibility: "public" | "private", name: string) {
@@ -242,104 +209,17 @@ function workflowSlugConflict(visibility: "public" | "private", name: string) {
   );
 }
 
-async function requirePublicWorkflowSlugAvailable(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly name: string;
-    readonly excludeWorkflowId?: string;
+const requireWorkflowSlugAvailable$ = command(
+  async ({ get }, args: WorkflowSlugScope, signal: AbortSignal) => {
+    const [existing] = await get(db$)
+      .select({ id: workflows.id })
+      .from(workflows)
+      .where(workflowSlugCondition(args))
+      .limit(1);
+    signal.throwIfAborted();
+    return existing ? workflowSlugConflict(args.visibility, args.name) : null;
   },
-) {
-  const exists = await publicWorkflowSlugExists(db, args);
-  return exists ? workflowSlugConflict("public", args.name) : null;
-}
-
-async function privateWorkflowSlugExists(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly ownerUserId: string;
-    readonly name: string;
-    readonly excludeWorkflowId?: string;
-  },
-): Promise<boolean> {
-  const [existing] = await db
-    .select({ id: workflows.id })
-    .from(workflows)
-    .where(
-      and(
-        eq(workflows.orgId, args.orgId),
-        eq(workflows.agentId, args.agentId),
-        eq(workflows.ownerUserId, args.ownerUserId),
-        eq(workflows.name, args.name),
-        eq(workflows.visibility, "private"),
-        args.excludeWorkflowId
-          ? ne(workflows.id, args.excludeWorkflowId)
-          : undefined,
-      ),
-    )
-    .limit(1);
-
-  return existing !== undefined;
-}
-
-async function requirePrivateWorkflowSlugAvailable(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly ownerUserId: string;
-    readonly name: string;
-    readonly excludeWorkflowId?: string;
-  },
-) {
-  const exists = await privateWorkflowSlugExists(db, args);
-  return exists ? workflowSlugConflict("private", args.name) : null;
-}
-
-async function requireWorkflowSlugAvailableForVisibility(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly agentId: string;
-    readonly ownerUserId: string;
-    readonly name: string;
-    readonly visibility: "public" | "private";
-    readonly excludeWorkflowId?: string;
-  },
-) {
-  if (args.visibility === "public") {
-    return await requirePublicWorkflowSlugAvailable(db, args);
-  }
-
-  return await requirePrivateWorkflowSlugAvailable(db, args);
-}
-
-async function loadMatchingWorkflowCreationThreadId(
-  db: Db,
-  args: {
-    readonly userId: string;
-    readonly agentId: string;
-    readonly chatThreadId: string;
-  },
-): Promise<string | null> {
-  const [thread] = await db
-    .select({ id: chatThreads.id })
-    .from(chatThreads)
-    .where(
-      and(
-        eq(chatThreads.id, args.chatThreadId),
-        eq(chatThreads.userId, args.userId),
-        eq(chatThreads.agentId, args.agentId),
-      ),
-    )
-    .limit(1)
-    .for("update");
-
-  return thread?.id ?? null;
-}
+);
 
 async function publishCreatedWorkflow(
   userId: string,
@@ -403,128 +283,207 @@ export interface WorkflowCreationInput {
   readonly importSource?: WorkflowImportSource | null;
 }
 
-async function validateWorkflowCreation(
-  db: Db,
-  args: WorkflowCreationInput,
-  lockAgent: boolean,
-  signal: AbortSignal,
-) {
-  const agent = await loadAgentForConfiguration(db, {
+function workflowCreationRowValues(
+  args: WorkflowCreationInput & { readonly workflowId: string },
+  currentTime: Date,
+): typeof workflows.$inferInsert {
+  const { body, member, visibility } = args;
+  return {
+    id: args.workflowId,
     orgId: args.orgId,
-    agentId: args.body.agentId,
-    lock: lockAgent,
-  });
-  signal.throwIfAborted();
-  if (!agent) {
-    return notFound(`Agent not found: ${args.body.agentId}`);
-  }
-  const permissionError =
-    args.visibility === "public"
-      ? requireAgentWritePermission(
-          agent,
-          args.member,
-          "create workflows on this agent",
-        )
-      : requireVisibleAgentForPrivateWorkflowCreate(agent, args.member);
-  if (permissionError) {
-    return permissionError;
-  }
-  const slugError = await requireWorkflowSlugAvailableForVisibility(db, {
-    orgId: args.orgId,
-    agentId: agent.id,
-    ownerUserId: args.member.userId,
-    name: args.body.name,
-    visibility: args.visibility,
-  });
-  signal.throwIfAborted();
-  return slugError;
+    agentId: body.agentId,
+    name: body.name,
+    visibility,
+    instruction: body.instruction ?? null,
+    ownerUserId: member.userId,
+    displayName: body.displayName ?? null,
+    description: body.description ?? null,
+    importSource: args.importSource ?? null,
+    createdBy: member.userId,
+    updatedBy: member.userId,
+    createdAt: currentTime,
+    updatedAt: currentTime,
+  };
 }
-async function createPreparedWorkflow(
-  db: Db,
-  args: WorkflowCreationInput & {
-    readonly workflowId: string;
-    readonly volume: PreparedServerSideVolume;
-  },
-  signal: AbortSignal,
-) {
-  return await db.transaction(async (tx) => {
-    const error = await validateWorkflowCreation(tx, args, true, signal);
-    if (error) {
-      return { kind: "error" as const, response: error };
-    }
-    // Cleanup takes this same lock before checking Workflow absence, so even
-    // an uncertain COMMIT cannot let cleanup race a late publication.
-    const [storage] = await tx
-      .select({ id: storages.id })
-      .from(storages)
-      .where(eq(storages.id, args.volume.version.storageId))
-      .for("update");
-    signal.throwIfAborted();
-    if (!storage) {
-      throw new Error(
-        `Prepared workflow storage not found: ${args.workflowId}`,
-      );
-    }
-    const { body, member, visibility } = args;
-    const currentTime = nowDate();
-    const [workflow] = await tx
-      .insert(workflows)
-      .values({
-        id: args.workflowId,
-        orgId: args.orgId,
-        agentId: body.agentId,
-        name: body.name,
-        visibility,
-        instruction: body.instruction ?? null,
-        ownerUserId: member.userId,
-        displayName: body.displayName ?? null,
-        description: body.description ?? null,
-        importSource: args.importSource ?? null,
-        createdBy: member.userId,
-        updatedBy: member.userId,
-        createdAt: currentTime,
-        updatedAt: currentTime,
+
+const validateWorkflowCreation$ = command(
+  async ({ get, set }, args: WorkflowCreationInput, signal: AbortSignal) => {
+    const [agent] = await get(db$)
+      .select({
+        id: agents.id,
+        owner: agents.owner,
+        visibility: agents.visibility,
+        name: agents.name,
+        displayName: agents.displayName,
       })
-      .onConflictDoNothing()
-      .returning({ id: workflows.id });
+      .from(agents)
+      .where(
+        and(eq(agents.orgId, args.orgId), eq(agents.id, args.body.agentId)),
+      )
+      .limit(1);
     signal.throwIfAborted();
-    if (!workflow) {
-      return {
-        kind: "error" as const,
-        response: workflowSlugConflict(visibility, body.name),
-      };
+    if (!agent) {
+      return notFound(`Agent not found: ${args.body.agentId}`);
     }
-    const chatThreadId = body.chatThreadId
-      ? await loadMatchingWorkflowCreationThreadId(tx, {
-          userId: member.userId,
-          agentId: body.agentId,
-          chatThreadId: body.chatThreadId,
-        })
-      : null;
-    signal.throwIfAborted();
-    if (chatThreadId) {
-      await tx.insert(workflowUserAutomationThreads).values({
+    const permissionError =
+      args.visibility === "public"
+        ? requireAgentWritePermission(
+            agent,
+            args.member,
+            "create workflows on this agent",
+          )
+        : requireVisibleAgentForPrivateWorkflowCreate(agent, args.member);
+    if (permissionError) {
+      return permissionError;
+    }
+    return await set(
+      requireWorkflowSlugAvailable$,
+      {
         orgId: args.orgId,
-        userId: member.userId,
-        workflowId: workflow.id,
-        chatThreadId,
-        createdAt: currentTime,
-        updatedAt: currentTime,
-      });
-      signal.throwIfAborted();
-    }
-    const { rowCount: published } = await tx.execute(
-      preparedVolumePublicationSql(args.volume, nowDate()),
+        agentId: agent.id,
+        ownerUserId: args.member.userId,
+        name: args.body.name,
+        visibility: args.visibility,
+      },
+      signal,
     );
-    if (published !== 1) {
-      throw new StorageVersionIdentityConflictError(
-        args.volume.version.versionId,
+  },
+);
+
+const commitPreparedWorkflow$ = command(
+  async (
+    { set },
+    args: WorkflowCreationInput & {
+      readonly workflowId: string;
+      readonly volume: PreparedServerSideVolume;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    return await db.transaction(async (tx) => {
+      // Publication reads Agent permissions without changing the Agent. SHARE
+      // keeps them stable while independent workflows publish concurrently.
+      const [agent] = await tx
+        .select({
+          id: agents.id,
+          owner: agents.owner,
+          visibility: agents.visibility,
+          name: agents.name,
+          displayName: agents.displayName,
+        })
+        .from(agents)
+        .where(
+          and(eq(agents.orgId, args.orgId), eq(agents.id, args.body.agentId)),
+        )
+        .limit(1)
+        .for("share");
+      signal.throwIfAborted();
+      if (!agent) {
+        return {
+          kind: "error" as const,
+          response: notFound(`Agent not found: ${args.body.agentId}`),
+        };
+      }
+      const permissionError =
+        args.visibility === "public"
+          ? requireAgentWritePermission(
+              agent,
+              args.member,
+              "create workflows on this agent",
+            )
+          : requireVisibleAgentForPrivateWorkflowCreate(agent, args.member);
+      if (permissionError) {
+        return { kind: "error" as const, response: permissionError };
+      }
+      const [existing] = await tx
+        .select({ id: workflows.id })
+        .from(workflows)
+        .where(
+          workflowSlugCondition({
+            orgId: args.orgId,
+            agentId: agent.id,
+            ownerUserId: args.member.userId,
+            name: args.body.name,
+            visibility: args.visibility,
+          }),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (existing) {
+        return {
+          kind: "error" as const,
+          response: workflowSlugConflict(args.visibility, args.body.name),
+        };
+      }
+      // Cleanup takes this same lock before checking Workflow absence, so even
+      // an uncertain COMMIT cannot let cleanup race a late publication.
+      const [storage] = await tx
+        .select({ id: storages.id })
+        .from(storages)
+        .where(eq(storages.id, args.volume.version.storageId))
+        .for("update");
+      signal.throwIfAborted();
+      if (!storage) {
+        throw new Error(
+          `Prepared workflow storage not found: ${args.workflowId}`,
+        );
+      }
+      const { body, member, visibility } = args;
+      const currentTime = nowDate();
+      const [workflow] = await tx
+        .insert(workflows)
+        .values(workflowCreationRowValues(args, currentTime))
+        .onConflictDoNothing()
+        .returning({ id: workflows.id });
+      signal.throwIfAborted();
+      if (!workflow) {
+        return {
+          kind: "error" as const,
+          response: workflowSlugConflict(visibility, body.name),
+        };
+      }
+      let chatThreadId: string | null = null;
+      if (body.chatThreadId) {
+        const [thread] = await tx
+          .select({ id: chatThreads.id })
+          .from(chatThreads)
+          .where(
+            and(
+              eq(chatThreads.id, body.chatThreadId),
+              eq(chatThreads.userId, member.userId),
+              eq(chatThreads.agentId, body.agentId),
+            ),
+          )
+          .limit(1)
+          .for("update");
+        chatThreadId = thread?.id ?? null;
+      }
+      signal.throwIfAborted();
+      if (chatThreadId) {
+        await tx.insert(workflowUserAutomationThreads).values({
+          orgId: args.orgId,
+          userId: member.userId,
+          workflowId: workflow.id,
+          chatThreadId,
+          createdAt: currentTime,
+          updatedAt: currentTime,
+        });
+        signal.throwIfAborted();
+      }
+      const { rowCount: published } = await tx.execute(
+        preparedVolumePublicationSql(args.volume, nowDate()),
       );
-    }
-    signal.throwIfAborted();
-    return { kind: "created" as const, workflow, chatThreadId };
-  });
-}
+      if (published !== 1) {
+        throw new StorageVersionIdentityConflictError(
+          args.volume.version.versionId,
+        );
+      }
+      signal.throwIfAborted();
+      return { kind: "created" as const, workflow, chatThreadId };
+    });
+  },
+);
+
 const cleanupUnpublishedWorkflow$ = command(
   async (
     { set },
@@ -577,8 +536,8 @@ const prepareAndCreateWorkflow$ = command(
           },
           signal,
         );
-        const created = await createPreparedWorkflow(
-          set(writeDb$),
+        const created = await set(
+          commitPreparedWorkflow$,
           { ...args, workflowId, volume },
           signal,
         );
@@ -636,12 +595,7 @@ export const createWorkflowRecord$ = command(
         ),
       };
     }
-    const error = await validateWorkflowCreation(
-      set(writeDb$),
-      args,
-      false,
-      signal,
-    );
+    const error = await set(validateWorkflowCreation$, args, signal);
     if (error) {
       return { kind: "error", response: error };
     }
@@ -824,8 +778,8 @@ const updateWorkflowInner$ = command(
         );
       }
 
-      const slugConflict = await requireWorkflowSlugAvailableForVisibility(
-        writeDb,
+      const slugConflict = await set(
+        requireWorkflowSlugAvailable$,
         {
           orgId: auth.orgId,
           agentId: visible.workflow.agentId,
@@ -834,6 +788,7 @@ const updateWorkflowInner$ = command(
           visibility: visible.workflow.visibility,
           excludeWorkflowId: visible.workflow.id,
         },
+        signal,
       );
       signal.throwIfAborted();
       if (slugConflict) {
@@ -1514,91 +1469,122 @@ interface VisibilityTransition {
   readonly member: WorkflowMember;
 }
 
-async function applyVisibilityUpdate(
-  db: Db,
-  args: {
-    readonly workflow: Pick<
-      WorkflowRow,
-      | "id"
-      | "orgId"
-      | "agentId"
-      | "ownerUserId"
-      | "name"
-      | "officialDefinitionName"
-      | "visibility"
-    >;
-    readonly updatedByUserId: string;
-    readonly visibility: "public" | "private";
+const applyWorkflowVisibility$ = command(
+  async (
+    { set },
+    args: {
+      readonly workflow: Pick<
+        WorkflowRow,
+        | "id"
+        | "orgId"
+        | "agentId"
+        | "ownerUserId"
+        | "name"
+        | "officialDefinitionName"
+        | "visibility"
+      >;
+      readonly updatedByUserId: string;
+      readonly visibility: "public" | "private";
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const visibilityChanged = await db.transaction(async (tx) => {
+      const [agent] = await tx
+        .select({ id: agents.id })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.id, args.workflow.agentId),
+            eq(agents.orgId, args.workflow.orgId),
+          ),
+        )
+        .for("key share")
+        .limit(1);
+      if (!agent) {
+        return false;
+      }
+      const workflowCondition = and(
+        eq(workflows.id, args.workflow.id),
+        eq(workflows.orgId, args.workflow.orgId),
+        eq(workflows.agentId, args.workflow.agentId),
+        eq(workflows.ownerUserId, args.workflow.ownerUserId),
+        eq(workflows.visibility, args.workflow.visibility),
+        isNull(workflows.officialDefinitionName),
+      );
+      const [locked] = await tx
+        .select({ id: workflows.id })
+        .from(workflows)
+        .where(workflowCondition)
+        .for("update")
+        .limit(1);
+      if (!locked) {
+        return false;
+      }
+
+      const scopes = [
+        { orgId: args.workflow.orgId, agentId: args.workflow.agentId },
+        {
+          orgId: args.workflow.orgId,
+          agentId: args.workflow.agentId,
+          userId: args.workflow.ownerUserId,
+        },
+      ] as const;
+      await tx
+        .insert(storagePublicationGenerations)
+        .values(publicationGenerationValues(scopes))
+        .onConflictDoNothing();
+      const publicationKey = workflowPublicationKey(args.workflow.id);
+      const currentScope =
+        args.workflow.visibility === "public" ? scopes[0] : scopes[1];
+      const [publication] = await tx
+        .select({ token: storagePublicationTokens.token })
+        .from(storagePublicationTokens)
+        .innerJoin(
+          storagePublicationGenerations,
+          and(
+            eq(
+              storagePublicationGenerations.orgId,
+              storagePublicationTokens.orgId,
+            ),
+            eq(
+              storagePublicationGenerations.agentId,
+              storagePublicationTokens.agentId,
+            ),
+            eq(
+              storagePublicationGenerations.subject,
+              storagePublicationTokens.subject,
+            ),
+          ),
+        )
+        .where(publicationKeyCondition(currentScope, publicationKey))
+        .limit(1);
+      if (publication) {
+        return false;
+      }
+
+      const [updated] = await tx
+        .update(workflows)
+        .set({
+          visibility: args.visibility,
+          updatedBy: args.updatedByUserId,
+          updatedAt: nowDate(),
+        })
+        .where(workflowCondition)
+        .returning({ id: workflows.id });
+      if (!updated) {
+        return false;
+      }
+      for (const scope of scopes) {
+        await tx.execute(lockPublicationScopeSql(scope, nowDate()));
+        await tx.execute(retirePublicationSql(scope, publicationKey));
+      }
+      return true;
+    });
+    signal.throwIfAborted();
+    return visibilityChanged;
   },
-): Promise<boolean> {
-  return await db.transaction(async (tx) => {
-    const [agent] = await tx
-      .select({ id: agents.id })
-      .from(agents)
-      .where(
-        and(
-          eq(agents.id, args.workflow.agentId),
-          eq(agents.orgId, args.workflow.orgId),
-        ),
-      )
-      .for("key share")
-      .limit(1);
-    if (!agent) {
-      return false;
-    }
-    const workflowCondition = and(
-      eq(workflows.id, args.workflow.id),
-      eq(workflows.orgId, args.workflow.orgId),
-      eq(workflows.agentId, args.workflow.agentId),
-      eq(workflows.ownerUserId, args.workflow.ownerUserId),
-      eq(workflows.visibility, args.workflow.visibility),
-      isNull(workflows.officialDefinitionName),
-    );
-    const [locked] = await tx
-      .select({ id: workflows.id })
-      .from(workflows)
-      .where(workflowCondition)
-      .for("update")
-      .limit(1);
-    if (!locked) {
-      return false;
-    }
-
-    const scopes = [
-      { orgId: args.workflow.orgId, agentId: args.workflow.agentId },
-      {
-        orgId: args.workflow.orgId,
-        agentId: args.workflow.agentId,
-        userId: args.workflow.ownerUserId,
-      },
-    ] as const;
-    await ensurePublicationGenerations(tx, scopes);
-    const publicationKey = workflowPublicationKey(args.workflow.id);
-    const currentScope =
-      args.workflow.visibility === "public" ? scopes[0] : scopes[1];
-    if (await publicationIsPending(tx, currentScope, publicationKey)) {
-      return false;
-    }
-
-    const [updated] = await tx
-      .update(workflows)
-      .set({
-        visibility: args.visibility,
-        updatedBy: args.updatedByUserId,
-        updatedAt: nowDate(),
-      })
-      .where(workflowCondition)
-      .returning({ id: workflows.id });
-    if (!updated) {
-      return false;
-    }
-    for (const scope of scopes) {
-      await tx.execute(lockPublicationScopeSql(scope, nowDate()));
-      await tx.execute(retirePublicationSql(scope, publicationKey));
-    }
-    return true;
-  });
-}
+);
 
 function summaryFrom(
   args: VisibilityTransition,
@@ -1619,36 +1605,60 @@ function summaryFrom(
 
 type NotFoundResponse = ReturnType<typeof notFound>;
 
-async function loadVisibilityTransition(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly member: WorkflowMember;
-    readonly workflowId: string;
+const loadVisibilityTransition$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly member: WorkflowMember;
+      readonly workflowId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<VisibilityTransition | NotFoundResponse> => {
+    const [visible] = await get(db$)
+      .select({
+        workflow: workflows,
+        agent: {
+          id: agents.id,
+          orgId: agents.orgId,
+          owner: agents.owner,
+          visibility: agents.visibility,
+          name: agents.name,
+          displayName: agents.displayName,
+        },
+      })
+      .from(workflows)
+      .innerJoin(agents, eq(workflows.agentId, agents.id))
+      .where(
+        and(
+          eq(workflows.orgId, args.orgId),
+          eq(workflows.id, args.workflowId),
+          visibleWorkflowCondition(args.member),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!visible) {
+      return workflowNotFound(args.workflowId);
+    }
+    return { ...visible, member: args.member };
   },
-): Promise<VisibilityTransition | NotFoundResponse> {
-  const visible = await loadVisibleWorkflowById(db, {
-    orgId: args.orgId,
-    member: args.member,
-    workflowId: args.workflowId,
-  });
-  if (!visible) {
-    return workflowNotFound(args.workflowId);
-  }
-  return { ...visible, member: args.member };
-}
+);
 
 const publishInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const member = memberFromAuth(auth);
   const params = get(pathParamsOf(workflowVisibilityContract.publish));
 
-  const writeDb = set(writeDb$);
-  const loaded = await loadVisibilityTransition(writeDb, {
-    orgId: auth.orgId,
-    member,
-    workflowId: params.workflowId,
-  });
+  const loaded = await set(
+    loadVisibilityTransition$,
+    {
+      orgId: auth.orgId,
+      member,
+      workflowId: params.workflowId,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   if ("status" in loaded) {
     return loaded;
@@ -1670,22 +1680,32 @@ const publishInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return publishError;
   }
 
-  const slugError = await requirePublicWorkflowSlugAvailable(writeDb, {
-    orgId: auth.orgId,
-    agentId: workflow.agentId,
-    name: workflow.name,
-    excludeWorkflowId: workflow.id,
-  });
+  const slugError = await set(
+    requireWorkflowSlugAvailable$,
+    {
+      orgId: auth.orgId,
+      agentId: workflow.agentId,
+      ownerUserId: workflow.ownerUserId,
+      visibility: "public",
+      name: workflow.name,
+      excludeWorkflowId: workflow.id,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   if (slugError) {
     return slugError;
   }
 
-  const updated = await applyVisibilityUpdate(writeDb, {
-    workflow,
-    updatedByUserId: auth.userId,
-    visibility: "public",
-  });
+  const updated = await set(
+    applyWorkflowVisibility$,
+    {
+      workflow,
+      updatedByUserId: auth.userId,
+      visibility: "public",
+    },
+    signal,
+  );
   signal.throwIfAborted();
   if (!updated) {
     return conflict("Workflow changed during publish; retry the request");
@@ -1703,12 +1723,15 @@ const demoteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const member = memberFromAuth(auth);
   const params = get(pathParamsOf(workflowVisibilityContract.demote));
 
-  const writeDb = set(writeDb$);
-  const loaded = await loadVisibilityTransition(writeDb, {
-    orgId: auth.orgId,
-    member,
-    workflowId: params.workflowId,
-  });
+  const loaded = await set(
+    loadVisibilityTransition$,
+    {
+      orgId: auth.orgId,
+      member,
+      workflowId: params.workflowId,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   if ("status" in loaded) {
     return loaded;
@@ -1725,22 +1748,31 @@ const demoteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return reviewError;
   }
 
-  const slugError = await requirePrivateWorkflowSlugAvailable(writeDb, {
-    orgId: auth.orgId,
-    agentId: loaded.workflow.agentId,
-    ownerUserId: loaded.workflow.ownerUserId,
-    name: loaded.workflow.name,
-  });
+  const slugError = await set(
+    requireWorkflowSlugAvailable$,
+    {
+      orgId: auth.orgId,
+      agentId: loaded.workflow.agentId,
+      ownerUserId: loaded.workflow.ownerUserId,
+      visibility: "private",
+      name: loaded.workflow.name,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   if (slugError) {
     return slugError;
   }
 
-  const updated = await applyVisibilityUpdate(writeDb, {
-    workflow: loaded.workflow,
-    updatedByUserId: auth.userId,
-    visibility: "private",
-  });
+  const updated = await set(
+    applyWorkflowVisibility$,
+    {
+      workflow: loaded.workflow,
+      updatedByUserId: auth.userId,
+      visibility: "private",
+    },
+    signal,
+  );
   signal.throwIfAborted();
   if (!updated) {
     return conflict("Workflow changed during demotion; retry the request");

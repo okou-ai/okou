@@ -5,9 +5,7 @@ import {
   storagePublicationGenerations,
   storagePublicationTokens,
 } from "@okouai/db/schema/storage-publication-fence";
-import { and, eq, sql, type SQL } from "drizzle-orm";
-
-import type { Tx } from "../../lib/db-types";
+import { eq, sql, type SQL } from "drizzle-orm";
 
 /**
  * Reserve-before-IO ordering for Agent instructions and workflow volume
@@ -134,43 +132,4 @@ export function publicationGenerationValues(
       subject: subjectForScope(scope),
     };
   });
-}
-
-/** Create missing scope generation rows without advancing existing ones. */
-export async function ensurePublicationGenerations(
-  tx: Tx,
-  scopes: readonly PublicationFenceScope[],
-): Promise<void> {
-  await tx
-    .insert(storagePublicationGenerations)
-    .values(publicationGenerationValues(scopes))
-    .onConflictDoNothing();
-}
-
-/** Whether any reservation of this key is still in flight for its scope. */
-export async function publicationIsPending(
-  tx: Tx,
-  scope: PublicationFenceScope,
-  publicationKey: string,
-): Promise<boolean> {
-  const [publication] = await tx
-    .select({ token: storagePublicationTokens.token })
-    .from(storagePublicationTokens)
-    .innerJoin(
-      storagePublicationGenerations,
-      and(
-        eq(storagePublicationGenerations.orgId, storagePublicationTokens.orgId),
-        eq(
-          storagePublicationGenerations.agentId,
-          storagePublicationTokens.agentId,
-        ),
-        eq(
-          storagePublicationGenerations.subject,
-          storagePublicationTokens.subject,
-        ),
-      ),
-    )
-    .where(publicationKeyCondition(scope, publicationKey))
-    .limit(1);
-  return publication !== undefined;
 }
