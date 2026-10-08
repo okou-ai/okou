@@ -7764,12 +7764,23 @@ production migration journal completion; record it only after the real release.
 
 ### Cloudflare SSH concurrency repair (#37941)
 
-Configuration rename/token update, deletion, Personal-to-Organization promotion
-and Organization-to-Personal adoption acquire current referencing hosts in UUID
+Credential rotation, deletion, Personal-to-Organization promotion and
+Organization-to-Personal adoption acquire current referencing hosts in UUID
 order with `FOR NO KEY UPDATE`, then the configuration `FOR UPDATE`. The weaker
 host lock remains compatible with implicit `FOR KEY SHARE` checks from restrictive
 parent-login deletion. Runner pin/observation continues to acquire its host
 before shared login/configuration authority.
+
+The local optimization in #37975 separates metadata-only rename from that
+fanout protocol. Rename locks only the visible configuration `FOR UPDATE`,
+revalidates current-scope management permission, expected revision and revision
+exhaustion, and updates name/revision/time without changing config generation.
+Its owner-filtered host-ID/name response is a nonlocking MVCC read, not an impact
+or authority check. It never follows configuration authority with a host row
+lock or host write, so it adds no reverse host-lock edge. Host generations,
+learned pins, independent login, endpoint, binding and rebind state remain
+unchanged; only the existing configuration metadata invalidation runs after
+commit.
 
 Selected host create/edit rechecks same-organization Organization or same-owner
 Personal visibility with `FOR SHARE` inside the write transaction, before inline
@@ -7779,21 +7790,39 @@ check rejects a bad selection before preparing a new login; it is not commit
 authority. Configuration existence and the same-org FK do not prove Personal
 visibility, and `FOR KEY SHARE` does not fence a non-key scope change.
 
-After the exclusive configuration fence, each mutation rescans references. A
-new reference outside the locked set ends an explicitly unwritten attempt;
-there is at most one fresh host-first transaction with the same prepared values.
-A second expansion conflicts. No transaction acquires a new host in reverse
-order after the configuration fence, and no exception/deadlock or ambiguous
-write is replayed. Current revision, management/scope, exhaustion and exact
-impact checks precede business writes. An empty-set preview cannot authorize
-affecting a newly bound member host. Encryption stays outside transactions;
-identifier-only best-effort notices and existing batching/cache windows stay
-post-commit. Login, target, learned trust, atomic generations and explicit
-protected `needs_rebind` behavior are preserved.
+After the exclusive configuration fence, each authority-changing mutation
+counts current references with the same org/config predicate and reuses its
+first locked metadata result, instead of loading all host metadata again.
+Under PostgreSQL READ COMMITTED, the locking reader rechecks a concurrently
+changed tuple before returning it: deleted/rebound nonmatches are omitted, and
+updated matches are returned locked. Every actually returned member therefore
+remains in the fresh count's set; its retained lock prevents deletion, rebinding
+and relevant metadata changes. Config `FOR SHARE` admission prevents later
+incoming bindings from escaping the exclusive configuration fence. The locked
+set is a subset of the counted set, so equal counts prove equal identities under
+these premises, not for arbitrary sets. A smaller count or missing aggregate row
+fails as an invariant violation. Impact, exhaustion and incompatible-owner
+checks use the complete retained records, including their current generations.
 
-No schema, migration, App/Runner DTO or provider changes are introduced. Old
-API configuration-first/unlocked writers retain the original concurrency risks
-while serving; code merge or green CI does not prove that they have drained.
+A larger count ends an explicitly unwritten attempt; there is at most one fresh
+host-first transaction with the same prepared values. A second expansion
+conflicts. No transaction acquires a new host in reverse order after the
+configuration fence, and no exception/deadlock or ambiguous write is replayed.
+Current revision, management/scope, exhaustion and exact impact checks precede
+business writes. An empty-set preview cannot authorize affecting a newly bound
+member host. Encryption stays outside transactions; identifier-only best-effort
+notices and existing batching/cache windows stay post-commit. Login, target,
+learned trust, atomic generations and explicit protected `needs_rebind` behavior
+are preserved. Counting still scans references and token rotation still advances
+N persisted host generations synchronously; no measured latency/throughput gain
+is established by the structural optimization.
+
+No schema, migration, App/Runner DTO or provider changes are introduced. The
+#37955 host-first writers and #37975 optimized writers can coexist with the same
+authority and generation contracts; no new migration or client cutover is
+required for the optimization. Older pre-#37955 API configuration-first/unlocked
+writers retain the original concurrency risks while serving; code merge or
+green CI does not prove that they have drained.
 This change does not authorize production drain, deployment or activation.
 Independent SSH-login revision semantics are unchanged. Writer inventory found
 login rotation host-before-login and Clerk cleanup host-before-login-before-config,
