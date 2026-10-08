@@ -28,14 +28,8 @@ export interface PiMemoryQuotaDecision {
     | "metadata_unrecognized"
     | "metadata_read_failed"
     | "metadata_timeout"
-    | "cash_percentage_unknown"
-    | "entitlement_stale";
-  readonly bucket?:
-    | "primary"
-    | "secondary"
-    | "short"
-    | "weekly"
-    | "member_pool";
+    | "cash_percentage_unknown";
+  readonly bucket?: "primary" | "secondary" | "member_pool";
   readonly remainingPercent?: number;
 }
 

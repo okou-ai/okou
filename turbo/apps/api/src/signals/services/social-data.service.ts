@@ -1,8 +1,3 @@
-import { resolveUsageAllowanceAvailability$ } from "./usage-allowance-availability.service";
-import {
-  allowanceAvailability,
-  allowanceAvailabilityQuery,
-} from "./usage-allowance-availability-plan";
 import { settleOrgUsage$ } from "./credit-usage-settlement.service";
 import { isDeepStrictEqual } from "node:util";
 
@@ -269,7 +264,7 @@ async function checkBudget(
     readonly resolution: UsagePricingResolution;
   },
   signal: AbortSignal,
-): Promise<ErrorResponse | "allowance_refresh_required" | null> {
+): Promise<ErrorResponse | null> {
   if (args.maxCredits < args.estimatedCredits) {
     return errorResponse(
       402,
@@ -303,11 +298,6 @@ async function checkBudget(
   if (args.maxCredits === 0) {
     return null;
   }
-  const at = nowDate();
-  const allowanceRows = await tx
-    .select()
-    .from(allowanceAvailabilityQuery(args.auth.orgId, at));
-  signal.throwIfAborted();
   return await checkManagedCreditsSnapshotInDb(
     tx,
     {
@@ -325,7 +315,6 @@ async function checkBudget(
       enforceBalance: true,
     },
     args.resolution,
-    allowanceAvailability(allowanceRows, at),
     signal,
   );
 }
@@ -340,7 +329,7 @@ async function admitJob(
     readonly resolution: UsagePricingResolution;
   },
   signal: AbortSignal,
-): Promise<CreatedResponse | ErrorResponse | "allowance_refresh_required"> {
+): Promise<CreatedResponse | ErrorResponse> {
   const [owner] = await tx
     .select({ orgId: orgMetadata.orgId })
     .from(orgMetadata)
@@ -425,26 +414,9 @@ export const createSocialDataJob$ = command(
         const estimate = await inspectSocialDataProviderPlan(plan, signal);
         signal.throwIfAborted();
         const resolution = get(usagePricingResolution$);
-        const admitted = await db.transaction((tx) => {
+        return await db.transaction((tx) => {
           return admitJob(tx, { ...args, plan, estimate, resolution }, signal);
         });
-        if (admitted !== "allowance_refresh_required") {
-          return admitted;
-        }
-        // The owner-row transaction has ended. External Stripe preparation and
-        // the allowance CAS refresh must not run while that row is owned.
-        await set(resolveUsageAllowanceAvailability$, args.auth.orgId, signal);
-        signal.throwIfAborted();
-        const refreshed = await db.transaction((tx) => {
-          return admitJob(tx, { ...args, plan, estimate, resolution }, signal);
-        });
-        return refreshed === "allowance_refresh_required"
-          ? errorResponse(
-              402,
-              "INSUFFICIENT_CREDITS",
-              "Insufficient credits. Please add credits to continue.",
-            )
-          : refreshed;
       })(),
       signal,
     );

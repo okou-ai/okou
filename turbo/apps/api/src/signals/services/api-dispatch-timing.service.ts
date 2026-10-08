@@ -252,7 +252,6 @@ export type ApiDispatchTimingActionType =
   | "api_dispatch_queue_first_thread_lock_wait"
   | "api_dispatch_validate_thread_session_snapshot_thread"
   | "api_dispatch_validate_thread_session_snapshot_session"
-  | "api_dispatch_activate_usage_allowance_windows"
   | "api_dispatch_load_thread_session_binding"
   | "api_dispatch_update_thread_session_binding"
   | "api_dispatch_prepare_storage_manifest"
