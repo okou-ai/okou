@@ -62,6 +62,18 @@ export async function validatePermanentDiscordFoundation(
       "uq_discord_org_installations_org",
     );
     await client.query(
+      `INSERT INTO discord_user_identities (discord_user_id, user_id)
+       VALUES ($1, $2), ($3, $4)`,
+      [senderA, userA, senderB, userB],
+    );
+    await rejectWrite(
+      `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id)
+       VALUES ($1, 'unowned-sender', 'unowned-user')`,
+      [guildA],
+      "23503",
+      "fk_discord_connection_identity_owner",
+    );
+    await client.query(
       `INSERT INTO discord_org_connections (id, guild_id, discord_user_id, user_id)
        VALUES ($1, $2, $3, $4), ($5, $2, $6, $7), ($8, $9, $3, $4)`,
       [
@@ -89,6 +101,12 @@ export async function validatePermanentDiscordFoundation(
       [guildA, userA],
       "23505",
       "uq_discord_org_connections_guild_user",
+    );
+    await rejectWrite(
+      `DELETE FROM discord_user_identities WHERE discord_user_id = $1`,
+      [senderA],
+      "23001",
+      "fk_discord_connection_identity_owner",
     );
     await client.query(
       `INSERT INTO discord_user_dm_preferences (discord_user_id, connection_id, user_id)

@@ -26,6 +26,11 @@ export async function validatePermanentDiscordChat(
       [guild, org],
     );
     await client.query(
+      `INSERT INTO discord_user_identities (discord_user_id, user_id)
+       VALUES ('sender', $1)`,
+      [user],
+    );
+    await client.query(
       `INSERT INTO discord_org_connections (id, guild_id, discord_user_id, user_id)
        VALUES ($1, $2, 'sender', $3)`,
       [connection, guild, user],
