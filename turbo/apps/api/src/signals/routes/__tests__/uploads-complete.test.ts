@@ -138,6 +138,19 @@ async function createRunUploadFixture(
   };
 }
 
+async function useLegacyPublicUploads(actor: ApiTestUser) {
+  createRouteMocks(context).clerk.session(actor.userId, requireOrgId(actor));
+  await accept(
+    setupApp({ context, routes: featureSwitchesRoutes })(
+      featureSwitchesContract,
+    ).update({
+      headers: { authorization: "Bearer clerk-session" },
+      body: { switches: { [FeatureSwitchKey.PrivateArtifacts]: false } },
+    }),
+    [200],
+  );
+}
+
 function addUploadObject(
   fixture: Pick<RunUploadFixture, "actor" | "objectStore">,
   fileId: string,
@@ -392,6 +405,7 @@ describe("POST /api/uploads/complete", () => {
 
   it("resolves the CDN from the immutable object layout marker", async () => {
     const fixture = await createRunUploadFixture();
+    await useLegacyPublicUploads(fixture.actor);
     const prepared = await chat.prepareUpload(fixture.actor, {
       filename: "okou-report.pdf",
       contentType: "application/pdf",
@@ -426,6 +440,7 @@ describe("POST /api/uploads/complete", () => {
 
   it("keeps completion idempotent while an Okou artifact adopts its short URL", async () => {
     const fixture = await createRunUploadFixture();
+    await useLegacyPublicUploads(fixture.actor);
     const prepared = await chat.prepareUpload(fixture.actor, {
       filename: "okou-cutover.pdf",
       contentType: "application/pdf",

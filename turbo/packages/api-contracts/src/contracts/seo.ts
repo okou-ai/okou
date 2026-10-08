@@ -114,6 +114,8 @@ const seoResponseBaseSchema = z.object({
   operation: seoOperationSchema,
   creditsCharged: z.number().int().nonnegative().nullable(),
   result: z.unknown(),
+  // Present only for usable SERP 40106 results; raw provider metadata is retained.
+  partialResults: z.literal(true).optional(),
 });
 
 export const seoResponseSchema = seoResponseBaseSchema.extend({

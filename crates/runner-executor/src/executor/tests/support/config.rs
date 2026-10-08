@@ -51,7 +51,6 @@ pub(in crate::executor::tests) async fn test_executor_config(dir: &Path) -> Exec
         background_fill: crate::storage_cache::StorageCacheBackgroundFillCoordinator::new()
             .unwrap(),
         pre_spawn_admission: crate::pre_spawn_admission::PreSpawnAdmission::new(2).unwrap(),
-        storage_baseline_observer: Default::default(),
         home: HomePaths::with_root(dir.to_path_buf()),
         workspace_cache: None,
     }

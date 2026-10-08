@@ -41,7 +41,10 @@ import {
   type UsagePricingKey,
   type UsagePricingRow,
 } from "../../../test-fixtures/system-config-seeds";
-import { deleteFeatureSwitchesForUser } from "./helpers/feature-switches";
+import {
+  deleteFeatureSwitchesForUser,
+  updateFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { seedCompose$, seedRun$ } from "./helpers/usage-state";
 import {
@@ -1895,7 +1898,10 @@ describe("POST /api/image-io/generate", () => {
       creditsCharged: 50,
       billingCategory: "output_image.medium.standard",
       billingQuantity: 1,
-      url: expect.stringMatching(/^https:\/\/a\.okou\.io\//u),
+      url: expect.stringMatching(
+        /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.png$/u,
+      ),
+      privateArtifacts: true,
     });
     mocks.clerk.session(fixture.userId, fixture.orgId);
     const billingStatus = await accept(
@@ -2026,6 +2032,9 @@ describe("POST /api/image-io/generate", () => {
   it("generates image files on the Okou CDN for Okou run-scoped agent tokens", async () => {
     mockEnv("OKOU_API_BACKEND_URL", API_ORIGIN);
     const fixture = await seedRunScopedImageRun("gpt-image-1", 10_000);
+    await updateFeatureSwitchesForUser(context, fixture, {
+      privateArtifacts: false,
+    });
     const { runId } = fixture;
     const pricingFixture = await createScopedImagePricing({
       configured: GPT_IMAGE_1_PRICING,
@@ -3248,9 +3257,14 @@ describe("POST /api/image-io/generate", () => {
       outputFormat: "jpeg",
       billingCategory: "output_megapixel",
       billingQuantity: 2,
-      sourceUrl: FAL_FLUX_PRO_11_MEDIA_URL,
+      privateArtifacts: true,
+      url: expect.stringMatching(
+        /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.jpg$/u,
+      ),
       seed: 99,
     });
+    expect(body).not.toHaveProperty("sourceUrl");
+    expect(body).not.toHaveProperty("embedUrl");
     expect(body).not.toHaveProperty("usage");
     expect(falCalls).toBe(1);
     expect(observedAuthorization).toBe("Key test-fal-key");
@@ -3277,13 +3291,9 @@ describe("POST /api/image-io/generate", () => {
     const fileId = String(body.id);
     const filename = String(body.filename);
     const putInput = putObjectInput();
-    expect(putInput.Key).toMatch(/^artifacts\/[0-9a-z]{10}\.jpg$/u);
-    expect(putInput.Metadata).toStrictEqual({
-      "artifact-id": fileId,
-      filename: encodeURIComponent(filename),
-      "public-brand": "okou",
-      "user-id": encodeURIComponent(fixture.userId),
-    });
+    expect(putInput.Bucket).toBe("test-private-artifacts");
+    expect(putInput.Key).toBe(`private-artifacts/${fileId}/${filename}`);
+    expect(putInput.Metadata).toStrictEqual({ "artifact-id": fileId });
     expect(putInput.ContentType).toBe("image/jpeg");
 
     // The megapixel category/quantity are asserted in the result body above;
@@ -3368,10 +3378,14 @@ describe("POST /api/image-io/generate", () => {
         outputFormat: "jpeg",
         billingCategory: "output_megapixel",
         billingQuantity: 2,
-        sourceUrl: FAL_FLUX_MEDIA_URL,
+        privateArtifacts: true,
+        url: expect.stringMatching(
+          /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.jpg$/u,
+        ),
         sourceImageUrls: [MOCKUP_IMAGE_URL],
         seed: 42,
       });
+      expect(body).not.toHaveProperty("sourceUrl");
       expect(body).not.toHaveProperty("imagePromptStrength");
       expect(falCalls).toBe(1);
       expect(observedAuthorization).toBe("Key test-fal-key");
@@ -3907,7 +3921,10 @@ describe("POST /api/image-io/generate", () => {
         outputFormat: "png",
         billingCategory: "output_image.1k",
         billingQuantity: 1,
-        sourceUrl: FAL_QWEN_IMAGE_3_MEDIA_URL,
+        privateArtifacts: true,
+        url: expect.stringMatching(
+          /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.png$/u,
+        ),
         seed: 7,
       });
       expect(observedBody).toStrictEqual({
@@ -4111,7 +4128,10 @@ describe("POST /api/image-io/generate", () => {
         creditsCharged: FAL_QWEN_IMAGE_3_STANDARD_TIER_CREDITS,
         model: "alibaba/qwen-image-3/text-to-image",
         billingCategory: "output_image.1k",
-        sourceUrl: FAL_QWEN_IMAGE_3_MEDIA_URL,
+        privateArtifacts: true,
+        url: expect.stringMatching(
+          /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.png$/u,
+        ),
         sourceImageUrls,
       });
       expect(falCalls).toBe(1);
@@ -4224,7 +4244,10 @@ describe("POST /api/image-io/generate", () => {
         outputFormat: "png",
         billingCategory: "output_image",
         billingQuantity: 1,
-        sourceUrl: FAL_NANO_BANANA_2_LITE_MEDIA_URL,
+        privateArtifacts: true,
+        url: expect.stringMatching(
+          /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.png$/u,
+        ),
       });
       // Lite always renders 1K, so it takes no resolution parameter.
       expect(observedBody).toStrictEqual({
@@ -4320,9 +4343,13 @@ describe("POST /api/image-io/generate", () => {
         outputFormat: "webp",
         billingCategory: "output_image",
         billingQuantity: 1,
-        sourceUrl: FAL_NANO_BANANA_2_MEDIA_URL,
+        privateArtifacts: true,
+        url: expect.stringMatching(
+          /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.webp$/u,
+        ),
         seed: 123,
       });
+      expect(body).not.toHaveProperty("sourceUrl");
       expect(falCalls).toBe(1);
       expect(observedAuthorization).toBe("Key test-fal-key");
       expect(observedBody).toStrictEqual({
@@ -4421,9 +4448,13 @@ describe("POST /api/image-io/generate", () => {
         outputFormat: "png",
         billingCategory: "output_image",
         billingQuantity: 1,
-        sourceUrl: FAL_NANO_BANANA_2_MEDIA_URL,
+        privateArtifacts: true,
+        url: expect.stringMatching(
+          /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.png$/u,
+        ),
         sourceImageUrls,
       });
+      expect(body).not.toHaveProperty("sourceUrl");
       expect(falCalls).toBe(1);
       expect(observedAuthorization).toBe("Key test-fal-key");
       expect(observedBody).toStrictEqual({

@@ -40,6 +40,30 @@ Haiku 5.5, DeepSeek V4.1 Flash). The Codex projection is unchanged.
 the Runner back below this release while the switch is on leaves generation 5
 jobs queued; disable the switch first.
 
+## SEO partial SERP results (issue #36799)
+
+`POST /api/seo/serp` returns HTTP 200 for DataForSEO task status `40106`
+when the successful single-task envelope contains non-empty SERP items.
+The response includes optional `partialResults: true` and retains the full raw
+provider response in `result`, including the task status and completeness
+message. Billing uses the provider-reported cost, not the requested depth, and
+completed partial results are not retried. HTTP/provider/envelope failures,
+invalid partial results, and `40106` outside SERP remain failures. Full success
+and `40102` no-search-results responses are unchanged and omit the new field.
+
+- **Old CLI → new API:** the additive property does not invalidate the old
+  response schema. Raw task status/message and available items are still
+  returned; the old human formatter does not add a dedicated partial-result
+  warning.
+- **New CLI → old API:** ordinary responses without the optional property
+  render as before. An old API still returns 502 for `40106`, which the CLI
+  continues to surface as an error; the CLI does not invent partial data.
+- **New CLI → new API:** human output explicitly warns about incomplete
+  results; `--json` preserves the marker, raw provider metadata, and billing.
+
+No database or Runner protocol changes, rollout fallback, or version floor are
+required. This change does not deploy or activate production changes.
+
 ## Desktop Computer Use plugins retired (2026-10-08)
 
 The Native Desktop replacement in #37889 removed the filesystem and MCP plugin
@@ -64,6 +88,42 @@ The existing capability-empty host behavior is preserved. Shared Computer Use ta
 and screenshot retention remain intact; this change performs no historical
 command or object-storage deletion. Retired switch overrides already pass through
 the general registry-key filtering.
+
+## Dynamic Run inputs without Agent execution configuration
+
+The first delivery of [#37970](https://github.com/okou-ai/okou/issues/37970)
+combines removal of the synthetic Agent execution configuration and baseline
+observation with current-input selection. The Agent remains the authorized
+identity for instructions, workflows, and connector selection. Framework comes
+from the current model provider, while Runner group and profile come from runtime
+routing policy. These values no longer pass through an Agent configuration.
+
+Each newly prepared Run resolves current instructions and skill resources.
+Environment precedence remains organization variables, user variables, then
+explicit current-Run overrides. A continuation no longer implicitly inherits
+the preceding Run's variables or configurable volume versions. Provider and
+connector credentials, permission checks, encryption, and the trusted platform
+environment overlay retain their existing owners. Teams status preserves its
+environment response fields, whose Agent-declared requirement lists are empty.
+
+Foreground Pi continuations resolve the current user-memory HEAD and its current
+summary projection on every Run. A disabled, missing, or pending projection keeps
+the existing no-content behavior for that Run; a later Run performs a fresh
+selection. Memory-maintenance producer pins and publication fences are unchanged.
+
+`storageMounts[].baselineCandidate` was optional observation metadata. New API
+with old Runner is compatible because the field is absent; old API with new
+Runner is compatible because the decoder ignores unknown fields. Removing the
+observer does not change immutable-version cache identity or cache application.
+The CLI and Guest launch contracts otherwise remain unchanged.
+
+This delivery requires no database migration. Native-history continuation still
+uses the existing Session, Conversation, and Checkpoint protocol. Non-memory
+writeback artifacts still use existing Session storage. Previously admitted Runs
+retain their captured launch inputs; the new selection policy applies to newly
+prepared Runs. Rolling back the API restores the previous selection policy.
+Thread-owned network storage and retirement of those persisted entities are
+later deliveries in the Epic.
 
 ## Pi turn-end stdout boundaries (2026-10-08)
 

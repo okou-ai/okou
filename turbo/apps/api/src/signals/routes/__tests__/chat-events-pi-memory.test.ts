@@ -1,8 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import {
-  CANONICAL_CODEX_MEMORY_MOUNT_PATH,
-  PI_MEMORY_ROOT,
-} from "@okouai/api-contracts/contracts/runners";
+import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
@@ -31,6 +28,7 @@ const context = testContext();
 const {
   bdd,
   api,
+  webhooks,
   chat,
   entitledChatActor,
   configureSubscriptionPiModel,
@@ -140,32 +138,15 @@ async function expectAgentChatProvenance(args: {
 }
 
 describe("CHAT-02: model-first routing", () => {
-  it("pins recall-enabled Pi memory across Sandbox turns of one session", async () => {
+  it("refreshes user memory from another Thread while resuming native Pi history", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
-    const frozenSummary =
-      "# Pi memory summary\n\nUse the exact pinned version for this session.";
-    const initialMemory = await commitMemoryVersion(context, actor, [
-      {
-        path: "MEMORY.md",
-        content: "Pi memory version pinned before the first completion.",
-      },
-      { path: "memory_summary.md", content: frozenSummary },
-    ]);
-    await seedReadyMemorySummaryProjection(
-      context,
-      actor,
-      initialMemory,
-      frozenSummary,
-    );
     const usagePricingResolution = await createGptUsagePricingResolution();
     await configureSubscriptionPiModel(actor, {}, "gpt-6-luna");
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
-      {
-        [FeatureSwitchKey.PiMemory]: true,
-      },
+      { [FeatureSwitchKey.PiMemory]: true },
     );
     mockPiResourceArchiveDownloads();
     const checkpointObjects = mockPiCheckpointObjectStore();
@@ -177,20 +158,18 @@ describe("CHAT-02: model-first routing", () => {
       model: "gpt-6-luna",
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    // The first turn has no stored history, so the Sandbox starts fresh.
     expect(firstClaim.claim.resumeSession).toBeNull();
-    expect(firstClaim.claim.piSessionId).toBe(first.threadId);
-    expect(firstClaim.claim.piLaunchConfig).toMatchObject({
-      memoryRecall: {
-        status: "ready",
-        memoryStorageId: initialMemory.storageId,
-        storageVersionId: initialMemory.versionId,
-        content: frozenSummary,
-      },
+    const initialMemory = expectCanonicalStorageManifest(
+      firstClaim.claim.storageManifest,
+    )?.storageMounts.find((mount) => {
+      return mount.name === "memory" && mount.mountPath === PI_MEMORY_ROOT;
     });
+    if (!initialMemory) {
+      throw new Error("Expected user memory in the first Pi Run");
+    }
     await completeSandboxFirstPiRun({
       actor,
-      answer: "Sandbox memory checkpoint",
+      answer: "First Pi turn completed",
       checkpointObjects,
       claim: firstClaim,
       prompt: firstPrompt,
@@ -198,69 +177,85 @@ describe("CHAT-02: model-first routing", () => {
       usagePricingResolution,
     });
 
-    const newerMemory = await commitMemoryVersion(context, actor, [
+    const publisher = await sendChatRun(actor, {
+      agentId,
+      prompt: "update shared user memory from a different Thread",
+      model: "gpt-6-luna",
+    });
+    const publisherClaim = await claimChatRun(runnerGroup, publisher.runId);
+    const content = "Use the latest user memory on the next Run.";
+    const files = [
       {
         path: "MEMORY.md",
-        content: "A newer HEAD must not replace the session-pinned version.",
+        hash: createHash("sha256").update(content).digest("hex"),
+        size: Buffer.byteLength(content),
       },
-    ]);
-    expect(newerMemory.versionId).not.toBe(initialMemory.versionId);
+    ];
+    const prepared = await webhooks.requestAgentStoragePrepare(
+      {
+        runId: publisher.runId,
+        storageId: initialMemory.storageId,
+        parentVersionId: initialMemory.versionId,
+        files,
+      },
+      publisherClaim.sandboxHeaders,
+      [200],
+    );
+    if (prepared.status !== 200) {
+      throw new Error("Expected Run-authorized memory upload preparation");
+    }
+    context.mocks.s3.send.mockResolvedValueOnce({ ContentLength: 1024 });
+    context.mocks.s3.send.mockResolvedValueOnce({ ContentLength: 1024 });
+    const committed = await webhooks.requestAgentStorageCommit(
+      {
+        runId: publisher.runId,
+        storageId: initialMemory.storageId,
+        parentVersionId: initialMemory.versionId,
+        versionId: prepared.body.versionId,
+        files,
+      },
+      publisherClaim.sandboxHeaders,
+      [200],
+    );
+    if (committed.status !== 200) {
+      throw new Error("Expected Run-authorized memory publication");
+    }
+    await cancelChatRun(actor, publisher.runId, publisherClaim.sandboxHeaders);
 
     const second = await sendChatRun(
       actor,
       {
         agentId,
         threadId: first.threadId,
-        prompt: "resume with the pinned Pi memory mount",
+        prompt: "continue with current user memory",
         model: "gpt-6-luna",
       },
       usagePricingResolution,
     );
     const claimed = await claimChatRun(runnerGroup, second.runId);
-    expect(claimed.claim.cliAgentType).toBe("pi");
-    // The resumed turn references the stored history blob.
     expect(claimed.claim.resumeSession).toMatchObject({
       sessionId: first.threadId,
       historyRef: { kind: "blob" },
     });
-    expect(claimed.claim.piLaunchConfig).toMatchObject({
-      memoryRecall: {
-        status: "ready",
-        memoryStorageId: initialMemory.storageId,
-        storageVersionId: initialMemory.versionId,
-        content: frozenSummary,
-        sourceHash: createHash("sha256").update(frozenSummary).digest("hex"),
-        sourceSize: Buffer.byteLength(frozenSummary),
-      },
-    });
-    expect(claimed.claim.appendSystemPrompt).not.toMatch(/auto.?memory/iu);
-    const storageManifest = expectCanonicalStorageManifest(
+    const mounts = expectCanonicalStorageManifest(
       claimed.claim.storageManifest,
-    );
-    if (!storageManifest) {
-      throw new Error("Expected recall-enabled Pi Storage mounts");
-    }
-    const memorySlotMounts = storageManifest.storageMounts.filter((mount) => {
+    )?.storageMounts.filter((mount) => {
       return mount.name === "memory" || mount.mountPath === PI_MEMORY_ROOT;
     });
-    expect(memorySlotMounts).toHaveLength(1);
-    expect(memorySlotMounts[0]).toMatchObject({
-      name: "memory",
-      versionId: initialMemory.versionId,
+    expect(mounts).toHaveLength(1);
+    expect(mounts?.[0]).toMatchObject({
+      storageId: initialMemory.storageId,
+      versionId: committed.body.versionId,
       mountPath: PI_MEMORY_ROOT,
-      missingRootPolicy: "preserveParentVersion",
       writeback: true,
-      archiveUrl: expect.any(String),
     });
-    expect(memorySlotMounts[0]).not.toHaveProperty("generatedBy");
-    expect(storageManifest.storageMounts).not.toContainEqual(
-      expect.objectContaining({
-        mountPath: CANONICAL_CODEX_MEMORY_MOUNT_PATH,
-      }),
-    );
-
+    expect(committed.body.versionId).not.toBe(initialMemory.versionId);
+    expect(claimed.claim.piLaunchConfig?.memoryRecall).toMatchObject({
+      storageVersionId: committed.body.versionId,
+      status: "no-content",
+    });
     await cancelChatRun(actor, second.runId, claimed.sandboxHeaders);
-  }, 90_000);
+  });
 
   it("keeps an empty recall-enabled Pi memory mount valid", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -315,11 +310,11 @@ describe("CHAT-02: model-first routing", () => {
     await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
   }, 90_000);
 
-  it("keeps a frozen projection miss no-content after the projection becomes ready", async () => {
+  it("keeps a Run's projection miss frozen and refreshes recall on the next continuation", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
-    const summary =
-      "# Delayed summary\n\nOnly a new Pi session may capture this.";
+    const usagePricingResolution = await createGptUsagePricingResolution();
+    const summary = "# Delayed summary\n\nThe next Run may capture this.";
     const memory = await commitMemoryVersion(context, actor, [
       { path: "memory_summary.md", content: summary },
     ]);
@@ -332,11 +327,12 @@ describe("CHAT-02: model-first routing", () => {
       },
     );
     mockPiResourceArchiveDownloads();
-    mockPiCheckpointObjectStore();
+    const checkpointObjects = mockPiCheckpointObjectStore();
 
+    const prompt = "freeze the projection miss";
     const frozenMiss = await sendChatRun(actor, {
       agentId,
-      prompt: "freeze the projection miss",
+      prompt,
       model: "gpt-6-luna",
     });
 
@@ -349,14 +345,36 @@ describe("CHAT-02: model-first routing", () => {
         storageVersionId: memory.versionId,
       },
     });
-
-    const newSession = await sendChatRun(actor, {
-      agentId,
-      prompt: "capture the now-ready projection in a new session",
-      model: "gpt-6-luna",
+    await completeSandboxFirstPiRun({
+      actor,
+      answer: "First Pi turn completed without memory recall",
+      checkpointObjects,
+      claim: frozenMissClaim,
+      prompt,
+      run: frozenMiss,
+      usagePricingResolution,
     });
-    const newSessionClaim = await claimChatRun(runnerGroup, newSession.runId);
-    expect(newSessionClaim.claim.piLaunchConfig).toMatchObject({
+
+    const continuation = await sendChatRun(
+      actor,
+      {
+        agentId,
+        threadId: frozenMiss.threadId,
+        prompt:
+          "capture the now-ready projection while continuing native history",
+        model: "gpt-6-luna",
+      },
+      usagePricingResolution,
+    );
+    const continuationClaim = await claimChatRun(
+      runnerGroup,
+      continuation.runId,
+    );
+    expect(continuationClaim.claim.resumeSession).toMatchObject({
+      sessionId: frozenMiss.threadId,
+      historyRef: { kind: "blob" },
+    });
+    expect(continuationClaim.claim.piLaunchConfig).toMatchObject({
       memoryRecall: {
         status: "ready",
         memoryStorageId: memory.storageId,
@@ -365,10 +383,11 @@ describe("CHAT-02: model-first routing", () => {
       },
     });
 
-    await Promise.all([
-      cancelChatRun(actor, frozenMiss.runId, frozenMissClaim.sandboxHeaders),
-      cancelChatRun(actor, newSession.runId, newSessionClaim.sandboxHeaders),
-    ]);
+    await cancelChatRun(
+      actor,
+      continuation.runId,
+      continuationClaim.sandboxHeaders,
+    );
   }, 90_000);
 
   it("injects no memory recall into a Pi launch while the owner's PiMemory is off", async () => {
@@ -392,7 +411,7 @@ describe("CHAT-02: model-first routing", () => {
       });
     }
 
-    // Off: the ready projection is never read, and the mount stays pinned.
+    // Off: the ready projection is never read; storage still uses current HEAD.
     const gated = await launchPiRun("launch Pi with PiMemory off");
     const gatedClaim = await claimChatRun(runnerGroup, gated.runId);
     expect(gatedClaim.claim.piLaunchConfig).toMatchObject({

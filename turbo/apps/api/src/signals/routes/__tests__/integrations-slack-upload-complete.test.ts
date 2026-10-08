@@ -1164,12 +1164,13 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       throw new Error("Expected canonical Slack upload initialization");
     }
     const canonicalAssetId = initialized.body.assetId;
-    const storageKey = `artifacts${new URL(initialized.body.url).pathname}`;
+    const storageKey = `private-artifacts/${canonicalAssetId}/report.csv`;
     objectStore.addObject({
-      bucket: "test-user-artifacts",
+      bucket: "test-private-artifacts",
       key: storageKey,
       size: 42,
       body: Buffer.alloc(42, "a"),
+      metadata: { "artifact-id": canonicalAssetId },
     });
 
     const materializeClient = setupApp({
@@ -1267,12 +1268,13 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       throw new Error("Expected canonical Slack upload initialization");
     }
     const canonicalAssetId = initialized.body.assetId;
-    const storageKey = `artifacts${new URL(initialized.body.url).pathname}`;
+    const storageKey = `private-artifacts/${canonicalAssetId}/report.csv`;
     objectStore.addObject({
-      bucket: "test-user-artifacts",
+      bucket: "test-private-artifacts",
       key: storageKey,
       size: 42,
       body: Buffer.alloc(42, "a"),
+      metadata: { "artifact-id": canonicalAssetId },
     });
 
     const materializeClient = setupApp({
@@ -1445,10 +1447,10 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     expect(
       objectStore.puts.some((put) => {
         return (
-          put.bucket === "test-user-artifacts" &&
-          /^artifacts\/[0-9a-z]{10}\.jpg$/u.test(put.key) &&
+          put.bucket === "test-private-artifacts" &&
+          /^private-artifacts\/[0-9a-f-]{36}\/poster-v2\.jpg$/u.test(put.key) &&
           put.contentType === "image/jpeg" &&
-          put.metadata?.["public-brand"] === "okou"
+          put.metadata?.["artifact-id"] === put.key.split("/")[1]
         );
       }),
     ).toBeTruthy();
@@ -1462,7 +1464,7 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     expect(files[0]).toMatchObject({
       id: fileId,
       previewImageUrl: expect.stringMatching(
-        /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.jpg$/u,
+        /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.jpg$/u,
       ),
     });
   });

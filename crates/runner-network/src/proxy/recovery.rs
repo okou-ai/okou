@@ -54,7 +54,7 @@ impl MitmRecovery {
     }
 
     pub fn maybe_start(&mut self, mitm: &mut MitmProxy, crash_rx: &mut mpsc::Receiver<()>) {
-        if !self.retry_deadline().is_some_and(|at| Instant::now() >= at) {
+        if self.retry_deadline().is_none_or(|at| Instant::now() < at) {
             return;
         }
         self.restart_at = None;

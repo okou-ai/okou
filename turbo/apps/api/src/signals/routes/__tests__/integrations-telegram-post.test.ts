@@ -166,12 +166,12 @@ function expectOk(response: Response, operation: string): void {
 }
 
 // The surface delivery rules render between the integration block and the
-// thread context. `privateArtifacts` is off for this fixture, so the note is
-// its single base line.
+// thread context, including private artifact guidance under the global default.
 const TELEGRAM_INTEGRATION_NOTE = [
   "# Integration Note",
   "",
   "- Telegram messaging and files: use `okou telegram --help`. Only your final reply is delivered to the originating chat, and nothing you produce while the run is in progress reaches Telegram on its own, so Telegram commands are for different chats, topics, reply targets, or explicit extra messages. Use `okou telegram message send -h` for extra messages, `okou telegram download-file -h` for `[Telegram file]` blocks, and `okou telegram upload-file -h` when file delivery is needed. All Telegram commands use the official Okou bot.",
+  "- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. This upload guidance applies to replies in Telegram. If the user continues the conversation in Web chat, deliver files there and do not continue uploading to Telegram unless the user explicitly requests it. A private `/artifacts/...` address is not openable from Telegram, so a link alone shows the user nothing. When you judge that Telegram can display that kind of file — a hosted website or HTML page never qualifies — upload it with `okou telegram upload-file` so the user has something they can open there. If you upload it, also keep the original private `/artifacts/...` address from before the upload in the final reply, not the address returned by `okou telegram upload-file`, so the owner can open the original artifact after returning to the web app.",
 ].join("\n");
 
 function expectExactSystemPromptFragment(

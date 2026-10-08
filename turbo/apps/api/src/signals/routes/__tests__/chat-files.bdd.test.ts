@@ -14,6 +14,7 @@ import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 
 /*
 helper gap:
@@ -807,7 +808,8 @@ describe("FILE-01 uploads, storage, and host APIs", () => {
     context.mocks.s3.getSignedUrl.mockResolvedValue(
       "https://r2.example.com/upload?sig=test",
     );
-    api.mockEmptyObjectStorage();
+    const objectStore =
+      createChatCallbacksApi(context).acceptChatObjectStorage();
     const prepared = await api.prepareUpload(actor, {
       filename: "notes.txt",
       contentType: "Text/Plain; Charset=UTF-8",
@@ -821,10 +823,19 @@ describe("FILE-01 uploads, storage, and host APIs", () => {
     expect("uploadUrl" in prepared ? prepared.uploadUrl : "").toMatch(
       /^https?:\/\//,
     );
-    expect(prepared.url).toMatch(/^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.txt$/u);
+    expect(prepared.url).toMatch(
+      /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.txt$/u,
+    );
     expect(prepared.url).not.toContain(actor.userId);
 
-    api.mockCompletedUploadObject(actor, prepared.id, "notes.txt", 12);
+    objectStore.addObject({
+      bucket: "test-private-artifacts",
+      key: `private-artifacts/${prepared.id}/notes.txt`,
+      size: 12,
+      body: Buffer.from("upload notes"),
+      contentType: "text/plain; charset=utf-8",
+      metadata: { "artifact-id": prepared.id },
+    });
     const completed = await api.completeUpload(actor, {
       id: prepared.id,
       contentType: prepared.contentType,
@@ -834,6 +845,7 @@ describe("FILE-01 uploads, storage, and host APIs", () => {
       filename: "notes.txt",
       contentType: "text/plain; charset=utf-8",
       size: 12,
+      url: prepared.url,
     });
 
     const otherActor = bdd.user();

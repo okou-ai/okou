@@ -33,6 +33,7 @@ const INLINE_ONLY_INTEGRATION_DELIVERY_CALLBACK_KINDS = [
   "feishu:chat",
   "teams:chat",
   "telegram:chat",
+  "agentphone:chat",
   "github:chat",
   "slack:org",
 ] as const;

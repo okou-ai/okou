@@ -2314,7 +2314,6 @@ mod tests {
                         mount_path: current_storage_path.clone(),
                         vas_storage_name: "current-storage".into(),
                         vas_version_id: "v1".into(),
-                        baseline_candidate: false,
                         instructions_target_filename: None,
                         archive_url: "https://example.com/current-storage.tar.gz".into(),
                         archive_size: None,
