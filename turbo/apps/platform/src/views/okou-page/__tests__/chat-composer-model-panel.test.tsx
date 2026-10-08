@@ -99,7 +99,7 @@ async function setupAutoComposer(
 
 test("Auto hides the model picker until a subscription adds models", async () => {
   await setupAutoComposer();
-  await findButton("Attach");
+  await screen.findByLabelText("Attach");
   expect(hasAutoModelTrigger()).toBeFalsy();
 });
 

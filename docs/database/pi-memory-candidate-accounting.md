@@ -41,24 +41,27 @@ The integration retains `main@737e752d859154f921d599412c5754ff262078e1`
 and #33974: only human-interactive sources may enter admission, before the
 existing live PiMemory gate and explicit C accounting.
 
-| Path                                                                             | Ownership contract                                                                                                                                                                                                          |
-| -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent-webhook-complete.service.ts`                                              | Persists checkpoints under the canonical storage lock; daily scheduling owns production candidate admission after #34044.                                                                                                   |
-| `pi-memory-stage1-schedule.service.ts`                                           | Daily decision selects at most two owned product Threads and calls canonical admission in the same transaction. Source Threads lock before Storage; day state locks before candidates.                                      |
-| `pi-memory-stage1-candidate.service.ts`                                          | Admission, source replacement, returned-row retain/release, standalone candidate deletion, and parent storage deletion.                                                                                                     |
-| `webhooks-clerk-cleanup.service.ts`                                              | User/org cleanup calls `deleteStoragesWithPiMemoryCandidates` inside the storage/candidate/reference transaction; external work stays outside.                                                                              |
-| `webhooks-clerk.ts`                                                              | Cleanup remains asynchronous after HTTP 200. Failure needs investigation/provider redelivery; this is not a durable retry mechanism.                                                                                        |
-| Stage 1 worker; Phase 2 job, maintenance and usage services                      | Status, output, lease, selection and usage updates only; no new source ownership. Existing fencing/parent locks remain.                                                                                                     |
-| Candidate fixtures, Phase 2 fixture, `test-pi-memory-stage1-state.ts`            | Candidate insertion and parent deletion use the same canonical service. The Phase 2 cascade test also uses canonical parent deletion and checks the surviving reference; other fixture writes change status/selection only. |
-| Workflow deletion, agent-instruction storage, registry sync and development seed | Their raw storage deletion targets custom-skill, instruction or system volumes, not canonical user-owned `memory`.                                                                                                          |
-| Test system-storage/cache/catalog/usage cleanup                                  | Owns explicitly constructed system/usage fixtures, not a supported candidate repair writer.                                                                                                                                 |
-| External migrations `006`, `007`, `008`, `015`                                   | Permanent historical records. `006` targets retired tables, `007`/`008` own skill volumes, and `015` builds version indexes. None is a current candidate repair command.                                                    |
-| DB validators                                                                    | Historical baseline supplies the original function fingerprint. The transition validator replays the guarded migration; permanent schema inventory requires its absence.                                                    |
+| Path                                                                             | Ownership contract                                                                                                                                                                                                         |
+| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent-webhook-complete.service.ts`                                              | Persists checkpoints under the canonical storage lock; daily scheduling owns production candidate admission after #34044.                                                                                                  |
+| `pi-memory-stage1-schedule.service.ts`                                           | Daily decision selects at most two owned product Threads and calls canonical admission in the same transaction. Source Threads lock before Storage; day state locks before candidates.                                     |
+| `pi-memory-stage1-candidate.service.ts`                                          | Admission, source replacement, returned-row retain/release, standalone candidate deletion, and parent storage deletion.                                                                                                    |
+| `webhooks-clerk-cleanup.service.ts`                                              | User/org cleanup calls `deleteStoragesWithPiMemoryCandidates` inside the storage/candidate/reference transaction; external work stays outside.                                                                             |
+| `webhooks-clerk.ts`                                                              | Cleanup remains asynchronous after HTTP 200. Failure needs investigation/provider redelivery; this is not a durable retry mechanism.                                                                                       |
+| Stage 1 worker; Phase 2 job, maintenance and usage services                      | Status, output, lease, selection and usage updates only; no new source ownership. Existing fencing/parent locks remain.                                                                                                    |
+| Candidate fixtures, Phase 2 fixture, `test-pi-memory-stage1-state.ts`            | These remaining private test consumers use internal candidate/parent writers. They are unprocessed under #37440; using the canonical service does not establish public scenario construction or authorize preserving them. |
+| Workflow deletion, agent-instruction storage, registry sync and development seed | Their raw storage deletion targets custom-skill, instruction or system volumes, not canonical user-owned `memory`.                                                                                                         |
+| Test system-storage/cache/catalog/usage cleanup                                  | Owns explicitly constructed system/usage fixtures, not a supported candidate repair writer.                                                                                                                                |
+| External migrations `006`, `007`, `008`, `015`                                   | Permanent historical records. `006` targets retired tables, `007`/`008` own skill volumes, and `015` builds version indexes. None is a current candidate repair command.                                                   |
+| DB validators                                                                    | Historical baseline supplies the original function fingerprint. The transition validator replays the guarded migration; permanent schema inventory requires its absence.                                                   |
 
-Use `insertPiMemoryStage1Candidates` for controlled fixture/repair insertion,
-`deletePiMemoryStage1Candidates` for standalone retention, and
-`deleteStoragesWithPiMemoryCandidates` for parent deletion. The caller owns the
-transaction. No independent active production candidate backfill/repair writer
+`insertPiMemoryStage1Candidates`, `deletePiMemoryStage1Candidates` and
+`deleteStoragesWithPiMemoryCandidates` are internal transaction-owned writers.
+They are not construction, execution or observation boundaries for API tests.
+Tests must use existing normal user APIs, genuine provider webhooks or
+authenticated Runner flows; delete unsupported scenarios instead of calling
+these writers. The inventory above does not authorize private fixture/repair
+insertion. No independent active production candidate backfill/repair writer
 was found. Raw candidate source changes, raw memory-parent cascades and pre-B
 repair tools are unsupported. For an actually deleted Clerk owner, redeliver its
 provider deletion event to the current API. Do not infer permission to repair
@@ -194,9 +197,19 @@ The validator uses synthetic metadata at **1,315 candidates / 310,578 blobs /
 release pipeline's production-clone smoke; clone timeout/drift blocks release
 without relaxing guards or changing global timeouts.
 
-Targeted API accounting, completion/admission, worker and Clerk tests cover C's
-reference semantics, parent cleanup, feature gate, fencing and GC. B transition
-coverage remains until the conditions in `turbo/packages/db/MIGRATIONS.md`
-allow its retirement. Production acceptance belongs to the controller: capture
+The earlier API accounting suite exercised private reference counts, fabricated
+history/corruption, transaction faults, direct worker admission and lock timing.
+[#37440 batch 004](../implementation/issue-37440-batches/batch-004.md) retires its
+15 declarations (20 expanded executions), including the raw operator-audit
+fixture. Those SQL/internal guarantees are no longer claimed as API coverage.
+Other completion/admission, worker and Clerk fixtures require their own scenario
+review; this batch does not certify their complete chains. Public storage
+publication followed by genuine Clerk deletion still checks external provider
+failure effects through the ordinary Runner lifecycle.
+
+The historical B transition validator and operator audit SQL are unchanged;
+the conditions in `turbo/packages/db/MIGRATIONS.md` still govern validator
+retirement. This history does not create a private-setup exception for current
+API cases. Production acceptance belongs to the controller: capture
 the real migration receipt/commit, actual C artifact and bounded data/log
 observations before closing #33748.

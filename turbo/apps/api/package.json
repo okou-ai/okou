@@ -1,6 +1,6 @@
 {
   "name": "api",
-  "version": "1.714.0",
+  "version": "1.714.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -37,8 +37,6 @@
     "@clerk/backend": "^3.13.1",
     "@hono/node-server": "^2.0.10",
     "@hono/otel": "^1.1.2",
-    "@langfuse/otel": "5.10.0",
-    "@langfuse/tracing": "5.10.0",
     "@modelcontextprotocol/client": "^2.2.0",
     "@modelcontextprotocol/server": "^2.0.0",
     "@opentelemetry/api": "^1.9.1",

@@ -12,8 +12,6 @@ import {
   createWriteToolDefinition,
   SettingsManager,
   type CreateAgentSessionFromServicesOptions,
-  type ExtensionAPI,
-  type ExtensionFactory,
   type SessionManager,
 } from "@earendil-works/pi-coding-agent";
 
@@ -45,35 +43,6 @@ import {
   startPiPreparationObservation,
   type PiPreparationObserver,
 } from "./preparation-timing";
-
-async function createLangfuseDebugExtension(pi: ExtensionAPI): Promise<void> {
-  try {
-    if (
-      !process.env.OKOU_PI_LANGFUSE_OTLP_ENDPOINT?.trim() ||
-      !process.env.OKOU_PI_LANGFUSE_OTLP_TOKEN?.trim()
-    ) {
-      return;
-    }
-    const { default: langfuseObservabilityExtension } =
-      await import("@langfuse/pi-observability-plugin");
-    langfuseObservabilityExtension(pi);
-  } catch {
-    // Optional debug telemetry must not prevent the Pi runtime from starting.
-  } finally {
-    // The plugin captures relay authentication in its extension closure.
-    // Remove temporary exporter settings before model or tool execution.
-    delete process.env.LANGFUSE_PUBLIC_KEY;
-    delete process.env.LANGFUSE_SECRET_KEY;
-    delete process.env.OKOU_PI_LANGFUSE_OTLP_ENDPOINT;
-    delete process.env.OKOU_PI_LANGFUSE_OTLP_TOKEN;
-  }
-}
-
-function langfuseDebugExtensionFactories(
-  enabled: boolean | undefined,
-): ExtensionFactory[] {
-  return enabled ? [createLangfuseDebugExtension] : [];
-}
 
 /**
  * Shell options for the loop's Bash tool.
@@ -163,7 +132,6 @@ interface PiAgentSessionRuntimeArgs {
   readonly onMemoryToolSourceUse?: (sourceUse: PiMemoryToolSourceUse) => void;
   readonly onPreparationTiming?: PiPreparationObserver;
   readonly sessionStartEvent?: CreateAgentSessionFromServicesOptions["sessionStartEvent"];
-  readonly enableLangfuseObservability?: boolean;
 }
 
 export async function createPiAgentSessionForRuntime(
@@ -213,9 +181,6 @@ export async function createPiAgentSessionForRuntime(
     signal,
   );
   const resourceSnapshot = args.resourceSnapshot;
-  const extensionFactories = langfuseDebugExtensionFactories(
-    args.enableLangfuseObservability,
-  );
   const services = await measurePiPreparation(
     args.onPreparationTiming,
     "session_services",
@@ -241,15 +206,12 @@ export async function createPiAgentSessionForRuntime(
           "resource_loader",
           () => {
             return resourceSnapshot
-              ? {
-                  ...piPreheatedResourceLoaderOptions({
-                    snapshot: resourceSnapshot,
-                    appendSystemPrompt,
-                    systemPrompt,
-                  }),
-                  extensionFactories,
-                }
-              : { ...sandboxResourceLoaderOptions, extensionFactories };
+              ? piPreheatedResourceLoaderOptions({
+                  snapshot: resourceSnapshot,
+                  appendSystemPrompt,
+                  systemPrompt,
+                })
+              : sandboxResourceLoaderOptions;
           },
           signal,
         ),

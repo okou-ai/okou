@@ -184,8 +184,6 @@ const getRunResponseSchema = z.object({
       z.object({ status: z.literal("connected"), id: z.uuid() }),
     ]),
   }),
-  /** Omitted when tracing was disabled for this run or by older APIs. */
-  langfuseTraceUrl: z.url().optional(),
 });
 
 /**

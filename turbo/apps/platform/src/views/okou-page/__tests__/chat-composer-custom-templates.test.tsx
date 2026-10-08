@@ -454,11 +454,7 @@ test("An empty kind hides filters and Custom reopens the available catalog", asy
   expect(
     within(dialog).queryByRole("group", { name: "Template categories" }),
   ).not.toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("button", dialog).filter((button) => {
-      return button.textContent?.trim() === "Import template";
-    }),
-  ).toHaveLength(1);
+  expect(within(dialog).getAllByLabelText("Import template")).toHaveLength(1);
   click(tabByText("Custom"));
   await expect(
     within(dialog).findByText("Q3 board review"),

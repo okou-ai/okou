@@ -2115,7 +2115,6 @@
         "default": "Thinking..."
       },
       "viewActivityLogs": "View activity logs",
-      "viewLangfuseTrace": "View Langfuse trace",
       "viewLogs": "View run logs",
       "waitingIn": "Waiting in",
       "workedFor": "Worked for {{duration}}",

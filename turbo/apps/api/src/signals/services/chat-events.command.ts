@@ -70,7 +70,11 @@ import {
   cancelRun$,
   type CancelRunResult,
 } from "./agent-run-terminal-transition.service";
-import { registerCanonicalWebInputAssets } from "./canonical-asset.service";
+import {
+  canonicalPrivateWebInputPlan,
+  canonicalWebInputPlan,
+} from "./canonical-asset.service";
+import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import {
   canonicalChatEventContent,
   canonicalChatEventError,
@@ -1348,15 +1352,56 @@ const createdSendThreadSelection = Object.freeze({
   createdAt: chatThreads.createdAt,
 });
 
+interface NormalSendInput {
+  readonly thread: SendThread;
+  readonly event: ReturnType<typeof normalSendEvent>;
+  readonly attachFileMetadata: readonly ChatEventAttachFileMetadata[];
+}
+
+function normalSendInputInsertSql(
+  event: ReturnType<typeof normalSendEvent>,
+  replacementRows:
+    | Parameters<typeof requireChatEventReplacementTarget>[0]
+    | null,
+) {
+  return replacementRows === null
+    ? chatEventInsertSql(event, "id")
+    : chatEventReplacementInsertSql(
+        requireChatEventReplacementTarget(replacementRows),
+        event,
+      );
+}
+
+function newSendThreadCreatedEventSql(
+  args: NormalSendArgs,
+  row: Parameters<typeof createdChatThreadFromRow>[0],
+) {
+  return chatThreadCreatedEventSql({
+    orgId: args.orgId,
+    eventId: args.body.chatThreadEventId,
+    thread: createdChatThreadFromRow(row, args.body.agentId),
+  });
+}
+
+function normalSendGetStartedSql(args: NormalSendArgs, sourceEventId: string) {
+  return args.getStartedWorkflowId
+    ? recordGetStartedWorkflowSql(
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          workflowId: args.getStartedWorkflowId,
+          sourceEventId,
+        },
+        nowDate(),
+      )
+    : undefined;
+}
+
 const appendNormalSendInput$ = command(
   async (
     { set },
     args: NormalSendArgs,
-    input: {
-      readonly thread: SendThread;
-      readonly event: ReturnType<typeof normalSendEvent>;
-      readonly attachFileMetadata: readonly ChatEventAttachFileMetadata[];
-    },
+    input: NormalSendInput,
     signal: AbortSignal,
   ) => {
     const { thread, event } = input;
@@ -1374,30 +1419,17 @@ const appendNormalSendInput$ = command(
         if (!createdRow) {
           throw new NewThreadSendCollision("thread");
         }
-        await tx.execute(
-          chatThreadCreatedEventSql({
-            orgId: args.orgId,
-            eventId: args.body.chatThreadEventId,
-            thread: createdChatThreadFromRow(
-              createdRow,
-              createdPlan.values.agentId,
-            ),
-          }),
-        );
+        await tx.execute(newSendThreadCreatedEventSql(args, createdRow));
       }
-      const insert = args.body.revokesEventId
-        ? chatEventReplacementInsertSql(
-            requireChatEventReplacementTarget(
-              parseRawRows(
-                chatEventReplacementTargetSchema,
-                await tx.execute(
-                  chatEventReplacementTargetSql(args.body.revokesEventId),
-                ),
-              ),
+      const replacementRows = args.body.revokesEventId
+        ? parseRawRows(
+            chatEventReplacementTargetSchema,
+            await tx.execute(
+              chatEventReplacementTargetSql(args.body.revokesEventId),
             ),
-            event,
           )
-        : chatEventInsertSql(event, "id");
+        : null;
+      const insert = normalSendInputInsertSql(event, replacementRows);
       const [inserted] = parseRawRows(
         chatEventCommandResultSchema,
         await tx.execute(insert),
@@ -1427,24 +1459,46 @@ const appendNormalSendInput$ = command(
           .values(preferencePlan.values)
           .onConflictDoUpdate(preferencePlan.conflict);
       }
-      await registerCanonicalWebInputAssets(tx, {
-        chatThreadId: thread.threadId,
-        userId: args.userId,
-        orgId: args.orgId,
-        files: input.attachFileMetadata,
-      });
-      if (args.getStartedWorkflowId) {
-        await tx.execute(
-          recordGetStartedWorkflowSql(
-            {
-              orgId: args.orgId,
-              userId: args.userId,
-              workflowId: args.getStartedWorkflowId,
-              sourceEventId: inserted.id,
-            },
-            nowDate(),
-          ),
-        );
+      // Canonical attachments and their input event commit as one unit.
+      for (const file of input.attachFileMetadata) {
+        const owner = {
+          chatThreadId: thread.threadId,
+          userId: args.userId,
+          orgId: args.orgId,
+          file,
+        };
+        if (file.objectKey.startsWith("private-artifacts/")) {
+          const [owned] = await tx
+            .select()
+            .from(runUploadedFiles)
+            .where(eq(runUploadedFiles.id, file.id))
+            .limit(1);
+          const plan = canonicalPrivateWebInputPlan({ ...owner, owned });
+          // Existing generated/integration identity is retained by the update predicate.
+          await tx.update(runUploadedFiles).set(plan.values).where(plan.where);
+          continue;
+        }
+        const plan = canonicalWebInputPlan(owner);
+        const [registered] = await tx
+          .insert(runUploadedFiles)
+          .values(plan.values)
+          .onConflictDoNothing()
+          .returning({ id: runUploadedFiles.id });
+        if (registered) {
+          continue;
+        }
+        const [existing] = await tx
+          .select({ id: runUploadedFiles.id })
+          .from(runUploadedFiles)
+          .where(plan.identity)
+          .limit(1);
+        if (!existing) {
+          throw new Error("Canonical web input asset conflict is missing");
+        }
+      }
+      const getStartedInsert = normalSendGetStartedSql(args, inserted.id);
+      if (getStartedInsert) {
+        await tx.execute(getStartedInsert);
       }
       const plan = queuedChatThreadEnqueuePlan({
         chatThreadId: thread.threadId,
