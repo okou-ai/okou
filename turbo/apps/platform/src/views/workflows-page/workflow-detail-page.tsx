@@ -163,6 +163,8 @@ import {
   setWorkflowActionDialog$,
   setWorkflowDetailActiveTab$,
   setWorkflowFileDraft$,
+  setWorkflowFileInput$,
+  showWorkflowFilePicker$,
   setWorkflowCopyForm$,
   setWorkflowAutomationCreateDialog$,
   setWorkflowAutomationEnabled$,
@@ -2617,11 +2619,14 @@ function WorkflowFilePicker({
 }) {
   const selectedFilePath = useGet(selectedWorkflowFilePath$);
   const setSelectedFilePath = useSet(setSelectedWorkflowFilePath$);
+  const setFileInput = useSet(setWorkflowFileInput$);
+  const showFilePicker = useSet(showWorkflowFilePicker$);
   const files: readonly WorkflowFileMetadata[] = detail.files ?? [];
   const fileContents: readonly WorkflowFileEntry[] = detail.fileContents ?? [];
   const pageSignal = useGet(pageSignal$);
   const [saveLoadable, updateWorkflow] = useLoadableSet(updateWorkflow$);
   const saving = saveLoadable.state === "loading";
+  const canManageFiles = detail.canManage && !detail.official;
   const selectedLabel =
     selectedFilePath ??
     i18n.t(($) => {
@@ -2675,6 +2680,26 @@ function WorkflowFilePicker({
 
   return (
     <DropdownMenu>
+      {canManageFiles ? (
+        <input
+          ref={setFileInput}
+          aria-label={i18n.t(($) => {
+            return $.workflows.detail.files.uploadAria;
+          })}
+          type="file"
+          multiple
+          disabled={saving}
+          hidden
+          onChange={(event) => {
+            const selected = event.currentTarget.files;
+            if (!selected || selected.length === 0) {
+              return;
+            }
+            uploadFiles(selected);
+            event.currentTarget.value = "";
+          }}
+        />
+      ) : null}
       <DropdownMenuTrigger
         render={
           <button
@@ -2695,11 +2720,11 @@ function WorkflowFilePicker({
           selectedFilePath={selectedFilePath}
           onSelectFile={setSelectedFilePath}
         />
-        {detail.canManage && !detail.official ? (
+        {canManageFiles ? (
           <WorkflowFileManagementItems
             saving={saving}
             selectedFilePath={selectedFilePath}
-            onUpload={uploadFiles}
+            onUpload={showFilePicker}
             onDeleteSelectedFile={deleteSelectedFile}
           />
         ) : null}
@@ -2762,18 +2787,13 @@ function WorkflowFileManagementItems({
 }: {
   readonly saving: boolean;
   readonly selectedFilePath: string | null;
-  readonly onUpload: (files: FileList) => void;
+  readonly onUpload: () => void;
   readonly onDeleteSelectedFile: () => void;
 }) {
   return (
     <>
       <div className="my-1 h-px bg-divider/60" />
-      <label
-        className={cn(
-          "flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm transition-colors hover:bg-state-hover hover:text-accent-foreground",
-          saving ? "pointer-events-none opacity-60" : "",
-        )}
-      >
+      <DropdownMenuItem disabled={saving} onClick={onUpload}>
         {saving ? (
           <Loader2 size={15} className="animate-spin" />
         ) : (
@@ -2784,27 +2804,9 @@ function WorkflowFileManagementItems({
             return $.workflows.detail.files.upload;
           })}
         </span>
-        <input
-          aria-label={i18n.t(($) => {
-            return $.workflows.detail.files.uploadAria;
-          })}
-          type="file"
-          multiple
-          disabled={saving}
-          className="sr-only"
-          onChange={(event) => {
-            const selected = event.currentTarget.files;
-            if (!selected || selected.length === 0) {
-              return;
-            }
-            onUpload(selected);
-            event.currentTarget.value = "";
-          }}
-        />
-      </label>
+      </DropdownMenuItem>
       {selectedFilePath ? (
-        <button
-          type="button"
+        <DropdownMenuItem
           aria-label={i18n.t(
             ($) => {
               return $.workflows.detail.files.deleteAria;
@@ -2812,7 +2814,7 @@ function WorkflowFileManagementItems({
             { path: selectedFilePath },
           )}
           disabled={saving}
-          className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm text-destructive transition-colors hover:bg-state-hover disabled:opacity-60"
+          className="text-destructive"
           onClick={onDeleteSelectedFile}
         >
           <Trash size={15} />
@@ -2821,7 +2823,7 @@ function WorkflowFileManagementItems({
               return $.workflows.detail.files.deleteSelected;
             })}
           </span>
-        </button>
+        </DropdownMenuItem>
       ) : null}
     </>
   );

@@ -693,6 +693,21 @@ export const selectedWorkflowFilePath$ = computed((get) => {
   );
 });
 
+const internalWorkflowFileInput$ = state<HTMLInputElement | null>(null);
+
+export const setWorkflowFileInput$ = onRef(
+  command(({ set }, element: HTMLInputElement, signal: AbortSignal) => {
+    set(internalWorkflowFileInput$, element);
+    signal.addEventListener("abort", () => {
+      set(internalWorkflowFileInput$, null);
+    });
+  }),
+);
+
+export const showWorkflowFilePicker$ = command(({ get }) => {
+  get(internalWorkflowFileInput$)?.showPicker();
+});
+
 export const targetedWorkflowAutomationId$ = computed((get) => {
   return get(searchParams$).get(WORKFLOW_AUTOMATION_TARGET_PARAM);
 });
