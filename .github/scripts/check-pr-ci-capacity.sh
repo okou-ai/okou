@@ -91,8 +91,40 @@ done
 limit=$CI_MAX_OPEN_PRS
 author_limit=$CI_MAX_OPEN_PRS_PER_AUTHOR
 
+# Like the runner cleanup PR selector, accept comma-separated positive PR
+# numbers with surrounding whitespace. Empty configuration grants no bypass.
+if ! bypass_numbers=$(jq -cn --arg list "${CI_PR_ADMISSION_BYPASS_LIST:-}" '
+  $list | gsub("^\\s+|\\s+$"; "") |
+  if . == "" then []
+  else
+    split(",") | map(gsub("^\\s+|\\s+$"; "")) |
+    if all(.[]; test("^[1-9][0-9]{0,9}$")) then
+      map(tonumber) |
+      if all(.[]; . <= 2147483647) then .
+      else error("PR number out of range") end
+    else error("Invalid PR number list") end
+  end
+' 2>/dev/null); then
+  message="CI_ADMISSION_CONFIG_INVALID: CI_PR_ADMISSION_BYPASS_LIST must be empty or contain comma-separated PR numbers from 1 to 2147483647 (for example: 38089,38123). Configure the repository Actions variables at https://github.com/${repository}/settings/variables/actions."
+  printf '::error title=CI admission configuration invalid::%s\n' "$message"
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    printf '### CI admission configuration invalid\n\n%s\n' "$message" >>"$GITHUB_STEP_SUMMARY"
+  fi
+  exit 1
+fi
+
 author_count_command="gh api --paginate --slurp 'repos/${repository}/pulls?state=open&per_page=100' | jq 'add | map(select(.user.login == \"${author}\")) | length'"
 echo "Open PRs: ${open_pr_count}; limit: ${limit}; author ${author}: ${author_pr_count} open PRs; author limit: ${author_limit}; PR #${pr_number} in merge queue: ${in_merge_queue}"
+
+if jq -e --argjson number "$pr_number" 'index($number) != null' <<<"$bypass_numbers" >/dev/null; then
+  message="CI_PR_ADMISSION_BYPASS: PR #${pr_number} is listed in CI_PR_ADMISSION_BYPASS_LIST. Repository and author PR count limits do not apply to this PR. Normal CI and required checks still run."
+  echo "$message"
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    printf '### PR CI admission limits bypassed\n\n%s\n\nRepository open PRs: **%s** (limit: **%s**). Author **%s**: **%s open PRs** (limit: **%s**).\n' \
+      "$message" "$open_pr_count" "$limit" "$author" "$author_pr_count" "$author_limit" >>"$GITHUB_STEP_SUMMARY"
+  fi
+  exit 0
+fi
 
 reasons=()
 if ((open_pr_count > limit)); then

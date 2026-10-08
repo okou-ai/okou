@@ -171,6 +171,7 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number || '' }}
           CI_MAX_OPEN_PRS: ${{ vars.CI_MAX_OPEN_PRS }}
           CI_MAX_OPEN_PRS_PER_AUTHOR: ${{ vars.CI_MAX_OPEN_PRS_PER_AUTHOR }}
+          CI_PR_ADMISSION_BYPASS_LIST: ${{ vars.CI_PR_ADMISSION_BYPASS_LIST }}
         run: bash .github/scripts/check-pr-ci-capacity.sh
 
   # Detect release-please context across all event types (PR, push, merge queue).

@@ -59,6 +59,7 @@ response() {
 run_admission() {
   local event=${1:-pull_request} failures=${2:-0}
   local limit=${3-40} author_limit=${4-20}
+  local bypass_list=${5-}
   printf '0\n' >"${test_root}/attempts"
   : >"${test_root}/summary.md"
   status=0
@@ -71,6 +72,7 @@ run_admission() {
       GITHUB_RUN_ID=123 \
       CI_MAX_OPEN_PRS="$limit" \
       CI_MAX_OPEN_PRS_PER_AUTHOR="$author_limit" \
+      CI_PR_ADMISSION_BYPASS_LIST="$bypass_list" \
       GITHUB_STEP_SUMMARY="${test_root}/summary.md" \
       MOCK_ATTEMPTS="${test_root}/attempts" \
       MOCK_RESPONSE="${test_root}/response.json" \
@@ -176,6 +178,45 @@ for invalid in '' '-1' '1.5' '01' 'bad' '2147483648' '99999999999999999999' '1+1
   done
 done
 
+# Only exact PR numbers bypass both limits; the normal workflow still runs.
+response 60 null 30
+run_admission pull_request 0 40 20 '42'
+[[ "$status" == 0 ]] || fail "a listed PR should bypass both count limits: $output"
+assert_contains "$output" 'CI_PR_ADMISSION_BYPASS'
+assert_contains "$output" 'PR #42 is listed in CI_PR_ADMISSION_BYPASS_LIST'
+assert_contains "$summary" 'Normal CI and required checks still run'
+assert_contains "$summary" '**60** (limit: **40**)'
+assert_contains "$summary" '**30 open PRs** (limit: **20**)'
+run_admission pull_request 0 40 20 $' 99,\n 42 ,100 '
+[[ "$status" == 0 ]] || fail "a PR within a whitespace-trimmed list should bypass limits: $output"
+run_admission pull_request 0 0 0 '42,42'
+[[ "$status" == 0 ]] || fail "a listed PR should bypass zero count limits: $output"
+
+for bypass_list in '' '  ' '142,420'; do
+  run_admission pull_request 0 40 20 "$bypass_list"
+  [[ "$status" == 1 ]] || fail "empty or unrelated bypass lists must not grant admission"
+  assert_contains "$output" 'CI_CAPACITY_LIMIT'
+  assert_contains "$output" 'CI_AUTHOR_PR_LIMIT'
+  [[ "$output" != *CI_PR_ADMISSION_BYPASS:* ]] || fail "bypass matching must be exact"
+done
+
+# Invalid configuration or unavailable GitHub state cannot be bypassed.
+for invalid in '42,' ',42' '42,,43' '0' '-42' '042' '42.0' '4 2' '*' '[42]' '#42' '2147483648' '99999999999999999999' '42,bad'; do
+  run_admission pull_request 0 40 20 "$invalid"
+  [[ "$status" == 1 ]] || fail "invalid bypass list must fail closed: $invalid"
+  assert_contains "$output" 'CI_ADMISSION_CONFIG_INVALID'
+  assert_contains "$summary" 'CI_PR_ADMISSION_BYPASS_LIST must be empty or contain comma-separated PR numbers'
+done
+run_admission pull_request 0 '' 20 '42'
+[[ "$status" == 1 ]] || fail "bypass must not hide missing repository limit configuration"
+assert_contains "$output" 'CI_ADMISSION_CONFIG_INVALID'
+run_admission pull_request 0 40 bad '42'
+[[ "$status" == 1 ]] || fail "bypass must not hide invalid author limit configuration"
+assert_contains "$output" 'CI_ADMISSION_CONFIG_INVALID'
+run_admission pull_request 3 40 20 '42'
+[[ "$status" == 1 ]] || fail "bypass must not hide a GitHub query failure"
+assert_contains "$output" 'CI_ADMISSION_QUERY_FAILED'
+
 # Count every page and report both limits when both are exceeded.
 response 101 null 21
 jq '
@@ -197,12 +238,12 @@ response 60 '{"id":"queue-entry"}' 30
 run_admission
 [[ "$status" == 0 ]] || fail "queued PRs should be admitted: $output"
 assert_contains "$output" 'in merge queue: true'
-run_admission pull_request 0 '' ''
+run_admission pull_request 0 '' '' 'bad'
 [[ "$status" == 0 ]] || fail "queued PRs must proceed without admission configuration"
 
 # Merge groups and staging must proceed even when GitHub lookups fail.
 for event in merge_group push; do
-  run_admission "$event" 3 '' ''
+  run_admission "$event" 3 '' '' 'bad'
   [[ "$status" == 0 ]] || fail "$event should be admitted: $output"
   [[ "$(cat "${test_root}/attempts")" == 0 ]] || fail "$event should not query PR admission"
 done
