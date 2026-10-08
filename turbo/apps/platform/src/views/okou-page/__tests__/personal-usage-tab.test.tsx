@@ -23,6 +23,7 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { emptyUsageImg } from "../platform-assets.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
+import { pathname } from "../../../signals/location.ts";
 
 const context = testContext();
 
@@ -722,6 +723,50 @@ test("Review personal credit-usage records by date range", async () => {
     expect(requests.ranges).toContain("7d");
   });
 });
+
+test.each(["click", "Enter"])(
+  "Usage links keep Settings open for browser activations and close on %s",
+  async (activation) => {
+    const user = userEvent.setup({ delay: null });
+    const threadId = "b0000000-0000-4000-a000-000000000001";
+    mockPersonalUsageStory([
+      usageRow({
+        title: "Planning conversation",
+        credits: 100,
+        runId: threadId,
+      }),
+    ]);
+    context.mocks.browser.open();
+    await openUsageSettings("usage-records");
+    const link = await screen.findByText("Planning conversation");
+    expect(link).toHaveAttribute("href", `/chats/${threadId}`);
+    const initialPath = pathname();
+
+    for (const modifier of ["Alt", "Control", "Meta", "Shift"]) {
+      await user.keyboard(`{${modifier}>}`);
+      await user.click(link);
+      await user.keyboard(`{/${modifier}}`);
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(pathname()).toBe(initialPath);
+    }
+    for (const keys of ["[MouseMiddle]", "[MouseRight]"]) {
+      await user.pointer({ target: link, keys });
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(pathname()).toBe(initialPath);
+    }
+
+    if (activation === "Enter") {
+      link.focus();
+      await user.keyboard("{Enter}");
+    } else {
+      click(link);
+    }
+    await waitFor(() => {
+      expect(pathname()).toBe(`/chats/${threadId}`);
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+  },
+);
 
 test("Merge every Social Search vendor into one connector-segment row", async () => {
   const user = userEvent.setup();
