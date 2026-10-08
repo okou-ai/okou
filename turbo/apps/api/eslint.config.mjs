@@ -718,10 +718,6 @@ export default [
       // Bounded job ownership needs real row-lock competition, expired leases,
       // handler-version skew and publication rollback unavailable through HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
-      // The post-commit presigned URL cache write is log-only. Every value an
-      // endpoint can produce fits the cache columns, so only the command's
-      // data parameter can carry a row PostgreSQL rejects.
-      "src/signals/services/__tests__/execution-storage.service.test.ts",
       // The Morning Brief source budget is a deployed 20-second constant, not
       // a request input, and shortening it through the preview endpoint would
       // ship a debug parameter. This suite drives the route's own admission
@@ -735,15 +731,9 @@ export default [
       // has actually connected, so these exact byte, deadline, identity,
       // retention and language-precedence boundaries have no HTTP ingress.
       "src/signals/services/__tests__/morning-brief-composition.test.ts",
-      // Trigger presence is a deployment boundary, not an HTTP input. Private
-      // schemas exercise the entitlement writer, rollback, and actual locks.
-      "src/signals/services/__tests__/org-plan-entitlements.service.test.ts",
       // Hosting trigger coexistence, ownership locks and allocation rollback
       // require isolated PostgreSQL schemas; route suites cover product APIs.
       "src/signals/services/__tests__/hosted-site-scope.service.test.ts",
-      // Pending guard coexistence, repair and row-lock races require private
-      // PostgreSQL schemas; route suites exercise checkout/webhook/cron.
-      "src/signals/services/__tests__/usage-pack-pending-snapshot.service.test.ts",
       "src/signals/services/__tests__/workflow-automation-context.test.ts",
       // #34693 and #34711 need the persisted membership fence in both
       // overlapping commit orders, the foreign-key cascades that invalidate a
@@ -870,23 +860,13 @@ export default [
       // policy lookup byte-for-byte; individual provider routes cannot cover
       // every lookup-table row without duplicating the contract under test.
       "src/signals/services/__tests__/workflow-automation-context.test.ts",
-      // The post-commit presigned URL cache write is log-only. Every value an
-      // endpoint can produce fits the cache columns, so only the command's
-      // data parameter can carry a row PostgreSQL rejects.
-      "src/signals/services/__tests__/execution-storage.service.test.ts",
       "src/signals/services/__tests__/storage-write-phase2-reconciliation.service.test.ts",
       // Bounded job ownership needs row locks, expired leases, handler-version
       // skew and transaction rollback that callers cannot construct via HTTP.
       "src/signals/services/__tests__/background-job.service.test.ts",
-      // Trigger presence is a deployment boundary, not an HTTP input. Private
-      // schemas exercise the entitlement writer, rollback, and actual locks.
-      "src/signals/services/__tests__/org-plan-entitlements.service.test.ts",
       // Hosting trigger coexistence, ownership locks and allocation rollback
       // require isolated PostgreSQL schemas; route suites cover product APIs.
       "src/signals/services/__tests__/hosted-site-scope.service.test.ts",
-      // Pending guard coexistence, repair and row-lock races require private
-      // PostgreSQL schemas; route suites exercise checkout/webhook/cron.
-      "src/signals/services/__tests__/usage-pack-pending-snapshot.service.test.ts",
       // The logger is the subject here, not a diagnostic: this suite covers the
       // app factory's log wiring and flush ownership, which no route exposes.
       "src/__tests__/app-factory.test.ts",

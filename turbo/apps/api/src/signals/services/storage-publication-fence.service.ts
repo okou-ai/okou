@@ -172,28 +172,3 @@ export async function publicationIsPending(
     .limit(1);
   return publication !== undefined;
 }
-
-/**
- * Consume this exact reservation after owning its scope generation row.
- * Returns false when a newer reservation superseded it.
- */
-export async function consumePublicationFence(
-  tx: Tx,
-  fence: StoragePublicationFence,
-  at: Date,
-): Promise<boolean> {
-  // Generation before publication, matching beginPublicationSql. Both are
-  // ordinary writes; zero rows means this fence was superseded.
-  const [generation] = await tx
-    .update(storagePublicationGenerations)
-    .set({ updatedAt: at })
-    .where(generationScopeCondition(fence.scope))
-    .returning({ generation: storagePublicationGenerations.generation });
-  const [publication] = generation
-    ? await tx
-        .delete(storagePublicationTokens)
-        .where(publicationScopeCondition(fence))
-        .returning({ token: storagePublicationTokens.token })
-    : [];
-  return publication !== undefined;
-}

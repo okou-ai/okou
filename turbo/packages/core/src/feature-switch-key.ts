@@ -58,5 +58,4 @@ export enum FeatureSwitchKey {
   GoogleSlidesConversion = "googleSlidesConversion",
   BrowserNativeInput = "browserNativeInput",
   HomeTaskRecommendations = "homeTaskRecommendations",
-  PiOpenRouterChatCompletions = "piOpenRouterChatCompletions",
 }

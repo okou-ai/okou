@@ -14,4 +14,6 @@ Each PR completes ten stable helper/API identities. Unchanged classifications, b
 
 - [Batch 005: private Pi scheduling, usage and Phase2 fixtures](batch-005.md) — eight shared and two local helper retirements; remove private scheduler/job/ledger matrices, retain the genuine shared digest contract, and remove unused fixture selectors.
 
+- [Batch 006: private entitlement, pending-purchase and cache faults](batch-006.md) — nine local and one shared helper retirements; remove fabricated entitlement/guard state, forced SQL interleavings and cache faults, while preserving existing public purchase concurrency and recording exact internal coverage losses.
+
 The [current ledger and merge receipts](https://github.com/okou-ai/okou/issues/37440#issuecomment-6058148595) are linked from #37440. The [original batches 001–004 ledger](https://github.com/okou-ai/okou/issues/37440#issuecomment-6052156682) retains all prior history. Only merged changes reduce the remaining inventory. Historical 1,125-case credit and the [#37918 correction](../issue-37440-correction/README.md) remain separate historical records.

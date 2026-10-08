@@ -200,6 +200,18 @@ preservation; it does not claim the SQL 23514 rollback or selectable physical/vi
 schema guarantees of the removed service case. The existing simultaneous PATCH
 case remains meaningful public concurrency without a private row-count probe.
 
+For purchase concurrency, the `rejects competing Plan previews and stale
+purchase replays` case in
+[`billing-checkout.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/billing-checkout.test.ts)
+creates normal Plan previews and confirms two concurrently, observing 200/409,
+stale-preview rejection and one Stripe subscription creation. Its identity
+factory only supplies random IDs; Clerk and Stripe mocks supply provider-owned
+responses. This is an existing public request race, without a SQL pause or guard
+count assertion. It does not establish the exact internal transaction/repair
+guarantees retired with
+[#37440 batch 006](../implementation/issue-37440-batches/batch-006.md), or certify
+unrelated private methods in the same fixture factory.
+
 For provider deletion failures, see the three public user-deletion cases in
 [`storage-object-cleanup.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/storage-object-cleanup.test.ts).
 They publish Memory through a real Runner claim and storage prepare/commit,

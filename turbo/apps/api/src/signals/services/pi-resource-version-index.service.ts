@@ -17,7 +17,7 @@ import {
   RESOURCE_ARCHIVE_MAX_BYTES,
 } from "../../lib/pi-resource-index";
 import { now, nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   downloadS3BufferWithMaxBytes,
   S3ObjectSizeLimitError,
@@ -28,7 +28,7 @@ const tracer = trace.getTracer("pi-resource-index");
 const WORK_BATCH_SIZE = 32;
 const WORK_LEASE_MS = 5 * 60 * 1000;
 
-function indexQueueValues(
+export function piResourceIndexQueueValues(
   versionIds: readonly string[],
   archiveSizes: ReadonlyMap<string, number>,
 ) {
@@ -45,75 +45,94 @@ function indexQueueValues(
   });
 }
 
-export async function enqueuePiResourceVersionIndexes(
-  db: Pick<Db, "insert" | "select" | "update">,
-  versionIds: readonly string[],
-  signal?: AbortSignal,
-): Promise<void> {
-  const unique = [...new Set(versionIds)].sort();
-  if (unique.length === 0) {
-    return;
-  }
-  const versions = await db
-    .select({
-      id: storageVersions.id,
-      archiveSize: storageVersions.archiveSize,
-    })
-    .from(storageVersions)
-    .where(inArray(storageVersions.id, unique));
-  signal?.throwIfAborted();
-  const sizes = new Map(
-    versions.map((version) => {
-      return [version.id, version.archiveSize] as const;
-    }),
-  );
-  const values = indexQueueValues(unique, sizes);
-  const inserted = await db
-    .insert(piResourceVersionIndexes)
-    .values(values)
-    .onConflictDoNothing()
-    .returning({
-      storageVersionId: piResourceVersionIndexes.storageVersionId,
-    });
-  const insertedVersionIds = new Set(
-    inserted.map((row) => {
-      return row.storageVersionId;
-    }),
-  );
-  // A first insert establishes indexing work but is not an encoding repair.
-  // Only a pre-existing row whose immutable archive encoding changed is reset.
-  // Insert-first also serializes concurrent enqueues without relying on
-  // PostgreSQL's internal tuple metadata.
-  for (const value of values) {
-    if (insertedVersionIds.has(value.storageVersionId)) {
-      continue;
+export const enqueuePiResourceVersionIndexes$ = command(
+  async (
+    { get, set },
+    versionIds: readonly string[],
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const unique = [...new Set(versionIds)].sort();
+    if (unique.length === 0) {
+      return;
     }
-    const enqueuedAt = nowDate();
-    await db
-      .update(piResourceVersionIndexes)
-      .set({
-        status: "pending",
-        projection: null,
-        projectionHash: null,
-        sourceArchiveSize: value.sourceArchiveSize,
-        leaseId: null,
-        leaseExpiresAt: null,
-        availableAt: enqueuedAt,
-        attemptCount: 0,
-        updatedAt: enqueuedAt,
+    const versions = await get(db$)
+      .select({
+        id: storageVersions.id,
+        archiveSize: storageVersions.archiveSize,
       })
-      .where(
-        and(
-          eq(piResourceVersionIndexes.storageVersionId, value.storageVersionId),
-          eq(
-            piResourceVersionIndexes.extractorVersion,
-            PI_RESOURCE_EXTRACTOR_VERSION,
+      .from(storageVersions)
+      .where(inArray(storageVersions.id, unique));
+    signal.throwIfAborted();
+    const sizes = new Map(
+      versions.map((version) => {
+        return [version.id, version.archiveSize] as const;
+      }),
+    );
+    const values = piResourceIndexQueueValues(unique, sizes);
+    const db = set(writeDb$);
+    const inserted = await db
+      .insert(piResourceVersionIndexes)
+      .values(values)
+      .onConflictDoNothing()
+      .returning({
+        storageVersionId: piResourceVersionIndexes.storageVersionId,
+      });
+    signal.throwIfAborted();
+    const insertedVersionIds = new Set(
+      inserted.map((row) => {
+        return row.storageVersionId;
+      }),
+    );
+    // A first insert establishes indexing work but is not an encoding repair.
+    // Only a pre-existing row whose immutable archive encoding changed is reset.
+    // Insert-first also serializes concurrent enqueues without relying on
+    // PostgreSQL's internal tuple metadata.
+    for (const value of values) {
+      if (insertedVersionIds.has(value.storageVersionId)) {
+        continue;
+      }
+      await db
+        .update(piResourceVersionIndexes)
+        .set(piResourceIndexRepairValues(value.sourceArchiveSize, nowDate()))
+        .where(
+          piResourceIndexRepairCondition(
+            value.storageVersionId,
+            value.sourceArchiveSize,
           ),
-          sql`${piResourceVersionIndexes.sourceArchiveSize} IS DISTINCT FROM ${value.sourceArchiveSize}`,
-        ),
-      );
-  }
-  signal?.throwIfAborted();
+        );
+    }
+    signal.throwIfAborted();
+  },
+);
+
+export function piResourceIndexRepairValues(
+  sourceArchiveSize: number,
+  enqueuedAt: Date,
+) {
+  return {
+    status: "pending" as const,
+    projection: null,
+    projectionHash: null,
+    sourceArchiveSize,
+    leaseId: null,
+    leaseExpiresAt: null,
+    availableAt: enqueuedAt,
+    attemptCount: 0,
+    updatedAt: enqueuedAt,
+  };
+}
+export function piResourceIndexRepairCondition(
+  storageVersionId: string,
+  sourceArchiveSize: number,
+) {
+  return and(
+    eq(piResourceVersionIndexes.storageVersionId, storageVersionId),
+    eq(
+      piResourceVersionIndexes.extractorVersion,
+      PI_RESOURCE_EXTRACTOR_VERSION,
+    ),
+    sql`${piResourceVersionIndexes.sourceArchiveSize} IS DISTINCT FROM ${sourceArchiveSize}`,
+  );
 }
 
 export function piResourceProjectionValues(
@@ -133,44 +152,6 @@ export function piResourceProjectionValues(
     leaseExpiresAt: null,
     updatedAt,
   };
-}
-
-export async function publishPiResourceVersionIndex(
-  args: {
-    readonly db: Pick<Db, "insert">;
-    readonly versionId: string;
-    readonly projection: PiResourceVersionIndex | undefined;
-    readonly archiveSize: number;
-    readonly source?: "publication" | "captured-read";
-  },
-  signal?: AbortSignal,
-): Promise<void> {
-  const { db, versionId, projection, archiveSize, source } = args;
-  const values = piResourceProjectionValues(projection, archiveSize);
-  await db
-    .insert(piResourceVersionIndexes)
-    .values({
-      storageVersionId: versionId,
-      extractorVersion: PI_RESOURCE_EXTRACTOR_VERSION,
-      ...values,
-    })
-    .onConflictDoUpdate({
-      target: [
-        piResourceVersionIndexes.storageVersionId,
-        piResourceVersionIndexes.extractorVersion,
-      ],
-      set: values,
-      // A launch captured before a Storage encoding repair must not overwrite
-      // the newly enqueued source size or the replacement worker's lease.
-      setWhere:
-        source === "captured-read"
-          ? or(
-              eq(piResourceVersionIndexes.sourceArchiveSize, archiveSize),
-              sql`${piResourceVersionIndexes.sourceArchiveSize} IS NULL`,
-            )
-          : undefined,
-    });
-  signal?.throwIfAborted();
 }
 
 interface PiResourceIndexReadRow {

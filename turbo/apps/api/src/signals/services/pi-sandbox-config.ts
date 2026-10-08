@@ -16,11 +16,6 @@ import {
   type PiModelConfig,
 } from "@okouai/api-contracts/contracts/runners";
 import {
-  FeatureSwitchKey,
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core";
-import {
   isPiExecutionRoute,
   isPresetUpstreamModel,
   piCatalogModel,
@@ -46,19 +41,6 @@ import { PiModelConfigurationError } from "./pi-model-configuration-error";
  * remain in the ordinary encrypted run context and are never embedded in this
  * launch metadata.
  */
-
-/**
- * Whether new Pi OpenRouter launches capture the generation 5 Chat Completions
- * route. Enable only after every Runner advertises that generation.
- */
-export function piOpenRouterChatCompletionsEnabled(
-  featureSwitchContext: FeatureSwitchContext,
-): boolean {
-  return isFeatureEnabled(
-    FeatureSwitchKey.PiOpenRouterChatCompletions,
-    featureSwitchContext,
-  );
-}
 
 function normalizedBaseUrl(url: string): string {
   return url.replace(/\/+$/, "");
@@ -176,7 +158,6 @@ function resolvePiRouteModelConfig(
   provider: PiModelProviderConfigInput | null,
   catalogModel: PiCatalogModel | null,
   codexServiceTier: "fast" | undefined,
-  openrouterChatCompletions: boolean,
 ): PiModelConfig | null {
   if (!provider || !provider.selectedModel) {
     return null;
@@ -203,18 +184,14 @@ function resolvePiRouteModelConfig(
   }
   // An OpenRouter preset upstream configures reasoning and service tier
   // itself, so the client sends neither.
-  return resolveOpenRouterPiModelConfig(
-    {
-      ...provider,
-      selectedModel: provider.selectedModel,
-    },
-    openrouterChatCompletions,
-  );
+  return resolveOpenRouterPiModelConfig({
+    ...provider,
+    selectedModel: provider.selectedModel,
+  });
 }
 
 function resolveOpenRouterPiModelConfig(
   provider: PiModelProviderConfigInput & { readonly selectedModel: string },
-  chatCompletions: boolean,
 ): PiModelConfig | null {
   const concreteType = modelProviderTypeSchema.safeParse(
     provider.concreteType ?? provider.type,
@@ -237,8 +214,10 @@ function resolveOpenRouterPiModelConfig(
   if (!model) {
     return null;
   }
-  const dialect = chatCompletions ? "openai-completions" : "openai-responses";
-  const endpoint = getModelProviderPiEndpoint(concreteType.data, dialect);
+  const endpoint = getModelProviderPiEndpoint(
+    concreteType.data,
+    "openai-completions",
+  );
   if (!endpoint) {
     return null;
   }
@@ -250,49 +229,37 @@ function resolveOpenRouterPiModelConfig(
     return null;
   }
 
-  const apiKeyEnv = "OPENAI_API_KEY";
-  const config = {
+  if (credentialSecretName !== "OPENROUTER_API_KEY") {
+    return null;
+  }
+  const route = {
     provider: providerId,
     baseUrl: endpoint.baseUrl,
     model,
-    apiKeyEnv,
-    credentialSecretName,
     ...(isPresetUpstreamModel(provider.upstreamModel)
       ? { catalogModel: provider.selectedModel }
       : {}),
   } as const;
-  const supported = isPiAgentModelSupported({
-    provider: config.provider,
-    baseUrl: config.baseUrl,
-    model: config.model,
-    ...(config.catalogModel ? { catalogModel: config.catalogModel } : {}),
+  return isPiAgentModelSupported({
+    ...route,
     apiKey: "sandbox-secret",
-    dialect,
-    transport: "sse",
-  });
-  if (!supported) {
-    return null;
-  }
-  if (!chatCompletions) {
-    return config;
-  }
-  if (credentialSecretName !== "OPENROUTER_API_KEY") {
-    return null;
-  }
-  const {
-    apiKeyEnv: environment,
-    credentialSecretName: _secretName,
-    ...route
-  } = config;
-  return {
-    schemaVersion: PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION,
     dialect: "openai-completions",
     transport: "sse",
-    ...route,
-    credentialBindings: [
-      { kind: "api-key", environment, secretName: credentialSecretName },
-    ],
-  };
+  })
+    ? {
+        schemaVersion: PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION,
+        dialect: "openai-completions",
+        transport: "sse",
+        ...route,
+        credentialBindings: [
+          {
+            kind: "api-key",
+            environment: "OPENAI_API_KEY",
+            secretName: credentialSecretName,
+          },
+        ],
+      }
+    : null;
 }
 
 /** Apply the run's effective effort to every Pi dialect before capturing its launch context. */
@@ -301,13 +268,11 @@ export function resolvePiSandboxModelConfig(
   catalogModel: PiCatalogModel | null,
   codexServiceTier: "fast" | undefined = undefined,
   reasoningEffort: ReasoningEffort | null | undefined = undefined,
-  openrouterChatCompletions = false,
 ): PiModelConfig | null {
   const config = resolvePiRouteModelConfig(
     provider,
     catalogModel,
     codexServiceTier,
-    openrouterChatCompletions,
   );
   if (
     !config ||
@@ -349,8 +314,6 @@ export interface PiModelPreparationInput {
   readonly piExecution: boolean;
   readonly codexServiceTier?: "fast";
   readonly reasoningEffort?: ReasoningEffort | null;
-  /** See `piOpenRouterChatCompletionsEnabled`. */
-  readonly openrouterChatCompletions?: boolean;
 }
 
 export function materializePreparedPiProvider(
@@ -366,7 +329,6 @@ export function materializePreparedPiProvider(
     catalogModel,
     input.codexServiceTier,
     input.reasoningEffort,
-    input.openrouterChatCompletions,
   );
   if (!config || !provider) {
     throw new Error(
@@ -379,7 +341,6 @@ export function materializePreparedPiProvider(
 /** Maintenance has its own platform-funded extraction model, not a chat model choice. */
 export function resolvePlatformMemoryPiModelConfig(
   provider: ResolvedModelProviderEnvironment,
-  openrouterChatCompletions: boolean,
 ): PiModelConfig {
   const route = provider.builtInModelRuntimeRoute;
   if (
@@ -396,13 +357,10 @@ export function resolvePlatformMemoryPiModelConfig(
     );
   }
   assertCurrentPiCliArtifact();
-  const config = resolveOpenRouterPiModelConfig(
-    {
-      ...provider,
-      selectedModel: provider.selectedModel,
-    },
-    openrouterChatCompletions,
-  );
+  const config = resolveOpenRouterPiModelConfig({
+    ...provider,
+    selectedModel: provider.selectedModel,
+  });
   if (!config) {
     throw new PiModelConfigurationError(
       "Platform memory model configuration is unavailable",
@@ -423,7 +381,6 @@ export function resolvePreparedPiModelConfig(args: {
     piCatalogModel(args.input.catalog, args.modelProvider?.selectedModel),
     args.input.codexServiceTier,
     args.input.reasoningEffort,
-    args.input.openrouterChatCompletions,
   );
   if (!config) {
     throw new Error(
