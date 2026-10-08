@@ -17,7 +17,3 @@ export function connectorCatalogExecutableCapabilityState(): ExecutableCapabilit
     },
   });
 }
-
-export function connectorCatalogExecutableCapabilityDigest(): string {
-  return connectorCatalogExecutableCapabilityState().digest;
-}
