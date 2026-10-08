@@ -17,7 +17,6 @@ import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.serv
 import {
   customConnectorPermissionBundleDependencySlug,
   loadCustomConnectorPermissionBundle,
-  loadCustomConnectorPermissionBundleDependencySlugs,
 } from "./custom-connector-permission-bundle.service";
 import { loadConnectorRuntimeSlugSelection } from "./connector-catalog-slug-source.service";
 import { publishConnectorRuntimeSyncWakeups } from "./connector-runtime-wakeup.service";
@@ -26,7 +25,6 @@ import {
   effectiveCustomConnectorPermissionBundleRef,
   FEISHU_CUSTOM_CONNECTOR_PERMISSION_BUNDLE_REF,
 } from "./feishu-custom-connector-permissions";
-import type { Tx } from "../../lib/db-types";
 
 type UpdateUserBuiltinConnectorsResult =
   | {
@@ -58,9 +56,8 @@ type UpdateUserCustomConnectorsResult =
 
 type UserCustomConnectorUpdateOperation = "replace" | "add" | "remove";
 type CustomConnectorPermissionIntent = "exact" | "preserveExistingOrDefault";
-type DbTransaction = Tx;
 
-interface UserCustomConnectorTransactionResult {
+interface UserCustomConnectorUpdateOutcome {
   readonly result: UpdateUserCustomConnectorsResult;
   readonly changedConnectorIds: readonly string[];
 }
@@ -94,6 +91,18 @@ type AddUserCustomConnectorResult =
       readonly message: string;
     };
 
+function grantAgentCondition(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly agentId: string;
+}) {
+  return and(
+    eq(agents.orgId, args.orgId),
+    eq(agents.id, args.agentId),
+    or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
+  );
+}
+
 async function lockAgentForConnectorReplace(
   db: Pick<Db, "select">,
   args: {
@@ -105,14 +114,24 @@ async function lockAgentForConnectorReplace(
   const [agent] = await db
     .select({ id: agents.id })
     .from(agents)
-    .where(
-      and(
-        eq(agents.orgId, args.orgId),
-        eq(agents.id, args.agentId),
-        or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
-      ),
-    )
+    .where(grantAgentCondition(args))
     .for("update")
+    .limit(1);
+  return agent !== undefined;
+}
+
+async function grantAgentVisible(
+  db: Pick<Db, "select">,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly agentId: string;
+  },
+): Promise<boolean> {
+  const [agent] = await db
+    .select({ id: agents.id })
+    .from(agents)
+    .where(grantAgentCondition(args))
     .limit(1);
   return agent !== undefined;
 }
@@ -128,7 +147,7 @@ export async function lockUserCustomConnectorGrantScope(
   return await lockAgentForConnectorReplace(db, args);
 }
 
-interface LockedCustomConnectorRow {
+interface CustomConnectorDefinitionRow {
   readonly id: string;
   readonly slug: string;
   readonly prefixTemplates: readonly string[];
@@ -137,18 +156,18 @@ interface LockedCustomConnectorRow {
   readonly permissionBundleRef: string | null;
 }
 
-interface LockedCustomConnectorDefinitions {
+interface CustomConnectorDefinitions {
   readonly missingIds: readonly string[];
   readonly permissionBundleRefs: ReadonlyMap<string, string | null>;
 }
 
-async function lockCustomConnectorDefinitionsForGrant(
+async function readCustomConnectorDefinitionsForGrant(
   db: Pick<Db, "select">,
   args: {
     readonly orgId: string;
     readonly connectorIds: readonly string[];
   },
-): Promise<LockedCustomConnectorDefinitions> {
+): Promise<CustomConnectorDefinitions> {
   if (args.connectorIds.length === 0) {
     return {
       missingIds: [],
@@ -156,50 +175,38 @@ async function lockCustomConnectorDefinitionsForGrant(
     };
   }
 
-  const sortedIds = [...args.connectorIds].sort();
-  const lockedRows: LockedCustomConnectorRow[] = [];
-  for (const id of sortedIds) {
-    const [locked] = await db
-      .select({
-        id: orgCustomConnectors.id,
-        slug: orgCustomConnectors.slug,
-        prefixTemplates: orgCustomConnectors.prefixTemplates,
-        authMode: orgCustomConnectors.authMode,
-        oauthProviderAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
-        permissionBundleRef: orgCustomConnectors.permissionBundleRef,
-      })
-      .from(orgCustomConnectors)
-      .leftJoin(
-        orgCustomConnectorOauthConfigs,
-        and(
-          eq(
-            orgCustomConnectorOauthConfigs.connectorId,
-            orgCustomConnectors.id,
-          ),
-          eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
-        ),
-      )
-      .where(
-        and(
-          eq(orgCustomConnectors.orgId, args.orgId),
-          eq(orgCustomConnectors.id, id),
-          eq(orgCustomConnectors.enabled, true),
-        ),
-      )
-      .for("update", { of: orgCustomConnectors })
-      .limit(1);
-    if (locked) {
-      lockedRows.push(locked);
-    }
-  }
+  const rows: CustomConnectorDefinitionRow[] = await db
+    .select({
+      id: orgCustomConnectors.id,
+      slug: orgCustomConnectors.slug,
+      prefixTemplates: orgCustomConnectors.prefixTemplates,
+      authMode: orgCustomConnectors.authMode,
+      oauthProviderAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
+      permissionBundleRef: orgCustomConnectors.permissionBundleRef,
+    })
+    .from(orgCustomConnectors)
+    .leftJoin(
+      orgCustomConnectorOauthConfigs,
+      and(
+        eq(orgCustomConnectorOauthConfigs.connectorId, orgCustomConnectors.id),
+        eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
+      ),
+    )
+    .where(
+      and(
+        eq(orgCustomConnectors.orgId, args.orgId),
+        inArray(orgCustomConnectors.id, [...new Set(args.connectorIds)]),
+        eq(orgCustomConnectors.enabled, true),
+      ),
+    );
 
-  const lockedIds = new Set(
-    lockedRows.map((row) => {
+  const foundIds = new Set(
+    rows.map((row) => {
       return row.id;
     }),
   );
   const missingIds = args.connectorIds.filter((id) => {
-    return !lockedIds.has(id);
+    return !foundIds.has(id);
   });
   if (missingIds.length > 0) {
     return {
@@ -211,7 +218,7 @@ async function lockCustomConnectorDefinitionsForGrant(
   return {
     missingIds: [],
     permissionBundleRefs: new Map(
-      lockedRows.map((row) => {
+      rows.map((row) => {
         return [
           row.id,
           effectiveCustomConnectorPermissionBundleRef({
@@ -496,7 +503,7 @@ async function resolveCustomConnectorPermissionSelection(args: {
 }
 
 async function persistUserCustomConnectorUpdate(
-  tx: DbTransaction,
+  db: Db,
   args: {
     readonly orgId: string;
     readonly userId: string;
@@ -514,9 +521,9 @@ async function persistUserCustomConnectorUpdate(
     eq(userCustomConnectors.agentId, args.agentId),
   );
   if (args.operation === "replace") {
-    await tx.delete(userCustomConnectors).where(connectorScope);
+    await db.delete(userCustomConnectors).where(connectorScope);
   } else if (args.operation === "remove" && connectorIds.length > 0) {
-    await tx
+    await db
       .delete(userCustomConnectors)
       .where(
         and(
@@ -527,7 +534,7 @@ async function persistUserCustomConnectorUpdate(
   }
 
   if (args.operation !== "remove" && args.grants.length > 0) {
-    await tx
+    await db
       .insert(userCustomConnectors)
       .values(
         args.grants.map((grant) => {
@@ -559,7 +566,7 @@ async function persistUserCustomConnectorUpdate(
       grants: args.grants,
     };
   }
-  const rows = await tx
+  const rows = await db
     .select({
       customConnectorId: userCustomConnectors.customConnectorId,
       permissionNames: userCustomConnectors.permissionNames,
@@ -585,18 +592,6 @@ async function persistUserCustomConnectorUpdate(
   };
 }
 
-/** Dependency metadata for custom connector permission bundles. */
-interface GrantConnectorCatalog {
-  readonly snapshot: ConnectorRuntimeSelection;
-  readonly dependencies: readonly ConnectorSlug[];
-  /** A final catalog is used as-is, even if a ref changed concurrently. */
-  readonly final: boolean;
-}
-
-interface StaleGrantConnectorCatalog {
-  readonly catalogDependencies: readonly ConnectorSlug[];
-}
-
 function permissionBundleDependencySlugs(
   permissionBundleRefs: Iterable<string | null>,
 ): ConnectorSlug[] {
@@ -615,37 +610,22 @@ function permissionBundleDependencySlugs(
   ];
 }
 
-async function loadGrantConnectorCatalog(
-  db: Db,
-  dependencies: readonly ConnectorSlug[],
-  final: boolean,
-): Promise<GrantConnectorCatalog> {
-  return {
-    snapshot: await loadConnectorRuntimeSlugSelection(db, {
-      connectorSlugs: [],
-      metadataConnectorSlugs: dependencies,
-    }),
-    dependencies,
-    final,
-  };
-}
-
-async function persistUserCustomConnectorTransaction(args: {
-  readonly tx: DbTransaction;
+/**
+ * Concurrent updates are last-writer-wins. A connector or agent removed
+ * meanwhile leaves the grant unusable, as if it were never configured.
+ */
+async function persistUserCustomConnectors(args: {
+  readonly db: Db;
   readonly request: UpdateUserCustomConnectorsArgs;
   readonly grants: readonly AgentCustomConnectorGrant[];
   readonly grantByConnectorId: ReadonlyMap<string, readonly string[]>;
   readonly operation: UserCustomConnectorUpdateOperation;
-  readonly connectorCatalog: GrantConnectorCatalog | null;
-}): Promise<UserCustomConnectorTransactionResult | StaleGrantConnectorCatalog> {
-  const agentLocked = await lockUserCustomConnectorGrantScope(
-    args.tx,
-    args.request,
-  );
-  if (!agentLocked) {
+  readonly readsConnectorCatalog: boolean;
+}): Promise<UserCustomConnectorUpdateOutcome> {
+  if (!(await grantAgentVisible(args.db, args.request))) {
     return { result: { status: "agentNotFound" }, changedConnectorIds: [] };
   }
-  const previousRows = await args.tx
+  const previousRows = await args.db
     .select({
       customConnectorId: userCustomConnectors.customConnectorId,
       permissionNames: userCustomConnectors.permissionNames,
@@ -657,15 +637,14 @@ async function persistUserCustomConnectorTransaction(args: {
         eq(userCustomConnectors.userId, args.request.userId),
         eq(userCustomConnectors.agentId, args.request.agentId),
       ),
-    )
-    .for("update");
+    );
   const connectorIds = args.grants.map((grant) => {
     return grant.customConnectorId;
   });
 
   if (args.operation === "remove") {
     return {
-      result: await persistUserCustomConnectorUpdate(args.tx, {
+      result: await persistUserCustomConnectorUpdate(args.db, {
         orgId: args.request.orgId,
         userId: args.request.userId,
         agentId: args.request.agentId,
@@ -679,7 +658,7 @@ async function persistUserCustomConnectorTransaction(args: {
       ),
     };
   }
-  const definitions = await lockCustomConnectorDefinitionsForGrant(args.tx, {
+  const definitions = await readCustomConnectorDefinitionsForGrant(args.db, {
     orgId: args.request.orgId,
     connectorIds,
   });
@@ -692,20 +671,15 @@ async function persistUserCustomConnectorTransaction(args: {
       changedConnectorIds: [],
     };
   }
-  const catalogDependencies = permissionBundleDependencySlugs(
-    definitions.permissionBundleRefs.values(),
-  );
-  // The catalog is read before this transaction from unlocked definitions.
-  // A bundle ref changed since then is re-read once with the locked refs.
-  if (
-    args.connectorCatalog !== null &&
-    !args.connectorCatalog.final &&
-    catalogDependencies.some((dependency) => {
-      return !args.connectorCatalog?.dependencies.includes(dependency);
-    })
-  ) {
-    return { catalogDependencies };
-  }
+  // Permission bundles read only their dependency connectors' metadata.
+  const connectorCatalogSnapshot = args.readsConnectorCatalog
+    ? await loadConnectorRuntimeSlugSelection(args.db, {
+        connectorSlugs: [],
+        metadataConnectorSlugs: permissionBundleDependencySlugs(
+          definitions.permissionBundleRefs.values(),
+        ),
+      })
+    : null;
   const permissionSelection = await resolveCustomConnectorPermissionSelection({
     connectorIds,
     permissionIntent: args.request.permissionIntent,
@@ -716,7 +690,7 @@ async function persistUserCustomConnectorTransaction(args: {
       }),
     ),
     permissionBundleRefs: definitions.permissionBundleRefs,
-    snapshot: args.connectorCatalog?.snapshot ?? null,
+    snapshot: connectorCatalogSnapshot,
   });
   if (!permissionSelection.ok) {
     return { result: permissionSelection.error, changedConnectorIds: [] };
@@ -732,7 +706,7 @@ async function persistUserCustomConnectorTransaction(args: {
     };
   });
   return {
-    result: await persistUserCustomConnectorUpdate(args.tx, {
+    result: await persistUserCustomConnectorUpdate(args.db, {
       orgId: args.request.orgId,
       userId: args.request.userId,
       agentId: args.request.agentId,
@@ -758,48 +732,19 @@ export async function updateUserCustomConnectors(
   }
   const { grants, grantByConnectorId } = normalized;
   const operation = args.operation ?? "replace";
-  const readsConnectorCatalog =
-    args.permissionIntent === "exact" &&
-    operation !== "remove" &&
-    grants.some((grant) => {
-      return grant.permissionNames.length > 0;
-    });
-
-  const transact = async (connectorCatalog: GrantConnectorCatalog | null) => {
-    return await db.transaction(async (tx) => {
-      const persisted = await persistUserCustomConnectorTransaction({
-        tx,
-        request: args,
-        grants,
-        grantByConnectorId,
-        operation,
-        connectorCatalog,
-      });
-      return persisted;
-    });
-  };
-  const firstCatalog = readsConnectorCatalog
-    ? await loadGrantConnectorCatalog(
-        db,
-        await loadCustomConnectorPermissionBundleDependencySlugs(db, {
-          orgId: args.orgId,
-          customConnectorIds: grants.map((grant) => {
-            return grant.customConnectorId;
-          }),
-        }),
-        false,
-      )
-    : null;
-  const first = await transact(firstCatalog);
-  const committed =
-    "result" in first
-      ? first
-      : await transact(
-          await loadGrantConnectorCatalog(db, first.catalogDependencies, true),
-        );
-  if (!("result" in committed)) {
-    throw new Error("Final grant connector catalog cannot be stale");
-  }
+  const committed = await persistUserCustomConnectors({
+    db,
+    request: args,
+    grants,
+    grantByConnectorId,
+    operation,
+    readsConnectorCatalog:
+      args.permissionIntent === "exact" &&
+      operation !== "remove" &&
+      grants.some((grant) => {
+        return grant.permissionNames.length > 0;
+      }),
+  });
   if (
     committed.result.status === "updated" &&
     !options.deferRuntimeWakeupUntilOuterCommit
