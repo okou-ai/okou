@@ -983,7 +983,7 @@ const completeClaimedCustomFeishuOAuth$ = command(
 
 const customConnectorOAuthState$ = customConnectorOAuthStateByState(
   computed((get) => {
-    return get(queryOf(feishuOauthContract.callback)).state ?? "";
+    return get(queryOf(feishuOauthContract.callback)).state;
   }),
 );
 

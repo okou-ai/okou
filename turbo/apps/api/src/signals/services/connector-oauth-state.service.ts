@@ -318,10 +318,13 @@ export const claimBuiltinConnectorOAuthState$ = command(
 );
 
 export function customConnectorOAuthStateByState(
-  state$: Computed<string>,
+  state$: Computed<string | undefined>,
 ): Computed<Promise<StoredOAuthStateRow | undefined>> {
   return computed(async (get) => {
     const state = get(state$);
+    if (!state) {
+      return undefined;
+    }
     const db = get(db$);
     const [storedState] = await db
       .select(storedOAuthStateSelection)

@@ -19,7 +19,7 @@ const callback = setupApp({ context, routes: feishuOauthRoutes })(
   feishuOauthContract,
 );
 
-async function requestPreview(state: string) {
+async function requestPreview(state?: string) {
   return await accept(
     callback.callback({
       query: { code: "preview-code", state, responseMode: "json" },
@@ -40,11 +40,13 @@ describe("Custom OAuth state preview", () => {
     }
   });
 
-  it("rejects an unknown nonce through the Feishu callback", async () => {
-    const response = await requestPreview(randomBytes(32).toString("hex"));
-    expect(response.body).toStrictEqual({
-      error: "Invalid or expired connect state",
-    });
+  it("rejects missing, empty and unknown nonces through the Feishu callback", async () => {
+    for (const state of [undefined, "", randomBytes(32).toString("hex")]) {
+      const response = await requestPreview(state);
+      expect(response.body).toStrictEqual({
+        error: "Invalid or expired connect state",
+      });
+    }
   });
 
   it("preserves a standard OAuth nonce rejected by the Feishu callback until its own completion", async () => {
