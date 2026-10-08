@@ -64,15 +64,19 @@ struct ChatComposerView: View {
             Group {
               if showsProgress {
                 ProgressView()
+                  .controlSize(.small)
+                  .tint(Color.primary)
               } else {
                 Image(systemName: showsStop ? "stop.fill" : "arrow.up")
               }
             }
             .font(.system(size: 18, weight: .semibold))
-            .frame(width: 42, height: 42)
             .foregroundStyle(Color(uiColor: .systemBackground))
-            .background(Color.primary.opacity((hasText || showsStop) ? 1 : 0.38), in: Circle())
           }
+          .buttonStyle(.borderedProminent)
+          .buttonBorderShape(.circle)
+          .controlSize(.large)
+          .tint(Color.primary)
           .disabled((!hasText && !showsStop) || isBusy || needsUpgrade)
           .accessibilityLabel(showsStop ? "Stop" : "Send message")
           .accessibilityIdentifier(showsStop ? "stop-message" : "send-message")

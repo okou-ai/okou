@@ -17,7 +17,6 @@ fn storage(
         mount_path: mount_path.into(),
         vas_storage_name: name.into(),
         vas_version_id: version.into(),
-        baseline_candidate: false,
         instructions_target_filename: instructions_target_filename.map(str::to_string),
         archive_url: format!("https://example.com/{name}/{version}.tar.gz"),
         archive_size: None,

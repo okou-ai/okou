@@ -91,6 +91,7 @@ import {
 } from "./pi-memory-builtin-config";
 import {
   materializePreparedPiProvider,
+  piOpenRouterChatCompletionsEnabled,
   resolvePlatformMemoryPiModelConfig,
   resolvePreparedPiModelConfig,
 } from "./pi-sandbox-config";
@@ -140,7 +141,7 @@ import type { ClaimedPiMemoryPhase2Job } from "./pi-memory-phase2-job.service";
 import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance.service";
 import {
   PiMemoryQuotaError,
-  checkPiMemoryQuota,
+  checkPiMemoryQuota$,
 } from "./pi-memory-quota.service";
 import {
   checkOrgCreditsForRunAdmission$,
@@ -327,8 +328,8 @@ const admitMaintenance$ = command(
     if (admission) {
       throw new PiMaintenanceDispositionError("source_admission_denied");
     }
-    await checkPiMemoryQuota(
-      db,
+    await set(
+      checkPiMemoryQuota$,
       {
         orgId: job.orgId,
         userId: job.userId,
@@ -375,12 +376,18 @@ async function prepareMaintenanceModel(
           sourceId: credential.pin.modelProviderId ?? "",
           piExecution: true,
         });
-  const piInput = { catalog, piExecution: true };
+  const openrouterChatCompletions = piOpenRouterChatCompletionsEnabled(
+    admitted.featureSwitchContext,
+  );
+  const piInput = { catalog, piExecution: true, openrouterChatCompletions };
   const modelProvider = resolvedProvider
     ? credential.pin.modelProvider === "built-in"
       ? {
           ...resolvedProvider,
-          piModelConfig: resolvePlatformMemoryPiModelConfig(resolvedProvider),
+          piModelConfig: resolvePlatformMemoryPiModelConfig(
+            resolvedProvider,
+            openrouterChatCompletions,
+          ),
         }
       : materializePreparedPiProvider(piInput, resolvedProvider)
     : null;

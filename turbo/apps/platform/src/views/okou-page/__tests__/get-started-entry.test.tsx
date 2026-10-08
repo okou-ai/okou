@@ -11,6 +11,7 @@ import {
 } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import {
   integrationsSlackContract,
   type SlackOrgStatus,
@@ -48,6 +49,35 @@ function buttonNamed(name: string, container: ParentNode): HTMLElement {
     throw new Error(`Could not find button named ${name}`);
   }
   return button;
+}
+
+function linkNamed(name: string, container: ParentNode): HTMLElement {
+  const link = queryAllByRoleFast("link", container).find((candidate) => {
+    return normalizedText(candidate) === name;
+  });
+  if (!link) {
+    throw new Error(`Could not find link named ${name}`);
+  }
+  return link;
+}
+
+async function expectBrowserActivationsKeepIntro(
+  link: HTMLElement,
+  dialog: HTMLElement,
+) {
+  const user = userEvent.setup({ delay: null });
+  for (const modifier of ["Alt", "Control", "Meta", "Shift"]) {
+    await user.keyboard(`{${modifier}>}`);
+    await user.click(link);
+    await user.keyboard(`{/${modifier}}`);
+    expect(pathname()).toBe(questChatPath());
+    expect(dialog).toBeInTheDocument();
+  }
+  for (const keys of ["[MouseMiddle]", "[MouseRight]"]) {
+    await user.pointer({ target: link, keys });
+    expect(pathname()).toBe(questChatPath());
+    expect(dialog).toBeInTheDocument();
+  }
 }
 
 function slackInstalled(): SlackOrgStatus {
@@ -368,7 +398,6 @@ test("A workflow reward still with the reviewer stops offering the step again", 
 
 test("The X step opens a blank composer for an original post", async () => {
   configureQuestPage(context, "member");
-  const open = vi.spyOn(window, "open").mockReturnValue(null);
   await setupPage({
     context,
     path: questChatPath(),
@@ -387,11 +416,9 @@ test("The X step opens a blank composer for an original post", async () => {
   // The only editable field in the dialog is still the post link.
   expect(within(dialog).getAllByRole("textbox")).toHaveLength(1);
 
-  click(buttonNamed("Open X", dialog));
-  expect(open).toHaveBeenCalledWith(
-    "https://x.com/intent/post",
-    "okou-share-post",
-  );
+  const openX = linkNamed("Open X", dialog);
+  expect(openX).toHaveAttribute("href", "https://x.com/intent/post");
+  expect(openX).toHaveAttribute("target", "okou-share-post");
   expect(buttonNamed("Submit", dialog)).toBeDisabled();
 });
 
@@ -438,6 +465,9 @@ test("Sharing on X restores pending state and an Ably review notification update
   const waitingDialog = await screen.findByRole("dialog", {
     name: "Your post is with the reviewer",
   });
+  const openPost = linkNamed("Open the post", waitingDialog);
+  expect(openPost).toHaveAttribute("href", "https://x.com/molly/status/1873");
+  expect(openPost).toHaveAttribute("target", "okou-share-post");
   // The post itself is the thing the reader cannot reconstruct from the row.
   expect(
     within(waitingDialog).getByText("https://x.com/molly/status/1873"),
@@ -776,6 +806,7 @@ test("Daily rewards are claimed by selecting check in", async () => {
 
 test("The connector step says what it costs the user before it hands them off", async () => {
   configureQuestPage(context, "admin");
+  context.mocks.browser.open();
   mockQuestCatalog();
   await setupPage({
     context,
@@ -802,9 +833,13 @@ test("The connector step says what it costs the user before it hands them off", 
   expect(within(picker).queryByText("OpenAI")).not.toBeInTheDocument();
 
   // The whole catalog is still one press away for anyone who wants it.
-  click(buttonNamed("Browse all connectors", dialog));
+  const browse = linkNamed("Browse all connectors", dialog);
+  expect(browse).toHaveAttribute("href", "/connectors");
+  await expectBrowserActivationsKeepIntro(browse, dialog);
+  click(browse);
   await waitFor(() => {
     expect(pathname()).toBe("/connectors");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
 
@@ -883,8 +918,37 @@ test("The Slack step starts the install instead of handing over a list", async (
   expect(pathname()).toBe(questChatPath());
 });
 
+test("The Slack step links to integrations when no install URL is available", async () => {
+  configureQuestPage(context, "admin", { slackClaimed: false });
+  context.mocks.browser.open();
+  context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
+    return respond(200, {
+      ...slackInstalled(),
+      isConnected: false,
+      isInstalled: false,
+      installUrl: null,
+    });
+  });
+  await setupPage({ context, path: questChatPath() });
+
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-slack"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Work with Okou where your team already talks",
+  });
+  const browse = linkNamed("Add to Slack", dialog);
+  expect(browse).toHaveAttribute("href", "/works");
+  await expectBrowserActivationsKeepIntro(browse, dialog);
+  click(browse);
+  await waitFor(() => {
+    expect(pathname()).toBe("/works");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
 test("The workflow step offers the recommendations rather than one sentence", async () => {
   configureQuestPage(context, "admin");
+  context.mocks.browser.open();
   await setupPage({
     context,
     path: questChatPath(),
@@ -907,9 +971,14 @@ test("The workflow step offers the recommendations rather than one sentence", as
 
   // The way out is still the workflows page, and it is a link rather than the
   // screen's only filled control.
-  click(buttonNamed("Browse workflows", dialog));
+  const browse = linkNamed("Browse workflows", dialog);
+  expect(browse).toHaveAttribute("href", "/workflows");
+  await expectBrowserActivationsKeepIntro(browse, dialog);
+  browse.focus();
+  await userEvent.setup({ delay: null }).keyboard("{Enter}");
   await waitFor(() => {
     expect(pathname()).toBe("/workflows");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
 

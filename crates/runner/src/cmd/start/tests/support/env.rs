@@ -282,7 +282,6 @@ fn build_mock_run_config_with_runtime(
             background_fill: crate::storage_cache::StorageCacheBackgroundFillCoordinator::new()
                 .unwrap(),
             pre_spawn_admission: crate::pre_spawn_admission::PreSpawnAdmission::new(2).unwrap(),
-            storage_baseline_observer: Default::default(),
             home,
             workspace_cache: None,
         }),

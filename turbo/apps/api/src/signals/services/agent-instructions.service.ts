@@ -14,7 +14,6 @@ import { downloadS3Buffer, downloadManifest } from "../external/s3";
 import { env } from "../../lib/env";
 import { extractFileFromTarGz } from "../../lib/tar";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
-import { APPLICATION_OWNED_AGENT_EXECUTION_PLAN } from "./agent-execution-plan";
 
 interface AgentInstructionsResult {
   readonly content: string | null;
@@ -58,9 +57,7 @@ export function agentInstructions(
       return null;
     }
 
-    const instructionsFilename = getInstructionsFilename(
-      APPLICATION_OWNED_AGENT_EXECUTION_PLAN.framework.fallback,
-    );
+    const instructionsFilename = getInstructionsFilename();
 
     const storageName = getInstructionsStorageName(agent.name);
     const [storage] = await get(db$)

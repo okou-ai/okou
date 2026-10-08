@@ -1,3 +1,5 @@
+import { createStore } from "ccstate";
+import { testContext } from "../../../__tests__/test-context";
 import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
 import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
@@ -7,7 +9,7 @@ import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-can
 import { db } from "../../../lib/db";
 import {
   claimPiMemoryPhase2Job,
-  failPiMemoryPhase2Job,
+  failPiMemoryPhase2Job$,
   PI_MEMORY_PHASE2_MAX_UNUSED_AGE_MS,
   PI_MEMORY_PHASE2_RETRY_DELAY_MS,
 } from "../pi-memory-phase2-job.service";
@@ -17,6 +19,8 @@ import {
   insertPhase2Candidates,
   type Phase2CandidateInput,
 } from "./pi-memory-phase2-job.test-fixture";
+
+const context = testContext();
 
 const NOW = Object.freeze(new Date("2026-09-03T04:00:00.000Z"));
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -211,14 +215,18 @@ describe("Pi memory Phase 2 selection", () => {
     });
     expect(exact?.selected).toHaveLength(256);
     await expect(
-      failPiMemoryPhase2Job(db(), {
-        ...scope,
-        leaseToken: exact?.leaseToken ?? "missing",
-        claimedRevision: exact?.claimedRevision ?? -1,
-        claimedBaseVersionId: exact?.baseVersion.versionId ?? "missing",
-        currentTime: new Date(NOW.getTime() + 1),
-        errorClass: "test_retry",
-      }),
+      createStore().set(
+        failPiMemoryPhase2Job$,
+        {
+          ...scope,
+          leaseToken: exact?.leaseToken ?? "missing",
+          claimedRevision: exact?.claimedRevision ?? -1,
+          claimedBaseVersionId: exact?.baseVersion.versionId ?? "missing",
+          currentTime: new Date(NOW.getTime() + 1),
+          errorClass: "test_retry",
+        },
+        context.signal,
+      ),
     ).resolves.toBeTruthy();
 
     const topRanked = exact?.selected.find((candidate) => {

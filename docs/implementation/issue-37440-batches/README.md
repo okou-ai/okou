@@ -8,5 +8,6 @@ Each PR completes ten stable helper/API identities. Unchanged classifications, b
 
 - [Batch 001: artifact erasure and publication bookkeeping](batch-001.md) — ten shared helper retirements, including one orphaned teardown definition; four whole declarations removed, with existing public lifecycles preserved; zero HTTP operation changes.
 - [Batch 002: hosted publication construction and shared snapshots](batch-002.md) — four shared and six local definitions; retire private history/scope drivers, preserve normal publication and sharing, and correct prior-batch deleted-identity observations without additional quota credit.
+- [Batch 003: public connector modes and Agent Draft behavior](batch-003.md) — one shared and nine local definitions; replace mode/config SQL observations with normal connector requests, retain public draft concurrency and rewrite invalid draft input at the HTTP boundary.
 
 The [current ledger and merge receipts](https://github.com/okou-ai/okou/issues/37440#issuecomment-6052156682) are linked from #37440. Only merged changes reduce the remaining inventory. Historical 1,125-case credit and the [#37918 correction](../issue-37440-correction/README.md) remain separate historical records.

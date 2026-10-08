@@ -642,24 +642,45 @@ test("Browse workflows opens the existing template picker in Workflow and preser
   expect(capture.sentMessages).toHaveLength(0);
 });
 
+test("Browse workflows in a workflow's dialog hands over to the template picker", async () => {
+  const capture = mockTemplateChat();
+  const editor = await selectWorkflow();
+  await fill(editor, "Keep my draft");
+  click(button("Start your day with a clear plan"));
+  const detail = await screen.findByRole("dialog", { name: "Morning brief" });
+  click(button("Browse workflows", detail));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Morning brief" })).toBeNull();
+  });
+  const picker = await screen.findByRole("dialog");
+  expect(tabByText("Workflow")).toHaveAttribute("aria-selected", "true");
+  expect(
+    button("Select workflow template Morning brief", picker),
+  ).toBeInTheDocument();
+  expect(editor.textContent).toBe("Keep my draft");
+  expect(capture.sentMessages).toHaveLength(0);
+});
+
+// The shelf captions a cover by what it gets done; the dialog it opens is
+// named by the workflow itself, beside the sample of what it delivers.
 test("Each built-in workflow opens its result preview", async () => {
   mockTemplateChat();
   await selectWorkflow();
-  for (const title of [
-    "Start your day with a clear plan",
-    "Walk into meetings prepared",
-    "Keep important emails moving",
-    "Wrap up your week clearly",
-    "Turn meetings into next steps",
-    "Keep your invoices organized",
-    "Know when competitors change",
-    "See how your business is doing",
-    "Catch the reply you’re waiting for",
-  ]) {
+  for (const [title, name] of [
+    ["Start your day with a clear plan", "Morning brief"],
+    ["Walk into meetings prepared", "Meeting preparation"],
+    ["Keep important emails moving", "Inbox sorting & reply drafts"],
+    ["Wrap up your week clearly", "Weekly work recap"],
+    ["Turn meetings into next steps", "Meeting recap"],
+    ["Keep your invoices organized", "Invoice filing"],
+    ["Know when competitors change", "Competitor updates"],
+    ["See how your business is doing", "Daily metrics brief"],
+    ["Catch the reply you’re waiting for", "Email reply watch"],
+  ] as const) {
     click(button(title));
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await screen.findByRole("dialog", { name });
     expect(within(dialog).getByRole("img", { name: /^Sample:/ })).toBeVisible();
-    expect(within(dialog).getByRole("heading", { name: title })).toBeVisible();
+    expect(within(dialog).getByRole("heading", { name })).toBeVisible();
     click(button("Close", dialog));
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).toBeNull();

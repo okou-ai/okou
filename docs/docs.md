@@ -94,6 +94,8 @@ surface; the index does not replace their detailed rules.
   scope, canonical chat history, checksum semantics, and download compatibility.
 - [Storage version publication](./storage-version-publication.md): R2-first
   version registration, DB-only reuse, and durable reference-first Clerk cleanup.
+- [Artifact share publication](./artifact-share-publication.md): initial
+  revocation, conditional R2 authority and the transaction-removal deployment gate.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, rejection log records, retained serving generations and
   recovered publication-order evidence.

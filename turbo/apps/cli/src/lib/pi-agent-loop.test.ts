@@ -990,6 +990,55 @@ describe("sandbox Pi agent loop", () => {
     });
   });
 
+  it("pins generation 5 Chat Completions affinity to the owning thread", async () => {
+    const config = {
+      schemaVersion: 5,
+      dialect: "openai-completions",
+      transport: "sse",
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "@preset/okou-1-0",
+      catalogModel: "okou-1.0",
+      credentialBindings: [
+        {
+          kind: "api-key",
+          environment: "OPENAI_API_KEY",
+          secretName: "OPENROUTER_API_KEY",
+        },
+      ],
+    };
+    const env = piEnv({
+      OKOU_RUN_ID: RUN_ID,
+      OKOU_CHAT_THREAD_ID: "thread-affinity",
+    });
+    env.OKOU_PI_MODEL_CONFIG = JSON.stringify(config);
+    await expect(piSandboxAgentConfigFromEnv(env)).resolves.toMatchObject({
+      model: {
+        provider: "openrouter",
+        model: "@preset/okou-1-0",
+        catalogModel: "okou-1.0",
+        dialect: "openai-completions",
+        transport: "sse",
+        apiKey: "test-api-key",
+        sessionAffinityKey: "thread-affinity",
+      },
+    });
+
+    const responses = piEnv({
+      OKOU_RUN_ID: RUN_ID,
+      OKOU_CHAT_THREAD_ID: "thread-affinity",
+    });
+    responses.OKOU_PI_MODEL_CONFIG = JSON.stringify({
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "openai/gpt-6-luna",
+      apiKeyEnv: "OPENAI_API_KEY",
+      credentialSecretName: "OPENROUTER_API_KEY",
+    });
+    const resolved = await piSandboxAgentConfigFromEnv(responses);
+    expect(resolved.model).not.toHaveProperty("sessionAffinityKey");
+  });
+
   it.each([2, 3] as const)(
     "materializes exact subscription bindings from generation %s",
     async (schemaVersion) => {

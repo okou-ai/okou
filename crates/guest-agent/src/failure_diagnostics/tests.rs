@@ -33,6 +33,10 @@ fn provider_failure_contract_is_consistent_across_terminal_frameworks() {
 
 #[test]
 fn new_provider_classification_does_not_match_unowned_output() {
+    let cyber_refusal: Value = serde_json::from_str(include_str!(
+        "../../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-cyber-safety-refusal.json"
+    ))
+    .unwrap();
     for framework in [
         AgentFramework::Pi,
         AgentFramework::Codex,
@@ -44,6 +48,7 @@ fn new_provider_classification_does_not_match_unowned_output() {
             "Codex error: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
             r#"{"error":{"code":"rate_limit_exceeded"}}"#,
             "API Error: 503 Service unavailable",
+            cyber_refusal["errorMessage"].as_str().unwrap(),
         ] {
             assert_eq!(
                 super::classify_cli_failure_reason(framework, FailureDetailSource::Stderr, message),
@@ -1705,12 +1710,44 @@ fn cli_failure_reason_classifies_codex_session_limit() {
 
 #[test]
 fn cli_failure_reason_classifies_codex_invalid_api_key_code() {
-    let reason = classify_cli_failure_reason(
-        AgentFramework::Codex,
-        "OpenAI API request failed: invalid_api_key",
-    );
+    for source in [FailureDetailSource::Stderr, FailureDetailSource::CodexJsonl] {
+        for message in [
+            "OpenAI API request failed: invalid_api_key",
+            "API Error: 500 invalid_api_key",
+        ] {
+            assert_eq!(
+                super::classify_cli_failure_reason(AgentFramework::Codex, source, message),
+                Some(FailureReason::InvalidApiKey),
+                "source={source:?}, message={message}"
+            );
+        }
+    }
+}
 
-    assert_eq!(reason, Some(FailureReason::InvalidApiKey));
+#[test]
+fn codex_cyber_refusal_credential_link_preserves_unowned_source_rules() {
+    let cyber_refusal: Value = serde_json::from_str(include_str!(
+        "../../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-cyber-safety-refusal.json"
+    ))
+    .unwrap();
+    let message = cyber_refusal["errorMessage"].as_str().unwrap().replace(
+        "https://example.invalid/policy",
+        "https://example.invalid/invalid_api_key",
+    );
+    for (source, reason) in [
+        (
+            FailureDetailSource::CodexJsonl,
+            FailureReason::SafetyPolicyRefusal,
+        ),
+        // Only the native credential heuristic may inspect stderr, not the refusal format.
+        (FailureDetailSource::Stderr, FailureReason::InvalidApiKey),
+    ] {
+        assert_eq!(
+            super::classify_cli_failure_reason(AgentFramework::Codex, source, &message),
+            Some(reason),
+            "source={source:?}"
+        );
+    }
 }
 
 #[test]

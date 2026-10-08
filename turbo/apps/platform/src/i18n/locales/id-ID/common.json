@@ -2545,7 +2545,6 @@
         "visualMethods": "Visual methods"
       },
       "workflows": {
-        "back": "Jelajahi workflow",
         "browse": "Jelajahi workflow",
         "close": "Tutup",
         "contextPrefix": "Yang penting bagi saya: {{preference}}",
@@ -2554,14 +2553,7 @@
             "cadence": "Harian atau mingguan",
             "description": "Pantau perubahan harga dan fitur di situs kompetitor, simpan temuannya di Notion, dan beri tahu Slack.",
             "name": "Pemantau kompetitor",
-            "next": "Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
             "prompt": "Bantu saya menyiapkan workflow ini: Pemantau kompetitor. Memeriksa halaman pesaing pilihan secara terjadwal. Menemukan perubahan penting pada harga, paket, atau pesan. Menyimpan temuan dan sumber ke Notion serta memberi tahu Slack jika diinginkan. Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
-            "results": {
-              "one": "Perbandingan sebelum dan sesudah",
-              "three": "Penjelasan singkat tentang perubahan",
-              "two": "Tautan sumber untuk setiap temuan"
-            },
-            "scope": "Pantau perubahan harga dan fitur di situs kompetitor, simpan temuannya di Notion, dan beri tahu Slack.",
             "steps": {
               "one": "Memeriksa halaman pesaing pilihan secara terjadwal",
               "three": "Menyimpan temuan dan sumber ke Notion serta memberi tahu Slack jika diinginkan",
@@ -2573,14 +2565,7 @@
             "cadence": "Saat email baru tiba",
             "description": "Sortir inbox Anda dan buat draf balasan untuk email yang membutuhkannya.",
             "name": "Sortir Gmail dan buat draf balasan",
-            "next": "Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
             "prompt": "Bantu saya menyiapkan workflow ini: Sortir Gmail dan buat draf balasan. Membaca pesan dalam cakupan kotak masuk pilihan. Mengurutkan berdasarkan urgensi dan aturan yang disepakati. Menyimpan saran balasan sebagai draf Gmail. Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya. Balasan email hanya berupa draf yang akan saya tinjau dan kirim sendiri.",
-            "results": {
-              "one": "Email terurut berdasarkan urgensi",
-              "three": "Draf balasan di Gmail",
-              "two": "Permintaan penting ditampilkan"
-            },
-            "scope": "Sortir inbox Anda dan buat draf balasan untuk email yang membutuhkannya.",
             "steps": {
               "one": "Membaca pesan dalam cakupan kotak masuk pilihan",
               "three": "Menyimpan saran balasan sebagai draf Gmail",
@@ -2592,14 +2577,7 @@
             "cadence": "Saat Anda memberi label pada faktur",
             "description": "Simpan email invoice ke Drive dan catat semuanya di Sheet.",
             "name": "Simpan invoice Gmail ke Google Drive",
-            "next": "Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
             "prompt": "Bantu saya menyiapkan workflow ini: Simpan invoice Gmail ke Google Drive. Mengidentifikasi faktur dari label Gmail pilihan. Menyimpan lampiran faktur di folder Drive yang disepakati. Mencatat detail di Google Sheets jika diinginkan. Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
-            "results": {
-              "one": "Faktur di folder yang benar",
-              "three": "Log faktur Sheets opsional",
-              "two": "Catatan penyimpanan yang konsisten"
-            },
-            "scope": "Simpan email invoice ke Drive dan catat semuanya di Sheet.",
             "steps": {
               "one": "Mengidentifikasi faktur dari label Gmail pilihan",
               "three": "Mencatat detail di Google Sheets jika diinginkan",
@@ -2611,14 +2589,7 @@
             "cadence": "Saat rapat ditambahkan",
             "description": "Teliti orang yang akan Anda temui sebelum setiap event kalender.",
             "name": "Teliti meeting kalender Anda",
-            "next": "Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
             "prompt": "Bantu saya menyiapkan workflow ini: Teliti meeting kalender Anda. Membaca peserta dan detail acara kalender baru. Meneliti konteks profesional dan perusahaan. Menyiapkan ringkasan dengan sumber dan topik diskusi. Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
-            "results": {
-              "one": "Konteks peserta dan perusahaan",
-              "three": "Saran topik diskusi",
-              "two": "Latar belakang relevan beserta sumber"
-            },
-            "scope": "Teliti orang yang akan Anda temui sebelum setiap event kalender.",
             "steps": {
               "one": "Membaca peserta dan detail acara kalender baru",
               "three": "Menyiapkan ringkasan dengan sumber dan topik diskusi",
@@ -2630,14 +2601,7 @@
             "cadence": "Setiap pagi",
             "description": "Posting jumlah pengunjung, signup, dan aktivasi harian ke Slack.",
             "name": "Posting metrik harian ke Slack",
-            "next": "Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
             "prompt": "Bantu saya menyiapkan workflow ini: Posting metrik harian ke Slack. Membaca metrik situs dan pendaftaran yang disepakati. Menyusun ringkasan harian dengan periode yang jelas. Membagikannya ke tujuan Slack pilihan. Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
-            "results": {
-              "one": "Pengunjung harian",
-              "three": "Periode pelaporan yang jelas",
-              "two": "Pendaftaran dan aktivasi jika tersedia"
-            },
-            "scope": "Posting jumlah pengunjung, signup, dan aktivasi harian ke Slack.",
             "steps": {
               "one": "Membaca metrik situs dan pendaftaran yang disepakati",
               "three": "Membagikannya ke tujuan Slack pilihan",
@@ -2649,14 +2613,7 @@
             "cadence": "Setiap pagi",
             "description": "Ubah update Gmail, Calendar, dan Notion jadi rencana harian singkat di Slack.",
             "name": "Ringkasan pagi",
-            "next": "Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
             "prompt": "Bantu saya menyiapkan workflow ini: Ringkasan pagi. Membaca email penting dan rapat hari ini. Memprioritaskan keputusan, tindak lanjut, dan waktu fokus. Mengirim rencana pagi singkat ke Slack. Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
-            "results": {
-              "one": "Prioritas hari ini",
-              "three": "Balasan dan keputusan untuk ditindaklanjuti",
-              "two": "Rapat dan waktu fokus"
-            },
-            "scope": "Ubah update Gmail, Calendar, dan Notion jadi rencana harian singkat di Slack.",
             "steps": {
               "one": "Membaca email penting dan rapat hari ini",
               "three": "Mengirim rencana pagi singkat ke Slack",
@@ -2668,14 +2625,7 @@
             "cadence": "Memeriksa catatan rapat baru secara berkala",
             "description": "Bagikan rangkuman berisi keputusan dan item aksi setelah setiap rapat.",
             "name": "Dapatkan rangkuman rapat di Slack",
-            "next": "Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
             "prompt": "Bantu saya menyiapkan workflow ini: Dapatkan rangkuman rapat di Slack. Membaca transkrip rapat baru. Mengambil keputusan, tindakan, penanggung jawab, dan tanggal yang disebutkan. Mengirim rangkuman singkat ke tujuan pilihan. Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
-            "results": {
-              "one": "Keputusan dalam percakapan",
-              "three": "Informasi yang belum ada ditandai jelas",
-              "two": "Tindakan dan penanggung jawab yang disebutkan"
-            },
-            "scope": "Bagikan rangkuman berisi keputusan dan item aksi setelah setiap rapat.",
             "steps": {
               "one": "Membaca transkrip rapat baru",
               "three": "Mengirim rangkuman singkat ke tujuan pilihan",
@@ -2687,14 +2637,7 @@
             "cadence": "Saat balasan yang sesuai tiba",
             "description": "Pantau satu percakapan dan dapatkan poin penting balasan baru serta langkah berikutnya.",
             "name": "Pemantauan balasan email",
-            "next": "Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
             "prompt": "Bantu saya menyiapkan workflow ini: Pemantauan balasan email. Mengikuti satu percakapan email dan pengirim yang disepakati. Mendeteksi balasan baru dan merangkum poin penting. Memberi tahu sekali dan menyiapkan draf jika diperlukan. Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya. Balasan email hanya berupa draf yang akan saya tinjau dan kirim sendiri.",
-            "results": {
-              "one": "Balasan masuk dan poin penting",
-              "three": "Draf tindak lanjut jika bermanfaat",
-              "two": "Tindakan yang diminta atau tenggat"
-            },
-            "scope": "Pantau satu percakapan dan dapatkan poin penting balasan baru serta langkah berikutnya.",
             "steps": {
               "one": "Mengikuti satu percakapan email dan pengirim yang disepakati",
               "three": "Memberi tahu sekali dan menyiapkan draf jika diperlukan",
@@ -2706,14 +2649,7 @@
             "cadence": "Setiap minggu",
             "description": "Rangkum aktivitas GitHub, Gmail, dan Calendar jadi satu update mingguan di Slack.",
             "name": "Ringkasan mingguan pribadi",
-            "next": "Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
             "prompt": "Bantu saya menyiapkan workflow ini: Ringkasan mingguan pribadi. Mengumpulkan aktivitas dari sumber pilihan. Mengelompokkan pencapaian, keputusan tertunda, dan tindak lanjut. Membagikan rangkuman mingguan ke tujuan Slack pilihan. Buat draf terlebih dahulu. Konfirmasikan sumber, cakupan, waktu, dan tujuan sebelum mengaktifkannya.",
-            "results": {
-              "one": "Pencapaian minggu ini",
-              "three": "Komitmen mendatang",
-              "two": "Keputusan tertunda dan tindak lanjut"
-            },
-            "scope": "Rangkum aktivitas GitHub, Gmail, dan Calendar jadi satu update mingguan di Slack.",
             "steps": {
               "one": "Mengumpulkan aktivitas dari sumber pilihan",
               "three": "Membagikan rangkuman mingguan ke tujuan Slack pilihan",
@@ -2722,9 +2658,6 @@
             "title": "Tutup pekan kerja dengan rangkuman jelas"
           }
         },
-        "next": "Workflow berikutnya",
-        "ownSources": "Workflow Anda akan menggunakan sumber dan konten milik Anda sendiri.",
-        "placeholder": "Opsional — beri tahu apa yang penting bagi Anda",
         "preview": {
           "competitors": {
             "changed": "Changed",
@@ -2818,13 +2751,10 @@
             "two": "Wrapped up the onboarding guide"
           }
         },
-        "previous": "Workflow sebelumnya",
         "sample": "Contoh",
         "tailor": "Apa yang ingin Anda sesuaikan?",
         "use": "Gunakan workflow ini",
-        "whatHappens": "Proses setiap kali dijalankan",
-        "whatYouGet": "Hasil yang Anda dapatkan",
-        "worksWith": "Aplikasi yang digunakan"
+        "whatHappens": "Proses setiap kali dijalankan"
       }
     },
     "templates": {

@@ -1,5 +1,93 @@
 [
   {
+    "message": "This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/policy before retrying.",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "Codex error: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/policy before retrying.",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "unknown: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/policy before retrying.",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "Error Code invalid_request_error: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/policy before retrying.",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via <redacted:url> before retrying.",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "{\"error\":{\"type\":\"invalid_request_error\",\"message\":\"This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/policy before retrying.\"}}",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "{\"error\":{\"code\":\"invalid_api_key\",\"message\":\"This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/policy before retrying.\"}}",
+    "reason": "invalid_api_key"
+  },
+  {
+    "message": "This content was flagged for possible cybersecurity risk.",
+    "reason": null
+  },
+  {
+    "message": "This request mentions cybersecurity risk.",
+    "reason": null
+  },
+  {
+    "message": "This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request.",
+    "reason": null
+  },
+  {
+    "message": "This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/policy",
+    "reason": null
+  },
+  {
+    "message": "This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via  before retrying.",
+    "reason": null
+  },
+  {
+    "message": "This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/policy extra before retrying.",
+    "reason": null
+  },
+  {
+    "message": "This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/policy\u0085extra before retrying.",
+    "reason": null
+  },
+  {
+    "message": "This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/policy before retrying. is an example.",
+    "reason": null
+  },
+  {
+    "message": "The tool printed: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/policy before retrying.",
+    "reason": null
+  },
+  {
+    "message": "\"This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/policy before retrying.\"",
+    "reason": null
+  },
+  {
+    "message": "{\"debug\":{\"error\":{\"message\":\"This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/policy before retrying.\"}}}",
+    "reason": null
+  },
+  {
+    "message": "This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/policy?request=503 before retrying.",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/context_length_exceeded before retrying.",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/invalid_api_key before retrying.",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "Codex error: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/policy?request=invalid_api_key before retrying.",
+    "reason": "safety_policy_refusal"
+  },
+  {
     "message": "{\"error\":{\"code\":\"InternalServerException\",\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\"}}",
     "reason": "provider_queue_timeout"
   },

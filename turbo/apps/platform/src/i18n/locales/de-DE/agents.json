@@ -453,6 +453,7 @@
         "title": "Unterstützung"
       }
     },
+    "categoryFilter": "Nach Kategorie filtern",
     "chat": "Chatten",
     "description": "Klicken Sie auf eine beliebige Karte, um eine Unterhaltung zu beginnen. Es könnte sich um eine On-Demand-Aufgabe, einen wiederkehrenden Workflow oder einen Sub-Agenten handeln.",
     "search": {

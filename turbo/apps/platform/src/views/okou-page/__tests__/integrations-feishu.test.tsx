@@ -7,6 +7,7 @@ import {
 } from "@okouai/api-contracts/contracts/feishu-connect";
 import { FEISHU_PLATFORMS } from "@okouai/core/feishu-platform";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -130,7 +131,68 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     expect(screen.queryByLabelText("Default agent")).not.toBeInTheDocument();
   });
 
+  it.each(["Enter", "click"] as const)(
+    `${provider.name} credentials validate before advancing with %s`,
+    async (activation) => {
+      const user = userEvent.setup({ delay: null });
+      const appIdCheck = createDeferredPromise<void>(context.signal);
+      mockBot();
+      context.mocks.api(
+        connectContract.checkAppId,
+        async ({ respond, withSignal }) => {
+          await withSignal(appIdCheck.promise);
+          return respond(200, { available: true });
+        },
+      );
+      await setupFeishuSettingsPage(context, platform);
+      click(await screen.findByText("Add bot"));
+      click(getAction("button", "Next"));
+      const appId = await screen.findByLabelText("App ID");
+      const appSecret = screen.getByLabelText("App Secret");
+      await fill(appId, "cli_new_bot");
+      expect(getAction("button", "Next")).toBeDisabled();
+      await user.click(appId);
+      await user.keyboard("{Enter}");
+      expect(appSecret).toBeInTheDocument();
+      await fill(appSecret, "   ");
+      expect(getAction("button", "Next")).toBeDisabled();
+      await fill(appSecret, "app-secret");
+      const next = getAction("button", "Next");
+      expect(next).toBeEnabled();
+
+      if (activation === "Enter") {
+        await user.click(appSecret);
+        await user.keyboard("{Enter}");
+      } else {
+        click(next);
+      }
+
+      await waitFor(() => {
+        expect(getAction("button", "Checking…")).toBeDisabled();
+      });
+      expect(appId).toBeDisabled();
+      expect(appSecret).toBeDisabled();
+      expect(getAction("button", "Back")).toBeDisabled();
+      click(next);
+      await user.keyboard("{Enter}");
+      appIdCheck.resolve();
+
+      await expect(
+        screen.findByLabelText("Verification Token"),
+      ).resolves.toBeInTheDocument();
+      expect(getAction("button", "Verify and continue")).toBeDisabled();
+      click(getAction("button", "Back"));
+      expect(screen.getByLabelText("App ID")).toHaveValue("cli_new_bot");
+      expect(screen.getByLabelText("App Secret")).toHaveValue("app-secret");
+      click(getAction("button", "Back"));
+      expect(screen.getByText("Create an Agent app")).toBeInTheDocument();
+      click(getAction("button", "Cancel"));
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    },
+  );
+
   it(`Guided ${provider.name} setup connects the admin through OAuth`, async () => {
+    const user = userEvent.setup({ delay: null });
     mockBot();
     const connectUrl = `https://api.okou.test/api/${platform}/oauth/connect?state=new-bot`;
     const completion = createDeferredPromise<void>(context.signal);
@@ -182,7 +244,8 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
       "verification-token",
     );
     await fill(screen.getByLabelText("Encrypt Key"), "encrypt-key");
-    click(getAction("button", "Verify and continue"));
+    await user.click(screen.getByLabelText("Encrypt Key"));
+    await user.keyboard("{Enter}");
     await expect(
       screen.findByText("Configure the OAuth redirect URL"),
     ).resolves.toBeVisible();
@@ -219,6 +282,7 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     await waitFor(() => {
       expect(getAction("button", "Back")).toBeDisabled();
     });
+    expect(getAction("button", "Done")).toBeDisabled();
     expect(pathname()).toBe(provider.settingsPath);
     completion.resolve();
     await expect(
@@ -639,15 +703,17 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
   });
 
   it(`A ${provider.name} App ID already registered in Okou cannot be reused`, async () => {
+    const user = userEvent.setup({ delay: null });
     mockBot({ isAdmin: true });
     context.mocks.api(connectContract.checkAppId, ({ query, respond }) => {
-      expect(query.appId).toBe("cli_registered");
-      return respond(409, {
-        error: {
-          code: "CONFLICT",
-          message: `This ${provider.name} App ID is already registered in Okou`,
-        },
-      });
+      return query.appId === "cli_registered"
+        ? respond(409, {
+            error: {
+              code: "CONFLICT",
+              message: `This ${provider.name} App ID is already registered in Okou`,
+            },
+          })
+        : respond(200, { available: true });
     });
     await setupIntegrationsPage(context, { [platform]: true });
     click(
@@ -660,7 +726,8 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     await fill(await screen.findByLabelText("App ID"), "cli_registered");
     await fill(screen.getByLabelText("App Secret"), "app-secret");
 
-    click(getAction("button", "Next"));
+    await user.click(screen.getByLabelText("App Secret"));
+    await user.keyboard("{Enter}");
 
     await expect(
       screen.findByText(
@@ -671,5 +738,11 @@ describe.each(["feishu", "lark"] as const)("%s integration UI", (platform) => {
     expect(
       screen.queryByLabelText("Verification Token"),
     ).not.toBeInTheDocument();
+    await fill(screen.getByLabelText("App ID"), "cli_available");
+    await user.click(screen.getByLabelText("App ID"));
+    await user.keyboard("{Enter}");
+    await expect(
+      screen.findByLabelText("Verification Token"),
+    ).resolves.toBeInTheDocument();
   });
 });

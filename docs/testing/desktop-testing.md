@@ -61,7 +61,7 @@ candidate; a successful feed response or download alone is insufficient.
 
 ## Release Workflow Contracts
 
-The `.github/scripts/tests/` Desktop tests protect version-file migration,
+The `.github/scripts/tests/` Desktop tests protect native version comparisons,
 immutable SHA-addressed R2 artifacts, exact-artifact promotion, signing inputs,
 and publishing the mutable manifest only after both notarized assets and API
 deployment succeed. The API appcast route must be deployed before Electron

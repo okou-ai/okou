@@ -26,6 +26,42 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
+  it("enables presentation conversion for Bingjie across workspaces", () => {
+    for (const orgId of [
+      undefined,
+      "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+      "org_nonexistent",
+    ]) {
+      const context = { email: "BINGJIE@OKOU.AI", orgId };
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.PresentationConvert, context),
+      ).toBe(true);
+      expect(
+        getAllFeatureStates(context)[FeatureSwitchKey.PresentationConvert],
+      ).toBe(true);
+    }
+  });
+
+  it("defaults presentation conversion off for everyone else, including staff", () => {
+    for (const context of [
+      {},
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+      {
+        userId: "staff-colleague",
+        email: "ethan@okou.ai",
+        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+      },
+      { userId: "external-user", orgId: "org_nonexistent" },
+    ]) {
+      expect(
+        isFeatureEnabled(FeatureSwitchKey.PresentationConvert, context),
+      ).toBe(false);
+      expect(
+        getAllFeatureStates(context)[FeatureSwitchKey.PresentationConvert],
+      ).toBe(false);
+    }
+  });
+
   it("enables private artifacts for everyone and honors explicit opt-outs", () => {
     for (const context of [
       {},
@@ -317,7 +353,7 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.OkouDebug]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.PiMemory]).toBe(true);
-    expect(staffOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(true);
+    expect(staffOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
@@ -460,6 +496,9 @@ describe("getFeatureSwitchMetadata", () => {
       "released",
     );
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
+    expect(metadata[FeatureSwitchKey.PresentationConvert].rolloutStage).toBe(
+      "alpha",
+    );
     expect(metadata[FeatureSwitchKey.CustomTemplates].rolloutStage).toBe(
       "beta",
     );

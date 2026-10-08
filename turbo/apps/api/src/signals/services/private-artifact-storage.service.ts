@@ -30,7 +30,7 @@ import {
   artifactReferenceRecord,
 } from "./artifact-reference.service";
 import {
-  queueArtifactCatalogFile,
+  queueArtifactCatalogFileSql,
   syncArtifactCatalogForFile$,
 } from "./artifact-catalog.service";
 
@@ -324,6 +324,7 @@ export const completePrivateArtifact$ = command(
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
+    // A completed file and its durable catalog handoff must commit together.
     const changed = await db.transaction(async (tx) => {
       const [row] = await tx
         .update(runUploadedFiles)
@@ -337,7 +338,8 @@ export const completePrivateArtifact$ = command(
         .where(eq(runUploadedFiles.id, args.id))
         .returning({ id: runUploadedFiles.id });
       if (row) {
-        await queueArtifactCatalogFile(tx, row.id, signal);
+        await tx.execute(queueArtifactCatalogFileSql(row.id));
+        signal.throwIfAborted();
       }
       return Boolean(row);
     });

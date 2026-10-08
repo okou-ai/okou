@@ -1637,6 +1637,67 @@ test("a failed publication write does not report a narrower audience, and unavai
   );
 });
 
+test("stopping an unpublished file records revocation and preserves its snapshot for a later explicit share", async () => {
+  const { members, session } = await fixture();
+  const target = await file();
+  const stopped = await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: { target, audience: "private" },
+    }),
+    [200],
+  );
+  expect(stopped.body).toMatchObject({
+    audience: "private",
+    url: null,
+    shortUrl: null,
+    selectedTarget: target,
+  });
+  expect(stopped.body.shareId).toBeTruthy();
+  const status = await accept(
+    api()(artifactSharesContract).status({ headers, body: target }),
+    [200],
+  );
+  expect(status.body).toStrictEqual(stopped.body);
+  const recipient = `user_${randomUUID()}`;
+  members.add(recipient);
+  session(recipient);
+  await accept(
+    api()(artifactSharesContract).resolve({
+      headers,
+      params: { id: stopped.body.shareId! },
+    }),
+    [404],
+  );
+  session();
+  const shared = await accept(
+    api()(artifactSharesContract).update({
+      headers,
+      body: { target, audience: "organization" },
+    }),
+    [200],
+  );
+  expect(shared.body.shareId).toBe(stopped.body.shareId);
+  session(recipient);
+  const resolved = await accept(
+    api()(artifactSharesContract).resolve({
+      headers,
+      params: { id: shared.body.shareId! },
+    }),
+    [200],
+  );
+  expect(resolved.body.url).toContain("signature=temporary");
+  expect(context.mocks.s3.getSignedUrl).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({
+      input: expect.objectContaining({
+        Key: expect.stringContaining(`private-artifacts/${target.id}/shares/`),
+      }),
+    }),
+    expect.anything(),
+  );
+});
+
 test("sharing copies file bytes once into private storage without changing the owner reference", async () => {
   await fixture();
   const target = await file();

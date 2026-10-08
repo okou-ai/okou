@@ -18,6 +18,7 @@ import {
 import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
 import rateLimitMessage from "./test/fixtures/codex-rate-limit.json";
+import cyberSafetyRefusal from "./test/fixtures/codex-cyber-safety-refusal.json";
 import { piModelFailureReason } from "./model-request-diagnostics";
 import { normalizeContext } from "@earendil-works/pi-ai";
 
@@ -55,11 +56,21 @@ function stream(signal?: AbortSignal) {
   );
 }
 
-function successResponse() {
+function successResponse(text?: string) {
+  const item = {
+    id: "synthetic-message",
+    type: "message",
+    role: "assistant",
+    status: "completed",
+    content:
+      text === undefined
+        ? []
+        : [{ type: "output_text", text, annotations: [] }],
+  };
   const response = {
     id: "synthetic-response",
     status: "completed",
-    output: [],
+    output: text === undefined ? [] : [item],
     usage: { input_tokens: 1, output_tokens: 0, total_tokens: 1 },
   };
   return new HttpResponse(
@@ -68,6 +79,22 @@ function successResponse() {
         type: "response.created",
         response: { ...response, status: "in_progress" },
       },
+      ...(text === undefined
+        ? []
+        : [
+            {
+              type: "response.output_item.added",
+              output_index: 0,
+              item: { ...item, content: [], status: "in_progress" },
+            },
+            {
+              type: "response.output_text.delta",
+              output_index: 0,
+              item_id: item.id,
+              delta: text,
+            },
+            { type: "response.output_item.done", output_index: 0, item },
+          ]),
       { type: "response.completed", response },
     ]
       .map((event) => {
@@ -224,6 +251,10 @@ describe("Codex model request diagnostics", () => {
       reason: "safety_policy_refusal",
     },
     {
+      message: cyberSafetyRefusal.errorMessage.slice("Codex error: ".length),
+      reason: "safety_policy_refusal",
+    },
+    {
       message: "Invalid prompt: messages must contain a user message",
       reason: undefined,
     },
@@ -255,9 +286,28 @@ describe("Codex model request diagnostics", () => {
         },
       ]);
       expect(piModelFailureReason(result)).toBe(reason);
+      expect(JSON.stringify(result.diagnostics)).not.toContain(message);
       expect(requests).toBe(1);
     },
   );
+
+  it("does not classify successful assistant text as a terminal refusal", async () => {
+    let requests = 0;
+    server.use(
+      http.post(endpoint, () => {
+        requests++;
+        return successResponse(cyberSafetyRefusal.errorMessage);
+      }),
+    );
+    const result = await stream().result();
+    expect(result.stopReason).toBe("stop");
+    expect(result.content).toMatchObject([
+      { type: "text", text: cyberSafetyRefusal.errorMessage },
+    ]);
+    expect(result.diagnostics).toBeUndefined();
+    expect(piModelFailureReason(result)).toBeUndefined();
+    expect(requests).toBe(1);
+  });
 
   it.each(["events", "result"])(
     "preserves the shared rate-limit fixture via %s",

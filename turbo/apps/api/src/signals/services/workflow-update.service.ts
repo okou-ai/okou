@@ -16,7 +16,7 @@ import { command } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
   isStalePublicationFenceError,
@@ -34,86 +34,97 @@ interface UpdateWorkflowInput {
   readonly updatedByUserId: string;
 }
 
-async function commitWorkflowMetadata(
-  db: Db,
-  args: UpdateWorkflowInput,
-  derived: { readonly volumeChanged: boolean; readonly nextName: string },
-) {
-  const { workflow, body } = args;
-  return await db.transaction(async (tx) => {
-    // Keep the parent alive until the source and its non-FK generation commit.
-    // Independent Workflow writes can share this parent protection.
-    const [agent] = await tx
-      .select({ id: agents.id })
-      .from(agents)
-      .where(
-        and(eq(agents.id, workflow.agentId), eq(agents.orgId, workflow.orgId)),
-      )
-      .for("key share")
-      .limit(1);
-    if (!agent) {
-      return { updated: false as const };
-    }
-    const [updated] = await tx
-      .update(workflows)
-      .set({
-        ...(body.name !== undefined && { name: body.name }),
-        ...(body.displayName !== undefined && {
-          displayName: body.displayName,
-        }),
-        ...(body.description !== undefined && {
-          description: body.description,
-        }),
-        ...(body.instruction !== undefined && {
-          instruction: body.instruction,
-        }),
-        updatedBy: args.updatedByUserId,
-        updatedAt: nowDate(),
-      })
-      .where(
-        and(
-          eq(workflows.id, workflow.id),
-          eq(workflows.orgId, workflow.orgId),
-          eq(workflows.agentId, workflow.agentId),
-          eq(workflows.ownerUserId, workflow.ownerUserId),
-          eq(workflows.visibility, workflow.visibility),
-          isNull(workflows.officialDefinitionName),
-        ),
-      )
-      .returning({ id: workflows.id });
-    if (!updated) {
-      return { updated: false as const };
-    }
-    const piMutation0Scope = {
-      orgId: workflow.orgId,
-      agentId: workflow.agentId,
-      ...(workflow.visibility === "private"
-        ? { userId: workflow.ownerUserId }
-        : {}),
-    };
-    const piMutation0Key = workflowPublicationKey(workflow.id);
-    const piMutation0Token = randomUUID();
-    const publicationFence = derived.volumeChanged
-      ? publicationFenceFromReceipt(
-          parseRawRows(
-            publicationGenerationReceiptSchema,
-            await tx.execute(
-              beginPublicationSql(
-                piMutation0Scope,
-                piMutation0Key,
-                piMutation0Token,
-                nowDate(),
+const commitWorkflowMetadata$ = command(
+  async (
+    { set },
+    args: UpdateWorkflowInput,
+    volumeChanged: boolean,
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const { workflow, body } = args;
+    const result = await db.transaction(async (tx) => {
+      // Metadata and its pending generation must commit atomically so a later
+      // upload can publish only the generation belonging to this source update.
+      // Keep the parent alive until the source and its non-FK generation commit.
+      // Independent Workflow writes can share this parent protection.
+      const [agent] = await tx
+        .select({ id: agents.id })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.id, workflow.agentId),
+            eq(agents.orgId, workflow.orgId),
+          ),
+        )
+        .for("key share")
+        .limit(1);
+      if (!agent) {
+        return { updated: false as const };
+      }
+      const [updated] = await tx
+        .update(workflows)
+        .set({
+          ...(body.name !== undefined && { name: body.name }),
+          ...(body.displayName !== undefined && {
+            displayName: body.displayName,
+          }),
+          ...(body.description !== undefined && {
+            description: body.description,
+          }),
+          ...(body.instruction !== undefined && {
+            instruction: body.instruction,
+          }),
+          updatedBy: args.updatedByUserId,
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(workflows.id, workflow.id),
+            eq(workflows.orgId, workflow.orgId),
+            eq(workflows.agentId, workflow.agentId),
+            eq(workflows.ownerUserId, workflow.ownerUserId),
+            eq(workflows.visibility, workflow.visibility),
+            isNull(workflows.officialDefinitionName),
+          ),
+        )
+        .returning({ id: workflows.id });
+      if (!updated) {
+        return { updated: false as const };
+      }
+      const piMutation0Scope = {
+        orgId: workflow.orgId,
+        agentId: workflow.agentId,
+        ...(workflow.visibility === "private"
+          ? { userId: workflow.ownerUserId }
+          : {}),
+      };
+      const piMutation0Key = workflowPublicationKey(workflow.id);
+      const piMutation0Token = randomUUID();
+      const publicationFence = volumeChanged
+        ? publicationFenceFromReceipt(
+            parseRawRows(
+              publicationGenerationReceiptSchema,
+              await tx.execute(
+                beginPublicationSql(
+                  piMutation0Scope,
+                  piMutation0Key,
+                  piMutation0Token,
+                  nowDate(),
+                ),
               ),
             ),
-          ),
-          piMutation0Scope,
-          piMutation0Key,
-          piMutation0Token,
-        )
-      : undefined;
-    return { updated: true as const, publicationFence };
-  });
-}
+            piMutation0Scope,
+            piMutation0Key,
+            piMutation0Token,
+          )
+        : undefined;
+      return { updated: true as const, publicationFence };
+    });
+    signal.throwIfAborted();
+    return result;
+  },
+);
 
 export const updateWorkflow$ = command(
   async (
@@ -121,7 +132,6 @@ export const updateWorkflow$ = command(
     args: UpdateWorkflowInput,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const writeDb = set(writeDb$);
     const { workflow, body } = args;
     if (workflow.officialDefinitionName !== null) {
       throw new Error("Official Workflow content and structure are read-only");
@@ -140,11 +150,12 @@ export const updateWorkflow$ = command(
     const volumeChanged = body.files !== undefined || skillChanged;
     // Metadata and its pending generation commit together. The later volume
     // transaction may make only this exact generation ready.
-    const metadata = await commitWorkflowMetadata(writeDb, args, {
+    const metadata = await set(
+      commitWorkflowMetadata$,
+      args,
       volumeChanged,
-      nextName,
-    });
-    signal.throwIfAborted();
+      signal,
+    );
     if (!metadata.updated) {
       return false;
     }
