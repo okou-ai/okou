@@ -209,6 +209,7 @@ import {
 } from "./pending-launch-tail-plan";
 import {
   materializePreparedPiProvider,
+  piOpenRouterChatCompletionsEnabled,
   type PiModelPreparationInput,
   resolvePreparedPiModelConfig,
   shouldUsePiExecution,
@@ -554,11 +555,6 @@ import {
 import { alias, QueryBuilder, unionAll } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import {
-  isPiLangfuseDebugRunEnvironment,
-  piLangfuseDebugPlatformEnvironment,
-  resolvePiLangfuseDebugConfig,
-} from "../../lib/pi-langfuse-debug";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
 import { generateOkouToken } from "../auth/tokens";
 import { getDatasetName, ingestToAxiom } from "../external/axiom";
@@ -6493,9 +6489,10 @@ export function createThreadClaimRunObjects(
     if (isRouteError(provider)) {
       return provider;
     }
+    const featureSwitchContext = await get(preCreateModelFeatureSwitchContext$);
     const materialized = safeSync(() => {
       return materializePreparedPiProvider(
-        piModelPreparationInput(context.input.args),
+        piModelPreparationInput(context.input.args, featureSwitchContext),
         provider,
       );
     });
@@ -7421,7 +7418,10 @@ export function createThreadClaimRunObjects(
       ? modelProviderFramework(modelProvider)
       : requestedFramework;
     const piSandbox = resolvePreparedPiModelConfig({
-      input: piModelPreparationInput(args),
+      input: piModelPreparationInput(
+        args,
+        await get(preCreateModelFeatureSwitchContext$),
+      ),
       modelProvider,
     });
     return officialWorkflowRunCandidates(
@@ -7630,6 +7630,9 @@ export function createThreadClaimRunObjects(
           piExecution: selectedRunPiExecution(input.command),
           codexServiceTier: input.command.codexServiceTier,
           reasoningEffort: input.command.reasoningEffort,
+          openrouterChatCompletions: piOpenRouterChatCompletionsEnabled(
+            await get(preCreateModelFeatureSwitchContext$),
+          ),
         },
         modelProvider,
       });
@@ -8264,7 +8267,10 @@ export function createThreadClaimRunObjects(
     const { body } = bodyContext;
     const { modelProvider, framework } = runtimeContext;
     const piSandbox = resolvePreparedPiModelConfig({
-      input: piModelPreparationInput(args),
+      input: piModelPreparationInput(
+        args,
+        await get(preCreateModelFeatureSwitchContext$),
+      ),
       modelProvider,
     });
     const resolved = resolveCompatibleDirectResumeSession({
@@ -11817,7 +11823,6 @@ interface LaunchRunRowsArgs {
   readonly apiStartTime: number;
   readonly runnerGroup: string | undefined;
   readonly launchSnapshot: AgentRunLaunchSnapshot;
-  readonly langfuseTraceEnabled: boolean;
   readonly officialWorkflowProvenance:
     | AgentRunOfficialWorkflowProvenance
     | undefined;
@@ -11868,7 +11873,6 @@ function launchRunValues(
     sessionId: args.identity.sessionId,
     runnerGroup: args.runnerGroup ?? null,
     launchSnapshot: args.launchSnapshot,
-    langfuseTraceEnabled: args.langfuseTraceEnabled,
     officialWorkflowProvenance: args.officialWorkflowProvenance ?? null,
     completedAt: args.status === "failed" ? createdAt : null,
     error: args.error ?? null,
@@ -12004,9 +12008,6 @@ function preparedLaunchRowsArgs(args: {
     apiStartTime: args.commit.createArgs.apiStartTime,
     runnerGroup: args.runnerGroup,
     launchSnapshot: args.commit.context.launchSnapshot,
-    langfuseTraceEnabled: isPiLangfuseDebugRunEnvironment(
-      args.commit.launch.runnerJobPayload.executionContext.platformEnvironment,
-    ),
     officialWorkflowProvenance:
       args.commit.context.officialWorkflowRun?.provenance,
     error: undefined,
@@ -13632,12 +13633,15 @@ function piModelPreparationInput(
     RunModelProviderArgs,
     "catalog" | "piExecution" | "codexServiceTier" | "agentRunMetadata"
   >,
+  featureSwitchContext: FeatureSwitchContext,
 ): PiModelPreparationInput {
   return {
     catalog: args.catalog,
     piExecution: args.piExecution,
     codexServiceTier: args.codexServiceTier,
     reasoningEffort: args.agentRunMetadata?.reasoningEffort,
+    openrouterChatCompletions:
+      piOpenRouterChatCompletionsEnabled(featureSwitchContext),
   };
 }
 
@@ -13886,28 +13890,6 @@ function buildStoredUntrustedEnvironment(args: {
   );
 }
 
-function piLangfuseExecutionEnvironment(args: {
-  readonly featureSwitchContext: FeatureSwitchContext;
-  readonly includeOkouTokenSecret: boolean | undefined;
-  readonly piSandbox: PiModelConfig | undefined;
-  readonly userId: string;
-}): {
-  readonly platformEnvironment?: Readonly<Record<string, string>>;
-} {
-  if (!args.includeOkouTokenSecret || args.piSandbox === undefined) {
-    return {};
-  }
-  const config = resolvePiLangfuseDebugConfig(args.featureSwitchContext);
-  if (!config) {
-    return {};
-  }
-  return {
-    platformEnvironment: piLangfuseDebugPlatformEnvironment({
-      userId: args.userId,
-    }),
-  };
-}
-
 /**
  * The Runner's model usage metering fields: billable firewalls, the provider
  * usage is reported under, and the long-context threshold captured from the
@@ -13993,7 +13975,6 @@ function buildStoredExecutionContextDraft(
   encryptedSecrets: BuiltStoredExecutionContextDraft["context"]["encryptedSecrets"],
 ): BuiltStoredExecutionContextDraft {
   const permissions = args.permissionManifest;
-  const langfuseEnvironment = piLangfuseExecutionEnvironment(args);
   const executionSecrets = buildStoredExecutionSecrets({
     connectorContext: args.connectorContext,
     modelProvider: args.modelProvider,
@@ -14023,10 +14004,7 @@ function buildStoredExecutionContextDraft(
     }),
   );
   const platformEnvironment = buildStoredPlatformEnvironment({
-    platformEnvironment: {
-      ...args.platformEnvironment,
-      ...langfuseEnvironment.platformEnvironment,
-    },
+    platformEnvironment: args.platformEnvironment,
     canonicalOkouRuntime: args.includeOkouTokenSecret === true,
   });
   const untrustedEnvironment = buildStoredUntrustedEnvironment({

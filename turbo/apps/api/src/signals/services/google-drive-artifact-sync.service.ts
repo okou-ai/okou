@@ -50,11 +50,10 @@ import {
   loadBuiltinConnectorCredentialConnection$,
   loadBuiltinConnectorCredentialValues$,
   refreshBuiltinConnectorCredentialAccess$,
-} from "./builtin-connector-credential-command.service";
-import {
   builtinConnectorCredentialRuntimeValueRef,
   type BuiltinConnectorCredentialConnection,
 } from "./builtin-connector-credential-runtime.service";
+
 import { runOwnedChatEventForRunCondition } from "./chat-event-type.service";
 import type { ConnectorRuntimeAuthLookup } from "./connector-catalog-runtime.service";
 import { loadConnectorRuntimeAuthSelection } from "./connector-catalog-slug-source.service";

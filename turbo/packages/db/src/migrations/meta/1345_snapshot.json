@@ -1,5 +1,5 @@
 {
-  "id": "1c789b5b-4bcb-4a6a-8923-563903647155",
+  "id": "d34fa3c7-1c0d-4544-8add-cf81af920c9a",
   "prevId": "10a98006-b853-41e5-b8e9-e0f7a9ca9405",
   "version": "7",
   "dialect": "postgresql",
@@ -539,13 +539,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
-        },
-        "langfuse_trace_enabled": {
-          "name": "langfuse_trace_enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "official_workflow_provenance": {
           "name": "official_workflow_provenance",
@@ -29850,84 +29843,6 @@
         "chk_usage_pack_credit_refunds_attempt": {
           "name": "chk_usage_pack_credit_refunds_attempt",
           "value": "\"usage_pack_credit_refunds\".\"attempt\" > 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.usage_pack_overdraft_transfers": {
-      "name": "usage_pack_overdraft_transfers",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "credit_grant_id": {
-          "name": "credit_grant_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount": {
-          "name": "amount",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_usage_pack_overdraft_transfers_org": {
-          "name": "idx_usage_pack_overdraft_transfers_org",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "chk_usage_pack_overdraft_transfers_amount": {
-          "name": "chk_usage_pack_overdraft_transfers_amount",
-          "value": "\"usage_pack_overdraft_transfers\".\"amount\" > 0"
         }
       },
       "isRLSEnabled": false

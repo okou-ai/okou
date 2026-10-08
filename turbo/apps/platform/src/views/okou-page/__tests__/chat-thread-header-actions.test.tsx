@@ -107,6 +107,20 @@ function menuItemNames() {
   });
 }
 
+async function expectMobileSidebarPin(pinned: boolean) {
+  click(buttonNamed("Open menu"));
+  const drawer = await screen.findByRole("dialog", { name: "Sidebar" });
+  await waitFor(() => {
+    expect(
+      within(drawer).getByTestId("chat-thread-menu-trigger"),
+    ).toHaveAttribute("data-pinned", String(pinned));
+  });
+  click(within(drawer).getByLabelText("Collapse sidebar"));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
+  });
+}
+
 test("Keep rapid pin changes responsive across resize and save without a success toast", async () => {
   const viewport = context.mocks.browser.matchMedia(true);
   const pinResponse = context.mocks.deferred<void>();
@@ -171,12 +185,7 @@ test("Keep rapid pin changes responsive across resize and save without a success
     expect(menuItemNamed("Unpin chat")).toBeEnabled();
   });
   click(menuItemNamed("Unpin chat"));
-  await waitFor(() => {
-    expect(screen.getByTestId("chat-thread-menu-trigger")).toHaveAttribute(
-      "data-pinned",
-      "false",
-    );
-  });
+  await expectMobileSidebarPin(false);
 
   pinResponse.resolve();
   await waitFor(() => {
@@ -184,10 +193,7 @@ test("Keep rapid pin changes responsive across resize and save without a success
       "Pin changes saved",
     );
   });
-  expect(screen.getByTestId("chat-thread-menu-trigger")).toHaveAttribute(
-    "data-pinned",
-    "false",
-  );
+  await expectMobileSidebarPin(false);
   expect(screen.queryByText("Chat pinned")).not.toBeInTheDocument();
   expect(screen.queryByText("Chat unpinned")).not.toBeInTheDocument();
   expect(screen.queryByText("Undo")).not.toBeInTheDocument();
@@ -463,23 +469,13 @@ test("Continue saving the next pin change after an earlier request fails", async
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   click(menuItemNamed("Pin chat"));
-  await waitFor(() => {
-    expect(screen.getByTestId("chat-thread-menu-trigger")).toHaveAttribute(
-      "data-pinned",
-      "true",
-    );
-  });
+  await expectMobileSidebarPin(true);
   click(buttonNamed("More actions"));
   await waitFor(() => {
     expect(menuItemNamed("Unpin chat")).toBeEnabled();
   });
   click(menuItemNamed("Unpin chat"));
-  await waitFor(() => {
-    expect(screen.getByTestId("chat-thread-menu-trigger")).toHaveAttribute(
-      "data-pinned",
-      "false",
-    );
-  });
+  await expectMobileSidebarPin(false);
 
   pinResponse.resolve();
   await screen.findByText("Unpin request failed");

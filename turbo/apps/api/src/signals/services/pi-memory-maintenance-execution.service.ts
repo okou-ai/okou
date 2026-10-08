@@ -91,6 +91,7 @@ import {
 } from "./pi-memory-builtin-config";
 import {
   materializePreparedPiProvider,
+  piOpenRouterChatCompletionsEnabled,
   resolvePlatformMemoryPiModelConfig,
   resolvePreparedPiModelConfig,
 } from "./pi-sandbox-config";
@@ -115,7 +116,6 @@ import { and, eq, isNull } from "drizzle-orm";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
 import { env, optionalEnv } from "../../lib/env";
-import { isPiLangfuseDebugRunEnvironment } from "../../lib/pi-langfuse-debug";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
 import { getDatasetName, ingestToAxiom } from "../external/axiom";
 import { normalizeRunMetadata } from "./agent-run-metadata-write.service";
@@ -141,7 +141,7 @@ import type { ClaimedPiMemoryPhase2Job } from "./pi-memory-phase2-job.service";
 import { bindPiMemoryPhase2MaintenanceRun } from "./pi-memory-phase2-maintenance.service";
 import {
   PiMemoryQuotaError,
-  checkPiMemoryQuota,
+  checkPiMemoryQuota$,
 } from "./pi-memory-quota.service";
 import {
   checkOrgCreditsForRunAdmission$,
@@ -328,8 +328,8 @@ const admitMaintenance$ = command(
     if (admission) {
       throw new PiMaintenanceDispositionError("source_admission_denied");
     }
-    await checkPiMemoryQuota(
-      db,
+    await set(
+      checkPiMemoryQuota$,
       {
         orgId: job.orgId,
         userId: job.userId,
@@ -376,12 +376,18 @@ async function prepareMaintenanceModel(
           sourceId: credential.pin.modelProviderId ?? "",
           piExecution: true,
         });
-  const piInput = { catalog, piExecution: true };
+  const openrouterChatCompletions = piOpenRouterChatCompletionsEnabled(
+    admitted.featureSwitchContext,
+  );
+  const piInput = { catalog, piExecution: true, openrouterChatCompletions };
   const modelProvider = resolvedProvider
     ? credential.pin.modelProvider === "built-in"
       ? {
           ...resolvedProvider,
-          piModelConfig: resolvePlatformMemoryPiModelConfig(resolvedProvider),
+          piModelConfig: resolvePlatformMemoryPiModelConfig(
+            resolvedProvider,
+            openrouterChatCompletions,
+          ),
         }
       : materializePreparedPiProvider(piInput, resolvedProvider)
     : null;
@@ -1371,7 +1377,6 @@ function maintenanceRunValues(args: {
   readonly status: "pending" | "failed";
   readonly runStorageMounts: readonly PersistedStorageMount[] | null;
   readonly runnerGroup: string | null;
-  readonly langfuseTraceEnabled: boolean;
   readonly creditAdmitted: boolean;
   readonly accountIdentity: string | null;
   readonly error: string | null;
@@ -1394,7 +1399,6 @@ function maintenanceRunValues(args: {
     sessionId: record.sessionId,
     runnerGroup: args.runnerGroup,
     launchSnapshot: record.launchSnapshot,
-    langfuseTraceEnabled: args.langfuseTraceEnabled,
     officialWorkflowProvenance: null,
     completedAt: args.status === "failed" ? args.createdAt : null,
     error: args.error,
@@ -1489,7 +1493,6 @@ async function insertFailedMaintenanceRun(
     runStorageMounts: null,
     sessionStorageMounts: null,
     runnerGroup: null,
-    langfuseTraceEnabled: false,
     creditAdmitted: false,
     accountIdentity: null,
     error,
@@ -1529,9 +1532,6 @@ async function insertPendingMaintenanceRun(
     runStorageMounts: launch.runStorageMounts,
     sessionStorageMounts: launch.sessionStorageMounts,
     runnerGroup,
-    langfuseTraceEnabled: isPiLangfuseDebugRunEnvironment(
-      launch.context.platformEnvironment,
-    ),
     creditAdmitted: args.creditAdmitted,
     accountIdentity: args.accountIdentity,
     error: null,

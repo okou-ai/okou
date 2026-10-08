@@ -48,7 +48,6 @@ export enum FeatureSwitchKey {
   DiscordIntegration = "discordIntegration",
   VncAccess = "vncAccess",
   PiMemory = "piMemory",
-  LangfuseTrace = "_langfuseTrace",
   ComposerTaskChips = "composerTaskChips",
   ChatThreadArchiving = "chatThreadArchiving",
   ChatThreadMuting = "chatThreadMuting",
@@ -59,5 +58,5 @@ export enum FeatureSwitchKey {
   GoogleSlidesConversion = "googleSlidesConversion",
   BrowserNativeInput = "browserNativeInput",
   HomeTaskRecommendations = "homeTaskRecommendations",
-  AgentResponsibilitySetup = "agentResponsibilitySetup",
+  PiOpenRouterChatCompletions = "piOpenRouterChatCompletions",
 }

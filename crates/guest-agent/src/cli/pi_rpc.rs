@@ -457,7 +457,7 @@ fn model_request_diagnostic(message: &Value) -> Option<ModelRequestDiagnostic> {
 fn model_request_details(message: &Value) -> Option<&Value> {
     if !matches!(
         message.get("api").and_then(Value::as_str),
-        Some("openai-codex-responses" | "openai-responses")
+        Some("openai-codex-responses" | "openai-responses" | "openai-completions")
     ) {
         return None;
     }
@@ -1314,6 +1314,24 @@ mod tests {
                 "{path}"
             );
         }
+    }
+
+    #[test]
+    fn model_request_diagnostic_projects_chat_completions_messages() {
+        let message = json!({
+            "role": "assistant", "api": "openai-completions", "stopReason": "error",
+            "errorMessage": "private provider detail",
+            "diagnostics": [{"type": "okou_model_request", "details": {
+                "httpStatus": 503, "transportAttempts": 2, "failureReason": "provider_server_error"
+            }}]
+        });
+        let request = model_request_diagnostic(&message).expect("Chat Completions diagnostic");
+        assert_eq!(request.http_status, Some(503));
+        assert_eq!(request.transport_attempts, 2);
+        assert_eq!(
+            PiAssistantTerminal::from_message(&message, false).failure_reason,
+            Some(guest_contracts::diagnostics::FailureReason::ProviderServerError)
+        );
     }
 
     #[test]

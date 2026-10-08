@@ -65,7 +65,7 @@ import {
   clerkReadUnavailable,
 } from "../external/clerk";
 import { loadWorkflowOwnerProfile } from "../services/workflow-owner-profile.service";
-import { workflowDetail } from "../services/workflow-detail.service";
+import { workflowDetail$ } from "../services/workflow-detail.service";
 import {
   ensureWorkflowUserAutomationThread,
   ensureWorkflowUserAutomationThread$,
@@ -100,7 +100,7 @@ import {
   type WorkflowAutomationAccountConnectorSlug,
 } from "../services/workflow-automation-account-classification.service";
 import { reconcileGoogleFormsWatchesForUser$ } from "../services/google-forms-automation-event.service";
-import { reconcileGoogleMeetSubscriptionsForUser } from "../services/google-meet-automation-event.service";
+import { reconcileGoogleMeetSubscriptionsForUser$ } from "../services/google-meet-automation-event.service";
 import {
   loadVisibleWorkflowById,
   requireWorkflowPermission,
@@ -767,21 +767,26 @@ const getWorkflowOwnerProfileInner$ = command(
   },
 );
 
-const getWorkflowDetailInner$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const params = get(pathParamsOf(workflowsDetailContract.get));
-  const result = await get(
-    workflowDetail({
-      orgId: auth.orgId,
-      member: memberFromAuth(auth),
-      workflowId: params.workflowId,
-    }),
-  );
-  if (!result) {
-    return workflowNotFound(params.workflowId);
-  }
-  return { status: 200 as const, body: result };
-});
+const getWorkflowDetailInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const params = get(pathParamsOf(workflowsDetailContract.get));
+    const result = await set(
+      workflowDetail$,
+      {
+        orgId: auth.orgId,
+        member: memberFromAuth(auth),
+        workflowId: params.workflowId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!result) {
+      return workflowNotFound(params.workflowId);
+    }
+    return { status: 200 as const, body: result };
+  },
+);
 
 const updateWorkflowInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -859,12 +864,14 @@ const updateWorkflowInner$ = command(
       return conflict("Workflow changed during update; retry the request");
     }
 
-    const detail = await get(
-      workflowDetail({
+    const detail = await set(
+      workflowDetail$,
+      {
         orgId: auth.orgId,
         member,
         workflowId: params.workflowId,
-      }),
+      },
+      signal,
     );
     signal.throwIfAborted();
     if (!detail) {
@@ -1653,7 +1660,11 @@ const reconcileCopiedWorkflowAutomationWatches$ = command(
     }
     if (args.copied.accountConnectorSlugs.includes("google-meet")) {
       await bestEffort(
-        reconcileGoogleMeetSubscriptionsForUser(owner, signal),
+        set(
+          reconcileGoogleMeetSubscriptionsForUser$,
+          { orgId: owner.orgId, userId: owner.userId },
+          signal,
+        ),
         signal,
       );
     }

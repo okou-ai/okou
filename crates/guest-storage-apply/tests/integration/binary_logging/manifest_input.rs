@@ -164,10 +164,9 @@ fn binary_invalid_stdin_manifest_logs_parse_failure_without_body() {
 #[test]
 fn binary_writes_system_log_on_manifest_read_failure() {
     let fixture = BinaryLoggingFixture::new("missing-manifest").unwrap();
+    let manifest_path = fixture.dir.path().join("missing-manifest.json");
 
-    let output = fixture
-        .run_manifest_path("/tmp/nonexistent-guest-storage-apply-manifest.json")
-        .unwrap();
+    let output = fixture.run_manifest_path(&manifest_path).unwrap();
 
     assert!(!output.status.success());
 

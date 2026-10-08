@@ -61,21 +61,19 @@ function requireDeclaredStorageName(args: {
   }
 }
 
-export async function upsertConnectorOwnedSecret(
-  db: Db,
+export function connectorOwnedSecretWrite(
   args: ConnectorOwnedCredentialWrite &
     ConnectorOwnedCredentialDescription & {
       readonly encryptedValue: string;
     },
-): Promise<void> {
+) {
   requireDeclaredStorageName({
     kind: "secret",
     storage: args.storage,
     name: args.name,
   });
-  const [row] = await db
-    .insert(secrets)
-    .values({
+  return {
+    values: {
       connectorId: args.connectorId,
       orgId: args.orgId,
       userId: args.userId,
@@ -83,8 +81,8 @@ export async function upsertConnectorOwnedSecret(
       encryptedValue: args.encryptedValue,
       description: args.description,
       type: "connector",
-    })
-    .onConflictDoUpdate({
+    },
+    conflict: {
       target: [secrets.connectorId, secrets.name],
       targetWhere: isNotNull(secrets.connectorId),
       set: {
@@ -94,28 +92,41 @@ export async function upsertConnectorOwnedSecret(
           : { description: args.updatedDescription }),
         updatedAt: nowDate(),
       },
-    })
+    },
+  };
+}
+
+export async function upsertConnectorOwnedSecret(
+  db: Db,
+  args: ConnectorOwnedCredentialWrite &
+    ConnectorOwnedCredentialDescription & {
+      readonly encryptedValue: string;
+    },
+): Promise<void> {
+  const write = connectorOwnedSecretWrite(args);
+  const [row] = await db
+    .insert(secrets)
+    .values(write.values)
+    .onConflictDoUpdate(write.conflict)
     .returning({ id: secrets.id });
   if (!row) {
     throw new Error(`Connector secret ${args.name} is owned by another row`);
   }
 }
 
-export async function upsertConnectorOwnedVariable(
-  db: Db,
+export function connectorOwnedVariableWrite(
   args: ConnectorOwnedCredentialWrite &
     ConnectorOwnedCredentialDescription & {
       readonly value: string;
     },
-): Promise<void> {
+) {
   requireDeclaredStorageName({
     kind: "variable",
     storage: args.storage,
     name: args.name,
   });
-  const [row] = await db
-    .insert(variables)
-    .values({
+  return {
+    values: {
       connectorId: args.connectorId,
       orgId: args.orgId,
       userId: args.userId,
@@ -123,8 +134,8 @@ export async function upsertConnectorOwnedVariable(
       value: args.value,
       description: args.description,
       type: "connector",
-    })
-    .onConflictDoUpdate({
+    },
+    conflict: {
       target: [variables.connectorId, variables.name],
       targetWhere: isNotNull(variables.connectorId),
       set: {
@@ -134,7 +145,22 @@ export async function upsertConnectorOwnedVariable(
           : { description: args.updatedDescription }),
         updatedAt: nowDate(),
       },
-    })
+    },
+  };
+}
+
+export async function upsertConnectorOwnedVariable(
+  db: Db,
+  args: ConnectorOwnedCredentialWrite &
+    ConnectorOwnedCredentialDescription & {
+      readonly value: string;
+    },
+): Promise<void> {
+  const write = connectorOwnedVariableWrite(args);
+  const [row] = await db
+    .insert(variables)
+    .values(write.values)
+    .onConflictDoUpdate(write.conflict)
     .returning({ id: variables.id });
   if (!row) {
     throw new Error(`Connector variable ${args.name} is owned by another row`);

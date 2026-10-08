@@ -79,6 +79,24 @@ describe("Pi memory recall compatibility", () => {
       "`MEMORY.md` is a file in the results, not a directory path",
     );
     expect(rendered).toContain(
+      "Agent instructions define team-shared behavior for everyone using the same agent",
+    );
+    expect(rendered).toContain(
+      "memory captures the current user's preferences, background, experience, and historical context without changing other team members' defaults",
+    );
+    expect(rendered).toContain(
+      "A long-lived personal preference does not necessarily belong in shared instructions",
+    );
+    expect(rendered).toContain(
+      "Memory is usually the better choice for personal or task-specific context; instructions suit genuinely shared, stable team rules",
+    );
+    expect(rendered).toContain(
+      "not whether they used the words 'instructions' or 'memory'",
+    );
+    expect(rendered).toContain(
+      "Exercise judgment rather than requiring a named storage target or confirmation for every update; existing permissions and memory-update rules still apply",
+    );
+    expect(rendered).toContain(
       "Use `add_ad_hoc_note` only when the user explicitly asks you to remember, forget, or update something",
     );
     expect(rendered).toContain(
@@ -94,7 +112,7 @@ describe("Pi memory recall compatibility", () => {
       "Do not claim that the update is durable, published, or persistently saved before the run completes successfully",
     );
     expect(sha256(rendered ?? "")).toBe(
-      "9e3e063f34d4b4c632cc115c8811ad3aaebb754db3674678c7ccc583f31c0906",
+      "af9644be2dbc7f7f6a7456e574842b8f88286ebba1bf5cff0b842b41605805f3",
     );
 
     const oversized = Array.from({ length: 4000 }, (_, index) => {
@@ -517,6 +535,6 @@ describe("Pi memory recall bounded injection", () => {
       sha256(
         renderPiMemoryRecall("Prefer focused targeted tests.")?.block ?? "",
       ),
-    ).toBe("9e3e063f34d4b4c632cc115c8811ad3aaebb754db3674678c7ccc583f31c0906");
+    ).toBe("af9644be2dbc7f7f6a7456e574842b8f88286ebba1bf5cff0b842b41605805f3");
   });
 });

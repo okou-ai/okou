@@ -1,5 +1,101 @@
 # Deployment Compatibility
 
+## Maps oversized-response error (issue #36791)
+
+`POST /api/maps/search` continues to return HTTP 502 when the Google Maps
+provider response exceeds Okou's 512 KiB response limit. Its error code is now
+`MAPS_RESPONSE_TOO_LARGE` rather than `MAPS_GROUNDING_ERROR`; the message explains
+that the provider response exceeded Okou's size limit and recommends narrowing
+the search area, requesting fewer places, or splitting the query before retrying.
+The error includes no query or provider response content. The size protection,
+failed-query billing behavior, success envelope, and other failure codes are
+unchanged.
+
+- **Old CLI → new API:** the existing string error code/message envelope is
+  compatible; the CLI displays the actionable server message and exits 1.
+- **New CLI → old API:** the old generic error remains visible and exits 1; the
+  CLI does not infer an oversized response from an undifferentiated 502.
+- **New CLI → new API:** the actionable server message is displayed for normal
+  and `--json` invocations. Errors continue to use stderr rather than success JSON.
+
+No database, Runner protocol, version floor, or rollout fallback is required.
+This change does not deploy or activate production changes.
+
+## Pi OpenRouter Chat Completions route (generation 5, default off)
+
+Pi model configuration gains generation 5 (`dialect: "openai-completions"`,
+`provider: "openrouter"`, exactly one `api-key` binding, no `serviceTier`). It
+moves Pi OpenRouter routes from OpenAI Responses to OpenRouter Chat
+Completions: the Auto `okou-1.0` Preset route, Pi memory maintenance and the
+API-side Stage 1 extraction. Generation 4 was the retired native carrier;
+Runners built before its removal can still advertise 4, so the new route
+skips to 5 and 4 stays unsupported everywhere.
+
+**Readers ship first.** Runners advertise `[1, 2, 3, 5]` on claim and
+validate the generation 5 shape. The API claim gate, the CLI launch reader,
+the Pi runtime and the guest-agent request diagnostics accept it. Writers are
+gated by the `piOpenRouterChatCompletions` feature switch, off by default;
+with it off every captured route is unchanged.
+
+**Activation.** Enable the switch only after every serving Runner advertises
+generation 5. The claim gate never hands a generation 5 job to an older
+Runner; such a job stays queued until a capable Runner claims it. The switch
+is evaluated
+when a Run's launch context is captured; already captured Runs keep their
+route. Pi memory maintenance and Stage 1 read the same switch from the owner's
+feature-switch context.
+
+**Request policy.** The Preset owns reasoning and routing: requests carry no
+reasoning parameters for Preset models. The client sends Anthropic-style
+cache breakpoints, which OpenRouter translates for other upstreams, replays
+`reasoning_details`, and sets `x-session-id` to the owning chat thread
+(`OKOU_CHAT_THREAD_ID`) so every Run of a thread keeps one upstream sticky
+route. The firewall already authorizes `/chat/completions` for
+`openrouter-codex`.
+
+**Context window.** Pi now uses a 1,000,000-token window for `okou-1.0`, the
+smallest window among the Preset's candidate backends (GPT-6 Luna, Claude
+Haiku 5.5, DeepSeek V4.1 Flash). The Codex projection is unchanged.
+
+**Rollback.** Disabling the switch returns new launches to Responses. Rolling
+the Runner back below this release while the switch is on leaves generation 5
+jobs queued; disable the switch first.
+
+## Official Workflow canonical queue contexts (#29908, writer cutover)
+
+Official `input.prompt` events from both Web and Agent callers now use the
+normal Web context ID. Their `context_type` remains `web` or `agent_run`, and
+the server-private `required_official_workflow_ids` claim is unchanged. Ordinary
+Agent inputs still point to their source Run. Official Agent inputs recover
+their source Run and inherited autonomy budget from the server-owned document
+annotation, as before. Final Official admission and exact artifact mounts are
+unchanged; the private claim stays out of public event and snapshot payloads.
+
+- **Prepared reader with new writer:** the reader preparation in #32533 accepts
+  the normal Web ID plus a strict Official claim for both origins. New and
+  prepared-reader APIs can consume each other's queued inputs.
+- **New reader with previous writer:** both reserved Official marker IDs remain
+  readable. The writer helper is removed, but marker constants and decoding
+  remain until the later retirement release.
+- **API before reader preparation:** it cannot safely consume canonical Official
+  inputs. Exclude it from serving and supported rollback before promoting this
+  writer. The current rollback resolver requires the unified chat queue commit
+  `553fc566b7e9be2cd4a8c1de314d55939b99490a`, which contains #32533. Refresh the
+  actual serving and rollback inventory before production promotion; source
+  ancestry alone does not prove deployed enforcement or outgoing-instance drain.
+
+This stage needs no migration or historical event rewrite. Retained context IDs
+remain opaque in raw events, snapshots and archives. After promotion, record
+canonical Official writes and successful admission from both origins, including
+Agent source and budget preservation, and record the last marker-writing API
+cutoff. An origin without traffic remains unverified.
+
+The later decoder retirement in #29908 requires excluding every marker writer
+from serving and supported rollback, a complete census of all unrevoked runless
+legacy-marker prompts across both IDs and every queue position, and current
+queue recovery evidence. Keep strict claim validation and immutable history;
+this writer cutover does not complete the parent issue.
+
 ## SEO partial SERP results (issue #36799)
 
 `POST /api/seo/serp` returns HTTP 200 for DataForSEO task status `40106`
@@ -84,6 +180,31 @@ retain their captured launch inputs; the new selection policy applies to newly
 prepared Runs. Rolling back the API restores the previous selection policy.
 Thread-owned network storage and retirement of those persisted entities are
 later deliveries in the Epic.
+
+## Dynamic storage preparation fails before CLI launch
+
+The next delivery of [#37970](https://github.com/okou-ai/okou/issues/37970)
+makes required stale-input cleanup and instruction normalization part of storage
+preparation success. Unreadable cleanup mount information, unsafe cleanup paths,
+failed removals, missing instruction sources, invalid filenames, and failed
+instruction writes now return failure. Later preparation phases stop, and
+`guest-storage-apply` exits with code 1. The existing Runner failure path then
+rejects preparation before starting the CLI.
+
+Missing stale paths remain successful cleanup. Atomic instruction replacement,
+cached-child preservation, and symlink protections remain in place. Permission
+failures for the `lost+found` directory directly at a mountpoint root may leave
+that filesystem metadata intact; other removal failures are fatal. Temporary
+staging cleanup remains best effort. Completed filesystem changes are not rolled
+back, and already running parallel downloads still finish before aggregate
+failure is returned.
+
+The storage manifest, decoded-file framing, and process exit-code contracts are
+unchanged. Old API with new Runner/Guest works with existing valid inputs. New
+API with old Runner/Guest retains the old best-effort cleanup behavior until the
+Runner image is upgraded; deploying the API alone does not enforce this policy.
+Runner and Guest are shipped together, and both stdin and fallback-file callers
+already reject nonzero helper exits. This change requires no database migration.
 
 ## Pi turn-end stdout boundaries (2026-10-08)
 
@@ -2105,8 +2226,9 @@ Kept compatibility, with the unmet condition:
   is a separate Runner/Guest protocol change without a documented deadline.
 - `GET /api/integrations/telegram/bots` for older CLIs: deployed CLIs have no
   version floor.
-- Official Workflow queue marker decoding (#29908): its writers still write the
-  markers.
+- Official Workflow queue marker decoding (#29908): previous APIs can still
+  write markers, and pending marker inputs have not been proven drained. See
+  the [canonical writer cutover](#official-workflow-canonical-queue-contexts-29908-writer-cutover).
 
 ## Direct PUT checksum removal and Browser file uploads (#37241)
 
@@ -6418,56 +6540,48 @@ restores its 16 MiB validation and resume limit: larger saved histories stay in
 storage, but continuing those sessions requires the fixed API and CLI again.
 That API rollback adds no stored-history rewrite, migration, or alternate reader.
 
-### Pi Langfuse trace relay
+### Pi debug tracing retired (single-release cutover)
 
-New run contexts no longer store or inject platform Langfuse credentials.
-The commit-pinned CLI exports
-OTLP to `POST /api/webhooks/agent/:runId/langfuse/traces` using its existing
-`OKOU_TOKEN`. The API checks that token's run/user/org and the run's captured
-`langfuseTraceEnabled`, then forwards only the OTLP body and encoding headers
-with server-owned Langfuse credentials. Connector account selection cannot
-change this destination or authentication. API execution, ownership transfer,
-Sandbox Wait, and Sandbox Execution are sibling observations under the
-deterministic Run End-to-End parent. LLM and tool observations stay inside their
-execution phase. Both V3 and V4 sandbox handoffs carry that run parent and a
-required `sandboxWaitStartedAt` timestamp when tracing is admitted. This
-staff-only trace contract has no legacy shape or historical rewrite.
+The owner requested abandonment of `_langfuseTrace` and complete removal of
+its implementation. The originating changes were #33756 (admission, terminal
+observation and plugin), #34158 (authenticated relay), #34148/#34215 (trace
+links) and #34326 (bootstrap retirement). No debug trace is exported by the new
+API or CLI. Ordinary Pi session validation, native tools, memory, model usage,
+terminal commits and Axiom/Sentry telemetry remain authoritative and unchanged.
+The independent Langfuse connector and immutable release/migration history are
+not part of platform debug tracing.
 
-The API phase ends when handoff preparation starts. Transfer preparation ends
-when manifest publication starts; the sandbox emits Sandbox Wait from that same
-timestamp through native execution start. Publication, handoff restoration, and
-runtime startup therefore belong to waiting. Publication failures still mark
-the transfer as failed. Cross-host clock skew never produces a fabricated or
-negative wait; invalid intervals are omitted.
+New Platform builds neither render the action nor create its per-run detail
+registry. Old Platform builds tolerate the missing optional run-detail URL.
+Previously captured CLIs may still attempt the removed relay, receiving 404;
+the patched exporter isolates those failures from agent execution. New CLIs
+ignore old tracing environment entries and do not load the plugin. Previously
+stored switch overrides pass through ordinary registry-key filtering. This
+retirement does not delete remote project traces, provider credentials, queued
+execution contexts or user-owned connector accounts.
 
-The relay sets `x-langfuse-ingestion-version: 4` on its upstream request so
-Langfuse stores native observations without synthesizing an extra trace span.
-The API owns this version declaration; incoming headers cannot downgrade it.
-This staff-only feature requires v4 ingestion and has no legacy ingestion
-fallback or historical trace backfill.
+**Database and accepted release boundary.** Migration `1345_outstanding_the_hood` drops
+`agent_runs.langfuse_trace_enabled` without rewriting historical migrations.
+Migrations precede API promotion. Outgoing APIs explicitly name that column
+in launch inserts, run detail reads and completion selections; generic Drizzle
+selections/returning can name it too. Disabling the switch does not make those
+APIs column-independent. Applying this migration during an ordinary rolling
+release would break run creation, reads and completion until they drain.
 
-The API and its pinned CLI must ship together through the existing deployment
-pipeline. Existing Guests already pass the first-party API URL, run token, and
-trusted platform environment to that CLI; no Runner promotion is needed.
+The owner explicitly accepted this interruption on 2026-10-08 and requested
+complete removal in one release rather than a preparatory column-independent
+API release. No compatibility branch or outgoing-writer drain prerequisite is
+required for this accepted cutover. This is not rolling-compatible: outgoing
+API request, cron and completion paths can fail with an undefined-column error
+between migration and their retirement. The duration is not asserted to be zero
+or bounded by the migration's runtime. Acceptance of that risk permits this PR
+to proceed through review, CI and the protected merge queue; it is not an
+instruction to execute a production release or any manual production mutation.
 
-The relay first reached production on 2026-09-15 at 05:11:55 UTC in API 1.603.0
-and CLI 9.331.0, at commit `4a60b74daa3cba9e11fdb6a072fa989dd1a242d3`
-([deployment](https://github.com/vm0-ai/vm0/actions/runs/34931381962/job/104260645155)).
-[#34256](https://github.com/vm0-ai/vm0/issues/34256) explicitly retires optional
-legacy tracing support: claim-time credential extraction and the Guest bootstrap
-file are removed. The 07:19 and 07:21 UTC observations found empty admission and
-runner queues and only post-rollout nonterminal Pi runs. Those observations do
-not certify complete draining of captured legacy contexts or close the rollback
-window; the retirement decision accepts loss of optional tracing for such contexts.
-
-An older context retains its captured CLI URL. That CLI treats an absent bootstrap
-path as tracing disabled, so agent execution continues without legacy exports.
-Guests still filter platform Langfuse project keys from tracing-enabled Pi child
-environments. The current CLI only configures the relay and has no direct-export
-fallback. This change does not repair exports from an already-running legacy CLI.
-An API rollback that removes the relay route drops optional trace exports from
-relay-enabled runs; agent execution continues independently. This retirement does
-not change production rollback policy.
+The repository rollback resolver rejects commits before this contraction's
+first-parent main commit; a rollback below it requires a reviewed forward
+migration restoring the column before an older API serves. This floor protects
+rollback only; it does not make outgoing APIs compatible with the migration.
 
 ### Runner
 
@@ -7861,12 +7975,23 @@ production migration journal completion; record it only after the real release.
 
 ### Cloudflare SSH concurrency repair (#37941)
 
-Configuration rename/token update, deletion, Personal-to-Organization promotion
-and Organization-to-Personal adoption acquire current referencing hosts in UUID
+Credential rotation, deletion, Personal-to-Organization promotion and
+Organization-to-Personal adoption acquire current referencing hosts in UUID
 order with `FOR NO KEY UPDATE`, then the configuration `FOR UPDATE`. The weaker
 host lock remains compatible with implicit `FOR KEY SHARE` checks from restrictive
 parent-login deletion. Runner pin/observation continues to acquire its host
 before shared login/configuration authority.
+
+The local optimization in #37975 separates metadata-only rename from that
+fanout protocol. Rename locks only the visible configuration `FOR UPDATE`,
+revalidates current-scope management permission, expected revision and revision
+exhaustion, and updates name/revision/time without changing config generation.
+Its owner-filtered host-ID/name response is a nonlocking MVCC read, not an impact
+or authority check. It never follows configuration authority with a host row
+lock or host write, so it adds no reverse host-lock edge. Host generations,
+learned pins, independent login, endpoint, binding and rebind state remain
+unchanged; only the existing configuration metadata invalidation runs after
+commit.
 
 Selected host create/edit rechecks same-organization Organization or same-owner
 Personal visibility with `FOR SHARE` inside the write transaction, before inline
@@ -7876,21 +8001,39 @@ check rejects a bad selection before preparing a new login; it is not commit
 authority. Configuration existence and the same-org FK do not prove Personal
 visibility, and `FOR KEY SHARE` does not fence a non-key scope change.
 
-After the exclusive configuration fence, each mutation rescans references. A
-new reference outside the locked set ends an explicitly unwritten attempt;
-there is at most one fresh host-first transaction with the same prepared values.
-A second expansion conflicts. No transaction acquires a new host in reverse
-order after the configuration fence, and no exception/deadlock or ambiguous
-write is replayed. Current revision, management/scope, exhaustion and exact
-impact checks precede business writes. An empty-set preview cannot authorize
-affecting a newly bound member host. Encryption stays outside transactions;
-identifier-only best-effort notices and existing batching/cache windows stay
-post-commit. Login, target, learned trust, atomic generations and explicit
-protected `needs_rebind` behavior are preserved.
+After the exclusive configuration fence, each authority-changing mutation
+counts current references with the same org/config predicate and reuses its
+first locked metadata result, instead of loading all host metadata again.
+Under PostgreSQL READ COMMITTED, the locking reader rechecks a concurrently
+changed tuple before returning it: deleted/rebound nonmatches are omitted, and
+updated matches are returned locked. Every actually returned member therefore
+remains in the fresh count's set; its retained lock prevents deletion, rebinding
+and relevant metadata changes. Config `FOR SHARE` admission prevents later
+incoming bindings from escaping the exclusive configuration fence. The locked
+set is a subset of the counted set, so equal counts prove equal identities under
+these premises, not for arbitrary sets. A smaller count or missing aggregate row
+fails as an invariant violation. Impact, exhaustion and incompatible-owner
+checks use the complete retained records, including their current generations.
 
-No schema, migration, App/Runner DTO or provider changes are introduced. Old
-API configuration-first/unlocked writers retain the original concurrency risks
-while serving; code merge or green CI does not prove that they have drained.
+A larger count ends an explicitly unwritten attempt; there is at most one fresh
+host-first transaction with the same prepared values. A second expansion
+conflicts. No transaction acquires a new host in reverse order after the
+configuration fence, and no exception/deadlock or ambiguous write is replayed.
+Current revision, management/scope, exhaustion and exact impact checks precede
+business writes. An empty-set preview cannot authorize affecting a newly bound
+member host. Encryption stays outside transactions; identifier-only best-effort
+notices and existing batching/cache windows stay post-commit. Login, target,
+learned trust, atomic generations and explicit protected `needs_rebind` behavior
+are preserved. Counting still scans references and token rotation still advances
+N persisted host generations synchronously; no measured latency/throughput gain
+is established by the structural optimization.
+
+No schema, migration, App/Runner DTO or provider changes are introduced. The
+#37955 host-first writers and #37975 optimized writers can coexist with the same
+authority and generation contracts; no new migration or client cutover is
+required for the optimization. Older pre-#37955 API configuration-first/unlocked
+writers retain the original concurrency risks while serving; code merge or
+green CI does not prove that they have drained.
 This change does not authorize production drain, deployment or activation.
 Independent SSH-login revision semantics are unchanged. Writer inventory found
 login rotation host-before-login and Clerk cleanup host-before-login-before-config,
@@ -8294,9 +8437,25 @@ Queued Runs retain their captured CLI package and exact account mapping.
 Builtin MCP admission requires the Run's Okou token for authenticated MCP
 discovery. None/manual and Automatic methods are executable. Plaud's Automatic
 method defaults off in auth-method discovery through `plaudConnector`; this
-switch does not gate existing account callbacks or execution. The addon honors explicit
-owner intent and never injects another owner's credentials when the requested
-owner is absent, including overlapping builtin/custom destinations.
+switch does not gate existing account callbacks or execution.
+
+Outside the platform API admission path, connector intent is an owner-disambiguation
+hint, not a credential-identity lock. The addon matches active firewall URLs and
+applies route precedence first. One eligible owner governs the request even when
+intent is absent, malformed, mismatched, or names an absent owner. Removing a builtin
+at an overlapping destination can therefore leave a sole eligible custom owner whose
+credentials may be injected, subject to its authorization checks. Multiple eligible
+owners require valid intent selecting one of them; unresolved ambiguity is blocked.
+With no active firewall match, ordinary network fallback applies without resolving
+or injecting managed connector credentials. See
+[ordinary connector firewall owner selection](mitm-addon-contracts.md#ordinary-connector-firewall-owner-selection).
+
+This ordinary selection rule does not relax the separate
+[platform connector authorization path policy](mitm-addon-contracts.md#platform-connector-authorization-path-policy),
+including the `/mcp` intent-admission gate, or the HTTP 409
+`connector_auth_owner_conflict` guard for confirmed authentication on a unique
+inactive route. The selected owner's permission, network-policy, destination,
+credential-resolution, and current-owner revalidation checks still apply.
 
 No-auth builtin and custom MCP requests skip credential validity checks and
 proxy auth resolution, including Automatic builtin and custom MCP resolved to no

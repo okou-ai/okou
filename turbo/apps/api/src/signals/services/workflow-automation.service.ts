@@ -76,7 +76,7 @@ import { command } from "ccstate";
 import { and, asc, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { publishChatThreadAutomationsChangedSafely } from "../external/realtime";
 import {
   bestEffort,
@@ -125,8 +125,8 @@ import {
 } from "./google-forms-automation-event.service";
 import { resolveGoogleMeetAutomationConnectorId } from "./google-meet-automation-account.service";
 import {
-  ensureGoogleMeetTranscriptGeneratedSubscriptionForUser,
-  hasEnabledGoogleMeetConsumer,
+  ensureGoogleMeetTranscriptGeneratedSubscriptionForUser$,
+  hasEnabledGoogleMeetConsumer$,
 } from "./google-meet-automation-event.service";
 import { persistMorningBriefAutomationToggle$ } from "./morning-brief-automation-toggle.service";
 import { officialAutomationLifecycleCondition } from "./workflow-automation-write-condition";
@@ -142,7 +142,7 @@ import {
   validateNotionEventConfigForConnector$,
 } from "./notion-automation-event.service";
 import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-account.service";
-import { readAcceptedOfficialWorkflowCatalog } from "./official-workflow-catalog-read.service";
+import { readAcceptedOfficialWorkflowCatalog$ } from "./official-workflow-catalog-read.service";
 import {
   OFFICIAL_WORKFLOW_AUTOMATION_READ_ONLY_MESSAGE,
   OFFICIAL_WORKFLOW_RECONFIGURATION_IN_PROGRESS_MESSAGE,
@@ -167,7 +167,6 @@ import type { WorkflowAutomationContext } from "./workflow-automation-context.se
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import { manualTriggerSource } from "./workflow-automation-trigger-source";
 import {
-  loadVisibleWorkflowById,
   visibleWorkflowCondition,
   workflowSummary,
   type WorkflowMember,
@@ -177,13 +176,12 @@ import {
   ensureWorkflowUserAutomationThread$,
   prepareWorkflowUserAutomationThread$,
   type WorkflowThreadPreparation,
-  loadWorkflowUserAutomationThreadId,
   workflowUserAutomationThreadOwnerCondition,
   preparedWorkflowThreadValues,
 } from "./workflow-user-automation-thread.service";
 import { lockWorkflowWebhookAutomationTierEligibleForOrg } from "./workflow-webhook-automation-entitlement.service";
 import {
-  buildWorkflowWebhookSummaryFields,
+  buildWorkflowWebhookSummaryFields$,
   workflowWebhookSummaryFields,
   defaultWebhookReceivedEventConfig,
   encryptWorkflowWebhookSecret,
@@ -191,7 +189,7 @@ import {
   hashWorkflowWebhookToken,
   mintWorkflowWebhookSecret,
   mintWorkflowWebhookToken,
-  revealWorkflowWebhookSecretFields,
+  revealWorkflowWebhookSecretFields$,
 } from "./workflow-webhook-automation.service";
 
 type AutomationRow = typeof workflowAutomations.$inferSelect;
@@ -650,20 +648,27 @@ type RowToSummaryOptions = {
     }
 );
 
-async function resolveAutomationChatThreadId(
-  db: ReadonlyDb,
-  row: AutomationRow,
-  options: RowToSummaryOptions,
-): Promise<string | null> {
-  if ("chatThreadId" in options) {
-    return options.chatThreadId ?? null;
-  }
-  return await loadWorkflowUserAutomationThreadId(db, {
-    orgId: row.orgId,
-    userId: row.ownerUserId,
-    workflowId: row.workflowId,
-  });
-}
+const resolveAutomationChatThreadId$ = command(
+  async (
+    { set },
+    row: AutomationRow,
+    options: RowToSummaryOptions,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    if ("chatThreadId" in options) {
+      return options.chatThreadId ?? null;
+    }
+    return await set(
+      readAutomationChatThreadId$,
+      {
+        orgId: row.orgId,
+        userId: row.ownerUserId,
+        workflowId: row.workflowId,
+      },
+      signal,
+    );
+  },
+);
 
 function notionChildPageRowSummary(
   row: AutomationRow,
@@ -814,23 +819,29 @@ function stripeAutomationHealthSummary(
   };
 }
 
-async function loadStripeWorkflowAutomationHealth(
-  db: ReadonlyDb,
-  automationId: string,
-): Promise<StripeWorkflowAutomationHealth> {
-  const [health] = await db
-    .select({
-      lastMatchingEventReceivedAt:
-        stripeWorkflowAutomationHealth.lastMatchingEventReceivedAt,
-      lastDeliveryStatus: stripeWorkflowAutomationHealth.latestDeliveryStatus,
-      lastDeliveryStatusAt:
-        stripeWorkflowAutomationHealth.latestDeliveryStatusAt,
-    })
-    .from(stripeWorkflowAutomationHealth)
-    .where(eq(stripeWorkflowAutomationHealth.automationId, automationId))
-    .limit(1);
-  return stripeAutomationHealthSummary(health);
-}
+const loadStripeWorkflowAutomationHealth$ = command(
+  async (
+    { get },
+    automationId: string,
+    signal: AbortSignal,
+  ): Promise<StripeWorkflowAutomationHealth> => {
+    const db = get(db$);
+
+    const [health] = await db
+      .select({
+        lastMatchingEventReceivedAt:
+          stripeWorkflowAutomationHealth.lastMatchingEventReceivedAt,
+        lastDeliveryStatus: stripeWorkflowAutomationHealth.latestDeliveryStatus,
+        lastDeliveryStatusAt:
+          stripeWorkflowAutomationHealth.latestDeliveryStatusAt,
+      })
+      .from(stripeWorkflowAutomationHealth)
+      .where(eq(stripeWorkflowAutomationHealth.automationId, automationId))
+      .limit(1);
+    signal.throwIfAborted();
+    return stripeAutomationHealthSummary(health);
+  },
+);
 
 interface EventSummaryWarnings {
   readonly googleCalendar?: GoogleCalendarWatchActionRequiredReason;
@@ -990,112 +1001,227 @@ function googleCalendarWarningFromState(
   return state?.reason ?? undefined;
 }
 
-async function loadGoogleCalendarAutomationWarning(
-  db: ReadonlyDb,
-  row: AutomationRow,
-): Promise<GoogleCalendarWatchActionRequiredReason | undefined> {
-  const calendarId = googleCalendarIdFromAutomationRow(row);
-  if (calendarId === null || row.eventConnectorId === null) {
-    return undefined;
-  }
-  const [state] = await db
-    .select({
-      reason: googleCalendarWatchStates.actionRequiredReason,
-      startedAt: googleCalendarWatchStates.actionRequiredAt,
-    })
-    .from(googleCalendarWatchStates)
-    .where(
-      and(
-        eq(googleCalendarWatchStates.orgId, row.orgId),
-        eq(googleCalendarWatchStates.userId, row.ownerUserId),
-        eq(googleCalendarWatchStates.connectorId, row.eventConnectorId),
-        eq(googleCalendarWatchStates.calendarId, calendarId),
-      ),
-    )
-    .limit(1);
-  return googleCalendarWarningFromState(state);
-}
+const loadGoogleCalendarAutomationWarning$ = command(
+  async (
+    { get },
+    row: AutomationRow,
+    signal: AbortSignal,
+  ): Promise<GoogleCalendarWatchActionRequiredReason | undefined> => {
+    const db = get(db$);
 
-async function rowToSummary(
-  db: ReadonlyDb,
-  row: AutomationRow,
-  options: RowToSummaryOptions = {},
-): Promise<WorkflowAutomationSummary> {
-  const chatThreadId = await resolveAutomationChatThreadId(db, row, options);
-  if (row.kind === "event") {
-    if (row.eventType === "stripe-invoice-paid") {
-      return stripeInvoicePaidRowToSummary(
-        row,
-        chatThreadId,
-        await loadStripeWorkflowAutomationHealth(db, row.id),
-      );
+    const calendarId = googleCalendarIdFromAutomationRow(row);
+    if (calendarId === null || row.eventConnectorId === null) {
+      return undefined;
     }
-    if (row.eventType === "webhook-received") {
-      return {
-        ...rowSummaryBase(row, chatThreadId),
-        kind: "event",
-        eventType: "webhook-received",
-        eventConfig: webhookReceivedEventConfigSchema.parse(row.eventConfig),
-        schedule: null,
-        scheduleSummary: null,
-        ...(await buildWorkflowWebhookSummaryFields(db, {
-          automation: row,
-          ...options,
-        })),
-      };
+    const [state] = await db
+      .select({
+        reason: googleCalendarWatchStates.actionRequiredReason,
+        startedAt: googleCalendarWatchStates.actionRequiredAt,
+      })
+      .from(googleCalendarWatchStates)
+      .where(
+        and(
+          eq(googleCalendarWatchStates.orgId, row.orgId),
+          eq(googleCalendarWatchStates.userId, row.ownerUserId),
+          eq(googleCalendarWatchStates.connectorId, row.eventConnectorId),
+          eq(googleCalendarWatchStates.calendarId, calendarId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return googleCalendarWarningFromState(state);
+  },
+);
+
+const rowToSummary$ = command(
+  async (
+    { set },
+    row: AutomationRow,
+    options: RowToSummaryOptions,
+    signal: AbortSignal,
+  ): Promise<WorkflowAutomationSummary> => {
+    const chatThreadId = await set(
+      resolveAutomationChatThreadId$,
+      row,
+      options,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (row.kind === "event") {
+      if (row.eventType === "stripe-invoice-paid") {
+        return stripeInvoicePaidRowToSummary(
+          row,
+          chatThreadId,
+          await set(loadStripeWorkflowAutomationHealth$, row.id, signal),
+        );
+      }
+      if (row.eventType === "webhook-received") {
+        return {
+          ...rowSummaryBase(row, chatThreadId),
+          kind: "event",
+          eventType: "webhook-received",
+          eventConfig: webhookReceivedEventConfigSchema.parse(row.eventConfig),
+          schedule: null,
+          scheduleSummary: null,
+          ...(await set(
+            buildWorkflowWebhookSummaryFields$,
+            {
+              automation: row,
+              ...options,
+            },
+            signal,
+          )),
+        };
+      }
+      const eventSummary = eventRowToSummary(row, chatThreadId, {
+        googleCalendar: await set(
+          loadGoogleCalendarAutomationWarning$,
+          row,
+          signal,
+        ),
+        googleForms: options.warning,
+      });
+      signal.throwIfAborted();
+      if (eventSummary) {
+        return eventSummary;
+      }
     }
-    const eventSummary = eventRowToSummary(row, chatThreadId, {
-      googleCalendar: await loadGoogleCalendarAutomationWarning(db, row),
-      googleForms: options.warning,
-    });
-    if (eventSummary) {
-      return eventSummary;
+    const schedule = rowToSchedule(row);
+    return {
+      ...rowSummaryBase(row, chatThreadId),
+      kind: "schedule",
+      schedule,
+      scheduleSummary: summarizeSchedule(schedule),
+    };
+  },
+);
+const rowToPublicSummary$ = command(
+  async (
+    { set },
+    row: AutomationRow,
+    options: {
+      readonly chatThreadId?: string | null;
+    },
+    signal: AbortSignal,
+  ): Promise<WorkflowAutomationSummary | null> => {
+    if (row.kind === "event" && !supportedAutomationEventType(row.eventType)) {
+      return null;
     }
-  }
-  const schedule = rowToSchedule(row);
-  return {
-    ...rowSummaryBase(row, chatThreadId),
-    kind: "schedule",
-    schedule,
-    scheduleSummary: summarizeSchedule(schedule),
-  };
-}
-async function rowToPublicSummary(
-  db: ReadonlyDb,
-  row: AutomationRow,
-  options: {
-    readonly chatThreadId?: string | null;
-  } = {},
-): Promise<WorkflowAutomationSummary | null> {
-  if (row.kind === "event" && !supportedAutomationEventType(row.eventType)) {
-    return null;
-  }
-  return await rowToSummary(db, row, options);
-}
+    return await set(rowToSummary$, row, options, signal);
+  },
+);
+
+const readAutomationVisibleWorkflow$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly member: WorkflowMember;
+      readonly workflowId: string;
+      readonly includeInstallingOfficial?: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<{
+    workflow: WorkflowRow;
+    agent: {
+      readonly id: string;
+      readonly orgId: string;
+      readonly owner: string;
+      readonly visibility: "public" | "private";
+      readonly name: string;
+      readonly displayName: string | null;
+    };
+  } | null> => {
+    const db = get(db$);
+    const [row] = await db
+      .select({
+        workflow: workflows,
+        agent: {
+          id: agents.id,
+          orgId: agents.orgId,
+          owner: agents.owner,
+          visibility: agents.visibility,
+          name: agents.name,
+          displayName: agents.displayName,
+        },
+      })
+      .from(workflows)
+      .innerJoin(agents, eq(workflows.agentId, agents.id))
+      .where(
+        and(
+          eq(workflows.orgId, args.orgId),
+          eq(workflows.id, args.workflowId),
+          args.includeInstallingOfficial
+            ? or(
+                visibleWorkflowCondition(args.member),
+                and(
+                  eq(workflows.ownerUserId, args.member.userId),
+                  eq(workflows.officialInstallationState, "installing"),
+                ),
+              )
+            : visibleWorkflowCondition(args.member),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+
+    if (!row) {
+      return null;
+    }
+    return { workflow: row.workflow, agent: row.agent };
+  },
+);
+
+const readAutomationChatThreadId$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly workflowId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const db = get(db$);
+    const [binding] = await db
+      .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
+      .from(workflowUserAutomationThreads)
+      .where(workflowUserAutomationThreadOwnerCondition(args))
+      .limit(1);
+    signal.throwIfAborted();
+    return binding?.chatThreadId ?? null;
+  },
+);
 
 interface UsableAgent {
   readonly id: string;
   readonly owner: string;
   readonly visibility: "public" | "private";
 }
-async function loadAgent(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly agentId: string;
+const loadAgent$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly agentId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<UsableAgent | null> => {
+    const db = get(db$);
+
+    const [agent] = await db
+      .select({
+        id: agents.id,
+        owner: agents.owner,
+        visibility: agents.visibility,
+      })
+      .from(agents)
+      .where(and(eq(agents.orgId, args.orgId), eq(agents.id, args.agentId)))
+      .limit(1);
+    signal.throwIfAborted();
+    return agent ?? null;
   },
-): Promise<UsableAgent | null> {
-  const [agent] = await db
-    .select({
-      id: agents.id,
-      owner: agents.owner,
-      visibility: agents.visibility,
-    })
-    .from(agents)
-    .where(and(eq(agents.orgId, args.orgId), eq(agents.id, args.agentId)))
-    .limit(1);
-  return agent ?? null;
-}
+);
 
 /**
  * An automation run executes as its owner, so the owner must be able to run the
@@ -1105,73 +1231,91 @@ async function loadAgent(
 function canUseAgent(agent: UsableAgent, member: WorkflowMember): boolean {
   return agent.visibility === "public" || agent.owner === member.userId;
 }
-async function loadAutomationWorkflowRunTarget(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly workflowId: string;
-  },
-): Promise<{
-  readonly agentId: string;
-  readonly workflowName: string;
-  readonly workflowTitle: string;
-} | null> {
-  const [workflow] = await db
-    .select({
-      agentId: workflows.agentId,
-      workflowName: workflows.name,
-      workflowDisplayName: workflows.displayName,
-    })
-    .from(workflows)
-    .where(
-      and(eq(workflows.orgId, args.orgId), eq(workflows.id, args.workflowId)),
-    )
-    .limit(1);
-  if (!workflow) {
-    return null;
-  }
-  return {
-    agentId: workflow.agentId,
-    workflowName: workflow.workflowName,
-    workflowTitle: workflow.workflowDisplayName ?? workflow.workflowName,
-  };
-}
-async function loadAutomationRow(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly automationId: string;
-  },
-): Promise<AutomationRow | null> {
-  const [row] = await db
-    .select(workflowAutomationColumns())
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.id, args.automationId),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
-}
+const loadAutomationWorkflowRunTarget$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly workflowId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<{
+    readonly agentId: string;
+    readonly workflowName: string;
+    readonly workflowTitle: string;
+  } | null> => {
+    const db = get(db$);
 
-async function loadAutomationOwnerTimezone(
-  db: ReadonlyDb,
-  automation: AutomationRow,
-): Promise<string | null> {
-  const [row] = await db
-    .select({ timezone: orgMembersMetadata.timezone })
-    .from(orgMembersMetadata)
-    .where(
-      and(
-        eq(orgMembersMetadata.orgId, automation.orgId),
-        eq(orgMembersMetadata.userId, automation.ownerUserId),
-      ),
-    )
-    .limit(1);
-  return row?.timezone ?? null;
-}
+    const [workflow] = await db
+      .select({
+        agentId: workflows.agentId,
+        workflowName: workflows.name,
+        workflowDisplayName: workflows.displayName,
+      })
+      .from(workflows)
+      .where(
+        and(eq(workflows.orgId, args.orgId), eq(workflows.id, args.workflowId)),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!workflow) {
+      return null;
+    }
+    return {
+      agentId: workflow.agentId,
+      workflowName: workflow.workflowName,
+      workflowTitle: workflow.workflowDisplayName ?? workflow.workflowName,
+    };
+  },
+);
+const loadAutomationRow$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly automationId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<AutomationRow | null> => {
+    const db = get(db$);
+
+    const [row] = await db
+      .select(workflowAutomationColumns())
+      .from(workflowAutomations)
+      .where(
+        and(
+          eq(workflowAutomations.orgId, args.orgId),
+          eq(workflowAutomations.id, args.automationId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return row ?? null;
+  },
+);
+
+const loadAutomationOwnerTimezone$ = command(
+  async (
+    { get },
+    automation: AutomationRow,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const db = get(db$);
+
+    const [row] = await db
+      .select({ timezone: orgMembersMetadata.timezone })
+      .from(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, automation.orgId),
+          eq(orgMembersMetadata.userId, automation.ownerUserId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return row?.timezone ?? null;
+  },
+);
 
 /**
  * List the caller's own workflow automations under a workflow. Detail pages show
@@ -1179,130 +1323,156 @@ async function loadAutomationOwnerTimezone(
  * Visibility of the workflow itself is the caller's responsibility (the workflow
  * must already be resolved as visible).
  */
-export async function loadWorkflowAutomations(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly workflowId: string;
-    readonly userId: string;
+export const loadWorkflowAutomations$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly orgId: string;
+      readonly workflowId: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<readonly WorkflowAutomationSummary[]> => {
+    const db = get(db$);
+
+    const rows = await db
+      .select(workflowAutomationColumns())
+      .from(workflowAutomations)
+      .where(
+        and(
+          eq(workflowAutomations.orgId, args.orgId),
+          eq(workflowAutomations.workflowId, args.workflowId),
+          eq(workflowAutomations.ownerUserId, args.userId),
+        ),
+      )
+      .orderBy(asc(workflowAutomations.createdAt));
+    signal.throwIfAborted();
+    const chatThreadId = await set(
+      readAutomationChatThreadId$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        workflowId: args.workflowId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    const summaries = await Promise.all(
+      rows.map((row) => {
+        return set(rowToPublicSummary$, row, { chatThreadId }, signal);
+      }),
+    );
+    signal.throwIfAborted();
+    return summaries.flatMap((summary) => {
+      return summary ? [summary] : [];
+    });
   },
-): Promise<readonly WorkflowAutomationSummary[]> {
-  const rows = await db
-    .select(workflowAutomationColumns())
-    .from(workflowAutomations)
-    .where(
-      and(
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.workflowId, args.workflowId),
-        eq(workflowAutomations.ownerUserId, args.userId),
-      ),
-    )
-    .orderBy(asc(workflowAutomations.createdAt));
-  const chatThreadId = await loadWorkflowUserAutomationThreadId(db, {
-    orgId: args.orgId,
-    userId: args.userId,
-    workflowId: args.workflowId,
-  });
-  const summaries = await Promise.all(
-    rows.map((row) => {
-      return rowToPublicSummary(db, row, { chatThreadId });
-    }),
-  );
-  return summaries.flatMap((summary) => {
-    return summary ? [summary] : [];
-  });
-}
+);
 
 /**
  * List the caller's workflow automations across every visible workflow in one
  * lightweight projection. This deliberately avoids workflow detail loading, so
  * it does not read workflow volume files from R2.
  */
-export async function listWorkspaceWorkflowAutomations(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly member: WorkflowMember;
+export const listWorkspaceWorkflowAutomations$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly orgId: string;
+      readonly member: WorkflowMember;
+    },
+    signal: AbortSignal,
+  ): Promise<readonly WorkflowAutomationsListEntry[]> => {
+    const db = get(db$);
+
+    const rows = await db
+      .select({
+        automation: workflowAutomationColumns(),
+        workflow: workflows,
+        agent: {
+          id: agents.id,
+          owner: agents.owner,
+          visibility: agents.visibility,
+          name: agents.name,
+          displayName: agents.displayName,
+        },
+        chatThreadId: workflowUserAutomationThreads.chatThreadId,
+      })
+      .from(workflowAutomations)
+      .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
+      .innerJoin(agents, eq(agents.id, workflows.agentId))
+      .leftJoin(
+        workflowUserAutomationThreads,
+        and(
+          eq(workflowUserAutomationThreads.orgId, workflowAutomations.orgId),
+          eq(
+            workflowUserAutomationThreads.userId,
+            workflowAutomations.ownerUserId,
+          ),
+          eq(
+            workflowUserAutomationThreads.workflowId,
+            workflowAutomations.workflowId,
+          ),
+        ),
+      )
+      .where(
+        and(
+          eq(workflowAutomations.orgId, args.orgId),
+          eq(workflowAutomations.ownerUserId, args.member.userId),
+          visibleWorkflowCondition(args.member),
+        ),
+      )
+      .orderBy(asc(workflowAutomations.createdAt), asc(workflowAutomations.id));
+    signal.throwIfAborted();
+
+    const hasOfficialWorkflow = rows.some((row) => {
+      return row.workflow.officialDefinitionName !== null;
+    });
+    const acceptedCatalog = hasOfficialWorkflow
+      ? await set(readAcceptedOfficialWorkflowCatalog$, signal)
+      : null;
+    signal.throwIfAborted();
+    const officialLifecycleByName = new Map(
+      acceptedCatalog?.payload.definitions.map((definition) => {
+        return [definition.name, definition.lifecycle] as const;
+      }) ?? [],
+    );
+
+    const entries = await Promise.all(
+      rows.map(async (row): Promise<WorkflowAutomationsListEntry | null> => {
+        const automation = await set(
+          rowToPublicSummary$,
+          row.automation,
+          {
+            chatThreadId: row.chatThreadId ?? null,
+          },
+          signal,
+        );
+        signal.throwIfAborted();
+        if (!automation) {
+          return null;
+        }
+        return {
+          workflow: workflowSummary({
+            workflow: row.workflow,
+            agent: row.agent,
+            member: args.member,
+            officialDefinitionLifecycle: row.workflow.officialDefinitionName
+              ? (officialLifecycleByName.get(
+                  row.workflow.officialDefinitionName,
+                ) ?? "unavailable")
+              : undefined,
+          }),
+          automation,
+        };
+      }),
+    );
+    signal.throwIfAborted();
+    return entries.flatMap((entry) => {
+      return entry ? [entry] : [];
+    });
   },
-): Promise<readonly WorkflowAutomationsListEntry[]> {
-  const rows = await db
-    .select({
-      automation: workflowAutomationColumns(),
-      workflow: workflows,
-      agent: {
-        id: agents.id,
-        owner: agents.owner,
-        visibility: agents.visibility,
-        name: agents.name,
-        displayName: agents.displayName,
-      },
-      chatThreadId: workflowUserAutomationThreads.chatThreadId,
-    })
-    .from(workflowAutomations)
-    .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
-    .innerJoin(agents, eq(agents.id, workflows.agentId))
-    .leftJoin(
-      workflowUserAutomationThreads,
-      and(
-        eq(workflowUserAutomationThreads.orgId, workflowAutomations.orgId),
-        eq(
-          workflowUserAutomationThreads.userId,
-          workflowAutomations.ownerUserId,
-        ),
-        eq(
-          workflowUserAutomationThreads.workflowId,
-          workflowAutomations.workflowId,
-        ),
-      ),
-    )
-    .where(
-      and(
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.ownerUserId, args.member.userId),
-        visibleWorkflowCondition(args.member),
-      ),
-    )
-    .orderBy(asc(workflowAutomations.createdAt), asc(workflowAutomations.id));
-
-  const hasOfficialWorkflow = rows.some((row) => {
-    return row.workflow.officialDefinitionName !== null;
-  });
-  const acceptedCatalog = hasOfficialWorkflow
-    ? await readAcceptedOfficialWorkflowCatalog(db)
-    : null;
-  const officialLifecycleByName = new Map(
-    acceptedCatalog?.payload.definitions.map((definition) => {
-      return [definition.name, definition.lifecycle] as const;
-    }) ?? [],
-  );
-
-  const entries = await Promise.all(
-    rows.map(async (row): Promise<WorkflowAutomationsListEntry | null> => {
-      const automation = await rowToPublicSummary(db, row.automation, {
-        chatThreadId: row.chatThreadId ?? null,
-      });
-      if (!automation) {
-        return null;
-      }
-      return {
-        workflow: workflowSummary({
-          workflow: row.workflow,
-          agent: row.agent,
-          member: args.member,
-          officialDefinitionLifecycle: row.workflow.officialDefinitionName
-            ? (officialLifecycleByName.get(
-                row.workflow.officialDefinitionName,
-              ) ?? "unavailable")
-            : undefined,
-        }),
-        automation,
-      };
-    }),
-  );
-  return entries.flatMap((entry) => {
-    return entry ? [entry] : [];
-  });
-}
+);
 
 function chatThreadAutomationFromSummary(args: {
   readonly workflow: WorkflowRow;
@@ -1332,123 +1502,166 @@ function chatThreadAutomationFromSummary(args: {
  * List workflow automations the caller owns that are bound to a chat thread,
  * joined with the workflow identity needed by the chat sidebar.
  */
-export async function listThreadBoundWorkflowAutomations(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly threadId: string;
+export const listThreadBoundWorkflowAutomations$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly threadId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<readonly ChatThreadWorkflowAutomation[]> => {
+    const db = get(db$);
+
+    const rows = await db
+      .select({
+        automation: workflowAutomationColumns(),
+        workflow: workflows,
+        chatThreadId: workflowUserAutomationThreads.chatThreadId,
+      })
+      .from(workflowAutomations)
+      .innerJoin(
+        workflowUserAutomationThreads,
+        and(
+          eq(workflowUserAutomationThreads.orgId, workflowAutomations.orgId),
+          eq(
+            workflowUserAutomationThreads.userId,
+            workflowAutomations.ownerUserId,
+          ),
+          eq(
+            workflowUserAutomationThreads.workflowId,
+            workflowAutomations.workflowId,
+          ),
+        ),
+      )
+      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .where(
+        and(
+          eq(workflowAutomations.orgId, args.orgId),
+          eq(workflowAutomations.ownerUserId, args.userId),
+          eq(workflowUserAutomationThreads.chatThreadId, args.threadId),
+          or(
+            isNull(workflows.officialDefinitionName),
+            eq(workflows.officialInstallationState, "installed"),
+          ),
+        ),
+      )
+      .orderBy(asc(workflowAutomations.createdAt));
+    signal.throwIfAborted();
+
+    const summaries = await Promise.all(
+      rows.map(async ({ automation, workflow, chatThreadId }) => {
+        const summary = await set(
+          rowToPublicSummary$,
+          automation,
+          {
+            chatThreadId,
+          },
+          signal,
+        );
+        signal.throwIfAborted();
+        return { workflow, summary, chatThreadId };
+      }),
+    );
+    signal.throwIfAborted();
+
+    return summaries.flatMap((summary) => {
+      return chatThreadAutomationFromSummary(summary);
+    });
   },
-): Promise<readonly ChatThreadWorkflowAutomation[]> {
-  const rows = await db
-    .select({
-      automation: workflowAutomationColumns(),
-      workflow: workflows,
-      chatThreadId: workflowUserAutomationThreads.chatThreadId,
-    })
-    .from(workflowAutomations)
-    .innerJoin(
-      workflowUserAutomationThreads,
-      and(
-        eq(workflowUserAutomationThreads.orgId, workflowAutomations.orgId),
-        eq(
-          workflowUserAutomationThreads.userId,
-          workflowAutomations.ownerUserId,
-        ),
-        eq(
-          workflowUserAutomationThreads.workflowId,
-          workflowAutomations.workflowId,
-        ),
-      ),
-    )
-    .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
-    .where(
-      and(
-        eq(workflowAutomations.orgId, args.orgId),
-        eq(workflowAutomations.ownerUserId, args.userId),
-        eq(workflowUserAutomationThreads.chatThreadId, args.threadId),
-        or(
-          isNull(workflows.officialDefinitionName),
-          eq(workflows.officialInstallationState, "installed"),
-        ),
-      ),
-    )
-    .orderBy(asc(workflowAutomations.createdAt));
-
-  const summaries = await Promise.all(
-    rows.map(async ({ automation, workflow, chatThreadId }) => {
-      const summary = await rowToPublicSummary(db, automation, {
-        chatThreadId,
-      });
-      return { workflow, summary, chatThreadId };
-    }),
-  );
-
-  return summaries.flatMap((summary) => {
-    return chatThreadAutomationFromSummary(summary);
-  });
-}
+);
 
 /**
  * Load a single automation if its workflow is visible to the caller. Read-only;
  * does not require ownership.
  */
-export async function getWorkflowAutomation(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly member: WorkflowMember;
-    readonly automationId: string;
+export const getWorkflowAutomation$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly member: WorkflowMember;
+      readonly automationId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<WorkflowAutomationSummary | null> => {
+    const automation = await set(
+      loadAutomationRow$,
+      {
+        orgId: args.orgId,
+        automationId: args.automationId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!automation) {
+      return null;
+    }
+    const visible = await set(
+      readAutomationVisibleWorkflow$,
+      {
+        orgId: args.orgId,
+        member: args.member,
+        workflowId: automation.workflowId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!visible) {
+      return null;
+    }
+    return await set(rowToPublicSummary$, automation, {}, signal);
   },
-): Promise<WorkflowAutomationSummary | null> {
-  const automation = await loadAutomationRow(db, {
-    orgId: args.orgId,
-    automationId: args.automationId,
-  });
-  if (!automation) {
-    return null;
-  }
-  const visible = await loadVisibleWorkflowById(db, {
-    orgId: args.orgId,
-    member: args.member,
-    workflowId: automation.workflowId,
-  });
-  if (!visible) {
-    return null;
-  }
-  return await rowToPublicSummary(db, automation);
-}
+);
 
-export async function revealWorkflowWebhookSecret(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly member: WorkflowMember;
-    readonly automationId: string;
+export const revealWorkflowWebhookSecret$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly member: WorkflowMember;
+      readonly automationId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<WorkflowWebhookSecretResponse | null> => {
+    const automation = await set(
+      loadAutomationRow$,
+      {
+        orgId: args.orgId,
+        automationId: args.automationId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (
+      !automation ||
+      automation.kind !== "event" ||
+      automation.eventType !== "webhook-received" ||
+      automation.ownerUserId !== args.member.userId
+    ) {
+      return null;
+    }
+    const visible = await set(
+      readAutomationVisibleWorkflow$,
+      {
+        orgId: args.orgId,
+        member: args.member,
+        workflowId: automation.workflowId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!visible) {
+      return null;
+    }
+    return await set(
+      revealWorkflowWebhookSecretFields$,
+      { automation },
+      signal,
+    );
   },
-): Promise<WorkflowWebhookSecretResponse | null> {
-  const automation = await loadAutomationRow(db, {
-    orgId: args.orgId,
-    automationId: args.automationId,
-  });
-  if (
-    !automation ||
-    automation.kind !== "event" ||
-    automation.eventType !== "webhook-received" ||
-    automation.ownerUserId !== args.member.userId
-  ) {
-    return null;
-  }
-  const visible = await loadVisibleWorkflowById(db, {
-    orgId: args.orgId,
-    member: args.member,
-    workflowId: automation.workflowId,
-  });
-  if (!visible) {
-    return null;
-  }
-  return await revealWorkflowWebhookSecretFields(db, { automation });
-}
+);
 
 interface CreateScheduleAutomationInput {
   readonly orgId: string;
@@ -3270,9 +3483,9 @@ const createGoogleMeetEventAutomationForWorkflow$ = command(
     };
     // eslint-disable-next-line api/signal-check-await -- Observe provider failure and finish the owned rollback before propagating cancellation.
     const subscriptionResult = await onRejection(
-      ensureGoogleMeetTranscriptGeneratedSubscriptionForUser(
+      set(
+        ensureGoogleMeetTranscriptGeneratedSubscriptionForUser$,
         {
-          db: db,
           orgId: args.input.orgId,
           userId: args.input.member.userId,
           connectorId,
@@ -3555,9 +3768,25 @@ const createStripeInvoicePaidEventAutomationForWorkflow$ = command(
         if (!row) {
           throw new Error("Failed to create Stripe workflow automation");
         }
+        const [health] = await tx
+          .select({
+            lastMatchingEventReceivedAt:
+              stripeWorkflowAutomationHealth.lastMatchingEventReceivedAt,
+            lastDeliveryStatus:
+              stripeWorkflowAutomationHealth.latestDeliveryStatus,
+            lastDeliveryStatusAt:
+              stripeWorkflowAutomationHealth.latestDeliveryStatusAt,
+          })
+          .from(stripeWorkflowAutomationHealth)
+          .where(eq(stripeWorkflowAutomationHealth.automationId, row.id))
+          .limit(1);
         return {
           kind: "ok" as const,
-          summary: await rowToSummary(tx, row, { chatThreadId }),
+          summary: stripeInvoicePaidRowToSummary(
+            row,
+            chatThreadId,
+            stripeAutomationHealthSummary(health),
+          ),
         };
       }),
     );
@@ -3964,86 +4193,12 @@ const loadCommittedAutomationSummary$ = command(
     args: { readonly row: AutomationRow; readonly chatThreadId: string | null },
     signal: AbortSignal,
   ): Promise<WorkflowAutomationSummary> => {
-    const db = set(writeDb$);
-    const { row, chatThreadId } = args;
-    if (row.kind === "event") {
-      if (row.eventType === "stripe-invoice-paid") {
-        const [health] = await db
-          .select({
-            lastMatchingEventReceivedAt:
-              stripeWorkflowAutomationHealth.lastMatchingEventReceivedAt,
-            lastDeliveryStatus:
-              stripeWorkflowAutomationHealth.latestDeliveryStatus,
-            lastDeliveryStatusAt:
-              stripeWorkflowAutomationHealth.latestDeliveryStatusAt,
-          })
-          .from(stripeWorkflowAutomationHealth)
-          .where(eq(stripeWorkflowAutomationHealth.automationId, row.id))
-          .limit(1);
-        signal.throwIfAborted();
-        return stripeInvoicePaidRowToSummary(
-          row,
-          chatThreadId,
-          stripeAutomationHealthSummary(health),
-        );
-      }
-      if (row.eventType === "webhook-received") {
-        const [webhook] = await db
-          .select()
-          .from(workflowWebhookAutomations)
-          .where(eq(workflowWebhookAutomations.automationId, row.id))
-          .limit(1);
-        signal.throwIfAborted();
-        if (!webhook) {
-          throw new Error(
-            `Workflow webhook automation config missing: ${row.id}`,
-          );
-        }
-        return {
-          ...rowSummaryBase(row, chatThreadId),
-          kind: "event",
-          eventType: "webhook-received",
-          eventConfig: webhookReceivedEventConfigSchema.parse(row.eventConfig),
-          schedule: null,
-          scheduleSummary: null,
-          ...workflowWebhookSummaryFields(webhook, {}),
-        };
-      }
-      let warning: GoogleCalendarWatchActionRequiredReason | undefined;
-      const calendarId = googleCalendarIdFromAutomationRow(row);
-      if (calendarId !== null && row.eventConnectorId !== null) {
-        const [state] = await db
-          .select({
-            reason: googleCalendarWatchStates.actionRequiredReason,
-            startedAt: googleCalendarWatchStates.actionRequiredAt,
-          })
-          .from(googleCalendarWatchStates)
-          .where(
-            and(
-              eq(googleCalendarWatchStates.orgId, row.orgId),
-              eq(googleCalendarWatchStates.userId, row.ownerUserId),
-              eq(googleCalendarWatchStates.connectorId, row.eventConnectorId),
-              eq(googleCalendarWatchStates.calendarId, calendarId),
-            ),
-          )
-          .limit(1);
-        signal.throwIfAborted();
-        warning = googleCalendarWarningFromState(state);
-      }
-      const summary = eventRowToSummary(row, chatThreadId, {
-        googleCalendar: warning,
-      });
-      if (summary) {
-        return summary;
-      }
-    }
-    const schedule = rowToSchedule(row);
-    return {
-      ...rowSummaryBase(row, chatThreadId),
-      kind: "schedule",
-      schedule,
-      scheduleSummary: summarizeSchedule(schedule),
-    };
+    return await set(
+      rowToSummary$,
+      args.row,
+      { chatThreadId: args.chatThreadId },
+      signal,
+    );
   },
 );
 
@@ -4098,13 +4253,16 @@ export const createWorkflowAutomation$ = command(
     args: CreateAutomationInput,
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
-    const writeDb = set(writeDb$);
-    const visible = await loadVisibleWorkflowById(writeDb, {
-      orgId: args.orgId,
-      member: args.member,
-      workflowId: args.workflowId,
-      includeInstallingOfficial: args.officialInstallation !== undefined,
-    });
+    const visible = await set(
+      readAutomationVisibleWorkflow$,
+      {
+        orgId: args.orgId,
+        member: args.member,
+        workflowId: args.workflowId,
+        includeInstallingOfficial: args.officialInstallation !== undefined,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!visible) {
       return { kind: "not-found" };
@@ -4131,10 +4289,14 @@ export const createWorkflowAutomation$ = command(
     }
     // The owning agent is derived from the workflow row (hard 1:N). The automation
     // owner must be able to run that agent for the scheduled run to fire.
-    const agent = await loadAgent(writeDb, {
-      orgId: args.orgId,
-      agentId: workflow.agentId,
-    });
+    const agent = await set(
+      loadAgent$,
+      {
+        orgId: args.orgId,
+        agentId: workflow.agentId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!agent) {
       return {
@@ -4148,7 +4310,6 @@ export const createWorkflowAutomation$ = command(
         message: "You do not have access to the workflow's agent",
       };
     }
-    const workflowTitle = workflow.displayName ?? workflow.name;
     if (!automationCreateInputIsSchedule(args)) {
       const created = await set(
         createEventAutomationForWorkflow$,
@@ -4156,7 +4317,7 @@ export const createWorkflowAutomation$ = command(
           input: args,
           workflowId: workflow.id,
           agentId: agent.id,
-          workflowTitle,
+          workflowTitle: workflow.displayName ?? workflow.name,
           automationId: args.officialInstallation?.automationId,
         },
         signal,
@@ -4681,11 +4842,15 @@ export const prepareOfficialAutomationReconfiguration$ = command(
     signal: AbortSignal,
   ): Promise<OfficialAutomationEventPreparationResult> => {
     const db = set(writeDb$);
-    const owned = await loadOwnedAutomation(db, {
-      orgId: args.input.orgId,
-      member: args.input.member,
-      automationId: args.automationId,
-    });
+    const owned = await set(
+      loadOwnedAutomation$,
+      {
+        orgId: args.input.orgId,
+        member: args.input.member,
+        automationId: args.automationId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if ("kind" in owned) {
       return owned;
@@ -4774,43 +4939,56 @@ async function publishThreadBoundWorkflowAutomationChanged(
   await publishChatThreadAutomationsChangedSafely(userId, chatThreadId);
 }
 
-async function loadOwnedAutomation(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly member: WorkflowMember;
-    readonly automationId: string;
+const loadOwnedAutomation$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly member: WorkflowMember;
+      readonly automationId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<OwnedAutomation | AutomationActionFailure> => {
+    const automation = await set(
+      loadAutomationRow$,
+      {
+        orgId: args.orgId,
+        automationId: args.automationId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!automation) {
+      return { kind: "not-found" };
+    }
+    if (
+      automation.kind === "event" &&
+      !supportedAutomationEventType(automation.eventType)
+    ) {
+      return { kind: "not-found" };
+    }
+    const visible = await set(
+      readAutomationVisibleWorkflow$,
+      {
+        orgId: args.orgId,
+        member: args.member,
+        workflowId: automation.workflowId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!visible) {
+      return { kind: "not-found" };
+    }
+    if (automation.ownerUserId !== args.member.userId) {
+      return {
+        kind: "forbidden",
+        message: "Only the automation owner can manage this automation",
+      };
+    }
+    return { automation };
   },
-): Promise<OwnedAutomation | AutomationActionFailure> {
-  const automation = await loadAutomationRow(db, {
-    orgId: args.orgId,
-    automationId: args.automationId,
-  });
-  if (!automation) {
-    return { kind: "not-found" };
-  }
-  if (
-    automation.kind === "event" &&
-    !supportedAutomationEventType(automation.eventType)
-  ) {
-    return { kind: "not-found" };
-  }
-  const visible = await loadVisibleWorkflowById(db, {
-    orgId: args.orgId,
-    member: args.member,
-    workflowId: automation.workflowId,
-  });
-  if (!visible) {
-    return { kind: "not-found" };
-  }
-  if (automation.ownerUserId !== args.member.userId) {
-    return {
-      kind: "forbidden",
-      message: "Only the automation owner can manage this automation",
-    };
-  }
-  return { automation };
-}
+);
 
 interface UpdateAutomationInput {
   readonly orgId: string;
@@ -5493,11 +5671,15 @@ export const updateWorkflowAutomation$ = command(
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
     const writeDb = set(writeDb$);
-    const owned = await loadOwnedAutomation(writeDb, {
-      orgId: args.orgId,
-      member: args.member,
-      automationId: args.automationId,
-    });
+    const owned = await set(
+      loadOwnedAutomation$,
+      {
+        orgId: args.orgId,
+        member: args.member,
+        automationId: args.automationId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if ("kind" in owned) {
       return owned;
@@ -5559,7 +5741,7 @@ export const updateWorkflowAutomation$ = command(
     if (!row) {
       throw new Error("Failed to update workflow automation");
     }
-    return { kind: "ok", summary: await rowToSummary(writeDb, row) };
+    return { kind: "ok", summary: await set(rowToSummary$, row, {}, signal) };
   },
 );
 
@@ -5604,25 +5786,32 @@ export const runOwnedWorkflowAutomationNow$ = command(
     args: AutomationActionInput,
     signal: AbortSignal,
   ): Promise<WorkflowAutomationRunNowResult> => {
-    const writeDb = set(writeDb$);
-    const owned = await loadOwnedAutomation(writeDb, args);
+    const owned = await set(loadOwnedAutomation$, args, signal);
     signal.throwIfAborted();
     if ("kind" in owned) {
       return owned;
     }
     const { automation } = owned;
-    const target = await loadAutomationWorkflowRunTarget(writeDb, {
-      orgId: args.orgId,
-      workflowId: automation.workflowId,
-    });
+    const target = await set(
+      loadAutomationWorkflowRunTarget$,
+      {
+        orgId: args.orgId,
+        workflowId: automation.workflowId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!target) {
       return { kind: "not-found" };
     }
-    const agent = await loadAgent(writeDb, {
-      orgId: args.orgId,
-      agentId: target.agentId,
-    });
+    const agent = await set(
+      loadAgent$,
+      {
+        orgId: args.orgId,
+        agentId: target.agentId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (!agent) {
       return {
@@ -5638,9 +5827,10 @@ export const runOwnedWorkflowAutomationNow$ = command(
     }
 
     const currentTime = nowDate();
-    const ownerTimezone = await loadAutomationOwnerTimezone(
-      writeDb,
+    const ownerTimezone = await set(
+      loadAutomationOwnerTimezone$,
       automation,
+      signal,
     );
     signal.throwIfAborted();
     const chatThreadId = await set(
@@ -5701,7 +5891,7 @@ export const deleteWorkflowAutomation$ = command(
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
     const writeDb = set(writeDb$);
-    const owned = await loadOwnedAutomation(writeDb, args);
+    const owned = await set(loadOwnedAutomation$, args, signal);
     signal.throwIfAborted();
     if ("kind" in owned) {
       return owned;
@@ -5712,11 +5902,15 @@ export const deleteWorkflowAutomation$ = command(
         message: OFFICIAL_WORKFLOW_AUTOMATION_READ_ONLY_MESSAGE,
       };
     }
-    const chatThreadId = await loadWorkflowUserAutomationThreadId(writeDb, {
-      orgId: owned.automation.orgId,
-      userId: owned.automation.ownerUserId,
-      workflowId: owned.automation.workflowId,
-    });
+    const chatThreadId = await set(
+      readAutomationChatThreadId$,
+      {
+        orgId: owned.automation.orgId,
+        userId: owned.automation.ownerUserId,
+        workflowId: owned.automation.workflowId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     // Delete the automation row only; the bound chat thread is kept.
     await writeDb
@@ -5776,7 +5970,6 @@ const enabledWatchHadConsumer$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
     if (supportedGmailEventType(args.automation.eventType)) {
       if (args.automation.eventConnectorId === null) {
         return false;
@@ -5795,9 +5988,9 @@ const enabledWatchHadConsumer$ = command(
       if (args.automation.eventConnectorId === null) {
         return false;
       }
-      return await hasEnabledGoogleMeetConsumer(
+      return await set(
+        hasEnabledGoogleMeetConsumer$,
         {
-          db: db,
           orgId: args.automation.orgId,
           userId: args.automation.ownerUserId,
           connectorId: args.automation.eventConnectorId,
@@ -5852,7 +6045,6 @@ const ensureEnabledAutomationEventWatch$ = command(
     },
     signal: AbortSignal,
   ): Promise<AutomationActionFailure | null> => {
-    const db = set(writeDb$);
     if (supportedGmailEventType(args.automation.eventType)) {
       if (args.automation.eventConnectorId === null) {
         return {
@@ -5882,16 +6074,15 @@ const ensureEnabledAutomationEventWatch$ = command(
             "Connect Google Meet before using Google Meet event automations",
         };
       }
-      const result =
-        await ensureGoogleMeetTranscriptGeneratedSubscriptionForUser(
-          {
-            db: db,
-            orgId: args.automation.orgId,
-            userId: args.automation.ownerUserId,
-            connectorId: args.automation.eventConnectorId,
-          },
-          signal,
-        );
+      const result = await set(
+        ensureGoogleMeetTranscriptGeneratedSubscriptionForUser$,
+        {
+          orgId: args.automation.orgId,
+          userId: args.automation.ownerUserId,
+          connectorId: args.automation.eventConnectorId,
+        },
+        signal,
+      );
       return result.kind === "ok"
         ? null
         : { kind: "bad-request", message: result.message };
@@ -6010,43 +6201,46 @@ function officialAutomationReconfigurationFailure(
     : null;
 }
 
-async function finalizeEnabledOfficialAutomation(
-  db: Db,
-  previousAutomation: AutomationRow,
-  enabledAutomation: AutomationRow,
-  signal: AbortSignal,
-): Promise<AutomationRow> {
-  if (
-    previousAutomation.officialBlueprintKey === null ||
-    enabledAutomation.kind !== "event"
-  ) {
-    return enabledAutomation;
-  }
-  if (previousAutomation.officialReconciliationStatus === null) {
-    throw new Error("Official Workflow automation state is incomplete");
-  }
-  const [finalized] = await db
-    .update(workflowAutomations)
-    .set({
-      officialReconciliationStatus:
-        previousAutomation.officialReconciliationStatus,
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(workflowAutomations.id, enabledAutomation.id),
-        eq(workflowAutomations.officialReconciliationStatus, "reconciling"),
-      ),
-    )
-    .returning(workflowAutomationColumns());
-  signal.throwIfAborted();
-  if (!finalized) {
-    throw new Error(
-      "Official Workflow lifecycle reconciliation lost ownership",
-    );
-  }
-  return finalized;
-}
+const finalizeEnabledOfficialAutomation$ = command(
+  async (
+    { set },
+    previousAutomation: AutomationRow,
+    enabledAutomation: AutomationRow,
+    signal: AbortSignal,
+  ): Promise<AutomationRow> => {
+    const db = set(writeDb$);
+    if (
+      previousAutomation.officialBlueprintKey === null ||
+      enabledAutomation.kind !== "event"
+    ) {
+      return enabledAutomation;
+    }
+    if (previousAutomation.officialReconciliationStatus === null) {
+      throw new Error("Official Workflow automation state is incomplete");
+    }
+    const [finalized] = await db
+      .update(workflowAutomations)
+      .set({
+        officialReconciliationStatus:
+          previousAutomation.officialReconciliationStatus,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(workflowAutomations.id, enabledAutomation.id),
+          eq(workflowAutomations.officialReconciliationStatus, "reconciling"),
+        ),
+      )
+      .returning(workflowAutomationColumns());
+    signal.throwIfAborted();
+    if (!finalized) {
+      throw new Error(
+        "Official Workflow lifecycle reconciliation lost ownership",
+      );
+    }
+    return finalized;
+  },
+);
 const ensureEnabledAutomationEventWatchWithRollback$ = command(
   async (
     { set },
@@ -6561,36 +6755,42 @@ function enabledAutomationWithAccountProjection(
   };
 }
 
-async function finalizeAndPublishEnabledWorkflowAutomation(
-  db: Db,
-  args: {
-    readonly previousAutomation: AutomationRow;
-    readonly enabledAutomation: AutomationRow;
-    readonly memberUserId: string;
+const finalizeAndPublishEnabledWorkflowAutomation$ = command(
+  async (
+    { set },
+    args: {
+      readonly previousAutomation: AutomationRow;
+      readonly enabledAutomation: AutomationRow;
+      readonly memberUserId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<AutomationResult> => {
+    const row = await set(
+      finalizeEnabledOfficialAutomation$,
+      args.previousAutomation,
+      args.enabledAutomation,
+      signal,
+    );
+    const chatThreadId = await set(
+      readAutomationChatThreadId$,
+      {
+        orgId: row.orgId,
+        userId: row.ownerUserId,
+        workflowId: row.workflowId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    await publishThreadBoundWorkflowAutomationChanged(
+      args.memberUserId,
+      chatThreadId,
+    );
+    signal.throwIfAborted();
+    const summary = await set(rowToSummary$, row, { chatThreadId }, signal);
+    signal.throwIfAborted();
+    return { kind: "ok", summary };
   },
-  signal: AbortSignal,
-): Promise<AutomationResult> {
-  const row = await finalizeEnabledOfficialAutomation(
-    db,
-    args.previousAutomation,
-    args.enabledAutomation,
-    signal,
-  );
-  const chatThreadId = await loadWorkflowUserAutomationThreadId(db, {
-    orgId: row.orgId,
-    userId: row.ownerUserId,
-    workflowId: row.workflowId,
-  });
-  signal.throwIfAborted();
-  await publishThreadBoundWorkflowAutomationChanged(
-    args.memberUserId,
-    chatThreadId,
-  );
-  signal.throwIfAborted();
-  const summary = await rowToSummary(db, row, { chatThreadId });
-  signal.throwIfAborted();
-  return { kind: "ok", summary };
-}
+);
 const publishEnabledGoogleFormsSummary$ = command(
   async (
     { set },
@@ -6938,8 +7138,8 @@ const persistAndReconcileEnabledWorkflowAutomation$ = command(
     if (watchFailure) {
       return watchFailure;
     }
-    return await finalizeAndPublishEnabledWorkflowAutomation(
-      db,
+    return await set(
+      finalizeAndPublishEnabledWorkflowAutomation$,
       {
         previousAutomation: args.automation,
         enabledAutomation: enabled.row,
@@ -7099,8 +7299,8 @@ export const enableWorkflowAutomation$ = command(
       };
     }
     if (morningBriefRow.kind === "applied") {
-      return await finalizeAndPublishEnabledWorkflowAutomation(
-        set(writeDb$),
+      return await set(
+        finalizeAndPublishEnabledWorkflowAutomation$,
         {
           previousAutomation: automation,
           enabledAutomation: morningBriefRow.row,
@@ -7167,7 +7367,7 @@ export const disableWorkflowAutomation$ = command(
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
     const writeDb = set(writeDb$);
-    const owned = await loadOwnedAutomation(writeDb, args);
+    const owned = await set(loadOwnedAutomation$, args, signal);
     signal.throwIfAborted();
     if ("kind" in owned) {
       return owned;
@@ -7224,11 +7424,15 @@ export const disableWorkflowAutomation$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const chatThreadId = await loadWorkflowUserAutomationThreadId(writeDb, {
-      orgId: row.orgId,
-      userId: row.ownerUserId,
-      workflowId: row.workflowId,
-    });
+    const chatThreadId = await set(
+      readAutomationChatThreadId$,
+      {
+        orgId: row.orgId,
+        userId: row.ownerUserId,
+        workflowId: row.workflowId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
     await publishThreadBoundWorkflowAutomationChanged(
       args.member.userId,
@@ -7237,7 +7441,7 @@ export const disableWorkflowAutomation$ = command(
     signal.throwIfAborted();
     return {
       kind: "ok",
-      summary: await rowToSummary(writeDb, row, { chatThreadId }),
+      summary: await set(rowToSummary$, row, { chatThreadId }, signal),
     };
   },
 );

@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import {
   billingStatusContract,
   billingUsagePackCreditsContract,
@@ -164,9 +165,9 @@ test("An admin is guided to add Okou to Slack first", async () => {
   await setupPage({ context, path: growthChatPath() });
 
   const addToSlack = await waitFor(() => {
-    return actionNamed("button", "Add Okou in Slack");
+    return actionNamed("link", "Add Okou in Slack");
   });
-  expect(addToSlack).toBeVisible();
+  expect(addToSlack).toHaveAttribute("href", "/works");
 
   click(addToSlack);
 
@@ -207,6 +208,14 @@ test("The growth menu credit balance opens Usage settings", async () => {
   click(moreActions);
 
   const menu = await screen.findByRole("menu");
+  expect(menuItemContaining(menu, "Okou is in Slack")).toHaveAttribute(
+    "href",
+    "/works",
+  );
+  expect(menuItemContaining(menu, "Telegram and phone")).toHaveAttribute(
+    "href",
+    "/works",
+  );
   const credits = await waitFor(() => {
     return menuItemContaining(menu, "Credits");
   });
@@ -219,6 +228,35 @@ test("The growth menu credit balance opens Usage settings", async () => {
     within(settings).findByRole("heading", { name: "Credit balance" }),
   ).resolves.toBeVisible();
 });
+
+test.each(["Okou is in Slack", "Telegram and phone"])(
+  "The growth menu opens %s through a native link with keyboard activation",
+  async (label) => {
+    const user = userEvent.setup({ delay: null });
+    configureGrowthPage(context, {
+      role: "admin",
+      slack: slackStatus({
+        connected: true,
+        installed: true,
+        workspaceAdmin: true,
+      }),
+    });
+    await setupPage({ context, path: growthChatPath() });
+    const more = await waitFor(() => {
+      return actionNamed("button", "More actions");
+    });
+    click(more);
+    const menu = await screen.findByRole("menu");
+    const destination = menuItemContaining(menu, label);
+    expect(destination).toHaveAttribute("href", "/works");
+    destination.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(pathname()).toBe("/works");
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    });
+  },
+);
 
 test("Installed Slack shifts the growth entry to inviting people", async () => {
   configureGrowthPage(context, {
@@ -288,7 +326,7 @@ test("A non-admin does not see the workspace growth entry", async () => {
   ).resolves.toBeVisible();
 
   expect(
-    queryAllByRoleFast("button").find((candidate) => {
+    queryAllByRoleFast("link").find((candidate) => {
       return normalizedText(candidate) === "Add Okou in Slack";
     }),
   ).toBeUndefined();

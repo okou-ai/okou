@@ -97,6 +97,11 @@ const expectedBindings = [
     direction: "response",
   },
   {
+    rustModulePath: ["runners", "runs"],
+    rustTypeName: "PiModelConfigV5",
+    direction: "response",
+  },
+  {
     rustModulePath: ["runners", "runs", "steerable_inputs", "next"],
     rustTypeName: "Response",
     direction: "response",

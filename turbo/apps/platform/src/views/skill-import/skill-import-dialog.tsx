@@ -28,6 +28,7 @@ import {
   startSkillImport$,
 } from "../../signals/skill-import/skill-import-dialog.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { shouldHandleLinkClick } from "../router/link-click.ts";
 import { Link } from "../router/link.tsx";
 import {
   ImportedSkillList,
@@ -152,8 +153,10 @@ export function SkillImportDialog() {
             className={buttonVariants({
               variant: imported.length > 0 ? "default" : "outline",
             })}
-            onClick={() => {
-              close();
+            onClick={(event) => {
+              if (shouldHandleLinkClick(event)) {
+                close();
+              }
             }}
           >
             {t(($) => {

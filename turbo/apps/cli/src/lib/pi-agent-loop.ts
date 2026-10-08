@@ -16,12 +16,10 @@ import {
   runPiOfficialRpcMode,
   runPiMemoryPhase2MountedConsolidation,
   type PiAgentModelConfig,
-  type PiLangfuseRuntimeConfig,
   type PiMemoryRecallOutcome,
   type PiMemoryToolSourceUse,
   type PiPreparationObservation,
 } from "@okouai/pi-agent-runtime/node";
-import { piLangfuseTracesContract } from "@okouai/api-contracts/contracts/pi-langfuse";
 import {
   PI_PREPARATION_TIMING_ENV,
   startPiCliObservation,
@@ -80,7 +78,6 @@ export interface PiSandboxAgentConfig {
   readonly model: PiAgentModelConfig;
   /** guest-agent owns the sandbox operation log and opts this child in. */
   readonly reportPreparationTiming: boolean;
-  readonly langfuseConfig?: PiLangfuseRuntimeConfig;
 }
 
 function requiredEnv(env: NodeJS.ProcessEnv, name: string): string {
@@ -203,7 +200,6 @@ export async function piSandboxAgentConfigFromEnv(
   let configOutcome: "success" | "error" = "error";
   try {
     const runId = requiredEnv(env, RUN_ID_ENV);
-    const langfuseConfig = piLangfuseRelayConfig(env, runId);
     const parsedModel = piModelConfigSchema.parse(
       parseJsonEnv(env, PI_MODEL_CONFIG_ENV),
     );
@@ -213,7 +209,6 @@ export async function piSandboxAgentConfigFromEnv(
       launchPayload: await readLaunchPayload(env),
       reportPreparationTiming: env[PI_PREPARATION_TIMING_ENV] === "1",
       model: await materializeSandboxModel(parsedModel, env),
-      ...(langfuseConfig ? { langfuseConfig } : {}),
     };
     configOutcome = "success";
     return config;
@@ -236,32 +231,15 @@ async function materializeSandboxModel(
       },
     });
     outcome = "success";
-    return model;
+    // Chat Completions pins OpenRouter's sticky routing to the owning thread so
+    // every Run of that thread reuses one upstream prompt cache.
+    const threadId = env.OKOU_CHAT_THREAD_ID?.trim();
+    return model.dialect === "openai-completions" && threadId
+      ? { ...model, sessionAffinityKey: threadId }
+      : model;
   } finally {
     finish(outcome);
   }
-}
-
-function piLangfuseRelayConfig(
-  env: NodeJS.ProcessEnv,
-  runId: string,
-): PiLangfuseRuntimeConfig | undefined {
-  if (env.OKOU_PI_LANGFUSE_DEBUG_ENABLED !== "true") {
-    return undefined;
-  }
-  const apiUrl = requiredEnv(env, "OKOU_API_BACKEND_URL");
-  const endpoint = new URL(
-    piLangfuseTracesContract.export.path.replace(
-      ":runId",
-      encodeURIComponent(runId),
-    ),
-    apiUrl.startsWith("http") ? apiUrl : `https://${apiUrl}`,
-  ).toString();
-  return {
-    relay: { endpoint, token: requiredEnv(env, "OKOU_TOKEN") },
-    userId: env.LANGFUSE_USER_ID,
-    environment: env.LANGFUSE_TRACING_ENVIRONMENT,
-  };
 }
 
 /**
@@ -367,9 +345,6 @@ export async function runPiSandboxAgentLoop(args: {
         }
       : {}),
     sessionFile,
-    ...(args.config.langfuseConfig
-      ? { langfuseConfig: args.config.langfuseConfig }
-      : {}),
   });
 }
 

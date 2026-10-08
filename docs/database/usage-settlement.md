@@ -39,7 +39,7 @@ ownership/lease checks remain intact and its financial writes use the same path.
 
 ## Legacy package overdrafts
 
-Migration `1345_usage_pack_overdraft_transfers` moves retained negative grant
+Migration `1346_usage_pack_overdraft_transfers` moves retained negative grant
 remainders to their organization wallets and zeroes those grant remainders in
 one transaction. An append-only transfer receipt retains the organization,
 member, grant identity and amount without a cascading grant FK. Original grant
@@ -85,7 +85,7 @@ background Social job delivery state machines are not changed.
 
 ## Deployment boundary
 
-Apply migration `1345_usage_pack_overdraft_transfers` before the new API. The
+Apply migration `1346_usage_pack_overdraft_transfers` before the new API. The
 new writer requires its audit table. Old APIs can still write against the expanded
 database, but retain their accepted package-overdraft behavior until drained.
 Rolling back the API does not undo transfers: the organization retains the debt,

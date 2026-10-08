@@ -409,6 +409,24 @@ fn classify_cli_failure_reason(
     {
         return Some(FailureReason::OutputTokenLimit);
     }
+    let provider_reason = if matches!(
+        (framework, source),
+        (AgentFramework::Pi, FailureDetailSource::PiResult)
+            | (AgentFramework::Codex, FailureDetailSource::CodexJsonl)
+            | (
+                AgentFramework::ClaudeCode,
+                FailureDetailSource::ClaudeResult
+            )
+    ) {
+        crate::provider_failure::provider_failure_reason(failure_message)
+    } else {
+        None
+    };
+    // A diagnosed refusal outranks native credential keywords in its opaque link.
+    // The provider classifier still gives structured credential codes priority.
+    if provider_reason == Some(FailureReason::SafetyPolicyRefusal) {
+        return provider_reason;
+    }
     if matches!(framework, AgentFramework::Codex)
         && (normalized.contains("invalid_api_key")
             || normalized.contains("incorrect api key provided"))
@@ -430,16 +448,7 @@ fn classify_cli_failure_reason(
     {
         return Some(FailureReason::ContextWindowExceeded);
     }
-    if matches!(
-        (framework, source),
-        (AgentFramework::Pi, FailureDetailSource::PiResult)
-            | (AgentFramework::Codex, FailureDetailSource::CodexJsonl)
-            | (
-                AgentFramework::ClaudeCode,
-                FailureDetailSource::ClaudeResult
-            )
-    ) && let Some(reason) = crate::provider_failure::provider_failure_reason(failure_message)
-    {
+    if let Some(reason) = provider_reason {
         return Some(reason);
     }
     if framework == AgentFramework::Codex

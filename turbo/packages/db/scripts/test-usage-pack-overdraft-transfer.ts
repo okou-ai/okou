@@ -32,7 +32,7 @@ try {
   `);
   const migration = await readFile(
     new URL(
-      "../src/migrations/1345_usage_pack_overdraft_transfers.sql",
+      "../src/migrations/1346_usage_pack_overdraft_transfers.sql",
       import.meta.url,
     ),
     "utf8",
