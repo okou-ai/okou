@@ -507,6 +507,10 @@ export interface StripeCustomersApi {
   ): Promise<StripeCustomer>;
 }
 
+export interface StripeProductsApi {
+  retrieve(id: string): Promise<StripeProduct | StripeDeletedProduct>;
+}
+
 export interface StripePricesApi {
   retrieve(id: string, params?: { expand?: string[] }): Promise<StripePrice>;
 }
@@ -738,6 +742,7 @@ export interface StripeClient {
   readonly subscriptionSchedules: StripeSubscriptionSchedulesApi;
   readonly customers: StripeCustomersApi;
   readonly prices: StripePricesApi;
+  readonly products: StripeProductsApi;
   readonly coupons: StripeCouponsApi;
   readonly invoices: StripeInvoicesApi;
   readonly invoiceItems: StripeInvoiceItemsApi;

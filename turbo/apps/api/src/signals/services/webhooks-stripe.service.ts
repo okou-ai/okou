@@ -44,6 +44,7 @@ import {
   type StripeCheckoutSession,
   type StripeInvoice,
   type StripePaymentIntent,
+  type StripeProductRef,
   type StripeSubscription,
   type StripeWebhookEvent,
 } from "../external/stripe-client";
@@ -104,7 +105,10 @@ import {
 } from "./usage-pack-subscription-migration.service";
 
 import { concurrencySubscriptionUpdatedAt } from "./concurrency-subscription-write";
-import { isArchivedUsageAllowanceMetadata } from "./archived-allowance";
+import {
+  isArchivedUsageAllowanceMetadata,
+  isArchivedUsageAllowancePrice,
+} from "./archived-allowance";
 
 const L = logger("WebhookStripe");
 
@@ -151,10 +155,20 @@ interface InvoiceInput {
       readonly subtotal?: number | null;
       readonly quantity?: number | null;
       readonly metadata?: Record<string, string> | null;
-      readonly price?: { readonly id: string } | null;
+      readonly price?: {
+        readonly id: string;
+        readonly product?: StripeProductRef | null;
+      } | null;
       readonly pricing?: {
         readonly price_details?: {
-          readonly price?: string | { readonly id: string } | null;
+          readonly price?:
+            | string
+            | {
+                readonly id: string;
+                readonly product?: StripeProductRef | null;
+              }
+            | null;
+          readonly product?: StripeProductRef | null;
         } | null;
       } | null;
       readonly proration?: boolean;
@@ -637,22 +651,43 @@ function isArchivedUsageAllowanceInvoice(invoice: InvoiceInput): boolean {
   );
 }
 
-function invoiceWithoutArchivedAllowanceLines(
+async function invoiceWithoutArchivedAllowanceLines(
   invoice: InvoiceInput,
-): InvoiceInput {
+  signal: AbortSignal,
+): Promise<InvoiceInput | null> {
+  if (isArchivedUsageAllowanceInvoice(invoice)) {
+    return null;
+  }
   const allowancePriceId = invoiceMergedMetadata(invoice).allowancePriceId;
-  return {
-    ...invoice,
-    lines: {
-      ...invoice.lines,
-      data: invoice.lines.data.filter((line) => {
-        return (
-          !isArchivedUsageAllowanceMetadata(line.metadata) &&
-          (!allowancePriceId || invoiceLinePriceId(line) !== allowancePriceId)
-        );
-      }),
-    },
-  };
+  const lines: InvoiceLineInput[] = [];
+  for (const line of invoice.lines.data) {
+    const priceId = invoiceLinePriceId(line);
+    if (
+      isArchivedUsageAllowanceMetadata(line.metadata) ||
+      (allowancePriceId && priceId === allowancePriceId)
+    ) {
+      continue;
+    }
+    const modernPrice = line.pricing?.price_details?.price;
+    const expandedModernPrice =
+      modernPrice && typeof modernPrice !== "string" ? modernPrice : null;
+    const product =
+      line.price?.product ??
+      expandedModernPrice?.product ??
+      line.pricing?.price_details?.product;
+    if (
+      priceId &&
+      (await isArchivedUsageAllowancePrice({ id: priceId, product }, signal))
+    ) {
+      continue;
+    }
+    lines.push(line);
+  }
+  // Do not allow invoice-level grant metadata to resurrect an excluded line.
+  if (invoice.lines.data.length > 0 && lines.length === 0) {
+    return null;
+  }
+  return { ...invoice, lines: { ...invoice.lines, data: lines } };
 }
 
 function isAtomGrantInvoice(invoice: InvoiceInput): boolean {
@@ -3397,10 +3432,15 @@ const handleInvoicePaid$ = command(
     invoice: InvoiceInput,
     signal: AbortSignal,
   ): Promise<string | null> => {
-    if (isArchivedUsageAllowanceInvoice(invoice)) {
+    const liveInvoice = await invoiceWithoutArchivedAllowanceLines(
+      invoice,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!liveInvoice) {
       return null;
     }
-    invoice = invoiceWithoutArchivedAllowanceLines(invoice);
+    invoice = liveInvoice;
     const db = set(writeDb$);
     const getClerk = (): ClerkClient => {
       return get(clerk$);

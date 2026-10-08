@@ -117,13 +117,111 @@ describe("Stripe billing purpose isolation", () => {
     },
   );
 
-  it.each(["line metadata", "price binding", "unmarked price"])(
+  it.each(
+    ["price_bdd_atom_grant", "price_bdd_team"].flatMap((priceId) => {
+      return [
+        "inline expanded",
+        "retrieved expanded",
+        "retrieved unexpanded",
+        "modern unexpanded",
+      ].map((source) => {
+        return { priceId, source };
+      });
+    }),
+  )(
+    "ignores Product-only archived lines with $priceId using $source provenance",
+    async ({ priceId, source }) => {
+      const { actor, plan, before } = await paidPlan();
+      const product = {
+        id: "prod_archived_allowance",
+        name: "Archived Allowance",
+        metadata: { purpose: "usage_allowance" },
+      };
+      context.mocks.stripe.prices.retrieve.mockResolvedValue({
+        id: priceId,
+        product: source === "retrieved expanded" ? product : product.id,
+      });
+      context.mocks.stripe.products.retrieve.mockResolvedValue(product);
+      context.mocks.stripe.subscriptions.retrieve.mockClear();
+      context.mocks.stripe.subscriptions.update.mockClear();
+      const invoice = {
+        id: `in_product_archived_${randomUUID()}`,
+        customer: plan.customerId,
+        amount_paid: 0,
+        metadata: {
+          orgId: actor.orgId,
+          purpose: "atom_grant",
+          grantType: "credits",
+          creditsAmount: "900000",
+        },
+        parent: null,
+        lines: {
+          data: [
+            {
+              ...(source === "modern unexpanded"
+                ? {
+                    pricing: {
+                      price_details: { price: priceId, product: product.id },
+                    },
+                  }
+                : {
+                    price: {
+                      id: priceId,
+                      ...(source === "inline expanded" ? { product } : {}),
+                    },
+                  }),
+              period: {
+                start: Math.floor(now() / 1000),
+                end: Math.floor(now() / 1000) + 86_400,
+              },
+              parent: { type: "invoice_item_details" },
+            },
+          ],
+        },
+      };
+      for (let replay = 0; replay < 2; replay++) {
+        await webhook.postStripeEvent(event("invoice.paid", invoice), [200]);
+      }
+      await expect(billing.readBillingStatus(actor)).resolves.toStrictEqual(
+        before,
+      );
+      expect(
+        context.mocks.stripe.subscriptions.retrieve,
+      ).not.toHaveBeenCalled();
+      expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
+      if (source === "retrieved unexpanded" || source === "modern unexpanded") {
+        expect(context.mocks.stripe.products.retrieve).toHaveBeenCalledWith(
+          product.id,
+        );
+      }
+    },
+  );
+
+  it.each([
+    "line metadata",
+    "price binding",
+    "unmarked price",
+    "Product metadata",
+  ])(
     "grants only Plan and concurrency benefits from a mixed invoice using %s",
     async (identity) => {
       const { actor, plan, before } = await paidPlan();
       const start = Math.floor(now() / 1000);
       const end = start + 45 * 86_400;
       const retiredPrice = "price_bdd_atom_grant";
+      if (identity === "Product metadata") {
+        context.mocks.stripe.prices.retrieve.mockImplementation((id) => {
+          return Promise.resolve({
+            id,
+            product: {
+              id: `prod_${String(id)}`,
+              name: "Billing product",
+              metadata:
+                id === retiredPrice ? { purpose: "usage_allowance" } : {},
+            },
+          });
+        });
+      }
       const subscription = {
         id: plan.subscriptionId,
         customer: plan.customerId,
