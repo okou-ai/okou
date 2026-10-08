@@ -1,7 +1,7 @@
 import {
   completePublicationSql,
   publicationGenerationReceiptSchema,
-  publicationFenceIsCurrent,
+  publicationScopeCondition,
   lockPublicationScopeSql,
   beginPublicationSql,
   publicationFenceFromReceipt,
@@ -10,6 +10,7 @@ import {
 } from "../services/storage-publication-fence.service";
 import { and, eq, sql } from "drizzle-orm";
 import { preparedVolumePublicationSql } from "../services/storage-volume-publication-sql";
+import { newStorageS3Location } from "../services/storage-s3-prefix.utils";
 import { StorageVersionIdentityConflictError } from "../services/storage-version-registration.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
 
@@ -23,12 +24,13 @@ import {
 } from "@okouai/core/storage-names";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { storagePublicationTokens } from "@okouai/db/schema/storage-publication-fence";
 import { storages } from "@okouai/db/schema/storage";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { conflict, notFound } from "../../lib/error";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { nowDate } from "../../lib/time";
@@ -36,7 +38,7 @@ import { agentResponse } from "../services/agent-data.service";
 
 import { prepareAgentInstructionsStorage$ } from "../services/agent-instructions-storage.service";
 import {
-  resolveCanonicalVolumeStorage,
+  canonicalVolumeStorageValues,
   type PreparedServerSideVolume,
   type ServerSideVolumeStorage,
 } from "../services/storage-volume-publication.service";
@@ -204,10 +206,11 @@ const publishPreparedAgentInstructions$ = command(
       if (admittedScope !== 1) {
         return { kind: "conflict" as const };
       }
-      const fenceIsCurrent = await publicationFenceIsCurrent(
-        tx,
-        reservation.fence,
-      );
+      const [fenceIsCurrent] = await tx
+        .select({ token: storagePublicationTokens.token })
+        .from(storagePublicationTokens)
+        .where(publicationScopeCondition(reservation.fence))
+        .limit(1);
       signal.throwIfAborted();
 
       if (!fenceIsCurrent) {
@@ -317,14 +320,37 @@ const reserveAgentInstructionPublication$ = command(
       if (permissionError) {
         return { kind: "forbidden" as const, response: permissionError };
       }
-      const reservedStorage = await resolveCanonicalVolumeStorage(
-        tx,
-        {
-          orgId: args.orgId,
-          storageName: getInstructionsStorageName(current.name),
-        },
-        signal,
-      );
+      const storageInput = {
+        orgId: args.orgId,
+        storageName: getInstructionsStorageName(current.name),
+      };
+      await tx
+        .insert(storages)
+        .values(
+          canonicalVolumeStorageValues({
+            ...storageInput,
+            ...newStorageS3Location(args.orgId),
+          }),
+        )
+        .onConflictDoNothing();
+      signal.throwIfAborted();
+      const [reservedStorage] = await tx
+        .select({ id: storages.id, s3Prefix: storages.s3Prefix })
+        .from(storages)
+        .where(
+          and(
+            eq(storages.orgId, storageInput.orgId),
+            eq(storages.userId, VOLUME_ORG_USER_ID),
+            eq(storages.name, storageInput.storageName),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (!reservedStorage) {
+        throw new Error(
+          `Failed to create storage for ${storageInput.storageName}`,
+        );
+      }
       const storage = (
         await tx
           .select(instructionStorageColumns)
@@ -386,30 +412,30 @@ const reserveAgentInstructionPublication$ = command(
       // The COMMIT receipt can fail after the token was written. Settle only
       // the fence we observed, whether the reservation committed or rolled back.
       if (reservedFence) {
-        await settleInstructionPublication(writeDb, reservedFence);
+        await set(settleInstructionPublication$, reservedFence);
       }
     });
   },
 );
 
-async function settleInstructionPublication(
-  db: Db,
-  fence: StoragePublicationFence,
-): Promise<void> {
-  // Deliberately outlive request cancellation; await exact-token settlement.
-  await db.transaction(async (tx) => {
-    await tx.execute(lockPublicationScopeSql(fence.scope, nowDate()));
-    await tx.execute(completePublicationSql(fence));
-  });
-}
+const settleInstructionPublication$ = command(
+  async ({ set }, fence: StoragePublicationFence): Promise<void> => {
+    const db = set(writeDb$);
+    // Deliberately outlive request cancellation; await exact-token settlement.
+    // Scope ownership and exact-token removal commit together in reservation order.
+    await db.transaction(async (tx) => {
+      await tx.execute(lockPublicationScopeSql(fence.scope, nowDate()));
+      await tx.execute(completePublicationSql(fence));
+    });
+  },
+);
 
 const publishOwnedAgentInstructions$ = command(
   async ({ set }, args: PublishInstructionArgs, signal: AbortSignal) => {
-    const writeDb = set(writeDb$);
     return await onRejection(
       set(prepareAndPublishAgentInstructions$, args, signal),
       async () => {
-        await settleInstructionPublication(writeDb, args.reservation.fence);
+        await set(settleInstructionPublication$, args.reservation.fence);
       },
     );
   },
@@ -447,10 +473,7 @@ const updateAgentInstructionsInner$ = command(
       signal,
     );
     if (result.kind !== "updated") {
-      await settleInstructionPublication(
-        set(writeDb$),
-        preflight.reservation.fence,
-      );
+      await set(settleInstructionPublication$, preflight.reservation.fence);
       signal.throwIfAborted();
       if (result.kind === "missing") {
         return notFound(`Agent not found: ${params.id}`);

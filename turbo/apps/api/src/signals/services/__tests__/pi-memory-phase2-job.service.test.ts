@@ -1,3 +1,5 @@
+import { createStore } from "ccstate";
+import { testContext } from "../../../__tests__/test-context";
 import { randomUUID } from "node:crypto";
 
 import { and, eq } from "drizzle-orm";
@@ -16,7 +18,7 @@ import {
 import {
   advancePiMemoryPhase2InputRevision,
   claimPiMemoryPhase2Job,
-  failPiMemoryPhase2Job,
+  failPiMemoryPhase2Job$,
   notifyPiMemoryPhase2ExternalHeadChange,
   PI_MEMORY_PHASE2_RETRY_DELAY_MS,
   PI_MEMORY_PHASE2_SUCCESS_COOLDOWN_MS,
@@ -29,6 +31,8 @@ import {
   readPhase2Job,
   setPhase2StorageHead,
 } from "./pi-memory-phase2-job.test-fixture";
+
+const context = testContext();
 
 const NOW = Object.freeze(new Date("2026-09-03T04:00:00.000Z"));
 
@@ -326,45 +330,61 @@ describe("Pi memory Phase 2 job transitions", () => {
     }
 
     await expect(
-      failPiMemoryPhase2Job(db(), {
-        ...scope,
-        errorClass: "provider_timeout",
-        leaseToken: randomUUID(),
-        claimedRevision: claimed.claimedRevision,
-        claimedBaseVersionId: claimed.baseVersion.versionId,
-        currentTime: new Date(NOW.getTime() + 1000),
-      }),
+      createStore().set(
+        failPiMemoryPhase2Job$,
+        {
+          ...scope,
+          errorClass: "provider_timeout",
+          leaseToken: randomUUID(),
+          claimedRevision: claimed.claimedRevision,
+          claimedBaseVersionId: claimed.baseVersion.versionId,
+          currentTime: new Date(NOW.getTime() + 1000),
+        },
+        context.signal,
+      ),
     ).resolves.toBeFalsy();
     await expect(
-      failPiMemoryPhase2Job(db(), {
-        ...scope,
-        errorClass: "provider_timeout",
-        leaseToken: claimed.leaseToken,
-        claimedRevision: claimed.claimedRevision,
-        claimedBaseVersionId: claimed.baseVersion.versionId,
-        currentTime: claimed.leaseExpiresAt,
-      }),
+      createStore().set(
+        failPiMemoryPhase2Job$,
+        {
+          ...scope,
+          errorClass: "provider_timeout",
+          leaseToken: claimed.leaseToken,
+          claimedRevision: claimed.claimedRevision,
+          claimedBaseVersionId: claimed.baseVersion.versionId,
+          currentTime: claimed.leaseExpiresAt,
+        },
+        context.signal,
+      ),
     ).resolves.toBeFalsy();
     const failedAt = new Date(NOW.getTime() + 2000);
     await expect(
-      failPiMemoryPhase2Job(db(), {
-        ...scope,
-        leaseToken: randomUUID(),
-        claimedRevision: claimed.claimedRevision,
-        claimedBaseVersionId: claimed.baseVersion.versionId,
-        currentTime: failedAt,
-        errorClass: "provider_timeout",
-      }),
+      createStore().set(
+        failPiMemoryPhase2Job$,
+        {
+          ...scope,
+          leaseToken: randomUUID(),
+          claimedRevision: claimed.claimedRevision,
+          claimedBaseVersionId: claimed.baseVersion.versionId,
+          currentTime: failedAt,
+          errorClass: "provider_timeout",
+        },
+        context.signal,
+      ),
     ).resolves.toBeFalsy();
     await expect(
-      failPiMemoryPhase2Job(db(), {
-        ...scope,
-        leaseToken: claimed.leaseToken,
-        claimedRevision: claimed.claimedRevision,
-        claimedBaseVersionId: claimed.baseVersion.versionId,
-        currentTime: failedAt,
-        errorClass: "provider_timeout",
-      }),
+      createStore().set(
+        failPiMemoryPhase2Job$,
+        {
+          ...scope,
+          leaseToken: claimed.leaseToken,
+          claimedRevision: claimed.claimedRevision,
+          claimedBaseVersionId: claimed.baseVersion.versionId,
+          currentTime: failedAt,
+          errorClass: "provider_timeout",
+        },
+        context.signal,
+      ),
     ).resolves.toBeTruthy();
     await expect(readPhase2Job(scope)).resolves.toMatchObject({
       status: "retryable_failure",
@@ -392,14 +412,18 @@ describe("Pi memory Phase 2 job transitions", () => {
     if (!second) {
       throw new Error("Expected second attempt");
     }
-    await failPiMemoryPhase2Job(db(), {
-      ...scope,
-      leaseToken: second.leaseToken,
-      claimedRevision: second.claimedRevision,
-      claimedBaseVersionId: second.baseVersion.versionId,
-      currentTime: new Date(retryAt.getTime() + 1),
-      errorClass: "provider_timeout",
-    });
+    await createStore().set(
+      failPiMemoryPhase2Job$,
+      {
+        ...scope,
+        leaseToken: second.leaseToken,
+        claimedRevision: second.claimedRevision,
+        claimedBaseVersionId: second.baseVersion.versionId,
+        currentTime: new Date(retryAt.getTime() + 1),
+        errorClass: "provider_timeout",
+      },
+      context.signal,
+    );
     const thirdAt = new Date(
       retryAt.getTime() + 1 + PI_MEMORY_PHASE2_RETRY_DELAY_MS,
     );
@@ -411,14 +435,18 @@ describe("Pi memory Phase 2 job transitions", () => {
     if (!third) {
       throw new Error("Expected third attempt");
     }
-    await failPiMemoryPhase2Job(db(), {
-      ...scope,
-      leaseToken: third.leaseToken,
-      claimedRevision: third.claimedRevision,
-      claimedBaseVersionId: third.baseVersion.versionId,
-      currentTime: new Date(thirdAt.getTime() + 1),
-      errorClass: "provider_timeout",
-    });
+    await createStore().set(
+      failPiMemoryPhase2Job$,
+      {
+        ...scope,
+        leaseToken: third.leaseToken,
+        claimedRevision: third.claimedRevision,
+        claimedBaseVersionId: third.baseVersion.versionId,
+        currentTime: new Date(thirdAt.getTime() + 1),
+        errorClass: "provider_timeout",
+      },
+      context.signal,
+    );
     await expect(readPhase2Job(scope)).resolves.toMatchObject({
       status: "terminal_failure",
       retryCount: 3,
@@ -463,14 +491,18 @@ describe("Pi memory Phase 2 job transitions", () => {
     if (!claimed) {
       throw new Error("Expected legacy job to reopen");
     }
-    await failPiMemoryPhase2Job(db(), {
-      ...scope,
-      leaseToken: claimed.leaseToken,
-      claimedRevision: claimed.claimedRevision,
-      claimedBaseVersionId: claimed.baseVersion.versionId,
-      currentTime: new Date(NOW.getTime() + 1),
-      errorClass: "credential_unavailable",
-    });
+    await createStore().set(
+      failPiMemoryPhase2Job$,
+      {
+        ...scope,
+        leaseToken: claimed.leaseToken,
+        claimedRevision: claimed.claimedRevision,
+        claimedBaseVersionId: claimed.baseVersion.versionId,
+        currentTime: new Date(NOW.getTime() + 1),
+        errorClass: "credential_unavailable",
+      },
+      context.signal,
+    );
     await expect(readPhase2Job(scope)).resolves.toMatchObject({
       status: "retryable_failure",
       retryCount: 1,
@@ -521,10 +553,14 @@ describe("Pi memory Phase 2 job transitions", () => {
         ...invalid,
       };
       await expect(
-        failPiMemoryPhase2Job(db(), {
-          ...fence,
-          errorClass: "rejected_fence",
-        }),
+        createStore().set(
+          failPiMemoryPhase2Job$,
+          {
+            ...fence,
+            errorClass: "rejected_fence",
+          },
+          context.signal,
+        ),
       ).resolves.toBeFalsy();
     }
     await expect(readPhase2Job(scope)).resolves.toStrictEqual(before);
@@ -536,14 +572,18 @@ describe("Pi memory Phase 2 job transitions", () => {
       });
     });
     await expect(
-      failPiMemoryPhase2Job(db(), {
-        ...scope,
-        leaseToken: claimed.leaseToken,
-        claimedRevision: claimed.claimedRevision,
-        claimedBaseVersionId: claimed.baseVersion.versionId,
-        currentTime: new Date(NOW.getTime() + 3),
-        errorClass: "old_revision_failed",
-      }),
+      createStore().set(
+        failPiMemoryPhase2Job$,
+        {
+          ...scope,
+          leaseToken: claimed.leaseToken,
+          claimedRevision: claimed.claimedRevision,
+          claimedBaseVersionId: claimed.baseVersion.versionId,
+          currentTime: new Date(NOW.getTime() + 3),
+          errorClass: "old_revision_failed",
+        },
+        context.signal,
+      ),
     ).resolves.toBeTruthy();
     await expect(readPhase2Job(scope)).resolves.toMatchObject({
       status: "pending",
@@ -601,14 +641,18 @@ describe("Pi memory Phase 2 job transitions", () => {
       throw new Error("Expected both takeover claims");
     }
     await expect(
-      failPiMemoryPhase2Job(db(), {
-        ...scope,
-        leaseToken: second.leaseToken,
-        claimedRevision: second.claimedRevision,
-        claimedBaseVersionId: second.baseVersion.versionId,
-        currentTime: new Date(second.leaseExpiresAt.getTime() - 1),
-        errorClass: "stale_owner",
-      }),
+      createStore().set(
+        failPiMemoryPhase2Job$,
+        {
+          ...scope,
+          leaseToken: second.leaseToken,
+          claimedRevision: second.claimedRevision,
+          claimedBaseVersionId: second.baseVersion.versionId,
+          currentTime: new Date(second.leaseExpiresAt.getTime() - 1),
+          errorClass: "stale_owner",
+        },
+        context.signal,
+      ),
     ).resolves.toBeFalsy();
     expect((await readPhase2Job(scope))?.leaseToken).toBe(third.leaseToken);
   });

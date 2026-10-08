@@ -97,4 +97,46 @@ describe("captured Pi execution intent", () => {
       ).resolves.toMatchObject({ model: "okou-1.0" });
     },
   );
+
+  it("owns the generation 5 Chat Completions route before credential resolution", async () => {
+    const wire = piModelConfigSchema.parse({
+      schemaVersion: 5,
+      dialect: "openai-completions",
+      transport: "sse",
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "@preset/okou-1-0",
+      catalogModel: "okou-1.0",
+      credentialBindings: [
+        {
+          kind: "api-key",
+          environment: "OPENAI_API_KEY",
+          secretName: "OPENROUTER_API_KEY",
+        },
+      ],
+    } satisfies PiModelConfig);
+    const route = normalizePiExecutionRoute(wire);
+    expect(route).not.toHaveProperty("schemaVersion");
+    expect(
+      await materializePiExecutionRoute({
+        route,
+        resolveCredential(binding) {
+          expect(binding).toStrictEqual({
+            kind: "api-key",
+            environment: "OPENAI_API_KEY",
+            secretName: "OPENROUTER_API_KEY",
+          });
+          return "selected-secret";
+        },
+      }),
+    ).toStrictEqual({
+      provider: "openrouter",
+      baseUrl: "https://openrouter.ai/api/v1",
+      model: "@preset/okou-1-0",
+      catalogModel: "okou-1.0",
+      dialect: "openai-completions",
+      transport: "sse",
+      apiKey: "selected-secret",
+    });
+  });
 });

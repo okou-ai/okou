@@ -3,7 +3,7 @@ import { OKOU_MODEL_METADATA } from "../okou-model-metadata";
 
 describe("Okou model metadata", () => {
   it.each([["okou-1.0", "gpt-6-luna", "@preset/okou-1-0", "max", 3]] as const)(
-    "%s projects its backing model's OpenRouter limits into both runtimes",
+    "%s projects its backing model's OpenRouter limits into both runtimes, capping Pi at the Preset candidates' smallest window",
     (model, backingModel, presetModel, reasoningEffort, codexPriority) => {
       expect(OKOU_MODEL_METADATA[model]).toMatchObject({
         backingModel,
@@ -11,7 +11,7 @@ describe("Okou model metadata", () => {
         presetModel,
         reasoningEffort,
         pi: {
-          contextWindow: 1_050_000,
+          contextWindow: 1_000_000,
           maxTokens: 128_000,
         },
         codex: {

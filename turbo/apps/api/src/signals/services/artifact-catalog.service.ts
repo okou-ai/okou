@@ -8,6 +8,9 @@ import {
   ilike,
   inArray,
   isNull,
+  isNotNull,
+  ne,
+  notExists,
   like,
   lt,
   lte,
@@ -312,40 +315,47 @@ async function readCatalogFileRow(
   return row ?? null;
 }
 
-/** Persist the handoff in the same transaction as the file mutation. */
-export async function queueArtifactCatalogFile(
-  tx: Tx,
-  fileId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  const row = await readCatalogFileRow(tx, fileId, signal);
-  if (!row?.url || !row.orgId) {
-    await tx.delete(artifacts).where(eq(artifacts.projectionFileId, fileId));
-    signal.throwIfAborted();
-    await tx
-      .delete(artifactCatalogPendingFiles)
-      .where(eq(artifactCatalogPendingFiles.fileId, fileId));
-    signal.throwIfAborted();
-    return;
-  }
-  const authorUserId = await resolveAuthorUserId(tx, row, signal);
-  await tx
-    .insert(artifactCatalogPendingFiles)
-    .values({
-      fileId,
-      orgId: row.orgId,
-      authorUserId,
-      queuedAt: sql`clock_timestamp()`,
-    })
-    .onConflictDoUpdate({
-      target: artifactCatalogPendingFiles.fileId,
-      set: {
-        orgId: row.orgId,
-        authorUserId,
-        queuedAt: sql`clock_timestamp()`,
-      },
-    });
-  signal.throwIfAborted();
+/** SQL-only handoff, executed by the command that owns the file mutation. */
+export function queueArtifactCatalogFileSql(fileId: string): SQL {
+  return sql`
+    WITH eligible_file AS (
+      SELECT ${runUploadedFiles.id} AS file_id,
+             ${runUploadedFiles.orgId} AS org_id,
+             COALESCE((
+               SELECT ${chatThreads.userId}
+               FROM ${chatThreads}
+               WHERE ${eq(
+                 chatThreads.id,
+                 sql`COALESCE(
+                 ${runUploadedFiles.chatThreadId},
+                 (SELECT ${chatEvents.chatThreadId}
+                  FROM ${chatEvents}
+                  WHERE ${runOwnedChatEventForRunCondition({ runId: runUploadedFiles.runId })}
+                  ORDER BY ${asc(chatEvents.seqId)} LIMIT 1)
+               )`,
+               )}
+               LIMIT 1
+             ), ${runUploadedFiles.userId}) AS author_user_id
+      FROM ${runUploadedFiles}
+      WHERE ${eq(runUploadedFiles.id, fileId)}
+        AND ${isNotNull(runUploadedFiles.url)} AND ${ne(runUploadedFiles.url, "")}
+        AND ${isNotNull(runUploadedFiles.orgId)} AND ${ne(runUploadedFiles.orgId, "")}
+    ), removed_artifacts AS (
+      DELETE FROM ${artifacts}
+      WHERE ${eq(artifacts.projectionFileId, fileId)}
+        AND ${notExists(sql`(SELECT 1 FROM eligible_file)`)}
+    ), removed_pending AS (
+      DELETE FROM ${artifactCatalogPendingFiles}
+      WHERE ${eq(artifactCatalogPendingFiles.fileId, fileId)}
+        AND ${notExists(sql`(SELECT 1 FROM eligible_file)`)}
+    )
+    INSERT INTO ${artifactCatalogPendingFiles} (file_id, org_id, author_user_id, queued_at)
+    SELECT file_id, org_id, author_user_id, clock_timestamp() FROM eligible_file
+    ON CONFLICT (file_id) DO UPDATE SET
+      org_id = excluded.org_id,
+      author_user_id = excluded.author_user_id,
+      queued_at = clock_timestamp()
+  `;
 }
 
 interface UpsertArtifactArgs {

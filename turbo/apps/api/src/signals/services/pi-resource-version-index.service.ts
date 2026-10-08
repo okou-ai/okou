@@ -173,10 +173,18 @@ export async function publishPiResourceVersionIndex(
   signal?.throwIfAborted();
 }
 
-export async function readPiResourceVersionIndexes(
-  db: Pick<Db, "select">,
+interface PiResourceIndexReadRow {
+  readonly versionId: string;
+  readonly status: typeof piResourceVersionIndexes.$inferSelect.status;
+  readonly storageId: string;
+  readonly archiveSize: number | null;
+  readonly projection: typeof piResourceVersionIndexes.$inferSelect.projection;
+  readonly projectionHash: string | null;
+}
+
+export function piResourceVersionIndexesResult(
   versionIds: readonly string[],
-  signal?: AbortSignal,
+  rows: readonly PiResourceIndexReadRow[],
 ) {
   const unique = [...new Set(versionIds)];
   const indexes = new Map<
@@ -188,8 +196,36 @@ export async function readPiResourceVersionIndexes(
     }
   >();
   const misses = { pending: 0, running: 0, unindexable: 0, missing: 0 };
+  misses.missing = unique.length - rows.length;
+  for (const row of rows) {
+    if (row.status !== "ready") {
+      misses[row.status]++;
+      continue;
+    }
+    const projection = piResourceVersionIndexSchema.parse(row.projection);
+    if (
+      row.archiveSize === null ||
+      piResourceIndexHash(projection) !== row.projectionHash
+    ) {
+      throw new Error("Pi resource version index failed integrity validation");
+    }
+    indexes.set(row.versionId, {
+      storageId: row.storageId,
+      archiveSize: row.archiveSize,
+      projection,
+    });
+  }
+  return { indexes, misses };
+}
+
+export async function readPiResourceVersionIndexes(
+  db: Pick<Db, "select">,
+  versionIds: readonly string[],
+  signal?: AbortSignal,
+) {
+  const unique = [...new Set(versionIds)];
   if (unique.length === 0) {
-    return { indexes, misses };
+    return piResourceVersionIndexesResult(unique, []);
   }
   const rows = await db
     .select({
@@ -215,26 +251,7 @@ export async function readPiResourceVersionIndexes(
       ),
     );
   signal?.throwIfAborted();
-  misses.missing = unique.length - rows.length;
-  for (const row of rows) {
-    if (row.status !== "ready") {
-      misses[row.status]++;
-      continue;
-    }
-    const projection = piResourceVersionIndexSchema.parse(row.projection);
-    if (
-      row.archiveSize === null ||
-      piResourceIndexHash(projection) !== row.projectionHash
-    ) {
-      throw new Error("Pi resource version index failed integrity validation");
-    }
-    indexes.set(row.versionId, {
-      storageId: row.storageId,
-      archiveSize: row.archiveSize,
-      projection,
-    });
-  }
-  return { indexes, misses };
+  return piResourceVersionIndexesResult(unique, rows);
 }
 
 const claimWork$ = command(

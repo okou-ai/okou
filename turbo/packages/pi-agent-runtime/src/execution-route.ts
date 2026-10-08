@@ -21,6 +21,15 @@ export type PiExecutionRoute =
       readonly transport: "sse";
       readonly credentialBindings: readonly [CredentialBinding<"api-key">];
     })
+  | (Pick<
+      ResponsesRoute,
+      "baseUrl" | "model" | "catalogModel" | "thinkingLevel"
+    > & {
+      readonly provider: "openrouter";
+      readonly dialect: "openai-completions";
+      readonly transport: "sse";
+      readonly credentialBindings: readonly [CredentialBinding<"api-key">];
+    })
   | (Pick<ResponsesRoute, "baseUrl" | "model" | "thinkingLevel"> & {
       readonly provider: "openai-codex";
       readonly dialect: "openai-codex-responses";
@@ -54,6 +63,20 @@ export function normalizePiExecutionRoute(
           secretName: credentialSecretName,
         },
       ],
+    };
+  }
+  if (config.dialect === "openai-completions") {
+    const {
+      schemaVersion: _schemaVersion,
+      credentialBindings,
+      ...route
+    } = config;
+    const [binding] = credentialBindings;
+    if (binding?.kind !== "api-key")
+      throw new Error("Pi Chat Completions requires its api-key binding");
+    return {
+      ...route,
+      credentialBindings: [{ ...binding, kind: "api-key" }],
     };
   }
   const {

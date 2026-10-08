@@ -1,4 +1,5 @@
 import {
+  PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION,
   PI_MODEL_CONFIG_CURRENT_GENERATION,
   PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
   PI_MODEL_CONFIG_LEGACY_GENERATION,
@@ -6,6 +7,7 @@ import {
   piModelConfigSchema,
   piModelConfigV2Schema,
   piModelConfigV3Schema,
+  piModelConfigV5Schema,
   type PiModelConfig,
   type RunnerClaimCapabilities,
 } from "@okouai/api-contracts/contracts/runners";
@@ -80,6 +82,12 @@ export function resolvePiModelConfigForClaim(args: {
   }
   if (generation === PI_MODEL_CONFIG_DIALECT_TIER_GENERATION) {
     const parsed = piModelConfigV3Schema.safeParse(args.modelConfig);
+    return parsed.success
+      ? { status: "compatible", modelConfig: parsed.data }
+      : { status: "invalid", error: parsed.error };
+  }
+  if (generation === PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION) {
+    const parsed = piModelConfigV5Schema.safeParse(args.modelConfig);
     return parsed.success
       ? { status: "compatible", modelConfig: parsed.data }
       : { status: "invalid", error: parsed.error };

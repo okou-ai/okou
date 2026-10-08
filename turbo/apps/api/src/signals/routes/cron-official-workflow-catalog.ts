@@ -2,15 +2,14 @@ import { cronOfficialWorkflowCatalogContract } from "@okouai/api-contracts/contr
 import { command } from "ccstate";
 
 import type { RouteEntry } from "../route-entry";
-import {
-  createOfficialWorkflowCatalogSyncCommand,
-  syncOfficialWorkflowCatalog$,
-} from "../services/official-workflow-catalog-sync.service";
+import { createOfficialWorkflowCatalogSyncCommand } from "../services/official-workflow-catalog-sync.service";
+import { OFFICIAL_WORKFLOW_SOURCE_CATALOG } from "../services/official-workflow-catalog-source";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 
-function routesForSyncCommand(
-  syncCommand: ReturnType<typeof createOfficialWorkflowCatalogSyncCommand>,
+export function createCronOfficialWorkflowCatalogRoutes(
+  candidate: unknown,
 ): readonly RouteEntry[] {
+  const syncCommand = createOfficialWorkflowCatalogSyncCommand(candidate);
   const syncOfficialWorkflowCatalogRoute$ = command(
     async ({ get, set }, signal: AbortSignal) => {
       if (!get(hasValidCronSecret$)) {
@@ -30,14 +29,5 @@ function routesForSyncCommand(
   ];
 }
 
-export function createCronOfficialWorkflowCatalogRoutes(
-  candidate: unknown,
-): readonly RouteEntry[] {
-  return routesForSyncCommand(
-    createOfficialWorkflowCatalogSyncCommand(candidate),
-  );
-}
-
-export const cronOfficialWorkflowCatalogRoutes = routesForSyncCommand(
-  syncOfficialWorkflowCatalog$,
-);
+export const cronOfficialWorkflowCatalogRoutes =
+  createCronOfficialWorkflowCatalogRoutes(OFFICIAL_WORKFLOW_SOURCE_CATALOG);

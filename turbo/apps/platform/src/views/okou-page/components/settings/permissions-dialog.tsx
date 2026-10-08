@@ -22,7 +22,9 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuRadioItemIndicator,
   Input,
 } from "@okouai/ui";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
@@ -471,14 +473,6 @@ function allowDurationMenuLabel(option: UserPermissionGrantExpiresIn): string {
   }
 }
 
-function MenuItemCheck({ active }: { active: boolean }) {
-  return active ? (
-    <Check size={14} />
-  ) : (
-    <span className="h-3.5 w-3.5 shrink-0" />
-  );
-}
-
 function menuOptionExpiresIn(
   value: UserPermissionGrantExpiresIn,
   allowGrant: PlatformUserPermissionGrant | undefined,
@@ -487,21 +481,6 @@ function menuOptionExpiresIn(
     return null;
   }
   return value;
-}
-
-function isDurationMenuOptionActive({
-  allowAlwaysActive,
-  selected,
-  value,
-}: {
-  allowAlwaysActive: boolean;
-  selected: UserPermissionGrantExpiresIn | undefined;
-  value: UserPermissionGrantExpiresIn;
-}): boolean {
-  if (selected !== undefined) {
-    return selected === value;
-  }
-  return value === "always" && allowAlwaysActive;
 }
 
 function PermissionAllowDurationDropdown({
@@ -520,19 +499,20 @@ function PermissionAllowDurationDropdown({
   onSelect: (expiresIn: UserPermissionGrantExpiresIn) => void;
 }) {
   const { t } = useTranslation();
+  const menuLabel = t(
+    ($) => {
+      return $.connectors.permissions.allowOptions;
+    },
+    { permission },
+  );
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
+        disabled={saving}
         render={
           <button
             type="button"
-            disabled={saving}
-            aria-label={t(
-              ($) => {
-                return $.connectors.permissions.allowOptions;
-              },
-              { permission },
-            )}
+            aria-label={menuLabel}
             className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-md border px-2 text-[11px] font-medium border-surface-border transition-colors ${
               saving
                 ? "cursor-default text-muted-foreground/50"
@@ -546,26 +526,30 @@ function PermissionAllowDurationDropdown({
         <ChevronDown size={12} className="shrink-0" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-40" finalFocus={false}>
-        {ALLOW_DURATION_MENU_OPTIONS.map((option) => {
-          return (
-            <DropdownMenuItem
-              key={option}
-              onClick={() => {
-                onSelect(option);
-              }}
-              className="flex items-center justify-between gap-4"
-            >
-              {allowDurationMenuLabel(option)}
-              <MenuItemCheck
-                active={isDurationMenuOptionActive({
-                  allowAlwaysActive,
-                  selected,
-                  value: option,
-                })}
-              />
-            </DropdownMenuItem>
-          );
-        })}
+        <DropdownMenuRadioGroup
+          value={selected ?? (allowAlwaysActive ? "always" : null)}
+          onValueChange={onSelect}
+          disabled={saving}
+          aria-label={menuLabel}
+        >
+          {ALLOW_DURATION_MENU_OPTIONS.map((option) => {
+            return (
+              <DropdownMenuRadioItem
+                key={option}
+                value={option}
+                closeOnClick
+                className="flex items-center justify-between gap-4"
+              >
+                {allowDurationMenuLabel(option)}
+                <span className="h-3.5 w-3.5 shrink-0">
+                  <DropdownMenuRadioItemIndicator>
+                    <Check size={14} aria-hidden />
+                  </DropdownMenuRadioItemIndicator>
+                </span>
+              </DropdownMenuRadioItem>
+            );
+          })}
+        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
