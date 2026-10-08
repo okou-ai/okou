@@ -199,7 +199,7 @@ struct ChatDetailView: View {
           hasPositionedHistory = true
         }
       }
-      .onChange(of: displayedMessages.first?.id) { _, _ in
+      .onChange(of: displayedMessages) { _, _ in
         guard hasPositionedHistory, !isScrolling else { return }
         if followsLatestMessage {
           positionAtBottom(proxy)
