@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { stdout } from "node:process";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { describe, expect, it } from "vitest";
@@ -92,6 +93,15 @@ async function completeRequests<T>(
 async function createUnreadAgentThreads(
   threadCount: number,
 ): Promise<AgentReadFixture> {
+  const started = performance.now();
+  const reportStage = (stage: string): void => {
+    if (threadCount > 1) {
+      stdout.write(
+        `batch008 unread diagnostic ${threadCount} ${stage} ${Math.round(performance.now() - started)}ms\n`,
+      );
+    }
+  };
+  reportStage("start");
   prepareChatRuntime();
   const orgId = `org_${randomUUID()}`;
   const owner = bdd.user({ orgId });
@@ -107,6 +117,7 @@ async function createUnreadAgentThreads(
     displayName: `Shared ${randomUUID().slice(0, 8)}`,
     visibility: "public",
   });
+  reportStage("entitlement, subscription and agent ready");
   const threadIds: string[] = [];
   for (let start = 0; start < threadCount; start += PUBLIC_REQUEST_BATCH_SIZE) {
     context.signal.throwIfAborted();
@@ -132,9 +143,11 @@ async function createUnreadAgentThreads(
         },
       ),
     );
+    reportStage(`cohort ${start}: sends returned`);
     // One owner drains the production work after all sends have returned.
     // Concurrent sendAndLaunch calls would compete for the shared tracker.
     await flushWaitUntilForTest();
+    reportStage(`cohort ${start}: send work drained`);
     const launched = await completeRequests(
       sent.map(async ({ threadId, clientEventId }) => {
         const { events } = await chat.listThreadEvents(actor, threadId);
@@ -151,18 +164,22 @@ async function createUnreadAgentThreads(
         return { threadId, runId: event.runId };
       }),
     );
+    reportStage(`cohort ${start}: run ids read`);
     await completeRequests(
       launched.map(({ runId }) => {
         return runs.requestCancelRun(actor, runId, [200]);
       }),
     );
+    reportStage(`cohort ${start}: cancellations returned`);
     await flushWaitUntilForTest();
+    reportStage(`cohort ${start}: cancellation work drained`);
     const unread = await chat.listUnreadChatThreadIds(actor);
     for (const { threadId } of launched) {
       expect(unread).toContain(threadId);
       threadIds.push(threadId);
     }
   }
+  reportStage("all unread threads constructed");
   return { actor, owner, agentId: agent.agentId, orgId, threadIds };
 }
 
@@ -170,6 +187,7 @@ async function createUnreadAgentThreads(
 async function readCursors(
   fixture: AgentReadFixture,
 ): Promise<ReadonlyMap<string, string | null>> {
+  const started = performance.now();
   const cursors = new Map<string, string | null>();
   for (
     let start = 0;
@@ -187,6 +205,11 @@ async function readCursors(
     for (const [threadId, cursor] of entries) {
       cursors.set(threadId, cursor);
     }
+  }
+  if (fixture.threadIds.length > 1) {
+    stdout.write(
+      `batch008 cursor diagnostic ${fixture.threadIds.length} ${Math.round(performance.now() - started)}ms\n`,
+    );
   }
   return cursors;
 }
