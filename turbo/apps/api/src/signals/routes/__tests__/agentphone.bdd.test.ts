@@ -3277,7 +3277,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       [200],
     );
     expect(completed.body).toMatchObject({
-      filename: "screen_shot.png",
+      filename: "screen shot.png",
       mimetype: "image/png",
       size: 456,
       toNumber: phone,
@@ -3316,7 +3316,7 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     );
     expect(downloaded.status).toBe(200);
     expect(downloaded.headers.get("content-type")).toBe("image/png");
-    expect(downloaded.headers.get("x-file-name")).toBe("screen_shot.png");
+    expect(downloaded.headers.get("x-file-name")).toBe("screen%20shot.png");
     expect(downloaded.text).toBe("png-bytes");
 
     const unauthorized = await integrations.requestPhoneDownloadFile(
