@@ -172,6 +172,24 @@
 //! sends the linked request through `exec_request`, and validates the linked
 //! report in `validate_result`.
 //!
+//! ## `prepare-for-cache`
+//!
+//! ```text
+//! guest-agent prepare-for-cache < request.json
+//! ```
+//!
+//! This terminal helper shares the bounded request, report and exit-code contract
+//! above, but accepts only the canonical managed runtime parent
+//! `/home/user/.vm0/guest-agent/runs`. Both requested anchors must pass the existing
+//! containment, no-follow, mount and identity checks before mutation. Once required
+//! readers and sidecar export/host copy finish, it removes all completed runtime
+//! children (including current/retained anchors) and managed Codex auth. It does not
+//! delete ordinary user files, framework histories/catalogs or package caches.
+//! Unlike idle preparation, Runner does not apply a rootfs-reserve gate to its
+//! report. Failure rejects optional publication; successful deletion is not a
+//! forensic block-erasure guarantee. Runner invokes it from
+//! `crates/runner-lifecycle/src/workspace_promotion.rs` before freeze and stop.
+//!
 //! ## `cleanup-codex-session`
 //!
 //! ### Invocation

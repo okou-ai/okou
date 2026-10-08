@@ -1034,6 +1034,15 @@ impl Sandbox for MockSandbox {
                 .codex_session_cleanup_calls
                 .lock_ignoring_poison()
                 .push(call);
+            wait_lifecycle_gate(&overrides.exec.codex_session_cleanup_gate).await;
+            if let Some(result) = overrides
+                .exec
+                .codex_session_cleanup_results
+                .lock_ignoring_poison()
+                .pop_front()
+            {
+                return Ok(apply_exec_output_limits(result?, EXEC_OUTPUT_LIMIT_64_KIB));
+            }
         }
         let result = self
             .exec_results

@@ -2450,7 +2450,52 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             match staged {
                 StagedSessionRestorePreparation::Serial(plan) => (deferred, Some(plan), None),
                 StagedSessionRestorePreparation::Missing => (deferred, None, None),
-                StagedSessionRestorePreparation::Ready(staged) => {
+                StagedSessionRestorePreparation::Ready(mut staged) => {
+                    // Storage and the isolated write have finished. A fresh VM can retain history;
+                    // prepare the requested live destination without losing staging overlap.
+                    let destination_started = Instant::now();
+                    let destination = staged
+                        .plan
+                        .prepare_destination(sandbox, context, &staged.session)
+                        .await;
+                    // The standalone staging write was recorded when it completed; aggregate
+                    // restore/transfer timings must also include live destination preparation.
+                    staged.staging_elapsed = staged
+                        .staging_elapsed
+                        .saturating_add(destination_started.elapsed());
+                    if cancel.is_cancelled() || destination.is_err() {
+                        record_staged_history_transfer_outcome(
+                            telemetry,
+                            context,
+                            &staged,
+                            staged.staging_elapsed,
+                            false,
+                        );
+                        record_staged_workspace_restore_outcome(
+                            telemetry,
+                            &staged,
+                            staged.staging_elapsed,
+                            false,
+                        );
+                        let _ = discard_staged_session_history(sandbox, &staging_path).await;
+                        model_catalog_prefetch.finish(telemetry).await;
+                        if !cancel.is_cancelled()
+                            && let Err(error) = destination
+                        {
+                            return Err(error);
+                        }
+                        let result = AgentExecutionResult::cancelled();
+                        telemetry.record(
+                            "agent_execute",
+                            pre_spawn_started.elapsed(),
+                            false,
+                            result
+                                .failure
+                                .as_ref()
+                                .map(|failure| failure.error.as_str()),
+                        );
+                        return Ok(result);
+                    }
                     let publication_started = Instant::now();
                     let publication = sandbox
                         .finalize_staged_file(&StagedFileFinalizeRequest {
@@ -2813,8 +2858,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             } => {
                 record_workspace_session_history_timings(telemetry, timings);
                 let guest_restore_started = Instant::now();
-                let restore_result =
-                    restore_session(sandbox, context, &session, start.reuse_result).await;
+                let restore_result = restore_session(sandbox, context, &session).await;
                 let guest_restore_elapsed = guest_restore_started.elapsed();
                 telemetry.record_history_transfer(
                     guest_restore_elapsed,
@@ -3010,7 +3054,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         };
         if let Some(session) = resume_session {
             let t = Instant::now();
-            let result = restore_session(sandbox, context, &session, start.reuse_result).await;
+            let result = restore_session(sandbox, context, &session).await;
             let elapsed = t.elapsed();
             telemetry.record_history_transfer(
                 elapsed,

@@ -31,6 +31,8 @@ enum PublicationExpectation {
     SerialRecovery,
     SerialRecoveryCleanupFailure,
     AmbiguousFailure,
+    DestinationFailure,
+    DestinationCancelled,
 }
 
 async fn configure_workspace_cache_hit(config: &mut RunConfig, reuse_key: &str) {
@@ -105,6 +107,16 @@ async fn workspace_history_staging_overlaps_storage_and_preserves_restore() {
             PublicationExpectation::Published,
         ),
         (
+            CliFramework::Codex,
+            ResumeSessionHistoryEncoding::Zstd,
+            PublicationExpectation::DestinationFailure,
+        ),
+        (
+            CliFramework::Codex,
+            ResumeSessionHistoryEncoding::Zstd,
+            PublicationExpectation::DestinationCancelled,
+        ),
+        (
             CliFramework::ClaudeCode,
             ResumeSessionHistoryEncoding::Identity,
             PublicationExpectation::AmbiguousFailure,
@@ -163,7 +175,14 @@ async fn workspace_history_staging_overlaps_storage_and_preserves_restore() {
         .await;
         let overrides = Arc::new(MockSandboxOverrides::new());
         match publication {
-            PublicationExpectation::Published => {}
+            PublicationExpectation::Published | PublicationExpectation::DestinationCancelled => {}
+            PublicationExpectation::DestinationFailure => {
+                overrides.push_codex_session_cleanup_result(Ok(sandbox::ExecResult::new(
+                    1,
+                    Vec::new(),
+                    b"ambiguous requested session".to_vec(),
+                )));
+            }
             PublicationExpectation::SerialRecovery
             | PublicationExpectation::SerialRecoveryCleanupFailure => {
                 overrides.push_finalize_staged_file_result(Ok(
@@ -188,6 +207,10 @@ async fn workspace_history_staging_overlaps_storage_and_preserves_restore() {
                     message: "ambiguous publication".into(),
                 }));
             }
+        }
+        let cleanup_gate = MockLifecycleGate::new();
+        if framework == "codex" {
+            overrides.set_codex_session_cleanup_gate(cleanup_gate.clone());
         }
         let storage_gate = MockLifecycleGate::new();
         overrides.set_storage_manifest_lifecycle_gate(storage_gate.clone());
@@ -259,6 +282,7 @@ async fn workspace_history_staging_overlaps_storage_and_preserves_restore() {
         assert_ne!(writes[0].path, expected_path);
         assert!(overrides.start_agent_process_calls().is_empty());
         assert!(overrides.finalize_staged_file_calls().is_empty());
+        assert!(overrides.codex_session_cleanup_calls().is_empty());
         if framework == "codex" {
             // The opposite completion order is also safe: storage may finish,
             // but publication still waits for the admitted staging write.
@@ -270,7 +294,50 @@ async fn workspace_history_staging_overlaps_storage_and_preserves_restore() {
             storage_gate.release_one();
         }
 
-        // Canonical publication is ordered after both operations complete.
+        if framework == "codex" {
+            cleanup_gate.wait_entered(1, WAIT).await.unwrap();
+            let cleanups = overrides.codex_session_cleanup_calls();
+            assert_eq!(cleanups.len(), 1);
+            assert_eq!(cleanups[0].session_id, session_id);
+            assert!(overrides.finalize_staged_file_calls().is_empty());
+            if publication == PublicationExpectation::DestinationCancelled {
+                let cancellation = wait_cancel_handle(&env.cancel_tokens, run_id, WAIT).await;
+                assert!(cancellation.request_hard_cancellation().await);
+            }
+            cleanup_gate.release_one();
+            if matches!(
+                publication,
+                PublicationExpectation::DestinationFailure
+                    | PublicationExpectation::DestinationCancelled
+            ) {
+                finalize_gate.wait_entered(1, WAIT).await.unwrap();
+                let calls = overrides.finalize_staged_file_calls();
+                assert_eq!(calls.len(), 1);
+                assert_eq!(calls[0].staging_path, writes[0].path);
+                assert_eq!(calls[0].disposition, StagedFileDispositionCall::Discard);
+                finalize_gate.release_one();
+                let completion = env.handle.wait_completion(run_id, WAIT).await.unwrap();
+                if publication == PublicationExpectation::DestinationCancelled {
+                    assert_eq!(completion.exit_code, 137);
+                } else {
+                    assert_ne!(completion.exit_code, 0);
+                    assert!(
+                        completion
+                            .error
+                            .as_deref()
+                            .is_some_and(|error| error.contains("codex session cleanup"))
+                    );
+                }
+                assert_eq!(overrides.write_file_calls().len(), 1);
+                assert!(overrides.start_agent_process_calls().is_empty());
+                server.assert_finished().await;
+                shutdown(&env, run_handle).await;
+                assert_eq!(budget.allocated().2, 0);
+                continue;
+            }
+        }
+
+        // Canonical publication is ordered after reconciliation, staging and destination cleanup.
         finalize_gate.wait_entered(1, WAIT).await.unwrap();
         let finalizations = overrides.finalize_staged_file_calls();
         assert_eq!(finalizations.len(), 1);

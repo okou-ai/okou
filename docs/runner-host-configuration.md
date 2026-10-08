@@ -172,11 +172,24 @@ Workspace promotion uses two independent runner-process-local admission gates,
 each sized as `(host_cpus / 2).clamp(1, 4)`. Cache clones share the gates.
 The existing sidecar export gate covers guest export execution only. Idle
 reclamation additionally acquires admission **before unpark** and holds it
-through terminal unpark, export, host copy, workspace freeze and immediate
-sandbox termination. Waiting reclamation jobs remain parked. Terminal unpark
-uses the same physical-deflation readiness boundary as normal reuse, and the
-temporary guest sidecar is left for sandbox destruction instead of a
-separate guest cleanup command.
+through terminal unpark, export, host copy, terminal private cleanup, workspace
+freeze and immediate sandbox termination. Waiting reclamation jobs remain parked.
+Terminal unpark uses the same physical-deflation readiness boundary as normal
+reuse. Direct completion and parked reclamation use the same cleanup gate after
+the required readers and host sidecar copy finish; publication still waits for
+successful sandbox termination.
+
+The fixed `guest-agent prepare-for-cache` helper validates containment and the
+canonical `/home/user/.vm0/guest-agent/runs` parent with the existing no-follow,
+mount and file-identity checks. It removes completed managed runtime children,
+including exported sidecar temporaries, and managed `.codex/auth.json`. It does
+not sweep user files, framework histories/catalogs or package caches. Unlike
+`prepare-for-reuse`, it does not retain current/history runtime readers and does
+not impose the idle rootfs reserve. Idle/handoff preparation remains unchanged.
+A missing helper, unsafe/unsupported runtime parent, failed cleanup, malformed or
+truncated report, or uncertain freeze skips optional cache publication without
+changing the completed Run outcome. Deletion proves filesystem absence, not
+forensic erasure of freed ext4 blocks.
 
 After successful termination, cache publication and factory destruction run
 without holding idle admission. If termination fails or panics, publication is
