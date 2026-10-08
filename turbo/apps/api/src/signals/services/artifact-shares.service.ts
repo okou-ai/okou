@@ -42,7 +42,7 @@ import {
 } from "../external/s3";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
 import {
-  privateArtifactRecord,
+  privateArtifactRecord$,
   privateArtifactUrl,
 } from "./private-artifact-storage.service";
 import { prepareArtifactShareAliases$ } from "./artifact-share-alias.service";
@@ -114,14 +114,19 @@ function policyFor(row: ShareIdentity, signal: AbortSignal) {
   });
 }
 
-function ownedShareTarget(
-  target: ArtifactShareTarget,
-  userId: string,
-  orgId: string,
-) {
-  return computed(async (get) => {
+const ownedShareTarget$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly target: ArtifactShareTarget;
+      readonly userId: string;
+      readonly orgId: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { target, userId, orgId } = args;
     if (target.kind === "file") {
-      const file = await get(privateArtifactRecord(target.id));
+      const file = await set(privateArtifactRecord$, target.id, signal);
       if (
         !file ||
         file.userId !== userId ||
@@ -164,6 +169,7 @@ function ownedShareTarget(
         ),
       )
       .limit(1);
+    signal.throwIfAborted();
     if (!row) {
       return null;
     }
@@ -184,8 +190,8 @@ function ownedShareTarget(
         manifest: hostedSiteDeliveryManifest(deployment.manifest),
       },
     };
-  });
-}
+  },
+);
 
 function shareIdentity(
   targetKind: ArtifactShareTarget["kind"],
@@ -337,9 +343,7 @@ export const readArtifactShare$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const candidate = await get(
-      ownedShareTarget(args.target, args.userId, args.orgId),
-    );
+    const candidate = await set(ownedShareTarget$, args, signal);
     signal.throwIfAborted();
     if (!candidate) {
       return null;
@@ -368,12 +372,12 @@ export const readArtifactShare$ = command(
 
 const snapshotFileTarget$ = command(
   async (
-    { get },
+    { get, set },
     target: Extract<ShareCandidate["target"], { kind: "file" }>,
     signal: AbortSignal,
   ) => {
     const snapshotId = randomUUID();
-    const file = await get(privateArtifactRecord(target.id));
+    const file = await set(privateArtifactRecord$, target.id, signal);
     signal.throwIfAborted();
     if (!file) {
       throw new Error("Shared artifact disappeared");
@@ -411,9 +415,7 @@ export const updateArtifactShare$ = command(
         "Hosted sites are public. Publish a new deployment to update the site.",
       );
     }
-    const candidate = await get(
-      ownedShareTarget(args.target, args.userId, args.orgId),
-    );
+    const candidate = await set(ownedShareTarget$, args, signal);
     signal.throwIfAborted();
     if (!candidate) {
       return null;
@@ -590,7 +592,7 @@ const authorizedArtifactSharePolicy$ = command(
 
 export const resolveArtifactShare$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly id: string;
       readonly userId: string;
@@ -609,7 +611,7 @@ export const resolveArtifactShare$ = command(
     if (policy.target.kind === "html") {
       return null;
     }
-    const file = await get(privateArtifactRecord(policy.target.id));
+    const file = await set(privateArtifactRecord$, policy.target.id, signal);
     signal.throwIfAborted();
     if (
       !file ||
@@ -699,15 +701,17 @@ export const resolveArtifactShareDownload$ = command(
     const { row, policy } = authorized;
     // Revocation and selected version come from the policy; deletion and
     // readiness still follow the underlying owned resource.
-    const candidate = await get(
-      ownedShareTarget(policy.target, row.userId, row.orgId),
+    const candidate = await set(
+      ownedShareTarget$,
+      { target: policy.target, userId: row.userId, orgId: row.orgId },
+      signal,
     );
     signal.throwIfAborted();
     if (!candidate) {
       return null;
     }
     if (policy.target.kind === "file") {
-      const file = await get(privateArtifactRecord(policy.target.id));
+      const file = await set(privateArtifactRecord$, policy.target.id, signal);
       signal.throwIfAborted();
       if (!file) {
         return null;
@@ -847,7 +851,7 @@ export const resolveArtifactTargetShare$ = command(
 /** Public references disclose only published delivery and preview metadata. */
 export const resolvePublicArtifactUrl$ = command(
   async (
-    { get },
+    { get, set },
     args: { readonly id: string; readonly kind?: "file" | "html" | "share" },
     signal: AbortSignal,
   ) => {
@@ -911,8 +915,10 @@ export const resolvePublicArtifactUrl$ = command(
       return null;
     }
     // A removed artifact must not become discoverable through an old reference.
-    const target = await get(
-      ownedShareTarget(policy.target, row.userId, row.orgId),
+    const target = await set(
+      ownedShareTarget$,
+      { target: policy.target, userId: row.userId, orgId: row.orgId },
+      signal,
     );
     signal.throwIfAborted();
     return target ? publicSharePreview(policy) : null;

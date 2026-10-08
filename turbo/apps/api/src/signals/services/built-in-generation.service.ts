@@ -12,7 +12,7 @@ import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { publishBuiltInGenerationChanged } from "../external/realtime";
 import {
-  privateArtifactCreationEnabled,
+  privateArtifactCreationEnabled$,
   artifactFileReference,
 } from "./private-artifact-storage.service";
 
@@ -289,14 +289,15 @@ async function publishJobSafely(job: BuiltInGenerationJobRow): Promise<void> {
 }
 
 export const createImageGenerationJob$ = command(
-  async (
-    { get, set },
-    args: CreateImageGenerationJobArgs,
-    signal: AbortSignal,
-  ) => {
+  async ({ set }, args: CreateImageGenerationJobArgs, signal: AbortSignal) => {
     const privateArtifacts =
       args.privateArtifacts ??
-      (await get(privateArtifactCreationEnabled(args.orgId, args.userId)));
+      (await set(
+        privateArtifactCreationEnabled$,
+        args.orgId,
+        args.userId,
+        signal,
+      ));
     signal.throwIfAborted();
     const writeDb = set(writeDb$);
     const [job] = await writeDb

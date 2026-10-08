@@ -443,20 +443,6 @@ export interface CreateQueuedChatRunInput {
   readonly telegramDelivery?: TelegramDeliveryTarget;
   readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
   readonly autonomyBudget: number;
-  readonly userInfoExtras?: {
-    readonly slackDisplayName?: string;
-    readonly slackUserId?: string;
-    readonly feishuDisplayName?: string;
-    readonly feishuOpenId?: string;
-    readonly teamsUserDisplayName?: string;
-    readonly teamsUserPrincipalName?: string;
-    readonly teamsUserId?: string;
-    readonly telegramDisplayName?: string;
-    readonly telegramUsername?: string;
-    readonly telegramUserId?: string;
-    readonly telegramLanguage?: string;
-    readonly agentphoneHandle?: string;
-  };
 }
 
 interface SlackQueuedMessageAdmissionFailure {
@@ -679,7 +665,6 @@ export function buildQueuedRunCommand(
     triggerSource: input.triggerSource,
     agentRunPreCreateSource: "chat_callback_auto_send" as const,
     appendSystemPrompt: input.appendSystemPrompt,
-    userInfoExtras: input.userInfoExtras,
     queueFirstAssociation: {
       threadId: input.threadId,
       eventId: input.queuedMessage.id,
@@ -2122,29 +2107,7 @@ async function runTerminalChatCallbackSideEffects(args: {
   });
 }
 
-export function buildAppendSystemPrompt(
-  integrationPrompt: string,
-  incompleteContext: string,
-  priorContext: string,
-  generationTemplatePrompt: string,
-  computerUseHostDisplayName: string | null,
-): string {
-  return [
-    integrationPrompt,
-    priorContext,
-    incompleteContext,
-    generationTemplatePrompt,
-    computerUseHostDisplayName
-      ? buildComputerUseSystemPrompt(computerUseHostDisplayName)
-      : "",
-  ]
-    .filter((part) => {
-      return part.length > 0;
-    })
-    .join("\n\n");
-}
-
-function buildComputerUseSystemPrompt(displayName: string): string {
+export function buildComputerUseSystemPrompt(displayName: string): string {
   return [
     "# Computer Use",
     `Computer Use is enabled for this run on ${displayName}.`,
@@ -2342,11 +2305,8 @@ type QueuedIntegrationDeliveries = Pick<
 
 export interface QueuedLaunchMaterial {
   readonly triggerSource: QueuedUserMessageTriggerSource;
-  readonly prompt: string;
-  readonly appendSystemPrompt: string;
   readonly connectorSourceId?: string;
   readonly delivery: QueuedIntegrationDeliveries;
-  readonly userInfoExtras?: CreateQueuedChatRunInput["userInfoExtras"];
 }
 
 function queuedIntegrationDeliveries(
@@ -2545,7 +2505,6 @@ export function queuedIntegrationLaunchFields(
     ...(delivery.agentphoneDelivery
       ? { agentphoneDelivery: { ...delivery.agentphoneDelivery, agentId } }
       : {}),
-    userInfoExtras: launchMaterial.userInfoExtras,
     ...(launchMaterial.connectorSourceId
       ? { connectorSourceId: launchMaterial.connectorSourceId }
       : {}),

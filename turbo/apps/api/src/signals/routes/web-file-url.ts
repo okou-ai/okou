@@ -9,8 +9,8 @@ import { queryOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
 import { resolveArtifactPreviewUrl$ } from "../services/artifact-preview-url.service";
 import {
-  uploadedArtifactObject,
-  uploadedArtifactPreviewImageUrl,
+  uploadedArtifactObject$,
+  uploadedArtifactPreviewImageUrl$,
 } from "../services/uploaded-artifact.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -19,19 +19,23 @@ const fileUrlInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const params = get(queryOf(webFilesContract.fileUrl));
 
   const [object, previewImageUrl] = await Promise.all([
-    get(
-      uploadedArtifactObject({
+    set(
+      uploadedArtifactObject$,
+      {
         userId: auth.userId,
         orgId: auth.orgId,
         id: params.file_id,
-      }),
+      },
+      signal,
     ),
-    get(
-      uploadedArtifactPreviewImageUrl({
+    set(
+      uploadedArtifactPreviewImageUrl$,
+      {
         userId: auth.userId,
         orgId: auth.orgId,
         id: params.file_id,
-      }),
+      },
+      signal,
     ),
   ]);
   signal.throwIfAborted();

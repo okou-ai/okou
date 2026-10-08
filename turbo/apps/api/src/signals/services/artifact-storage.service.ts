@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { registerLegacyArtifactFile$ } from "./artifact-delivery.service";
 
-import { command, computed, type Computed } from "ccstate";
+import { command } from "ccstate";
 import {
   CURRENT_LINK_LAYOUT,
   linkLayoutFromSegment,
@@ -412,29 +412,39 @@ function resolvedV2ArtifactObjectFromHead(args: {
   };
 }
 
-function resolveExactV2ArtifactObject(
-  bucket: string,
-  userId: string,
-  id: string,
-  filenameHint: string,
-  variant?: string,
-): Computed<Promise<ResolvedArtifactObject | null>> {
-  return computed(async (get): Promise<ResolvedArtifactObject | null> => {
+const resolveExactV2ArtifactObject$ = command(
+  async (
+    { get },
+    args: {
+      readonly bucket: string;
+      readonly userId: string;
+      readonly id: string;
+      readonly filenameHint: string;
+      readonly variant: string | undefined;
+    },
+    signal: AbortSignal,
+  ): Promise<ResolvedArtifactObject | null> => {
+    const { bucket, userId, id, filenameHint, variant } = args;
     const key = buildArtifactKeyV2(id, filenameHint, variant);
     const head = await get(s3ObjectHead(bucket, key));
+    signal.throwIfAborted();
     return resolvedV2ArtifactObjectFromHead({ userId, id, key, head });
-  });
-}
+  },
+);
 
-function resolveV2ArtifactObject(
-  bucket: string,
-  userId: string,
-  id: string,
-): Computed<Promise<ResolvedArtifactObject | null>> {
-  return computed(async (get): Promise<ResolvedArtifactObject | null> => {
+const resolveV2ArtifactObject$ = command(
+  async (
+    { get },
+    bucket: string,
+    userId: string,
+    id: string,
+    signal: AbortSignal,
+  ): Promise<ResolvedArtifactObject | null> => {
     const objects = await get(listS3Objects(bucket, buildArtifactPrefixV2(id)));
+    signal.throwIfAborted();
     for (const object of objects) {
       const head = await get(s3ObjectHead(bucket, object.key));
+      signal.throwIfAborted();
       const resolved = resolvedV2ArtifactObjectFromHead({
         userId,
         id,
@@ -447,21 +457,24 @@ function resolveV2ArtifactObject(
       }
     }
     return null;
-  });
-}
+  },
+);
 
-function resolveV1ArtifactObject(
-  bucket: string,
-  userId: string,
-  id: string,
-): Computed<Promise<ResolvedArtifactObject | null>> {
-  // V1 objects predate the layout marker and keep their legacy links for the
-  // persisted object's lifetime. Remove with V1 reads once no V1 object
-  // remains reachable; tracked by #28449.
-  return computed(async (get): Promise<ResolvedArtifactObject | null> => {
+const resolveV1ArtifactObject$ = command(
+  async (
+    { get },
+    bucket: string,
+    userId: string,
+    id: string,
+    signal: AbortSignal,
+  ): Promise<ResolvedArtifactObject | null> => {
+    // V1 objects predate the layout marker and keep their legacy links for the
+    // persisted object's lifetime. Remove with V1 reads once no V1 object
+    // remains reachable; tracked by #28449.
     const objects = await get(
       listS3Objects(bucket, buildArtifactPrefix(userId, id)),
     );
+    signal.throwIfAborted();
     const object = objects[0];
     if (!object) {
       return null;
@@ -476,20 +489,27 @@ function resolveV1ArtifactObject(
       size: object.size,
       lastModified: object.lastModified,
     };
-  });
-}
+  },
+);
 
-export function resolvedArtifactObject(
-  userId: string,
-  id: string,
-  filenameHint?: string,
-  variant?: string,
-): Computed<Promise<ResolvedArtifactObject | null>> {
-  return computed(async (get): Promise<ResolvedArtifactObject | null> => {
+export const resolvedArtifactObject$ = command(
+  async (
+    { set },
+    args: {
+      readonly userId: string;
+      readonly id: string;
+      readonly filenameHint?: string;
+      readonly variant?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<ResolvedArtifactObject | null> => {
+    const { userId, id, filenameHint, variant } = args;
     const bucket = env("R2_USER_ARTIFACTS_BUCKET_NAME");
     if (filenameHint !== undefined) {
-      const exact = await get(
-        resolveExactV2ArtifactObject(bucket, userId, id, filenameHint, variant),
+      const exact = await set(
+        resolveExactV2ArtifactObject$,
+        { bucket, userId, id, filenameHint, variant },
+        signal,
       );
       if (exact) {
         return exact;
@@ -499,11 +519,11 @@ export function resolvedArtifactObject(
       return null;
     }
     return (
-      (await get(resolveV2ArtifactObject(bucket, userId, id))) ??
-      (await get(resolveV1ArtifactObject(bucket, userId, id)))
+      (await set(resolveV2ArtifactObject$, bucket, userId, id, signal)) ??
+      (await set(resolveV1ArtifactObject$, bucket, userId, id, signal))
     );
-  });
-}
+  },
+);
 
 export const resolveArtifactMultipartUpload$ = command(
   async (

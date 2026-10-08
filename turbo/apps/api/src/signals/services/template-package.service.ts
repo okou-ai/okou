@@ -4,7 +4,7 @@ import { Parser } from "tar";
 
 import { createDeferredPromise, safeSync, settle } from "../utils";
 import { downloadS3BufferWithMaxBytes } from "../external/s3";
-import { uploadedArtifactObject } from "./uploaded-artifact.service";
+import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
 
 /**
  * The parts of publishing a compiled template that do not depend on what the
@@ -38,7 +38,7 @@ interface PackageFile {
  */
 export const resolveTemplateUploads$ = command(
   async (
-    { get },
+    { set },
     args: {
       readonly ownerUserId: string;
       readonly orgId: string;
@@ -48,12 +48,14 @@ export const resolveTemplateUploads$ = command(
   ): Promise<ReadonlyMap<string, ResolvedUpload>> => {
     const resolved = new Map<string, ResolvedUpload>();
     for (const id of new Set(args.ids)) {
-      const object = await get(
-        uploadedArtifactObject({
+      const object = await set(
+        uploadedArtifactObject$,
+        {
           userId: args.ownerUserId,
           orgId: args.orgId,
           id,
-        }),
+        },
+        signal,
       );
       signal.throwIfAborted();
       if (object) {

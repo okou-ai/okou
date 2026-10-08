@@ -1,18 +1,21 @@
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { modelProviders } from "@okouai/db/schema/model-provider";
 import {
   modelProviderAccounts,
   modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
 import { storages } from "@okouai/db/schema/storage";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
-import { and, asc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import type { Db } from "../external/db";
 import type { AgentRunModelPin } from "./agent-run-contracts";
 import { resolveCurrentPersonalSubscriptionBundleForApi } from "./agent-webhook-firewall-auth.service";
 import { resolvePiMemoryBuiltinRoute } from "./pi-memory-builtin-config";
+import {
+  selectPiMemoryCurrentCredential,
+  type PiMemoryCurrentCredential,
+} from "./pi-memory-current-credential.service";
 import { decryptStoredSecretValue } from "./crypto.utils";
 import {
   featureSwitchContextFromRows,
@@ -44,15 +47,7 @@ function reject(reason: CredentialFailure): never {
   throw new PiMemoryPhase2CredentialError(reason);
 }
 
-interface CurrentCredential {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly type: string;
-  readonly id: string | null;
-  readonly scope: "org" | "member";
-}
-
-function credentialPin(source: CurrentCredential) {
+function credentialPin(source: PiMemoryCurrentCredential) {
   return {
     modelProvider: source.type,
     modelProviderId: source.id,
@@ -61,79 +56,12 @@ function credentialPin(source: CurrentCredential) {
   } satisfies AgentRunModelPin;
 }
 
-/** Historical run credentials are provenance only. Choose one current route
- * for the owner of the whole, already locked candidate selection. */
-async function selectCurrentCredential(
-  _catalogSnapshot: ModelCatalog,
-  db: ReadDb,
-  claim: ClaimedPiMemoryPhase2Job,
-): Promise<CurrentCredential> {
-  // A member has at most one Codex provider row per organization; the ID order
-  // keeps the read deterministic. No historical source decides this ranking.
-  const providers = await db
-    .select({
-      id: modelProviders.id,
-      type: modelProviders.type,
-      userId: modelProviders.userId,
-    })
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.orgId, claim.orgId),
-        eq(modelProviders.userId, claim.userId),
-        eq(modelProviders.type, "codex-oauth-token"),
-      ),
-    )
-    .orderBy(asc(modelProviders.type), asc(modelProviders.id));
-  for (const provider of providers) {
-    if (provider.type === "codex-oauth-token") {
-      // Reconnect state lives on the account row, checked below.
-      if (provider.userId !== claim.userId) {
-        continue;
-      }
-      const [account] = await db
-        .select({ id: modelProviderAccounts.id })
-        .from(modelProviderAccounts)
-        .where(
-          and(
-            eq(modelProviderAccounts.modelProviderId, provider.id),
-            eq(modelProviderAccounts.orgId, claim.orgId),
-            eq(modelProviderAccounts.userId, claim.userId),
-            eq(modelProviderAccounts.type, provider.type),
-            eq(modelProviderAccounts.isActive, true),
-            eq(modelProviderAccounts.needsReconnect, false),
-            isNotNull(modelProviderAccounts.externalAccountId),
-            isNull(modelProviderAccounts.disconnectedAt),
-          ),
-        )
-        .limit(1);
-      if (account) {
-        return {
-          orgId: claim.orgId,
-          userId: claim.userId,
-          type: provider.type,
-          id: account.id,
-          scope: "member",
-        };
-      }
-      continue;
-    }
-  }
-  return {
-    orgId: claim.orgId,
-    userId: claim.userId,
-    type: "built-in",
-    id: null,
-    scope: "org",
-  };
-}
-
 /** Capture ownership and route references only. Canonical launch preparation
  * owns decryption, firewall credentials and atomic subscription refresh. */
 async function credentialSnapshot(
   _catalogSnapshot: ModelCatalog,
   db: ReadDb,
-  source: CurrentCredential,
+  source: PiMemoryCurrentCredential,
 ) {
   if (source.type === "built-in") {
     return "built-in";
@@ -195,7 +123,7 @@ async function readQuotaPairSnapshot(db: ReadDb, sourceId: string) {
 
 async function prepareSubscription(
   db: Db,
-  source: CurrentCredential,
+  source: PiMemoryCurrentCredential,
   externalAccountId: string,
   signal: AbortSignal,
 ) {
@@ -300,7 +228,7 @@ export async function resolvePiMemoryPhase2Credential(
   if (claim.selected.length === 0) {
     reject("source_credentials_missing");
   }
-  const selected = await selectCurrentCredential(catalogSnapshot, db, claim);
+  const selected = await selectPiMemoryCurrentCredential(db, claim);
   signal.throwIfAborted();
   const pin = credentialPin(selected);
   const captured = await credentialSnapshot(catalogSnapshot, db, selected);
