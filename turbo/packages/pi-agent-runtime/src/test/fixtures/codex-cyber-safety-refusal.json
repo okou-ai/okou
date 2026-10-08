@@ -1,0 +1,17 @@
+{
+  "role": "assistant",
+  "api": "openai-codex-responses",
+  "content": [],
+  "stopReason": "error",
+  "errorMessage": "Codex error: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/policy before retrying.",
+  "diagnostics": [
+    {
+      "type": "okou_model_request",
+      "details": {
+        "httpStatus": 200,
+        "transportAttempts": 1,
+        "failureReason": "safety_policy_refusal"
+      }
+    }
+  ]
+}

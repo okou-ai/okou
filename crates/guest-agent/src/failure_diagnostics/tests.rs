@@ -33,6 +33,10 @@ fn provider_failure_contract_is_consistent_across_terminal_frameworks() {
 
 #[test]
 fn new_provider_classification_does_not_match_unowned_output() {
+    let cyber_refusal: Value = serde_json::from_str(include_str!(
+        "../../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-cyber-safety-refusal.json"
+    ))
+    .unwrap();
     for framework in [
         AgentFramework::Pi,
         AgentFramework::Codex,
@@ -44,6 +48,7 @@ fn new_provider_classification_does_not_match_unowned_output() {
             "Codex error: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt: https://example.invalid/policy",
             r#"{"error":{"code":"rate_limit_exceeded"}}"#,
             "API Error: 503 Service unavailable",
+            cyber_refusal["errorMessage"].as_str().unwrap(),
         ] {
             assert_eq!(
                 super::classify_cli_failure_reason(framework, FailureDetailSource::Stderr, message),

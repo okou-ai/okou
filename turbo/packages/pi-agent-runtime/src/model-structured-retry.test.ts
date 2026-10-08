@@ -21,6 +21,7 @@ import {
 import { piModelFailureReason } from "./model-request-diagnostics";
 import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
 import { createPiAgentSessionForRuntime } from "./session-runtime";
+import cyberSafetyRefusal from "./test/fixtures/codex-cyber-safety-refusal.json";
 
 /**
  * The provider body from the incident in #35577. It carries no status, no
@@ -176,6 +177,49 @@ describe("Codex structured retry classification", () => {
     });
     expect(piModelFailureReason(final)).toBe("provider_server_error");
   });
+
+  it.each([200, 503])(
+    "keeps the full cybersecurity refusal terminal behind HTTP %s",
+    async (status) => {
+      const message = cyberSafetyRefusal.errorMessage.slice(
+        "Codex error: ".length,
+      );
+      let requests = 0;
+      server.use(
+        http.post(endpoint, () => {
+          requests++;
+          return status === 200
+            ? new HttpResponse(
+                `data: ${JSON.stringify({ type: "error", message })}`,
+                { headers: { "content-type": "text/event-stream" } },
+              )
+            : HttpResponse.json({ error: { message } }, { status });
+        }),
+      );
+      const { created, retries, answers } = await session();
+      await created.session.prompt("hello");
+      expect(requests).toBe(1);
+      expect(retries).toStrictEqual([]);
+      expect(answers).toHaveLength(1);
+      const final = answers.at(-1);
+      if (!final) throw new Error("Missing terminal assistant answer");
+      expect(final).toMatchObject({
+        stopReason: "error",
+        diagnostics: [
+          {
+            type: "okou_model_request",
+            details: {
+              httpStatus: status,
+              transportAttempts: 1,
+              failureReason: "safety_policy_refusal",
+            },
+          },
+        ],
+      });
+      expect(piModelFailureReason(final)).toBe("safety_policy_refusal");
+      if (status === 200) expect(final).toMatchObject(cyberSafetyRefusal);
+    },
+  );
 
   // A terminal condition in the provider body outranks the transport status, so
   // none of these may become retryable on a 429 or 503 alone.
