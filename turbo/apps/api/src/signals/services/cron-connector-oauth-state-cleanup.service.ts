@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import {
   connectorOauthStates,
   connectorOauthCompletions,
@@ -19,7 +20,10 @@ interface ConnectorOauthStateCleanupOwner {
 
 async function cleanupExpiredOAuthRows(
   db: Db,
-  table: typeof connectorOauthStates | typeof connectorOauthCompletions,
+  table:
+    | typeof connectorOauthStates
+    | typeof connectorOauthCompletions
+    | typeof discordOauthStates,
   args: {
     readonly cutoff: Date;
     readonly owner: ConnectorOauthStateCleanupOwner | undefined;
@@ -78,7 +82,13 @@ async function cleanupConnectorOauthStates(
     { cutoff, owner, batchSize },
     signal,
   );
-  return states + completions;
+  const discord = await cleanupExpiredOAuthRows(
+    db,
+    discordOauthStates,
+    { cutoff, owner, batchSize },
+    signal,
+  );
+  return states + completions + discord;
 }
 
 export const cleanupConnectorOauthStates$ = command(

@@ -1,4 +1,5 @@
 import {
+  foreignKey,
   index,
   pgTable,
   text,
@@ -9,6 +10,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { discordOrgInstallations } from "./discord-org-installation";
+import { discordUserIdentities } from "./discord-user-identity";
 
 /** A verified Discord sender binding; organization ownership comes from its guild. */
 export const discordOrgConnections = pgTable(
@@ -29,6 +31,14 @@ export const discordOrgConnections = pgTable(
   },
   (table) => {
     return [
+      foreignKey({
+        name: "fk_discord_connection_identity_owner",
+        columns: [table.discordUserId, table.userId],
+        foreignColumns: [
+          discordUserIdentities.discordUserId,
+          discordUserIdentities.userId,
+        ],
+      }).onDelete("cascade"),
       unique("uq_discord_org_connections_guild_sender").on(
         table.guildId,
         table.discordUserId,
