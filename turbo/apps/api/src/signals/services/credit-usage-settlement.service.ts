@@ -1,5 +1,5 @@
 import { OrgCreditExpirationConflict } from "./org-credit-expiration";
-import { expireOrgCreditsInTransaction } from "./org-credit-expiration.service";
+import { prepareUsageCreditDeductionsInTransaction } from "./usage-credit-deduction.service";
 import {
   prepareUsageFinancialPlan$,
   usageFinancialPlan,
@@ -108,9 +108,10 @@ interface SettlementBatchArgs extends UsageSettlementArgs {
 
 /**
  * All financial rows commit together; only plain values leave this command.
- * The pending claim prevents duplicate charging. Prepared allowance and credit
- * splits use atomic arithmetic without old-version or balance checks; concurrent
- * overuse is accepted. No external I/O runs inside this transaction.
+ * The pending claim prevents duplicate charging. Prices and allowances stay
+ * prepared, but cash is re-read and locked before allocation.
+ * Member grants cannot overdraw; all remaining charges debit the organization.
+ * No external I/O runs inside this transaction.
  */
 const commitUsageBatch$ = command(
   async ({ set }, args: SettlementBatchArgs, signal: AbortSignal) => {
@@ -173,9 +174,16 @@ const commitUsageBatch$ = command(
           windows,
           entitlement,
         );
-        financial = usageFinancialPlan(batch, priced, allowance, at);
+        financial = usageFinancialPlan(priced, allowance, at);
       }
-      const { priced, allowance, charges, deduction, expiry } = financial;
+      const { priced, allowance, charges } = financial;
+      const { deduction, expiry } =
+        await prepareUsageCreditDeductionsInTransaction(
+          tx,
+          orgId,
+          charges.byUser,
+          at,
+        );
       if (allowance.refresh) {
         await tx.execute(allowance.refresh);
       }
@@ -195,10 +203,6 @@ const commitUsageBatch$ = command(
       const granted = (await tx.execute(grantSql)).rowCount;
       requireConditionalDeductions("grant", deduction.updates, granted);
       const amount = deduction.sharedCredits;
-      if (amount > 0) {
-        // Main's order: expire before the new deduction, in one statement.
-        await expireOrgCreditsInTransaction(tx, orgId, at);
-      }
       const lotSql = expiryLotDeductionsSql(expiry.updates);
       const lotted = (await tx.execute(lotSql)).rowCount;
       requireConditionalDeductions("expiry lot", expiry.updates, lotted);
