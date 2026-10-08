@@ -42,7 +42,7 @@ gh api 'repos/okou-ai/okou/contents/docs/docs.md?ref=<PRACTICE_SHA>' --jq '.cont
 | Database schema, raw results, SQL rewrites                                    | [Database development](.claude/skills/database-development/SKILL.md)                                               |
 | New user-facing behavior and containment                                      | [Feature switches](.claude/skills/feature-switch/SKILL.md)                                                         |
 | External identifiers and reference resolution                                 | [Externally managed references](docs/externally-managed-references.md)                                             |
-| App/shared UI styling or interactions                                         | [Styles](docs/styles.md), [native UI interactions](CLAUDE.md#native-ui-interactions)                               |
+| App/shared UI styling or interactions                                         | [Styles](docs/styles.md), [UI interaction contracts](CLAUDE.md#ui-interaction-contracts)                           |
 | Chat-card recognition, registration, or rendering                             | [Chat cards](docs/chat-cards.md)                                                                                   |
 | Runner build, release, deploy, architecture selection, or rollback            | [Runner architectures](docs/runner-multi-architecture.md)                                                          |
 | React performance claims or subscription equality                             | [React measurements](docs/react-commit.md)                                                                         |
@@ -79,13 +79,14 @@ Do not load unrelated references merely because they share a parent directory.
 - Report concrete practice violations with the rule and source location. Do not
   infer a bug from function length, a search match, or a generic preference.
 
-### Native UI Interactions
+### UI Interaction Contracts
 
 For changed UI interactions, apply the
-[implementation contracts](CLAUDE.md#native-ui-interactions) and check:
+[implementation contracts](CLAUDE.md#ui-interaction-contracts) and check:
 
-- The final DOM and real callers retain native link, button, form and selection
-  semantics, using the existing shared primitives where applicable.
+- The final DOM retains appropriate HTML semantics. Composite controls use
+  shared components and Base UI's supported keyboard, selection and focus
+  behavior; editor input follows its editor APIs.
 - Trace keyboard and pointer activation and dismissal through wrappers and
   callers for duplicate actions, swallowed callbacks, lost render props/refs,
   broad keyboard interception and missing focus restoration.
