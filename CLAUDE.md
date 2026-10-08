@@ -35,7 +35,7 @@ Use [the documentation index](docs/docs.md) to select relevant guidance.
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
 | Tests or test failures                     | [Testing](docs/testing.md), then the matching application guide                                             |
 | React, signals, async ownership            | [ccstate](.claude/skills/ccstate/SKILL.md), [effects](docs/effect.md), [cache](docs/cache.md) as applicable |
-| App or shared UI styling                   | [Styles](docs/styles.md)                                                                                    |
+| App/shared UI styling or interactions      | [Styles](docs/styles.md), [native UI interactions](#native-ui-interactions)                                 |
 | Database schema or queries                 | [Database development](.claude/skills/database-development/SKILL.md)                                        |
 | New user-facing features or switch changes | [Feature switches](.claude/skills/feature-switch/SKILL.md)                                                  |
 | CLI commands                               | [CLI design](.claude/skills/cli-design/SKILL.md)                                                            |
@@ -48,6 +48,31 @@ selectors, CSS modules, runtime stylesheets, and CSS-in-JS are prohibited in
 Platform and UI. Exact global/third-party exceptions belong in
 `turbo/style-allowlist.json`, which business code must not expand. Read the
 styles guide before changing that boundary.
+
+## Native UI Interactions
+
+Follow [semantic elements and composition](docs/styles.md#semantic-elements-and-base-ui-composition)
+for App and shared UI changes.
+
+- Match the element to the intent: anchors or Router Link for navigation,
+  buttons for actions, forms for submission, and associated labels/inputs for
+  file selection. Reuse shared selection, menu and dialog primitives.
+- Keep keyboard navigation, selection, dismissal and focus management with
+  their owning primitive. Handle editor input through Tiptap/ProseMirror hooks;
+  avoid duplicate outer event handlers. Global shortcuts must match their
+  intended combinations and context without taking over local text input.
+- Preserve public contracts: refs, supported props, event details, state
+  callbacks and disabled/loading behavior. Use the primitive's composition API;
+  custom render targets forward all received props and the ref to the same
+  element without silently dropping or replacing primitive-owned behavior.
+- Cancel events only at the layer that owns the action. New or changed
+  `preventDefault`, `stopPropagation`, explicit `blur`, or disabled focus
+  restoration needs a concrete reason in the code or PR. Focus handoffs must
+  have a defined destination; ordinary dismissal retains the default return.
+- Preserve browser modifier-key, target and download behavior. IME composition
+  and candidate confirmation must not trigger submission, navigation or
+  destructive actions. Account for browser-specific composition completion
+  when handling Enter.
 
 ## Development and Verification
 
