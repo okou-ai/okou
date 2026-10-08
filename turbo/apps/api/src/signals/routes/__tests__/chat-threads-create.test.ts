@@ -579,6 +579,122 @@ describe("POST /api/chat-threads", () => {
     });
   });
 
+  it("refreshes builtin and custom selection authorization after grant changes", async () => {
+    const actor = bdd.user();
+    bdd.acceptAgentStorageWrites();
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Selection authorization changes",
+      visibility: "private",
+    });
+    const builtin = await connectorApi.connectManualGrant(
+      actor,
+      "openai",
+      "api-token",
+      { apiKey: "scope-read-openai-key" },
+      agent.agentId,
+    );
+    const definition = await connectorApi.createCustomConnector(
+      actor,
+      manualHttpCustomConnectorCreateBody({
+        slug: `_scope-read-${randomUUID()}`,
+        displayName: "Selection scope read",
+        prefixTemplates: ["https://scope-read.example.test/"],
+      }),
+    );
+    const custom = await connectorApi.setCustomConnectorValues(
+      actor,
+      definition.id,
+      [{ key: "secret", kind: "secret", value: "scope-read-custom-key" }],
+    );
+    if (!custom.connectedAccountId) {
+      throw new Error("Expected the API-created custom connector account");
+    }
+    await connectorApi.updateAgentCustomConnectors(actor, agent.agentId, [
+      definition.id,
+    ]);
+    const headers = { authorization: "Bearer clerk-session" };
+    const requested = [
+      {
+        connectionId: builtin.id,
+        target: { kind: "builtin", connectorSlug: "openai" },
+      },
+      {
+        connectionId: custom.connectedAccountId,
+        target: { kind: "custom", customConnectorId: definition.id },
+      },
+    ] as const;
+    const created = await accept(
+      threadsClient().create({
+        headers,
+        body: {
+          agentId: agent.agentId,
+          model: null,
+          connectorSelections: [...requested],
+        },
+      }),
+      [201],
+    );
+    const initial = await accept(
+      connectorSelectionsClient().get({
+        headers,
+        params: { id: created.body.id },
+      }),
+      [200],
+    );
+    expect(initial.body.selections).toHaveLength(2);
+    expect(initial.body.selections).toStrictEqual(
+      expect.arrayContaining([...requested]),
+    );
+
+    await api.enableAgentConnectors(actor, agent.agentId, []);
+    await connectorApi.updateAgentCustomConnectors(actor, agent.agentId, []);
+    for (const selection of requested) {
+      const denied = await accept(
+        connectorSelectionsClient().update({
+          headers,
+          params: { id: created.body.id },
+          body: selection,
+        }),
+        [400],
+      );
+      expect(denied.body.error).toBe(
+        "Connector target is not authorized for this chat thread",
+      );
+    }
+    const preserved = await accept(
+      connectorSelectionsClient().get({
+        headers,
+        params: { id: created.body.id },
+      }),
+      [200],
+    );
+    expect(preserved.body.selections).toStrictEqual(initial.body.selections);
+
+    await api.enableAgentConnectors(actor, agent.agentId, ["openai"]);
+    await connectorApi.updateAgentCustomConnectors(actor, agent.agentId, [
+      definition.id,
+    ]);
+    for (const selection of requested) {
+      const updated = await accept(
+        connectorSelectionsClient().update({
+          headers,
+          params: { id: created.body.id },
+          body: selection,
+        }),
+        [200],
+      );
+      expect(updated.body).toStrictEqual(selection);
+    }
+    const restored = await accept(
+      connectorSelectionsClient().get({
+        headers,
+        params: { id: created.body.id },
+      }),
+      [200],
+    );
+    expect(restored.body.selections).toStrictEqual(initial.body.selections);
+  });
+
   it("creates and reads an exact built-in connector account selection", async () => {
     const fixture = await seedAgent();
     await updateFeatureSwitchesForUser(context, fixture, {});
