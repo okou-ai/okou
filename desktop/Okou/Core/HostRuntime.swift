@@ -33,12 +33,22 @@ public actor HostRuntime {
   private let installationId: String
   private let hostName: String
   private let version: String
-  private let tokenProvider: @Sendable () async throws -> String
+  private let tokenProvider: @Sendable (Bool) async throws -> String
   private let onChange: @MainActor @Sendable (RuntimeState) -> Void
   private var generation = 0
   private var running = false
   private var acceptingCommands = false
-  private var hostToken: String?
+  private struct Connection: Sendable {
+    let hostId: String
+    let generation: Int
+    func body(_ value: JSONValue) -> JSONValue {
+      guard case .object(var fields) = value else { return value }
+      fields["connectionGeneration"] = .number(Double(generation))
+      return .object(fields)
+    }
+    func path(_ suffix: String) -> String { "api/computer-use/hosts/\(hostId)/\(suffix)" }
+  }
+  private var connection: Connection?
   private var heartbeatTask: Task<Void, Never>?
   private var pollTask: Task<Void, Never>?
   private var stopTask: Task<Void, Never>?
@@ -51,7 +61,7 @@ public actor HostRuntime {
   public init(
     api: APIClient, executor: CommandExecutor, installationId: String, hostName: String,
     version: String,
-    tokenProvider: @escaping @Sendable () async throws -> String,
+    tokenProvider: @escaping @Sendable (Bool) async throws -> String,
     onChange: @escaping @MainActor @Sendable (RuntimeState) -> Void
   ) {
     self.api = api
@@ -71,6 +81,29 @@ public actor HostRuntime {
       "supportedCapabilities": .strings(CommandExecutor.capabilities), "permissions": permissions,
     ])
   }
+  private func parsedConnection(_ body: JSONValue) -> Connection? {
+    guard let id = body["hostId"].string, UUID(uuidString: id) != nil,
+      let number = body["connectionGeneration"].number,
+      let revision = Int(exactly: number), revision > 0
+    else { return nil }
+    return Connection(hostId: id, generation: revision)
+  }
+  private func request(
+    _ path: String, connection: Connection, body: JSONValue, timeout: TimeInterval,
+    generation current: Int
+  ) async throws -> APIResponse {
+    let provider = tokenProvider
+    return try await api.authenticatedRequest(
+      path, body: connection.body(body), timeout: timeout,
+      tokenProvider: { forceRefresh in
+        let token = try await provider(forceRefresh)
+        try await self.checkGeneration(current)
+        return token
+      })
+  }
+  private func checkGeneration(_ current: Int) throws {
+    guard running, generation == current else { throw CancellationError() }
+  }
   private func publish() async { await onChange(state) }
   public func start() async {
     guard !running, stopTask == nil else { return }
@@ -84,9 +117,7 @@ public actor HostRuntime {
     var attempt = 0
     while running && current == generation {
       do {
-        let token = try await tokenProvider()
-        guard running, current == generation else { return }
-        let registering = Task { try await self.register(token: token, generation: current) }
+        let registering = Task { try await self.register(generation: current) }
         registrationTask = (current, registering)
         do { try await registering.value } catch {
           if registrationTask?.generation == current { registrationTask = nil }
@@ -96,29 +127,33 @@ public actor HostRuntime {
         return
       } catch is CancellationError { return } catch {
         guard running, current == generation else { return }
+        if await rejectAuthentication(error) { return }
         attempt += 1
         await recover(error, attempt: attempt)
         try? await Task.sleep(for: .seconds(delay(attempt)))
       }
     }
   }
-  private func register(token: String, generation current: Int) async throws {
-    let response = try await api.request(
-      "api/computer-use/hosts/start", token: token, body: body())
+  private func register(generation current: Int) async throws {
+    let response = try await api.authenticatedRequest(
+      "api/computer-use/hosts/register", body: body(), timeout: 10, tokenProvider: tokenProvider)
     guard running, current == generation else {
-      if let lateToken = response.body["hostToken"].string {
-        _ = try? await api.request(
-          "api/computer-use/host/stop", token: lateToken, body: .object([:]), timeout: 5)
+      if let lateConnection = parsedConnection(response.body) {
+        _ = try? await api.authenticatedRequest(
+          lateConnection.path("stop"), body: lateConnection.body(.object([:])),
+          timeout: 5, tokenProvider: tokenProvider)
       }
       return
     }
     guard (200..<300).contains(response.status) else {
-      if [401, 403, 409, 426].contains(response.status) {
+      if [401, 403, 404, 409, 426].contains(response.status) {
         running = false
         state.status = response.status == 403 ? "disabled" : "error"
         state.lastError =
           response.status == 409
           ? "Computer Use is already active in another Desktop session."
+          : response.status == 404
+            ? "Computer Use is temporarily unavailable until the service is updated."
           : response.status == 426
             ? "This version of Okou must be updated."
             : response.status == 401
@@ -130,13 +165,11 @@ public actor HostRuntime {
       throw DesktopFailure(
         "network_error", "Unable to register Computer Use host (HTTP \(response.status))")
     }
-    guard let token = response.body["hostToken"].string, let id = response.body["hostId"].string
-    else {
-      throw DesktopFailure(
-        "invalid_response", "Host registration response is missing its identity")
+    guard let connection = parsedConnection(response.body) else {
+      throw DesktopFailure("invalid_response", "Host registration response is missing its identity")
     }
-    hostToken = token
-    state.hostId = id
+    self.connection = connection
+    state.hostId = connection.hostId
     state.status = "online"
     state.lastHeartbeat = Date()
     state.lastError = nil
@@ -144,8 +177,8 @@ public actor HostRuntime {
     state.retryAt = nil
     await publish()
     guard running, acceptingCommands, generation == current else { return }
-    heartbeatTask = Task { await self.heartbeatLoop(generation: current, token: token) }
-    pollTask = Task { await self.commandLoop(generation: current, token: token) }
+    heartbeatTask = Task { await self.heartbeatLoop(generation: current, connection: connection) }
+    pollTask = Task { await self.commandLoop(generation: current, connection: connection) }
   }
   public func stop() async {
     if let stopTask {
@@ -161,13 +194,13 @@ public actor HostRuntime {
     acceptingCommands = false
     state.status = "stopping"
     await publish()
-    // Keep heartbeats alive while an existing command drains; its host
-    // token must remain live until the completion report has been sent.
-    if hostToken == nil {
+    // Keep heartbeats alive while an existing command drains; its Clerk
+    // session must remain available until the completion report has been sent.
+    if connection == nil {
       running = false
       generation += 1
     }
-    // A delayed registration owns its late-token cleanup. Wait for that
+    // A delayed registration owns its late-connection cleanup. Wait for that
     // request before allowing application termination to discard its result.
     _ = try? await registrationTask?.task.value
     // Let an already claimed command finish and report before stopping its
@@ -179,16 +212,17 @@ public actor HostRuntime {
     generation += 1
     heartbeatTask?.cancel()
     heartbeatTask = nil
-    if let token = hostToken {
+    if let connection {
       do {
-        let response = try await api.request(
-          "api/computer-use/host/stop", token: token, body: .object([:]), timeout: 5)
+        let response = try await api.authenticatedRequest(
+          connection.path("stop"), body: connection.body(.object([:])), timeout: 5,
+          tokenProvider: tokenProvider)
         if response.status != 401 && !(200..<300).contains(response.status) {
           throw DesktopFailure("network_error", "Unable to stop host (HTTP \(response.status))")
         }
       } catch { state.errors.append(error.localizedDescription) }
     }
-    hostToken = nil
+    connection = nil
     state.status = "offline"
     state.hostId = nil
     state.retryAt = nil
@@ -206,7 +240,7 @@ public actor HostRuntime {
     state.errors = Array(state.errors.prefix(50))
     await publish()
   }
-  private func heartbeatLoop(generation current: Int, token: String) async {
+  private func heartbeatLoop(generation current: Int, connection: Connection) async {
     var attempt = 0
     var wait: Double = 2
     while running && generation == current {
@@ -214,8 +248,9 @@ public actor HostRuntime {
         try await Task.sleep(for: .seconds(wait))
         try Task.checkCancellation()
         guard running, generation == current else { return }
-        let response = try await api.request(
-          "api/computer-use/heartbeat", token: token, body: body(), timeout: 10)
+        let response = try await request(
+          connection.path("heartbeat"), connection: connection, body: body(), timeout: 10,
+          generation: current)
         guard running, generation == current else { return }
         if await rejectAuthority(response) { return }
         guard (200..<300).contains(response.status) else {
@@ -231,11 +266,23 @@ public actor HostRuntime {
         await publish()
       } catch is CancellationError { return } catch {
         guard running, generation == current else { return }
+        if await rejectAuthentication(error) { return }
         attempt += 1
         wait = delay(attempt)
         await recover(error, attempt: attempt)
       }
     }
+  }
+  private func rejectAuthentication(_ error: Error) async -> Bool {
+    guard let failure = error as? DesktopFailure, failure.code == "unauthenticated" else {
+      return false
+    }
+    running = false
+    acceptingCommands = false
+    state.status = "error"
+    state.lastError = failure.message
+    await publish()
+    return true
   }
   private func rejectAuthority(_ response: APIResponse) async -> Bool {
     guard [401, 403, 409, 426].contains(response.status) else { return false }
@@ -248,15 +295,15 @@ public actor HostRuntime {
     await publish()
     return true
   }
-  private func commandLoop(generation current: Int, token: String) async {
+  private func commandLoop(generation current: Int, connection: Connection) async {
     var attempt = 0
     while running && acceptingCommands && generation == current {
       do {
         let claimStarted = ContinuousClock.now
-        let response = try await api.request(
-          "api/computer-use/host/commands/next", token: token,
+        let response = try await request(
+          connection.path("commands/next"), connection: connection,
           body: .object(["supportedCapabilities": .strings(CommandExecutor.capabilities)]),
-          timeout: 5)
+          timeout: 5, generation: current)
         if await rejectAuthority(response) { return }
         guard (200..<300).contains(response.status) else {
           throw DesktopFailure("network_error", "Command poll failed (HTTP \(response.status))")
@@ -289,7 +336,7 @@ public actor HostRuntime {
                 "command_timeout", "Host stopped before dispatch; no action was started"
               ).response
           }
-          try await complete(id: id, token: token, result: result)
+          try await complete(id: id, connection: connection, result: result)
         } else if body["status"].string != "idle" {
           throw DesktopFailure("invalid_response", "Unknown command poll response")
         }
@@ -304,13 +351,14 @@ public actor HostRuntime {
           await publish()
           return
         }
+        if await rejectAuthentication(error) { return }
         attempt += 1
         await recover(error, attempt: attempt)
         try? await Task.sleep(for: .seconds(delay(attempt)))
       }
     }
   }
-  private func complete(id: String, token: String, result: JSONValue) async throws {
+  private func complete(id: String, connection: Connection, result: JSONValue) async throws {
     let deadline = ContinuousClock.now.advanced(by: .seconds(5))
     var lastError: Error = DesktopFailure(
       "network_error", "Command completion could not be reported")
@@ -318,13 +366,25 @@ public actor HostRuntime {
       let remaining = ContinuousClock.now.duration(to: deadline).seconds
       guard remaining > 0 else { break }
       do {
-        let response = try await api.request(
-          "api/computer-use/host/commands/\(id)/complete", token: token, body: result,
-          timeout: remaining)
-        if (200..<300).contains(response.status) || response.status == 409 { return }
-        if await rejectAuthority(response) { return }
+        let response = try await api.authenticatedRequest(
+          connection.path("commands/\(id)/complete"), body: connection.body(result),
+          timeout: remaining, tokenProvider: tokenProvider)
+        if (200..<300).contains(response.status) { return }
+        if response.status == 409 && response.body["error"]["code"].string == "CONFLICT" { return }
+        if await rejectAuthority(response) {
+          throw DesktopFailure(
+            "result_unconfirmed",
+            "Command may have executed, but its result could not be confirmed by the server")
+        }
         lastError = DesktopFailure("network_error", "Completion failed (HTTP \(response.status))")
-      } catch { lastError = error }
+      } catch {
+        if await rejectAuthentication(error) {
+          throw DesktopFailure(
+            "result_unconfirmed",
+            "Command may have executed, but its result could not be confirmed by the server")
+        }
+        lastError = error
+      }
       if attempt == 0 && ContinuousClock.now.duration(to: deadline).seconds > 2 {
         try await Task.sleep(for: .seconds(2))
       }

@@ -1,11 +1,5 @@
 import type { FormEvent, ReactNode } from "react";
-import {
-  useGet,
-  useLastLoadable,
-  useLoadable,
-  useSet,
-  type Loadable,
-} from "ccstate-react";
+import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { EllipsisVertical } from "lucide-react";
@@ -41,17 +35,21 @@ import {
 } from "../../../../signals/okou-page/connector-accounts.ts";
 import {
   deleteConnectorAccount$,
-  renameConnectorAccount$,
   setDefaultConnectorAccount$,
   settingsConnectorAccounts,
 } from "../../../../signals/okou-page/settings/connector-accounts.ts";
 import {
   clearConnectorAccountDeletion$,
   clearConnectorAccountRename$,
+  connectorAccountActionsRef$,
   connectorAccountDeletionDraft$,
+  connectorAccountManagerRef$,
+  completeConnectorAccountRenameMenu$,
   connectorAccountRenameDraft$,
+  connectorAccountRenameInputRef$,
   prepareConnectorAccountDeletion$,
   resetConnectorAccountManagerDrafts$,
+  saveConnectorAccountRename$,
   setConnectorAccountRenameValue$,
   startConnectorAccountRename$,
 } from "../../../../signals/okou-page/settings/connector-account-dialogs.ts";
@@ -182,13 +180,27 @@ function AccountActions({
 }) {
   const { t } = useTranslation();
   const startRename = useSet(startConnectorAccountRename$);
+  const actionsRef = useSet(connectorAccountActionsRef$);
+  const renameDraft = useGet(connectorAccountRenameDraft$);
+  const completeRenameMenu = useSet(completeConnectorAccountRenameMenu$);
+  const handingOffToRename =
+    renameDraft?.account.id === account.id &&
+    renameDraft.phase === "closing-menu";
   const [, prepareDisconnect] = useLoadableSet(
     prepareConnectorAccountDeletion$,
   );
   const signal = useGet(pageSignal$);
   return (
-    <DropdownMenu>
+    <DropdownMenu
+      onOpenChangeComplete={(open) => {
+        if (!open) {
+          completeRenameMenu(account.id);
+        }
+      }}
+    >
       <DropdownMenuTrigger
+        ref={actionsRef}
+        data-connection-id={account.id}
         render={
           <Button
             showTooltip
@@ -203,7 +215,10 @@ function AccountActions({
       >
         <EllipsisVertical size={16} />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent
+        align="end"
+        finalFocus={handingOffToRename ? false : undefined}
+      >
         {account.scopeMismatch === true && onReviewScopes ? (
           <DropdownMenuItem
             onClick={() => {
@@ -256,11 +271,13 @@ function AccountActions({
 function AccountRow({
   target,
   account,
+  listed,
   onReconnect,
   onReviewScopes,
 }: {
   readonly target: ConnectorAccountTarget;
   readonly account: ConnectorAccountConnection;
+  readonly listed: boolean;
   readonly onReconnect: (account: ConnectorAccountConnection) => void;
   readonly onReviewScopes?: (account: ConnectorAccountConnection) => void;
 }) {
@@ -270,8 +287,11 @@ function AccountRow({
   const identity = connectorAccountExternalIdentity(account);
   const label = accountLabel(account);
   const needsReconnect = account.connectionStatus === "reconnect-required";
-  if (renameDraft?.account.id === account.id) {
-    return <RenameAccountForm target={target} />;
+  if (
+    renameDraft?.account.id === account.id &&
+    renameDraft.phase === "editing"
+  ) {
+    return <RenameAccountForm target={target} listed={listed} />;
   }
   return (
     <div
@@ -336,52 +356,67 @@ function AccountsCard({
   readonly onReconnect: (account: ConnectorAccountConnection) => void;
   readonly onReviewScopes?: (account: ConnectorAccountConnection) => void;
 }) {
-  if (loadable.state === "hasError") {
-    return <AccountsMessage messageKey="accountsUnavailable" />;
-  }
-  if (loadable.state === "loading") {
-    return <AccountsMessage messageKey="loading" />;
-  }
-  if (!loadable.data.available) {
-    return <AccountsMessage messageKey="accountsUnavailable" />;
-  }
-  // At rest the default account is pinned on top, so the dialog always shows
-  // which account new runs will use. An active search owns the whole list
-  // instead: keeping a non-matching row pinned would put a visible account
-  // directly above a message saying no account was found.
-  const others = loadable.data.connections.filter((account) => {
+  const renameDraft = useGet(connectorAccountRenameDraft$);
+  const editingAccount = renameDraft?.account;
+  const available = loadable.state === "hasData" && loadable.data.available;
+  const connections = available ? loadable.data.connections : [];
+  // At rest the default account is pinned on top. Search owns the entire list.
+  const others = connections.filter((account) => {
     return account.id !== defaultConnection?.id;
   });
   const rows: readonly ConnectorAccountConnection[] = search.trim()
-    ? loadable.data.connections
-    : defaultConnection
+    ? connections
+    : available && defaultConnection
       ? [defaultConnection, ...others]
       : others;
-  if (rows.length === 0) {
-    return <AccountsMessage messageKey="noAccountsFound" />;
-  }
+  const messageKey =
+    loadable.state === "hasError" ||
+    (loadable.state === "hasData" && !available)
+      ? "accountsUnavailable"
+      : loadable.state === "loading"
+        ? "loading"
+        : rows.length === 0
+          ? "noAccountsFound"
+          : null;
+  // Keep the closing menu, then the editor, mounted until save/cancel completes,
+  // even if a refresh fails or the account leaves the current search page.
+  const displayedRows =
+    editingAccount &&
+    !rows.some((account) => {
+      return account.id === editingAccount.id;
+    })
+      ? [...rows, editingAccount]
+      : rows;
   return (
-    <RadioGroup
-      value={defaultConnection?.id ?? null}
-      // The row radios post their own change; RadioGroup only owns grouping.
-      className="overflow-hidden rounded-xl bg-card border border-surface-border"
-    >
-      {rows.map((account, index) => {
-        return (
-          <div key={account.id}>
-            {index > 0 ? (
-              <div className="mx-5 h-0 border-t border-t-gray-400" />
-            ) : null}
-            <AccountRow
-              target={target}
-              account={account}
-              onReconnect={onReconnect}
-              onReviewScopes={onReviewScopes}
-            />
-          </div>
-        );
-      })}
-    </RadioGroup>
+    <>
+      {messageKey ? <AccountsMessage messageKey={messageKey} /> : null}
+      {displayedRows.length > 0 ? (
+        <RadioGroup
+          value={defaultConnection?.id ?? null}
+          // The row radios post their own change; RadioGroup only owns grouping.
+          className="overflow-hidden rounded-xl bg-card border border-surface-border"
+        >
+          {displayedRows.map((account, index) => {
+            return (
+              <div key={account.id}>
+                {index > 0 ? (
+                  <div className="mx-5 h-0 border-t border-t-gray-400" />
+                ) : null}
+                <AccountRow
+                  target={target}
+                  account={account}
+                  listed={rows.some((row) => {
+                    return row.id === account.id;
+                  })}
+                  onReconnect={onReconnect}
+                  onReviewScopes={onReviewScopes}
+                />
+              </div>
+            );
+          })}
+        </RadioGroup>
+      ) : null}
+    </>
   );
 }
 
@@ -408,29 +443,26 @@ function AccountsMessage({
   );
 }
 
-function RenameAccountForm({ target }: { target: ConnectorAccountTarget }) {
+function RenameAccountForm({
+  target,
+  listed,
+}: {
+  readonly target: ConnectorAccountTarget;
+  readonly listed: boolean;
+}) {
   const { t } = useTranslation();
   const draft = useGet(connectorAccountRenameDraft$);
   const setValue = useSet(setConnectorAccountRenameValue$);
   const clear = useSet(clearConnectorAccountRename$);
-  const [renameLoadable, rename] = useLoadableSet(renameConnectorAccount$);
+  const [renameLoadable, rename] = useLoadableSet(saveConnectorAccountRename$);
+  const inputRef = useSet(connectorAccountRenameInputRef$);
   const signal = useGet(pageSignal$);
   if (!draft) {
     return null;
   }
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const displayName = draft.displayName.trim() || null;
-    detach(
-      (async () => {
-        await rename(
-          { target, connectionId: draft.account.id, displayName },
-          signal,
-        );
-        clear();
-      })(),
-      Reason.DomCallback,
-    );
+    detach(rename(target, signal), Reason.DomCallback);
   };
   return (
     <form className="space-y-4 px-5 py-4" onSubmit={submit}>
@@ -441,6 +473,7 @@ function RenameAccountForm({ target }: { target: ConnectorAccountTarget }) {
           })}
         </label>
         <Input
+          ref={inputRef}
           id="account-rename"
           value={draft.displayName}
           onChange={(event) => {
@@ -450,7 +483,13 @@ function RenameAccountForm({ target }: { target: ConnectorAccountTarget }) {
         />
       </div>
       <div className="flex justify-end gap-2">
-        <Button type="button" variant="outline" onClick={clear}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            clear(listed);
+          }}
+        >
           {t(($) => {
             return $.connectors.actions.cancel;
           })}
@@ -553,6 +592,7 @@ function ConnectorAccountSearch({ value }: { readonly value: string }) {
   return (
     <div className="relative">
       <Input
+        data-account-search
         value={value}
         onChange={(event) => {
           return setSearch(event.target.value, signal);
@@ -646,12 +686,13 @@ export function ConnectorAccountManagerDialog({
 }: ConnectorAccountManagerDialogProps) {
   const { t } = useTranslation();
   const accountsLoadable = useLastLoadable(settingsConnectorAccounts.accounts$);
-  const summariesLoadable = useLoadable(connectorAccountSummaryByTarget$);
+  const summariesLoadable = useLastLoadable(connectorAccountSummaryByTarget$);
   const search = useGet(settingsConnectorAccounts.search$);
   const [loadMoreLoadable, loadMore] = useLoadableSet(
     settingsConnectorAccounts.loadMore$,
   );
   const resetDrafts = useSet(resetConnectorAccountManagerDrafts$);
+  const managerRef = useSet(connectorAccountManagerRef$);
   const signal = useGet(pageSignal$);
   const nextCursor = connectorAccountNextCursor(accountsLoadable);
   const defaultConnection =
@@ -680,6 +721,7 @@ export function ConnectorAccountManagerDialog({
       }}
     >
       <DialogContent
+        ref={managerRef}
         maxWidth="xl"
         contentClassName="flex flex-col overflow-hidden"
       >

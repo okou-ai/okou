@@ -169,6 +169,26 @@ and checks the returned grants. Neither path needs a private DB seed or a forced
 worker visit. Apply that same standard to usage reports, storage, and automation
 lifecycles instead of using a private driver to manufacture their prerequisites.
 
+For a mixed historical test, inspect what the current writer can actually do.
+The `preserves history and aliases across out-of-order completion [HOST-A]`
+case in
+[`host-maps.bdd.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/host-maps.bdd.test.ts)
+prepares two versions through the host API and completes the newer one first.
+It checks both versions through files/history responses and emitted S3 manifests;
+it needs no historical deployment rows. The same suite obtains a Runner's
+`OKOU_TOKEN` through normal chat send and authenticated heartbeat/claim before
+publishing. A helper that signs a token for an invented Run does not establish
+that lifecycle.
+
+When testing overlapping requests, use identifiers a real client knows. The
+pending-title matrix in
+[`shared-thread-artifacts.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/shared-thread-artifacts.test.ts)
+supplies the share ID in the normal create request before attempting deletion.
+Reading a server-selected ID from a storage key before the response arrives
+would grant the test knowledge its caller does not have. Observe publication
+through the public shared response/catalog and revocation through access denial,
+not application-owned policy JSON stored behind those APIs.
+
 For the full reasoning, see
 [Testing External Behavior](./testing-external-behavior.md).
 

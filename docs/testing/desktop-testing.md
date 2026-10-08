@@ -15,8 +15,8 @@ swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolutio
 Core tests exercise existing Electron preferences, service-origin compatibility,
 server claim deadlines, stdio protocol retirement, and the host HTTP lifecycle.
 Verify that a late claim is completed without dispatch after admission closes,
-that host requests use their independent host token, and that input cannot be
-replayed after helper retirement. Native helper tests cover Accessibility policy,
+that every host request obtains the current Clerk session token, and that input
+cannot be replayed after helper retirement. Native helper tests cover Accessibility policy,
 window targeting, screenshots, and input recovery in the existing backend.
 
 Build each affected packaged configuration with `desktop/scripts/build.py`.
@@ -42,7 +42,7 @@ Use the actual packaged app for these cases:
   state, and delivers input only to the selected app/window.
 - Closing the window retains the menu-bar host; reopening restores the window.
 - Stop, workspace changes, sign-out, quit, and updates drain work and report
-  completion before retiring authority.
+  completion with the current Clerk session before retiring authority.
 - Developer Tools and command diagnostics remain gated by the server switch.
 
 For distribution changes, test signed ZIP and mounted DMG startup, validate

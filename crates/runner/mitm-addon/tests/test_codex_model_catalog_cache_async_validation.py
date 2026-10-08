@@ -416,6 +416,7 @@ async def test_worker_start_failures_release_queued_snapshots_and_recover(
 async def test_done_joins_catalog_validation_and_closes_admission(
     real_flow: _FlowFactory,
     mitm_ctx,
+    fresh_usage_executor,
     upstream_shutdown_fails: bool,
 ) -> None:
     executor = _ControlledValidationExecutor(asyncio.get_running_loop())

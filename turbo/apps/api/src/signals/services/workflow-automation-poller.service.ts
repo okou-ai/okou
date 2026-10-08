@@ -348,7 +348,7 @@ const dueWorkflowAutomationOwnerIsMember$ = command(
     if (membership) {
       return true;
     }
-    log.warn(
+    log.debug(
       "Disabling workflow automation: owner is no longer an org member",
       {
         automationId: row.automation.id,
@@ -500,6 +500,13 @@ const launchClaimedDueRow$ = command(
           }
         : undefined;
     const recordFailure = async (error: unknown) => {
+      log.error("Workflow automation pre-run failed", {
+        automationId: claimed.id,
+        workflowId: claimed.workflowId,
+        orgId: claimed.orgId,
+        userId: claimed.ownerUserId,
+        error,
+      });
       if (
         scheduleClaim &&
         (error instanceof WorkflowScheduleAdmissionError || signal.aborted)

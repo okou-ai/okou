@@ -1954,10 +1954,6 @@
       "newThread": "新しいチャット",
       "reload": "タスクを再読み込み"
     },
-    "lastReadMarker": {
-      "previouslyRead": "前回ここまで読みました",
-      "unread": "未読メッセージ"
-    },
     "mail": {
       "bcc": "BCC",
       "cc": "cc",

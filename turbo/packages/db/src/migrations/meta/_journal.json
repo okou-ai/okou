@@ -1863,6 +1863,13 @@
       "when": 1791386270721,
       "tag": "1343_retire_pi_stable_context",
       "breakpoints": true
+    },
+    {
+      "idx": 1344,
+      "version": "7",
+      "when": 1791432517943,
+      "tag": "1344_computer_use_session_auth",
+      "breakpoints": true
     }
   ]
 }

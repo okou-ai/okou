@@ -40,6 +40,31 @@ Haiku 5.5, DeepSeek V4.1 Flash). The Codex projection is unchanged.
 the Runner back below this release while the switch is on leaves generation 5
 jobs queued; disable the switch first.
 
+## Desktop Computer Use plugins retired (2026-10-08)
+
+The Native Desktop replacement in #37889 removed the filesystem and MCP plugin
+runtimes and advertises only native Computer Use commands. The remaining
+`computerUseDesktopPlugins` switch, filesystem/MCP CLI commands, `plugin.call`
+contracts, plugin command/content endpoints, capability routing, result offload
+and plugin audit branches are now removed together.
+
+This feature was never generally released: its registry was default-off and
+staff-enabled, and the owner confirmed it is unused. Per [fallback policy](fallback.md#2-features-behind-a-feature-switch-need-no-fallback),
+no old-plugin-client compatibility branch or data migration is required. Old
+CLI plugin requests against the new API receive an unavailable endpoint; the new
+CLI exposes no plugin commands and makes no plugin requests to an older API.
+Command and screenshot reads select only supported native command kinds; audit
+lists do the same, so retired records cannot invalidate native responses.
+Historical staff plugin command IDs are unavailable after the cutover.
+
+This retirement leaves Native Desktop and older native-command hosts' command,
+permission, claim, completion, audit and screenshot contracts unchanged. The
+separate session-authentication rollout follows its own compatibility gates below.
+The existing capability-empty host behavior is preserved. Shared Computer Use tables
+and screenshot retention remain intact; this change performs no historical
+command or object-storage deletion. Retired switch overrides already pass through
+the general registry-key filtering.
+
 ## Pi turn-end stdout boundaries (2026-10-08)
 
 The CLI's Pi JSON/RPC serializer omits `turn_end.message` and
@@ -59,6 +84,18 @@ and supported rollback packages have drained; track that verification in
 such as `message_end` remain fatal above the 16 MiB line limit. Rolling back
 both components restores the previous oversized-turn failure. No stored data
 migration or API change is required.
+
+## Native Desktop session authentication (expand release)
+
+Native Desktop uses additive session-authenticated host routes. Migration
+`1344_computer_use_session_auth` adds session binding, provider-validation time,
+connection generation, and command-claim generation; `token_hash` becomes nullable
+for new Native hosts. Legacy writes remain valid. Deploy the expanded API fully
+before releasing the Native client. Old installed clients retain their host-token
+protocol during the upgrade window; new Native against an old API stays offline
+and never acquires a host token. Existing installation and chat host identities
+are preserved. Legacy contraction requires the Desktop version floor and API
+serving/rollback drain. See [the full contract](desktop-session-auth.md).
 
 ## Connector catalog column reads (expand release)
 
