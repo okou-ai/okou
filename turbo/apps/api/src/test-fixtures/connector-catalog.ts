@@ -2,7 +2,7 @@ import { connectorCatalogEntryColumns } from "@okouai/connectors/connector-catal
 import { createHash } from "node:crypto";
 
 import { createStore } from "ccstate";
-import { and, eq, notInArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getConnectorAuthProviderRegistrationCapabilities } from "@okouai/connectors/auth-providers";
 import {
   connectorCatalog,
@@ -243,34 +243,4 @@ export function apiTestConnectorCatalogWithUnavailableAuthMethods(
     throw new Error(`Unknown auth methods: ${[...remaining].join(", ")}`);
   }
   return connectorCatalogArtifactSchema.parse(unavailable);
-}
-
-/**
- * Makes every current entry outside `keepSlugs` fail a whole-catalog runtime
- * read, so a successful request shows it read only the slugs it names.
- */
-export async function breakCurrentConnectorCatalogEntriesExcept(
-  keepSlugs: readonly string[],
-): Promise<void> {
-  const db = store.set(writeDb$);
-  const [current] = await db
-    .select({ hash: connectorCatalog.hash })
-    .from(connectorCatalog)
-    .limit(1);
-  if (!current) {
-    throw new Error("Expected the case's current connector catalog");
-  }
-  const updated = await db
-    .update(connectorCatalogEntries)
-    .set({ icon: { key: "invalid-catalog-icon", invertInDarkMode: false } })
-    .where(
-      and(
-        eq(connectorCatalogEntries.hash, current.hash),
-        notInArray(connectorCatalogEntries.slug, [...keepSlugs]),
-      ),
-    )
-    .returning({ slug: connectorCatalogEntries.slug });
-  if (updated.length === 0) {
-    throw new Error("Expected other entries in the current connector catalog");
-  }
 }
