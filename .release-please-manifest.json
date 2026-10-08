@@ -1,8 +1,8 @@
 {
   "turbo/packages/core": "8.734.8",
   "turbo/apps/cli": "9.378.22",
-  "turbo/apps/api": "1.713.0",
-  "turbo/apps/platform": "0.1002.0",
+  "turbo/apps/api": "1.713.1",
+  "turbo/apps/platform": "0.1002.1",
   "turbo/apps/app-worker": "1.8.198",
   "turbo/apps/host-worker": "1.5.119",
   "turbo/packages/api-contracts": "1.538.0",

@@ -9,6 +9,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.713.1](https://github.com/okou-ai/okou/compare/api-v1.713.0...api-v1.713.1) (2026-10-08)
+
+
+### Performance Improvements
+
+* **api:** reduce mcp input observation reads ([#37921](https://github.com/okou-ai/okou/issues/37921)) ([b4497cd](https://github.com/okou-ai/okou/commit/b4497cd5a05367fd6ee6fde0d5a4d2c98bfb3ae9))
+
 ## [1.713.0](https://github.com/okou-ai/okou/compare/api-v1.712.7...api-v1.713.0) (2026-10-08)
 
 

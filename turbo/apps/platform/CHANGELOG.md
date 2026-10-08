@@ -12,6 +12,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1002.1](https://github.com/okou-ai/okou/compare/app-v0.1002.0...app-v0.1002.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **platform:** navigate immediately when archiving from the chat header ([#37938](https://github.com/okou-ai/okou/issues/37938)) ([367bc26](https://github.com/okou-ai/okou/commit/367bc268b77e01b0dafbe056fc81bfb5fea6fd98))
+
 ## [0.1002.0](https://github.com/okou-ai/okou/compare/app-v0.1001.5...app-v0.1002.0) (2026-10-08)
 
 
