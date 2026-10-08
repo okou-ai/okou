@@ -4,7 +4,6 @@ import {
   runnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract,
   runnersJobClaimContract,
-  runnersModelProviderFailuresContract,
   runnersPollContract,
 } from "../contracts/runners";
 import {
@@ -68,11 +67,6 @@ export const runtimeApiRouteBindings = [
     id: "runners.connectorRuntime.sync",
     owner: "runner",
     route: runnersConnectorRuntimeSyncContract.sync,
-  },
-  {
-    id: "runners.runs.modelProviderFailures",
-    owner: "mitm-addon",
-    route: runnersModelProviderFailuresContract.report,
   },
   {
     id: "webhooks.agent.events",

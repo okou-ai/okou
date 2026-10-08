@@ -188,19 +188,6 @@ export const runnerInstalledVersionsSchema = z
   .strict()
   .readonly();
 
-export const builtInModelProviderConnectionSourceSchema = z.enum([
-  "provider_response",
-  "upstream_transport",
-]);
-
-const BUILT_IN_MODEL_PROVIDER_RETRY_AFTER_MAX_SECONDS = 300;
-const builtInModelProviderRetryAfterSecondsSchema = z
-  .number()
-  .int()
-  .positive()
-  .max(BUILT_IN_MODEL_PROVIDER_RETRY_AFTER_MAX_SECONDS)
-  .optional();
-
 /**
  * Atomic advisory decision for cross-runner reuse coordination. A preferred
  * runner is not an exclusive assignee; another runner with a better compatible
@@ -1486,68 +1473,6 @@ export const runnersCancellationContract = c.router({
   },
 });
 
-export const runnersModelProviderFailuresContract = c.router({
-  report: {
-    method: "POST",
-    path: "/api/runners/runs/:runId/model-provider-failures",
-    headers: authHeadersSchema,
-    pathParams: z.object({
-      runId: z.uuid(),
-    }),
-    body: z.discriminatedUnion("failureKind", [
-      z
-        .object({
-          failureKind: z.literal("authentication"),
-          retryAfterSeconds: builtInModelProviderRetryAfterSecondsSchema,
-        })
-        .strict(),
-      z
-        .object({
-          failureKind: z.literal("billing"),
-          retryAfterSeconds: builtInModelProviderRetryAfterSecondsSchema,
-        })
-        .strict(),
-      z
-        .object({
-          failureKind: z.literal("rate_limit"),
-          retryAfterSeconds: builtInModelProviderRetryAfterSecondsSchema,
-        })
-        .strict(),
-      z
-        .object({
-          failureKind: z.literal("provider_unavailable"),
-          retryAfterSeconds: builtInModelProviderRetryAfterSecondsSchema,
-        })
-        .strict(),
-      z
-        .object({
-          failureKind: z.literal("timeout"),
-          retryAfterSeconds: builtInModelProviderRetryAfterSecondsSchema,
-        })
-        .strict(),
-      z
-        .object({
-          failureKind: z.literal("connection"),
-          connectionSource: builtInModelProviderConnectionSourceSchema,
-          retryAfterSeconds: builtInModelProviderRetryAfterSecondsSchema,
-        })
-        .strict(),
-    ]),
-    responses: {
-      200: z
-        .object({
-          outcome: z.enum(["recorded", "observed", "ignored"]),
-        })
-        .strict(),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      500: apiErrorSchema,
-    },
-    summary: "Report a built-in model provider failure for a run",
-  },
-});
-
 export const STEERED_INPUT_ALREADY_CONSUMED_ERROR_CODE =
   "INPUT_ALREADY_CONSUMED";
 export const STEERED_INPUT_RUN_NOT_RUNNING_ERROR_CODE = "RUN_NOT_RUNNING";
@@ -1727,8 +1652,6 @@ export const runnersHeartbeatContract = c.router({
 
 export type RunnersPollContract = typeof runnersPollContract;
 export type RunnersJobClaimContract = typeof runnersJobClaimContract;
-export type RunnersModelProviderFailuresContract =
-  typeof runnersModelProviderFailuresContract;
 export type RunnersSteerContract = typeof runnersSteerContract;
 export type RunnersConnectorRuntimeSyncContract =
   typeof runnersConnectorRuntimeSyncContract;

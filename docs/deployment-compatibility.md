@@ -746,12 +746,12 @@ history value, so nothing is converted or archived.
 Runner: the mitm addon no longer observes or reports model provider failures,
 and the Runner no longer passes `OKOU_MITM_RUNNER_TOKEN` to mitmdump. Runners
 released before this change still `POST
-/api/runners/runs/:runId/model-provider-failures` best-effort. The endpoint and
-its contract stay: it authenticates the caller and returns
-`{ "outcome": "ignored" }` without reading the run or the body, so old Runners
-see the same success shape they already accept. Remove the endpoint, its
-contract and generated Rust bindings once production Runners no longer send
-these reports (no Runner after this change calls it).
+/api/runners/runs/:runId/model-provider-failures` best-effort; the API
+authenticated those reports and returned `{ "outcome": "ignored" }` until they
+drained. The endpoint, its contract, its runtime API schema entry and the
+generated Rust bindings were removed on 2026-10-09 once production Runners
+(0.220.18 and later, inside the rollback floor) had stopped sending reports.
+A Runner older than that now receives `404` for its best-effort report.
 
 App: a stale App build that opens Settings debug as staff receives `404` from
 the removed diagnostics endpoint inside that debug-only block; no user flow

@@ -73,12 +73,6 @@ const expectedBindings = [
   },
   {
     method: "POST",
-    path: "/api/runners/runs/:runId/model-provider-failures",
-    rustModulePath: ["runners", "runs", "by_run_id", "model_provider_failures"],
-    rustConstName: "REPORT",
-  },
-  {
-    method: "POST",
     path: "/api/runners/runs/:runId/connector-runtime/sync",
     rustModulePath: [
       "runners",

@@ -1,13 +1,11 @@
 import { z } from "zod";
 import {
   artifactMissingRootPolicySchema,
-  builtInModelProviderConnectionSourceSchema,
   piLaunchConfigSchema,
   piModelConfigLegacySchema,
   piModelConfigV2Schema,
   piModelConfigV3Schema,
   piModelConfigV5Schema,
-  runnersModelProviderFailuresContract,
   runnerCancellationResponseSchema,
   runnerNextSteerableInputResponseSchema,
   runnerSteeredInputResponseSchema,
@@ -101,10 +99,6 @@ export const rustTypeModuleDocs = [
   {
     rustModulePath: ["runners", "runs", "steerable_inputs", "steered"],
     rustDoc: ["DTOs for declaring a prompt or run-targeted budget steered."],
-  },
-  {
-    rustModulePath: ["runners", "runs", "model_provider_failures"],
-    rustDoc: ["DTOs for reporting bounded built-in model provider failures."],
   },
   {
     rustModulePath: ["webhooks"],
@@ -643,57 +637,6 @@ export const rustTypeBindings = [
         ],
         fields: {
           outcome: ["The input is consumed by this run, idempotently."],
-        },
-      },
-    ],
-  },
-  {
-    schema: builtInModelProviderConnectionSourceSchema,
-    rustModulePath: ["runners", "runs", "model_provider_failures"],
-    rustTypeName: "RequestConnectionSource",
-    direction: "request",
-    declarations: [
-      {
-        rustTypeName: "RequestConnectionSource",
-        rustDoc: ["Source of an eligible connection failure."],
-        variants: {
-          provider_response: ["The provider returned a connection failure."],
-          upstream_transport: [
-            "The runner observed an upstream transport failure.",
-          ],
-        },
-      },
-    ],
-  },
-  {
-    schema: runnersModelProviderFailuresContract.report.body,
-    rustModulePath: ["runners", "runs", "model_provider_failures"],
-    rustTypeName: "Request",
-    direction: "request",
-    fieldTypeOverrides: {
-      connectionSource: "RequestConnectionSource",
-    },
-    declarations: [
-      {
-        rustTypeName: "Request",
-        rustDoc: [
-          "Request body for reporting a built-in model provider failure.",
-        ],
-        variants: {
-          authentication: ["Provider authentication failed."],
-          billing: ["Provider billing rejected the request."],
-          rate_limit: ["Provider rate limiting rejected the request."],
-          provider_unavailable: [
-            "The provider route was unavailable or overloaded.",
-          ],
-          timeout: ["The provider inference request timed out."],
-          connection: ["The provider connection failed."],
-        },
-        fields: {
-          connectionSource: ["Required source of the connection failure."],
-          retryAfterSeconds: [
-            "Optional bounded provider retry delay in seconds.",
-          ],
         },
       },
     ],

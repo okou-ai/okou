@@ -9,7 +9,6 @@ import {
   runnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract,
   runnersJobClaimContract,
-  runnersModelProviderFailuresContract,
   runnersPollContract,
   runnersSteerContract,
   runnerVersionSchema,
@@ -2621,19 +2620,6 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
 });
 
-// Built-in model cooldown is retired. Runners released before its removal still
-// report model provider failures; authenticate and ignore them until they drain.
-const modelProviderFailureInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const auth = await set(runnerAuth$, get(authorization$), signal);
-    signal.throwIfAborted();
-    if (!auth) {
-      return unauthorizedAuthenticationRequired;
-    }
-    return { status: 200 as const, body: { outcome: "ignored" as const } };
-  },
-);
-
 const runnerRealtimeTokenBody$ = bodyResultOf(
   runnerRealtimeTokenContract.create,
 );
@@ -2882,10 +2868,6 @@ export const runnersRoutes: readonly RouteEntry[] = [
     route: runnersJobClaimContract.claim,
     handler: claimInner$,
     observeJsonResponse: observeClaimJsonResponse,
-  },
-  {
-    route: runnersModelProviderFailuresContract.report,
-    handler: modelProviderFailureInner$,
   },
   {
     route: runnersSteerContract.next,

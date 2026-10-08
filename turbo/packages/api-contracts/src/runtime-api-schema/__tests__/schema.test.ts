@@ -20,45 +20,64 @@ function binding(id: string, path: string): RuntimeApiRouteBinding {
   return { id, owner: "guest-agent", route: contract.get };
 }
 
+function strictUnionBinding(id: string, path: string): RuntimeApiRouteBinding {
+  const contract = c.router({
+    report: {
+      method: "POST",
+      path,
+      body: z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("plain") }).strict(),
+        z
+          .object({
+            kind: z.literal("sourced"),
+            source: z.enum(["provider_response", "upstream_transport"]),
+          })
+          .strict(),
+      ]),
+      responses: {
+        200: z.object({ ok: z.boolean() }),
+      },
+    },
+  });
+  return { id, owner: "mitm-addon", route: contract.report };
+}
+
 describe("runtime API schema document", () => {
-  it("publishes the strict model provider failure report contract", () => {
-    const document = buildRuntimeApiSchemaDocument("2026-08-12T00:00:00.000Z");
+  it("publishes strict discriminated-union request bodies as oneOf alternatives", () => {
+    const document = buildRuntimeApiSchemaDocument("2026-08-12T00:00:00.000Z", [
+      strictUnionBinding("mitm.example", "/api/runners/example"),
+    ]);
     const route = document.routes.find(({ id }) => {
-      return id === "runners.runs.modelProviderFailures";
+      return id === "mitm.example";
     });
 
     expect(route).toMatchObject({
       method: "POST",
       owner: "mitm-addon",
-      path: "/api/runners/runs/:runId/model-provider-failures",
+      path: "/api/runners/example",
     });
     const body = route?.request.body;
     if (!body || body.kind !== "json-schema") {
-      throw new Error("Expected the model provider failure request schema");
+      throw new Error("Expected a JSON schema request body");
     }
     const alternatives = body.schema.oneOf;
     if (!Array.isArray(alternatives)) {
-      throw new Error("Expected failure-kind request alternatives");
+      throw new Error("Expected request alternatives");
     }
-    expect(alternatives).toHaveLength(6);
+    expect(alternatives).toHaveLength(2);
     expect(alternatives).toContainEqual({
       additionalProperties: false,
       properties: {
-        connectionSource: {
+        kind: {
+          const: "sourced",
+          type: "string",
+        },
+        source: {
           enum: ["provider_response", "upstream_transport"],
           type: "string",
         },
-        failureKind: {
-          const: "connection",
-          type: "string",
-        },
-        retryAfterSeconds: {
-          exclusiveMinimum: 0,
-          maximum: 300,
-          type: "integer",
-        },
       },
-      required: ["failureKind", "connectionSource"],
+      required: ["kind", "source"],
       type: "object",
     });
   });
