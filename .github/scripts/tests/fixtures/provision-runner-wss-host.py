@@ -16,6 +16,7 @@ ANSIBLE = sys.argv[2]
 WORK = Path(sys.argv[3])
 HELPER = Path("/usr/local/libexec/okou-runner-wss-host-prepare.py")
 POLICY = Path("/etc/systemd/system/vm0-runner-.service.d/10-wss-host.conf")
+PREPARATION = Path("/etc/systemd/system/okou-runner-wss-host-prepare.service")
 NAMESPACE = Path("/run/okou-ws")
 
 
@@ -158,7 +159,15 @@ GROUP_ID = grp.getgrnam("okou-wss-caddy").gr_gid
 assert GROUP_ID != os.getegid()
 assert grp.getgrnam("okou-wss-caddy").gr_mem == []
 require_namespace()
-assert HELPER.stat().st_uid == POLICY.stat().st_uid == 0
+assert HELPER.stat().st_uid == POLICY.stat().st_uid == PREPARATION.stat().st_uid == 0
+assert (
+    POLICY.read_bytes()
+    == (REPO / "ansible/files/okou-runner-wss-host.conf").read_bytes()
+)
+assert (
+    PREPARATION.read_bytes()
+    == (REPO / "ansible/files/okou-runner-wss-host-prepare.service").read_bytes()
+)
 assert reload_log.read_text() == "daemon-reload\ndaemon-reload\n"
 assert not (Path("/etc/systemd/system") / "okou-wss-caddy.service").exists()
 assert shutil.which("caddy", path=ENV["PATH"]) is None
@@ -239,7 +248,7 @@ helper(success=False)
 assert snapshot(NAMESPACE) == before
 os.removexattr("/run", "system.posix_acl_default")
 
-# Parent trust is checked both by the native pre-start helper and Ansible.
+# Parent trust is checked both by the native preparation helper and Ansible.
 Path("/run").chmod(0o777)
 before = snapshot(NAMESPACE)
 helper(success=False)
@@ -301,30 +310,35 @@ helper(success=False)
 assert snapshot(NAMESPACE) == before
 NAMESPACE.unlink()
 
-# Configured ExecStartPre restores volatile state before the Runner command.
-pre_start = next(
-    line.removeprefix("ExecStartPre=")
-    for line in POLICY.read_text().splitlines()
-    if line.startswith("ExecStartPre=")
+# The independently configured oneshot restores a fresh volatile namespace.
+preparation = next(
+    line.removeprefix("ExecStart=")
+    for line in PREPARATION.read_text().splitlines()
+    if line.startswith("ExecStart=")
 )
 fresh_runtime = WORK / "boot-run"
 fresh_runtime.mkdir()
 mount(fresh_runtime, "/run")
 assert not NAMESPACE.exists()
-require_success(command(shlex.split(pre_start)))
+require_success(command(shlex.split(preparation)))
 require_namespace()
 
-# systemd itself must resolve the prefix policy for release and preview names.
+# Resolve actual prefix dependencies and production delegation properties.
+# Real manager/kernel startup is exercised by provision-runner-wss-systemd-test.
 for name in ("vm0-runner-v999.0.0.service", "vm0-runner-pr-38073-1.service"):
     unit = Path("/etc/systemd/system") / name
-    unit.write_text("[Service]\nType=simple\nExecStart=/usr/bin/true\n")
+    unit.write_text(
+        "[Service]\nType=simple\nExecStart=/usr/bin/true\n"
+        "Delegate=cpu\nDelegateSubgroup=control\n"
+    )
     result = command(
         ["systemd-analyze", "verify", "--man=no", "--generators=no", str(unit)],
         env={**ENV, "SYSTEMD_LOG_LEVEL": "debug"},
     )
     require_success(result)
     parsed = result.stdout + result.stderr
-    assert "ExecStartPre:" in parsed and str(HELPER) in parsed, parsed
+    assert f"Requires: {PREPARATION.name}" in parsed, parsed
+    assert f"After: {PREPARATION.name}" in parsed, parsed
 
 NAMESPACE.rmdir()
 processes = [
@@ -341,5 +355,5 @@ assert all(process.returncode == 0 for process in processes), outputs
 assert sorted(output[0] for output in outputs) == ["", "created\n"]
 require_namespace()
 print(
-    "native Runner WSS provisioning, endpoint preservation and pre-start restoration: ok"
+    "native Runner WSS provisioning, endpoint preservation and oneshot restoration: ok"
 )

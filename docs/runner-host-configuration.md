@@ -17,13 +17,25 @@ expensive package/monitoring setup. Shared Runner Image and behavior consumers
 therefore do not depend on an operator running a Caddy playbook first.
 
 Provisioning installs the root-owned helper
-`/usr/local/libexec/okou-runner-wss-host-prepare.py` and the prefix drop-in
-`/etc/systemd/system/vm0-runner-.service.d/10-wss-host.conf`. Systemd applies its
-`ExecStartPre` to every `vm0-runner-<suffix>.service`, including release, preview
-and behavior units. It restores a missing volatile namespace **before each
-Runner process**, including boot, and a preparation failure prevents that
-process from starting. Updating this policy only reloads systemd configuration;
-it does not restart or drain already-running Runners.
+`/usr/local/libexec/okou-runner-wss-host-prepare.py`, the independent
+`okou-runner-wss-host-prepare.service` oneshot, and the prefix drop-in
+`/etc/systemd/system/vm0-runner-.service.d/10-wss-host.conf`. The drop-in gives
+every `vm0-runner-<suffix>.service`, including release, preview and behavior
+units, `Requires` and `After` dependencies on that oneshot. Preparation succeeds
+before each Runner starts, including after boot; failure prevents the dependent
+Runner from starting. Successful oneshots return to inactive, so later starts
+also check missing or conflicting volatile state. The shared helper unit has no
+start-rate limit: a burst of Runner starts must not be rejected by a second,
+host-global limit. Runner services retain their own start-rate limits.
+
+Preparation runs outside the Runner's delegated CPU cgroup. Do not add
+`ExecStartPre` to Runner units: systemd puts control commands in its reserved
+`.control` subgroup, which existing Runner binaries reject alongside the
+reviewed `control` and `guests` layout. Changing only a new binary would not
+protect retained releases or rollback targets from a shared hook. Provisioning
+replaces the previous hook policy with ordering dependencies and reloads systemd
+configuration without restarting or draining any already-running Runner. The
+oneshot is pulled in by Runner dependencies, not separately enabled at boot.
 
 The helper requires root, accepts no path/group overrides, validates root-owned
 non-group/world-writable `/` and `/run`, and uses no-follow directory descriptors.
@@ -39,8 +51,9 @@ rather than widen permissions or automatically remove the namespace.
 
 A plain tmpfiles `d` rule is deliberately not used: it converges existing
 metadata at boot, and create-only mode/owner/group modifiers are unavailable in
-the Ubuntu 22.04/systemd 249 baseline. The guarded pre-start drop-in preserves
-the same fail-closed contract without a separate readiness service.
+the Ubuntu 22.04/systemd 249 baseline. The independent guarded oneshot preserves
+the same fail-closed contract using standard service ordering, without changing
+Runner binaries or their cgroup validation.
 
 Deliver these prerequisites before the listener-capable Runner in #37027, then
 optional Caddy ingress in #37028, and coordinate physical-host reboot and real

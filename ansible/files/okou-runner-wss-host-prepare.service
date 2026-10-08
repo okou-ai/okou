@@ -1,0 +1,11 @@
+[Unit]
+Description=Prepare the protected Runner WSS socket namespace
+# Each Runner start revalidates the namespace. A shared start-rate limit must
+# not reject a legitimate burst of independently rate-limited Runner services.
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/libexec/okou-runner-wss-host-prepare.py
+# Stay inactive after success so later starts also validate volatile state.
+RemainAfterExit=no

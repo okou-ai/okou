@@ -68,6 +68,10 @@
             path: /etc/systemd/system/vm0-runner-.service.d/10-wss-host.conf,
             directory: false,
           }
+        - {
+            path: /etc/systemd/system/okou-runner-wss-host-prepare.service,
+            directory: false,
+          }
       register: runner_wss_policy_paths
 
     - name: Refuse unsafe Runner WSS installation paths
@@ -118,14 +122,18 @@
       register: runner_wss_host_prepare
       changed_when: runner_wss_host_prepare.stdout == 'created'
 
-    - name: Prepare Runner WSS namespace before every systemd Runner start
+    - name: Install independent Runner WSS host preparation unit
       ansible.builtin.copy:
+        src: ../files/okou-runner-wss-host-prepare.service
+        dest: /etc/systemd/system/okou-runner-wss-host-prepare.service
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Order Runner starts after independent WSS host preparation
+      ansible.builtin.copy:
+        src: ../files/okou-runner-wss-host.conf
         dest: /etc/systemd/system/vm0-runner-.service.d/10-wss-host.conf
-        content: |
-          # Managed by ansible/playbooks/provision-runner.yml - do not edit.
-          # Applies to release, preview and behavior units; no service restart.
-          [Service]
-          ExecStartPre=/usr/bin/python3 /usr/local/libexec/okou-runner-wss-host-prepare.py
         owner: root
         group: root
         mode: "0644"
