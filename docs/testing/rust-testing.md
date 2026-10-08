@@ -138,8 +138,10 @@ cargo llvm-cov nextest --all-targets --all-features --test-threads 8 \
 Nextest schedules tests across executables and runs each case in a separate
 process. Guest mock fixtures recognize the verified Cargo or nextest parent
 session so the mock binaries are built once per invocation, not once per case.
-The job validates the LCOV source-file count and normalized source-set digest
-before uploading to Codecov; failed coverage still fails the Crates gate.
+The job requires a nonempty LCOV report with at least one source file, then
+logs the unique normalized source-file count and source-set SHA-256 before
+uploading to Codecov. It does not compare the digest against an expected value;
+failed coverage still fails the Crates gate.
 
 ## Test Organization
 
