@@ -656,8 +656,21 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
 
   it("rebuilds queued Telegram launch material from context", async () => {
     const runnerGroup = configureCanonicalTelegramRunner();
-    const fixture = await createTelegramPostFixture({ linkOfficial: true });
-    const actor = actorForFixture(fixture);
+    configureOfficialBotEnv();
+    const actor = authOrgApi.user();
+    const { defaultAgentId } = await authOrgApi.readOnboardingStatus(actor);
+    if (!actor.orgId || !defaultAgentId) {
+      throw new Error("Expected onboarding to create the Telegram Agent");
+    }
+    await authOrgApi.completeOnboarding(actor);
+    const fixture: TelegramPostFixture = {
+      orgId: actor.orgId,
+      userId: actor.userId,
+      composeId: defaultAgentId,
+      telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
+      webhookSecret: OFFICIAL_WEBHOOK_SECRET,
+      telegramUserId: await linkOfficialTelegramUser(actor),
+    };
 
     await connectNativeFableSubscription(fixture);
     telegramApiMocks();

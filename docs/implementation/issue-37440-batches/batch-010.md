@@ -50,10 +50,17 @@ test or timing/retry/assertion weakening is introduced.
 
 ## Full-chain evidence and collateral cleanup
 
-- `createTelegramPostFixture` uses onboarding and a signed production Telegram
-  link. Its personal model setup uses an invoice webhook and normal provider
-  requests. `requestListLogs` calls the user Run-log API; `runForPrompt` still
-  uses a private Run list elsewhere and is deliberately not used or credited.
+- T1 calls `readOnboardingStatus` and `completeOnboarding` directly with normal
+  Clerk authentication; the production status endpoint lazily creates the
+  default Agent. It then uses the signed production Telegram link. Its personal
+  model setup uses an invoice webhook and normal provider requests.
+  `requestListLogs` calls the user Run-log API; `runForPrompt` still uses a
+  private Run list elsewhere and is deliberately not used or credited.
+- Independent review found that the initial T1 factory choice reached
+  `bootstrapLimitedFreeOnboarding` → `okouAgentReadHeaders`, which signs a token
+  for an invented Run. The selected case now avoids that shortcut entirely.
+  The shared factory and its other consumers remain unprocessed; no blanket
+  compliance claim is made for neighboring Telegram cases.
 - Telegram's current ingress writer in `telegram-post.service.ts` constructs
   `thinkingMessageId: null`. Only the selected private writer supplied701.
   Real callback/runtime code remains unchanged.
@@ -89,7 +96,9 @@ test or timing/retry/assertion weakening is introduced.
 ## Verification and remaining scope
 
 Formatting/diff, scoped lint, types and unused-code results are recorded in the
-PR and phase ledger.
+PR and phase ledger. The initial [Changes Requested receipt](https://github.com/okou-ai/okou/pull/38207#issuecomment-6066608899)
+for `d37f52b53575c54fcea59fe12014e8590ea431f7` is preserved; later approval
+must inspect the repaired complete chain on its new source HEAD.
 No local Vitest/dev server. Runtime verification belongs to PR CI, genuine
 independent current-HEAD review and the protected queue. Counts change only at
 actual GitHub merge; record every failure and repair in the linked ledger.
