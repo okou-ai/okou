@@ -3,7 +3,7 @@
 // It renders inside the slash menu's popover shell from slash-workflow.tsx.
 import type { Ref } from "react";
 import { ChevronRight, Globe, Image, Presentation, Route } from "lucide-react";
-import { cn, Popover, PopoverContent } from "@okouai/ui";
+import { cn, Popover, PopoverContent, useMediaQuery } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { SlashWorkflowName } from "./slash-workflow.tsx";
 import { i18n } from "../../i18n/index.ts";
@@ -392,6 +392,9 @@ export function SlashTemplatePanel({
   categoryOptionId,
 }: SlashTemplatePanelProps) {
   const { t } = useTranslation();
+  // The 260px index and 320px flyout need enough room on either side of the
+  // caret. Narrow screens open the responsive picker from the category row.
+  const showTemplatePreview = useMediaQuery("(min-width: 64rem)");
   // Keep the mark on the previewed row while the pointer crosses into its
   // flyout. Keyboard navigation or leaving both cards restores the keyboard
   // selection and its preview together.
@@ -493,7 +496,7 @@ export function SlashTemplatePanel({
           </button>
         </div>
       </div>
-      {detailCategory !== null && (
+      {showTemplatePreview && detailCategory !== null && (
         <SlashTemplateDetailFlyout
           menuRef={menuRef}
           onClose={onClose}
