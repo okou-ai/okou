@@ -1,6 +1,6 @@
 {
-  "id": "d34fa3c7-1c0d-4544-8add-cf81af920c9a",
-  "prevId": "10a98006-b853-41e5-b8e9-e0f7a9ca9405",
+  "id": "8428e401-f19d-4183-8e65-9726380b62cc",
+  "prevId": "d34fa3c7-1c0d-4544-8add-cf81af920c9a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -10120,53 +10120,47 @@
           "primaryKey": false,
           "notNull": true
         },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
         "label": {
           "name": "label",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "description": {
           "name": "description",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "category": {
           "name": "category",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "icon": {
           "name": "icon",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "tags": {
           "name": "tags",
           "type": "text[]",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "generation": {
           "name": "generation",
           "type": "text[]",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "auth_methods": {
           "name": "auth_methods",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "mcp": {
           "name": "mcp",
@@ -10178,16 +10172,22 @@
           "name": "skill",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "firewall": {
           "name": "firewall",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "permission_summary": {
           "name": "permission_summary",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false

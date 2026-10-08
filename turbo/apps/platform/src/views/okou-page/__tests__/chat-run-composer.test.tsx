@@ -25,20 +25,11 @@ import {
 
 const ACTIVE_RUN_ID = "a0000000-0000-4000-a000-000000000501";
 
-function composerFileInput(): HTMLInputElement {
-  const input = document.querySelector<HTMLInputElement>('input[type="file"]');
-  if (!input) {
-    throw new Error("Composer file input was not mounted");
-  }
-  return input;
-}
-
 async function uploadFile(
   user: ReturnType<typeof userEvent.setup>,
   file: File,
 ): Promise<void> {
-  await user.click(await findButton("Attach"));
-  await user.upload(composerFileInput(), file);
+  await user.upload(await screen.findByLabelText("Attach"), file);
   await expect(findButton(`Remove ${file.name}`)).resolves.toBeVisible();
 }
 

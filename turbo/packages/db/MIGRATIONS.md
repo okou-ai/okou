@@ -120,7 +120,7 @@ are enforced by the integration ingress tests.
   permissions, allow/deny policy ties, unknown policies, categories and MCP;
   outgoing payload-only writes remain valid in the expansion and backfill
   retries are idempotent. It also protects preparation migration
-  `1345_connector_catalog_payload_independent_api`: incomplete retained
+  `1346_connector_catalog_payload_independent_api`: incomplete retained
   projections fail with transactional DDL rollback, populated rows are unchanged,
   outgoing dual writers and column-only writers coexist, MCP remains optional,
   and the runtime ORM works after a disposable physical DROP. Retain it through

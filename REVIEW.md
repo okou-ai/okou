@@ -42,7 +42,7 @@ gh api 'repos/okou-ai/okou/contents/docs/docs.md?ref=<PRACTICE_SHA>' --jq '.cont
 | Database schema, raw results, SQL rewrites                                    | [Database development](.claude/skills/database-development/SKILL.md)                                               |
 | New user-facing behavior and containment                                      | [Feature switches](.claude/skills/feature-switch/SKILL.md)                                                         |
 | External identifiers and reference resolution                                 | [Externally managed references](docs/externally-managed-references.md)                                             |
-| App styling                                                                   | [Styles](docs/styles.md)                                                                                           |
+| App/shared UI styling or interactions                                         | [Styles](docs/styles.md), [UI interaction contracts](CLAUDE.md#ui-interaction-contracts)                           |
 | Chat-card recognition, registration, or rendering                             | [Chat cards](docs/chat-cards.md)                                                                                   |
 | Runner build, release, deploy, architecture selection, or rollback            | [Runner architectures](docs/runner-multi-architecture.md)                                                          |
 | React performance claims or subscription equality                             | [React measurements](docs/react-commit.md)                                                                         |
@@ -78,6 +78,28 @@ Do not load unrelated references merely because they share a parent directory.
   callback-ref cleanup, await/signal ownership, and real page initialization.
 - Report concrete practice violations with the rule and source location. Do not
   infer a bug from function length, a search match, or a generic preference.
+
+### UI Interaction Contracts
+
+For changed UI interactions, apply the
+[implementation contracts](CLAUDE.md#ui-interaction-contracts) and check:
+
+- The final DOM retains appropriate HTML semantics. Composite controls use
+  shared components and Base UI's supported keyboard, selection and focus
+  behavior; editor input follows its editor APIs.
+- Trace keyboard and pointer activation and dismissal through wrappers and
+  callers for duplicate actions, swallowed callbacks, lost render props/refs,
+  broad keyboard interception and missing focus restoration.
+- Event cancellation and focus overrides have a concrete need and correct
+  ownership. Preserve legitimate cancellation; verify the destination of a
+  focus handoff and default focus return for ordinary dismissal.
+- Evidence covers the applicable behavior: keyboard activation/navigation,
+  Escape and focus return, IME confirmation, modifier-key links and
+  disabled/loading states. Apply the existing coverage requirements to the
+  affected behavior, reusing adequate tests and adding focused regressions
+  where needed. Record test or preview evidence and material gaps; synthetic
+  IME events do not establish real input-method behavior, and green CI alone
+  does not establish browser interaction correctness.
 
 ### Persisted Data and Compatibility
 

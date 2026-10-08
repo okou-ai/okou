@@ -1874,8 +1874,15 @@
     {
       "idx": 1345,
       "version": "7",
-      "when": 1791450066135,
-      "tag": "1345_connector_catalog_payload_independent_api",
+      "when": 1791439917399,
+      "tag": "1345_outstanding_the_hood",
+      "breakpoints": true
+    },
+    {
+      "idx": 1346,
+      "version": "7",
+      "when": 1791458653630,
+      "tag": "1346_connector_catalog_payload_independent_api",
       "breakpoints": true
     }
   ]
