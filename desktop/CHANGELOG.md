@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.50.1](https://github.com/okou-ai/okou/compare/desktop-v0.50.0...desktop-v0.50.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **desktop:** align compact native titlebar and separator ([#37962](https://github.com/okou-ai/okou/issues/37962)) ([071c4fa](https://github.com/okou-ai/okou/commit/071c4faf190ae917f5903be1d4c97fc307d39f12))
+
 ## [0.50.0](https://github.com/okou-ai/okou/compare/desktop-v0.49.75...desktop-v0.50.0) (2026-10-08)
 
 

@@ -102,10 +102,13 @@ def model_usage_long_context_min_total_input_tokens(
 ) -> int | None:
     """Return the API-captured long-context threshold of the run's route.
 
-    A positive integer is the threshold and ``0`` is the API's explicit
-    single-tier marker (the route has no long-context pricing). ``None`` means
-    the registry entry carries no usable value (an API that predates catalog
-    thresholds); only then may callers fall back to the generated map.
+    A positive integer is the total-input threshold (input + cache read +
+    cache creation) and ``0`` is the API's explicit single-tier marker.
+    ``None`` means the registry entry is absent or carries no usable value.
+    The usage reporter selects the base tier for ``0`` or ``None``; it does
+    not reconstruct a threshold. This behavior is not supported pre-catalog
+    pricing compatibility; see ``docs/deployment-compatibility.md`` for
+    deployment order and rollback limits.
     """
     value = meta.get(metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS)
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:

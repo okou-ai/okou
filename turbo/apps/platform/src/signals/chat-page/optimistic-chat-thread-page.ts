@@ -36,6 +36,7 @@ import {
   resolveDefaultModelSelection,
 } from "../okou-page/model-default-selection.ts";
 import { selectedModelAvailable$ } from "../okou-page/model-first-personal-oauth.ts";
+import { requestedNewThreadReasoningEffort } from "../okou-page/model-reasoning-effort.ts";
 import {
   textToMessageDocument,
   type EditorDocumentSnapshot,
@@ -254,7 +255,7 @@ const resolveCurrentNewThreadModelSelection$ = command(
       resolved &&
       (await set(selectedModelAvailable$, resolved.selectedModel, signal))
     ) {
-      return resolved;
+      return { modelSelection: resolved, models, catalog };
     }
     toast.error(
       i18n.t(($) => {
@@ -362,16 +363,21 @@ async function createChatThread(
     readonly clientThreadId: string;
     readonly eventId: string;
     readonly modelSelection: ModelProviderSelection;
+    readonly models: AvailableRunModelsResponse;
+    readonly catalog: ModelCatalog;
     readonly connectorSelections?: readonly ConnectorAccountSelection[];
     readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
   },
   signal: AbortSignal,
 ): Promise<void> {
   const { selectedModel } = args.modelSelection;
-  const selectedEffort =
-    selectedModel === null
-      ? undefined
-      : args.modelSelection.modelSettings?.[selectedModel]?.effort;
+  const selectedEffort = requestedNewThreadReasoningEffort(
+    args.modelSelection,
+    args.models.models.find((entry) => {
+      return entry.model === selectedModel;
+    }),
+    args.catalog,
+  );
   const client = args.createClient(chatThreadsContract);
   await accept(
     client.create({
@@ -455,6 +461,8 @@ const startNewChatThreadCreate$ = command(
           clientThreadId: threadId,
           eventId,
           modelSelection,
+          models,
+          catalog,
         },
         signal,
       );
@@ -510,13 +518,11 @@ const sendNewThreadMessage$ = command(
     const { agentId, prompt } = request;
     const { computerUseHostId, cloudBrowserEnabled } = request;
     const draft = request.draft ?? get(talkDraft$);
-    const resolvedModelSelection = await set(
-      resolveCurrentNewThreadModelSelection$,
-      signal,
-    );
-    if (!resolvedModelSelection) {
+    const resolved = await set(resolveCurrentNewThreadModelSelection$, signal);
+    if (!resolved) {
       return null;
     }
+    const resolvedModelSelection = resolved.modelSelection;
     const prepared = await set(
       prepareUserMessageFromDraft$,
       draft,
@@ -579,6 +585,8 @@ const sendNewThreadMessage$ = command(
         clientThreadId: threadId,
         eventId: chatThreadEventId,
         modelSelection: resolvedModelSelection,
+        models: resolved.models,
+        catalog: resolved.catalog,
         connectorSelections: request.connectorSelections,
         initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
       },

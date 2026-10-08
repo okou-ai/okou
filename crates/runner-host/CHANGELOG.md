@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.12](https://github.com/okou-ai/okou/compare/runner-host-v0.2.11...runner-host-v0.2.12) (2026-10-08)
+
+
+### Performance Improvements
+
+* **runner:** keep routine cache scans off the capacity lock ([#37952](https://github.com/okou-ai/okou/issues/37952)) ([f53d1e8](https://github.com/okou-ai/okou/commit/f53d1e8ea334ecc4414489a8d9471673557090a1))
+
 ## [0.2.11](https://github.com/okou-ai/okou/compare/runner-host-v0.2.10...runner-host-v0.2.11) (2026-10-07)
 
 ## [0.2.10](https://github.com/okou-ai/okou/compare/runner-host-v0.2.9...runner-host-v0.2.10) (2026-10-07)

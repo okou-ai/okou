@@ -1997,10 +1997,6 @@
       "newThread": "Novo chat",
       "reload": "Recarregar tarefas"
     },
-    "lastReadMarker": {
-      "previouslyRead": "Você leu até aqui da última vez",
-      "unread": "Mensagens não lidas"
-    },
     "mail": {
       "bcc": "cco",
       "cc": "cc",

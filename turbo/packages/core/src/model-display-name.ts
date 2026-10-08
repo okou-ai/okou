@@ -1,5 +1,6 @@
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 
+import { AUTO_RUN_MODEL } from "./auto-run-model";
 import { IMAGE_MODEL_CONFIGS, resolveImageModel } from "./image-model-catalog";
 
 /**
@@ -81,12 +82,15 @@ export function getModelDisplayName(model: string): string {
 }
 
 /**
- * Get the model label for one run, including its user-facing service tier.
+ * Get an integration footer's model label, omitting Auto and including the tier.
  */
 export function getRunModelDisplayName(
   model: string,
   codexServiceTier: CodexServiceTier | null | undefined,
-): string {
+): string | undefined {
+  if (model === AUTO_RUN_MODEL) {
+    return undefined;
+  }
   const modelName = getModelDisplayName(model);
   return codexServiceTier === "fast" ? `${modelName} Fast` : modelName;
 }

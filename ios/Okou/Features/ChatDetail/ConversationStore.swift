@@ -21,6 +21,11 @@ final class ConversationStore {
   var draft = ""
   private(set) var history: ChatHistory?
   private(set) var pending: [PendingMessage] = []
+  private(set) var messages: [ChatMessage] = []
+  private(set) var visibleMessages: [ChatMessage] = []
+  private(set) var hasEarlierMessages = false
+  private(set) var isLoadingEarlier = false
+  private(set) var readingPosition: ConversationReadingPosition?
   private(set) var isLoading = false
   private(set) var isSending = false
   private(set) var isStopping = false
@@ -40,6 +45,8 @@ final class ConversationStore {
   private var refreshTask: Task<Void, Never>?
   private var sendTask: Task<Void, Never>?
   private var stopTask: Task<Void, Never>?
+  private var expansionTask: Task<Void, Never>?
+  private var renderWindow = ConversationRenderWindow()
   private var closed = false
 
   init(
@@ -63,13 +70,8 @@ final class ConversationStore {
     self.didSettle = didSettle
   }
 
-  var messages: [ChatMessage] {
-    let persisted = history?.persistedEventIDs ?? []
-    return (history?.messages ?? []) + pending.filter { !persisted.contains($0.id) }.map(\.message)
-  }
-
   var canRelease: Bool {
-    draft.isEmpty && pending.isEmpty && !isLoading && !isSending && !isStopping
+    draft.isEmpty && pending.isEmpty && !isLoading && !isSending && !isStopping && !isLoadingEarlier
       && history?.executionState.isActive != true
   }
 
@@ -91,6 +93,7 @@ final class ConversationStore {
         await messageMarkdown.prepareLatest(cached.messages)
         guard !closed, !Task.isCancelled else { return }
         history = cached
+        rebuildMessages()
       }
       repeat {
         refreshAgain = false
@@ -101,6 +104,7 @@ final class ConversationStore {
           guard !closed else { return }
           if history != result { history = result }
           pending.removeAll { result.persistedEventIDs.contains($0.id) }
+          rebuildMessages()
           if !pending.contains(where: \.needsRetry) { error = nil }
           if isVisible(), thread.indicator == .unread {
             try await commands.markRead(threadID: thread.id)
@@ -124,6 +128,7 @@ final class ConversationStore {
     guard !text.isEmpty, !isSending, !closed, !needsUpgrade, !Task.isCancelled else { return }
     let message = PendingMessage(id: UUID().uuidString.lowercased(), text: text, createdAt: Date())
     pending.append(message)
+    rebuildMessages()
     draft = ""
     await submit(message)
   }
@@ -195,6 +200,80 @@ final class ConversationStore {
     refreshTask?.cancel()
     sendTask?.cancel()
     stopTask?.cancel()
+    expansionTask?.cancel()
+  }
+
+  func rememberReadingPosition(_ position: ConversationReadingPosition?) {
+    guard !closed else { return }
+    // A disappearing/recycled row may still report an identity that replay just revoked.
+    if let position, position.messageID != readingPosition?.messageID,
+      !messages.contains(where: { $0.id == position.messageID })
+    {
+      return
+    }
+    if position == nil { renderWindow.resumeFollowing() } else { renderWindow.pauseFollowing() }
+    if readingPosition != position { readingPosition = position }
+  }
+
+  func loadEarlierMessages() async {
+    guard !closed, !needsUpgrade, !Task.isCancelled, hasEarlierMessages, expansionTask == nil else {
+      return
+    }
+    isLoadingEarlier = true
+    let task = Task { [weak self] in
+      guard let self else { return }
+      defer {
+        expansionTask = nil
+        isLoadingEarlier = false
+        didSettle()
+      }
+      // Warm only the landing rows immediately above the current boundary, not the entire page.
+      await messageMarkdown.prepareLatest(
+        Array(messages.prefix(renderWindow.range.lowerBound).suffix(4)))
+      guard !closed, !needsUpgrade, !Task.isCancelled else { return }
+      // Refresh/send may have changed the projection while preparation was suspended.
+      renderWindow.expand()
+      publishWindow()
+    }
+    expansionTask = task
+    await task.value
+  }
+
+  func resetRenderWindowToLatest() {
+    guard !closed else { return }
+    expansionTask?.cancel()
+    readingPosition = nil
+    renderWindow.resetToLatest()
+    publishWindow()
+  }
+
+  private func rebuildMessages() {
+    let persisted = history?.persistedEventIDs ?? []
+    let next =
+      (history?.messages ?? []) + pending.filter { !persisted.contains($0.id) }.map(\.message)
+    guard messages != next else { return }
+    if let position = readingPosition, !next.contains(where: { $0.id == position.messageID }) {
+      let surviving = Set(next.map(\.id))
+      if let index = messages.firstIndex(where: { $0.id == position.messageID }),
+        let replacement = messages.dropFirst(index + 1).first(where: { surviving.contains($0.id) })
+          ?? messages.prefix(index).last(where: { surviving.contains($0.id) })
+      {
+        readingPosition = ConversationReadingPosition(
+          messageID: replacement.id, offset: position.offset)
+      } else {
+        readingPosition = nil
+      }
+    }
+    messages = next
+    renderWindow.update(next)
+    if let readingPosition { renderWindow.include(readingPosition.messageID) }
+    publishWindow()
+  }
+
+  private func publishWindow() {
+    let next = Array(messages[renderWindow.range])
+    if visibleMessages != next { visibleMessages = next }
+    hasEarlierMessages = renderWindow.hasEarlierMessages
   }
 
   private func show(_ failure: Error) {

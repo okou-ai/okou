@@ -317,8 +317,8 @@ Paths below are relative to `turbo/apps/api/src/` unless stated otherwise.
 | `signals/services/host.service.ts`: prepare/allocation           | `createHostedSiteDeployment` locks the run before selecting/locking or creating a site. It performs the unscoped-site conflict check, canonical creation, version allocation, final admission and deployment insert in one transaction. Public and private deployments share the ownership check. |
 | `signals/services/host.service.ts`: completion/promotion         | Retains the existing site row lock and updates only deployment status and active-version fields. It does not change ownership, requested slug or originating run. Existing completion authorization and chat checks remain in place.                                                              |
 | `signals/routes/test-cron-cleanup-sandboxes-state.ts`            | Current setup explicitly canonicalizes site ownership and admits its deployment in one transaction. Its teardown deletes only the owned site; ordinary foreign keys cascade deployments.                                                                                                          |
-| `test-fixtures/hosted-sites.ts`                                  | The historical VM0-brand fixture explicitly writes its requested slug and has no originating run/chat owner. It is already independent of the two triggers.                                                                                                                                       |
-| `signals/routes/test-runtime-state.ts`                           | The two hosted `*-as-previous-api` operations are removed with 1132. Historical writer controls remain in the private compatibility suite.                                                                                                                                                        |
+| Former `test-fixtures/hosted-sites.ts`                           | The preparation-era fixture explicitly wrote its requested slug with no originating run/chat owner. #37440 batch 002 removes this privately constructed historical state and its unsupported cases.                                                                                               |
+| `signals/routes/test-runtime-state.ts`                           | The two hosted `*-as-previous-api` operations were removed with 1132. #37440 batch 002 also removes the replacement private hosting compatibility harness; those controls are not a recommended test boundary.                                                                                    |
 | `turbo/packages/db/scripts/test-migration-consistency-schema.ts` | Checks the contracted trigger/function inventory and surviving ordinary constraints; the API owns current business behavior.                                                                                                                                                                      |
 | Numbered `014-public-artifact-registration` backfill             | Reads sites/deployments for artifact registration; it does not write their ownership. Preserve this historical migration.                                                                                                                                                                         |
 
@@ -352,21 +352,21 @@ transaction; do not catch a failed admission and commit the allocation.
 Run/chat cleanup preserves the denormalized site owner. Direct SQL that relied
 on either trigger is not a supported repair path after contraction.
 
-The private PostgreSQL suite uses shipped site/deployment constraints and
-retained or absent hosting triggers, without changing shared/public triggers.
-It exercises canonical/null semantics, immutable ownership, explicit repair,
-cross-chat rejection, actual allocation transactions, concurrent versions,
-public/private behavior, insertion failure and retry, and run/site row locks.
-API route coverage exercises site reuse, chat isolation, organization-site
-adoption rejection, completion permissions, public/private workflows and
-concurrent prepares. The previous-API control remains in its private retained
-schema; a trigger-dependent writer is unsupported after contraction.
+The preparation-era PostgreSQL suite selected retained or absent hosting
+triggers and fabricated run metadata, repairs, insertion failures and row-lock
+interleavings. [#37440 batch 002](implementation/issue-37440-batches/batch-002.md)
+removes that private harness and records the precise coverage lost; historical
+compatibility intent does not authorize private construction under the current
+testing rule. Retained route tests construct site reuse, chat isolation,
+organization-site adoption rejection, completion permissions, deletion,
+concurrent prepares and out-of-order completion through normal APIs and actual
+Runner claims. A trigger-dependent writer remains unsupported after contraction.
 
 Both hosting triggers/functions coexisted with prepared values during the
-preparation releases and are removed by 1132. Historical writer controls stay
-in private schemas; current-route legacy fixtures are retired. The exact
-remaining catalog is checked by migration consistency. API rollback does not
-restore database triggers.
+preparation releases and are removed by 1132. The later test cleanup removes
+historical writer controls without changing production ownership operations or
+this migration history. The exact remaining catalog is checked by migration
+consistency. API rollback does not restore database triggers.
 
 ## Pending usage-pack purchase preparation
 

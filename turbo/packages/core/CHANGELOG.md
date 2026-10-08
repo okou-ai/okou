@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.734.9](https://github.com/okou-ai/okou/compare/core-v8.734.8...core-v8.734.9) (2026-10-08)
+
+
+### Bug Fixes
+
+* **integrations:** hide auto model attribution in message footers ([#37959](https://github.com/okou-ai/okou/issues/37959)) ([46a2d1a](https://github.com/okou-ai/okou/commit/46a2d1a044c0d48829d2879c689539ccfea64a65))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.538.1
+
 ## [8.734.8](https://github.com/okou-ai/okou/compare/core-v8.734.7...core-v8.734.8) (2026-10-08)
 
 

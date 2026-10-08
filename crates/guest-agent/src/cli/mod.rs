@@ -1322,6 +1322,7 @@ async fn execute_cli_inner(
     // See: https://github.com/vm0-ai/vm0/issues/3645
     let mut reader = tokio::io::BufReader::new(stdout);
     let mut stdout_partial_line = Vec::new();
+    let mut stdout_discarding_record = false;
     let mut stdout_closed = false;
 
     // Capture the process group ID before wait() reaps the child, since
@@ -1530,11 +1531,21 @@ async fn execute_cli_inner(
                     None => {}
                 }
             }
-            line_result = line_reader::read_bounded_utf8_line(
-                &mut reader,
-                &mut stdout_partial_line,
-                ORDINARY_CLI_STDOUT_MAX_LINE_BYTES,
-            ), if !stdout_closed => {
+            line_result = async {
+                if stdout_discarding_record {
+                    // Keep draining inside the control race. The flag survives
+                    // cancellation so a record tail cannot become a new line.
+                    line_reader::skip_to_line_end(&mut reader)
+                        .await
+                        .map_err(line_reader::BoundedLineError::Io)?;
+                    stdout_discarding_record = false;
+                }
+                line_reader::read_bounded_utf8_line(
+                    &mut reader,
+                    &mut stdout_partial_line,
+                    ORDINARY_CLI_STDOUT_MAX_LINE_BYTES,
+                ).await
+            }, if !stdout_closed => {
                 match line_result {
                     Ok(Some(line)) => {
                         let stripped = line.trim();
@@ -1888,30 +1899,8 @@ async fn execute_cli_inner(
                                     ORDINARY_CLI_STDOUT_MAX_LINE_BYTES,
                                 );
                                 stdout_partial_line.clear();
-                                match line_reader::skip_to_line_end(&mut reader).await {
-                                    // The record was unterminated, so the next
-                                    // read observes EOF and closes stdout
-                                    // through the ordinary path.
-                                    Ok(_) => continue,
-                                    Err(error) => {
-                                        stdout_closed = true;
-                                        active_input_controller.close_terminal();
-                                        let error = AgentError::Io(error);
-                                        if cli_status.is_some() {
-                                            break Err(error);
-                                        }
-                                        let error_log = error.to_string();
-                                        termination_runtime.begin_control_failure(
-                                            TerminationReason::StdoutIngestion,
-                                            error,
-                                            ControlTerminationLog::StdoutIngestionFailed {
-                                                error: error_log,
-                                            },
-                                            termination_deadline.as_mut(),
-                                        );
-                                        continue;
-                                    }
-                                }
+                                stdout_discarding_record = true;
+                                continue;
                             }
                         }
                         stdout_closed = true;

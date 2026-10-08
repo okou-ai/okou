@@ -64,6 +64,21 @@ That means:
    too. Use the production endpoint appropriate to that actor and mock only its
    external dependencies. Thin API helpers must preserve that boundary.
 
+An external storage mock does not authorize inventing application-owned records.
+Returning S3 unavailability for an upload created through the normal API is a
+provider failure; injecting an artifact alias with invented target identities
+to force a collision is private application-state construction. Observe share
+publication and revocation through the resulting access and catalog responses.
+External byte transfers and emitted documents consumed by another production
+component can still be meaningful boundary effects.
+
+The observer must also be a real surviving caller. After a verified account
+deletion, mocking the deleted session back into existence does not establish a
+public observation path. Unrelated owners can still verify their own files; that
+proves isolation, not the erased owner's physical row deletion. Likewise, an
+overlapping request may use a caller-supplied ID or an already returned ID, not
+one learned only by inspecting an internal write.
+
 For API tests, the database is not the external interface. DB schema is internal
 implementation.
 
@@ -93,6 +108,18 @@ name is not evidence that its setup is public.
 
 ## Cases Without Public Construction
 
+Evaluate the scenario before choosing a replacement helper:
+
+1. Identify the real caller, trigger, and useful observable guarantee. Decide
+   whether the case protects that behavior or manufactures an unlikely internal
+   race, intermediate state, or implementation detail.
+2. Delete unjustified coverage and its unused support. For valuable behavior,
+   construct the complete lifecycle through existing normal user APIs or genuine
+   provider webhooks and authenticated Runner requests.
+3. If those interfaces cannot construct the case, reconsider its value and
+   remove the unsupported coverage. A valuable label or an old regression does
+   not authorize private setup, execution, or observation.
+
 Delete cases whose decisive state or behavior cannot be constructed or driven
 through the user-accessible production boundary. Do not replace a retired test
 endpoint with a DB helper or private worker driver, relocate the case to another
@@ -121,6 +148,12 @@ Record exact names, dependencies, decisions, lost and retained coverage, and
 support code removed. If the real caller's boundary is ambiguous, identify the
 specific production entry point and authorization chain for review; do not
 grant a blanket fixture exception.
+
+The [#37440 helper/API ledger](../implementation/issue-37440-batches/README.md)
+records this decision separately for each inventoried definition or operation.
+Inventory-item progress and test-declaration/parameter-branch changes are
+different measures; neither endpoint removal nor helper renaming establishes
+compliance by itself.
 
 ## Infrastructure and External Providers
 

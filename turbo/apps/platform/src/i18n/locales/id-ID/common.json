@@ -1954,10 +1954,6 @@
       "newThread": "Chat baru",
       "reload": "Muat ulang tugas"
     },
-    "lastReadMarker": {
-      "previouslyRead": "Terakhir Anda membaca sampai di sini",
-      "unread": "Pesan belum dibaca"
-    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",

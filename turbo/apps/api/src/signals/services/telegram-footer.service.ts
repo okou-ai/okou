@@ -26,10 +26,11 @@ async function resolveAgentReplyModelLabel(args: {
 }): Promise<string | undefined> {
   const runModel = await resolveRunModelSelection(args.db, args.runId);
   const model = runModel?.selectedModel;
-
-  return model
-    ? escapeHtml(getRunModelDisplayName(model, runModel?.codexServiceTier))
+  const modelLabel = model
+    ? getRunModelDisplayName(model, runModel?.codexServiceTier)
     : undefined;
+
+  return modelLabel ? escapeHtml(modelLabel) : undefined;
 }
 
 export async function resolveTelegramAgentReplyFooterText(args: {
@@ -91,15 +92,14 @@ export function telegramMessageSendFooterText(args: {
     if (agentLabel) {
       parts.push(`Sent via ${escapeHtml(agentLabel)}`);
     }
-    if (runModel?.selectedModel) {
-      parts.push(
-        escapeHtml(
-          getRunModelDisplayName(
-            runModel.selectedModel,
-            runModel.codexServiceTier,
-          ),
-        ),
-      );
+    const modelLabel = runModel?.selectedModel
+      ? getRunModelDisplayName(
+          runModel.selectedModel,
+          runModel.codexServiceTier,
+        )
+      : undefined;
+    if (modelLabel) {
+      parts.push(escapeHtml(modelLabel));
     }
 
     return parts.length > 0 ? parts.join(" · ") : undefined;

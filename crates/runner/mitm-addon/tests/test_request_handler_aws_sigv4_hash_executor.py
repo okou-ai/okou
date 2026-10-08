@@ -248,6 +248,7 @@ async def test_done_joins_hashes_and_closes_hashing(
     real_flow,
     headers,
     mitm_ctx,
+    fresh_usage_executor,
     catalog_shutdown_fails: bool,
 ) -> None:
     hasher = _ControlledHashes(asyncio.get_running_loop())

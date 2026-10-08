@@ -324,6 +324,7 @@
     "src/signals/services/browser-user-actions.service.ts",
     "src/signals/services/claude-code-usage.service.ts",
     "src/signals/services/codex-reset-credit-expiry.service.ts",
+    "src/signals/services/computer-use-host-auth.service.ts",
     "src/signals/services/computer-use.service.ts",
     "src/signals/services/connector-oauth-state.service.ts",
     "src/signals/services/custom-connector-automatic-oauth.service.ts",

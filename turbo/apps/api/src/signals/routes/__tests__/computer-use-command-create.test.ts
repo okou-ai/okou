@@ -1,13 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import {
-  COMPUTER_USE_FILESYSTEM_PLUGIN,
-  COMPUTER_USE_PLUGIN_CALL_KIND,
-  computerUsePluginCapability,
-  computerUsePluginToolCapability,
-} from "@okouai/api-contracts/contracts/computer-use-plugins";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { aroundEach, describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
@@ -23,7 +16,6 @@ import {
   computerUseToken,
   createComputerUseBddApi,
 } from "./helpers/api-bdd-computer-use";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -32,23 +24,9 @@ const computerUse = createComputerUseBddApi(context);
 
 const STARTED_AT_MS = Date.parse("2026-09-19T01:00:00.000Z");
 const CASE_TIMEOUT_MS = 30_000;
-const PLUGIN_BODY = {
-  plugin: "filesystem",
-  tool: "read_text_file",
-  arguments: { path: "/tmp/r21.txt" },
-} as const;
-const HOST_CAPABILITIES = [
-  "apps.list",
-  "app.open",
-  COMPUTER_USE_PLUGIN_CALL_KIND,
-  computerUsePluginCapability(COMPUTER_USE_FILESYSTEM_PLUGIN),
-  computerUsePluginToolCapability(
-    COMPUTER_USE_FILESYSTEM_PLUGIN,
-    "read_text_file",
-  ),
-] as const;
+const HOST_CAPABILITIES = ["apps.list", "app.open"] as const;
 
-type CommandKind = "read" | "write" | "plugin";
+type CommandKind = "read" | "write";
 type ComputerUseAuth = ApiTestUser | { readonly bearer: string } | null;
 type CreationStatus = 200 | 400 | 401 | 403 | 404 | 409;
 aroundEach(async (runTest) => {
@@ -62,20 +40,6 @@ function orgScoped(
     throw new Error("Computer Use command creation requires an organization");
   }
   return { ...actor, orgId: actor.orgId };
-}
-
-async function enablePlugins(
-  actor: ApiTestUser & { readonly orgId: string },
-): Promise<void> {
-  await updateFeatureSwitchesForUser(
-    context,
-    {
-      userId: actor.userId,
-      orgId: actor.orgId,
-      orgRole: actor.orgRole,
-    },
-    { [FeatureSwitchKey.ComputerUseDesktopPlugins]: true },
-  );
 }
 
 function agentAuth(args: {
@@ -109,18 +73,10 @@ function requestCreate(
       signal,
     );
   }
-  if (kind === "write") {
-    return computerUse.requestCreateComputerUseWriteCommand(
-      auth,
-      statuses,
-      { kind: "app.open", app: "Safari", timeoutMs: 12_002 },
-      signal,
-    );
-  }
-  return computerUse.requestCreateComputerUsePluginCommand(
+  return computerUse.requestCreateComputerUseWriteCommand(
     auth,
-    { ...PLUGIN_BODY, timeoutMs: 13_003 },
     statuses,
+    { kind: "app.open", app: "Safari", timeoutMs: 12_002 },
     signal,
   );
 }
@@ -251,14 +207,13 @@ describe("Computer Use command creation", () => {
       });
 
       const agentActor = orgScoped(bdd.user());
-      await enablePlugins(agentActor);
       const agentHost = await startCapableHost(agentActor, "Agent Desktop");
       const agent = agentAuth({
         actor: agentActor,
         hostId: agentHost.hostId,
         runId: `run_${randomUUID()}`,
       });
-      const agentCreated = await createCommand("plugin", {
+      const agentCreated = await createCommand("write", {
         bearer: agent.bearer,
       });
       const agentClaimed = await computerUse.claimNextComputerUseCommand(
@@ -270,9 +225,9 @@ describe("Computer Use command creation", () => {
         command: {
           id: agentCreated.commandId,
           hostId: agentHost.hostId,
-          kind: "plugin.call",
-          timeoutMs: 13_003,
-          payload: PLUGIN_BODY,
+          kind: "app.open",
+          timeoutMs: 12_002,
+          payload: { app: "Safari" },
         },
       });
       await computerUse.completeComputerUseCommandWith(
@@ -281,9 +236,8 @@ describe("Computer Use command creation", () => {
         {
           status: "succeeded",
           result: {
-            plugin: "filesystem",
-            tool: "read_text_file",
-            sizeBytes: 0,
+            app: "Safari",
+            opened: true,
           },
         },
       );
@@ -296,23 +250,17 @@ describe("Computer Use command creation", () => {
         commandId: agentCreated.commandId,
         hostId: agentHost.hostId,
         runId: agent.runId,
-        kind: "plugin.call",
+        kind: "app.open",
       });
     },
   );
 
   it(
-    "keeps authentication, feature, bound-host and 404/409 eligibility precedence unchanged",
+    "keeps authentication, bound-host and 404/409 eligibility precedence unchanged",
     { timeout: CASE_TIMEOUT_MS },
     async () => {
       const actor = orgScoped(bdd.user());
       expect((await requestCreate("read", null, [401])).status).toBe(401);
-
-      const disabled = await requestCreate("plugin", actor, [403]);
-      expectApiError(disabled.body);
-      expect(disabled.body.error.message).toBe(
-        "Computer Use Desktop plugins are disabled",
-      );
 
       const unbound = agentAuth({ actor });
       const unboundResponse = await requestCreate(

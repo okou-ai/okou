@@ -16,6 +16,29 @@ public actor APIClient {
     self.version = version
     self.session = session
   }
+  /// Includes SDK lookup, one forced refresh on 401, and HTTP in one budget.
+  public func authenticatedRequest(
+    _ path: String, body: JSONValue, timeout: TimeInterval,
+    tokenProvider: @escaping @Sendable (Bool) async throws -> String
+  ) async throws -> APIResponse {
+    try await withThrowingTaskGroup(of: APIResponse.self) { group in
+      group.addTask {
+        let token = try await tokenProvider(false)
+        try Task.checkCancellation()
+        let response = try await self.request(path, token: token, body: body, timeout: timeout)
+        guard response.status == 401 else { return response }
+        let renewed = try await tokenProvider(true)
+        try Task.checkCancellation()
+        return try await self.request(path, token: renewed, body: body, timeout: timeout)
+      }
+      group.addTask {
+        try await Task.sleep(for: .seconds(timeout))
+        throw DesktopFailure("network_error", "Desktop authentication request timed out")
+      }
+      defer { group.cancelAll() }
+      return try await group.next()!
+    }
+  }
   public func request(
     _ path: String, token: String, body: JSONValue? = nil, timeout: TimeInterval = 30
   ) async throws -> APIResponse {

@@ -1961,10 +1961,6 @@
       "newThread": "New chat",
       "reload": "Reload tasks"
     },
-    "lastReadMarker": {
-      "previouslyRead": "You last read up to here",
-      "unread": "Unread messages"
-    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",
