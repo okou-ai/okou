@@ -24,7 +24,7 @@ impl Budget {
         let previous = self
             .0
             .used
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |used| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |used| {
                 used.checked_add(bytes).filter(|&sum| sum <= MAX_MEMORY)
             })
             .map_err(|_| Error::ResourceLimit)?;

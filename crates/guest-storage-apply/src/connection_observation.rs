@@ -37,7 +37,7 @@ pub(crate) fn agent(config: Config) -> ureq::Agent {
 fn allocate_call_id(counter: &AtomicU64) -> Option<u64> {
     // Exhaustion loses attribution rather than wrapping into another call's ID.
     counter
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
             value.checked_add(1)
         })
         .ok()
