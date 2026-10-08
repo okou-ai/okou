@@ -8458,15 +8458,26 @@ discovery. None/manual and Automatic methods are executable. Plaud's Automatic
 method defaults off in auth-method discovery through `plaudConnector`; this
 switch does not gate existing account callbacks or execution.
 
-Outside the platform API admission path, connector intent is an owner-disambiguation
-hint, not a credential-identity lock. The addon matches active firewall URLs and
-applies route precedence first. One eligible owner governs the request even when
-intent is absent, malformed, mismatched, or names an absent owner. Removing a builtin
-at an overlapping destination can therefore leave a sole eligible custom owner whose
-credentials may be injected, subject to its authorization checks. Multiple eligible
-owners require valid intent selecting one of them; unresolved ambiguity is blocked.
-With no active firewall match, ordinary network fallback applies without resolving
-or injecting managed connector credentials. See
+Outside the platform API admission path, connector intent affects registered
+builtin eligibility and final owner disambiguation; it is not a credential-identity
+lock. After gathering active firewall base matches, the addon excludes registered
+builtin candidates when a registered custom candidate matches, unless present intent
+identifies a matching registered builtin. This filter precedes base/rule specificity,
+even for a broader custom base and narrower builtin base. Classification comes from
+registry-owned `connectorRuntimeTargets`; unclassified firewall entries are not
+excluded by this rule. A matching custom denial or malformed configuration does not
+reconsider excluded builtin candidates.
+
+The remaining candidates undergo base specificity, matching rule specificity, then
+owner disambiguation. The builtin-intent exception retains eligibility, not an
+override of specificity or authorization. One eligible owner governs the request even
+when intent is absent, malformed, mismatched, or names an absent owner. Removing a
+builtin at an overlapping destination can therefore leave a sole eligible custom
+owner whose credentials may be injected, subject to its authorization checks.
+Multiple eligible owners require valid intent selecting one of them; unresolved
+ambiguity is blocked. With no active firewall match, ordinary network fallback
+applies without resolving or injecting managed connector credentials. See the staged
+contract and broader-custom/narrower-builtin example in
 [ordinary connector firewall owner selection](mitm-addon-contracts.md#ordinary-connector-firewall-owner-selection).
 
 This ordinary selection rule does not relax the separate
