@@ -6556,7 +6556,12 @@ function ComposerConnectorAccountMenuContent({
           </span>
         </div>
         {showSearch ? (
-          <div className="shrink-0 border-b border-border/50 px-3 py-2">
+          <div className="relative shrink-0 border-b border-border/50 px-3 py-2">
+            <Search
+              size={16}
+              aria-hidden="true"
+              className="pointer-events-none absolute left-6 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
             <Input
               value={search}
               onChange={(event) => {
@@ -6569,7 +6574,7 @@ function ComposerConnectorAccountMenuContent({
               placeholder={t(($) => {
                 return $.connectors.accounts.find;
               })}
-              className="h-8"
+              className="h-8 pl-9"
             />
           </div>
         ) : null}
@@ -6782,6 +6787,8 @@ function ConnectorsPopoverButton({
   onOpenAddDialog: () => void;
 }) {
   const { t } = useTranslation();
+  const panelRef = useSet(signals.connector.searchFocus.panelRef$);
+  const initialFocus = useSet(signals.connector.searchFocus.initialFocus$);
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
   const remoteMenuOpen = useGet(
     signals.connector.connectorUiState$,
@@ -6859,6 +6866,8 @@ function ConnectorsPopoverButton({
         </Tooltip>
       </TooltipProvider>
       <PopoverContent
+        ref={panelRef}
+        initialFocus={initialFocus}
         side="top"
         align="start"
         aria-label={t(($) => {
@@ -6910,6 +6919,7 @@ function ComposerConnectorsPopoverBody({
   onOpenDownloadDialog: () => void;
 }) {
   const { t } = useTranslation();
+  const inputRef = useSet(signals.connector.searchFocus.inputRef$);
   const agentId = signals.agentId;
   const connectorData = useLastResolved(signals.connector.data$);
   const connectorsLoading = connectorData === undefined;
@@ -6976,9 +6986,18 @@ function ComposerConnectorsPopoverBody({
       {(connectorItems.length > 0 || connectorsLoading) && (
         <div className="flex min-h-0 flex-1 flex-col py-1">
           {showSearch && (
-            <div className="shrink-0 px-3 py-1 border-b border-border/50">
+            <div className="flex shrink-0 items-center gap-2 px-3 py-1 border-b border-border/50">
+              <Search
+                size={16}
+                aria-hidden="true"
+                className="pointer-events-none shrink-0 text-muted-foreground"
+              />
               <input
+                ref={inputRef}
                 type="text"
+                aria-label={t(($) => {
+                  return $.chat.connectors.find;
+                })}
                 placeholder={t(($) => {
                   return $.chat.connectors.find;
                 })}
@@ -6988,7 +7007,7 @@ function ComposerConnectorsPopoverBody({
                     popoverSearch: e.target.value,
                   });
                 }}
-                className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
+                className="min-w-0 w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
               />
             </div>
           )}
