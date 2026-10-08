@@ -11285,6 +11285,18 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "do not suggest connectors for them",
           "okou doctor credit",
           "okou credit <credits>",
+          "Agent instructions are team-shared behavior rules for everyone using the same agent",
+          "Memory captures the current user's preferences, background, experience, and historical context",
+          "without changing other team members' defaults",
+          "A long-lived personal preference does not necessarily belong in shared instructions",
+          "choose between instructions and memory based on their intent, the nature and scope of the content, and its impact on other team members",
+          "Memory is usually the better choice for personal communication habits",
+          "Instructions are more appropriate for defining or revising common rules the whole team should follow",
+          "Avoid turning personal preferences into team-wide defaults or leaving genuinely shared rules only in personal memory",
+          "not whether the user used the words 'instructions' or 'memory'",
+          "exercise judgment rather than requiring a named storage target or confirmation for every update; existing permissions and memory-update rules still apply",
+          "okou agent edit --help",
+          "preserve unrelated settings",
           "Plan permission requests",
           "all concrete connector operations required for the current task",
           "Do not include hypothetical future operations",
@@ -11358,6 +11370,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         ]) {
           expect(appendSystemPrompt).toContain(toolHint);
         }
+        expect(appendSystemPrompt).not.toContain(
+          "When the user asks to change your behavior, update your own configuration",
+        );
         expect(
           appendSystemPrompt.indexOf("- New web chat threads:"),
         ).toBeLessThan(appendSystemPrompt.indexOf("- Web chat messaging:"));
