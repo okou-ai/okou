@@ -59,6 +59,9 @@ function segmentBody(
       previousTranscript: previousTranscript.slice(
         -VOICE_IO_TRANSCRIBE_MAX_PREVIOUS_CHARS,
       ),
+      // Old APIs require final. False keeps every audio request transcript-only
+      // on both versions; remove after older APIs leave serving/rollback.
+      final: false,
       totalDurationSeconds: options.totalDurationSeconds,
       overlapDurationSeconds: file ? options.overlapDurationSeconds : 0,
     }),

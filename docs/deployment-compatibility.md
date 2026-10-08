@@ -1351,10 +1351,11 @@ removes the local attributes only, without changing download behavior.
 
 Microphone input now uses two independent requests. Every audio segment, including
 its tail, calls `/api/voice-io/transcribe/segment` with the same transcript-only
-contract. `previousTranscript` is a spelling/overlap suffix capped at 1,000
-characters, not the accumulated recording; `final` and `polishedText` are removed.
-The client waits for all segment checkpoints, then calls `/api/voice-io/polish`
-with a nonempty, recording-ordered `segments` array. Its combined text is bounded
+model prompt. The client sends `final: false` on every audio request so it also
+works against serving/rollback APIs that require the field. Model context is a
+spelling/overlap suffix capped at 1,000 characters, not the accumulated recording.
+The client waits for all segment checkpoints, then calls the additive
+`/api/voice-io/polish/segments` with a nonempty, recording-ordered `segments` array. Its combined text is bounded
 at 262,144 characters. Both model stages have an owner-bound 60-second deadline.
 Daily request/duration usage remains attached to successful audio transcription;
 finite lifetime recording usage is counted only after successful polish. Empty
@@ -1372,18 +1373,36 @@ including old PCM and combined-finalization progress. Other App databases are
 untouched. Version 2 checkpoints retain ordinary resume/retry behavior. No old
 recording converter, tombstone contract, or cache fallback is provided.
 
-These HTTP contracts intentionally change together. Old Web/new API can receive
-400 for a full-prefix context or no-audio finalization, or a transcript-only
-response that an old Web cannot finalize. New Web/old API cannot supply the old
-required `final` option and cannot use the old polish `text` body. Neither mix
-is a supported voice workflow; old clients must refresh onto the split pipeline.
-Release operations must coordinate the API/App rollout and existing force-upgrade
-floor once the first containing release is known. This source PR does not change
-live floor settings or deploy production. Rolling back either side alone restores
-an incompatible protocol. Rolling the App back to its version-1 cache reader also
-requires clearing the version-2 voice database, rather than treating a
-`VersionError` as an empty recording. Retired cache contents cannot be recovered
-by rollback.
+HTTP compatibility is temporary and separate from the approved cache retirement:
+
+- **Old Web/new API:** the original final/full-prefix segment contract and the
+  original `/api/voice-io/polish` `text` body remain accepted. A final HTTP request
+  adapts to separate transcript-only and text-only model calls, never the former
+  combined prompt. A silent/text-only final still edits the saved prefix. Only a
+  successful final consumes finite recording usage. The combined legacy request
+  has an 80-second owner-bound deadline below the edge's 100-second timeout.
+- **New Web/old API:** all audio requests use `final: false`. Only `404` from the
+  additive polish route uses the old segment endpoint's existing text-only final
+  request, including its quota writer. It sends no audio and preserves completed
+  transcription checkpoints on failure. Other failures never trigger another
+  generation path.
+- **New Web/new API:** the client independently orchestrates transcription and
+  ordered-text polish. Successful polish consumes finite recording usage.
+
+Normal API-first/App-second promotion is safe for these HTTP producers. In a
+later release, raise the App floor only after the first containing App is live;
+then retire old final/full-prefix/text adapters after the old senders are excluded.
+The new-App fallback and `final: false` sender remain until older API versions
+are outside both serving and supported rollback targets. Every protected surface
+must close before removing the shared bridge. Follow-up retirement PR:
+`chore(voice): retire split-pipeline rollout bridge`, required after those gates;
+this run does not create that later PR or change live floor/deployment settings.
+
+The cache cutover remains destructive by explicit owner decision. Old tabs do
+not gain a version-2 cache reader from HTTP compatibility and may need refresh
+once that cache upgrades. Rolling the App back to its version-1 cache reader
+requires clearing only the voice database, rather than treating a `VersionError`
+as an empty recording. Retired cache contents cannot be recovered by rollback.
 
 ## File transcription and Seedream 5 retirement
 

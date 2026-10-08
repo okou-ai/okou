@@ -1,4 +1,4 @@
-import { voiceIoPolishContract } from "@okouai/api-contracts/contracts/voice-io-polish";
+import { voiceIoPolishSegmentsContract } from "@okouai/api-contracts/contracts/voice-io-polish";
 import { HttpResponse, http } from "msw";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -29,7 +29,7 @@ function client() {
     context,
     routes: voiceIoPolishRoutes,
     rethrowErrors: true,
-  })(voiceIoPolishContract);
+  })(voiceIoPolishSegmentsContract);
 }
 function polish(signal?: AbortSignal) {
   return client().post({

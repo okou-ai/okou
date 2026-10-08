@@ -93,7 +93,7 @@ describe("reuse an unfinished agent recording in the forward dialog without repl
     context.mocks.browser.voiceInput({ rms: 0.12 });
     const uploads: ArrayBuffer[] = [];
     let successful = false;
-    context.mocks.http.post("*/api/voice-io/polish", () => {
+    context.mocks.http.post("*/api/voice-io/polish/segments", () => {
       return HttpResponse.json({ text: "Original recording." });
     });
     context.mocks.http.post(

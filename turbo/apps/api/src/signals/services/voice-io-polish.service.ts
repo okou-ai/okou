@@ -1,6 +1,6 @@
 import {
   VOICE_IO_POLISH_MAX_TEXT_CHARS,
-  type VoiceIoPolishRequest,
+  type VoiceIoPolishSegmentsRequest,
   type VoiceIoPolishResponse,
 } from "@okouai/api-contracts/contracts/voice-io-polish";
 import { command } from "ccstate";
@@ -60,7 +60,7 @@ function providerError(error: unknown) {
 }
 
 export const polishVoiceTranscript$ = command(
-  async ({ get }, body: VoiceIoPolishRequest, signal: AbortSignal) => {
+  async ({ get }, body: VoiceIoPolishSegmentsRequest, signal: AbortSignal) => {
     const requestSignal = AbortSignal.any([signal, get(requestSignal$)]);
     requestSignal.throwIfAborted();
     if (!gcpLlmConfiguration()) {

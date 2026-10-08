@@ -22,7 +22,7 @@ test("Keep recording after an incremental segment fails and finish in order", as
   });
   installRunChat();
   let requestAttempts = 0;
-  context.mocks.http.post("*/api/voice-io/polish", () => {
+  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
     return HttpResponse.json({ text: "First part. Last part." });
   });
   context.mocks.http.post(endpoint, () => {
@@ -75,7 +75,7 @@ test("Preserve audio without an application error when transcription is busy", a
   installRunChat();
   let available = false;
   const audio: ArrayBuffer[] = [];
-  context.mocks.http.post("*/api/voice-io/polish", () => {
+  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
     return HttpResponse.json({ text: "Retained speech." });
   });
   context.mocks.http.post(endpoint, async ({ request }) => {

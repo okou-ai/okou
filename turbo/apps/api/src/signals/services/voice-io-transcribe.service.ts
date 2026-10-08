@@ -1,8 +1,9 @@
 import { CLIENT_REQUEST_ID_HEADER } from "@okouai/api-contracts/contracts/client-headers";
-import type {
-  VoiceIoTranscribeContext,
-  VoiceIoTranscribeSegmentOptions,
-  VoiceIoTranscribeSegmentResponse,
+import {
+  VOICE_IO_TRANSCRIBE_MAX_PREVIOUS_CHARS,
+  type VoiceIoTranscribeContext,
+  type VoiceIoTranscribeSegmentOptions,
+  type VoiceIoTranscribeSegmentResponse,
 } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { command } from "ccstate";
 import { isSpanContextValid, trace } from "@opentelemetry/api";
@@ -33,7 +34,7 @@ const VOICE_TRANSCRIPT_MINIMUM_SUSPICIOUS_CHARACTERS = 100;
 // receives a classified 503 instead of an edge 524 without CORS headers.
 const VOICE_SEGMENT_DEADLINE_MS = 60_000;
 
-type VoiceDraftTranscriptionInput = VoiceIoTranscribeContext &
+export type VoiceDraftTranscriptionInput = VoiceIoTranscribeContext &
   VoiceIoTranscribeSegmentOptions & {
     readonly files: readonly File[];
     readonly debug: boolean;
@@ -197,7 +198,16 @@ async function transcribeIncrementalVoice(
   const audio = await voiceAudio(file, signal);
   attempt.modelCall = true;
   attempt.stage = "transcription";
-  const result = await transcribeVoice(audio, input, signal);
+  const result = await transcribeVoice(
+    audio,
+    {
+      ...input,
+      previousTranscript: input.previousTranscript.slice(
+        -VOICE_IO_TRANSCRIBE_MAX_PREVIOUS_CHARS,
+      ),
+    },
+    signal,
+  );
   if (!result) {
     throw new VoiceResponseError("not_configured");
   }

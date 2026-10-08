@@ -1,4 +1,7 @@
-import { voiceIoPolishContract } from "@okouai/api-contracts/contracts/voice-io-polish";
+import {
+  voiceIoPolishContract,
+  voiceIoPolishSegmentsContract,
+} from "@okouai/api-contracts/contracts/voice-io-polish";
 import { command } from "ccstate";
 
 import { authRoute } from "../auth/auth-route";
@@ -11,7 +14,28 @@ import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { polishVoiceTranscript$ } from "../services/voice-io-polish.service";
 
-const voiceIoPolishBody$ = bodyResultOf(voiceIoPolishContract.post);
+const voiceIoPolishBody$ = bodyResultOf(voiceIoPolishSegmentsContract.post);
+const legacyPolishBody$ = bodyResultOf(voiceIoPolishContract.post);
+
+// Keep the currently deployed text-only HTTP producer until the App floor and
+// API rollback gate close. This adapter never reads retired IndexedDB state.
+const postLegacyPolish$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const result = await get(legacyPolishBody$);
+  signal.throwIfAborted();
+  if (!result.ok) {
+    return result.response;
+  }
+  return await set(
+    polishVoiceTranscript$,
+    {
+      segments: [result.data.text],
+      ...(result.data.lastAssistantMessage
+        ? { lastAssistantMessage: result.data.lastAssistantMessage }
+        : {}),
+    },
+    signal,
+  );
+});
 
 const postVoiceIoPolish$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -47,7 +71,7 @@ const postVoiceIoPolish$ = command(
 
 export const voiceIoPolishRoutes: readonly RouteEntry[] = [
   {
-    route: voiceIoPolishContract.post,
+    route: voiceIoPolishSegmentsContract.post,
     handler: authRoute(
       {
         accept: ["session"],
@@ -55,6 +79,17 @@ export const voiceIoPolishRoutes: readonly RouteEntry[] = [
         missingOrganizationStatus: 401,
       },
       postVoiceIoPolish$,
+    ),
+  },
+  {
+    route: voiceIoPolishContract.post,
+    handler: authRoute(
+      {
+        accept: ["session"],
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+      },
+      postLegacyPolish$,
     ),
   },
 ];

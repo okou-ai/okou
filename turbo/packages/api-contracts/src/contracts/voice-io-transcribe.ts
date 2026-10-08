@@ -14,7 +14,10 @@ export const VOICE_IO_TRANSCRIBE_MAX_SEGMENT_SECONDS = 75;
 const VOICE_IO_TRANSCRIBE_MAX_RECORDING_SECONDS = 60 * 60;
 
 export const voiceIoTranscribeSegmentOptionsSchema = z.object({
-  previousTranscript: z.string().max(VOICE_IO_TRANSCRIBE_MAX_PREVIOUS_CHARS),
+  // Live old Apps send their accumulated prefix. Bound the model context at
+  // the service boundary; retire after the live App floor and API rollback gate.
+  previousTranscript: z.string().max(VOICE_IO_POLISH_MAX_TEXT_CHARS),
+  final: z.boolean().optional(),
   overlapDurationSeconds: z.number().min(0).max(2).default(0),
   totalDurationSeconds: z
     .number()
@@ -45,6 +48,7 @@ export interface VoiceIoTranscribeContext {
 export const voiceIoTranscribeSegmentResponseSchema = z
   .object({
     transcript: z.string().max(VOICE_IO_POLISH_MAX_TEXT_CHARS),
+    polishedText: z.string().max(VOICE_IO_POLISH_MAX_TEXT_CHARS).optional(),
     language: z.string().trim().min(1).max(64),
   })
   .strict();
@@ -71,7 +75,8 @@ export const voiceIoTranscribeContract = c.router({
       502: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "Transcribe new speech from one audio segment without polishing",
+    summary:
+      "Transcribe a segment and retain existing final callers during rollout",
   },
 });
 

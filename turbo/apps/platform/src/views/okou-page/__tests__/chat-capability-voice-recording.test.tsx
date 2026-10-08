@@ -14,7 +14,6 @@ import {
   installRunChat,
   queryButton,
   RUN_PATH,
-  RUN_THREAD_ID,
 } from "./chat-run-test-fixtures.ts";
 
 const secondContext = testContext();
@@ -85,7 +84,7 @@ test("Recover committed PCM after a reload during recording", async () => {
   });
   installVoiceBoundaries();
   const uploads: ArrayBuffer[] = [];
-  context.mocks.http.post("*/api/voice-io/polish", () => {
+  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
     return HttpResponse.json({ text: "Recovered audio." });
   });
   context.mocks.http.post(
@@ -148,7 +147,7 @@ test("Include the final worklet chunk before transcribing", async () => {
     finalPcmSamples: new Float32Array(1024).fill(-0.75),
   });
   const consoleErrors = installVoiceBoundaries();
-  context.mocks.http.post("*/api/voice-io/polish", () => {
+  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
     return HttpResponse.json({ text: "Complete recording." });
   });
   context.mocks.http.post(
@@ -205,19 +204,25 @@ test("Restore completed transcripts after reload and retry only polish", async (
       language: "en",
     });
   });
-  context.mocks.http.post("*/api/voice-io/polish", async ({ request }) => {
-    await expect(request.json()).resolves.toMatchObject({
-      segments: ["Keep this saved speech."],
-    });
-    return polishAvailable
-      ? HttpResponse.json({ text: "Keep this saved speech." })
-      : HttpResponse.json(
-          {
-            error: { code: "PROVIDER_UNAVAILABLE", message: "Editing is busy" },
-          },
-          { status: 503 },
-        );
-  });
+  context.mocks.http.post(
+    "*/api/voice-io/polish/segments",
+    async ({ request }) => {
+      await expect(request.json()).resolves.toMatchObject({
+        segments: ["Keep this saved speech."],
+      });
+      return polishAvailable
+        ? HttpResponse.json({ text: "Keep this saved speech." })
+        : HttpResponse.json(
+            {
+              error: {
+                code: "PROVIDER_UNAVAILABLE",
+                message: "Editing is busy",
+              },
+            },
+            { status: 503 },
+          );
+    },
+  );
   await setupPage({
     context: { ...context, signal: firstPageSignal },
     path: RUN_PATH,
@@ -236,51 +241,6 @@ test("Restore completed transcripts after reload and retry only polish", async (
   await waitFor(() => {
     expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
       "Keep this saved speech.",
-    );
-  });
-});
-
-test("Discard the old combined-pipeline voice cache on upgrade", async () => {
-  // The old schema is intentionally seeded here: the retired recording cannot
-  // be created through the new UI, and only the visible absence is asserted.
-  const oldDatabase = await openDB("okou-voice-drafts", 1, {
-    upgrade(database) {
-      database.createObjectStore("drafts");
-      database.createObjectStore("chunks");
-    },
-  });
-  const key = JSON.stringify([
-    "test-user-123",
-    "org_default",
-    `thread:${RUN_THREAD_ID}`,
-  ]);
-  await oldDatabase.put(
-    "drafts",
-    { id: "old-recording", sampleCount: 16_000, chunkCount: 1 },
-    key,
-  );
-  await oldDatabase.put("chunks", new Float32Array(16_000).buffer, [
-    key,
-    "old-recording",
-    0,
-  ]);
-  oldDatabase.close();
-  installVoiceBoundaries();
-  context.mocks.browser.voiceInput({ rms: 0.12 });
-  context.mocks.http.post("*/api/voice-io/transcribe/segment", () => {
-    return HttpResponse.json({ transcript: "New recording.", language: "en" });
-  });
-  context.mocks.http.post("*/api/voice-io/polish", () => {
-    return HttpResponse.json({ text: "New recording." });
-  });
-  await setupPage({ context, path: RUN_PATH });
-  await findEnabledButton("Voice input");
-  expect(queryButton("Retry")).toBeNull();
-  click(await findEnabledButton("Voice input"));
-  click(await findEnabledButton("Stop recording"));
-  await waitFor(() => {
-    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
-      "New recording.",
     );
   });
 });

@@ -10,7 +10,71 @@ import {
 } from "./chat-run-test-fixtures.ts";
 
 const transcribeEndpoint = "*/api/voice-io/transcribe/segment";
-const polishEndpoint = "*/api/voice-io/polish";
+const polishEndpoint = "*/api/voice-io/polish/segments";
+
+test("Use an older API without re-uploading audio when its polish route is absent", async () => {
+  context.mocks.browser.voiceInput({ rms: 0.1 });
+  installRunChat();
+  let transcribed = false;
+  let available = false;
+  context.mocks.http.post(polishEndpoint, () => {
+    return new HttpResponse("Old API has no additive route", { status: 404 });
+  });
+  context.mocks.http.post(transcribeEndpoint, async ({ request }) => {
+    const form = await request.formData();
+    const options: unknown = JSON.parse(String(form.get("options")));
+    const hasAudio = form.has("file");
+    expect(options).toMatchObject({
+      final: !hasAudio,
+      previousTranscript: hasAudio ? "" : "Saved speech.",
+      ...(hasAudio ? {} : { overlapDurationSeconds: 0 }),
+    });
+    if (hasAudio) {
+      if (transcribed) {
+        return HttpResponse.json(
+          {
+            error: {
+              code: "REUPLOAD",
+              message: "Audio was already transcribed",
+            },
+          },
+          { status: 502 },
+        );
+      }
+      transcribed = true;
+      return HttpResponse.json({ transcript: "Saved speech.", language: "en" });
+    }
+    return available
+      ? HttpResponse.json({
+          transcript: "",
+          polishedText: "Saved speech.",
+          language: "en",
+        })
+      : HttpResponse.json(
+          {
+            error: {
+              code: "PROVIDER_UNAVAILABLE",
+              message: "Old API editing is busy",
+            },
+          },
+          { status: 503 },
+        );
+  });
+  await setupPage({ context, path: RUN_PATH });
+  click(await findEnabledButton("Voice input"));
+  click(await findEnabledButton("Stop recording"));
+  await expect(
+    screen.findByText("Old API editing is busy", { exact: false }),
+  ).resolves.toBeInTheDocument();
+  await findEnabledButton("Retry");
+  available = true;
+  click(await findEnabledButton("Retry"));
+  await waitFor(() => {
+    expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
+      "Saved speech.",
+    );
+  });
+});
 
 test("Merge three completed segments only after the final transcription", async () => {
   const capture = context.mocks.deferred<(samples: Float32Array) => void>();

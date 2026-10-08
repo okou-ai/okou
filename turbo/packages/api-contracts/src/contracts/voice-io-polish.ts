@@ -8,7 +8,21 @@ const c = initContract();
 
 export const VOICE_IO_POLISH_MAX_TEXT_CHARS = 262_144;
 
+const assistantReferenceSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(VOICE_IO_POLISH_MAX_TEXT_CHARS)
+  .optional();
+
 export const voiceIoPolishRequestSchema = z
+  .object({
+    text: z.string().trim().min(1).max(VOICE_IO_POLISH_MAX_TEXT_CHARS),
+    lastAssistantMessage: assistantReferenceSchema,
+  })
+  .strict();
+
+export const voiceIoPolishSegmentsRequestSchema = z
   .object({
     segments: z
       .array(z.string().trim().min(1).max(VOICE_IO_POLISH_MAX_TEXT_CHARS))
@@ -16,17 +30,15 @@ export const voiceIoPolishRequestSchema = z
       .max(128)
       .refine((segments) => {
         return (
-          segments.reduce((total, segment) => {
-            return total + segment.length;
-          }, 0) <= VOICE_IO_POLISH_MAX_TEXT_CHARS
+          segments.reduce(
+            (total, segment) => {
+              return total + segment.length;
+            },
+            Math.max(0, segments.length - 1),
+          ) <= VOICE_IO_POLISH_MAX_TEXT_CHARS
         );
       }, "Voice segments exceed the total text limit"),
-    lastAssistantMessage: z
-      .string()
-      .trim()
-      .min(1)
-      .max(VOICE_IO_POLISH_MAX_TEXT_CHARS)
-      .optional(),
+    lastAssistantMessage: assistantReferenceSchema,
   })
   .strict();
 
@@ -37,8 +49,13 @@ export const voiceIoPolishResponseSchema = z
   .strict();
 
 export type VoiceIoPolishRequest = z.infer<typeof voiceIoPolishRequestSchema>;
+export type VoiceIoPolishSegmentsRequest = z.infer<
+  typeof voiceIoPolishSegmentsRequestSchema
+>;
 export type VoiceIoPolishResponse = z.infer<typeof voiceIoPolishResponseSchema>;
 
+// Preserve the live text-only caller until the replacement App floor and API
+// rollback boundary allow retirement. No voice-cache compatibility is implied.
 export const voiceIoPolishContract = c.router({
   post: {
     method: "POST",
@@ -49,8 +66,28 @@ export const voiceIoPolishContract = c.router({
       200: voiceIoPolishResponseSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
+      403: apiErrorSchema,
+      502: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary: "Polish a raw voice transcription into send-ready writing",
+  },
+});
+
+export const voiceIoPolishSegmentsContract = c.router({
+  post: {
+    method: "POST",
+    path: "/api/voice-io/polish/segments",
+    headers: authHeadersSchema,
+    body: voiceIoPolishSegmentsRequestSchema,
+    responses: {
+      200: voiceIoPolishResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
       402: voiceIoQuotaErrorSchema,
       403: apiErrorSchema,
+      // A supported old API has no additive route; its 404 body is unspecified.
+      404: z.unknown(),
       502: apiErrorSchema,
       503: apiErrorSchema,
     },
@@ -59,3 +96,5 @@ export const voiceIoPolishContract = c.router({
 });
 
 export type VoiceIoPolishContract = typeof voiceIoPolishContract;
+export type VoiceIoPolishSegmentsContract =
+  typeof voiceIoPolishSegmentsContract;

@@ -97,7 +97,7 @@ async function setupShortcutTranscription() {
   const response = context.mocks.deferred<void>();
   context.mocks.browser.voiceInput({ rms: 0.12 });
   installAvailableVoiceQuota();
-  context.mocks.http.post("*/api/voice-io/polish", () => {
+  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
     return HttpResponse.json({ text: "Shortcut voice note" });
   });
   context.mocks.http.post("*/api/voice-io/transcribe/segment", async () => {
@@ -168,7 +168,7 @@ test("Transcribe a voice draft using the latest assistant reference", async () =
   const transcriptionReady = context.mocks.deferred<void>();
   context.mocks.browser.voiceInput({ rms: 0.12 });
   installAvailableVoiceQuota();
-  context.mocks.http.post("*/api/voice-io/polish", () => {
+  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
     return HttpResponse.json({ text: "Send the launch update tomorrow." });
   });
   context.mocks.http.post(
@@ -293,7 +293,7 @@ test("Keep a silent voice draft recording until the user stops it", async () => 
     },
   });
   installAvailableVoiceQuota();
-  context.mocks.http.post("*/api/voice-io/polish", () => {
+  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
     return HttpResponse.json({ text: "Extended voice draft." });
   });
   context.mocks.http.post("*/api/voice-io/transcribe/segment", () => {
