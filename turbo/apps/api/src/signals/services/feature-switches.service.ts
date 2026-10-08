@@ -13,6 +13,8 @@ import {
   ORG_SENTINEL_USER_ID,
   splitFeatureSwitchesByScope,
   userFeatureSwitchOverridesFromRows,
+  userFeatureSwitchRowCondition,
+  featureSwitchContextFromRows,
 } from "./feature-switch-scope";
 
 export function userFeatureSwitchOverrides(
@@ -71,6 +73,28 @@ export function userFeatureSwitchContext(
   const overrides$ = userFeatureSwitchOverrides(orgId, userId);
   return computed(async (get) => {
     return { orgId, userId, overrides: await get(overrides$) };
+  });
+}
+
+/** Connect queried identities while constructing the owning read graph. */
+export function createUserFeatureSwitchContext(
+  identity$: Computed<
+    Promise<{ readonly orgId: string; readonly userId: string } | null>
+  >,
+): Computed<Promise<FeatureSwitchContext | null>> {
+  return computed(async (get) => {
+    const identity = await get(identity$);
+    if (!identity) {
+      return null;
+    }
+    const rows = await get(db$)
+      .select({
+        userId: userFeatureSwitches.userId,
+        switches: userFeatureSwitches.switches,
+      })
+      .from(userFeatureSwitches)
+      .where(userFeatureSwitchRowCondition(identity.orgId, identity.userId));
+    return featureSwitchContextFromRows(identity.orgId, identity.userId, rows);
   });
 }
 

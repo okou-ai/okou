@@ -386,6 +386,13 @@ describe("CHAT-02: shared user message queue", () => {
 
     const forwardedRun = await api.readRun(actor, forwardedRunId);
     const forwardedSystemPrompt = forwardedRun.appendSystemPrompt ?? "";
+    expect(
+      forwardedSystemPrompt.match(/^# Current User Info$/gmu),
+    ).toHaveLength(1);
+    expect(forwardedSystemPrompt).toContain(`Email: ${actor.email}`);
+    expect(forwardedSystemPrompt.indexOf("# Current User Info")).toBeLessThan(
+      forwardedSystemPrompt.indexOf("# Current Integration"),
+    );
     expect(forwardedSystemPrompt).toContain("# This Run's Trigger");
     expect(forwardedSystemPrompt).toContain(
       "was sent by a person who forwarded selected content",

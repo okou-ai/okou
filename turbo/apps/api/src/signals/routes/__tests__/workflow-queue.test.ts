@@ -534,6 +534,12 @@ describe("workflow queue", () => {
     expect(firstClaim.appendSystemPrompt).toContain("# Agent Identity");
     expect(firstClaim.appendSystemPrompt).not.toContain("# Current context");
     expect(firstClaim.appendSystemPrompt).not.toContain("# This run's event");
+    expect(
+      firstClaim.appendSystemPrompt?.match(/^# Current User Info$/gmu),
+    ).toHaveLength(1);
+    expect(firstClaim.appendSystemPrompt).toContain(
+      `Email: ${scenario.actor.email}`,
+    );
 
     const runIds = await workflowRunIds(automation.threadId);
     expect(runIds).toHaveLength(2);
@@ -546,6 +552,12 @@ describe("workflow queue", () => {
     expect(secondClaim.appendSystemPrompt).toContain("# Agent Identity");
     expect(secondClaim.appendSystemPrompt).not.toContain("# Current context");
     expect(secondClaim.appendSystemPrompt).not.toContain("# This run's event");
+    expect(
+      secondClaim.appendSystemPrompt?.match(/^# Current User Info$/gmu),
+    ).toHaveLength(1);
+    expect(secondClaim.appendSystemPrompt).toContain(
+      `Email: ${scenario.actor.email}`,
+    );
 
     await runsApi.requestCancelRun(scenario.actor, runIds[1]!, [200]);
   });
