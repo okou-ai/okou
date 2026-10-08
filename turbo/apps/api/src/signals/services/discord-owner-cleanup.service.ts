@@ -1,6 +1,9 @@
+import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
 import { and, eq, inArray } from "drizzle-orm";
+import { discordUserIdentities } from "@okouai/db/schema/discord-user-identity";
+import { releaseUnusedDiscordIdentities } from "./discord-identity-ownership.service";
 
 import type { Db } from "../external/db";
 
@@ -10,6 +13,14 @@ export async function deleteDiscordOrgMemberData(
   args: { readonly orgId: string; readonly userId: string },
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    await tx
+      .delete(discordOauthStates)
+      .where(
+        and(
+          eq(discordOauthStates.userId, args.userId),
+          eq(discordOauthStates.orgId, args.orgId),
+        ),
+      );
     await tx
       .delete(discordOrgConnections)
       .where(
@@ -24,6 +35,7 @@ export async function deleteDiscordOrgMemberData(
           ),
         ),
       );
+    await releaseUnusedDiscordIdentities(tx, [args.userId]);
   });
 }
 
@@ -33,8 +45,25 @@ export async function deleteDiscordOrgData(
 ): Promise<void> {
   await db.transaction(async (tx) => {
     await tx
+      .delete(discordOauthStates)
+      .where(eq(discordOauthStates.orgId, orgId));
+    const owners = await tx
+      .select({ userId: discordOrgConnections.userId })
+      .from(discordOrgConnections)
+      .innerJoin(
+        discordOrgInstallations,
+        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+      )
+      .where(eq(discordOrgInstallations.orgId, orgId));
+    await tx
       .delete(discordOrgInstallations)
       .where(eq(discordOrgInstallations.orgId, orgId));
+    await releaseUnusedDiscordIdentities(
+      tx,
+      owners.map((owner) => {
+        return owner.userId;
+      }),
+    );
   });
 }
 
@@ -43,6 +72,9 @@ export async function deleteDiscordUserData(
   userId: string,
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    await tx
+      .delete(discordOauthStates)
+      .where(eq(discordOauthStates.userId, userId));
     // A surviving organization's installation is not the installer's account
     // data. Keep it usable by the remaining members and remove the association.
     await tx
@@ -55,5 +87,8 @@ export async function deleteDiscordUserData(
     await tx
       .delete(discordOrgConnections)
       .where(eq(discordOrgConnections.userId, userId));
+    await tx
+      .delete(discordUserIdentities)
+      .where(eq(discordUserIdentities.userId, userId));
   });
 }
