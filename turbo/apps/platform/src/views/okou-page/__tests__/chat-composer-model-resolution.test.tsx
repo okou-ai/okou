@@ -154,9 +154,18 @@ test("Switch only the thread to Auto when its model is no longer selectable", as
 });
 
 test.each([null, "auto", "okou-1.0"])(
-  "Show Auto selected for a thread storing %s",
+  "Send without repairing an Auto thread storing %s",
   async (selectedModel) => {
-    installRunChat({ selectedModel });
+    const requests: string[] = [];
+    installRunChat({
+      selectedModel,
+      onModelSelectionUpdate: () => {
+        requests.push("repair model");
+      },
+      onSendRequest: () => {
+        requests.push("send");
+      },
+    });
     configureRunModels(["claude-opus-5"]);
     context.mocks.api(runModelsMainContract.list, ({ respond }) => {
       return respond(200, {
@@ -179,6 +188,12 @@ test.each([null, "auto", "okou-1.0"])(
     const panel = await openModelPanel("Auto");
     expect(modelOption(/^Auto/u, panel)).toBeChecked();
     expect(modelOption(/^Claude Opus 5/u, panel)).not.toBeChecked();
+    await closeModelPanel();
+    await sendText("Continue on Auto");
+    await expect(
+      screen.findByText("Continue on Auto"),
+    ).resolves.toBeInTheDocument();
+    expect(requests).toStrictEqual(["send"]);
   },
 );
 

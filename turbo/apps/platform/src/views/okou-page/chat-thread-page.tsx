@@ -494,7 +494,12 @@ function modelChangesByEventId(
         previousSelection !== undefined &&
         selection !== undefined
       ) {
-        if (selection.selectedModel !== previousSelection.selectedModel) {
+        if (
+          !sameSelectedModel(
+            selection.selectedModel,
+            previousSelection.selectedModel,
+          )
+        ) {
           changes.set(event.id, { kind: "model", selection });
         } else if (
           fastModeEnabled(selection) !== fastModeEnabled(previousSelection)

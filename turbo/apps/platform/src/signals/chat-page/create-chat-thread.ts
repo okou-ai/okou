@@ -1,4 +1,8 @@
 import {
+  isAutoSelectedModel,
+  sameSelectedModel,
+} from "@okouai/core/auto-run-model";
+import {
   chatEventCompatibilityRole,
   isChatEventContentTextType,
   isChatRunTerminalEventType,
@@ -404,7 +408,11 @@ function createModelSelection(
         get(availableRunModels$),
         get(modelCatalog$),
       ]);
-      const resolvedModel = catalog.resolve(get(selectedModel$));
+      const storedModel = get(selectedModel$);
+      if (storedModel === null || isAutoSelectedModel(storedModel)) {
+        return null;
+      }
+      const resolvedModel = catalog.resolve(storedModel);
       return resolvedModel !== undefined &&
         models.models.some((runModel) => {
           return runModel.model === resolvedModel;
@@ -477,7 +485,10 @@ function createModelSelectionForSend({
       // A pin without an offered route is shown as Auto. Switch the thread to
       // Auto the way the picker does, so the send runs what the composer shows
       // without changing the member's default model.
-      if (selectedModel === null && get(selectedModel$) !== null) {
+      if (
+        selectedModel === null &&
+        !sameSelectedModel(selectedModel, get(selectedModel$))
+      ) {
         await set(setModelSelection$, { selectedModel: null }, signal);
         signal.throwIfAborted();
       }

@@ -6,7 +6,10 @@ import {
   type UpdateUserModelPreferenceRequest,
   userModelPreferenceContract,
 } from "@okouai/api-contracts/contracts/user-model-preference";
-import { isAutoSelectedModel } from "@okouai/core/auto-run-model";
+import {
+  AUTO_SELECTED_MODEL,
+  isAutoSelectedModel,
+} from "@okouai/core/auto-run-model";
 import { command, computed } from "ccstate";
 
 import { badRequestMessage } from "../../lib/error";
@@ -146,12 +149,13 @@ function resolveRequestedPreferenceModels(
   request: UpdateUserModelPreferenceRequest,
 ): UpdateUserModelPreferenceRequest | ReturnType<typeof badRequestMessage> {
   const selectedModel =
-    request.selectedModel === null || isAutoSelectedModel(request.selectedModel)
+    request.selectedModel === null ||
+    request.selectedModel === AUTO_SELECTED_MODEL
       ? null
       : resolveCatalogRunModel(catalog, request.selectedModel);
   if (
     request.selectedModel !== null &&
-    !isAutoSelectedModel(request.selectedModel) &&
+    request.selectedModel !== AUTO_SELECTED_MODEL &&
     selectedModel === null
   ) {
     return badRequestMessage(`Unknown model "${request.selectedModel}"`);

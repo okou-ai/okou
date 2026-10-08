@@ -184,8 +184,51 @@ apply selected NOT NULL and relevant conditional runtime constraints, and
 remove expired protocol/catalog/pricing compatibility. Historical billing
 conversion requires captured evidence, never today's org preset, and must not
 change settled amounts; unrecoverable identities remain auditable. These
-compatibility readers are tracked for removal in those planned PR2/PR3
-follow-ups, not by elapsed time or a green Runner promotion.
+compatibility readers are tracked in [#38114](https://github.com/okou-ai/okou/issues/38114),
+not by elapsed time or a green Runner promotion.
+
+**Compatibility inventory / cleanup ownership.** #38114 owns the release-3
+removal gates for these concrete surfaces:
+
+- `core/auto-run-model.ts`: `isAutoSelectedModel`, `sameSelectedModel`,
+  `autoRunBillingProvider`; API `model-selection.service.ts`:
+  `resolveModelSelectionPin$`, `resolveQueuedModelSelectionPinFromSnapshot`;
+  preference/send normalization and `session-compatibility.ts:modelFamily`.
+- Web `availableRunModels$`, `createModelCatalog`,
+  `create-chat-thread.ts:createModelSelection,createModelSelectionForSend`,
+  default selection, picker and historical/upcoming Run notices; CLI catalog,
+  model/chat-model and automation display helpers; iOS
+  `resolveThreadModelSelection`.
+- Pi `model.ts:capturedAutoCatalogIdentity`; API catalog capability lookup,
+  captured built-in runtime routes and `pi-sandbox-config.ts`.
+- API `built-in-route-pricing.ts:builtInRouteForContext`; DB
+  `model-usage-reporting.ts:modelUsageDisplayProviderSql`, with legacy price
+  rows retained until old executions and late observations drain.
+
+**Native session evidence and future trigger.** A read-only MaskDB census of
+current retained production tables, bounded by
+`created_at < 2026-10-08T09:52:40.625254Z`, found no selected `auto` in Runs,
+threads or member preferences. It found 3,566 legacy Auto Runs and 922 session
+references to completed legacy Pi conversations with nonempty native-history
+hashes. Reads were paginated and repeated, not one transaction snapshot; archived
+history, R2 readability, user activity and current thread binding were not
+verified. This is not evidence of an already occurring production reset.
+
+After PR2 writes `auto`, a still-serving or supported rollback PR1 can read that
+captured input or session and compare it with `okou-1.0`. Completed Run identity
+is used for continuity; Runner drain does not remove these retained references.
+`modelFamily` therefore treats only the two selected Auto aliases as the same
+existing family, retaining harness/family/null incompatibility checks. Deferring
+that reader change to PR2 would require proving PR1 is absent from serving and
+rollback, contrary to the agreed overlap. Mixed-record deployed/R2 resume remains
+a PR2 verification gate, not a claim that source checks prove blob restoration.
+
+**Public request contract.** Nullable Auto and `auto` are accepted selection
+intents and normalize to legacy writes in PR1. The internal `okou-1.0` capture
+ID remains readable history/captured metadata, not a public selectable request
+ID; preference updates, thread selection and normal sends reject that explicit
+public selection. Merely echoing an existing stored preference for an unrelated
+media change retains the existing no-new-admission path.
 
 ## SEO partial SERP results (issue #36799)
 
