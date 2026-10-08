@@ -4,8 +4,8 @@ import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installat
 import { discordUserIdentities } from "@okouai/db/schema/discord-user-identity";
 import { and, asc, eq, inArray, or } from "drizzle-orm";
 import {
-  lockDiscordIdentities,
-  releaseUnusedDiscordIdentities,
+  discordIdentityOwnersWhere,
+  unusedDiscordIdentityOwnersWhere,
 } from "./discord-identity-ownership.service";
 import type { Db } from "../external/db";
 
@@ -44,12 +44,18 @@ export async function deleteDiscordOrgMemberData(
           inArray(discordOrgConnections.guildId, guildIds),
         ),
       );
-    const identities = await lockDiscordIdentities(
-      tx,
-      connections.map((connection) => {
-        return connection.discordUserId;
-      }),
-    );
+    const identities = await tx
+      .select({ discordUserId: discordUserIdentities.discordUserId })
+      .from(discordUserIdentities)
+      .where(
+        discordIdentityOwnersWhere(
+          connections.map((connection) => {
+            return connection.discordUserId;
+          }),
+        ),
+      )
+      .orderBy(asc(discordUserIdentities.discordUserId))
+      .for("update");
     await tx
       .delete(discordOrgConnections)
       .where(
@@ -58,7 +64,9 @@ export async function deleteDiscordOrgMemberData(
           inArray(discordOrgConnections.guildId, guildIds),
         ),
       );
-    await releaseUnusedDiscordIdentities(tx, identities);
+    await tx
+      .delete(discordUserIdentities)
+      .where(unusedDiscordIdentityOwnersWhere(identities));
   });
 }
 
@@ -86,16 +94,24 @@ export async function deleteDiscordOrgData(
       .select({ discordUserId: discordOrgConnections.discordUserId })
       .from(discordOrgConnections)
       .where(inArray(discordOrgConnections.guildId, guildIds));
-    const identities = await lockDiscordIdentities(
-      tx,
-      connections.map((connection) => {
-        return connection.discordUserId;
-      }),
-    );
+    const identities = await tx
+      .select({ discordUserId: discordUserIdentities.discordUserId })
+      .from(discordUserIdentities)
+      .where(
+        discordIdentityOwnersWhere(
+          connections.map((connection) => {
+            return connection.discordUserId;
+          }),
+        ),
+      )
+      .orderBy(asc(discordUserIdentities.discordUserId))
+      .for("update");
     await tx
       .delete(discordOrgInstallations)
       .where(eq(discordOrgInstallations.orgId, orgId));
-    await releaseUnusedDiscordIdentities(tx, identities);
+    await tx
+      .delete(discordUserIdentities)
+      .where(unusedDiscordIdentityOwnersWhere(identities));
   });
 }
 
@@ -128,12 +144,18 @@ export async function deleteDiscordUserData(
       .select({ discordUserId: discordUserIdentities.discordUserId })
       .from(discordUserIdentities)
       .where(eq(discordUserIdentities.userId, userId));
-    const identities = await lockDiscordIdentities(
-      tx,
-      owned.map((identity) => {
-        return identity.discordUserId;
-      }),
-    );
+    const identities = await tx
+      .select({ discordUserId: discordUserIdentities.discordUserId })
+      .from(discordUserIdentities)
+      .where(
+        discordIdentityOwnersWhere(
+          owned.map((identity) => {
+            return identity.discordUserId;
+          }),
+        ),
+      )
+      .orderBy(asc(discordUserIdentities.discordUserId))
+      .for("update");
     await tx
       .update(discordOrgInstallations)
       .set({ installedByUserId: null })
@@ -141,6 +163,8 @@ export async function deleteDiscordUserData(
     await tx
       .delete(discordOrgConnections)
       .where(eq(discordOrgConnections.userId, userId));
-    await releaseUnusedDiscordIdentities(tx, identities);
+    await tx
+      .delete(discordUserIdentities)
+      .where(unusedDiscordIdentityOwnersWhere(identities));
   });
 }

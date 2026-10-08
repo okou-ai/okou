@@ -1,5 +1,6 @@
 import { command, computed } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
+import { discordUserIdentities } from "@okouai/db/schema/discord-user-identity";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
@@ -16,8 +17,8 @@ import {
   disconnectDiscordBinding$,
 } from "../services/discord-data.service";
 import {
-  lockDiscordIdentities,
-  releaseUnusedDiscordIdentities,
+  discordIdentityOwnersWhere,
+  unusedDiscordIdentityOwnersWhere,
 } from "../services/discord-identity-ownership.service";
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import {
@@ -68,12 +69,18 @@ async function uninstallDiscordOrganization(
       .from(discordOrgConnections)
       .where(eq(discordOrgConnections.guildId, installation.guildId));
     signal.throwIfAborted();
-    const identities = await lockDiscordIdentities(
-      tx,
-      connections.map((connection) => {
-        return connection.discordUserId;
-      }),
-    );
+    const identities = await tx
+      .select({ discordUserId: discordUserIdentities.discordUserId })
+      .from(discordUserIdentities)
+      .where(
+        discordIdentityOwnersWhere(
+          connections.map((connection) => {
+            return connection.discordUserId;
+          }),
+        ),
+      )
+      .orderBy(asc(discordUserIdentities.discordUserId))
+      .for("update");
     signal.throwIfAborted();
     const userIds = await discordOrgChangedUserIds(tx, auth.orgId, [
       auth.userId,
@@ -86,7 +93,9 @@ async function uninstallDiscordOrganization(
       .delete(discordOrgInstallations)
       .where(eq(discordOrgInstallations.guildId, installation.guildId));
     signal.throwIfAborted();
-    await releaseUnusedDiscordIdentities(tx, identities);
+    await tx
+      .delete(discordUserIdentities)
+      .where(unusedDiscordIdentityOwnersWhere(identities));
     signal.throwIfAborted();
     return userIds;
   });

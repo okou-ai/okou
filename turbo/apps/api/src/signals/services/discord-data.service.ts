@@ -1,5 +1,6 @@
 import { command, computed, type Computed } from "ccstate";
-import { and, eq, or, type SQL } from "drizzle-orm";
+import { and, asc, eq, or, type SQL } from "drizzle-orm";
+import { discordUserIdentities } from "@okouai/db/schema/discord-user-identity";
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
 import { agents } from "@okouai/db/schema/agent";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
@@ -14,8 +15,8 @@ import { db$, writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import { publishDiscordChanged } from "./discord-realtime.service";
 import {
-  lockDiscordIdentities,
-  releaseUnusedDiscordIdentities,
+  discordIdentityOwnersWhere,
+  unusedDiscordIdentityOwnersWhere,
 } from "./discord-identity-ownership.service";
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import {
@@ -405,7 +406,12 @@ async function deleteDiscordBinding(
     if (!installation) {
       return [];
     }
-    const identities = await lockDiscordIdentities(tx, [args.discordUserId]);
+    const identities = await tx
+      .select({ discordUserId: discordUserIdentities.discordUserId })
+      .from(discordUserIdentities)
+      .where(discordIdentityOwnersWhere([args.discordUserId]))
+      .orderBy(asc(discordUserIdentities.discordUserId))
+      .for("update");
     signal.throwIfAborted();
     const removed = await tx
       .delete(discordOrgConnections)
@@ -428,7 +434,9 @@ async function deleteDiscordBinding(
       )
       .returning({ userId: discordOrgConnections.userId });
     signal.throwIfAborted();
-    await releaseUnusedDiscordIdentities(tx, identities);
+    await tx
+      .delete(discordUserIdentities)
+      .where(unusedDiscordIdentityOwnersWhere(identities));
     signal.throwIfAborted();
     return removed;
   });

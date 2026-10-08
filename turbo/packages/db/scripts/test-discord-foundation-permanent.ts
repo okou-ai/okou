@@ -28,7 +28,7 @@ export async function validatePermanentDiscordFoundation(
   async function rejectWrite(
     query: string,
     values: readonly unknown[],
-    code: string,
+    code: string | RegExp,
     constraint: string,
   ) {
     await client.query("SAVEPOINT rejected_discord_write");
@@ -105,7 +105,8 @@ export async function validatePermanentDiscordFoundation(
     await rejectWrite(
       `DELETE FROM discord_user_identities WHERE discord_user_id = $1`,
       [senderA],
-      "23001",
+      // PostgreSQL 18 reports restrict_violation; PostgreSQL 17 reports foreign_key_violation.
+      /^(?:23001|23503)$/u,
       "fk_discord_connection_identity_owner",
     );
     await client.query(

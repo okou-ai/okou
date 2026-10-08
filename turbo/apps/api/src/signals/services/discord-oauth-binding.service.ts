@@ -5,12 +5,9 @@ import { discordUserIdentities } from "@okouai/db/schema/discord-user-identity";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
 import { nowDate } from "../../lib/time";
-import type { Tx } from "../../lib/db-types";
-import { writeDb$, type Db } from "../external/db";
-import {
-  discordOrgChangedUserIds,
-  publishDiscordChanged,
-} from "./discord-realtime.service";
+import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
+import { writeDb$ } from "../external/db";
+import { publishDiscordChanged } from "./discord-realtime.service";
 import { notifyDiscordConnection$ } from "./discord-oauth-welcome.service";
 import { settle } from "../utils";
 
@@ -32,150 +29,166 @@ class InvalidAttempt extends Error {
   }
 }
 
-async function claimCompletion(
-  tx: Tx,
-  attempt: DiscordOauthAttempt,
-  signal: AbortSignal,
-): Promise<void> {
-  const [claimed] = await tx
-    .delete(discordOauthStates)
-    .where(
-      and(
-        eq(discordOauthStates.id, attempt.id),
-        eq(discordOauthStates.userId, attempt.userId),
-        eq(discordOauthStates.orgId, attempt.orgId),
-        eq(discordOauthStates.completionTokenHash, attempt.completionTokenHash),
-        eq(discordOauthStates.phase, "approved"),
-        gt(discordOauthStates.expiresAt, nowDate()),
-      ),
-    )
-    .returning({ id: discordOauthStates.id });
-  signal.throwIfAborted();
-  if (!claimed) {
-    throw new InvalidAttempt();
-  }
+function approvedAttemptWhere(attempt: DiscordOauthAttempt) {
+  return and(
+    eq(discordOauthStates.id, attempt.id),
+    eq(discordOauthStates.userId, attempt.userId),
+    eq(discordOauthStates.orgId, attempt.orgId),
+    eq(discordOauthStates.completionTokenHash, attempt.completionTokenHash),
+    eq(discordOauthStates.phase, "approved"),
+  );
 }
 
-async function consumeConflictedAttempt(
-  db: Db,
-  attempt: DiscordOauthAttempt,
-  signal: AbortSignal,
-): Promise<void> {
-  // The failed binding transaction rolled back completely. Consume this exact
-  // owned proof so a conflict cannot be replayed as a later install.
-  await db
-    .delete(discordOauthStates)
-    .where(
-      and(
-        eq(discordOauthStates.id, attempt.id),
-        eq(discordOauthStates.userId, attempt.userId),
-        eq(discordOauthStates.orgId, attempt.orgId),
-        eq(discordOauthStates.completionTokenHash, attempt.completionTokenHash),
-        eq(discordOauthStates.phase, "approved"),
-      ),
-    );
-  signal.throwIfAborted();
+const consumeConflictedAttempt$ = command(
+  async (
+    { set },
+    attempt: DiscordOauthAttempt,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    // The failed binding transaction rolled back completely. Consume this exact
+    // owned proof so a conflict cannot be replayed as a later install.
+    await set(writeDb$)
+      .delete(discordOauthStates)
+      .where(approvedAttemptWhere(attempt));
+    signal.throwIfAborted();
+  },
+);
+
+interface DiscordOauthBindingArgs {
+  readonly attempt: DiscordOauthAttempt;
+  readonly evidence: DiscordOauthEvidence;
 }
 
-/** Claim and final binding commit together; no callback or approval grants access. */
+/** The capability claim, identity ownership and binding have one atomic owner. */
+const commitDiscordOauthBinding$ = command(
+  async ({ set }, args: DiscordOauthBindingArgs, signal: AbortSignal) => {
+    const { attempt, evidence } = args;
+    const db = set(writeDb$);
+    return await db.transaction(async (tx) => {
+      const [claimed] = await tx
+        .delete(discordOauthStates)
+        .where(
+          and(
+            approvedAttemptWhere(attempt),
+            gt(discordOauthStates.expiresAt, nowDate()),
+          ),
+        )
+        .returning({ id: discordOauthStates.id });
+      signal.throwIfAborted();
+      if (!claimed) {
+        throw new InvalidAttempt();
+      }
+      if (attempt.flow === "install") {
+        await tx
+          .insert(discordOrgInstallations)
+          .values({
+            guildId: evidence.guildId,
+            guildName: evidence.guildName,
+            orgId: attempt.orgId,
+            botUserId: evidence.botUserId,
+            installedByUserId: attempt.userId,
+            createdAt: nowDate(),
+            updatedAt: nowDate(),
+          })
+          .onConflictDoNothing();
+        signal.throwIfAborted();
+      }
+      const [installation] = await tx
+        .select()
+        .from(discordOrgInstallations)
+        .where(
+          and(
+            eq(discordOrgInstallations.guildId, evidence.guildId),
+            eq(discordOrgInstallations.orgId, attempt.orgId),
+          ),
+        )
+        .for("share");
+      signal.throwIfAborted();
+      if (!installation || installation.botUserId !== evidence.botUserId) {
+        throw new BindingConflict();
+      }
+      // One owner-qualified upsert acquires the identity parent lock. An
+      // INSERT DO NOTHING followed by SELECT has a release/delete gap that
+      // can reject a valid concurrent claim after cleanup removes the row.
+      // Existing ownership is NEVER changed; another owner's row returns none.
+      const [owner] = await tx
+        .insert(discordUserIdentities)
+        .values({
+          discordUserId: evidence.discordUserId,
+          userId: attempt.userId,
+        })
+        .onConflictDoUpdate({
+          target: discordUserIdentities.discordUserId,
+          set: { userId: attempt.userId },
+          setWhere: eq(discordUserIdentities.userId, attempt.userId),
+        })
+        .returning({ userId: discordUserIdentities.userId });
+      signal.throwIfAborted();
+      if (owner?.userId !== attempt.userId) {
+        throw new BindingConflict();
+      }
+      const [inserted] = await tx
+        .insert(discordOrgConnections)
+        .values({
+          guildId: evidence.guildId,
+          userId: attempt.userId,
+          discordUserId: evidence.discordUserId,
+          createdAt: nowDate(),
+        })
+        .onConflictDoNothing()
+        .returning({ id: discordOrgConnections.id });
+      signal.throwIfAborted();
+      const [connection] = await tx
+        .select({ id: discordOrgConnections.id })
+        .from(discordOrgConnections)
+        .where(
+          and(
+            eq(discordOrgConnections.guildId, evidence.guildId),
+            eq(discordOrgConnections.userId, attempt.userId),
+            eq(discordOrgConnections.discordUserId, evidence.discordUserId),
+          ),
+        );
+      signal.throwIfAborted();
+      if (!connection) {
+        throw new BindingConflict();
+      }
+      const admins = await tx
+        .select({ userId: orgMembersCache.userId })
+        .from(orgMembersCache)
+        .where(
+          and(
+            eq(orgMembersCache.orgId, attempt.orgId),
+            eq(orgMembersCache.role, "admin"),
+          ),
+        );
+      const recipients = [
+        ...new Set([
+          attempt.userId,
+          ...admins.map((admin) => {
+            return admin.userId;
+          }),
+        ]),
+      ];
+      signal.throwIfAborted();
+      return {
+        connectionId: connection.id,
+        inserted: inserted?.id === connection.id,
+        recipients,
+      };
+    });
+  },
+);
+
+/** No callback or approval grants access; publish only committed binding facts. */
 export const persistDiscordOauth$ = command(
   async (
     { set },
-    args: {
-      readonly attempt: DiscordOauthAttempt;
-      readonly evidence: DiscordOauthEvidence;
-    },
+    args: DiscordOauthBindingArgs,
     signal: AbortSignal,
   ): Promise<"saved" | "conflict" | "invalid"> => {
-    const { attempt, evidence } = args;
-    const db = set(writeDb$);
+    const { attempt } = args;
     const result = await settle(
-      db.transaction(async (tx) => {
-        await claimCompletion(tx, attempt, signal);
-        if (attempt.flow === "install") {
-          await tx
-            .insert(discordOrgInstallations)
-            .values({
-              guildId: evidence.guildId,
-              guildName: evidence.guildName,
-              orgId: attempt.orgId,
-              botUserId: evidence.botUserId,
-              installedByUserId: attempt.userId,
-              createdAt: nowDate(),
-              updatedAt: nowDate(),
-            })
-            .onConflictDoNothing();
-          signal.throwIfAborted();
-        }
-        const [installation] = await tx
-          .select()
-          .from(discordOrgInstallations)
-          .where(
-            and(
-              eq(discordOrgInstallations.guildId, evidence.guildId),
-              eq(discordOrgInstallations.orgId, attempt.orgId),
-            ),
-          )
-          .for("share");
-        signal.throwIfAborted();
-        if (!installation || installation.botUserId !== evidence.botUserId) {
-          throw new BindingConflict();
-        }
-        // One owner-qualified upsert acquires the identity parent lock. An
-        // INSERT DO NOTHING followed by SELECT has a release/delete gap that
-        // can reject a valid concurrent claim after cleanup removes the row.
-        // Existing ownership is NEVER changed; another owner's row returns none.
-        const [owner] = await tx
-          .insert(discordUserIdentities)
-          .values({
-            discordUserId: evidence.discordUserId,
-            userId: attempt.userId,
-          })
-          .onConflictDoUpdate({
-            target: discordUserIdentities.discordUserId,
-            set: { userId: attempt.userId },
-            setWhere: eq(discordUserIdentities.userId, attempt.userId),
-          })
-          .returning({ userId: discordUserIdentities.userId });
-        signal.throwIfAborted();
-        if (owner?.userId !== attempt.userId) {
-          throw new BindingConflict();
-        }
-        const [inserted] = await tx
-          .insert(discordOrgConnections)
-          .values({
-            guildId: evidence.guildId,
-            userId: attempt.userId,
-            discordUserId: evidence.discordUserId,
-            createdAt: nowDate(),
-          })
-          .onConflictDoNothing()
-          .returning({ id: discordOrgConnections.id });
-        signal.throwIfAborted();
-        const [connection] = await tx
-          .select({ id: discordOrgConnections.id })
-          .from(discordOrgConnections)
-          .where(
-            and(
-              eq(discordOrgConnections.guildId, evidence.guildId),
-              eq(discordOrgConnections.userId, attempt.userId),
-              eq(discordOrgConnections.discordUserId, evidence.discordUserId),
-            ),
-          );
-        signal.throwIfAborted();
-        if (!connection) {
-          throw new BindingConflict();
-        }
-        const recipients = await discordOrgChangedUserIds(tx, attempt.orgId, [
-          attempt.userId,
-        ]);
-        signal.throwIfAborted();
-        return {
-          connectionId: connection.id,
-          inserted: inserted?.id === connection.id,
-          recipients,
-        };
-      }),
+      set(commitDiscordOauthBinding$, args, signal),
       signal,
     );
     if (!result.ok) {
@@ -185,7 +198,7 @@ export const persistDiscordOauth$ = command(
       if (!(result.error instanceof BindingConflict)) {
         throw result.error;
       }
-      await consumeConflictedAttempt(db, attempt, signal);
+      await set(consumeConflictedAttempt$, attempt, signal);
       return "conflict";
     }
     await publishDiscordChanged(result.value.recipients);

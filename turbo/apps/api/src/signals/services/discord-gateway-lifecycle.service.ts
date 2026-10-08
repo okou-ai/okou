@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
-import { eq, or } from "drizzle-orm";
+import { asc, eq, or } from "drizzle-orm";
+import { discordUserIdentities } from "@okouai/db/schema/discord-user-identity";
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import {
-  lockDiscordIdentities,
-  releaseUnusedDiscordIdentities,
+  discordIdentityOwnersWhere,
+  unusedDiscordIdentityOwnersWhere,
 } from "./discord-identity-ownership.service";
 import { discordGatewayReceipts } from "@okouai/db/schema/discord-gateway-receipt";
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
@@ -67,12 +68,18 @@ async function uninstallDiscordGuild(
       .from(discordOrgConnections)
       .where(eq(discordOrgConnections.guildId, args.guildId));
     signal.throwIfAborted();
-    const identities = await lockDiscordIdentities(
-      tx,
-      connections.map((connection) => {
-        return connection.discordUserId;
-      }),
-    );
+    const identities = await tx
+      .select({ discordUserId: discordUserIdentities.discordUserId })
+      .from(discordUserIdentities)
+      .where(
+        discordIdentityOwnersWhere(
+          connections.map((connection) => {
+            return connection.discordUserId;
+          }),
+        ),
+      )
+      .orderBy(asc(discordUserIdentities.discordUserId))
+      .for("update");
     signal.throwIfAborted();
     const userIds = await discordOrgChangedUserIds(
       tx,
@@ -86,7 +93,9 @@ async function uninstallDiscordGuild(
       .delete(discordOrgInstallations)
       .where(eq(discordOrgInstallations.guildId, args.guildId));
     signal.throwIfAborted();
-    await releaseUnusedDiscordIdentities(tx, identities);
+    await tx
+      .delete(discordUserIdentities)
+      .where(unusedDiscordIdentityOwnersWhere(identities));
     signal.throwIfAborted();
     return { outcome: "accepted" as const, userIds };
   });
