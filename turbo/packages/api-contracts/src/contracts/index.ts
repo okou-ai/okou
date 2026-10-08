@@ -1648,10 +1648,10 @@ export {
 } from "./voice-io-polish";
 export {
   voiceIoTranscribeContract,
-  voiceIoTranscribeResponseSchema,
+  voiceIoTranscribeSegmentResponseSchema,
   VOICE_IO_TRANSCRIBE_MAX_CONTEXT_CHARS,
   type VoiceIoTranscribeContract,
-  type VoiceIoTranscribeResponse,
+  type VoiceIoTranscribeSegmentResponse,
 } from "./voice-io-transcribe";
 export {
   voiceIoQuotaContract,

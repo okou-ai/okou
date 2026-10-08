@@ -1347,6 +1347,44 @@ Web floor is needed. A normal Runner rollout is needed to observe these fields;
 production activation or deployment is not included in this PR. Runner rollback
 removes the local attributes only, without changing download behavior.
 
+## Client-owned voice transcription and independent polish
+
+Microphone input now uses two independent requests. Every audio segment, including
+its tail, calls `/api/voice-io/transcribe/segment` with the same transcript-only
+contract. `previousTranscript` is a spelling/overlap suffix capped at 1,000
+characters, not the accumulated recording; `final` and `polishedText` are removed.
+The client waits for all segment checkpoints, then calls `/api/voice-io/polish`
+with a nonempty, recording-ordered `segments` array. Its combined text is bounded
+at 262,144 characters. Both model stages have an owner-bound 60-second deadline.
+Daily request/duration usage remains attached to successful audio transcription;
+finite lifetime recording usage is counted only after successful polish. Empty
+recordings never request polish or consume recording usage.
+
+The client keeps PCM and segment checkpoints in IndexedDB. A failed/cancelled
+polish does not erase those checkpoints; Retry/reload submits only polish once
+transcription is complete. VAD runs before each new audio upload and inspects only
+the non-overlapping samples. Silent tails do not upload audio; earlier speech
+still reaches the independent polish request.
+
+The owner explicitly authorized discarding old voice recordings. Opening version
+2 of `okou-voice-drafts` replaces its `drafts` and `chunks` stores atomically,
+including old PCM and combined-finalization progress. Other App databases are
+untouched. Version 2 checkpoints retain ordinary resume/retry behavior. No old
+recording converter, tombstone contract, or cache fallback is provided.
+
+These HTTP contracts intentionally change together. Old Web/new API can receive
+400 for a full-prefix context or no-audio finalization, or a transcript-only
+response that an old Web cannot finalize. New Web/old API cannot supply the old
+required `final` option and cannot use the old polish `text` body. Neither mix
+is a supported voice workflow; old clients must refresh onto the split pipeline.
+Release operations must coordinate the API/App rollout and existing force-upgrade
+floor once the first containing release is known. This source PR does not change
+live floor settings or deploy production. Rolling back either side alone restores
+an incompatible protocol. Rolling the App back to its version-1 cache reader also
+requires clearing the version-2 voice database, rather than treating a
+`VersionError` as an empty recording. Retired cache contents cannot be recovered
+by rollback.
+
 ## File transcription and Seedream 5 retirement
 
 - Remove `okou video transcribe` and `/api/voice-io/stt`; old CLIs receive

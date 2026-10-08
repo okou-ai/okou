@@ -95,10 +95,7 @@ function parseVoiceDraftForm(formData: FormData) {
     return badRequest("Invalid voice segment options");
   }
   const segment = options.data;
-  const files =
-    segment.final && formData.getAll("file").length === 0
-      ? []
-      : audioFiles(formData);
+  const files = audioFiles(formData);
   if (!files) {
     return badRequest("No audio file provided");
   }
@@ -243,7 +240,6 @@ const voiceIoTranscribeHandler$ = command(
       recordSttUsage$,
       {
         ...policy,
-        recordLifetimeUsage: policy.recordLifetimeUsage && segment.final,
         orgId: auth.orgId,
         userId: auth.userId,
       },

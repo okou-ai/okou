@@ -19,10 +19,13 @@ function installVoiceInput(): void {
   context.mocks.api(voiceIoQuotaContract.get, ({ respond }) => {
     return respond(200, { allowed: true, count: 0, limit: 60 });
   });
+  context.mocks.http.post("*/api/voice-io/polish", () => {
+    return HttpResponse.json({ text: "Voice note." });
+  });
   context.mocks.http.post("*/api/voice-io/transcribe/segment", () => {
     return HttpResponse.json({
       transcript: "voice note",
-      polishedText: "Voice note.",
+
       language: "en-US",
     });
   });
@@ -37,6 +40,9 @@ test("Wait for nonempty PCM before showing the waveform and preserve the opening
     onPcmCapture: connected.resolve,
     finalPcmSamples: new Float32Array(0),
   });
+  context.mocks.http.post("*/api/voice-io/polish", () => {
+    return HttpResponse.json({ text: "Opening words." });
+  });
   context.mocks.http.post(
     "*/api/voice-io/transcribe/segment",
     async ({ request }) => {
@@ -48,7 +54,7 @@ test("Wait for nonempty PCM before showing the waveform and preserve the opening
       uploaded.resolve(await file.arrayBuffer());
       return HttpResponse.json({
         transcript: "opening words",
-        polishedText: "Opening words.",
+
         language: "en-US",
       });
     },

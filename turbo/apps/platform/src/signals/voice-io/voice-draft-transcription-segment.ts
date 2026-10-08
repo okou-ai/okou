@@ -7,8 +7,8 @@ import {
 import { settle } from "../utils.ts";
 import {
   voiceIoTranscribeContract,
+  VOICE_IO_TRANSCRIBE_MAX_PREVIOUS_CHARS,
   type VoiceIoTranscribeContext,
-  type VoiceIoTranscribeSegmentResponse,
 } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
@@ -56,8 +56,9 @@ function segmentBody(
   body.append(
     "options",
     JSON.stringify({
-      previousTranscript,
-      final: options.segment?.final ?? true,
+      previousTranscript: previousTranscript.slice(
+        -VOICE_IO_TRANSCRIBE_MAX_PREVIOUS_CHARS,
+      ),
       totalDurationSeconds: options.totalDurationSeconds,
       overlapDurationSeconds: file ? options.overlapDurationSeconds : 0,
     }),
@@ -71,26 +72,9 @@ function segmentBody(
   return body;
 }
 
-function completedText(
-  final: boolean,
-  response: VoiceIoTranscribeSegmentResponse | undefined,
-): string | undefined {
-  if (!final) {
-    return;
-  }
-  if (!response) {
-    return "";
-  }
-  if (!response.polishedText?.trim()) {
-    throw new Error("Final voice transcription returned no polished text");
-  }
-  return response.polishedText;
-}
-
 async function requestSegment(
   createClient: ApiClientFactory,
   body: FormData,
-  final: boolean,
   signal: AbortSignal,
 ): Promise<VoiceDraftTranscriptionResult | undefined> {
   const result = await accept(
@@ -115,7 +99,6 @@ async function requestSegment(
   return {
     kind: "transcribed",
     transcript: result.status === 200 ? result.body.transcript : "",
-    text: completedText(final, result.status === 200 ? result.body : undefined),
   };
 }
 
@@ -128,7 +111,6 @@ async function transcribePreparedSegment(
 ): Promise<VoiceDraftTranscriptionResult | undefined> {
   const { segment } = options;
   let file: File | undefined;
-  let vadPolicyVersion: string | undefined;
   if (segment) {
     const audio = await readVoiceDraftAudio(options.key, options.recordingId);
     signal.throwIfAborted();
@@ -151,35 +133,20 @@ async function transcribePreparedSegment(
       };
     }
     if (detected.value === "no_speech") {
-      vadPolicyVersion = VOICE_ACTIVITY_POLICY_VERSION;
-      if (!segment.final || !previousTranscript.trim()) {
-        return {
-          kind: "transcribed",
-          transcript: "",
-          ...(segment.final ? { text: "" } : {}),
-          vadPolicyVersion,
-        };
-      }
-      // A silent tail still finalizes all earlier speech using the existing
-      // no-audio polish endpoint contract. Never discard the saved prefix.
-    } else {
-      file = new File(
-        [encodeVoiceDraftPcmWav(samples)],
-        `voice-draft-${String(segment.startSample)}.wav`,
-        { type: "audio/wav" },
-      );
+      return {
+        kind: "transcribed",
+        transcript: "",
+        vadPolicyVersion: VOICE_ACTIVITY_POLICY_VERSION,
+      };
     }
+    file = new File(
+      [encodeVoiceDraftPcmWav(samples)],
+      `voice-draft-${String(segment.startSample)}.wav`,
+      { type: "audio/wav" },
+    );
   }
   const body = segmentBody(options, context, previousTranscript, file);
-  const result = await requestSegment(
-    createClient,
-    body,
-    segment?.final ?? true,
-    signal,
-  );
-  return result?.kind === "transcribed"
-    ? { ...result, ...(vadPolicyVersion ? { vadPolicyVersion } : {}) }
-    : result;
+  return await requestSegment(createClient, body, signal);
 }
 
 function hasReusableTranscript(
@@ -264,8 +231,9 @@ export const transcribeVoiceDraftSegment$ = command(
           .join(" "),
       };
     }
-    if (!segment && !previous.transcript) {
-      return { kind: "transcribed", transcript: "", text: "" };
+    if (!segment) {
+      // A sealed recording with no new samples needs only the polish command.
+      return previous;
     }
     if (segment && !saved) {
       progress = {
