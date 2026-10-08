@@ -3,7 +3,7 @@ import {
   feishuPlatformFromTokenUrl,
   type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { and, eq, ne } from "drizzle-orm";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
@@ -27,7 +27,8 @@ import { nowDate } from "../../lib/time";
 import type { RouteEntry } from "../route-entry";
 import {
   claimConnectorOAuthState,
-  readCustomConnectorOAuthState,
+  customConnectorOAuthStateByState,
+  customConnectorOAuthStatePreview,
   type StoredCustomConnectorOAuthState,
 } from "../services/connector-oauth-state.service";
 import {
@@ -980,9 +981,15 @@ const completeClaimedCustomFeishuOAuth$ = command(
   },
 );
 
+const customConnectorOAuthState$ = customConnectorOAuthStateByState(
+  computed((get) => {
+    return get(queryOf(feishuOauthContract.callback)).state ?? "";
+  }),
+);
+
 const completeCustomFeishuOAuth$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly db: Db;
       readonly query: FeishuOAuthCallbackQuery & { readonly state: string };
@@ -990,11 +997,9 @@ const completeCustomFeishuOAuth$ = command(
     signal: AbortSignal,
   ) => {
     const { db, query } = args;
-    const preview = await readCustomConnectorOAuthState(
-      db,
-      { state: query.state },
-      signal,
-    );
+    const storedState = await get(customConnectorOAuthState$);
+    signal.throwIfAborted();
+    const preview = customConnectorOAuthStatePreview(storedState);
     if (preview.kind !== "usable") {
       return jsonErrorResponse("Invalid or expired connect state");
     }
