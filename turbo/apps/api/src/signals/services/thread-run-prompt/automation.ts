@@ -13,9 +13,12 @@ export function createAutomationThreadPrompt(
   context$: ReturnType<typeof createThreadAutomationContext>,
 ): Computed<Promise<IntegrationPromptVariables | null>> {
   return computed(async (get) => {
-    const [source, context] = await Promise.all([get(source$), get(context$)]);
+    const source = await get(source$);
+    if (source?.event.contextType !== "automation") {
+      return null;
+    }
+    const context = await get(context$);
     if (
-      source?.event.contextType !== "automation" ||
       !context ||
       context.workflowName === null ||
       context.eventType === null ||

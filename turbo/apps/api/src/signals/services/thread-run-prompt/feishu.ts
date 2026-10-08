@@ -10,8 +10,12 @@ export function createFeishuThreadPrompt(
   context$: Computed<Promise<FeishuThreadContext>>,
 ): Computed<Promise<IntegrationPromptVariables | null>> {
   return computed(async (get) => {
-    const [source, context] = await Promise.all([get(source$), get(context$)]);
-    if (!source || !context) {
+    const source = await get(source$);
+    if (source?.event.contextType !== "feishu") {
+      return null;
+    }
+    const context = await get(context$);
+    if (!context) {
       return null;
     }
     const providerName = FEISHU_PLATFORMS[context.platform].name;

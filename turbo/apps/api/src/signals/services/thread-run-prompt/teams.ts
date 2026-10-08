@@ -9,8 +9,12 @@ export function createTeamsThreadPrompt(
   context$: Computed<Promise<TeamsThreadContext>>,
 ): Computed<Promise<IntegrationPromptVariables | null>> {
   return computed(async (get) => {
-    const [source, context] = await Promise.all([get(source$), get(context$)]);
-    if (!source || !context) {
+    const source = await get(source$);
+    if (source?.event.contextType !== "teams") {
+      return null;
+    }
+    const context = await get(context$);
+    if (!context) {
       return null;
     }
     // The context also retains history attachments for delivery; the user

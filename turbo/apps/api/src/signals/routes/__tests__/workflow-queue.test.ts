@@ -16,7 +16,7 @@ import { chatThreadRoutes } from "../chat-threads";
 import { meModelProvidersDeleteRoutes } from "../me-model-providers-delete";
 import { webhooksWorkflowAutomationsRoutes } from "../webhooks-workflow-automations";
 import { workflowAutomationsRoutes } from "../workflow-automations";
-import type { ApiTestUser } from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -38,6 +38,7 @@ const TEST_APP_ROUTES = Object.freeze([
 ]);
 
 const context = testContext();
+const bdd = createBddApi(context);
 const api = createRunsApi(context);
 const mocks = createRouteMocks(context);
 const wf = createWorkflowsBddApi(context);
@@ -498,6 +499,7 @@ describe("workflow queue", () => {
 
   it("keeps user-friendly automation prompts across queue drain", async () => {
     const scenario = await setup();
+    await bdd.readMe(scenario.actor);
     const automation = await createWebhookAutomation(scenario);
 
     const firstRunId = await expectAcceptedRunId(
