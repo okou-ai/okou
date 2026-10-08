@@ -174,10 +174,13 @@ migration.
 
 A diagnosed `safety_policy_refusal` vetoes native assistant and summary retries
 before generic text matching, even when the preserved provider link contains
-HTTP-looking digits. The [pinned patch contract](../turbo/patches/pi-pending-tools.md#provider-declared-queue-expiry)
-owns this narrow retry precedence; no answer/tool/stderr classifier is added.
-Only the matching patched CLI gains that veto. A newer Guest can classify an
-older CLI's terminal text, but cannot undo retries the old SDK already made.
+HTTP-looking digits. It also stays out of automatic overflow/threshold compaction:
+context-looking link text must not trigger summarization or replay. The
+[pinned patch contract](../turbo/patches/pi-pending-tools.md#provider-declared-queue-expiry)
+owns these narrow SDK guards; genuine context-overflow recovery is unchanged,
+and no answer/tool/stderr classifier is added. Only the matching patched CLI
+gains those guards. A newer Guest can classify an older CLI's terminal text,
+but cannot undo retries or recovery the old SDK already performed.
 
 A settled final Pi `length` response follows Pi's completed outcome: partial
 assistant text stays in its event and becomes the public result, without a

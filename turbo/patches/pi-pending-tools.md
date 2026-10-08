@@ -198,6 +198,18 @@ unchanged; absent or unclassified diagnostics retain native text matching.
 and code-less HTTP 503 with canonical, numeric and redacted links, plus a real
 unclassified HTTP-200 transient. Original error text remains intact.
 
+The existing `pi-coding-agent@0.87.1` patch also keeps a failed assistant message
+whose latest owned diagnostic is `safety_policy_refusal` out of `_checkCompaction`.
+This applies before automatic overflow recovery and threshold summarization:
+opaque link text such as `context_length_exceeded` must not cause another model
+request or omit the refused attempt from history. The same real-session regression
+uses prior history and enabled compaction over HTTP 200 / 503, and verifies that
+the refusal creates no `context_edit` or `compaction` entry. A genuine structured
+context overflow still produces one compaction and a successful continuation.
+Manual compaction, ordinary recovery settings and failed/nonzero semantics are
+unchanged. Remove this narrow guard only when pinned upstream honors the same
+owned terminal reason at automatic recovery and these regressions stay green.
+
 Remove these hunks and their helper together only when the pinned upstream SDK
 implements the same terminal behavior at both retry owners and these boundary
 tests pass against it. A version bump alone is insufficient. Regenerate the

@@ -55,11 +55,21 @@ afterAll(() => {
   return server.close();
 });
 
-function successResponse() {
+function successResponse(text?: string) {
+  const item = {
+    id: "synthetic-message",
+    type: "message",
+    role: "assistant",
+    status: "completed",
+    content:
+      text === undefined
+        ? []
+        : [{ type: "output_text", text, annotations: [] }],
+  };
   const response = {
     id: "synthetic-response",
     status: "completed",
-    output: [],
+    output: text === undefined ? [] : [item],
     usage: { input_tokens: 1, output_tokens: 0, total_tokens: 1 },
   };
   return new HttpResponse(
@@ -68,6 +78,22 @@ function successResponse() {
         type: "response.created",
         response: { ...response, status: "in_progress" },
       },
+      ...(text === undefined
+        ? []
+        : [
+            {
+              type: "response.output_item.added",
+              output_index: 0,
+              item: { ...item, content: [], status: "in_progress" },
+            },
+            {
+              type: "response.output_text.delta",
+              output_index: 0,
+              item_id: item.id,
+              delta: text,
+            },
+            { type: "response.output_item.done", output_index: 0, item },
+          ]),
       { type: "response.completed", response },
     ]
       .map((event) => {
@@ -94,7 +120,10 @@ function turn() {
 }
 
 /** A session carrying the retry budget the classifier decides to spend. */
-async function session() {
+async function session(compaction?: {
+  enabled: boolean;
+  keepRecentTokens: number;
+}) {
   const directory = await mkdtemp(join(tmpdir(), "pi-structured-retry-"));
   onTestFinished(() => {
     return rm(directory, { recursive: true, force: true });
@@ -103,6 +132,7 @@ async function session() {
     join(directory, "settings.json"),
     JSON.stringify({
       retry: { enabled: true, maxRetries: 2, baseDelayMs: 1 },
+      compaction,
     }),
   );
   const created = await createPiAgentSessionForRuntime({
@@ -210,6 +240,97 @@ describe("Codex structured retry classification", () => {
     expect(piModelFailureReason(first)).toBeUndefined();
     expect(answers.at(-1)).toMatchObject({ stopReason: "stop" });
   });
+
+  it("keeps a genuine context overflow on the compact-and-retry path", async () => {
+    let requests = 0;
+    server.use(
+      http.post(endpoint, () => {
+        requests++;
+        if (requests === 2) {
+          return HttpResponse.json(
+            {
+              error: {
+                code: "context_length_exceeded",
+                message: "context_length_exceeded",
+              },
+            },
+            { status: 400 },
+          );
+        }
+        return successResponse(
+          requests === 3 || requests === 4
+            ? "The prior turn completed."
+            : "completed",
+        );
+      }),
+    );
+    const { created, retries, answers } = await session({
+      enabled: true,
+      keepRecentTokens: 1,
+    });
+    await created.session.prompt("a prior turn");
+    await created.session.prompt("hello");
+    // Warmup, overflow, history and split-turn summaries, then continuation.
+    expect(requests).toBe(5);
+    expect(retries).toStrictEqual([]);
+    expect(answers).toHaveLength(3);
+    const overflow = answers[1];
+    if (!overflow) throw new Error("Missing context overflow answer");
+    expect(piModelFailureReason(overflow)).toBe("context_window_exceeded");
+    expect(answers.at(-1)).toMatchObject({
+      stopReason: "stop",
+      content: [{ type: "text", text: "completed" }],
+    });
+    expect(
+      created.session.sessionManager.getBranch().filter((entry) => {
+        return entry.type === "compaction";
+      }),
+    ).toHaveLength(1);
+  });
+
+  it.each([200, 503])(
+    "does not compact or replay a cybersecurity refusal with context-like link text behind HTTP %s",
+    async (status) => {
+      const message = cyberSafetyRefusal.errorMessage
+        .replace(
+          "https://example.invalid/policy",
+          "https://example.invalid/context_length_exceeded",
+        )
+        .slice("Codex error: ".length);
+      let requests = 0;
+      server.use(
+        http.post(endpoint, () => {
+          requests++;
+          if (requests === 1) return successResponse();
+          return status === 200
+            ? new HttpResponse(
+                `data: ${JSON.stringify({ type: "error", message })}`,
+                { headers: { "content-type": "text/event-stream" } },
+              )
+            : HttpResponse.json({ error: { message } }, { status });
+        }),
+      );
+      const { created, retries, answers } = await session({
+        enabled: true,
+        keepRecentTokens: 1,
+      });
+      await created.session.prompt("a prior turn");
+      await created.session.prompt("hello");
+      expect(requests).toBe(2);
+      expect(retries).toStrictEqual([]);
+      expect(answers).toHaveLength(2);
+      const final = answers.at(-1);
+      if (!final) throw new Error("Missing terminal assistant answer");
+      expect(final.stopReason).toBe("error");
+      expect(final.errorMessage).toContain(message);
+      expect(piModelFailureReason(final)).toBe("safety_policy_refusal");
+      expect(
+        created.session.sessionManager.getBranch().some((entry) => {
+          return entry.type === "context_edit" || entry.type === "compaction";
+        }),
+      ).toBe(false);
+    },
+  );
 
   it.each(
     [200, 503].flatMap((status) => {
