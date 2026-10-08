@@ -85,6 +85,31 @@ prepared Runs. Rolling back the API restores the previous selection policy.
 Thread-owned network storage and retirement of those persisted entities are
 later deliveries in the Epic.
 
+## Dynamic storage preparation fails before CLI launch
+
+The next delivery of [#37970](https://github.com/okou-ai/okou/issues/37970)
+makes required stale-input cleanup and instruction normalization part of storage
+preparation success. Unreadable cleanup mount information, unsafe cleanup paths,
+failed removals, missing instruction sources, invalid filenames, and failed
+instruction writes now return failure. Later preparation phases stop, and
+`guest-storage-apply` exits with code 1. The existing Runner failure path then
+rejects preparation before starting the CLI.
+
+Missing stale paths remain successful cleanup. Atomic instruction replacement,
+cached-child preservation, and symlink protections remain in place. Permission
+failures for the `lost+found` directory directly at a mountpoint root may leave
+that filesystem metadata intact; other removal failures are fatal. Temporary
+staging cleanup remains best effort. Completed filesystem changes are not rolled
+back, and already running parallel downloads still finish before aggregate
+failure is returned.
+
+The storage manifest, decoded-file framing, and process exit-code contracts are
+unchanged. Old API with new Runner/Guest works with existing valid inputs. New
+API with old Runner/Guest retains the old best-effort cleanup behavior until the
+Runner image is upgraded; deploying the API alone does not enforce this policy.
+Runner and Guest are shipped together, and both stdin and fallback-file callers
+already reject nonzero helper exits. This change requires no database migration.
+
 ## Pi turn-end stdout boundaries (2026-10-08)
 
 The CLI's Pi JSON/RPC serializer omits `turn_end.message` and
