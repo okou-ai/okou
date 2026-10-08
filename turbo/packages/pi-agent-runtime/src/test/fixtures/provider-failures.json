@@ -80,6 +80,14 @@
     "reason": "safety_policy_refusal"
   },
   {
+    "message": "This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/invalid_api_key before retrying.",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "Codex error: This content was flagged for possible cybersecurity risk. If this seems wrong, try rephrasing your request. If you’re doing authorized security work that requires more cyber permissive safeguards, apply for Daybreak access via https://example.invalid/policy?request=invalid_api_key before retrying.",
+    "reason": "safety_policy_refusal"
+  },
+  {
     "message": "{\"error\":{\"code\":\"InternalServerException\",\"message\":\"We were unable to start processing your request within the 900-second timeout limit. Please try again later.\"}}",
     "reason": "provider_queue_timeout"
   },

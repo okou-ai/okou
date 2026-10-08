@@ -150,6 +150,11 @@ an earlier retry budget. Aborted messages and tool results cannot supply model
 HTTP evidence. Historical messages without this diagnostic remain supported.
 
 Structured provider codes precede recognized terminal text and HTTP status.
+At owned Guest terminal sources, a diagnosed provider refusal also precedes
+native Codex credential-keyword heuristics: an opaque policy link containing
+`invalid_api_key` does not change the cause. Actual structured credential codes
+retain priority, and stderr keeps its existing native rules rather than gaining
+refusal inference.
 The original body distinguishes ordinary HTTP 429 rate limits from provider
 account balance failures (`provider_insufficient_credits`) and subscription
 usage limits (`usage_limit`), even when the SDK renders all three as a usage
