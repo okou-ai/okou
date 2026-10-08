@@ -124,7 +124,7 @@ are enforced by the integration ingress tests.
   projections fail with transactional DDL rollback, populated rows are unchanged,
   outgoing dual writers and column-only writers coexist, MCP remains optional,
   and the runtime ORM works after contraction migration
-  `1350_drop_connector_catalog_payload`. The contraction uses a frozen outgoing
+  `1351_drop_connector_catalog_payload`. The contraction uses a frozen outgoing
   table fixture, verifies transactional DROP rollback and preserves every
   retained hash/slug, projection and the current pointer (including historical
   and partial generations). Retain it through the production payload contraction;

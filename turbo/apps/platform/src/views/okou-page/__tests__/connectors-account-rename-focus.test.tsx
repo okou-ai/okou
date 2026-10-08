@@ -412,18 +412,26 @@ test("A search changed during save determines focus without a later stale handof
   await setupPage({ context, path: "/connectors?keywords=github" });
   const manager = await openManager(user);
   await enterRename(user, manager, "keyboard");
-  await user.keyboard("{Control>}a{/Control}Research");
+  await user.keyboard("{Control>}a{/Control}");
+  await user.paste("Research");
   await user.keyboard("{Enter}");
   await fixture.refreshStarted;
   const search = within(manager).getByPlaceholderText("Find accounts");
   await user.click(search);
-  await user.keyboard("No matching account");
+  await user.paste("No matching account");
   expect(search).toHaveValue("No matching account");
 
   refresh.resolve();
   await within(manager).findByText("No accounts found");
-  expect(search).toHaveFocus();
-  await user.keyboard("{Control>}a{/Control}Research");
+  // Empty results can render before save finishes its focus handoff.
+  await waitFor(() => {
+    expect(
+      within(manager).queryByLabelText("Account name"),
+    ).not.toBeInTheDocument();
+    expect(search).toHaveFocus();
+  });
+  await user.keyboard("{Control>}a{/Control}");
+  await user.paste("Research");
   await within(manager).findByRole("group", { name: "Research" });
   expect(search).toHaveFocus();
   await user.keyboard("{End}x");

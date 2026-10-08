@@ -1,6 +1,6 @@
 {
-  "id": "382fcc90-2ab0-4e82-942a-c8d6488c55c6",
-  "prevId": "4d182250-4b60-42a2-ae47-c52f4d1434c1",
+  "id": "d943ace1-a60f-4a0b-bf76-0ac3cb22a615",
+  "prevId": "382fcc90-2ab0-4e82-942a-c8d6488c55c6",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -10185,12 +10185,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},

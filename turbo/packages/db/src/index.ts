@@ -1,4 +1,5 @@
 import * as getStartedClaimSchema from "./schema/get-started-claim";
+import * as mailNotificationSchema from "./schema/mail-notification";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as activeAgentRunSchema from "./schema/active-agent-run";
 import * as homeTaskRecommendationSchema from "./schema/home-task-recommendation";
@@ -160,6 +161,7 @@ import * as vncConnectionSchema from "./schema/vnc-connection";
 import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config";
 
 export const schema = {
+  ...mailNotificationSchema,
   ...getStartedClaimSchema,
   ...activeAgentRunSchema,
   ...homeTaskRecommendationSchema,

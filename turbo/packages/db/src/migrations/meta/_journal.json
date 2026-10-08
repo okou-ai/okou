@@ -1909,8 +1909,15 @@
     {
       "idx": 1350,
       "version": "7",
-      "when": 1791471764350,
-      "tag": "1350_drop_connector_catalog_payload",
+      "when": 1791469279706,
+      "tag": "1350_acoustic_adam_warlock",
+      "breakpoints": true
+    },
+    {
+      "idx": 1351,
+      "version": "7",
+      "when": 1791473200258,
+      "tag": "1351_drop_connector_catalog_payload",
       "breakpoints": true
     }
   ]

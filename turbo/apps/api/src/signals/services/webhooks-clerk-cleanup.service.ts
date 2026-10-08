@@ -92,6 +92,7 @@ import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
 import { eraseVncOwnerData$ } from "./vnc-owner-lifecycle.service";
 import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
+import { eraseMailNotifications$ } from "./mail-notification.service";
 
 const L = logger("WebhookClerkCleanup");
 const CLERK_ORG_MEMBERSHIP_PAGE_SIZE = 100;
@@ -736,6 +737,8 @@ const deleteOrgData$ = command(
     const released = releasedSlotCollector();
     await cancelOrgRuns(db, orgId, released.collect);
     signal.throwIfAborted();
+    await set(eraseMailNotifications$, { orgId }, signal);
+    signal.throwIfAborted();
     await deleteDiscordOrgData(db, orgId);
     signal.throwIfAborted();
 
@@ -867,6 +870,8 @@ const deleteUserData$ = command(
     const db = set(writeDb$);
     const released = releasedSlotCollector();
     await cancelUserRuns(db, userId, released.collect);
+    signal.throwIfAborted();
+    await set(eraseMailNotifications$, { userId }, signal);
     signal.throwIfAborted();
     await deleteDiscordUserData(db, userId);
     signal.throwIfAborted();

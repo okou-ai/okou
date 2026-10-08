@@ -47,6 +47,11 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.NotifyMail]: {
+    maintainer: "lancy@okou.ai",
+    description: "Allow agents to send Okou email notifications to their user",
+    enabled: false,
+  },
   [FeatureSwitchKey.HomeTaskRecommendations]: {
     maintainer: "yuma@okou.ai",
     description:
