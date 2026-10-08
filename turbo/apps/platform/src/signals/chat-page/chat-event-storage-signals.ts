@@ -12,7 +12,6 @@ import { captureTaskCompletedSuccessfully } from "../../lib/posthog.ts";
 import type { ChatEventDataKey } from "../../shared-database/data-key.ts";
 import { queryChatEventSharedDatabase$ } from "../shared-database.ts";
 import { reloadBillingStatus$ } from "../okou-page/billing.ts";
-import { detach, Reason } from "../utils.ts";
 import { notifyChatEventsChanged$ } from "./chat-event-change-registry.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 import {
@@ -28,7 +27,7 @@ import {
   type OptimisticChatEventInput,
 } from "./optimistic-chat-events.ts";
 export type AppendOptimisticEventCommand = Command<
-  void,
+  Promise<void>,
   [OptimisticChatEventInput, AbortSignal]
 >;
 
@@ -241,16 +240,14 @@ export function createChatEventStorageSignals({
     optimisticEvents$,
   });
   const appendOptimisticEvent$: AppendOptimisticEventCommand = command(
-    ({ set }, input: OptimisticChatEventInput, signal: AbortSignal): void => {
+    async (
+      { set },
+      input: OptimisticChatEventInput,
+      signal: AbortSignal,
+    ): Promise<void> => {
       signal.throwIfAborted();
       set(appendOptimisticChatEvent$, createOptimisticChatEventEntry(input));
-      // Presentation and read-mark effects must not delay or reject the send.
-      // Notification still combines this operation's signal with each listener's owner.
-      detach(
-        set(notifyChatEventsChanged$, chatEvents$, signal),
-        Reason.Daemon,
-        "Optimistic chat event change notification",
-      );
+      await set(notifyChatEventsChanged$, chatEvents$, signal);
     },
   );
   const mergePersistentEvents$ = command(
