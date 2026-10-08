@@ -28,7 +28,7 @@ import { z } from "zod";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
   downloadS3BufferWithMaxBytes,
   S3ObjectSizeLimitError,
@@ -58,8 +58,6 @@ const manifestSchema = z
     createdAt: z.iso.datetime(),
   })
   .strict();
-
-type ProjectionDb = Pick<Db, "insert">;
 
 interface CanonicalMemoryStorageIdentity {
   readonly id: string;
@@ -140,32 +138,18 @@ function isCanonicalUserMemoryStorage(
   );
 }
 
-export async function enqueueMemorySummaryProjection(
-  args: {
-    readonly db: ProjectionDb;
-    readonly storage: CanonicalMemoryStorageIdentity;
-    readonly storageVersionId: string;
-  },
-  signal?: AbortSignal,
-): Promise<boolean> {
-  if (!isCanonicalUserMemoryStorage(args.storage)) {
-    return false;
-  }
-
-  const [inserted] = await args.db
-    .insert(memorySummaryProjections)
-    .values({
-      memoryStorageId: args.storage.id,
-      storageVersionId: args.storageVersionId,
-      orgId: args.storage.orgId,
-      userId: args.storage.userId,
-    })
-    .onConflictDoNothing()
-    .returning({
-      memoryStorageId: memorySummaryProjections.memoryStorageId,
-    });
-  signal?.throwIfAborted();
-  return inserted !== undefined;
+export function memorySummaryProjectionValues(args: {
+  readonly storage: CanonicalMemoryStorageIdentity;
+  readonly storageVersionId: string;
+}) {
+  return isCanonicalUserMemoryStorage(args.storage)
+    ? {
+        memoryStorageId: args.storage.id,
+        storageVersionId: args.storageVersionId,
+        orgId: args.storage.orgId,
+        userId: args.storage.userId,
+      }
+    : undefined;
 }
 
 function projectionScopeCondition(

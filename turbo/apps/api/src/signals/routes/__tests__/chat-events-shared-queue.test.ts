@@ -1117,10 +1117,9 @@ describe("CHAT-02: shared user message queue", () => {
 
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
-    // The terminal callback acknowledges before it drains the queue, and it
-    // reports the template usage only after the auto-sent run is already
-    // visible. Settle that background work so the assertions below observe the
-    // finished dispatch instead of a half-built one.
+    // The terminal callback acknowledges before it drains the queue. Settle
+    // that background work so the assertions below observe the finished
+    // dispatch instead of a half-built one.
     await flushWaitUntilForTest();
 
     const messages = await waitForThreadMessages(

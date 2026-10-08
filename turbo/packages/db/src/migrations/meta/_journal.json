@@ -1895,8 +1895,15 @@
     {
       "idx": 1348,
       "version": "7",
-      "when": 1791462963246,
-      "tag": "1348_retire_connector_permission_baseline",
+      "when": 1791464547115,
+      "tag": "1348_connector_catalog_payload_independent_api",
+      "breakpoints": true
+    },
+    {
+      "idx": 1349,
+      "version": "7",
+      "when": 1791466652113,
+      "tag": "1349_retire_connector_permission_baseline",
       "breakpoints": true
     }
   ]

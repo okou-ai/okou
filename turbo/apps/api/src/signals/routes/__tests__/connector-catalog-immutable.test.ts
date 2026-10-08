@@ -42,10 +42,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { builtinConnectorsRoutes } from "../connectors";
 import { createRouteMocks } from "./helpers/route-test";
-import {
-  API_TEST_CONNECTOR_CATALOG,
-  useLegacyConnectorCatalogPayloadFixture,
-} from "../../../test-fixtures/connector-catalog";
+import { API_TEST_CONNECTOR_CATALOG } from "../../../test-fixtures/connector-catalog";
 
 import { describe, expect, it } from "vitest";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -345,85 +342,6 @@ describe("slug-first current catalog business readers", () => {
     await directory(candidate);
     const oneClick = await accept(catalogClient().oneClick({ headers }), [200]);
     expect(oneClick.body.connectors.length).toBeGreaterThan(0);
-  });
-
-  it("serves payload-only entries written by an outgoing API after the column backfill", async () => {
-    const artifact = release(
-      `2099-02-01.${randomUUID()}`,
-      "Outgoing writer catalog",
-      "manual-mcp",
-    ).artifact;
-    const mcpConnector = artifact.connectors.find((connector) => {
-      return connector.slug === "manual-mcp";
-    });
-    if (!mcpConnector?.mcp) {
-      throw new Error("Missing fixed MCP connector");
-    }
-    mcpConnector.tags = [];
-    mcpConnector.generation = [];
-    const candidate = publication(artifact);
-    serve(candidate);
-    await accept(sync(), [200]);
-    const {
-      actor,
-      connection,
-      run,
-      runs,
-      client,
-      headers: runHeaders,
-    } = await admittedMcpRun();
-    routeMocks.clerk.session(actor.userId, actor.orgId);
-    const expectedHttp = await accept(
-      catalogClient().get({ headers, params: { connectorSlug: "notion" } }),
-      [200],
-    );
-
-    await useLegacyConnectorCatalogPayloadFixture(candidate.hash);
-
-    const listed = await accept(catalogClient().list({ headers }), [200]);
-    expect(listed.body.connectors).toContainEqual(
-      expect.objectContaining({
-        slug: mcpConnector.slug,
-        label: "Outgoing writer catalog",
-        tags: [],
-        generation: [],
-        mcp: mcpConnector.mcp,
-        permissionSummary: {
-          hasPermissions: false,
-          permissionCount: 0,
-          hasCategories: false,
-          hasDefaultPolicyOverrides: false,
-        },
-      }),
-    );
-    const actualHttp = await accept(
-      catalogClient().get({ headers, params: { connectorSlug: "notion" } }),
-      [200],
-    );
-    expect(actualHttp.body).toStrictEqual(expectedHttp.body);
-    const search = await accept(
-      setupApp({ context, routes: builtinConnectorsRoutes })(
-        builtinConnectorsSearchContract,
-      ).search({ headers, query: { keyword: mcpConnector.slug } }),
-      [200],
-    );
-    expect(search.body.connectors).toContainEqual(
-      expect.objectContaining({
-        slug: mcpConnector.slug,
-        label: "Outgoing writer catalog",
-      }),
-    );
-    const discovered = await accept(
-      client.list({ headers: runHeaders }),
-      [200],
-    );
-    expect(discovered.body.connectors).toContainEqual(
-      expect.objectContaining({
-        displayName: "Outgoing writer catalog",
-        connectionId: connection.id,
-      }),
-    );
-    await runs.requestCancelRun(actor, run.runId, [200]);
   });
 
   it("lists named onboarding sources from current entries", async () => {

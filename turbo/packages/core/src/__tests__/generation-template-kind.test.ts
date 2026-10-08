@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 
 import { generationTemplateKind } from "../generation-template-kind";
-import { generationTemplateIdentity } from "../generation-template-identity";
 
 function videoTemplate(stylePresetId: string): GenerationTemplateRequest {
   return { type: "video", selection: { stylePresetId } };
@@ -50,17 +49,5 @@ describe("generationTemplateKind", () => {
     expect(generationTemplateKind(videoTemplate("avatar-template:"))).toBe(
       "video",
     );
-  });
-});
-
-describe("generationTemplateIdentity reporting", () => {
-  it("keeps historical video and avatar apart inside the video envelope", () => {
-    expect(
-      generationTemplateIdentity(videoTemplate("video-template:kinetic"))
-        .category,
-    ).toBe("video");
-    expect(
-      generationTemplateIdentity(videoTemplate("avatar-template:42")).category,
-    ).toBe("avatar");
   });
 });

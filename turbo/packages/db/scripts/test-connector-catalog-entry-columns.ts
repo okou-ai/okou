@@ -13,6 +13,7 @@ import {
   connectorCatalogPermissionSummary,
 } from "@okouai/connectors/connector-catalog/entry-columns";
 import { connectorCatalogEntries } from "../src/schema/connector-catalog";
+import { validateConnectorCatalogColumnContract } from "./test-connector-catalog-columns-permanent";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
@@ -30,6 +31,13 @@ const expansion = await readFile(
 const backfill = await readFile(
   new URL(
     "../src/migrations/1340_backfill_connector_catalog_entry_columns.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const preparation = await readFile(
+  new URL(
+    "../src/migrations/1348_connector_catalog_payload_independent_api.sql",
     import.meta.url,
   ),
   "utf8",
@@ -276,8 +284,10 @@ try {
     PRIMARY KEY (hash, slug)
   )`);
   // Neither migration may assume only the currently published hash matters.
-  for (const hash of ["historical", "current"]) {
-    for (const connector of connectors) {
+  for (const hash of ["historical", "current", "partial-preparation"]) {
+    for (const connector of hash === "partial-preparation"
+      ? connectors.slice(0, 1)
+      : connectors) {
       await client.query(
         "INSERT INTO connector_catalog_entries VALUES ($1, $2, $3)",
         [hash, connector.slug, JSON.stringify(connector)],
@@ -287,7 +297,7 @@ try {
   await client.query(expansion);
   await client.query(backfill);
   const rows = await db.select().from(connectorCatalogEntries);
-  assert.equal(rows.length, connectors.length * 2);
+  assert.equal(rows.length, connectors.length * 2 + 1);
   for (const row of rows) {
     const expected = connectors.find((connector) => {
       return connector.slug === row.slug;
@@ -334,8 +344,57 @@ try {
     0,
     "new writer already supplies the projection",
   );
+  // Fail closed on an incomplete retained projection; DDL rollback must keep
+  // the old NOT NULL payload contract intact. No automatic data rewrite.
+  await client.query(
+    "UPDATE connector_catalog_entries SET label = NULL WHERE hash = 'historical'",
+  );
+  await client.query("SAVEPOINT preparation");
+  await assert.rejects(client.query(preparation), (error: unknown) => {
+    return error instanceof Error && "code" in error && error.code === "23502";
+  });
+  await client.query("ROLLBACK TO SAVEPOINT preparation");
+  const payloadConstraint = await client.query(
+    `SELECT is_nullable FROM information_schema.columns
+     WHERE table_schema = $1 AND table_name = 'connector_catalog_entries'
+       AND column_name = 'payload'`,
+    [testSchema],
+  );
+  assert.deepEqual(payloadConstraint.rows, [{ is_nullable: "NO" }]);
+  await client.query(
+    `UPDATE connector_catalog_entries SET label = payload ->> 'label'
+     WHERE hash = 'historical'`,
+  );
+  const before = await db.select().from(connectorCatalogEntries);
+  await client.query(preparation);
+  assert.deepEqual(await db.select().from(connectorCatalogEntries), before);
+  await validateConnectorCatalogColumnContract(client);
+  // The immediately outgoing dual writer remains valid while migrations run
+  // before API promotion, even though payload is now optional.
+  await db.insert(connectorCatalogEntries).values({
+    hash: "outgoing-dual-writer",
+    slug: base.slug,
+    payload: base,
+    ...connectorCatalogEntryColumns(base),
+  });
+  await client.query(preparation);
+  assert.deepEqual(await db.select().from(connectorCatalogEntries), [
+    ...before,
+    {
+      hash: "outgoing-dual-writer",
+      slug: base.slug,
+      payload: base,
+      ...connectorCatalogEntryColumns(base),
+    },
+  ]);
+  // Exercise the same runtime ORM after the future physical contraction. This
+  // is a disposable test transaction, not a DROP migration in this release.
+  await client.query(
+    "ALTER TABLE connector_catalog_entries DROP COLUMN payload",
+  );
+  await validateConnectorCatalogColumnContract(client);
   console.log(
-    `Catalog entry expansion/backfill: ${rows.length} rows across historical/current hashes, ${cases.length} summary boundaries, outgoing/new writer coexistence, idempotent retry`,
+    `Catalog entry expansion/backfill/preparation: ${rows.length} retained rows, ${cases.length} summary boundaries, fail-closed DDL rollback, outgoing/new writers, unchanged identity/data, post-DROP runtime reads`,
   );
 } finally {
   await client.query("ROLLBACK");

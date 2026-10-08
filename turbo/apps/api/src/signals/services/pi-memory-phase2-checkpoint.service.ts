@@ -34,11 +34,3 @@ export async function findPiMemoryPhase2Checkpoint(
     .limit(1);
   return receipt;
 }
-
-/** Called only inside the generic commit transaction, after validation/fencing. */
-export async function recordPiMemoryPhase2Checkpoint(
-  tx: Tx,
-  receipt: CheckpointReceipt,
-): Promise<void> {
-  await tx.insert(piMemoryPhase2Checkpoints).values(receipt);
-}

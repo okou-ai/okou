@@ -63,6 +63,7 @@ readonly CONNECTOR_CATALOG_RELEASE_2_PATH=turbo/packages/db/src/migrations/1334_
 readonly MODEL_ROUTE_STATE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1338_retire_model_route_state.sql
 readonly PI_STABLE_CONTEXT_RETIREMENT_PATH=turbo/packages/db/src/migrations/1343_retire_pi_stable_context.sql
 readonly PI_DEBUG_TRACE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1345_outstanding_the_hood.sql
+readonly CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_PATH=turbo/packages/db/src/migrations/1348_connector_catalog_payload_independent_api.sql
 
 fail() {
   echo "::error::$*" >&2
@@ -131,6 +132,19 @@ if ! git merge-base --is-ancestor "$RUNNER_STEER_ENDPOINTS_COMMIT" "$TARGET_COMM
 fi
 if ! git merge-base --is-ancestor "$VIDEO_GENERATION_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the video generation retirement: ${VIDEO_GENERATION_RETIREMENT_COMMIT}."
+fi
+
+# The preparatory catalog release stops writing/reading payload and removes it
+# from the runtime ORM. Resolve its merged commit, not a branch SHA. Once new
+# entries have NULL payload, payload-dependent APIs are no longer supported
+# rollback targets; the later physical DROP requires this same floor.
+connector_catalog_payload_independent_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_PATH" | sed -n '1p')
+if [[ ! "$connector_catalog_payload_independent_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged connector catalog payload-independent API on main."
+fi
+if ! git merge-base --is-ancestor "$connector_catalog_payload_independent_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the connector catalog payload-independent API: ${connector_catalog_payload_independent_commit}."
 fi
 
 # Migration 1255 drops the remaining non-link public_brand columns and renames

@@ -26,6 +26,14 @@ ruleTester.run("require-sql-result-mapping", requireSqlResultMapping, {
   valid: [
     {
       code: `${preamble}
+        import { connectorCatalogEntries } from "@okouai${"/db/runtime/connector-catalog"}";
+        import { sql } from "drizzle-orm";
+        import { nullableDriverValueDecoder } from "../../apps/api/src/lib/db-structured-result";
+        db.select({ label: sql\`CASE WHEN true THEN \${connectorCatalogEntries.label} END\`.mapWith(nullableDriverValueDecoder(connectorCatalogEntries.label)) }).from(connectorCatalogEntries);
+      `,
+    },
+    {
+      code: `${preamble}
         import { chatThreads } from "@okouai${"/db/runtime/chat-thread"}";
         import { sql } from "drizzle-orm";
         db.select({ activeAt: sql\`max(\${chatThreads.lastMessageAt})\`.mapWith(chatThreads.lastMessageAt) }).from(chatThreads);
