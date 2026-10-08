@@ -1,5 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as Sentry from "@sentry/react";
+import { posthog } from "posthog-js/dist/module.slim";
 
 import { startPlatformEntrypoint } from "../lib/platform-entrypoint.ts";
 import { testContext } from "../signals/__tests__/test-helpers.ts";
@@ -60,6 +62,36 @@ describe("platform entrypoint", () => {
     expect(
       screen.queryByRole("heading", { name: /browser to continue/ }),
     ).toBeNull();
+  });
+
+  it("strips Discord approval fragments synchronously before analytics initialize", async () => {
+    const proof = "p".repeat(43);
+    const attemptState = "s".repeat(43);
+    context.mocks.browser.url(
+      `https://app.okou.ai/works?discord=pending#discord_oauth=approve&state=${attemptState}&approval_proof=${proof}`,
+    );
+    context.mocks.browser.userAgent(
+      "Mozilla/5.0 Chrome/142.0.0.0 Safari/537.36",
+    );
+    vi.stubGlobal("SharedWorker", class extends EventTarget {});
+    const analyticsUrls: string[] = [];
+    vi.spyOn(Sentry, "init").mockImplementation(() => {
+      analyticsUrls.push(window.location.href);
+      return undefined;
+    });
+    vi.spyOn(posthog, "init").mockImplementation(() => {
+      analyticsUrls.push(window.location.href);
+      return posthog;
+    });
+    startPlatformEntrypoint();
+    expect(window.location.hash).toBe("");
+    expect(analyticsUrls.length).toBeGreaterThan(0);
+    expect(analyticsUrls).toStrictEqual(
+      analyticsUrls.map(() => {
+        return "https://app.okou.ai/works?discord=pending";
+      }),
+    );
+    await waitForApplicationStart();
   });
 
   it("shows browser guidance before bootstrap when SharedWorker is unavailable", async () => {
