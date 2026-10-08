@@ -1,6 +1,6 @@
 {
-  "id": "f5b431b7-7952-4a65-9842-0de2cb4fe555",
-  "prevId": "84386129-831c-4b76-a366-f069317b8f10",
+  "id": "e6030612-8720-4925-880b-84c92212e8eb",
+  "prevId": "f5b431b7-7952-4a65-9842-0de2cb4fe555",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -17949,7 +17949,7 @@
         },
         "pricing_provider": {
           "name": "pricing_provider",
-          "type": "varchar(100)",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -28859,7 +28859,7 @@
         },
         "provider": {
           "name": "provider",
-          "type": "varchar(100)",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -29195,7 +29195,7 @@
         },
         "provider": {
           "name": "provider",
-          "type": "varchar(100)",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -31919,7 +31919,7 @@
         },
         "provider": {
           "name": "provider",
-          "type": "varchar(100)",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },

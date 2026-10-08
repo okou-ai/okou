@@ -1895,8 +1895,15 @@
     {
       "idx": 1348,
       "version": "7",
-      "when": 1791464647824,
-      "tag": "1348_expand_runtime_billing_identity",
+      "when": 1791464547115,
+      "tag": "1348_connector_catalog_payload_independent_api",
+      "breakpoints": true
+    },
+    {
+      "idx": 1349,
+      "version": "7",
+      "when": 1791466668915,
+      "tag": "1349_expand_runtime_billing_identity",
       "breakpoints": true
     }
   ]

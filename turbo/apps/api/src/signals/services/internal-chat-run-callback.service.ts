@@ -27,11 +27,9 @@ import { command } from "ccstate";
 import { and, asc, desc, eq, isNotNull, lte, max, not, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import type { GenerationTemplateIdentity } from "@okouai/core/generation-template-identity";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
-import { logTemplateUsage } from "../../lib/template-usage-log";
 import { now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$, type Db } from "../external/db";
@@ -406,13 +404,6 @@ export interface CreateQueuedChatRunInput {
    * queued message selected and its sender may still access.
    */
   readonly presentationTemplateVolumes: readonly PresentationTemplateVolume[];
-  /**
-   * The selections behind that guidance, reported once the run is created.
-   * Building this input does not commit to a run: admission is re-checked
-   * afterwards and can leave the message queued for a later attempt, which
-   * would report the same message twice.
-   */
-  readonly generationTemplateIdentities: readonly GenerationTemplateIdentity[];
   readonly threadId: string;
   readonly connectorSourceId?: string;
   readonly queuedMessage: QueuedUserMessage;
@@ -2479,19 +2470,6 @@ function channelQueuedMessageAdmissionFailure(
   }
 }
 
-export function queuedUserMessageProjection(
-  message: QueuedUserMessage["userMessage"],
-): ReturnType<typeof projectUserMessage> {
-  const queuedUserMessage = requiredUserMessageForEvent(
-    "input.prompt",
-    message,
-  );
-  if (!queuedUserMessage) {
-    throw new Error("Queued input event is missing userMessage");
-  }
-  return projectUserMessage(queuedUserMessage);
-}
-
 export function queuedIntegrationLaunchFields(
   launchMaterial: QueuedLaunchMaterial,
   agentId: string,
@@ -2710,15 +2688,10 @@ function unreachableQueuedAdmissionFailure(failure: never): never {
   throw new Error(`Unsupported queued admission failure: ${String(failure)}`);
 }
 
-/** The committed run's title, usage and typing observations need no read plan. */
+/** The committed run's title and typing observations need no read plan. */
 export type QueuedPromptLaunchInput = Pick<
   CreateQueuedChatRunInput,
-  | "orgId"
-  | "threadId"
-  | "prompt"
-  | "generationTemplateIdentities"
-  | "discordDelivery"
-  | "triggerSource"
+  "orgId" | "threadId" | "prompt" | "discordDelivery" | "triggerSource"
 >;
 
 export interface QueuedPromptLaunchContext {
@@ -2738,16 +2711,6 @@ export const recordQueuedPromptRunLaunch$ = command(
     const db = set(writeDb$);
     const { userId, runInput } = args;
     const threadId = runInput.threadId;
-    // Only a launched run counts as template use; an unclaimed head may retry.
-    logTemplateUsage(
-      {
-        dispatchPath: "queued-claim",
-        orgId: runInput.orgId,
-        userId,
-        chatThreadId: threadId,
-      },
-      runInput.generationTemplateIdentities,
-    );
     waitUntil(
       set(
         generateAndPersistChatThreadTitle$,

@@ -45,6 +45,7 @@ import { validatePermanentOrgPlanEntitlementState } from "./test-org-plan-entitl
 import { validatePermanentModelCatalogConstraints } from "./test-model-catalog-permanent";
 import { validateModelCatalogSeed } from "./test-model-catalog-seed";
 import { validateXResourceUsageSchema } from "./test-x-resource-usage";
+import { validatePermanentConnectorCatalogColumns } from "./test-connector-catalog-columns-permanent";
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE_DIR = path.join(dirname, "..");
@@ -2666,6 +2667,7 @@ async function main(): Promise<void> {
     await validatePermanentDiscordFoundation(dbUrl1);
     await validatePermanentDiscordChat(dbUrl1);
     await validatePermanentOrgPlanEntitlementState(dbUrl1);
+    await validatePermanentConnectorCatalogColumns(dbUrl1);
     await validatePermanentModelCatalogConstraints(dbUrl1);
     await validateModelCatalogSeed(dbUrl1);
     await validateXResourceUsageSchema(dbUrl1);
@@ -2694,6 +2696,7 @@ async function main(): Promise<void> {
     await validatePermanentDiscordFoundation(dbUrl2);
     await validatePermanentDiscordChat(dbUrl2);
     await validatePermanentOrgPlanEntitlementState(dbUrl2);
+    await validatePermanentConnectorCatalogColumns(dbUrl2);
     await validatePermanentModelCatalogConstraints(dbUrl2);
     await validateXResourceUsageSchema(dbUrl2);
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);

@@ -22,7 +22,7 @@ import type { BuiltinConnectorBrief } from "@okouai/api-contracts/contracts/conn
 import {
   connectorCatalog,
   connectorCatalogEntries,
-} from "@okouai/db/schema/connector-catalog";
+} from "@okouai/db/runtime/connector-catalog";
 import { asc, eq } from "drizzle-orm";
 
 import { singleton } from "../../lib/singleton";

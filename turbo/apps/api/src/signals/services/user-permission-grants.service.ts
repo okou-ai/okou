@@ -14,7 +14,7 @@ import {
 } from "@okouai/connectors/firewall-types";
 
 import { userPermissionGrants } from "@okouai/db/schema/user-permission-grant";
-import { connectorCatalog } from "@okouai/db/schema/connector-catalog";
+import { connectorCatalog } from "@okouai/db/runtime/connector-catalog";
 import { agents } from "@okouai/db/schema/agent";
 import { and, asc, eq, gt, inArray, isNull, or, type SQL } from "drizzle-orm";
 import type {

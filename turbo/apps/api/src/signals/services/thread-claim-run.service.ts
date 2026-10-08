@@ -57,7 +57,6 @@ import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 
 import {
-  executeRawRows,
   parseRawRows,
   pgTimestampWithoutTimezoneToDateSchema,
 } from "../../lib/db-raw-rows";
@@ -75,7 +74,6 @@ import {
   insufficientCredits as pickChatRunModelInsufficientCredits,
   providerUnavailable,
 } from "../../lib/error";
-import { buildGenerationTemplatesPrompt } from "../../lib/generation-template-prompt";
 import { logger } from "../../lib/log";
 import { VERCEL_AUTOMATION_BYPASS_ENV } from "../../lib/preview-automation-bypass";
 
@@ -87,13 +85,7 @@ import {
 } from "../context/system-skill-storage-resolution";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
 import { waitUntil } from "../context/wait-until";
-import {
-  type Db,
-  db$,
-  rawSqlReadDb$,
-  type ReadonlyDb,
-  writeDb$,
-} from "../external/db";
+import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
@@ -174,7 +166,6 @@ import {
   queuedMessageRejection,
   type QueuedPromptLaunchContext,
   type QueuedRunAdmissionFailureInput,
-  queuedUserMessageProjection,
   recordQueuedPromptRunLaunch$,
   rejectedQueuedRunAdmissionFailure,
   routeQueuedMessagePiExecution,
@@ -270,17 +261,10 @@ import {
   resolveBuiltinConnectorCredentialAccess,
 } from "./builtin-connector-credential-access.service";
 import {
-  canonicalChatEventContent,
   canonicalChatEventUserMessage,
   canonicalChatInputModelSelection,
   parseCanonicalChatEventRequiredOfficialWorkflowIds,
 } from "./canonical-chat-event-read.service";
-import { visibleChatEventCondition } from "./chat-event-shared.service";
-import {
-  chatEventTextCondition,
-  chatEventTypeIn,
-  runOwnedChatEventCondition,
-} from "./chat-event-type.service";
 import {
   chatEventInsertSql,
   chatEventReplacementInsertSql,
@@ -365,11 +349,6 @@ import {
 } from "./memory-summary-projection.service";
 
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
-import {
-  CHAT_EVENT_TYPES,
-  chatEventCompatibilityRole,
-  type ChatEventType,
-} from "@okouai/api-contracts/contracts/chat-events";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type {
   ConnectorAccountSelection,
@@ -439,7 +418,6 @@ import {
   getValidatedFramework,
   type SupportedFramework,
 } from "@okouai/core/frameworks";
-import { generationTemplateIdentity } from "@okouai/core/generation-template-identity";
 import { parseGitHubTreeUrl, resolveSkillRef } from "@okouai/core/github-url";
 import {
   DEFAULT_IMAGE_MODEL,
@@ -495,13 +473,11 @@ import { computerUseHosts } from "@okouai/db/schema/computer-use-host";
 
 import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { presentationTemplates } from "@okouai/db/schema/presentation-template";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { systemStoragePresignedUrlCache } from "@okouai/db/schema/system-storage-presigned-url-cache";
 
-import { userTemplates } from "@okouai/db/schema/user-template";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import {
@@ -514,13 +490,10 @@ import {
   asc,
   desc,
   eq,
-  exists,
   inArray,
   isNotNull,
   isNull,
   like,
-  lt,
-  min,
   ne,
   notExists,
   or,
@@ -578,11 +551,11 @@ import {
 } from "./official-workflow-reconciliation-dispatch.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { PiModelConfigurationError } from "./pi-model-configuration-error";
+import { additionalVolumesForRun } from "./presentation-template-data.service";
 import {
-  additionalVolumesForRun,
-  selectedUserPresentationTemplateIds,
-  userPresentationTemplateVolumes,
-} from "./presentation-template-data.service";
+  createRunTemplates,
+  type RunTemplatesResult,
+} from "./run-templates.service";
 import {
   environmentRecordToEntries,
   executionFirewallsToAxiomEntries,
@@ -623,10 +596,6 @@ import { teamsDeliveryTargetSchema } from "./teams-chat-callback-payload";
 
 import { telegramDeliveryTargetSchema } from "./telegram-chat-callback-payload";
 
-import {
-  selectedUserTemplateIds,
-  userTemplateVolumes,
-} from "./user-template-data.service";
 import { webChatQueueContextFromContextId } from "./web-chat-queue-context.service";
 
 import {
@@ -795,68 +764,6 @@ class QueuedPromptLaunchUnavailableError extends Error {
   }
 }
 
-interface IncompleteRoundSelection {
-  readonly runId: string;
-  readonly status: IncompleteRunStatus;
-}
-
-const INCOMPLETE_ROUND_LIMIT = 20;
-
-const incompleteRoundFrontierRowSchema = z.object({
-  runId: z.string(),
-  runStatus: z.string(),
-  isSuccess: z.boolean(),
-});
-
-function isIncompleteRunStatus(value: string): value is IncompleteRunStatus {
-  return value === "cancelled" || value === "failed" || value === "timeout";
-}
-
-interface IncompleteRound extends IncompleteRoundSelection {
-  readonly events: IncompleteRoundEvent[];
-}
-
-function buildWebChatIncompleteContext(
-  rounds: readonly IncompleteRound[],
-): string {
-  if (rounds.length === 0) {
-    return "";
-  }
-  const total = rounds.length;
-  const blocks = rounds.map((round, index) => {
-    const relativeIndex = index - total + 1;
-    const rendered = round.events.map((event) => {
-      return formatIncompleteEvent(event);
-    });
-    const hasAssistant = round.events.some((event) => {
-      return event.role === "assistant";
-    });
-    if (!hasAssistant) {
-      rendered.push("Assistant: [no response before run ended]");
-    }
-    return [
-      "---",
-      "",
-      `- RELATIVE_INDEX: ${relativeIndex}`,
-      `- RUN_STATUS: ${round.status}`,
-      "",
-      ...rendered,
-    ].join("\n");
-  });
-  return [
-    "# Incomplete Rounds Context",
-    "",
-    "The rounds below were sent in this thread but their runs did not complete",
-    "(cancelled, failed, or timed out), so the CLI session history does not",
-    "contain them. Treat them as part of the conversation you are having with",
-    "the user. RELATIVE_INDEX 0 is the most recent incomplete round.",
-    "",
-    blocks.join("\n\n"),
-    "",
-    "---",
-  ].join("\n");
-}
-
 function queuedPromptRunInput(args: {
   readonly input: CreateQueuedChatRunInputArgs;
   readonly launch: QueuedLaunchMaterial;
@@ -866,14 +773,9 @@ function queuedPromptRunInput(args: {
     QueuedMessageModelRouteResolution,
     { readonly error: unknown }
   >;
-  readonly templates: {
-    readonly generationTemplatePrompt: string;
-    readonly generationTemplateIdentities: CreateQueuedChatRunInput["generationTemplateIdentities"];
-    readonly presentationTemplateVolumes: CreateQueuedChatRunInput["presentationTemplateVolumes"];
-  };
+  readonly templates: Exclude<RunTemplatesResult, { readonly error: unknown }>;
   readonly session: ChatThreadSessionResolution;
-  readonly incomplete: string;
-  readonly prior: string;
+  readonly continuation: string;
   readonly host: CreateQueuedChatRunInput["computerUseHostGrant"];
   readonly capture: boolean;
   readonly features: FeatureSwitchContext;
@@ -883,8 +785,7 @@ function queuedPromptRunInput(args: {
   const prompt = renderThreadPrompt(
     {
       userIdentity: args.userIdentity,
-      priorContext: args.prior,
-      incompleteContext: args.incomplete,
+      continuationContext: args.continuation,
       generationTemplatePrompt: templates.generationTemplatePrompt,
       computerUseContext: args.host
         ? buildComputerUseSystemPrompt(args.host.displayName)
@@ -909,7 +810,6 @@ function queuedPromptRunInput(args: {
     prompt: prompt.userPrompt,
     appendSystemPrompt: prompt.systemPrompt,
     presentationTemplateVolumes: templates.presentationTemplateVolumes,
-    generationTemplateIdentities: templates.generationTemplateIdentities,
     threadId: input.threadId,
     queuedMessage: input.queuedMessage,
     requiredOfficialWorkflowIds:
@@ -1504,34 +1404,6 @@ type ClaimProducerBinding =
     }
   | null;
 
-type IncompleteRunStatus = "cancelled" | "failed" | "timeout";
-
-const earlierRunEvent = alias(chatEvents, "earlier_run_event");
-
-const incompleteRunAnchor = alias(chatEvents, "incomplete_run_anchor");
-
-const incompleteAnchorCandidate = alias(
-  chatEvents,
-  "incomplete_anchor_candidate",
-);
-
-interface IncompleteRoundEvent {
-  readonly eventType: ChatEventType;
-  readonly role: "user" | "assistant";
-  readonly content: string | null;
-  readonly agentPrompt: string;
-}
-
-function formatIncompleteEvent(event: IncompleteRoundEvent): string {
-  if (event.role === "user") {
-    return `User: ${truncateIncomplete(event.agentPrompt) || "[empty message]"}`;
-  }
-  if (event.content !== null && event.content !== "") {
-    return `Assistant (partial): ${truncateIncomplete(event.content)}`;
-  }
-  return "Assistant: [no response before run ended]";
-}
-
 type ClaimQueueRunCommandArgs = ThreadRunCommand;
 
 type ClaimRejectionContext =
@@ -1697,16 +1569,7 @@ function workflowThreadSessionRoute(
   };
 }
 
-function truncateIncomplete(value: string): string {
-  if (value.length <= INCOMPLETE_EVENT_CHAR_CAP) {
-    return value;
-  }
-  return `${value.slice(0, INCOMPLETE_EVENT_CHAR_CAP)}...[truncated]`;
-}
-
 type ActivePreviousRunPolicy = "block" | "allow";
-
-const INCOMPLETE_EVENT_CHAR_CAP = 4000;
 
 function claimCommitInput(input: RunPlan): ThreadRunContext["input"] {
   return {
@@ -1755,7 +1618,6 @@ function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
         orgId: input.orgId,
         threadId: input.threadId,
         prompt: input.prompt,
-        generationTemplateIdentities: input.generationTemplateIdentities,
         discordDelivery: input.discordDelivery,
         triggerSource: input.triggerSource,
       },
@@ -2781,11 +2643,6 @@ export function createThreadClaimRunObjects(
       return get(context.featureSwitches$);
     },
   );
-  const promptProjectionProjection$ = computed(async (get) => {
-    return queuedUserMessageProjection(
-      (await get(promptArgsArgs$)).queuedMessage.userMessage,
-    );
-  });
   const promptMaterialMaterial$ = computed(
     async (get): Promise<QueuedLaunchMaterial> => {
       const { queuedMessage } = await get(promptArgsArgs$);
@@ -2944,339 +2801,11 @@ export function createThreadClaimRunObjects(
     memberRoutes$,
     claimCatalog$,
   );
-  const incompleteRoundAnchors$ = computed(async (get) => {
-    const { db, threadId } = await get(promptArgsArgs$);
-    const anchors = [undefined, sql`incomplete_frontier.seq_id`].map(
-      (beforeSeq) => {
-        const isSuccessfulRun = sql`COALESCE(
-    ${and(
-      sql`${agentRuns.result} ? 'agentSessionId'`,
-      eq(
-        sql`jsonb_typeof(${agentRuns.result}->'agentSessionId')`,
-        sql`'string'`,
-      ),
-    )},
-    FALSE
-  )`.mapWith(pgBooleanDecoder);
-        // Grouping prevents PostgreSQL's MIN/MAX optimization from seeking forward
-        // through unrelated older runs in the thread-sequence index.
-        // Keep eligibility in this run-keyed lookup too: joining runs in the outer
-        // candidate scan can sort the entire thread before its caller's LIMIT.
-        const firstOwnedEvent = db
-          .select({ seqId: min(earlierRunEvent.seqId).as("first_seq") })
-          .from(earlierRunEvent)
-          .innerJoin(agentRuns, eq(agentRuns.id, earlierRunEvent.runId))
-          .where(
-            and(
-              eq(earlierRunEvent.chatThreadId, threadId),
-              eq(earlierRunEvent.runId, incompleteRunAnchor.runId),
-              ne(earlierRunEvent.eventType, "control.interrupt"),
-              or(
-                isSuccessfulRun,
-                inArray(
-                  agentRuns.status,
-                  sql`('cancelled', 'failed', 'timeout')`,
-                ),
-              ),
-            ),
-          )
-          .groupBy(earlierRunEvent.runId)
-          .as("first_owned_event");
-        const candidates = db
-          .select({
-            runId: incompleteRunAnchor.runId,
-            seqId: incompleteRunAnchor.seqId,
-            firstSeq: firstOwnedEvent.seqId,
-          })
-          .from(incompleteRunAnchor)
-          .crossJoinLateral(firstOwnedEvent)
-          .where(
-            and(
-              eq(incompleteRunAnchor.chatThreadId, threadId),
-              beforeSeq === undefined
-                ? undefined
-                : lt(incompleteRunAnchor.seqId, beforeSeq),
-              isNotNull(incompleteRunAnchor.runId),
-              ne(incompleteRunAnchor.eventType, "control.interrupt"),
-            ),
-          )
-          .orderBy(desc(incompleteRunAnchor.seqId));
-        // Keep the equality outside this planner boundary so the lateral minimum
-        // can be memoized by run ID, not recomputed for every candidate sequence.
-        // Drizzle omits .offset(0); this shell must retain PostgreSQL's OFFSET 0.
-        const candidateSource = sql`(${candidates} OFFSET 0)
-      AS incomplete_anchor_candidate(run_id, seq_id, first_seq)`;
-        // A later append cannot move the first retained event for a run. Include
-        // revoked rows in this ordering fact; visibility only controls eligibility
-        // and content. control.interrupt targets a run without belonging to it.
-        // This reader remains hot-only: archival retention may remove its anchor.
-        return db
-          .select({
-            runId: agentRuns.id,
-            runStatus: agentRuns.status,
-            isSuccess: isSuccessfulRun,
-            // candidateSource is an opaque SQL FROM fragment; a bare column
-            // cannot pass Drizzle's typed-source membership validation here.
-            seqId: sql`${incompleteAnchorCandidate.seqId}`.mapWith(
-              chatEvents.seqId,
-            ),
-          })
-          .from(candidateSource)
-          .innerJoin(
-            agentRuns,
-            eq(agentRuns.id, incompleteAnchorCandidate.runId),
-          )
-          .where(
-            and(
-              eq(
-                incompleteAnchorCandidate.seqId,
-                sql`incomplete_anchor_candidate.first_seq`,
-              ),
-              exists(
-                db
-                  .select({ id: chatEvents.id })
-                  .from(chatEvents)
-                  .where(
-                    and(
-                      eq(chatEvents.chatThreadId, threadId),
-                      eq(chatEvents.runId, incompleteAnchorCandidate.runId),
-                      runOwnedChatEventCondition(),
-                      visibleChatEventCondition(),
-                      or(isSuccessfulRun, chatEventTypeIn(CHAT_EVENT_TYPES)),
-                    ),
-                  ),
-              ),
-            ),
-          )
-          .orderBy(desc(incompleteAnchorCandidate.seqId))
-          .limit(1);
-      },
-    );
-    const [newestAnchor, precedingAnchor] = anchors;
-    if (!newestAnchor || !precedingAnchor) {
-      throw new Error("Incomplete round anchors were not constructed");
-    }
-    return { newestAnchor, precedingAnchor };
-  });
-  const promptIncompleteSelectionIncompleteSelection$ = computed(
-    async (get): Promise<readonly IncompleteRoundSelection[]> => {
-      const args = await get(promptArgsArgs$);
-      if (!isWebChatContextType(args.queuedMessage.contextType)) {
-        return [];
-      }
-      // Handwritten raw SQL needs `execute`; see rawSqlReadDb$.
-      const db = get(rawSqlReadDb$);
-      const { newestAnchor, precedingAnchor } = await get(
-        incompleteRoundAnchors$,
-      );
-      const rows = await executeRawRows(
-        db,
-        sql`
-      WITH RECURSIVE incomplete_frontier AS (
-        SELECT candidate.*, 1 AS depth
-        FROM (${newestAnchor}) AS candidate(run_id, run_status, is_success, seq_id)
-
-        UNION ALL
-
-        SELECT candidate.*, incomplete_frontier.depth + 1
-        FROM incomplete_frontier
-        CROSS JOIN LATERAL (${precedingAnchor})
-          AS candidate(run_id, run_status, is_success, seq_id)
-        WHERE incomplete_frontier.depth < ${INCOMPLETE_ROUND_LIMIT + 1}
-          AND NOT incomplete_frontier.is_success
-      )
-      SELECT run_id AS "runId", run_status AS "runStatus", is_success AS "isSuccess"
-      FROM incomplete_frontier
-      ORDER BY depth
-    `,
-        incompleteRoundFrontierRowSchema,
-      );
-      const rounds: IncompleteRoundSelection[] = [];
-      for (const row of rows) {
-        if (row.isSuccess) {
-          break;
-        }
-        if (
-          rounds.length < INCOMPLETE_ROUND_LIMIT &&
-          isIncompleteRunStatus(row.runStatus)
-        ) {
-          rounds.push({ runId: row.runId, status: row.runStatus });
-        }
-      }
-      return rounds.reverse();
-    },
-  );
-  const promptIncompleteRoundsIncompleteRounds$ = computed(
-    async (get): Promise<readonly IncompleteRound[]> => {
-      const [args, selection] = await Promise.all([
-        get(promptArgsArgs$),
-        get(promptIncompleteSelectionIncompleteSelection$),
-      ]);
-      const { db, threadId } = args;
-      if (selection.length === 0) {
-        return [];
-      }
-      const runIds = selection.map((round) => {
-        return round.runId;
-      });
-      const rows = await db
-        .select({
-          runId: chatEvents.runId,
-          eventType: chatEvents.eventType,
-          content: canonicalChatEventContent(),
-          agentPrompt: agentRuns.prompt,
-        })
-        .from(chatEvents)
-        .innerJoin(agentRuns, eq(agentRuns.id, chatEvents.runId))
-        .where(
-          and(
-            eq(chatEvents.chatThreadId, threadId),
-            inArray(chatEvents.runId, runIds),
-            chatEventTextCondition(),
-            visibleChatEventCondition(),
-          ),
-        )
-        .orderBy(asc(chatEvents.seqId));
-      const roundsByRunId = new Map<string, IncompleteRound>();
-      for (const round of selection) {
-        roundsByRunId.set(round.runId, { ...round, events: [] });
-      }
-      for (const row of rows) {
-        if (row.runId === null) {
-          continue;
-        }
-        const round = roundsByRunId.get(row.runId);
-        if (round === undefined) {
-          continue;
-        }
-        round.events.push({
-          eventType: row.eventType,
-          role: chatEventCompatibilityRole(row.eventType),
-          content: row.content,
-          agentPrompt: row.agentPrompt,
-        });
-      }
-      return [...roundsByRunId.values()].filter((round) => {
-        return round.events.length > 0;
-      });
-    },
-  );
-  const promptIncompleteIncomplete$ = computed(async (get) => {
-    return buildWebChatIncompleteContext(
-      await get(promptIncompleteRoundsIncompleteRounds$),
-    );
-  });
-  const promptPresentationTemplatesPresentationTemplates$ = computed(
-    async (get) => {
-      const [args, projection] = await Promise.all([
-        get(promptArgsArgs$),
-        get(promptProjectionProjection$),
-      ]);
-      const ids = selectedUserPresentationTemplateIds(projection.templates);
-      if (!ids.length) {
-        return [];
-      }
-      const rows = await args.db
-        .select({ id: presentationTemplates.id })
-        .from(presentationTemplates)
-        .where(
-          and(
-            inArray(presentationTemplates.id, [...ids]),
-            eq(presentationTemplates.orgId, args.agent.orgId),
-            or(
-              eq(presentationTemplates.ownerUserId, args.userId),
-              eq(presentationTemplates.visibility, "public"),
-            ),
-          ),
-        );
-      const accessible = new Set(
-        rows.map((row) => {
-          return row.id;
-        }),
-      );
-      return ids.filter((id) => {
-        return accessible.has(id);
-      });
-    },
-  );
-  const promptUserTemplatesUserTemplates$ = computed(async (get) => {
-    const [args, projection, features] = await Promise.all([
-      get(promptArgsArgs$),
-      get(promptProjectionProjection$),
-      get(promptFeaturesFeatures$),
-    ]);
-    const ids = selectedUserTemplateIds(projection.templates);
-    if (
-      !isFeatureEnabled(FeatureSwitchKey.CustomTemplates, features) ||
-      !ids.length
-    ) {
-      return [];
-    }
-    const rows = await args.db
-      .select({ id: userTemplates.id, manifest: userTemplates.manifest })
-      .from(userTemplates)
-      .where(
-        and(
-          inArray(userTemplates.id, [...ids]),
-          eq(userTemplates.orgId, args.agent.orgId),
-          or(
-            eq(userTemplates.ownerUserId, args.userId),
-            eq(userTemplates.visibility, "organization"),
-          ),
-        ),
-      );
-    const kinds = new Map(
-      rows.map((row) => {
-        return [row.id, row.manifest.kind];
-      }),
-    );
-    return ids.flatMap((id) => {
-      const kind = kinds.get(id);
-      return kind === undefined ? [] : [{ templateId: id, kind }];
-    });
-  });
-  const promptTemplatesTemplates$ = computed(
-    async (
-      get,
-    ): Promise<
-      | {
-          readonly generationTemplatePrompt: string;
-          readonly generationTemplateIdentities: CreateQueuedChatRunInput["generationTemplateIdentities"];
-          readonly presentationTemplateVolumes: CreateQueuedChatRunInput["presentationTemplateVolumes"];
-        }
-      | {
-          readonly error: {
-            readonly code: string;
-            readonly message: string;
-          };
-        }
-    > => {
-      const [projection, presentations, mounted] = await Promise.all([
-        get(promptProjectionProjection$),
-        get(promptPresentationTemplatesPresentationTemplates$),
-        get(promptUserTemplatesUserTemplates$),
-      ]);
-      const guidance = await buildGenerationTemplatesPrompt(
-        projection.templates,
-        {
-          mountedUserPresentationTemplateIds: presentations,
-          mountedUserTemplates: mounted,
-        },
-      );
-      if (guidance.status === "invalid") {
-        return { error: { code: "BAD_REQUEST", message: guidance.message } };
-      }
-      return {
-        generationTemplatePrompt: guidance.prompt,
-        generationTemplateIdentities: projection.templates.map(
-          generationTemplateIdentity,
-        ),
-        presentationTemplateVolumes: [
-          ...userPresentationTemplateVolumes(presentations),
-          ...userTemplateVolumes(mounted),
-        ],
-      };
-    },
+  const templateOrgId = claim.orgId;
+  const runTemplates$ = createRunTemplates(
+    pickedEvent$,
+    templateOrgId,
+    promptFeaturesFeatures$,
   );
   const promptHostHost$ = computed(async (get) => {
     const [{ head }, thread] = await Promise.all([
@@ -3328,8 +2857,7 @@ export function createThreadClaimRunObjects(
         model,
         templates,
         session,
-        incomplete,
-        prior,
+        continuation,
         host,
         capture,
         features,
@@ -3339,9 +2867,8 @@ export function createThreadClaimRunObjects(
         get(selectedIntegrationPrompt$),
         get(threadUserIdentity$),
         get(promptModelModel$),
-        get(promptTemplatesTemplates$),
+        get(runTemplates$),
         get(promptSessionSession$),
-        get(promptIncompleteIncomplete$),
         get(rotatedPrompt$),
         get(promptHostHost$),
         get(promptCaptureCapture$),
@@ -3383,8 +2910,7 @@ export function createThreadClaimRunObjects(
         model,
         templates,
         session,
-        incomplete,
-        prior,
+        continuation,
         host,
         capture,
         features,
@@ -3530,7 +3056,7 @@ export function createThreadClaimRunObjects(
   const resourceValidation$ = computed(async (get) => {
     const [material, templates] = await Promise.all([
       settle(get(promptMaterialMaterial$)),
-      get(promptTemplatesTemplates$),
+      get(runTemplates$),
     ]);
     if (!material.ok) {
       queuedPromptPreparationRejection(
@@ -3687,7 +3213,7 @@ export function createThreadClaimRunObjects(
     if (await get(internalEarlyAssembly$)) {
       return {};
     }
-    const templates = await get(promptTemplatesTemplates$);
+    const templates = await get(runTemplates$);
     return "error" in templates
       ? {}
       : additionalVolumesForRun(templates.presentationTemplateVolumes);
@@ -4053,8 +3579,7 @@ export function createThreadClaimRunObjects(
       const prompt = renderThreadPrompt(
         {
           userIdentity: await get(threadUserIdentity$),
-          priorContext: "",
-          incompleteContext: "",
+          continuationContext: "",
           generationTemplatePrompt: "",
           computerUseContext:
             appendComputerUseSystemPrompt(undefined, computerUseHostGrant) ??
