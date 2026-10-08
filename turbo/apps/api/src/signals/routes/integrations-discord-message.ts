@@ -17,7 +17,10 @@ import {
   requireDiscordBinding$,
   requireDiscordConversationAccess$,
 } from "../services/discord-access.service";
-import { discordMessageSendFooterText } from "../services/integration-message-context.service";
+import {
+  discordMessageSendFooterText,
+  integrationMessageSendLabels$,
+} from "../services/integration-message-context.service";
 import { readDiscordContextMessage$ } from "../services/discord-context.service";
 import {
   discordApiFailure,
@@ -150,13 +153,12 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (binding.kind === "denied") {
     return partialFailure(binding.response, []);
   }
-  const footerText = await get(
-    discordMessageSendFooterText({
-      authRunId: "runId" in auth ? auth.runId : undefined,
-      discordUserId: binding.binding.discordUserId,
-    }),
-  );
+  const labels = await get(integrationMessageSendLabels$);
   signal.throwIfAborted();
+  const footerText = discordMessageSendFooterText({
+    ...labels,
+    discordUserId: binding.binding.discordUserId,
+  });
   const text = footerText
     ? `${body.data.text}\n\n-# ${footerText}`
     : body.data.text;

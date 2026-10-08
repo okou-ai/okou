@@ -250,11 +250,25 @@ whose API cannot parse Discord sources or whose provider imports remain
 unresolved. Turning off a feature does not remove already persisted source
 values; any rollback after a test must retain the readers needed for its data.
 
-## Fixture acceptance
+## Protected preview setup and manual acceptance
 
-Fixture tests exercise the actual service/UI boundaries with controlled
-provider responses. They do not demonstrate that a live Discord bot is
-configured, installed, or reachable.
+The protected fixture below is an operator setup path for separately authorized
+non-production acceptance, not a production onboarding API or an exception to
+[API test construction](testing/api-testing.md#external-behavior-boundary).
+Automated API tests must construct the whole case through production interfaces,
+including prerequisites hidden in shared helpers. A production Gateway request or
+Runner claim cannot make a preview-only binding seed a valid test lifecycle.
+
+Until a genuine binding-construction lifecycle exists, remove unsupported
+automated cases rather than replacing the fixture with DB setup, another private
+driver, or a product endpoint added solely for testing. Preserve independently
+reachable request validation, feature containment and CLI coverage. Record the
+lost behavioral coverage explicitly; it remains pending authorized acceptance,
+not proven by green CI. See the [#37968 coverage ledger](implementation/discord-parity-37968-testing.md).
+
+The following is a manual, protected-preview acceptance checklist. Controlled
+provider responses do not demonstrate that a live Discord bot is configured,
+installed, or reachable.
 
 A has [published the protected fixture interface](https://github.com/okou-ai/okou/issues/36640#issuecomment-5811564566).
 The actual provider revision must be available before running these steps;
@@ -270,7 +284,8 @@ the interface announcement alone is not execution evidence.
   fields. Conflicting ownership returns `409` instead of rebinding.
 - Optional `history: {chatThreadId, channelId, messageId, messageText}` seeds
   deletion/export descendants, including a failed admission-notice delivery,
-  for an already-created owned canonical Chat thread. Use C's real ingress entrypoint for admission tests.
+  for an already-created owned canonical Chat thread during manual preview
+  acceptance. Automated tests cannot use this private history constructor.
 - `DELETE /api/test/discord-state?guildId=...` uses the same admin context and
   deletes only that org's named guild.
 - Production returns `404`. Development is allowed; protected previews also
@@ -278,8 +293,9 @@ the interface announcement alone is not execution evidence.
   feature gating or turn supplied IDs into a production onboarding flow.
 - A's `signals/routes/__tests__/helpers/discord.ts` exports
   `configureDiscordApp`, `uniqueDiscordSnowflake`, `mockDiscordMemberships`,
-  `seedDiscordFixture`, and `deleteDiscordFixture`. The seed helper calls the
-  guarded HTTP route and returns the actor, IDs, and connection ID. Mock current
+  `seedDiscordFixture`, and `deleteDiscordFixture`. These historical helpers call
+  the guarded HTTP route; their existence does not authorize new API tests to use
+  them. They return the actor, IDs, and connection ID. Mock current
   Clerk membership at its external boundary; cached session roles are not
   binding authority. Configure all four app settings with synthetic values and
   enable `discordIntegration` only for the fixture cohort through the existing

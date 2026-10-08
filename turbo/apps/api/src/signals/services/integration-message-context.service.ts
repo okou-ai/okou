@@ -5,65 +5,87 @@ import { agentSessions } from "@okouai/db/schema/agent-session";
 import { agents } from "@okouai/db/schema/agent";
 import { eq } from "drizzle-orm";
 
-import { db$, type ReadonlyDb } from "../external/db";
+import { organizationAuthContext$ } from "../auth/auth-context";
+import { db$ } from "../external/db";
 import { tapError } from "../utils";
-import { resolveRunModelSelection } from "./run-model-selection.service";
 
-async function resolveAgentLabel(db: ReadonlyDb, runId: string) {
-  const [row] = await db
-    .select({ displayName: agents.displayName, name: agents.name })
+const attributionRun$ = computed(async (get) => {
+  const auth = get(organizationAuthContext$);
+  if (!("runId" in auth)) {
+    return undefined;
+  }
+  const [row] = await get(db$)
+    .select({
+      sessionId: agentRuns.sessionId,
+      orgId: agentRuns.orgId,
+      userId: agentRuns.userId,
+      selectedModel: agentRuns.selectedModel,
+      codexServiceTier: agentRuns.codexServiceTier,
+      triggerSource: agentRuns.triggerSource,
+    })
     .from(agentRuns)
-    .innerJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
+    .where(eq(agentRuns.id, auth.runId))
+    .limit(1);
+  return row;
+});
+
+const agentLabel$ = computed(async (get) => {
+  const run = await get(attributionRun$);
+  if (!run) {
+    return undefined;
+  }
+  const [row] = await get(db$)
+    .select({ displayName: agents.displayName, name: agents.name })
+    .from(agentSessions)
     .innerJoin(agents, eq(agentSessions.agentId, agents.id))
-    .where(eq(agentRuns.id, runId))
+    .where(eq(agentSessions.id, run.sessionId))
     .limit(1);
   return row ? (row.displayName ?? row.name) : undefined;
-}
+});
 
-async function resolveModelLabel(db: ReadonlyDb, runId: string) {
-  const row = await resolveRunModelSelection(db, runId);
-  return row?.selectedModel
-    ? getRunModelDisplayName(row.selectedModel, row.codexServiceTier)
-    : undefined;
-}
+const modelLabel$ = computed(async (get) => {
+  const run = await get(attributionRun$);
+  if (!run || run.triggerSource === null || run.selectedModel === null) {
+    return undefined;
+  }
+  // Preserve the existing attribution reader's historical tier normalization.
+  return getRunModelDisplayName(
+    run.selectedModel,
+    run.codexServiceTier === "fast" ? "fast" : null,
+  );
+});
 
-/** Native sends share Slack's independently best-effort attribution lookups. */
-export function integrationMessageSendLabels(args: {
-  readonly authRunId: string | undefined;
-}) {
-  return computed(async (get) => {
-    if (!args.authRunId) {
-      return { agentLabel: undefined, modelLabel: undefined };
-    }
-    const db = get(db$);
-    const noop = (): void => {};
-    const [agentLabel, modelLabel] = await Promise.all([
-      tapError(resolveAgentLabel(db, args.authRunId), noop),
-      tapError(resolveModelLabel(db, args.authRunId), noop),
-    ]);
-    return { agentLabel, modelLabel };
-  });
-}
+/** Request-owned reads share Slack's independently best-effort attribution. */
+export const integrationMessageSendLabels$ = computed(async (get) => {
+  const noop = (): void => {};
+  const [run, agentLabel, modelLabel] = await Promise.all([
+    tapError(get(attributionRun$), noop),
+    tapError(get(agentLabel$), noop),
+    tapError(get(modelLabel$), noop),
+  ]);
+  return {
+    agentLabel,
+    modelLabel,
+    runOwner: run ? { orgId: run.orgId, userId: run.userId } : undefined,
+  };
+});
 
+/** Format captured display data; the caller supplies its verified sender. */
 export function discordMessageSendFooterText(args: {
-  readonly authRunId: string | undefined;
+  readonly agentLabel: string | undefined;
+  readonly modelLabel: string | undefined;
   readonly discordUserId: string;
 }) {
-  return computed(async (get) => {
-    const { agentLabel, modelLabel } = await get(
-      integrationMessageSendLabels(args),
-    );
-    if (!agentLabel && !modelLabel) {
-      return undefined;
-    }
-    const parts: string[] = [];
-    if (agentLabel) {
-      parts.push(`Sent via ${agentLabel}`);
-    }
-    parts.push(`Triggered by <@${args.discordUserId}>`);
-    if (modelLabel) {
-      parts.push(modelLabel);
-    }
-    return parts.join(" · ");
-  });
+  if (!args.agentLabel && !args.modelLabel) {
+    return undefined;
+  }
+  const parts: string[] = [];
+  if (args.agentLabel) {
+    parts.push(`Sent via ${args.agentLabel}`);
+  }
+  parts.push(`Triggered by <@${args.discordUserId}>`);
+  if (args.modelLabel) {
+    parts.push(args.modelLabel);
+  }
+  return parts.join(" · ");
 }

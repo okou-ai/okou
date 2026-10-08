@@ -1,39 +1,35 @@
 import { command, computed, type Computed } from "ccstate";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { and, eq } from "drizzle-orm";
 
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import type { SlackClient } from "../external/slack-message-client";
 import { tapError } from "../utils";
-import { integrationMessageSendLabels } from "./integration-message-context.service";
+import { integrationMessageSendLabels$ } from "./integration-message-context.service";
 
-async function resolveUserMention(
-  db: ReadonlyDb,
-  runId: string,
-): Promise<string | undefined> {
-  const [row] = await db
+const userMention$ = computed(async (get) => {
+  const { runOwner } = await get(integrationMessageSendLabels$);
+  if (!runOwner) {
+    return undefined;
+  }
+  const [row] = await get(db$)
     .select({ slackUserId: slackOrgConnections.slackUserId })
-    .from(agentRuns)
-    .innerJoin(
-      slackOrgInstallations,
-      eq(slackOrgInstallations.orgId, agentRuns.orgId),
-    )
+    .from(slackOrgInstallations)
     .innerJoin(
       slackOrgConnections,
       and(
-        eq(slackOrgConnections.userId, agentRuns.userId),
+        eq(slackOrgConnections.userId, runOwner.userId),
         eq(
           slackOrgConnections.slackWorkspaceId,
           slackOrgInstallations.slackWorkspaceId,
         ),
       ),
     )
-    .where(eq(agentRuns.id, runId))
+    .where(eq(slackOrgInstallations.orgId, runOwner.orgId))
     .limit(1);
   return row ? `<@${row.slackUserId}>` : undefined;
-}
+});
 
 /**
  * Resolve the attribution footer text appended to user-initiated Slack messages.
@@ -41,20 +37,12 @@ async function resolveUserMention(
  * Mirrors the Slack message route footer resolver. Each resolver swallows its
  * own errors so any single lookup failure degrades the footer gracefully.
  */
-export function slackMessageSendFooterText(args: {
-  readonly authRunId: string | undefined;
-}): Computed<Promise<string | undefined>> {
-  return computed(async (get): Promise<string | undefined> => {
-    if (!args.authRunId) {
-      return undefined;
-    }
-    const db = get(db$);
-    const runId = args.authRunId;
-
+export const slackMessageSendFooterText$ = computed(
+  async (get): Promise<string | undefined> => {
     const noop = (): void => {};
     const [{ agentLabel, modelLabel }, userMention] = await Promise.all([
-      get(integrationMessageSendLabels(args)),
-      tapError(resolveUserMention(db, runId), noop),
+      get(integrationMessageSendLabels$),
+      tapError(get(userMention$), noop),
     ]);
 
     const parts: string[] = [];
@@ -69,8 +57,8 @@ export function slackMessageSendFooterText(args: {
     }
 
     return parts.length > 0 ? parts.join(" · ") : undefined;
-  });
-}
+  },
+);
 
 /**
  * Resolve the current user's Slack user ID via the org's Slack installation.
