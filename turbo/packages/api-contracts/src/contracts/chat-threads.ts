@@ -18,10 +18,6 @@ import { requireUserMessageForDraftAttachments } from "./draft-user-message";
 import { hostedArtifactKindSchema } from "./host";
 import { runFailureReasonTokenSchema } from "./run-failure-reasons";
 import { runModelIdSchema } from "./model-providers";
-import {
-  avatarVideoAspectRatioSchema,
-  avatarVideoVoiceIdSchema,
-} from "./avatar-video";
 
 const c = initContract();
 const chatEventCursorSchema = z.union([
@@ -431,46 +427,48 @@ const presentationGenerationTemplateRequestSchema = z.object({
     .strict(),
 });
 
-/**
- * Talking-avatar parameters. Unrelated to text-to-video despite sharing the
- * "video" envelope.
- *
- * What keeps this envelope shared is persisted data, not client parsing: avatar
- * selections have always been stored as `type: "video"` with the product
- * encoded in `stylePresetId`, and those rows are customer data. Splitting them
- * apart would need the backfill and phasing in
- * `docs/deployment-compatibility.md` first.
- */
-const avatarGenerationOptionsSchema = z
+const retiredAvatarAspectRatioSchema = z.enum([
+  "portrait",
+  "landscape",
+  "square",
+]);
+const retiredAvatarVoiceIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .regex(/^[A-Za-z0-9._:-]+$/);
+
+/** Read-only talking-avatar parameters stored in historical video selections. */
+const retiredAvatarGenerationOptionsSchema = z
   .object({
     titleSnapshot: z.string().trim().min(1),
     previewUrl: z.url(),
-    voiceId: avatarVideoVoiceIdSchema,
-    aspectRatio: avatarVideoAspectRatioSchema,
+    voiceId: retiredAvatarVoiceIdSchema,
+    aspectRatio: retiredAvatarAspectRatioSchema,
   })
   .partial();
 
-const videoGenerationTemplateRequestSchema = z.object({
+/**
+ * Video and talking-avatar selections written before generation was retired.
+ * Keep the historical envelope and fields for message readers; current clients
+ * do not produce these selections and the prompt builder ignores them.
+ */
+const retiredVideoGenerationTemplateRequestSchema = z.object({
   type: z.literal("video"),
   selection: z.object({
     stylePresetId: z.string().min(1),
-    avatarOptions: avatarGenerationOptionsSchema.optional(),
+    avatarOptions: retiredAvatarGenerationOptionsSchema.optional(),
 
     /**
-     * Historical flat fields stay parseable because messages and persisted
-     * drafts written before avatarOptions was introduced only carry this
-     * shape. Dropping them here would strip those selections on parse;
-     * retaining the nested schema alone does not preserve those values.
-     *
-     * @deprecated Read-only fallback; write avatarOptions.titleSnapshot.
+     * Messages and persisted drafts written before avatarOptions was introduced
+     * carry these flat fields. Keep them to avoid stripping saved selections
+     * when parsing historical documents.
      */
     titleSnapshot: z.string().trim().min(1).optional(),
-    /** @deprecated Read-only fallback; write avatarOptions.previewUrl. */
     previewUrl: z.url().optional(),
-    /** @deprecated Read-only fallback; write avatarOptions.voiceId. */
-    voiceId: avatarVideoVoiceIdSchema.optional(),
-    /** @deprecated Read-only fallback; write avatarOptions.aspectRatio. */
-    aspectRatio: avatarVideoAspectRatioSchema.optional(),
+    voiceId: retiredAvatarVoiceIdSchema.optional(),
+    aspectRatio: retiredAvatarAspectRatioSchema.optional(),
   }),
 });
 
@@ -533,7 +531,7 @@ const customGenerationTemplateRequestSchema = z.object({
 const generationTemplateRequestSchema = z.discriminatedUnion("type", [
   presentationGenerationTemplateRequestSchema,
   customGenerationTemplateRequestSchema,
-  videoGenerationTemplateRequestSchema,
+  retiredVideoGenerationTemplateRequestSchema,
   retiredIntroVideoGenerationTemplateRequestSchema,
   illustrationGenerationTemplateRequestSchema,
   workflowGenerationTemplateRequestSchema,
@@ -2033,7 +2031,6 @@ export {
   userMessagePartSchema,
   userMessageDocumentSchema,
   presentationGenerationTemplateRequestSchema,
-  videoGenerationTemplateRequestSchema,
   illustrationGenerationTemplateRequestSchema,
   websiteGenerationTemplateRequestSchema,
   chatEventSchema,
@@ -2084,12 +2081,6 @@ export type ThreadGenerationTemplates = Partial<
 >;
 export type PresentationGenerationTemplateRequest = z.infer<
   typeof presentationGenerationTemplateRequestSchema
->;
-export type AvatarGenerationOptions = z.infer<
-  typeof avatarGenerationOptionsSchema
->;
-export type VideoGenerationTemplateRequest = z.infer<
-  typeof videoGenerationTemplateRequestSchema
 >;
 export type IllustrationGenerationTemplateRequest = z.infer<
   typeof illustrationGenerationTemplateRequestSchema

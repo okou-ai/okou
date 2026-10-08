@@ -641,9 +641,9 @@ describe("chat thread generation template contract", () => {
     expect(parsed.success).toBe(true);
   });
 
-  it("accepts avatar snapshots in the compatible video template envelope", () => {
-    const parsed = generationTemplateRequestSchema.safeParse({
-      type: "video",
+  it.each([
+    {
+      shape: "flat",
       selection: {
         stylePresetId: "avatar-template:81",
         titleSnapshot: "Ada",
@@ -651,22 +651,39 @@ describe("chat thread generation template contract", () => {
         voiceId: "en-US-ChristopherNeural",
         aspectRatio: "landscape",
       },
-    });
-
-    expect(parsed).toMatchObject({
-      success: true,
-      data: {
-        type: "video",
-        selection: {
-          stylePresetId: "avatar-template:81",
+    },
+    {
+      shape: "nested",
+      selection: {
+        stylePresetId: "avatar-template:81",
+        avatarOptions: {
           titleSnapshot: "Ada",
           previewUrl: "https://example.com/ada.jpg",
           voiceId: "en-US-ChristopherNeural",
           aspectRatio: "landscape",
         },
       },
-    });
-  });
+    },
+  ])(
+    "reads a historical avatar message with $shape options",
+    ({ selection }) => {
+      const userMessage = {
+        version: 1,
+        parts: [
+          { type: "text", text: "Explain the product" },
+          {
+            type: "template",
+            titleSnapshot: "Ada",
+            template: { type: "video", selection },
+          },
+        ],
+      };
+
+      expect(userMessageDocumentSchema.parse(userMessage)).toStrictEqual(
+        userMessage,
+      );
+    },
+  );
 
   it("rejects empty workflow template ids", () => {
     const parsed = generationTemplateRequestSchema.safeParse({
