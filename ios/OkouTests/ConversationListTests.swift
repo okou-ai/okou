@@ -1,0 +1,185 @@
+import SwiftUI
+import XCTest
+
+@testable import Okou
+
+@MainActor
+final class ConversationListTests: XCTestCase {
+  func testNativeListPreservesPartialRowAcrossPrependAndHeightChanges() async throws {
+    let model = ListProbeModel()
+    let anchor = ConversationScrollAnchor()
+    let host = UIHostingController(rootView: ListProbe(model: model, anchor: anchor))
+    let window = try mount(host)
+    defer { unmount(window) }
+    try await eventually { anchor.capture() != nil }
+    let scroll = try XCTUnwrap(markers(in: host.view).first?.enclosingScrollView)
+    scroll.setContentOffset(CGPoint(x: 0, y: 140), animated: false)
+    try await eventually { anchor.capture()?.offset ?? 0 < -20 }
+    let position = try XCTUnwrap(anchor.capture())
+    let initialHeight = scroll.contentSize.height
+    anchor.preserve(position)
+    model.ids = Array(0..<40)
+    try await eventually {
+      scroll.contentSize.height > initialHeight
+        && anchor.capture()?.messageID == position.messageID
+        && abs((anchor.capture()?.offset ?? .infinity) - position.offset) < 1
+    }
+    XCTAssertEqual(anchor.capture()?.messageID, position.messageID)
+    model.extraHeight = 60
+    try await eventually {
+      let row = markers(in: host.view).first { $0.messageID == position.messageID }
+      return row?.bounds.height ?? 0 > 150
+        && abs((anchor.capture()?.offset ?? .infinity) - position.offset) < 1
+    }
+    XCTAssertEqual(anchor.capture()?.messageID, position.messageID)
+    anchor.cancel()
+    scroll.setContentOffset(CGPoint(x: 0, y: scroll.contentOffset.y + 100), animated: false)
+    try await eventually { anchor.capture() != position }
+  }
+
+  func testConversationRestoresResidentReadingPositionAndPreservesItDuringExpansionAndRefresh()
+    async throws
+  {
+    let fixture = ConversationHistoryFixture()
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    await conversation.refresh()
+    let position = ConversationReadingPosition(
+      messageID: ConversationHistoryFixture.id(95), offset: -42)
+    conversation.rememberReadingPosition(position)
+    let host = UIHostingController(rootView: ChatDetailView(conversation: conversation))
+    let window = try mount(host)
+    defer { unmount(window) }
+    try await eventually {
+      abs((offset(of: position.messageID, in: host.view) ?? .infinity) - position.offset) < 1
+    }
+    await conversation.loadEarlierMessages()
+    try await eventually {
+      conversation.visibleMessages.first?.id == ConversationHistoryFixture.id(81)
+        && abs((offset(of: position.messageID, in: host.view) ?? .infinity) - position.offset) < 1
+    }
+    fixture.appendMessage()
+    await conversation.refresh()
+    try await eventually {
+      abs((offset(of: position.messageID, in: host.view) ?? .infinity) - position.offset) < 1
+    }
+    XCTAssertEqual(conversation.messages.count, 101)
+    XCTAssertEqual(conversation.visibleMessages.count, 21)
+    XCTAssertEqual(conversation.readingPosition, position)
+
+    // Recreate the detail view as navigation does, while retaining its conversation store.
+    unmount(window)
+    let reopened = UIHostingController(rootView: ChatDetailView(conversation: conversation))
+    let reopenedWindow = try mount(reopened)
+    defer { unmount(reopenedWindow) }
+    try await eventually {
+      abs((offset(of: position.messageID, in: reopened.view) ?? .infinity) - position.offset) < 1
+    }
+    XCTAssertEqual(conversation.visibleMessages.count, 21)
+
+    fixture.revoke(95)
+    await conversation.refresh()
+    try await eventually {
+      abs(
+        (offset(of: ConversationHistoryFixture.id(96), in: reopened.view) ?? .infinity)
+          - position.offset) < 1
+    }
+    conversation.draft = "My next message"
+    await conversation.send()
+    let pending = try XCTUnwrap(conversation.pending.first)
+    try await eventually {
+      guard let y = offset(of: pending.id, in: reopened.view) else { return false }
+      return y >= 0 && y < reopened.view.bounds.height
+    }
+    XCTAssertTrue(pending.needsRetry)
+    XCTAssertNil(conversation.readingPosition)
+    try await eventually {
+      guard let scroll = markers(in: reopened.view).first?.enclosingScrollView else { return false }
+      return scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.bounds.maxY
+        <= 20
+    }
+    conversation.resetRenderWindowToLatest()
+    XCTAssertEqual(
+      conversation.visibleMessages.map(\.id),
+      (90...101).filter { $0 != 95 }.map(ConversationHistoryFixture.id) + [pending.id])
+    try await eventually {
+      guard let y = offset(of: pending.id, in: reopened.view) else { return false }
+      return y >= 0 && y < reopened.view.bounds.height
+    }
+  }
+}
+
+@MainActor
+private func mount<V: View>(_ host: UIHostingController<V>) throws -> UIWindow {
+  let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+  let window = UIWindow(windowScene: scene)
+  window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+  window.rootViewController = host
+  window.makeKeyAndVisible()
+  return window
+}
+
+@MainActor
+private func unmount(_ window: UIWindow) {
+  window.isHidden = true
+  window.rootViewController = nil
+}
+
+@MainActor
+private func markers(in view: UIView) -> [ConversationRowMarker] {
+  (view as? ConversationRowMarker).map { [$0] } ?? view.subviews.flatMap { markers(in: $0) }
+}
+
+@MainActor
+private func offset(of id: String, in view: UIView) -> CGFloat? {
+  guard let row = markers(in: view).first(where: { $0.messageID == id }),
+    let scroll = row.enclosingScrollView
+  else { return nil }
+  return row.convert(row.bounds, to: scroll).minY - scroll.bounds.minY
+    - scroll.adjustedContentInset.top
+}
+
+@MainActor
+private func eventually(file: StaticString = #filePath, line: UInt = #line, _ predicate: () -> Bool)
+  async throws
+{
+  let deadline = ContinuousClock.now + .seconds(3)
+  while !predicate() && ContinuousClock.now < deadline {
+    try await Task.sleep(for: .milliseconds(20))
+  }
+  XCTAssertTrue(predicate(), file: file, line: line)
+}
+
+@MainActor @Observable
+private final class ListProbeModel {
+  var ids = Array(20..<40)
+  var extraHeight: CGFloat = 0
+}
+
+private struct ListProbe: View {
+  var model: ListProbeModel
+  let anchor: ConversationScrollAnchor
+  var body: some View {
+    ScrollViewReader { proxy in
+      List(model.ids.map(String.init), id: \.self) { messageID in
+        let id = Int(messageID)!
+        Text("Message \(id)")
+          .frame(height: (id.isMultiple(of: 3) ? 170 : 95) + model.extraHeight)
+          .background(ConversationRowAnchor(messageID: messageID, anchor: anchor))
+      }.listStyle(.plain)
+        .onAppear { anchor.revealRow = { proxy.scrollTo($0, anchor: .top) } }
+        .onChange(of: model.ids) { _, _ in
+          if let position = anchor.preservedPosition { anchor.restore(position) }
+        }
+        .onScrollGeometryChange(for: CGSize.self) {
+          $0.contentSize
+        } action: { _, _ in
+          anchor.layoutDidChange()
+        }
+        .onDisappear {
+          anchor.cancel()
+          anchor.revealRow = nil
+        }
+    }
+  }
+}
