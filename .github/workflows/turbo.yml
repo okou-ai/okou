@@ -153,7 +153,7 @@ env:
 
 jobs:
   ci-admission:
-    name: Check PR CI capacity
+    name: Check PR CI limits
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -164,7 +164,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Check PR CI capacity
+      - name: Check PR CI limits
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
@@ -2941,7 +2941,7 @@ jobs:
           RELEASE_DEPLOY_CLI_RESULT: ${{ needs.deploy-cli.result }}
         run: |
           if [[ "$CI_ADMISSION_RESULT" != "success" ]]; then
-            echo "::error::CI admission did not pass ($CI_ADMISSION_RESULT). See the Check PR CI capacity job and workflow summary for the reason and retry instructions."
+            echo "::error::CI admission did not pass ($CI_ADMISSION_RESULT). See the Check PR CI limits job and workflow summary for the reason and retry instructions."
             exit 1
           fi
 

@@ -27,7 +27,11 @@ if ((attempt <= MOCK_FAILURES)); then
   echo 'gh: GitHub API unavailable (HTTP 503)' >&2
   exit 1
 fi
-cat "$MOCK_RESPONSE"
+if [[ " $* " == *' --paginate '* && " $* " == *' --slurp '* ]]; then
+  cat "$MOCK_RESPONSE"
+else
+  jq '.[0:1]' "$MOCK_RESPONSE"
+fi
 SH
 cat >"${test_root}/bin/sleep" <<'SH'
 #!/usr/bin/env bash
@@ -36,11 +40,19 @@ SH
 chmod +x "${test_root}/bin/gh" "${test_root}/bin/sleep"
 
 response() {
-  jq -cn --argjson count "$1" --argjson entry "${2:-null}" '
-    {data: {repository: {
-      pullRequests: {totalCount: $count},
-      pullRequest: {number: 42, mergeQueueEntry: $entry}
-    }}}
+  jq -cn --argjson count "$1" --argjson entry "${2:-null}" \
+    --argjson author_count "${3:-1}" --arg author "${4:-developer}" '
+    [range($count) | {number: (. + 42), author: {login: (if . < $author_count then $author else "other-author" end)}}] as $nodes |
+    [range(0; ([1, $count] | max); 100) as $start |
+      {data: {repository: {
+        pullRequests: {
+          totalCount: $count,
+          nodes: $nodes[$start:($start + 100)],
+          pageInfo: {hasNextPage: ($start + 100 < $count), endCursor: "cursor-\($start + 100)"}
+        },
+        pullRequest: {number: 42, author: {login: $author}, mergeQueueEntry: $entry}
+      }}}
+    ]
   ' >"${test_root}/response.json"
 }
 
@@ -76,7 +88,7 @@ run_admission
 [[ "$status" == 1 ]] || fail "an unqueued PR at 41 open PRs should fail"
 assert_contains "$output" 'CI_CAPACITY_LIMIT'
 assert_contains "$output" '41 open PRs'
-assert_contains "$output" 'below 40'
+assert_contains "$output" 'fewer than 40'
 assert_contains "$output" 'gh run rerun 123 --repo test/repo'
 assert_contains "$summary" '**41 open PRs**'
 assert_contains "$summary" 'not in the merge queue'
@@ -89,8 +101,48 @@ response 39
 run_admission
 [[ "$status" == 0 ]] || fail "a retry after capacity recovers should pass: $output"
 
+# The current PR is included in its author's count: 20 is allowed, 21 is not.
+response 30 null 20
+run_admission
+[[ "$status" == 0 ]] || fail "an author with 20 open PRs should be admitted: $output"
+response 30 null 21
+run_admission
+[[ "$status" == 1 ]] || fail "an author with 21 open PRs should fail"
+assert_contains "$output" 'CI_AUTHOR_PR_LIMIT'
+assert_contains "$output" 'Author developer has 21 open PRs in test/repo'
+assert_contains "$summary" 'Author **developer**: **21 open PRs**'
+assert_contains "$summary" 'at most 20 open PRs'
+assert_contains "$summary" 'repos/test/repo/pulls?state=open&per_page=100'
+[[ "$output" != *CI_CAPACITY_LIMIT* ]] || fail "author limit must apply below the repository limit"
+
+# Bot and draft PRs are counted by the same open-PR query, without exemptions.
+response 30 null 21 'dependabot[bot]'
+run_admission
+[[ "$status" == 1 ]] || fail "bot authors should have the same limit"
+assert_contains "$output" 'Author dependabot[bot] has 21 open PRs'
+
+response 39 null 20
+run_admission
+[[ "$status" == 0 ]] || fail "a retry after both limits recover should pass: $output"
+
+# Count every page and report both limits when both are exceeded.
+response 101 null 21
+jq '
+  .[0].data.repository.pullRequests.nodes[0] as $author_pr |
+  .[1].data.repository.pullRequests.nodes[0] as $other_pr |
+  .[0].data.repository.pullRequests.nodes[0] = $other_pr |
+  .[1].data.repository.pullRequests.nodes[0] = $author_pr
+' "${test_root}/response.json" >"${test_root}/paginated.json"
+mv "${test_root}/paginated.json" "${test_root}/response.json"
+run_admission
+[[ "$status" == 1 ]] || fail "both exceeded limits should fail"
+assert_contains "$output" 'CI_CAPACITY_LIMIT'
+assert_contains "$output" 'CI_AUTHOR_PR_LIMIT'
+assert_contains "$summary" '**101 open PRs**'
+assert_contains "$summary" '**21 open PRs**'
+
 # Actual queue membership exempts PR-triggered runs at any count.
-response 60 '{"id":"queue-entry"}'
+response 60 '{"id":"queue-entry"}' 30
 run_admission
 [[ "$status" == 0 ]] || fail "queued PRs should be admitted: $output"
 assert_contains "$output" 'in merge queue: true'
@@ -116,11 +168,15 @@ assert_contains "$summary" 'gh run rerun 123 --repo test/repo'
 
 # Partial GraphQL errors and missing queue/count data must not grant admission.
 for invalid in \
-  '{"errors":[{"message":"forbidden"}],"data":{"repository":{"pullRequests":{"totalCount":0},"pullRequest":{"number":42,"mergeQueueEntry":null}}}}' \
-  '{"data":{"repository":null}}' \
-  '{"data":{"repository":{"pullRequests":{"totalCount":0},"pullRequest":{"number":42}}}}' \
-  '{"data":{"repository":{"pullRequests":{"totalCount":41},"pullRequest":{"number":42,"mergeQueueEntry":{}}}}'; do
-  printf '%s\n' "$invalid" >"${test_root}/response.json"
+  '.[0].errors = [{message: "forbidden"}]' \
+  '.[0].data.repository = null' \
+  'del(.[0].data.repository.pullRequest.mergeQueueEntry)' \
+  '.[0].data.repository.pullRequest.mergeQueueEntry = {}' \
+  '.[0].data.repository.pullRequest.author = null' \
+  '.[0].data.repository.pullRequests.nodes = []'; do
+  response 39
+  jq "$invalid" "${test_root}/response.json" >"${test_root}/invalid.json"
+  mv "${test_root}/invalid.json" "${test_root}/response.json"
   run_admission
   [[ "$status" == 1 ]] || fail "invalid GitHub response must fail closed"
   assert_contains "$output" 'CI_ADMISSION_QUERY_FAILED'
