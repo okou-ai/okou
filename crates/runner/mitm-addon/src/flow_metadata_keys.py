@@ -188,9 +188,13 @@ Model-provider usage
   ``usage_pricing`` provider, which may be an alias of the actual model) from
   registry sandbox info. Read by model-provider reported-model selection.
 - ``MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS``: optional ``int`` from
-  registry sandbox info. The API-resolved total-input threshold for the
-  long-context billing tier of ``MODEL_USAGE_PROVIDER``. When absent (older
-  API), billing falls back to the generated map keyed by provider.
+  registry sandbox info. A positive API-captured total-input threshold (input
+  + cache read + cache creation) is the inclusive boundary for the long-context
+  billing tier of ``MODEL_USAGE_PROVIDER``. ``0`` marks a single-tier route. Without
+  a usable positive captured threshold, the reporter selects the base tier;
+  it does not reconstruct a threshold. This is not supported pre-catalog
+  pricing compatibility; see ``docs/deployment-compatibility.md`` for deployment
+  order and rollback limits.
 Connector usage and parser state
 --------------------------------
 - ``X_NDJSON_STATE``: ``dict`` owned by the X connector NDJSON parser. Written
