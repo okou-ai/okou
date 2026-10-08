@@ -1,3 +1,4 @@
+import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
@@ -17,6 +18,7 @@ export const discordExportKindSchema = z.enum([
   "routes",
   "ingress",
   "contexts",
+  "oauth-attempts",
 ]);
 
 type DiscordExportKind = z.infer<typeof discordExportKindSchema>;
@@ -66,6 +68,32 @@ export const readDiscordUserExportPage$ = command(
 
     const read = async () => {
       switch (args.kind) {
+        case "oauth-attempts": {
+          return await db
+            .select({
+              key: discordOauthStates.id,
+              // Capability hashes and the OAuth redirect URI are not user content.
+              row: {
+                id: discordOauthStates.id,
+                orgId: discordOauthStates.orgId,
+                userId: discordOauthStates.userId,
+                flow: discordOauthStates.flow,
+                guildId: discordOauthStates.guildId,
+                createdAt: discordOauthStates.createdAt,
+                expiresAt: discordOauthStates.expiresAt,
+              },
+            })
+            .from(discordOauthStates)
+            .where(
+              and(
+                eq(discordOauthStates.userId, userId),
+                lte(discordOauthStates.createdAt, startedAt),
+                cursor ? gt(discordOauthStates.id, cursor) : undefined,
+              ),
+            )
+            .orderBy(asc(discordOauthStates.id))
+            .limit(PAGE_SIZE);
+        }
         case "installations": {
           return await set(readDiscordInstallationsPage$, args, signal);
         }

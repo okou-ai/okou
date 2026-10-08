@@ -1870,6 +1870,20 @@
       "when": 1791432517943,
       "tag": "1344_computer_use_session_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 1345,
+      "version": "7",
+      "when": 1791447833666,
+      "tag": "1345_discord_oauth_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 1346,
+      "version": "7",
+      "when": 1791447960582,
+      "tag": "1346_discord_account_ownership",
+      "breakpoints": true
     }
   ]
 }
