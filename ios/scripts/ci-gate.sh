@@ -11,7 +11,7 @@ case "${IOS_NEEDED:-}:${BUILD_RESULT:-}" in
     echo "iOS app build and simulator tests passed."
     ;;
   false:skipped)
-    echo "No iOS changes; simulator checks were not needed."
+    echo "iOS simulator checks were not needed for this event."
     ;;
   *)
     echo "::error::Unexpected iOS CI results: needed=${IOS_NEEDED:-missing}, build=${BUILD_RESULT:-missing}"

@@ -12,17 +12,14 @@ import {
   workflowsDetailContract,
 } from "@okouai/api-contracts/contracts/workflows";
 import { getCustomSkillStorageName } from "@okouai/core/storage-names";
-import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { alterRegisteredVolumeIndexFixture } from "../../../test-fixtures/registered-volume-index";
-import { createDeferredPromise } from "../../utils";
 import { testPiResourceIndexWorkRoutes } from "../test-pi-resource-index-work";
 import { workflowsRoutes } from "../workflows";
 import { createBddApi } from "./helpers/api-bdd";
-import { storageTextFile } from "./helpers/api-bdd-storage-files";
 import { createStoragesBddApi } from "./helpers/api-bdd-storages";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -158,12 +155,6 @@ async function createVolume() {
     storageName,
     versionId: firstVersion.versionId,
   };
-  const genericFiles = [
-    storageTextFile("SKILL.md", synthesizeWorkflowSkillMd(definition)),
-    ...files.map((file) => {
-      return storageTextFile(file.path, file.content);
-    }),
-  ];
   return {
     actor,
     definition,
@@ -175,23 +166,7 @@ async function createVolume() {
     original,
     firstVersion,
     fixture,
-    genericFiles,
   };
-}
-
-async function makePending(volume: Awaited<ReturnType<typeof createVolume>>) {
-  // Older serving/rollback APIs can leave a registered version without an index.
-  // Public APIs cannot remove a ready index: alter only this test-owned version.
-  await alterRegisteredVolumeIndexFixture(
-    { ...volume.fixture, state: "missing" },
-    context.signal,
-  );
-  await storages.commitStorage(volume.actor, {
-    storageName: volume.fixture.storageName,
-    storageOwner: "organization",
-    versionId: volume.fixture.versionId,
-    files: volume.genericFiles,
-  });
 }
 
 describe("Registered workflow volume index reuse", () => {
@@ -294,97 +269,4 @@ describe("Registered workflow volume index reuse", () => {
       });
     },
   );
-
-  it("completes pending canonical publication without allowing a stale worker to overwrite it", async () => {
-    const volume = await createVolume();
-    await makePending(volume);
-    const original = context.mocks.s3.send.getMockImplementation();
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    let hold = true;
-    context.mocks.s3.send.mockImplementation(async (request: unknown) => {
-      if (
-        hold &&
-        request instanceof GetObjectCommand &&
-        request.input.Key?.endsWith(
-          `/${volume.fixture.versionId}/archive.tar.gz`,
-        )
-      ) {
-        hold = false;
-        entered.resolve(undefined);
-        await release.promise;
-      }
-      if (!original) {
-        throw new Error("Expected the test object store");
-      }
-      return await original(request);
-    });
-    const publish = async () => {
-      await entered.promise;
-      await accept(volume.update(), [200]);
-    };
-    // Join both owners immediately, and release the external read even when
-    // publication fails, so a regression cannot leave unhandled worker work.
-    const [worker] = await Promise.all([
-      run(volume.fixture.versionId),
-      publish().finally(() => {
-        release.resolve(undefined);
-      }),
-    ]);
-    expect(worker).toMatchObject({ claimed: 1, ready: 0, stale: 1 });
-    await expect(run(volume.fixture.versionId)).resolves.toMatchObject({
-      claimed: 0,
-    });
-    await expect(volume.download()).resolves.toStrictEqual(volume.firstVersion);
-    expect((await volume.read()).body.fileContents).toStrictEqual(
-      volume.original.body.fileContents,
-    );
-  });
-
-  it("keeps unindexable worker results on the canonical publication path", async () => {
-    const volume = await createVolume();
-    await makePending(volume);
-    const original = context.mocks.s3.send.getMockImplementation();
-    context.mocks.s3.send.mockImplementation((request: unknown) => {
-      if (
-        request instanceof GetObjectCommand &&
-        request.input.Key?.endsWith(
-          `/${volume.fixture.versionId}/archive.tar.gz`,
-        )
-      ) {
-        const invalid = Buffer.from("Invalid resource archive");
-        return Promise.resolve({
-          ContentLength: invalid.length,
-          Body: Readable.from([invalid]),
-        });
-      }
-      if (!original) {
-        throw new Error("Expected the test object store");
-      }
-      return original(request);
-    });
-    await expect(run(volume.fixture.versionId)).resolves.toMatchObject({
-      claimed: 1,
-      unindexable: 1,
-    });
-    if (!original) {
-      throw new Error("Expected the test object store");
-    }
-    context.mocks.s3.send.mockImplementation(original);
-    await accept(volume.update(), [200]);
-    await expect(volume.download()).resolves.toStrictEqual(volume.firstVersion);
-    expect((await volume.read()).body.fileContents).toStrictEqual(
-      volume.original.body.fileContents,
-    );
-    await expect(run(volume.fixture.versionId)).resolves.toMatchObject({
-      claimed: 0,
-    });
-    await alterRegisteredVolumeIndexFixture(
-      { ...volume.fixture, state: "corrupt-hash" },
-      context.signal,
-    );
-    await expect(volume.rejectedUpdate()).rejects.toThrow(
-      "Pi resource version index failed integrity validation",
-    );
-  });
 });

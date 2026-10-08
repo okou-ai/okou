@@ -1,5 +1,5 @@
 {
-  "id": "811b7881-08d7-472d-a177-ea7297f5c722",
+  "id": "382fcc90-2ab0-4e82-942a-c8d6488c55c6",
   "prevId": "4d182250-4b60-42a2-ae47-c52f4d1434c1",
   "version": "7",
   "dialect": "postgresql",
@@ -9920,6 +9920,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "contract_hash": {
+          "name": "contract_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
         "endpoint": {
           "name": "endpoint",
           "type": "text",
@@ -10040,13 +10046,15 @@
             "dcr_registration_id",
             "org_id",
             "connector_slug",
-            "auth_method"
+            "auth_method",
+            "contract_hash"
           ],
           "columnsTo": [
             "id",
             "org_id",
             "connector_slug",
-            "auth_method"
+            "auth_method",
+            "contract_hash"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -10058,7 +10066,7 @@
       "checkConstraints": {
         "chk_connector_oauth_binding_identity": {
           "name": "chk_connector_oauth_binding_identity",
-          "value": "\"connector_account_oauth_bindings\".\"storage_version\" > 0 AND btrim(\"connector_account_oauth_bindings\".\"endpoint\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"issuer\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"resource\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"token_endpoint\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"client_id\") <> ''"
+          "value": "\"connector_account_oauth_bindings\".\"storage_version\" > 0 AND \"connector_account_oauth_bindings\".\"contract_hash\" ~ '^[a-f0-9]{64}$' AND btrim(\"connector_account_oauth_bindings\".\"endpoint\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"issuer\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"resource\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"token_endpoint\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"client_id\") <> ''"
         },
         "chk_connector_oauth_binding_token_auth": {
           "name": "chk_connector_oauth_binding_token_auth",
@@ -10230,6 +10238,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "contract_hash": {
+          "name": "contract_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
         "issuer": {
           "name": "issuer",
           "type": "text",
@@ -10288,39 +10302,6 @@
         }
       },
       "indexes": {
-        "idx_connector_dcr_issuer": {
-          "name": "idx_connector_dcr_issuer",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "connector_slug",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "auth_method",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "issuer",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_connector_dcr_org": {
           "name": "idx_connector_dcr_org",
           "columns": [
@@ -10347,7 +10328,19 @@
             "id",
             "org_id",
             "connector_slug",
-            "auth_method"
+            "auth_method",
+            "contract_hash"
+          ]
+        },
+        "uq_connector_dcr_issuer": {
+          "name": "uq_connector_dcr_issuer",
+          "nullsNotDistinct": false,
+          "columns": [
+            "org_id",
+            "connector_slug",
+            "auth_method",
+            "contract_hash",
+            "issuer"
           ]
         }
       },
@@ -10355,7 +10348,7 @@
       "checkConstraints": {
         "chk_connector_dcr_identity": {
           "name": "chk_connector_dcr_identity",
-          "value": "btrim(\"connector_dcr_registrations\".\"issuer\") <> '' AND btrim(\"connector_dcr_registrations\".\"client_id\") <> '' AND btrim(\"connector_dcr_registrations\".\"redirect_uri\") <> ''"
+          "value": "btrim(\"connector_dcr_registrations\".\"issuer\") <> '' AND btrim(\"connector_dcr_registrations\".\"client_id\") <> '' AND btrim(\"connector_dcr_registrations\".\"redirect_uri\") <> '' AND \"connector_dcr_registrations\".\"contract_hash\" ~ '^[a-f0-9]{64}$'"
         },
         "chk_connector_dcr_client_auth": {
           "name": "chk_connector_dcr_client_auth",
@@ -17015,6 +17008,139 @@
           "onUpdate": "no action"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.mail_notifications": {
+      "name": "mail_notifications",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_run_id": {
+          "name": "source_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload_hash": {
+          "name": "payload_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "outbox_id": {
+          "name": "outbox_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "mail_notifications_owner_key_unique": {
+          "name": "mail_notifications_owner_key_unique",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "idempotency_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "mail_notifications_outbox_unique": {
+          "name": "mail_notifications_outbox_unique",
+          "columns": [
+            {
+              "expression": "outbox_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "mail_notifications_user_idx": {
+          "name": "mail_notifications_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

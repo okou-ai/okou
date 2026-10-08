@@ -58,6 +58,7 @@ describe("Okou CLI program", () => {
       "vnc",
       "run",
       "mail",
+      "notify",
       "credit",
       "upgrade",
       "doctor",
@@ -124,8 +125,8 @@ describe("Okou CLI program", () => {
     expect(canonicalCommandNames).not.toContain("__agent-loop");
   });
 
-  it("should have exactly 47 canonical commands", () => {
-    expect(canonicalCommandNames).toHaveLength(47);
+  it("should have exactly 48 canonical commands", () => {
+    expect(canonicalCommandNames).toHaveLength(48);
     expect(canonicalCommandNames).toContain("subscription");
   });
 });

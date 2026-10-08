@@ -1,9 +1,9 @@
 # Deployment Compatibility
 
-## Automatic OAuth contract hash retirement (migration 1350)
+## Automatic OAuth contract hash retirement (migration 1351)
 
 Builtin Automatic OAuth no longer computes, writes, reads or compares a local
-configuration fingerprint. Migration `1350_retire_oauth_contract_hash` physically
+configuration fingerprint. Migration `1351_retire_oauth_contract_hash` physically
 removes `contract_hash` from account bindings and DCR registrations and removes
 `contractHash` only from builtin Automatic authorization contexts. Existing
 accounts, encrypted credentials, DCR client IDs and exact registration references
@@ -30,16 +30,15 @@ RFC 9700 section 4.4.2). State ownership, expiry and single use, PKCE S256,
 provider protocol validation, safe outbound URL handling, account ownership,
 credential encryption and real invalid-client/invalid-grant recovery remain.
 
-**This is a schema contraction, not a rolling-compatible additive migration.**
+**Intentional breaking contraction; old API compatibility is not supported.**
+The owner explicitly accepted removing backward compatibility for this change.
 Old APIs reference the removed columns and require the old context fingerprint;
-they cannot serve after migration or consume new authorization contexts. The
-current automatic migrate-before-promote pipeline is therefore **not sufficient**
-for this change. Do not release it through that pipeline unchanged. A controlled
-cutover must prevent outgoing APIs from starting or finishing database work,
-apply the migration, promote the new API and then resume API traffic. Alternatively,
-ship and verify hash-independent readers and optional outgoing writers as a
-separate preparation release before enabling this contraction. This PR does not
-implement or authorize that production orchestration.
+old API requests that overlap the migration or consume new authorization contexts
+may fail. That interruption is accepted; do not retain the fingerprint, add dual
+writers/readers or require a preparation release solely for outgoing API support.
+Apply migrations before promoting the new API through the existing deployment
+pipeline. This does not authorize manual production mutations or deployment
+approval in the PR-review workflow.
 
 The new reader accepts pending old authorization contexts through ordinary
 unknown-field stripping, whether or not the migration already removed the
@@ -9650,3 +9649,34 @@ grant or the new personal grant; the other writer cannot award both. Existing
 clients use their unchanged billing endpoints. No database migration, client
 version floor, or Runner protocol change is required. This change does not deploy
 or activate production changes.
+
+## Agent mail notifications stage one
+
+`okou notify mail` adds `POST /api/notifications/mail`, a workspace/user-scoped
+receipt read, the `notify:write` capability gated by `notifyMail`, and the
+`agent-notification` email-outbox template. The additive `mail_notifications`
+migration must precede the API deployment. Old APIs ignore this table and
+continue processing the existing email templates.
+
+| Combination                         | Behavior / requirement                                                                                                                                |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Old CLI / new API                   | Existing commands and Official result-email callbacks retain their behavior.                                                                          |
+| New CLI / old API                   | New notification calls fail with an HTTP error; the CLI must not report a send or try a second transport.                                             |
+| Old token / new API                 | Tokens without `notify:write` cannot send; start a new run after enabling the switch.                                                                 |
+| New API / old Runner                | The additive capability is carried in the trusted `OKOU_TOKEN` overlay; no Runner protocol change is needed. The installed CLI must include `notify`. |
+| New producer / old outbox drainer   | Unsupported. Keep `notifyMail` disabled until every drain instance recognizes `agent-notification`, including old deployments reached by cron.        |
+| Receipt / expired or deleted outbox | A receipt keeps its ID, content hash, and final status; replay never inserts another email.                                                           |
+
+Deploy migration and all template readers before enabling notification
+producers. A rollback after enabling must first stop new production and drain
+pending/sending notification rows with the compatible worker; do not route an
+existing new template to an old reader. Feature switches are user-overridable
+rollout controls, so operational readiness must precede any enablement.
+Membership/user/organization cleanup removes these receipts and their outbox
+content. In-flight provider calls cannot be recalled.
+
+Morning Brief retains `resultEmail: true` and its existing accepted callback
+snapshots throughout stage one. The later Official revision must change the
+instructions and `resultEmail` together, update Morning Brief readiness checks,
+and let old runs complete their accepted delivery contract. See
+[agent mail notifications](agent-mail-notifications.md) for acceptance gates.
