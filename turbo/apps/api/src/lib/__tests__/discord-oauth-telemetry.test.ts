@@ -17,6 +17,11 @@ test.each(["start", "callback", "approve", "complete"])(
     init({
       dsn: "https://public@telemetry.invalid/1",
       defaultIntegrations: false,
+      // Match production's external OTel ownership; do not install a global
+      // Sentry tracer provider while testing its event transport boundary.
+      skipOpenTelemetrySetup: true,
+      tracesSampleRate: 0,
+      sendDefaultPii: false,
       beforeSend: filterDiscordOauthSentryEvent,
       beforeBreadcrumb: filterDiscordOauthSentryBreadcrumb,
       transport: () => {
