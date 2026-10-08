@@ -2107,7 +2107,6 @@
         "default": "생각 중..."
       },
       "viewActivityLogs": "활동 로그 보기",
-      "viewLangfuseTrace": "Langfuse 트레이스 보기",
       "viewLogs": "실행 로그 보기",
       "waitingIn": "대기 중",
       "workedFor": "{{duration}} 동안 작업 완료",

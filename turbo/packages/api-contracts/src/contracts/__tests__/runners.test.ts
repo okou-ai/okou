@@ -17,7 +17,6 @@ import {
   PI_MEMORY_SUMMARY_MAX_BYTES,
   PI_MEMORY_SUMMARY_MAX_TOKENS,
   PI_MEMORY_SUMMARY_SOURCE_MAX_TOKENS,
-  piLangfuseParentSchema,
   piMemoryRecallSelectionSchema,
   piModelConfigLegacySchema,
   piModelConfigSchema,
@@ -504,35 +503,6 @@ describe("Pi sandbox execution contract", () => {
       }
     },
   );
-
-  it("accepts one strict sampled Langfuse parent", () => {
-    const langfuseParent = {
-      traceId: "1".repeat(32),
-      spanId: "2".repeat(16),
-      traceFlags: 1,
-      sessionId: piSessionId,
-      sandboxWaitStartedAt: 1_000,
-    } as const;
-
-    expect(piLangfuseParentSchema.parse(langfuseParent)).toStrictEqual(
-      langfuseParent,
-    );
-    for (const invalidParent of [
-      { ...langfuseParent, traceId: "0".repeat(32) },
-      { ...langfuseParent, traceId: "1".repeat(31) },
-      { ...langfuseParent, spanId: "0".repeat(16) },
-      { ...langfuseParent, spanId: "2".repeat(15) },
-      { ...langfuseParent, traceFlags: 0 },
-      { ...langfuseParent, sandboxWaitStartedAt: undefined },
-      { ...langfuseParent, sandboxWaitStartedAt: -1 },
-      { ...langfuseParent, sandboxWaitStartedAt: 1.5 },
-      { ...langfuseParent, extra: true },
-    ]) {
-      expect(piLangfuseParentSchema.safeParse(invalidParent).success).toBe(
-        false,
-      );
-    }
-  });
 
   it("preserves the Chat Thread session across stored and Runner-facing contexts", () => {
     const stored = storedExecutionContextSchema.parse({

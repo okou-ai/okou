@@ -832,27 +832,6 @@ export const piResourceSnapshotSchema = z.discriminatedUnion("schemaVersion", [
   piResourceSnapshotV2Schema,
 ]);
 
-export const piLangfuseParentSchema = z
-  .object({
-    traceId: z
-      .string()
-      .regex(/^[a-f0-9]{32}$/)
-      .refine((value) => {
-        return !/^0+$/.test(value);
-      }, "Trace ID must be non-zero"),
-    spanId: z
-      .string()
-      .regex(/^[a-f0-9]{16}$/)
-      .refine((value) => {
-        return !/^0+$/.test(value);
-      }, "Span ID must be non-zero"),
-    traceFlags: z.literal(1),
-    sessionId: z.uuid(),
-    sandboxWaitStartedAt: z.number().int().nonnegative(),
-  })
-  .strict()
-  .readonly();
-
 /**
  * Installed-CLI launch requirements the API captured for a Pi run. The guest
  * execs the rootfs-installed CLI only when it matches the session
@@ -1792,7 +1771,6 @@ export type PiMemoryRecallSelection = z.infer<
 export type PiInstalledCliRequirement = z.infer<
   typeof piInstalledCliRequirementSchema
 >;
-export type PiLangfuseParent = z.infer<typeof piLangfuseParentSchema>;
 export type PiResourceSnapshot = z.infer<typeof piResourceSnapshotSchema>;
 export type PiLaunchPayload = z.infer<typeof piLaunchPayloadSchema>;
 export type ClaimCompatibleStoredExecutionContext = z.infer<

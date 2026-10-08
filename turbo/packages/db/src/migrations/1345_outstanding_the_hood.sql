@@ -1,0 +1,1 @@
+ALTER TABLE "agent_runs" DROP COLUMN "langfuse_trace_enabled";

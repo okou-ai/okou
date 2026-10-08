@@ -1874,8 +1874,15 @@
     {
       "idx": 1345,
       "version": "7",
-      "when": 1791443568268,
-      "tag": "1345_retire_connector_permission_baseline",
+      "when": 1791439917399,
+      "tag": "1345_outstanding_the_hood",
+      "breakpoints": true
+    },
+    {
+      "idx": 1346,
+      "version": "7",
+      "when": 1791455984400,
+      "tag": "1346_retire_connector_permission_baseline",
       "breakpoints": true
     }
   ]

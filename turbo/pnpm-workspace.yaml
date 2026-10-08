@@ -42,10 +42,6 @@ auditConfig:
 overrides:
   # Upstream dependencies still resolve vulnerable releases without these floors.
   "@esbuild-kit/core-utils>esbuild": ^0.25.4
-  "@langfuse/core": 5.10.0
-  "@langfuse/otel": 5.10.0
-  "@langfuse/pi-observability-plugin@0.1.2>@opentelemetry/sdk-trace-node": 2.10.0
-  "@langfuse/tracing": 5.10.0
   "esbuild@>=0.27.3 <0.28.1": ">=0.28.1"
   "jayson>uuid": 11.1.1
   # @swc/core 1.16 refuses to load its native binding in the CI container
@@ -81,7 +77,6 @@ patchedDependencies:
   "@earendil-works/pi-agent-core@0.87.1": patches/@earendil-works__pi-agent-core@0.87.1.patch
   "@earendil-works/pi-ai@0.87.1": patches/@earendil-works__pi-ai@0.87.1.patch
   "@earendil-works/pi-coding-agent@0.87.1": patches/@earendil-works__pi-coding-agent@0.87.1.patch
-  "@langfuse/pi-observability-plugin@0.1.2": patches/@langfuse__pi-observability-plugin@0.1.2.patch
   # Remove when upstream jest-dom declarations support Vitest 5's Matchers.
   "@testing-library/jest-dom@6.9.1": patches/@testing-library__jest-dom@6.9.1.patch
 
