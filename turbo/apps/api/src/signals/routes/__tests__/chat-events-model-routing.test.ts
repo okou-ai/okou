@@ -1,10 +1,7 @@
 import { setOrgOpenrouterPresetFixture } from "../../../test-fixtures/org-metadata";
-import { assertPiLangfuseRelayContract } from "./helpers/pi-langfuse-relay";
 import { randomUUID } from "node:crypto";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import { mockOptionalEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 
 import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
@@ -12,7 +9,6 @@ import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 import {
   createChatEventsFixture,
@@ -20,7 +16,6 @@ import {
   type ChatRunSendBody,
   type PromptMessage,
   requireOrgId,
-  createGptUsagePricingResolution,
   claimEnvironment,
   userMessages,
 } from "./helpers/chat-events-fixture";
@@ -50,7 +45,6 @@ const {
   mockPiCheckpointObjectStore,
   publishPendingPiInstructions,
   mockPiResourceArchiveDownloads,
-  completeSandboxFirstPiRun,
 } = createChatEventsFixture(context);
 
 function base64UrlEncode(input: string): string {
@@ -398,145 +392,6 @@ describe("CHAT-02: model-first routing", () => {
     expect(claim.modelUsageProvider).toBe("okou-1.0");
     await cancelChatRun(actor, run.runId);
   }, 90_000);
-
-  it("exposes the owner's run trace URL after tracing is disabled", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const orgId = requireOrgId(actor);
-    await configureBuiltInPiModel(actor, "okou-1.0");
-    const pricing = await createGptUsagePricingResolution();
-    mockPiResourceArchiveDownloads();
-    const checkpointObjects = mockPiCheckpointObjectStore();
-    mockOptionalEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-bdd-trace-link");
-    mockOptionalEnv("LANGFUSE_SECRET_KEY", "sk-lf-bdd-trace-link");
-    mockOptionalEnv("LANGFUSE_BASE_URL", undefined);
-    mockOptionalEnv("LANGFUSE_PROJECT_ID", undefined);
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.LangfuseTrace]: true,
-      },
-    );
-    const tracedPrompt = "complete a traced run";
-    const traced = await sendChatRun(actor, {
-      agentId,
-      prompt: tracedPrompt,
-      model: null,
-    });
-    await completeSandboxFirstPiRun({
-      actor,
-      answer: "Completed answer",
-      checkpointObjects,
-      claim: await claimChatRun(runnerGroup, traced.runId),
-      prompt: tracedPrompt,
-      run: traced,
-      usagePricingResolution: pricing,
-    });
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.LangfuseTrace]: false,
-      },
-    );
-    const traceUrl = `https://us.cloud.langfuse.com/project/cmu0bvhcu012gad0drbw8ddts/traces/${traced.runId.replaceAll("-", "")}`;
-    expect((await api.readRun(actor, traced.runId)).langfuseTraceUrl).toBe(
-      traceUrl,
-    );
-    const untraced = await sendChatRun(actor, {
-      agentId,
-      threadId: traced.threadId,
-      prompt: "continue without tracing",
-      model: null,
-    });
-    await flushWaitUntilForTest();
-    expect((await api.readRun(actor, untraced.runId)).status).toBe("pending");
-    await expect(
-      api.readRun(actor, untraced.runId),
-    ).resolves.not.toHaveProperty("langfuseTraceUrl");
-    expect((await api.readRun(actor, traced.runId)).langfuseTraceUrl).toBe(
-      traceUrl,
-    );
-    const peer = { ...actor, userId: `${actor.userId}_peer` };
-    await api.requestReadRun(peer, traced.runId, [404]);
-    mockOptionalEnv("LANGFUSE_BASE_URL", "https://langfuse.example/");
-    mockOptionalEnv("LANGFUSE_PROJECT_ID", "  project-debug  ");
-    expect((await api.readRun(actor, traced.runId)).langfuseTraceUrl).toBe(
-      `https://langfuse.example/project/project-debug/traces/${traced.runId.replaceAll("-", "")}`,
-    );
-    mockOptionalEnv("LANGFUSE_BASE_URL", "javascript:alert(1)");
-    await expect(api.readRun(actor, traced.runId)).resolves.not.toHaveProperty(
-      "langfuseTraceUrl",
-    );
-    await cancelChatRun(actor, untraced.runId);
-  });
-
-  it("relays admitted run traces with platform credentials after runner claim", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const orgId = requireOrgId(actor);
-    await publishPendingPiInstructions(actor, agentId);
-    await configureBuiltInPiModel(actor, "okou-1.0");
-    mockPiResourceArchiveDownloads(true);
-    mockOptionalEnv("LANGFUSE_PUBLIC_KEY", "pk-lf-bdd-trace-admission");
-    mockOptionalEnv("LANGFUSE_SECRET_KEY", "sk-lf-bdd-trace-admission");
-    mockOptionalEnv("LANGFUSE_BASE_URL", "https://langfuse.example");
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.LangfuseTrace]: true,
-      },
-    );
-    await api.heartbeatRunner(runnerGroup);
-
-    const run = await sendChatRun(actor, {
-      agentId,
-      prompt: "preserve the Langfuse trace gate through claim",
-      model: null,
-    });
-    await flushWaitUntilForTest();
-
-    const claimed = await claimChatRun(runnerGroup, run.runId);
-    expect(claimed.claim.cliAgentType).toBe("pi");
-    expect(claimed.claim.platformEnvironment).toMatchObject({
-      OKOU_PI_LANGFUSE_DEBUG_ENABLED: "true",
-      LANGFUSE_TRACING_ENABLED: "true",
-    });
-    expect(claimed.claim.platformEnvironment).not.toHaveProperty(
-      "LANGFUSE_PUBLIC_KEY",
-    );
-    expect(claimed.claim.platformEnvironment).not.toHaveProperty(
-      "LANGFUSE_SECRET_KEY",
-    );
-    expect(claimed.claim.secretValues).not.toContain(
-      "sk-lf-bdd-trace-admission",
-    );
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.LangfuseTrace]: false,
-      },
-    );
-    const relay = await assertPiLangfuseRelayContract(context, {
-      runId: run.runId,
-      token: claimed.claim.platformEnvironment.OKOU_TOKEN,
-    });
-    await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
-
-    const untraced = await sendChatRun(actor, {
-      agentId,
-      prompt: "run without trace admission",
-      model: null,
-    });
-    await flushWaitUntilForTest();
-    const untracedClaim = await claimChatRun(runnerGroup, untraced.runId);
-    await relay.expectAdmissionDenied(
-      untraced.runId,
-      untracedClaim.claim.platformEnvironment.OKOU_TOKEN,
-    );
-    await cancelChatRun(actor, untraced.runId, untracedClaim.sandboxHeaders);
-  });
 
   it("rejects a disconnected thread subscription until its owner explicitly selects Auto", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();

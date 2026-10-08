@@ -417,7 +417,7 @@ export function createSidebarChatThreadScrollSignals({
 }
 
 export const responsiveSidebarChatThreadScrollSignals =
-  createSidebarChatThreadScrollSignals();
+  createSidebarChatThreadScrollSignals({ restoreScrollPosition: true });
 export const threeColumnSidebarChatThreadScrollSignals =
   createSidebarChatThreadScrollSignals();
 

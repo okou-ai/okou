@@ -1813,66 +1813,6 @@ describe("Morning Brief preference", () => {
     ).toHaveLength(0);
   });
 
-  it("does not treat outstanding membership qualification as enable intent", async () => {
-    const actor = bdd.user();
-    mockBriefMemberships([
-      { actor, createdAt: new Date("2020-01-01T00:00:00.000Z") },
-    ]);
-    const membershipReads =
-      context.mocks.clerk.organizations.getOrganizationMembershipList;
-    const respond = membershipReads.getMockImplementation();
-    if (!respond) {
-      throw new Error("Expected the historical membership response");
-    }
-    const started = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    membershipReads.mockImplementation(async (...args) => {
-      if (!started.settled()) {
-        started.resolve(undefined);
-      }
-      await release.promise;
-      return await respond(...args);
-    });
-    onTestFinished(async () => {
-      if (!release.settled()) {
-        release.resolve(undefined);
-      }
-      await flushWaitUntilForTest();
-    });
-
-    await bdd.updateUserTimezone(actor, "Asia/Shanghai");
-    await started.promise;
-    // The public timezone request is still awaiting the external Clerk result.
-    // Unknown eligibility is not an enable choice.
-    expect((await readBriefPreference(actor)).body).toMatchObject({
-      enabled: false,
-      status: "preparing",
-      unavailableReason: "missing-default-agent",
-    });
-
-    // A user's explicit enable is real intent even before qualification or
-    // prerequisites complete, and the older eligibility read cannot erase it.
-    const enabled = await accept(
-      morningBriefPreferenceClient().update({
-        headers: authHeaders(actor),
-        body: { enabled: true },
-      }),
-      [200],
-    );
-    expect(enabled.body).toMatchObject({
-      enabled: true,
-      status: "preparing",
-      unavailableReason: "missing-default-agent",
-    });
-    release.resolve(undefined);
-    await flushWaitUntilForTest();
-    expect((await readBriefPreference(actor)).body).toMatchObject({
-      enabled: true,
-      status: "preparing",
-      unavailableReason: "missing-default-agent",
-    });
-  });
-
   it("adopts the default Agent installation when installations exist across Agents", async () => {
     installCatalogStorageFixture();
     await syncDeployedCatalog();
@@ -2293,18 +2233,14 @@ async function prepareBriefMember({
   return { actor, createdAt };
 }
 
-describe("Morning Brief default onboarding", () => {
-  it("installs from the preference toggle without any connected source", async () => {
+describe("Morning Brief explicit installation", () => {
+  it("installs only from the preference toggle, not initialization or onboarding", async () => {
     const { actor } = await prepareBriefMember();
     const headers = authHeaders(actor);
-    await accept(
-      morningBriefPreferenceClient().update({
-        headers,
-        body: { enabled: false },
-      }),
-      [200],
-    );
     await initializeBriefMember(actor, "Asia/Shanghai");
+    await bdd.completeOnboarding(actor, { timezone: "Asia/Shanghai" });
+    await bdd.updateUserTimezone(actor, "Asia/Tokyo");
+    await flushWaitUntilForTest();
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
     const reenabled = await accept(
       morningBriefPreferenceClient().update({
@@ -2325,6 +2261,13 @@ describe("Morning Brief default onboarding", () => {
     const { actor } = await prepareBriefMember();
     await connectBriefSource(actor);
     await initializeBriefMember(actor, "Asia/Shanghai");
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
     const [before] = await listMorningBriefInstallations(actor);
     await bdd.updateUserTimezone(actor, "America/Los_Angeles");
     const changed = await readBriefPreference(actor);
@@ -2366,77 +2309,38 @@ describe("Morning Brief default onboarding", () => {
     });
   });
 
-  it("enrolls an invited member of an existing organization without enrolling its existing owner", async () => {
+  it("installs a rejoined member's brief from their explicit preference", async () => {
     const owner = await prepareBriefMember({
       createdAt: new Date("2020-01-01T00:00:00.000Z"),
     });
     const actor = bdd.user({ orgId: owner.actor.orgId, orgRole: "org:member" });
     const createdAt = new Date("2030-01-01T00:00:00.000Z");
-    mockBriefMemberships([owner, { actor, createdAt }]);
     await deliverClerkOrganizationMembershipCreated(actor, createdAt);
-    await connectBriefSource(actor);
     await initializeBriefMember(actor, "Asia/Shanghai");
-    expect((await readBriefPreference(actor)).body).toMatchObject({
-      status: "enabled",
-      enabled: true,
-    });
-    await initializeBriefMember(owner.actor, "Asia/Tokyo");
-    expect((await readBriefPreference(owner.actor)).body).toMatchObject({
-      status: "paused",
-      enabled: false,
-    });
-    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
-    await expect(
-      listMorningBriefInstallations(owner.actor),
-    ).resolves.toHaveLength(0);
-  });
-
-  it("enrolls a new membership generation after removal", async () => {
-    const { actor, createdAt } = await prepareBriefMember();
-    await deliverClerkOrganizationMembershipCreated(actor, createdAt);
     await deliverClerkOrganizationMembershipDeleted(actor);
-    const membershipReads =
-      context.mocks.clerk.organizations.getOrganizationMembershipList;
-    membershipReads.mockClear();
-    const newMembershipId = `rejoined-${actor.userId}-${actor.orgId}`;
-    const rejoinedAt = new Date(createdAt.getTime() + 1000);
-    mockBriefMemberships([
-      { actor, createdAt: rejoinedAt, membershipId: newMembershipId },
-    ]);
     await deliverClerkOrganizationMembershipCreated(
       actor,
-      rejoinedAt,
-      newMembershipId,
+      new Date(createdAt.getTime() + 1000),
+      `rejoined-${actor.userId}-${actor.orgId}`,
     );
     await initializeBriefMember(actor, "Asia/Shanghai");
-    expect(membershipReads).toHaveBeenCalledTimes(1);
-    expect((await readBriefPreference(actor)).body).toMatchObject({
-      enabled: true,
+    const enabled = await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(enabled.body).toMatchObject({
       status: "enabled",
+      enabled: true,
+      unavailableReason: null,
+    });
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      status: "enabled",
+      enabled: true,
     });
     await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
-  });
-
-  it("refuses to install pending work for a different live membership generation", async () => {
-    const { actor, createdAt } = await prepareBriefMember();
-    await deliverClerkOrganizationMembershipCreated(actor, createdAt);
-    mockBriefMemberships([
-      {
-        actor,
-        createdAt: new Date(createdAt.getTime() + 1000),
-        membershipId: `replacement-${actor.userId}-${actor.orgId}`,
-      },
-    ]);
-    const membershipReads =
-      context.mocks.clerk.organizations.getOrganizationMembershipList;
-    membershipReads.mockClear();
-    await initializeBriefMember(actor, "Asia/Shanghai");
-    expect(membershipReads).toHaveBeenCalledTimes(1);
-    expect((await readBriefPreference(actor)).body).toMatchObject({
-      enabled: false,
-      status: "paused",
-    });
-    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
   });
 
   it("keeps an explicit timezone choice when initialization runs later", async () => {

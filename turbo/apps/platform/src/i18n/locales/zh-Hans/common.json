@@ -418,8 +418,7 @@
         "invite": "邀请",
         "openArtifacts": "打开成果面板",
         "openAutomations": "打开自动化面板",
-        "openMenu": "打开菜单",
-        "overlay": "侧边栏遮罩"
+        "openMenu": "打开菜单"
       },
       "navigation": {
         "agents": "智能体",
@@ -2108,7 +2107,6 @@
         "default": "思考中…"
       },
       "viewActivityLogs": "查看活动日志",
-      "viewLangfuseTrace": "查看Langfuse追踪",
       "viewLogs": "查看运行日志",
       "waitingIn": "正在等待",
       "workedFor": "共工作 {{duration}}",

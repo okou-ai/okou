@@ -418,8 +418,7 @@
         "invite": "招待する",
         "openArtifacts": "モバイルでアーティファクトを開く",
         "openAutomations": "モバイルでオートメーションを開く",
-        "openMenu": "メニューを開く",
-        "overlay": "サイドバーのオーバーレイ"
+        "openMenu": "メニューを開く"
       },
       "navigation": {
         "agents": "エージェント",
@@ -2108,7 +2107,6 @@
         "default": "考え中..."
       },
       "viewActivityLogs": "アクティビティログを表示する",
-      "viewLangfuseTrace": "Langfuse トレースを表示",
       "viewLogs": "実行ログを表示する",
       "waitingIn": "待機中",
       "workedFor": "{{duration}}で働いていました",

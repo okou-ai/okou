@@ -1016,6 +1016,7 @@ test("Mark all of an agent’s chats read", async () => {
     path: `/agents/${AGENT_ID}/chat`,
   });
 
+  click(screen.getByLabelText("Open menu"));
   const nav = await waitFor(() => {
     const current = mobileSidebar();
     expect(within(current).getByText("Research Agent")).toBeInTheDocument();

@@ -1,8 +1,5 @@
-import {
-  morningBriefEnrollments,
-  morningBriefRollout,
-} from "@okouai/db/schema/morning-brief-enrollment";
-import { and, eq, isNull, ne, or } from "drizzle-orm";
+import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
+import { and, eq } from "drizzle-orm";
 import { command } from "ccstate";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
@@ -36,68 +33,6 @@ export const loadMorningBriefEnrollment$ = command(
       .limit(1);
     signal.throwIfAborted();
     return row;
-  },
-);
-
-export const recordMorningBriefMembership$ = command(
-  async (
-    { set },
-    args: MorningBriefMemberIdentity & {
-      readonly membershipId: string;
-      readonly createdAt: Date;
-      /** A live qualification must retain the automatic attempt's retry lease. */
-      readonly preserveRetrySchedule?: boolean;
-    },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const db = set(writeDb$);
-    signal.throwIfAborted();
-    const [rollout] = await db
-      .select()
-      .from(morningBriefRollout)
-      .where(eq(morningBriefRollout.name, "morning-brief"))
-      .limit(1);
-    signal.throwIfAborted();
-    if (!rollout) {
-      throw new Error("Morning Brief rollout boundary is missing");
-    }
-    const eligible = args.createdAt >= rollout.activatedAt;
-    const currentTime = nowDate();
-    await db
-      .insert(morningBriefEnrollments)
-      .values({
-        orgId: args.orgId,
-        userId: args.userId,
-        membershipId: args.membershipId,
-        sourceCreatedAt: args.createdAt,
-        state: eligible ? "pending" : "ineligible",
-        availableAt: currentTime,
-        createdAt: currentTime,
-        updatedAt: currentTime,
-      })
-      .onConflictDoUpdate({
-        target: [morningBriefEnrollments.orgId, morningBriefEnrollments.userId],
-        set: {
-          membershipId: args.membershipId,
-          sourceCreatedAt: args.createdAt,
-          state: eligible ? "pending" : "ineligible",
-          ...(args.preserveRetrySchedule
-            ? {}
-            : { availableAt: currentTime, attemptCount: 0, lastError: null }),
-          updatedAt: currentTime,
-        },
-        setWhere: or(
-          eq(morningBriefEnrollments.state, "checking"),
-          and(
-            eq(morningBriefEnrollments.state, "departed"),
-            or(
-              isNull(morningBriefEnrollments.membershipId),
-              ne(morningBriefEnrollments.membershipId, args.membershipId),
-            ),
-          ),
-        ),
-      });
-    signal.throwIfAborted();
   },
 );
 

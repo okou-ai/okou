@@ -1493,18 +1493,17 @@ does: Tailwind emits the `inset` shorthand before the `bottom` longhand inside
 `@layer utilities`, and `cn()` keeps both, because a modifier-prefixed
 `bottom-*` never conflicts with an unprefixed `inset-0`.
 
-The mobile drawer `aside` carries the same utility, plus `max-md:p-safe` for its
-four-value padding. Its `::before` layer exists for one case: the `aside`
+The mobile drawer's shared `SheetContent` carries the same utility, plus `p-safe`
+for its four-value padding. Its `::before` layer exists for one case: the popup
 already carries `bg-sidebar`, so that fill is invisible wherever the element's
 own box is, and the layer's only visible work is the standalone extension below,
 which paints the sidebar color into the home-indicator area. `isolate` keeps
 the `-z-1` layer inside this element instead of letting it fall behind the page.
 
-`max-md` is not an exact restatement of `max-width: 767px`. Tailwind emits
-`@media (width < 48rem)`, so a fractional viewport width strictly between 767px
-and 768px takes the padding where a `767px` bound would not. Every integer width
-agrees, and the element already gates its whole fixed-drawer geometry on
-`max-md`.
+The shell mounts the Sheet only below the shared `48rem` desktop breakpoint
+and outside the PWA navigation path. Sheet owns the portal, backdrop, modal
+focus boundary, and trigger/close relationship. Closed drawers unmount; existing
+sidebar signals retain section state and restore the chat-list scroll position.
 
 ### The onboarding workflow diagram canvas
 

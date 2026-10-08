@@ -22,6 +22,7 @@ import {
   onRejection,
   resetSignal,
   waitForOperation,
+  waitLoopUntil,
 } from "../../utils.ts";
 import {
   connectorAccountDeletionImpact$,
@@ -394,42 +395,49 @@ const saveConnectorAccountRenameCommand$ = command(
       signal,
     );
     signal.throwIfAborted();
-    while (true) {
-      const accountsPromise = get(settingsConnectorAccounts.accounts$);
-      const summariesPromise = get(connectorAccountSummaryByTarget$);
-      const [refresh] = await waitForOperation(
-        Promise.allSettled([Promise.all([accountsPromise, summariesPromise])]),
-        signal,
-      );
-      signal.throwIfAborted();
-      // Search or pagination may change while the mutation refresh is pending.
-      // A superseded debounced search can also reject with its own cancellation.
-      // Only the currently rendered query can determine the return destination.
-      if (
-        accountsPromise !== get(settingsConnectorAccounts.accounts$) ||
-        summariesPromise !== get(connectorAccountSummaryByTarget$)
-      ) {
-        continue;
-      }
-      if (refresh.status === "rejected") {
-        throw refresh.reason;
-      }
-      const [accounts, summaries] = refresh.value;
-      const pinnedDefault =
-        !get(settingsConnectorAccounts.search$).trim() &&
-        (accounts.defaultConnection !== undefined
-          ? accounts.defaultConnection
-          : summaries.get(connectorAccountTargetKey(target))
-              ?.defaultConnection);
-      const restoreAccount =
-        accounts.available &&
-        ((pinnedDefault && pinnedDefault.id === draft.account.id) ||
-          accounts.connections.some((account) => {
-            return account.id === draft.account.id;
-          }));
-      set(finishConnectorAccountRename$, Boolean(restoreAccount));
-      return;
-    }
+    await waitLoopUntil(
+      async (loopSignal) => {
+        const accountsPromise = get(settingsConnectorAccounts.accounts$);
+        const summariesPromise = get(connectorAccountSummaryByTarget$);
+        const [refresh] = await waitForOperation(
+          Promise.allSettled([
+            Promise.all([accountsPromise, summariesPromise]),
+          ]),
+          loopSignal,
+        );
+        loopSignal.throwIfAborted();
+        // Search or pagination may change while the mutation refresh is pending.
+        // A superseded debounced search can also reject with its own cancellation.
+        // Only the currently rendered query can determine the return destination.
+        if (
+          accountsPromise !== get(settingsConnectorAccounts.accounts$) ||
+          summariesPromise !== get(connectorAccountSummaryByTarget$)
+        ) {
+          return false;
+        }
+        if (refresh.status === "rejected") {
+          throw refresh.reason;
+        }
+        const [accounts, summaries] = refresh.value;
+        const pinnedDefault =
+          !get(settingsConnectorAccounts.search$).trim() &&
+          (accounts.defaultConnection !== undefined
+            ? accounts.defaultConnection
+            : summaries.get(connectorAccountTargetKey(target))
+                ?.defaultConnection);
+        const restoreAccount =
+          accounts.available &&
+          ((pinnedDefault && pinnedDefault.id === draft.account.id) ||
+            accounts.connections.some((account) => {
+              return account.id === draft.account.id;
+            }));
+        set(finishConnectorAccountRename$, Boolean(restoreAccount));
+        return true;
+      },
+      0,
+      signal,
+      { retryTransientErrors: false },
+    );
   },
 );
 

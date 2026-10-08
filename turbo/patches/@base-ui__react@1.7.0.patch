@@ -24,3 +24,58 @@ index 8a6039fc4fb65de89bb4bfcca286ef819a54fcf4..5f71b5375feb01ec509ea377ffa4cb53
            }
          }
        }
+diff --git a/internals/composite/root/useCompositeRoot.js b/internals/composite/root/useCompositeRoot.js
+index 99a34f4a971c10b151d1064041108706bbc00244..f94dd606a53911c940286651319df106f979769b 100644
+--- a/internals/composite/root/useCompositeRoot.js
++++ b/internals/composite/root/useCompositeRoot.js
+@@ -45,7 +45,17 @@ function useCompositeRoot(params) {
+     }
+   });
+   const onMapChange = (0, _useStableCallback.useStableCallback)(map => {
+-    if (map.size === 0 || hasSetDefaultIndexRef.current) {
++    if (map.size === 0) {
++      return;
++    }
++    if (hasSetDefaultIndexRef.current) {
++      // A keyed item can retain focus while a DOM reorder changes its index.
++      // Keep the uncontrolled roving tab stop on that same focused item.
++      const focusedElement = rootRef.current ? (0, _utils.activeElement)(rootRef.current.ownerDocument) : null;
++      const focusedIndex = focusedElement ? map.get(focusedElement)?.index : undefined;
++      if (externalHighlightedIndex == null && focusedIndex != null && focusedIndex !== highlightedIndex) {
++        onHighlightedIndexChange(focusedIndex);
++      }
+       return;
+     }
+     hasSetDefaultIndexRef.current = true;
+diff --git a/internals/composite/root/useCompositeRoot.mjs b/internals/composite/root/useCompositeRoot.mjs
+index be0ccd08b5497825cc09330b45b227c032378cf0..df38e5cf857016501060c7b8e997d081c06e1c3d 100644
+--- a/internals/composite/root/useCompositeRoot.mjs
++++ b/internals/composite/root/useCompositeRoot.mjs
+@@ -7,7 +7,7 @@ import { useMergedRefs } from '@base-ui/utils/useMergedRefs';
+ import { useIsoLayoutEffect } from '@base-ui/utils/useIsoLayoutEffect';
+ import { COMPOSITE_KEYS, ARROW_DOWN, ARROW_LEFT, ARROW_RIGHT, ARROW_UP, END, HOME, MODIFIER_KEYS, findNonDisabledListIndex, getMaxListIndex, getMinListIndex, isListIndexDisabled, isIndexOutOfListBounds, isNativeInput, scrollIntoViewIfNeeded } from "../composite.mjs";
+ import { ACTIVE_COMPOSITE_ITEM } from "../constants.mjs";
+-import { getTarget } from "../../../floating-ui-react/utils.mjs";
++import { activeElement, getTarget } from "../../../floating-ui-react/utils.mjs";
+ const EMPTY_ARRAY = [];
+ export function useCompositeRoot(params) {
+   const {
+@@ -39,7 +39,17 @@ export function useCompositeRoot(params) {
+     }
+   });
+   const onMapChange = useStableCallback(map => {
+-    if (map.size === 0 || hasSetDefaultIndexRef.current) {
++    if (map.size === 0) {
++      return;
++    }
++    if (hasSetDefaultIndexRef.current) {
++      // A keyed item can retain focus while a DOM reorder changes its index.
++      // Keep the uncontrolled roving tab stop on that same focused item.
++      const focusedElement = rootRef.current ? activeElement(rootRef.current.ownerDocument) : null;
++      const focusedIndex = focusedElement ? map.get(focusedElement)?.index : undefined;
++      if (externalHighlightedIndex == null && focusedIndex != null && focusedIndex !== highlightedIndex) {
++        onHighlightedIndexChange(focusedIndex);
++      }
+       return;
+     }
+     hasSetDefaultIndexRef.current = true;

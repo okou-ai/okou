@@ -16,6 +16,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@okouai/ui";
+import { buttonVariants } from "@okouai/ui/components/ui/button";
+import { cn } from "@okouai/ui/lib/utils";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import type { OrgResponse } from "@okouai/api-contracts/contracts/orgs";
 import { org$, isOrgAdmin$ } from "../../../../signals/org.ts";
@@ -29,8 +31,6 @@ import {
   pendingLogoFile$,
   pendingLogoPreview$,
   setPendingLogo$,
-  fileInputEl$,
-  setFileInputEl$,
   logoLoaded$,
   setLogoLoaded$,
   deleteConfirm$,
@@ -67,9 +67,6 @@ function ProfileSection({
   const pendingLogoPreview = useGet(pendingLogoPreview$);
   const setPendingLogo = useSet(setPendingLogo$);
   const clearPendingLogo = useSet(clearPendingLogo$);
-
-  const fileInputEl = useGet(fileInputEl$);
-  const setFileInputEl = useSet(setFileInputEl$);
 
   const modalSignal = useGet(settingsDialogSignal$);
 
@@ -176,15 +173,25 @@ function ProfileSection({
             </p>
           </div>
           <div className="flex items-center gap-3 shrink-0">
-            {isAdmin && (
+            <label
+              ref={(el) => {
+                if (el) {
+                  handleLogoLoad();
+                }
+              }}
+              className={cn(
+                buttonVariants({ variant: "quiet", size: "icon" }),
+                "group relative h-9 w-9 shrink-0 overflow-hidden has-[:disabled]:pointer-events-none has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring has-[:focus-visible]:ring-offset-2",
+              )}
+            >
               <input
-                ref={setFileInputEl}
                 type="file"
                 aria-label={t(($) => {
                   return $.settings.workspace.profile.logo.upload;
                 })}
                 accept="image/png,image/jpeg,image/gif,image/webp"
-                className="hidden"
+                className="sr-only"
+                disabled={!isAdmin}
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) {
@@ -193,22 +200,6 @@ function ProfileSection({
                   e.target.value = "";
                 }}
               />
-            )}
-            <button
-              type="button"
-              ref={(el) => {
-                if (el) {
-                  handleLogoLoad();
-                }
-              }}
-              className="group relative h-9 w-9 shrink-0 rounded-lg overflow-hidden"
-              disabled={!isAdmin}
-              onClick={() => {
-                if (isAdmin) {
-                  fileInputEl?.click();
-                }
-              }}
-            >
               {(pendingLogoPreview ?? logoUrl) ? (
                 <img
                   src={(pendingLogoPreview ?? logoUrl)!}
@@ -221,14 +212,14 @@ function ProfileSection({
                   className="h-full w-full object-cover"
                 />
               ) : (
-                <div className="h-full w-full bg-muted/50 animate-pulse" />
+                <span className="block h-full w-full bg-muted/50 animate-pulse" />
               )}
               {isAdmin && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100">
+                <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100">
                   <Upload size={14} className="text-white" />
-                </div>
+                </span>
               )}
-            </button>
+            </label>
           </div>
         </div>
         <div className="h-0 border-t border-t-gray-400 mx-5" />

@@ -116,7 +116,6 @@ import { and, eq, isNull } from "drizzle-orm";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import type { Tx } from "../../lib/db-types";
 import { env, optionalEnv } from "../../lib/env";
-import { isPiLangfuseDebugRunEnvironment } from "../../lib/pi-langfuse-debug";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
 import { getDatasetName, ingestToAxiom } from "../external/axiom";
 import { normalizeRunMetadata } from "./agent-run-metadata-write.service";
@@ -1378,7 +1377,6 @@ function maintenanceRunValues(args: {
   readonly status: "pending" | "failed";
   readonly runStorageMounts: readonly PersistedStorageMount[] | null;
   readonly runnerGroup: string | null;
-  readonly langfuseTraceEnabled: boolean;
   readonly creditAdmitted: boolean;
   readonly accountIdentity: string | null;
   readonly error: string | null;
@@ -1401,7 +1399,6 @@ function maintenanceRunValues(args: {
     sessionId: record.sessionId,
     runnerGroup: args.runnerGroup,
     launchSnapshot: record.launchSnapshot,
-    langfuseTraceEnabled: args.langfuseTraceEnabled,
     officialWorkflowProvenance: null,
     completedAt: args.status === "failed" ? args.createdAt : null,
     error: args.error,
@@ -1496,7 +1493,6 @@ async function insertFailedMaintenanceRun(
     runStorageMounts: null,
     sessionStorageMounts: null,
     runnerGroup: null,
-    langfuseTraceEnabled: false,
     creditAdmitted: false,
     accountIdentity: null,
     error,
@@ -1536,9 +1532,6 @@ async function insertPendingMaintenanceRun(
     runStorageMounts: launch.runStorageMounts,
     sessionStorageMounts: launch.sessionStorageMounts,
     runnerGroup,
-    langfuseTraceEnabled: isPiLangfuseDebugRunEnvironment(
-      launch.context.platformEnvironment,
-    ),
     creditAdmitted: args.creditAdmitted,
     accountIdentity: args.accountIdentity,
     error: null,
