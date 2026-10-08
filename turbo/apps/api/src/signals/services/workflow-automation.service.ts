@@ -169,17 +169,12 @@ import {
   workflowAutomationAccountConnectorSlug,
   type WorkflowAutomationAccountConnectorSlug,
 } from "./workflow-automation-account-classification.service";
-import { buildWorkflowScheduleAutomationBrief } from "./workflow-automation-brief.service";
-import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
-import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import { manualTriggerSource } from "./workflow-automation-trigger-source";
 import {
   visibleWorkflowCondition,
   workflowSummary,
   type WorkflowMember,
 } from "./workflow-data.service";
 import {
-  ensureWorkflowUserAutomationThread$,
   prepareWorkflowUserAutomationThread$,
   type WorkflowThreadPreparation,
   workflowUserAutomationThreadOwnerCondition,
@@ -195,7 +190,7 @@ import {
   mintWorkflowWebhookSecret,
   mintWorkflowWebhookToken,
   revealWorkflowWebhookSecretFields$,
-} from "./workflow-webhook-automation.service";
+} from "./workflow-webhook-automation-config.service";
 
 type AutomationRow = typeof workflowAutomations.$inferSelect;
 type WorkflowRow = typeof workflows.$inferSelect;
@@ -315,7 +310,7 @@ type AutomationActionFailure = Exclude<
       readonly kind: "deleted";
     }
 >;
-type WorkflowAutomationRunNowResult =
+export type WorkflowAutomationRunNowResult =
   | {
       readonly kind: "enqueued";
       readonly chatThreadId: string;
@@ -1205,7 +1200,7 @@ interface UsableAgent {
   readonly owner: string;
   readonly visibility: "public" | "private";
 }
-const loadAgent$ = command(
+export const loadAgent$ = command(
   async (
     { get },
     args: {
@@ -1235,10 +1230,13 @@ const loadAgent$ = command(
  * workflow's owning agent: public agents are runnable by any member, private
  * agents only by their owner. This is a "use" gate, not the agent "manage" gate.
  */
-function canUseAgent(agent: UsableAgent, member: WorkflowMember): boolean {
+export function canUseAgent(
+  agent: UsableAgent,
+  member: WorkflowMember,
+): boolean {
   return agent.visibility === "public" || agent.owner === member.userId;
 }
-const loadAutomationWorkflowRunTarget$ = command(
+export const loadAutomationWorkflowRunTarget$ = command(
   async (
     { get },
     args: {
@@ -1301,7 +1299,7 @@ const loadAutomationRow$ = command(
   },
 );
 
-const loadAutomationOwnerTimezone$ = command(
+export const loadAutomationOwnerTimezone$ = command(
   async (
     { get },
     automation: AutomationRow,
@@ -5063,7 +5061,7 @@ async function publishThreadBoundWorkflowAutomationChanged(
   await publishChatThreadAutomationsChangedSafely(userId, chatThreadId);
 }
 
-const loadOwnedAutomation$ = command(
+export const loadOwnedAutomation$ = command(
   async (
     { set },
     args: {
@@ -5869,7 +5867,7 @@ export const updateWorkflowAutomation$ = command(
   },
 );
 
-interface AutomationActionInput {
+export interface AutomationActionInput {
   readonly orgId: string;
   readonly member: WorkflowMember;
   readonly automationId: string;
@@ -5877,137 +5875,6 @@ interface AutomationActionInput {
   readonly inheritedAutonomyBudget?: number;
   readonly allowReservedOfficialMaterialization?: boolean;
 }
-
-/**
- * Repeated "Run now" clicks are otherwise indistinguishable, so the request time
- * is this run's unique identifier.
- */
-function manualTriggerContext(args: {
-  readonly automation: AutomationRow;
-  readonly workflowName: string;
-  readonly requestedAt: Date;
-  readonly sourceRunId?: string;
-}): WorkflowAutomationContext {
-  const requestedAt = args.requestedAt.toISOString();
-  return {
-    workflowName: args.workflowName,
-    eventType: "manual",
-    trigger: `manual run requested at ${requestedAt}.`,
-    event: {
-      automationId: args.automation.id,
-      trigger: "manual",
-      requestedAt,
-      ...(args.sourceRunId === undefined
-        ? {}
-        : { sourceRunId: args.sourceRunId }),
-    },
-  };
-}
-
-export const runOwnedWorkflowAutomationNow$ = command(
-  async (
-    { set },
-    args: AutomationActionInput,
-    signal: AbortSignal,
-  ): Promise<WorkflowAutomationRunNowResult> => {
-    const owned = await set(loadOwnedAutomation$, args, signal);
-    signal.throwIfAborted();
-    if ("kind" in owned) {
-      return owned;
-    }
-    const { automation } = owned;
-    const target = await set(
-      loadAutomationWorkflowRunTarget$,
-      {
-        orgId: args.orgId,
-        workflowId: automation.workflowId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!target) {
-      return { kind: "not-found" };
-    }
-    const agent = await set(
-      loadAgent$,
-      {
-        orgId: args.orgId,
-        agentId: target.agentId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!agent) {
-      return {
-        kind: "conflict",
-        message: "Cannot run: the workflow's agent no longer exists.",
-      };
-    }
-    if (!canUseAgent(agent, args.member)) {
-      return {
-        kind: "forbidden",
-        message: "You do not have access to the workflow's agent",
-      };
-    }
-
-    const currentTime = nowDate();
-    const ownerTimezone = await set(
-      loadAutomationOwnerTimezone$,
-      automation,
-      signal,
-    );
-    signal.throwIfAborted();
-    const chatThreadId = await set(
-      ensureWorkflowUserAutomationThread$,
-      {
-        orgId: automation.orgId,
-        userId: automation.ownerUserId,
-        workflowId: automation.workflowId,
-        agentId: target.agentId,
-        workflowTitle: target.workflowTitle,
-        currentTime,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-
-    const manualContext = manualTriggerContext({
-      automation,
-      workflowName: target.workflowName,
-      requestedAt: currentTime,
-      ...(args.sourceRunId === undefined
-        ? {}
-        : { sourceRunId: args.sourceRunId }),
-    });
-    await set(
-      runWorkflowAutomationNow$,
-      {
-        due: {
-          automation,
-          agentId: target.agentId,
-          chatThreadId,
-        },
-        automationContext: manualContext,
-        apiStartTime: currentTime.getTime(),
-        triggerSource: manualTriggerSource(automation),
-        triggerBrief:
-          buildWorkflowScheduleAutomationBrief({
-            createdAt: currentTime,
-            scheduleType: automation.scheduleType,
-            cronExpression: automation.cronExpression,
-            intervalSeconds: automation.intervalSeconds,
-            atTime: automation.atTime,
-            automationTimezone: automation.timezone,
-            userTimezone: ownerTimezone,
-          }) ?? undefined,
-        replacePendingScheduleTick: false,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    return { kind: "enqueued", chatThreadId };
-  },
-);
 export const deleteWorkflowAutomation$ = command(
   async (
     { set },

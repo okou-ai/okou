@@ -82,7 +82,7 @@ import {
   hashWorkflowWebhookToken,
   mintWorkflowWebhookSecret,
   mintWorkflowWebhookToken,
-} from "../services/workflow-webhook-automation.service";
+} from "../services/workflow-webhook-automation-config.service";
 import {
   insertWorkflowAutomation,
   workflowAutomationColumns,

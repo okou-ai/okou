@@ -543,10 +543,8 @@ import {
   resolveQueuedModelSelectionPinFromSnapshot,
 } from "./model-selection.service";
 import type { OfficialWorkflowContextFacts } from "./official-workflow-context.signals";
-import {
-  dispatchConfiguredOfficialWorkflowReconciliation$,
-  type OfficialWorkflowReconciliationResult,
-} from "./official-workflow-reconciliation-dispatch.service";
+import type { OfficialWorkflowReconciliationResult } from "./official-workflow-reconciliation.types";
+import { reconcileOfficialWorkflowInstallation$ } from "./official-workflow-reconciliation.service";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { PiModelConfigurationError } from "./pi-model-configuration-error";
 import { additionalVolumesForRun } from "./presentation-template-data.service";
@@ -3376,7 +3374,7 @@ export function createThreadClaimRunObjects(
   const reconcileOfficialWorkflow$ = command(
     async ({ set }, target: LaunchTarget, signal: AbortSignal) => {
       const reconciled = await set(
-        dispatchConfiguredOfficialWorkflowReconciliation$,
+        reconcileOfficialWorkflowInstallation$,
         {
           orgId: target.automation.orgId,
           member: { userId: target.automation.ownerUserId, role: "member" },

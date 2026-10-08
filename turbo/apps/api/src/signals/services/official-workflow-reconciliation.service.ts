@@ -86,7 +86,7 @@ import {
 import type {
   OfficialWorkflowReconciliationArgs,
   OfficialWorkflowReconciliationResult,
-} from "./official-workflow-reconciliation-dispatch.service";
+} from "./official-workflow-reconciliation.types";
 import {
   buildOfficialAutomationPatch,
   officialAutomationRestorePatch,
