@@ -1409,7 +1409,7 @@ function deferredConcurrencyPreviewResponse(
 interface ScheduledConcurrencyPreview {
   readonly id: string;
   readonly item: StripeSubscriptionItem | null;
-  readonly kind: "concurrency" | "plan" | "shared";
+  readonly kind: "concurrency" | "neutral" | "plan" | "shared";
   readonly priceId: string;
   readonly schedule: StripeSubscriptionSchedule;
   readonly planEndsAt?: number;
@@ -1422,6 +1422,7 @@ function scheduledConcurrencyPreview(
 ): ScheduledConcurrencyPreview | null {
   switch (schedule.kind) {
     case "concurrency":
+    case "neutral":
     case "shared": {
       return {
         id: schedule.id,
@@ -1441,7 +1442,6 @@ function scheduledConcurrencyPreview(
         planEndsAt: schedule.endsAt,
       };
     }
-    case "neutral":
     case "none": {
       return null;
     }
@@ -1459,7 +1459,7 @@ function concurrencyRecurringPreviewParams(
     return {
       subscription: subscription.id,
       preview_mode: "recurring",
-      subscription_details: { items },
+      subscription_details: { items, proration_behavior: "none" },
     };
   }
   if (scheduledPreview.kind === "shared") {
@@ -1528,7 +1528,12 @@ function concurrencyRecurringPreviewParams(
 
 type PreparedConcurrencySchedule =
   | { readonly ok: true; readonly kind: "none" }
-  | { readonly ok: true; readonly kind: "neutral"; readonly id: string }
+  | {
+      readonly ok: true;
+      readonly kind: "neutral";
+      readonly id: string;
+      readonly schedule: StripeSubscriptionSchedule;
+    }
   | {
       readonly ok: true;
       readonly kind: "concurrency";
@@ -1643,7 +1648,7 @@ const prepareConcurrencySchedule$ = command(
       return { ok: true, kind: "concurrency", id: scheduleId, schedule };
     }
     return subscriptionScheduleHasNoFutureChanges(args.subscription, schedule)
-      ? { ok: true, kind: "neutral", id: scheduleId }
+      ? { ok: true, kind: "neutral", id: scheduleId, schedule }
       : { ok: false };
   },
 );
