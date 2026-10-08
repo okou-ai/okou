@@ -1108,7 +1108,6 @@ function FeishuSetupWizardFooter({
   readOnly,
   onClose,
   onBack,
-  onContinue,
 }: {
   step: FeishuSetupStep;
   data: FeishuDialogData | null;
@@ -1118,7 +1117,6 @@ function FeishuSetupWizardFooter({
   readOnly: boolean;
   onClose: () => void;
   onBack: () => void;
-  onContinue: () => void;
 }) {
   const { t } = useTranslation();
   const platform = useGet(feishuPlatform$);
@@ -1157,11 +1155,7 @@ function FeishuSetupWizardFooter({
           </span>
         )}
       </Button>
-      <Button
-        type={step === "tokens" && !readOnly ? "submit" : "button"}
-        disabled={!canContinue}
-        onClick={step === "tokens" && !readOnly ? undefined : onContinue}
-      >
+      <Button type="submit" disabled={!canContinue}>
         {saving ? <Loader2 size={16} className="animate-spin" /> : null}
         {continueLabel}
         {(step !== "tokens" || readOnly) && step !== "publish" ? (
@@ -1197,26 +1191,23 @@ function FeishuSetupWizard({
     appIdCheckLoadable.state === "loading" ||
     setupLoadable.state === "loading" ||
     completionLoadable.state === "loading";
-  const canSave = canSubmitFeishuSetup(form, saving);
   const canContinue =
-    readOnly || canContinueFeishuSetup({ step, data, form, saving });
+    !saving &&
+    (readOnly || canContinueFeishuSetup({ step, data, form, saving }));
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (readOnly || step !== "tokens" || !canSave) {
+    if (!canContinue) {
       return;
     }
-    detach(
-      (async () => {
-        await setup(feishuSetupRequest(form, data), signal);
-        advanceStep();
-      })(),
-      Reason.DomCallback,
-    );
-  };
-
-  const continueFlow = () => {
-    if (!canContinue) {
+    if (step === "tokens" && !readOnly) {
+      detach(
+        (async () => {
+          await setup(feishuSetupRequest(form, data), signal);
+          advanceStep();
+        })(),
+        Reason.DomCallback,
+      );
       return;
     }
     if (step === "publish") {
@@ -1273,7 +1264,6 @@ function FeishuSetupWizard({
         readOnly={readOnly}
         onClose={onClose}
         onBack={goBack}
-        onContinue={continueFlow}
       />
     </form>
   );
