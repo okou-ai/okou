@@ -1,7 +1,6 @@
 """Model-provider response parser setup integration tests."""
 
 import gzip
-import json
 from typing import cast
 
 import pytest
@@ -23,54 +22,7 @@ class TestModelJsonResponseInspectorProtocolDispatch:
         unsupported_protocol = cast(usage.ModelUsageProtocol, "unsupported")
 
         with pytest.raises(AssertionError, match="Expected code to be unreachable"):
-            usage.create_model_json_response_inspector(
-                unsupported_protocol,
-                include_usage=True,
-                include_failure=False,
-            )
-
-
-class TestModelJsonFailureMessageOverflow:
-    """Pin the current optional-message contract for each active consumer set."""
-
-    @pytest.mark.parametrize("chunk_size", [None, 1], ids=["whole-body", "byte-at-a-time"])
-    @pytest.mark.parametrize(
-        ("include_usage", "message_size", "expected_valid", "expected_codes"),
-        [
-            pytest.param(False, 512, True, ("billing_error",), id="failure-only-at-limit"),
-            pytest.param(False, 513, False, (), id="failure-only-over-limit"),
-            pytest.param(True, 512, True, ("billing_error",), id="combined-at-limit"),
-            pytest.param(True, 513, True, ("billing_error",), id="combined-over-limit"),
-        ],
-    )
-    def test_known_code_with_bounded_optional_message(
-        self,
-        include_usage: bool,
-        message_size: int,
-        expected_valid: bool,
-        expected_codes: tuple[str, ...],
-        chunk_size: int | None,
-    ) -> None:
-        body = json.dumps(
-            {"type": "error", "error": {"type": "billing_error", "message": "x" * message_size}}
-        ).encode()
-        inspector = usage.create_model_json_response_inspector(
-            "anthropic_messages",
-            include_usage=include_usage,
-            include_failure=True,
-        )
-        step = len(body) if chunk_size is None else chunk_size
-        for start in range(0, len(body), step):
-            if not inspector.accepts_more_input():
-                break
-            inspector.feed(body[start : start + step])
-
-        inspection = inspector.finish()
-
-        assert inspection.failure.is_valid is expected_valid
-        assert inspection.failure.failure_codes == expected_codes
-        assert inspection.usage is None
-        assert inspection.usage_error is None
+            usage.create_model_json_response_inspector(unsupported_protocol)
 
 
 class TestResponseHeadersModelJsonParser:
@@ -84,12 +36,12 @@ class TestResponseHeadersModelJsonParser:
         ],
     )
     def test_non_sse_media_type_uses_json_parser(self, real_flow, content_type):
-        flow = real_flow(with_response=False, host="api.openai.com")
+        flow = real_flow(with_response=False, host="openrouter.ai")
         flow.response = tutils.tresp(
             status_code=200,
             headers=header_map({"content-type": content_type}),
         )
-        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:openai-api-key"
+        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:openrouter-codex"
         flow.metadata[metadata_keys.CLI_AGENT_TYPE] = "codex"
         flow.metadata[metadata_keys.FIREWALL_BILLABLE] = True
         flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER] = "gpt-5.5"
@@ -119,9 +71,8 @@ class TestResponseHeadersModelJsonParser:
             status_code=200,
             headers=header_map({"content-type": "application/json", "content-encoding": "br"}),
         )
-        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:anthropic-api-key"
-        flow.metadata[metadata_keys.FIREWALL_BILLABLE] = True
-        flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER] = "claude-sonnet-4-6"
+        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:claude-code-oauth-token"
+        flow.metadata[metadata_keys.FIREWALL_BILLABLE] = False
 
         with mitm_ctx():
             mitm_addon.responseheaders(flow)
@@ -151,8 +102,8 @@ class TestBodyBearingConnectModelResponseParserAdmission:
     ) -> None:
         flow = real_flow(
             with_response=False,
-            host="api.openai.com",
-            path="/v1/chat/completions",
+            host="openrouter.ai",
+            path="/api/v1/chat/completions",
             method="CONNECT",
         )
         response_headers = {"content-type": "application/json"}
@@ -166,7 +117,7 @@ class TestBodyBearingConnectModelResponseParserAdmission:
         flow.metadata.update(
             {
                 metadata_keys.SANDBOX_PROXY_LOG_PATH: str(proxy_log_path),
-                metadata_keys.FIREWALL_NAME: "model-provider:openai-api-key",
+                metadata_keys.FIREWALL_NAME: "model-provider:openrouter-codex",
                 metadata_keys.FIREWALL_BILLABLE: True,
                 metadata_keys.MODEL_USAGE_PROVIDER: "gpt-5.5",
             }
@@ -237,9 +188,8 @@ class TestBodylessModelResponseParserAdmission:
         flow.metadata.update(
             {
                 metadata_keys.SANDBOX_PROXY_LOG_PATH: str(proxy_log_path),
-                metadata_keys.FIREWALL_NAME: "model-provider:anthropic-api-key",
-                metadata_keys.FIREWALL_BILLABLE: True,
-                metadata_keys.MODEL_USAGE_PROVIDER: "claude-sonnet-4-6",
+                metadata_keys.FIREWALL_NAME: "model-provider:claude-code-oauth-token",
+                metadata_keys.FIREWALL_BILLABLE: False,
             }
         )
 
@@ -271,9 +221,8 @@ class TestResponseHeadersSseParser:
         flow.response = tutils.tresp(
             status_code=200, headers=header_map({"content-type": "text/event-stream"})
         )
-        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:anthropic-api-key"
-        flow.metadata[metadata_keys.FIREWALL_BILLABLE] = True
-        flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER] = "claude-sonnet-4-6"
+        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:claude-code-oauth-token"
+        flow.metadata[metadata_keys.FIREWALL_BILLABLE] = False
 
         mitm_addon.responseheaders(flow)
 
@@ -293,12 +242,12 @@ class TestResponseHeadersSseParser:
         assert flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE]["tokens.input"] == 42
 
     def test_sets_up_sse_parser_with_case_insensitive_content_type(self, real_flow):
-        flow = real_flow(with_response=False, host="api.openai.com")
+        flow = real_flow(with_response=False, host="openrouter.ai")
         flow.response = tutils.tresp(
             status_code=200,
             headers=header_map({"content-type": "Text/Event-Stream; Charset=UTF-8"}),
         )
-        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:openai-api-key"
+        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:openrouter-codex"
         flow.metadata[metadata_keys.CLI_AGENT_TYPE] = "codex"
         flow.metadata[metadata_keys.FIREWALL_BILLABLE] = True
         flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER] = "gpt-5.5"
@@ -316,12 +265,12 @@ class TestResponseHeadersSseParser:
         assert flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE]["tokens.output"] == 5
 
     def test_finalizes_sse_parser_for_trailing_event_without_blank_line(self, real_flow):
-        flow = real_flow(with_response=False, host="api.openai.com")
+        flow = real_flow(with_response=False, host="openrouter.ai")
         flow.response = tutils.tresp(
             status_code=200,
             headers=header_map({"content-type": "text/event-stream"}),
         )
-        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:openai-api-key"
+        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:openrouter-codex"
         flow.metadata[metadata_keys.CLI_AGENT_TYPE] = "codex"
         flow.metadata[metadata_keys.FIREWALL_BILLABLE] = True
         flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER] = "gpt-5.5"
@@ -342,12 +291,12 @@ class TestResponseHeadersSseParser:
         assert flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE]["tokens.output"] == 7
 
     def test_sets_up_openai_sse_parser_for_openai_model_provider(self, real_flow, headers):
-        flow = real_flow(with_response=False, host="api.openai.com")
+        flow = real_flow(with_response=False, host="openrouter.ai")
         flow.response = tutils.tresp(
             status_code=200,
             headers=header_map({"content-type": "text/event-stream"}),
         )
-        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:openai-api-key"
+        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:openrouter-codex"
         flow.metadata[metadata_keys.CLI_AGENT_TYPE] = "codex"
         flow.metadata[metadata_keys.FIREWALL_BILLABLE] = True
         flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER] = "gpt-5.5"
@@ -428,9 +377,8 @@ class TestResponseHeadersSseParser:
                 }
             ),
         )
-        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:anthropic-api-key"
-        flow.metadata[metadata_keys.FIREWALL_BILLABLE] = True
-        flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER] = "claude-sonnet-4-6"
+        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:claude-code-oauth-token"
+        flow.metadata[metadata_keys.FIREWALL_BILLABLE] = False
 
         mitm_addon.responseheaders(flow)
 
@@ -465,13 +413,13 @@ class TestResponseHeadersSseParser:
         assert "model_sse_usage_finish" not in flow.metadata
 
     def test_billable_json_response_uses_json_parser(self, real_flow, headers):
-        flow = real_flow(with_response=False, host="api.anthropic.com")
+        flow = real_flow(with_response=False, host="openrouter.ai", path="/api/v1/responses")
         flow.response = tutils.tresp(
             status_code=200, headers=header_map({"content-type": "application/json"})
         )
-        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:anthropic-api-key"
+        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:openrouter-codex"
         flow.metadata[metadata_keys.FIREWALL_BILLABLE] = True
-        flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER] = "claude-sonnet-4-6"
+        flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER] = "gpt-5.5"
 
         mitm_addon.responseheaders(flow)
 
@@ -479,11 +427,11 @@ class TestResponseHeadersSseParser:
         assert "model_sse_usage_finish" not in flow.metadata
 
     def test_billable_sse_parser_does_not_require_model_usage_provider(self, real_flow, headers):
-        flow = real_flow(with_response=False, host="api.anthropic.com")
+        flow = real_flow(with_response=False, host="openrouter.ai", path="/api/v1/responses")
         flow.response = tutils.tresp(
             status_code=200, headers=header_map({"content-type": "text/event-stream"})
         )
-        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:anthropic-api-key"
+        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:openrouter-codex"
         flow.metadata[metadata_keys.FIREWALL_BILLABLE] = True
 
         mitm_addon.responseheaders(flow)
@@ -497,9 +445,8 @@ class TestResponseHeadersSseParser:
         flow.response = tutils.tresp(
             status_code=200, headers=header_map({"content-type": "text/event-stream"})
         )
-        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:anthropic-api-key"
+        flow.metadata[metadata_keys.FIREWALL_NAME] = "model-provider:claude-code-oauth-token"
         flow.metadata[metadata_keys.FIREWALL_BILLABLE] = False
-        flow.metadata[metadata_keys.MODEL_USAGE_PROVIDER] = "claude-sonnet-4-6"
 
         mitm_addon.responseheaders(flow)
 

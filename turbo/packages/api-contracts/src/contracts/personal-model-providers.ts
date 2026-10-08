@@ -45,6 +45,7 @@ export const personalModelProvidersMainContract = c.router({
       401: apiErrorSchema,
       404: apiErrorSchema,
       500: apiErrorSchema,
+      403: apiErrorSchema,
     },
     summary: "List the requesting user's personal model providers",
   },
@@ -86,6 +87,7 @@ export const personalModelProvidersByTypeContract = c.router({
       204: c.noBody(),
       401: apiErrorSchema,
       404: apiErrorSchema,
+      409: apiErrorSchema,
       500: apiErrorSchema,
     },
     summary: "Delete a personal model provider for the requesting user",
@@ -104,6 +106,7 @@ export const personalModelProvidersByTypeContract = c.router({
       401: apiErrorSchema,
       404: apiErrorSchema,
       500: apiErrorSchema,
+      403: apiErrorSchema,
     },
     summary: "Reset a personal model provider subscription usage window",
   },
@@ -111,6 +114,24 @@ export const personalModelProvidersByTypeContract = c.router({
 
 export type PersonalModelProvidersByTypeContract =
   typeof personalModelProvidersByTypeContract;
+
+/** Read one owned subscription without requiring a failed Run. */
+export const personalSubscriptionsContract = c.router({
+  get: {
+    method: "GET",
+    path: "/api/me/subscriptions/:id",
+    headers: authHeadersSchema,
+    pathParams: z.object({ id: z.uuid() }),
+    responses: {
+      200: modelProviderResponseSchema,
+      401: apiErrorSchema,
+      404: apiErrorSchema,
+      500: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+    summary: "Read one personal subscription and its live usage",
+  },
+});
 
 /** Concrete personal subscription account mutations. */
 export const personalModelProviderAccountsByIdContract = c.router({
@@ -126,6 +147,7 @@ export const personalModelProviderAccountsByIdContract = c.router({
       401: apiErrorSchema,
       404: apiErrorSchema,
       500: apiErrorSchema,
+      403: apiErrorSchema,
     },
     summary: "Reset the verified original account of a failed run",
   },
@@ -154,7 +176,9 @@ export const personalModelProviderAccountsByIdContract = c.router({
       200: modelProviderResponseSchema,
       401: apiErrorSchema,
       404: apiErrorSchema,
+      409: apiErrorSchema,
       500: apiErrorSchema,
+      403: apiErrorSchema,
     },
     summary: "Activate a personal subscription account",
   },
@@ -167,6 +191,7 @@ export const personalModelProviderAccountsByIdContract = c.router({
       204: c.noBody(),
       401: apiErrorSchema,
       404: apiErrorSchema,
+      409: apiErrorSchema,
       500: apiErrorSchema,
     },
     summary: "Delete a personal subscription account",
@@ -183,6 +208,7 @@ export const personalModelProviderAccountsByIdContract = c.router({
       401: apiErrorSchema,
       404: apiErrorSchema,
       500: apiErrorSchema,
+      403: apiErrorSchema,
     },
     summary: "Reset one personal subscription account usage window",
   },

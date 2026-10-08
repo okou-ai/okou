@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   userPreferencesContract,
   type UpdateUserPreferencesRequest,
@@ -22,47 +21,6 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 
-test("Debug preferences restore and change the voice input model", async () => {
-  const updates = mockPreferences({
-    voiceInputModel: "google/gemini-3.6-flash",
-  });
-  await setupPage({
-    context,
-    path: "/?settings=debug",
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: true },
-  });
-  const picker = await screen.findByLabelText("Voice input model");
-  await waitFor(() => {
-    return expect(picker).toHaveTextContent("Gemini 3.6 Flash");
-  });
-  click(picker);
-  const option = await waitFor(() => {
-    const element = getFastRole("option", "ElevenLabs Scribe v2");
-    expect(element).toBeVisible();
-    return element;
-  });
-  click(option);
-  await waitFor(() => {
-    return expect(picker).toHaveTextContent("ElevenLabs Scribe v2");
-  });
-  expect(updates).toContainEqual({
-    voiceInputModel: "fal-ai/elevenlabs/speech-to-text/scribe-v2",
-  });
-});
-
-test("Voice model selection is hidden while Debug is disabled", async () => {
-  mockPreferences({ voiceInputModel: "google/gemini-3.8-flash" });
-  await setupPage({
-    context,
-    path: "/?settings=preference",
-    featureSwitches: { [FeatureSwitchKey.OkouDebug]: false },
-  });
-  await screen.findByRole("dialog");
-  expect(
-    screen.queryByRole("combobox", { name: "Voice input model" }),
-  ).not.toBeInTheDocument();
-});
-
 function defaultPreferences(): UserPreferencesResponse {
   return {
     timezone: "Etc/UTC",
@@ -74,7 +32,7 @@ function defaultPreferences(): UserPreferencesResponse {
     theme: "system",
     colorTheme: "blue-horizon",
     captureNetworkBodiesRemaining: 0,
-    voiceInputModel: null,
+    memoryInitialized: true,
   };
 }
 
@@ -188,7 +146,6 @@ test("Cookie theme and account-backed color theme are restored and saved", async
     context,
     path: "/settings",
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.GradientColorThemes]: true },
   });
 
   await expect(
@@ -242,7 +199,6 @@ test("A workspace without a saved color theme starts on the default palette", as
     context,
     path: "/settings",
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.GradientColorThemes]: true },
   });
 
   const colorTheme = await screen.findByRole("group", { name: "Color theme" });
@@ -266,58 +222,23 @@ test("A workspace without a saved color theme starts on the default palette", as
   ).toStrictEqual([{ colorTheme: "golden-hour" }]);
 });
 
-test("Gradient color themes stay hidden when the capability is disabled", async () => {
-  mockPreferences({ colorTheme: "blue-horizon" });
-
-  await setupPage({
-    context,
-    path: "/settings",
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.GradientColorThemes]: false },
-  });
-
-  await expect(
-    screen.findByText("Your preferred color scheme"),
-  ).resolves.toBeVisible();
-  expect(screen.queryByRole("group", { name: "Color theme" })).toBeNull();
-  expect(document.documentElement).not.toHaveAttribute(
-    "data-gradient-color-themes",
-  );
-  expect(document.documentElement).not.toHaveAttribute("data-color-theme");
-});
-
-test("Chat settings fall back to Preference while the capability is disabled", async () => {
-  mockPreferences({ cloudBrowserEnabledByDefault: false });
-
-  await setupPage({
-    context,
-    path: "/?settings=chat",
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ChatPreference]: false },
-  });
-
-  const dialog = await screen.findByRole("dialog", { name: "Settings" });
-  expect(
-    within(dialog).getByRole("heading", { name: "Preference" }),
-  ).toBeVisible();
-  expect(within(dialog).queryByText("Chat")).not.toBeInTheDocument();
-  expect(within(dialog).getByText("Send message with")).toBeVisible();
-  expect(
-    within(dialog).queryByRole("switch", { name: "Cloud browser" }),
-  ).toBeNull();
-  expect(within(dialog).queryByText("Default model")).toBeNull();
-  expect(new URLSearchParams(window.location.search).get("settings")).toBe(
-    "preference",
-  );
-});
-
-test("Chat settings keep the agreed row order and save chat defaults", async () => {
+test("Chat settings keep the agreed row order and save personal subscription chat defaults", async () => {
+  context.mocks.data.personalModelProviders([
+    {
+      id: "00000000-0000-4000-a000-000000000601",
+      type: "codex-oauth-token",
+      framework: "codex",
+      needsReconnect: false,
+      lastRefreshErrorCode: null,
+      createdAt: "2026-09-06T00:00:00.000Z",
+      updatedAt: "2026-09-06T00:00:00.000Z",
+    },
+  ]);
   const updates = mockPreferences({ cloudBrowserEnabledByDefault: false });
   context.mocks.data.userModelPreference({
     selectedModel: "gpt-6-astra",
     serviceTier: null,
     modelSettings: {},
-    selectedVideoModel: null,
     selectedImageModel: null,
     updatedAt: "2026-09-06T00:00:00.000Z",
   });
@@ -335,7 +256,6 @@ test("Chat settings keep the agreed row order and save chat defaults", async () 
                 effort: body.modelSettingsPatch.effort,
               },
             },
-      selectedVideoModel: null,
       selectedImageModel: null,
       updatedAt: "2026-09-06T00:00:01.000Z",
     };
@@ -347,9 +267,6 @@ test("Chat settings keep the agreed row order and save chat defaults", async () 
     context,
     path: "/?settings=chat",
     host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.ChatPreference]: true,
-    },
   });
 
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
@@ -383,9 +300,7 @@ test("Chat settings keep the agreed row order and save chat defaults", async () 
     ).toBeVisible();
   });
   click(within(dialog).getByRole("combobox", { name: "GPT 6 Astra Fast" }));
-  click(
-    await screen.findByRole("option", { name: "Inherit from org default" }),
-  );
+  click(await screen.findByRole("option", { name: "Auto" }));
   await waitFor(() => {
     expect(modelUpdates).toContainEqual({
       selectedModel: null,
@@ -393,7 +308,7 @@ test("Chat settings keep the agreed row order and save chat defaults", async () 
     });
     expect(
       within(dialog).getByRole("combobox", {
-        name: "Inherit from org default",
+        name: "Auto",
       }),
     ).toBeVisible();
   });
@@ -418,10 +333,14 @@ test("Chat settings keep the agreed row order and save chat defaults", async () 
   });
 });
 
-test("A user can save message-send and time-zone preferences", async () => {
+test("A user can save a message-send preference in Chat settings", async () => {
   const updates = mockPreferences();
 
-  await setupPage({ context, path: "/settings", host: "app.okou.ai" });
+  await setupPage({
+    context,
+    path: "/?settings=chat",
+    host: "app.okou.ai",
+  });
 
   await expect(screen.findByText("Send message with")).resolves.toBeVisible();
   click(getFastRole("button", "⌘ Enter"));
@@ -438,8 +357,18 @@ test("A user can save message-send and time-zone preferences", async () => {
     "aria-pressed",
     "false",
   );
+});
 
-  const timezone = screen.getByRole("combobox", { name: "Time zone" });
+test("A user can save a time-zone preference", async () => {
+  const updates = mockPreferences();
+
+  await setupPage({
+    context,
+    path: "/settings",
+    host: "app.okou.ai",
+  });
+
+  const timezone = await screen.findByRole("combobox", { name: "Time zone" });
   expect(timezone).toHaveTextContent("UTC");
   timezone.focus();
   expect(timezone).toHaveFocus();
@@ -480,7 +409,10 @@ test("A failed preference save shows its error and can be retried", async () => 
       return respond(200, preferences);
     },
   );
-  await setupPage({ context, path: "/agents?settings=preference" });
+  await setupPage({
+    context,
+    path: "/agents?settings=chat",
+  });
 
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
   const sendMode = getFastRole("button", "⌘ Enter", dialog);

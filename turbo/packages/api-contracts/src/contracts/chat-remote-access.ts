@@ -5,6 +5,16 @@ import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 const protocolSchema = z.enum(["ssh", "vnc"]);
+export const initialRemoteAccessOverrideSchema = z
+  .object({
+    protocol: protocolSchema,
+    connectionId: z.uuid(),
+    enabled: z.boolean(),
+  })
+  .strict();
+export type InitialRemoteAccessOverride = z.infer<
+  typeof initialRemoteAccessOverrideSchema
+>;
 const hostParamsSchema = z
   .object({ protocol: protocolSchema, connectionId: z.uuid() })
   .strict();

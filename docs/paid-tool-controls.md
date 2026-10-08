@@ -18,9 +18,12 @@ a user session; agent and sandbox credentials cannot
 change preferences. Membership removal deletes only that member's workspace
 rows; user and organization deletion remove their respective rows.
 
-The shared catalog includes `web-search`, `people-search`, `scrape`, `finance`,
-`maps`, `seo`, `social`, `image-recognition`, `image-generation`,
-`video-generation`, `voice-generation`, and `avatar-video-generation`.
+The settings catalog (`AVAILABLE_PAID_TOOL_IDS`) includes `web-search`,
+`people-search`, `scrape`, `finance`, `maps`, `seo`, `social`, and
+`image-generation`. `PAID_TOOL_IDS` still accepts the retired
+`image-recognition`, `video-generation`, `voice-generation`, and
+`avatar-video-generation` IDs so stored preferences and older clients keep
+parsing; no current command acts on them.
 
 ## Settings and run semantics
 
@@ -49,15 +52,14 @@ Prompt injection is unchanged. A disabled paid invocation exits with status 1
 and identifies the disabled tool, links to Settings → Personal → Tools,
 and explains that re-enabling applies to later runs.
 
-### BYOK web-search fallback
+### User-credential web-search fallback
 
 Claude Code and Codex normally keep framework-native web search disabled so
 public-web discovery uses managed `okou web-search`. Run preparation exposes
 the framework-native tool only when the captured policy disables `web-search`
-and the resolved route uses BYOK credentials. This includes a stored member or
-organization provider and an explicit framework key declared in compose. An
-outer `built-in` provider remains non-BYOK even when its concrete upstream
-provider is OpenAI or Anthropic.
+and the resolved route uses user-owned credentials: a connected personal
+subscription or an explicit framework key declared in compose. The `built-in`
+Auto provider never exposes the framework-native tool.
 
 The API records the resolved decision in trusted platform environment as
 `OKOU_ENABLE_FRAMEWORK_WEB_SEARCH=true`. Guest Agent accepts only that exact
@@ -71,7 +73,7 @@ only when that fallback is exposed.
 | ---------------------------- | -------------- | -------------------------- |
 | Enabled                      | Any            | Disabled                   |
 | Disabled                     | Built-in       | Disabled                   |
-| Disabled                     | BYOK           | Enabled                    |
+| Disabled                     | User-owned     | Enabled                    |
 
 Pi behavior does not change. Pi has no registered native web-search tool and
 continues to reach managed search through the Okou CLI.
@@ -83,18 +85,15 @@ Provider discovery reports when a built-in option is disabled and preserves
 connector alternatives. Free help, prompt compilation, template authoring,
 resource catalogs and existing result observation remain available.
 
-| Tool ID                   | Paid execution covered                                               | Free branches preserved                             |
-| ------------------------- | -------------------------------------------------------------------- | --------------------------------------------------- |
-| `image-generation`        | Built-in image generation, image-batch start and hidden batch worker | Prompt compilation, provider and connector guidance |
-| `video-generation`        | Built-in video generation                                            | Template authoring and provider guidance            |
-| `voice-generation`        | Built-in voice generation                                            | Provider and connector guidance                     |
-| `avatar-video-generation` | Built-in avatar video                                                | Avatar/voice catalogs and connector guidance        |
+| Tool ID            | Paid execution covered                                               | Free branches preserved                             |
+| ------------------ | -------------------------------------------------------------------- | --------------------------------------------------- |
+| `image-generation` | Built-in image generation, image-batch start and hidden batch worker | Prompt compilation, provider and connector guidance |
 
 Checks precede uploads, artifact preparation and execution output writes. A
 disabled batch worker does not create a misleading completion file.
 
 The creation UI explains disabled choices and links to settings. Explicit
-built-in image/video creation checks current owner preferences before sending;
+built-in image creation checks current owner preferences before sending;
 a failed read does not assume the tools are enabled. Selected templates can
 also be discussed without generating anything, so a template alone does not
 block ordinary messages. The CLI checks the actual paid command selected by
@@ -111,7 +110,7 @@ Do not enable it while an old serving API can prepare runs without the policy.
 Runner job schemas are unchanged: the existing platform environment carries
 the variable, and prepared jobs retain their commit-addressed CLI package.
 
-The BYOK native-search fallback is also additive. A new Guest paired with an
+The user-credential native-search fallback is also additive. A new Guest paired with an
 old API sees no positive marker and keeps native search disabled; an old Guest
 paired with a new API ignores the marker and also keeps native search disabled.
 The fallback activates only after both surfaces are current. Prepared

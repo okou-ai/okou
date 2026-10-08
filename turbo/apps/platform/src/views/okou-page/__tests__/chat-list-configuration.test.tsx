@@ -8,6 +8,7 @@ import {
   startPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 import {
   CHAT_LIST_AGENT_ID,
   cachedChatListEvents,
@@ -18,58 +19,15 @@ import {
   fastButton,
   installActiveChatBoundaries,
   installChatListAgent,
-  installChatListModelPolicies,
+  installChatListRunModels,
   installChatListStream,
   onlineComputerUseHost,
   sidebarThreadLinks,
   sidebarThreadTitles,
 } from "./chat-list-test-helpers.ts";
-import {
-  composerModelTrigger,
-  composerModelTriggerIn,
-} from "./chat-composer-test-helpers.ts";
 
 const context = testContext();
 const HOST_ID = "a7000000-0000-4000-a000-000000000001";
-
-async function openMediaCategory(
-  name: "Image" | "Video",
-): Promise<HTMLElement> {
-  if (!screen.queryByRole("menu", { name: "Models" })) {
-    click(await waitFor(composerModelTriggerOrThrow));
-  }
-  const types = await screen.findByRole("menu", { name: "Models" });
-  const type = queryAllByRoleFast("menuitem", types).find((candidate) => {
-    return candidate.textContent?.startsWith(name);
-  });
-  if (!type) {
-    throw new Error(`${name} models are not on the flyout's type rail`);
-  }
-  click(type);
-  return await screen.findByRole("menu", { name: `${name} models` });
-}
-
-/**
- * A row reads as its model followed by a price tier. Compare the complete model
- * name so models with a shared prefix remain distinct.
- */
-function expectSelectedMediaModel(panel: HTMLElement, label: string): void {
-  const row = queryAllByRoleFast("menuitemradio", panel).find((option) => {
-    return option.textContent?.replace(/\$+$/u, "").trim() === label;
-  });
-  if (!row) {
-    throw new Error(`Expected a ${label} row in the open model panel`);
-  }
-  expect(row).toHaveAttribute("aria-checked", "true");
-}
-
-function composerModelTriggerOrThrow(): HTMLElement {
-  const trigger = composerModelTriggerIn(document);
-  if (!trigger) {
-    throw new Error("The composer model trigger is not visible");
-  }
-  return trigger;
-}
 
 function computerMenuIsOpen(): boolean {
   return queryAllByRoleFast("button", document).some((candidate) => {
@@ -116,7 +74,7 @@ test("Enabling cloud browser replaces the Computer Use host", async () => {
   });
   const remote = context.mocks.deferred<void>();
   installChatListAgent(context);
-  installChatListModelPolicies(context);
+  installChatListRunModels(context);
   installChatListStream(context, {
     caseId: 2,
     snapshot: [thread],
@@ -168,7 +126,7 @@ test("Conversation configuration arriving before creation is retained", async ()
   const threadId = chatListThreadId(37);
   const host = onlineComputerUseHost(HOST_ID);
   installChatListAgent(context);
-  installChatListModelPolicies(context);
+  installChatListRunModels(context);
   installChatListStream(context, {
     caseId: 4,
     snapshot: [],
@@ -186,15 +144,7 @@ test("Conversation configuration arriving before creation is retained", async ()
         cloudBrowserEnabled: false,
         createdAt: "2026-08-01T02:00:04.000Z",
       }),
-      chatListEvent(4, 5, "video_model_updated", threadId, {
-        selectedVideoModel: "MiniMax-H3",
-        createdAt: "2026-08-01T02:00:05.000Z",
-      }),
-      chatListEvent(4, 6, "image_model_updated", threadId, {
-        selectedImageModel: "gpt-image-2",
-        createdAt: "2026-08-01T02:00:06.000Z",
-      }),
-      chatListEvent(4, 7, "created", threadId, {
+      chatListEvent(4, 5, "created", threadId, {
         title: "Out-of-order configuration",
         selectedModel: "deepseek-v4-flash",
         createdAt: "2026-08-01T02:00:00.000Z",
@@ -215,52 +165,13 @@ test("Conversation configuration arriving before creation is retained", async ()
   expect(sidebarThreadLinks()).toHaveLength(1);
   click(await findThreadLink(threadId));
 
-  await expectSelectedModel("GPT 5.6 Sol Fast");
+  await expectSelectedModel("GPT 5.6 Sol, Max, Fast");
   await openComputerMenu();
   const configuredHost = await screen.findByRole("switch", {
     name: "Studio Mac",
     checked: true,
   });
   expect(configuredHost).toBeChecked();
-
-  expectSelectedMediaModel(await openMediaCategory("Image"), "GPT Image 2");
-  expectSelectedMediaModel(await openMediaCategory("Video"), "MiniMax H3");
-});
-
-test("Media models do not overwrite one another or the run model", async () => {
-  const auth = chatListAuth(6);
-  const thread = chatListThread(38, "Independent media models", {
-    selectedModel: "claude-sonnet-4-6",
-    selectedVideoModel: "MiniMax-H3",
-    selectedImageModel: "gpt-image-1",
-  });
-  installChatListAgent(context);
-  installChatListModelPolicies(context);
-  installChatListStream(context, {
-    caseId: 6,
-    snapshot: [thread],
-    events: [
-      chatListEvent(6, 2, "image_model_updated", thread.id, {
-        selectedImageModel: "gpt-image-2",
-      }),
-    ],
-  });
-  installActiveChatBoundaries(context, { metadata: thread });
-
-  await setupPage({
-    context,
-    path: `/chats/${thread.id}`,
-    auth,
-    cachedChatThreadEvents: cachedChatListEvents(6, [thread]),
-  });
-
-  await expectSelectedModel("Claude Sonnet 4.6");
-  expectSelectedMediaModel(await openMediaCategory("Image"), "GPT Image 2");
-  expectSelectedMediaModel(await openMediaCategory("Video"), "MiniMax H3");
-  // Picking either media model must leave the run model where it was.
-  await expect(
-    composerModelTrigger("Claude Sonnet 4.6"),
-  ).resolves.toBeVisible();
 });
 
 test("Service tier and Computer Use settings update independently", async () => {
@@ -271,7 +182,7 @@ test("Service tier and Computer Use settings update independently", async () => 
   const newer = chatListThread(44, "Newer conversation");
   const remote = context.mocks.deferred<void>();
   installChatListAgent(context);
-  installChatListModelPolicies(context);
+  installChatListRunModels(context);
   installChatListStream(context, {
     caseId: 14,
     snapshot: [target, newer],
@@ -312,7 +223,7 @@ test("Service tier and Computer Use settings update independently", async () => 
   remote.resolve();
   await page.ready;
 
-  await expectSelectedModel("GPT 5.6 Sol Fast");
+  await expectSelectedModel("GPT 5.6 Sol, Max, Fast");
   await openComputerMenu();
   const connectedHost = await screen.findByRole("switch", {
     name: "Studio Mac",

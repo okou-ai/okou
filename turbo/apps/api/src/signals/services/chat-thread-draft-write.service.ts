@@ -3,78 +3,75 @@ import type {
   ChatThreadDraftUserMessage,
 } from "@okouai/db/jsonb-contracts/chat-thread";
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
-import type { Tx } from "../../lib/db-types";
+import { command } from "ccstate";
+import { writeDb$ } from "../external/db";
 
-export interface ChatThreadDraftWrite {
+interface ChatThreadDraftWrite {
   readonly chatThreadId: string;
+  readonly userId: string;
   readonly draftUserMessage: ChatThreadDraftUserMessage | null;
   readonly draftAttachments: ChatThreadDraftAttachments | null;
 }
 
 /**
- * Upserts the thread's `chat_thread_drafts` row for one admitted draft write.
+ * Saves or clears one thread's composer draft in a single statement.
  *
- * The caller must already be inside {@link withChatThreadContentWrite}, which
- * has resolved the thread's canonical identity, admitted its erasure subjects
- * and taken the thread's `FOR KEY SHARE` lock. This function therefore performs
- * no ownership check of its own: the thread id it is given is the one the fence
- * revalidated, and the row it writes is deleted with the thread by the
- * table's `ON DELETE CASCADE`.
+ * The row is keyed by the thread and the caller, so the statement touches no
+ * other table and takes no lock on the thread row.
  *
- * A clear writes null draft values into a retained row instead of deleting it.
- * `persistAgentDraft` deletes its row on clear and that is safe there, because
- * `agent_drafts` is already the only store for an Agent composer draft. Here a
- * missing row is what the later read cutover will treat as "fall back to
- * `chat_threads`", so deleting on clear would hand a user back the draft they
- * had just cleared.
- *
- * `updated_at` uses the database clock so the stored value always belongs to
- * the transaction that wrote it, and `created_at` keeps the default from the
- * first write that touched the thread.
- *
- * Draft PATCH keeps its B1 admission and child-before-parent write order.
- * Send-coupled clears use the separate existing-row-only helper below after
- * acquiring an authorized parent FOR UPDATE lock before any weaker row lock.
+ * A cleared draft deletes the row, the same shape as `agent_drafts`. No reader
+ * falls back to the retired `chat_threads` columns, so absence means "no
+ * draft".
  */
-export async function persistChatThreadDraftRow(
-  tx: Tx,
-  draft: ChatThreadDraftWrite,
-): Promise<void> {
-  await tx
-    .insert(chatThreadDrafts)
-    .values({
-      chatThreadId: draft.chatThreadId,
-      draftUserMessage: draft.draftUserMessage,
-      draftAttachments: draft.draftAttachments,
-    })
-    .onConflictDoUpdate({
-      target: chatThreadDrafts.chatThreadId,
-      set: {
+export const persistChatThreadDraft$ = command(
+  async (
+    { set },
+    draft: ChatThreadDraftWrite,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    const db = set(writeDb$);
+    if (draft.draftUserMessage === null) {
+      await db
+        .delete(chatThreadDrafts)
+        .where(
+          and(
+            eq(chatThreadDrafts.chatThreadId, draft.chatThreadId),
+            eq(chatThreadDrafts.userId, draft.userId),
+          ),
+        );
+      signal.throwIfAborted();
+      return;
+    }
+    await db
+      .insert(chatThreadDrafts)
+      .values({
+        chatThreadId: draft.chatThreadId,
+        userId: draft.userId,
         draftUserMessage: draft.draftUserMessage,
         draftAttachments: draft.draftAttachments,
-        updatedAt: sql`now()`,
-      },
-    });
-}
+      })
+      .onConflictDoUpdate({
+        target: [chatThreadDrafts.chatThreadId, chatThreadDrafts.userId],
+        set: {
+          draftUserMessage: draft.draftUserMessage,
+          draftAttachments: draft.draftAttachments,
+          updatedAt: sql`now()`,
+        },
+      });
+    signal.throwIfAborted();
+  },
+);
 
-/**
- * Clear a child row only after the caller's authorized parent UPDATE matched.
- * Send transactions have no B1 producer admission, so they must never use the
- * PATCH upsert above. A missing child is a normal no-op; retaining an existing
- * row and its created_at prevents a later legacy fallback from reviving it.
- */
-export async function clearExistingChatThreadDraftRow(
-  tx: Tx,
-  chatThreadId: string,
-): Promise<void> {
-  await tx
-    .update(chatThreadDrafts)
-    .set({
-      draftUserMessage: null,
-      draftAttachments: null,
-      updatedAt: sql`now()`,
-    })
-    .where(eq(chatThreadDrafts.chatThreadId, chatThreadId));
-}
+/** Removes a thread's saved draft; a thread without one is a no-op. */
+export const deleteChatThreadDraft$ = command(
+  async ({ set }, chatThreadId: string, signal: AbortSignal): Promise<void> => {
+    signal.throwIfAborted();
+    await set(writeDb$)
+      .delete(chatThreadDrafts)
+      .where(eq(chatThreadDrafts.chatThreadId, chatThreadId));
+    signal.throwIfAborted();
+  },
+);

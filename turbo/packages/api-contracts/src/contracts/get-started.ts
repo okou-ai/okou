@@ -7,6 +7,7 @@ const c = initContract();
 export const getStartedQuestKeySchema = z.enum([
   "connector",
   "slack",
+  "imessage",
   "workflow",
   "invite",
   "share",
@@ -28,6 +29,7 @@ export const GET_STARTED_REWARDS_CHANGED_EVENT = "getStartedRewardsChanged";
 export const GET_STARTED_REWARDS = {
   connector: { amount: 100, limit: null, target: "user" },
   slack: { amount: 2000, limit: 1, target: "org" },
+  imessage: { amount: 1000, limit: 1, target: "user" },
   workflow: { amount: 1000, limit: 1, target: "user" },
   invite: { amount: 100, limit: 15, target: "user" },
   share: { amount: 2000, limit: 1, target: "user" },

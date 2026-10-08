@@ -1,27 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
 import { clearMockNow, mockNow, now } from "../../../lib/time";
-import { server } from "../../../mocks/server";
-import { setChatCallbackGitHubDeliveryFixture } from "../../../test-fixtures/chat-events";
 import { verifyOkouToken } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { readAgentRunState$ } from "./helpers/agent-run-callback";
 import { expectApiError, type ApiTestUser } from "./helpers/api-bdd";
 import { createComputerUseBddApi } from "./helpers/api-bdd-computer-use";
-import { createGithubBddApi } from "./helpers/api-bdd-github";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { readRunAutonomyBudgetFixture } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
-  type PromptMessage,
-  type RunnerClaim,
   okouTokenFromClaim,
   userMessages,
-  assistantEvent,
+  type PromptMessage,
+  type RunnerClaim,
 } from "./helpers/chat-events-fixture";
 
 const context = testContext();
@@ -30,7 +21,6 @@ const {
   api,
   chat,
   chatCallbacks,
-  runStateStore,
   entitledChatActor,
   sendChatRun,
   claimChatRun,
@@ -43,16 +33,22 @@ const {
   requestSendEventWithBearer,
 } = createChatEventsFixture(context);
 
-const github = createGithubBddApi(context);
-
 const cu = createComputerUseBddApi(context);
 
-async function expectRunAppContext(args: {
+async function entitledNativeChatActor(): Promise<
+  Awaited<ReturnType<typeof entitledChatActor>>
+> {
+  const fixture = await entitledChatActor();
+  await api.updateUserModelPreference(fixture.actor, "claude-fable-5-1");
+  return fixture;
+}
+
+function expectRunAppContext(args: {
   readonly actor: ApiTestUser;
   readonly runId: string;
   readonly claim: RunnerClaim;
   readonly appUrl: string;
-}): Promise<void> {
+}): void {
   if (!args.actor.orgId) {
     throw new Error("Expected an organization-scoped chat actor");
   }
@@ -63,22 +59,6 @@ async function expectRunAppContext(args: {
   }
   expect(verifyOkouToken(token)).toMatchObject({
     runId: args.runId,
-  });
-  const state = await runStateStore.set(
-    readAgentRunState$,
-    {
-      orgId: args.actor.orgId,
-      userId: args.actor.userId,
-      runId: args.runId,
-    },
-    context.signal,
-  );
-  expect(
-    state.callbacks.find((callback) => {
-      return callback.internalKind === "chat";
-    }),
-  ).toMatchObject({
-    payload: { publicBrand: "okou" },
   });
 }
 
@@ -92,7 +72,7 @@ async function readThreadComputerUseHostId(
 describe("CHAT-02: default assistant identity", () => {
   it("keeps the default name as Okou through queued runs without renaming custom agents", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
-    const { actor, runnerGroup } = await entitledChatActor();
+    const { actor, runnerGroup } = await entitledNativeChatActor();
     bdd.acceptAgentStorageWrites();
     const onboarding = await bdd.readOnboardingStatus(actor);
     const defaultAgentId = onboarding.defaultAgentId;
@@ -108,7 +88,7 @@ describe("CHAT-02: default assistant identity", () => {
     expect(anchorRun.appendSystemPrompt).toContain("Your name is Okou.");
 
     const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
-    await expectRunAppContext({
+    expectRunAppContext({
       actor,
       runId: anchor.runId,
       claim: anchorClaim.claim,
@@ -167,7 +147,7 @@ describe("CHAT-02: default assistant identity", () => {
     const promotedRun = await api.readRun(actor, promoted.runId);
     expect(promotedRun.appendSystemPrompt).toContain("Your name is Okou.");
     const promotedClaim = await claimChatRun(runnerGroup, promoted.runId);
-    await expectRunAppContext({
+    expectRunAppContext({
       actor,
       runId: promoted.runId,
       claim: promotedClaim.claim,
@@ -189,7 +169,7 @@ describe("CHAT-02: default assistant identity", () => {
     expect(customPrompt).toContain("Your name is Nova.");
     expect(customPrompt).not.toContain("Your name is Okou.");
     const customClaim = await claimChatRun(runnerGroup, customRun.runId);
-    await expectRunAppContext({
+    expectRunAppContext({
       actor,
       runId: customRun.runId,
       claim: customClaim.claim,
@@ -198,73 +178,11 @@ describe("CHAT-02: default assistant identity", () => {
 
     await cancelChatRun(actor, customRun.runId);
   }, 90_000);
-
-  it("posts GitHub Audit links to the configured Okou app", async () => {
-    mockEnv("APP_URL", "https://app.okou.ai");
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    bdd.acceptAgentStorageWrites();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped chat actor");
-    }
-    const orgId = actor.orgId;
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId },
-      {
-        [FeatureSwitchKey.OkouDebug]: true,
-      },
-    );
-    const installation = await github.installGithubApp(actor, agentId);
-    const postedComments: string[] = [];
-    server.use(
-      http.post(
-        "https://api.github.com/repos/:owner/:repo/issues/:issueNumber/comments",
-        async ({ request, params }) => {
-          expect(params.owner).toBe("okou-ai");
-          expect(params.repo).toBe("okou");
-          const body = (await request.json()) as Record<string, unknown>;
-          if (typeof body.body !== "string") {
-            return HttpResponse.json(
-              { message: "Expected a comment body" },
-              { status: 400 },
-            );
-          }
-          postedComments.push(body.body);
-          return HttpResponse.json({ id: postedComments.length });
-        },
-      ),
-    );
-
-    const run = await sendChatRun(actor, {
-      agentId,
-      prompt: "deliver an Okou GitHub response",
-    });
-    const claim = await claimChatRun(runnerGroup, run.runId);
-    await setChatCallbackGitHubDeliveryFixture({
-      runId: run.runId,
-      remoteInstallationId: installation.remoteInstallationId,
-      repo: "okou-ai/okou",
-      subjectNumber: 1,
-      subjectKind: "issue",
-      agentId,
-    });
-
-    chatCallbacks.mockChatOutputEvents([
-      assistantEvent(0, "GitHub callback brand response"),
-    ]);
-    await completeChatRunOk(run.runId, claim.sandboxHeaders);
-    await flushWaitUntilForTest();
-
-    expect(postedComments.at(-1)).toContain(
-      `📋 [Audit](https://app.okou.ai/activities/${run.runId})`,
-    );
-    expect(postedComments).toHaveLength(1);
-  }, 90_000);
 });
 
 describe("CHAT-02: run-scoped agent-token chat launches", () => {
-  it("keeps immediate and queued runs agent-scoped without retired provenance", async () => {
-    const { actor, agentId } = await entitledChatActor();
+  it("preserves the caller's run annotation on immediate and queued handoffs", async () => {
+    const { actor, agentId } = await entitledNativeChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped chat actor");
     }
@@ -288,54 +206,62 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       }),
       [201],
     );
-    const immediate = await requestSendEventWithBearer(
+    const immediateEventId = randomUUID();
+    const immediateSend = await requestSendEventWithBearer(
       okouToken,
       {
         agentId,
+        clientEventId: immediateEventId,
         threadId: createdThread.body.id,
         prompt: "immediate run-scoped handoff",
       },
       [201],
     );
-    if (immediate.status !== 201) {
+    if (immediateSend.status !== 201) {
       throw new Error("Expected the run-scoped handoff request to succeed");
     }
-    if (!immediate.body.runId) {
-      throw new Error("Expected the run-scoped handoff to launch immediately");
+    expect(immediateSend.body.runId).toBeNull();
+    // The idle thread's background pick launches the handoff.
+    await flushWaitUntilForTest();
+    const launchedMessages = await waitForThreadMessages(
+      actor,
+      createdThread.body.id,
+      (items) => {
+        return userMessages(items).some((message) => {
+          return (
+            message.revokesEventId === immediateEventId &&
+            message.runId !== undefined
+          );
+        });
+      },
+    );
+    const immediateRunId = userMessages(launchedMessages.events).find(
+      (message) => {
+        return message.revokesEventId === immediateEventId;
+      },
+    )?.runId;
+    if (immediateRunId === undefined) {
+      throw new Error("Expected the run-scoped handoff to launch");
     }
 
-    await expect(
-      api.readRun(actor, immediate.body.runId),
-    ).resolves.toMatchObject({
-      runId: immediate.body.runId,
+    await expect(api.readRun(actor, immediateRunId)).resolves.toMatchObject({
+      runId: immediateRunId,
       prompt: "immediate run-scoped handoff",
     });
-    await expect(
-      readRunAutonomyBudgetFixture(context, caller.runId),
-    ).resolves.toBe(10);
-    await expect(
-      readRunAutonomyBudgetFixture(context, immediate.body.runId),
-    ).resolves.toBe(9);
-    // Neither callback internals nor retired provenance are public API fields.
-    // The test-only state route is the only boundary that can prove their
-    // absence without importing database schemas or production services.
-    const immediateState = await runStateStore.set(
-      readAgentRunState$,
-      {
-        orgId: actor.orgId,
-        userId: actor.userId,
-        runId: immediate.body.runId,
-      },
-      context.signal,
-    );
-    expect(immediateState.agent_run).toMatchObject({
-      triggerSource: "agent",
-    });
-    expect(
-      immediateState.callbacks.map((callback) => {
-        return callback.internalKind;
+    expect(userMessages(launchedMessages.events)).toContainEqual(
+      expect.objectContaining({
+        revokesEventId: immediateEventId,
+        userMessage: expect.objectContaining({
+          parts: expect.arrayContaining([
+            expect.objectContaining({
+              type: "source",
+              kind: "agent",
+              runId: caller.runId,
+            }),
+          ]),
+        }),
       }),
-    ).toStrictEqual(["chat"]);
+    );
 
     const queuedEventId = randomUUID();
     const queued = await requestSendEventWithBearer(
@@ -353,7 +279,8 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
     }
     expect(queued.body.runId).toBeNull();
 
-    await cancelChatRun(actor, immediate.body.runId);
+    await cancelChatRun(actor, immediateRunId);
+    await flushWaitUntilForTest();
     const promotedMessages = await waitForThreadMessages(
       actor,
       createdThread.body.id,
@@ -382,26 +309,13 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       runId: promoted.runId,
       prompt: "queued run-scoped handoff",
     });
-    await expect(
-      readRunAutonomyBudgetFixture(context, promoted.runId),
-    ).resolves.toBe(9);
-    const promotedState = await runStateStore.set(
-      readAgentRunState$,
-      {
-        orgId: actor.orgId,
-        userId: actor.userId,
-        runId: promoted.runId,
-      },
-      context.signal,
-    );
-    expect(promotedState.agent_run).toMatchObject({
-      triggerSource: "agent",
-    });
-    expect(
-      promotedState.callbacks.map((callback) => {
-        return callback.internalKind;
+    expect(promoted.userMessage.parts).toContainEqual(
+      expect.objectContaining({
+        type: "source",
+        kind: "agent",
+        runId: caller.runId,
       }),
-    ).toStrictEqual(["chat"]);
+    );
 
     await cancelChatRun(actor, promoted.runId);
     await cancelChatRun(actor, caller.runId);
@@ -410,7 +324,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
 
 describe("CHAT-02/FILE-03: computer-use host grants", () => {
   it("grants computer-use capability only for a selected host", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const { hostId, hostToken } = await cu.startComputerUseHost(actor);
 
@@ -531,16 +445,17 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
 
   it("rejects unusable computer-use host selections", async () => {
     const actor = bdd.user();
-    await api.ensureOrgModelProvider(actor);
+    await api.ensurePersonalSubscriptionModel(actor);
     bdd.acceptAgentStorageWrites();
     const agent = await bdd.createAgent(actor, {
       displayName: "Computer-use guard agent",
     });
+    const agentId = agent.agentId;
 
     const unknownHost = await chat.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
+        agentId,
         prompt: "use an unknown host",
         computerUseHostId: randomUUID(),
       },
@@ -549,37 +464,6 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
     expectApiError(unknownHost.body);
     expect(unknownHost.body.error.message).toBe("Computer-use host not found");
 
-    // Stopping a host revokes it, so an explicit selection reports it as
-    // missing rather than offline, and clears any thread binding immediately.
-    const stopped = await cu.startComputerUseHost(actor);
-    const stoppedPinned = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "pin the host before stopping it",
-        computerUseHostId: stopped.hostId,
-      },
-      [201],
-    );
-    if (stoppedPinned.status !== 201) {
-      throw new Error("Expected the stopped-host pin send to be accepted");
-    }
-    await cu.stopComputerUseHost(stopped.hostToken);
-    await expect(
-      readThreadComputerUseHostId(actor, stoppedPinned.body.threadId),
-    ).resolves.toBeNull();
-    const revokedHost = await chat.requestSendEvent(
-      actor,
-      {
-        agentId: agent.agentId,
-        prompt: "use a stopped host",
-        computerUseHostId: stopped.hostId,
-      },
-      [404],
-    );
-    expectApiError(revokedHost.body);
-    expect(revokedHost.body.error.message).toBe("Computer-use host not found");
-
     // Installation-backed hosts stop as temporary offline devices, so thread
     // bindings survive and reconnect to the same host id on the next start.
     const installationId = randomUUID();
@@ -587,7 +471,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
     const installedPinned = await chat.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
+        agentId,
         prompt: "pin the durable host before stopping it",
         computerUseHostId: installed.hostId,
       },
@@ -603,7 +487,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
     const stoppedInstalledHost = await chat.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
+        agentId,
         threadId: installedPinned.body.threadId,
         prompt: "use a stopped durable host",
         computerUseHostId: installed.hostId,
@@ -623,7 +507,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
     const survivorThread = await chat.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
+        agentId,
         prompt: "pin a host for a later sticky send",
         computerUseHostId: survivor.hostId,
       },
@@ -640,7 +524,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
     const offlineHostSend = await chat.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
+        agentId,
         prompt: "use a stale host",
         computerUseHostId: survivor.hostId,
       },
@@ -653,7 +537,7 @@ describe("CHAT-02/FILE-03: computer-use host grants", () => {
     const staleStickySend = await chat.requestSendEvent(
       actor,
       {
-        agentId: agent.agentId,
+        agentId,
         threadId: survivorThread.body.threadId,
         prompt: "send while the sticky host is stale",
       },

@@ -1,6 +1,17 @@
 import { useGet, useLastResolved, useSet } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Clock, Ellipsis, Package, Pencil, Pin, PinOff } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  Clock,
+  Ellipsis,
+  Package,
+  Pencil,
+  Pin,
+  PinOff,
+} from "lucide-react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Button,
   cn,
@@ -15,8 +26,11 @@ import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.t
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
 import { openThreadAutomations$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
+import { setChatThreadArchivedFromHeader$ } from "../../signals/chat-page/chat-thread-archive.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { rootSignal$ } from "../../signals/root-signal.ts";
 import { useOpenThreadArtifacts } from "./thread-sidebar.tsx";
 
 export function ChatThreadPinButton({
@@ -82,9 +96,17 @@ export function MobileChatThreadMoreMenu({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
+  const rootSignal = useGet(rootSignal$);
   const pinned = useGet(thread.pin.pinned$);
   const setPinned = useSet(thread.pin.setPinned$);
   const openRename = useSet(openRenameChatThreadDialogForThreadId$);
+  const archiveEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
+  const archived = useGet(thread.threadMeta$)?.archived === true;
+  const [archiveLoadable, archive] = useLoadableSet(
+    setChatThreadArchivedFromHeader$,
+  );
+  const archiving = archiveLoadable.state === "loading";
   const automations = useLastResolved(thread.headerAutomations.automations$);
   const reloadAutomations = useSet(thread.headerAutomations.reloadAutomations$);
   const openAutomations = useSet(openThreadAutomations$);
@@ -137,6 +159,35 @@ export function MobileChatThreadMoreMenu({
             return $.chat.sidebar.rename;
           })}
         </DropdownMenuItem>
+        {archiveEnabled && (
+          <DropdownMenuItem
+            className="min-h-11"
+            disabled={archiving}
+            onClick={() => {
+              detach(
+                archive(
+                  {
+                    threadId: thread.threadId,
+                    agentId: thread.agentId,
+                    archived: !archived,
+                  },
+                  // Archiving navigates away immediately, which aborts the page signal.
+                  rootSignal,
+                ),
+                Reason.DomCallback,
+              );
+            }}
+          >
+            {archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
+            {archived
+              ? t(($) => {
+                  return $.chat.sidebar.unarchive;
+                })
+              : t(($) => {
+                  return $.chat.sidebar.archive;
+                })}
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         {automations && automations.length > 0 && (
           <DropdownMenuItem

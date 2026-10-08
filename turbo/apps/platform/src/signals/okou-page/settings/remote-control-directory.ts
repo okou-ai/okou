@@ -1,13 +1,14 @@
 import { command, computed, state } from "ccstate";
+import { searchParams$, updateSearchParams$ } from "../../route.ts";
 
 export type RemoteControlType = "all" | "ssh" | "vnc";
 export type RemoteControlView = "connections" | "credentials";
 
-const type$ = state<RemoteControlType>("all");
 const view$ = state<RemoteControlView>("connections");
 
 export const remoteControlType$ = computed((get) => {
-  return get(type$);
+  const type = get(searchParams$).get("type");
+  return type === "ssh" || type === "vnc" ? type : "all";
 });
 
 export const remoteControlView$ = computed((get) => {
@@ -15,8 +16,14 @@ export const remoteControlView$ = computed((get) => {
 });
 
 export const setRemoteControlType$ = command(
-  ({ set }, value: RemoteControlType) => {
-    set(type$, value);
+  ({ get, set }, value: RemoteControlType) => {
+    const params = new URLSearchParams(get(searchParams$));
+    if (value === "all") {
+      params.delete("type");
+    } else {
+      params.set("type", value);
+    }
+    set(updateSearchParams$, params);
   },
 );
 

@@ -80,6 +80,7 @@ mod lifecycle;
 mod metadata;
 mod path_safety;
 mod sidecar;
+pub mod snapshot;
 mod types;
 mod watcher;
 

@@ -1,8 +1,7 @@
 import {
   isBuiltInModelProviderType,
-  modelProviderCredentialScopeSchema,
   modelProviderTypeSchema,
-  supportedRunModelSchema,
+  runModelIdSchema,
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
@@ -29,15 +28,10 @@ interface LogAgentRunFailureInput {
   readonly exitCode: number;
   readonly error?: string;
   readonly failureReason?: RunFailureReasonToken;
-  readonly executionOwner: "api-first" | "sandbox";
   readonly run: AgentRunFailureLogSnapshot;
 }
 
-type ModelCredentialOwner =
-  | "platform"
-  | "member"
-  | "organization"
-  | "unresolved";
+type ModelCredentialOwner = "platform" | "member" | "unresolved";
 
 const L = logger("webhook:complete");
 
@@ -80,8 +74,8 @@ function parsedModelProvider(
 function parsedSelectedModel(
   run: AgentRunFailureLogSnapshot,
 ): string | undefined {
-  const result = supportedRunModelSchema.safeParse(run.selectedModel);
-  return result.success ? result.data : undefined;
+  // Any catalog model ID is logged; the static model list is not an authority.
+  return runModelIdSchema.safeParse(run.selectedModel).data;
 }
 
 function modelCredentialOwner(
@@ -94,13 +88,9 @@ function modelCredentialOwner(
   if (isBuiltInModelProviderType(modelProvider)) {
     return "platform";
   }
-  const scope = modelProviderCredentialScopeSchema.safeParse(
-    run.modelProviderCredentialScope,
-  );
-  if (!scope.success) {
-    return "unresolved";
-  }
-  return scope.data === "member" ? "member" : "organization";
+  return run.modelProviderCredentialScope === "member"
+    ? "member"
+    : "unresolved";
 }
 
 function shouldSuppressKnownFailureLog(
@@ -112,7 +102,7 @@ function shouldSuppressKnownFailureLog(
       return true;
     }
     case "suppress-caller-owned": {
-      return credentialOwner === "member" || credentialOwner === "organization";
+      return credentialOwner === "member";
     }
     case "retain": {
       return false;
@@ -135,7 +125,7 @@ function projectFailureEvidence(input: LogAgentRunFailureInput) {
       : {};
   return {
     framework: input.run.launchSnapshot?.framework ?? "unknown",
-    executionOwner: input.executionOwner,
+    executionOwner: "sandbox",
     modelProvider: modelProvider ?? "unknown",
     selectedModel: parsedSelectedModel(input.run) ?? "unknown",
     modelCredentialOwner: credentialOwner,

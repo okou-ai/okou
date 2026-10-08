@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.22.6](https://github.com/okou-ai/okou/compare/guest-control-server-v0.22.5...guest-control-server-v0.22.6) (2026-10-07)
+
+## [0.22.5](https://github.com/okou-ai/okou/compare/guest-control-server-v0.22.4...guest-control-server-v0.22.5) (2026-10-07)
+
+## [0.22.4](https://github.com/okou-ai/okou/compare/guest-control-server-v0.22.3...guest-control-server-v0.22.4) (2026-10-07)
+
+## [0.22.3](https://github.com/okou-ai/okou/compare/guest-control-server-v0.22.2...guest-control-server-v0.22.3) (2026-10-02)
+
+## [0.22.2](https://github.com/okou-ai/okou/compare/guest-control-server-v0.22.1...guest-control-server-v0.22.2) (2026-10-01)
+
+## [0.22.1](https://github.com/okou-ai/okou/compare/guest-control-server-v0.22.0...guest-control-server-v0.22.1) (2026-09-30)
+
+## [0.22.0](https://github.com/okou-ai/okou/compare/guest-control-server-v0.21.53...guest-control-server-v0.22.0) (2026-09-30)
+
+
+### Features
+
+* **runner:** add private run-scoped guest duplex channel ([#37113](https://github.com/okou-ai/okou/issues/37113)) ([5487cfc](https://github.com/okou-ai/okou/commit/5487cfce060b5072409b8a0d944a7d1528ffbd91))
+
+## [0.21.53](https://github.com/okou-ai/okou/compare/guest-control-server-v0.21.52...guest-control-server-v0.21.53) (2026-09-30)
+
+## [0.21.52](https://github.com/okou-ai/okou/compare/guest-control-server-v0.21.51...guest-control-server-v0.21.52) (2026-09-29)
+
+## [0.21.51](https://github.com/okou-ai/okou/compare/guest-control-server-v0.21.50...guest-control-server-v0.21.51) (2026-09-29)
+
+## [0.21.50](https://github.com/okou-ai/okou/compare/guest-control-server-v0.21.49...guest-control-server-v0.21.50) (2026-09-28)
+
+## [0.21.49](https://github.com/okou-ai/okou/compare/guest-control-server-v0.21.48...guest-control-server-v0.21.49) (2026-09-28)
+
+## [0.21.48](https://github.com/okou-ai/okou/compare/guest-control-server-v0.21.47...guest-control-server-v0.21.48) (2026-09-28)
+
+## [0.21.47](https://github.com/okou-ai/okou/compare/guest-control-server-v0.21.46...guest-control-server-v0.21.47) (2026-09-27)
+
+## [0.21.46](https://github.com/okou-ai/okou/compare/guest-control-server-v0.21.45...guest-control-server-v0.21.46) (2026-09-26)
+
+## [0.21.45](https://github.com/okou-ai/okou/compare/guest-control-server-v0.21.44...guest-control-server-v0.21.45) (2026-09-25)
+
+## [0.21.44](https://github.com/okou-ai/okou/compare/guest-control-server-v0.21.43...guest-control-server-v0.21.44) (2026-09-25)
+
+## [0.21.43](https://github.com/okou-ai/okou/compare/guest-control-server-v0.21.42...guest-control-server-v0.21.43) (2026-09-24)
+
 ## [0.21.42](https://github.com/okou-ai/okou/compare/guest-control-server-v0.21.41...guest-control-server-v0.21.42) (2026-09-23)
 
 ## [0.21.41](https://github.com/okou-ai/okou/compare/guest-control-server-v0.21.40...guest-control-server-v0.21.41) (2026-09-23)

@@ -42,6 +42,7 @@ function summary(workflow: WorkflowDetailResponse): WorkflowSummary {
     canManage: workflow.canManage,
     canPublish: workflow.canPublish,
     official: workflow.official,
+    importSource: workflow.importSource,
   };
 }
 
@@ -143,6 +144,7 @@ export const apiWorkflowsHandlers = [
       canManage: true,
       canPublish: true,
       official: null,
+      importSource: null,
       createdByUserId: "test-user-123",
       updatedByUserId: "test-user-123",
       createdAt: now,

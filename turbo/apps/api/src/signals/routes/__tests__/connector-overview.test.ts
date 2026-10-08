@@ -29,7 +29,7 @@ import { customConnectorsDeleteRoutes } from "../custom-connectors-delete";
 import { customConnectorProposalRoutes } from "../custom-connectors-proposal";
 import { customConnectorsValuesSetRoutes } from "../custom-connectors-values-set";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const trackCleanup = createFixtureTracker<() => Promise<void>>(
   async (action) => {
     await action();
@@ -201,6 +201,7 @@ test("overview projects connected connector briefs and default accounts for one 
     client(computerUseHostsContract).start({
       headers,
       body: {
+        installationId: randomUUID(),
         hostName: "Composer test desktop",
         appVersion: "0.1.0",
         osVersion: "macOS 15",
@@ -230,7 +231,6 @@ test("overview projects connected connector briefs and default accounts for one 
     expect.objectContaining({
       slug: "gitlab",
       label: expect.any(String),
-      description: expect.any(String),
       icon: expect.objectContaining({ url: expect.any(String) }),
       hasPermissions: expect.any(Boolean),
     }),

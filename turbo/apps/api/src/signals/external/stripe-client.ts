@@ -61,6 +61,7 @@ export interface StripeSubscriptionItem {
 
 export interface StripeSubscription {
   readonly id: string;
+  readonly created?: number;
   readonly customer: string | { readonly id: string };
   readonly status: string;
   readonly metadata?: Record<string, string> | null;
@@ -332,7 +333,7 @@ export interface StripeInvoice {
     } | null;
   } | null;
   readonly amount_due: number;
-  readonly amount_paid?: number;
+  readonly amount_paid: number;
   readonly currency: string;
   readonly status: "draft" | "open" | "paid" | "uncollectible" | "void" | null;
   readonly paid?: boolean;
@@ -490,10 +491,13 @@ export interface StripeSubscriptionSchedulesApi {
 
 export interface StripeCustomersApi {
   retrieve(id: string): Promise<StripeCustomerRef>;
-  create(params: {
-    metadata?: StripeMetadataParam;
-    email?: string;
-  }): Promise<StripeCustomer>;
+  create(
+    params: {
+      metadata?: StripeMetadataParam;
+      email?: string;
+    },
+    options?: StripeRequestOptions,
+  ): Promise<StripeCustomer>;
   update(
     id: string,
     params: {
@@ -1181,9 +1185,8 @@ export function constructStripeBillingWebhookEvent(
 
 const PAYMENT_METHOD_PORTAL_CONFIGURATION_NAME = "Okou payment methods";
 const PAYMENT_METHOD_PORTAL_CONFIGURATION_IDEMPOTENCY_KEY =
-  "vm0-payment-method-portal-v1";
+  "payment-method-portal-v2";
 const PAYMENT_METHOD_PORTAL_METADATA = {
-  managed_by: "vm0",
   purpose: "payment_method_management",
 } as const;
 
@@ -1201,9 +1204,7 @@ function isManagedPaymentMethodPortalConfiguration(
   configuration: StripeSDK.BillingPortal.Configuration,
 ): boolean {
   return (
-    configuration.metadata?.managed_by ===
-      PAYMENT_METHOD_PORTAL_METADATA.managed_by &&
-    configuration.metadata.purpose === PAYMENT_METHOD_PORTAL_METADATA.purpose
+    configuration.metadata?.purpose === PAYMENT_METHOD_PORTAL_METADATA.purpose
   );
 }
 
@@ -1235,9 +1236,16 @@ export async function ensurePaymentMethodPortalConfiguration(
   });
   signal.throwIfAborted();
 
-  const existing = configurations.data.find(
+  if (configurations.has_more) {
+    throw new Error("Payment method portal configuration list is incomplete");
+  }
+  const matches = configurations.data.filter(
     isManagedPaymentMethodPortalConfiguration,
   );
+  if (matches.length > 1) {
+    throw new Error("Multiple payment method portal configurations found");
+  }
+  const [existing] = matches;
   if (!existing) {
     const created = await stripe.billingPortal.configurations.create(
       {

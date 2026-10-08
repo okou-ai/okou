@@ -34,11 +34,6 @@ export function localizedSshError(code: string): string | undefined {
         return $.ssh.unavailable;
       });
     }
-    case SSH_ERROR_CODES.AGENT_UNAVAILABLE: {
-      return i18n.t(($) => {
-        return $.ssh.errors.agentUnavailable;
-      });
-    }
     case SSH_ERROR_CODES.INVALID_INPUT: {
       return i18n.t(($) => {
         return $.ssh.errors.invalidInput;

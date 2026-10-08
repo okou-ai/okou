@@ -362,38 +362,6 @@ async function readStorageVersionForAction(
   });
 }
 
-async function setStorageVersionArchiveSizeForAction(
-  db: Db,
-  body: CacheStateAction<"set-storage-version-archive-size">,
-  signal: AbortSignal,
-) {
-  const [storage] = await db
-    .select({ id: storages.id })
-    .from(storages)
-    .where(storageIdentityCondition(body))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!storage) {
-    throw new Error("Storage is unavailable");
-  }
-
-  const updated = await db
-    .update(storageVersions)
-    .set({ archiveSize: body.archive_size })
-    .where(
-      and(
-        eq(storageVersions.storageId, storage.id),
-        eq(storageVersions.id, body.version_id),
-      ),
-    )
-    .returning({ id: storageVersions.id });
-  signal.throwIfAborted();
-  if (updated.length === 0) {
-    throw new Error("Storage version is unavailable");
-  }
-  return actionOk();
-}
-
 async function readCacheByObjectKeyPrefix(
   db: Db,
   objectKeyPrefix: string,
@@ -431,14 +399,6 @@ async function readCacheByObjectKeyPrefix(
       };
     }),
   });
-}
-
-async function readCacheByObjectKeyPrefixForAction(
-  db: Db,
-  body: CacheStateAction<"read-cache-by-object-key-prefix">,
-  signal: AbortSignal,
-) {
-  return await readCacheByObjectKeyPrefix(db, body.object_key_prefix, signal);
 }
 
 const mutateSystemStoragePresignedUrlCacheState$ = command(
@@ -504,12 +464,6 @@ const mutateSystemStoragePresignedUrlCacheState$ = command(
       }
       case "read-storage-version": {
         return await readStorageVersionForAction(db, body, signal);
-      }
-      case "set-storage-version-archive-size": {
-        return await setStorageVersionArchiveSizeForAction(db, body, signal);
-      }
-      case "read-cache-by-object-key-prefix": {
-        return await readCacheByObjectKeyPrefixForAction(db, body, signal);
       }
     }
   },

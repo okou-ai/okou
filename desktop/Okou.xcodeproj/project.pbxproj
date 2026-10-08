@@ -1,0 +1,215 @@
+// !$*UTF8*$!
+{
+	"archiveVersion" = 1;
+	"classes" = {
+	};
+	"objectVersion" = 77;
+	"objects" = {
+		"000000000000000000000002" = {
+			"isa" = "PBXFileSystemSynchronizedRootGroup";
+			"path" = "Okou/App";
+			"sourceTree" = "<group>";
+		};
+		"000000000000000000000003" = {
+			"isa" = "PBXFileSystemSynchronizedBuildFileExceptionSet";
+			"membershipExceptions" = ("Info.plist","Entitlements.plist","symbol.svg","wordmark.svg","dmg-background.svg",);
+			"target" = "00000000000000000000000A";
+		};
+		"000000000000000000000004" = {
+			"isa" = "PBXFileSystemSynchronizedRootGroup";
+			"path" = "Resources";
+			"sourceTree" = "<group>";
+			"exceptions" = ("000000000000000000000003",);
+		};
+		"000000000000000000000005" = {
+			"isa" = "PBXFileReference";
+			"explicitFileType" = "wrapper.application";
+			"includeInIndex" = 0;
+			"path" = "Okou.app";
+			"sourceTree" = "BUILT_PRODUCTS_DIR";
+		};
+		"000000000000000000000006" = {
+			"isa" = "PBXGroup";
+			"name" = "Products";
+			"children" = ("000000000000000000000005",);
+			"sourceTree" = "<group>";
+		};
+		"000000000000000000000007" = {
+			"isa" = "PBXGroup";
+			"children" = ("000000000000000000000002","000000000000000000000004","000000000000000000000006",);
+			"sourceTree" = "<group>";
+		};
+		"000000000000000000000014" = {
+			"isa" = "XCRemoteSwiftPackageReference";
+			"repositoryURL" = "https://github.com/clerk/clerk-ios.git";
+			"requirement" = {
+				"kind" = "exactVersion";
+				"version" = "1.5.6";
+			};
+		};
+		"000000000000000000000015" = {
+			"isa" = "XCRemoteSwiftPackageReference";
+			"repositoryURL" = "https://github.com/sparkle-project/Sparkle.git";
+			"requirement" = {
+				"kind" = "exactVersion";
+				"version" = "2.10.0";
+			};
+		};
+		"000000000000000000000016" = {
+			"isa" = "XCLocalSwiftPackageReference";
+			"relativePath" = ".";
+		};
+		"00000000000000000000001E" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"package" = "000000000000000000000014";
+			"productName" = "ClerkKit";
+		};
+		"000000000000000000000028" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "00000000000000000000001E";
+		};
+		"00000000000000000000001F" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"package" = "000000000000000000000015";
+			"productName" = "Sparkle";
+		};
+		"000000000000000000000029" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "00000000000000000000001F";
+		};
+		"000000000000000000000020" = {
+			"isa" = "XCSwiftPackageProductDependency";
+			"package" = "000000000000000000000016";
+			"productName" = "OkouCore";
+		};
+		"00000000000000000000002A" = {
+			"isa" = "PBXBuildFile";
+			"productRef" = "000000000000000000000020";
+		};
+		"000000000000000000000032" = {
+			"isa" = "PBXSourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"000000000000000000000033" = {
+			"isa" = "PBXFrameworksBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ("000000000000000000000028","000000000000000000000029","00000000000000000000002A",);
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"000000000000000000000034" = {
+			"isa" = "PBXResourcesBuildPhase";
+			"buildActionMask" = 2147483647;
+			"files" = ();
+			"runOnlyForDeploymentPostprocessing" = 0;
+		};
+		"00000000000000000000003C" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Debug";
+			"buildSettings" = {
+				"SDKROOT" = "macosx";
+				"MACOSX_DEPLOYMENT_TARGET" = "14.0";
+				"ARCHS" = "arm64";
+				"SWIFT_VERSION" = "6.0";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "$(OKOU_BUNDLE_IDENTIFIER)";
+				"OKOU_BUNDLE_IDENTIFIER" = "ai.okou.desktop";
+				"PRODUCT_NAME" = "$(OKOU_PRODUCT_NAME)";
+				"OKOU_PRODUCT_NAME" = "Okou";
+				"INFOPLIST_FILE" = "Resources/Info.plist";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"MARKETING_VERSION" = "$(OKOU_VERSION)";
+				"OKOU_VERSION" = "0.49.72";
+				"CURRENT_PROJECT_VERSION" = "$(OKOU_VERSION)";
+				"CODE_SIGN_ENTITLEMENTS" = "Resources/Entitlements.plist";
+				"ENABLE_HARDENED_RUNTIME" = "YES";
+				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)","@executable_path/../Frameworks",);
+				"SWIFT_OPTIMIZATION_LEVEL" = "-Onone";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "DEBUG";
+			};
+		};
+		"00000000000000000000003E" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Debug";
+			"buildSettings" = {
+				"CLANG_ENABLE_MODULES" = "YES";
+				"CLANG_ENABLE_OBJC_ARC" = "YES";
+			};
+		};
+		"00000000000000000000003D" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Release";
+			"buildSettings" = {
+				"SDKROOT" = "macosx";
+				"MACOSX_DEPLOYMENT_TARGET" = "14.0";
+				"ARCHS" = "arm64";
+				"SWIFT_VERSION" = "6.0";
+				"PRODUCT_BUNDLE_IDENTIFIER" = "$(OKOU_BUNDLE_IDENTIFIER)";
+				"OKOU_BUNDLE_IDENTIFIER" = "ai.okou.desktop";
+				"PRODUCT_NAME" = "$(OKOU_PRODUCT_NAME)";
+				"OKOU_PRODUCT_NAME" = "Okou";
+				"INFOPLIST_FILE" = "Resources/Info.plist";
+				"GENERATE_INFOPLIST_FILE" = "NO";
+				"MARKETING_VERSION" = "$(OKOU_VERSION)";
+				"OKOU_VERSION" = "0.49.72";
+				"CURRENT_PROJECT_VERSION" = "$(OKOU_VERSION)";
+				"CODE_SIGN_ENTITLEMENTS" = "Resources/Entitlements.plist";
+				"ENABLE_HARDENED_RUNTIME" = "YES";
+				"LD_RUNPATH_SEARCH_PATHS" = ("$(inherited)","@executable_path/../Frameworks",);
+				"SWIFT_OPTIMIZATION_LEVEL" = "-O";
+				"SWIFT_ACTIVE_COMPILATION_CONDITIONS" = "";
+			};
+		};
+		"00000000000000000000003F" = {
+			"isa" = "XCBuildConfiguration";
+			"name" = "Release";
+			"buildSettings" = {
+				"CLANG_ENABLE_MODULES" = "YES";
+				"CLANG_ENABLE_OBJC_ARC" = "YES";
+			};
+		};
+		"000000000000000000000040" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("00000000000000000000003C","00000000000000000000003D",);
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Release";
+		};
+		"000000000000000000000041" = {
+			"isa" = "XCConfigurationList";
+			"buildConfigurations" = ("00000000000000000000003E","00000000000000000000003F",);
+			"defaultConfigurationIsVisible" = 0;
+			"defaultConfigurationName" = "Release";
+		};
+		"00000000000000000000000A" = {
+			"isa" = "PBXNativeTarget";
+			"name" = "Okou";
+			"productName" = "Okou";
+			"productReference" = "000000000000000000000005";
+			"productType" = "com.apple.product-type.application";
+			"buildConfigurationList" = "000000000000000000000040";
+			"buildPhases" = ("000000000000000000000032","000000000000000000000033","000000000000000000000034",);
+			"buildRules" = ();
+			"dependencies" = ();
+			"fileSystemSynchronizedGroups" = ("000000000000000000000002","000000000000000000000004",);
+			"packageProductDependencies" = ("00000000000000000000001E","00000000000000000000001F","000000000000000000000020",);
+		};
+		"000000000000000000000001" = {
+			"isa" = "PBXProject";
+			"attributes" = {
+				"LastUpgradeCheck" = "2630";
+			};
+			"buildConfigurationList" = "000000000000000000000041";
+			"compatibilityVersion" = "Xcode 16.0";
+			"developmentRegion" = "en";
+			"knownRegions" = ("en","Base",);
+			"mainGroup" = "000000000000000000000007";
+			"productRefGroup" = "000000000000000000000006";
+			"projectDirPath" = "";
+			"projectRoot" = "";
+			"targets" = ("00000000000000000000000A",);
+			"packageReferences" = ("000000000000000000000014","000000000000000000000015","000000000000000000000016",);
+			"preferredProjectObjectVersion" = 77;
+		};
+	};
+	"rootObject" = "000000000000000000000001";
+}

@@ -4,10 +4,7 @@ import {
   type ConnectorCatalogArtifact,
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
 } from "../connector-catalog/artifacts/artifacts";
-import {
-  decodeConnectorCatalogSnapshot,
-  encodeConnectorCatalogSnapshot,
-} from "../connector-catalog/artifacts/loader";
+import { validateConnectorCatalogCandidateBytes } from "../connector-catalog/artifacts/loader";
 
 const CONNECTOR_SLUG = "token-security";
 const CATALOG_VERSION = "2026-09-03.exact-public-slug";
@@ -98,11 +95,13 @@ function decodeCatalog(
   artifact: ConnectorCatalogArtifact,
 ): ConnectorCatalogArtifact {
   const rawBytes = Buffer.from(`${JSON.stringify(artifact)}\n`);
-  return decodeConnectorCatalogSnapshot({
-    catalogGzip: encodeConnectorCatalogSnapshot(rawBytes),
-    catalogRawSize: rawBytes.byteLength,
-    catalogVersion: CATALOG_VERSION,
-    catalogDigest: `sha256:${createHash("sha256").update(rawBytes).digest("hex")}`,
+  return validateConnectorCatalogCandidateBytes({
+    pointer: {
+      catalogVersion: CATALOG_VERSION,
+      catalogKey: `connectors/v${SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION}/releases/${CATALOG_VERSION}/catalog.json`,
+      catalogDigest: `sha256:${createHash("sha256").update(rawBytes).digest("hex")}`,
+    },
+    rawBytes,
   }).artifact;
 }
 

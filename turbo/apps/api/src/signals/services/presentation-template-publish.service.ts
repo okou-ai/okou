@@ -18,6 +18,7 @@ import { badRequestMessage } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import {
+  checkTemplatePages,
   loadTemplatePackage$,
   resolveTemplateUploads$,
   type ResolvedUpload,
@@ -33,28 +34,6 @@ function checkSource(source: ResolvedUpload): string | null {
   }
   if (source.sizeBytes > MAX_PRESENTATION_TEMPLATE_SOURCE_BYTES) {
     return `The source deck must be ${MAX_PRESENTATION_TEMPLATE_SOURCE_BYTES.toString()} bytes or smaller`;
-  }
-  return null;
-}
-
-function checkPages(pages: readonly ResolvedUpload[]): string | null {
-  const wrongType = pages.findIndex((page) => {
-    return page.contentType !== PRESENTATION_TEMPLATE_PAGE_CONTENT_TYPE;
-  });
-  if (wrongType !== -1) {
-    return `Page ${(wrongType + 1).toString()} must be a ${PRESENTATION_TEMPLATE_PAGE_CONTENT_TYPE}`;
-  }
-  const oversized = pages.findIndex((page) => {
-    return page.sizeBytes > MAX_PRESENTATION_TEMPLATE_PAGE_BYTES;
-  });
-  if (oversized !== -1) {
-    return `Page ${(oversized + 1).toString()} must be no larger than ${MAX_PRESENTATION_TEMPLATE_PAGE_BYTES.toString()} bytes`;
-  }
-  const total = pages.reduce((sum, page) => {
-    return sum + page.sizeBytes;
-  }, 0);
-  if (total > MAX_PRESENTATION_TEMPLATE_TOTAL_PAGE_BYTES) {
-    return `Page images must total ${MAX_PRESENTATION_TEMPLATE_TOTAL_PAGE_BYTES.toString()} bytes or fewer`;
   }
   return null;
 }
@@ -122,7 +101,11 @@ export const publishPresentationTemplate$ = command(
     if (sourceError) {
       return rejected(sourceError);
     }
-    const pageError = checkPages(pages);
+    const pageError = checkTemplatePages(pages, {
+      contentType: PRESENTATION_TEMPLATE_PAGE_CONTENT_TYPE,
+      maxPageBytes: MAX_PRESENTATION_TEMPLATE_PAGE_BYTES,
+      maxTotalBytes: MAX_PRESENTATION_TEMPLATE_TOTAL_PAGE_BYTES,
+    });
     if (pageError) {
       return rejected(pageError);
     }
@@ -167,9 +150,7 @@ export const publishPresentationTemplate$ = command(
       {
         orgId: args.orgId,
         storageName: getPresentationTemplateStorageName(created.id),
-        files: files.map((file) => {
-          return { path: file.path, content: file.content };
-        }),
+        files,
       },
       signal,
     );

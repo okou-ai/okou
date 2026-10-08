@@ -15,9 +15,7 @@ export function queueResponse(
 ): QueueResponse {
   return {
     concurrency,
-    queue: [],
     runningTasks: [],
-    estimatedTimePerRun: 30_000,
   };
 }
 

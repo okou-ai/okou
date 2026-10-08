@@ -18,7 +18,7 @@ import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRouteMocks } from "./helpers/route-test";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 const runs = createRunsApi(context);
@@ -33,7 +33,9 @@ async function runActor() {
   runs.acceptTelemetryIngest();
   const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(actor, {
     displayName: "Builtin MCP Agent",
   });
@@ -79,10 +81,9 @@ describe("builtin MCP Run admission", () => {
     if (!admittedAccount) {
       throw new Error("Expected the admitted manual MCP account");
     }
-    const run = await runs.createRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId,
       prompt: "Use the admitted builtin MCP tools",
-      modelProvider: "anthropic-api-key",
     });
 
     await connectors.connectManualGrant(

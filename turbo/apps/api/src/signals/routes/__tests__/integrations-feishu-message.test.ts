@@ -107,7 +107,7 @@ interface FeishuTestActor extends ApiTestUser {
   readonly orgRole: "org:admin";
 }
 
-async function setupFeishuInstallation(
+async function createOnboardedFeishuInstallation(
   actorOverride?: FeishuTestActor,
   platform: FeishuPlatform = "feishu",
 ): Promise<{
@@ -126,10 +126,15 @@ async function setupFeishuInstallation(
     [FEISHU_PLATFORMS[platform].featureSwitch]: true,
   });
   authOrgApi.acceptAgentStorageWrites();
-  const agent = await authOrgApi.createAgent(actor, {
+  const bootstrap = await authOrgApi.bootstrapLimitedFreeOnboarding(actor, {
     displayName: "Feishu CLI agent",
-    visibility: "public",
   });
+  const agent = await authOrgApi.updateAgentMetadata(
+    actor,
+    bootstrap.body.agentId,
+    { visibility: "public" },
+  );
+  await runsApi.grantProEntitlement(actor);
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   const client = setupApp({ context, routes: feishuConnectRoutes })(
     platform === "lark" ? larkConnectContract : feishuConnectContract,
@@ -141,7 +146,6 @@ async function setupFeishuInstallation(
         appId: `cli_${randomUUID()}`,
         appSecret: "feishu-cli-secret",
         verificationToken: `verification_${randomUUID()}`,
-        defaultAgentId: agent.agentId,
         createNew: true,
       },
     }),
@@ -156,7 +160,6 @@ async function setupFeishuInstallation(
       headers: { authorization: "Bearer clerk-session" },
       params: { installationId },
       body: {
-        defaultAgentId: agent.agentId,
         setupCompleted: true,
       },
     }),
@@ -336,7 +339,7 @@ describe("POST /api/integrations/feishu/message", () => {
   });
 
   it("sends chat, current-user, and threaded reply messages", async () => {
-    const { actor, installationId } = await setupFeishuInstallation();
+    const { actor, installationId } = await createOnboardedFeishuInstallation();
     await connectCurrentFeishuUser(actor);
     captured = [];
     const token = okouToken(actor);
@@ -421,7 +424,7 @@ describe("POST /api/integrations/feishu/message", () => {
   });
 
   it("maps Feishu request and response failures to contract errors", async () => {
-    const { actor, installationId } = await setupFeishuInstallation();
+    const { actor, installationId } = await createOnboardedFeishuInstallation();
     let requestCount = 0;
     server.use(
       http.post("https://open.feishu.cn/open-apis/im/v1/messages", () => {
@@ -463,7 +466,7 @@ describe("POST /api/integrations/feishu/message", () => {
   it.each(["feishu", "lark"] as const)(
     "downloads a resource from a %s message",
     async (platform) => {
-      const { actor, installationId } = await setupFeishuInstallation(
+      const { actor, installationId } = await createOnboardedFeishuInstallation(
         undefined,
         platform,
       );
@@ -522,26 +525,17 @@ describe("POST /api/integrations/feishu/message", () => {
   it.each(["feishu", "lark"] as const)(
     "uploads a stored file and sends it as a %s message",
     async (platform) => {
-      const { actor, agentId, installationId } = await setupFeishuInstallation(
-        undefined,
-        platform,
-      );
+      const { actor, agentId, installationId } =
+        await createOnboardedFeishuInstallation(undefined, platform);
       await runsApi.grantProEntitlement(actor);
-      await runsApi.ensureOrgModelProvider(actor);
+      await runsApi.ensurePersonalSubscriptionModel(actor);
       const runnerGroup = runsApi.configureRunnerGroup();
       await runsApi.heartbeatRunner(runnerGroup);
-      const sent = await chatApi.requestSendEvent(
-        actor,
-        {
-          agentId,
-          prompt: "Create a run for Feishu file upload completion",
-        },
-        [201],
-      );
-      if (sent.status !== 201 || sent.body.runId === null) {
-        throw new Error("Expected chat send to create a run for Feishu upload");
-      }
-      const token = okouToken({ ...actor, platform, runId: sent.body.runId });
+      const sent = await chatApi.sendAndLaunch(actor, {
+        agentId,
+        prompt: "Create a run for Feishu file upload completion",
+      });
+      const token = okouToken({ ...actor, platform, runId: sent.runId });
       const content = Buffer.from("feishu upload bytes");
       context.mocks.s3.getSignedUrl.mockResolvedValue(
         "https://storage.test/feishu-upload",
@@ -652,13 +646,10 @@ describe("POST /api/integrations/feishu/message", () => {
           replyInThread: false,
         },
       ]);
-      const artifacts = await chatApi.listThreadArtifacts(
-        actor,
-        sent.body.threadId,
-      );
+      const artifacts = await chatApi.listThreadArtifacts(actor, sent.threadId);
       const files =
         artifacts.runs.find((run) => {
-          return run.runId === sent.body.runId;
+          return run.runId === sent.runId;
         })?.files ?? [];
       expect(files).toHaveLength(1);
       expect(files[0]).toMatchObject({

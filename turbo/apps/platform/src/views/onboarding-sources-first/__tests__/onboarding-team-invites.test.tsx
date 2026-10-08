@@ -1,6 +1,6 @@
 import { orgInviteContract } from "@okouai/api-contracts/contracts/org-member-routes";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -19,12 +19,8 @@ import {
 
 const context = testContext();
 
-const SOURCES_FIRST_ON = {
-  [FeatureSwitchKey.OnboardingSourcesFirst]: true,
-} as const;
-
-const TEAM_QUESTION = "Bring the people who do this work with you.";
-const EXPERIENCE_QUESTION = "Have you used Codex or Claude Code?";
+const TEAM_QUESTION = "Make Okou useful to your whole team";
+const EXPERIENCE_QUESTION = "How would you like to start with Okou?";
 const TEAMMATE = "rowan@company.com";
 
 /** One connected source, which every step after the source step requires. */
@@ -56,7 +52,6 @@ async function openTeamStep(): Promise<void> {
     context,
     locale: "en-US",
     path: ROUTES.onboardingTeam,
-    featureSwitches: SOURCES_FIRST_ON,
   });
 
   await expect(
@@ -65,7 +60,7 @@ async function openTeamStep(): Promise<void> {
 }
 
 async function typeInvite(email: string): Promise<void> {
-  await fill(screen.getByLabelText("Teammate’s email"), email);
+  await fill(screen.getByLabelText("Team member’s email"), email);
 }
 
 test("An invited teammate is only marked invited once the API accepts the address", async () => {
@@ -84,10 +79,12 @@ test("An invited teammate is only marked invited once the API accepts the addres
   await expect(screen.findByText("Sending…")).resolves.toBeInTheDocument();
   expect(screen.getByText(TEAMMATE)).toBeInTheDocument();
   expect(screen.queryByText("Invited")).not.toBeInTheDocument();
+  expect(getButtonByName("Continue")).toBeDisabled();
 
   sent.resolve();
 
   await expect(screen.findByText("Invited")).resolves.toBeInTheDocument();
+  expect(getButtonByName("Continue")).toBeEnabled();
   // The workspace invites a member, and no usage pack keeps onboarding clear
   // of the seat-purchase branch.
   expect(requested[0]).toStrictEqual({ email: TEAMMATE, role: "member" });
@@ -112,8 +109,10 @@ test("A refused address shows why, and the step continues anyway", async () => {
   ).resolves.toBeInTheDocument();
   expect(screen.getByText("Not sent")).toBeInTheDocument();
   expect(screen.queryByText("Invited")).not.toBeInTheDocument();
+  // A refused invite completes nothing, so only Not now leads on.
+  expect(getButtonByName("Continue")).toBeDisabled();
 
-  click(getButtonByName("Continue"));
+  click(getButtonByName("Not now"));
 
   await expect(
     screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
@@ -125,6 +124,8 @@ test("The step can be left without inviting anyone", async () => {
   await openTeamStep();
 
   expect(getButtonByName("Send invite")).toBeDisabled();
+  // Continue waits for an invite; Not now is the way on without one.
+  expect(getButtonByName("Continue")).toBeDisabled();
 
   click(getButtonByName("Not now"));
 
@@ -132,4 +133,47 @@ test("The step can be left without inviting anyone", async () => {
     screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe(ROUTES.onboardingExperience);
+});
+
+test("A malformed address cannot be sent, and the step says why in the reader's language", async () => {
+  const requested: string[] = [];
+  context.mocks.api(orgInviteContract.invite, ({ body, respond }) => {
+    requested.push(body.email);
+    return respond(200, { message: `Invitation sent to ${body.email}` });
+  });
+  await openTeamStep();
+
+  const field = screen.getByLabelText("Team member’s email");
+  await typeInvite("not-an-email");
+
+  expect(getButtonByName("Send invite")).toBeDisabled();
+  // Still typing: the address is not judged yet.
+  expect(
+    screen.queryByText("Enter a valid email address"),
+  ).not.toBeInTheDocument();
+
+  await userEvent.click(field);
+  field.blur();
+
+  await expect(
+    screen.findByText("Enter a valid email address"),
+  ).resolves.toBeInTheDocument();
+  expect(field).toHaveAccessibleDescription("Enter a valid email address");
+  expect(field).toBeInvalid();
+  expect(getButtonByName("Send invite")).toBeDisabled();
+
+  // Correcting it lifts the hint and lets the address go.
+  await typeInvite(TEAMMATE);
+
+  expect(
+    screen.queryByText("Enter a valid email address"),
+  ).not.toBeInTheDocument();
+  expect(field).toBeValid();
+  click(getButtonByName("Send invite"));
+
+  await expect(screen.findByText("Invited")).resolves.toBeInTheDocument();
+  // The malformed address never reached the API, so no raw refusal is shown.
+  expect(requested).toStrictEqual([TEAMMATE]);
+  expect(screen.queryByText("Not sent")).not.toBeInTheDocument();
+  expect(screen.queryByText(/Invalid email address/)).not.toBeInTheDocument();
 });

@@ -10,11 +10,8 @@ function defaultOutPath(fileId: string): string {
 
 export const downloadFileCommand = new Command()
   .name("download-file")
-  .description("Download an AgentPhone media file by id")
-  .argument(
-    "<file-id>",
-    "AgentPhone message id from an [AgentPhone file] block",
-  )
+  .description("Download a phone media file by id")
+  .argument("<file-id>", "Phone message id from a [Phone file] block")
   .option(
     "-o, --out <path>",
     "Output path for the downloaded file (default: /tmp/phone-<file-id>)",
@@ -32,9 +29,7 @@ Output:
 
 How to read the downloaded file:
   - Images (png/jpg/gif/webp/svg): open the file path with your image viewing tool
-  - Videos (mp4/mov/webm): transcribe audio first with
-      okou video transcribe --url <download-url>
-    or extract frames with
+  - Videos (mp4/mov/webm): extract frames with
       ffmpeg -i <path> -vf "fps=1" -q:v 2 /tmp/<file-id>_frame_%03d.jpg
   - PDF/text/csv/json/markdown: read the file directly`,
   )

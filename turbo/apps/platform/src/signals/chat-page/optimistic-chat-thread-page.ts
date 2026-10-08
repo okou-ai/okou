@@ -1,63 +1,62 @@
-import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import { command, computed } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import type { ImageModel } from "@okouai/core/image-model-catalog";
-import type { VideoModel } from "@okouai/core/video-model-catalog";
+import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
   chatThreadsContract,
-  type ChatRunVideoOptionsRequest,
   type GenerationTemplateRequest,
   type ResolvedAttachFile,
   type UserMessageDocument,
   type UserMessageInputDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ConnectorAccountSelection } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { OrgModelPoliciesResponse } from "@okouai/api-contracts/contracts/model-providers";
+import type { AvailableRunModelsResponse } from "@okouai/api-contracts/contracts/model-providers";
+import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { UserModelPreferenceResponse } from "@okouai/api-contracts/contracts/user-model-preference";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { toast } from "@okouai/ui/components/ui/sonner";
+import { command, computed } from "ccstate";
+import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
-import { startChatNavigationTiming$ } from "../../lib/posthog.ts";
 import { nowDate } from "../../lib/time.ts";
-import { apiClient$, type ApiClientFactory } from "../api-client.ts";
+import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
 import { currentChatThreadId$ } from "../agent-chat.ts";
-import { detachedNavigateTo$, searchParams$ } from "../route.ts";
-import { loadRightThread$ } from "./chat-thread-panes.ts";
-import { talkDraft$, type DraftSignals } from "../okou-page/chat-draft.ts";
+import { apiClient$, type ApiClientFactory } from "../api-client.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
+import { modelCatalog$, type ModelCatalog } from "../external/model-catalog.ts";
+import { availableRunModels$ } from "../external/run-models.ts";
+import { userModelPreference$ } from "../external/user-model-preference.ts";
+import { logger } from "../log.ts";
 import { clearAgentDraftById$ } from "../okou-page/agent-draft.ts";
-import { prepareUserMessageFromDraft$ } from "./resolve-draft-attachments.ts";
+import { talkDraft$, type DraftSignals } from "../okou-page/chat-draft.ts";
+import { chatPageModelSelection$ } from "../okou-page/chat-page.ts";
+import {
+  rememberComposerTaskForThread$,
+  type ComposerTaskSelection,
+} from "../okou-page/composer-task-handoff.ts";
+import {
+  isCodexFastModeAvailableForSelection,
+  resolveDefaultModelSelection,
+} from "../okou-page/model-default-selection.ts";
+import { selectedModelAvailable$ } from "../okou-page/model-first-personal-oauth.ts";
+import {
+  textToMessageDocument,
+  type EditorDocumentSnapshot,
+} from "../okou-page/user-message-document-codec.ts";
+import { detachedNavigateTo$, searchParams$ } from "../route.ts";
+import { sendChatEvent } from "./chat-event-api.ts";
+import { withOptimisticAgentRunSource } from "./chat-event-signals.ts";
+import type { ChatForwardContext } from "./chat-forward.ts";
+import { registerOptimisticChatThreadEvent$ } from "./chat-thread-event-sourcing.ts";
+import { loadRightThread$ } from "./chat-thread-panes.ts";
+import {
+  apiServiceTierFromSelection,
+  runOptionsFromModelProviderSelection,
+  withSelectedModelAnnotation,
+} from "./model-selection-request.ts";
 import {
   appendOptimisticChatEvent$,
   createOptimisticChatEventEntry,
   type OptimisticChatEventInput,
 } from "./optimistic-chat-events.ts";
-import { sendChatEvent } from "./chat-event-api.ts";
-import {
-  isCodexFastModeAvailableForSelection,
-  resolveModelFirstUserDefaultSelection,
-} from "../okou-page/model-default-selection.ts";
-import { orgModelPolicies$ } from "../external/org-model-policies.ts";
-import { userModelPreference$ } from "../external/user-model-preference.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
-import { logger } from "../log.ts";
-import {
-  runOptionsFromModelProviderSelection,
-  withSelectedModelAnnotation,
-} from "./model-selection-request.ts";
-import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
-import { registerOptimisticChatThreadEvent$ } from "./chat-thread-event-sourcing.ts";
-import { chatPageModelSelection$ } from "../okou-page/chat-page.ts";
-import { selectedModelAvailable$ } from "../okou-page/model-first-personal-oauth.ts";
-import { toast } from "@okouai/ui/components/ui/sonner";
-import { i18n } from "../../i18n/index.ts";
-import {
-  textToMessageDocument,
-  type EditorDocumentSnapshot,
-} from "../okou-page/user-message-document-codec.ts";
-import {
-  rememberComposerTaskForThread$,
-  type ComposerTaskSelection,
-} from "../okou-page/composer-task-handoff.ts";
-import type { ChatForwardContext } from "./chat-forward.ts";
-import { withOptimisticAgentRunSource } from "./chat-event-signals.ts";
+import { prepareUserMessageFromDraft$ } from "./resolve-draft-attachments.ts";
 
 export type NewChatThreadPane = "main" | "sidebar";
 
@@ -80,20 +79,13 @@ interface SendNewThreadMessageRequest {
   editorDocument?: EditorDocumentSnapshot;
   computerUseHostId?: string | null;
   cloudBrowserEnabled?: boolean;
-  imageModel?: ImageModel;
-  videoModel?: VideoModel;
-  videoRunOptions?: ChatRunVideoOptionsRequest;
   /** What the composer was set to make, for the thread this send creates. */
   composerTask?: ComposerTaskSelection;
   routeSearchParams?: URLSearchParams;
   forward?: ChatForwardContext;
   onOptimisticSend?: () => void;
   connectorSelections?: readonly ConnectorAccountSelection[];
-}
-
-interface SendNewThreadMessageResult {
-  threadId: string;
-  runId: string | null;
+  initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
 }
 
 interface PreparedNewThreadPayload {
@@ -146,7 +138,7 @@ function annotatedMessagesForNewThread(
   const annotatedUserMessage = withSelectedModelAnnotation(
     userMessage,
     modelSelection.selectedModel,
-    modelSelection.codexServiceTier === "fast" ? "priority" : undefined,
+    apiServiceTierFromSelection(modelSelection) ?? undefined,
   );
   return {
     annotatedUserMessage,
@@ -189,7 +181,6 @@ function newThreadSendBody({
   userMessage,
   computerUseHostId,
   cloudBrowserEnabled,
-  videoRunOptions,
   sourceRunId,
 }: {
   agentId: string;
@@ -201,13 +192,9 @@ function newThreadSendBody({
   userMessage: UserMessageDocument;
   computerUseHostId?: string | null;
   cloudBrowserEnabled?: boolean;
-  videoRunOptions?: ChatRunVideoOptionsRequest;
   sourceRunId?: string;
 }) {
-  const runOptions = runOptionsFromModelProviderSelection(
-    modelSelection,
-    videoRunOptions,
-  );
+  const runOptions = runOptionsFromModelProviderSelection(modelSelection);
   return {
     agentId,
     prompt: prepared.prompt,
@@ -226,36 +213,42 @@ function newThreadSendBody({
 function resolveNewThreadModelSelection(
   modelSelection: ModelProviderSelection | null,
   args: {
-    readonly policies: OrgModelPoliciesResponse | null | undefined;
+    readonly models: AvailableRunModelsResponse | null | undefined;
     readonly userPreference: UserModelPreferenceResponse | null | undefined;
+    readonly catalog: ModelCatalog;
   },
 ): ModelProviderSelection | null {
   if (modelSelection) {
     return modelSelection.codexServiceTier === "fast" &&
       !isCodexFastModeAvailableForSelection({
-        policies: args.policies,
+        models: args.models,
         selectedModel: modelSelection.selectedModel,
       })
       ? { ...modelSelection, codexServiceTier: undefined }
       : modelSelection;
   }
-  return resolveModelFirstUserDefaultSelection({
+  return resolveDefaultModelSelection({
     userPreference: args.userPreference,
-    policies: args.policies,
+    models: args.models,
+    catalog: args.catalog,
   });
 }
 
 const resolveCurrentNewThreadModelSelection$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const [modelSelection, policies, userPreference] = await Promise.all([
-      get(chatPageModelSelection$),
-      get(orgModelPolicies$),
-      get(userModelPreference$),
-    ]);
+    const [modelSelection, models, userPreference, catalog] = await Promise.all(
+      [
+        get(chatPageModelSelection$),
+        get(availableRunModels$),
+        get(userModelPreference$),
+        get(modelCatalog$),
+      ],
+    );
     signal.throwIfAborted();
     const resolved = resolveNewThreadModelSelection(modelSelection, {
-      policies,
+      models,
       userPreference,
+      catalog,
     });
     if (
       resolved &&
@@ -339,8 +332,6 @@ const mintOptimisticThreadWithEvent$ = command(
       readonly modelSettings: ModelSettings;
       readonly computerUseHostId: string | null;
       readonly cloudBrowserEnabled: boolean;
-      readonly selectedImageModel: ImageModel | null;
-      readonly selectedVideoModel: VideoModel | null;
     },
     signal: AbortSignal,
   ): void => {
@@ -359,8 +350,6 @@ const mintOptimisticThreadWithEvent$ = command(
       serviceTier: args.serviceTier,
       computerUseHostId: args.computerUseHostId,
       cloudBrowserEnabled: args.cloudBrowserEnabled,
-      selectedVideoModel: args.selectedVideoModel,
-      selectedImageModel: args.selectedImageModel,
     });
   },
 );
@@ -373,15 +362,16 @@ async function createChatThread(
     readonly clientThreadId: string;
     readonly eventId: string;
     readonly modelSelection: ModelProviderSelection;
-    readonly imageModel?: ImageModel;
-    readonly videoModel?: VideoModel;
     readonly connectorSelections?: readonly ConnectorAccountSelection[];
+    readonly initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
   },
   signal: AbortSignal,
 ): Promise<void> {
+  const { selectedModel } = args.modelSelection;
   const selectedEffort =
-    args.modelSelection.modelSettings?.[args.modelSelection.selectedModel]
-      ?.effort;
+    selectedModel === null
+      ? undefined
+      : args.modelSelection.modelSettings?.[selectedModel]?.effort;
   const client = args.createClient(chatThreadsContract);
   await accept(
     client.create({
@@ -389,17 +379,21 @@ async function createChatThread(
         agentId: args.agentId,
         clientThreadId: args.clientThreadId,
         eventId: args.eventId,
-        model: args.modelSelection.selectedModel,
-        serviceTier:
-          args.modelSelection.codexServiceTier === "fast" ? "priority" : null,
+        model: selectedModel,
+        serviceTier: apiServiceTierFromSelection(args.modelSelection),
         ...(selectedEffort === undefined
           ? {}
           : { reasoningEffort: selectedEffort }),
-        ...(args.imageModel ? { imageModel: args.imageModel } : {}),
-        ...(args.videoModel ? { videoModel: args.videoModel } : {}),
         ...(args.title ? { title: args.title } : {}),
         ...(args.connectorSelections?.length
           ? { connectorSelections: [...args.connectorSelections] }
+          : {}),
+        ...(args.initialRemoteAccessOverrides?.length
+          ? {
+              initialRemoteAccessOverrides: [
+                ...args.initialRemoteAccessOverrides,
+              ],
+            }
           : {}),
       },
       fetchOptions: { signal },
@@ -420,20 +414,20 @@ const startNewChatThreadCreate$ = command(
   }> => {
     const threadId = crypto.randomUUID();
     const eventId = crypto.randomUUID();
-    const policies = await get(orgModelPolicies$);
+    const models = await get(availableRunModels$);
     signal.throwIfAborted();
     const userPreference = await get(userModelPreference$);
     signal.throwIfAborted();
+    const catalog = await get(modelCatalog$);
+    signal.throwIfAborted();
     const modelSelection = resolveNewThreadModelSelection(null, {
-      policies,
+      models,
       userPreference,
+      catalog,
     });
     if (!modelSelection) {
       throw new Error("A model selection is required");
     }
-    // A blank thread carries no image or video model pin, so it follows the
-    // member's live default: changing that default later updates every thread
-    // that was never explicitly repinned, matching the run-model behavior.
     signal.throwIfAborted();
     await set(
       mintOptimisticThreadWithEvent$,
@@ -443,12 +437,9 @@ const startNewChatThreadCreate$ = command(
         agentId,
         selectedModel: modelSelection.selectedModel,
         modelSettings: modelSelection.modelSettings ?? {},
-        serviceTier:
-          modelSelection.codexServiceTier === "fast" ? "priority" : null,
+        serviceTier: apiServiceTierFromSelection(modelSelection),
         computerUseHostId: null,
         cloudBrowserEnabled: false,
-        selectedImageModel: null,
-        selectedVideoModel: null,
       },
       signal,
     );
@@ -514,7 +505,7 @@ const sendNewThreadMessage$ = command(
     signal: AbortSignal,
   ): Promise<{
     readonly threadId: string;
-    readonly sendResult: Promise<SendNewThreadMessageResult>;
+    readonly sendResult: Promise<void>;
   } | null> => {
     const { agentId, prompt } = request;
     const { computerUseHostId, cloudBrowserEnabled } = request;
@@ -536,10 +527,6 @@ const sendNewThreadMessage$ = command(
       return null;
     }
     const features = get(featureSwitch$);
-    // Pin only an explicit per-thread pick; an unpinned (null) thread follows
-    // the member's live default, so changing the default later updates it.
-    const imageModel = request.imageModel;
-    const videoModel = request.videoModel;
     const { annotatedUserMessage, optimisticUserMessage } =
       annotatedMessagesForNewThread(
         request,
@@ -567,14 +554,9 @@ const sendNewThreadMessage$ = command(
         agentId,
         selectedModel: resolvedModelSelection.selectedModel,
         modelSettings: resolvedModelSelection.modelSettings ?? {},
-        serviceTier:
-          resolvedModelSelection.codexServiceTier === "fast"
-            ? "priority"
-            : null,
+        serviceTier: apiServiceTierFromSelection(resolvedModelSelection),
         computerUseHostId: computerUseHostId ?? null,
         cloudBrowserEnabled: cloudBrowserEnabled ?? false,
-        selectedImageModel: imageModel ?? null,
-        selectedVideoModel: videoModel ?? null,
       },
       signal,
     );
@@ -597,9 +579,8 @@ const sendNewThreadMessage$ = command(
         clientThreadId: threadId,
         eventId: chatThreadEventId,
         modelSelection: resolvedModelSelection,
-        imageModel,
-        videoModel,
         connectorSelections: request.connectorSelections,
+        initialRemoteAccessOverrides: request.initialRemoteAccessOverrides,
       },
       signal,
     );
@@ -614,19 +595,14 @@ const sendNewThreadMessage$ = command(
       userMessage: annotatedUserMessage,
       computerUseHostId,
       cloudBrowserEnabled,
-      videoRunOptions: request.videoRunOptions,
       sourceRunId: request.forward?.runId,
     });
-    const sendResult = (async (): Promise<SendNewThreadMessageResult> => {
+    const sendResult = (async (): Promise<void> => {
       await Promise.all([clearDraftResult, createResult]);
       signal.throwIfAborted();
-      const result = await sendChatEvent(createClient, sendBody, signal);
+      await sendChatEvent(createClient, sendBody, signal);
       signal.throwIfAborted();
-      L.debug("sendNewThreadMessage$ POST chat/events 201", {
-        threadId: result.threadId,
-        runId: result.runId,
-      });
-      return { threadId: result.threadId, runId: result.runId };
+      L.debug("sendNewThreadMessage$ POST chat/events 201", { threadId });
     })();
     return { threadId, sendResult };
   },
@@ -643,7 +619,6 @@ export const sendNewThread$ = command(
       return false;
     }
 
-    set(startChatNavigationTiming$);
     await set(
       routeChatThread$,
       {

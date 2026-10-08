@@ -146,12 +146,18 @@ fn run_scenario(scenario: MockScenario<'_>, prompt: &str, output_format: &str) -
         MockScenario::AppendPromptTransport(payload) => {
             fixtures::run_append_prompt_transport_scenario(output_format, payload)
         }
-        MockScenario::ParallelShellToolOom => {
-            fixtures::run_parallel_shell_tool_oom_scenario(output_format, false)
-        }
-        MockScenario::GuestWideToolOom => {
-            fixtures::run_parallel_shell_tool_oom_scenario(output_format, true)
-        }
+        MockScenario::ParallelShellToolOom => fixtures::run_parallel_shell_tool_oom_scenario(
+            output_format,
+            fixtures::ToolOomMode::WorkloadLimit,
+        ),
+        MockScenario::GuestWideToolOom => fixtures::run_parallel_shell_tool_oom_scenario(
+            output_format,
+            fixtures::ToolOomMode::GuestPressure,
+        ),
+        MockScenario::GuestWideToolOomInjected => fixtures::run_parallel_shell_tool_oom_scenario(
+            output_format,
+            fixtures::ToolOomMode::GuestInjected,
+        ),
         MockScenario::RuntimeOnlyOom => fixtures::run_runtime_only_oom_scenario(output_format),
         MockScenario::Shell => shell_execution::run(prompt, output_format),
     }

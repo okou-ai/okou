@@ -13,7 +13,7 @@ use serde_json::json;
 use std::time::Duration;
 
 const RUN_ID: &str = "codex-app-server-backend-active-input-no-turn-test";
-const DELIVERY_ID: &str = "34919e72-7fb3-4b8f-b2ad-9a5e2e1ba0a6";
+const EVENT_ID: &str = "34919e72-7fb3-4b8f-b2ad-9a5e2e1ba0a6";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn codex_app_server_backend_fails_visible_when_no_active_turn()
@@ -37,25 +37,21 @@ async fn codex_app_server_backend_fails_visible_when_no_active_turn()
     let runtime = common::guest_runtime_from_process_env()?;
     let _run_files = common::RunFilesGuard::new_for_paths(&runtime.paths);
 
-    let receipt = server.mock(|when, then| {
+    let steered = server.mock(|when, then| {
         when.method(POST).path(format!(
-            "/api/runners/runs/{RUN_ID}/active-inputs/deliveries/{DELIVERY_ID}/receipt"
+            "/api/runners/runs/{RUN_ID}/steerable-inputs/{EVENT_ID}/steered"
         ));
         then.status(200)
             .header("Content-Type", "application/json")
-            .json_body(json!({ "outcome": "delivered" }));
+            .json_body(json!({ "outcome": "steered" }));
     });
-    let journal_path = guest_contracts::runtime_paths::active_input_receipt_journal_file(
-        runtime.paths.runtime_dir(),
-    );
-    let active_input = ActiveInputRuntime::new_with_receipts(
+    let active_input = ActiveInputRuntime::new_enabled(
         &runtime.config.run_id,
         &runtime.config.prompt,
-        &journal_path,
         HttpClient::with_api_config(server.base_url(), "test-token", "", RUN_ID, Duration::ZERO)?,
-    )?;
+    );
     let payload = guest_contracts::active_input::encode_active_input(
-        DELIVERY_ID,
+        EVENT_ID,
         "no-active-turn follow-up prompt",
     )?;
     assert_eq!(
@@ -82,14 +78,7 @@ async fn codex_app_server_backend_fails_visible_when_no_active_turn()
         message.contains("active input steer failed") && message.contains("no active turn"),
         "unexpected error: {message}"
     );
-    receipt.assert_calls(0);
-    assert!(
-        guest_contracts::active_input_receipts::read_active_input_receipt_journal(
-            &journal_path,
-            RUN_ID,
-        )?
-        .is_empty()
-    );
+    steered.assert_calls(0);
 
     Ok(())
 }

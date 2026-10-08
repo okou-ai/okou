@@ -1,10 +1,8 @@
 import { useGet, useSet } from "ccstate-react";
 import { Check, SwatchBook } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cn } from "@okouai/ui";
 
-import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import {
   colorTheme$,
@@ -84,14 +82,9 @@ function useColorThemeOptions(): readonly ColorThemeOption[] {
 
 export function ColorThemeSettings() {
   const { t } = useTranslation();
-  const featureSwitches = useGet(featureSwitch$);
   const colorTheme = useGet(colorTheme$);
   const updateColorTheme = useUpdateColorTheme();
   const options = useColorThemeOptions();
-
-  if (!featureSwitches[FeatureSwitchKey.GradientColorThemes]) {
-    return null;
-  }
 
   return (
     <div className="flex flex-col gap-4 rounded-xl bg-card p-4 border border-surface-border">

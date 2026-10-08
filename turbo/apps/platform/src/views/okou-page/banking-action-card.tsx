@@ -879,9 +879,7 @@ function BankingAccountOption({
       <Checkbox
         checked={checked}
         disabled={busy}
-        onCheckedChange={(next) => {
-          onCheckedChange(next === true);
-        }}
+        onCheckedChange={onCheckedChange}
       />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm text-foreground">{name}</span>

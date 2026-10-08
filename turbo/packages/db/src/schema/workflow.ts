@@ -31,6 +31,8 @@ export type { WorkflowAutomationEventConfig } from "@okouai/db/jsonb-contracts/w
  */
 export type WorkflowVisibility = "public" | "private";
 export type OfficialWorkflowInstallationState = "installing" | "installed";
+/** The local tool a skill-imported workflow came from. */
+export type WorkflowImportSource = "claudeCode" | "codex";
 export type OfficialWorkflowReconciliationStatus =
   | "current"
   | "reconciling"
@@ -72,6 +74,11 @@ export const workflows = pgTable(
     officialInstallationState: varchar("official_installation_state", {
       length: 32,
     }).$type<OfficialWorkflowInstallationState>(),
+    // Set once by the skill import when it creates the workflow; null for a
+    // workflow made in Okou or imported by a session that named no tool.
+    importSource: varchar("import_source", {
+      length: 32,
+    }).$type<WorkflowImportSource>(),
     createdBy: text("created_by").notNull(),
     updatedBy: text("updated_by").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -252,10 +259,14 @@ export const workflowAutomations = pgTable(
     timezone: varchar("timezone", { length: 50 }).default("UTC").notNull(),
     enabled: boolean("enabled").default(true).notNull(),
     nextRunAt: timestamp("next_run_at"),
+    /** Retry gate for the exact unclaimed anchor; a new anchor bypasses it. */
+    deferredAnchorAt: timestamp("deferred_anchor_at"),
+    deferredUntil: timestamp("deferred_until"),
+    deferredReason: varchar("deferred_reason", { length: 32 }),
     lastRunAt: timestamp("last_run_at"),
     lastRunId: uuid("last_run_id"),
     consecutiveFailures: integer("consecutive_failures").notNull().default(0),
-    autonomyBudget: integer("autonomy_budget").notNull().default(10),
+    autonomyBudget: integer("autonomy_budget").notNull().default(32),
     officialBlueprintKey: varchar("official_blueprint_key", { length: 64 }),
     officialAppliedFingerprint: varchar("official_applied_fingerprint", {
       length: 64,
@@ -282,6 +293,21 @@ export const workflowAutomations = pgTable(
       index("idx_workflow_automations_next_run")
         .on(table.nextRunAt)
         .where(sql`enabled = true`),
+      index("idx_workflow_automations_deferred_retry")
+        .on(table.deferredUntil, table.nextRunAt)
+        .where(sql`${table.deferredUntil} IS NOT NULL`),
+      check(
+        "workflow_automations_deferral_pair_check",
+        sql`(
+          ${table.deferredAnchorAt} IS NULL
+          AND ${table.deferredUntil} IS NULL
+          AND ${table.deferredReason} IS NULL
+        ) OR (
+          ${table.deferredAnchorAt} IS NOT NULL
+          AND ${table.deferredUntil} IS NOT NULL
+          AND ${table.deferredReason} IS NOT NULL
+        )`,
+      ),
       // Each automation kind carries exactly its own config.
       check(
         "workflow_automations_schedule_config_check",
@@ -307,7 +333,7 @@ export const workflowAutomations = pgTable(
       ),
       check(
         "workflow_automations_autonomy_budget_check",
-        sql`${table.autonomyBudget} BETWEEN 0 AND 10`,
+        sql`${table.autonomyBudget} BETWEEN 0 AND 32`,
       ),
       uniqueIndex("idx_workflow_automations_official_blueprint_unique")
         .on(table.workflowId, table.officialBlueprintKey)

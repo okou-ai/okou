@@ -1,11 +1,9 @@
 import { cronRefreshHomeTaskRecommendationsContract } from "@okouai/api-contracts/contracts/cron";
 import { command } from "ccstate";
 
-import { clerk$ } from "../external/clerk";
-import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
-  refreshDueHomeTaskRecommendations,
+  refreshDueHomeTaskRecommendations$,
   type HomeTaskScope,
 } from "../services/home-task-recommendations.service";
 import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
@@ -17,9 +15,8 @@ function createRefreshHomeTaskRecommendationsRoute(
     if (!get(hasValidCronSecret$)) {
       return cronUnauthorized();
     }
-    const body = await refreshDueHomeTaskRecommendations(
-      set(writeDb$),
-      get(clerk$),
+    const body = await set(
+      refreshDueHomeTaskRecommendations$,
       onlyScope,
       signal,
     );

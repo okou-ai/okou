@@ -8,6 +8,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { platformOkouWordmarkDarkImg } from "../../../lib/static-assets.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
 
 const context = testContext();
 
@@ -75,10 +76,7 @@ test("The hosted sign-in form renders with Google One Tap on the base route", as
   expect(clerk.uiRequests).toStrictEqual([
     "https://app.example.test/assets/clerk-ui-test.js",
   ]);
-  expect(screen.getByTestId("app-skeleton")).toHaveAttribute(
-    "aria-hidden",
-    "true",
-  );
+  expect(bootstrapSkeleton()).toHaveAttribute("aria-hidden", "true");
 });
 
 test("Nested sign-in task paths stay on the hosted sign-in form", async () => {

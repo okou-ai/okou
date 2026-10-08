@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { publicBrandSchema } from "./public-brand";
 
 const c = initContract();
 
@@ -11,8 +10,6 @@ const agentPhoneConnectBodySchema = z.object({
   timestamp: z.number(),
   signature: z.string().min(1),
   channel: z.string().min(1).optional(),
-  publicBrand: publicBrandSchema,
-  publicBrandSignature: z.string().min(1),
 });
 
 const agentPhoneConnectResponseSchema = z.object({
@@ -32,13 +29,11 @@ const agentPhoneLinkStatusResponseSchema = z.discriminatedUnion("linked", [
     phoneHandle: z.string(),
     agentPhoneNumber: z.string().nullable(),
     configured: z.boolean(),
-    publicBrand: publicBrandSchema,
   }),
   z.object({
     linked: z.literal(false),
     agentPhoneNumber: z.string().nullable(),
     configured: z.boolean(),
-    publicBrand: publicBrandSchema,
   }),
 ]);
 
@@ -56,6 +51,45 @@ const agentPhoneLinkCodeResponseSchema = z.object({
   expiresAt: z.iso.datetime(),
 });
 
+export const agentPhoneGroupHistoryQuerySchema = z
+  .object({
+    groupId: z.string().min(5).max(255).startsWith("grp_"),
+    after: z.iso.datetime({ offset: true }).optional(),
+    before: z.iso.datetime({ offset: true }).optional(),
+    query: z.string().trim().min(1).max(500).optional(),
+    limit: z.coerce.number().int().min(1).max(200).default(100),
+    cursor: z.string().min(1).max(512).optional(),
+  })
+  .refine(
+    (value) => {
+      return (
+        value.after === undefined ||
+        value.before === undefined ||
+        Date.parse(value.after) < Date.parse(value.before)
+      );
+    },
+    { message: "after must be earlier than before", path: ["after"] },
+  );
+
+const agentPhoneGroupHistoryResponseSchema = z.object({
+  groupId: z.string(),
+  messages: z.array(
+    z.object({
+      id: z.string(),
+      conversationId: z.string().nullable(),
+      fromNumber: z.string(),
+      toNumber: z.string(),
+      direction: z.enum(["inbound", "outbound"]),
+      channel: z.string(),
+      body: z.string().nullable(),
+      mediaUrl: z.string().nullable(),
+      receivedAt: z.iso.datetime(),
+    }),
+  ),
+  hasMore: z.boolean(),
+  nextCursor: z.string().nullable(),
+});
+
 export const integrationsAgentPhoneContract = c.router({
   connectAgentPhone: {
     method: "POST",
@@ -68,7 +102,7 @@ export const integrationsAgentPhoneContract = c.router({
       401: apiErrorSchema,
       409: apiErrorSchema,
     },
-    summary: "Link the authenticated Okou user to an AgentPhone phone handle",
+    summary: "Link the authenticated Okou user to a phone handle",
   },
   webhook: {
     method: "POST",
@@ -80,8 +114,22 @@ export const integrationsAgentPhoneContract = c.router({
       400: z.string(),
       401: z.string(),
       404: z.string(),
+      500: z.string(),
     },
-    summary: "Handle AgentPhone inbound message webhooks",
+    summary: "Handle inbound phone message webhooks",
+  },
+  groupHistory: {
+    method: "GET",
+    path: "/api/integrations/agentphone/group-history",
+    headers: authHeadersSchema,
+    query: agentPhoneGroupHistoryQuerySchema,
+    responses: {
+      200: agentPhoneGroupHistoryResponseSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Read archived iMessage group messages visible to the user",
   },
   getLinkStatus: {
     method: "GET",
@@ -91,7 +139,7 @@ export const integrationsAgentPhoneContract = c.router({
       200: agentPhoneLinkStatusResponseSchema,
       401: apiErrorSchema,
     },
-    summary: "Check the authenticated user's AgentPhone link status",
+    summary: "Check the authenticated user's phone link status",
   },
   startLink: {
     method: "POST",
@@ -106,7 +154,7 @@ export const integrationsAgentPhoneContract = c.router({
       409: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "Send a verified AgentPhone connection link by SMS",
+    summary: "Send a verified phone connection link by SMS",
   },
   createLinkCode: {
     method: "POST",
@@ -119,7 +167,7 @@ export const integrationsAgentPhoneContract = c.router({
       409: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "Create a one-time AgentPhone connection code",
+    summary: "Create a one-time phone connection code",
   },
   unlink: {
     method: "DELETE",
@@ -131,7 +179,7 @@ export const integrationsAgentPhoneContract = c.router({
       401: apiErrorSchema,
       404: apiErrorSchema,
     },
-    summary: "Disconnect the authenticated user's AgentPhone link",
+    summary: "Disconnect the authenticated user's phone link",
   },
 });
 
@@ -151,4 +199,10 @@ export type AgentPhoneStartLinkResponse = z.infer<
 >;
 export type AgentPhoneLinkCodeResponse = z.infer<
   typeof agentPhoneLinkCodeResponseSchema
+>;
+export type AgentPhoneGroupHistoryQuery = z.infer<
+  typeof agentPhoneGroupHistoryQuerySchema
+>;
+export type AgentPhoneGroupHistoryResponse = z.infer<
+  typeof agentPhoneGroupHistoryResponseSchema
 >;

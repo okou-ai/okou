@@ -104,9 +104,7 @@ export const replaceUserTemplatePackage$ = command(
       {
         orgId: args.orgId,
         storageName: getUserTemplateStorageName(row.id),
-        files: packageResult.files.map((file) => {
-          return { path: file.path, content: file.content };
-        }),
+        files: packageResult.files,
       },
       signal,
     );

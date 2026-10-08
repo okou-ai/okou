@@ -4,7 +4,6 @@ import { command } from "ccstate";
 import type {
   TestSlackStatePostBody,
   TestSlackStatePostResponse,
-  TestSlackStateResponse,
 } from "@okouai/api-contracts/contracts/test-slack-state";
 
 import { createAppWithRoutes } from "../../../../app-factory-core";
@@ -23,12 +22,6 @@ interface SeedSlackInstallationValues {
   readonly slackWorkspaceName?: string;
   readonly botScopes?: string | null;
   readonly botToken?: string;
-}
-
-interface SeedSlackConnectionValues {
-  readonly slackWorkspaceId: string;
-  readonly userId: string;
-  readonly slackUserId?: string;
 }
 
 function randomSlackId(prefix: string): string {
@@ -71,20 +64,6 @@ async function postSlackState(
   return await readJson<TestSlackStatePostResponse>(response);
 }
 
-async function getSlackState(
-  signal: AbortSignal,
-  slackWorkspaceId: string,
-): Promise<TestSlackStateResponse> {
-  const response = await requestSlackState(
-    signal,
-    `${SLACK_STATE_ROUTE}?${new URLSearchParams({
-      team_id: slackWorkspaceId,
-    }).toString()}`,
-  );
-  expectOk(response, "read Slack state");
-  return await readJson<TestSlackStateResponse>(response);
-}
-
 export const seedSlackOrgInstallation$ = command(
   async (
     _,
@@ -104,31 +83,6 @@ export const seedSlackOrgInstallation$ = command(
       orgId: response.org_id,
       slackWorkspaceId: response.team_id,
     };
-  },
-);
-
-export const seedSlackOrgConnection$ = command(
-  async (
-    _,
-    values: SeedSlackConnectionValues,
-    signal: AbortSignal,
-  ): Promise<{ readonly slackUserId: string }> => {
-    const slackUserId = values.slackUserId ?? randomSlackId("U");
-    const state = await getSlackState(signal, values.slackWorkspaceId);
-    const orgId = state.installation?.orgId;
-    if (!orgId) {
-      throw new Error("Cannot seed Slack connection without installation org");
-    }
-
-    await postSlackState(signal, {
-      team_id: values.slackWorkspaceId,
-      org_id: orgId,
-      user_id: values.userId,
-      slack_user_id: slackUserId,
-      seed_connection: true,
-    });
-
-    return { slackUserId };
   },
 );
 

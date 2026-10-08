@@ -4,38 +4,37 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agentDeletionError } from "@okouai/core/agent-protection";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
+import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
 
-import { db$, writeDb$ } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import type { Tx } from "../../lib/db-types";
 import { env } from "../../lib/env";
 import { conflict } from "../../lib/error";
+import { logger } from "../../lib/log";
 import { isLockNotAvailable } from "../../lib/pg-errors";
-import { testOverride } from "../../lib/singleton";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { settle } from "../utils";
-import { lockCanonicalAgentMutation } from "./agent-mutation-lock.service";
-import { deleteAgentStableContextLifecycleData } from "./agent-lifecycle.service";
-import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
+import { deleteAgentPublicationFences } from "./agent-lifecycle.service";
 import {
   lockAgentInstructionsStoragesInTransaction,
   removeLockedAgentInstructionsStoragesInTransaction,
 } from "./agent-instructions-storage-transaction.service";
-import { reconcileAutomationEventWatches } from "./automation-event-watch-lifecycle.service";
+import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
 import {
   deleteRunConversations,
   logCommittedConversationDeletion,
   releaseDeletedConversationReferences,
 } from "./conversation-history-deletion.service";
-import { revokeMorningBriefDeliveryOwnership } from "./morning-brief-delivery.service";
-import { deleteArtifactCatalogForRunIds } from "./artifact-catalog-deletion.service";
-import {
-  lockMorningBriefNativeAgentAuthorities,
-  revokeMorningBriefNativeAuthority,
-} from "./morning-brief-native-schedule.service";
-import { nowDate } from "../../lib/time";
+import { chatThreadEventInsertSql } from "./chat-thread-event.service";
+
+const log = logger("api:agent-deletion");
+const THREAD_DELETION_READ_PAGE_SIZE = 500;
+const THREAD_DELETION_EVENT_BATCH_SIZE = 16;
 
 export function agentExistsInOrg(args: {
   readonly orgId: string;
@@ -53,35 +52,16 @@ export function agentExistsInOrg(args: {
 }
 
 const DELETE_AGENT_LOCK_TIMEOUT = "100ms";
-
-interface AgentDeletionHooks {
-  readonly afterInitialStableContextCleanup?: (
-    tx: Tx,
-    args: { readonly agentId: string },
-  ) => Promise<void>;
-}
-
-const agentDeletionHooks = testOverride<AgentDeletionHooks>(() => {
-  return {};
-});
-
-export function setAgentDeletionHooksForTest(hooks: AgentDeletionHooks): void {
-  agentDeletionHooks.set(hooks);
-}
-
-export function clearAgentDeletionHooksForTest(): void {
-  agentDeletionHooks.clear();
-}
-
 interface DeleteAgentArgs {
   readonly agentId: string;
   readonly orgId: string;
-  readonly member: { readonly userId: string; readonly role: string };
+  readonly member: {
+    readonly userId: string;
+    readonly role: string;
+  };
 }
 
 async function lockAgentLifecycleForDeletion(tx: Tx, args: DeleteAgentArgs) {
-  await lockCanonicalAgentMutation(tx, args.agentId);
-
   const [agent] = await tx
     .select({
       id: agents.id,
@@ -216,40 +196,30 @@ async function preflightAgentDeletion(tx: Tx, args: DeleteAgentArgs) {
       }
     : { kind: "ready" as const };
 }
-
-async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
+export async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
   await tx.execute(
     sql`SELECT set_config('lock_timeout', ${DELETE_AGENT_LOCK_TIMEOUT}, true)`,
   );
-  // Maintenance can retain ledger rows before locking Runs. Join admission
-  // before parent locks so our Run-delete FK cannot reverse that order.
-  await lockUsageEventCompaction(tx, "shared");
-
-  // Read authorization without a row lock, then fence every native owner before
-  // taking the Agent lifecycle lock. The lifecycle reader below revalidates the
-  // same permission and identity under lock before any deletion commits.
+  // Revalidate permission and identity under the lifecycle lock before deletion commits.
   const preflight = await preflightAgentDeletion(tx, args);
   if (preflight.kind !== "ready") {
     return preflight;
   }
-  const nativeOwners = await lockMorningBriefNativeAgentAuthorities(tx, {
-    orgId: args.orgId,
-    agentId: args.agentId,
-  });
-
   const lifecycle = await lockAgentLifecycleForDeletion(tx, args);
   if (lifecycle.kind !== "ready") {
     return lifecycle;
   }
-  const revokedAt = nowDate();
-  for (const owner of nativeOwners) {
-    await revokeMorningBriefNativeAuthority(
-      tx,
-      { orgId: owner.orgId, userId: owner.userId },
-      revokedAt,
-    );
-  }
-
+  // The Agent cascade strongly locks its threads before deleting sequence
+  // children. A direct append already owns a sequence before its thread FK
+  // check, so take existing sequences first. A busy sequence surfaces through
+  // this transaction's existing lock timeout and conflict response.
+  await tx
+    .select({ id: chatEventSequences.chatThreadId })
+    .from(chatEventSequences)
+    .innerJoin(chatThreads, eq(chatThreads.id, chatEventSequences.chatThreadId))
+    .where(eq(chatThreads.agentId, args.agentId))
+    .orderBy(asc(chatEventSequences.chatThreadId))
+    .for("update", { of: chatEventSequences });
   const automations = await tx
     .select({
       orgId: workflowAutomations.orgId,
@@ -263,41 +233,28 @@ async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
     .where(
       and(eq(workflows.orgId, args.orgId), eq(workflows.agentId, args.agentId)),
     );
-
   const removed = await deleteRunConversations(tx, lifecycle.runIds);
-  // Storage parents precede stable artifacts/edges in the publisher and GC
-  // lock order. Prelock before lifecycle cleanup, not after Agent deletion.
+  // Prelock instruction Storages in UUID order before lifecycle cleanup, not
+  // after Agent deletion.
   const lockedInstructionsStorages =
     await lockAgentInstructionsStoragesInTransaction(tx, [
       { orgId: args.orgId, agentName: lifecycle.agentName },
     ]);
-
   // Remove current non-FK lifecycle rows before the Agent cascade.
-  await deleteAgentStableContextLifecycleData(tx, args.agentId);
-  await agentDeletionHooks
-    .get()
-    .afterInitialStableContextCleanup?.(tx, { agentId: args.agentId });
-  // Revoke unsent native Morning Brief mail before the Agent cascade.
-  await revokeMorningBriefDeliveryOwnership(tx, {
-    kind: "agent",
-    agentId: args.agentId,
-  });
-
-  await deleteArtifactCatalogForRunIds(tx, lifecycle.runIds);
+  await deleteAgentPublicationFences(tx, args.agentId);
+  await tx.execute(purgeRetiredMorningBriefEmailSql());
   await tx
     .delete(agents)
     .where(and(eq(agents.id, args.agentId), eq(agents.orgId, args.orgId)));
   // The cascade drains transactions that already owned a child Workflow row.
   // Sweep again afterward so any generation/publication they initialized
   // after the first scan cannot outlive the deleted Agent.
-  await deleteAgentStableContextLifecycleData(tx, args.agentId);
-
+  await deleteAgentPublicationFences(tx, args.agentId);
   await removeLockedAgentInstructionsStoragesInTransaction(
     tx,
     lockedInstructionsStorages,
   );
   const s3Prefix = lockedInstructionsStorages[0]?.s3Prefix ?? null;
-
   return {
     kind: "deleted" as const,
     s3Prefix,
@@ -308,11 +265,104 @@ async function deleteAgentInTransaction(tx: Tx, args: DeleteAgentArgs) {
     ),
   };
 }
-
+async function readAgentThreadEventOwners(
+  db: Pick<Db, "select">,
+  agentId: string,
+  orgId: string,
+): Promise<
+  readonly {
+    id: string;
+    userId: string;
+    orgId: string;
+  }[]
+> {
+  const owners: {
+    id: string;
+    userId: string;
+    orgId: string;
+  }[] = [];
+  let afterId: string | null = null;
+  for (;;) {
+    const page = await db
+      .select({ id: chatThreads.id, userId: chatThreads.userId })
+      .from(chatThreads)
+      .where(
+        and(
+          eq(chatThreads.agentId, agentId),
+          afterId === null ? undefined : gt(chatThreads.id, afterId),
+        ),
+      )
+      .orderBy(asc(chatThreads.id))
+      .limit(THREAD_DELETION_READ_PAGE_SIZE);
+    owners.push(
+      ...page.map((thread) => {
+        return { ...thread, orgId };
+      }),
+    );
+    const last = page.at(-1);
+    if (!last || page.length < THREAD_DELETION_READ_PAGE_SIZE) {
+      break;
+    }
+    afterId = last.id;
+  }
+  return owners;
+}
+/** Best-effort lifecycle notifications, never part of the Agent's deletion transaction. */
+async function appendDeletedAgentThreadEvents(
+  db: Db,
+  agentId: string,
+  owners: readonly {
+    id: string;
+    userId: string;
+    orgId: string;
+  }[],
+): Promise<void> {
+  for (
+    let offset = 0;
+    offset < owners.length;
+    offset += THREAD_DELETION_EVENT_BATCH_SIZE
+  ) {
+    const batch = owners.slice(
+      offset,
+      offset + THREAD_DELETION_EVENT_BATCH_SIZE,
+    );
+    const results = await Promise.allSettled(
+      batch.map(async (thread) => {
+        await db.execute(
+          chatThreadEventInsertSql({
+            kind: "deleted",
+            userId: thread.userId,
+            orgId: thread.orgId,
+            chatThreadId: thread.id,
+            agentId,
+          }),
+        );
+      }),
+    );
+    const failed = results.filter((result) => {
+      return result.status === "rejected";
+    });
+    if (failed.length > 0) {
+      log.error("Failed to append deleted Agent thread events", {
+        agentId,
+        offset,
+        failed: failed.length,
+        error: failed[0]?.reason,
+      });
+    }
+  }
+}
 export const deleteAgentById$ = command(
   async ({ set }, args: DeleteAgentArgs, signal: AbortSignal) => {
     const writeDb = set(writeDb$);
-
+    // The cascade destroys these rows. Read them in bounded keyset pages
+    // before it starts; a concurrent creation missed by this read is tolerated.
+    const threadEventOwners = await readAgentThreadEventOwners(
+      writeDb,
+      args.agentId,
+      args.orgId,
+    );
+    signal.throwIfAborted();
     const transaction = await settle(
       writeDb.transaction(async (tx) => {
         return await deleteAgentInTransaction(tx, args);
@@ -328,36 +378,37 @@ export const deleteAgentById$ = command(
     const result = transaction.value;
     if (result.kind === "deleted") {
       logCommittedConversationDeletion("agent", result.conversationDeletion);
+      // Single-statement appends run only after the delete commits. An event
+      // failure must not retry or roll back the already committed deletion.
+      await appendDeletedAgentThreadEvents(
+        writeDb,
+        args.agentId,
+        threadEventOwners,
+      );
     }
     signal.throwIfAborted();
-
     if (result.kind === "ownership-conflict") {
       return conflict(
         "Cannot delete agent because its lifecycle ownership is inconsistent",
       );
     }
-
     if (result.kind === "active-run") {
       return conflict("Cannot delete agent: agent is currently running");
     }
-
     if (result.kind === "forbidden") {
       return result.response;
     }
-
     if (result.kind === "missing") {
       return undefined;
     }
-
-    await reconcileAutomationEventWatches(
+    await set(
+      reconcileAutomationEventWatches$,
       {
-        db: writeDb,
         automations: result.automations,
       },
       signal,
     );
     signal.throwIfAborted();
-
     if (result.s3Prefix) {
       await set(
         purgeDeletedStoragePrefix$,
@@ -368,7 +419,6 @@ export const deleteAgentById$ = command(
         signal,
       );
     }
-
     return undefined;
   },
 );

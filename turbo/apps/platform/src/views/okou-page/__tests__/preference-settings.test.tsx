@@ -18,7 +18,7 @@ const context = testContext();
 
 async function expectUnifiedSection(
   section: "preference" | "model" | "debug",
-  heading: "Preference" | "Models" | "Debug",
+  heading: "Preference" | "Use more models" | "Debug",
 ): Promise<void> {
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
   expect(within(dialog).getByRole("heading", { name: heading })).toBeVisible();
@@ -44,7 +44,14 @@ describe("unified preference settings", () => {
     async (path) => {
       await setupPage({ context, path });
 
-      await expectUnifiedSection("model", "Models");
+      await expectUnifiedSection("model", "Use more models");
+      const dialog = screen.getByRole("dialog", { name: "Settings" });
+      expect(
+        within(dialog).getByRole("heading", { name: "Claude" }),
+      ).toBeVisible();
+      expect(
+        within(dialog).getByRole("heading", { name: "ChatGPT (Codex)" }),
+      ).toBeVisible();
       expect(pathname()).toBe("/agents");
     },
   );
@@ -61,32 +68,11 @@ describe("unified preference settings", () => {
     expect(new URLSearchParams(search()).get("settings")).toBe("debug");
   });
 
-  it("hides email subscriptions and Morning Brief when only Official Workflows is available", async () => {
-    await setupPage({
-      context,
-      path: "/agents?settings=preference",
-      featureSwitches: {
-        [FeatureSwitchKey.MorningBrief]: false,
-        [FeatureSwitchKey.OfficialWorkflows]: true,
-      },
-    });
-
-    const dialog = await screen.findByRole("dialog", { name: "Settings" });
-    expect(
-      within(dialog).queryByTestId("morning-brief-preference"),
-    ).not.toBeInTheDocument();
-    expect(
-      within(dialog).queryByRole("region", { name: "Email subscriptions" }),
-    ).not.toBeInTheDocument();
-  });
-
   it("shows Morning Brief without requiring Official Workflows", async () => {
     context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
       return respond(200, {
         enabled: false,
         status: "paused",
-        nextRunAt: null,
-        timezone: "Asia/Shanghai",
         unavailableReason: null,
       });
     });
@@ -95,7 +81,6 @@ describe("unified preference settings", () => {
       context,
       path: "/agents?settings=preference",
       featureSwitches: {
-        [FeatureSwitchKey.MorningBrief]: true,
         [FeatureSwitchKey.OfficialWorkflows]: false,
       },
     });
@@ -111,8 +96,6 @@ describe("unified preference settings", () => {
     let preference: MorningBriefPreferenceResponse = {
       enabled: false,
       status: "paused",
-      nextRunAt: null,
-      timezone: "Asia/Shanghai",
       unavailableReason: null,
     };
     let conflicted = false;
@@ -143,8 +126,6 @@ describe("unified preference settings", () => {
         preference = {
           enabled: true,
           status: "enabled",
-          nextRunAt: "2030-01-02T23:00:00.000Z",
-          timezone: "Asia/Shanghai",
           unavailableReason: null,
         };
         return respond(200, preference);
@@ -155,7 +136,6 @@ describe("unified preference settings", () => {
       context,
       path: "/agents?settings=preference",
       featureSwitches: {
-        [FeatureSwitchKey.MorningBrief]: true,
         [FeatureSwitchKey.OfficialWorkflows]: false,
       },
     });
@@ -182,12 +162,10 @@ describe("unified preference settings", () => {
   });
 });
 
-test("shows pending Morning Brief enrollment, accepts cancellation, and receives completion through realtime", async () => {
+test("shows pending Morning Brief enrollment and accepts cancellation", async () => {
   let preference: MorningBriefPreferenceResponse = {
     enabled: true,
     status: "preparing",
-    nextRunAt: null,
-    timezone: "Asia/Shanghai",
     unavailableReason: null,
   };
   context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
@@ -226,49 +204,16 @@ test("shows pending Morning Brief enrollment, accepts cancellation, and receives
       within(card).getByRole("switch", { name: "Morning brief" }),
     ).toBeChecked();
   });
-  preference = {
-    ...preference,
-    status: "enabled",
-    nextRunAt: "2030-01-02T23:00:00.000Z",
-  };
-  await waitFor(() => {
-    expect(
-      context.mocks.ably.hasSubscription("morningBriefChanged"),
-    ).toBeTruthy();
-  });
-  context.mocks.ably.trigger("morningBriefChanged");
-  await waitFor(() => {
-    expect(within(card).getByText(/Next /u)).toBeVisible();
-  });
-  expect(
-    within(card).queryByText(
-      "Preparing your first Morning Brief. You can turn it off at any time.",
-    ),
-  ).toBeNull();
 });
 
 test("keeps the Morning Brief toggle disabled while an unavailable reason is reported", async () => {
-  let preference: MorningBriefPreferenceResponse = {
-    enabled: false,
-    status: "paused",
-    nextRunAt: null,
-    timezone: "Asia/Shanghai",
-    unavailableReason: "missing-default-agent",
-  };
   context.mocks.api(morningBriefPreferenceContract.get, ({ respond }) => {
-    return respond(200, preference);
+    return respond(200, {
+      enabled: false,
+      status: "paused",
+      unavailableReason: "missing-default-agent",
+    });
   });
-  context.mocks.api(
-    morningBriefPreferenceContract.update,
-    ({ body, respond }) => {
-      preference = {
-        ...preference,
-        enabled: body.enabled,
-        status: "preparing",
-      };
-      return respond(200, preference);
-    },
-  );
   await setupPage({ context, path: "/agents?settings=preference" });
   const card = await screen.findByTestId("morning-brief-preference");
   await expect(
@@ -279,23 +224,4 @@ test("keeps the Morning Brief toggle disabled while an unavailable reason is rep
   expect(
     within(card).getByRole("switch", { name: "Morning brief" }),
   ).toHaveAttribute("aria-disabled", "true");
-
-  preference = { ...preference, unavailableReason: null };
-  await waitFor(() => {
-    expect(
-      context.mocks.ably.hasSubscription("morningBriefChanged"),
-    ).toBeTruthy();
-  });
-  context.mocks.ably.trigger("morningBriefChanged");
-  await waitFor(() => {
-    expect(
-      within(card).getByRole("switch", { name: "Morning brief" }),
-    ).toBeEnabled();
-  });
-  click(within(card).getByRole("switch", { name: "Morning brief" }));
-  await waitFor(() => {
-    expect(
-      within(card).getByRole("switch", { name: "Morning brief" }),
-    ).toBeChecked();
-  });
 });

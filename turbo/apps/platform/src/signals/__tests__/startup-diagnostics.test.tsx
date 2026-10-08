@@ -158,7 +158,6 @@ test("Startup timing is bounded and anonymous", async () => {
       navigation_response_end_ms: 87,
       navigation_response_start_ms: 41,
       paint_metric: "first-contentful-paint",
-      public_brand: "okou",
       response_end_to_skeleton_paint_ms: 12,
       skeleton_paint_ms: 98,
       token: POSTHOG_KEY,

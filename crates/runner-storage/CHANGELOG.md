@@ -1,5 +1,84 @@
 # Changelog
 
+## [0.2.3](https://github.com/okou-ai/okou/compare/runner-storage-v0.2.2...runner-storage-v0.2.3) (2026-10-07)
+
+## [0.2.2](https://github.com/okou-ai/okou/compare/runner-storage-v0.2.1...runner-storage-v0.2.2) (2026-10-07)
+
+## [0.2.1](https://github.com/okou-ai/okou/compare/runner-storage-v0.2.0...runner-storage-v0.2.1) (2026-10-07)
+
+## [0.2.0](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.27...runner-storage-v0.2.0) (2026-10-04)
+
+
+### Features
+
+* **observability:** log r2 keys only in runner-local info ([#37687](https://github.com/okou-ai/okou/issues/37687)) ([193f547](https://github.com/okou-ai/okou/commit/193f5472860eab1725897d976f25f6b70f3cb1c4))
+
+## [0.1.27](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.26...runner-storage-v0.1.27) (2026-10-02)
+
+
+### Bug Fixes
+
+* **runner-storage:** retry transient archive download failures ([#37557](https://github.com/okou-ai/okou/issues/37557)) ([353e71f](https://github.com/okou-ai/okou/commit/353e71fd9f0c29bbc7718382d49f40f62484e05b))
+
+## [0.1.26](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.25...runner-storage-v0.1.26) (2026-10-01)
+
+## [0.1.25](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.24...runner-storage-v0.1.25) (2026-10-01)
+
+
+### Refactoring
+
+* **rust:** reuse host ignored-child harness in storage tests ([#37464](https://github.com/okou-ai/okou/issues/37464)) ([c3a0268](https://github.com/okou-ai/okou/commit/c3a0268098ef916b6d56681a377ecf8ff688445d))
+
+## [0.1.24](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.23...runner-storage-v0.1.24) (2026-09-30)
+
+## [0.1.23](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.22...runner-storage-v0.1.23) (2026-09-30)
+
+## [0.1.22](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.21...runner-storage-v0.1.22) (2026-09-30)
+
+
+### Refactoring
+
+* **chat:** complete chat event v8 transition cleanup ([#37411](https://github.com/okou-ai/okou/issues/37411)) ([cd4aac5](https://github.com/okou-ai/okou/commit/cd4aac5fa635dd7f71eb82756529c5643c552cc9))
+
+## [0.1.21](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.20...runner-storage-v0.1.21) (2026-09-30)
+
+
+### Bug Fixes
+
+* **runner-storage:** accept compressed archive size drift ([#37407](https://github.com/okou-ai/okou/issues/37407)) ([06257e9](https://github.com/okou-ai/okou/commit/06257e98eb4156d023629240d2035d16fef1e631))
+
+## [0.1.20](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.19...runner-storage-v0.1.20) (2026-09-30)
+
+## [0.1.19](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.18...runner-storage-v0.1.19) (2026-09-29)
+
+## [0.1.18](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.17...runner-storage-v0.1.18) (2026-09-29)
+
+## [0.1.17](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.16...runner-storage-v0.1.17) (2026-09-28)
+
+## [0.1.16](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.15...runner-storage-v0.1.16) (2026-09-28)
+
+## [0.1.15](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.14...runner-storage-v0.1.15) (2026-09-28)
+
+## [0.1.14](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.13...runner-storage-v0.1.14) (2026-09-28)
+
+## [0.1.13](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.12...runner-storage-v0.1.13) (2026-09-27)
+
+## [0.1.12](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.11...runner-storage-v0.1.12) (2026-09-26)
+
+## [0.1.11](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.10...runner-storage-v0.1.11) (2026-09-25)
+
+## [0.1.10](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.9...runner-storage-v0.1.10) (2026-09-25)
+
+## [0.1.9](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.8...runner-storage-v0.1.9) (2026-09-25)
+
+## [0.1.8](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.7...runner-storage-v0.1.8) (2026-09-25)
+
+## [0.1.7](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.6...runner-storage-v0.1.7) (2026-09-24)
+
+## [0.1.6](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.5...runner-storage-v0.1.6) (2026-09-24)
+
+## [0.1.5](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.4...runner-storage-v0.1.5) (2026-09-24)
+
 ## [0.1.4](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.3...runner-storage-v0.1.4) (2026-09-23)
 
 ## [0.1.3](https://github.com/okou-ai/okou/compare/runner-storage-v0.1.2...runner-storage-v0.1.3) (2026-09-23)

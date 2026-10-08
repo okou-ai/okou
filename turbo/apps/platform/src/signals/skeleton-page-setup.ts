@@ -1,12 +1,12 @@
 import { command } from "ccstate";
 import { createElement } from "react";
-import { AppSkeleton } from "../views/okou-page/app-skeleton.tsx";
 import { DefaultErrorFallback } from "../views/default-error-boundary.tsx";
 import { updatePage$ } from "./react-router.ts";
 import { hideAppSkeleton$ } from "./app-skeleton.ts";
 
+// Never hides the bootstrap skeleton, so the page is only the skeleton.
 export const setupSkeletonPage$ = command(({ set }) => {
-  set(updatePage$, createElement(AppSkeleton, { visible: true }));
+  set(updatePage$, null);
 });
 
 export const setupErrorPage$ = command(async ({ set }, signal: AbortSignal) => {

@@ -1,16 +1,15 @@
-import { command, computed, state, type Command, type State } from "ccstate";
-import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   claudeCodeDeviceAuthContract,
   type ClaudeCodeDeviceAuthMode,
   type ClaudeCodeDeviceAuthScope,
 } from "@okouai/api-contracts/contracts/claude-code-device-auth";
+import { toast } from "@okouai/ui/components/ui/sonner";
+import { command, computed, state, type Command, type State } from "ccstate";
 
-import { accept } from "../../../lib/accept.ts";
 import { i18n } from "../../../i18n/index.ts";
+import { accept } from "../../../lib/accept.ts";
 import { now } from "../../../lib/time.ts";
 import { apiClient$ } from "../../api-client.ts";
-import { reloadOrgModelProviders$ } from "../../external/org-model-providers.ts";
 import { bestEffort, resetSignal, tapError } from "../../utils.ts";
 import { reloadPersonalModelProvider$ } from "../model-first-personal-oauth.ts";
 
@@ -40,7 +39,6 @@ type ActiveClaudeCodeDeviceAuthFlowState = {
   readonly browserUrl: string;
   readonly expiresAtMs: number;
   readonly authorizationCode: string;
-  readonly approvalOpened: boolean;
   readonly errorMessage: string | null;
 };
 
@@ -69,15 +67,6 @@ function createRequestId(scope: ClaudeCodeDeviceAuthScope): string {
 
 function secondsToMilliseconds(seconds: number): number {
   return seconds * 1000;
-}
-
-function openApprovalPage(browserUrl: string): boolean {
-  const approvalWindow = window.open(browserUrl, "_blank");
-  if (!approvalWindow) {
-    return false;
-  }
-  approvalWindow.opener = null;
-  return true;
 }
 
 function isCurrentStarting(
@@ -168,7 +157,7 @@ const cancelClaudeCodeDeviceAuth$ = command(
 );
 
 interface ClaudeCodeDeviceAuthSignalContext {
-  scope: ClaudeCodeDeviceAuthScope;
+  scope: "personal";
   reloadProviders$: Command<void, []>;
   internalDialogState$: State<ClaudeCodeDeviceAuthDialogState>;
   internalFlowState$: State<ClaudeCodeDeviceAuthFlowState>;
@@ -186,16 +175,13 @@ function createClaudeCodeRunFlow$(ctx: ClaudeCodeDeviceAuthSignalContext) {
         readonly scope: ClaudeCodeDeviceAuthScope;
         readonly mode?: ClaudeCodeDeviceAuthMode;
         readonly modelProviderId?: string;
-      } =
-        ctx.scope === "personal"
-          ? {
-              scope: ctx.scope,
-              mode: dialog.mode === "reconnect" ? "reconnect" : "add",
-              ...(dialog.modelProviderId
-                ? { modelProviderId: dialog.modelProviderId }
-                : {}),
-            }
-          : { scope: ctx.scope };
+      } = {
+        scope: "personal",
+        mode: dialog.mode === "reconnect" ? "reconnect" : "add",
+        ...(dialog.modelProviderId
+          ? { modelProviderId: dialog.modelProviderId }
+          : {}),
+      };
 
       const started = await tapError(
         set(startClaudeCodeDeviceAuth$, startArgs, signal),
@@ -222,7 +208,6 @@ function createClaudeCodeRunFlow$(ctx: ClaudeCodeDeviceAuthSignalContext) {
         browserUrl: started.browserUrl,
         expiresAtMs: now() + secondsToMilliseconds(started.expiresIn),
         authorizationCode: "",
-        approvalOpened: false,
         errorMessage: null,
       });
       return true;
@@ -270,33 +255,6 @@ function createClaudeCodeOpen$(
       return await set(run$, signal);
     },
   );
-}
-
-function createClaudeCodeOpenApprovalPage$(
-  ctx: ClaudeCodeDeviceAuthSignalContext,
-) {
-  return command(({ get, set }, signal: AbortSignal): boolean => {
-    const current = get(ctx.internalFlowState$);
-    if (!isActive(current)) {
-      return false;
-    }
-    const opened = openApprovalPage(current.browserUrl);
-    signal.throwIfAborted();
-    const latest = get(ctx.internalFlowState$);
-    if (!isCurrentActive(latest, current.requestId)) {
-      return opened;
-    }
-    set(ctx.internalFlowState$, {
-      ...latest,
-      approvalOpened: opened || latest.approvalOpened,
-      errorMessage: opened
-        ? null
-        : i18n.t(($) => {
-            return $.settings.models.deviceAuth.claude.approvalOpenError;
-          }),
-    });
-    return opened;
-  });
 }
 
 function createClaudeCodeSetAuthorizationCode$(
@@ -396,7 +354,7 @@ function createClaudeCodeClose$(ctx: ClaudeCodeDeviceAuthSignalContext) {
 }
 
 function createClaudeCodeDeviceAuthSignals(
-  scope: ClaudeCodeDeviceAuthScope,
+  scope: "personal",
   reloadProviders$: Command<void, []>,
 ) {
   const ctx: ClaudeCodeDeviceAuthSignalContext = {
@@ -419,24 +377,12 @@ function createClaudeCodeDeviceAuthSignals(
       return get(ctx.internalFlowState$);
     }),
     open$: createClaudeCodeOpen$(ctx, run$),
-    openApprovalPage$: createClaudeCodeOpenApprovalPage$(ctx),
     setAuthorizationCode$: createClaudeCodeSetAuthorizationCode$(ctx),
     submit$: createClaudeCodeSubmit$(ctx),
     close$: createClaudeCodeClose$(ctx),
     run$,
   };
 }
-
-export const {
-  dialogState$: claudeCodeDeviceAuthDialogState$,
-  flowState$: claudeCodeDeviceAuthFlowState$,
-  open$: openClaudeCodeDeviceAuthDialog$,
-  openApprovalPage$: openClaudeCodeDeviceAuthApprovalPage$,
-  setAuthorizationCode$: setClaudeCodeDeviceAuthAuthorizationCode$,
-  submit$: submitClaudeCodeDeviceAuth$,
-  close$: closeClaudeCodeDeviceAuthDialog$,
-  run$: runClaudeCodeDeviceAuth$,
-} = createClaudeCodeDeviceAuthSignals("org", reloadOrgModelProviders$);
 
 const personalClaudeCodeDeviceAuthSignals = createClaudeCodeDeviceAuthSignals(
   "personal",
@@ -451,8 +397,6 @@ export const openClaudeCodeDeviceAuthDialogPersonal$: Command<
   Promise<boolean>,
   [OpenPersonalClaudeCodeDeviceAuthArgs, AbortSignal]
 > = personalClaudeCodeDeviceAuthSignals.open$;
-export const openClaudeCodeDeviceAuthApprovalPagePersonal$ =
-  personalClaudeCodeDeviceAuthSignals.openApprovalPage$;
 export const setClaudeCodeDeviceAuthAuthorizationCodePersonal$ =
   personalClaudeCodeDeviceAuthSignals.setAuthorizationCode$;
 export const submitClaudeCodeDeviceAuthPersonal$ =

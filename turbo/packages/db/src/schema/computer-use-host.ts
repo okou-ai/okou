@@ -52,7 +52,6 @@ export const computerUseHosts = pgTable(
         .on(table.orgId, table.userId, table.installationId)
         .where(sql`installation_id IS NOT NULL AND revoked_at IS NULL`),
       index("idx_computer_use_hosts_org_user").on(table.orgId, table.userId),
-      index("idx_computer_use_hosts_last_seen").on(table.lastSeenAt),
     ];
   },
 );
@@ -64,9 +63,11 @@ export const computerUseCommands = pgTable(
     orgId: text("org_id").notNull(),
     userId: text("user_id").notNull(),
     runId: text("run_id"),
-    hostId: uuid("host_id").references(() => {
-      return computerUseHosts.id;
-    }),
+    hostId: uuid("host_id")
+      .references(() => {
+        return computerUseHosts.id;
+      })
+      .notNull(),
     kind: text("kind").notNull(),
     status: text("status").default("queued").notNull(),
     payload: jsonb("payload")
@@ -75,7 +76,7 @@ export const computerUseCommands = pgTable(
       .notNull(),
     result: jsonb("result").$type<ComputerUseCommandResult>(),
     error: text("error"),
-    timeoutMs: integer("timeout_ms"),
+    timeoutMs: integer("timeout_ms").notNull(),
     claimedAt: timestamp("claimed_at"),
     completedAt: timestamp("completed_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -87,6 +88,11 @@ export const computerUseCommands = pgTable(
         table.hostId,
         table.status,
       ),
+      // One running command per host. Claim polls race without locks, so
+      // this is what makes the losing poll's compare-and-set fail.
+      uniqueIndex("idx_computer_use_commands_running_host")
+        .on(table.hostId)
+        .where(sql`status = 'running'`),
       index("idx_computer_use_commands_org_user").on(table.orgId, table.userId),
       index("idx_computer_use_commands_created").on(table.createdAt),
     ];
@@ -111,7 +117,6 @@ export const computerUseCommandAuditEvents = pgTable(
     kind: text("kind").notNull(),
     app: text("app"),
     event: text("event").notNull(),
-    approvalOutcome: text("approval_outcome"),
     redactedResult:
       jsonb("redacted_result").$type<ComputerUseCommandAuditRedactedResult>(),
     error: jsonb("error").$type<ComputerUseCommandAuditError>(),

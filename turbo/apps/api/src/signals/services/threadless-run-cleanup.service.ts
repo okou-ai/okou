@@ -1,9 +1,7 @@
 import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { agentRunQueue } from "@okouai/db/schema/agent-run-queue";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreadEvents } from "@okouai/db/schema/chat-thread-event";
-import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { usageEvent } from "@okouai/db/schema/usage-event";
 import { command } from "ccstate";
@@ -13,12 +11,10 @@ import {
   eq,
   exists,
   gte,
-  gt,
   inArray,
   isNotNull,
   isNull,
   ne,
-  notExists,
   or,
   sql,
 } from "drizzle-orm";
@@ -26,23 +22,12 @@ import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
-import { failPendingInlineOnlyDeliveryCallbacksForDeletedThread } from "./agent-run-callback.service";
-import {
-  dispatchCompleteSideEffects$,
-  drainOrgQueue$,
-} from "./agent-run-lifecycle.service";
-import { cancelRun$, dispatchCancelSideEffects$ } from "./run-cancel.service";
-import { lockUsageEventCompaction } from "./usage-event-compaction-lock.service";
-import {
-  activePiMemoryPhase2MaintenanceRunCondition,
-  lockPiMemoryPhase2MaintenanceCleanupProtection,
-} from "./pi-memory-phase2-maintenance.service";
-import {
-  loadPiMemoryPhase2UsageBinding,
-  piMemoryPhase2ProviderCondition,
-  PI_MEMORY_PHASE2_USAGE_DRAIN_MS,
-  PI_MEMORY_PHASE2_MODELS,
-} from "./pi-memory-phase2-usage.service";
+import { failPendingInlineOnlyDeliveryCallbacksForDeletedThread$ } from "./agent-run-callback.service";
+import { dispatchCompleteSideEffects$ } from "./agent-run-lifecycle.service";
+import { cancelRun$ } from "./agent-run-terminal-transition.service";
+import { dispatchCancelSideEffects$ } from "./run-cancel.service";
+import { lockDeletionProtection } from "./threadless-run-protection.service";
+import { THREADLESS_RUN_PROTECTIONS } from "./threadless-run-protections";
 
 import {
   deleteLockedRuns,
@@ -53,7 +38,7 @@ import {
 
 const L = logger("ThreadlessRunCleanup");
 
-const ACTIVE_RUN_STATUSES = ["queued", "pending", "running"] as const;
+const ACTIVE_RUN_STATUSES = ["pending", "running"] as const;
 const TERMINAL_RUN_STATUSES = [
   "completed",
   "failed",
@@ -123,13 +108,9 @@ function terminalError(candidate: ThreadlessRunCandidate): string | undefined {
 
 async function loadThreadlessRunCandidates(
   db: Db,
-  runIds: readonly string[] | null,
   currentTime: Date,
 ): Promise<readonly ThreadlessRunCandidate[]> {
   const forwardCutoff = new Date(THREADLESS_RUN_FORWARD_CUTOFF_ISO);
-  const usageQuietBefore = new Date(
-    currentTime.getTime() - PI_MEMORY_PHASE2_USAGE_DRAIN_MS,
-  );
   return await db
     .select({
       runId: agentRuns.id,
@@ -150,46 +131,9 @@ async function loadThreadlessRunCandidates(
           ...ACTIVE_RUN_STATUSES,
           ...TERMINAL_RUN_STATUSES,
         ]),
-        notExists(
-          db
-            .select({ memoryStorageId: piMemoryPhase2Jobs.memoryStorageId })
-            .from(piMemoryPhase2Jobs)
-            .where(
-              activePiMemoryPhase2MaintenanceRunCondition(db, {
-                runId: agentRuns.id,
-                orgId: agentRuns.orgId,
-                userId: agentRuns.userId,
-                currentTime,
-              }),
-            ),
-        ),
-        // Do not let retained private billing contexts occupy the bounded
-        // sweep and starve ordinary threadless cleanup. Revalidate under lock.
-        notExists(
-          db
-            .select({ id: agentRunCallbacks.id })
-            .from(agentRunCallbacks)
-            .where(
-              and(
-                eq(agentRunCallbacks.runId, agentRuns.id),
-                eq(agentRunCallbacks.internalKind, "pi-memory:phase2"),
-                eq(
-                  sql`${agentRunCallbacks.payload}->>'orgId'`,
-                  agentRuns.orgId,
-                ),
-                eq(
-                  sql`${agentRunCallbacks.payload}->>'userId'`,
-                  agentRuns.userId,
-                ),
-                eq(agentRuns.triggerSource, "agent"),
-                piMemoryPhase2ProviderCondition(),
-                inArray(agentRuns.selectedModel, [...PI_MEMORY_PHASE2_MODELS]),
-                eq(sql`${agentRuns.launchSnapshot}->>'framework'`, "pi"),
-                gt(agentRuns.completedAt, usageQuietBefore),
-              ),
-            ),
-        ),
-        runIds === null ? undefined : inArray(agentRuns.id, runIds),
+        ...THREADLESS_RUN_PROTECTIONS.flatMap((protection) => {
+          return protection.sweepEligibility(db, { currentTime });
+        }),
         or(
           gte(agentRuns.createdAt, forwardCutoff),
           exists(
@@ -248,15 +192,6 @@ async function hasDeletionBlocker(
     return true;
   }
 
-  const [queuedRun] = await db
-    .select({ runId: agentRunQueue.runId })
-    .from(agentRunQueue)
-    .where(eq(agentRunQueue.runId, runId))
-    .limit(1);
-  if (queuedRun) {
-    return true;
-  }
-
   const [runnerJob] = await db
     .select({ runId: runnerJobQueue.runId })
     .from(runnerJobQueue)
@@ -280,9 +215,6 @@ async function deleteIfStillEligible(
   quietBefore: Date,
 ): Promise<boolean> {
   const receipt = await db.transaction(async (tx) => {
-    // Account cleanup and compaction hold ledger rows before Runs. Exclude
-    // that maintenance before our Run-delete FK acquires ledger-row locks.
-    await lockUsageEventCompaction(tx, "shared");
     const [current] = await tx
       .select({
         status: agentRuns.status,
@@ -320,19 +252,12 @@ async function deleteIfStillEligible(
     }
 
     if (
-      await lockPiMemoryPhase2MaintenanceCleanupProtection(tx, {
+      await lockDeletionProtection(THREADLESS_RUN_PROTECTIONS, tx, {
         runId: candidate.runId,
         orgId: candidate.orgId,
         userId: candidate.userId,
+        completedAt: current.completedAt,
       })
-    ) {
-      return null;
-    }
-
-    if (
-      current.completedAt.getTime() >
-        nowDate().getTime() - PI_MEMORY_PHASE2_USAGE_DRAIN_MS &&
-      (await loadPiMemoryPhase2UsageBinding(tx, candidate))
     ) {
       return null;
     }
@@ -355,10 +280,9 @@ async function deleteIfStillEligible(
 const redriveTerminalLifecycle$ = command(
   async function redriveTerminalLifecycle(
     { set },
-    args: { readonly db: Db; readonly candidate: ThreadlessRunCandidate },
+    candidate: ThreadlessRunCandidate,
     signal: AbortSignal,
   ): Promise<void> {
-    const { db, candidate } = args;
     if (candidate.status === "cancelled") {
       const cancelResult = await set(
         cancelRun$,
@@ -392,32 +316,20 @@ const redriveTerminalLifecycle$ = command(
     );
     signal.throwIfAborted();
 
-    await failPendingInlineOnlyDeliveryCallbacksForDeletedThread(
-      db,
+    await set(
+      failPendingInlineOnlyDeliveryCallbacksForDeletedThread$,
       candidate.runId,
+      signal,
     );
-    signal.throwIfAborted();
-
-    // dispatchCompleteSideEffects$ treats queue publication as best effort for
-    // normal webhooks. Deletion requires a strict durable reconciliation pass.
-    await set(drainOrgQueue$, { orgId: candidate.orgId }, signal);
     signal.throwIfAborted();
   },
 );
 
 export const cleanupThreadlessRuns$ = command(
-  async (
-    { set },
-    runIds: readonly string[] | null,
-    signal: AbortSignal,
-  ): Promise<ThreadlessRunCleanupResult> => {
+  async ({ set }, signal: AbortSignal): Promise<ThreadlessRunCleanupResult> => {
     const db = set(writeDb$);
     const currentTime = nowDate();
-    const candidates = await loadThreadlessRunCandidates(
-      db,
-      runIds,
-      currentTime,
-    );
+    const candidates = await loadThreadlessRunCandidates(db, currentTime);
     signal.throwIfAborted();
 
     let cancelled = 0;
@@ -440,7 +352,7 @@ export const cleanupThreadlessRuns$ = command(
                 orgId: candidate.orgId,
                 runnerCancellationMode: "hard",
                 preserveExistingCancellation: true,
-                protectActivePiMemoryPhase2Maintenance: true,
+                protectThreadlessRuns: true,
               },
               signal,
             );
@@ -460,7 +372,7 @@ export const cleanupThreadlessRuns$ = command(
             return;
           }
 
-          await set(redriveTerminalLifecycle$, { db, candidate }, signal);
+          await set(redriveTerminalLifecycle$, candidate, signal);
           signal.throwIfAborted();
           if (await deleteIfStillEligible(db, candidate, quietBefore)) {
             deleted++;

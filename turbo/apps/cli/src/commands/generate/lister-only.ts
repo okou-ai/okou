@@ -1,7 +1,8 @@
 import { Command } from "commander";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { printConnectorGuidance } from "./lib/connector-guidance";
-import { runLister, type GenerationType } from "./lib/lister";
+import { runLister } from "./lib/lister";
+import type { GenerationType } from "./lib/generation-type";
 
 interface ListerOnlyOptions {
   readonly provider?: string;

@@ -4,12 +4,12 @@ import { command } from "ccstate";
 import { delay } from "signal-timers";
 import { v5 as uuidv5 } from "uuid";
 import { eq } from "drizzle-orm";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import type { LinkLayout } from "@okouai/api-contracts/contracts/link-layout";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { z } from "zod";
 
 import { env } from "../../lib/env";
-import { publicArtifactsBaseUrlForBrand } from "../../lib/file-url";
+import { publicArtifactsBaseUrl } from "../../lib/file-url";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
@@ -143,7 +143,8 @@ export interface RenderArtifactPreviewArgs {
   // Discriminates the renderer: `video/*` extracts a poster frame, otherwise a
   // Browser Rendering page screenshot.
   readonly contentType: string | null;
-  readonly publicBrand: PublicBrand;
+  // Layout of the source URL; the poster transform runs on its CDN origin.
+  readonly layout: LinkLayout;
   // Versions the preview key so each deployment gets a fresh, CDN-cache-busting
   // URL instead of overwriting a stale object at a fixed key.
   readonly deploymentId?: string;
@@ -178,10 +179,10 @@ function canExtractVideoPoster(contentType: string | null): boolean {
 // sibling of the `/cdn-cgi/image/` resizing already used for images.
 async function extractVideoPoster(
   videoUrl: string,
-  publicBrand: PublicBrand,
+  layout: LinkLayout,
   signal: AbortSignal,
 ): Promise<Buffer> {
-  const base = publicArtifactsBaseUrlForBrand(publicBrand);
+  const base = publicArtifactsBaseUrl(layout);
   const transformUrl = `${base}/cdn-cgi/media/mode=frame,time=1s,width=640,format=jpg/${videoUrl}`;
   const response = await fetch(transformUrl, { signal });
   if (!response.ok) {
@@ -219,7 +220,7 @@ const renderVideoPoster$ = command(
       return image ? { image, isPrivate: true } : null;
     }
     return {
-      image: await extractVideoPoster(args.url, args.publicBrand, signal),
+      image: await extractVideoPoster(args.url, args.layout, signal),
       isPrivate: false,
     };
   },
@@ -737,7 +738,6 @@ const renderAndStoreArtifactPreview$ = command(
             filename,
             contentType,
             size: image.byteLength,
-            publicBrand: args.publicBrand,
           },
           signal,
         )
@@ -749,7 +749,6 @@ const renderAndStoreArtifactPreview$ = command(
               id: args.id,
               filename,
               variant: filename,
-              publicBrand: args.publicBrand,
             },
             signal,
           )),

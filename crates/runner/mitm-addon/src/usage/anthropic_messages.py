@@ -3,13 +3,6 @@
 from collections.abc import Callable
 
 from .json_selective import JsonExtractionResult, JsonSelectiveExtractor, ScalarField
-from .model_http import (
-    ModelHttpFailureEvidence,
-    ModelHttpFailureObserver,
-    combined_scalar_fields,
-    combined_value_presence_paths,
-    failure_evidence_from_result,
-)
 from .model_tokens import ANTHROPIC_USAGE_FIELD_CATEGORIES, update_model_usage_quantity
 from .quantities import MAX_USAGE_QUANTITY
 from .sse import SseUsageScanner
@@ -22,7 +15,6 @@ _ANTHROPIC_MESSAGES_ACCOUNTING_EVENTS = frozenset(
 # parser's bulk-scan path for ordinary large content strings.
 _ANTHROPIC_MESSAGES_MAX_WORK_UNITS = 65_536
 _SseUsageParseErrorCallback = Callable[[str, str], None]
-AnthropicMessagesLifecycleCallback = Callable[[str, str | None], None]
 AnthropicMessagesAccountingEventCallback = Callable[[str], None]
 
 _MODEL_JSON_SCALAR_FIELDS = {
@@ -40,7 +32,6 @@ _MODEL_JSON_SCALAR_FIELDS = {
 
 _ANTHROPIC_SSE_SCALAR_FIELDS = {
     ("type",): ScalarField("string", max_bytes=1024),
-    ("content_block", "type"): ScalarField("string", max_bytes=1024),
     ("message", "id"): ScalarField("string", max_bytes=1024),
     ("message", "model"): ScalarField("string", max_bytes=1024),
     **{
@@ -75,11 +66,7 @@ def _store_selected_usage_values(values: dict, target: dict, prefix: tuple[str, 
 
 def create_anthropic_messages_sse_usage_extractor(
     on_parse_error: _SseUsageParseErrorCallback | None = None,
-    on_lifecycle_event: AnthropicMessagesLifecycleCallback | None = None,
     on_accounting_event: AnthropicMessagesAccountingEventCallback | None = None,
-    *,
-    include_usage: bool = True,
-    failure_observer: ModelHttpFailureObserver | None = None,
 ) -> tuple[SseUsageScanner, dict]:
     """Create an incremental SSE parser that extracts usage from Anthropic API streams.
 
@@ -98,31 +85,12 @@ def create_anthropic_messages_sse_usage_extractor(
     have been fed, callers must invoke ``scanner.finish()`` to finalize a
     captured trailing event when the stream ends without a blank-line terminator.
 
-    ``include_usage`` controls both usage extraction and delivery of the
-    callbacks described below. When it is ``False``, usage parsing is disabled
-    and ``on_parse_error``, ``on_lifecycle_event``, and ``on_accounting_event``
-    are not called, even when provided. ``failure_observer`` is independent of
-    this option and continues to receive failure evidence for events it
-    requests.
-
     When a captured event cannot be parsed or exceeds an extractor bound,
     ``on_parse_error(event_type, error)`` receives the resolved event identity
     and parser diagnostic only for ``message_start`` and ``message_delta``.
     Event-less frames can use a completed JSON ``type`` scalar as their
     identity. Malformed frames without a usable usage-event identity and
     malformed non-usage events remain silent.
-
-    ``on_lifecycle_event(event_type, content_block_type)`` receives only
-    successfully parsed lifecycle observations. A ``message_start`` emits
-    ``("message_start", None)``; a ``content_block_start`` emits
-    ``("content_block_start", content_block_type)``, where the second value is
-    the bounded string ``content_block.type``, or ``None`` when that field is
-    absent or not a string. Event-less frames can again use the JSON ``type``.
-    Conflicting SSE and JSON event types, malformed events, oversized selected
-    fields, and unknown or irrelevant events do not emit lifecycle observations.
-    Only event identity and bounded block-type metadata cross this callback
-    boundary; message text, thinking text, tool input, and other response
-    payload content do not.
 
     ``on_accounting_event(event_type)`` receives only successfully parsed
     ``message_start``, ``message_delta``, and ``message_stop`` event identities.
@@ -138,10 +106,7 @@ def create_anthropic_messages_sse_usage_extractor(
         _AnthropicMessagesSseUsageHandler(
             usage,
             on_parse_error=on_parse_error,
-            on_lifecycle_event=on_lifecycle_event,
             on_accounting_event=on_accounting_event,
-            include_usage=include_usage,
-            failure_observer=failure_observer,
         ),
         # Anthropic-shaped streams can omit SSE event names and rely on JSON
         # "type" fields to classify message_start/message_delta payloads.
@@ -156,42 +121,21 @@ class _AnthropicMessagesSseUsageHandler:
         usage: dict,
         *,
         on_parse_error: _SseUsageParseErrorCallback | None = None,
-        on_lifecycle_event: AnthropicMessagesLifecycleCallback | None = None,
         on_accounting_event: AnthropicMessagesAccountingEventCallback | None = None,
-        include_usage: bool = True,
-        failure_observer: ModelHttpFailureObserver | None = None,
     ) -> None:
         self._usage = usage
         self._extractor: JsonSelectiveExtractor | None = None
         self._on_parse_error = on_parse_error
-        self._on_lifecycle_event = on_lifecycle_event
         self._on_accounting_event = on_accounting_event
-        self._include_usage = include_usage
-        self._failure_observer = failure_observer
 
     def should_capture_event(self, event_name: str | None) -> bool:
-        usage_needs_event = self._include_usage and (
-            event_name in _ANTHROPIC_MESSAGES_USAGE_EVENTS
-            or (event_name == "message_stop" and self._on_accounting_event is not None)
-            or (event_name == "content_block_start" and self._on_lifecycle_event is not None)
-        )
-        return usage_needs_event or (
-            self._failure_observer is not None
-            and self._failure_observer.needs_sse_event(event_name)
+        return event_name in _ANTHROPIC_MESSAGES_USAGE_EVENTS or (
+            event_name == "message_stop" and self._on_accounting_event is not None
         )
 
     def on_event_start(self, event_name: str | None) -> None:
         self._extractor = JsonSelectiveExtractor(
-            scalar_fields=combined_scalar_fields(
-                _ANTHROPIC_SSE_SCALAR_FIELDS,
-                include_usage=self._include_usage,
-                include_failure=self._failure_observer is not None,
-            ),
-            value_presence_paths=combined_value_presence_paths(
-                (),
-                include_usage=self._include_usage,
-                include_failure=self._failure_observer is not None,
-            ),
+            scalar_fields=_ANTHROPIC_SSE_SCALAR_FIELDS,
             max_work_units=_ANTHROPIC_MESSAGES_MAX_WORK_UNITS,
         )
 
@@ -209,12 +153,6 @@ class _AnthropicMessagesSseUsageHandler:
             return
 
         result = extractor.finish()
-        if self._failure_observer is not None:
-            self._failure_observer.observe(
-                failure_evidence_from_result(result, event_name=event_name)
-            )
-        if not self._include_usage:
-            return
         if not result.complete:
             event_type = event_name
             if event_type is None:
@@ -248,16 +186,6 @@ class _AnthropicMessagesSseUsageHandler:
         elif event_type == "message_delta":
             _store_selected_usage_values(result.values, self._usage, ("usage",))
 
-        if self._on_lifecycle_event is not None:
-            if event_type == "message_start":
-                self._on_lifecycle_event(event_type, None)
-            elif event_type == "content_block_start":
-                block_type = result.values.get(("content_block", "type"))
-                self._on_lifecycle_event(
-                    event_type,
-                    block_type if isinstance(block_type, str) else None,
-                )
-
         if (
             self._on_accounting_event is not None
             and event_type in _ANTHROPIC_MESSAGES_ACCOUNTING_EVENTS
@@ -266,10 +194,6 @@ class _AnthropicMessagesSseUsageHandler:
 
     def on_event_discard(self, event_name: str | None) -> None:
         self._extractor = None
-        if self._failure_observer is not None and self._failure_observer.needs_sse_event(
-            event_name
-        ):
-            self._failure_observer.observe(ModelHttpFailureEvidence(event_name=event_name))
 
 
 def model_json_scalar_fields() -> dict:

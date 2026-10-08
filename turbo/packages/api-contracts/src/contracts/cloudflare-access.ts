@@ -41,10 +41,7 @@ export const scopedCloudflareAccessConfigSchema =
   cloudflareAccessConfigSchema.extend({
     scope: z.enum(["personal", "organization"]),
   });
-const configResponseSchema = z.union([
-  cloudflareAccessConfigSchema,
-  scopedCloudflareAccessConfigSchema,
-]);
+const configResponseSchema = scopedCloudflareAccessConfigSchema;
 const viewQuery = z.object({ view: z.literal("scoped").optional() }).strict();
 const c = initContract();
 const errors = {
@@ -73,7 +70,33 @@ const updateBody = z
     },
     { message: "At least one Cloudflare Access field must be updated" },
   );
-const deleteBody = z.object({ expectedRevision: revision }).strict();
+const impactSnapshot = z.string().regex(/^[a-f0-9]{64}$/u);
+const deleteBody = z
+  .object({
+    expectedRevision: revision,
+    impactSnapshot: impactSnapshot.optional(),
+  })
+  .strict();
+// Only aggregate SSH host usage is exposed to the reviewing administrator.
+const impactPreviewSchema = z
+  .object({
+    expectedRevision: revision,
+    ownHostCount: z.int().nonnegative(),
+    otherHostCount: z.int().nonnegative(),
+    affectedOwners: z.array(
+      z
+        .object({
+          userId: z.string().min(1),
+          displayName: z.string().nullable(),
+        })
+        .strict(),
+    ),
+    impactSnapshot,
+  })
+  .strict();
+const conversionBody = z
+  .object({ expectedRevision: revision, impactSnapshot })
+  .strict();
 export const cloudflareAccessContract = c.router({
   list: {
     method: "GET",
@@ -115,6 +138,30 @@ export const cloudflareAccessContract = c.router({
     body: deleteBody,
     responses: { 204: c.noBody(), ...errors },
   },
+  convertToOrganization: {
+    method: "POST",
+    path: "/api/cloudflare-access/configs/:configId/convert-to-organization",
+    headers: authHeadersSchema,
+    pathParams,
+    body: z.object({ expectedRevision: revision }).strict(),
+    responses: { 200: configResponseSchema, ...errors },
+  },
+  impactPreview: {
+    method: "GET",
+    path: "/api/cloudflare-access/configs/:configId/impact-preview",
+    headers: authHeadersSchema,
+    pathParams,
+    query: z.object({ operation: z.enum(["convert", "delete"]) }).strict(),
+    responses: { 200: impactPreviewSchema, ...errors },
+  },
+  convertToPersonal: {
+    method: "POST",
+    path: "/api/cloudflare-access/configs/:configId/convert-to-personal",
+    headers: authHeadersSchema,
+    pathParams,
+    body: conversionBody,
+    responses: { 200: configResponseSchema, ...errors },
+  },
 });
 export type CloudflareAccessConfig = z.infer<
   typeof cloudflareAccessConfigSchema
@@ -127,3 +174,6 @@ export type CreateCloudflareAccessRequest = z.infer<
 >;
 export type CreateCloudflareAccessConfigRequest = z.infer<typeof createBody>;
 export type UpdateCloudflareAccessRequest = z.infer<typeof updateBody>;
+export type CloudflareAccessImpactPreview = z.infer<typeof impactPreviewSchema>;
+export type ConvertCloudflareAccessRequest = z.infer<typeof conversionBody>;
+export type DeleteCloudflareAccessRequest = z.infer<typeof deleteBody>;

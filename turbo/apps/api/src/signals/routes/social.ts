@@ -17,7 +17,6 @@ import { notFound } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
 import { socialKitRequest$ } from "../services/social.service";
 import { socialStatus$ } from "../services/social-status.service";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import {
   createSocialKitDownload$,
   getSocialKitDownload$,
@@ -127,13 +126,12 @@ const createSocialKitDownloadInner$ = command(
     if (!bodyResult.ok) {
       return agentSafeResponse(auth, bodyResult.response);
     }
-    const publicBrand = PUBLIC_BRAND;
     const reconciliationSignal = AbortSignal.timeout(
       SOCIALKIT_RECONCILIATION_TIMEOUT_MS,
     );
     const response = await set(
       createSocialKitDownload$,
-      { auth, body: bodyResult.data, publicBrand },
+      { auth, body: bodyResult.data },
       signal,
     );
     if (response.status === 202) {

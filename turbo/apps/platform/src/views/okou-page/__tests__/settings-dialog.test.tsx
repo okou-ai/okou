@@ -1,7 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { modelProviderCooldownDiagnosticsContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import {
   type UserLocale,
   type UserPreferencesResponse,
@@ -16,14 +15,17 @@ import {
   startPage,
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  mockChatThreadSnapshotResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import { OKOU_LOCALE_COOKIE_NAME } from "../../../i18n/locale-fallback.ts";
 
 const context = testContext();
 
 async function openDialog(
   role: "admin" | "member" = "admin",
-  section: "debug" | "general" | "model" | "preference" = "general",
+  section: "general" | "model" | "preference" = "general",
   host = "localhost",
 ): Promise<void> {
   context.mocks.data.org({
@@ -43,8 +45,7 @@ async function openDialog(
     context,
     host,
     path: `/?settings=${section}`,
-    featureSwitches:
-      section === "debug" ? { [FeatureSwitchKey.OkouDebug]: true } : {},
+    featureSwitches: {},
   });
   await waitFor(() => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
@@ -78,7 +79,7 @@ function createPreferences(
     theme: "system",
     colorTheme: "blue-horizon",
     captureNetworkBodiesRemaining: 0,
-    voiceInputModel: null,
+    memoryInitialized: true,
   };
 }
 
@@ -96,38 +97,6 @@ function mockMissingLocaleInitialization(
     }
     return respond(200, preferences());
   });
-}
-
-function connectorCatalogDisclosure(region: HTMLElement): {
-  readonly details: HTMLDetailsElement;
-  readonly summary: HTMLElement;
-} {
-  const title = within(region).getByText("Connector catalog");
-  const summary = title.closest("summary");
-  const details = summary?.closest("details");
-  if (!(summary instanceof HTMLElement)) {
-    throw new Error("Connector catalog summary not found");
-  }
-  if (!(details instanceof HTMLDetailsElement)) {
-    throw new Error("Connector catalog disclosure not found");
-  }
-  return { details, summary };
-}
-
-function builtInModelCooldownDisclosure(region: HTMLElement): {
-  readonly details: HTMLDetailsElement;
-  readonly summary: HTMLElement;
-} {
-  const title = within(region).getByText("Built-in model fallback");
-  const summary = title.closest("summary");
-  const details = summary?.closest("details");
-  if (!(summary instanceof HTMLElement)) {
-    throw new Error("Built-in model cooldown summary not found");
-  }
-  if (!(details instanceof HTMLDetailsElement)) {
-    throw new Error("Built-in model cooldown disclosure not found");
-  }
-  return { details, summary };
 }
 
 function indexedDbDisclosure(region: HTMLElement): {
@@ -176,7 +145,7 @@ async function openSupportedLanguagePicker() {
 
   await openDialog("admin", "preference");
 
-  click(await screen.findByRole("combobox", { name: "Idioma" }));
+  click(await screen.findByRole("combobox", { name: "Language" }));
 }
 
 test("Offer only the workspace's supported languages", async () => {
@@ -197,6 +166,14 @@ test("Persist the browser language when the workspace has no preference", async 
   let serverLocale: UserLocale | null = null;
   context.mocks.browser.languages(["id-ID"]);
   context.mocks.api(userPreferencesContract.get, ({ respond }) => {
+    if (serverLocale === null) {
+      return respond(409, {
+        error: {
+          code: "USER_PREFERENCES_UNINITIALIZED",
+          message: "User preferences require timezone or locale initialization",
+        },
+      });
+    }
     return respond(200, createPreferences(serverLocale));
   });
   mockMissingLocaleInitialization(
@@ -217,7 +194,7 @@ test("Persist the browser language when the workspace has no preference", async 
   await openDialog("admin", "preference", "app.okou.ai");
 
   const languageSelect = await screen.findByRole("combobox", {
-    name: "Bahasa",
+    name: "Language",
   });
   await waitFor(() => {
     expect(serverLocale).toBe("id-ID");
@@ -263,9 +240,9 @@ test("Select and persist a supported interface language", async () => {
 
   await waitFor(() => {
     expect(submittedLocales).toContain("de-DE");
-    expect(screen.getByRole("combobox", { name: "Sprache" })).toHaveTextContent(
-      "Deutsch",
-    );
+    expect(
+      screen.getByRole("combobox", { name: "Language" }),
+    ).toHaveTextContent("Deutsch");
     expect(document.documentElement.lang).toBe("de-DE");
   });
 });
@@ -278,11 +255,11 @@ test("Use the saved workspace language ahead of locale hints", async () => {
   await openDialog("admin", "preference", "app.okou.ai");
 
   const languageSelect = await screen.findByRole("combobox", {
-    name: "Bahasa",
+    name: "Language",
   });
   await waitFor(() => {
     expect(languageSelect).toHaveTextContent("Bahasa Indonesia");
-    expect(languageSelect).toHaveAccessibleName("Bahasa");
+    expect(languageSelect).toHaveAccessibleName("Language");
     expect(document.documentElement.lang).toBe("id-ID");
   });
 
@@ -352,91 +329,6 @@ test("Route members away from administrator-only workspace settings", async () =
   expect(screen.getByText("Theme")).toBeInTheDocument();
 });
 
-test("Inspect built-in model cooldown diagnostics", async () => {
-  const releaseRefresh = context.mocks.deferred<void>();
-  const refreshStarted = context.mocks.deferred<void>();
-  let initialResponseServed = false;
-  context.mocks.api(
-    modelProviderCooldownDiagnosticsContract.get,
-    async ({ respond }) => {
-      if (initialResponseServed) {
-        refreshStarted.resolve();
-        await releaseRefresh.promise;
-        return respond(200, {
-          activeCooldowns: [],
-        });
-      }
-      initialResponseServed = true;
-      return respond(200, {
-        activeCooldowns: [
-          {
-            selectedModel: "gpt-5.6-luna",
-            providerType: "openai-api-key",
-            upstreamModel: "gpt-5.6-luna-2026-08-01",
-            unavailableUntil: "2026-08-23T04:05:00.000Z",
-          },
-        ],
-      });
-    },
-  );
-
-  await openDialog("admin", "debug");
-
-  const diagnostics = await screen.findByRole("region", {
-    name: "Built-in model fallback",
-  });
-  const { details, summary } = builtInModelCooldownDisclosure(diagnostics);
-  expect(details.open).toBeFalsy();
-  expect(summary).toHaveTextContent("global active cooldowns: 1");
-  expect(
-    within(diagnostics).queryByText("gpt-5.6-luna-2026-08-01"),
-  ).not.toBeVisible();
-
-  click(summary);
-  expect(details.open).toBeTruthy();
-  expect(within(diagnostics).getByText("gpt-5.6-luna")).toBeInTheDocument();
-  expect(within(diagnostics).getByText("openai-api-key")).toBeInTheDocument();
-  expect(
-    within(diagnostics).getByText("gpt-5.6-luna-2026-08-01"),
-  ).toBeInTheDocument();
-  expect(
-    within(diagnostics).getByText("2026-08-23T04:05:00.000Z"),
-  ).toHaveAttribute("datetime", "2026-08-23T04:05:00.000Z");
-  expect(
-    queryAllByRoleFast("button", diagnostics).some((button) => {
-      return button.textContent?.trim() === "Cancel cooldown";
-    }),
-  ).toBeFalsy();
-
-  const refreshButton = queryAllByRoleFast("button", diagnostics).find(
-    (button) => {
-      return button.textContent?.trim() === "Refresh";
-    },
-  );
-  if (!refreshButton) {
-    throw new Error("Built-in model cooldown refresh button not found");
-  }
-  click(refreshButton);
-  await refreshStarted.promise;
-  expect(refreshButton).toBeDisabled();
-  expect(details.open).toBeTruthy();
-  expect(
-    within(diagnostics).getByText("gpt-5.6-luna-2026-08-01"),
-  ).toBeInTheDocument();
-
-  releaseRefresh.resolve();
-  await waitFor(() => {
-    expect(summary).toHaveTextContent("global active cooldowns: 0");
-    expect(refreshButton).toBeEnabled();
-  });
-  expect(details.open).toBeTruthy();
-  expect(
-    within(diagnostics).getByText(
-      "No built-in model routes are currently in global cooldown.",
-    ),
-  ).toBeInTheDocument();
-});
-
 async function setupSnapshotMeasurement() {
   const agentId = crypto.randomUUID();
   const snapshotRequested = context.mocks.deferred<void>();
@@ -447,28 +339,31 @@ async function setupSnapshotMeasurement() {
       snapshotRequested.resolve();
     }
     await releaseSnapshot.promise;
-    return respond(200, {
-      chatThreads: ["Snapshot 文 😀", "Second thread", "Third thread"].map(
-        (title) => {
-          return {
-            id: crypto.randomUUID(),
-            agentId,
-            title,
-            sortAt: "2026-09-05T00:00:00Z",
-            createdAt: "2026-09-05T00:00:00Z",
-            updatedAt: "2026-09-05T00:00:00Z",
-            pinnedAt: null,
-            renamedAt: null,
-            selectedModel: null,
-            serviceTier: null,
-            computerUseHostId: null,
-            selectedVideoModel: null,
-          };
-        },
-      ),
-      latestEventId: null,
-      latestSeqId: null,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: ["Snapshot 文 😀", "Second thread", "Third thread"].map(
+          (title) => {
+            return {
+              id: crypto.randomUUID(),
+              agentId,
+              title,
+              sortAt: "2026-09-05T00:00:00Z",
+              createdAt: "2026-09-05T00:00:00Z",
+              updatedAt: "2026-09-05T00:00:00Z",
+              pinnedAt: null,
+              archived: false,
+              renamedAt: null,
+              selectedModel: null,
+              serviceTier: null,
+              computerUseHostId: null,
+            };
+          },
+        ),
+        latestEventId: null,
+        latestSeqId: null,
+      }),
+    );
   });
   context.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });
@@ -515,133 +410,4 @@ test("Measure the threads inside a singleton snapshot on demand", async () => {
   expect(values[0]).toHaveTextContent("3");
   expect(values[1]).toHaveTextContent(/^[1-9][\d.]*KB$/u);
   expect(values[2]).toHaveTextContent(/^[\d,.]+ ms$/u);
-});
-
-test("Cancel a global built-in model cooldown as staff", async () => {
-  const releaseCancellation = context.mocks.deferred<void>();
-  const cancellationStarted = context.mocks.deferred<void>();
-  let cooldownActive = true;
-  let cancellationBody: {
-    readonly selectedModel: string;
-    readonly providerType: string;
-    readonly upstreamModel: string;
-  } | null = null;
-  context.mocks.api(
-    modelProviderCooldownDiagnosticsContract.get,
-    ({ respond }) => {
-      return respond(200, {
-        canCancelCooldowns: true,
-        activeCooldowns: cooldownActive
-          ? [
-              {
-                selectedModel: "gpt-5.6-luna",
-                providerType: "openai-api-key",
-                upstreamModel: "gpt-5.6-luna-2026-08-01",
-                unavailableUntil: "2026-08-23T04:05:00.000Z",
-              },
-            ]
-          : [],
-      });
-    },
-  );
-  context.mocks.api(
-    modelProviderCooldownDiagnosticsContract.cancel,
-    async ({ body, respond }) => {
-      cancellationBody = body;
-      cancellationStarted.resolve();
-      await releaseCancellation.promise;
-      cooldownActive = false;
-      return respond(204);
-    },
-  );
-
-  await openDialog("admin", "debug");
-
-  const diagnostics = await screen.findByRole("region", {
-    name: "Built-in model fallback",
-  });
-  const { details, summary } = builtInModelCooldownDisclosure(diagnostics);
-  click(summary);
-  expect(details.open).toBeTruthy();
-
-  click(buttonWithText(diagnostics, "Cancel cooldown"));
-  const confirmation = await screen.findByRole("dialog", {
-    name: "Cancel global cooldown?",
-  });
-  expect(cancellationBody).toBeNull();
-  expect(within(confirmation).getByText("gpt-5.6-luna")).toBeVisible();
-  expect(within(confirmation).getByText("openai-api-key")).toBeVisible();
-  expect(
-    within(confirmation).getByText("gpt-5.6-luna-2026-08-01"),
-  ).toBeVisible();
-  expect(
-    within(confirmation).getByText(
-      "Cancelling this global cooldown makes the route immediately eligible for every workspace.",
-    ),
-  ).toBeVisible();
-  expect(
-    within(confirmation).getByText(
-      "A later qualifying failure can place this route back in cooldown.",
-    ),
-  ).toBeVisible();
-
-  click(buttonWithText(confirmation, "Cancel cooldown"));
-  await cancellationStarted.promise;
-  expect(buttonWithText(confirmation, "Cancelling...")).toBeDisabled();
-  expect(buttonWithText(confirmation, "Keep cooldown")).toBeDisabled();
-  expect(cancellationBody).toStrictEqual({
-    selectedModel: "gpt-5.6-luna",
-    providerType: "openai-api-key",
-    upstreamModel: "gpt-5.6-luna-2026-08-01",
-  });
-
-  releaseCancellation.resolve();
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Cancel global cooldown?" }),
-    ).not.toBeInTheDocument();
-    expect(summary).toHaveTextContent("global active cooldowns: 0");
-  });
-  expect(details.open).toBeTruthy();
-  expect(
-    within(diagnostics).getByText(
-      "No built-in model routes are currently in global cooldown.",
-    ),
-  ).toBeInTheDocument();
-});
-
-test("Inspect connector catalog diagnostics", async () => {
-  await openDialog("admin", "debug");
-
-  const diagnostics = await screen.findByRole("region", {
-    name: "Connector catalog",
-  });
-  const { details, summary } = connectorCatalogDisclosure(diagnostics);
-  expect(details.open).toBeFalsy();
-  expect(summary).toHaveTextContent("Sync state: Stale");
-  expect(summary).toHaveTextContent("Active version: 2026-07-25.1");
-  expect(summary).toHaveTextContent("Last attempt: Rejected");
-  expect(summary).toHaveTextContent("Evaluation: Current");
-
-  click(summary);
-  expect(details.open).toBeTruthy();
-  expect(within(diagnostics).getByText("2026-07-25.2")).toBeInTheDocument();
-  expect(within(diagnostics).getByText("1.319.0")).toBeInTheDocument();
-  expect(within(diagnostics).getByText("Reused")).toBeInTheDocument();
-  expect(within(diagnostics).getAllByText("Invalid artifact")).toHaveLength(2);
-  expect(within(diagnostics).getByText("github / oauth")).toBeInTheDocument();
-  expect(
-    within(diagnostics).getByText("Missing revoke provider"),
-  ).toBeInTheDocument();
-  expect(within(diagnostics).getByText("Missing versions")).toBeInTheDocument();
-  expect(within(diagnostics).getByText("Unowned secrets")).toBeInTheDocument();
-  expect(
-    within(diagnostics).getByText("Unowned variables"),
-  ).toBeInTheDocument();
-  expect(
-    within(diagnostics).getByText("Unresolved bridge credentials"),
-  ).toBeInTheDocument();
-
-  click(summary);
-  expect(details.open).toBeFalsy();
 });

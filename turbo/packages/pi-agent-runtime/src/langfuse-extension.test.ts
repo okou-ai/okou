@@ -61,7 +61,6 @@ const MANAGED_ENVIRONMENT = [
   "LANGFUSE_PI_PARENT_TRACE_ID",
   "LANGFUSE_PI_PARENT_SPAN_ID",
   "LANGFUSE_PI_PARENT_SESSION_ID",
-  "PI_LANGFUSE_CONTINUATION",
 ] as const;
 const originalEnvironment = Object.fromEntries(
   MANAGED_ENVIRONMENT.map((name) => {
@@ -78,7 +77,6 @@ beforeEach(() => {
   process.env.LANGFUSE_PI_PARENT_SPAN_ID = "2".repeat(16);
   process.env.LANGFUSE_PI_PARENT_SESSION_ID =
     "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
-  process.env.PI_LANGFUSE_CONTINUATION = "true";
 });
 
 afterEach(() => {
@@ -187,27 +185,7 @@ describe("patched official Pi Langfuse extension", () => {
     });
   });
 
-  it("exports a parented Sandbox Continuation on pending-tool agent_start", async () => {
-    const payload = await captureExport(async (handlers) => {
-      await onlyHandler(handlers, "agent_start")(
-        { type: "agent_start" },
-        fakeContext(),
-      );
-    });
-
-    expect(payload.includes(Buffer.from("Sandbox Continuation"))).toBe(true);
-    expect(payload.includes(Buffer.from("continue this run"))).toBe(true);
-    expect(
-      payload.includes(Buffer.from("1".repeat(32), "hex")) ||
-        payload.includes(Buffer.from("1".repeat(32))),
-    ).toBe(true);
-    expect(
-      payload.includes(Buffer.from("2".repeat(16), "hex")) ||
-        payload.includes(Buffer.from("2".repeat(16))),
-    ).toBe(true);
-  }, 30_000);
-
-  it("does not create a second root after before_agent_start", async () => {
+  it("exports a parented root for the sandbox prompt", async () => {
     const payload = await captureExport(async (handlers) => {
       const context = fakeContext();
       await onlyHandler(handlers, "before_agent_start")(
@@ -218,13 +196,17 @@ describe("patched official Pi Langfuse extension", () => {
         },
         context,
       );
-      await onlyHandler(handlers, "agent_start")(
-        { type: "agent_start" },
-        context,
-      );
     });
 
     expect(payload.includes(Buffer.from("Subagent Turn"))).toBe(true);
-    expect(payload.includes(Buffer.from("Sandbox Continuation"))).toBe(false);
+    expect(payload.includes(Buffer.from("new prompt"))).toBe(true);
+    expect(
+      payload.includes(Buffer.from("1".repeat(32), "hex")) ||
+        payload.includes(Buffer.from("1".repeat(32))),
+    ).toBe(true);
+    expect(
+      payload.includes(Buffer.from("2".repeat(16), "hex")) ||
+        payload.includes(Buffer.from("2".repeat(16))),
+    ).toBe(true);
   }, 30_000);
 });

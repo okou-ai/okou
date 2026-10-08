@@ -14,7 +14,7 @@ import { requestSignal$ } from "../context/hono";
 import { readBoundedResponseText, safeJsonParse, settle } from "../utils";
 import {
   checkManagedCredits$,
-  recordManagedUsage$,
+  recordSuccessfulManagedUsage$,
   type ManagedUsageErrorResponse,
 } from "./managed-usage.service";
 
@@ -202,7 +202,7 @@ function runIdForUsage(auth: AuthContext): string | undefined {
 function successBody(
   operation: FinanceOperation,
   result: unknown,
-  creditsCharged: number,
+  creditsCharged: number | null,
 ): FinanceResponse {
   return {
     operation,
@@ -263,7 +263,7 @@ export const finance$ = command(
 
     const runId = runIdForUsage(args.auth);
     const creditsCharged = await set(
-      recordManagedUsage$,
+      recordSuccessfulManagedUsage$,
       {
         actor: {
           orgId: args.auth.orgId,

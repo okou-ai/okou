@@ -400,6 +400,8 @@ interface AutomaticMcpOAuthProviderOptions {
   readonly synchronizeAuthorizationServerDiscovery?: boolean;
   readonly dcrFailureStatus?: number;
   readonly dcrFailureDescription?: string;
+  readonly dcrClientIdIssuedAt?: number | null;
+  readonly dcrClientSecretExpiresAt?: number;
   readonly invalidDcrResponse?: boolean;
   readonly authorizationCodeSupported?: boolean;
   readonly pkceS256Supported?: boolean;
@@ -429,6 +431,7 @@ interface AutomaticMcpOAuthProviderOptions {
   readonly resource?: string;
   readonly authorizationEndpoint?: string;
   readonly metadataIssuer?: string;
+  readonly userInfoEndpoint?: string;
   readonly identity?: OAuthIdentityFixtureOptions;
   readonly refreshIdentity?: OAuthIdentityFixtureOptions;
 }
@@ -507,7 +510,7 @@ export function mockAutomaticMcpOAuthProvider(
   const tokenUrl = `${issuer}/token`;
   const registrationUrl = `${issuer}/register`;
   const jwksUrl = `${issuer}/jwks.json`;
-  const userInfoUrl = `${issuer}/userinfo`;
+  const userInfoUrl = options.userInfoEndpoint ?? `${issuer}/userinfo`;
   const resourceMetadata = {
     resource: options.resource ?? endpoint,
     scopes_supported: [...(options.metadataScopes ?? ["metadata-fallback"])],
@@ -730,7 +733,15 @@ export function mockAutomaticMcpOAuthProvider(
         ...(tokenEndpointAuthMethod === "none"
           ? {}
           : { client_secret: "automatic-dcr-secret" }),
-        client_id_issued_at: Math.floor(now() / 1000),
+        ...(options.dcrClientIdIssuedAt === null
+          ? {}
+          : {
+              client_id_issued_at:
+                options.dcrClientIdIssuedAt ?? Math.floor(now() / 1000),
+            }),
+        ...(options.dcrClientSecretExpiresAt === undefined
+          ? {}
+          : { client_secret_expires_at: options.dcrClientSecretExpiresAt }),
         token_endpoint_auth_method: tokenEndpointAuthMethod,
       });
     }),

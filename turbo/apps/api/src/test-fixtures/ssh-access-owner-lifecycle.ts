@@ -7,7 +7,7 @@ import { db } from "../lib/db";
 
 /**
  * A deleted user cannot authenticate to inspect their own resources. This
- * fixture checks physical erasure of otherwise-invisible encrypted state.
+ * fixture checks physical deletion of otherwise-invisible encrypted state.
  */
 export async function countUserSshAccessResourcesFixture(userId: string) {
   const [configs, hosts, credentials] = await Promise.all([

@@ -184,7 +184,7 @@ function printSensitivePermissionGuidance(
       "IMPORTANT: Granting chat:write allows sending messages AS THE USER's identity, not as a bot.",
     );
     console.log(
-      "Use `okou slack message send -c <channel> -t <text>` to send messages as the bot instead — this is the recommended approach for most use cases.",
+      "Use `okou slack message send --to <channel> -t <text>` to send messages as the bot instead — this is the recommended approach for most use cases.",
     );
     console.log(
       "Only allow this permission below if acting as the user is specifically required.",

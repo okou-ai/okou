@@ -2,26 +2,33 @@ import {
   FEISHU_PLATFORMS,
   type FeishuPlatform,
 } from "@okouai/core/feishu-platform";
-import { readFileSync } from "node:fs";
-
-import chalk from "chalk";
 import { Command } from "commander";
 
 import { sendFeishuMessage } from "../../../lib/api/domains/integrations-feishu";
 import { withErrorHandler } from "../../../lib/command/with-error-handler";
+import {
+  TO_OPTION_FLAGS,
+  isJsonObject,
+  parseRichJson,
+  readMessageText,
+  toOptionDescription,
+} from "../../../lib/command/message-target";
+import {
+  JSON_OPTION_DESCRIPTION,
+  JSON_OPTION_FLAGS,
+  printMessageOutput,
+} from "../../../lib/command/message-output";
+import {
+  type FeishuDestinationOptions,
+  replyModeOption,
+  resolveFeishuDestination,
+} from "./target";
 
-interface SendFeishuOptions {
-  readonly installation?: string;
-  readonly chat?: string;
-  readonly user?: string;
-  readonly reply?: string;
-  readonly thread?: boolean;
+interface SendFeishuOptions extends FeishuDestinationOptions {
+  readonly as?: string;
   readonly text?: string;
-  readonly card?: string;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  readonly rich?: string;
+  readonly json?: boolean;
 }
 
 function parseCard(
@@ -31,16 +38,9 @@ function parseCard(
   if (!input) {
     return undefined;
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(input);
-  } catch {
-    throw new Error("Invalid JSON for --card flag", {
-      cause: new Error(`Provide a valid ${providerName} card JSON object`),
-    });
-  }
-  if (!isRecord(parsed)) {
-    throw new Error("Invalid JSON for --card", {
+  const parsed = parseRichJson(input, `a ${providerName} card JSON object`);
+  if (!isJsonObject(parsed)) {
+    throw new Error("Invalid --rich payload", {
       cause: new Error(`Provide a ${providerName} card JSON object`),
     });
   }
@@ -52,71 +52,55 @@ export function createFeishuSendCommand(platform: FeishuPlatform) {
   return new Command()
     .name("send")
     .description(`Send a message to a ${providerName} chat or user`)
-    .option("-i, --installation <id>", `${providerName} installation ID`)
-    .option("-c, --chat <id>", `${providerName} chat ID`)
     .option(
-      "-u, --user <open-id>",
-      `${providerName} user open ID (use "me" for yourself)`,
+      TO_OPTION_FLAGS,
+      toOptionDescription("oc_… chat, ou_… user open ID"),
     )
-    .option("-r, --reply <message-id>", "Message ID to reply to")
-    .option("--thread", `Reply in a ${providerName} thread`)
-    .option("-t, --text <message>", "Message text")
-    .option("--card <json>", `${providerName} interactive card JSON`)
+    .option("--reply-to <message-id>", "Message ID to reply to (om_…)")
+    .addOption(replyModeOption())
+    .option("--as <installation-id>", `${providerName} installation to send as`)
+    .option("-t, --text <message>", "Message text (or pipe it on stdin)")
+    .option("--rich <json>", `${providerName} interactive card JSON`)
+    .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
     .addHelpText(
       "after",
       `
 Examples:
-  Chat message:          okou ${platform} message send -c oc_xxx -t "Hello!"
-  Direct message:        okou ${platform} message send -u ou_xxx -t "Hello!"
-  DM yourself:           okou ${platform} message send -u me -t "Hello!"
-  Thread reply:          okou ${platform} message send -r om_xxx --thread -t "Reply"
-  Interactive card:      okou ${platform} message send -c oc_xxx --card '{"schema":"2.0","body":{"elements":[]}}'
-  Select a custom app:   okou ${platform} message send -i <installation-id> -c oc_xxx -t "Hello!"
+  Chat message:          okou ${platform} message send --to oc_xxx -t "Hello!"
+  Direct message:        okou ${platform} message send --to ou_xxx -t "Hello!"
+  DM yourself:           okou ${platform} message send --to me -t "Hello!"
+  Thread reply:          okou ${platform} message send --reply-to om_xxx --reply-mode thread -t "Reply"
+  Interactive card:      okou ${platform} message send --to oc_xxx --rich '{"schema":"2.0","body":{"elements":[]}}'
+  Select a custom app:   okou ${platform} message send --as <installation-id> --to oc_xxx -t "Hello!"
 
 Notes:
-  - Exactly one of --chat, --user, or --reply is required
-  - Exactly one of --text or --card is required
-  - --installation is required when the organization has multiple ${providerName} bots`,
+  - Exactly one of --to or --reply-to is required; replies go to the replied-to message's chat
+  - Exactly one of --text or --rich is required
+  - --as is required when the organization has multiple ${providerName} bots`,
     )
     .action(
       withErrorHandler(async (options: SendFeishuOptions) => {
-        const targets = [options.chat, options.user, options.reply].filter(
-          Boolean,
-        );
-        if (targets.length !== 1) {
-          throw new Error(
-            "Exactly one of --chat, --user, or --reply must be provided",
-          );
-        }
-        if (options.thread && !options.reply) {
-          throw new Error("--thread requires --reply");
-        }
-
-        let text = options.text;
-        if (!text && !options.card && !process.stdin.isTTY) {
-          try {
-            text = readFileSync("/dev/stdin", "utf8").trim();
-          } catch {
-            // stdin is not readable; fall through to normal input validation.
-          }
-        }
-        const card = parseCard(options.card, providerName);
+        const destination = resolveFeishuDestination(providerName, options);
+        const card = parseCard(options.rich, providerName);
+        const text = card ? options.text : readMessageText(options.text);
         if (Boolean(text) === Boolean(card)) {
-          throw new Error("Exactly one of --text or --card must be provided");
+          throw new Error("Exactly one of --text or --rich must be provided");
         }
 
         const result = await sendFeishuMessage({
           ...(platform === "lark" ? { platform } : {}),
-          installationId: options.installation,
-          chat: options.chat,
-          user: options.user,
-          replyToMessageId: options.reply,
-          replyInThread: options.thread,
+          installationId: options.as,
+          ...destination,
           text,
           card,
         });
-        console.log(
-          chalk.green(`✓ Message sent (message: ${result.messageId})`),
+        printMessageOutput(
+          {
+            integration: platform,
+            chatId: result.chatId,
+            messages: [{ id: result.messageId, url: null }],
+          },
+          options,
         );
       }),
     );

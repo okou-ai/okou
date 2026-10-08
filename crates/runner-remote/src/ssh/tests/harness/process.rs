@@ -16,7 +16,7 @@ pub(super) enum Input {
 }
 
 pub(super) struct Process {
-    input: mpsc::Sender<Input>,
+    input: mpsc::UnboundedSender<Input>,
     task: JoinHandle<()>,
     pid: u32,
 }
@@ -81,7 +81,9 @@ impl Process {
         let mut stdin = child.stdin.take();
         let stdout = child.stdout.take().unwrap();
         let stderr = child.stderr.take().unwrap();
-        let (input, mut receiver) = mpsc::channel(16);
+        // The SSH handler also drains this process's output. Waiting for stdin
+        // capacity there can deadlock when a child writes before reading.
+        let (input, mut receiver) = mpsc::unbounded_channel();
         let task = tokio::spawn(async move {
             let inputs = async {
                 while let Some(input) = receiver.recv().await {
@@ -126,9 +128,7 @@ impl Process {
     }
 
     pub(super) fn input(&self, input: Input) -> Result<(), russh::Error> {
-        self.input
-            .try_send(input)
-            .map_err(|_| russh::Error::Disconnect)
+        self.input.send(input).map_err(|_| russh::Error::Disconnect)
     }
 
     pub(super) fn signal(&self, signal: &russh::Sig) {

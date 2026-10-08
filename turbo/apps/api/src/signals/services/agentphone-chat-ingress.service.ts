@@ -1,19 +1,18 @@
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
-import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import { agents } from "@okouai/db/schema/agent";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq } from "drizzle-orm";
 
-import type { Db } from "../external/db";
-import { appendChatThreadEvent } from "./chat-thread-event.service";
-import {
-  loadNewChatThreadMediaModels,
-  type NewChatThreadMediaModels,
-} from "./chat-thread-media-model.service";
-import { loadNewChatThreadModelSettings } from "./chat-thread-model-settings.service";
-import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import { writeDb$ } from "../external/db";
+import { command } from "ccstate";
+import { randomUUID } from "node:crypto";
+import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
 import type { Tx } from "../../lib/db-types";
-import { isIntegrationDmSessionKey } from "../../lib/integration-dm-session";
+import {
+  integrationChatThreadInsertFromRouteSql,
+  integrationChatThreadValues,
+  integrationThreadCreatedEventSql,
+  type IntegrationChatThreadCreation,
+} from "./integration-chat-thread-publication";
 
 interface AgentPhoneChatThreadRouteKey {
   readonly agentphoneUserLinkId: string;
@@ -24,26 +23,9 @@ interface AgentPhoneChatThreadBinding {
   readonly chatThreadId: string;
 }
 
-interface LoadedAgentPhoneChatThreadRoute extends AgentPhoneChatThreadBinding {
-  readonly id: string;
+interface AgentPhoneChatThreadCreateArgs extends IntegrationChatThreadCreation {
   readonly conversationId: string | null;
-  readonly agentId: string;
-  readonly selectedModel: string | null;
-  readonly codexServiceTier: "fast" | null;
-  readonly computerUseHostId: string | null;
 }
-
-interface AgentPhoneChatThreadCreateArgs {
-  readonly userId: string;
-  readonly orgId: string;
-  readonly agentId: string;
-  readonly selectedModel: string | null;
-  readonly serviceTier: ChatThreadServiceTier | null;
-  readonly conversationId: string | null;
-  readonly currentTime: Date;
-}
-
-type AgentPhoneChatThreadTransaction = Tx;
 
 function routeWhere(key: AgentPhoneChatThreadRouteKey) {
   return and(
@@ -55,102 +37,54 @@ function routeWhere(key: AgentPhoneChatThreadRouteKey) {
   );
 }
 
-async function loadRoute(
-  db: Pick<Db, "select">,
+/** Read the chat thread an AgentPhone conversation already routes to. */
+export const findAgentPhoneRoutedChatThreadId$ = command(
+  async (
+    { set },
+    key: AgentPhoneChatThreadRouteKey,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> => {
+    const db = set(writeDb$);
+    const [route] = await db
+      .select({ chatThreadId: agentphoneChatThreadRoutes.chatThreadId })
+      .from(agentphoneChatThreadRoutes)
+      .where(routeWhere(key))
+      .limit(1);
+    signal?.throwIfAborted();
+    return route?.chatThreadId;
+  },
+);
+
+const ROUTE_COLUMNS = {
+  id: agentphoneChatThreadRoutes.id,
+  conversationId: agentphoneChatThreadRoutes.conversationId,
+  chatThreadId: agentphoneChatThreadRoutes.chatThreadId,
+} as const;
+
+type AgentPhoneChatThreadRouteRow = Awaited<
+  ReturnType<typeof loadAgentPhoneChatThreadRoute>
+>;
+
+async function loadAgentPhoneChatThreadRoute(
+  tx: Tx,
   key: AgentPhoneChatThreadRouteKey,
-): Promise<LoadedAgentPhoneChatThreadRoute | undefined> {
-  const [route] = await db
-    .select({
-      id: agentphoneChatThreadRoutes.id,
-      conversationId: agentphoneChatThreadRoutes.conversationId,
-      chatThreadId: agentphoneChatThreadRoutes.chatThreadId,
-      agentId: agents.id,
-      selectedModel: chatThreads.selectedModel,
-      codexServiceTier: chatThreads.codexServiceTier,
-      computerUseHostId: chatThreads.computerUseHostId,
-    })
+) {
+  const [route] = await tx
+    .select(ROUTE_COLUMNS)
     .from(agentphoneChatThreadRoutes)
     .innerJoin(
       chatThreads,
       eq(chatThreads.id, agentphoneChatThreadRoutes.chatThreadId),
     )
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
     .where(routeWhere(key))
-    .limit(1)
-    .for("update");
+    .limit(1);
   return route;
 }
 
-interface CreatedAgentPhoneChatThread {
-  readonly id: string;
-  readonly createdAt: Date;
-  readonly mediaModels: NewChatThreadMediaModels;
-  readonly modelSettings: ModelSettings;
-}
-
-async function createCanonicalAgentPhoneChatThread(
-  tx: AgentPhoneChatThreadTransaction,
-  args: AgentPhoneChatThreadCreateArgs,
-  computerUseHostId: string | null = null,
-): Promise<CreatedAgentPhoneChatThread> {
-  const mediaModels = await loadNewChatThreadMediaModels(tx, {
-    orgId: args.orgId,
-    userId: args.userId,
-  });
-  const modelSettings = await loadNewChatThreadModelSettings(tx, {
-    orgId: args.orgId,
-    userId: args.userId,
-  });
-  const [thread] = await tx
-    .insert(chatThreads)
-    .values({
-      userId: args.userId,
-      agentId: args.agentId,
-      computerUseHostId,
-      cloudBrowserEnabled: false,
-      selectedModel: args.selectedModel,
-      modelSettings,
-      codexServiceTier: args.serviceTier === "priority" ? "fast" : null,
-      title: null,
-      lastReadAt: args.currentTime,
-      lastMessageAt: args.currentTime,
-      createdAt: args.currentTime,
-      updatedAt: args.currentTime,
-      selectedVideoModel: mediaModels.selectedVideoModel,
-      selectedImageModel: mediaModels.selectedImageModel,
-    })
-    .returning({ id: chatThreads.id, createdAt: chatThreads.createdAt });
-  if (!thread) {
-    throw new Error("Failed to create canonical AgentPhone chat thread");
-  }
-  return { ...thread, mediaModels, modelSettings };
-}
-
-async function appendCanonicalAgentPhoneChatThreadCreatedEvent(
-  tx: AgentPhoneChatThreadTransaction,
-  args: AgentPhoneChatThreadCreateArgs,
-  thread: CreatedAgentPhoneChatThread,
-  computerUseHostId: string | null | undefined,
-): Promise<void> {
-  await appendChatThreadEvent(tx, {
-    kind: "created",
-    userId: args.userId,
-    orgId: args.orgId,
-    chatThreadId: thread.id,
-    agentId: args.agentId,
-    title: null,
-    selectedModel: args.selectedModel,
-    modelSettings: thread.modelSettings,
-    serviceTier: args.serviceTier,
-    computerUseHostId,
-    ...thread.mediaModels,
-    createdAt: thread.createdAt,
-  });
-}
-
-async function updateRouteConversationContext(
-  tx: AgentPhoneChatThreadTransaction,
-  route: LoadedAgentPhoneChatThreadRoute,
+/** Conditional context refresh; no row lock, the route id pins the row. */
+async function refreshAgentPhoneRouteConversation(
+  tx: Tx,
+  route: NonNullable<AgentPhoneChatThreadRouteRow>,
   conversationId: string | null,
 ): Promise<void> {
   if (route.conversationId === conversationId) {
@@ -162,148 +96,77 @@ async function updateRouteConversationContext(
     .where(eq(agentphoneChatThreadRoutes.id, route.id));
 }
 
-async function reconcileExistingRoute(
-  tx: AgentPhoneChatThreadTransaction,
-  args: AgentPhoneChatThreadRouteKey & AgentPhoneChatThreadCreateArgs,
-  existing: LoadedAgentPhoneChatThreadRoute,
-): Promise<AgentPhoneChatThreadBinding> {
-  if (existing.agentId !== args.agentId) {
-    const thread = await createCanonicalAgentPhoneChatThread(
-      tx,
-      args,
-      existing.computerUseHostId,
+/**
+ * The unique route and its new thread/event commit in this command alone.
+ * One `INSERT … ON CONFLICT DO NOTHING` decides a concurrent create; the loser
+ * reads the committed winner once. The thread row is inserted by the same
+ * statement only when the route insert wins.
+ */
+export const ensureAgentPhoneChatThreadRoute$ = command(
+  async (
+    { set },
+    args: AgentPhoneChatThreadRouteKey & AgentPhoneChatThreadCreateArgs,
+    signal: AbortSignal,
+  ): Promise<AgentPhoneChatThreadBinding> => {
+    const defaults = await set(
+      loadNewChatThreadDefaults$,
+      { orgId: args.orgId, userId: args.userId },
+      signal,
     );
-    const [route] = await tx
-      .update(agentphoneChatThreadRoutes)
-      .set({
-        chatThreadId: thread.id,
-        conversationId: args.conversationId,
-      })
-      .where(
-        and(
-          eq(agentphoneChatThreadRoutes.id, existing.id),
-          eq(agentphoneChatThreadRoutes.chatThreadId, existing.chatThreadId),
-        ),
-      )
-      .returning({ chatThreadId: agentphoneChatThreadRoutes.chatThreadId });
-    if (!route) {
-      throw new Error("Failed to rebind AgentPhone chat thread route");
-    }
-    await appendCanonicalAgentPhoneChatThreadCreatedEvent(
-      tx,
-      args,
-      thread,
-      existing.computerUseHostId,
-    );
-    return route;
-  }
-
-  await updateRouteConversationContext(tx, existing, args.conversationId);
-  const selectedModelChanged = existing.selectedModel !== args.selectedModel;
-  const codexServiceTier = args.serviceTier === "priority" ? "fast" : null;
-  const serviceTierChanged = existing.codexServiceTier !== codexServiceTier;
-  if (selectedModelChanged || serviceTierChanged) {
-    const [thread] = await tx
-      .update(chatThreads)
-      .set({
-        ...(selectedModelChanged
-          ? {
-              modelProviderId: null,
-              modelProviderType: null,
-              modelProviderCredentialScope: null,
-              selectedModel: args.selectedModel,
-            }
-          : {}),
-        codexServiceTier,
-        updatedAt: args.currentTime,
-      })
-      .where(eq(chatThreads.id, existing.chatThreadId))
-      .returning({ id: chatThreads.id });
-    if (!thread) {
-      throw new Error("Failed to update canonical AgentPhone thread model");
-    }
-    if (selectedModelChanged) {
-      await appendChatThreadEvent(tx, {
-        kind: "model_selection_updated",
-        userId: args.userId,
-        orgId: args.orgId,
-        chatThreadId: existing.chatThreadId,
-        agentId: existing.agentId,
-        selectedModel: args.selectedModel,
-        createdAt: args.currentTime,
-      });
-    }
-    if (serviceTierChanged) {
-      await appendChatThreadEvent(tx, {
-        kind: "service_tier_updated",
-        userId: args.userId,
-        orgId: args.orgId,
-        chatThreadId: existing.chatThreadId,
-        agentId: existing.agentId,
-        serviceTier: args.serviceTier,
-        createdAt: args.currentTime,
-      });
-    }
-  }
-  return existing;
-}
-
-export async function ensureAgentPhoneChatThreadRoute(
-  db: Db,
-  args: AgentPhoneChatThreadRouteKey & AgentPhoneChatThreadCreateArgs,
-): Promise<AgentPhoneChatThreadBinding> {
-  return await db.transaction(async (tx) => {
-    const existing = await loadRoute(tx, args);
-    if (existing) {
-      if (isIntegrationDmSessionKey(args.rootMessageId)) {
-        await updateRouteConversationContext(tx, existing, args.conversationId);
+    const candidateId = randomUUID();
+    const db = set(writeDb$);
+    const result = await db.transaction(async (tx) => {
+      const existing = await loadAgentPhoneChatThreadRoute(tx, args);
+      if (existing) {
+        await refreshAgentPhoneRouteConversation(
+          tx,
+          existing,
+          args.conversationId,
+        );
         return existing;
       }
-      return await reconcileExistingRoute(tx, args, existing);
-    }
-
-    const thread = await createCanonicalAgentPhoneChatThread(tx, args);
-    const [route] = await tx
-      .insert(agentphoneChatThreadRoutes)
-      .values({
-        agentphoneUserLinkId: args.agentphoneUserLinkId,
-        rootMessageId: args.rootMessageId,
-        conversationId: args.conversationId,
-        chatThreadId: thread.id,
-        createdAt: args.currentTime,
-      })
-      .onConflictDoNothing({
-        target: [
-          agentphoneChatThreadRoutes.agentphoneUserLinkId,
-          agentphoneChatThreadRoutes.rootMessageId,
-        ],
-      })
-      .returning({ chatThreadId: agentphoneChatThreadRoutes.chatThreadId });
-    if (!route) {
-      await tx.delete(chatThreads).where(eq(chatThreads.id, thread.id));
-      const conflicted = await loadRoute(tx, args);
-      if (!conflicted) {
+      const thread = integrationChatThreadValues(args, candidateId, defaults);
+      const insertedRoute = tx.$with("inserted_agentphone_route").as(
+        tx
+          .insert(agentphoneChatThreadRoutes)
+          .values({
+            agentphoneUserLinkId: args.agentphoneUserLinkId,
+            rootMessageId: args.rootMessageId,
+            conversationId: args.conversationId,
+            chatThreadId: thread.id,
+            createdAt: args.currentTime,
+          })
+          .onConflictDoNothing({
+            target: [
+              agentphoneChatThreadRoutes.agentphoneUserLinkId,
+              agentphoneChatThreadRoutes.rootMessageId,
+            ],
+          })
+          .returning(ROUTE_COLUMNS),
+      );
+      const insertedThread = tx
+        .$with("inserted_agentphone_thread", {})
+        .as(integrationChatThreadInsertFromRouteSql(thread, insertedRoute));
+      const [route] = await tx
+        .with(insertedRoute, insertedThread)
+        .select()
+        .from(insertedRoute);
+      if (route) {
+        await tx.execute(integrationThreadCreatedEventSql(args.orgId, thread));
+        signal.throwIfAborted();
+        return route;
+      }
+      // ON CONFLICT waited for the winner's commit; read it once.
+      const winner = await loadAgentPhoneChatThreadRoute(tx, args);
+      if (!winner) {
         throw new Error(
           "Failed to resolve AgentPhone chat thread route after conflict",
         );
       }
-      if (isIntegrationDmSessionKey(args.rootMessageId)) {
-        await updateRouteConversationContext(
-          tx,
-          conflicted,
-          args.conversationId,
-        );
-        return conflicted;
-      }
-      return await reconcileExistingRoute(tx, args, conflicted);
-    }
-
-    await appendCanonicalAgentPhoneChatThreadCreatedEvent(
-      tx,
-      args,
-      thread,
-      null,
-    );
-    return route;
-  });
-}
+      await refreshAgentPhoneRouteConversation(tx, winner, args.conversationId);
+      return winner;
+    });
+    signal.throwIfAborted();
+    return result;
+  },
+);

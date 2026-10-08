@@ -160,6 +160,19 @@ export default [
     },
   },
   {
+    files: ["src/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-globals": [
+        "error",
+        {
+          name: "sessionStorage",
+          message:
+            "Platform does not persist state in sessionStorage. Carry return state in the URL or keep it in memory.",
+        },
+      ],
+    },
+  },
+  {
     files: ["**/__tests__/**/*.{ts,tsx}"],
     rules: {
       "ccstate/no-test-delay": "error",

@@ -84,6 +84,18 @@ describe("okou web-search command", () => {
       .join("\n");
   }
 
+  it("prints search results and pending billing when the charge is unknown", async () => {
+    server.use(
+      http.post("http://localhost:3000/api/web-search", () => {
+        return HttpResponse.json({ ...responseBody, creditsCharged: null });
+      }),
+    );
+    await webSearchCommand.parseAsync(["node", "cli", "latest AI regulation"]);
+    expect(output()).toContain("AI regulation update");
+    expect(output()).toContain("Credits charged: pending");
+    expect(mockExit).not.toHaveBeenCalled();
+  });
+
   it("posts default requests and prints JSON", async () => {
     let requestBody: unknown;
     server.use(

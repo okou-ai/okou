@@ -1,110 +1,69 @@
 import { describe, expect, it } from "vitest";
-import { isPiExecutionRoute } from "../pi-execution";
+import {
+  isPiExecutionRoute,
+  piCatalogModel,
+  piRouteCatalogIdentities,
+} from "../pi-execution";
+import { SEEDED_MODEL_CATALOG } from "./seeded-model-catalog";
 
-describe("DeepSeek Pi admission", () => {
-  it.each([
-    ["built-in", "deepseek", true],
-    ["built-in", "openrouter-codex", true],
-    ["custom-openai-responses", "custom-openai-responses", true],
-    ["openrouter-codex", "openrouter-codex", true],
-    ["deepseek", "deepseek", false],
-    ["built-in", "openai-api-key", false],
-    ["openai-api-key", "openai-api-key", false],
-    ["vercel-ai-gateway-codex", "vercel-ai-gateway-codex", false],
-    ["custom-anthropic-messages", "custom-anthropic-messages", false],
-  ] as const)(
-    "keeps V4.1 policy for %s via %s",
-    (modelProviderType, runtimeProviderType, supported) => {
-      for (const piEnabled of [false, true]) {
-        expect(
-          isPiExecutionRoute({
-            selectedModel: "deepseek-v4.1-flash",
-            modelProviderType,
-            runtimeProviderType,
-            piEnabled,
-            codexServiceTier: undefined,
-          }),
-        ).toBe(piEnabled && supported);
-      }
-    },
-  );
+describe("Auto and personal-subscription Pi execution", () => {
+  it("runs Auto through OpenRouter without a model catalog", () => {
+    const args = {
+      catalogModel: piCatalogModel(null, "okou-1.0"),
+      modelProviderType: "built-in",
+      runtimeProviderType: "openrouter-codex",
+      codexServiceTier: undefined,
+    } as const;
+    expect(isPiExecutionRoute(args)).toBe(true);
+    expect(piRouteCatalogIdentities(args)).toStrictEqual([
+      { provider: "openrouter", model: "okou-1.0" },
+    ]);
+  });
 
-  it.each(["deepseek-v4-flash", "deepseek-v4-pro"] as const)(
-    "preserves existing routes for %s",
-    (selectedModel) => {
-      for (const modelProviderType of [
-        "built-in",
-        "deepseek",
-        "openrouter-codex",
-        "custom-openai-responses",
-      ]) {
-        expect(
-          isPiExecutionRoute({
-            selectedModel,
-            modelProviderType,
-            runtimeProviderType: "deepseek",
-            piEnabled: true,
-            codexServiceTier: undefined,
-          }),
-        ).toBe(true);
-      }
-    },
-  );
-
-  it.each(["deepseek-v4.2-flash", "deepseek-v4-unknown", "deepseek-flash"])(
-    "rejects an unauthorized logical model %s",
-    (selectedModel) => {
+  it("retains personally connected Codex model choice and Fast", () => {
+    for (const tier of [undefined, "fast"] as const) {
       expect(
         isPiExecutionRoute({
-          selectedModel,
-          modelProviderType: "built-in",
-          runtimeProviderType: "deepseek",
-          piEnabled: true,
-          codexServiceTier: undefined,
-        }),
-      ).toBe(false);
-    },
-  );
-});
-
-describe("Okou preset Pi admission", () => {
-  it.each(["okou-1.0", "okou-1.0-pro", "okou-1.0-max"] as const)(
-    "admits %s only on the built-in OpenRouter route",
-    (selectedModel) => {
-      expect(
-        isPiExecutionRoute({
-          selectedModel,
-          modelProviderType: "built-in",
-          runtimeProviderType: "openrouter-codex",
-          piEnabled: true,
-          codexServiceTier: undefined,
+          catalogModel: piCatalogModel(SEEDED_MODEL_CATALOG, "gpt-6-luna"),
+          modelProviderType: "codex-oauth-token",
+          runtimeProviderType: "codex-oauth-token",
+          codexServiceTier: tier,
         }),
       ).toBe(true);
-      for (const rejected of [
-        {
-          modelProviderType: "openrouter-codex",
-          runtimeProviderType: "openrouter-codex",
-          codexServiceTier: undefined,
-        },
-        {
-          modelProviderType: "built-in",
-          runtimeProviderType: "openai-api-key",
-          codexServiceTier: undefined,
-        },
-        {
-          modelProviderType: "built-in",
-          runtimeProviderType: "openrouter-codex",
-          codexServiceTier: "fast" as const,
-        },
-      ]) {
-        expect(
-          isPiExecutionRoute({
-            selectedModel,
-            ...rejected,
-            piEnabled: true,
-          }),
-        ).toBe(false);
-      }
-    },
-  );
+    }
+  });
+
+  it("keeps personal Claude subscriptions on the vendor harness", () => {
+    expect(
+      isPiExecutionRoute({
+        catalogModel: piCatalogModel(SEEDED_MODEL_CATALOG, "claude-opus-5-5"),
+        modelProviderType: "claude-code-oauth-token",
+        runtimeProviderType: "claude-code-oauth-token",
+        codexServiceTier: undefined,
+      }),
+    ).toBe(false);
+  });
+
+  it("does not carry fast on the fixed Auto route", () => {
+    expect(
+      isPiExecutionRoute({
+        catalogModel: piCatalogModel(null, "okou-1.0"),
+        modelProviderType: "built-in",
+        runtimeProviderType: "openrouter-codex",
+        codexServiceTier: "fast",
+      }),
+    ).toBe(false);
+  });
+
+  it("refuses a mismatched concrete provider and unknown models", () => {
+    expect(
+      isPiExecutionRoute({
+        catalogModel: piCatalogModel(null, "okou-1.0"),
+        modelProviderType: "built-in",
+        runtimeProviderType: "codex-oauth-token",
+        codexServiceTier: undefined,
+      }),
+    ).toBe(false);
+    expect(piCatalogModel(null, "unknown")).toBeNull();
+  });
 });

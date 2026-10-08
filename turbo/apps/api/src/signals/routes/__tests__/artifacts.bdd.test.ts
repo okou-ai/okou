@@ -9,18 +9,15 @@ import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { webFileUrlRoutes } from "../web-file-url";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { createHash, randomUUID } from "node:crypto";
-import { createStore } from "ccstate";
 
 import { HttpResponse, http } from "msw";
 import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { describe, expect, it } from "vitest";
 
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { signSandboxJwtForTests } from "../../auth/tokens";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -28,8 +25,6 @@ import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { readRunUploadedFileSources } from "./helpers/runtime-state";
-import { seedRun$ } from "./helpers/usage-state";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -214,6 +209,7 @@ function mockCloudflareVideoFrame(
 async function artifactActor(
   displayName: string,
   actor: ApiTestUser = bdd.user(),
+  tier: "pro" | "team" = "pro",
 ): Promise<ArtifactActor> {
   const objectStore = chatCallbacks.acceptChatObjectStorage();
   api.acceptStorageDownloads();
@@ -221,8 +217,12 @@ async function artifactActor(
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   chatCallbacks.disableVapid();
   const runnerGroup = api.configureRunnerGroup();
-  await api.grantProEntitlement(actor);
-  await api.ensureOrgModelProvider(actor);
+  await api.grantProEntitlement(actor, { tier });
+  // Artifact scenarios claim the chat run through the native Runner; Fable
+  // stays off Pi while Sonnet 5 would run API-first.
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   const agent = await bdd.createAgent(actor, {
     displayName,
     visibility: "private",
@@ -238,11 +238,8 @@ async function sendChatRun(
     readonly threadId?: string;
   },
 ): Promise<{ readonly runId: string; readonly threadId: string }> {
-  const sent = await chat.requestSendEvent(actor, body, [201]);
-  if (sent.status !== 201 || sent.body.runId === null) {
-    throw new Error("Expected chat send to create a run");
-  }
-  return { runId: sent.body.runId, threadId: sent.body.threadId };
+  const sent = await chat.sendAndLaunch(actor, body);
+  return { runId: sent.runId, threadId: sent.threadId };
 }
 
 async function claimChatRun(
@@ -268,22 +265,6 @@ function okouTokenFromClaim(claim: RunnerClaim): string {
     );
   }
   return token;
-}
-
-function fileWriteToken(owner: ArtifactActor, runId: string): string {
-  if (!owner.actor.orgId) {
-    throw new Error("Expected artifact test actor to have an org");
-  }
-  const seconds = Math.floor(now() / 1000);
-  return signSandboxJwtForTests({
-    scope: "okou",
-    userId: owner.actor.userId,
-    orgId: owner.actor.orgId,
-    runId,
-    capabilities: ["file:write"],
-    iat: seconds,
-    exp: seconds + 60,
-  });
 }
 
 async function completeChatRunOk(
@@ -607,7 +588,7 @@ describe("video Artifact previews", () => {
       "reference-footage.mp4",
     );
     expect(previewedArtifact?.thumbnail?.url).toMatch(
-      /\/artifacts\/[0-9a-z]{10}\.jpg$/u,
+      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.jpg$/u,
     );
   }, 180_000);
 
@@ -745,7 +726,7 @@ describe("video Artifact previews", () => {
       }),
     ]);
     expect(previewedArtifact?.thumbnail?.url).toMatch(
-      /\/artifacts\/[0-9a-z]{10}\.jpg$/u,
+      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.jpg$/u,
     );
   }, 180_000);
 
@@ -775,65 +756,6 @@ describe("video Artifact previews", () => {
     expect(failedArtifact).toMatchObject({ kind: "file" });
     expect(failedArtifact?.thumbnail).toBeNull();
   }, 180_000);
-});
-
-describe("artifact upload provenance", () => {
-  it.each([
-    "automation-schedule",
-    "automation-event",
-    "automation-schedule",
-    "automation-event",
-    "goal",
-  ] as const)(
-    "attributes run uploads to the %s source",
-    async (triggerSource) => {
-      const owner = await artifactActor(
-        `Artifacts API ${triggerSource} source agent`,
-      );
-      if (!owner.actor.orgId) {
-        throw new Error("Artifact provenance requires an org-scoped actor");
-      }
-      // An in-flight legacy Goal may still upload its result after retirement.
-      const run =
-        triggerSource === "goal"
-          ? await createStore().set(
-              seedRun$,
-              {
-                orgId: owner.actor.orgId,
-                userId: owner.actor.userId,
-                composeId: owner.agentId,
-                triggerSource,
-                status: "running",
-                startedAt: new Date(now()),
-              },
-              context.signal,
-            )
-          : await api.createDirectRun(owner.actor, {
-              agentId: owner.agentId,
-              prompt: `create ${triggerSource} artifact`,
-              modelProviderType: "anthropic-api-key",
-              triggerSource,
-              vars: { OKOU_AGENT_ID: owner.agentId },
-              secrets: { OKOU_TOKEN: "bdd-artifact-okou-token" },
-            });
-      const fileId = randomUUID();
-      owner.objectStore.addObject({
-        bucket: "test-user-artifacts",
-        key: `artifacts/${owner.actor.userId}/${fileId}/workflow-output.txt`,
-        size: 128,
-      });
-
-      await chat.completeUploadWithBearer(
-        `Bearer ${fileWriteToken(owner, run.runId)}`,
-        { id: fileId, contentType: "text/plain" },
-        [200],
-      );
-
-      await expect(
-        readRunUploadedFileSources(context, run.runId),
-      ).resolves.toStrictEqual([triggerSource]);
-    },
-  );
 });
 
 describe("GET /api/chat-threads/:threadId/artifacts", () => {
@@ -984,7 +906,7 @@ describe("hosted Artifact previews", () => {
     );
   }, 120_000);
 
-  it("renders Okou deployments from their branded hosted-site domain", async () => {
+  it("renders current-layout deployments from their hosted-site domain", async () => {
     const owner = await artifactActor("Artifacts API Okou preview image agent");
     mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
     mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
@@ -1306,6 +1228,7 @@ describe("hosted Artifact previews", () => {
       rateLimitedSnapshot("1"),
       {},
     ]);
+    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
     const site = `rate-limit-retry-${randomUUID().slice(0, 8)}`;
 
     await createHostedArtifact({
@@ -1318,6 +1241,11 @@ describe("hosted Artifact previews", () => {
     await flushWaitUntilForTest();
 
     expect(snapshotRequests).toHaveLength(2);
+    // The stated wait is requested rather than slept on in the test.
+    expect(context.mocks.signalTimers.delay).toHaveBeenCalledExactlyOnceWith(
+      1000,
+      expect.anything(),
+    );
     // An admission rejection happens before any render, so the retry repeats
     // the primary profile rather than falling back to the navigation one.
     expect(snapshotRequests[1]?.body).toMatchObject({
@@ -1337,6 +1265,7 @@ describe("hosted Artifact previews", () => {
       rateLimitedSnapshot(),
       {},
     ]);
+    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
     const site = `rate-limit-backoff-${randomUUID().slice(0, 8)}`;
 
     await createHostedArtifact({
@@ -1349,6 +1278,11 @@ describe("hosted Artifact previews", () => {
     await flushWaitUntilForTest();
 
     expect(snapshotRequests).toHaveLength(2);
+    // Without a stated wait the first backoff is 2s plus up to 500ms jitter.
+    expect(context.mocks.signalTimers.delay).toHaveBeenCalledOnce();
+    const [backoffMs] = context.mocks.signalTimers.delay.mock.calls[0] ?? [];
+    expect(backoffMs).toBeGreaterThanOrEqual(2000);
+    expect(backoffMs).toBeLessThanOrEqual(2500);
     const previewedArtifact = await findCatalogArtifact(owner.actor, site);
     expect(previewedArtifact?.thumbnail?.url).toMatch(
       /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.webp$/u,
@@ -1364,6 +1298,7 @@ describe("hosted Artifact previews", () => {
       rateLimitedSnapshot("1"),
       rateLimitedSnapshot("1"),
     ]);
+    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
     const site = `rate-limit-budget-${randomUUID().slice(0, 8)}`;
 
     const artifact = await createHostedArtifact({
@@ -1376,6 +1311,11 @@ describe("hosted Artifact previews", () => {
     await flushWaitUntilForTest();
 
     expect(snapshotRequests).toHaveLength(3);
+    expect(
+      context.mocks.signalTimers.delay.mock.calls.map(([ms]) => {
+        return ms;
+      }),
+    ).toStrictEqual([1000, 1000]);
     const unpreviewedArtifact = await findCatalogArtifact(owner.actor, site);
     expect(unpreviewedArtifact?.thumbnail).toBeNull();
     expect(
@@ -1405,6 +1345,7 @@ describe("hosted Artifact previews", () => {
       rateLimitedSnapshot("1"),
       rateLimitedSnapshot("1"),
     ]);
+    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
     const site = `retry-sharing-${randomUUID().slice(0, 8)}`;
 
     await createHostedArtifact({
@@ -1417,6 +1358,12 @@ describe("hosted Artifact previews", () => {
     await flushWaitUntilForTest();
 
     expect(snapshotRequests).toHaveLength(3);
+    // The last shared request stops instead of waiting for a fourth one.
+    expect(
+      context.mocks.signalTimers.delay.mock.calls.map(([ms]) => {
+        return ms;
+      }),
+    ).toStrictEqual([1000]);
     // The rate-limit retry repeats whichever profile the render had reached,
     // so it must not reset the navigation fallback back to the primary one.
     expect(snapshotRequests[2]?.body).toMatchObject({

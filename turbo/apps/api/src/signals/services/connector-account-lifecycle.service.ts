@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { command, computed } from "ccstate";
 
 import {
   connectorAccountTargetKey,
@@ -39,12 +40,16 @@ import {
 import { z } from "zod";
 
 import type { Tx } from "../../lib/db-types";
-import { pgBooleanDecoder } from "../../lib/db-structured-result";
+import {
+  pgBooleanDecoder,
+  pgTextDecoder,
+} from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import type { Db, ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { safeJsonParse, settle } from "../utils";
-import { lockConnectorAccountTarget } from "./auth-state-lock.service";
+import { isUniqueViolation, safeSqlStateCode } from "../../lib/pg-errors";
+import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
 import { invalidateNotionPendingEventsForConnector } from "./notion-automation-account.service";
 import { isConnectorCatalogUnavailableError } from "./connector-catalog-reader.service";
@@ -63,42 +68,42 @@ import {
   builtinConnectorCredentialStatusWithMethod,
 } from "./connector-credential-status.service";
 import {
-  loadConnectorRuntimeSelection,
-  loadConnectorRuntimeSnapshot,
-  type ConnectorRuntimeSelection,
-  type ConnectorRuntimeSnapshot,
+  materializeConnectorRuntimeAuthLookup,
+  type ConnectorRuntimeAuthLookup,
 } from "./connector-catalog-runtime.service";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/schema/connector-catalog";
+import {
+  connectorCatalogCurrentWhere,
+  connectorCatalogSlugJoin,
+  connectorCatalogSlugSourceFromRows,
+} from "./connector-catalog-slug-source.service";
+import {
+  connectorCatalogCompatibilityColumns,
+  materializeConnectorCatalogCompatibilityRow,
+} from "./connector-catalog-columns";
 
 const log = logger("connector-account-lifecycle");
 
 const accessTokenSecret = alias(secrets, "connector_account_access_token");
 const refreshTokenSecret = alias(secrets, "connector_account_refresh_token");
 const oauthScopesSchema = z.array(z.string());
+// The cursor carries created_at at full microsecond precision. Accounts
+// created concurrently commonly share a millisecond, so a JavaScript Date
+// boundary would skip rows between the truncated and the real timestamp.
 const cursorSchema = z
   .object({
-    createdAt: z.string().datetime(),
+    createdAt: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z?$/u),
     id: z.uuid(),
   })
   .strict();
 
-async function loadCurrentConnectorRuntimeSnapshot(
-  db: ReadonlyDb,
-): Promise<ConnectorRuntimeSnapshot | null> {
-  const result = await settle(loadConnectorRuntimeSnapshot(db));
-  if (result.ok) {
-    return result.value;
-  }
-  if (!isConnectorCatalogUnavailableError(result.error)) {
-    throw result.error;
-  }
-  log.warn("Connector catalog unavailable while resolving account lifecycle", {
-    error: result.error,
-  });
-  return null;
-}
-
 interface ConnectorAccountCursor {
-  readonly createdAt: Date;
+  readonly createdAt: string;
   readonly id: string;
 }
 
@@ -121,6 +126,10 @@ function accountSelection() {
     needsReconnect: connectors.needsReconnect,
     reconnectReason: connectors.reconnectReason,
     createdAt: connectors.createdAt,
+    createdAtCursor:
+      sql`to_char(${connectors.createdAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US')`.mapWith(
+        pgTextDecoder,
+      ),
     updatedAt: connectors.updatedAt,
     definitionAuthMode: orgCustomConnectors.authMode,
     definitionMcpTransport: orgCustomConnectors.mcpTransport,
@@ -159,7 +168,7 @@ function parseOauthScopes(value: string | null): string[] | null {
 
 function encodeCursor(row: ConnectorAccountRow): string {
   return Buffer.from(
-    JSON.stringify({ createdAt: row.createdAt.toISOString(), id: row.id }),
+    JSON.stringify({ createdAt: row.createdAtCursor, id: row.id }),
     "utf8",
   ).toString("base64url");
 }
@@ -169,7 +178,7 @@ function decodeCursor(raw: string): ConnectorAccountCursor | null {
     safeJsonParse(Buffer.from(raw, "base64url").toString("utf8")),
   );
   return parsed.success
-    ? { createdAt: new Date(parsed.data.createdAt), id: parsed.data.id }
+    ? { createdAt: parsed.data.createdAt, id: parsed.data.id }
     : null;
 }
 
@@ -195,9 +204,9 @@ async function loadConnectorAccountRows(
     : undefined;
   const cursorCondition = args.cursor
     ? or(
-        lt(connectors.createdAt, args.cursor.createdAt),
+        lt(connectors.createdAt, sql`${args.cursor.createdAt}::timestamp`),
         and(
-          eq(connectors.createdAt, args.cursor.createdAt),
+          eq(connectors.createdAt, sql`${args.cursor.createdAt}::timestamp`),
           lt(connectors.id, args.cursor.id),
         ),
       )
@@ -406,7 +415,7 @@ async function customTargetIsVisible(
 
 function builtinConnection(
   row: ConnectorAccountRow,
-  snapshot: ConnectorRuntimeSelection,
+  snapshot: ConnectorRuntimeAuthLookup,
   now: Date,
   includeScopeMismatch = false,
 ): ConnectorAccountConnection | null {
@@ -561,7 +570,7 @@ function customConnection(
 
 function projectConnection(
   row: ConnectorAccountRow,
-  snapshot: ConnectorRuntimeSelection | null,
+  snapshot: ConnectorRuntimeAuthLookup | null,
   now: Date,
   includeBuiltinScopeMismatch = false,
 ): ConnectorAccountConnection | null {
@@ -579,7 +588,7 @@ type ConnectorAccountSummaryGroup = Awaited<
 
 function projectSummaryGroup(
   row: ConnectorAccountSummaryGroup,
-  snapshot: ConnectorRuntimeSnapshot | null,
+  snapshot: ConnectorRuntimeAuthLookup | null,
   now: Date,
 ): {
   readonly target: ConnectorAccountTarget;
@@ -670,11 +679,13 @@ export async function listConnectorAccountSummaries(
   args: { readonly orgId: string; readonly userId: string },
 ): Promise<readonly ConnectorAccountSummary[]> {
   const now = nowDate();
-  const [groups, defaultRows, snapshot] = await Promise.all([
+  const [groups, defaultRows] = await Promise.all([
     loadConnectorAccountSummaryGroups(db, args),
     loadConnectorAccountRows(db, { ...args, defaultOnly: true }),
-    loadCurrentConnectorRuntimeSnapshot(db),
   ]);
+  // Every default account belongs to a group, so the groups name every
+  // builtin connector this projection reads.
+  const snapshot = await loadConnectorAccountAuthLookup(db, groups);
   const defaultConnections = new Map<string, ConnectorAccountConnection>();
   for (const row of defaultRows) {
     const connection = projectConnection(row, snapshot, now);
@@ -713,6 +724,18 @@ export async function listConnectorAccountSummaries(
   });
 }
 
+/** Custom accounts project without the connector catalog. */
+async function loadConnectorTargetAuthLookup(
+  db: ReadonlyDb,
+  target: ConnectorAccountTarget,
+): Promise<ConnectorRuntimeAuthLookup | null> {
+  return target.kind === "builtin"
+    ? await loadConnectorAccountAuthLookup(db, [
+        { connectorSlug: target.connectorSlug },
+      ])
+    : null;
+}
+
 export async function listConnectorAccountsForTarget(
   db: ReadonlyDb,
   args: {
@@ -738,7 +761,7 @@ export async function listConnectorAccountsForTarget(
   if (args.cursor && !cursor) {
     return { kind: "invalid-cursor" };
   }
-  const snapshot = await loadCurrentConnectorRuntimeSnapshot(db);
+  const snapshot = await loadConnectorTargetAuthLookup(db, args.target);
   if (
     args.target.kind === "builtin" &&
     (!snapshot || !snapshot.connectors.has(args.target.connectorSlug))
@@ -819,14 +842,14 @@ export async function getConnectorAccount(
   if (!row) {
     return null;
   }
-  const snapshot = await loadCurrentConnectorRuntimeSnapshot(db);
+  const snapshot = await loadConnectorAccountAuthLookup(db, [row]);
   return projectConnection(row, snapshot, nowDate());
 }
 
-async function loadConnectorAccountRuntimeSelection(
+async function loadConnectorAccountAuthLookup(
   db: ReadonlyDb,
-  rows: readonly ConnectorAccountRow[],
-): Promise<ConnectorRuntimeSelection | null> {
+  rows: readonly { readonly connectorSlug: string | null }[],
+): Promise<ConnectorRuntimeAuthLookup | null> {
   const connectorSlugs = rows.flatMap((row) => {
     const slug = connectorSlugSchema.safeParse(row.connectorSlug);
     return slug.success ? [slug.data] : [];
@@ -835,9 +858,37 @@ async function loadConnectorAccountRuntimeSelection(
     return null;
   }
   const result = await settle(
-    loadConnectorRuntimeSelection(db, {
-      requestedConnectorSlugs: connectorSlugs,
-    }),
+    (async () => {
+      const catalogRows = await db
+        .select({
+          current: {
+            schemaVersion: connectorCatalog.schemaVersion,
+            hash: connectorCatalog.hash,
+          },
+          entry: connectorCatalogCompatibilityColumns,
+        })
+        .from(connectorCatalog)
+        .leftJoin(
+          connectorCatalogEntries,
+          connectorCatalogSlugJoin(connectorSlugs),
+        )
+        .where(connectorCatalogCurrentWhere());
+      // Account projections are presentation and single-item reads: a stored
+      // account whose connector has no entry is omitted (404 for one item).
+      const source = connectorCatalogSlugSourceFromRows(
+        catalogRows.map((row) => {
+          return {
+            ...row,
+            entry:
+              row.entry === null
+                ? null
+                : materializeConnectorCatalogCompatibilityRow(row.entry),
+          };
+        }),
+        connectorSlugs,
+      );
+      return materializeConnectorRuntimeAuthLookup(source);
+    })(),
   );
   if (result.ok) {
     return result.value;
@@ -867,7 +918,7 @@ export async function listConnectorAccountsByIds(
     ...args,
     connectionIds,
   });
-  const snapshot = await loadConnectorAccountRuntimeSelection(db, rows);
+  const snapshot = await loadConnectorAccountAuthLookup(db, rows);
   const now = nowDate();
   return rows.flatMap((row) => {
     const connection = projectConnection(row, snapshot, now);
@@ -875,63 +926,196 @@ export async function listConnectorAccountsByIds(
   });
 }
 
-async function exactOwnedAccountExists(
-  db: Tx,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly target: ConnectorAccountTarget;
-    readonly connectionId: string;
+export const renameConnectorAccount$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly target: ConnectorAccountTarget;
+      readonly connectionId: string;
+      readonly displayName: string | null;
+    },
+  ): Promise<Date | null> => {
+    return await set(writeDb$).transaction(async (tx) => {
+      if (args.target.kind === "custom") {
+        const [definition] = await tx
+          .select({
+            providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
+          })
+          .from(orgCustomConnectors)
+          .leftJoin(
+            orgCustomConnectorOauthConfigs,
+            and(
+              eq(
+                orgCustomConnectorOauthConfigs.connectorId,
+                orgCustomConnectors.id,
+              ),
+              eq(
+                orgCustomConnectorOauthConfigs.orgId,
+                orgCustomConnectors.orgId,
+              ),
+            ),
+          )
+          .where(
+            and(
+              eq(orgCustomConnectors.id, args.target.customConnectorId),
+              eq(orgCustomConnectors.orgId, args.orgId),
+            ),
+          )
+          .limit(1);
+        if (
+          definition === undefined ||
+          isIntegrationManagedCustomConnectorProviderAdapter(
+            definition.providerAdapter,
+          )
+        ) {
+          return null;
+        }
+      }
+      const [row] = await tx
+        .select({ id: connectors.id })
+        .from(connectors)
+        .where(
+          and(
+            eq(connectors.id, args.connectionId),
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.userId),
+            targetCondition(args.target),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      if (row === undefined) {
+        return null;
+      }
+      const [updated] = await tx
+        .update(connectors)
+        .set({
+          displayName: args.displayName,
+          updatedAt: sql`clock_timestamp()`,
+        })
+        .where(
+          and(
+            eq(connectors.id, args.connectionId),
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.userId),
+            targetCondition(args.target),
+          ),
+        )
+        .returning({ updatedAt: connectors.updatedAt });
+      return updated?.updatedAt ?? null;
+    });
   },
-): Promise<boolean> {
-  const [row] = await db
-    .select({ id: connectors.id })
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.id, args.connectionId),
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        targetCondition(args.target),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  return row !== undefined;
+);
+
+function connectorAccountOwnerCondition(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly target: ConnectorAccountTarget;
+}): SQL {
+  return and(
+    eq(connectors.orgId, args.orgId),
+    eq(connectors.userId, args.userId),
+    targetCondition(args.target),
+  ) as SQL;
 }
 
-export async function renameConnectorAccount(
-  db: Db,
+/** Rolls back a default change whose target no longer exists. */
+class DefaultConnectorAccountMissing extends Error {}
+
+function clearOtherDefaultsSql(
+  owner: ReturnType<typeof connectorAccountOwnerCondition>,
+  connectionId: string,
+) {
+  return and(
+    owner,
+    eq(connectors.isDefault, true),
+    ne(connectors.id, connectionId),
+  );
+}
+
+/**
+ * Move the default with ordinary writes. A concurrent default change that
+ * trips the partial unique index rolls back and is reported as a conflict.
+ */
+async function changeDefaultConnectorAccount(
+  tx: Tx,
   args: {
     readonly orgId: string;
     readonly userId: string;
     readonly target: ConnectorAccountTarget;
     readonly connectionId: string;
-    readonly displayName: string | null;
   },
-): Promise<Date | null> {
-  return await db.transaction(async (tx) => {
-    await lockConnectorAccountTarget(tx, args);
-    if (
-      args.target.kind === "custom" &&
-      !(await customTargetIsVisible(tx, {
-        orgId: args.orgId,
-        customConnectorId: args.target.customConnectorId,
-      }))
-    ) {
-      return null;
-    }
-    if (!(await exactOwnedAccountExists(tx, args))) {
-      return null;
-    }
-    const [updated] = await tx
-      .update(connectors)
-      .set({ displayName: args.displayName, updatedAt: sql`clock_timestamp()` })
-      .where(eq(connectors.id, args.connectionId))
-      .returning({ updatedAt: connectors.updatedAt });
-    return updated?.updatedAt ?? null;
-  });
+): Promise<Date> {
+  const owner = connectorAccountOwnerCondition(args);
+  await tx
+    .update(connectors)
+    .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
+    .where(clearOtherDefaultsSql(owner, args.connectionId));
+  const [updated] = await tx
+    .update(connectors)
+    .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
+    .where(and(owner, eq(connectors.id, args.connectionId)))
+    .returning({ updatedAt: connectors.updatedAt });
+  if (!updated) {
+    throw new DefaultConnectorAccountMissing();
+  }
+  return updated.updatedAt;
 }
+
+/** Known default-account races roll back; other database failures propagate. */
+export function isConnectorAccountDefaultConflict(error: unknown): boolean {
+  return (
+    isUniqueViolation(error, "idx_connectors_org_user_slug_default") ||
+    isUniqueViolation(
+      error,
+      "idx_connectors_org_user_custom_connector_default",
+    ) ||
+    safeSqlStateCode(error) === "40P01"
+  );
+}
+
+async function settleDefaultChange(
+  change: Promise<Date>,
+): Promise<Date | "conflict" | null> {
+  const settled = await settle(change);
+  if (settled.ok) {
+    return settled.value;
+  }
+  if (settled.error instanceof DefaultConnectorAccountMissing) {
+    return null;
+  }
+  if (isConnectorAccountDefaultConflict(settled.error)) {
+    return "conflict";
+  }
+  throw settled.error;
+}
+
+export const setDefaultGoogleFormsAccount$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly connectionId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<Date | "conflict" | null> => {
+    const db = set(writeDb$);
+    return await settleDefaultChange(
+      db.transaction(async (tx) => {
+        const updatedAt = await changeDefaultConnectorAccount(tx, {
+          ...args,
+          target: { kind: "builtin", connectorSlug: "google-forms" },
+        });
+        await tx.execute(googleFormsAccountProjectionStatement(args));
+        signal.throwIfAborted();
+        return updatedAt;
+      }),
+    );
+  },
+);
 
 export async function setDefaultConnectorAccount(
   db: Db,
@@ -942,116 +1126,80 @@ export async function setDefaultConnectorAccount(
     readonly connectionId: string;
   },
   signal: AbortSignal,
-): Promise<Date | null> {
-  return await db.transaction(async (tx) => {
-    await lockConnectorAccountTarget(tx, args);
-    if (
-      args.target.kind === "custom" &&
-      !(await customTargetIsVisible(tx, {
-        orgId: args.orgId,
-        customConnectorId: args.target.customConnectorId,
-      }))
-    ) {
-      return null;
-    }
-    if (!(await exactOwnedAccountExists(tx, args))) {
-      return null;
-    }
-    await tx
-      .update(connectors)
-      .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
-      .where(
-        and(
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          targetCondition(args.target),
-        ),
-      );
-    const [updated] = await tx
-      .update(connectors)
-      .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
-      .where(eq(connectors.id, args.connectionId))
-      .returning({ updatedAt: connectors.updatedAt });
-    await reprojectWorkflowAutomationsForOwner(tx, args, signal);
-    return updated?.updatedAt ?? null;
-  });
+): Promise<Date | "conflict" | null> {
+  return await settleDefaultChange(
+    db.transaction(async (tx) => {
+      if (
+        args.target.kind === "custom" &&
+        !(await customTargetIsVisible(tx, {
+          orgId: args.orgId,
+          customConnectorId: args.target.customConnectorId,
+        }))
+      ) {
+        throw new DefaultConnectorAccountMissing();
+      }
+      const updatedAt = await changeDefaultConnectorAccount(tx, args);
+      await reprojectWorkflowAutomationsForOwner(tx, args, signal);
+      return updatedAt;
+    }),
+  );
 }
 
-async function oldestConnectorAccountSibling(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly target: ConnectorAccountTarget;
-    readonly excludedConnectionId: string;
-  },
-): Promise<{ readonly id: string } | null> {
-  const [row] = await db
-    .select({ id: connectors.id })
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        targetCondition(args.target),
-        ne(connectors.id, args.excludedConnectionId),
-      ),
-    )
-    .orderBy(asc(connectors.createdAt), asc(connectors.id))
-    .for("update")
-    .limit(1);
-  return row ?? null;
-}
-
-export async function connectorAccountDeletionImpact(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly target: ConnectorAccountTarget;
-    readonly connectionId: string;
-  },
-): Promise<{
-  readonly explicitSelectionCount: number;
-  readonly hasSibling: boolean;
-} | null> {
-  const [account] = await db
-    .select({ id: connectors.id })
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.id, args.connectionId),
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        targetCondition(args.target),
-      ),
-    )
-    .limit(1);
-  if (!account) {
-    return null;
-  }
-  const [[selectionCount], [sibling]] = await Promise.all([
-    db
-      .select({ value: count() })
-      .from(chatThreadConnectorSelections)
-      .where(eq(chatThreadConnectorSelections.connectorId, args.connectionId)),
-    db
-      .select({ id: connectors.id })
-      .from(connectors)
-      .where(
-        and(
-          eq(connectors.orgId, args.orgId),
-          eq(connectors.userId, args.userId),
-          targetCondition(args.target),
-          ne(connectors.id, args.connectionId),
-        ),
-      )
-      .limit(1),
-  ]);
-  return {
-    explicitSelectionCount: selectionCount?.value ?? 0,
-    hasSibling: sibling !== undefined,
-  };
+export function connectorAccountDeletionImpact(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly target: ConnectorAccountTarget;
+  readonly connectionId: string;
+}) {
+  return computed(
+    async (
+      get,
+    ): Promise<{
+      readonly explicitSelectionCount: number;
+      readonly hasSibling: boolean;
+    } | null> => {
+      const db = get(db$);
+      const [account] = await db
+        .select({ id: connectors.id })
+        .from(connectors)
+        .where(
+          and(
+            eq(connectors.id, args.connectionId),
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.userId),
+            targetCondition(args.target),
+          ),
+        )
+        .limit(1);
+      if (!account) {
+        return null;
+      }
+      const [[selectionCount], [sibling]] = await Promise.all([
+        db
+          .select({ value: count() })
+          .from(chatThreadConnectorSelections)
+          .where(
+            eq(chatThreadConnectorSelections.connectorId, args.connectionId),
+          ),
+        db
+          .select({ id: connectors.id })
+          .from(connectors)
+          .where(
+            and(
+              eq(connectors.orgId, args.orgId),
+              eq(connectors.userId, args.userId),
+              targetCondition(args.target),
+              ne(connectors.id, args.connectionId),
+            ),
+          )
+          .limit(1),
+      ]);
+      return {
+        explicitSelectionCount: selectionCount?.value ?? 0,
+        hasSibling: sibling !== undefined,
+      };
+    },
+  );
 }
 
 type PreparedConnectorAccountDeletion =
@@ -1062,7 +1210,8 @@ type PreparedConnectorAccountDeletion =
       readonly promotedDefaultConnectionId: string | null;
     };
 
-export async function prepareConnectorAccountDeletion(
+/** Plain reads and writes; a concurrent change resolves as last writer wins. */
+export async function prepareConnectorAccountDeletionWithTargetLocked(
   db: Tx,
   args: {
     readonly orgId: string;
@@ -1072,47 +1221,42 @@ export async function prepareConnectorAccountDeletion(
   },
   signal: AbortSignal,
 ): Promise<PreparedConnectorAccountDeletion> {
-  await lockConnectorAccountTarget(db, args);
+  const owner = connectorAccountOwnerCondition(args);
   const [account] = await db
-    .select({ id: connectors.id, isDefault: connectors.isDefault })
+    .select({ isDefault: connectors.isDefault })
     .from(connectors)
-    .where(
-      and(
-        eq(connectors.id, args.connectionId),
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        targetCondition(args.target),
-      ),
-    )
-    .for("update")
+    .where(and(owner, eq(connectors.id, args.connectionId)))
     .limit(1);
   if (!account) {
     return { kind: "missing" };
   }
+  let promotedDefaultConnectionId: string | null = null;
+  if (account.isDefault) {
+    const [sibling] = await db
+      .select({ id: connectors.id })
+      .from(connectors)
+      .where(and(owner, ne(connectors.id, args.connectionId)))
+      .orderBy(asc(connectors.createdAt), asc(connectors.id))
+      .limit(1);
+    if (sibling) {
+      await db
+        .update(connectors)
+        .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
+        .where(eq(connectors.id, args.connectionId));
+      await db
+        .update(connectors)
+        .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
+        .where(eq(connectors.id, sibling.id));
+      promotedDefaultConnectionId = sibling.id;
+    }
+  }
 
-  const sibling = await oldestConnectorAccountSibling(db, {
-    ...args,
-    excludedConnectionId: args.connectionId,
-  });
   const resolvedSelectionCount =
     (
       await db
         .delete(chatThreadConnectorSelections)
         .where(eq(chatThreadConnectorSelections.connectorId, args.connectionId))
     ).rowCount ?? 0;
-
-  let promotedDefaultConnectionId: string | null = null;
-  if (account.isDefault && sibling) {
-    await db
-      .update(connectors)
-      .set({ isDefault: false, updatedAt: sql`clock_timestamp()` })
-      .where(eq(connectors.id, args.connectionId));
-    await db
-      .update(connectors)
-      .set({ isDefault: true, updatedAt: sql`clock_timestamp()` })
-      .where(eq(connectors.id, sibling.id));
-    promotedDefaultConnectionId = sibling.id;
-  }
 
   if (
     args.target.kind === "builtin" &&

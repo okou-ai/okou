@@ -39,7 +39,7 @@ import {
   resolvePresentationTemplatePreviewPresignedUrls,
   type PresentationTemplatePreviewPresignedUrlRequest,
 } from "../services/system-storage-presigned-url-cache.service";
-import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
+import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { loadUserDisplayNames } from "../services/user-profile-directory.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -69,11 +69,7 @@ const templatePublishAuth = {
  */
 const customTemplatesEnabled$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const context = await loadUserFeatureSwitchContext(
-    get(db$),
-    auth.orgId,
-    auth.userId,
-  );
+  const context = await get(userFeatureSwitchContext(auth.orgId, auth.userId));
   return isFeatureEnabled(FeatureSwitchKey.CustomTemplates, context);
 });
 

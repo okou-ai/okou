@@ -1,21 +1,16 @@
 import { command } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   teamsBotContract,
   type TeamsInboundActivity,
 } from "@okouai/api-contracts/contracts/teams-bot";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
-import {
-  PUBLIC_BRAND_PRESENTATION,
-  PUBLIC_BRAND,
-} from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import {
   normalizeTeamsActivity,
   readTeamsActivityChannelId,
   readTeamsActivityServiceUrl,
 } from "../../lib/teams-bot-activity";
-import { env } from "../../lib/env";
 import { verifyTeamsBotAuthorization } from "../../lib/teams-bot-auth";
 import { logger } from "../../lib/log";
 import { teamsBotDisplayName } from "../../lib/teams-official-app";
@@ -92,42 +87,6 @@ function buildTeamsLoginPromptCard(args: {
   };
 }
 
-function queueUrl(): string {
-  return `${env("APP_URL")}/?queue=1`;
-}
-
-function buildTeamsQueueText(url: string): string {
-  return `\u26a0 Run queued -- concurrency limit reached. Will start automatically when a slot is available. [View queue](${url})`;
-}
-
-function buildTeamsQueueCard(args: {
-  readonly url: string;
-}): TeamsAdaptiveCard {
-  return {
-    type: "AdaptiveCard",
-    version: "1.4",
-    body: [
-      {
-        type: "TextBlock",
-        text: "Run queued",
-        wrap: true,
-      },
-      {
-        type: "TextBlock",
-        text: "Concurrency limit reached. Will start automatically when a slot is available.",
-        wrap: true,
-      },
-    ],
-    actions: [
-      {
-        type: "Action.OpenUrl",
-        title: "View queue",
-        url: args.url,
-      },
-    ],
-  };
-}
-
 type TeamsDispatchReplySource =
   | {
       readonly kind: "notice";
@@ -135,7 +94,6 @@ type TeamsDispatchReplySource =
       readonly connectUrl?: string;
       readonly card?: TeamsAdaptiveCard;
     }
-  | { readonly kind: "queued" }
   | { readonly kind: "ignored" | "accepted" };
 
 type TeamsMessageActivity = Extract<TeamsInboundActivity, { kind: "message" }>;
@@ -162,13 +120,6 @@ function dispatchReplyContent(dispatch: TeamsDispatchReplySource): {
               }),
             }
           : {}),
-    };
-  }
-  if (dispatch.kind === "queued") {
-    const url = queueUrl();
-    return {
-      replyText: buildTeamsQueueText(url),
-      card: buildTeamsQueueCard({ url }),
     };
   }
   return { replyText: null };
@@ -208,7 +159,7 @@ function buildTeamsInstallWelcomeContent(
   readonly text: string;
   readonly entities?: readonly TeamsMentionEntity[];
 } {
-  const { brandName } = PUBLIC_BRAND_PRESENTATION;
+  const { brandName } = BRAND_PRESENTATION;
   const botName = teamsBotDisplayName(installation.botName);
   const mention = buildTeamsInstallWelcomeMention(activity, botName);
   if (!mention) {
@@ -276,7 +227,6 @@ const dispatchTeamsMessageAndReply$ = command(
     args: {
       readonly activity: TeamsMessageActivity;
       readonly installation: TeamsInstallation | null;
-      readonly publicBrand: PublicBrand;
       readonly apiStartTime: number;
       readonly timing: ApiDispatchTimingCollector;
     },
@@ -286,7 +236,6 @@ const dispatchTeamsMessageAndReply$ = command(
       dispatchTeamsMessageToAgent$,
       {
         activity: args.activity,
-        publicBrand: args.publicBrand,
         installation: args.installation,
         apiStartTime: args.apiStartTime,
         timing: args.timing,
@@ -327,7 +276,6 @@ const dispatchTeamsMessageAndReply$ = command(
 
 const handleTeamsBot$ = command(async ({ get, set }, signal: AbortSignal) => {
   const request = get(request$);
-  const publicBrand = PUBLIC_BRAND;
   const apiStartTime = now();
   const bodyText = await request.text();
   signal.throwIfAborted();
@@ -404,7 +352,6 @@ const handleTeamsBot$ = command(async ({ get, set }, signal: AbortSignal) => {
           {
             activity: normalized.activity,
             installation,
-            publicBrand,
             apiStartTime,
             timing,
           },

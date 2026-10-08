@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
-import { connectorCatalogDiagnosticsSchema } from "./connector-catalog-diagnostics";
 import {
   connectorAuthMethodIdSchema,
   connectorSlugSchema,
@@ -40,24 +39,6 @@ export const publicConnectorCatalogIconSchema = z.object({
   url: z.url({ protocol: /^https$/u }).max(2048),
   invertInDarkMode: z.boolean(),
   scale: z.number().min(1).max(3).optional(),
-});
-
-const publicConnectorCatalogCategoryGroupSchema = z.object({
-  id: z.string(),
-  label: z.string(),
-  menuLabel: z.string(),
-});
-
-const publicConnectorCatalogCategorySchema = z.object({
-  id: z.string(),
-  label: z.string(),
-  menuLabel: z.string(),
-  groupId: z.string().nullable(),
-});
-
-const publicConnectorCatalogCategoryMetadataSchema = z.object({
-  categories: z.array(publicConnectorCatalogCategorySchema),
-  groups: z.array(publicConnectorCatalogCategoryGroupSchema),
 });
 
 const publicConnectorCatalogItemSchema = z.object({
@@ -118,7 +99,6 @@ const publicConnectorCatalogDetailSchema =
 
 const publicConnectorCatalogListResponseSchema = z.object({
   connectors: z.array(publicConnectorCatalogItemSchema),
-  categoryMetadata: publicConnectorCatalogCategoryMetadataSchema.optional(),
 });
 
 const publicConnectorCatalogConnectionStatusSchema = z.enum([
@@ -182,7 +162,6 @@ const publicConnectorCatalogDetailResponseSchema = z.object({
 
 const publicConnectorCatalogStatusResponseSchema = z.object({
   connectors: z.array(publicConnectorCatalogStatusItemSchema),
-  categoryMetadata: publicConnectorCatalogCategoryMetadataSchema.optional(),
 });
 
 const publicConnectorCatalogDiscoveryResponseSchema =
@@ -263,15 +242,6 @@ export type PublicConnectorCatalogPermissionSummary = z.infer<
 >;
 export type PublicConnectorCatalogIcon = z.infer<
   typeof publicConnectorCatalogIconSchema
->;
-export type PublicConnectorCatalogCategoryGroup = z.infer<
-  typeof publicConnectorCatalogCategoryGroupSchema
->;
-export type PublicConnectorCatalogCategory = z.infer<
-  typeof publicConnectorCatalogCategorySchema
->;
-export type PublicConnectorCatalogCategoryMetadata = z.infer<
-  typeof publicConnectorCatalogCategoryMetadataSchema
 >;
 export type PublicConnectorCatalogItem = z.infer<
   typeof publicConnectorCatalogItemSchema
@@ -380,18 +350,6 @@ export const connectorCatalogContract = c.router({
     },
     summary:
       "List connectors that connect in one browser step, with connection status",
-  },
-  diagnostics: {
-    method: "GET",
-    path: "/api/connector-catalog/diagnostics",
-    headers: authHeadersSchema,
-    responses: {
-      200: connectorCatalogDiagnosticsSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary: "Read connector catalog diagnostics",
   },
   get: {
     method: "GET",

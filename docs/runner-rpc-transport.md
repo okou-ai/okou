@@ -6,9 +6,79 @@ consumer is the [Runner SSH dispatcher](runner-ssh-execution.md), installed by
 `crates/runner-remote/src/guest_rpc`; SSH owns only its business handlers and run-local
 authority/session state. The generic transport itself has no API
 calls or business validators. Local/mock sandbox providers expose no capability.
+The private [run-scoped Guest duplex](runner-guest-duplex.md) has its own
+**52002 listener** and long-lived stream protocol. Guest RPC remains on 52001:
+its request bytes, one-operation lifetime, admission budget and decoder are not
+part of a shared protocol classifier. Both listeners rely on the same sandbox
+assignment and authoritative normal-operation reservation. Idle duplex candidates
+hold no park reservation.
 The [SSH CLI and owner/Agent UI](ssh-access.md) are delivered. SSH is generally
 available but still requires current API authority; the transport itself does
 not grant SSH access.
+
+## Choosing a Guest/Runner transport for new work
+
+The three private Firecracker vsock ports connect the Guest to host CID 2. A
+vsock connection is bidirectional; choose by **operation ownership and lifetime**,
+not by which side can write bytes or by the product feature's name. None is a
+public sandbox endpoint.
+
+Apply these questions in order:
+
+1. **Does it need to cross the Guest/Runner boundary?** If not, use no vsock
+   port. Keep host-only work in the Runner and Guest-local work in the Guest.
+2. **Does the Runner direct or supervise work inside the Guest as part of
+   sandbox control?** Use the long-lived control connection on port **52000**.
+   Exec, Guest file writes, quiesce, restore, and shutdown belong here: the
+   Runner owns the sequenced operation and the Guest returns responses, output,
+   and protocol control frames.
+3. **Does a Guest program or CLI ask for a Runner-owned service on the current
+   assignment, with a bounded request/result?** Use the one-request-per-connection
+   RPC on port **52001**. Add an explicitly authorized method/consumer, not a
+   new port. `run.usage`, `ssh.*`, and `vnc.*` belong here; file methods use the
+   existing opt-in binary stream contract.
+4. **Does the Runner attach an opaque, long-lived bidirectional channel to the
+   exact live Run rather than service one Guest RPC?** Use the separate private
+   duplex listener on **52002**. Its connection is not an RPC request and cannot
+   acquire an operation reservation until exact-run attachment; #37027 owns
+   ticket admission before any public WSS acknowledgement. See the
+   [duplex contract](runner-guest-duplex.md).
+
+Port 52000 has one accepted control connection: the Guest control service owns its
+end, and the host removes the listener after acceptance. Its current reader
+routes Guest frames as control/exec events or replies to host-owned sequences;
+it is **not** a generic Guest-origin RPC dispatcher. A standalone helper cannot
+join the established connection by changing its destination port. Guest-origin
+business requests could technically be added to this full-duplex connection,
+but would require a bounded Guest-local helper-to-control-service bridge,
+disjoint request/stream identity and host dispatch, plus flow control, priority
+and cancellation that preserve control/exec/park behavior. Do not disguise a
+new request as an existing response or reuse `process-control-ipc` as a general
+bridge. See the [control listener](../crates/guest-control-client/src/connection/listener.rs)
+and [host reader](../crates/guest-control-client/src/connection/mod.rs).
+
+Port 52001 is the private assignment-bound ingress for one-shot Guest-origin services.
+The helper connects once per request, while the Runner owns the handler,
+capacity, current-Run authorization, normal-operation reservation, deadline,
+and cancellation. A new business method does not justify another vsock port.
+For run-scoped work, 52001 admission uses the control client's authoritative
+normal-operation tracker and the host's current Run assignment; 52002 uses that
+same authority with a separate listener and connection lifetime. A separate
+listener does not create a second source of authority. See the
+[helper](../crates/runner-rpc-client/src/lib.rs) and
+[dispatch owner](../crates/runner-remote/src/guest_rpc/mod.rs).
+
+**Before changing control/RPC placement:** a smaller socket count is not evidence
+of lower latency or simpler maintenance. Moving only `run.usage` to 52000 would leave
+SSH/VNC on 52001 while adding a reverse-request bridge; it would not remove the
+52001 listener. A full consolidation must preserve the existing RPC terminal
+plus EOF, file streaming, deadlines, no-replay and exact-Run/park semantics,
+while proving bounded control latency under congested Guest-origin traffic and
+bounded RPC latency under busy control/file work. Compare paired-image
+fresh/restore/reuse behavior and measured idle and congested tail latency
+before recommending a physical-port change. [#37378](https://github.com/okou-ai/okou/issues/37378)
+tracks that research; this placement guide does not choose or activate a
+consolidation.
 
 ## Guest boundary
 
@@ -178,15 +248,15 @@ process control/placement IPC, not this cross-VM transport.
 `run.usage` is a read-only, assignment-bound method. It accepts only the empty
 object `{}`. Any guest-supplied Run ID, host path, endpoint, addon generation or
 source total is an `invalid_request` rejected before dispatch. The host selects
-the Run from the current assignment and reads the immutable API-first handoff
-observation plus one generation-frozen MITM snapshot. The method requires no SSH
+the Run from the current assignment and reads one generation-frozen MITM
+snapshot. The method requires no SSH
 consumer, credential or capability grant.
 
 During independent artifact promotion, a Runner that knows the method but did
 not install the usage consumer returns `unavailable` with `not_dispatched`. An
 older Runner returns `unknown_method`. Callers preserve that distinction as
 assignment-unavailable versus unsupported Runner; neither response permits a
-fallback or retry. Source absence, invalid handoff data, MITM saturation and
+fallback or retry. Source absence, MITM saturation and
 bounded MITM read failures are source states inside a successful business result
 when the Runner can still return a truthful snapshot.
 
@@ -195,8 +265,8 @@ budget, assignment and sandbox cancellation, joined shutdown and
 terminal-plus-EOF rules as the other ordinary methods. It writes exactly one
 result terminal and then closes the stream. Parking, reassignment and sandbox
 cleanup retire the old owner, so an old guest connection or frozen addon reader
-cannot follow the next assignment. See [API-first run usage handoff](api-run-usage.md)
-for the version-1 source and composition contract.
+cannot follow the next assignment. See [run usage contract and historical handoff](api-run-usage.md) for the
+current source contract and the retired version-1 history.
 
 ## Opt-in binary streaming foundation
 

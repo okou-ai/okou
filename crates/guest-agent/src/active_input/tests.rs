@@ -42,7 +42,7 @@ fn mark_accepted(controller: &ActiveInputController, uuid: &str, expects_replay:
             },
             expects_replay,
         )
-        .expect("test receipt acceptance should persist");
+        .expect("test acceptance should be recorded");
 }
 
 fn user_event(uuid: &str, text: &str) -> Value {
@@ -116,33 +116,33 @@ fn active_input_rejects_invalid_payloads() {
         ),
         (
             "bad-type",
-            br#"{"type":"other","deliveryId":"223f8797-a456-4eea-98f7-f7ab88c43c00","text":"hello"}"#.as_slice(),
+            br#"{"type":"other","eventId":"223f8797-a456-4eea-98f7-f7ab88c43c00","text":"hello"}"#.as_slice(),
             "active input payload type is unsupported",
         ),
         (
             "empty",
-            br#"{"type":"active-input","deliveryId":"223f8797-a456-4eea-98f7-f7ab88c43c00","text":""}"#.as_slice(),
+            br#"{"type":"active-input","eventId":"223f8797-a456-4eea-98f7-f7ab88c43c00","text":""}"#.as_slice(),
             "active input text is empty",
         ),
         (
-            "missing-delivery-id",
+            "missing-event-id",
             br#"{"type":"active-input","text":"hello"}"#.as_slice(),
             "active input payload is invalid",
         ),
         (
-            "null-delivery-id",
-            br#"{"type":"active-input","deliveryId":null,"text":"hello"}"#.as_slice(),
+            "null-event-id",
+            br#"{"type":"active-input","eventId":null,"text":"hello"}"#.as_slice(),
             "active input payload is invalid",
         ),
         (
-            "malformed-delivery-id",
-            br#"{"type":"active-input","deliveryId":"invalid","text":"hello"}"#.as_slice(),
-            "active input delivery id is invalid",
+            "malformed-event-id",
+            br#"{"type":"active-input","eventId":"invalid","text":"hello"}"#.as_slice(),
+            "active input event id is invalid",
         ),
         (
-            "noncanonical-delivery-id",
-            br#"{"type":"active-input","deliveryId":"223F8797-A456-4EEA-98F7-F7AB88C43C00","text":"hello"}"#.as_slice(),
-            "active input delivery id is not canonical",
+            "noncanonical-event-id",
+            br#"{"type":"active-input","eventId":"223F8797-A456-4EEA-98F7-F7AB88C43C00","text":"hello"}"#.as_slice(),
+            "active input event id is not canonical",
         ),
     ] {
         assert!(
@@ -212,7 +212,7 @@ async fn active_input_can_release_capacity_for_sink_without_replay() {
         writer.mark_writing(&frame.uuid);
         writer
             .mark_backend_accepted_without_replay(&frame)
-            .expect("test receipt acceptance should persist");
+            .expect("test acceptance should be recorded");
         assert_not_pending(&controller, &frame.uuid);
     }
 

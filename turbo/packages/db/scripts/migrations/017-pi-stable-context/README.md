@@ -5,9 +5,8 @@ migrations through `1167_private_artifact_absolute_urls`. It intentionally
 does not enumerate user x Agent x session combinations or materialize a
 production-wide cache. Normal authoritative source writes invalidate existing
 heads, and an exact request miss records bounded demand from captured immutable
-inputs. The migration also creates an empty legacy-erasure fence containing
-only one-way subject digests; rows are written by future Clerk deletion events,
-not by this command or a historical backfill.
+inputs. The migration also created an empty legacy Clerk-deletion fence table,
+which migration 1249 dropped; this command never wrote it.
 
 This command reports existing heads in UUID cursor order. The default is
 read-only. With separately authorized `--migrate`, it only requeues a failed

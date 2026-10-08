@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  billingAutoRechargeContract,
   billingConcurrencySubscriptionContract,
   billingDowngradeContract,
   billingRestoreContract,
@@ -22,6 +23,7 @@ import {
   postConcurrencyEntitlementsInvoicePaid,
   TEST_PRICE_CONCURRENCY,
 } from "./helpers/stripe-billing-webhook";
+import { billingAutoRechargeRoutes } from "../billing-auto-recharge";
 import { billingConcurrencySubscriptionRoutes } from "../billing-concurrency-subscriptions";
 import { billingDowngradeRoutes } from "../billing-downgrade";
 import { billingRestoreRoutes } from "../billing-restore";
@@ -308,6 +310,82 @@ describe("POST /api/billing/downgrade", () => {
     const effectiveDate = new Date(periodEnd * 1000).toISOString();
     expect(status.body.cancelAtPeriodEnd).toBeFalsy();
     expect(status.body.currentPeriodEnd).toBe(effectiveDate);
+    expect(status.body.scheduledChange).toStrictEqual({
+      type: "downgrade",
+      targetTier: "pro",
+      effectiveDate,
+    });
+  });
+
+  it("records a downgrade schedule that Stripe applied while the organization row was rewritten", async () => {
+    const subId = `sub-team-pro-${randomUUID().slice(0, 8)}`;
+    const periodStart = 1_782_809_751;
+    const periodEnd = 1_785_401_751;
+    const scheduleId = `sched-team-pro-${randomUUID().slice(0, 8)}`;
+    const fixture = await track(
+      store.set(
+        seedInvoicesOrg$,
+        {
+          stripeSubscriptionId: subId,
+          subscriptionStatus: "active",
+          tier: "team",
+        },
+        context.signal,
+      ),
+    );
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    context.mocks.stripe.subscriptions.retrieve.mockResolvedValue({
+      id: subId,
+      default_payment_method: "pm_card",
+      items: {
+        data: [
+          {
+            id: "si_item_1",
+            current_period_start: periodStart,
+            current_period_end: periodEnd,
+            quantity: 1,
+            price: {
+              id: TEST_PRICE_TEAM,
+              recurring: { interval: "month", interval_count: 1 },
+            },
+          },
+        ],
+      },
+    });
+    context.mocks.stripe.subscriptionSchedules.create.mockResolvedValue({
+      id: scheduleId,
+      current_phase: { start_date: periodStart, end_date: periodEnd },
+    });
+    // Another organization write (settlement debits and webhooks rewrite the
+    // same row) lands while Stripe is applying the schedule.
+    context.mocks.stripe.subscriptionSchedules.update.mockImplementation(
+      async () => {
+        await accept(
+          setupApp({ context, routes: billingAutoRechargeRoutes })(
+            billingAutoRechargeContract,
+          ).update({
+            headers: { authorization: "Bearer clerk-session" },
+            body: { enabled: false, threshold: 1000, amount: 5000 },
+          }),
+          [200],
+        );
+        return { id: scheduleId };
+      },
+    );
+
+    const response = await accept(
+      setupApp({ context, routes: billingDowngradeRoutes })(
+        billingDowngradeContract,
+      ).create({
+        body: { targetTier: "pro" },
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+
+    const effectiveDate = new Date(periodEnd * 1000).toISOString();
+    expect(response.body).toStrictEqual({ success: true, effectiveDate });
+    const status = await readBillingStatus();
     expect(status.body.scheduledChange).toStrictEqual({
       type: "downgrade",
       targetTier: "pro",
@@ -943,7 +1021,7 @@ describe("POST /api/billing/downgrade", () => {
     ).not.toHaveBeenCalled();
   });
 
-  it("downgrades team to limited-free-1 via cancel at period end", async () => {
+  it("converges concurrent Team cancellation at the period end", async () => {
     const subId = `sub-team-suspend-${randomUUID().slice(0, 8)}`;
     const periodEnd = new Date(now() + 30 * 86_400 * 1000);
     const fixture = await track(
@@ -986,18 +1064,39 @@ describe("POST /api/billing/downgrade", () => {
     const client = setupApp({ context, routes: billingDowngradeRoutes })(
       billingDowngradeContract,
     );
-    const response = await accept(
-      client.create({
-        body: { targetTier: "limited-free-1" },
-        headers: { authorization: "Bearer clerk-session" },
+    const responses = await Promise.all(
+      [0, 1].map(() => {
+        return accept(
+          client.create({
+            body: { targetTier: "limited-free-1" },
+            headers: { authorization: "Bearer clerk-session" },
+          }),
+          [200, 409],
+        );
       }),
-      [200],
     );
-
-    expect(response.body).toStrictEqual({
-      success: true,
-      effectiveDate: expectedEffectiveDate,
-    });
+    expect(
+      responses.some((response) => {
+        return response.status === 200;
+      }),
+    ).toBeTruthy();
+    for (const response of responses) {
+      expect(response.body).toStrictEqual(
+        response.status === 200
+          ? { success: true, effectiveDate: expectedEffectiveDate }
+          : {
+              error: {
+                code: "CONFLICT",
+                message:
+                  "Billing changed while downgrading; refresh and try again",
+              },
+            },
+      );
+    }
+    const status = await readBillingStatus();
+    expect(status.body.cancelAtPeriodEnd).toBeTruthy();
+    expect(status.body.currentPeriodEnd).toBe(expectedEffectiveDate);
+    expect(status.body.tier).toBe("team");
     expect(context.mocks.stripe.subscriptions.update).toHaveBeenCalledWith(
       subId,
       { cancel_at_period_end: true },

@@ -35,6 +35,12 @@ export const testWorkflowSkillStoragePresignedUrlCacheStateActionBodySchema =
       object_key_prefix: z.string(),
       scope: cacheScopeSchema.optional(),
     }),
+    z.object({
+      action: z.literal("set-cache-expiration"),
+      object_key_prefix: z.string(),
+      scope: cacheScopeSchema.optional(),
+      expires_at: z.iso.datetime(),
+    }),
   ]);
 
 export const testWorkflowSkillStoragePresignedUrlCacheStateActionResponseSchema =

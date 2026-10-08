@@ -1640,6 +1640,10 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
         .guest_rpc
         .as_ref()
         .and_then(|runtime| runtime.install(sandbox.as_ref(), context, &cleanup_cancel));
+    let guest_duplex_registration =
+        config
+            .guest_duplex
+            .register(context.run_id, sandbox.as_ref(), &cleanup_cancel);
     let reuse_result = start.reuse_result;
     let workspace_reuse_result = start.workspace_reuse_result;
 
@@ -1659,6 +1663,8 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
     if let Some(guest_rpc) = guest_rpc {
         guest_rpc.shutdown().await;
     }
+    // Revoke before cleanup, park, or release to an idle/reused sandbox.
+    drop(guest_duplex_registration);
 
     let pre_process_resource_diagnostics = match result.as_ref() {
         Err(error) if explicit_enospc_evidence([error.to_string().as_str()]) => {
@@ -1732,7 +1738,6 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
 
     ExecuteOutcome {
         failure: agent_result.failure,
-        active_input_delivery_ids: agent_result.active_input_delivery_ids,
         sandbox_reuse_disposition: agent_result.sandbox_reuse_disposition,
         sandbox: Some(sandbox),
         source_ip,
@@ -1813,6 +1818,8 @@ pub(super) async fn register_proxy(
         capture_network_bodies: context.capture_network_bodies.unwrap_or(false),
         billable_firewalls: &context.billable_firewalls,
         model_usage_provider: context.model_usage_provider.as_deref(),
+        model_usage_long_context_min_total_input_tokens: context
+            .model_usage_long_context_min_total_input_tokens,
     };
     let publication = config
         .registry

@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
-import { and, asc, eq, gt, gte, inArray } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, count, sql } from "drizzle-orm";
 import { createSHA256 } from "hash-wasm";
 import { z } from "zod";
+import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
 import { exportJobs } from "@okouai/db/schema/export-job";
 import {
@@ -20,7 +21,8 @@ import {
   updateUserExportCrc32,
   userExportZipEntryLayout,
 } from "../../lib/user-export-zip";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import {
   completeMultipartS3Upload,
   createMultipartS3Upload,
@@ -31,21 +33,21 @@ import {
   s3ObjectHead,
 } from "../external/s3";
 import {
-  claimBackgroundJob,
-  completeBackgroundJob,
-  failBackgroundJob,
-  retryBackgroundJob,
-  yieldBackgroundJob,
+  claimBackgroundJob$,
+  retryBackgroundJob$,
+  yieldBackgroundJob$,
+  backgroundJobActiveLease,
+  backgroundJobDatabaseNow,
   type ClaimedBackgroundJob,
 } from "./background-job.service";
 import { collectUserExportSourceStep$ } from "./user-export-source.service";
 import { assembleUserExportStep$ } from "./user-export-assembly.service";
-import { userExportReadyEmail } from "./user-export.service";
+import { userExportReadyEmail$ } from "./user-export.service";
 import { settleIncludingAbort } from "../utils";
 import {
   authorizeUserExportPage$,
-  currentUserExportMemberships,
-  lockUserExportPublicationAuthority,
+  currentUserExportMemberships$,
+  userExportPublicationChecks,
 } from "./user-export-authorization.service";
 
 const log = logger("service:user-export-durable");
@@ -90,7 +92,6 @@ const stateSchema = z.object({
 });
 type ExportState = z.infer<typeof stateSchema>;
 interface Runtime {
-  readonly db: Db;
   readonly bucket: string;
   readonly job: ClaimedBackgroundJob;
   readonly state: ExportState;
@@ -118,82 +119,120 @@ function stringMetadata(
 function contentKey(job: ClaimedBackgroundJob, bytes: Buffer): string {
   return `exports/${job.userId}/${job.id}/staging/${createHash("sha256").update(bytes).digest("hex")}`;
 }
-async function saveState(
-  runtime: Runtime,
-  state: ExportState,
-  signal: AbortSignal,
-): Promise<boolean> {
-  return await yieldBackgroundJob(
-    runtime.db,
-    { job: runtime.job, checkpoint: state },
-    signal,
-  );
-}
+const saveState$ = command(
+  async (
+    { set },
+    runtime: Runtime,
+    state: ExportState,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    return await set(
+      yieldBackgroundJob$,
+      { job: runtime.job, checkpoint: state },
+      signal,
+    );
+  },
+);
 
 /** Commit one collection step: pin its snapshots, record its entries, run the job. */
-async function commitCollectedEntries(
-  args: {
-    readonly db: Db;
-    readonly job: ClaimedBackgroundJob;
-    readonly entries: readonly (typeof userExportEntries.$inferInsert)[];
-    readonly next: ExportState;
-  },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const { db, job, entries, next } = args;
-  return await db.transaction(async (tx) => {
-    if (!(await yieldBackgroundJob(tx, { job, checkpoint: next }, signal))) {
-      return false;
-    }
-    for (const entry of entries) {
-      if (entry.metadata?.sourceKind !== "chat-snapshot") {
-        continue;
-      }
-      const threadId = entry.metadata.threadId;
-      if (typeof threadId !== "string") {
-        throw new Error("Export snapshot has no thread identity");
-      }
-      // Pin while holding the current head against replacement. GC observes
-      // either the live head or this committed export reference, never a gap.
-      const [head] = await tx
-        .select({ id: chatEventSnapshots.id })
-        .from(chatEventSnapshots)
-        .where(
-          and(
-            eq(chatEventSnapshots.chatThreadId, threadId),
-            eq(chatEventSnapshots.archiveSchemaVersion, 7),
-            eq(chatEventSnapshots.objectKey, entry.sourceKey),
-          ),
-        )
+const commitCollectedEntries$ = command(
+  async (
+    { set },
+    args: {
+      readonly job: ClaimedBackgroundJob;
+      readonly entries: readonly (typeof userExportEntries.$inferInsert)[];
+      readonly next: ExportState;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const { job, entries, next } = args;
+    return await db.transaction(async (tx) => {
+      const transition = { job, checkpoint: next };
+      // The checkpoint and its byte inventory are one recoverable business write.
+      // Lock before evaluating database-clock expiry, never extend this lease.
+      const [lease] = await tx
+        .select({ id: backgroundJobs.id })
+        .from(backgroundJobs)
+        .where(backgroundJobActiveLease(job))
         .limit(1)
-        .for("share");
+        .for("update", { skipLocked: true });
       signal.throwIfAborted();
-      if (!head) {
-        throw new Error(
-          "Export snapshot changed before its durable pin; retry collection",
-        );
+      if (!lease) {
+        return false;
       }
-    }
-    if (entries.length > 0) {
-      await tx.insert(userExportEntries).values([...entries]);
+      const [progress] = await tx
+        .update(backgroundJobs)
+        .set({
+          status: "pending",
+          checkpoint: transition.checkpoint,
+          failureCount: 0,
+          lastError: null,
+          availableAt: backgroundJobDatabaseNow,
+          leaseId: null,
+          leaseExpiresAt: null,
+          updatedAt: backgroundJobDatabaseNow,
+        })
+        .where(backgroundJobActiveLease(job))
+        .returning({ id: backgroundJobs.id });
       signal.throwIfAborted();
-    }
-    await tx
-      .update(exportJobs)
-      .set({ status: "running" })
-      .where(and(eq(exportJobs.id, job.id), eq(exportJobs.status, "pending")));
-    signal.throwIfAborted();
-    return true;
-  });
-}
+      if (!(progress !== undefined)) {
+        return false;
+      }
+      for (const entry of entries) {
+        if (entry.metadata?.sourceKind !== "chat-snapshot") {
+          continue;
+        }
+        const threadId = entry.metadata.threadId;
+        if (typeof threadId !== "string") {
+          throw new Error("Export snapshot has no thread identity");
+        }
+        // Pin while holding the current head against replacement. GC observes
+        // either the live head or this committed export reference, never a gap.
+        const [head] = await tx
+          .select({ id: chatEventSnapshots.id })
+          .from(chatEventSnapshots)
+          .where(
+            and(
+              eq(chatEventSnapshots.chatThreadId, threadId),
+              eq(
+                chatEventSnapshots.archiveSchemaVersion,
+                CURRENT_CHAT_EVENT_SCHEMA_VERSION,
+              ),
+              eq(chatEventSnapshots.objectKey, entry.sourceKey),
+            ),
+          )
+          .limit(1)
+          .for("share");
+        signal.throwIfAborted();
+        if (!head) {
+          throw new Error(
+            "Export snapshot changed before its durable pin; retry collection",
+          );
+        }
+      }
+      if (entries.length > 0) {
+        await tx.insert(userExportEntries).values([...entries]);
+        signal.throwIfAborted();
+      }
+      await tx
+        .update(exportJobs)
+        .set({ status: "running" })
+        .where(
+          and(eq(exportJobs.id, job.id), eq(exportJobs.status, "pending")),
+        );
+      signal.throwIfAborted();
+      return true;
+    });
+  },
+);
 
 const collectStep$ = command(
   async ({ get, set }, runtime: Runtime, signal: AbortSignal) => {
-    const { db, bucket, job, state } = runtime;
+    const { bucket, job, state } = runtime;
     const result = await set(
       collectUserExportSourceStep$,
       {
-        db,
         bucket,
         userId: job.userId,
         orgId: job.orgId,
@@ -289,7 +328,7 @@ const collectStep$ = command(
       phase: result.done ? "scan" : "collect",
       collectedAt: result.done ? nowDate().toISOString() : state.collectedAt,
     };
-    return await commitCollectedEntries({ db, job, entries, next }, signal);
+    return await set(commitCollectedEntries$, { job, entries, next }, signal);
   },
 );
 
@@ -341,37 +380,135 @@ function placePrehashedEntries(
   };
 }
 
-async function commitPlacedEntries(
-  args: {
-    readonly db: Db;
-    readonly job: ClaimedBackgroundJob;
-    readonly placed: readonly EntryPosition[];
-    readonly next: ExportState;
+const commitPlacedEntries$ = command(
+  async (
+    { set },
+    args: {
+      readonly job: ClaimedBackgroundJob;
+      readonly placed: readonly EntryPosition[];
+      readonly next: ExportState;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const { job, placed, next } = args;
+
+    const transition = { job, checkpoint: next };
+    const leased = db
+      .select({ id: backgroundJobs.id })
+      .from(backgroundJobs)
+      .where(backgroundJobActiveLease(job))
+      .limit(1)
+      .for("update", { skipLocked: true });
+    const progress = db
+      .update(backgroundJobs)
+      .set({
+        status: "pending",
+        checkpoint: transition.checkpoint,
+        failureCount: 0,
+        lastError: null,
+        availableAt: backgroundJobDatabaseNow,
+        leaseId: null,
+        leaseExpiresAt: null,
+        updatedAt: backgroundJobDatabaseNow,
+      })
+      .where(
+        and(
+          backgroundJobActiveLease(job),
+          sql`exists (select 1 from export_step_lease)`,
+        ),
+      )
+      .returning({ id: backgroundJobs.id });
+    const localOffset = sql`case ${userExportEntries.ordinal} ${sql.join(
+      placed.map((position) => {
+        return sql`when ${position.ordinal} then ${position.localOffset}::bigint`;
+      }),
+      sql` `,
+    )} end`;
+    const centralOffset = sql`case ${userExportEntries.ordinal} ${sql.join(
+      placed.map((position) => {
+        return sql`when ${position.ordinal} then ${position.centralOffset}::bigint`;
+      }),
+      sql` `,
+    )} end`;
+    const changed = db
+      .update(userExportEntries)
+      .set({ localOffset, centralOffset })
+      .where(
+        and(
+          eq(userExportEntries.jobId, job.id),
+          inArray(
+            userExportEntries.ordinal,
+            placed.map((position) => {
+              return position.ordinal;
+            }),
+          ),
+          sql`exists (select 1 from export_step_progress)`,
+        ),
+      )
+      .returning({ ordinal: userExportEntries.ordinal });
+    // Gated mutations and their checkpoint commit in one statement, not
+    // separately committing commands. The lease clock is checked after locking.
+    const committed = parseRawRows(
+      z.object({ id: z.string().uuid() }),
+      await db.execute(sql`
+        with export_step_lease as materialized (${leased}),
+        export_step_progress as (${progress.getSQL()}),
+        export_step_inventory as (${changed.getSQL()})
+        select id from export_step_progress
+      `),
+    );
+    signal.throwIfAborted();
+    return committed.length === 1;
   },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const { db, job, placed, next } = args;
-  return await db.transaction(async (tx) => {
-    if (!(await yieldBackgroundJob(tx, { job, checkpoint: next }, signal))) {
-      return false;
+);
+
+function scannedEntryPlan(
+  entry: typeof userExportEntries.$inferSelect,
+  state: ExportState,
+  bytes: Buffer,
+  hasher: Awaited<ReturnType<typeof createSHA256>>,
+) {
+  const savedHash = stringMetadata(entry.metadata, "hashState");
+  if (savedHash) {
+    hasher.load(Buffer.from(savedHash, "base64"));
+  }
+  hasher.update(bytes);
+  const scannedBytes = entry.scannedBytes + bytes.length;
+  const ready = scannedBytes === entry.size;
+  const metadata = { ...entry.metadata };
+  if (ready) {
+    const sha256 = hasher.digest("hex");
+    const expected = stringMetadata(metadata, "expectedSha256");
+    if (expected && expected !== sha256) {
+      throw new Error("Export source checksum mismatch");
     }
-    for (const position of placed) {
-      await tx
-        .update(userExportEntries)
-        .set({
-          localOffset: position.localOffset,
-          centralOffset: position.centralOffset,
-        })
-        .where(entryCondition(job.id, position.ordinal));
-      signal.throwIfAborted();
-    }
-    return true;
+    delete metadata.hashState;
+    metadata.sha256 = sha256;
+  } else {
+    metadata.hashState = Buffer.from(hasher.save()).toString("base64");
+  }
+  const layout = userExportZipEntryLayout({
+    path: entry.path,
+    size: entry.size,
+    localHeaderOffset: state.localSize,
   });
+  const next: ExportState = ready
+    ? {
+        ...state,
+        cursor: state.cursor + 1,
+        localSize: state.localSize + layout.localHeaderSize + entry.size,
+        centralSize: state.centralSize + layout.centralHeaderSize,
+      }
+    : state;
+
+  return { scannedBytes, ready, metadata, next };
 }
 
 const scanStep$ = command(
-  async ({ get }, runtime: Runtime, signal: AbortSignal) => {
-    const { db, bucket, job, state } = runtime;
+  async ({ get, set }, runtime: Runtime, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const { bucket, job, state } = runtime;
     const rows = await db
       .select()
       .from(userExportEntries)
@@ -386,7 +523,8 @@ const scanStep$ = command(
     signal.throwIfAborted();
     const [entry] = rows;
     if (!entry) {
-      return await saveState(
+      return await set(
+        saveState$,
         runtime,
         { ...state, phase: "inventory", cursor: 0 },
         signal,
@@ -394,7 +532,7 @@ const scanStep$ = command(
     }
     const advanced = placePrehashedEntries(rows, state);
     if (advanced) {
-      return await commitPlacedEntries({ db, job, ...advanced }, signal);
+      return await set(commitPlacedEntries$, { job, ...advanced }, signal);
     }
     const etag = stringMetadata(entry.metadata, "etag");
     if (!etag) {
@@ -415,63 +553,77 @@ const scanStep$ = command(
     signal.throwIfAborted();
     const hasher = await createSHA256();
     signal.throwIfAborted();
-    const savedHash = stringMetadata(entry.metadata, "hashState");
-    if (savedHash) {
-      hasher.load(Buffer.from(savedHash, "base64"));
-    }
-    hasher.update(bytes);
-    const scannedBytes = entry.scannedBytes + bytes.length;
-    const ready = scannedBytes === entry.size;
-    const metadata = { ...entry.metadata };
-    if (ready) {
-      const sha256 = hasher.digest("hex");
-      const expected = stringMetadata(metadata, "expectedSha256");
-      if (expected && expected !== sha256) {
-        throw new Error("Export source checksum mismatch");
-      }
-      delete metadata.hashState;
-      metadata.sha256 = sha256;
-    } else {
-      metadata.hashState = Buffer.from(hasher.save()).toString("base64");
-    }
-    const layout = userExportZipEntryLayout({
-      path: entry.path,
-      size: entry.size,
-      localHeaderOffset: state.localSize,
-    });
-    const next: ExportState = ready
-      ? {
-          ...state,
-          cursor: state.cursor + 1,
-          localSize: state.localSize + layout.localHeaderSize + entry.size,
-          centralSize: state.centralSize + layout.centralHeaderSize,
-        }
-      : state;
-    return await db.transaction(async (tx) => {
-      if (!(await yieldBackgroundJob(tx, { job, checkpoint: next }, signal))) {
-        return false;
-      }
-      await tx
-        .update(userExportEntries)
-        .set({
-          scannedBytes,
-          crc32: updateUserExportCrc32(entry.crc32, bytes),
-          metadata,
-          ready,
-          localOffset: state.localSize,
-          centralOffset: state.centralSize,
-        })
-        .where(entryCondition(job.id, entry.ordinal));
-      signal.throwIfAborted();
-      return true;
-    });
+    const { scannedBytes, ready, metadata, next } = scannedEntryPlan(
+      entry,
+      state,
+      bytes,
+      hasher,
+    );
+
+    const transition = { job, checkpoint: next };
+    const leased = db
+      .select({ id: backgroundJobs.id })
+      .from(backgroundJobs)
+      .where(backgroundJobActiveLease(job))
+      .limit(1)
+      .for("update", { skipLocked: true });
+    const progress = db
+      .update(backgroundJobs)
+      .set({
+        status: "pending",
+        checkpoint: transition.checkpoint,
+        failureCount: 0,
+        lastError: null,
+        availableAt: backgroundJobDatabaseNow,
+        leaseId: null,
+        leaseExpiresAt: null,
+        updatedAt: backgroundJobDatabaseNow,
+      })
+      .where(
+        and(
+          backgroundJobActiveLease(job),
+          sql`exists (select 1 from export_step_lease)`,
+        ),
+      )
+      .returning({ id: backgroundJobs.id });
+    const changed = db
+      .update(userExportEntries)
+      .set({
+        scannedBytes,
+        crc32: updateUserExportCrc32(entry.crc32, bytes),
+        metadata,
+        ready,
+        localOffset: state.localSize,
+        centralOffset: state.centralSize,
+      })
+      .where(
+        and(
+          entryCondition(job.id, entry.ordinal),
+          sql`exists (select 1 from export_step_progress)`,
+        ),
+      )
+      .returning({ ordinal: userExportEntries.ordinal });
+    // Gated mutations and their checkpoint commit in one statement, not
+    // separately committing commands. The lease clock is checked after locking.
+    const committed = parseRawRows(
+      z.object({ id: z.string().uuid() }),
+      await db.execute(sql`
+        with export_step_lease as materialized (${leased}),
+        export_step_progress as (${progress.getSQL()}),
+        export_step_inventory as (${changed.getSQL()})
+        select id from export_step_progress
+      `),
+    );
+    signal.throwIfAborted();
+    return committed.length === 1;
   },
 );
 
 /** The manifest is paged too: a large account never creates one giant JSON value. */
 const inventoryStep$ = command(
-  async ({ get }, runtime: Runtime, signal: AbortSignal) => {
-    const { db, bucket, job, state } = runtime;
+  async ({ get, set }, runtime: Runtime, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const { bucket, job, state } = runtime;
     const rows = await db
       .select()
       .from(userExportEntries)
@@ -545,32 +697,57 @@ const inventoryStep$ = command(
       manifestHashState,
       manifestSha256,
     };
-    return await db.transaction(async (tx) => {
-      if (!(await yieldBackgroundJob(tx, { job, checkpoint: next }, signal))) {
-        return false;
-      }
-      await tx.insert(userExportEntries).values({
-        jobId: job.id,
-        ordinal: state.entryCount + pageNumber,
-        path,
-        sourceKey,
-        size: bytes.length,
-        scannedBytes: bytes.length,
-        crc32: updateUserExportCrc32(0, bytes),
-        ready: true,
-        localOffset: state.localSize,
-        centralOffset: state.centralSize,
-        metadata: { etag: head.etag },
-      });
-      signal.throwIfAborted();
-      return true;
-    });
+
+    const transition = { job, checkpoint: next };
+    const leased = db
+      .select({ id: backgroundJobs.id })
+      .from(backgroundJobs)
+      .where(backgroundJobActiveLease(job))
+      .limit(1)
+      .for("update", { skipLocked: true });
+    const progress = db
+      .update(backgroundJobs)
+      .set({
+        status: "pending",
+        checkpoint: transition.checkpoint,
+        failureCount: 0,
+        lastError: null,
+        availableAt: backgroundJobDatabaseNow,
+        leaseId: null,
+        leaseExpiresAt: null,
+        updatedAt: backgroundJobDatabaseNow,
+      })
+      .where(
+        and(
+          backgroundJobActiveLease(job),
+          sql`exists (select 1 from export_step_lease)`,
+        ),
+      )
+      .returning({ id: backgroundJobs.id });
+    // Gated mutations and their checkpoint commit in one statement, not
+    // separately committing commands. The lease clock is checked after locking.
+    const committed = parseRawRows(
+      z.object({ id: z.string().uuid() }),
+      await db.execute(sql`
+        with export_step_lease as materialized (${leased}),
+        export_step_progress as (${progress.getSQL()}),
+        export_step_inventory as (insert into ${userExportEntries} (job_id, ordinal, path, source_key, size, scanned_bytes, crc32, ready, local_offset, central_offset, metadata)
+         select ${job.id}::uuid, ${state.entryCount + pageNumber}::integer, ${path}, ${sourceKey}, ${bytes.length}::bigint,
+          ${bytes.length}::bigint, ${updateUserExportCrc32(0, bytes)}::bigint, true,
+          ${state.localSize}::bigint, ${state.centralSize}::bigint, ${sql.param({ etag: head.etag }, userExportEntries.metadata)}
+         from export_step_progress returning ordinal)
+        select id from export_step_progress
+      `),
+    );
+    signal.throwIfAborted();
+    return committed.length === 1;
   },
 );
 
 const manifestStep$ = command(
-  async ({ get }, runtime: Runtime, signal: AbortSignal) => {
-    const { db, bucket, job, state } = runtime;
+  async ({ get, set }, runtime: Runtime, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const { bucket, job, state } = runtime;
     const bytes = Buffer.from(
       JSON.stringify(
         {
@@ -609,47 +786,64 @@ const manifestStep$ = command(
       size: bytes.length,
       localHeaderOffset: state.localSize,
     });
-    return await db.transaction(async (tx) => {
-      if (
-        !(await yieldBackgroundJob(
-          tx,
-          {
-            job,
-            checkpoint: {
-              ...state,
-              phase: "init-upload",
-              entryCount: state.entryCount + 1,
-              localSize:
-                state.localSize + layout.localHeaderSize + bytes.length,
-              centralSize: state.centralSize + layout.centralHeaderSize,
-            },
-          },
-          signal,
-        ))
-      ) {
-        return false;
-      }
-      await tx.insert(userExportEntries).values({
-        jobId: job.id,
-        ordinal: state.entryCount,
-        path,
-        sourceKey,
-        size: bytes.length,
-        scannedBytes: bytes.length,
-        crc32: updateUserExportCrc32(0, bytes),
-        ready: true,
-        localOffset: state.localSize,
-        centralOffset: state.centralSize,
-        metadata: { etag: head.etag },
-      });
-      signal.throwIfAborted();
-      return true;
-    });
+
+    const transition = {
+      job,
+      checkpoint: {
+        ...state,
+        phase: "init-upload",
+        entryCount: state.entryCount + 1,
+        localSize: state.localSize + layout.localHeaderSize + bytes.length,
+        centralSize: state.centralSize + layout.centralHeaderSize,
+      },
+    };
+    const leased = db
+      .select({ id: backgroundJobs.id })
+      .from(backgroundJobs)
+      .where(backgroundJobActiveLease(job))
+      .limit(1)
+      .for("update", { skipLocked: true });
+    const progress = db
+      .update(backgroundJobs)
+      .set({
+        status: "pending",
+        checkpoint: transition.checkpoint,
+        failureCount: 0,
+        lastError: null,
+        availableAt: backgroundJobDatabaseNow,
+        leaseId: null,
+        leaseExpiresAt: null,
+        updatedAt: backgroundJobDatabaseNow,
+      })
+      .where(
+        and(
+          backgroundJobActiveLease(job),
+          sql`exists (select 1 from export_step_lease)`,
+        ),
+      )
+      .returning({ id: backgroundJobs.id });
+    // Gated mutations and their checkpoint commit in one statement, not
+    // separately committing commands. The lease clock is checked after locking.
+    const committed = parseRawRows(
+      z.object({ id: z.string().uuid() }),
+      await db.execute(sql`
+        with export_step_lease as materialized (${leased}),
+        export_step_progress as (${progress.getSQL()}),
+        export_step_inventory as (insert into ${userExportEntries} (job_id, ordinal, path, source_key, size, scanned_bytes, crc32, ready, local_offset, central_offset, metadata)
+         select ${job.id}::uuid, ${state.entryCount}::integer, ${path}, ${sourceKey}, ${bytes.length}::bigint,
+          ${bytes.length}::bigint, ${updateUserExportCrc32(0, bytes)}::bigint, true,
+          ${state.localSize}::bigint, ${state.centralSize}::bigint, ${sql.param({ etag: head.etag }, userExportEntries.metadata)}
+         from export_step_progress returning ordinal)
+        select id from export_step_progress
+      `),
+    );
+    signal.throwIfAborted();
+    return committed.length === 1;
   },
 );
 
 const initUploadStep$ = command(
-  async ({ get }, runtime: Runtime, signal: AbortSignal) => {
+  async ({ get, set }, runtime: Runtime, signal: AbortSignal) => {
     const { bucket, job, state } = runtime;
     const footer = serializeUserExportZipEnd({
       entryCount: state.entryCount,
@@ -675,7 +869,8 @@ const initUploadStep$ = command(
       ),
     );
     signal.throwIfAborted();
-    return await saveState(
+    return await set(
+      saveState$,
       runtime,
       { ...state, phase: "assemble", totalSize, resultKey, uploadId },
       signal,
@@ -685,56 +880,82 @@ const initUploadStep$ = command(
 
 const assembleStep$ = command(
   async ({ set }, runtime: Runtime, signal: AbortSignal) => {
-    const { db, bucket, job, state } = runtime;
+    const db = set(writeDb$);
+    const { bucket, job, state } = runtime;
     const result = await set(
       assembleUserExportStep$,
-      { db, bucket, jobId: job.id, userId: job.userId, state },
+      { bucket, jobId: job.id, userId: job.userId, state },
       signal,
     );
     signal.throwIfAborted();
-    return await db.transaction(async (tx) => {
-      if (
-        !(await yieldBackgroundJob(
-          tx,
-          {
-            job,
-            checkpoint: {
-              ...state,
-              ...result.state,
-              phase: result.done ? "authorize" : "assemble",
-              cursor: result.done ? 0 : state.cursor,
-            },
-          },
-          signal,
-        ))
-      ) {
-        return false;
-      }
-      if (result.part) {
-        await tx
-          .insert(userExportParts)
-          .values({ jobId: job.id, ...result.part })
-          .onConflictDoUpdate({
-            target: [userExportParts.jobId, userExportParts.partNumber],
-            set: { etag: result.part.etag },
-          });
-      }
-      signal.throwIfAborted();
-      return true;
-    });
+
+    const transition = {
+      job,
+      checkpoint: {
+        ...state,
+        ...result.state,
+        phase: result.done ? "authorize" : "assemble",
+        cursor: result.done ? 0 : state.cursor,
+      },
+    };
+    const leased = db
+      .select({ id: backgroundJobs.id })
+      .from(backgroundJobs)
+      .where(backgroundJobActiveLease(job))
+      .limit(1)
+      .for("update", { skipLocked: true });
+    const progress = db
+      .update(backgroundJobs)
+      .set({
+        status: "pending",
+        checkpoint: transition.checkpoint,
+        failureCount: 0,
+        lastError: null,
+        availableAt: backgroundJobDatabaseNow,
+        leaseId: null,
+        leaseExpiresAt: null,
+        updatedAt: backgroundJobDatabaseNow,
+      })
+      .where(
+        and(
+          backgroundJobActiveLease(job),
+          sql`exists (select 1 from export_step_lease)`,
+        ),
+      )
+      .returning({ id: backgroundJobs.id });
+    // Gated mutations and their checkpoint commit in one statement, not
+    // separately committing commands. The lease clock is checked after locking.
+    const committed = parseRawRows(
+      z.object({ id: z.string().uuid() }),
+      await db.execute(sql`
+        with export_step_lease as materialized (${leased}),
+        export_step_progress as (${progress.getSQL()}),
+        export_step_inventory as (${
+          result.part
+            ? sql`insert into ${userExportParts} (job_id, part_number, etag)
+        select ${job.id}::uuid, ${result.part.partNumber}::integer, ${result.part.etag} from export_step_progress
+        on conflict (job_id, part_number) do update set etag = excluded.etag returning part_number`
+            : sql`select id from export_step_progress`
+        })
+        select id from export_step_progress
+      `),
+    );
+    signal.throwIfAborted();
+    return committed.length === 1;
   },
 );
 
 const authorizeStep$ = command(
   async ({ set }, runtime: Runtime, signal: AbortSignal) => {
-    const { db, job, state } = runtime;
+    const { job, state } = runtime;
     const result = await set(
       authorizeUserExportPage$,
-      { db, jobId: job.id, userId: job.userId, cursor: state.cursor },
+      { jobId: job.id, userId: job.userId, cursor: state.cursor },
       signal,
     );
     signal.throwIfAborted();
-    return await saveState(
+    return await set(
+      saveState$,
       runtime,
       {
         ...state,
@@ -747,8 +968,9 @@ const authorizeStep$ = command(
 );
 
 const publishStep$ = command(
-  async ({ get }, runtime: Runtime, signal: AbortSignal) => {
-    const { db, bucket, job, state } = runtime;
+  async ({ get, set }, runtime: Runtime, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const { bucket, job, state } = runtime;
     const head = await get(s3ObjectHead(bucket, state.resultKey, signal));
     signal.throwIfAborted();
     if (head.kind === "missing") {
@@ -787,22 +1009,57 @@ const publishStep$ = command(
     ) {
       throw new Error("Completed export does not match its durable byte plan");
     }
-    const orgIds = await get(currentUserExportMemberships(job.userId, signal));
+    const orgIds = await set(currentUserExportMemberships$, job.userId, signal);
     signal.throwIfAborted();
     return await db.transaction(async (tx) => {
-      await lockUserExportPublicationAuthority(
-        tx,
-        { jobId: job.id, userId: job.userId, orgIds },
-        signal,
-      );
+      for (const check of userExportPublicationChecks({
+        jobId: job.id,
+        userId: job.userId,
+        orgIds,
+      })) {
+        const [expected] = await tx
+          .select({ count: count() })
+          .from(sql`(${check.expected}) expected_resources`);
+        const [actual] = await tx
+          .select({ count: count() })
+          .from(sql`(${check.readable}) locked_resources`);
+        signal.throwIfAborted();
+        if (!expected || !actual || expected.count !== actual.count) {
+          throw new Error(
+            "Access to an exported resource changed before publication",
+          );
+        }
+      }
       signal.throwIfAborted();
-      if (
-        !(await yieldBackgroundJob(
-          tx,
-          { job, checkpoint: { ...state, phase: "notify" } },
-          signal,
-        ))
-      ) {
+      const transition = { job, checkpoint: { ...state, phase: "notify" } };
+      // The checkpoint and its byte inventory are one recoverable business write.
+      // Lock before evaluating database-clock expiry, never extend this lease.
+      const [lease] = await tx
+        .select({ id: backgroundJobs.id })
+        .from(backgroundJobs)
+        .where(backgroundJobActiveLease(job))
+        .limit(1)
+        .for("update", { skipLocked: true });
+      signal.throwIfAborted();
+      if (!lease) {
+        return false;
+      }
+      const [progress] = await tx
+        .update(backgroundJobs)
+        .set({
+          status: "pending",
+          checkpoint: transition.checkpoint,
+          failureCount: 0,
+          lastError: null,
+          availableAt: backgroundJobDatabaseNow,
+          leaseId: null,
+          leaseExpiresAt: null,
+          updatedAt: backgroundJobDatabaseNow,
+        })
+        .where(backgroundJobActiveLease(job))
+        .returning({ id: backgroundJobs.id });
+      signal.throwIfAborted();
+      if (!(progress !== undefined)) {
         return false;
       }
       const published = await tx
@@ -834,8 +1091,9 @@ const publishStep$ = command(
 );
 
 const notifyStep$ = command(
-  async ({ get }, runtime: Runtime, signal: AbortSignal) => {
-    const { db, bucket, job, state } = runtime;
+  async ({ get, set }, runtime: Runtime, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const { bucket, job, state } = runtime;
     const [published] = await db
       .select({ expiresAt: exportJobs.expiresAt })
       .from(exportJobs)
@@ -854,27 +1112,53 @@ const notifyStep$ = command(
       ),
     );
     signal.throwIfAborted();
-    const email = await get(
-      userExportReadyEmail(
-        { db, bucket },
-        {
-          userId: job.userId,
-          downloadUrl,
-          expiresAt: published.expiresAt,
-          artifactCount: 0,
-        },
-        signal,
-      ),
+    const email = await set(
+      userExportReadyEmail$,
+      {
+        userId: job.userId,
+        downloadUrl,
+        expiresAt: published.expiresAt,
+        artifactCount: 0,
+      },
+      signal,
     );
     signal.throwIfAborted();
-    return await db.transaction(async (tx) => {
-      if (!(await completeBackgroundJob(tx, { job }, signal))) {
-        return false;
-      }
-      await tx.insert(emailOutbox).values(email);
-      signal.throwIfAborted();
-      return true;
-    });
+    const leased = db
+      .select({ id: backgroundJobs.id })
+      .from(backgroundJobs)
+      .where(backgroundJobActiveLease(job))
+      .limit(1)
+      .for("update", { skipLocked: true });
+    const completion = db
+      .update(backgroundJobs)
+      .set({
+        status: "completed",
+        leaseId: null,
+        leaseExpiresAt: null,
+        lastError: null,
+        completedAt: backgroundJobDatabaseNow,
+        updatedAt: backgroundJobDatabaseNow,
+      })
+      .where(
+        and(
+          backgroundJobActiveLease(job),
+          sql`exists (select 1 from export_notification_lease)`,
+        ),
+      )
+      .returning({ id: backgroundJobs.id });
+    // One statement commits the terminal receipt and notification together. The
+    // existing outbox ID also makes a replay after a lost receipt harmless.
+    const { rowCount } = await db.execute(sql`
+      with export_notification_lease as materialized (${leased}),
+      completed_export as (${completion.getSQL()})
+      insert into ${emailOutbox} (id, from_address, to_addresses, subject, template, status, attempts)
+      select ${job.id}::uuid, ${email.fromAddress}, ${sql.param(email.toAddresses, emailOutbox.toAddresses)},
+        ${email.subject}, ${sql.param(email.template, emailOutbox.template)}, 'pending', 0
+      from completed_export
+      on conflict (id) do nothing
+    `);
+    signal.throwIfAborted();
+    return rowCount === 1;
   },
 );
 
@@ -913,57 +1197,94 @@ const executeStep$ = command(
 );
 
 /** Persist the outcome even when the work signal aborted or its receipt was lost. */
-async function finishUserExportAttempt(
-  db: Db,
-  job: ClaimedBackgroundJob,
-  work: Promise<boolean>,
-): Promise<void> {
-  const result = await settleIncludingAbort(work);
-  if (!result.ok) {
-    // The independent cleanup deadline can record a retry after the request aborts.
-    const cleanupSignal = AbortSignal.timeout(5000);
-    const error =
-      result.error instanceof Error
-        ? result.error.message
-        : "Export step failed";
-    log.warn("Export step will recover from its committed checkpoint", {
-      jobId: job.id,
-      error,
-    });
-    if (job.failureCount + 1 >= MAX_FAILURES) {
-      await db.transaction(async (tx) => {
-        if (await failBackgroundJob(tx, { job, error }, cleanupSignal)) {
-          await tx
-            .update(exportJobs)
+const finishUserExportAttempt$ = command(
+  async (
+    { set },
+    job: ClaimedBackgroundJob,
+    attempt: Awaited<ReturnType<typeof settleIncludingAbort<boolean>>>,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const result = attempt;
+    signal.throwIfAborted();
+    if (!result.ok) {
+      // The independent cleanup deadline can record a retry after the request aborts.
+      const cleanupSignal = signal;
+      const error =
+        result.error instanceof Error
+          ? result.error.message
+          : "Export step failed";
+      log.warn("Export step will recover from its committed checkpoint", {
+        jobId: job.id,
+        error,
+      });
+      if (job.failureCount + 1 >= MAX_FAILURES) {
+        const leased = db
+          .$with("export_failure_lease")
+          .as(
+            db
+              .select({ id: backgroundJobs.id })
+              .from(backgroundJobs)
+              .where(backgroundJobActiveLease(job))
+              .limit(1)
+              .for("update", { skipLocked: true }),
+          );
+        const failed = db.$with("export_failed_job").as(
+          db
+            .update(backgroundJobs)
             .set({
               status: "failed",
-              error: "Data export could not be completed. Please try again.",
-              completedAt: nowDate(),
+              failureCount: sql`${backgroundJobs.failureCount} + 1`,
+              lastError: error.slice(0, 4096),
+              leaseId: null,
+              leaseExpiresAt: null,
+              completedAt: backgroundJobDatabaseNow,
+              updatedAt: backgroundJobDatabaseNow,
             })
             .where(
               and(
-                eq(exportJobs.id, job.id),
-                inArray(exportJobs.status, ["pending", "running"]),
+                backgroundJobActiveLease(job),
+                inArray(
+                  backgroundJobs.id,
+                  db.select({ id: leased.id }).from(leased),
+                ),
               ),
-            );
-        }
-      });
-    } else {
-      await retryBackgroundJob(
-        db,
-        {
-          job,
-          error,
-          availableAt: new Date(
-            nowDate().getTime() +
-              Math.min(600_000, 15_000 * 2 ** job.failureCount),
-          ),
-        },
-        cleanupSignal,
-      );
+            )
+            .returning({ id: backgroundJobs.id }),
+        );
+        await db
+          .with(leased, failed)
+          .update(exportJobs)
+          .set({
+            status: "failed",
+            error: "Data export could not be completed. Please try again.",
+            completedAt: nowDate(),
+          })
+          .where(
+            and(
+              eq(exportJobs.id, job.id),
+              inArray(exportJobs.status, ["pending", "running"]),
+              inArray(exportJobs.id, db.select({ id: failed.id }).from(failed)),
+            ),
+          );
+        signal.throwIfAborted();
+      } else {
+        await set(
+          retryBackgroundJob$,
+          {
+            job,
+            error,
+            availableAt: new Date(
+              nowDate().getTime() +
+                Math.min(600_000, 15_000 * 2 ** job.failureCount),
+            ),
+          },
+          cleanupSignal,
+        );
+      }
     }
-  }
-}
+  },
+);
 
 /** Cron is the durable wakeup; request waitUntil only reduces initial latency. */
 export const executeDurableUserExportWork$ = command(
@@ -980,8 +1301,8 @@ export const executeDurableUserExportWork$ = command(
       performance.now() - started < INVOCATION_BUDGET_MS
     ) {
       signal.throwIfAborted();
-      const job = await claimBackgroundJob(
-        db,
+      const job = await set(
+        claimBackgroundJob$,
         { jobId: args.jobId, kind: "user-export", handlerVersion: 1 },
         signal,
       );
@@ -993,41 +1314,43 @@ export const executeDurableUserExportWork$ = command(
         signal,
         AbortSignal.timeout(ATTEMPT_TIMEOUT_MS),
       ]);
-      await finishUserExportAttempt(
-        db,
+      await set(
+        finishUserExportAttempt$,
         job,
-        (async () => {
-          const [owner] = await db
-            .select({ id: exportJobs.id })
-            .from(exportJobs)
-            .where(
-              and(
-                eq(exportJobs.id, job.id),
-                eq(exportJobs.userId, job.userId),
-                eq(exportJobs.executionMode, "durable-v1"),
-              ),
-            )
-            .limit(1);
-          attemptSignal.throwIfAborted();
-          if (
-            !owner ||
-            nowDate().getTime() - job.createdAt.getTime() > MAX_JOB_AGE_MS
-          ) {
-            throw new Error(
-              "Export owner is unavailable or the job has expired",
+        await settleIncludingAbort(
+          (async () => {
+            const [owner] = await db
+              .select({ id: exportJobs.id })
+              .from(exportJobs)
+              .where(
+                and(
+                  eq(exportJobs.id, job.id),
+                  eq(exportJobs.userId, job.userId),
+                  eq(exportJobs.executionMode, "durable-v1"),
+                ),
+              )
+              .limit(1);
+            attemptSignal.throwIfAborted();
+            if (
+              !owner ||
+              nowDate().getTime() - job.createdAt.getTime() > MAX_JOB_AGE_MS
+            ) {
+              throw new Error(
+                "Export owner is unavailable or the job has expired",
+              );
+            }
+            return await set(
+              executeStep$,
+              {
+                bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
+                job,
+                state: stateSchema.parse(job.checkpoint),
+              },
+              attemptSignal,
             );
-          }
-          return await set(
-            executeStep$,
-            {
-              db,
-              bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
-              job,
-              state: stateSchema.parse(job.checkpoint),
-            },
-            attemptSignal,
-          );
-        })(),
+          })(),
+        ),
+        AbortSignal.timeout(5000),
       );
       signal.throwIfAborted();
       processed += 1;

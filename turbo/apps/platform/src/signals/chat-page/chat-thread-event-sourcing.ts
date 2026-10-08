@@ -60,13 +60,13 @@ export interface ThreadMeta {
   readonly agentId: string;
   readonly title: string | null;
   readonly pinnedAt: string | null;
+  readonly archived: boolean;
+  readonly muted: boolean;
   readonly selectedModel: string | null;
   readonly modelSettings: ModelSettings;
   readonly serviceTier: "priority" | null;
   readonly computerUseHostId: string | null;
   readonly cloudBrowserEnabled: boolean;
-  readonly selectedVideoModel: string | null;
-  readonly selectedImageModel: string | null;
 }
 
 interface BootstrapThreadMetaEntry {
@@ -336,13 +336,13 @@ const canonicalThreadMetaMap$ = computed((get) => {
       agentId: thread.agentId,
       title: thread.title,
       pinnedAt: thread.pinnedAt,
+      archived: thread.archived,
+      muted: thread.muted,
       selectedModel: thread.selectedModel,
       modelSettings: thread.modelSettings,
       serviceTier: thread.serviceTier,
       computerUseHostId: thread.computerUseHostId,
       cloudBrowserEnabled: thread.cloudBrowserEnabled,
-      selectedVideoModel: thread.selectedVideoModel,
-      selectedImageModel: thread.selectedImageModel,
     });
   }
   return metaById;
@@ -371,13 +371,13 @@ function threadMetaFromMetadata(metadata: ChatThreadMetadata): ThreadMeta {
     agentId: metadata.agentId,
     title: metadata.title,
     pinnedAt: metadata.pinnedAt,
+    archived: metadata.archived,
+    muted: metadata.muted,
     selectedModel: metadata.selectedModel,
     modelSettings: metadata.modelSettings,
     serviceTier: metadata.serviceTier,
     computerUseHostId: metadata.computerUseHostId,
     cloudBrowserEnabled: metadata.cloudBrowserEnabled,
-    selectedVideoModel: metadata.selectedVideoModel,
-    selectedImageModel: metadata.selectedImageModel,
   };
 }
 
@@ -610,8 +610,6 @@ export const registerOptimisticChatThreadEvent$ = command(
       serviceTier: null,
       computerUseHostId: null,
       cloudBrowserEnabled: false,
-      selectedVideoModel: null,
-      selectedImageModel: null,
       createdAt: nowDate().toISOString(),
       ...input,
     };

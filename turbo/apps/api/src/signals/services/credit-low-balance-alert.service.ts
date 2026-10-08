@@ -23,7 +23,6 @@ import {
   buildUnsubscribeHeaders,
   buildUnsubscribeUrl,
   CREDIT_LOW_BALANCE_EMAIL_SUBJECT,
-  EMAIL_PUBLIC_BRAND,
   getUserEmail,
   type EmailTemplate,
 } from "./email-common.service";
@@ -291,7 +290,6 @@ export const enqueueCreditLowBalanceAlert$ = command(
           toAddresses: recipient.email,
           ccAddresses: null,
           subject: CREDIT_LOW_BALANCE_EMAIL_SUBJECT,
-          publicBrand: EMAIL_PUBLIC_BRAND,
           replyTo: null,
           headers: buildUnsubscribeHeaders(
             buildOneClickUnsubscribeUrl(recipient.userId),

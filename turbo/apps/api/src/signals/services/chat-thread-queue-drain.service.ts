@@ -1,303 +1,321 @@
-import { command } from "ccstate";
-import { CANCELLATION_RECOVERY_STALE_AFTER_MS } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatEvents } from "@okouai/db/schema/chat-event";
-import { and, eq, isNotNull } from "drizzle-orm";
-
+import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
+import {
+  chatEvents,
+  chatEventRunlessInputPredicate,
+} from "@okouai/db/schema/chat-event";
+import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
+import { command } from "ccstate";
+import {
+  and,
+  count,
+  eq,
+  isNotNull,
+  inArray,
+  isNull,
+  lte,
+  notExists,
+  or,
+} from "drizzle-orm";
 import { logger } from "../../lib/log";
-import { writeDb$, type Db } from "../external/db";
-import { now, nowDate } from "../../lib/time";
+import { nowDate } from "../../lib/time";
+import { db$, writeDb$ } from "../external/db";
+import { publishActiveInputToRunnerGroup } from "../external/realtime";
+import { settle, tapError } from "../utils";
+import type { AgentRunContextSignals } from "./agent-run-context.signals";
+import type { ChatThreadRequestFacts } from "./chat-thread-request-facts";
 import {
-  publishActiveInputToRunnerGroup,
-  publishChatThreadDetailChangedSafely,
-} from "../external/realtime";
-import { tapError } from "../utils";
-import type { DispatchFailedRunCallbacks } from "./agent-run-create.service";
-import { staleChatThreadQueueThreadIds } from "./workflow-chat-event-queue.service";
+  chatInputEnqueueCommits$,
+  type ChatInputEnqueueCommit,
+} from "./chat-input-enqueue-observation";
+import type { ChatQueuePickResult } from "./chat-queue-wait-reason";
 import {
-  drainQueuedUserMessagesForThread$,
-  type ChatCallbackPreCreateTimingCollector,
-} from "./internal-chat-run-callback.service";
-import {
-  drainWorkflowQueueForThread$,
-  type WorkflowQueueDrainResult,
-} from "./workflow-queue-drain.service";
-import { expiredCancellationRecoveryThreads } from "./chat-active-run.service";
-import type { ApiDispatchTimingCollector } from "./api-dispatch-timing.service";
-import {
-  pendingActiveInputCondition,
-  recentStaleChatQueueWindow,
-} from "./chat-event-queue.service";
+  pickChatThread$,
+  type OrgPickCursor,
+  type PickIteration,
+} from "./pick-chat-run.service";
+import { listQueuedChatThreadOrgIds$ } from "./queued-chat-thread.service";
 
-const DRAIN_SWEEP_LIMIT = 20;
-const L = logger("ChatThreadQueueDrain");
-
-type QueueDrainSweepCandidate =
-  | {
-      readonly chatThreadId: string;
-      readonly userId: string;
-      readonly reason: "cancellation-recovery-expired";
-    }
-  | {
-      readonly chatThreadId: string;
-      readonly queueItemCreatedBefore: Date;
-      readonly reason: "queue-item-stale";
-    };
-
-interface DrainChatThreadQueueInput {
-  readonly apiStartTime?: number;
-  readonly chatThreadId: string;
-  readonly dispatchFailedCallbacks: DispatchFailedRunCallbacks;
-  readonly queueItemCreatedBefore?: Date;
-  readonly timing?: ChatCallbackPreCreateTimingCollector;
-  readonly automationEventLaunch?: {
-    readonly eventId: string;
-    readonly apiStartTime: number;
-    readonly timing: ApiDispatchTimingCollector;
-  };
-}
-
-export async function notifyRunningChatRunOfPendingInput(
-  db: Db,
-  chatThreadId: string,
-): Promise<boolean> {
-  const [run] = await db
-    .select({
-      id: agentRuns.id,
-      runnerGroup: agentRuns.runnerGroup,
-    })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.chatThreadId, chatThreadId),
-        eq(agentRuns.status, "running"),
-        isNotNull(agentRuns.triggerSource),
-      ),
-    )
-    .limit(1);
-  if (!run) {
-    return false;
-  }
-  const [pendingInput] = await db
-    .select({ id: chatEvents.id })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, chatThreadId),
-        pendingActiveInputCondition(db, run.id),
-      ),
-    )
-    .limit(1);
-  if (!pendingInput) {
-    return false;
-  }
-  if (run.runnerGroup) {
-    await tapError(
-      publishActiveInputToRunnerGroup(run.runnerGroup, run.id),
-      (error) => {
-        L.warn("Failed to notify runner about active input", {
-          chatThreadId,
-          runId: run.id,
-          error,
-        });
-      },
-    );
-  }
-  return true;
-}
+const L = logger("ChatThreadQueue");
 
 /**
- * The single per-thread scheduler entry: terminal run callbacks, cancel,
- * resume, and the stale sweep all converge here. User messages precede workflow automations. The
- * final claims serialize on the same thread row and fold
- * pending events by class priority, then original `created_at` and id.
- *
- * This entry is the designated mounting point for a future unified per-thread
- * rate limiter: admission delays belong here, before either drain half runs.
+ * Tell the thread's running run, if any, that it has a pending input to
+ * steer, through its runner group. The runner also reads pending input at
+ * startup and after its Ably subscription reconnects.
  */
-export const drainChatThreadQueueForThread$ = command(
+export const notifyRunningChatRunOfPendingInput$ = command(
   async (
-    { set },
-    input: DrainChatThreadQueueInput,
+    { get },
+    chatThreadId: string,
     signal: AbortSignal,
-  ): Promise<WorkflowQueueDrainResult | null> => {
-    const schedulerEnteredAt = now();
-    const apiStartTime = input.apiStartTime ?? schedulerEnteredAt;
-    const db = set(writeDb$);
-
-    const notifiedRunningRun = await notifyRunningChatRunOfPendingInput(
-      db,
-      input.chatThreadId,
-    );
-    signal.throwIfAborted();
-    if (notifiedRunningRun) {
-      return null;
-    }
-
-    await set(
-      drainQueuedUserMessagesForThread$,
-      {
-        chatThreadId: input.chatThreadId,
-        apiStartTime,
-        queueItemCreatedBefore: input.queueItemCreatedBefore,
-        timing: input.timing,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    const workflowResult = await set(
-      drainWorkflowQueueForThread$,
-      {
-        chatThreadId: input.chatThreadId,
-        apiStartTime,
-        dispatchFailedCallbacks: input.dispatchFailedCallbacks,
-        queueItemCreatedBefore: input.queueItemCreatedBefore,
-        ...(input.automationEventLaunch
-          ? { automationEventLaunch: input.automationEventLaunch }
-          : {}),
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    return workflowResult;
-  },
-);
-
-/** Resolve a terminal run's thread before entering the shared scheduler. */
-export const drainChatThreadQueueForRun$ = command(
-  async (
-    { set },
-    input: {
-      readonly runId: string;
-      readonly dispatchFailedCallbacks: DispatchFailedRunCallbacks;
-      readonly apiStartTime: number;
-    },
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const db = set(writeDb$);
-    const [run] = await db
-      .select({ chatThreadId: agentRuns.chatThreadId })
+  ): Promise<boolean> => {
+    const database = get(db$);
+    const [run] = await database
+      .select({
+        id: agentRuns.id,
+        runnerGroup: agentRuns.runnerGroup,
+      })
       .from(agentRuns)
       .where(
-        and(eq(agentRuns.id, input.runId), isNotNull(agentRuns.triggerSource)),
+        and(
+          eq(agentRuns.chatThreadId, chatThreadId),
+          eq(agentRuns.status, "running"),
+          isNotNull(agentRuns.triggerSource),
+        ),
       )
       .limit(1);
     signal.throwIfAborted();
-    if (!run?.chatThreadId) {
-      return;
+    if (!run) {
+      return false;
     }
-    await set(
-      drainChatThreadQueueForThread$,
-      {
-        chatThreadId: run.chatThreadId,
-        apiStartTime: input.apiStartTime,
-        dispatchFailedCallbacks: input.dispatchFailedCallbacks,
-      },
-      signal,
-    );
-  },
-);
-
-/** Re-enter the shared scheduler for workflow queues missed by callbacks. */
-export const drainStaleChatThreadQueues$ = command(
-  async (
-    { set },
-    input: {
-      readonly dispatchFailedCallbacks: DispatchFailedRunCallbacks;
-      readonly chatThreadIds?: readonly string[];
-    },
-    signal: AbortSignal,
-  ): Promise<number> => {
-    if (input.chatThreadIds?.length === 0) {
-      return 0;
-    }
-    const db = set(writeDb$);
-    const currentTime = nowDate().getTime();
-    const staleWindow = recentStaleChatQueueWindow(currentTime);
-    const recoveryExpiredBefore = new Date(
-      currentTime - CANCELLATION_RECOVERY_STALE_AFTER_MS,
-    );
-    const [recoveryThreads, staleThreadIds] = await Promise.all([
-      expiredCancellationRecoveryThreads(db, {
-        expiredBefore: recoveryExpiredBefore,
-        limit: DRAIN_SWEEP_LIMIT,
-        chatThreadIds: input.chatThreadIds,
-      }),
-      staleChatThreadQueueThreadIds(
-        db,
-        {
-          ...staleWindow,
-          limit: DRAIN_SWEEP_LIMIT,
-          chatThreadIds: input.chatThreadIds,
-        },
-        signal,
-      ),
-    ]);
-    signal.throwIfAborted();
-    const recoveryThreadIdSet = new Set(
-      recoveryThreads.map((thread) => {
-        return thread.chatThreadId;
-      }),
-    );
-    const recoveryCandidates: readonly QueueDrainSweepCandidate[] =
-      recoveryThreads.map(({ chatThreadId, userId }) => {
-        return {
-          chatThreadId,
-          userId,
-          reason: "cancellation-recovery-expired" as const,
-        };
-      });
-    const staleCandidates: readonly QueueDrainSweepCandidate[] = staleThreadIds
-      .filter((chatThreadId) => {
-        return !recoveryThreadIdSet.has(chatThreadId);
-      })
-      .map((chatThreadId) => {
-        return {
-          chatThreadId,
-          queueItemCreatedBefore: staleWindow.createdBefore,
-          reason: "queue-item-stale" as const,
-        };
-      });
-    // Give both repair paths capacity under sustained backlog, then let either
-    // path consume any unused share without raising the existing total limit.
-    const reservedPerReason = Math.floor(DRAIN_SWEEP_LIMIT / 2);
-    const candidates: readonly QueueDrainSweepCandidate[] = [
-      ...recoveryCandidates.slice(0, reservedPerReason),
-      ...staleCandidates.slice(0, reservedPerReason),
-      ...recoveryCandidates.slice(reservedPerReason),
-      ...staleCandidates.slice(reservedPerReason),
-    ].slice(0, DRAIN_SWEEP_LIMIT);
-    for (const candidate of candidates) {
-      await tapError(
-        set(
-          drainChatThreadQueueForThread$,
-          {
-            chatThreadId: candidate.chatThreadId,
-            dispatchFailedCallbacks: input.dispatchFailedCallbacks,
-            queueItemCreatedBefore:
-              candidate.reason === "queue-item-stale"
-                ? candidate.queueItemCreatedBefore
-                : undefined,
-          },
-          signal,
+    const candidates = await database
+      .select({ id: chatEvents.id })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, chatThreadId),
+          chatEventRunlessInputPredicate(
+            chatEvents.runId,
+            chatEvents.eventType,
+          ),
+          or(
+            eq(chatEvents.eventType, "input.prompt"),
+            and(
+              eq(chatEvents.eventType, "input.budget"),
+              eq(chatEvents.contextType, "agent_run"),
+              eq(chatEvents.contextId, run.id),
+            ),
+          ),
         ),
+      );
+    signal.throwIfAborted();
+    if (candidates.length === 0) {
+      return false;
+    }
+    const revokers = await database
+      .select({ eventId: chatEvents.revokesEventId })
+      .from(chatEvents)
+      .where(
+        inArray(
+          chatEvents.revokesEventId,
+          candidates.map((event) => {
+            return event.id;
+          }),
+        ),
+      );
+    signal.throwIfAborted();
+    const revoked = new Set(
+      revokers.map((event) => {
+        return event.eventId;
+      }),
+    );
+    if (
+      candidates.every((event) => {
+        return revoked.has(event.id);
+      })
+    ) {
+      return false;
+    }
+    if (run.runnerGroup) {
+      await tapError(
+        publishActiveInputToRunnerGroup(run.runnerGroup, run.id),
         (error) => {
-          L.error("Failed to drain stale chat thread queue", {
-            chatThreadId: candidate.chatThreadId,
-            reason: candidate.reason,
+          L.warn("Failed to notify runner about active input", {
+            chatThreadId,
+            runId: run.id,
             error,
           });
         },
       );
+    }
+    signal.throwIfAborted();
+    return true;
+  },
+);
+
+/**
+ * User-facing observation of one enqueued input for integrations, taken after
+ * that enqueue's pick has finished.
+ */
+export interface ChatQueuePick extends ChatQueuePickResult {
+  readonly orgId: string;
+}
+
+/**
+ * The integration wait reason for one enqueued input, read after that
+ * enqueue's pick has finished and never from the pick's return value, since
+ * another picker may hold the thread lease (design §5.2):
+ * - a later chat_events row revoking the input means it was already handled
+ *   (a run claimed it, it was rejected, or the user recalled it);
+ * - otherwise a thread in `active_agent_runs` is running, and the input steers
+ *   into that run;
+ * - otherwise the input waits for an organization slot.
+ * Rare cases, such as an earlier queued input rejected ahead of this one, may
+ * report `org-full` for an idle thread; that gap is accepted.
+ */
+export const enqueuedChatQueueWaitReason$ = command(
+  async (
+    { get },
+    input: {
+      readonly orgId: string;
+      readonly chatThreadId: string;
+      readonly eventId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<ChatQueuePick> => {
+    const database = get(db$);
+    const [revoker] = await database
+      .select({ id: chatEvents.id })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, input.chatThreadId),
+          eq(chatEvents.revokesEventId, input.eventId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (revoker) {
+      return { orgId: input.orgId, reason: "handled" };
+    }
+    const [active] = await database
+      .select({ runId: activeAgentRuns.runId })
+      .from(activeAgentRuns)
+      .where(eq(activeAgentRuns.chatThreadId, input.chatThreadId))
+      .limit(1);
+    signal.throwIfAborted();
+    return { orgId: input.orgId, reason: active ? "running" : "org-full" };
+  },
+);
+
+/** Pick once. The entry owns background scheduling and all post-pick work. */
+export const pickEnqueuedChatThread$ = command(
+  async (
+    { set },
+    input: {
+      readonly orgId: string;
+      readonly chatThreadId: string;
+      readonly enqueueCommit?: ChatInputEnqueueCommit;
+      readonly context?: AgentRunContextSignals;
+      readonly requestFacts?: ChatThreadRequestFacts;
+    },
+    signal: AbortSignal,
+  ) => {
+    const receipt = input.enqueueCommit;
+    if (receipt) {
+      set(chatInputEnqueueCommits$, (previous) => {
+        return new Map(previous).set(receipt.eventId, receipt.committedAt);
+      });
+    }
+    const { result } = await set(pickChatThread$, input, signal);
+    return result;
+  },
+);
+
+/** Keyset page size for passes over queued threads and organizations. */
+const PICK_PAGE_SIZE = 100;
+
+/**
+ * A finite organization pass handles at most the queued-thread count captured
+ * at entry. Each invocation owns its keyset cursor and skips active/leased work;
+ * each candidate is visited once, even when it has no input, loses its claim,
+ * or rejects its head. A `none` pick is not a signal that the organization is
+ * empty; the pass stops early only when a pick found the organization full.
+ * Remaining input and new work are handled by the next enqueue, slot release,
+ * or cron pass. Unexpected errors propagate to the caller's error boundary.
+ */
+export const pickOrgQueuedChatThreads$ = command(
+  async (
+    { set },
+    input: { readonly orgId: string },
+    signal: AbortSignal,
+  ): Promise<number> => {
+    const database = set(writeDb$);
+    const [snapshot] = await database
+      .select({ count: count() })
+      .from(queuedChatThreads)
+      .where(
+        and(
+          eq(queuedChatThreads.orgId, input.orgId),
+          or(
+            isNull(queuedChatThreads.claimExpiresAt),
+            lte(queuedChatThreads.claimExpiresAt, nowDate()),
+          ),
+          notExists(
+            database
+              .select({ runId: activeAgentRuns.runId })
+              .from(activeAgentRuns)
+              .where(
+                eq(
+                  activeAgentRuns.chatThreadId,
+                  queuedChatThreads.chatThreadId,
+                ),
+              ),
+          ),
+        ),
+      );
+    signal.throwIfAborted();
+    if (!snapshot) {
+      throw new Error("Queued chat thread count returned no row");
+    }
+    let cursor: OrgPickCursor | null = null;
+    let launched = 0;
+    for (let visited = 0; visited < snapshot.count; visited++) {
+      const { result: picked, cursor: nextCursor }: PickIteration = await set(
+        pickChatThread$,
+        { orgId: input.orgId, after: cursor },
+        signal,
+      );
+      cursor = nextCursor;
       signal.throwIfAborted();
-      if (candidate.reason === "cancellation-recovery-expired") {
-        await publishChatThreadDetailChangedSafely(
-          candidate.userId,
-          candidate.chatThreadId,
-        );
-        signal.throwIfAborted();
+      if (picked.kind === "org-full") {
+        return launched;
+      }
+      if (picked.kind === "launched") {
+        launched += 1;
       }
     }
-    return candidates.length;
+    return launched;
+  },
+);
+
+/**
+ * Cron pass: org-pick every organization that has a queued row, without a
+ * bound, until the table is exhausted or the request ends.
+ */
+export const pickAllQueuedOrgs$ = command(
+  async ({ set }, signal: AbortSignal): Promise<number> => {
+    let launched = 0;
+    let after: string | undefined;
+    while (true) {
+      const orgIds = await set(
+        listQueuedChatThreadOrgIds$,
+        {
+          limit: PICK_PAGE_SIZE,
+          ...(after === undefined ? {} : { after }),
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      for (const orgId of orgIds) {
+        const picked = await settle(
+          set(pickOrgQueuedChatThreads$, { orgId }, signal),
+          signal,
+        );
+        if (!picked.ok) {
+          L.error("Failed to pick queued organization", {
+            orgId,
+            error: picked.error,
+          });
+          continue;
+        }
+        launched += picked.value;
+      }
+      const last = orgIds.at(-1);
+      if (orgIds.length < PICK_PAGE_SIZE || last === undefined) {
+        return launched;
+      }
+      after = last;
+    }
   },
 );

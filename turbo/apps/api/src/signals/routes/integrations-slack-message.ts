@@ -8,7 +8,7 @@ import type { SlackAnyBlock } from "../external/slack-block-kit";
 import { createSlackClient } from "../external/slack-message-client";
 import { slackOrgInstallation } from "../services/slack-data.service";
 import {
-  resolveCurrentUserSlackId,
+  resolveSlackTargetChannel$,
   slackMessageSendFooterText,
 } from "../services/slack-message-context.service";
 import { buildFooterBlocks } from "../../lib/slack-blocks";
@@ -24,18 +24,7 @@ const noInstallation = Object.freeze({
   }),
 });
 
-const noUserConnection = Object.freeze({
-  status: 404 as const,
-  body: Object.freeze({
-    error: Object.freeze({
-      message:
-        "No Slack connection found for current user. Connect your Slack account first.",
-      code: "NOT_FOUND",
-    }),
-  }),
-});
-
-const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
+const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const authRunId =
     "runId" in auth && typeof auth.runId === "string" ? auth.runId : undefined;
@@ -62,40 +51,21 @@ const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
   const footerText = await get(slackMessageSendFooterText({ authRunId }));
   signal.throwIfAborted();
 
-  let targetChannel: string;
-  if (body.user) {
-    let slackUserId = body.user;
-    if (slackUserId === "me") {
-      const resolved = await get(
-        resolveCurrentUserSlackId({
-          userId: auth.userId,
-          orgId: auth.orgId,
-        }),
-      );
-      signal.throwIfAborted();
-      if (!resolved) {
-        return noUserConnection;
-      }
-      slackUserId = resolved;
-    }
-
-    const dm = await client.openDMChannel(slackUserId);
-    signal.throwIfAborted();
-    if (dm.kind === "slack_error") {
-      return {
-        status: 404 as const,
-        body: {
-          error: {
-            message: `Cannot open DM: ${dm.error}`,
-            code: "NOT_FOUND",
-          },
-        },
-      };
-    }
-    targetChannel = dm.channelId;
-  } else {
-    targetChannel = body.channel!;
+  const target = await set(
+    resolveSlackTargetChannel$,
+    {
+      client,
+      userId: auth.userId,
+      orgId: auth.orgId,
+      channel: body.channel,
+      user: body.user,
+    },
+    signal,
+  );
+  if ("status" in target) {
+    return target;
   }
+  const targetChannel = target.channelId;
 
   let finalBlocks = body.blocks as SlackAnyBlock[] | undefined;
   if (footerText) {

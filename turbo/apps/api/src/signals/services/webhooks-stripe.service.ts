@@ -1,22 +1,56 @@
-import type { OrgTier } from "@okouai/api-contracts/contracts/orgs";
+import { publishLegacyPlanInvoice$ } from "./legacy-plan-invoice.service";
+import { legacyPlanInvoiceAdmission } from "./legacy-plan-invoice";
+import {
+  areDuplicateInitialPurchases,
+  refundDuplicateSubscriptionInvoice,
+} from "./billing-duplicate-subscription.service";
+import { retireMarketingMetadata } from "../../lib/marketing-metadata";
+import { invoiceUsagePackCreditGrantSql } from "./usage-pack-credit-grant-sql";
+import {
+  orgCreditInvoiceGrantSql,
+  pendingOrgCreditExpirationQuery,
+  requireNoPendingOrgCreditExpiration,
+} from "./org-credit-expiration";
+import { grantPurchasedOrgCredits$ } from "./org-credit-grant.service";
+import {
+  orgTierSchema,
+  type OrgTier,
+} from "@okouai/api-contracts/contracts/orgs";
+import { expireOrgCredits$ } from "./org-credit-expiration.service";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgConcurrencyEntitlements } from "@okouai/db/schema/org-concurrency-entitlement";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { usagePackSubscriptions } from "@okouai/db/schema/usage-pack-subscription";
+import {
+  usagePackSubscriptions,
+  usagePackAllocations,
+} from "@okouai/db/schema/usage-pack-subscription";
 import {
   orgUsageAllowanceEntitlements,
   orgUsageAllowanceWindows,
 } from "@okouai/db/schema/org-usage-allowance";
 import { command } from "ccstate";
-import { and, eq, gt, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  lt,
+  lte,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 
 import { env } from "../../lib/env";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { now, nowDate, timestampWithoutTimeZone } from "../../lib/time";
 import { clerk$ } from "../external/clerk";
+import { waitUntil } from "../context/wait-until";
 import { writeDb$, type Db } from "../external/db";
 import {
   getStripeClient,
@@ -43,15 +77,15 @@ import {
   subscriptionScheduleCancellationEnd,
   subscriptionScheduleId,
 } from "./stripe-subscription-schedules.service";
-import { downgradeSubscriptionForOrg } from "./billing-downgrade.service";
+import { downgradeSubscription$ } from "./billing-downgrade.service";
 import {
   BILLING_DOWNGRADE_PURPOSE,
   BILLING_PURCHASE_PURPOSE,
   BILLING_RESTORE_PURPOSE,
 } from "./billing-payment-method.service";
-import { restoreSubscriptionForOrg } from "./billing-restore.service";
+import { restoreSubscription$ } from "./billing-restore.service";
 import { publishBillingChangedForOrg } from "./billing-realtime.service";
-import { drainOrgQueueToCapacity$ } from "./agent-run-lifecycle.service";
+import { pickOrgQueuedChatThreads$ } from "./chat-thread-queue-drain.service";
 import {
   CONCURRENCY_SUBSCRIPTION_PURPOSE,
   isConcurrencyPriceId,
@@ -59,32 +93,32 @@ import {
 import { disableIneligibleWorkflowWebhookAutomationsForOrg } from "./workflow-webhook-automation-entitlement.service";
 import {
   ensureOrgMetadataPlanEntitlement,
+  orgPlanEntitlementValues,
   orgPlanEntitlementOrgIdForStripeSubscription,
   upsertOrgPlanEntitlement,
   writeOrgMetadataWithPlanEntitlements,
-  writeOrgMetadataWithDefaultPlanEntitlement,
 } from "./org-plan-entitlements.service";
 import type { Tx } from "../../lib/db-types";
 import {
-  handleUsagePackCheckoutCompleted,
-  handleUsagePackInvoicePaid,
+  handleUsagePackCheckoutCompleted$,
+  handleUsagePackInvoicePaid$,
   handleUsagePackSubscriptionCreated,
   handleUsagePackSubscriptionDeleted,
   handleUsagePackSubscriptionUpdated,
-  stripeSubscriptionUsesMemberUsagePacks,
 } from "./usage-pack-subscription.service";
-import { createUsagePackCreditGrant } from "./usage-pack-credit.service";
 import { failScheduledUsagePackAllocationChangesForSchedule } from "./usage-pack-allocation-change.service";
 import {
-  handleUsagePackInvitationCheckoutFailed,
-  handleUsagePackInvitationCheckoutPaid,
-  handleUsagePackInvitationInvoicePaid,
-  handleUsagePackInvitationPaymentIntentSucceeded,
+  handleUsagePackInvitationCheckoutFailed$,
+  handleUsagePackInvitationCheckoutPaid$,
+  handleUsagePackInvitationInvoicePaid$,
+  handleUsagePackInvitationPaymentIntentSucceeded$,
 } from "./usage-pack-invitation-purchase.service";
 import {
-  handleUsagePackMigrationInvoicePaid,
-  handleUsagePackMigrationSubscriptionUpdated,
+  handleUsagePackMigrationInvoicePaid$,
+  handleUsagePackMigrationSubscriptionUpdated$,
 } from "./usage-pack-subscription-migration.service";
+
+import { concurrencySubscriptionUpdatedAt } from "./concurrency-subscription-write";
 
 const L = logger("WebhookStripe");
 
@@ -92,7 +126,6 @@ type BillingDowngradeCheckoutTargetTier = "limited-free-1" | "pro";
 const CANCELED_SUBSCRIPTION_TARGET_TIER = "limited-free-1";
 
 type WriteTx = Tx;
-type UsageAllowanceSubscriptionUpdateStore = Pick<Db, "select" | "update">;
 type ClerkClient = ReturnType<typeof clerk$.read>;
 type ClerkClientProvider = () => ClerkClient;
 
@@ -118,7 +151,9 @@ interface CheckoutSessionInput {
 }
 
 interface InvoiceInput {
+  readonly billing_reason?: string | null;
   readonly id: string;
+  readonly amount_paid: number;
   readonly customer: string | { readonly id: string } | null;
   readonly metadata: Record<string, string> | null;
   readonly subtotal?: number | null;
@@ -214,11 +249,6 @@ interface CheckoutSubscriptionContext {
   readonly subscriptionId: string;
 }
 
-interface BillingRestoreCheckoutOutcome {
-  readonly handled: boolean;
-  readonly orgId: string | null;
-}
-
 interface CheckoutCompletedOutcome {
   readonly drainOrgId: string | null;
   readonly orgIds: readonly string[];
@@ -240,7 +270,7 @@ interface LockedInvoicePaidOrg extends InvoicePaidOrg {
   > | null;
 }
 
-interface SubscriptionInvoiceDetails {
+export interface SubscriptionInvoiceDetails {
   readonly subscription: SubscriptionInput;
   readonly tier: BillingSubscriptionTier;
   readonly priceId: string;
@@ -358,6 +388,7 @@ interface ConcurrencySubscriptionState {
   readonly subscriptionStatus: string;
   readonly currentPeriodEnd: Date | null;
   readonly cancelAtPeriodEnd: boolean;
+  readonly hasSchedule: boolean;
 }
 
 function concurrencySubscriptionState(
@@ -374,6 +405,8 @@ function concurrencySubscriptionState(
     slots,
     subscriptionStatus: subscription.status,
     currentPeriodEnd: concurrencySubscriptionPeriodEnd(subscription),
+    hasSchedule:
+      subscription.schedule !== null && subscription.schedule !== undefined,
     cancelAtPeriodEnd:
       subscription.cancel_at_period_end &&
       knownBillingPlanPriceItem(subscription.items.data) === undefined,
@@ -383,19 +416,16 @@ function concurrencySubscriptionState(
 async function retrieveConcurrencySubscriptionState(
   subscriptionId: string,
 ): Promise<ConcurrencySubscriptionState | null> {
-  const subscription =
-    await getStripeClient().subscriptions.retrieve(subscriptionId);
-  return concurrencySubscriptionState(subscription);
-}
-
-async function lockConcurrencySubscriptionState(
-  tx: WriteTx,
-  subscriptionId: string,
-): Promise<void> {
-  const lockKey = `stripe_concurrency_subscription:${subscriptionId}`;
-  await tx.execute(
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`,
+  const result = await settle(
+    getStripeClient().subscriptions.retrieve(subscriptionId),
   );
+  if (!result.ok) {
+    if (isStripeResourceMissingError(result.error)) {
+      return null;
+    }
+    throw result.error;
+  }
+  return concurrencySubscriptionState(result.value);
 }
 
 function subscriptionCancelAt(subscription: SubscriptionInput): Date | null {
@@ -487,9 +517,6 @@ function requiredSubscriptionTrialEnd(subscription: SubscriptionInput): Date {
 
 function monthlyCreditsForTier(tier: OrgTier): number {
   switch (tier) {
-    case "free": {
-      return 0;
-    }
     case "limited-free-1": {
       return 0;
     }
@@ -1189,128 +1216,153 @@ async function usageAllowanceInvoiceDetails(
   };
 }
 
-async function handleUsageAllowanceInvoicePaid(
-  db: Db,
-  invoice: InvoiceInput,
-): Promise<PaidWebhookOutcome> {
-  const details = await usageAllowanceInvoiceDetails(invoice);
-  if (!details) {
-    return { handled: false, drainOrgId: null };
-  }
-  const existingRows = await db
-    .select({
-      effectiveAt: orgUsageAllowanceEntitlements.effectiveAt,
-      stripeSubscriptionId: orgUsageAllowanceEntitlements.stripeSubscriptionId,
-    })
-    .from(orgUsageAllowanceEntitlements)
-    .where(eq(orgUsageAllowanceEntitlements.orgId, details.orgId))
-    .limit(1);
-  const existing = existingRows[0];
-  if (!details.active) {
-    if (
-      existing?.stripeSubscriptionId &&
-      existing.stripeSubscriptionId !== details.subscriptionId
-    ) {
-      L.warn("stale canceled usage allowance invoice ignored", {
-        invoiceId: invoice.id,
-        orgId: details.orgId,
-        currentSubscriptionId: existing.stripeSubscriptionId,
-        invoiceSubscriptionId: details.subscriptionId,
-      });
-      return { handled: true, drainOrgId: null };
-    }
-    const canceledAt = nowDate();
-    await db.transaction(async (tx) => {
-      const rows = await tx
+function usageAllowanceInvoiceValues(
+  invoiceId: string,
+  details: UsageAllowanceInvoiceDetails,
+  at: Date,
+) {
+  return {
+    orgId: details.orgId,
+    source: "atom_usage_allowance",
+    status: "active",
+    shortWindowSeconds: details.shortWindowSeconds,
+    shortWindowUnits: details.shortWindowUnits,
+    weeklyWindowSeconds: details.weeklyWindowSeconds,
+    weeklyWindowUnits: details.weeklyWindowUnits,
+    effectiveAt: details.effectiveAt,
+    expiresAt: details.expiresAt,
+    stripeCustomerId: details.customerId,
+    stripeSubscriptionId: details.subscriptionId,
+    stripeInvoiceId: invoiceId,
+    updatedAt: at,
+  };
+}
+
+function allowanceInvoiceBindingWhere(details: UsageAllowanceInvoiceDetails) {
+  return or(
+    isNull(orgUsageAllowanceEntitlements.stripeSubscriptionId),
+    eq(
+      orgUsageAllowanceEntitlements.stripeSubscriptionId,
+      details.subscriptionId,
+    ),
+    details.active
+      ? lt(orgUsageAllowanceEntitlements.effectiveAt, details.effectiveAt)
+      : undefined,
+  );
+}
+
+const publishUsageAllowanceInvoice$ = command(
+  async (
+    { set },
+    args: {
+      readonly invoiceId: string;
+      readonly details: UsageAllowanceInvoiceDetails;
+    },
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const db = set(writeDb$);
+    const { details } = args;
+    const windows = details.active
+      ? []
+      : await db
+          .select({ id: orgUsageAllowanceWindows.id })
+          .from(orgUsageAllowanceWindows)
+          .where(currentAllowanceWindowsWhere(details.orgId, nowDate()));
+    signal.throwIfAborted();
+    const windowIds = windows.map((row) => {
+      return row.id;
+    });
+    const orgId = await db.transaction(async (tx) => {
+      // No row locks: the entitlement publication is conditional on its
+      // invoice binding, and cancellation writes the entitlement before it
+      // re-checks the prepared window set (window creators lock that row).
+      const [existing] = await tx
+        .select({ orgId: orgUsageAllowanceEntitlements.orgId })
+        .from(orgUsageAllowanceEntitlements)
+        .where(eq(orgUsageAllowanceEntitlements.orgId, details.orgId));
+      const at = nowDate();
+      if (details.active) {
+        const values = usageAllowanceInvoiceValues(args.invoiceId, details, at);
+        const [published] = await tx
+          .insert(orgUsageAllowanceEntitlements)
+          .values(values)
+          .onConflictDoUpdate({
+            target: orgUsageAllowanceEntitlements.orgId,
+            set: values,
+            setWhere: allowanceInvoiceBindingWhere(details),
+          })
+          .returning({ orgId: orgUsageAllowanceEntitlements.orgId });
+        return published?.orgId ?? null;
+      }
+      if (!existing) {
+        return details.orgId;
+      }
+      const [published] = await tx
         .update(orgUsageAllowanceEntitlements)
-        .set({
-          status: "canceled",
-          expiresAt: canceledAt,
-          updatedAt: canceledAt,
-        })
+        .set({ status: "canceled", expiresAt: at, updatedAt: at })
         .where(
           and(
             eq(orgUsageAllowanceEntitlements.orgId, details.orgId),
-            or(
-              isNull(orgUsageAllowanceEntitlements.stripeSubscriptionId),
-              eq(
-                orgUsageAllowanceEntitlements.stripeSubscriptionId,
-                details.subscriptionId,
-              ),
-            ),
+            allowanceInvoiceBindingWhere(details),
           ),
         )
         .returning({ orgId: orgUsageAllowanceEntitlements.orgId });
-      await expireActiveUsageAllowanceWindows(tx, {
-        orgIds: rows.map((row) => {
-          return row.orgId;
-        }),
-        at: canceledAt,
-        updatedAt: canceledAt,
-      });
+      if (!published) {
+        return null;
+      }
+      const windowScope = currentAllowanceWindowsWhere(details.orgId, at);
+      const [unprepared] = await tx
+        .select({ id: orgUsageAllowanceWindows.id })
+        .from(orgUsageAllowanceWindows)
+        .where(
+          and(windowScope, notInArray(orgUsageAllowanceWindows.id, windowIds)),
+        )
+        .limit(1);
+      if (unprepared) {
+        throw new Error(
+          "Usage allowance windows changed during invoice cancellation",
+        );
+      }
+      await tx
+        .update(orgUsageAllowanceWindows)
+        .set(expiredAllowanceWindowValues(at))
+        .where(
+          and(windowScope, inArray(orgUsageAllowanceWindows.id, windowIds)),
+        );
+      signal.throwIfAborted();
+      return details.orgId;
     });
-    return { handled: true, drainOrgId: details.orgId };
-  }
-  if (
-    existing?.stripeSubscriptionId &&
-    existing.stripeSubscriptionId !== details.subscriptionId &&
-    existing.effectiveAt.getTime() >= details.effectiveAt.getTime()
-  ) {
-    L.warn("stale usage allowance invoice ignored", {
+    signal.throwIfAborted();
+    return orgId;
+  },
+);
+
+const handleUsageAllowanceInvoicePaid$ = command(
+  async (
+    { set },
+    invoice: InvoiceInput,
+    signal: AbortSignal,
+  ): Promise<PaidWebhookOutcome> => {
+    const details = await usageAllowanceInvoiceDetails(invoice);
+    signal.throwIfAborted();
+    if (!details) {
+      return { handled: false, drainOrgId: null };
+    }
+    const drainOrgId = await set(
+      publishUsageAllowanceInvoice$,
+      { invoiceId: invoice.id, details },
+      signal,
+    );
+    signal.throwIfAborted();
+    L.debug("usage allowance invoice processed", {
       invoiceId: invoice.id,
       orgId: details.orgId,
-      currentSubscriptionId: existing.stripeSubscriptionId,
-      invoiceSubscriptionId: details.subscriptionId,
-      currentEffectiveAt: existing.effectiveAt.toISOString(),
-      invoiceEffectiveAt: details.effectiveAt.toISOString(),
+      subscriptionId: details.subscriptionId,
+      expiresAt: details.expiresAt?.toISOString() ?? null,
     });
-    return { handled: true, drainOrgId: null };
-  }
-
-  const updatedAt = nowDate();
-  await db
-    .insert(orgUsageAllowanceEntitlements)
-    .values({
-      orgId: details.orgId,
-      source: "atom_usage_allowance",
-      status: "active",
-      shortWindowSeconds: details.shortWindowSeconds,
-      shortWindowUnits: details.shortWindowUnits,
-      weeklyWindowSeconds: details.weeklyWindowSeconds,
-      weeklyWindowUnits: details.weeklyWindowUnits,
-      effectiveAt: details.effectiveAt,
-      expiresAt: details.expiresAt,
-      stripeCustomerId: details.customerId,
-      stripeSubscriptionId: details.subscriptionId,
-      stripeInvoiceId: invoice.id,
-      updatedAt,
-    })
-    .onConflictDoUpdate({
-      target: orgUsageAllowanceEntitlements.orgId,
-      set: {
-        source: "atom_usage_allowance",
-        status: "active",
-        shortWindowSeconds: details.shortWindowSeconds,
-        shortWindowUnits: details.shortWindowUnits,
-        weeklyWindowSeconds: details.weeklyWindowSeconds,
-        weeklyWindowUnits: details.weeklyWindowUnits,
-        effectiveAt: details.effectiveAt,
-        expiresAt: details.expiresAt,
-        stripeCustomerId: details.customerId,
-        stripeSubscriptionId: details.subscriptionId,
-        stripeInvoiceId: invoice.id,
-        updatedAt,
-      },
-    });
-
-  L.debug("usage allowance invoice processed", {
-    invoiceId: invoice.id,
-    orgId: details.orgId,
-    subscriptionId: details.subscriptionId,
-    expiresAt: details.expiresAt?.toISOString() ?? null,
-  });
-  return { handled: true, drainOrgId: details.orgId };
-}
+    return { handled: true, drainOrgId };
+  },
+);
 
 function stripePreviewMetadataForEvent(
   event: StripeWebhookEvent,
@@ -1415,355 +1467,166 @@ function addBillingChangedOrgIds(
   }
 }
 
-async function grantOrgCredits(
-  tx: WriteTx,
-  orgId: string,
-  amount: number,
-): Promise<void> {
-  await writeOrgMetadataWithDefaultPlanEntitlement(
-    tx,
-    orgId,
-    async (writeTx) => {
-      return await writeTx
-        .insert(orgMetadataCanonicalWrites)
-        .values({
-          orgId,
-          credits: amount,
-          createdAt: sql`now()`,
-          updatedAt: sql`now()`,
-        })
-        .onConflictDoUpdate({
-          target: orgMetadataCanonicalWrites.orgId,
-          set: {
-            credits: sql`${orgMetadata.credits} + ${amount}`,
-            updatedAt: sql`now()`,
-          },
-        })
-        .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
-    },
-  );
+function atomPlanInvoiceWalletColumns() {
+  return {
+    orgId: orgMetadata.orgId,
+    lastProcessedInvoiceId: orgMetadata.lastProcessedInvoiceId,
+    stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
+    subscriptionStatus: orgMetadata.subscriptionStatus,
+    tier: orgMetadata.tier,
+    planEntitlementSource: orgPlanEntitlements.source,
+    planEntitlementPeriodEnd: orgPlanEntitlements.currentPeriodEnd,
+    planEntitlementSourceMetadata: orgPlanEntitlements.sourceMetadata,
+  };
 }
 
-async function createExpiresRecord(
-  tx: WriteTx,
-  orgId: string,
-  params: {
-    readonly source: string;
-    readonly stripeInvoiceId: string;
-    readonly amount: number;
-    readonly expiresAt: Date;
-  },
-): Promise<boolean> {
-  const rows = await tx
-    .insert(creditExpiresRecord)
-    .values({
-      orgId,
-      source: params.source,
-      stripeInvoiceId: params.stripeInvoiceId,
-      amount: params.amount,
-      remaining: params.amount,
-      expiresAt: params.expiresAt,
-    })
-    .onConflictDoNothing()
-    .returning({ id: creditExpiresRecord.id });
+const handleAutoRechargeInvoicePaid$ = command(
+  async (
+    { set },
+    invoice: Pick<InvoiceInput, "id" | "metadata">,
+    signal: AbortSignal,
+  ): Promise<PaidWebhookOutcome> => {
+    const metadata = invoice.metadata;
+    if (!metadata || metadata.type !== "auto_recharge") {
+      return { handled: false, drainOrgId: null };
+    }
 
-  return rows.length > 0;
-}
+    const orgId = metadata.orgId;
+    const creditsAmount = Number(metadata.creditsAmount);
+    if (!orgId || !creditsAmount || Number.isNaN(creditsAmount)) {
+      L.warn("Auto-recharge invoice has invalid metadata", {
+        invoiceId: invoice.id,
+        metadata,
+      });
+      return { handled: false, drainOrgId: null };
+    }
 
-async function lockInvoicePaidOrg(
-  tx: WriteTx,
-  orgId: string,
-): Promise<LockedInvoicePaidOrg | null> {
-  const [org] = await tx
-    .select({
-      orgId: orgMetadata.orgId,
-      lastProcessedInvoiceId: orgMetadata.lastProcessedInvoiceId,
-      stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
-      subscriptionStatus: orgMetadata.subscriptionStatus,
-      tier: orgMetadata.tier,
-      planEntitlementSource: orgPlanEntitlements.source,
-      planEntitlementPeriodEnd: orgPlanEntitlements.currentPeriodEnd,
-      planEntitlementSourceMetadata: orgPlanEntitlements.sourceMetadata,
-    })
-    .from(orgMetadata)
-    .leftJoin(
-      orgPlanEntitlements,
-      eq(orgPlanEntitlements.orgId, orgMetadata.orgId),
-    )
-    .where(eq(orgMetadata.orgId, orgId))
-    .for("update", { of: orgMetadata })
-    .limit(1);
-
-  return org ?? null;
-}
-
-async function existingTrialPlanCredits(
-  tx: WriteTx,
-  args: {
-    readonly orgId: string;
-    readonly credits: number;
-  },
-): Promise<boolean> {
-  const rows = await tx
-    .select({ id: creditExpiresRecord.id })
-    .from(creditExpiresRecord)
-    .where(
-      and(
-        eq(creditExpiresRecord.orgId, args.orgId),
-        eq(creditExpiresRecord.source, "subscription_renewal"),
-        eq(creditExpiresRecord.amount, args.credits),
-      ),
-    )
-    .for("update");
-
-  return rows.length > 0;
-}
-
-async function refreshTrialPlanCredits(
-  tx: WriteTx,
-  args: {
-    readonly orgId: string;
-    readonly credits: number;
-    readonly expiresAt: Date;
-  },
-): Promise<void> {
-  await tx
-    .update(creditExpiresRecord)
-    .set({ expiresAt: args.expiresAt })
-    .where(
-      and(
-        eq(creditExpiresRecord.orgId, args.orgId),
-        eq(creditExpiresRecord.source, "subscription_renewal"),
-        eq(creditExpiresRecord.amount, args.credits),
-        gt(creditExpiresRecord.remaining, 0),
-      ),
-    );
-}
-
-async function expireCredits(tx: WriteTx, orgId: string): Promise<number> {
-  const expired = await tx
-    .select({
-      id: creditExpiresRecord.id,
-      remaining: creditExpiresRecord.remaining,
-    })
-    .from(creditExpiresRecord)
-    .where(
-      and(
-        eq(creditExpiresRecord.orgId, orgId),
-        lte(creditExpiresRecord.expiresAt, nowDate()),
-        gt(creditExpiresRecord.remaining, 0),
-      ),
-    )
-    .for("update");
-
-  if (expired.length === 0) {
-    return 0;
-  }
-
-  const totalExpired = expired.reduce((sum, record) => {
-    return sum + record.remaining;
-  }, 0);
-
-  for (const record of expired) {
-    await tx
-      .update(creditExpiresRecord)
-      .set({ remaining: 0 })
-      .where(eq(creditExpiresRecord.id, record.id));
-  }
-
-  if (totalExpired > 0) {
-    await tx
-      .update(orgMetadata)
-      .set({
-        credits: sql`GREATEST(${orgMetadata.credits} - ${totalExpired}, 0)`,
-        updatedAt: nowDate(),
-      })
-      .where(eq(orgMetadata.orgId, orgId));
-  }
-
-  L.debug("expired credits settled", { orgId, totalExpired });
-  return totalExpired;
-}
-
-async function handleAutoRechargeInvoicePaid(
-  db: Db,
-  invoice: Pick<InvoiceInput, "id" | "metadata">,
-): Promise<PaidWebhookOutcome> {
-  const metadata = invoice.metadata;
-  if (!metadata || metadata.type !== "auto_recharge") {
-    return { handled: false, drainOrgId: null };
-  }
-
-  const orgId = metadata.orgId;
-  const creditsAmount = Number(metadata.creditsAmount);
-  if (!orgId || !creditsAmount || Number.isNaN(creditsAmount)) {
-    L.warn("Auto-recharge invoice has invalid metadata", {
-      invoiceId: invoice.id,
-      metadata,
-    });
-    return { handled: false, drainOrgId: null };
-  }
-
-  const grantResult = await db.transaction(
-    async (tx): Promise<"duplicate" | "granted"> => {
-      const inserted = await createExpiresRecord(tx, orgId, {
+    await set(
+      grantPurchasedOrgCredits$,
+      {
+        orgId,
         source: "auto_recharge",
         stripeInvoiceId: invoice.id,
         amount: creditsAmount,
         expiresAt: autoRechargeNeverExpiresAt(),
-      });
+        clearAutoRechargePending: true,
+      },
+      signal,
+    );
+    return { handled: true, drainOrgId: orgId };
+  },
+);
 
-      if (!inserted) {
-        L.debug("Auto-recharge invoice already processed", {
-          orgId,
+const handleCreditPurchaseInvoicePaid$ = command(
+  async (
+    { set },
+    invoice: Pick<InvoiceInput, "id" | "metadata" | "subtotal">,
+    signal: AbortSignal,
+  ): Promise<PaidWebhookOutcome> => {
+    const metadata = invoice.metadata;
+    if (
+      !metadata ||
+      (metadata.type !== "credit_purchase" &&
+        metadata.purpose !== "credit_purchase")
+    ) {
+      return { handled: false, drainOrgId: null };
+    }
+
+    const orgId = metadata.orgId;
+    const creditsAmount = creditsFromAmountCents(invoice.subtotal);
+    if (!orgId || !creditsAmount || Number.isNaN(creditsAmount)) {
+      L.warn("credit_purchase invoice has invalid metadata or subtotal", {
+        invoiceId: invoice.id,
+        hasOrgId: Boolean(orgId),
+        subtotal: invoice.subtotal ?? null,
+        metadata,
+      });
+      return { handled: true, drainOrgId: null };
+    }
+
+    const expiresAt = creditPurchaseExpiresAt(metadata);
+    if (!expiresAt) {
+      L.warn(
+        "credit_purchase invoice has invalid credits expiration metadata",
+        {
           invoiceId: invoice.id,
-        });
-        return "duplicate";
-      }
-
-      await grantOrgCredits(tx, orgId, creditsAmount);
-      await tx
-        .update(orgMetadata)
-        .set({ autoRechargePendingAt: null, updatedAt: nowDate() })
-        .where(eq(orgMetadata.orgId, orgId));
-      return "granted";
-    },
-  );
-
-  if (grantResult === "granted") {
-    L.debug("Auto-recharge credits granted", {
-      orgId,
-      creditsAmount,
-      invoiceId: invoice.id,
-    });
-  }
-
-  return { handled: true, drainOrgId: orgId };
-}
-
-async function handleCreditPurchaseInvoicePaid(
-  db: Db,
-  invoice: Pick<InvoiceInput, "id" | "metadata" | "subtotal">,
-): Promise<PaidWebhookOutcome> {
-  const metadata = invoice.metadata;
-  if (
-    !metadata ||
-    (metadata.type !== "credit_purchase" &&
-      metadata.purpose !== "credit_purchase")
-  ) {
-    return { handled: false, drainOrgId: null };
-  }
-
-  const orgId = metadata.orgId;
-  const creditsAmount = creditsFromAmountCents(invoice.subtotal);
-  if (!orgId || !creditsAmount || Number.isNaN(creditsAmount)) {
-    L.warn("credit_purchase invoice has invalid metadata or subtotal", {
-      invoiceId: invoice.id,
-      hasOrgId: Boolean(orgId),
-      subtotal: invoice.subtotal ?? null,
-      metadata,
-    });
-    return { handled: true, drainOrgId: null };
-  }
-
-  const expiresAt = creditPurchaseExpiresAt(metadata);
-  if (!expiresAt) {
-    L.warn("credit_purchase invoice has invalid credits expiration metadata", {
-      invoiceId: invoice.id,
-      orgId,
-      creditsExpiresAt:
-        metadata[CREDIT_PURCHASE_EXPIRES_AT_METADATA_KEY] ?? null,
-    });
-    return { handled: true, drainOrgId: null };
-  }
-
-  await db.transaction(async (tx) => {
-    const inserted = await createExpiresRecord(tx, orgId, {
-      source: "credit_purchase",
-      stripeInvoiceId: invoice.id,
-      amount: creditsAmount,
-      expiresAt,
-    });
-
-    if (!inserted) {
-      L.debug("credit_purchase invoice already processed", {
-        invoiceId: invoice.id,
-        orgId,
-      });
-      return;
-    }
-
-    await grantOrgCredits(tx, orgId, creditsAmount);
-  });
-
-  return { handled: true, drainOrgId: orgId };
-}
-
-async function processAtomCreditGrantInvoicePaid(
-  db: Db,
-  invoice: InvoiceInput,
-  details: AtomCreditGrantInvoiceDetails,
-): Promise<void> {
-  await db.transaction(async (tx) => {
-    const inserted = await createExpiresRecord(tx, details.orgId, {
-      source: "credit_purchase",
-      stripeInvoiceId: invoice.id,
-      amount: details.credits,
-      expiresAt: details.creditExpiresAt,
-    });
-    if (!inserted) {
-      L.debug("atom credit grant invoice already processed", {
-        invoiceId: invoice.id,
-        orgId: details.orgId,
-      });
-      return;
-    }
-
-    await grantOrgCredits(tx, details.orgId, details.credits);
-  });
-}
-
-async function processAtomUsagePackCreditGrantInvoicePaid(
-  db: Db,
-  invoice: InvoiceInput,
-  details: AtomUsagePackCreditGrantInvoiceDetails,
-): Promise<void> {
-  await db.transaction(async (tx) => {
-    const [activePlan] = await tx
-      .select({
-        stripeCustomerId: orgMetadata.stripeCustomerId,
-      })
-      .from(orgPlanEntitlements)
-      .innerJoin(orgMetadata, eq(orgMetadata.orgId, orgPlanEntitlements.orgId))
-      .where(
-        and(
-          eq(orgPlanEntitlements.orgId, details.orgId),
-          inArray(orgPlanEntitlements.planKey, ["pro", "team"]),
-          eq(orgPlanEntitlements.status, "active"),
-          or(
-            isNull(orgPlanEntitlements.expiresAt),
-            gt(orgPlanEntitlements.expiresAt, nowDate()),
-          ),
-        ),
-      )
-      .for("update")
-      .limit(1);
-    if (!activePlan || activePlan.stripeCustomerId !== details.customerId) {
-      throw new Error(
-        `Atom usage pack grant ${invoice.id} requires an active Pro or Team plan`,
+          orgId,
+          creditsExpiresAt:
+            metadata[CREDIT_PURCHASE_EXPIRES_AT_METADATA_KEY] ?? null,
+        },
       );
+      return { handled: true, drainOrgId: null };
     }
 
-    await createUsagePackCreditGrant(tx, {
+    await set(
+      grantPurchasedOrgCredits$,
+      {
+        orgId,
+        source: "credit_purchase",
+        stripeInvoiceId: invoice.id,
+        amount: creditsAmount,
+        expiresAt,
+      },
+      signal,
+    );
+
+    return { handled: true, drainOrgId: orgId };
+  },
+);
+
+const grantAtomMemberCredits$ = command(
+  async (
+    { set },
+    args: {
+      readonly invoiceId: string;
+      readonly details: AtomUsagePackCreditGrantInvoiceDetails;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const { invoiceId, details } = args;
+    const grant = invoiceUsagePackCreditGrantSql({
       orgId: details.orgId,
       userId: details.userId,
       grantType: "bonus",
-      idempotencyKey: `atom-usage-pack:${invoice.id}:${details.userId}`,
+      idempotencyKey: `atom-usage-pack:${invoiceId}:${details.userId}`,
       amount: details.credits,
       expiresAt: details.creditsExpiresAt,
     });
-  });
-}
+    await db.transaction(async (tx) => {
+      const [wallet] = await tx
+        .select({ customerId: orgMetadata.stripeCustomerId })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, details.orgId))
+        .for("update");
+      const [activePlan] = await tx
+        .select({ orgId: orgPlanEntitlements.orgId })
+        .from(orgPlanEntitlements)
+        .where(
+          and(
+            eq(orgPlanEntitlements.orgId, details.orgId),
+            inArray(orgPlanEntitlements.planKey, ["pro", "team"]),
+            eq(orgPlanEntitlements.status, "active"),
+            or(
+              isNull(orgPlanEntitlements.expiresAt),
+              gt(orgPlanEntitlements.expiresAt, nowDate()),
+            ),
+          ),
+        )
+        .for("update");
+      if (!activePlan || wallet?.customerId !== details.customerId) {
+        throw new Error(
+          `Atom usage pack grant ${invoiceId} requires an active Pro or Team plan`,
+        );
+      }
+      if ((await tx.execute(grant)).rowCount !== 1) {
+        throw new Error("Atom member grant invoice identity changed");
+      }
+      signal.throwIfAborted();
+    });
+    signal.throwIfAborted();
+  },
+);
 
 function rejectAtomGrantTierReplacement(args: {
   readonly invoice: InvoiceInput;
@@ -1801,25 +1664,6 @@ function rejectAtomGrantTierReplacement(args: {
   });
 }
 
-async function grantAtomRedeemMemberUsagePack(
-  tx: WriteTx,
-  invoice: InvoiceInput,
-  details: AtomPlanGrantInvoiceDetails,
-): Promise<void> {
-  if (!details.memberUsagePack) {
-    return;
-  }
-
-  await createUsagePackCreditGrant(tx, {
-    orgId: details.orgId,
-    userId: details.memberUsagePack.userId,
-    grantType: "bonus",
-    idempotencyKey: `atom-redeem-usage-pack:${invoice.id}:${details.memberUsagePack.userId}`,
-    amount: details.memberUsagePack.credits,
-    expiresAt: details.memberUsagePack.expiresAt,
-  });
-}
-
 async function insertStripeCustomerOrgMetadata(
   tx: WriteTx,
   args: { readonly orgId: string; readonly customerId?: string | null },
@@ -1838,340 +1682,513 @@ async function insertStripeCustomerOrgMetadata(
   return rows.length > 0;
 }
 
-async function processAtomPlanGrantInvoicePaid(
-  db: Db,
+function atomPlanInvoiceDisposition(args: {
+  readonly invoice: InvoiceInput;
+  readonly details: AtomPlanGrantInvoiceDetails;
+  readonly lockedOrg: LockedInvoicePaidOrg;
+}) {
+  if (args.lockedOrg.lastProcessedInvoiceId === args.invoice.id) {
+    // Paid receipt identity alone does not authorize cleanup after another
+    // purchase has replaced the Plan binding but has not delivered its invoice.
+    return args.lockedOrg.tier === args.details.tier &&
+      args.lockedOrg.subscriptionStatus === ATOM_GRANT_SUBSCRIPTION_STATUS &&
+      args.lockedOrg.stripeSubscriptionId === null
+      ? "duplicate"
+      : "superseded";
+  }
+  if (atomUsagePackGrantWouldNotExtendEntitlement(args)) {
+    return "member_only";
+  }
+  if (
+    atomGrantWouldReplaceWithSameOrLowerTier({
+      lockedOrg: args.lockedOrg,
+      targetTier: args.details.tier,
+    })
+  ) {
+    return "rejected";
+  }
+  return "publish";
+}
+
+function atomPlanInvoiceMetadata(
   invoice: InvoiceInput,
   details: AtomPlanGrantInvoiceDetails,
-): Promise<boolean> {
-  return await db.transaction(async (tx) => {
-    await insertStripeCustomerOrgMetadata(tx, details);
-    const lockedOrg = await lockInvoicePaidOrg(tx, details.orgId);
-    if (!lockedOrg) {
-      return false;
-    }
-    if (lockedOrg.lastProcessedInvoiceId === invoice.id) {
-      if (
-        lockedOrg.tier === details.tier &&
-        lockedOrg.subscriptionStatus === ATOM_GRANT_SUBSCRIPTION_STATUS &&
-        lockedOrg.stripeSubscriptionId === null
-      ) {
-        await upsertAtomGrantPlanEntitlement(tx, invoice, details);
-      }
-      await grantAtomRedeemMemberUsagePack(tx, invoice, details);
-      await cancelReplacedSubscriptionsAfterAtomGrant({
+) {
+  return {
+    tier: details.tier,
+    ...(details.customerId ? { stripeCustomerId: details.customerId } : {}),
+    stripeSubscriptionId: null,
+    subscriptionStatus: ATOM_GRANT_SUBSCRIPTION_STATUS,
+    cancelAtPeriodEnd: details.grantExpiresAt !== null,
+    onboardingPaymentPending: false,
+    lastProcessedInvoiceId: invoice.id,
+    currentPeriodEnd: details.grantExpiresAt,
+    pendingSubscriptionScheduleId: null,
+    pendingSubscriptionTargetTier: details.grantExpiresAt
+      ? CANCELED_SUBSCRIPTION_TARGET_TIER
+      : null,
+    pendingSubscriptionChangeAt: details.grantExpiresAt,
+    updatedAt: nowDate(),
+  };
+}
+
+function atomGrantPlanEntitlementValues(
+  invoice: InvoiceInput,
+  details: AtomPlanGrantInvoiceDetails,
+) {
+  const grantLine = invoiceAtomGrantLine(invoice);
+  const periodStart = grantLine?.period.start;
+  const sourceMetadata = retireMarketingMetadata({
+    ...invoice.metadata,
+    atomPlanInvoiceId: invoice.id,
+  });
+  return {
+    ...orgPlanEntitlementValues(
+      {
         orgId: details.orgId,
-        customerId: details.customerId,
-        invoiceId: invoice.id,
-        knownOldSubscriptionId: lockedOrg.stripeSubscriptionId,
-      });
-      L.debug("atom grant invoice already processed", {
-        invoiceId: invoice.id,
-        orgId: details.orgId,
-      });
-      return true;
-    }
+        tier: details.tier,
+        source: "stripe_atom_grant",
+        currentPeriodStart:
+          typeof periodStart === "number" ? new Date(periodStart * 1000) : null,
+        currentPeriodEnd: details.grantExpiresAt,
+        expiresAt: details.grantExpiresAt,
+        stripePriceId: grantLine ? invoiceLinePriceId(grantLine) : null,
+        showUsagePack: invoice.metadata?.planVersion === "usagePack",
+        sourceMetadata,
+      },
+      { stripeSubscriptionId: null, sourceMetadata },
+    ),
+    stripeProductId: null,
+    metadataHash: null,
+  };
+}
+
+function atomPlanOrgCreditGrantSql(
+  invoiceId: string,
+  details: AtomPlanGrantInvoiceDetails,
+) {
+  return orgCreditInvoiceGrantSql(
+    details.orgId,
+    {
+      source: "subscription_renewal",
+      stripeInvoiceId: invoiceId,
+      amount: details.credits,
+      expiresAt: details.creditExpiresAt,
+    },
+    nowDate(),
+  );
+}
+
+function atomPlanMemberCreditGrantSql(
+  invoiceId: string,
+  orgId: string,
+  member: AtomMemberUsagePackDetails,
+) {
+  return invoiceUsagePackCreditGrantSql({
+    orgId,
+    userId: member.userId,
+    grantType: "bonus",
+    idempotencyKey: `atom-redeem-usage-pack:${invoiceId}:${member.userId}`,
+    amount: member.credits,
+    expiresAt: member.expiresAt,
+  });
+}
+
+const prepareAtomPlanInvoice$ = command(
+  async (
+    { set },
+    input: {
+      readonly invoice: InvoiceInput;
+      readonly details: AtomPlanGrantInvoiceDetails;
+    },
+    signal: AbortSignal,
+  ): Promise<readonly string[]> => {
+    const db = set(writeDb$);
+    const { invoice, details } = input;
+    const [current] = await db
+      .select(atomPlanInvoiceWalletColumns())
+      .from(orgMetadata)
+      .leftJoin(
+        orgPlanEntitlements,
+        eq(orgPlanEntitlements.orgId, orgMetadata.orgId),
+      )
+      .where(eq(orgMetadata.orgId, details.orgId));
+    signal.throwIfAborted();
+    const disposition = current
+      ? atomPlanInvoiceDisposition({ invoice, details, lockedOrg: current })
+      : "publish";
     if (
-      atomUsagePackGrantWouldNotExtendEntitlement({
+      disposition === "member_only" ||
+      disposition === "rejected" ||
+      disposition === "superseded"
+    ) {
+      return [];
+    }
+    if (disposition === "publish" && details.credits > 0) {
+      await set(expireOrgCredits$, details.orgId, signal);
+    }
+    const replaced = details.customerId
+      ? await replacedAtomGrantSubscriptionIdsForCustomer({
+          customerId: details.customerId,
+        })
+      : [];
+    signal.throwIfAborted();
+    return replaced;
+  },
+);
+
+const publishAtomPlanInvoice$ = command(
+  async (
+    { set },
+    input: {
+      readonly invoice: InvoiceInput;
+      readonly details: AtomPlanGrantInvoiceDetails;
+    },
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const { invoice, details } = input;
+    return await db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(orgMetadataCanonicalWrites)
+        .values({
+          orgId: details.orgId,
+          ...(details.customerId
+            ? { stripeCustomerId: details.customerId }
+            : {}),
+        })
+        .onConflictDoNothing({ target: orgMetadataCanonicalWrites.orgId })
+        .returning({ tier: orgMetadata.tier });
+      const insertedTier = orgTierSchema.safeParse(inserted?.tier);
+      if (insertedTier.success) {
+        await tx
+          .insert(orgPlanEntitlements)
+          .values(
+            orgPlanEntitlementValues(
+              {
+                orgId: details.orgId,
+                tier: insertedTier.data,
+                source: "org_metadata_migration",
+              },
+              { stripeSubscriptionId: null, sourceMetadata: {} },
+            ),
+          )
+          .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
+      }
+      const [lockedOrg] = await tx
+        .select(atomPlanInvoiceWalletColumns())
+        .from(orgMetadata)
+        .leftJoin(
+          orgPlanEntitlements,
+          eq(orgPlanEntitlements.orgId, orgMetadata.orgId),
+        )
+        .where(eq(orgMetadata.orgId, details.orgId))
+        .for("update", { of: orgMetadata });
+      if (!lockedOrg) {
+        return {
+          processed: false,
+          cancelReplaced: false,
+          oldSubscriptionId: null,
+        };
+      }
+      const disposition = atomPlanInvoiceDisposition({
         invoice,
         details,
         lockedOrg,
-      })
-    ) {
-      await grantAtomRedeemMemberUsagePack(tx, invoice, details);
-      return true;
-    }
-    if (
-      atomGrantWouldReplaceWithSameOrLowerTier({
-        lockedOrg,
-        targetTier: details.tier,
-      })
-    ) {
-      rejectAtomGrantTierReplacement({ invoice, details, lockedOrg });
-      return false;
-    }
-
-    if (details.credits > 0) {
-      await expireCredits(tx, details.orgId);
-      const inserted = await createExpiresRecord(tx, details.orgId, {
-        source: "subscription_renewal",
-        stripeInvoiceId: invoice.id,
-        amount: details.credits,
-        expiresAt: details.creditExpiresAt,
       });
-      if (!inserted) {
-        if (
-          lockedOrg.tier === details.tier &&
-          lockedOrg.subscriptionStatus === ATOM_GRANT_SUBSCRIPTION_STATUS &&
-          lockedOrg.stripeSubscriptionId === null
-        ) {
-          await upsertAtomGrantPlanEntitlement(tx, invoice, details);
+      if (disposition === "rejected" || disposition === "superseded") {
+        if (disposition === "rejected") {
+          rejectAtomGrantTierReplacement({ invoice, details, lockedOrg });
         }
-        await cancelReplacedSubscriptionsAfterAtomGrant({
-          orgId: details.orgId,
-          customerId: details.customerId,
-          invoiceId: invoice.id,
-          knownOldSubscriptionId: lockedOrg.stripeSubscriptionId,
-        });
-        L.debug("atom grant invoice credits already processed", {
-          invoiceId: invoice.id,
-          orgId: details.orgId,
-        });
-        return true;
+        return {
+          processed: false,
+          cancelReplaced: false,
+          oldSubscriptionId: null,
+        };
       }
-
-      await grantOrgCredits(tx, details.orgId, details.credits);
-    }
-    await writeOrgMetadataWithPlanEntitlements(tx, {
-      writeOrgMetadata: async (writeTx) => {
-        return await writeTx
+      let writeMetadata = disposition === "publish";
+      let grantMember = true;
+      if (writeMetadata && details.credits > 0) {
+        const [pending] = await tx
+          .select()
+          .from(pendingOrgCreditExpirationQuery(details.orgId, nowDate()));
+        requireNoPendingOrgCreditExpiration(details.orgId, pending);
+        const grantCount = (
+          await tx.execute(atomPlanOrgCreditGrantSql(invoice.id, details))
+        ).rowCount;
+        if (grantCount !== 1) {
+          writeMetadata = false;
+          grantMember = false;
+        }
+      }
+      if (writeMetadata) {
+        await tx
           .update(orgMetadata)
-          .set({
-            tier: details.tier,
-            ...(details.customerId
-              ? { stripeCustomerId: details.customerId }
-              : {}),
-            stripeSubscriptionId: null,
-            subscriptionStatus: ATOM_GRANT_SUBSCRIPTION_STATUS,
-            cancelAtPeriodEnd: details.grantExpiresAt !== null,
-            onboardingPaymentPending: false,
-            lastProcessedInvoiceId: invoice.id,
-            currentPeriodEnd: details.grantExpiresAt,
-            pendingSubscriptionScheduleId: null,
-            pendingSubscriptionTargetTier: details.grantExpiresAt
-              ? CANCELED_SUBSCRIPTION_TARGET_TIER
-              : null,
-            pendingSubscriptionChangeAt: details.grantExpiresAt,
-            updatedAt: nowDate(),
-          })
-          .where(eq(orgMetadata.orgId, details.orgId))
-          .returning({ orgId: orgMetadata.orgId });
-      },
-      writePlanEntitlement: async (writeTx) => {
-        await upsertAtomGrantPlanEntitlement(writeTx, invoice, details);
-      },
+          .set(atomPlanInvoiceMetadata(invoice, details))
+          .where(eq(orgMetadata.orgId, details.orgId));
+      }
+      if (
+        disposition !== "member_only" &&
+        (writeMetadata ||
+          (lockedOrg.tier === details.tier &&
+            lockedOrg.subscriptionStatus === ATOM_GRANT_SUBSCRIPTION_STATUS &&
+            lockedOrg.stripeSubscriptionId === null))
+      ) {
+        const values = atomGrantPlanEntitlementValues(invoice, details);
+        await tx.insert(orgPlanEntitlements).values(values).onConflictDoUpdate({
+          target: orgPlanEntitlements.orgId,
+          set: values,
+        });
+      }
+      if (grantMember && details.memberUsagePack) {
+        const member = details.memberUsagePack;
+        const grantCount = (
+          await tx.execute(
+            atomPlanMemberCreditGrantSql(invoice.id, details.orgId, member),
+          )
+        ).rowCount;
+        if (grantCount !== 1) {
+          throw new Error("Atom bundled member grant invoice identity changed");
+        }
+      }
+      signal.throwIfAborted();
+      return {
+        processed: true,
+        cancelReplaced: disposition !== "member_only",
+        oldSubscriptionId: lockedOrg.stripeSubscriptionId,
+      };
     });
-    await grantAtomRedeemMemberUsagePack(tx, invoice, details);
-    await cancelReplacedSubscriptionsAfterAtomGrant({
-      orgId: details.orgId,
-      customerId: details.customerId,
+  },
+);
+
+const handleAtomGrantInvoicePaid$ = command(
+  async (
+    { set },
+    invoice: InvoiceInput,
+    signal: AbortSignal,
+  ): Promise<PaidWebhookOutcome> => {
+    if (!isAtomGrantInvoice(invoice)) {
+      return { handled: false, drainOrgId: null };
+    }
+
+    const details = atomGrantInvoiceDetails(invoice);
+    if (!details) {
+      return { handled: true, drainOrgId: null };
+    }
+
+    if (details.kind === "credits") {
+      await set(
+        grantPurchasedOrgCredits$,
+        {
+          orgId: details.orgId,
+          source: "credit_purchase",
+          stripeInvoiceId: invoice.id,
+          amount: details.credits,
+          expiresAt: details.creditExpiresAt,
+        },
+        signal,
+      );
+      L.debug("atom credit grant invoice processed", {
+        invoiceId: invoice.id,
+        orgId: details.orgId,
+        credits: details.credits,
+        creditExpiresAt: details.creditExpiresAt.toISOString(),
+      });
+      return { handled: true, drainOrgId: details.orgId };
+    }
+
+    if (details.kind === "usagePackCredits") {
+      await set(
+        grantAtomMemberCredits$,
+        { invoiceId: invoice.id, details },
+        signal,
+      );
+      signal.throwIfAborted();
+      L.debug("atom member usage pack credit grant invoice processed", {
+        invoiceId: invoice.id,
+        orgId: details.orgId,
+        userId: details.userId,
+        credits: details.credits,
+        creditsExpiresAt: details.creditsExpiresAt.toISOString(),
+      });
+      return { handled: true, drainOrgId: details.orgId };
+    }
+
+    const replacedSubscriptionIds = await set(
+      prepareAtomPlanInvoice$,
+      { invoice, details },
+      signal,
+    );
+    const result = await set(
+      publishAtomPlanInvoice$,
+      { invoice, details },
+      signal,
+    );
+    if (!result.processed) {
+      return { handled: true, drainOrgId: null };
+    }
+    if (result.cancelReplaced) {
+      await cancelReplacedSubscriptionsAfterAtomGrant({
+        orgId: details.orgId,
+        invoiceId: invoice.id,
+        subscriptionIds: [
+          ...replacedSubscriptionIds,
+          ...(result.oldSubscriptionId ? [result.oldSubscriptionId] : []),
+        ],
+      });
+      signal.throwIfAborted();
+    }
+
+    L.debug("atom grant invoice processed", {
       invoiceId: invoice.id,
-      knownOldSubscriptionId: lockedOrg.stripeSubscriptionId,
-    });
-    return true;
-  });
-}
-
-async function upsertAtomGrantPlanEntitlement(
-  tx: WriteTx,
-  invoice: InvoiceInput,
-  details: AtomPlanGrantInvoiceDetails,
-): Promise<void> {
-  const grantLine = invoiceAtomGrantLine(invoice);
-  const periodStart = grantLine?.period.start;
-  await upsertOrgPlanEntitlement(tx, {
-    orgId: details.orgId,
-    tier: details.tier,
-    source: "stripe_atom_grant",
-    currentPeriodStart:
-      typeof periodStart === "number" ? new Date(periodStart * 1000) : null,
-    currentPeriodEnd: details.grantExpiresAt,
-    expiresAt: details.grantExpiresAt,
-    stripePriceId: grantLine ? invoiceLinePriceId(grantLine) : null,
-    showUsagePack: invoice.metadata?.planVersion === "usagePack",
-    sourceMetadata: {
-      ...invoice.metadata,
-      atomPlanInvoiceId: invoice.id,
-    },
-  });
-}
-
-async function handleAtomGrantInvoicePaid(
-  db: Db,
-  invoice: InvoiceInput,
-): Promise<PaidWebhookOutcome> {
-  if (!isAtomGrantInvoice(invoice)) {
-    return { handled: false, drainOrgId: null };
-  }
-
-  const details = atomGrantInvoiceDetails(invoice);
-  if (!details) {
-    return { handled: true, drainOrgId: null };
-  }
-
-  if (details.kind === "credits") {
-    await processAtomCreditGrantInvoicePaid(db, invoice, details);
-    L.debug("atom credit grant invoice processed", {
-      invoiceId: invoice.id,
       orgId: details.orgId,
-      credits: details.credits,
+      tier: details.tier,
+      grantExpiresAt: details.grantExpiresAt?.toISOString() ?? null,
       creditExpiresAt: details.creditExpiresAt.toISOString(),
+      memberUsagePackCredits: details.memberUsagePack?.credits ?? 0,
+      memberUsagePackUserId: details.memberUsagePack?.userId ?? null,
     });
     return { handled: true, drainOrgId: details.orgId };
-  }
+  },
+);
 
-  if (details.kind === "usagePackCredits") {
-    await processAtomUsagePackCreditGrantInvoicePaid(db, invoice, details);
-    L.debug("atom member usage pack credit grant invoice processed", {
-      invoiceId: invoice.id,
-      orgId: details.orgId,
-      userId: details.userId,
-      credits: details.credits,
-      creditsExpiresAt: details.creditsExpiresAt.toISOString(),
-    });
-    return { handled: true, drainOrgId: details.orgId };
-  }
+const handleOneTimePurchaseCompleted$ = command(
+  async (
+    { set },
+    session: CheckoutSessionInput,
+    paidAt: Date,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const metadata = session.metadata ?? {};
+    const orgId = metadata.orgId;
+    const campaignKey = metadata.campaignKey;
 
-  const processed = await processAtomPlanGrantInvoicePaid(db, invoice, details);
-  if (!processed) {
-    return { handled: true, drainOrgId: null };
-  }
-
-  L.debug("atom grant invoice processed", {
-    invoiceId: invoice.id,
-    orgId: details.orgId,
-    tier: details.tier,
-    grantExpiresAt: details.grantExpiresAt?.toISOString() ?? null,
-    creditExpiresAt: details.creditExpiresAt.toISOString(),
-    memberUsagePackCredits: details.memberUsagePack?.credits ?? 0,
-    memberUsagePackUserId: details.memberUsagePack?.userId ?? null,
-  });
-  return { handled: true, drainOrgId: details.orgId };
-}
-
-async function handleOneTimePurchaseCompleted(
-  db: Db,
-  session: CheckoutSessionInput,
-  paidAt: Date,
-): Promise<string | null> {
-  const metadata = session.metadata ?? {};
-  const orgId = metadata.orgId;
-  const campaignKey = metadata.campaignKey;
-
-  if (!orgId || !campaignKey) {
-    L.warn("one_time_purchase missing metadata", {
-      sessionId: session.id,
-      hasOrgId: Boolean(orgId),
-      hasCampaignKey: Boolean(campaignKey),
-    });
-    return null;
-  }
-
-  const campaign = getCampaign(campaignKey);
-  if (!campaign) {
-    L.warn("one_time_purchase unknown campaign; skipping", {
-      sessionId: session.id,
-      campaignKey,
-    });
-    return null;
-  }
-
-  const expiresAt = new Date(
-    paidAt.getTime() + campaign.expiresDays * 24 * 60 * 60 * 1000,
-  );
-
-  await db.transaction(async (tx) => {
-    const inserted = await createExpiresRecord(tx, orgId, {
-      source: campaign.source,
-      stripeInvoiceId: session.id,
-      amount: campaign.credits,
-      expiresAt,
-    });
-
-    if (!inserted) {
-      L.debug("one_time_purchase already processed", {
+    if (!orgId || !campaignKey) {
+      L.warn("one_time_purchase missing metadata", {
         sessionId: session.id,
-        orgId,
+        hasOrgId: Boolean(orgId),
+        hasCampaignKey: Boolean(campaignKey),
       });
-      return;
+      return null;
     }
 
-    await grantOrgCredits(tx, orgId, campaign.credits);
-  });
-
-  return orgId;
-}
-
-async function handleCreditPurchaseCompleted(
-  db: Db,
-  session: CheckoutSessionInput,
-): Promise<string | null> {
-  if (session.payment_status !== "paid") {
-    L.debug("credit_purchase checkout completed before payment settled", {
-      sessionId: session.id,
-      paymentStatus: session.payment_status ?? null,
-    });
-    return null;
-  }
-
-  const metadata = session.metadata ?? {};
-  const orgId = metadata.orgId;
-  const creditsAmount = creditPurchaseAmount(session);
-
-  if (!orgId || !creditsAmount || Number.isNaN(creditsAmount)) {
-    L.warn("credit_purchase checkout has invalid metadata or amount", {
-      sessionId: session.id,
-      hasOrgId: Boolean(orgId),
-      amountSubtotal: session.amount_subtotal ?? null,
-      amountTotal: session.amount_total ?? null,
-      metadata,
-    });
-    return null;
-  }
-
-  const expiresAt = creditPurchaseExpiresAt(metadata);
-  if (!expiresAt) {
-    L.warn("credit_purchase checkout has invalid credits expiration metadata", {
-      sessionId: session.id,
-      orgId,
-      creditsExpiresAt:
-        metadata[CREDIT_PURCHASE_EXPIRES_AT_METADATA_KEY] ?? null,
-    });
-    return null;
-  }
-
-  await db.transaction(async (tx) => {
-    const inserted = await createExpiresRecord(tx, orgId, {
-      source: "credit_purchase",
-      stripeInvoiceId: session.id,
-      amount: creditsAmount,
-      expiresAt,
-    });
-
-    if (!inserted) {
-      L.debug("credit_purchase checkout already processed", {
+    const campaign = getCampaign(campaignKey);
+    if (!campaign) {
+      L.warn("one_time_purchase unknown campaign; skipping", {
         sessionId: session.id,
-        orgId,
+        campaignKey,
       });
-      return;
+      return null;
     }
 
-    await grantOrgCredits(tx, orgId, creditsAmount);
-  });
+    const expiresAt = new Date(
+      paidAt.getTime() + campaign.expiresDays * 24 * 60 * 60 * 1000,
+    );
 
-  return orgId;
-}
+    await set(
+      grantPurchasedOrgCredits$,
+      {
+        orgId,
+        source: campaign.source,
+        stripeInvoiceId: session.id,
+        amount: campaign.credits,
+        expiresAt,
+      },
+      signal,
+    );
 
-async function handlePaidCheckoutPurpose(
-  db: Db,
-  session: CheckoutSessionInput,
-  purpose: "one_time_purchase",
-  paidAt: Date,
-): Promise<PaidWebhookOutcome> {
-  if (session.metadata?.purpose !== purpose) {
-    return { handled: false, drainOrgId: null };
-  }
+    return orgId;
+  },
+);
 
-  if (session.payment_status !== "paid") {
-    L.debug(`${purpose} checkout completed before payment settled`, {
-      sessionId: session.id,
-      paymentStatus: session.payment_status ?? null,
-    });
-    return { handled: true, drainOrgId: null };
-  }
+const handleCreditPurchaseCompleted$ = command(
+  async (
+    { set },
+    session: CheckoutSessionInput,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    if (session.payment_status !== "paid") {
+      L.debug("credit_purchase checkout completed before payment settled", {
+        sessionId: session.id,
+        paymentStatus: session.payment_status ?? null,
+      });
+      return null;
+    }
 
-  const drainOrgId = await handleOneTimePurchaseCompleted(db, session, paidAt);
-  return { handled: true, drainOrgId };
-}
+    const metadata = session.metadata ?? {};
+    const orgId = metadata.orgId;
+    const creditsAmount = creditPurchaseAmount(session);
+
+    if (!orgId || !creditsAmount || Number.isNaN(creditsAmount)) {
+      L.warn("credit_purchase checkout has invalid metadata or amount", {
+        sessionId: session.id,
+        hasOrgId: Boolean(orgId),
+        amountSubtotal: session.amount_subtotal ?? null,
+        amountTotal: session.amount_total ?? null,
+        metadata,
+      });
+      return null;
+    }
+
+    const expiresAt = creditPurchaseExpiresAt(metadata);
+    if (!expiresAt) {
+      L.warn(
+        "credit_purchase checkout has invalid credits expiration metadata",
+        {
+          sessionId: session.id,
+          orgId,
+          creditsExpiresAt:
+            metadata[CREDIT_PURCHASE_EXPIRES_AT_METADATA_KEY] ?? null,
+        },
+      );
+      return null;
+    }
+
+    await set(
+      grantPurchasedOrgCredits$,
+      {
+        orgId,
+        source: "credit_purchase",
+        stripeInvoiceId: session.id,
+        amount: creditsAmount,
+        expiresAt,
+      },
+      signal,
+    );
+
+    return orgId;
+  },
+);
+
+const handlePaidCheckoutPurpose$ = command(
+  async (
+    { set },
+    session: CheckoutSessionInput,
+    purpose: "one_time_purchase",
+    paidAt: Date,
+    signal: AbortSignal,
+  ): Promise<PaidWebhookOutcome> => {
+    if (session.metadata?.purpose !== purpose) {
+      return { handled: false, drainOrgId: null };
+    }
+
+    if (session.payment_status !== "paid") {
+      L.debug(`${purpose} checkout completed before payment settled`, {
+        sessionId: session.id,
+        paymentStatus: session.payment_status ?? null,
+      });
+      return { handled: true, drainOrgId: null };
+    }
+
+    const drainOrgId = await set(
+      handleOneTimePurchaseCompleted$,
+      session,
+      paidAt,
+      signal,
+    );
+    return { handled: true, drainOrgId };
+  },
+);
 
 function checkoutSubscriptionContext(
   session: CheckoutSessionInput,
@@ -2285,9 +2302,8 @@ function billingDowngradeTargetTier(
   if (value === "pro") {
     return value;
   }
-  if (value === "limited-free-1" || value === "pro-suspend") {
-    // Checkout sessions created by a previous App can complete after rollout.
-    return "limited-free-1";
+  if (value === "limited-free-1") {
+    return value;
   }
   return null;
 }
@@ -2316,234 +2332,215 @@ function billingDowngradeCheckoutMetadata(session: CheckoutSessionInput): {
   return { orgId, subscriptionId, targetTier };
 }
 
-async function billingSetupSubscriptionState(
-  db: Db,
-  metadata: { readonly orgId: string; readonly subscriptionId: string },
-  subscriptionScope: "plan" | "purchase",
-): Promise<{
-  readonly org:
-    | {
-        readonly stripeCustomerId: string | null;
-        readonly stripeSubscriptionId: string | null;
-      }
-    | undefined;
-  readonly subscriptionMatches: boolean;
-  readonly expectedCustomerId: string | null;
-}> {
-  const [org] = await db
-    .select({
-      stripeCustomerId: orgMetadata.stripeCustomerId,
-      stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
-    })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, metadata.orgId))
-    .limit(1);
-  if (subscriptionScope === "plan") {
-    return {
-      org,
-      subscriptionMatches:
-        org?.stripeSubscriptionId === metadata.subscriptionId,
-      expectedCustomerId: org?.stripeCustomerId ?? null,
-    };
-  }
-
-  const [usagePackSubscriptionsRows, concurrencySubscriptionsRows] =
-    await Promise.all([
-      db
-        .select({ stripeCustomerId: usagePackSubscriptions.stripeCustomerId })
-        .from(usagePackSubscriptions)
-        .where(
-          and(
-            eq(usagePackSubscriptions.orgId, metadata.orgId),
-            eq(
-              usagePackSubscriptions.stripeSubscriptionId,
-              metadata.subscriptionId,
+const billingSetupSubscriptionState$ = command(
+  async (
+    { set },
+    args: {
+      readonly metadata: {
+        readonly orgId: string;
+        readonly subscriptionId: string;
+      };
+      readonly subscriptionScope: "plan" | "purchase";
+    },
+    signal: AbortSignal,
+  ) => {
+    const { metadata, subscriptionScope } = args;
+    const db = set(writeDb$);
+    const [org] = await db
+      .select({
+        stripeCustomerId: orgMetadata.stripeCustomerId,
+        stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
+      })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, metadata.orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    let subscriptionMatches =
+      org?.stripeSubscriptionId === metadata.subscriptionId;
+    let expectedCustomerId = org?.stripeCustomerId ?? null;
+    if (subscriptionScope === "purchase") {
+      const [usagePackRows, concurrencyRows] = await Promise.all([
+        db
+          .select({ stripeCustomerId: usagePackSubscriptions.stripeCustomerId })
+          .from(usagePackSubscriptions)
+          .where(
+            and(
+              eq(usagePackSubscriptions.orgId, metadata.orgId),
+              eq(
+                usagePackSubscriptions.stripeSubscriptionId,
+                metadata.subscriptionId,
+              ),
             ),
-          ),
-        )
-        .limit(1),
-      db
-        .select({
-          stripeSubscriptionId:
-            orgConcurrencySubscriptions.stripeSubscriptionId,
-        })
-        .from(orgConcurrencySubscriptions)
-        .where(
-          and(
-            eq(orgConcurrencySubscriptions.orgId, metadata.orgId),
-            eq(
+          )
+          .limit(1),
+        db
+          .select({
+            stripeSubscriptionId:
               orgConcurrencySubscriptions.stripeSubscriptionId,
-              metadata.subscriptionId,
+          })
+          .from(orgConcurrencySubscriptions)
+          .where(
+            and(
+              eq(orgConcurrencySubscriptions.orgId, metadata.orgId),
+              eq(
+                orgConcurrencySubscriptions.stripeSubscriptionId,
+                metadata.subscriptionId,
+              ),
             ),
-          ),
-        )
-        .limit(1),
-    ]);
-  const usagePackSubscription = usagePackSubscriptionsRows[0];
-  const concurrencySubscription = concurrencySubscriptionsRows[0];
-  return {
-    org,
-    subscriptionMatches:
-      org?.stripeSubscriptionId === metadata.subscriptionId ||
-      usagePackSubscription !== undefined ||
-      concurrencySubscription !== undefined,
-    expectedCustomerId:
-      org?.stripeCustomerId ?? usagePackSubscription?.stripeCustomerId ?? null,
-  };
-}
+          )
+          .limit(1),
+      ]);
+      signal.throwIfAborted();
+      subscriptionMatches ||=
+        usagePackRows.length > 0 || concurrencyRows.length > 0;
+      expectedCustomerId ??= usagePackRows[0]?.stripeCustomerId ?? null;
+    }
+    return { org, subscriptionMatches, expectedCustomerId };
+  },
+);
 
-async function applyBillingSetupPaymentMethod(
-  db: Db,
-  session: CheckoutSessionInput,
-  metadata: { readonly orgId: string; readonly subscriptionId: string },
-  logContext: string,
-  subscriptionScope: "plan" | "purchase" = "plan",
-): Promise<boolean> {
-  if (session.mode !== "setup") {
-    L.warn(`billing ${logContext} checkout completed with unexpected mode`, {
-      sessionId: session.id,
-      mode: session.mode ?? null,
-    });
-    return false;
-  }
-
-  const customerId = checkoutCustomerId(session);
-  if (!customerId) {
-    L.warn(`billing ${logContext} checkout completed without customer`, {
-      sessionId: session.id,
-      orgId: metadata.orgId,
-    });
-    return false;
-  }
-
-  const { org, subscriptionMatches, expectedCustomerId } =
-    await billingSetupSubscriptionState(db, metadata, subscriptionScope);
-
-  if (
-    !org ||
-    !subscriptionMatches ||
-    (expectedCustomerId !== null && expectedCustomerId !== customerId)
-  ) {
-    L.warn(
-      `billing ${logContext} checkout no longer matches org billing state`,
-      {
+const applyBillingSetupPaymentMethod$ = command(
+  async (
+    { set },
+    args: {
+      readonly session: CheckoutSessionInput;
+      readonly metadata: {
+        readonly orgId: string;
+        readonly subscriptionId: string;
+      };
+      readonly purpose: "restore" | "downgrade" | "purchase";
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const { session, metadata, purpose } = args;
+    if (session.mode !== "setup") {
+      L.warn(`billing ${purpose} checkout completed with unexpected mode`, {
+        sessionId: session.id,
+        mode: session.mode ?? null,
+      });
+      return false;
+    }
+    const customerId = checkoutCustomerId(session);
+    if (!customerId) {
+      L.warn(`billing ${purpose} checkout completed without customer`, {
         sessionId: session.id,
         orgId: metadata.orgId,
-        customerId,
-        metadataSubscriptionId: metadata.subscriptionId,
-        orgStripeCustomerId: org?.stripeCustomerId ?? null,
-        orgStripeSubscriptionId: org?.stripeSubscriptionId ?? null,
-        subscriptionScope,
+      });
+      return false;
+    }
+
+    const { org, subscriptionMatches, expectedCustomerId } = await set(
+      billingSetupSubscriptionState$,
+      {
+        metadata,
+        subscriptionScope: purpose === "purchase" ? "purchase" : "plan",
       },
+      signal,
     );
-    return false;
-  }
-
-  const stripe = getStripeClient();
-  const paymentMethodId = await checkoutSetupPaymentMethodId(stripe, session);
-  if (!paymentMethodId) {
-    L.warn(`billing ${logContext} checkout has no setup payment method`, {
-      sessionId: session.id,
-      orgId: metadata.orgId,
+    if (
+      !org ||
+      !subscriptionMatches ||
+      (expectedCustomerId !== null && expectedCustomerId !== customerId)
+    ) {
+      L.warn(
+        `billing ${purpose} checkout no longer matches org billing state`,
+        {
+          sessionId: session.id,
+          orgId: metadata.orgId,
+          customerId,
+          metadataSubscriptionId: metadata.subscriptionId,
+          orgStripeCustomerId: org?.stripeCustomerId ?? null,
+          orgStripeSubscriptionId: org?.stripeSubscriptionId ?? null,
+          subscriptionScope: purpose === "purchase" ? "purchase" : "plan",
+        },
+      );
+      return false;
+    }
+    const stripe = getStripeClient();
+    const paymentMethodId = await checkoutSetupPaymentMethodId(stripe, session);
+    signal.throwIfAborted();
+    if (!paymentMethodId) {
+      L.warn(`billing ${purpose} checkout has no setup payment method`, {
+        sessionId: session.id,
+        orgId: metadata.orgId,
+      });
+      return false;
+    }
+    await stripe.customers.update(customerId, {
+      invoice_settings: { default_payment_method: paymentMethodId },
     });
-    return false;
-  }
+    signal.throwIfAborted();
+    return true;
+  },
+);
 
-  await stripe.customers.update(customerId, {
-    invoice_settings: { default_payment_method: paymentMethodId },
-  });
-  return true;
-}
-
-async function handleBillingRestoreCheckoutCompleted(
-  db: Db,
-  session: CheckoutSessionInput,
-): Promise<BillingRestoreCheckoutOutcome> {
-  const metadata = billingRestoreCheckoutMetadata(session);
-  if (!metadata) {
-    return { handled: false, orgId: null };
-  }
-  const paymentMethodSet = await applyBillingSetupPaymentMethod(
-    db,
-    session,
-    metadata,
-    "restore",
-  );
-  if (!paymentMethodSet) {
-    return { handled: true, orgId: null };
-  }
-
-  const restoreResult = await restoreSubscriptionForOrg(db, {
-    orgId: metadata.orgId,
-    requirePaymentMethod: false,
-  });
-  if (!restoreResult.ok) {
-    L.warn("billing restore checkout could not restore subscription", {
-      sessionId: session.id,
-      orgId: metadata.orgId,
-      reason: restoreResult.reason,
-    });
-    return { handled: true, orgId: null };
-  }
-
-  return { handled: true, orgId: metadata.orgId };
-}
-
-async function handleBillingPurchaseCheckoutCompleted(
-  db: Db,
-  session: CheckoutSessionInput,
-): Promise<BillingRestoreCheckoutOutcome> {
-  const metadata = billingPurchaseCheckoutMetadata(session);
-  if (!metadata) {
-    return { handled: false, orgId: null };
-  }
-  const paymentMethodSet = await applyBillingSetupPaymentMethod(
-    db,
-    session,
-    metadata,
-    "purchase",
-    "purchase",
-  );
-  return {
-    handled: true,
-    orgId: paymentMethodSet ? metadata.orgId : null,
-  };
-}
-
-async function handleBillingDowngradeCheckoutCompleted(
-  db: Db,
-  session: CheckoutSessionInput,
-): Promise<BillingRestoreCheckoutOutcome> {
-  const metadata = billingDowngradeCheckoutMetadata(session);
-  if (!metadata) {
-    return { handled: false, orgId: null };
-  }
-  const paymentMethodSet = await applyBillingSetupPaymentMethod(
-    db,
-    session,
-    metadata,
-    "downgrade",
-  );
-  if (!paymentMethodSet) {
-    return { handled: true, orgId: null };
-  }
-
-  const downgradeResult = await downgradeSubscriptionForOrg(db, {
-    orgId: metadata.orgId,
-    targetTier: metadata.targetTier,
-    requirePaymentMethod: false,
-  });
-  if (!downgradeResult.ok) {
-    L.warn("billing downgrade checkout could not downgrade subscription", {
-      sessionId: session.id,
-      orgId: metadata.orgId,
-      reason: downgradeResult.reason,
-    });
-    return { handled: true, orgId: null };
-  }
-
-  return { handled: true, orgId: metadata.orgId };
-}
+const handleBillingSetupCheckoutCompleted$ = command(
+  async (
+    { set },
+    session: CheckoutSessionInput,
+    signal: AbortSignal,
+  ): Promise<CheckoutCompletedOutcome | null> => {
+    const restore = billingRestoreCheckoutMetadata(session);
+    const downgrade = billingDowngradeCheckoutMetadata(session);
+    const purchase = billingPurchaseCheckoutMetadata(session);
+    const metadata = restore ?? downgrade ?? purchase;
+    if (!metadata) {
+      return null;
+    }
+    const purpose = restore ? "restore" : downgrade ? "downgrade" : "purchase";
+    const ignored = { drainOrgId: null, orgIds: [] };
+    const paymentMethodSet = await set(
+      applyBillingSetupPaymentMethod$,
+      {
+        session,
+        metadata,
+        purpose,
+      },
+      signal,
+    );
+    if (!paymentMethodSet) {
+      return ignored;
+    }
+    if (restore) {
+      const result = await set(
+        restoreSubscription$,
+        {
+          orgId: restore.orgId,
+          requirePaymentMethod: false,
+        },
+        signal,
+      );
+      if (!result.ok) {
+        L.warn("billing restore checkout could not restore subscription", {
+          sessionId: session.id,
+          orgId: restore.orgId,
+          reason: result.reason,
+        });
+        return ignored;
+      }
+    } else if (downgrade) {
+      const result = await set(
+        downgradeSubscription$,
+        {
+          orgId: downgrade.orgId,
+          targetTier: downgrade.targetTier,
+          requirePaymentMethod: false,
+        },
+        signal,
+      );
+      if (!result.ok) {
+        L.warn("billing downgrade checkout could not downgrade subscription", {
+          sessionId: session.id,
+          orgId: downgrade.orgId,
+          reason: result.reason,
+        });
+        return ignored;
+      }
+    }
+    signal.throwIfAborted();
+    return { drainOrgId: null, orgIds: [metadata.orgId] };
+  },
+);
 
 async function shouldSkipSubscriptionBinding(
   db: Db,
@@ -2852,71 +2849,18 @@ function concurrencyInvoiceEntitlementValue(args: {
   };
 }
 
-async function upsertConcurrencySubscriptionState(
-  tx: WriteTx,
-  args: {
-    readonly orgId: string;
-    readonly subscriptionId: string;
-    readonly state: ConcurrencySubscriptionState;
-  },
-): Promise<void> {
-  const updatedAt = nowDate();
-  await tx
-    .insert(orgConcurrencySubscriptions)
-    .values({
-      orgId: args.orgId,
-      stripeSubscriptionId: args.subscriptionId,
-      stripePriceId: args.state.stripePriceId,
-      slots: args.state.slots,
-      subscriptionStatus: args.state.subscriptionStatus,
-      currentPeriodEnd: args.state.currentPeriodEnd,
-      cancelAtPeriodEnd: args.state.cancelAtPeriodEnd,
-      updatedAt,
-    })
-    .onConflictDoUpdate({
-      target: orgConcurrencySubscriptions.stripeSubscriptionId,
-      set: {
-        orgId: args.orgId,
-        stripePriceId: args.state.stripePriceId,
-        slots: args.state.slots,
-        subscriptionStatus: args.state.subscriptionStatus,
-        currentPeriodEnd: args.state.currentPeriodEnd,
-        cancelAtPeriodEnd: args.state.cancelAtPeriodEnd,
-        updatedAt,
-      },
-    });
-}
-
-function concurrencyInvoiceSubscriptionState(
-  values: readonly ConcurrencyInvoiceEntitlementValue[],
-): ConcurrencySubscriptionState | null {
-  const activeValues = values.filter((value) => {
-    return value.expiresAt > nowDate();
-  });
-  const currentValues = activeValues.length > 0 ? activeValues : values;
-  const firstValue = currentValues[0];
-  if (!firstValue) {
-    return null;
-  }
-
-  return {
-    stripePriceId: firstValue.stripePriceId,
-    slots: currentValues.reduce((sum, value) => {
-      return sum + value.slots;
-    }, 0),
-    subscriptionStatus: "active",
-    currentPeriodEnd: currentValues.reduce((latest, value) => {
-      return value.expiresAt > latest ? value.expiresAt : latest;
-    }, firstValue.expiresAt),
-    cancelAtPeriodEnd: false,
-  };
-}
-
-async function handleConcurrencyInvoicePaid(
+async function prepareConcurrencyInvoiceEntitlements(
   db: Db,
   getClerk: ClerkClientProvider,
   invoice: InvoiceInput,
-): Promise<PaidWebhookOutcome> {
+): Promise<
+  | PaidWebhookOutcome
+  | {
+      readonly orgId: string;
+      readonly subscriptionId: string;
+      readonly values: readonly ConcurrencyInvoiceEntitlementValue[];
+    }
+> {
   const lines = concurrencyInvoiceLines(invoice);
   const hasConcurrencyPurpose = invoiceHasConcurrencyPurpose(invoice);
   if (lines.length === 0 && !hasConcurrencyPurpose) {
@@ -2971,58 +2915,151 @@ async function handleConcurrencyInvoicePaid(
     });
   }
 
-  const persisted = await db.transaction(async (tx) => {
-    await lockConcurrencySubscriptionState(tx, subscriptionId);
-    const [existing] = await tx
+  return { orgId: org.orgId, subscriptionId, values };
+}
+
+interface PreparedConcurrencyInvoice {
+  readonly invoiceId: string;
+  readonly orgId: string;
+  readonly subscriptionId: string;
+  readonly values: readonly ConcurrencyInvoiceEntitlementValue[];
+}
+
+class ConcurrencyProjectionChangedError extends Error {
+  constructor() {
+    super("Concurrency subscription changed during invoice reconciliation");
+  }
+}
+
+function retiredConcurrencyState(
+  known: { readonly stripePriceId: string; readonly slots: number } | undefined,
+): ConcurrencySubscriptionState | null {
+  if (!known) {
+    return null;
+  }
+  return {
+    stripePriceId: known.stripePriceId,
+    slots: known.slots,
+    subscriptionStatus: "canceled",
+    currentPeriodEnd: nowDate(),
+    cancelAtPeriodEnd: false,
+    hasSchedule: false,
+  };
+}
+
+const publishConcurrencyInvoice$ = command(
+  async (
+    { set },
+    prepared: PreparedConcurrencyInvoice,
+  ): Promise<PaidWebhookOutcome> => {
+    const { orgId, subscriptionId, values } = prepared;
+    const db = set(writeDb$);
+    const [existing] = await db
       .select({
         subscriptionId: orgConcurrencySubscriptions.stripeSubscriptionId,
+        stripePriceId: orgConcurrencySubscriptions.stripePriceId,
+        slots: orgConcurrencySubscriptions.slots,
+        rowVersion: sql`${orgConcurrencySubscriptions}.xmin::text`.mapWith(
+          pgTextDecoder,
+        ),
+        updatedAtText:
+          sql`${orgConcurrencySubscriptions.updatedAt}::text`.mapWith(
+            pgTextDecoder,
+          ),
       })
       .from(orgConcurrencySubscriptions)
       .where(
         eq(orgConcurrencySubscriptions.stripeSubscriptionId, subscriptionId),
       )
       .limit(1);
-    const state = existing
-      ? await retrieveConcurrencySubscriptionState(subscriptionId)
-      : concurrencyInvoiceSubscriptionState(values);
-    if (!state) {
-      return null;
+    if (!existing && values.length === 0) {
+      return { handled: true, drainOrgId: orgId };
     }
-    const insertedRows =
-      values.length === 0
-        ? []
+    const originalVersion = and(
+      eq(orgConcurrencySubscriptions.stripeSubscriptionId, subscriptionId),
+      existing
+        ? and(
+            eq(
+              orgConcurrencySubscriptions.updatedAt,
+              sql`${existing.updatedAtText}::timestamp`,
+            ),
+            sql`${orgConcurrencySubscriptions}.xmin::text = ${existing.rowVersion}`,
+          )
+        : undefined,
+    );
+    // Snapshot and Stripe I/O complete before entering the bounded SQL commit.
+    const state = await retrieveConcurrencySubscriptionState(subscriptionId);
+    const projectionState =
+      state ?? retiredConcurrencyState(existing ?? values.at(-1));
+    if (!projectionState) {
+      return { handled: true, drainOrgId: orgId };
+    }
+    await db.transaction(async (tx) => {
+      // Payment evidence remains valid even after the renewable subscription or
+      // concurrency item disappears. Record its immutable invoice identity without
+      // reviving a current projection from that historical payment.
+      const insertedRows =
+        values.length === 0
+          ? []
+          : await tx
+              .insert(orgConcurrencyEntitlements)
+              .values([...values])
+              .onConflictDoNothing()
+              .returning({ id: orgConcurrencyEntitlements.id });
+      const projection = {
+        orgId: orgId,
+        stripePriceId: projectionState.stripePriceId,
+        slots: projectionState.slots,
+        subscriptionStatus: projectionState.subscriptionStatus,
+        currentPeriodEnd: projectionState.currentPeriodEnd,
+        cancelAtPeriodEnd: projectionState.cancelAtPeriodEnd,
+        ...(!state ? { scheduledSlots: null, scheduledChangeAt: null } : {}),
+      };
+      const written = existing
+        ? await tx
+            .update(orgConcurrencySubscriptions)
+            .set({
+              ...projection,
+              updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
+            })
+            .where(originalVersion)
+            .returning({ id: orgConcurrencySubscriptions.stripeSubscriptionId })
         : await tx
-            .insert(orgConcurrencyEntitlements)
-            .values(values)
-            .onConflictDoNothing()
-            .returning({ id: orgConcurrencyEntitlements.id });
-    await upsertConcurrencySubscriptionState(tx, {
-      orgId: org.orgId,
-      subscriptionId,
-      state,
+            .insert(orgConcurrencySubscriptions)
+            .values({
+              ...projection,
+              stripeSubscriptionId: subscriptionId,
+              updatedAt: nowDate(),
+            })
+            .onConflictDoNothing({
+              target: orgConcurrencySubscriptions.stripeSubscriptionId,
+            })
+            .returning({
+              id: orgConcurrencySubscriptions.stripeSubscriptionId,
+            });
+      if (written.length === 0) {
+        // Roll back the related invoice inserts and let Stripe retry the entire
+        // delivery against current state. A stale result is never a success.
+        throw new ConcurrencyProjectionChangedError();
+      }
+      return { insertedLines: insertedRows.length, state: projectionState };
     });
-    return { insertedLines: insertedRows.length, state };
-  });
 
-  if (!persisted) {
-    L.warn("concurrency invoice.paid subscription has no concurrency item", {
-      invoiceId: invoice.id,
-      orgId: org.orgId,
-      subscriptionId,
-    });
-    return { handled: true, drainOrgId: org.orgId };
-  }
+    return { handled: true, drainOrgId: orgId };
+  },
+);
 
-  L.debug("concurrency invoice.paid processed", {
-    invoiceId: invoice.id,
-    orgId: org.orgId,
-    subscriptionId,
-    insertedLines: persisted.insertedLines,
-    slots: persisted.state.slots,
-  });
-
-  return { handled: true, drainOrgId: org.orgId };
-}
+const reconcileConcurrencyInvoice$ = command(
+  async (
+    { set },
+    prepared: PreparedConcurrencyInvoice,
+  ): Promise<PaidWebhookOutcome> => {
+    // One conditional publication. A contending delivery that changed the
+    // projection makes this one fail as a whole; Stripe redelivers it against
+    // the committed state. No in-process re-run.
+    return await set(publishConcurrencyInvoice$, prepared);
+  },
+);
 
 type BindSubscriptionToCustomerOrgArgs = {
   readonly customerId: string;
@@ -3034,6 +3071,52 @@ type BindSubscriptionToCustomerOrgArgs = {
       readonly getClerk: ClerkClientProvider;
     }
 );
+
+/**
+ * A Plan invoice whose organization entitlement is held by another live
+ * subscription bought concurrently as an initial purchase is a duplicate: it
+ * is refunded instead of granted, whatever its tier. Read before publication
+ * so neither a rejection nor a tier upgrade grants it.
+ */
+async function planInvoiceIsDuplicateInitialPurchase(
+  db: Db,
+  publication: Parameters<typeof legacyPlanInvoiceAdmission>[1],
+): Promise<boolean> {
+  const [wallet] = await db
+    .select()
+    .from(orgMetadata)
+    .where(eq(orgMetadata.orgId, publication.orgId));
+  return (
+    !!wallet?.stripeSubscriptionId &&
+    wallet.stripeSubscriptionId !== publication.subscriptionId &&
+    wallet.lastProcessedInvoiceId !== publication.invoiceId &&
+    (wallet.subscriptionStatus === "active" ||
+      wallet.subscriptionStatus === "trialing" ||
+      wallet.subscriptionStatus === "past_due") &&
+    (wallet.currentPeriodEnd === null || wallet.currentPeriodEnd > nowDate()) &&
+    (await areDuplicateInitialPurchases(
+      publication.subscriptionId,
+      wallet.stripeSubscriptionId,
+    ))
+  );
+}
+
+/** Refund and cancel a duplicate initial Plan purchase instead of granting it. */
+async function refundDuplicateInitialPlanPurchase(
+  db: Db,
+  invoice: InvoiceInput,
+  publication: Parameters<typeof legacyPlanInvoiceAdmission>[1],
+): Promise<boolean> {
+  // Only a subscription's first invoice can be a duplicate initial purchase.
+  if (
+    invoice.billing_reason !== "subscription_create" ||
+    !(await planInvoiceIsDuplicateInitialPurchase(db, publication))
+  ) {
+    return false;
+  }
+  await refundDuplicateSubscriptionInvoice(invoice, publication.subscriptionId);
+  return true;
+}
 
 async function bindSubscriptionToCustomerOrg(
   db: Db,
@@ -3094,47 +3177,6 @@ async function bindSubscriptionToCustomerOrg(
   return rows.map((row) => {
     return row.orgId;
   });
-}
-
-function invoiceWouldReplaceWithSameOrLowerTier(args: {
-  readonly currentSubscriptionId: string | null;
-  readonly subscriptionId: string;
-  readonly currentTier: string;
-  readonly targetTier: BillingSubscriptionTier;
-}): boolean {
-  return (
-    args.currentSubscriptionId !== null &&
-    args.currentSubscriptionId !== args.subscriptionId &&
-    checkoutWouldReplaceWithSameOrLowerTier({
-      currentTier: args.currentTier,
-      targetTier: args.targetTier,
-    })
-  );
-}
-
-function replacedPlanSubscriptionId(args: {
-  readonly currentSubscriptionId: string | null;
-  readonly currentSubscriptionStatus: string | null;
-  readonly currentTier: string;
-  readonly newSubscriptionId: string;
-  readonly targetTier: BillingSubscriptionTier;
-}): string | null {
-  if (
-    !args.currentSubscriptionId ||
-    args.currentSubscriptionId === args.newSubscriptionId
-  ) {
-    return null;
-  }
-
-  const replacesPaidTier =
-    (args.targetTier === "team" && args.currentTier === "pro") ||
-    (args.targetTier === "custom" &&
-      (args.currentTier === "pro" || args.currentTier === "team"));
-  if (replacesPaidTier || args.currentSubscriptionStatus === "trialing") {
-    return args.currentSubscriptionId;
-  }
-
-  return null;
 }
 
 function tierFromSubscription(subscription: StripeSubscription) {
@@ -3226,34 +3268,6 @@ async function cancelReplacedPlanSubscriptions(args: {
   }
 }
 
-async function cancelReplacedPlanSubscriptionsAfterInvoice(args: {
-  readonly orgId: string;
-  readonly customerId: string;
-  readonly invoiceId: string;
-  readonly newSubscriptionId: string;
-  readonly targetTier: BillingSubscriptionTier;
-  readonly knownOldSubscriptionId: string | null;
-}): Promise<void> {
-  const replacedSubscriptionIds = [
-    ...(args.knownOldSubscriptionId ? [args.knownOldSubscriptionId] : []),
-    ...(await replacedPlanSubscriptionIdsForCustomer({
-      customerId: args.customerId,
-      newSubscriptionId: args.newSubscriptionId,
-      targetTier: args.targetTier,
-    })),
-  ];
-  if (replacedSubscriptionIds.length === 0) {
-    return;
-  }
-
-  await cancelReplacedPlanSubscriptions({
-    orgId: args.orgId,
-    invoiceId: args.invoiceId,
-    oldSubscriptionIds: replacedSubscriptionIds,
-    newSubscriptionId: args.newSubscriptionId,
-  });
-}
-
 function isReplaceablePaidSubscriptionForAtomGrant(
   subscription: StripeSubscription,
 ): boolean {
@@ -3283,24 +3297,15 @@ async function replacedAtomGrantSubscriptionIdsForCustomer(args: {
 
 async function cancelReplacedSubscriptionsAfterAtomGrant(args: {
   readonly orgId: string;
-  readonly customerId: string | null;
   readonly invoiceId: string;
-  readonly knownOldSubscriptionId: string | null;
+  readonly subscriptionIds: readonly string[];
 }): Promise<void> {
-  const replacedSubscriptionIds = [
-    ...(args.knownOldSubscriptionId ? [args.knownOldSubscriptionId] : []),
-    ...(args.customerId
-      ? await replacedAtomGrantSubscriptionIdsForCustomer({
-          customerId: args.customerId,
-        })
-      : []),
-  ];
-  if (replacedSubscriptionIds.length === 0) {
+  if (args.subscriptionIds.length === 0) {
     return;
   }
 
   const stripe = getStripeClient();
-  for (const oldSubscriptionId of new Set(replacedSubscriptionIds)) {
+  for (const oldSubscriptionId of new Set(args.subscriptionIds)) {
     const cancelResult = await settle(
       stripe.subscriptions.cancel(oldSubscriptionId, {
         invoice_now: false,
@@ -3492,413 +3497,105 @@ async function subscriptionInvoiceDetails(
   };
 }
 
-async function updateSubscriptionInvoiceMetadata(
-  tx: WriteTx,
-  args: {
-    readonly orgId: string;
-    readonly invoiceId: string;
-    readonly subscriptionId: string;
-    readonly details: SubscriptionInvoiceDetails;
-  },
-): Promise<void> {
-  const scheduleId = subscriptionScheduleId(args.details.subscription);
-  const willCancel =
-    subscriptionWillCancel(args.details.subscription) ||
-    args.details.scheduledEndDate !== null;
-  const pendingChangeAt = args.details.scheduledEndDate;
+const handleCheckoutCompleted$ = command(
+  async (
+    { set },
+    session: CheckoutSessionInput,
+    paidAt: Date,
+    signal: AbortSignal,
+  ): Promise<CheckoutCompletedOutcome> => {
+    const db = set(writeDb$);
 
-  await writeOrgMetadataWithPlanEntitlements(tx, {
-    writeOrgMetadata: async (writeTx) => {
-      return await writeTx
-        .update(orgMetadata)
-        .set({
-          tier: args.details.tier,
-          stripeSubscriptionId: args.subscriptionId,
-          subscriptionStatus: args.details.subscription.status,
-          cancelAtPeriodEnd: willCancel,
-          onboardingPaymentPending: false,
-          lastProcessedInvoiceId: args.invoiceId,
-          currentPeriodEnd: pendingChangeAt ?? args.details.periodEndDate,
-          pendingSubscriptionScheduleId: pendingChangeAt ? scheduleId : null,
-          pendingSubscriptionTargetTier: pendingChangeAt
-            ? CANCELED_SUBSCRIPTION_TARGET_TIER
-            : null,
-          pendingSubscriptionChangeAt: pendingChangeAt,
-          updatedAt: nowDate(),
-        })
-        .where(eq(orgMetadata.orgId, args.orgId))
-        .returning({ orgId: orgMetadata.orgId });
-    },
-    writePlanEntitlement: async (writeTx, row) => {
-      await upsertSubscriptionPlanEntitlement(writeTx, {
-        orgId: row.orgId,
-        subscriptionId: args.subscriptionId,
-        details: args.details,
-      });
-    },
-  });
-}
-
-async function upsertSubscriptionPlanEntitlement(
-  tx: WriteTx,
-  args: {
-    readonly orgId: string;
-    readonly subscriptionId: string;
-    readonly details: SubscriptionInvoiceDetails;
-  },
-): Promise<void> {
-  const showUsagePack = await stripeSubscriptionUsesMemberUsagePacks(tx, {
-    orgId: args.orgId,
-    stripeSubscriptionId: args.subscriptionId,
-  });
-  await upsertOrgPlanEntitlement(tx, {
-    orgId: args.orgId,
-    tier: args.details.tier,
-    source: "stripe_subscription",
-    status: args.details.subscription.status,
-    stripeSubscriptionId: args.subscriptionId,
-    stripePriceId: args.details.priceId,
-    currentPeriodStart: args.details.periodStartDate,
-    currentPeriodEnd: args.details.periodEndDate,
-    cancelAt: args.details.scheduledEndDate,
-    expiresAt: args.details.scheduledEndDate,
-    showUsagePack,
-  });
-}
-
-function subscriptionPlanEntitlementIsCurrent(
-  lockedOrg: LockedInvoicePaidOrg,
-  args: {
-    readonly subscriptionId: string;
-    readonly details: SubscriptionInvoiceDetails;
-  },
-): boolean {
-  return (
-    lockedOrg.tier === args.details.tier &&
-    lockedOrg.stripeSubscriptionId === args.subscriptionId
-  );
-}
-
-async function processNoCreditSubscriptionInvoicePaid(
-  tx: WriteTx,
-  args: {
-    readonly invoice: InvoiceInput;
-    readonly customerId: string;
-    readonly subscriptionId: string;
-    readonly orgId: string;
-    readonly details: SubscriptionInvoiceDetails;
-    readonly replacedSubscriptionId: string | null;
-  },
-): Promise<void> {
-  await expireCredits(tx, args.orgId);
-  await updateSubscriptionInvoiceMetadata(tx, {
-    orgId: args.orgId,
-    invoiceId: args.invoice.id,
-    subscriptionId: args.subscriptionId,
-    details: args.details,
-  });
-  await cancelReplacedPlanSubscriptionsAfterInvoice({
-    orgId: args.orgId,
-    customerId: args.customerId,
-    invoiceId: args.invoice.id,
-    newSubscriptionId: args.subscriptionId,
-    targetTier: args.details.tier,
-    knownOldSubscriptionId: args.replacedSubscriptionId,
-  });
-}
-
-async function reconcileAlreadyProcessedSubscriptionInvoice(
-  tx: WriteTx,
-  args: {
-    readonly customerId: string;
-    readonly details: SubscriptionInvoiceDetails;
-    readonly invoiceId: string;
-    readonly lockedOrg: LockedInvoicePaidOrg;
-    readonly orgId: string;
-    readonly replacedSubscriptionId: string | null;
-    readonly subscriptionId: string;
-  },
-): Promise<void> {
-  if (subscriptionPlanEntitlementIsCurrent(args.lockedOrg, args)) {
-    await upsertSubscriptionPlanEntitlement(tx, {
-      orgId: args.orgId,
-      subscriptionId: args.subscriptionId,
-      details: args.details,
-    });
-  }
-  await cancelReplacedPlanSubscriptionsAfterInvoice({
-    orgId: args.orgId,
-    customerId: args.customerId,
-    invoiceId: args.invoiceId,
-    newSubscriptionId: args.subscriptionId,
-    targetTier: args.details.tier,
-    knownOldSubscriptionId: args.replacedSubscriptionId,
-  });
-  L.debug("invoice.paid already processed by concurrent delivery", {
-    invoiceId: args.invoiceId,
-    orgId: args.orgId,
-  });
-}
-
-async function processSubscriptionInvoicePaid(
-  tx: WriteTx,
-  args: {
-    readonly invoice: InvoiceInput;
-    readonly customerId: string;
-    readonly subscriptionId: string;
-    readonly orgId: string;
-    readonly details: SubscriptionInvoiceDetails;
-  },
-): Promise<boolean> {
-  const lockedOrg = await lockInvoicePaidOrg(tx, args.orgId);
-  if (!lockedOrg) {
-    return false;
-  }
-  const replacedSubscriptionId = replacedPlanSubscriptionId({
-    currentSubscriptionId: lockedOrg.stripeSubscriptionId,
-    currentSubscriptionStatus: lockedOrg.subscriptionStatus,
-    currentTier: lockedOrg.tier,
-    newSubscriptionId: args.subscriptionId,
-    targetTier: args.details.tier,
-  });
-
-  if (lockedOrg.lastProcessedInvoiceId === args.invoice.id) {
-    await reconcileAlreadyProcessedSubscriptionInvoice(tx, {
-      ...args,
-      invoiceId: args.invoice.id,
-      lockedOrg,
-      replacedSubscriptionId,
-    });
-    return true;
-  }
-
-  if (
-    invoiceWouldReplaceWithSameOrLowerTier({
-      currentSubscriptionId: lockedOrg.stripeSubscriptionId,
-      subscriptionId: args.subscriptionId,
-      currentTier: lockedOrg.tier,
-      targetTier: args.details.tier,
-    })
-  ) {
-    L.warn("invoice.paid rejected tier replacement", {
-      customerId: args.customerId,
-      invoiceId: args.invoice.id,
-      subscriptionId: args.subscriptionId,
-      currentSubscriptionId: lockedOrg.stripeSubscriptionId,
-      currentTier: lockedOrg.tier,
-      targetTier: args.details.tier,
-      reason: checkoutTierConflictMessage({
-        currentTier: lockedOrg.tier,
-        targetTier: args.details.tier,
-      }),
-    });
-    return false;
-  }
-
-  if (args.details.credits === 0) {
-    await processNoCreditSubscriptionInvoicePaid(tx, {
-      ...args,
-      replacedSubscriptionId,
-    });
-    return true;
-  }
-
-  const trialingExistingSubscription =
-    args.details.subscription.status === "trialing" &&
-    lockedOrg.stripeSubscriptionId === args.subscriptionId &&
-    lockedOrg.tier === args.details.tier &&
-    (await existingTrialPlanCredits(tx, {
-      orgId: args.orgId,
-      credits: args.details.credits,
-    }));
-
-  if (trialingExistingSubscription) {
-    await refreshTrialPlanCredits(tx, {
-      orgId: args.orgId,
-      credits: args.details.credits,
-      expiresAt: args.details.expiresAt,
-    });
-    await updateSubscriptionInvoiceMetadata(tx, {
-      orgId: args.orgId,
-      invoiceId: args.invoice.id,
-      subscriptionId: args.subscriptionId,
-      details: args.details,
-    });
-    return true;
-  }
-
-  await expireCredits(tx, args.orgId);
-
-  const inserted = await createExpiresRecord(tx, args.orgId, {
-    source: "subscription_renewal",
-    stripeInvoiceId: args.invoice.id,
-    amount: args.details.credits,
-    expiresAt: args.details.expiresAt,
-  });
-  if (!inserted) {
-    if (subscriptionPlanEntitlementIsCurrent(lockedOrg, args)) {
-      await upsertSubscriptionPlanEntitlement(tx, {
-        orgId: args.orgId,
-        subscriptionId: args.subscriptionId,
-        details: args.details,
-      });
-    }
-    L.debug("invoice.paid already processed by concurrent delivery", {
-      invoiceId: args.invoice.id,
-      orgId: args.orgId,
-    });
-    return true;
-  }
-
-  await grantOrgCredits(tx, args.orgId, args.details.credits);
-  await updateSubscriptionInvoiceMetadata(tx, {
-    orgId: args.orgId,
-    invoiceId: args.invoice.id,
-    subscriptionId: args.subscriptionId,
-    details: args.details,
-  });
-  await cancelReplacedPlanSubscriptionsAfterInvoice({
-    orgId: args.orgId,
-    customerId: args.customerId,
-    invoiceId: args.invoice.id,
-    newSubscriptionId: args.subscriptionId,
-    targetTier: args.details.tier,
-    knownOldSubscriptionId: replacedSubscriptionId,
-  });
-  return true;
-}
-
-function billingSetupCheckoutOutcome(
-  result: BillingRestoreCheckoutOutcome,
-): CheckoutCompletedOutcome {
-  return {
-    drainOrgId: null,
-    orgIds: result.orgId === null ? [] : [result.orgId],
-  };
-}
-
-async function handleBillingSetupCheckoutCompleted(
-  db: Db,
-  session: CheckoutSessionInput,
-): Promise<CheckoutCompletedOutcome | null> {
-  const restoreResult = await handleBillingRestoreCheckoutCompleted(
-    db,
-    session,
-  );
-  if (restoreResult.handled) {
-    return billingSetupCheckoutOutcome(restoreResult);
-  }
-  const downgradeResult = await handleBillingDowngradeCheckoutCompleted(
-    db,
-    session,
-  );
-  if (downgradeResult.handled) {
-    return billingSetupCheckoutOutcome(downgradeResult);
-  }
-  const purchaseResult = await handleBillingPurchaseCheckoutCompleted(
-    db,
-    session,
-  );
-  return purchaseResult.handled
-    ? billingSetupCheckoutOutcome(purchaseResult)
-    : null;
-}
-
-async function handleCheckoutCompleted(
-  db: Db,
-  getClerk: ClerkClientProvider,
-  session: CheckoutSessionInput,
-  paidAt: Date,
-  signal: AbortSignal,
-): Promise<CheckoutCompletedOutcome> {
-  const usagePackInvitation = await handleUsagePackInvitationCheckoutPaid(
-    db,
-    getClerk(),
-    session,
-    paidAt,
-    signal,
-  );
-  if (usagePackInvitation.handled) {
-    return {
-      drainOrgId: null,
-      orgIds: usagePackInvitation.orgId ? [usagePackInvitation.orgId] : [],
-    };
-  }
-
-  const billingSetupResult = await handleBillingSetupCheckoutCompleted(
-    db,
-    session,
-  );
-  if (billingSetupResult) {
-    return billingSetupResult;
-  }
-
-  if (session.metadata?.purpose === "credit_purchase") {
-    const invoiceId = checkoutSessionInvoiceId(session);
-    if (!invoiceId) {
-      const drainOrgId = await handleCreditPurchaseCompleted(db, session);
+    const usagePackInvitation = await set(
+      handleUsagePackInvitationCheckoutPaid$,
+      session,
+      paidAt,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (usagePackInvitation.handled) {
       return {
-        drainOrgId,
-        orgIds: drainOrgId === null ? [] : [drainOrgId],
+        drainOrgId: null,
+        orgIds: usagePackInvitation.orgId ? [usagePackInvitation.orgId] : [],
       };
     }
 
-    L.debug("credit_purchase checkout completed; waiting for invoice.paid", {
-      sessionId: session.id,
-      invoiceId,
-      paymentStatus: session.payment_status ?? null,
+    if (session.metadata?.purpose === "credit_purchase") {
+      const invoiceId = checkoutSessionInvoiceId(session);
+      if (!invoiceId) {
+        const drainOrgId = await set(
+          handleCreditPurchaseCompleted$,
+          session,
+          signal,
+        );
+        return {
+          drainOrgId,
+          orgIds: drainOrgId === null ? [] : [drainOrgId],
+        };
+      }
+
+      L.debug("credit_purchase checkout completed; waiting for invoice.paid", {
+        sessionId: session.id,
+        invoiceId,
+        paymentStatus: session.payment_status ?? null,
+      });
+      return { drainOrgId: null, orgIds: [] };
+    }
+
+    const oneTimePurchaseResult = await set(
+      handlePaidCheckoutPurpose$,
+      session,
+      "one_time_purchase",
+      paidAt,
+      signal,
+    );
+    if (oneTimePurchaseResult.handled) {
+      return {
+        drainOrgId: oneTimePurchaseResult.drainOrgId,
+        orgIds:
+          oneTimePurchaseResult.drainOrgId === null
+            ? []
+            : [oneTimePurchaseResult.drainOrgId],
+      };
+    }
+
+    if (session.metadata?.purpose === CONCURRENCY_SUBSCRIPTION_PURPOSE) {
+      return { drainOrgId: null, orgIds: [] };
+    }
+
+    const checkoutContext = checkoutSubscriptionContext(session);
+    if (!checkoutContext) {
+      return { drainOrgId: null, orgIds: [] };
+    }
+    const { customerId, subscriptionId } = checkoutContext;
+
+    const stripe = getStripeClient();
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    signal.throwIfAborted();
+    const usagePackOutcome = await set(
+      handleUsagePackCheckoutCompleted$,
+      session,
+      subscription,
+      signal,
+    );
+    signal.throwIfAborted();
+    const orgIds = await bindSubscriptionToCustomerOrg(db, {
+      customerId,
+      subscription: usagePackOutcome.subscription ?? subscription,
+      source: "checkout.session.completed",
     });
-    return { drainOrgId: null, orgIds: [] };
-  }
-
-  const oneTimePurchaseResult = await handlePaidCheckoutPurpose(
-    db,
-    session,
-    "one_time_purchase",
-    paidAt,
-  );
-  if (oneTimePurchaseResult.handled) {
+    signal.throwIfAborted();
     return {
-      drainOrgId: oneTimePurchaseResult.drainOrgId,
-      orgIds:
-        oneTimePurchaseResult.drainOrgId === null
-          ? []
-          : [oneTimePurchaseResult.drainOrgId],
+      drainOrgId: null,
+      orgIds: [
+        ...new Set([
+          ...orgIds,
+          ...(usagePackOutcome.orgId ? [usagePackOutcome.orgId] : []),
+        ]),
+      ],
     };
-  }
-
-  if (session.metadata?.purpose === CONCURRENCY_SUBSCRIPTION_PURPOSE) {
-    return { drainOrgId: null, orgIds: [] };
-  }
-
-  const checkoutContext = checkoutSubscriptionContext(session);
-  if (!checkoutContext) {
-    return { drainOrgId: null, orgIds: [] };
-  }
-  const { customerId, subscriptionId } = checkoutContext;
-
-  const stripe = getStripeClient();
-  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-  const usagePackOutcome = await handleUsagePackCheckoutCompleted(
-    db,
-    session,
-    subscription,
-  );
-  const orgIds = await bindSubscriptionToCustomerOrg(db, {
-    customerId,
-    subscription: usagePackOutcome.subscription ?? subscription,
-    source: "checkout.session.completed",
-  });
-  return {
-    drainOrgId: null,
-    orgIds: [
-      ...new Set([
-        ...orgIds,
-        ...(usagePackOutcome.orgId ? [usagePackOutcome.orgId] : []),
-      ]),
-    ],
-  };
-}
+  },
+);
 
 async function handleSubscriptionCreatedLegacy(
   db: Db,
@@ -3943,170 +3640,269 @@ async function handleSubscriptionCreated(
   ];
 }
 
-async function handlePlanSubscriptionInvoicePaid(
-  db: Db,
-  getClerk: ClerkClientProvider,
-  invoice: InvoiceInput,
-  concurrencyResult: PaidWebhookOutcome,
-  fallbackDrainOrgId: string | null,
-): Promise<string | null> {
-  const subscriptionId = subscriptionIdFromInvoice(invoice);
-  if (!subscriptionId) {
-    L.warn("invoice.paid without subscription; skipping", {
-      invoiceId: invoice.id,
-    });
-    return concurrencyResult.drainOrgId ?? fallbackDrainOrgId;
-  }
+const handlePlanSubscriptionInvoicePaid$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly invoice: InvoiceInput;
+      readonly concurrencyResult: PaidWebhookOutcome;
+      readonly fallbackDrainOrgId: string | null;
+    },
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const db = set(writeDb$);
+    const getClerk = (): ClerkClient => {
+      return get(clerk$);
+    };
+    const { invoice, concurrencyResult, fallbackDrainOrgId } = args;
+    const subscriptionId = subscriptionIdFromInvoice(invoice);
+    if (!subscriptionId) {
+      L.warn("invoice.paid without subscription; skipping", {
+        invoiceId: invoice.id,
+      });
+      return concurrencyResult.drainOrgId ?? fallbackDrainOrgId;
+    }
 
-  const customerId = customerIdFromInvoice(invoice);
-  if (!customerId) {
-    L.warn("invoice.paid without customer ID", { invoiceId: invoice.id });
-    return concurrencyResult.drainOrgId ?? fallbackDrainOrgId;
-  }
+    const customerId = customerIdFromInvoice(invoice);
+    if (!customerId) {
+      L.warn("invoice.paid without customer ID", { invoiceId: invoice.id });
+      return concurrencyResult.drainOrgId ?? fallbackDrainOrgId;
+    }
 
-  const org = await invoicePaidOrgForCustomerOrMetadata(db, getClerk, {
-    customerId,
-    subscriptionId,
-  });
-  if (!org) {
-    L.warn("invoice.paid for unknown customer", {
+    const org = await invoicePaidOrgForCustomerOrMetadata(db, getClerk, {
       customerId,
-      invoiceId: invoice.id,
+      subscriptionId,
     });
-    return concurrencyResult.drainOrgId ?? fallbackDrainOrgId;
-  }
-  if (
-    concurrencyResult.handled &&
-    org.stripeSubscriptionId !== subscriptionId
-  ) {
-    return concurrencyResult.drainOrgId ?? fallbackDrainOrgId;
-  }
+    signal.throwIfAborted();
+    if (!org) {
+      L.warn("invoice.paid for unknown customer", {
+        customerId,
+        invoiceId: invoice.id,
+      });
+      return concurrencyResult.drainOrgId ?? fallbackDrainOrgId;
+    }
+    if (
+      concurrencyResult.handled &&
+      org.stripeSubscriptionId !== subscriptionId
+    ) {
+      return concurrencyResult.drainOrgId ?? fallbackDrainOrgId;
+    }
 
-  const details = await subscriptionInvoiceDetails(invoice, {
-    subscriptionId,
-    orgId: org.orgId,
-  });
-  if (!details) {
-    return concurrencyResult.drainOrgId ?? fallbackDrainOrgId;
-  }
+    const details = await subscriptionInvoiceDetails(invoice, {
+      subscriptionId,
+      orgId: org.orgId,
+    });
+    signal.throwIfAborted();
+    if (!details) {
+      return concurrencyResult.drainOrgId ?? fallbackDrainOrgId;
+    }
 
-  const processed = await db.transaction(async (tx) => {
-    return await processSubscriptionInvoicePaid(tx, {
-      invoice,
+    const publication = {
+      invoiceId: invoice.id,
       customerId,
       subscriptionId,
       orgId: org.orgId,
       details,
+    };
+    if (await refundDuplicateInitialPlanPurchase(db, invoice, publication)) {
+      signal.throwIfAborted();
+      return org.orgId;
+    }
+    const replacedSubscriptionIds =
+      legacyPlanInvoiceAdmission(org, publication) === "rejected"
+        ? []
+        : await replacedPlanSubscriptionIdsForCustomer({
+            customerId,
+            newSubscriptionId: subscriptionId,
+            targetTier: details.tier,
+          });
+    signal.throwIfAborted();
+    const result = await set(publishLegacyPlanInvoice$, publication, signal);
+    signal.throwIfAborted();
+    if (!result.processed) {
+      // A concurrent first purchase can publish between the check above and
+      // this publication; the rejected loser is then refunded here instead.
+      const refunded = await refundDuplicateInitialPlanPurchase(
+        db,
+        invoice,
+        publication,
+      );
+      signal.throwIfAborted();
+      return refunded
+        ? org.orgId
+        : (concurrencyResult.drainOrgId ?? fallbackDrainOrgId);
+    }
+    if (result.cancelReplaced) {
+      await cancelReplacedPlanSubscriptions({
+        orgId: org.orgId,
+        invoiceId: invoice.id,
+        newSubscriptionId: subscriptionId,
+        oldSubscriptionIds: [
+          ...replacedSubscriptionIds,
+          ...(result.replacedSubscriptionId
+            ? [result.replacedSubscriptionId]
+            : []),
+        ],
+      });
+      signal.throwIfAborted();
+    }
+    return org.orgId;
+  },
+);
+
+const handleInvoicePaid$ = command(
+  async (
+    { get, set },
+    invoice: InvoiceInput,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const db = set(writeDb$);
+    const getClerk = (): ClerkClient => {
+      return get(clerk$);
+    };
+    const migrationResult = await set(
+      handleUsagePackMigrationInvoicePaid$,
+      invoice,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (migrationResult.handled) {
+      return migrationResult.orgId;
+    }
+
+    const invitationResult = await set(
+      handleUsagePackInvitationInvoicePaid$,
+      invoice,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (invitationResult.handled) {
+      return invitationResult.orgId;
+    }
+
+    const usagePackResult = await set(
+      handleUsagePackInvoicePaid$,
+      invoice,
+      signal,
+    );
+    signal.throwIfAborted();
+    const invoiceLines = invoice.lines?.data ?? [];
+    const hasCustomPlanInvoiceLine = invoiceLines.some((line) => {
+      const priceId = invoiceLinePriceId(line);
+      return priceId
+        ? tierForKnownPlanPrice({ id: priceId }) === "custom"
+        : false;
     });
-  });
-  return processed
-    ? org.orgId
-    : (concurrencyResult.drainOrgId ?? fallbackDrainOrgId);
-}
+    if (usagePackResult.handled && !hasCustomPlanInvoiceLine) {
+      const prepared = await prepareConcurrencyInvoiceEntitlements(
+        db,
+        getClerk,
+        invoice,
+      );
+      signal.throwIfAborted();
+      const concurrencyResult =
+        "handled" in prepared
+          ? prepared
+          : await set(reconcileConcurrencyInvoice$, {
+              ...prepared,
+              invoiceId: invoice.id,
+            });
+      return concurrencyResult.drainOrgId ?? usagePackResult.orgId;
+    }
+    if (!usagePackResult.handled) {
+      const autoRechargeResult = await set(
+        handleAutoRechargeInvoicePaid$,
+        invoice,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (autoRechargeResult.handled) {
+        return autoRechargeResult.drainOrgId;
+      }
 
-async function handleInvoicePaid(
-  db: Db,
-  getClerk: ClerkClientProvider,
-  invoice: InvoiceInput,
-  signal: AbortSignal,
-): Promise<string | null> {
-  const migrationResult = await handleUsagePackMigrationInvoicePaid(
-    db,
-    invoice,
-  );
-  if (migrationResult.handled) {
-    return migrationResult.orgId;
-  }
+      const creditPurchaseResult = await set(
+        handleCreditPurchaseInvoicePaid$,
+        invoice,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (creditPurchaseResult.handled) {
+        return creditPurchaseResult.drainOrgId;
+      }
+    }
 
-  const invitationResult = await handleUsagePackInvitationInvoicePaid(
-    db,
-    getClerk(),
-    invoice,
-    signal,
-  );
-  if (invitationResult.handled) {
-    return invitationResult.orgId;
-  }
+    const usageAllowanceResult = await set(
+      handleUsageAllowanceInvoicePaid$,
+      invoice,
+      signal,
+    );
+    signal.throwIfAborted();
 
-  const usagePackResult = await handleUsagePackInvoicePaid(db, invoice);
-  const invoiceLines = invoice.lines?.data ?? [];
-  const hasCustomPlanInvoiceLine = invoiceLines.some((line) => {
-    const priceId = invoiceLinePriceId(line);
-    return priceId
-      ? tierForKnownPlanPrice({ id: priceId }) === "custom"
-      : false;
-  });
-  if (usagePackResult.handled && !hasCustomPlanInvoiceLine) {
-    const concurrencyResult = await handleConcurrencyInvoicePaid(
+    const atomGrantResult = await set(
+      handleAtomGrantInvoicePaid$,
+      invoice,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (atomGrantResult.handled) {
+      return atomGrantResult.drainOrgId;
+    }
+
+    const hasPlanInvoiceLine = invoiceLines.some((line) => {
+      const priceId = invoiceLinePriceId(line);
+      return priceId ? tierForKnownPlanPrice({ id: priceId }) !== null : false;
+    });
+    const shouldHandlePlanInvoice =
+      hasPlanInvoiceLine &&
+      (!usagePackResult.handled || hasCustomPlanInvoiceLine);
+    const componentDrainOrgId =
+      usageAllowanceResult.drainOrgId ?? usagePackResult.orgId;
+    const planDrainOrgId = shouldHandlePlanInvoice
+      ? await set(
+          handlePlanSubscriptionInvoicePaid$,
+          {
+            invoice,
+            concurrencyResult: { handled: false, drainOrgId: null },
+            fallbackDrainOrgId: componentDrainOrgId,
+          },
+          signal,
+        )
+      : componentDrainOrgId;
+    const prepared = await prepareConcurrencyInvoiceEntitlements(
       db,
       getClerk,
       invoice,
     );
-    return concurrencyResult.drainOrgId ?? usagePackResult.orgId;
-  }
-  if (!usagePackResult.handled) {
-    const autoRechargeResult = await handleAutoRechargeInvoicePaid(db, invoice);
-    if (autoRechargeResult.handled) {
-      return autoRechargeResult.drainOrgId;
-    }
+    signal.throwIfAborted();
+    const concurrencyResult =
+      "handled" in prepared
+        ? prepared
+        : await set(reconcileConcurrencyInvoice$, {
+            ...prepared,
+            invoiceId: invoice.id,
+          });
+    return concurrencyResult.drainOrgId ?? planDrainOrgId;
+  },
+);
 
-    const creditPurchaseResult = await handleCreditPurchaseInvoicePaid(
-      db,
-      invoice,
-    );
-    if (creditPurchaseResult.handled) {
-      return creditPurchaseResult.drainOrgId;
-    }
-  }
-
-  const usageAllowanceResult = await handleUsageAllowanceInvoicePaid(
-    db,
-    invoice,
-  );
-
-  const atomGrantResult = await handleAtomGrantInvoicePaid(db, invoice);
-  if (atomGrantResult.handled) {
-    return atomGrantResult.drainOrgId;
-  }
-
-  const hasPlanInvoiceLine = invoiceLines.some((line) => {
-    const priceId = invoiceLinePriceId(line);
-    return priceId ? tierForKnownPlanPrice({ id: priceId }) !== null : false;
-  });
-  const shouldHandlePlanInvoice =
-    hasPlanInvoiceLine &&
-    (!usagePackResult.handled || hasCustomPlanInvoiceLine);
-  const componentDrainOrgId =
-    usageAllowanceResult.drainOrgId ?? usagePackResult.orgId;
-  const planDrainOrgId = shouldHandlePlanInvoice
-    ? await handlePlanSubscriptionInvoicePaid(
-        db,
-        getClerk,
-        invoice,
-        { handled: false, drainOrgId: null },
-        componentDrainOrgId,
-      )
-    : componentDrainOrgId;
-  const concurrencyResult = await handleConcurrencyInvoicePaid(
-    db,
-    getClerk,
-    invoice,
-  );
-  return concurrencyResult.drainOrgId ?? planDrainOrgId;
-}
-
-async function handleConcurrencySubscriptionUpdated(
-  db: Db,
-  subscription: SubscriptionInput,
-): Promise<readonly string[]> {
-  return await db.transaction(async (tx) => {
-    await lockConcurrencySubscriptionState(tx, subscription.id);
-    const [existing] = await tx
+const publishConcurrencySubscription$ = command(
+  async (
+    { set },
+    subscription: SubscriptionInput,
+  ): Promise<readonly string[]> => {
+    const db = set(writeDb$);
+    const [existing] = await db
       .select({
         orgId: orgConcurrencySubscriptions.orgId,
-        slots: orgConcurrencySubscriptions.slots,
+        rowVersion: sql`${orgConcurrencySubscriptions}.xmin::text`.mapWith(
+          pgTextDecoder,
+        ),
         cancelAtPeriodEnd: orgConcurrencySubscriptions.cancelAtPeriodEnd,
         scheduledSlots: orgConcurrencySubscriptions.scheduledSlots,
+        updatedAtText:
+          sql`${orgConcurrencySubscriptions.updatedAt}::text`.mapWith(
+            pgTextDecoder,
+          ),
       })
       .from(orgConcurrencySubscriptions)
       .where(
@@ -4117,140 +3913,125 @@ async function handleConcurrencySubscriptionUpdated(
       return [];
     }
 
-    const eventState = concurrencySubscriptionState(subscription);
-    const state =
-      eventState?.slots === existing.slots
-        ? eventState
-        : await retrieveConcurrencySubscriptionState(subscription.id);
-    if (!state) {
+    // An equal quantity does not make an event current: cancellation, status,
+    // renewal and schedule can change independently. Read Stripe for every
+    // projection and publish only against the database snapshot it started from.
+    const state = await retrieveConcurrencySubscriptionState(subscription.id);
+    return await db.transaction(async (tx) => {
+      if (!state) {
+        const rows = await tx
+          .update(orgConcurrencySubscriptions)
+          .set({
+            subscriptionStatus: "canceled",
+            cancelAtPeriodEnd: false,
+            scheduledSlots: null,
+            scheduledChangeAt: null,
+            currentPeriodEnd: nowDate(),
+            updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
+          })
+          .where(
+            and(
+              eq(
+                orgConcurrencySubscriptions.stripeSubscriptionId,
+                subscription.id,
+              ),
+              eq(
+                orgConcurrencySubscriptions.updatedAt,
+                sql`${existing.updatedAtText}::timestamp`,
+              ),
+              sql`${orgConcurrencySubscriptions}.xmin::text = ${existing.rowVersion}`,
+            ),
+          )
+          .returning({ orgId: orgConcurrencySubscriptions.orgId });
+        if (rows.length === 0) {
+          throw new Error(
+            "Concurrency subscription changed during Stripe reconciliation",
+          );
+        }
+        return rows.map((row) => {
+          return row.orgId;
+        });
+      }
+
       const rows = await tx
         .update(orgConcurrencySubscriptions)
         .set({
-          subscriptionStatus: "canceled",
-          cancelAtPeriodEnd: false,
-          scheduledSlots: null,
-          scheduledChangeAt: null,
-          currentPeriodEnd: nowDate(),
-          updatedAt: nowDate(),
+          stripePriceId: state.stripePriceId,
+          slots: state.slots,
+          subscriptionStatus: state.subscriptionStatus,
+          currentPeriodEnd: state.currentPeriodEnd,
+          cancelAtPeriodEnd:
+            state.cancelAtPeriodEnd ||
+            (existing.cancelAtPeriodEnd && state.hasSchedule),
+          ...(existing.scheduledSlots === state.slots
+            ? { scheduledSlots: null, scheduledChangeAt: null }
+            : {}),
+          updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
         })
         .where(
-          eq(orgConcurrencySubscriptions.stripeSubscriptionId, subscription.id),
+          and(
+            eq(
+              orgConcurrencySubscriptions.stripeSubscriptionId,
+              subscription.id,
+            ),
+            eq(
+              orgConcurrencySubscriptions.updatedAt,
+              sql`${existing.updatedAtText}::timestamp`,
+            ),
+            sql`${orgConcurrencySubscriptions}.xmin::text = ${existing.rowVersion}`,
+          ),
         )
         .returning({ orgId: orgConcurrencySubscriptions.orgId });
+
+      if (rows.length === 0) {
+        throw new Error(
+          "Concurrency subscription changed during Stripe reconciliation",
+        );
+      }
       return rows.map((row) => {
         return row.orgId;
       });
-    }
-
-    const rows = await tx
-      .update(orgConcurrencySubscriptions)
-      .set({
-        stripePriceId: state.stripePriceId,
-        slots: state.slots,
-        subscriptionStatus: state.subscriptionStatus,
-        currentPeriodEnd: state.currentPeriodEnd,
-        cancelAtPeriodEnd:
-          state.cancelAtPeriodEnd ||
-          (existing.cancelAtPeriodEnd &&
-            subscription.schedule !== null &&
-            subscription.schedule !== undefined),
-        ...(existing.scheduledSlots === state.slots
-          ? { scheduledSlots: null, scheduledChangeAt: null }
-          : {}),
-        updatedAt: nowDate(),
-      })
-      .where(
-        eq(orgConcurrencySubscriptions.stripeSubscriptionId, subscription.id),
-      )
-      .returning({ orgId: orgConcurrencySubscriptions.orgId });
-
-    return rows.map((row) => {
-      return row.orgId;
     });
-  });
-}
-
-type UsageAllowanceSubscriptionUpdateTarget =
-  | { readonly by: "subscription"; readonly orgIds: readonly string[] }
-  | {
-      readonly by: "org";
-      readonly orgId: string;
-      readonly currentStripeSubscriptionId: string | null;
-    };
+  },
+);
 
 interface UsageAllowanceSubscriptionCreditsUpdate {
   readonly shortWindowUnits: number;
   readonly weeklyWindowUnits: number;
 }
 
-async function usageAllowanceSubscriptionUpdateTarget(
-  db: Pick<UsageAllowanceSubscriptionUpdateStore, "select">,
-  subscription: Pick<SubscriptionInput, "id" | "items" | "metadata">,
-): Promise<UsageAllowanceSubscriptionUpdateTarget | null> {
-  const subscriptionRows = await db
-    .select({ orgId: orgUsageAllowanceEntitlements.orgId })
-    .from(orgUsageAllowanceEntitlements)
-    .where(
-      eq(orgUsageAllowanceEntitlements.stripeSubscriptionId, subscription.id),
-    );
-  if (subscriptionRows.length > 0) {
-    return {
-      by: "subscription",
-      orgIds: subscriptionRows.map((row) => {
-        return row.orgId;
-      }),
-    };
+function acceptsAllowanceSubscription(args: {
+  readonly bound: boolean;
+  readonly subscription: SubscriptionInput;
+  readonly entitlement:
+    | typeof orgUsageAllowanceEntitlements.$inferSelect
+    | undefined;
+  readonly wallet:
+    | { readonly stripeSubscriptionId: string | null; readonly tier: string }
+    | undefined;
+}): boolean {
+  const { entitlement, subscription, wallet } = args;
+  if (!entitlement) {
+    return false;
   }
-
-  const metadataOrgId = subscription.metadata?.orgId;
-  if (
-    !metadataOrgId ||
-    (!subscription.metadata?.allowancePriceId &&
-      !hasUsageAllowanceWindowMetadata(subscription.metadata ?? {}))
-  ) {
-    return null;
+  if (args.bound) {
+    return entitlement.stripeSubscriptionId === subscription.id;
   }
-
-  const orgRows = await db
-    .select({
-      orgId: orgUsageAllowanceEntitlements.orgId,
-      allowanceSubscriptionId:
-        orgUsageAllowanceEntitlements.stripeSubscriptionId,
-      planSubscriptionId: orgMetadata.stripeSubscriptionId,
-      planTier: orgMetadata.tier,
-    })
-    .from(orgUsageAllowanceEntitlements)
-    .innerJoin(
-      orgMetadata,
-      eq(orgMetadata.orgId, orgUsageAllowanceEntitlements.orgId),
-    )
-    .where(eq(orgUsageAllowanceEntitlements.orgId, metadataOrgId))
-    .limit(1);
-  const orgRow = orgRows[0];
-  if (!orgRow) {
-    return null;
+  if (!wallet) {
+    return false;
   }
-
   const planItem = knownBillingPlanPriceItem(subscription.items.data);
-  const establishesCustomMainSubscription =
-    orgRow.planSubscriptionId === null &&
-    orgRow.planTier === "custom" &&
+  const establishesCustom =
+    wallet.stripeSubscriptionId === null &&
+    wallet.tier === "custom" &&
     planItem !== undefined &&
     tierForKnownPlanPrice(planItem.price) === "custom";
-  if (
-    orgRow.allowanceSubscriptionId !== null &&
-    orgRow.allowanceSubscriptionId !== subscription.id &&
-    orgRow.planSubscriptionId !== subscription.id &&
-    !establishesCustomMainSubscription
-  ) {
-    return null;
-  }
-
-  return {
-    by: "org",
-    orgId: orgRow.orgId,
-    currentStripeSubscriptionId: orgRow.allowanceSubscriptionId,
-  };
+  return (
+    entitlement.stripeSubscriptionId === null ||
+    entitlement.stripeSubscriptionId === subscription.id ||
+    wallet.stripeSubscriptionId === subscription.id ||
+    establishesCustom
+  );
 }
 
 function usageAllowanceSubscriptionCreditsUpdate(
@@ -4276,217 +4057,218 @@ function usageAllowanceSubscriptionCreditsUpdate(
   return { shortWindowUnits, weeklyWindowUnits };
 }
 
-async function updateActiveUsageAllowanceWindowLimits(
-  db: Pick<UsageAllowanceSubscriptionUpdateStore, "update">,
-  args: {
-    readonly orgIds: readonly string[];
-    readonly credits: UsageAllowanceSubscriptionCreditsUpdate;
-    readonly at: Date;
-    readonly updatedAt: Date;
-  },
-): Promise<void> {
-  await Promise.all(
-    args.orgIds.flatMap((orgId) => {
-      return [
-        db
-          .update(orgUsageAllowanceWindows)
-          .set({
-            unitLimit: args.credits.shortWindowUnits,
-            updatedAt: args.updatedAt,
-          })
-          .where(
-            and(
-              eq(orgUsageAllowanceWindows.orgId, orgId),
-              eq(orgUsageAllowanceWindows.kind, "short"),
-              lte(orgUsageAllowanceWindows.startsAt, args.at),
-              gt(orgUsageAllowanceWindows.expiresAt, args.at),
-            ),
-          ),
-        db
-          .update(orgUsageAllowanceWindows)
-          .set({
-            unitLimit: args.credits.weeklyWindowUnits,
-            updatedAt: args.updatedAt,
-          })
-          .where(
-            and(
-              eq(orgUsageAllowanceWindows.orgId, orgId),
-              eq(orgUsageAllowanceWindows.kind, "weekly"),
-              lte(orgUsageAllowanceWindows.startsAt, args.at),
-              gt(orgUsageAllowanceWindows.expiresAt, args.at),
-            ),
-          ),
-      ];
-    }),
+function allowanceSubscriptionPublication(
+  subscription: SubscriptionInput,
+  at: Date,
+) {
+  const periodEnd = usageAllowanceSubscriptionEnd(subscription);
+  const cancelAt = subscription.metadata?.allowanceCancelAt
+    ? new Date(subscription.metadata.allowanceCancelAt)
+    : null;
+  const terminal =
+    subscription.status === "canceled" ||
+    subscription.status === "incomplete_expired" ||
+    subscription.metadata?.allowanceStatus === "canceled" ||
+    (cancelAt !== null && !Number.isNaN(cancelAt.getTime()) && cancelAt <= at);
+  const credits = usageAllowanceSubscriptionCreditsUpdate(subscription);
+  return {
+    terminal,
+    credits,
+    values: {
+      status: terminal ? "canceled" : subscription.status,
+      ...(terminal
+        ? { expiresAt: at }
+        : periodEnd
+          ? { expiresAt: periodEnd }
+          : {}),
+      ...credits,
+      stripeSubscriptionId: subscription.id,
+      updatedAt: at,
+    },
+  };
+}
+
+function expiredAllowanceWindowValues(at: Date) {
+  return {
+    expiresAt: sql`GREATEST(${timestampWithoutTimeZone(at)}::timestamp, ${orgUsageAllowanceWindows.startsAt} + INTERVAL '1 millisecond')`,
+    updatedAt: at,
+  };
+}
+
+function currentAllowanceWindowsWhere(orgId: string, at: Date) {
+  return and(
+    eq(orgUsageAllowanceWindows.orgId, orgId),
+    lte(orgUsageAllowanceWindows.startsAt, at),
+    gt(orgUsageAllowanceWindows.expiresAt, at),
   );
 }
 
-async function expireActiveUsageAllowanceWindows(
-  db: Pick<UsageAllowanceSubscriptionUpdateStore, "update">,
-  args: {
-    readonly orgIds: readonly string[];
-    readonly at: Date;
-    readonly updatedAt: Date;
-  },
-): Promise<void> {
-  await Promise.all(
-    args.orgIds.map((orgId) => {
-      return db
-        .update(orgUsageAllowanceWindows)
-        .set({
-          expiresAt: sql`GREATEST(${timestampWithoutTimeZone(args.at)}::timestamp, ${orgUsageAllowanceWindows.startsAt} + INTERVAL '1 millisecond')`,
-          updatedAt: args.updatedAt,
+const publishUsageAllowanceSubscription$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly subscription: SubscriptionInput;
+      readonly bound: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const prepared = await db
+      .select({ id: orgUsageAllowanceWindows.id })
+      .from(orgUsageAllowanceWindows)
+      .where(currentAllowanceWindowsWhere(args.orgId, nowDate()));
+    signal.throwIfAborted();
+    const windowIds = prepared.map((row) => {
+      return row.id;
+    });
+    const result = await db.transaction(async (tx) => {
+      // No row locks: the entitlement write is conditional on the binding it
+      // was accepted from, and it precedes the prepared-window re-check so
+      // window creators (which lock the entitlement) are ordered around it.
+      const [wallet] = await tx
+        .select({
+          stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
+          tier: orgMetadata.tier,
         })
+        .from(orgMetadata)
+        .where(eq(orgMetadata.orgId, args.orgId));
+      const [entitlement] = await tx
+        .select()
+        .from(orgUsageAllowanceEntitlements)
+        .where(eq(orgUsageAllowanceEntitlements.orgId, args.orgId));
+      if (
+        !entitlement ||
+        !acceptsAllowanceSubscription({ ...args, entitlement, wallet })
+      ) {
+        return false;
+      }
+      const at = nowDate();
+      const publication = allowanceSubscriptionPublication(
+        args.subscription,
+        at,
+      );
+      const [published] = await tx
+        .update(orgUsageAllowanceEntitlements)
+        .set(publication.values)
         .where(
           and(
-            eq(orgUsageAllowanceWindows.orgId, orgId),
-            lte(orgUsageAllowanceWindows.startsAt, args.at),
-            gt(orgUsageAllowanceWindows.expiresAt, args.at),
+            eq(orgUsageAllowanceEntitlements.id, entitlement.id),
+            eq(orgUsageAllowanceEntitlements.orgId, args.orgId),
+            entitlement.stripeSubscriptionId === null
+              ? isNull(orgUsageAllowanceEntitlements.stripeSubscriptionId)
+              : eq(
+                  orgUsageAllowanceEntitlements.stripeSubscriptionId,
+                  entitlement.stripeSubscriptionId,
+                ),
           ),
+        )
+        .returning({ id: orgUsageAllowanceEntitlements.id });
+      if (!published) {
+        // The binding moved after acceptance: deterministic "not published".
+        return false;
+      }
+      const windowScope = currentAllowanceWindowsWhere(args.orgId, at);
+      const [unprepared] = await tx
+        .select({ id: orgUsageAllowanceWindows.id })
+        .from(orgUsageAllowanceWindows)
+        .where(
+          and(windowScope, notInArray(orgUsageAllowanceWindows.id, windowIds)),
+        )
+        .limit(1);
+      if (unprepared) {
+        throw new Error(
+          "Usage allowance windows changed during Stripe reconciliation",
         );
-    }),
-  );
-}
-
-async function handleUsageAllowanceSubscriptionUpdated(
-  db: Db,
-  subscription: SubscriptionInput,
-): Promise<readonly string[]> {
-  return await db.transaction(async (tx) => {
-    const target = await usageAllowanceSubscriptionUpdateTarget(
-      tx,
-      subscription,
-    );
-    if (!target) {
-      return [];
-    }
-
-    const periodEnd = usageAllowanceSubscriptionEnd(subscription);
-    const allowanceCancelAt = subscription.metadata?.allowanceCancelAt
-      ? new Date(subscription.metadata.allowanceCancelAt)
-      : null;
-    const terminalStatus =
-      subscription.status === "canceled" ||
-      subscription.status === "incomplete_expired" ||
-      subscription.metadata?.allowanceStatus === "canceled" ||
-      (allowanceCancelAt !== null &&
-        !Number.isNaN(allowanceCancelAt.getTime()) &&
-        allowanceCancelAt <= nowDate());
-    const updatedAt = nowDate();
-    const credits = usageAllowanceSubscriptionCreditsUpdate(subscription);
-    const rows = await tx
-      .update(orgUsageAllowanceEntitlements)
-      .set({
-        status: terminalStatus ? "canceled" : subscription.status,
-        ...(terminalStatus
-          ? { expiresAt: updatedAt }
-          : periodEnd
-            ? { expiresAt: periodEnd }
-            : {}),
-        ...(credits
-          ? {
-              shortWindowUnits: credits.shortWindowUnits,
-              weeklyWindowUnits: credits.weeklyWindowUnits,
-            }
-          : {}),
-        stripeSubscriptionId: subscription.id,
-        updatedAt,
-      })
-      .where(
-        target.by === "subscription"
-          ? eq(
-              orgUsageAllowanceEntitlements.stripeSubscriptionId,
-              subscription.id,
-            )
-          : and(
-              eq(orgUsageAllowanceEntitlements.orgId, target.orgId),
-              target.currentStripeSubscriptionId === null
-                ? isNull(orgUsageAllowanceEntitlements.stripeSubscriptionId)
-                : eq(
-                    orgUsageAllowanceEntitlements.stripeSubscriptionId,
-                    target.currentStripeSubscriptionId,
-                  ),
-            ),
-      )
-      .returning({ orgId: orgUsageAllowanceEntitlements.orgId });
-
-    const orgIds = rows.map((row) => {
-      return row.orgId;
+      }
+      if (publication.terminal) {
+        await tx
+          .update(orgUsageAllowanceWindows)
+          .set(expiredAllowanceWindowValues(at))
+          .where(
+            and(windowScope, inArray(orgUsageAllowanceWindows.id, windowIds)),
+          );
+      } else if (publication.credits) {
+        for (const kind of ["short", "weekly"] as const) {
+          await tx
+            .update(orgUsageAllowanceWindows)
+            .set({
+              unitLimit:
+                kind === "short"
+                  ? publication.credits.shortWindowUnits
+                  : publication.credits.weeklyWindowUnits,
+              updatedAt: at,
+            })
+            .where(
+              and(
+                windowScope,
+                inArray(orgUsageAllowanceWindows.id, windowIds),
+                eq(orgUsageAllowanceWindows.kind, kind),
+              ),
+            );
+        }
+      }
+      signal.throwIfAborted();
+      return true;
     });
-
-    if (terminalStatus) {
-      await expireActiveUsageAllowanceWindows(tx, {
-        orgIds,
-        at: updatedAt,
-        updatedAt,
-      });
-    } else if (credits) {
-      await updateActiveUsageAllowanceWindowLimits(tx, {
-        orgIds,
-        credits,
-        at: updatedAt,
-        updatedAt,
-      });
-    }
-
-    return orgIds;
-  });
-}
-
-async function upsertSubscriptionUpdatedPlanEntitlements(
-  tx: WriteTx,
-  args: {
-    readonly rows: readonly { readonly orgId: string }[];
-    readonly tier: BillingSubscriptionTier;
-    readonly planItem: SubscriptionInput["items"]["data"][number];
-    readonly subscription: SubscriptionInput;
-    readonly scheduledEnd: Date | null;
+    signal.throwIfAborted();
+    return result;
   },
-): Promise<void> {
-  const itemPeriodStart = args.planItem.current_period_start
-    ? new Date(args.planItem.current_period_start * 1000)
-    : null;
-  const itemPeriodEnd = args.planItem.current_period_end
-    ? new Date(args.planItem.current_period_end * 1000)
-    : null;
-  for (const row of args.rows) {
-    const showUsagePack = await stripeSubscriptionUsesMemberUsagePacks(tx, {
-      orgId: row.orgId,
-      stripeSubscriptionId: args.subscription.id,
-    });
-    await upsertOrgPlanEntitlement(tx, {
-      orgId: row.orgId,
-      tier: args.tier,
-      source: "stripe_subscription",
-      status: args.subscription.status,
-      stripeSubscriptionId: args.subscription.id,
-      stripePriceId: args.planItem.price.id,
-      currentPeriodStart: itemPeriodStart,
-      currentPeriodEnd: itemPeriodEnd,
-      cancelAt: args.scheduledEnd,
-      expiresAt: args.scheduledEnd,
-      showUsagePack,
-      sourceMetadata: args.subscription.metadata ?? {},
-    });
-  }
+);
+
+const handleUsageAllowanceSubscriptionUpdated$ = command(
+  async (
+    { set },
+    subscription: SubscriptionInput,
+    signal: AbortSignal,
+  ): Promise<readonly string[]> => {
+    const db = set(writeDb$);
+    const bindings = await db
+      .select({ orgId: orgUsageAllowanceEntitlements.orgId })
+      .from(orgUsageAllowanceEntitlements)
+      .where(
+        eq(orgUsageAllowanceEntitlements.stripeSubscriptionId, subscription.id),
+      );
+    signal.throwIfAborted();
+    const metadataOrgId = subscription.metadata?.orgId;
+    const targets =
+      bindings.length > 0
+        ? bindings.map((row) => {
+            return { ...row, bound: true };
+          })
+        : metadataOrgId &&
+            (subscription.metadata?.allowancePriceId ||
+              hasUsageAllowanceWindowMetadata(subscription.metadata ?? {}))
+          ? [{ orgId: metadataOrgId, bound: false }]
+          : [];
+    const changed: string[] = [];
+    for (const target of targets) {
+      if (
+        await set(
+          publishUsageAllowanceSubscription$,
+          { ...target, subscription },
+          signal,
+        )
+      ) {
+        changed.push(target.orgId);
+      }
+      signal.throwIfAborted();
+    }
+    return changed;
+  },
+);
+
+interface LegacyPlanPublication {
+  readonly orgId: string;
+  readonly subscription: SubscriptionInput;
+  readonly previousAttributes: SubscriptionPreviousAttributes | undefined;
+  readonly scheduledEnd: Date | null;
 }
 
-async function handleSubscriptionUpdatedLegacy(
-  db: Db,
-  subscription: SubscriptionInput,
-  previousAttributes: SubscriptionPreviousAttributes | undefined,
-): Promise<readonly string[]> {
-  const allowanceOrgIds = await handleUsageAllowanceSubscriptionUpdated(
-    db,
-    subscription,
-  );
-  const concurrencyOrgIds = await handleConcurrencySubscriptionUpdated(
-    db,
-    subscription,
-  );
-  const stripe = getStripeClient();
-  const periodEnd = await subscriptionScheduledEnd(stripe, subscription);
-  const willCancel = subscriptionWillCancel(subscription) || periodEnd !== null;
+function legacyPlanPublication(args: Omit<LegacyPlanPublication, "orgId">) {
+  const { subscription, previousAttributes, scheduledEnd } = args;
+  const willCancel =
+    subscriptionWillCancel(subscription) || scheduledEnd !== null;
   const pendingScheduleId = subscriptionScheduleId(subscription);
   const clearPendingChange = subscriptionPendingChangeCleared(
     subscription,
@@ -4506,113 +4288,309 @@ async function handleSubscriptionUpdatedLegacy(
   const planItem = knownBillingPlanPriceItem(subscription.items.data);
   const planTier = planItem ? tierForKnownPlanPrice(planItem.price) : null;
   const metadataOrgId = subscription.metadata?.orgId;
-  const planTarget =
-    planTier === "custom" && metadataOrgId
-      ? or(
-          eq(orgMetadata.stripeSubscriptionId, subscription.id),
-          and(
-            eq(orgMetadata.orgId, metadataOrgId),
-            eq(orgMetadata.tier, "custom"),
-            isNull(orgMetadata.stripeSubscriptionId),
-          ),
-        )
-      : eq(orgMetadata.stripeSubscriptionId, subscription.id);
+  return {
+    planItem,
+    planTier,
+    trialEnd: trialShortened ? trialEnd : null,
+    target:
+      planTier === "custom" && metadataOrgId
+        ? or(
+            eq(orgMetadata.stripeSubscriptionId, subscription.id),
+            and(
+              eq(orgMetadata.orgId, metadataOrgId),
+              eq(orgMetadata.tier, "custom"),
+              isNull(orgMetadata.stripeSubscriptionId),
+            ),
+          )
+        : eq(orgMetadata.stripeSubscriptionId, subscription.id),
+    values: {
+      ...(planTier
+        ? { tier: planTier, stripeSubscriptionId: subscription.id }
+        : {}),
+      subscriptionStatus: subscription.status,
+      cancelAtPeriodEnd: willCancel,
+      updatedAt: nowDate(),
+      ...(scheduledEnd ? { currentPeriodEnd: scheduledEnd } : {}),
+      ...(scheduledEnd && pendingScheduleId
+        ? {
+            pendingSubscriptionScheduleId: pendingScheduleId,
+            pendingSubscriptionTargetTier: CANCELED_SUBSCRIPTION_TARGET_TIER,
+            pendingSubscriptionChangeAt: scheduledEnd,
+          }
+        : {}),
+      ...(clearPendingChange
+        ? {
+            pendingSubscriptionScheduleId: null,
+            pendingSubscriptionTargetTier: null,
+            pendingSubscriptionChangeAt: null,
+          }
+        : {}),
+      ...(trialShortened ? { currentPeriodEnd: trialEnd } : {}),
+    },
+  };
+}
 
-  const planOrgIds = await db.transaction(async (tx) => {
-    const rows = await tx
-      .update(orgMetadata)
-      .set({
-        ...(planTier ? { tier: planTier } : {}),
-        ...(planTier ? { stripeSubscriptionId: subscription.id } : {}),
-        subscriptionStatus: subscription.status,
-        cancelAtPeriodEnd: willCancel,
-        updatedAt: nowDate(),
-        ...(periodEnd ? { currentPeriodEnd: periodEnd } : {}),
-        ...(periodEnd && pendingScheduleId
+function trialShorteningWhere(orgId: string, end: Date) {
+  return and(
+    eq(creditExpiresRecord.orgId, orgId),
+    eq(creditExpiresRecord.source, "subscription_renewal"),
+    gt(creditExpiresRecord.expiresAt, end),
+    gt(creditExpiresRecord.remaining, 0),
+  );
+}
+
+function legacyPlanEntitlement(
+  args: LegacyPlanPublication,
+  input: {
+    readonly tier: BillingSubscriptionTier;
+    readonly item: SubscriptionInput["items"]["data"][number];
+    readonly showUsagePack: boolean;
+    readonly owner: string | undefined;
+  },
+) {
+  const duplicateOwner =
+    input.owner !== undefined && input.owner !== args.orgId;
+  const metadata = retireMarketingMetadata(args.subscription.metadata ?? {});
+  return {
+    ...orgPlanEntitlementValues(
+      {
+        orgId: args.orgId,
+        tier: input.tier,
+        source: "stripe_subscription",
+        status: args.subscription.status,
+        stripeSubscriptionId: args.subscription.id,
+        stripePriceId: input.item.price.id,
+        currentPeriodStart: input.item.current_period_start
+          ? new Date(input.item.current_period_start * 1000)
+          : null,
+        currentPeriodEnd: input.item.current_period_end
+          ? new Date(input.item.current_period_end * 1000)
+          : null,
+        cancelAt: args.scheduledEnd,
+        expiresAt: args.scheduledEnd,
+        showUsagePack: input.showUsagePack,
+      },
+      {
+        stripeSubscriptionId: duplicateOwner ? null : args.subscription.id,
+        sourceMetadata: duplicateOwner
           ? {
-              pendingSubscriptionScheduleId: pendingScheduleId,
-              pendingSubscriptionTargetTier: CANCELED_SUBSCRIPTION_TARGET_TIER,
-              pendingSubscriptionChangeAt: periodEnd,
+              ...metadata,
+              stripeSubscriptionSnapshotSkipped:
+                "duplicate_stripe_subscription_id",
             }
-          : {}),
-        ...(clearPendingChange
-          ? {
-              pendingSubscriptionScheduleId: null,
-              pendingSubscriptionTargetTier: null,
-              pendingSubscriptionChangeAt: null,
-            }
-          : {}),
-        ...(trialShortened ? { currentPeriodEnd: trialEnd } : {}),
-      })
-      .where(planTarget)
-      .returning({ orgId: orgMetadata.orgId });
+          : metadata,
+      },
+    ),
+    stripeProductId: null,
+    metadataHash: null,
+  };
+}
 
-    if (planTier && planItem) {
-      await upsertSubscriptionUpdatedPlanEntitlements(tx, {
-        rows,
-        tier: planTier,
-        planItem,
-        subscription,
-        scheduledEnd: periodEnd,
-      });
-    }
-
-    if (!trialShortened) {
-      return rows.map((row) => {
-        return row.orgId;
-      });
-    }
-
-    for (const row of rows) {
-      await tx
-        .update(creditExpiresRecord)
-        .set({ expiresAt: trialEnd })
-        .where(
-          and(
-            eq(creditExpiresRecord.orgId, row.orgId),
-            eq(creditExpiresRecord.source, "subscription_renewal"),
-            gt(creditExpiresRecord.expiresAt, trialEnd),
-            gt(creditExpiresRecord.remaining, 0),
-          ),
-        );
-    }
-    return rows.map((row) => {
-      return row.orgId;
+const publishLegacyPlanSubscription$ = command(
+  async (
+    { set },
+    args: LegacyPlanPublication,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const prepared = legacyPlanPublication(args);
+    const lots = prepared.trialEnd
+      ? await db
+          .select({ id: creditExpiresRecord.id })
+          .from(creditExpiresRecord)
+          .where(trialShorteningWhere(args.orgId, prepared.trialEnd))
+      : [];
+    signal.throwIfAborted();
+    const lotIds = lots.map((row) => {
+      return row.id;
     });
-  });
-  return [
-    ...new Set([...allowanceOrgIds, ...concurrencyOrgIds, ...planOrgIds]),
-  ];
-}
+    const result = await db.transaction(async (tx) => {
+      // No row lock: publish the plan projection as a conditional write on the
+      // subscription binding first; the wallet row it writes then orders the
+      // credit-lot re-check below against grant writers.
+      const publication = legacyPlanPublication(args);
+      const [wallet] = await tx
+        .update(orgMetadata)
+        .set(publication.values)
+        .where(and(eq(orgMetadata.orgId, args.orgId), prepared.target))
+        .returning({ orgId: orgMetadata.orgId });
+      if (!wallet) {
+        return false;
+      }
+      if (publication.trialEnd) {
+        const [unprepared] = await tx
+          .select({ id: creditExpiresRecord.id })
+          .from(creditExpiresRecord)
+          .where(
+            and(
+              trialShorteningWhere(args.orgId, publication.trialEnd),
+              notInArray(creditExpiresRecord.id, lotIds),
+            ),
+          )
+          .limit(1);
+        if (unprepared) {
+          throw new Error(
+            "Subscription credit lots changed during trial shortening",
+          );
+        }
+      }
+      if (publication.planTier && publication.planItem) {
+        const [memberPack] = await tx
+          .select({ id: usagePackAllocations.id })
+          .from(usagePackSubscriptions)
+          .innerJoin(
+            usagePackAllocations,
+            eq(
+              usagePackAllocations.usagePackSubscriptionId,
+              usagePackSubscriptions.id,
+            ),
+          )
+          .where(
+            and(
+              eq(usagePackSubscriptions.orgId, args.orgId),
+              eq(
+                usagePackSubscriptions.stripeSubscriptionId,
+                args.subscription.id,
+              ),
+              notInArray(usagePackSubscriptions.subscriptionStatus, [
+                "canceled",
+                "incomplete_expired",
+                "invalid",
+              ]),
+              inArray(usagePackAllocations.status, [
+                "pending_payment",
+                "active",
+                "pending_invitation",
+                "paid_pending_invitation",
+              ]),
+            ),
+          )
+          .limit(1);
+        const [owner] = await tx
+          .select({ orgId: orgPlanEntitlements.orgId })
+          .from(orgPlanEntitlements)
+          .where(
+            eq(orgPlanEntitlements.stripeSubscriptionId, args.subscription.id),
+          )
+          .limit(1);
+        const entitlement = legacyPlanEntitlement(args, {
+          tier: publication.planTier,
+          item: publication.planItem,
+          showUsagePack: memberPack !== undefined,
+          owner: owner?.orgId,
+        });
+        await tx
+          .insert(orgPlanEntitlements)
+          .values(entitlement)
+          .onConflictDoUpdate({
+            target: orgPlanEntitlements.orgId,
+            set: entitlement,
+          });
+      }
+      if (publication.trialEnd) {
+        await tx
+          .update(creditExpiresRecord)
+          .set({ expiresAt: publication.trialEnd })
+          .where(
+            and(
+              trialShorteningWhere(args.orgId, publication.trialEnd),
+              inArray(creditExpiresRecord.id, lotIds),
+            ),
+          );
+      }
+      signal.throwIfAborted();
+      return true;
+    });
+    signal.throwIfAborted();
+    return result;
+  },
+);
 
-async function handleSubscriptionUpdated(
-  db: Db,
-  subscription: SubscriptionInput,
-  previousAttributes: SubscriptionPreviousAttributes | undefined,
-): Promise<readonly string[]> {
-  const migrationOutcome = await handleUsagePackMigrationSubscriptionUpdated(
-    db,
-    subscription,
-  );
-  if (migrationOutcome.handled) {
-    return migrationOutcome.orgId ? [migrationOutcome.orgId] : [];
-  }
-  const usagePackOutcome = await handleUsagePackSubscriptionUpdated(
-    db,
-    subscription,
-  );
-  const orgIds = await handleSubscriptionUpdatedLegacy(
-    db,
-    usagePackOutcome.subscription ?? subscription,
-    previousAttributes,
-  );
-  return [
-    ...new Set([
-      ...orgIds,
-      ...(usagePackOutcome.orgId ? [usagePackOutcome.orgId] : []),
-    ]),
-  ];
-}
+const handleSubscriptionUpdatedLegacy$ = command(
+  async (
+    { set },
+    subscription: SubscriptionInput,
+    previousAttributes: SubscriptionPreviousAttributes | undefined,
+    signal: AbortSignal,
+  ): Promise<readonly string[]> => {
+    const db = set(writeDb$);
+    const allowanceOrgIds = await set(
+      handleUsageAllowanceSubscriptionUpdated$,
+      subscription,
+      signal,
+    );
+    signal.throwIfAborted();
+    const concurrencyOrgIds = await set(
+      publishConcurrencySubscription$,
+      subscription,
+    );
+    signal.throwIfAborted();
+    const scheduledEnd = await subscriptionScheduledEnd(
+      getStripeClient(),
+      subscription,
+    );
+    signal.throwIfAborted();
+    const input = { subscription, previousAttributes, scheduledEnd };
+    const targets = await db
+      .select({ orgId: orgMetadata.orgId })
+      .from(orgMetadata)
+      .where(legacyPlanPublication(input).target);
+    signal.throwIfAborted();
+    const planOrgIds: string[] = [];
+    for (const target of targets) {
+      if (
+        await set(
+          publishLegacyPlanSubscription$,
+          { ...input, orgId: target.orgId },
+          signal,
+        )
+      ) {
+        planOrgIds.push(target.orgId);
+      }
+      signal.throwIfAborted();
+    }
+    return [
+      ...new Set([...allowanceOrgIds, ...concurrencyOrgIds, ...planOrgIds]),
+    ];
+  },
+);
+
+const handleSubscriptionUpdated$ = command(
+  async (
+    { set },
+    subscription: SubscriptionInput,
+    previousAttributes: SubscriptionPreviousAttributes | undefined,
+    signal: AbortSignal,
+  ): Promise<readonly string[]> => {
+    const db = set(writeDb$);
+    const migrationOutcome = await set(
+      handleUsagePackMigrationSubscriptionUpdated$,
+      subscription,
+      signal,
+    );
+    if (migrationOutcome.handled) {
+      return migrationOutcome.orgId ? [migrationOutcome.orgId] : [];
+    }
+    const usagePackOutcome = await handleUsagePackSubscriptionUpdated(
+      db,
+      subscription,
+    );
+    signal.throwIfAborted();
+    const orgIds = await set(
+      handleSubscriptionUpdatedLegacy$,
+      usagePackOutcome.subscription ?? subscription,
+      previousAttributes,
+      signal,
+    );
+    signal.throwIfAborted();
+    return [
+      ...new Set([
+        ...orgIds,
+        ...(usagePackOutcome.orgId ? [usagePackOutcome.orgId] : []),
+      ]),
+    ];
+  },
+);
 
 async function handleSubscriptionScheduleReleased(
   db: Db,
@@ -4704,13 +4682,21 @@ async function handleSubscriptionDeletedLegacy(
         eq(orgUsageAllowanceEntitlements.stripeSubscriptionId, subscription.id),
       )
       .returning({ orgId: orgUsageAllowanceEntitlements.orgId });
-    await expireActiveUsageAllowanceWindows(tx, {
-      orgIds: rows.map((row) => {
-        return row.orgId;
-      }),
-      at: canceledAt,
-      updatedAt: canceledAt,
-    });
+    await tx
+      .update(orgUsageAllowanceWindows)
+      .set(expiredAllowanceWindowValues(canceledAt))
+      .where(
+        and(
+          inArray(
+            orgUsageAllowanceWindows.orgId,
+            rows.map((row) => {
+              return row.orgId;
+            }),
+          ),
+          lte(orgUsageAllowanceWindows.startsAt, canceledAt),
+          gt(orgUsageAllowanceWindows.expiresAt, canceledAt),
+        ),
+      );
     return rows;
   });
   const concurrencyRows = await db
@@ -4719,7 +4705,7 @@ async function handleSubscriptionDeletedLegacy(
       subscriptionStatus: "canceled",
       cancelAtPeriodEnd: false,
       currentPeriodEnd: nowDate(),
-      updatedAt: nowDate(),
+      updatedAt: concurrencySubscriptionUpdatedAt(nowDate()),
     })
     .where(
       eq(orgConcurrencySubscriptions.stripeSubscriptionId, subscription.id),
@@ -4889,74 +4875,80 @@ async function paidPlanOrgIdForSubscription(
  * subscription snapshot. The billing cron uses this when delivery of any
  * subscription or paid-invoice webhook may have been missed.
  */
-export async function reconcileStripeSubscriptionSnapshot(
-  db: Db,
-  getClerk: ClerkClientProvider,
-  subscription: StripeSubscription,
-  signal: AbortSignal,
-): Promise<StripeSubscriptionSnapshotReconciliation> {
-  const terminal =
-    subscription.status === "canceled" ||
-    subscription.status === "ended" ||
-    subscription.status === "incomplete_expired";
-  if (terminal) {
-    const downgradedOrgId = await paidPlanOrgIdForSubscription(
-      db,
-      subscription.id,
-    );
-    signal.throwIfAborted();
-    const orgIds = await handleSubscriptionDeleted(db, subscription);
-    signal.throwIfAborted();
-    return {
-      orgIds,
-      downgradedOrgIds: downgradedOrgId ? [downgradedOrgId] : [],
-      paidInvoiceId: null,
+export const reconcileStripeSubscriptionSnapshot$ = command(
+  async (
+    { get, set },
+    subscription: StripeSubscription,
+    signal: AbortSignal,
+  ): Promise<StripeSubscriptionSnapshotReconciliation> => {
+    const db = set(writeDb$);
+    const getClerk = (): ClerkClient => {
+      return get(clerk$);
     };
-  }
+    const terminal =
+      subscription.status === "canceled" ||
+      subscription.status === "ended" ||
+      subscription.status === "incomplete_expired";
+    if (terminal) {
+      const downgradedOrgId = await paidPlanOrgIdForSubscription(
+        db,
+        subscription.id,
+      );
+      signal.throwIfAborted();
+      const orgIds = await handleSubscriptionDeleted(db, subscription);
+      signal.throwIfAborted();
+      return {
+        orgIds,
+        downgradedOrgIds: downgradedOrgId ? [downgradedOrgId] : [],
+        paidInvoiceId: null,
+      };
+    }
 
-  const orgIds = new Set<string>();
-  // A snapshot is current state, not a creation event. The strict usage-pack
-  // creation path intentionally rejects an invalid initial shape, but that is
-  // wrong for reconciliation: a valid Custom subscription can currently have
-  // no usage-pack items because their removal webhook was missed. Bind any
-  // unrecorded main plan first, then let the update projection deactivate or
-  // repair the usage-pack component from current Stripe truth.
-  for (const orgId of await handleSubscriptionCreatedLegacy(
-    db,
-    getClerk,
-    subscription,
-  )) {
-    orgIds.add(orgId);
-  }
-  signal.throwIfAborted();
+    const orgIds = new Set<string>();
+    // A snapshot is current state, not a creation event. The strict usage-pack
+    // creation path intentionally rejects an invalid initial shape, but that is
+    // wrong for reconciliation: a valid Custom subscription can currently have
+    // no usage-pack items because their removal webhook was missed. Bind any
+    // unrecorded main plan first, then let the update projection deactivate or
+    // repair the usage-pack component from current Stripe truth.
+    for (const orgId of await handleSubscriptionCreatedLegacy(
+      db,
+      getClerk,
+      subscription,
+    )) {
+      orgIds.add(orgId);
+    }
+    signal.throwIfAborted();
 
-  for (const orgId of await handleSubscriptionUpdated(
-    db,
-    subscription,
-    reconciliationPreviousAttributes(subscription),
-  )) {
-    orgIds.add(orgId);
-  }
-  signal.throwIfAborted();
+    for (const orgId of await set(
+      handleSubscriptionUpdated$,
+      subscription,
+      reconciliationPreviousAttributes(subscription),
+      signal,
+    )) {
+      orgIds.add(orgId);
+    }
+    signal.throwIfAborted();
 
-  const paidInvoice = await latestPaidInvoiceForSubscription(
-    subscription,
-    signal,
-  );
-  const invoiceOrgId = paidInvoice
-    ? await handleInvoicePaid(db, getClerk, paidInvoice, signal)
-    : null;
-  signal.throwIfAborted();
-  if (invoiceOrgId) {
-    orgIds.add(invoiceOrgId);
-  }
+    const paidInvoice = await latestPaidInvoiceForSubscription(
+      subscription,
+      signal,
+    );
+    const invoiceOrgId = paidInvoice
+      ? await set(handleInvoicePaid$, paidInvoice, signal)
+      : null;
+    signal.throwIfAborted();
+    if (invoiceOrgId) {
+      orgIds.add(invoiceOrgId);
+    }
 
-  return {
-    orgIds: [...orgIds],
-    downgradedOrgIds: [],
-    paidInvoiceId: paidInvoice?.id ?? null,
-  };
-}
+    return {
+      orgIds: [...orgIds],
+      downgradedOrgIds: [],
+      paidInvoiceId: paidInvoice?.id ?? null,
+    };
+  },
+);
 
 /** Reconciles a locally referenced subscription that Stripe no longer has. */
 export async function reconcileMissingStripeSubscription(
@@ -5000,7 +4992,7 @@ async function publishBillingChanges(
 
 export const reconcilePaidStripeCheckoutSession$ = command(
   async (
-    { get, set },
+    { set },
     input: {
       readonly session: StripeCheckoutSession;
       readonly paidAt: Date;
@@ -5012,16 +5004,19 @@ export const reconcilePaidStripeCheckoutSession$ = command(
     }
 
     const db = set(writeDb$);
-    const getClerk = (): ClerkClient => {
-      return get(clerk$);
-    };
-    const result = await handleCheckoutCompleted(
-      db,
-      getClerk,
+    const setupResult = await set(
+      handleBillingSetupCheckoutCompleted$,
       input.session,
-      input.paidAt,
       signal,
     );
+    const result =
+      setupResult ??
+      (await set(
+        handleCheckoutCompleted$,
+        input.session,
+        input.paidAt,
+        signal,
+      ));
     signal.throwIfAborted();
 
     const orgIds = new Set(result.orgIds);
@@ -5030,8 +5025,13 @@ export const reconcilePaidStripeCheckoutSession$ = command(
     }
     await publishBillingChanges(db, orgIds, signal);
     if (result.drainOrgId) {
-      await set(drainOrgQueueToCapacity$, { orgId: result.drainOrgId }, signal);
-      signal.throwIfAborted();
+      waitUntil(
+        set(
+          pickOrgQueuedChatThreads$,
+          { orgId: result.drainOrgId },
+          new AbortController().signal,
+        ),
+      );
     }
     return [...orgIds];
   },
@@ -5039,23 +5039,21 @@ export const reconcilePaidStripeCheckoutSession$ = command(
 
 export const reconcilePaidStripeInvoice$ = command(
   async (
-    { get, set },
+    { set },
     invoice: StripeInvoice,
     signal: AbortSignal,
   ): Promise<string | null> => {
     const db = set(writeDb$);
-    const getClerk = (): ClerkClient => {
-      return get(clerk$);
-    };
-    const orgId = await handleInvoicePaid(db, getClerk, invoice, signal);
+    const orgId = await set(handleInvoicePaid$, invoice, signal);
     signal.throwIfAborted();
     if (!orgId) {
       return null;
     }
 
     await publishBillingChanges(db, new Set([orgId]), signal);
-    await set(drainOrgQueueToCapacity$, { orgId }, signal);
-    signal.throwIfAborted();
+    waitUntil(
+      set(pickOrgQueuedChatThreads$, { orgId }, new AbortController().signal),
+    );
     return orgId;
   },
 );
@@ -5084,14 +5082,12 @@ export const handleStripeWebhookEvent$ = command(
 
     switch (event.kind) {
       case "payment_intent.succeeded": {
-        const usagePackInvitation =
-          await handleUsagePackInvitationPaymentIntentSucceeded(
-            db,
-            getClerk(),
-            event.object,
-            new Date(event.created * 1000),
-            signal,
-          );
+        const usagePackInvitation = await set(
+          handleUsagePackInvitationPaymentIntentSucceeded$,
+          event.object,
+          new Date(event.created * 1000),
+          signal,
+        );
         signal.throwIfAborted();
         if (usagePackInvitation.handled) {
           if (usagePackInvitation.orgId) {
@@ -5104,34 +5100,36 @@ export const handleStripeWebhookEvent$ = command(
         break;
       }
       case "checkout.session.paid": {
-        const result = await handleCheckoutCompleted(
-          db,
-          getClerk,
+        const setupResult = await set(
+          handleBillingSetupCheckoutCompleted$,
           event.object,
-          new Date(event.created * 1000),
           signal,
         );
+        const result =
+          setupResult ??
+          (await set(
+            handleCheckoutCompleted$,
+            event.object,
+            new Date(event.created * 1000),
+            signal,
+          ));
         signal.throwIfAborted();
         drainOrgId = result.drainOrgId;
         addBillingChangedOrgIds(billingChangedOrgIds, result.orgIds);
         break;
       }
       case "checkout.session.failed": {
-        await handleUsagePackInvitationCheckoutFailed(db, event.object);
-        signal.throwIfAborted();
-        break;
-      }
-      case "invoice.paid": {
-        const paidDrainOrgId = await handleInvoicePaid(
-          db,
-          getClerk,
+        await set(
+          handleUsagePackInvitationCheckoutFailed$,
           event.object,
           signal,
         );
-        signal.throwIfAborted();
-        drainOrgId = paidDrainOrgId;
-        if (paidDrainOrgId) {
-          billingChangedOrgIds.add(paidDrainOrgId);
+        break;
+      }
+      case "invoice.paid": {
+        drainOrgId = await set(handleInvoicePaid$, event.object, signal);
+        if (drainOrgId) {
+          billingChangedOrgIds.add(drainOrgId);
         }
         break;
       }
@@ -5146,10 +5144,11 @@ export const handleStripeWebhookEvent$ = command(
         break;
       }
       case "customer.subscription.updated": {
-        const orgIds = await handleSubscriptionUpdated(
-          db,
+        const orgIds = await set(
+          handleSubscriptionUpdated$,
           event.object,
           event.previousAttributes,
+          signal,
         );
         signal.throwIfAborted();
         addBillingChangedOrgIds(billingChangedOrgIds, orgIds);
@@ -5186,8 +5185,10 @@ export const handleStripeWebhookEvent$ = command(
     await publishBillingChanges(db, billingChangedOrgIds, signal);
 
     if (drainOrgId) {
-      await set(drainOrgQueueToCapacity$, { orgId: drainOrgId }, signal);
-      signal.throwIfAborted();
+      const queueSignal = new AbortController().signal;
+      waitUntil(
+        set(pickOrgQueuedChatThreads$, { orgId: drainOrgId }, queueSignal),
+      );
     }
   },
 );

@@ -37,6 +37,19 @@ fn binary_applies_decoded_files_without_remote_attribution() {
         files[0].content
     );
     let ops = fixture.ops_entries().unwrap();
+    let payload_rows: Vec<_> = ops
+        .iter()
+        .filter(|op| {
+            op["action_type"].as_str().is_some_and(|action| {
+                action.starts_with("guest_storage_apply_input_payload_bytes_")
+            })
+        })
+        .collect();
+    assert_eq!(payload_rows.len(), 1);
+    assert_eq!(
+        payload_rows[0]["action_type"],
+        "guest_storage_apply_input_payload_bytes_64_kib_to_256_kib"
+    );
     let total = ops
         .iter()
         .find(|op| op["action_type"] == "storage_download")

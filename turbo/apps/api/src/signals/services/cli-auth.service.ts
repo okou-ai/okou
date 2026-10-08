@@ -11,9 +11,11 @@ import { and, desc, eq, ne, sql } from "drizzle-orm";
 
 import { generateCliToken } from "../auth/tokens";
 import { clerk$ } from "../external/clerk";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
-import { writeOrgMetadataWithDefaultPlanEntitlement } from "./org-plan-entitlements.service";
+import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { expireOrgCreditsInTransaction } from "./org-credit-expiration.service";
 
 export const DEFAULT_TEST_EMAIL = "dev+clerk_test+serial@vm0-e2e.ai";
 const CLI_TOKEN_EXPIRES_IN_SECONDS = 90 * 24 * 60 * 60;
@@ -89,51 +91,29 @@ export const testUserId$ = command(
       }
     }
 
-    const clerk = get(clerk$);
-    const writeDb = set(writeDb$);
-    return await writeDb.transaction(async (tx): Promise<string> => {
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtext(${`clerk_user_email:${args.email}`}))`,
-      );
-      signal.throwIfAborted();
+    // Resolve through Clerk before touching the database: no external I/O
+    // inside a transaction. Concurrent refreshes may each call Clerk; the
+    // user_id primary-key upsert below makes their writes converge.
+    const { data: users } = await get(clerk$).users.getUserList({
+      emailAddress: [args.email],
+    });
+    signal.throwIfAborted();
+    const user = users[0];
+    if (!user) {
+      throw new Error(`Test user not found for email: ${args.email}`);
+    }
 
-      const [lockedCached] = await tx
-        .select({ userId: userCache.userId, cachedAt: userCache.cachedAt })
-        .from(userCache)
-        .where(eq(userCache.email, args.email))
-        .orderBy(desc(userCache.cachedAt))
-        .limit(1);
-      signal.throwIfAborted();
-      if (
-        lockedCached &&
-        (args.refresh
-          ? lockedCached.cachedAt.getTime() >= refreshStartedAt.getTime()
-          : refreshStartedAt.getTime() - lockedCached.cachedAt.getTime() <
-            USER_CACHE_TTL_MS)
-      ) {
-        return lockedCached.userId;
-      }
+    const resolvedEmail =
+      user.emailAddresses?.find((entry) => {
+        return entry.id === user.primaryEmailAddressId;
+      })?.emailAddress ??
+      user.emailAddresses?.[0]?.emailAddress ??
+      args.email;
+    const name =
+      [user.firstName, user.lastName].filter(Boolean).join(" ") || null;
+    const cachedAt = nowDate();
 
-      const { data: users } = await clerk.users.getUserList({
-        emailAddress: [args.email],
-      });
-      signal.throwIfAborted();
-      const user = users[0];
-      if (!user) {
-        await tx.delete(userCache).where(eq(userCache.email, args.email));
-        throw new Error(`Test user not found for email: ${args.email}`);
-      }
-
-      const resolvedEmail =
-        user.emailAddresses?.find((entry) => {
-          return entry.id === user.primaryEmailAddressId;
-        })?.emailAddress ??
-        user.emailAddresses?.[0]?.emailAddress ??
-        args.email;
-      const name =
-        [user.firstName, user.lastName].filter(Boolean).join(" ") || null;
-      const cachedAt = nowDate();
-
+    await set(writeDb$).transaction(async (tx) => {
       await tx
         .delete(userCache)
         .where(
@@ -160,9 +140,9 @@ export const testUserId$ = command(
             cachedAt,
           },
         });
-      signal.throwIfAborted();
-      return user.id;
     });
+    signal.throwIfAborted();
+    return user.id;
   },
 );
 
@@ -170,38 +150,45 @@ function clerkRoleToCacheRole(role: string): "admin" | "member" {
   return role === "org:admin" ? "admin" : "member";
 }
 
-async function ensureTestOrgBillingRow(
-  writeDb: Db,
-  orgId: string,
-): Promise<void> {
-  await writeDb.transaction(async (tx) => {
-    await writeOrgMetadataWithDefaultPlanEntitlement(
-      tx,
-      orgId,
-      async (writeTx) => {
-        return await writeTx
-          .insert(orgMetadataCanonicalWrites)
-          .values({
-            orgId,
-            tier: "pro",
-            credits: TEST_ORG_CREDITS,
-            updatedAt: nowDate(),
-          })
-          .onConflictDoUpdate({
-            target: orgMetadataCanonicalWrites.orgId,
-            set: {
-              tier: "pro",
-              credits: sql`
-            GREATEST(COALESCE(${orgMetadata.credits}, 0), ${TEST_ORG_CREDITS})
-          `,
-              updatedAt: nowDate(),
-            },
-          })
-          .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
-      },
-    );
-  });
-}
+/**
+ * One transaction, no retry: expired remainder is cleared by one conditional
+ * statement first, then the top-up is one atomic GREATEST update. A lost clear
+ * throws OrgCreditExpirationConflict for this test-only caller.
+ */
+const ensureTestOrgBillingRow$ = command(
+  async ({ set }, orgId: string, signal: AbortSignal): Promise<void> => {
+    await set(writeDb$).transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(orgMetadataCanonicalWrites)
+        .values({ orgId, tier: "pro" })
+        .onConflictDoNothing()
+        .returning({ orgId: orgMetadata.orgId });
+      if (inserted) {
+        await tx
+          .insert(orgPlanEntitlements)
+          .values(
+            orgPlanEntitlementValues(
+              { orgId, tier: "pro", source: "org_metadata_migration" },
+              { stripeSubscriptionId: null, sourceMetadata: {} },
+            ),
+          )
+          .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
+      }
+      const at = nowDate();
+      await expireOrgCreditsInTransaction(tx, orgId, at);
+      await tx
+        .update(orgMetadata)
+        .set({
+          tier: "pro",
+          credits: sql`GREATEST(${orgMetadata.credits}, ${TEST_ORG_CREDITS})`,
+          updatedAt: at,
+        })
+        .where(eq(orgMetadata.orgId, orgId));
+      signal.throwIfAborted();
+    });
+    signal.throwIfAborted();
+  },
+);
 
 export const ensureTestOrg$ = command(
   async (
@@ -240,7 +227,7 @@ export const ensureTestOrg$ = command(
       signal.throwIfAborted();
     }
 
-    await ensureTestOrgBillingRow(writeDb, org.id);
+    await set(ensureTestOrgBillingRow$, org.id, signal);
     signal.throwIfAborted();
 
     await writeDb
@@ -290,69 +277,53 @@ export const resolveTestOrgId$ = command(
       return cachedOrgId;
     }
 
-    const clerk = get(clerk$);
+    // Concurrent first resolutions may each call Clerk; the org_cache and
+    // org_members_cache primary-key upserts make their writes converge.
+    const memberships = await get(clerk$).users.getOrganizationMembershipList({
+      userId,
+    });
+    signal.throwIfAborted();
+    const membership = [...memberships.data].sort((a, b) => {
+      return a.createdAt - b.createdAt;
+    })[0];
+    if (!membership) {
+      throw new Error(`Test user ${userId} has no organization membership`);
+    }
+
+    const org = membership.organization;
+    const cachedAt = new Date(nowDate().getTime() + FAR_FUTURE_CACHE_MS);
     const writeDb = set(writeDb$);
-    return await writeDb.transaction(async (tx): Promise<string> => {
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtext(${`clerk_test_org:${userId}`}))`,
-      );
-      signal.throwIfAborted();
-
-      const [lockedCached] = await tx
-        .select({ orgId: orgMembersCache.orgId })
-        .from(orgMembersCache)
-        .where(eq(orgMembersCache.userId, userId))
-        .orderBy(desc(orgMembersCache.cachedAt))
-        .limit(1);
-      signal.throwIfAborted();
-      if (lockedCached) {
-        return lockedCached.orgId;
-      }
-
-      const memberships = await clerk.users.getOrganizationMembershipList({
-        userId,
-      });
-      signal.throwIfAborted();
-      const membership = [...memberships.data].sort((a, b) => {
-        return a.createdAt - b.createdAt;
-      })[0];
-      if (!membership) {
-        throw new Error(`Test user ${userId} has no organization membership`);
-      }
-
-      const org = membership.organization;
-      const cachedAt = new Date(nowDate().getTime() + FAR_FUTURE_CACHE_MS);
-      await tx
-        .insert(orgCache)
-        .values({
-          orgId: org.id,
+    await writeDb
+      .insert(orgCache)
+      .values({
+        orgId: org.id,
+        name: org.name,
+        cachedAt,
+      })
+      .onConflictDoUpdate({
+        target: orgCache.orgId,
+        set: {
           name: org.name,
           cachedAt,
-        })
-        .onConflictDoUpdate({
-          target: orgCache.orgId,
-          set: {
-            name: org.name,
-            cachedAt,
-          },
-        });
-      await tx
-        .insert(orgMembersCache)
-        .values({
-          orgId: org.id,
-          userId,
+        },
+      });
+    signal.throwIfAborted();
+    await writeDb
+      .insert(orgMembersCache)
+      .values({
+        orgId: org.id,
+        userId,
+        role: clerkRoleToCacheRole(membership.role),
+        cachedAt,
+      })
+      .onConflictDoUpdate({
+        target: [orgMembersCache.orgId, orgMembersCache.userId],
+        set: {
           role: clerkRoleToCacheRole(membership.role),
           cachedAt,
-        })
-        .onConflictDoUpdate({
-          target: [orgMembersCache.orgId, orgMembersCache.userId],
-          set: {
-            role: clerkRoleToCacheRole(membership.role),
-            cachedAt,
-          },
-        });
-      signal.throwIfAborted();
-      return org.id;
-    });
+        },
+      });
+    signal.throwIfAborted();
+    return org.id;
   },
 );

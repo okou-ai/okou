@@ -1,6 +1,6 @@
 [package]
 name = "runner-remote"
-version = "0.2.1"
+version = "0.10.5"
 edition.workspace = true
 description = "Runner guest RPC, remote usage, SSH, and VNC services"
 
@@ -14,6 +14,7 @@ runner-rpc-proto.workspace = true
 runner-types.workspace = true
 sandbox.workspace = true
 async-trait.workspace = true
+guest-contracts.workspace = true
 base64 = { workspace = true, features = ["simd-unsafe", "std"] }
 bytes = { workspace = true, features = ["std"] }
 chrono = { workspace = true, features = ["now", "serde"] }

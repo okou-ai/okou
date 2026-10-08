@@ -5,10 +5,7 @@ import {
 import { messageDocumentToDisplayText } from "../okou-page/user-message-document-codec.ts";
 import {
   isFollowupsEvent,
-  isGoalMarkerEvent,
-  isGoalQueueEvent,
   isInterruptControlEvent,
-  isQueueMarkerEvent,
   isRecallControlEvent,
 } from "@okouai/api-contracts/contracts/chat-event-semantics";
 import {
@@ -27,7 +24,6 @@ function chatEventBodyContent(event: ChatEvent): string {
   if (
     event.eventType === "input.prompt" ||
     event.eventType === "input.automation" ||
-    event.eventType === "input.goal" ||
     event.eventType === "input.rejected"
   ) {
     if (event.eventType === "input.automation" && !event.userMessage) {
@@ -46,11 +42,13 @@ function skipsEventBodyRendering(event: ChatEvent): boolean {
   return (
     isInterruptControlEvent(event) ||
     isRecallControlEvent(event) ||
-    isQueueMarkerEvent(event) ||
-    isGoalQueueEvent(event) ||
-    isFollowupsEvent(event) ||
-    isGoalMarkerEvent(event)
+    isFollowupsEvent(event)
   );
+}
+
+/** A provisional message can still gain more bytes at its current URL tail. */
+export function isTransientOutputMessage(event: ChatEvent): boolean {
+  return event.eventType === "output.message" && event.seqId === undefined;
 }
 
 /** Whether the event carries an assistant body rendered as markdown. */
@@ -80,6 +78,7 @@ interface ChatEventTreePlan {
   readonly content: string;
   readonly treeSource: string;
   readonly descriptors: readonly CardDescriptorBlock[];
+  readonly requireUrlTerminator: boolean;
 }
 
 /**
@@ -93,13 +92,15 @@ export function chatEventTreePlan(
   if (content === null) {
     return null;
   }
+  const requireUrlTerminator = isTransientOutputMessage(event);
   const plan = eventBodyPlan(content, {
-    previews: true,
+    requireUrlTerminator,
     chatActionContext,
   });
   return {
     content,
     treeSource: plan.treeSource,
     descriptors: plan.descriptors,
+    requireUrlTerminator,
   };
 }

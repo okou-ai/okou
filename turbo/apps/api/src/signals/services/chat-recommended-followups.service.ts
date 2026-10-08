@@ -24,12 +24,7 @@ function sanitizeFollowupPrompt(raw: string): string | null {
 function isRecommendedFollowupGenerationType(
   value: unknown,
 ): value is RecommendedFollowupGenerationType {
-  return (
-    value === "image" ||
-    value === "video" ||
-    value === "presentation" ||
-    value === "website"
-  );
+  return value === "image" || value === "presentation" || value === "website";
 }
 
 function isJsonSyntaxPromptFragment(prompt: string): boolean {

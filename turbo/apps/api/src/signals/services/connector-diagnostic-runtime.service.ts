@@ -8,7 +8,7 @@ import {
 
 import { safeSync, safeUrlParse } from "../utils";
 import type {
-  ConnectorServerFirewallCatalog,
+  ConnectorServerFirewallSelection,
   ConnectorServerFirewallExecutionMetadata,
   FirewallRoutingRouteMetadata,
 } from "./connector-server-firewall-catalog.service";
@@ -117,7 +117,7 @@ function executionTemplatesByBase(
 }
 
 export async function loadConnectorDiagnosticCatalogView(
-  catalog: ConnectorServerFirewallCatalog,
+  catalog: ConnectorServerFirewallSelection,
   connectorSlug: string,
 ): Promise<ConnectorDiagnosticCatalogView | null> {
   const routing = await catalog.loadRoutingMetadata(connectorSlug);

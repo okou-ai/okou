@@ -12,7 +12,6 @@ import {
   TooltipTrigger,
   cn,
 } from "@okouai/ui";
-import type { ModelProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { RotateCcw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { formatLocalizedNumber } from "../../../../i18n/format.ts";
@@ -153,7 +152,7 @@ export function CodexResetCreditsMenuItem({
             aria-label={label}
             aria-disabled={resetDisabled || undefined}
             className={cn(
-              "shrink-0 gap-1.5 px-1 text-xs tabular-nums text-muted-foreground hover:text-foreground data-highlighted:text-foreground",
+              "shrink-0 gap-1.5 px-1 text-[10px] leading-4 tabular-nums text-muted-foreground hover:text-foreground data-highlighted:text-foreground [&_svg]:size-3",
               className,
               resetDisabled &&
                 "opacity-50 hover:bg-transparent hover:text-muted-foreground data-highlighted:bg-transparent data-highlighted:text-muted-foreground active:bg-transparent",
@@ -165,7 +164,7 @@ export function CodexResetCreditsMenuItem({
               }
             }}
           >
-            <RotateCcw size={14} className="shrink-0" aria-hidden />
+            <RotateCcw size={12} className="shrink-0" aria-hidden />
             <span className="truncate">{displayLabel}</span>
           </DropdownMenuItem>
         }
@@ -188,14 +187,12 @@ export function CodexResetCreditsMenuItem({
 
 export function CodexResetUsageDialog({
   open,
-  providerType,
   resetCredits,
   resetting,
   onOpenChange,
   onConfirm,
 }: {
   open: boolean;
-  providerType: ModelProviderType;
   resetCredits: number | null;
   resetting: boolean;
   onOpenChange: (open: boolean) => void;
@@ -203,11 +200,6 @@ export function CodexResetUsageDialog({
 }) {
   const { t } = useTranslation();
   const remaining = formatCodexResetCredits(resetCredits);
-  const provider = t(($) => {
-    return providerType === "codex-oauth-token"
-      ? $.settings.accountMenu.subscriptions.providers.codex
-      : $.settings.accountMenu.subscriptions.providers.claudeCode;
-  });
 
   return (
     <Dialog
@@ -225,14 +217,9 @@ export function CodexResetUsageDialog({
       >
         <DialogHeader>
           <DialogTitle>
-            {t(
-              ($) => {
-                return $.settings.models.reset.title;
-              },
-              {
-                provider,
-              },
-            )}
+            {t(($) => {
+              return $.settings.models.reset.title;
+            })}
           </DialogTitle>
           <DialogDescription>
             {t(
@@ -240,7 +227,6 @@ export function CodexResetUsageDialog({
                 return $.settings.models.reset.confirmDescription;
               },
               {
-                provider,
                 remaining,
               },
             )}

@@ -18,6 +18,8 @@
   ],
   "references": [
     { "path": "./tsconfig.gateways.json" },
+    { "path": "./tsconfig.foundation.json" },
+    { "path": "./tsconfig.admission.json" },
     { "path": "./tsconfig.core.json" }
   ]
 }

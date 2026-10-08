@@ -1,16 +1,14 @@
-import { createHash, randomUUID } from "node:crypto";
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
+import { randomUUID } from "node:crypto";
 import { createStore } from "ccstate";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { delay } from "msw";
 import { agents } from "@okouai/db/schema/agent";
+import { insertBenchmarkRunBatch$ } from "../../../scripts/benchmark-run-seed";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
-import {
-  connectorCatalogActiveSnapshot,
-  connectorCatalogSyncState,
-} from "@okouai/db/schema/connector-catalog";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { connectors } from "@okouai/db/schema/connector";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
@@ -33,19 +31,7 @@ import { testContext } from "../../../__tests__/test-context";
 import { server } from "../../../mocks/server";
 import { writeDb$ } from "../../external/db";
 import { nowDate } from "../../../lib/time";
-import { appendChatThreadEvent } from "../../services/chat-thread-event.service";
-import {
-  connectorCatalogExecutableCapabilityState,
-  persistConnectorCatalogCompatibility,
-} from "../../services/connector-catalog-compatibility.service";
-import {
-  SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-  type ConnectorCatalogArtifact,
-  type ConnectorCatalogArtifactConnector,
-} from "@okouai/connectors/connector-catalog/artifacts/artifacts";
-import { encodeConnectorCatalogSnapshot } from "@okouai/connectors/connector-catalog/artifacts/loader";
-import { connectorCatalogSource } from "../../services/connector-catalog-source";
-import { currentConnectorCatalogValidatorIdentity } from "../../services/connector-catalog-validator-authority";
+import { chatThreadEventInsertSql } from "../../services/chat-thread-event.service";
 import { normalizeRunMetadata } from "../../services/agent-run-metadata-write.service";
 import { seedUserModelProvider$ } from "./helpers/model-providers";
 import { createBenchHttpHandlers, MOCK_R2_LIST_DELAY_MS } from "./helpers/http";
@@ -90,10 +76,7 @@ const BULK_INSERT_CHUNK = 500;
 const TARGET_ATTACHMENT_COUNT = 6;
 const STATUSES = ["completed", "completed", "failed", "running"] as const;
 const queryPlanRowSchema = z.object({ "QUERY PLAN": z.string() });
-const BENCH_CONNECTOR_CATALOG_VERSION = "bench-api-v1";
-const BENCH_CONNECTOR_CATALOG_KEY =
-  `connectors/v${String(SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION)}/` +
-  `releases/${BENCH_CONNECTOR_CATALOG_VERSION}/catalog.json`;
+const BENCH_CONNECTOR_SLUGS = ["github", "slack", "notion"] as const;
 
 const chatThreadClient = setupApp({ context, routes: chatThreadRoutes })(
   chatThreadByIdContract,
@@ -120,183 +103,6 @@ interface BenchChatThreadFixture {
   readonly orgId: string;
   readonly agentId: string;
   readonly threadId: string;
-}
-
-function benchCatalogConnector(args: {
-  readonly connectorSlug: string;
-  readonly label: string;
-  readonly iconKey: string;
-  readonly secretName: string;
-}): ConnectorCatalogArtifactConnector {
-  return {
-    slug: args.connectorSlug,
-    label: args.label,
-    description: `${args.label} connector used by the API benchmark`,
-    category: "benchmark",
-    generation: [],
-    tags: ["benchmark"],
-    authMethods: [
-      {
-        id: "api-token",
-        label: "API token",
-        description: null,
-        visible: true,
-        storage: {
-          version: 1,
-          secrets: [args.secretName],
-          variables: [],
-        },
-        grant: {
-          kind: "manual",
-          fields: [
-            {
-              privateName: args.secretName,
-              publicId: "credential",
-              label: "Credential",
-              required: true,
-              placeholder: null,
-              storage: "secret",
-            },
-          ],
-        },
-        access: {
-          kind: "static",
-          envBindings: {
-            BENCH_CONNECTOR_TOKEN: `$secrets.${args.secretName}`,
-          },
-        },
-        revoke: { kind: "none" },
-      },
-    ],
-    icon: {
-      key: args.iconKey,
-      invertInDarkMode: false,
-    },
-    skill: { kind: "none" },
-    firewall: { kind: "none" },
-  };
-}
-
-const BENCH_CONNECTOR_CATALOG = {
-  artifactSchemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-  catalogVersion: BENCH_CONNECTOR_CATALOG_VERSION,
-  categoryMetadata: {
-    categories: [
-      {
-        id: "benchmark",
-        label: "Benchmark",
-        menuLabel: "Benchmark",
-        groupId: null,
-      },
-    ],
-    groups: [],
-  },
-  connectors: [
-    benchCatalogConnector({
-      connectorSlug: "benchmark-github",
-      label: "GitHub",
-      iconKey:
-        "views/zero-page/components/settings/icons/github-4a739019d805.svg",
-      secretName: "GITHUB_TOKEN",
-    }),
-    benchCatalogConnector({
-      connectorSlug: "benchmark-notion",
-      label: "Notion",
-      iconKey:
-        "views/zero-page/components/settings/icons/notion-beeb509915a9.svg",
-      secretName: "NOTION_TOKEN",
-    }),
-    benchCatalogConnector({
-      connectorSlug: "benchmark-slack",
-      label: "Slack",
-      iconKey:
-        "views/zero-page/components/settings/icons/slack-198390069136.svg",
-      secretName: "SLACK_TOKEN",
-    }),
-  ],
-} satisfies ConnectorCatalogArtifact;
-
-function sha256Digest(bytes: Uint8Array): string {
-  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-}
-
-async function seedBenchConnectorCatalog(): Promise<void> {
-  const rawBytes = Buffer.from(`${JSON.stringify(BENCH_CONNECTOR_CATALOG)}\n`);
-  const catalogDigest = sha256Digest(rawBytes);
-  const catalogGzip = encodeConnectorCatalogSnapshot(rawBytes);
-  const source = connectorCatalogSource();
-  const capability = connectorCatalogExecutableCapabilityState();
-  const activatedAt = nowDate();
-  const db = store.set(writeDb$);
-  const syncStateValues = {
-    revision: 1,
-    lastObservedCatalogVersion: BENCH_CONNECTOR_CATALOG_VERSION,
-    lastObservedCatalogKey: BENCH_CONNECTOR_CATALOG_KEY,
-    lastObservedCatalogDigest: catalogDigest,
-    lastObservedPointerEtag: null,
-    lastAttemptAt: activatedAt,
-    lastAttemptOutcome: "accepted" as const,
-    lastAttemptReusedCachedRejection: false,
-    lastSuccessAt: activatedAt,
-    lastFailureCode: null,
-    lastRejectedCatalogVersion: null,
-    lastRejectedCatalogKey: null,
-    lastRejectedCatalogDigest: null,
-    lastRejectedPointerEtag: null,
-    lastRejectedFailureCode: null,
-    lastRejectedBackendVersion: null,
-    lastRejectedBuildCommitSha: null,
-  };
-  const snapshotValues = {
-    catalogVersion: BENCH_CONNECTOR_CATALOG_VERSION,
-    catalogKey: BENCH_CONNECTOR_CATALOG_KEY,
-    catalogDigest,
-    catalogRawSize: rawBytes.byteLength,
-    catalogGzip,
-    activatedAt,
-  };
-
-  await db.transaction(async (tx) => {
-    await tx
-      .insert(connectorCatalogSyncState)
-      .values({
-        sourceId: source.sourceId,
-        schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-        ...syncStateValues,
-      })
-      .onConflictDoUpdate({
-        target: [
-          connectorCatalogSyncState.sourceId,
-          connectorCatalogSyncState.schemaVersion,
-        ],
-        set: syncStateValues,
-      });
-    await tx
-      .insert(connectorCatalogActiveSnapshot)
-      .values({
-        sourceId: source.sourceId,
-        schemaVersion: SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-        ...snapshotValues,
-      })
-      .onConflictDoUpdate({
-        target: [
-          connectorCatalogActiveSnapshot.sourceId,
-          connectorCatalogActiveSnapshot.schemaVersion,
-        ],
-        set: snapshotValues,
-      });
-    await persistConnectorCatalogCompatibility({
-      db: tx,
-      sourceId: source.sourceId,
-      identity: {
-        catalogVersion: BENCH_CONNECTOR_CATALOG_VERSION,
-        catalogDigest,
-      },
-      artifact: BENCH_CONNECTOR_CATALOG,
-      capability,
-      validator: currentConnectorCatalogValidatorIdentity(),
-    });
-  });
 }
 
 async function chunkedInsert<T>(
@@ -468,7 +274,7 @@ async function seedBackgroundLoad(): Promise<void> {
     }
   }
   await chunkedInsert(runRows, (chunk) => {
-    return db.insert(agentRuns).values(chunk);
+    return store.set(insertBenchmarkRunBatch$, chunk);
   });
 }
 
@@ -493,14 +299,16 @@ async function seedBenchChatThread(): Promise<BenchChatThreadFixture> {
     title,
   });
   await db.transaction(async (tx) => {
-    await appendChatThreadEvent(tx, {
-      userId,
-      orgId,
-      chatThreadId: threadId,
-      kind: "created",
-      agentId,
-      title,
-    });
+    await tx.execute(
+      chatThreadEventInsertSql({
+        userId,
+        orgId,
+        chatThreadId: threadId,
+        kind: "created",
+        agentId,
+        title,
+      }),
+    );
   });
 
   return { userId, orgId, agentId, threadId };
@@ -575,15 +383,20 @@ async function seedTargetThreadRuns(
     }
   }
   await chunkedInsert(runRows, (chunk) => {
-    return db.insert(agentRuns).values(chunk);
+    return store.set(insertBenchmarkRunBatch$, chunk);
   });
   await chunkedInsert(eventRows, (chunk) => {
     return db.insert(chatEvents).values(chunk);
   });
   await db
-    .update(chatThreads)
-    .set({ lastChatEventSeqId: eventRows.length })
-    .where(eq(chatThreads.id, fixture.threadId));
+    .insert(chatEventSequences)
+    .values({ chatThreadId: fixture.threadId, lastSeqId: eventRows.length })
+    .onConflictDoUpdate({
+      target: chatEventSequences.chatThreadId,
+      set: {
+        lastSeqId: sql`GREATEST(${chatEventSequences.lastSeqId}, ${eventRows.length})`,
+      },
+    });
 }
 
 async function seedSideEffectFreeGetData(
@@ -644,8 +457,8 @@ async function seedSideEffectFreeGetData(
     {
       orgId: fixture.orgId,
       userId: fixture.userId,
-      connectorSlug: "benchmark-github",
-      authMethod: "api-token",
+      connectorSlug: "github",
+      authMethod: "oauth",
       storageVersion: 1,
       externalId: "bench-github",
       externalUsername: "bench-github",
@@ -653,8 +466,8 @@ async function seedSideEffectFreeGetData(
     {
       orgId: fixture.orgId,
       userId: fixture.userId,
-      connectorSlug: "benchmark-slack",
-      authMethod: "api-token",
+      connectorSlug: "slack",
+      authMethod: "oauth",
       storageVersion: 1,
       externalId: "bench-slack",
       externalUsername: "bench-slack",
@@ -662,8 +475,8 @@ async function seedSideEffectFreeGetData(
     {
       orgId: fixture.orgId,
       userId: fixture.userId,
-      connectorSlug: "benchmark-notion",
-      authMethod: "api-token",
+      connectorSlug: "notion",
+      authMethod: "oauth",
       storageVersion: 1,
       externalId: "bench-notion",
       externalUsername: "bench-notion",
@@ -676,7 +489,6 @@ async function seedSideEffectFreeGetData(
       orgId: fixture.orgId,
       userId: fixture.userId,
       type: "codex-oauth-token",
-      isDefault: true,
       secretName: "CODEX_OAUTH_TOKEN",
     },
     context.signal,
@@ -732,7 +544,6 @@ const ensureSeeded: () => Promise<BenchChatThreadFixture> = (() => {
   return () => {
     cached ??= (async () => {
       installBenchExternalMocks();
-      await seedBenchConnectorCatalog();
       const seeded = await seedBenchChatThread();
       await seedBackgroundLoad();
       await seedTargetThreadRuns(seeded);
@@ -762,13 +573,11 @@ const ensureSeeded: () => Promise<BenchChatThreadFixture> = (() => {
           return connector.slug;
         }),
       );
-      const missingConnectorSlugs = BENCH_CONNECTOR_CATALOG.connectors
-        .map((connector) => {
-          return connector.slug;
-        })
-        .filter((connectorSlug) => {
+      const missingConnectorSlugs = BENCH_CONNECTOR_SLUGS.filter(
+        (connectorSlug) => {
           return !listedConnectorSlugs.has(connectorSlug);
-        });
+        },
+      );
       if (missingConnectorSlugs.length > 0) {
         throw new Error(
           `connector sanity check omitted seeded connectors: ${missingConnectorSlugs.join(", ")}`,

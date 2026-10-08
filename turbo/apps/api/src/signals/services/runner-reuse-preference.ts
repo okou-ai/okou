@@ -56,6 +56,21 @@ function reusableSandboxCondition(args: {
   return arrayContains(runnerState.heldSandboxStates, heldSandboxStates);
 }
 
+function activeProducerCondition(args: {
+  readonly reuseKey: SQLWrapper;
+  readonly profile: SQLWrapper;
+  readonly historyGenerationRunId: SQLWrapper;
+}): SQL {
+  return arrayContains(
+    runnerState.activeReuseProducers,
+    sql`jsonb_build_array(jsonb_build_object(
+      'runId', cast(${args.historyGenerationRunId} as text),
+      'reuseKey', cast(${args.reuseKey} as text),
+      'profile', cast(${args.profile} as text)
+    ))`,
+  );
+}
+
 function capableWorkspaceCondition(args: {
   readonly reuseKey: SQLWrapper;
   readonly profile: SQLWrapper;
@@ -107,13 +122,20 @@ function runnerStateHas(args: {
 function finalizingPredecessorCondition(args: {
   readonly runnerGroup: string;
   readonly completedAfter: Date;
+  readonly activeProducer: SQL;
 }): SQL | undefined {
+  // The recent-completion guard also covers a current Runner whose first
+  // producer-bearing heartbeat has not reached the API yet. The process
+  // generation and short completion deadline bound that advisory preference.
   // admittableProfiles is remaining capacity, so it may be empty while this
   // process is still finalizing. Poll and Ably recipients enforce static
   // profile support before admitting the advisory preference.
   return and(
     eq(finalizingSourceRun.status, "completed"),
-    gt(finalizingSourceRun.completedAt, args.completedAfter),
+    or(
+      gt(finalizingSourceRun.completedAt, args.completedAfter),
+      args.activeProducer,
+    ),
     eq(finalizingSourceRun.runnerGroup, args.runnerGroup),
     isNotNull(finalizingSourceRun.runnerId),
     isNotNull(finalizingSourceRun.runnerHeartbeatGeneration),
@@ -132,6 +154,7 @@ function runnerStateHasFinalizingPredecessor(args: {
   readonly historyGenerationRunId: SQLWrapper;
   readonly freshAfter: Date;
   readonly completedAfter: Date;
+  readonly activeProducer: SQL;
 }): SQL {
   return exists(
     args.db
@@ -139,9 +162,11 @@ function runnerStateHasFinalizingPredecessor(args: {
       .from(runnerState)
       .innerJoin(
         finalizingSourceRun,
+        // Cast the queued id rather than the key so the join stays a primary
+        // key lookup instead of scanning agent_runs for every queued job.
         eq(
-          sql`${finalizingSourceRun.id}::text`,
-          sql`cast(${args.historyGenerationRunId} as text)`,
+          finalizingSourceRun.id,
+          sql`cast(${args.historyGenerationRunId} as uuid)`,
         ),
       )
       .where(
@@ -154,6 +179,7 @@ function runnerStateHasFinalizingPredecessor(args: {
           finalizingPredecessorCondition({
             runnerGroup: args.runnerGroup,
             completedAfter: args.completedAfter,
+            activeProducer: args.activeProducer,
           }),
         ),
       ),
@@ -214,12 +240,22 @@ export function runnerReusePreferencePollPriority(args: {
   const hasLocalReusable = local(reusableCondition);
   const hasGlobalWorkspace = global(workspaceCondition);
   const hasLocalWorkspace = local(workspaceCondition);
+  const pendingProducer =
+    and(
+      gt(runnerJobQueue.createdAt, protectedAfter),
+      activeProducerCondition({
+        reuseKey,
+        profile,
+        historyGenerationRunId: targetGenerationRunId,
+      }),
+    ) ?? sql`false`;
   const hasGlobalFinalizingPredecessor = runnerStateHasFinalizingPredecessor({
     db: args.db,
     runnerGroup: args.runnerGroup,
     historyGenerationRunId: targetGenerationRunId,
     freshAfter,
     completedAfter: finalizingCompletedAfter,
+    activeProducer: pendingProducer,
   });
   const hasLocalFinalizingPredecessor = runnerStateHasFinalizingPredecessor({
     db: args.db,
@@ -228,6 +264,7 @@ export function runnerReusePreferencePollPriority(args: {
     historyGenerationRunId: targetGenerationRunId,
     freshAfter,
     completedAfter: finalizingCompletedAfter,
+    activeProducer: pendingProducer,
   });
   return sql`CASE
     WHEN ${and(
@@ -324,6 +361,7 @@ interface RunnerReuseHolder {
   readonly runnerIdentity: PositiveRunnerPreference["runnerIdentity"];
   readonly hasExactHistoryGeneration: boolean;
   readonly isFinalizingPredecessor: boolean;
+  readonly hasActiveProducer: boolean;
   readonly hasReusableSandbox: boolean;
   readonly sourceCompletedAt: Date | null;
 }
@@ -360,11 +398,20 @@ async function selectRunnerReuseHolder(args: {
           historyGenerationRunId: sql.param(args.historyGenerationRunId),
         })
       : sql`false`;
+  const producerCondition =
+    args.shouldLookUpGenericReuse && args.historyGenerationRunId
+      ? activeProducerCondition({
+          reuseKey: sql.param(args.reuseKey),
+          profile: sql.param(args.profile),
+          historyGenerationRunId: sql.param(args.historyGenerationRunId),
+        })
+      : sql`false`;
   const finalizingCondition =
     (args.historyGenerationRunId
       ? finalizingPredecessorCondition({
           runnerGroup: args.runnerGroup,
           completedAfter: args.finalizingCompletedAfter,
+          activeProducer: producerCondition,
         })
       : undefined) ?? sql`false`;
   const resourceRank = sql`CASE
@@ -384,6 +431,7 @@ async function selectRunnerReuseHolder(args: {
       isFinalizingPredecessor: sql`${finalizingCondition}`.mapWith(
         pgBooleanDecoder,
       ),
+      hasActiveProducer: sql`${producerCondition}`.mapWith(pgBooleanDecoder),
       hasReusableSandbox: sql`${reusableCondition}`.mapWith(pgBooleanDecoder),
       sourceCompletedAt: finalizingSourceRun.completedAt,
     })
@@ -421,6 +469,7 @@ async function selectRunnerReuseHolder(args: {
     },
     hasExactHistoryGeneration: holder.hasExactHistoryGeneration,
     isFinalizingPredecessor: holder.isFinalizingPredecessor,
+    hasActiveProducer: holder.hasActiveProducer,
     hasReusableSandbox: holder.hasReusableSandbox,
     sourceCompletedAt: holder.sourceCompletedAt,
   };
@@ -434,6 +483,9 @@ export async function resolveRunnerReusePreference(args: {
   readonly historyGenerationRunId: string | undefined;
   readonly createdAt: Date;
   readonly currentDate: Date;
+  readonly onFinalizingSource?: (
+    source: "active_producer" | "completion_bridge",
+  ) => void;
 }): Promise<RunnerPreference> {
   if (!args.reuseKey) {
     return {
@@ -496,13 +548,19 @@ export async function resolveRunnerReusePreference(args: {
     if (!holder.sourceCompletedAt) {
       throw new Error("Finalizing predecessor is missing its completion time");
     }
+    args.onFinalizingSource?.(
+      holder.hasActiveProducer ? "active_producer" : "completion_bridge",
+    );
     return {
       kind: "preference",
       runnerIdentity: holder.runnerIdentity,
       tier: "finalizingPredecessor",
-      expiresAt: new Date(
-        holder.sourceCompletedAt.getTime() +
-          RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
+      expiresAt: (holder.hasActiveProducer
+        ? matchingReuseExpiresAt
+        : new Date(
+            holder.sourceCompletedAt.getTime() +
+              RUNNER_FINALIZING_PREDECESSOR_PROTECTION_MS,
+          )
       ).toISOString(),
     };
   }

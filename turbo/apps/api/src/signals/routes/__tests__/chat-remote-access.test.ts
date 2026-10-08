@@ -3,14 +3,10 @@ import { randomUUID } from "node:crypto";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import {
-  closeErasureSubjectFixture,
-  removeErasureSubjectsFixture,
-} from "../../../test-fixtures/account-erasure-subject";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
@@ -79,25 +75,10 @@ async function createSshHost(displayName: string, id = randomUUID()) {
   return id;
 }
 
-async function closeOwnerForErasure(userId: string): Promise<void> {
-  const closing = closeErasureSubjectFixture({
-    subjectKind: "user",
-    subjectId: userId,
-  });
-  onTestFinished(async () => {
-    const { jobId } = await closing;
-    await removeErasureSubjectsFixture([jobId]);
-  });
-  await closing;
-}
-
 describe("chat remote access owner API", () => {
   it("inherits the current default without chat rows and preserves explicit allow or deny across multiple hosts", async () => {
     useSecretKmsProbe();
     const owner = await ownerWithThread();
-    await updateFeatureSwitchesForUser(context, owner.actor, {
-      [FeatureSwitchKey.ThreadRemoteAccess]: true,
-    });
     mocks.clerk.session(
       owner.actor.userId,
       owner.actor.orgId,
@@ -274,16 +255,13 @@ describe("chat remote access owner API", () => {
     });
   });
 
-  it("keeps the new API gated and gives cross-owner IDs the same not-found result", async () => {
+  it("makes owner host defaults available and gives cross-owner IDs the same not-found result", async () => {
     useSecretKmsProbe();
     const firstOwner = await ownerWithThread();
     const firstHost = await createSshHost("Private host");
-    await accept(accessClient().listHostDefaults({ headers }), [404]);
+    await accept(accessClient().listHostDefaults({ headers }), [200]);
 
     const secondOwner = await ownerWithThread();
-    await updateFeatureSwitchesForUser(context, secondOwner.actor, {
-      [FeatureSwitchKey.ThreadRemoteAccess]: true,
-    });
     mocks.clerk.session(
       secondOwner.actor.userId,
       secondOwner.actor.orgId,
@@ -348,7 +326,6 @@ describe("chat remote access owner API", () => {
     initializeVncRuntimeTest();
     const owner = await ownerWithThread();
     await updateFeatureSwitchesForUser(context, owner.actor, {
-      [FeatureSwitchKey.ThreadRemoteAccess]: true,
       [FeatureSwitchKey.VncAccess]: true,
     });
     vnc.authenticate({
@@ -446,7 +423,6 @@ describe("chat remote access owner API", () => {
       source: "default",
     });
     await updateFeatureSwitchesForUser(context, owner.actor, {
-      [FeatureSwitchKey.ThreadRemoteAccess]: true,
       [FeatureSwitchKey.VncAccess]: false,
     });
     vnc.authenticate({
@@ -468,125 +444,281 @@ describe("chat remote access owner API", () => {
     );
   });
 
-  it("rejects remote access writes after the owner is closed for erasure", async () => {
-    useSecretKmsProbe();
-    const owner = await ownerWithThread();
-    await updateFeatureSwitchesForUser(context, owner.actor, {
-      [FeatureSwitchKey.ThreadRemoteAccess]: true,
-    });
-    mocks.clerk.session(
-      owner.actor.userId,
-      owner.actor.orgId,
-      owner.actor.orgRole,
-    );
-    const hostId = await createSshHost("Closed owner host");
-    await accept(
-      accessClient().setThreadOverride({
-        headers,
-        params: {
-          threadId: owner.threadId,
-          protocol: "ssh",
-          connectionId: hostId,
-        },
-        body: { enabled: true },
-      }),
-      [200],
-    );
+  it.each([
+    ["ssh", "orgId"],
+    ["ssh", "userId"],
+    ["vnc", "orgId"],
+    ["vnc", "userId"],
+  ] as const)(
+    "rejects foreign %s configuration changes sharing the %s and preserves both owners' choices",
+    async (protocol, shared) => {
+      if (protocol === "vnc") {
+        initializeVncRuntimeTest();
+      } else {
+        useSecretKmsProbe();
+      }
+      const owner = await ownerWithThread();
+      if (protocol === "vnc") {
+        await updateFeatureSwitchesForUser(context, owner.actor, {
+          [FeatureSwitchKey.VncAccess]: true,
+        });
+        vnc.authenticate(owner.actor);
+      }
+      const ownerHost =
+        protocol === "ssh"
+          ? await createSshHost("Owner host")
+          : (
+              await accept(
+                vnc.connections().create({
+                  headers,
+                  body: vncConnectionBody(),
+                }),
+                [201],
+              )
+            ).body.id;
+      await accept(
+        accessClient().setThreadOverride({
+          headers,
+          params: {
+            threadId: owner.threadId,
+            protocol,
+            connectionId: ownerHost,
+          },
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      const ownerDefaults = await accept(
+        accessClient().listHostDefaults({ headers }),
+        [200],
+      );
+      const ownerAccess = await accept(
+        accessClient().listThreadAccess({
+          headers,
+          params: { threadId: owner.threadId },
+        }),
+        [200],
+      );
 
-    await closeOwnerForErasure(owner.actor.userId);
+      const peer = await ownerWithThread(
+        bdd.user({ [shared]: owner.actor[shared] }),
+      );
+      if (protocol === "vnc") {
+        await updateFeatureSwitchesForUser(context, peer.actor, {
+          [FeatureSwitchKey.VncAccess]: true,
+        });
+        vnc.authenticate(peer.actor);
+      }
+      const peerHost =
+        protocol === "ssh"
+          ? await createSshHost("Peer host")
+          : (
+              await accept(
+                vnc.connections().create({
+                  headers,
+                  body: vncConnectionBody(),
+                }),
+                [201],
+              )
+            ).body.id;
+      await accept(
+        accessClient().setThreadOverride({
+          headers,
+          params: {
+            threadId: peer.threadId,
+            protocol,
+            connectionId: peerHost,
+          },
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      const peerDefaults = await accept(
+        accessClient().listHostDefaults({ headers }),
+        [200],
+      );
+      expect(
+        peerDefaults.body[protocol].map((host) => {
+          return host.connectionId;
+        }),
+      ).toStrictEqual([peerHost]);
+      const peerAccess = await accept(
+        accessClient().listThreadAccess({
+          headers,
+          params: { threadId: peer.threadId },
+        }),
+        [200],
+      );
+      expect(
+        peerAccess.body[protocol].map((host) => {
+          return host.connectionId;
+        }),
+      ).toStrictEqual([peerHost]);
+      const deniedDefault = await accept(
+        accessClient().updateHostDefault({
+          headers,
+          params: { protocol, connectionId: ownerHost },
+          body: { enabled: true },
+        }),
+        [404],
+      );
+      const missingDefault = await accept(
+        accessClient().updateHostDefault({
+          headers,
+          params: { protocol, connectionId: randomUUID() },
+          body: { enabled: true },
+        }),
+        [404],
+      );
+      expect(missingDefault.body).toStrictEqual(deniedDefault.body);
+      await accept(
+        accessClient().setThreadOverride({
+          headers,
+          params: {
+            threadId: peer.threadId,
+            protocol,
+            connectionId: ownerHost,
+          },
+          body: { enabled: false },
+        }),
+        [404],
+      );
+      const deniedClear = await accept(
+        accessClient().clearThreadOverride({
+          headers,
+          params: {
+            threadId: peer.threadId,
+            protocol,
+            connectionId: ownerHost,
+          },
+        }),
+        [404],
+      );
+      const missingClear = await accept(
+        accessClient().clearThreadOverride({
+          headers,
+          params: {
+            threadId: peer.threadId,
+            protocol,
+            connectionId: randomUUID(),
+          },
+        }),
+        [404],
+      );
+      expect(missingClear.body).toStrictEqual(deniedClear.body);
+      const deniedThread = await accept(
+        accessClient().listThreadAccess({
+          headers,
+          params: { threadId: owner.threadId },
+        }),
+        [404],
+      );
+      const missingThread = await accept(
+        accessClient().listThreadAccess({
+          headers,
+          params: { threadId: randomUUID() },
+        }),
+        [404],
+      );
+      expect(missingThread.body).toStrictEqual(deniedThread.body);
+      await accept(
+        accessClient().setThreadOverride({
+          headers,
+          params: {
+            threadId: owner.threadId,
+            protocol,
+            connectionId: peerHost,
+          },
+          body: { enabled: false },
+        }),
+        [404],
+      );
+      await accept(
+        accessClient().clearThreadOverride({
+          headers,
+          params: {
+            threadId: owner.threadId,
+            protocol,
+            connectionId: ownerHost,
+          },
+        }),
+        [404],
+      );
+      expect(
+        (await accept(accessClient().listHostDefaults({ headers }), [200]))
+          .body,
+      ).toStrictEqual(peerDefaults.body);
+      expect(
+        (
+          await accept(
+            accessClient().listThreadAccess({
+              headers,
+              params: { threadId: peer.threadId },
+            }),
+            [200],
+          )
+        ).body,
+      ).toStrictEqual(peerAccess.body);
 
-    await accept(
-      accessClient().updateHostDefault({
-        headers,
-        params: { protocol: "ssh", connectionId: hostId },
-        body: { enabled: true },
-      }),
-      [404],
-    );
-    await accept(
-      accessClient().setThreadOverride({
-        headers,
-        params: {
-          threadId: owner.threadId,
-          protocol: "ssh",
-          connectionId: hostId,
-        },
-        body: { enabled: false },
-      }),
-      [404],
-    );
-    await accept(
-      accessClient().clearThreadOverride({
-        headers,
-        params: {
-          threadId: owner.threadId,
-          protocol: "ssh",
-          connectionId: hostId,
-        },
-      }),
-      [404],
-    );
-    const current = await accept(
-      accessClient().listThreadAccess({
-        headers,
-        params: { threadId: owner.threadId },
-      }),
-      [200],
-    );
-    expect(current.body.ssh[0]).toMatchObject({
-      connectionId: hostId,
-      defaultEnabled: false,
-      overrideEnabled: true,
-      enabled: true,
-    });
-  });
-
-  it("rejects VNC writes after the owner is closed for erasure", async () => {
-    initializeVncRuntimeTest();
-    const owner = await ownerWithThread();
-    await updateFeatureSwitchesForUser(context, owner.actor, {
-      [FeatureSwitchKey.ThreadRemoteAccess]: true,
-      [FeatureSwitchKey.VncAccess]: true,
-    });
-    vnc.authenticate({ orgId: owner.actor.orgId, userId: owner.actor.userId });
-    const created = await accept(
-      vnc.connections().create({ headers, body: vncConnectionBody() }),
-      [201],
-    );
-    await closeOwnerForErasure(owner.actor.userId);
-
-    await accept(
-      accessClient().updateHostDefault({
-        headers,
-        params: { protocol: "vnc", connectionId: created.body.id },
-        body: { enabled: true },
-      }),
-      [404],
-    );
-    await accept(
-      accessClient().setThreadOverride({
-        headers,
-        params: {
-          threadId: owner.threadId,
-          protocol: "vnc",
-          connectionId: created.body.id,
-        },
-        body: { enabled: true },
-      }),
-      [404],
-    );
-    const current = await accept(
-      accessClient().listThreadAccess({
-        headers,
-        params: { threadId: owner.threadId },
-      }),
-      [200],
-    );
-    expect(current.body.vnc[0]).toMatchObject({
-      connectionId: created.body.id,
-      defaultEnabled: false,
-      overrideEnabled: null,
-      enabled: false,
-    });
-  });
+      if (protocol === "vnc") {
+        vnc.authenticate(owner.actor);
+      } else {
+        mocks.clerk.session(
+          owner.actor.userId,
+          owner.actor.orgId,
+          owner.actor.orgRole,
+        );
+      }
+      expect(
+        (await accept(accessClient().listHostDefaults({ headers }), [200]))
+          .body,
+      ).toStrictEqual(ownerDefaults.body);
+      expect(
+        (
+          await accept(
+            accessClient().listThreadAccess({
+              headers,
+              params: { threadId: owner.threadId },
+            }),
+            [200],
+          )
+        ).body,
+      ).toStrictEqual(ownerAccess.body);
+      const cleared = await accept(
+        accessClient().clearThreadOverride({
+          headers,
+          params: {
+            threadId: owner.threadId,
+            protocol,
+            connectionId: ownerHost,
+          },
+        }),
+        [200],
+      );
+      expect(cleared.body).toStrictEqual({
+        ...ownerAccess.body[protocol][0],
+        overrideEnabled: null,
+        enabled: false,
+        source: "default",
+      });
+      await accept(
+        accessClient().updateHostDefault({
+          headers,
+          params: { protocol, connectionId: ownerHost },
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      const recovered = await accept(
+        accessClient().listThreadAccess({
+          headers,
+          params: { threadId: owner.threadId },
+        }),
+        [200],
+      );
+      expect(recovered.body[protocol]).toStrictEqual([
+        { ...cleared.body, defaultEnabled: true, enabled: true },
+      ]);
+    },
+  );
 });

@@ -528,6 +528,7 @@ describe("workflow display-profile rollout compatibility", () => {
     canManage: true,
     canPublish: true,
     official: null,
+    importSource: null,
   };
 
   it("allows an old app's optional nullable fields to be omitted by a new API", () => {

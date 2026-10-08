@@ -1,23 +1,28 @@
 import { z } from "zod";
+import {
+  loadBuiltinConnectorCredentialConnection$,
+  loadBuiltinConnectorCredentialValues$,
+  refreshBuiltinConnectorCredentialAccess$,
+} from "./builtin-connector-credential-command.service";
 
+import { connectors } from "@okouai/db/schema/connector";
+import { command } from "ccstate";
+import { and, eq } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import {
   readBoundedResponseText,
   safeJsonParse,
   settleIncludingAbort,
   startUntrackedBestEffortCleanup,
 } from "../utils";
-import { loadAgentConnectorScope } from "./agent-connector-scope.service";
+import { loadAgentConnectorScope$ } from "./agent-connector-scope.service";
+import { builtinConnectorCredentialRuntimeValueRef } from "./builtin-connector-credential-runtime.service";
+import { connectorUrlPermission$ } from "./connector-url-permission.service";
 import {
-  builtinConnectorCredentialRuntimeValueRef,
-  loadBuiltinConnectorCredentialConnection,
-  loadBuiltinConnectorCredentialValues,
-  refreshBuiltinConnectorCredentialAccess,
-} from "./builtin-connector-credential-runtime.service";
-import { resolveConnectorAccount } from "./connector-account-resolution.service";
-import { loadConnectorRuntimeSnapshot } from "./connector-catalog-runtime.service";
-import { connectorUrlPermission } from "./connector-url-permission.service";
+  loadConnectorRuntimeAuthSelection,
+  loadConnectorRuntimeSlugSelection,
+} from "./connector-catalog-slug-source.service";
 
 const GMAIL_ACCESS_TOKEN_ENVIRONMENT_NAME = "GMAIL_TOKEN";
 const GMAIL_API_ORIGIN = "https://gmail.googleapis.com";
@@ -158,149 +163,171 @@ function tokenNeedsRefresh(tokenExpiresAt: Date | null): boolean {
   );
 }
 
-async function gmailAccessToken(
-  db: Db,
-  scope: HomeTaskGmailScope,
-  connectorId: string,
-  signal: AbortSignal,
-): Promise<string | null> {
-  const snapshot = await loadConnectorRuntimeSnapshot(db);
-  signal.throwIfAborted();
-  const loaded = await loadBuiltinConnectorCredentialConnection({
-    db,
-    snapshot,
-    ...scope,
-    connectorSlug: "gmail",
-    connectorId,
-  });
-  signal.throwIfAborted();
-  if (loaded.kind !== "ok" || loaded.connection.needsReconnect) {
-    return null;
-  }
-  const connection = loaded.connection;
-  const valueRef = builtinConnectorCredentialRuntimeValueRef(
-    connection,
-    GMAIL_ACCESS_TOKEN_ENVIRONMENT_NAME,
-  );
-  if (valueRef === null) {
-    return null;
-  }
-  const values = await loadBuiltinConnectorCredentialValues({
-    connection,
-    db,
-    valueRefs: [valueRef],
-  });
-  signal.throwIfAborted();
-  const storedToken = values.get(valueRef);
-  if (storedToken === undefined) {
-    return null;
-  }
-  if (!tokenNeedsRefresh(connection.tokenExpiresAt)) {
-    return storedToken;
-  }
-  const refreshed = await refreshBuiltinConnectorCredentialAccess(
-    {
+const gmailAccessToken$ = command(
+  async (
+    { set },
+    scope: HomeTaskGmailScope,
+    connectorId: string,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const snapshot = await loadConnectorRuntimeAuthSelection(set(writeDb$), {
+      connectorSlugs: ["gmail"],
+    });
+    signal.throwIfAborted();
+    const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
+      snapshot,
+      ...scope,
+      connectorSlug: "gmail",
+      connectorId,
+    });
+    signal.throwIfAborted();
+    if (loaded.kind !== "ok" || loaded.connection.needsReconnect) {
+      return null;
+    }
+    const connection = loaded.connection;
+    const valueRef = builtinConnectorCredentialRuntimeValueRef(
       connection,
-      db,
-      orgId: scope.orgId,
-      userId: scope.userId,
-      runtimeEnvironmentName: GMAIL_ACCESS_TOKEN_ENVIRONMENT_NAME,
-      persist: { db, markNeedsReconnectOnFailure: true },
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  return refreshed.kind === "ok" ? refreshed.accessToken : null;
-}
-
-async function currentlyAuthorized(
-  args: {
-    readonly db: Db;
-    readonly scope: HomeTaskGmailScope;
-    readonly url: string;
-  },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const connectorScope = await loadAgentConnectorScope(args.db, args.scope);
-  signal.throwIfAborted();
-  if (!connectorScope.allowedConnectorSlugs.includes("gmail")) {
-    return false;
-  }
-  const snapshot = await loadConnectorRuntimeSnapshot(args.db);
-  signal.throwIfAborted();
-  const decision = await connectorUrlPermission({
-    db: args.db,
-    snapshot,
-    scope: args.scope,
-    connectorSlug: "gmail",
-    method: "GET",
-    url: args.url,
-  });
-  signal.throwIfAborted();
-  return decision.allowed;
-}
-
-async function defaultGmailConnectorId(
-  db: Db,
-  scope: HomeTaskGmailScope,
-): Promise<string | null> {
-  const resolved = await resolveConnectorAccount(db, {
-    orgId: scope.orgId,
-    userId: scope.userId,
-    request: {
-      target: { kind: "builtin", connectorSlug: "gmail" },
-      selection: { kind: "default" },
-    },
-  });
-  return resolved.kind === "resolved" ? resolved.account.connectorId : null;
-}
-
-async function gmailConnectionIsUsable(
-  db: Db,
-  scope: HomeTaskGmailScope,
-  connectorId: string,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const snapshot = await loadConnectorRuntimeSnapshot(db);
-  signal.throwIfAborted();
-  const loaded = await loadBuiltinConnectorCredentialConnection({
-    db,
-    snapshot,
-    ...scope,
-    connectorSlug: "gmail",
-    connectorId,
-  });
-  signal.throwIfAborted();
-  return (
-    loaded.kind === "ok" &&
-    !loaded.connection.needsReconnect &&
-    builtinConnectorCredentialRuntimeValueRef(
-      loaded.connection,
       GMAIL_ACCESS_TOKEN_ENVIRONMENT_NAME,
-    ) !== null
-  );
-}
+    );
+    if (valueRef === null) {
+      return null;
+    }
+    const values = await set(
+      loadBuiltinConnectorCredentialValues$,
+      {
+        connection,
+        valueRefs: [valueRef],
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    const storedToken = values.get(valueRef);
+    if (storedToken === undefined) {
+      return null;
+    }
+    if (!tokenNeedsRefresh(connection.tokenExpiresAt)) {
+      return storedToken;
+    }
+    const refreshed = await set(
+      refreshBuiltinConnectorCredentialAccess$,
+      {
+        connection,
+        orgId: scope.orgId,
+        userId: scope.userId,
+        runtimeEnvironmentName: GMAIL_ACCESS_TOKEN_ENVIRONMENT_NAME,
+        persist: { markNeedsReconnectOnFailure: true },
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return refreshed.kind === "ok" ? refreshed.accessToken : null;
+  },
+);
 
-/** Re-derive the whole authority fence around one pinned default account. */
-async function gmailAuthorityIsCurrent(
-  db: Db,
-  scope: HomeTaskGmailScope,
-  connectorId: string,
-  urls: readonly string[],
-  signal: AbortSignal,
-): Promise<boolean> {
-  for (const url of urls) {
-    if (!(await currentlyAuthorized({ db, scope, url }, signal))) {
+const currentlyAuthorized$ = command(
+  async (
+    { set },
+    args: {
+      readonly scope: HomeTaskGmailScope;
+      readonly url: string;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const connectorScope = await set(loadAgentConnectorScope$, args.scope);
+    signal.throwIfAborted();
+    if (!connectorScope.allowedConnectorSlugs.includes("gmail")) {
       return false;
     }
-  }
-  const currentConnectorId = await defaultGmailConnectorId(db, scope);
-  signal.throwIfAborted();
-  return (
-    currentConnectorId === connectorId &&
-    (await gmailConnectionIsUsable(db, scope, connectorId, signal))
-  );
-}
+    const snapshot = await loadConnectorRuntimeSlugSelection(set(writeDb$), {
+      connectorSlugs: ["gmail"],
+    });
+    signal.throwIfAborted();
+    const decision = await set(
+      connectorUrlPermission$,
+      {
+        snapshot,
+        scope: args.scope,
+        connectorSlug: "gmail",
+        method: "GET",
+        url: args.url,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return decision.allowed;
+  },
+);
+
+const defaultGmailConnectorId$ = command(
+  async ({ set }, scope: HomeTaskGmailScope): Promise<string | null> => {
+    const db = set(writeDb$);
+    const rows = await db
+      .select({ connectorId: connectors.id })
+      .from(connectors)
+      .where(
+        and(
+          eq(connectors.orgId, scope.orgId),
+          eq(connectors.userId, scope.userId),
+          eq(connectors.connectorSlug, "gmail"),
+          eq(connectors.isDefault, true),
+        ),
+      )
+      .limit(2);
+    return rows.length === 1 ? rows[0]!.connectorId : null;
+  },
+);
+
+const gmailConnectionIsUsable$ = command(
+  async (
+    { set },
+    scope: HomeTaskGmailScope,
+    connectorId: string,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const snapshot = await loadConnectorRuntimeAuthSelection(set(writeDb$), {
+      connectorSlugs: ["gmail"],
+    });
+    signal.throwIfAborted();
+    const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
+      snapshot,
+      ...scope,
+      connectorSlug: "gmail",
+      connectorId,
+    });
+    signal.throwIfAborted();
+    return (
+      loaded.kind === "ok" &&
+      !loaded.connection.needsReconnect &&
+      builtinConnectorCredentialRuntimeValueRef(
+        loaded.connection,
+        GMAIL_ACCESS_TOKEN_ENVIRONMENT_NAME,
+      ) !== null
+    );
+  },
+);
+
+/** Re-derive the whole authority fence around one pinned default account. */
+const gmailAuthorityIsCurrent$ = command(
+  async (
+    { set },
+    scope: HomeTaskGmailScope,
+    connectorId: string,
+    urls: readonly string[],
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    for (const url of urls) {
+      if (!(await set(currentlyAuthorized$, { scope, url }, signal))) {
+        return false;
+      }
+    }
+    const currentConnectorId = await set(defaultGmailConnectorId$, scope);
+    signal.throwIfAborted();
+    return (
+      currentConnectorId === connectorId &&
+      (await set(gmailConnectionIsUsable$, scope, connectorId, signal))
+    );
+  },
+);
 
 /**
  * Revalidate Gmail-derived cached cards without reading provider content.
@@ -308,162 +335,179 @@ async function gmailAuthorityIsCurrent(
  * the usable connection hides those cards immediately instead of waiting for
  * the recommendation refresh window.
  */
-export async function homeTaskGmailCacheAuthorized(
-  db: Db,
-  scope: HomeTaskGmailScope,
-  parentSignal: AbortSignal,
-): Promise<boolean> {
-  const attempt = await settleIncludingAbort(
-    (async () => {
-      const signal = AbortSignal.any([
-        parentSignal,
-        AbortSignal.timeout(GMAIL_COLLECTION_DEADLINE_MS),
-      ]);
-      const connectorId = await defaultGmailConnectorId(db, scope);
-      signal.throwIfAborted();
-      return connectorId === null
-        ? false
-        : await gmailAuthorityIsCurrent(
-            db,
-            scope,
-            connectorId,
-            [gmailListUrl(), gmailMessageUrl("permission-probe")],
-            signal,
-          );
-    })(),
-  );
-  if (attempt.ok) {
-    return attempt.value;
-  }
-  parentSignal.throwIfAborted();
-  return false;
-}
+export const homeTaskGmailCacheAuthorized$ = command(
+  async (
+    { set },
+    scope: HomeTaskGmailScope,
+    parentSignal: AbortSignal,
+  ): Promise<boolean> => {
+    const attempt = await settleIncludingAbort(
+      (async () => {
+        const signal = AbortSignal.any([
+          parentSignal,
+          AbortSignal.timeout(GMAIL_COLLECTION_DEADLINE_MS),
+        ]);
+        const connectorId = await set(defaultGmailConnectorId$, scope);
+        signal.throwIfAborted();
+        return connectorId === null
+          ? false
+          : await set(
+              gmailAuthorityIsCurrent$,
+              scope,
+              connectorId,
+              [gmailListUrl(), gmailMessageUrl("permission-probe")],
+              signal,
+            );
+      })(),
+    );
+    if (attempt.ok) {
+      return attempt.value;
+    }
+    parentSignal.throwIfAborted();
+    return false;
+  },
+);
 
 /**
  * Read a small Gmail inbox window only when this exact Agent has both the
  * connector and URL-level read permission. Authority and the selected account
  * are rechecked before any collected provider content is released.
  */
-async function collectAuthorizedGmailEvidence(
-  db: Db,
-  scope: HomeTaskGmailScope,
-  parentSignal: AbortSignal,
-): Promise<readonly HomeTaskGmailEvidence[]> {
-  const signal = AbortSignal.any([
-    parentSignal,
-    AbortSignal.timeout(GMAIL_COLLECTION_DEADLINE_MS),
-  ]);
-  const listUrl = gmailListUrl();
-  if (!(await currentlyAuthorized({ db, scope, url: listUrl }, signal))) {
-    return [];
-  }
-  const connectorId = await defaultGmailConnectorId(db, scope);
-  signal.throwIfAborted();
-  if (connectorId === null) {
-    return [];
-  }
-  const accessToken = await gmailAccessToken(db, scope, connectorId, signal);
-  if (accessToken === null) {
-    return [];
-  }
-  // Credential preparation may refresh remotely. Recheck the account and
-  // endpoint immediately before using the resulting token.
-  if (
-    !(await gmailAuthorityIsCurrent(db, scope, connectorId, [listUrl], signal))
-  ) {
-    return [];
-  }
-  const list = await gmailJson(
-    {
-      accessToken,
-      schema: gmailMessageListSchema,
-      url: listUrl,
-    },
-    signal,
-  );
-  const messageIds = list?.messages?.map((message) => {
-    return message.id;
-  });
-  if (!messageIds || messageIds.length === 0) {
-    return [];
-  }
-  const firstDetailUrl = gmailMessageUrl(messageIds[0]!);
-  if (
-    !(await gmailAuthorityIsCurrent(
-      db,
+const collectAuthorizedGmailEvidence$ = command(
+  async (
+    { set },
+    scope: HomeTaskGmailScope,
+    parentSignal: AbortSignal,
+  ): Promise<readonly HomeTaskGmailEvidence[]> => {
+    const signal = AbortSignal.any([
+      parentSignal,
+      AbortSignal.timeout(GMAIL_COLLECTION_DEADLINE_MS),
+    ]);
+    const listUrl = gmailListUrl();
+    if (!(await set(currentlyAuthorized$, { scope, url: listUrl }, signal))) {
+      return [];
+    }
+    const connectorId = await set(defaultGmailConnectorId$, scope);
+    signal.throwIfAborted();
+    if (connectorId === null) {
+      return [];
+    }
+    const accessToken = await set(
+      gmailAccessToken$,
       scope,
       connectorId,
-      [listUrl, firstDetailUrl],
       signal,
-    ))
-  ) {
-    return [];
-  }
-  const messages = await Promise.all(
-    messageIds.map((messageId) => {
-      return gmailJson(
-        {
-          accessToken,
-          schema: gmailMessageSchema,
-          url: gmailMessageUrl(messageId),
-        },
+    );
+    if (accessToken === null) {
+      return [];
+    }
+    // Credential preparation may refresh remotely. Recheck the account and
+    // endpoint immediately before using the resulting token.
+    if (
+      !(await set(
+        gmailAuthorityIsCurrent$,
+        scope,
+        connectorId,
+        [listUrl],
         signal,
-      );
-    }),
-  );
-  signal.throwIfAborted();
-
-  // Do not release provider content after either URL grant, the Agent scope,
-  // the selected default account, or the connection changed mid-read.
-  if (
-    !(await gmailAuthorityIsCurrent(
-      db,
-      scope,
-      connectorId,
-      [listUrl, firstDetailUrl],
-      signal,
-    ))
-  ) {
-    return [];
-  }
-
-  return messages.flatMap((message, index): HomeTaskGmailEvidence[] => {
-    if (message === null) {
+      ))
+    ) {
       return [];
     }
-    const labels = new Set(message.labelIds ?? []);
-    const subject = header(message, "Subject");
-    const snippet = cleanText(message.snippet, SNIPPET_CHARS);
-    if (subject.length === 0 && snippet.length === 0) {
-      return [];
-    }
-    return [
+    const list = await gmailJson(
       {
-        ref: `g${(index + 1).toString()}`,
-        receivedAt: receivedAt(message.internalDate),
-        from: header(message, "From"),
-        subject,
-        snippet,
-        important: labels.has("IMPORTANT"),
-        unread: labels.has("UNREAD"),
+        accessToken,
+        schema: gmailMessageListSchema,
+        url: listUrl,
       },
-    ];
-  });
-}
+      signal,
+    );
+    const messageIds = list?.messages?.map((message) => {
+      return message.id;
+    });
+    if (!messageIds || messageIds.length === 0) {
+      return [];
+    }
+    const firstDetailUrl = gmailMessageUrl(messageIds[0]!);
+    if (
+      !(await set(
+        gmailAuthorityIsCurrent$,
+        scope,
+        connectorId,
+        [listUrl, firstDetailUrl],
+        signal,
+      ))
+    ) {
+      return [];
+    }
+    const messages = await Promise.all(
+      messageIds.map((messageId) => {
+        return gmailJson(
+          {
+            accessToken,
+            schema: gmailMessageSchema,
+            url: gmailMessageUrl(messageId),
+          },
+          signal,
+        );
+      }),
+    );
+    signal.throwIfAborted();
 
-export async function collectHomeTaskGmailEvidence(
-  db: Db,
-  scope: HomeTaskGmailScope,
-  parentSignal: AbortSignal,
-): Promise<readonly HomeTaskGmailEvidence[]> {
-  const attempt = await settleIncludingAbort(
-    collectAuthorizedGmailEvidence(db, scope, parentSignal),
-  );
-  if (attempt.ok) {
-    return attempt.value;
-  }
-  // Gmail is optional evidence. Its own timeout/provider failure removes only
-  // that source; cancellation of the owning page request still propagates.
-  parentSignal.throwIfAborted();
-  return [];
-}
+    // Do not release provider content after either URL grant, the Agent scope,
+    // the selected default account, or the connection changed mid-read.
+    if (
+      !(await set(
+        gmailAuthorityIsCurrent$,
+        scope,
+        connectorId,
+        [listUrl, firstDetailUrl],
+        signal,
+      ))
+    ) {
+      return [];
+    }
+
+    return messages.flatMap((message, index): HomeTaskGmailEvidence[] => {
+      if (message === null) {
+        return [];
+      }
+      const labels = new Set(message.labelIds ?? []);
+      const subject = header(message, "Subject");
+      const snippet = cleanText(message.snippet, SNIPPET_CHARS);
+      if (subject.length === 0 && snippet.length === 0) {
+        return [];
+      }
+      return [
+        {
+          ref: `g${(index + 1).toString()}`,
+          receivedAt: receivedAt(message.internalDate),
+          from: header(message, "From"),
+          subject,
+          snippet,
+          important: labels.has("IMPORTANT"),
+          unread: labels.has("UNREAD"),
+        },
+      ];
+    });
+  },
+);
+
+export const collectHomeTaskGmailEvidence$ = command(
+  async (
+    { set },
+    scope: HomeTaskGmailScope,
+    parentSignal: AbortSignal,
+  ): Promise<readonly HomeTaskGmailEvidence[]> => {
+    const attempt = await settleIncludingAbort(
+      set(collectAuthorizedGmailEvidence$, scope, parentSignal),
+    );
+    if (attempt.ok) {
+      return attempt.value;
+    }
+    // Gmail is optional evidence. Its own timeout/provider failure removes only
+    // that source; cancellation of the owning page request still propagates.
+    parentSignal.throwIfAborted();
+    return [];
+  },
+);

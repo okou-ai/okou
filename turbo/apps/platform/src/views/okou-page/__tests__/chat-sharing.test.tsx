@@ -7,7 +7,6 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { expect, test } from "vitest";
 
@@ -264,6 +263,7 @@ test("Message text and code copying remain separate from group selection", async
 });
 
 test("A growing selected message group becomes partial and can select its new messages", async () => {
+  const user = userEvent.setup();
   const chatEvents: MockChatEventInput[] = standardConversation().slice(0, 1);
   const createRequests: string[][] = [];
   mockConversation(chatEvents);
@@ -304,9 +304,19 @@ test("A growing selected message group becomes partial and can select its new me
   await waitFor(() => {
     expect(selection).toBeChecked();
   });
+  expect(selection).not.toBePartiallyChecked();
   expect(requiredButtonNamed("Share").closest("footer")).toHaveTextContent(
     "1 selected",
   );
+
+  await user.click(selection);
+  expect(selection).not.toBeChecked();
+  expect(selection).not.toBePartiallyChecked();
+  expect(requiredButtonNamed("Share")).toBeDisabled();
+
+  await user.keyboard(" ");
+  expect(selection).toBeChecked();
+  expect(selection).not.toBePartiallyChecked();
   click(requiredButtonNamed("Share"));
   await screen.findByRole("textbox", { name: "Shared conversation link" });
   expect(createRequests).toStrictEqual([
@@ -837,7 +847,6 @@ async function setupSingleMessageShare(conflict = false) {
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ChatMessageShare]: true },
   });
   await screen.findByText(ANSWER);
   await waitFor(() => {
@@ -877,16 +886,4 @@ test("Revert the button and report a dead copied link when creation fails", asyn
   await waitFor(() => {
     expect(buttonsNamed("Share message")).toHaveLength(1);
   });
-});
-
-test("Hide single-message sharing while the switch is off", async () => {
-  mockConversation();
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-  await screen.findByText(ANSWER);
-  expect(buttonsNamed("Copy message").length).toBeGreaterThan(0);
-  expect(buttonsNamed("Share message")).toStrictEqual([]);
 });

@@ -10,16 +10,16 @@ import {
 } from "./auth.ts";
 import { hash, pathname, pushState, replaceState, search } from "./location.ts";
 import { setPageSignal$ } from "./page-signal.ts";
-import { clearPage$ } from "./react-router.ts";
 import { rootSignal$ } from "./root-signal.ts";
 import { bridgeConnected$ } from "./shared-database-bridge-state.ts";
 import { detach, onDomEventFn, Reason, resetSignal } from "./utils.ts";
 import { logger } from "./log.ts";
+import { capturePageView, markBootstrapRouteSetup$ } from "../lib/posthog.ts";
+import { pwaNavigationEnabled$ } from "./okou-page/pwa-navigation.ts";
 import {
-  capturePageView,
-  markBootstrapRouteSetup$,
-  markNavigationPushState$,
-} from "../lib/posthog.ts";
+  pwaPageTransitionDirection,
+  type PwaPageTransitionDirection,
+} from "./okou-page/pwa-page-transition.ts";
 
 const L = logger("Route");
 
@@ -97,16 +97,18 @@ interface Route {
   path: string;
   setup: Command<Promise<void> | void, [AbortSignal]>;
   analytics?: boolean;
-  /** Keep the current page mounted while navigating within this group. */
-  pageGroup?: string;
 }
 
 const internalRouteConfig$ = state<Route[] | undefined>(undefined);
 
-function findRoute(
-  config: readonly Route[],
-  currentPath: string,
-): Route | null {
+const currentRoute$ = computed((get) => {
+  const config = get(internalRouteConfig$);
+  if (!config) {
+    return null;
+  }
+
+  const currentPath = get(pathname$);
+
   for (const route of config) {
     const matcher = match(route.path, { decode: decodeURIComponent });
     const result = matcher(currentPath);
@@ -116,31 +118,7 @@ function findRoute(
   }
 
   return null;
-}
-
-const currentRoute$ = computed((get) => {
-  const config = get(internalRouteConfig$);
-  if (!config) {
-    return null;
-  }
-
-  return findRoute(config, get(pathname$));
 });
-
-const clearPageForRouteBoundary$ = command(
-  ({ get, set }, nextPathname: string) => {
-    const config = get(internalRouteConfig$);
-    const nextRoute = config ? findRoute(config, nextPathname) : null;
-    const currentRoute = get(currentRoute$);
-    if (
-      currentRoute !== nextRoute &&
-      (!currentRoute?.pageGroup ||
-        currentRoute.pageGroup !== nextRoute?.pageGroup)
-    ) {
-      set(clearPage$);
-    }
-  },
-);
 
 export const pathParams$ = computed((get) => {
   const currentRoute = get(currentRoute$);
@@ -200,6 +178,69 @@ const navigateToDefaultWhenInvalid$ = command(({ get, set }) => {
   }
 });
 
+// Read before the route state moves, while it still describes the page on
+// screen.
+const pageTransitionDirectionTo$ = command(
+  (
+    { get },
+    pathname: string,
+    searchParams: URLSearchParams,
+  ): PwaPageTransitionDirection => {
+    if (
+      !get(pwaNavigationEnabled$) ||
+      !("startViewTransition" in document) ||
+      !CSS.supports("selector(:active-view-transition-type(a))")
+    ) {
+      return "none";
+    }
+    return pwaPageTransitionDirection(
+      { pathname: get(pathname$), searchParams: get(searchParams$) },
+      { pathname, searchParams },
+    );
+  },
+);
+
+type RouteMove =
+  | { readonly kind: "push" | "replace"; readonly path: string }
+  | { readonly kind: "pop"; readonly historyState: unknown };
+
+const moveRouteState$ = command(({ set }, move: RouteMove) => {
+  if (move.kind === "pop") {
+    set(internalHistoryState$, move.historyState);
+  } else {
+    if (move.kind === "replace") {
+      replaceState({}, "", move.path);
+    } else {
+      pushState({}, "", move.path);
+    }
+    set(internalHistoryState$, {});
+  }
+  set(reloadPathname$, (x) => {
+    return x + 1;
+  });
+});
+
+// The browser captures the page on screen, then the update moves the route.
+// The incoming page is a live layer, so it renders inside the slide as the
+// next route's setup runs.
+const slideRoute$ = command(
+  async (
+    { set },
+    direction: "push" | "pop",
+    move: RouteMove,
+    signal: AbortSignal,
+  ) => {
+    await document.startViewTransition({
+      update: () => {
+        signal.throwIfAborted();
+        set(moveRouteState$, move);
+      },
+      types: [direction],
+    }).updateCallbackDone;
+    signal.throwIfAborted();
+  },
+);
+
 export const initRoutes$ = command(
   async ({ set }, config: readonly Route[], signal: AbortSignal) => {
     set(internalRouteConfig$, config as Route[]);
@@ -208,11 +249,22 @@ export const initRoutes$ = command(
     window.addEventListener(
       "popstate",
       onDomEventFn(async (event: PopStateEvent) => {
-        set(internalHistoryState$, event.state);
-        set(clearPageForRouteBoundary$, pathname());
-        set(reloadPathname$, (x) => {
-          return x + 1;
-        });
+        // The browser has already moved to the destination, while the route
+        // state still describes the page on screen. After an edge swipe the
+        // browser has animated the change itself, so a slide would play twice.
+        const direction = event.hasUAVisualTransition
+          ? "none"
+          : set(
+              pageTransitionDirectionTo$,
+              pathname(),
+              new URLSearchParams(search()),
+            );
+        const move: RouteMove = { kind: "pop", historyState: event.state };
+        if (direction === "none") {
+          set(moveRouteState$, move);
+        } else {
+          await set(slideRoute$, direction, move, signal);
+        }
         set(navigateToDefaultWhenInvalid$);
         await set(loadRoute$, signal);
       }),
@@ -249,17 +301,20 @@ const navigate$ = command(
       "navigating to",
       isDesktopAuthFlow(new URL(newPath, location.origin)) ? pathname : newPath,
     );
-    set(clearPageForRouteBoundary$, pathname);
-    if (options.replace) {
-      replaceState({}, "", newPath);
+    const direction = set(
+      pageTransitionDirectionTo$,
+      pathname,
+      options.searchParams ?? new URLSearchParams(),
+    );
+    const move: RouteMove = {
+      kind: options.replace ? "replace" : "push",
+      path: newPath,
+    };
+    if (direction === "none") {
+      set(moveRouteState$, move);
     } else {
-      pushState({}, "", newPath);
-      set(markNavigationPushState$);
+      await set(slideRoute$, direction, move, signal);
     }
-    set(internalHistoryState$, {});
-    set(reloadPathname$, (x) => {
-      return x + 1;
-    });
     // Use rootSignal$ (not the caller's route signal) so the new route gets
     // a fresh, non-aborted signal.  resetRouteSignal$ inside loadRoute$ will
     // abort the previous route's controller, which would poison any signal
@@ -270,24 +325,37 @@ const navigate$ = command(
   },
 );
 
+interface NavigateToOptions {
+  pathParams?: Parameters<typeof generateRouterPath>[1];
+  searchParams?: URLSearchParams;
+  hash?: string;
+  replace?: boolean;
+}
+
+export const navigateTo$ = command(
+  (
+    { set },
+    pathname: Parameters<typeof generateRouterPath>[0],
+    options: NavigateToOptions | undefined,
+    signal: AbortSignal,
+  ) => {
+    return set(
+      navigate$,
+      generateRouterPath(pathname, options?.pathParams),
+      options ?? {},
+      signal,
+    );
+  },
+);
+
 export const detachedNavigateTo$ = command(
   (
     { set, get },
     pathname: Parameters<typeof generateRouterPath>[0],
-    options?: {
-      pathParams?: Parameters<typeof generateRouterPath>[1];
-      searchParams?: URLSearchParams;
-      hash?: string;
-      replace?: boolean;
-    },
+    options?: NavigateToOptions,
   ) => {
     detach(
-      set(
-        navigate$,
-        generateRouterPath(pathname, options?.pathParams),
-        options ?? {},
-        get(rootSignal$),
-      ),
+      set(navigateTo$, pathname, options, get(rootSignal$)),
       Reason.Entrance,
     );
   },

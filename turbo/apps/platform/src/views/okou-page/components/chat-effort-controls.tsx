@@ -1,18 +1,16 @@
-import { withModelReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import { Field } from "@base-ui/react/field";
 import {
-  Switch,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@okouai/ui";
-import { useGet, useLastResolved } from "ccstate-react";
+  type ReasoningEffort,
+  withModelReasoningEffort,
+} from "@okouai/api-contracts/contracts/model-reasoning-effort";
+import { Switch } from "@okouai/ui";
+import { useLastResolved } from "ccstate-react";
 import { Zap } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { featureSwitch$ } from "../../../signals/external/feature-switch.ts";
-import { orgModelPolicies$ } from "../../../signals/external/org-model-policies.ts";
+import { modelCatalog$ } from "../../../signals/external/model-catalog.ts";
+import { availableRunModels$ } from "../../../signals/external/run-models.ts";
 import {
   availableChatReasoningEfforts,
   effectiveChatReasoningEffort,
@@ -23,14 +21,14 @@ import type { ModelProviderSelection } from "./model-provider-picker.tsx";
 export function useChatEffort(
   selection: ModelProviderSelection | null | undefined,
 ) {
-  const switches = useGet(featureSwitch$);
-  const policies = useLastResolved(orgModelPolicies$);
-  const policy = policies?.policies.find((entry) => {
+  const models = useLastResolved(availableRunModels$);
+  const catalog = useLastResolved(modelCatalog$);
+  const runModel = models?.models.find((entry) => {
     return entry.model === selection?.selectedModel;
   });
   return {
-    efforts: availableChatReasoningEfforts(selection, switches, policy),
-    effort: effectiveChatReasoningEffort(selection, switches, policy),
+    efforts: availableChatReasoningEfforts(selection, runModel, catalog),
+    effort: effectiveChatReasoningEffort(selection, runModel, catalog),
   };
 }
 
@@ -40,51 +38,66 @@ export function useChatEffort(
  * `ultra`, Claude runs `low`/`medium`/`high`/`extra`/`max`/`ultracode`.
  * Renaming them to a house scale would tell a user something their model does
  * not say. The only thing this changes is the case: a level is a label in the
- * interface, not the raw enum it happens to be on the wire.
+ * interface, not the raw enum it happens to be on the wire. Each label is
+ * spelled out rather than derived, because a compound level such as `xhigh`
+ * does not survive a mechanical capitalisation (`Xhigh`).
  */
-export function formatChatEffort(effort: string) {
-  return effort.charAt(0).toUpperCase() + effort.slice(1);
+const CHAT_EFFORT_LABELS: Readonly<Record<ReasoningEffort, string>> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "xHigh",
+  extra: "Extra",
+  max: "Max",
+  ultra: "Ultra",
+  ultracode: "Ultracode",
+};
+
+export function formatChatEffort(effort: ReasoningEffort) {
+  return CHAT_EFFORT_LABELS[effort];
 }
 
 /**
- * The two words naming the ends of the scale.
- *
- * They are not a second reading of the current value -- the row above already
- * carries that. They name the *direction*, which is the one thing the level
- * names cannot say on their own: a user who has not dragged the bar has no way
- * to know which way `Extra` or `Ultracode` points. Claude and ChatGPT both
- * label the poles for the same reason.
- *
- * The row is a sibling of the bar rather than part of it, so it inherits the
- * bar's width and `justify-between` lands each word on a track end. It sits
- * closer to the track than to the row above, because it labels the ruler and is
- * not the setting row's second sentence. It stays outside the track, so the
- * aurora revealed at the highest step never sits underneath the words.
+ * Keep each end's benefit and usage visible together. Only personal
+ * subscription routes expose effort levels, so usage is the subscription's
+ * allowance.
  */
 function EffortScaleLabels() {
   const { t } = useTranslation();
   return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none mt-5 mb-2 flex select-none items-baseline justify-between gap-3 text-xs text-muted-foreground"
-    >
-      <span>
-        {t(($) => {
-          return $.settings.models.picker.effortScale.faster;
-        })}
-      </span>
-      <span>
-        {t(($) => {
-          return $.settings.models.picker.effortScale.smarter;
-        })}
-      </span>
+    <div className="pointer-events-none mb-2 flex select-none items-start justify-between gap-3 text-xs text-muted-foreground">
+      <div className="flex flex-col gap-0.5">
+        <span>
+          {t(($) => {
+            return $.settings.models.picker.effortScale.faster;
+          })}
+        </span>
+        <span className="text-[11px] text-gray-700">
+          {t(($) => {
+            return $.settings.models.picker.effortScale.lowerUsage;
+          })}
+        </span>
+      </div>
+      <div className="flex flex-col gap-0.5 text-right">
+        <span>
+          {t(($) => {
+            return $.settings.models.picker.effortScale.smarter;
+          })}
+        </span>
+        <span className="text-[11px] text-gray-700">
+          {t(($) => {
+            return $.settings.models.picker.effortScale.higherUsage;
+          })}
+        </span>
+      </div>
     </div>
   );
 }
 
 /**
- * The effort row: the label, the selected step in the user's words, and the
- * bar. Renders nothing for a model that has no effort levels.
+ * The effort bar. The composer's model panel trigger already names the level
+ * and the bar carries it for assistive technology, so no label/value row sits
+ * above it. Renders nothing for a model that has no effort levels.
  */
 export function ChatEffortSettings({
   selection,
@@ -108,16 +121,7 @@ export function ChatEffortSettings({
     return effort === value;
   });
   return (
-    // The gap between the rows is not uniform, so each row below the header
-    // carries its own spacing rather than the column setting one for all of
-    // them.
     <div className="flex flex-col px-2 py-3">
-      {/* The same label/value pair the composer's video options use: the name
-          of the setting recedes, the chosen value carries the row. */}
-      <div className="flex items-baseline justify-between gap-3 text-[13px]">
-        <span className="text-muted-foreground">{label}</span>
-        <span className="font-medium text-foreground">{displayValue}</span>
-      </div>
       {index !== -1 ? (
         <>
           <EffortScaleLabels />
@@ -129,12 +133,13 @@ export function ChatEffortSettings({
             valueText={displayValue}
             onValueChange={(next) => {
               const effort = efforts[next];
-              if (effort !== undefined) {
+              const model = selection.selectedModel;
+              if (effort !== undefined && model !== null) {
                 onChange({
                   ...selection,
                   modelSettings: withModelReasoningEffort(
                     selection.modelSettings,
-                    { model: selection.selectedModel, effort },
+                    { model, effort },
                   ),
                 });
               }
@@ -147,10 +152,8 @@ export function ChatEffortSettings({
 }
 
 /**
- * The Fast row. The bolt is the same icon and treatment the model rows use for
- * Fast and it carries the speed and credit impact in its tooltip; spelling that
- * out underneath put two lines of small print in a row the user reads as a
- * single switch.
+ * Show Fast's cost before the user enables it, including as the
+ * switch's accessible description.
  */
 export function ChatFastSetting({
   selection,
@@ -165,29 +168,26 @@ export function ChatFastSetting({
 }) {
   const { t } = useTranslation();
   const label = t(($) => {
-    return $.settings.models.picker.fast;
+    return $.settings.models.picker.fastMode;
   });
   return (
-    <div className="flex items-center justify-between gap-3 px-2 py-3">
-      <TooltipProvider delay={300}>
-        <Tooltip>
-          <TooltipTrigger className="flex cursor-default items-center gap-2 text-[13px]">
-            <Zap
-              size={18}
-              fill="currentColor"
-              className="text-amber-600 dark:text-amber-300"
-              aria-hidden="true"
-            />
-            {label}
-          </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs">
+    <Field.Root className="flex items-center justify-between gap-3 px-2 py-3">
+      <div className="flex min-w-0 items-start gap-2">
+        <Zap
+          size={18}
+          fill="currentColor"
+          className="mt-px shrink-0 text-amber-600 dark:text-amber-300"
+          aria-hidden="true"
+        />
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <Field.Label className="text-[13px]">{label}</Field.Label>
+          <Field.Description className="text-[11px] text-gray-700">
             {fastImpact}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+          </Field.Description>
+        </div>
+      </div>
       <Switch
         size="compact"
-        aria-label={label}
         checked={selection.codexServiceTier === "fast"}
         onCheckedChange={(fast) => {
           onChange({
@@ -197,6 +197,6 @@ export function ChatFastSetting({
         }}
         disabled={disabled}
       />
-    </div>
+    </Field.Root>
   );
 }

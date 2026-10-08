@@ -103,6 +103,41 @@ async fn is_rootfs_present_checks_rootfs_file() {
 }
 
 #[tokio::test]
+async fn cached_rootfs_requires_a_matching_cli_sidecar() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
+    let rootfs = RootfsPaths::new(&home, "cli-rootfs-hash");
+    tokio::fs::create_dir_all(rootfs.dir()).await.unwrap();
+    tokio::fs::write(rootfs.rootfs(), b"committed-rootfs")
+        .await
+        .unwrap();
+
+    let input = tempfile::tempdir().unwrap();
+    okou_cli::test_support::write_artifact_dir(input.path(), b"tarball-bytes", "9.353.0", "1.36.0");
+    let artifact = OkouCliArtifact::resolve(input.path()).await.unwrap();
+    let error = verify_cli_sidecar(&rootfs, Some(&artifact))
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("sidecar"), "{error}");
+
+    tokio::fs::write(rootfs.okou_cli_manifest(), b"wrong identity")
+        .await
+        .unwrap();
+    let error = verify_cli_sidecar(&rootfs, Some(&artifact))
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("does not match"), "{error}");
+
+    tokio::fs::write(
+        rootfs.okou_cli_manifest(),
+        artifact.installed_manifest_bytes(),
+    )
+    .await
+    .unwrap();
+    verify_cli_sidecar(&rootfs, Some(&artifact)).await.unwrap();
+}
+
+#[tokio::test]
 async fn rootfs_image_lock_uses_shared_for_existing_rootfs_in_use() {
     let dir = tempfile::tempdir().unwrap();
     let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());

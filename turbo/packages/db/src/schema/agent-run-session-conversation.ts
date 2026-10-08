@@ -38,15 +38,9 @@ export const agentRuns = pgTable(
         table.createdAt.desc(),
       ),
       index("idx_agent_runs_org").on(table.orgId),
-      // Composite index for status-based heartbeat queries
-      index("idx_agent_runs_status_heartbeat").on(
-        table.status,
-        table.lastHeartbeatAt,
-      ),
-      // Partial index for cron cleanup (only running status)
-      index("idx_agent_runs_running_heartbeat")
-        .on(table.lastHeartbeatAt)
-        .where(sql`status = 'running'`),
+      // Active-run scans filter by status only; heartbeat stays unindexed so
+      // heartbeat updates remain HOT.
+      index("idx_agent_runs_status").on(table.status),
       // Composite index for org+status queries (concurrency checks, queue listing)
       index("idx_agent_runs_org_status_created").on(
         table.orgId,
@@ -62,7 +56,7 @@ export const agentRuns = pgTable(
         .where(sql`${table.workflowAutomationId} IS NOT NULL`),
       check(
         "agent_runs_autonomy_budget_check",
-        sql`${table.autonomyBudget} >= 0 AND ${table.autonomyBudget} <= 10`,
+        sql`${table.autonomyBudget} >= 0 AND ${table.autonomyBudget} <= 32`,
       ),
       check(
         "agent_runs_runner_cancellation_mode_check",
@@ -83,7 +77,6 @@ export const agentRuns = pgTable(
             ${table.modelRuntimeModel} IS NULL AND
             ${table.builtInModelKeyId} IS NULL AND
             ${table.codexServiceTier} IS NULL AND
-            ${table.selectedVideoModel} IS NULL AND
             ${table.selectedImageModel} IS NULL AND
             ${table.chatThreadId} IS NULL AND
             ${table.apiStartedAt} IS NULL AND

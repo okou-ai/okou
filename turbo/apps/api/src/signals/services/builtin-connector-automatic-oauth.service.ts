@@ -1,59 +1,63 @@
-import { createHash } from "node:crypto";
-import { isDeepStrictEqual } from "node:util";
 import {
   IssuerMismatchError,
   type OAuthClientMetadata,
 } from "@modelcontextprotocol/client";
-import { command } from "ccstate";
-import { and, eq, isNull, sql } from "drizzle-orm";
-import { z } from "zod";
 import type { ConnectorAccountMutationIntent } from "@okouai/api-contracts/contracts/connector-accounts";
 import {
   connectorAuthMethodIdSchema,
   connectorSlugSchema,
 } from "@okouai/api-contracts/contracts/connector-identity";
-import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connector-config";
 import { AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH } from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
+import type { ConnectorAuthMethodRuntimeConfig } from "@okouai/connectors/connector-config";
 import { connectors } from "@okouai/db/schema/connector";
-import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { builtinConnectorDcrRegistrations } from "@okouai/db/schema/connector-dcr-registration";
+import { connectorOauthStates } from "@okouai/db/schema/connector-oauth-state";
 import { secrets } from "@okouai/db/schema/secret";
+import { command } from "ccstate";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import { z } from "zod";
 import {
   connectorOAuthStateExpiresAt,
   generateConnectorOAuthState,
 } from "../../lib/connector-oauth-state";
 import { nowDate } from "../../lib/time";
-import type { Tx } from "../../lib/db-types";
 import { writeDb$, type Db } from "../external/db";
 import { safeJsonParse, safeSync, settle } from "../utils";
+import {
+  automaticAccountExists$,
+  publishAutomaticConnection$,
+  type AutomaticConnectionPublication,
+} from "./builtin-connector-automatic-connection.service";
+import {
+  builtinConnectorAutomaticDcrStore,
+  createBuiltinDcrRegistration$,
+  hasBuiltinDcrLinkedAccounts$,
+  readBuiltinDcrBoundClient$,
+  readBuiltinDcrRegistrationByIssuer$,
+  retireBuiltinDcrRegistration$,
+  type BuiltinConnectorAutomaticContractOwner,
+} from "./builtin-connector-automatic-dcr.service";
 import type { ResolvedConnectorActionMethod } from "./connector-action-resolver.service";
 import {
   getConnectorRuntimeMethod,
-  loadConnectorRuntimeSnapshot,
   type ConnectorRuntimeMethod,
-  type ConnectorRuntimeSnapshot,
+  type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
+import { upsertConnectorOwnedSecret } from "./connector-credential-storage-write.service";
+import { loadConnectorRuntimeSlugSelection } from "./connector-catalog-slug-source.service";
 import {
-  replaceConnectorConnection,
-  resolveConnectorConnectionMutation,
-  type ReadyConnectorConnectionMutation,
-} from "./connector-connection-write.service";
-import {
-  claimConnectorOAuthState,
+  claimBuiltinConnectorOAuthState$,
   insertConnectorOAuthState,
   type StoredBuiltinOAuthState,
 } from "./connector-oauth-state.service";
-import { upsertConnectorOwnedSecret } from "./connector-credential-storage-write.service";
+import { publishConnectorRuntimeSyncWakeups$ } from "./connector-runtime-wakeup.service";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
 } from "./crypto.utils";
-import {
-  builtinConnectorAutomaticDcrStore,
-  lockBuiltinConnectorAutomaticLifecycle,
-  type BuiltinConnectorAutomaticContractOwner,
-} from "./builtin-connector-automatic-dcr.service";
 import {
   McpAutomaticOAuthError,
   exchangeMcpAutomaticOAuthCode,
@@ -63,13 +67,10 @@ import {
   refreshMcpAutomaticOAuthToken,
   validateMcpAutomaticOAuthCallbackIssuer,
   type McpAutomaticOAuthBinding,
-  type McpAutomaticOAuthContext,
   type McpAutomaticOAuthTokenResult,
 } from "./mcp-automatic-oauth.service";
 import { configuredOkouMcpOAuthClientMetadata } from "./mcp-oauth-client-metadata.service";
 import { resolveRefreshedOAuthIdentity } from "./mcp-oauth-identity.service";
-import { commitConnectorRuntimeMutation } from "./connector-runtime-wakeup.service";
-import { lockConnectorAccountTarget } from "./auth-state-lock.service";
 
 const httpsUrl = z.url({ protocol: /^https$/u });
 const contextBase = z.object({
@@ -80,7 +81,6 @@ const contextBase = z.object({
   storageVersion: z.number().int().positive(),
   contractHash: z.string().regex(/^[a-f0-9]{64}$/u),
   endpoint: httpsUrl,
-  reconnectRevision: z.string().nullable(),
   issuer: httpsUrl,
   resource: httpsUrl,
   resourceMetadataUrl: httpsUrl.nullable(),
@@ -113,6 +113,7 @@ type BuiltinAutomaticMethod = Extract<
   { readonly grant: { readonly kind: "automatic" } }
 >;
 interface BuiltinAutomaticContract {
+  readonly catalogIdentity: ConnectorRuntimeSelection["catalogIdentity"];
   readonly connectorSlug: string;
   readonly authMethodId: string;
   readonly storageVersion: number;
@@ -133,11 +134,11 @@ interface Failure {
   readonly reason: FailureReason;
   readonly connectorSlug?: string;
 }
-class StaleBuiltinAutomaticContractError extends Error {}
 
 function contractFromMethod(
   runtime: ConnectorRuntimeMethod,
   endpoint: string | undefined,
+  catalogIdentity: ConnectorRuntimeSelection["catalogIdentity"],
 ): BuiltinAutomaticContract | null {
   const { connectorSlug, authMethodId, method } = runtime;
   if (
@@ -162,6 +163,7 @@ function contractFromMethod(
     connectorSlug,
     authMethodId,
     endpoint,
+    catalogIdentity,
     storageVersion: method.storage.version,
     contractHash,
     method: {
@@ -174,7 +176,7 @@ function contractFromMethod(
 }
 
 function currentContractFromSnapshot(
-  snapshot: ConnectorRuntimeSnapshot,
+  snapshot: ConnectorRuntimeSelection,
   connectorSlug: string,
   authMethodId: string,
 ): BuiltinAutomaticContract | null {
@@ -188,6 +190,7 @@ function currentContractFromSnapshot(
     ? contractFromMethod(
         runtime,
         snapshot.connectors.get(connectorSlug)?.catalogConnector.mcp?.endpoint,
+        snapshot.catalogIdentity,
       )
     : null;
 }
@@ -198,27 +201,31 @@ async function currentContract(
   authMethodId: string,
 ): Promise<BuiltinAutomaticContract | null> {
   return currentContractFromSnapshot(
-    await loadConnectorRuntimeSnapshot(db),
+    await loadConnectorRuntimeSlugSelection(db, {
+      connectorSlugs: [connectorSlug],
+    }),
     connectorSlug,
     authMethodId,
   );
 }
 
-async function assertCurrentContract(
-  db: Db,
-  contract: BuiltinAutomaticContract,
-): Promise<void> {
-  const current = await currentContract(
-    db,
-    contract.connectorSlug,
-    contract.authMethodId,
-  );
-  if (current?.contractHash !== contract.contractHash) {
-    throw new StaleBuiltinAutomaticContractError(
-      "Builtin MCP credential contract changed",
+const currentBuiltinAutomaticContract$ = command(
+  async (
+    { set },
+    args: { readonly connectorSlug: string; readonly authMethodId: string },
+    signal: AbortSignal,
+  ): Promise<BuiltinAutomaticContract | null> => {
+    const snapshot = await loadConnectorRuntimeSlugSelection(set(writeDb$), {
+      connectorSlugs: [args.connectorSlug],
+    });
+    signal.throwIfAborted();
+    return currentContractFromSnapshot(
+      snapshot,
+      args.connectorSlug,
+      args.authMethodId,
     );
-  }
-}
+  },
+);
 
 function contractOwner(
   orgId: string,
@@ -236,16 +243,10 @@ function dcrStore(db: Db, orgId: string, contract: BuiltinAutomaticContract) {
   return builtinConnectorAutomaticDcrStore({
     db,
     owner: contractOwner(orgId, contract),
-    assertCurrentContract: async (lockedDb) => {
-      await assertCurrentContract(lockedDb, contract);
-    },
   });
 }
 
 function failure(error: unknown): Failure {
-  if (error instanceof StaleBuiltinAutomaticContractError) {
-    return { kind: "error", reason: "stale-contract" };
-  }
   if (error instanceof McpAutomaticOAuthError) {
     return {
       kind: "error",
@@ -259,28 +260,6 @@ function failure(error: unknown): Failure {
     return { kind: "error", reason: "oauth-failed" };
   }
   throw error;
-}
-
-function revision(mutation: ReadyConnectorConnectionMutation): string | null {
-  return mutation.kind === "update" ? mutation.existing.stateRevision : null;
-}
-
-async function resolveMutation(
-  tx: Tx,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly account: ConnectorAccountMutationIntent;
-  },
-  contract: BuiltinAutomaticContract,
-) {
-  return await resolveConnectorConnectionMutation(tx, {
-    orgId: args.orgId,
-    userId: args.userId,
-    target: { kind: "builtin", connectorSlug: contract.connectorSlug },
-    mutation: args.account,
-    allowSiblings: true,
-  });
 }
 
 function tokenStorageName(
@@ -301,322 +280,365 @@ function tokenStorageName(
   return name;
 }
 
-async function writeTokens(
-  db: Db,
+interface EncryptedAutomaticToken {
+  readonly name: string;
+  readonly encryptedValue: string;
+}
+
+async function encryptAutomaticTokens(
   args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly connectorId: string;
     readonly contract: BuiltinAutomaticContract;
     readonly token: McpAutomaticOAuthTokenResult;
     readonly fallbackRefreshToken?: string;
   },
   signal: AbortSignal,
-): Promise<void> {
+): Promise<readonly EncryptedAutomaticToken[]> {
   const tokens = {
     accessToken: args.token.accessToken,
     refreshToken: args.token.refreshToken ?? args.fallbackRefreshToken,
     idToken: args.token.idToken,
   };
+  const encrypted: EncryptedAutomaticToken[] = [];
   for (const key of ["accessToken", "refreshToken", "idToken"] as const) {
     const name = tokenStorageName(args.contract, key);
     const value = tokens[key];
     if (!name || !value) {
       continue;
     }
-    const encryptedValue = await encryptStoredSecretValue(value);
+    encrypted.push({
+      name,
+      encryptedValue: await encryptStoredSecretValue(value),
+    });
     signal.throwIfAborted();
+  }
+  return encrypted;
+}
+
+async function writeEncryptedTokens(
+  db: Db,
+  args: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly connectorId: string;
+    readonly contract: BuiltinAutomaticContract;
+    readonly tokens: readonly EncryptedAutomaticToken[];
+  },
+): Promise<void> {
+  for (const token of args.tokens) {
     await upsertConnectorOwnedSecret(db, {
       connectorId: args.connectorId,
       orgId: args.orgId,
       userId: args.userId,
       storage: args.contract.method.storage,
-      name,
-      encryptedValue,
+      name: token.name,
+      encryptedValue: token.encryptedValue,
       description: "Automatic MCP OAuth token",
     });
   }
 }
 
-async function persistConnection(
-  tx: Tx,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly contract: BuiltinAutomaticContract;
-    readonly resolution: ReadyConnectorConnectionMutation;
-    readonly token?: McpAutomaticOAuthTokenResult;
-    readonly context?: McpAutomaticOAuthContext;
-  },
-  signal: AbortSignal,
-): Promise<string> {
-  const connection = await replaceConnectorConnection(
-    tx,
-    {
-      orgId: args.orgId,
-      userId: args.userId,
-      authMethod: args.contract.authMethodId,
-      automaticAuthType: args.token ? "oauth" : "none",
-      storageVersion: args.contract.storageVersion,
-      tokenExpiresAt: args.token?.expiresAt ?? null,
-      target: {
-        kind: "builtin",
-        connectorSlug: args.contract.connectorSlug,
-        identity: args.token?.userInfo
-          ? {
-              kind: "external",
-              externalId: args.token.userInfo.id,
-              externalUsername: args.token.userInfo.username,
-              externalEmail: args.token.userInfo.email,
-              oauthRequestedScopes: null,
-              oauthGrantedScopes: args.token.scopes,
-            }
-          : { kind: "local" },
-      },
-      resolution: args.resolution,
-      writeCredentials: async ({ db, connectorId }, writeSignal) => {
-        if (!args.token || !args.context) {
-          return;
-        }
-        await writeTokens(
-          db,
-          { ...args, connectorId, token: args.token },
-          writeSignal,
-        );
-        const context = args.context;
-        await db.insert(builtinConnectorAccountOauthBindings).values({
-          connectorAccountId: connectorId,
-          orgId: args.orgId,
-          userId: args.userId,
-          connectorSlug: args.contract.connectorSlug,
-          authMethod: args.contract.authMethodId,
-          storageVersion: args.contract.storageVersion,
-          contractHash: args.contract.contractHash,
-          endpoint: args.contract.endpoint,
-          issuer: context.issuer,
-          resource: context.resource,
-          resourceMetadataUrl: context.resourceMetadataUrl,
-          tokenEndpoint: context.tokenEndpoint,
-          clientId: context.clientId,
-          tokenEndpointAuthMethod: context.tokenEndpointAuthMethod,
-          registrationMethod: context.registrationMethod,
-          dcrRegistrationId:
-            context.registrationMethod === "dcr"
-              ? context.dcrRegistrationId
-              : null,
-        });
-        await db
-          .update(connectors)
-          .set({
-            oauthGrantedScopes:
-              args.token.scopes === null
-                ? null
-                : JSON.stringify(args.token.scopes),
-          })
-          .where(eq(connectors.id, connectorId));
-      },
-    },
-    signal,
-  );
-  return connection.id;
-}
-
-function builtinAutomaticWakeup(
-  db: Db,
-  owner: { readonly orgId: string; readonly userId: string },
-  connectorSlug: string,
-) {
-  return {
-    db,
-    scope: { orgId: owner.orgId, userId: owner.userId },
-    targets: [{ kind: "builtin" as const, connectorSlug }],
-  };
-}
-
-export const startBuiltinConnectorAutomatic$ = command(
+const prepareBuiltinAutomaticAuthorization$ = command(
   async (
     { set },
     args: {
       readonly orgId: string;
-      readonly userId: string;
-      readonly resolved: ResolvedConnectorActionMethod;
-      readonly account: ConnectorAccountMutationIntent;
-      readonly agentId: string | null;
-      readonly authorizeAgent: boolean;
+      readonly contract: BuiltinAutomaticContract;
       readonly redirectUri: string;
+      readonly state: string;
       readonly cimdClientId: string;
       readonly dcrClientMetadata: OAuthClientMetadata;
     },
     signal: AbortSignal,
-  ): Promise<
-    | Failure
-    | {
-        readonly kind: "authorization";
-        readonly authorizationUrl: string;
-        readonly oauthAttemptId: string;
-      }
-    | { readonly kind: "connected"; readonly connectionId: string }
-  > => {
-    const db = set(writeDb$);
+  ) => {
+    const { contract } = args;
+    return await prepareMcpAutomaticOAuthAuthorization(
+      {
+        dcrStore: {
+          readByIssuer: async (issuer) => {
+            return await set(
+              readBuiltinDcrRegistrationByIssuer$,
+              {
+                owner: contractOwner(args.orgId, contract),
+                issuer,
+              },
+              signal,
+            );
+          },
+          hasLinkedAccounts: async (registrationId) => {
+            return await set(
+              hasBuiltinDcrLinkedAccounts$,
+              registrationId,
+              signal,
+            );
+          },
+          retire: async (id) => {
+            await set(
+              retireBuiltinDcrRegistration$,
+              { owner: contractOwner(args.orgId, contract), id },
+              signal,
+            );
+          },
+          create: async (value, createSignal) => {
+            return await set(
+              createBuiltinDcrRegistration$,
+              {
+                owner: contractOwner(args.orgId, contract),
+                catalogIdentity: contract.catalogIdentity,
+                value,
+              },
+              createSignal,
+            );
+          },
+        },
+        endpoint: contract.endpoint,
+        redirectUri: args.redirectUri,
+        state: args.state,
+        cimdClientId: args.cimdClientId,
+        dcrClientMetadata: args.dcrClientMetadata,
+      },
+      signal,
+    );
+  },
+);
+
+interface StartBuiltinAutomaticArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly resolved: ResolvedConnectorActionMethod;
+  readonly account: ConnectorAccountMutationIntent;
+  readonly agentId: string | null;
+  readonly authorizeAgent: boolean;
+  readonly redirectUri: string;
+  readonly cimdClientId: string;
+  readonly dcrClientMetadata: OAuthClientMetadata;
+}
+
+type StartedBuiltinAutomatic =
+  | Failure
+  | {
+      readonly kind: "authorization";
+      readonly authorizationUrl: string;
+      readonly oauthAttemptId: string;
+    }
+  | { readonly kind: "connected"; readonly connectionId: string };
+
+export const startBuiltinConnectorAutomatic$ = command(
+  async (
+    { set },
+    args: StartBuiltinAutomaticArgs,
+    signal: AbortSignal,
+  ): Promise<StartedBuiltinAutomatic> => {
     const contract = contractFromMethod(
       args.resolved.runtimeMethod,
       args.resolved.catalogConnector.mcp?.endpoint,
+      args.resolved.snapshot.catalogIdentity,
     );
     if (!contract) {
       return { kind: "error", reason: "stale-contract" };
     }
-    // Treat the commit and its runtime wakeup as one cancellation boundary.
-    const operation = await settle(
-      commitConnectorRuntimeMutation(
-        (async () => {
-          await assertCurrentContract(db, contract);
-          const preflight = await db.transaction(async (tx) => {
-            return await resolveMutation(tx, args, contract);
-          });
-          if (preflight.kind !== "ready") {
-            return { kind: "error", reason: "invalid-account" } as const;
-          }
-          const reconnectRevision = revision(preflight.mutation);
-          const state = generateConnectorOAuthState();
-          const prepared = await prepareMcpAutomaticOAuthAuthorization(
-            {
-              dcrStore: dcrStore(db, args.orgId, contract),
-              endpoint: contract.endpoint,
-              redirectUri: args.redirectUri,
-              state,
-              cimdClientId: args.cimdClientId,
-              dcrClientMetadata: args.dcrClientMetadata,
-            },
-            signal,
-          );
-          return await db.transaction(async (tx) => {
-            await lockBuiltinConnectorAutomaticLifecycle(
-              tx,
-              contractOwner(args.orgId, contract),
-            );
-            await assertCurrentContract(tx, contract);
-            const resolution = await resolveMutation(tx, args, contract);
-            if (
-              resolution.kind !== "ready" ||
-              revision(resolution.mutation) !== reconnectRevision
-            ) {
-              return { kind: "error", reason: "invalid-account" } as const;
-            }
-            if (prepared.kind === "none") {
-              const connectionId = await persistConnection(
-                tx,
-                { ...args, contract, resolution: resolution.mutation },
-                signal,
-              );
-              return { kind: "connected", connectionId } as const;
-            }
-            const context = builtinAutomaticContextSchema.parse({
-              ...prepared.context,
-              version: 1,
-              kind: "connector-mcp-automatic",
-              connectorSlug: contract.connectorSlug,
-              authMethodId: contract.authMethodId,
-              endpoint: contract.endpoint,
-              storageVersion: contract.storageVersion,
-              contractHash: contract.contractHash,
-              reconnectRevision,
-            });
-            const oauthAttemptId = await insertConnectorOAuthState(tx, {
-              state,
-              connectorSlug: contract.connectorSlug,
-              authMethod: contract.authMethodId,
-              storageVersion: null,
-              userId: args.userId,
-              orgId: args.orgId,
-              agentId: args.agentId,
-              authorizeAgent: args.authorizeAgent,
-              redirectUri: args.redirectUri,
-              authorizationUrl: prepared.authorizationUrl,
-              codeVerifier: prepared.codeVerifier,
-              oauthRequestedScopes: prepared.requestedScope,
-              oauthContext: JSON.stringify(context),
-              accountMutation: args.account,
-              expiresAt: connectorOAuthStateExpiresAt(),
-            });
-            return {
-              kind: "authorization",
-              authorizationUrl: prepared.authorizationUrl,
-              oauthAttemptId,
-            } as const;
-          });
-        })(),
-        (result) => {
-          return result.kind === "connected"
-            ? builtinAutomaticWakeup(db, args, contract.connectorSlug)
-            : undefined;
+    if (
+      args.account.intent === "reconnect" &&
+      !(await set(
+        automaticAccountExists$,
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          connectorSlug: contract.connectorSlug,
+          connectionId: args.account.connectionId,
         },
+        signal,
+      ))
+    ) {
+      return { kind: "error", reason: "invalid-account" };
+    }
+    const state = generateConnectorOAuthState();
+    const prepared = await settle(
+      set(
+        prepareBuiltinAutomaticAuthorization$,
+        {
+          orgId: args.orgId,
+          contract,
+          redirectUri: args.redirectUri,
+          state,
+          cimdClientId: args.cimdClientId,
+          dcrClientMetadata: args.dcrClientMetadata,
+        },
+        signal,
       ),
       signal,
     );
-    if (!operation.ok) {
-      return failure(operation.error);
+    if (!prepared.ok) {
+      return failure(prepared.error);
     }
-    return operation.value;
+    if (prepared.value.kind === "none") {
+      const connected = await set(
+        publishAutomaticConnection$,
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          connectorSlug: contract.connectorSlug,
+          authMethod: contract.authMethodId,
+          storageVersion: contract.storageVersion,
+          account: args.account,
+          binding: null,
+          identity: null,
+          expiresAt: null,
+          scopes: null,
+          credentials: [],
+        },
+        signal,
+      );
+      if (connected.kind === "connected") {
+        await set(
+          publishConnectorRuntimeSyncWakeups$,
+          {
+            scope: { orgId: args.orgId, userId: args.userId },
+            targets: [
+              { kind: "builtin", connectorSlug: contract.connectorSlug },
+            ],
+          },
+          signal,
+        );
+      }
+      signal.throwIfAborted();
+      return connected;
+    }
+    const authorization = prepared.value;
+    const context = builtinAutomaticContextSchema.parse({
+      ...authorization.context,
+      version: 1,
+      kind: "connector-mcp-automatic",
+      connectorSlug: contract.connectorSlug,
+      authMethodId: contract.authMethodId,
+      endpoint: contract.endpoint,
+      storageVersion: contract.storageVersion,
+      contractHash: contract.contractHash,
+    });
+    const oauthAttemptId = await insertConnectorOAuthState(set(writeDb$), {
+      state,
+      connectorSlug: contract.connectorSlug,
+      authMethod: contract.authMethodId,
+      storageVersion: null,
+      userId: args.userId,
+      orgId: args.orgId,
+      agentId: args.agentId,
+      authorizeAgent: args.authorizeAgent,
+      redirectUri: args.redirectUri,
+      authorizationUrl: authorization.authorizationUrl,
+      codeVerifier: authorization.codeVerifier,
+      oauthRequestedScopes: authorization.requestedScope,
+      oauthContext: JSON.stringify(context),
+      accountMutation: args.account,
+      expiresAt: connectorOAuthStateExpiresAt(),
+    });
+    signal.throwIfAborted();
+    return {
+      kind: "authorization",
+      authorizationUrl: authorization.authorizationUrl,
+      oauthAttemptId,
+    };
   },
 );
 
-async function finishAutomaticOAuth(
-  db: Db,
-  stored: StoredBuiltinOAuthState,
-  context: z.infer<typeof builtinAutomaticContextSchema>,
+async function prepareAutomaticCallbackPublication(
   args: {
-    readonly code: string;
-    readonly codeVerifier: string;
-    readonly issuer: string | undefined;
+    readonly stored: StoredBuiltinOAuthState;
+    readonly context: z.infer<typeof builtinAutomaticContextSchema>;
+    readonly contract: BuiltinAutomaticContract;
+    readonly token: McpAutomaticOAuthTokenResult;
   },
   signal: AbortSignal,
-) {
-  const { code, codeVerifier, issuer } = args;
-  const contract = await currentContract(
-    db,
-    stored.connectorSlug,
-    stored.authMethod,
-  );
-  if (
-    !contract ||
-    contract.contractHash !== context.contractHash ||
-    contract.endpoint !== context.endpoint ||
-    contract.storageVersion !== context.storageVersion
-  ) {
-    return { kind: "error", reason: "stale-contract" } as const;
-  }
-  return await db.transaction(async (tx) => {
-    await lockBuiltinConnectorAutomaticLifecycle(
-      tx,
-      contractOwner(stored.orgId, contract),
-    );
-    await assertCurrentContract(tx, contract);
-    const resolution = await resolveMutation(
-      tx,
-      {
-        orgId: stored.orgId,
-        userId: stored.userId,
-        account: stored.accountMutation,
-      },
-      contract,
-    );
-    if (
-      resolution.kind !== "ready" ||
-      revision(resolution.mutation) !== context.reconnectRevision
-    ) {
-      return { kind: "error", reason: "invalid-account" } as const;
+): Promise<AutomaticConnectionPublication> {
+  const { stored, context, contract, token } = args;
+  const credentials = [];
+  for (const key of ["accessToken", "refreshToken", "idToken"] as const) {
+    const name = tokenStorageName(contract, key);
+    const value = token[key];
+    if (name && value) {
+      credentials.push({
+        name,
+        encryptedValue: await encryptStoredSecretValue(value),
+      });
+      signal.throwIfAborted();
     }
-    const store = dcrStore(tx, stored.orgId, contract);
+  }
+  return {
+    orgId: stored.orgId,
+    userId: stored.userId,
+    connectorSlug: contract.connectorSlug,
+    authMethod: contract.authMethodId,
+    storageVersion: contract.storageVersion,
+    account: stored.accountMutation,
+    identity: token.userInfo,
+    expiresAt: token.expiresAt,
+    scopes: token.scopes,
+    credentials,
+    binding: {
+      orgId: stored.orgId,
+      userId: stored.userId,
+      connectorSlug: contract.connectorSlug,
+      authMethod: contract.authMethodId,
+      storageVersion: contract.storageVersion,
+      contractHash: contract.contractHash,
+      endpoint: contract.endpoint,
+      issuer: context.issuer,
+      resource: context.resource,
+      resourceMetadataUrl: context.resourceMetadataUrl,
+      tokenEndpoint: context.tokenEndpoint,
+      clientId: context.clientId,
+      tokenEndpointAuthMethod: context.tokenEndpointAuthMethod,
+      registrationMethod: context.registrationMethod,
+      dcrRegistrationId:
+        context.registrationMethod === "dcr" ? context.dcrRegistrationId : null,
+    },
+  };
+}
+
+const finishAutomaticOAuth$ = command(
+  async (
+    { set },
+    args: {
+      readonly stored: StoredBuiltinOAuthState;
+      readonly context: z.infer<typeof builtinAutomaticContextSchema>;
+      readonly contract: BuiltinAutomaticContract | null;
+      readonly code: string;
+      readonly codeVerifier: string;
+      readonly issuer: string | undefined;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { stored, context, contract } = args;
+    if (
+      !contract ||
+      contract.contractHash !== context.contractHash ||
+      contract.endpoint !== context.endpoint ||
+      contract.storageVersion !== context.storageVersion
+    ) {
+      return { kind: "error", reason: "stale-contract" } as const;
+    }
+    const owner = contractOwner(stored.orgId, contract);
+    const client =
+      context.registrationMethod === "dcr"
+        ? await set(
+            readBuiltinDcrBoundClient$,
+            { owner, id: context.dcrRegistrationId },
+            signal,
+          )
+        : null;
     const exchanged = await settle(
       exchangeMcpAutomaticOAuthCode(
         {
-          dcrStore: store,
+          dcrStore: {
+            readBoundClient: (id) => {
+              return Promise.resolve(client?.id === id ? client : null);
+            },
+          },
           context,
           redirectUri: stored.redirectUri,
           cimdClientId: configuredOkouMcpOAuthClientMetadata().client_id,
-          code,
-          iss: issuer,
-          codeVerifier,
+          code: args.code,
+          iss: args.issuer,
+          codeVerifier: args.codeVerifier,
         },
         signal,
       ),
@@ -627,35 +649,59 @@ async function finishAutomaticOAuth(
         isAutomaticOAuthInvalidClient(exchanged.error) &&
         context.registrationMethod === "dcr"
       ) {
-        await store.retire(context.dcrRegistrationId);
+        await set(
+          retireBuiltinDcrRegistration$,
+          { owner, id: context.dcrRegistrationId },
+          signal,
+        );
       }
       return failure(exchanged.error);
     }
-    await assertCurrentContract(tx, contract);
-    const connectionId = await persistConnection(
-      tx,
+    const publication = await prepareAutomaticCallbackPublication(
+      { stored, context, contract, token: exchanged.value },
+      signal,
+    );
+    const published = await set(
+      publishAutomaticConnection$,
+      publication,
+      signal,
+    );
+    if (published.kind !== "connected") {
+      return published;
+    }
+    await set(
+      publishConnectorRuntimeSyncWakeups$,
       {
-        orgId: stored.orgId,
-        userId: stored.userId,
-        contract,
-        resolution: resolution.mutation,
-        token: exchanged.value,
-        context,
+        scope: { orgId: stored.orgId, userId: stored.userId },
+        targets: [{ kind: "builtin", connectorSlug: stored.connectorSlug }],
       },
       signal,
     );
     return {
       kind: "connected",
       connectorSlug: stored.connectorSlug,
-      connectionId,
+      connectionId: published.connectionId,
       orgId: stored.orgId,
       userId: stored.userId,
       agentId: stored.agentId,
       authorizeAgent: stored.authorizeAgent,
       oauthAttemptId: stored.id,
     } as const;
-  });
-}
+  },
+);
+
+type CompletedBuiltinAutomaticOAuth =
+  | Failure
+  | {
+      readonly kind: "connected";
+      readonly connectorSlug: string;
+      readonly connectionId: string;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly agentId: string | null;
+      readonly authorizeAgent: boolean;
+      readonly oauthAttemptId: string;
+    };
 
 export const completeBuiltinConnectorAutomatic$ = command(
   async (
@@ -669,19 +715,7 @@ export const completeBuiltinConnectorAutomatic$ = command(
       readonly redirectUri: string;
     },
     signal: AbortSignal,
-  ): Promise<
-    | Failure
-    | {
-        readonly kind: "connected";
-        readonly connectorSlug: string;
-        readonly connectionId: string;
-        readonly orgId: string;
-        readonly userId: string;
-        readonly agentId: string | null;
-        readonly authorizeAgent: boolean;
-        readonly oauthAttemptId: string;
-      }
-  > => {
+  ): Promise<CompletedBuiltinAutomaticOAuth> => {
     const db = set(writeDb$);
     const [candidate] = await db
       .select({
@@ -706,11 +740,11 @@ export const completeBuiltinConnectorAutomatic$ = command(
     ) {
       return { kind: "error", reason: "invalid-state" };
     }
-    const claimed = await claimConnectorOAuthState(
-      db,
+    const claimed = await set(
+      claimBuiltinConnectorOAuthState$,
       {
         state: args.state,
-        target: { kind: "builtin", connectorSlug: candidate.connectorSlug },
+        connectorSlug: candidate.connectorSlug,
       },
       signal,
     );
@@ -759,20 +793,26 @@ export const completeBuiltinConnectorAutomatic$ = command(
     }
     // COMMIT may finish after cancellation; publish its wakeup before the
     // route observes the cancelled request.
+    const contract = await set(
+      currentBuiltinAutomaticContract$,
+      {
+        connectorSlug: stored.connectorSlug,
+        authMethodId: stored.authMethod,
+      },
+      signal,
+    );
     const operation = await settle(
-      commitConnectorRuntimeMutation(
-        finishAutomaticOAuth(
-          db,
+      set(
+        finishAutomaticOAuth$,
+        {
           stored,
           context,
-          { code, codeVerifier, issuer: args.issuer },
-          signal,
-        ),
-        (result) => {
-          return result.kind === "connected"
-            ? builtinAutomaticWakeup(db, stored, stored.connectorSlug)
-            : undefined;
+          contract,
+          code,
+          codeVerifier,
+          issuer: args.issuer,
         },
+        signal,
       ),
       signal,
     );
@@ -902,13 +942,6 @@ interface ResolveAutomaticCredentialArgs {
   readonly forceRefresh?: boolean;
 }
 
-interface LockedAutomaticCredentialContext {
-  readonly contract: BuiltinAutomaticContract;
-  readonly accessName: string;
-  readonly initialAccessEncrypted: string | undefined;
-  readonly accountIdentity: ReturnType<typeof and>;
-}
-
 async function markReconnect(
   db: Db,
   connectorId: string,
@@ -924,10 +957,13 @@ async function markReconnect(
   return { kind: "unavailable", reason: "reconnect" };
 }
 
-async function refreshLockedAutomatic(
+/**
+ * Provider refresh runs outside any transaction; one short transaction then
+ * writes the refreshed tokens and account metadata.
+ */
+async function refreshAutomatic(
   context: {
     readonly args: ResolveAutomaticCredentialArgs;
-    readonly tx: Tx;
     readonly contract: BuiltinAutomaticContract;
     readonly binding: NonNullable<
       Awaited<ReturnType<typeof readBuiltinConnectorAutomaticOAuthBinding>>
@@ -937,9 +973,8 @@ async function refreshLockedAutomatic(
   },
   signal: AbortSignal,
 ): Promise<CredentialResult> {
-  const { args, tx, contract, binding, account, encryptedRefreshToken } =
-    context;
-  const store = dcrStore(tx, args.orgId, contract);
+  const { args, contract, binding, account, encryptedRefreshToken } = context;
+  const store = dcrStore(args.db, args.orgId, contract);
   const refreshToken = await decryptStoredSecretValue(encryptedRefreshToken);
   signal.throwIfAborted();
   const metadata = configuredOkouMcpOAuthClientMetadata();
@@ -968,7 +1003,11 @@ async function refreshLockedAutomatic(
       isAutomaticOAuthInvalidClient(refreshed.error) &&
       binding.registrationMethod === "dcr"
     ) {
-      await store.retire(binding.dcrRegistration.id);
+      await args.db.transaction(async (tx) => {
+        await dcrStore(tx, args.orgId, contract).retire(
+          binding.dcrRegistration.id,
+        );
+      });
       return { kind: "unavailable", reason: "reconnect" };
     }
     if (
@@ -977,7 +1016,7 @@ async function refreshLockedAutomatic(
       (refreshed.error instanceof McpAutomaticOAuthError &&
         refreshed.error.kind === "binding-drift")
     ) {
-      return await markReconnect(tx, account.id);
+      return await markReconnect(args.db, account.id);
     }
     if (
       refreshed.error instanceof McpAutomaticOAuthError &&
@@ -986,18 +1025,6 @@ async function refreshLockedAutomatic(
       return { kind: "unavailable", reason: "temporary" };
     }
     throw refreshed.error;
-  }
-  if (
-    !(await credentialDestinationMatches(
-      tx,
-      contract,
-      args.expectedEndpoint,
-      signal,
-    ))
-  ) {
-    throw new StaleBuiltinAutomaticContractError(
-      "Builtin MCP credential destination changed during refresh",
-    );
   }
   const identity = resolveRefreshedOAuthIdentity(
     {
@@ -1008,37 +1035,39 @@ async function refreshLockedAutomatic(
     refreshed.value.userInfo,
   );
   if (identity.kind === "mismatch") {
-    return await markReconnect(tx, account.id);
+    return await markReconnect(args.db, account.id);
   }
-  await writeTokens(
-    tx,
-    {
-      ...args,
-      connectorId: account.id,
-      contract,
-      token: refreshed.value,
-      fallbackRefreshToken: refreshToken,
-    },
+  const tokens = await encryptAutomaticTokens(
+    { contract, token: refreshed.value, fallbackRefreshToken: refreshToken },
     signal,
   );
-  await tx
-    .update(connectors)
-    .set({
-      tokenExpiresAt: refreshed.value.expiresAt,
-      oauthGrantedScopes:
-        refreshed.value.scopes === null
-          ? account.oauthGrantedScopes
-          : JSON.stringify(refreshed.value.scopes),
-      ...(identity.kind === "update"
-        ? {
-            externalId: identity.externalId,
-            externalUsername: identity.externalUsername,
-            externalEmail: identity.externalEmail,
-          }
-        : {}),
-      updatedAt: sql`clock_timestamp()`,
-    })
-    .where(eq(connectors.id, account.id));
+  await args.db.transaction(async (tx) => {
+    await writeEncryptedTokens(tx, {
+      orgId: args.orgId,
+      userId: args.userId,
+      connectorId: account.id,
+      contract,
+      tokens,
+    });
+    await tx
+      .update(connectors)
+      .set({
+        tokenExpiresAt: refreshed.value.expiresAt,
+        oauthGrantedScopes:
+          refreshed.value.scopes === null
+            ? account.oauthGrantedScopes
+            : JSON.stringify(refreshed.value.scopes),
+        ...(identity.kind === "update"
+          ? {
+              externalId: identity.externalId,
+              externalUsername: identity.externalUsername,
+              externalEmail: identity.externalEmail,
+            }
+          : {}),
+        updatedAt: sql`clock_timestamp()`,
+      })
+      .where(eq(connectors.id, account.id));
+  });
   return {
     kind: "oauth",
     accessToken: refreshed.value.accessToken,
@@ -1065,7 +1094,9 @@ async function credentialDestinationMatches(
   if (expectedEndpoint !== contract.endpoint) {
     return false;
   }
-  const snapshot = await loadConnectorRuntimeSnapshot(db);
+  const snapshot = await loadConnectorRuntimeSlugSelection(db, {
+    connectorSlugs: [contract.connectorSlug],
+  });
   const current = currentContractFromSnapshot(
     snapshot,
     contract.connectorSlug,
@@ -1086,49 +1117,70 @@ async function credentialDestinationMatches(
   );
 }
 
-async function resolveLockedAutomatic(
-  tx: Tx,
+/**
+ * Catalog propagation is best-effort: a request matched by a stale runner
+ * catalog must never receive credentials for an endpoint or auth contract that
+ * the API no longer accepts for this account connection.
+ */
+async function acceptedCredentialContract(
   args: ResolveAutomaticCredentialArgs,
-  context: LockedAutomaticCredentialContext,
   signal: AbortSignal,
-): Promise<CredentialResult> {
-  const { contract, accessName, initialAccessEncrypted, accountIdentity } =
-    context;
-  await lockBuiltinConnectorAutomaticLifecycle(
-    tx,
-    contractOwner(args.orgId, contract),
+): Promise<{
+  readonly contract: BuiltinAutomaticContract;
+  readonly accessName: string;
+} | null> {
+  const contract = await currentContract(
+    args.db,
+    args.connectorSlug,
+    args.authMethodId,
   );
-  await lockConnectorAccountTarget(tx, {
-    orgId: args.orgId,
-    userId: args.userId,
-    target: { kind: "builtin", connectorSlug: args.connectorSlug },
-  });
-  const [account] = await tx
-    .select()
-    .from(connectors)
-    .where(accountIdentity)
-    .for("update")
-    .limit(1);
-  signal.throwIfAborted();
-  if (!account) {
-    return { kind: "unavailable", reason: "reconnect" };
-  }
-  if (account.automaticAuthType === "none") {
-    return { kind: "none" };
-  }
-  // Catalog propagation is best-effort: a request matched by a stale runner
-  // catalog must never receive credentials for an endpoint or auth contract that
-  // the API no longer accepts for this account connection.
+  const accessName = contract && tokenStorageName(contract, "accessToken");
   if (
+    !contract ||
+    !accessName ||
     !(await credentialDestinationMatches(
-      tx,
+      args.db,
       contract,
       args.expectedEndpoint,
       signal,
     ))
   ) {
+    return null;
+  }
+  return { contract, accessName };
+}
+
+export async function resolveBuiltinConnectorAutomaticMcpCredential(
+  args: ResolveAutomaticCredentialArgs,
+  signal: AbortSignal,
+): Promise<CredentialResult> {
+  const { db } = args;
+  const [account] = await db
+    .select()
+    .from(connectors)
+    .where(
+      and(
+        eq(connectors.id, args.connectorId),
+        eq(connectors.orgId, args.orgId),
+        eq(connectors.userId, args.userId),
+        eq(connectors.connectorSlug, args.connectorSlug),
+        eq(connectors.authMethod, args.authMethodId),
+      ),
+    )
+    .limit(1);
+  signal.throwIfAborted();
+  if (!account) {
+    return { kind: "unavailable", reason: "reconnect" };
+  }
+  // A public MCP has no credential contract to validate or refresh.
+  if (account.automaticAuthType === "none") {
+    return { kind: "none" };
+  }
+  const accepted = await acceptedCredentialContract(args, signal);
+  if (!accepted) {
     return { kind: "unavailable", reason: "stale-contract" };
   }
+  const { contract, accessName } = accepted;
   if (
     account.automaticAuthType !== "oauth" ||
     account.needsReconnect ||
@@ -1137,7 +1189,7 @@ async function resolveLockedAutomatic(
     return { kind: "unavailable", reason: "reconnect" };
   }
   const binding = await readBuiltinConnectorAutomaticOAuthBinding(
-    tx,
+    db,
     account.id,
   );
   if (
@@ -1145,18 +1197,21 @@ async function resolveLockedAutomatic(
     binding.contractHash !== contract.contractHash ||
     binding.endpoint !== contract.endpoint
   ) {
-    return await markReconnect(tx, account.id);
+    return await markReconnect(db, account.id);
   }
-  const store = dcrStore(tx, args.orgId, contract);
   if (
     binding.registrationMethod === "dcr" &&
     binding.dcrRegistration.expiresAt !== null &&
     binding.dcrRegistration.expiresAt <= nowDate()
   ) {
-    await store.retire(binding.dcrRegistration.id);
+    await db.transaction(async (tx) => {
+      await dcrStore(tx, args.orgId, contract).retire(
+        binding.dcrRegistration.id,
+      );
+    });
     return { kind: "unavailable", reason: "reconnect" };
   }
-  const tokenRows = await tx
+  const tokenRows = await db
     .select({ name: secrets.name, encryptedValue: secrets.encryptedValue })
     .from(secrets)
     .where(
@@ -1166,6 +1221,7 @@ async function resolveLockedAutomatic(
         eq(secrets.userId, args.userId),
       ),
     );
+  signal.throwIfAborted();
   const access = tokenRows.find((token) => {
     return token.name === accessName;
   });
@@ -1173,13 +1229,12 @@ async function resolveLockedAutomatic(
     return token.name === tokenStorageName(contract, "refreshToken");
   });
   if (!access) {
-    return await markReconnect(tx, account.id);
+    return await markReconnect(db, account.id);
   }
-  const refreshedSinceInitialRead =
-    access.encryptedValue !== initialAccessEncrypted;
+  // Providers may omit refresh tokens: use a still-valid access token until expiry.
   if (
-    (!args.forceRefresh || refreshedSinceInitialRead) &&
-    accessTokenRemainsValid(account.tokenExpiresAt, 60_000)
+    !args.forceRefresh &&
+    accessTokenRemainsValid(account.tokenExpiresAt, refresh ? 60_000 : 0)
   ) {
     return {
       kind: "oauth",
@@ -1187,24 +1242,12 @@ async function resolveLockedAutomatic(
       tokenExpiresAt: account.tokenExpiresAt,
     };
   }
-  // Providers may omit refresh tokens: use a still-valid access token until expiry.
   if (!refresh) {
-    if (
-      !args.forceRefresh &&
-      accessTokenRemainsValid(account.tokenExpiresAt, 0)
-    ) {
-      return {
-        kind: "oauth",
-        accessToken: await decryptStoredSecretValue(access.encryptedValue),
-        tokenExpiresAt: account.tokenExpiresAt,
-      };
-    }
-    return await markReconnect(tx, account.id);
+    return await markReconnect(db, account.id);
   }
-  return await refreshLockedAutomatic(
+  return await refreshAutomatic(
     {
       args,
-      tx,
       contract,
       binding,
       account,
@@ -1212,78 +1255,4 @@ async function resolveLockedAutomatic(
     },
     signal,
   );
-}
-
-export async function resolveBuiltinConnectorAutomaticMcpCredential(
-  args: ResolveAutomaticCredentialArgs,
-  signal: AbortSignal,
-): Promise<CredentialResult> {
-  const accountIdentity = and(
-    eq(connectors.id, args.connectorId),
-    eq(connectors.orgId, args.orgId),
-    eq(connectors.userId, args.userId),
-    eq(connectors.connectorSlug, args.connectorSlug),
-    eq(connectors.authMethod, args.authMethodId),
-  );
-  const [initialAccount] = await args.db
-    .select({ automaticAuthType: connectors.automaticAuthType })
-    .from(connectors)
-    .where(accountIdentity)
-    .limit(1);
-  signal.throwIfAborted();
-  if (!initialAccount) {
-    return { kind: "unavailable", reason: "reconnect" };
-  }
-  // A public MCP has no credential contract to validate or lease to refresh.
-  if (initialAccount.automaticAuthType === "none") {
-    return { kind: "none" };
-  }
-  const contract = await currentContract(
-    args.db,
-    args.connectorSlug,
-    args.authMethodId,
-  );
-  if (!contract) {
-    return { kind: "unavailable", reason: "stale-contract" };
-  }
-  const accessName = tokenStorageName(contract, "accessToken");
-  if (!accessName) {
-    return { kind: "unavailable", reason: "stale-contract" };
-  }
-  const [initialAccess] = await args.db
-    .select({ encryptedValue: secrets.encryptedValue })
-    .from(secrets)
-    .where(
-      and(
-        eq(secrets.connectorId, args.connectorId),
-        eq(secrets.orgId, args.orgId),
-        eq(secrets.userId, args.userId),
-        eq(secrets.name, accessName),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  const resolved = await settle(
-    args.db.transaction(async (tx) => {
-      return await resolveLockedAutomatic(
-        tx,
-        args,
-        {
-          contract,
-          accessName,
-          initialAccessEncrypted: initialAccess?.encryptedValue,
-          accountIdentity,
-        },
-        signal,
-      );
-    }),
-    signal,
-  );
-  if (!resolved.ok) {
-    if (resolved.error instanceof StaleBuiltinAutomaticContractError) {
-      return { kind: "unavailable", reason: "stale-contract" };
-    }
-    throw resolved.error;
-  }
-  return resolved.value;
 }

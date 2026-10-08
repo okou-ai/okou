@@ -1,27 +1,57 @@
 import SwiftUI
 import Textual
 
-struct MessageBodyView: View {
+struct MessageBodyView: View, Equatable {
   let text: String
   let baseURL: URL
+  let markdown: MessageMarkdownCache
+  private struct Prepared {
+    let source: String
+    let content: AttributedString
+  }
+  @State private var prepared: Prepared?
+
+  init(text: String, baseURL: URL, markdown: MessageMarkdownCache) {
+    self.text = text
+    self.baseURL = baseURL
+    self.markdown = markdown
+    _prepared = State(
+      initialValue: markdown.cached(text).map { Prepared(source: text, content: $0) })
+  }
+
+  nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.text == rhs.text && lhs.baseURL == rhs.baseURL && lhs.markdown === rhs.markdown
+  }
 
   var body: some View {
-    StructuredText(markdown: text, baseURL: baseURL)
-      // Keep overrides closest to the content; the bundled style sets the same environment keys.
-      .textual.codeBlockStyle(MessageCodeBlockStyle())
-      .textual.tableStyle(.overflow)
-      .textual.structuredTextStyle(.gitHub)
-      .textual.imageAttachmentLoader(MessageImageLoader(baseURL: baseURL))
-      .textual.textSelection(.enabled)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .environment(
-        \.openURL,
-        OpenURLAction { url in
-          guard ["https", "http", "mailto"].contains(url.scheme?.lowercased() ?? "") else {
-            return .discarded
-          }
-          return .systemAction(url)
-        })
+    Group {
+      if let prepared, prepared.source == text {
+        StructuredText(text, parser: PreparedMessageParser(content: prepared.content))
+      } else {
+        Text(text).textSelection(.enabled)
+      }
+    }
+    // Keep overrides closest to the content; the bundled style sets the same environment keys.
+    .textual.codeBlockStyle(MessageCodeBlockStyle())
+    .textual.tableStyle(.overflow)
+    .textual.structuredTextStyle(.gitHub)
+    .textual.imageAttachmentLoader(MessageImageLoader(baseURL: baseURL))
+    .textual.textSelection(.enabled)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .environment(
+      \.openURL,
+      OpenURLAction { url in
+        guard ["https", "http", "mailto"].contains(url.scheme?.lowercased() ?? "") else {
+          return .discarded
+        }
+        return .systemAction(url)
+      }
+    )
+    .task(id: text) {
+      let content = await markdown.content(for: text)
+      guard !Task.isCancelled else { return }
+      prepared = Prepared(source: text, content: content)
+    }
   }
 }
 
@@ -100,7 +130,8 @@ private struct MessageImageLoader: AttachmentLoader {
         print(answer)
         ```
         """,
-      baseURL: URL(string: "https://app.okou.ai")!
+      baseURL: URL(string: "https://app.okou.ai")!,
+      markdown: MessageMarkdownCache(baseURL: URL(string: "https://app.okou.ai")!)
     )
     .padding(20)
   }

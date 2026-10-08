@@ -1,74 +1,113 @@
-import { isPiExecutionRoute } from "@okouai/core/pi-execution";
-import type { OrgModelPolicy } from "@okouai/api-contracts/contracts/model-providers";
+import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
+import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import {
-  defaultModelReasoningEffort,
-  getRouteReasoningEfforts,
-  modelReasoningEffort,
+  narrowRouteReasoningEfforts,
+  reasoningEffortSchema,
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import {
-  getMemberModelPolicyRoute,
-  isMemberModelPolicyConfigurable,
-} from "@okouai/api-contracts/contracts/member-model-policy";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { isPiExecutionRoute } from "@okouai/core/pi-execution";
 import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
+import type { ModelCatalog } from "../external/model-catalog.ts";
 
-/** Saved preferences remain independent of the route's current capability. */
-export function preferredChatReasoningEffort(
-  selection: ModelProviderSelection | null | undefined,
-): ReasoningEffort | undefined {
-  return modelReasoningEffort(
-    selection?.selectedModel,
-    selection?.modelSettings,
-  );
+function catalogRouteQuery(runModel: AvailableRunModel) {
+  const route = runModel.memberEffective;
+  return {
+    providerType: route.providerType,
+    concreteProviderType: route.runtimeProviderType,
+  };
 }
 
-/** Resolve the same model/provider runtime policy used by server admission. */
+/**
+ * The saved preference of the selected model, independent of the route's
+ * current capability; without one the route's catalog default applies.
+ */
+export function preferredChatReasoningEffort(
+  selection: ModelProviderSelection | null | undefined,
+  catalog?: ModelCatalog | null,
+): ReasoningEffort | undefined {
+  const model = selection?.selectedModel;
+  if (!model) {
+    return undefined;
+  }
+  const saved = selection.modelSettings?.[model]?.effort;
+  if (saved !== undefined) {
+    return saved;
+  }
+  const parsed = reasoningEffortSchema.safeParse(catalog?.defaultEffort(model));
+  return parsed.success ? parsed.data : undefined;
+}
+
+/**
+ * The catalog route's efforts are the product authority; execution-time
+ * protocol narrowing (Pi and provider-specific rules) is applied on top.
+ */
 export function availableChatReasoningEfforts(
   selection: ModelProviderSelection | null | undefined,
-  switches: Partial<Record<FeatureSwitchKey, boolean>>,
-  policy: OrgModelPolicy | undefined,
+  runModel: AvailableRunModel | undefined,
+  catalog: ModelCatalog | null | undefined,
 ): readonly ReasoningEffort[] {
-  if (!selection || !policy || !isMemberModelPolicyConfigurable(policy)) {
+  const model = selection?.selectedModel;
+  if (
+    !selection ||
+    !model ||
+    !runModel ||
+    !catalog ||
+    !isMemberRunModelConfigurable(runModel)
+  ) {
     return [];
   }
-  const route = getMemberModelPolicyRoute(policy);
+  const route = runModel.memberEffective;
   const runtimeProviderType = route.runtimeProviderType;
   if (runtimeProviderType === null) {
     return [];
   }
   const piExecution = isPiExecutionRoute({
-    selectedModel: selection.selectedModel,
+    catalogModel: catalog.piModel(model),
     modelProviderType: route.providerType,
     runtimeProviderType,
     codexServiceTier: selection.codexServiceTier ?? undefined,
-    piEnabled: switches[FeatureSwitchKey.PiLoop] === true,
   });
-  return getRouteReasoningEfforts({
-    model: selection.selectedModel,
+  const catalogEfforts = catalog
+    .efforts(model, catalogRouteQuery(runModel))
+    .flatMap((effort) => {
+      const parsed = reasoningEffortSchema.safeParse(effort);
+      return parsed.success ? [parsed.data] : [];
+    });
+  const routeEfforts = narrowRouteReasoningEfforts({
+    model,
+    efforts: catalogEfforts,
     piExecution,
     runtimeProviderType,
   });
+  return runModel.subscriptionOptions
+    ? routeEfforts.filter((effort) => {
+        return runModel.subscriptionOptions?.efforts.includes(effort);
+      })
+    : routeEfforts;
 }
 
 /** Resolve the value this UI can execute without mutating the saved preference. */
 export function effectiveChatReasoningEffort(
   selection: ModelProviderSelection | null | undefined,
-  switches: Partial<Record<FeatureSwitchKey, boolean>>,
-  policy: OrgModelPolicy | undefined,
+  runModel: AvailableRunModel | undefined,
+  catalog: ModelCatalog | null | undefined,
 ): ReasoningEffort | undefined {
-  if (!selection) {
+  const model = selection?.selectedModel;
+  if (!selection || !model || !runModel || !catalog) {
     return undefined;
   }
-  const available = availableChatReasoningEfforts(selection, switches, policy);
+  const available = availableChatReasoningEfforts(selection, runModel, catalog);
   const preferred = preferredChatReasoningEffort(selection);
   if (preferred && available.includes(preferred)) {
     return preferred;
   }
-  const defaultEffort = defaultModelReasoningEffort(selection.selectedModel);
-  return defaultEffort && available.includes(defaultEffort)
-    ? defaultEffort
-    : undefined;
+  const defaultEffort = catalog.defaultEffort(
+    model,
+    catalogRouteQuery(runModel),
+  );
+  return available.find((effort) => {
+    return effort === defaultEffort;
+  });
 }
 
 /** Preserve the map across model and Fast changes; never copy one model's effort. */

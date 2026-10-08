@@ -2,17 +2,15 @@
  * Catalog of prompt-based built-in image generation models.
  *
  * Provider request shapes, pricing, and model-specific parameters stay in the
- * API service. Promptless transforms are deliberately excluded because they
- * cannot act as chat defaults.
+ * API service. Members choose their model in Settings > Built-in tools.
  */
 import {
-  IMAGE_MODEL_IDS,
   isImageModelId,
   type ImageModelId,
 } from "@okouai/api-contracts/contracts/image-models";
 
 interface ImageModelConfig {
-  /** Value accepted by the CLI's `--model` flag. */
+  /** Short, user-facing model identifier. */
   readonly alias: string;
   /** Human-facing name for pickers. */
   readonly label: string;
@@ -59,14 +57,6 @@ export const IMAGE_MODEL_CONFIGS = {
     alias: "seedream4",
     label: "Seedream 4",
   },
-  "dola-seedream-5-0-pro-260628": {
-    alias: "seedream5-pro",
-    label: "Seedream 5 Pro",
-  },
-  "seedream-5-0-lite-260128": {
-    alias: "seedream5-lite",
-    label: "Seedream 5 Lite",
-  },
   "fal-ai/nano-banana-2": {
     alias: "nano-banana-2",
     label: "Nano Banana 2",
@@ -79,18 +69,11 @@ export const IMAGE_MODEL_CONFIGS = {
 
 export type ImageModel = ImageModelId;
 
-/** Reserved run environment key carrying the built-in image default alias. */
-export const DEFAULT_IMAGE_MODEL_ENV = "OKOU_DEFAULT_IMAGE_MODEL";
-
-/** All catalog models, in user-facing picker order. */
-export const IMAGE_MODELS: readonly ImageModel[] = IMAGE_MODEL_IDS;
-
 /**
  * Catalog models offered by the user-facing picker, in display order. The
  * picker presents the current entry for each family rather than every catalog
- * entry: Seedream 4, both Flux 1.1 variants, and Seedream 5 Lite are all
- * deliberately absent. Every one of them stays generatable through its alias
- * and through defaults that already point at it.
+ * entry: Seedream 4 and both Flux 1.1 variants are deliberately absent.
+ * Stored member settings that name them remain supported.
  * Nano Banana 2 Lite is the exception: it is offered beside Nano Banana 2
  * because it is the cheaper way to reach the same family.
  */
@@ -103,7 +86,6 @@ export const PUBLIC_IMAGE_MODELS = [
   "google/nano-banana-2-lite",
   "fal-ai/flux-2-pro",
   "ideogram/v4",
-  "dola-seedream-5-0-pro-260628",
   "alibaba/qwen-image-3/text-to-image",
 ] as const satisfies readonly ImageModel[];
 
@@ -118,8 +100,6 @@ export const IMAGE_MODEL_ALIASES = {
   "qwen-image-3": "alibaba/qwen-image-3/text-to-image",
   "ideogram-4": "ideogram/v4",
   seedream4: "fal-ai/bytedance/seedream/v4/text-to-image",
-  "seedream5-pro": "dola-seedream-5-0-pro-260628",
-  "seedream5-lite": "seedream-5-0-lite-260128",
   "nano-banana-2": "fal-ai/nano-banana-2",
   "nano-banana2": "fal-ai/nano-banana-2",
   "nano-banana-2-lite": "google/nano-banana-2-lite",
@@ -141,4 +121,4 @@ export function resolveImageModel(model: string): ImageModel | undefined {
 }
 
 /** Global fallback when no more specific image model default exists. */
-export const DEFAULT_IMAGE_MODEL = "gpt-image-1" satisfies ImageModel;
+export const DEFAULT_IMAGE_MODEL = "gpt-image-2.5-flare" satisfies ImageModel;

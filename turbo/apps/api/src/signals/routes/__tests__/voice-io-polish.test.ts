@@ -161,28 +161,11 @@ describe("POST /api/voice-io/polish", () => {
     expect(urls).toHaveLength(2);
     expect(urls[1]).toBe(urls[0]);
     expect(urls[0]).toContain(
-      "/locations/us/publishers/google/models/gemini-3.8-flash:generateContent",
+      "/locations/us/publishers/google/models/gemini-3.1-flash-lite:generateContent",
     );
   });
 
   it.each([
-    {
-      reason: "output_truncated",
-      body: {
-        candidates: [
-          {
-            finishReason: "MAX_TOKENS",
-            content: { parts: [{ text: "private partial transcript" }] },
-          },
-        ],
-      },
-    },
-    {
-      reason: "blocked",
-      body: {
-        promptFeedback: { blockReason: "private upstream block reason" },
-      },
-    },
     { reason: "blocked", body: { candidates: [{ finishReason: "SAFETY" }] } },
     {
       reason: "non_stop",
@@ -398,7 +381,7 @@ describe("POST /api/voice-io/polish", () => {
     expect(requestBody).toMatchObject({
       generationConfig: {
         maxOutputTokens: 65_536,
-        thinkingConfig: { thinkingLevel: "LOW" },
+        thinkingConfig: { thinkingLevel: "MINIMAL" },
       },
       systemInstruction: {
         parts: [
@@ -424,7 +407,7 @@ describe("POST /api/voice-io/polish", () => {
         },
       ],
     });
-    expect(requestBody).not.toHaveProperty("generationConfig.temperature");
+    expect(requestBody).toHaveProperty("generationConfig.temperature", 0);
     expect(requestBody).not.toHaveProperty("generationConfig.responseMimeType");
   });
 

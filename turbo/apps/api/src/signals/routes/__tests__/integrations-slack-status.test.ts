@@ -10,17 +10,17 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import {
   deleteSlackIntegrationFixture$,
-  seedSlackOrgConnection$,
-  seedSlackOrgInstallation$,
   type SlackIntegrationFixture,
 } from "./helpers/integrations-slack";
+import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { integrationsSlackRoutes } from "../integrations-slack";
 import { slackOauthRoutes } from "../slack-oauth";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const store = createStore();
 const mocks = createRouteMocks(context);
+const slackOrgs = createPublicSlackOrgApi(context);
 
 describe("GET /api/integrations/slack", () => {
   const track = createFixtureTracker<SlackIntegrationFixture>((fixture) => {
@@ -145,9 +145,7 @@ describe("GET /api/integrations/slack", () => {
   it("returns isConnected=false when user has no connection", async () => {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
-    const fixture = await track(
-      store.set(seedSlackOrgInstallation$, { orgId }, context.signal),
-    );
+    const fixture = await slackOrgs.installForOrg({ orgId });
     mocks.clerk.session(userId, orgId);
 
     const client = setupApp({ context, routes: integrationsSlackRoutes })(
@@ -273,18 +271,15 @@ describe("GET /api/integrations/slack", () => {
   it("returns scopeMismatch=true when installation is missing scopes", async () => {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
-    const fixture = await track(
-      store.set(
-        seedSlackOrgInstallation$,
-        { orgId, botScopes: JSON.stringify(["chat:write", "channels:read"]) },
-        context.signal,
-      ),
-    );
-    await store.set(
-      seedSlackOrgConnection$,
-      { slackWorkspaceId: fixture.slackWorkspaceId, userId: userId },
-      context.signal,
-    );
+    const fixture = await slackOrgs.installForOrg({
+      orgId,
+      botScopes: "chat:write,channels:read",
+    });
+    await slackOrgs.connectMember({
+      orgId,
+      userId,
+      slackWorkspaceId: fixture.slackWorkspaceId,
+    });
     mocks.clerk.session(userId, orgId, "org:admin");
 
     const client = setupApp({ context, routes: integrationsSlackRoutes })(
@@ -358,18 +353,15 @@ describe("GET /api/integrations/slack", () => {
   it("treats null bot_scopes as mismatch (requires reinstall)", async () => {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
-    const fixture = await track(
-      store.set(
-        seedSlackOrgInstallation$,
-        { orgId, botScopes: null },
-        context.signal,
-      ),
-    );
-    await store.set(
-      seedSlackOrgConnection$,
-      { slackWorkspaceId: fixture.slackWorkspaceId, userId: userId },
-      context.signal,
-    );
+    const fixture = await slackOrgs.installForOrg({
+      orgId,
+      botScopes: null,
+    });
+    await slackOrgs.connectMember({
+      orgId,
+      userId,
+      slackWorkspaceId: fixture.slackWorkspaceId,
+    });
     mocks.clerk.session(userId, orgId, "org:admin");
 
     const client = setupApp({ context, routes: integrationsSlackRoutes })(
@@ -389,18 +381,15 @@ describe("GET /api/integrations/slack", () => {
   it("does not expose scopeMismatch to non-admin users", async () => {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
-    const fixture = await track(
-      store.set(
-        seedSlackOrgInstallation$,
-        { orgId, botScopes: JSON.stringify(["chat:write"]) },
-        context.signal,
-      ),
-    );
-    await store.set(
-      seedSlackOrgConnection$,
-      { slackWorkspaceId: fixture.slackWorkspaceId, userId: userId },
-      context.signal,
-    );
+    const fixture = await slackOrgs.installForOrg({
+      orgId,
+      botScopes: "chat:write",
+    });
+    await slackOrgs.connectMember({
+      orgId,
+      userId,
+      slackWorkspaceId: fixture.slackWorkspaceId,
+    });
     mocks.clerk.session(userId, orgId, "org:member");
 
     const client = setupApp({ context, routes: integrationsSlackRoutes })(
@@ -421,13 +410,10 @@ describe("GET /api/integrations/slack", () => {
   it("returns scopeMismatch for admin when user is not connected", async () => {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
-    const fixture = await track(
-      store.set(
-        seedSlackOrgInstallation$,
-        { orgId, botScopes: JSON.stringify(["chat:write"]) },
-        context.signal,
-      ),
-    );
+    const fixture = await slackOrgs.installForOrg({
+      orgId,
+      botScopes: "chat:write",
+    });
     mocks.clerk.session(userId, orgId, "org:admin");
 
     const client = setupApp({ context, routes: integrationsSlackRoutes })(

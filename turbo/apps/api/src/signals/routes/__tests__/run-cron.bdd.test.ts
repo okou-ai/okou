@@ -1,17 +1,14 @@
 import { randomUUID } from "node:crypto";
 
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { clearMockNow, mockNow, now } from "../../../lib/time";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
+import { now } from "../../../lib/time";
 import {
   createBddApi,
   expectApiError,
   type ApiTestUser,
 } from "./helpers/api-bdd";
-import { createEmailApi } from "./helpers/api-bdd-email";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 
 /**
@@ -21,32 +18,20 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
  *   the old DB fixture matrix can be ported without DB writes. This file covers
  *   model-provider setup through API routes and run-context GET boundaries.
  * - RUN-01/RUN-03/CHAIN-RUN successful dispatch is covered by
- *   run-lifecycle.bdd.test.ts via the public Stripe invoice.paid entitlement
+ *   run-lifecycle.bdd.cases.ts via the public Stripe invoice.paid entitlement
  *   helper (grantProEntitlement); this file keeps the unauthenticated and
  *   malformed admission boundaries plus runner auth surfaces.
  * - RUN-04 persisted runner log ingestion needs callback/event API helpers.
  *   Checkpoint creation through the sandbox webhook is covered by
- *   run-lifecycle.bdd.test.ts; missing-run GET boundaries stay here.
+ *   run-lifecycle-completion.bdd.test.ts; missing-run GET boundaries stay here.
  * - SCHED-02 sync-skills valid-path coverage needs a focused external GitHub
  *   tarball/S3 helper; this file keeps shared cron auth rejection route-based
  *   without running valid global sweeps from the wrong owner file.
  */
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 
-function resendSendCallsTo(recipient: string): number {
-  return context.mocks.resend.send.mock.calls.filter((call) => {
-    const [payload] = call;
-    return (
-      typeof payload === "object" &&
-      payload !== null &&
-      "to" in payload &&
-      payload.to === recipient
-    );
-  }).length;
-}
-
-async function createAgentWithModelProvider(actor: ApiTestUser): Promise<{
+async function createAgentForNoCreditAdmission(actor: ApiTestUser): Promise<{
   readonly agentId: string;
 }> {
   const bdd = createBddApi(context);
@@ -58,103 +43,27 @@ async function createAgentWithModelProvider(actor: ApiTestUser): Promise<{
   });
 
   const api = createRunsApi(context);
-  await api.ensureOrgModelProvider(actor);
+  await api.ensurePersonalSubscriptionModel(actor);
 
   return { agentId: agent.agentId };
 }
-
-describe("RUN-01: run creation admission and validation", () => {
-  it("rejects invalid or unauthorized run creation requests through API validation", async () => {
-    const bdd = createBddApi(context);
-    const api = createRunsApi(context);
-    const actor = bdd.user();
-
-    const unauthenticated = await api.requestCreateRun(
-      null,
-      {
-        agentId: randomUUID(),
-        prompt: "summarize the repo",
-        modelProvider: "anthropic-api-key",
-      },
-      [401],
-    );
-    expectApiError(unauthenticated.body);
-    expect(unauthenticated.body.error.code).toBe("UNAUTHORIZED");
-
-    const missingAgent = await api.requestCreateRunUnchecked(
-      actor,
-      { prompt: "summarize the repo" },
-      [400],
-    );
-    expectApiError(missingAgent.body);
-    expect(missingAgent.body.error.code).toBe("BAD_REQUEST");
-    expect(missingAgent.body.error.message).toBe(
-      "Missing agentId or sessionId",
-    );
-
-    const invalidTools = await api.requestCreateRun(
-      actor,
-      {
-        agentId: randomUUID(),
-        prompt: "use a malformed tool list",
-        tools: ["Bash,Read"],
-        modelProvider: "anthropic-api-key",
-      },
-      [400],
-    );
-    expectApiError(invalidTools.body);
-    expect(invalidTools.body.error.code).toBe("BAD_REQUEST");
-
-    const missingSession = await api.requestCreateRun(
-      actor,
-      {
-        sessionId: randomUUID(),
-        prompt: "resume a missing session",
-        modelProvider: "anthropic-api-key",
-      },
-      [404],
-    );
-    expectApiError(missingSession.body);
-    expect(missingSession.body.error.code).toBe("NOT_FOUND");
-
-    const missingAgentId = await api.requestCreateRun(
-      actor,
-      {
-        agentId: randomUUID(),
-        prompt: "run a missing agent",
-        modelProvider: "anthropic-api-key",
-      },
-      [404],
-    );
-    expectApiError(missingAgentId.body);
-    expect(missingAgentId.body.error.code).toBe("NOT_FOUND");
-  });
-});
 
 describe("RUN-01..04 and CHAIN-RUN: run admission, runner, and visible reads", () => {
   it("sets up run prerequisites through APIs and exposes the no-credit admission boundary", async () => {
     const bdd = createBddApi(context);
     const api = createRunsApi(context);
     const actor = bdd.user();
-    const { agentId } = await createAgentWithModelProvider(actor);
+    const { agentId } = await createAgentForNoCreditAdmission(actor);
 
-    const denied = await api.requestCreateRun(
-      actor,
-      {
+    await expect(
+      api.readThreadRunRejection(actor, {
         agentId,
         prompt: "Produce a concise status report.",
-        modelProvider: "anthropic-api-key",
-        tools: ["Bash"],
-        settings: "{}",
-      },
-      [402],
-    );
-    expectApiError(denied.body);
-    expect(denied.body.error.code).toBe("INSUFFICIENT_CREDITS");
+      }),
+    ).resolves.toBe("insufficient_credits");
 
     const queue = await api.readRunQueue(actor);
     expect(queue.body.concurrency.active).toBe(0);
-    expect(queue.body.queue).toHaveLength(0);
 
     const runnerGroup = api.configureRunnerGroup();
     const heartbeat = await api.heartbeatRunner(runnerGroup);
@@ -444,113 +353,5 @@ describe("SCHED-02: cron routes", () => {
         return response.status === 401;
       }),
     ).toBeTruthy();
-  });
-});
-
-describe("SCHED-02 and OPS-01: email outbox drain cron", () => {
-  it("drains a data-export email once at its UTC retry boundary", async () => {
-    const email = createEmailApi(context);
-    const actor = createBddApi(context).user();
-    const baseTime = now();
-    mockNow(baseTime);
-    onTestFinished(() => {
-      clearMockNow();
-    });
-
-    const { to, subject } = await email.enqueueDataExportEmail(actor);
-    const item = await email.findEmailOutboxItem({ to, subject });
-    expect(resendSendCallsTo(to)).toBe(0);
-
-    context.mocks.resend.send.mockResolvedValue({
-      data: null,
-      error: { message: "data export drain down" },
-    });
-    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-    const failedDrain = await email.drainEmailOutboxItems([item.id]);
-    expect(failedDrain).toBe(1);
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-    expect(resendSendCallsTo(to)).toBe(1);
-
-    context.mocks.resend.send.mockReset();
-    context.mocks.resend.send.mockResolvedValue({
-      data: { id: "resend-bdd-1" },
-    });
-
-    const beforeRetry = await email.drainEmailOutboxItems([item.id]);
-    expect(beforeRetry).toBe(0);
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(0);
-    expect(resendSendCallsTo(to)).toBe(0);
-
-    mockNow(baseTime + 1000);
-    const drain = await email.drainEmailOutboxItems([item.id]);
-    expect(drain).toBe(1);
-    expect(context.mocks.resend.send).toHaveBeenCalledWith(
-      expect.objectContaining({
-        from: "Okou <okou@mail.example.com>",
-        to,
-        subject,
-        html: expect.stringContaining("Your data export is ready"),
-      }),
-      // The retry replays the request the first attempt committed.
-      { idempotencyKey: `okou-email-outbox/v1/${item.id}` },
-    );
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-    expect(resendSendCallsTo(to)).toBe(1);
-
-    const second = await email.drainEmailOutboxItems([item.id]);
-    expect(second).toBe(0);
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-    expect(resendSendCallsTo(to)).toBe(1);
-  });
-
-  it("skips an outbox row locked by the inline drain", async () => {
-    const email = createEmailApi(context);
-    const actor = createBddApi(context).user();
-    const { to, subject } = await email.enqueueDataExportEmail(actor);
-    const item = await email.findEmailOutboxItem({ to, subject });
-    const sendStarted = createDeferredPromise<void>(context.signal);
-    const releaseSend = createDeferredPromise<void>(context.signal);
-    onTestFinished(async () => {
-      if (!releaseSend.settled()) {
-        releaseSend.resolve(undefined);
-      }
-      await flushWaitUntilForTest();
-    });
-
-    context.mocks.resend.send.mockReset();
-    context.mocks.resend.send.mockImplementation(async (payload) => {
-      if (
-        typeof payload === "object" &&
-        payload !== null &&
-        "to" in payload &&
-        payload.to === to
-      ) {
-        sendStarted.resolve(undefined);
-        await releaseSend.promise;
-      }
-      return { data: { id: "resend-bdd-locked" }, error: null };
-    });
-    context.mocks.signalTimers.delay.mockResolvedValue(undefined);
-
-    const firstDrain = email.drainEmailOutboxItems([item.id]);
-    await sendStarted.promise;
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-    expect(resendSendCallsTo(to)).toBe(1);
-
-    const concurrentDrain = await email.drainEmailOutboxItems([item.id]);
-    expect(concurrentDrain).toBe(0);
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-    expect(resendSendCallsTo(to)).toBe(1);
-
-    releaseSend.resolve(undefined);
-    await expect(firstDrain).resolves.toBe(1);
-    await flushWaitUntilForTest();
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-    expect(resendSendCallsTo(to)).toBe(1);
-
-    const afterRelease = await email.drainEmailOutboxItems([item.id]);
-    expect(afterRelease).toBe(0);
-    expect(context.mocks.resend.send).toHaveBeenCalledTimes(1);
-    expect(resendSendCallsTo(to)).toBe(1);
   });
 });

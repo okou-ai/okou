@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use std::time::Duration;
 
 const RUN_ID: &str = "codex-app-server-backend-active-input-test";
-const DELIVERY_ID: &str = "6bd71939-58df-48f2-81d4-468da3c788a5";
+const EVENT_ID: &str = "6bd71939-58df-48f2-81d4-468da3c788a5";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn codex_app_server_backend_steers_active_input_into_active_turn()
@@ -37,29 +37,24 @@ async fn codex_app_server_backend_steers_active_input_into_active_turn()
     let runtime = common::guest_runtime_from_process_env()?;
     let _run_files = common::RunFilesGuard::new_for_paths(&runtime.paths);
 
-    let receipt = server.mock(|when, then| {
+    let steered = server.mock(|when, then| {
         when.method(POST)
             .path(format!(
-                "/api/runners/runs/{RUN_ID}/active-inputs/deliveries/{DELIVERY_ID}/receipt"
+                "/api/runners/runs/{RUN_ID}/steerable-inputs/{EVENT_ID}/steered"
             ))
             .header("Authorization", "Bearer test-token")
             .json_body(json!({}));
         then.status(200)
             .header("Content-Type", "application/json")
-            .json_body(json!({ "outcome": "delivered" }));
+            .json_body(json!({ "outcome": "steered" }));
     });
-    let journal_path = guest_contracts::runtime_paths::active_input_receipt_journal_file(
-        runtime.paths.runtime_dir(),
-    );
-    let active_input = ActiveInputRuntime::new_with_receipts(
+    let active_input = ActiveInputRuntime::new_enabled(
         &runtime.config.run_id,
         &runtime.config.prompt,
-        &journal_path,
         HttpClient::with_api_config(server.base_url(), "test-token", "", RUN_ID, Duration::ZERO)?,
-    )?;
+    );
     let controller = active_input.controller();
-    let payload =
-        guest_contracts::active_input::encode_active_input(DELIVERY_ID, "follow-up prompt")?;
+    let payload = guest_contracts::active_input::encode_active_input(EVENT_ID, "follow-up prompt")?;
     assert_eq!(
         controller.handle_control_payload(&payload),
         ActiveInputControlOutcome::Accepted
@@ -85,18 +80,7 @@ async fn codex_app_server_backend_steers_active_input_into_active_turn()
 
     assert_eq!(cli_result.exit_code, common::CLEAN_EXIT);
     assert!(cli_result.failure_diagnostic.is_none());
-    assert_eq!(
-        cli_result.active_input_delivery_ids,
-        vec![DELIVERY_ID.to_string()]
-    );
-    receipt.assert_calls(1);
-    assert!(
-        guest_contracts::active_input_receipts::read_active_input_receipt_journal(
-            &journal_path,
-            RUN_ID,
-        )?
-        .is_empty()
-    );
+    steered.assert_calls(1);
 
     let input_events = common::read_codex_session_history_events_for_runtime(&runtime)?
         .into_iter()
@@ -113,7 +97,7 @@ async fn codex_app_server_backend_steers_active_input_into_active_turn()
     let client_user_message_id = input_events[1]["turn_request_client_user_message_id"]
         .as_str()
         .expect("steered input should carry an internal UUID");
-    assert_eq!(client_user_message_id, DELIVERY_ID);
+    assert_eq!(client_user_message_id, EVENT_ID);
 
     Ok(())
 }

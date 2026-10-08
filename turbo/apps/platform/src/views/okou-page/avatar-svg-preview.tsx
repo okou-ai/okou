@@ -1,9 +1,4 @@
-import { useGet } from "ccstate-react";
 import { cn } from "@okouai/ui";
-import {
-  avatarFramingEnabled$,
-  avatarNeckSweaterEnabled$,
-} from "../../signals/external/feature-switch.ts";
 import {
   AVATAR_ARTWORK_SLOT,
   AVATAR_HEAD_SLOT,
@@ -38,7 +33,6 @@ interface AvatarSvgPreviewProps {
   config: ResolvedAvatarSvgConfig;
   size?: number;
   className?: string;
-  centerContent?: boolean;
   /** Keep the shared chin and collar aligned with adjacent brand avatars. */
   preserveChinBaseline?: boolean;
   /**
@@ -58,29 +52,23 @@ export function AvatarSvgPreview({
   config,
   size,
   className,
-  centerContent = false,
   preserveChinBaseline = false,
   textureUrl,
   alt,
   "data-testid": testId,
 }: AvatarSvgPreviewProps) {
-  const neckSweater = useGet(avatarNeckSweaterEnabled$);
   const preserveBaseline =
-    preserveChinBaseline && neckSweater && !isLegacyAvatarSvgConfig(config);
-  const framing = useGet(avatarFramingEnabled$) && !preserveBaseline;
+    preserveChinBaseline && !isLegacyAvatarSvgConfig(config);
+  // Pinned rows keep the shared chin baseline instead of letting hair height
+  // move each collar to a different position, so they skip the framing.
+  const framing = !preserveBaseline;
   // A texture and the bottom anchor are one decision, not two: the anchor only
   // matters because the texture makes the artwork's cut edge visible.
   const bottomAnchored = textureUrl !== undefined;
   const { behind, head, front, headOffsetY, contentOffsetY, contentScale } =
-    avatarSvgComposition(config, { neckSweater, framing, bottomAnchored });
-  // `centerContent` is the avatar maker asking for centering on its own while
-  // the framing switch is off. Pinned rows keep the shared chin baseline instead
-  // of letting hair height move each collar to a different position.
+    avatarSvgComposition(config, { framing, bottomAnchored });
   const transform = avatarSvgContentTransform({
-    contentOffsetY:
-      bottomAnchored || (!preserveBaseline && (framing || centerContent))
-        ? contentOffsetY
-        : 0,
+    contentOffsetY: bottomAnchored || framing ? contentOffsetY : 0,
     contentScale,
   });
   const layerClassName = "absolute inset-0 h-full w-full object-cover";

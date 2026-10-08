@@ -1,6 +1,4 @@
-import { z } from "zod";
-import { executeRawRows } from "../../../lib/db-raw-rows";
-import { createDeferredPromise, settle } from "../../utils";
+import { captureFixtureRunBilling } from "../billing-run-fixture";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { eq, sql } from "drizzle-orm";
@@ -13,7 +11,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { conversations } from "@okouai/db/schema/conversation";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import {
@@ -152,31 +150,35 @@ async function harness(enabled = true) {
     await db
       .insert(agentSessions)
       .values({ id: sessionId, userId, orgId, agentId: thread.agentId });
-    const [run] = await db
-      .insert(agentRuns)
-      .values({
-        id,
-        sessionId,
-        orgId,
-        userId,
-        chatThreadId: threadId,
-        status: options.status ?? "completed",
-        prompt: "fixture",
-        triggerSource: options.triggerSource ?? "web",
-        autonomyBudget: 0,
-        launchSnapshot: {
-          schemaVersion: 3,
-          framework: "pi",
-          runnerProfile: DEFAULT_PROFILE,
-        },
-        createdAt: at,
-        completedAt:
-          options.status && options.status !== "completed" ? null : at,
-      })
-      .returning();
-    if (!run) {
-      throw new Error("Missing fixture run");
-    }
+    const run = await db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(agentRuns)
+        .values({
+          id,
+          sessionId,
+          orgId,
+          userId,
+          chatThreadId: threadId,
+          status: options.status ?? "completed",
+          prompt: "fixture",
+          triggerSource: options.triggerSource ?? "web",
+          autonomyBudget: 0,
+          launchSnapshot: {
+            schemaVersion: 3,
+            framework: "pi",
+            runnerProfile: DEFAULT_PROFILE,
+          },
+          createdAt: at,
+          completedAt:
+            options.status && options.status !== "completed" ? null : at,
+        })
+        .returning();
+      if (!inserted) {
+        throw new Error("Missing fixture run");
+      }
+      await captureFixtureRunBilling(tx, inserted.id);
+      return inserted;
+    });
     const piSessionId = options.piSessionId ?? randomUUID();
     const hash = options.hash ?? createHash("sha256").update(id).digest("hex");
     if (options.checkpoint !== false) {
@@ -234,7 +236,7 @@ describe("durable Pi Stage 1 daily scheduling", () => {
   it("commits one cross-org day, rolls back failures, and survives trigger deletion and zero selection", async () => {
     const h = await harness();
     const a = await h.source(0, { status: "pending", checkpoint: false });
-    const b = await h.source(0, { status: "queued", checkpoint: false });
+    const b = await h.source(0, { status: "pending", checkpoint: false });
     await expect(
       h.db.transaction(async (tx) => {
         await requestPiMemoryStage1Day(tx, a.run);
@@ -273,7 +275,10 @@ describe("durable Pi Stage 1 daily scheduling", () => {
         orgId: otherOrg,
       });
     });
-    const switched = await h.source(0, { status: "queued", checkpoint: false });
+    const switched = await h.source(0, {
+      status: "pending",
+      checkpoint: false,
+    });
     await h.db
       .update(agents)
       .set({ orgId: otherOrg })
@@ -353,7 +358,7 @@ describe("durable Pi Stage 1 daily scheduling", () => {
     },
   );
 
-  it.each(["queued", "pending", "running", "failed"])(
+  it.each(["pending", "running", "failed"])(
     "rejects a newer %s continuation without a conversation",
     async (status) => {
       const h = await harness();
@@ -376,7 +381,7 @@ describe("durable Pi Stage 1 daily scheduling", () => {
     expect(selected).toHaveLength(1);
     await h.source(0, {
       threadId: original.threadId,
-      status: "queued",
+      status: "pending",
       checkpoint: false,
     });
     expect((await h.claim()).claimed).toHaveLength(0);
@@ -540,63 +545,6 @@ describe("durable Pi Stage 1 daily scheduling", () => {
       });
     },
   );
-
-  it("does not invert a foreground Thread lock with the daily decision", async () => {
-    const h = await harness();
-    const source = await h.source();
-    await h.startup();
-    const locked = createDeferredPromise<number>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    const foreground = h.db.transaction(async (tx) => {
-      await tx
-        .select({ id: chatThreads.id })
-        .from(chatThreads)
-        .where(eq(chatThreads.id, source.threadId))
-        .for("update");
-      const [backend] = await executeRawRows(
-        tx,
-        sql`SELECT pg_backend_pid() AS pid`,
-        z.object({ pid: z.number() }),
-      );
-      if (!backend) {
-        throw new Error("Missing lock backend");
-      }
-      locked.resolve(backend.pid);
-      await release.promise;
-      await tx
-        .update(agentRuns)
-        .set({ status: "pending", completedAt: null })
-        .where(eq(agentRuns.id, source.run.id));
-      await requestPiMemoryStage1Day(tx, {
-        ...source.run,
-        status: "pending",
-        completedAt: null,
-      });
-    });
-    const blockerPid = await locked.promise;
-    const selection = h.select();
-    const blocked = await settle(
-      Promise.resolve(
-        expect
-          .poll(async () => {
-            const rows = await executeRawRows(
-              h.db,
-              sql`SELECT pid FROM pg_stat_activity WHERE ${blockerPid} = ANY(pg_blocking_pids(pid))`,
-              z.object({ pid: z.number() }),
-            );
-            return rows.length;
-          })
-          .toBeGreaterThan(0),
-      ),
-    );
-    release.resolve(undefined);
-    await Promise.all([foreground, selection]);
-    if (!blocked.ok) {
-      throw blocked.error;
-    }
-    await expect(selection).resolves.toHaveLength(0);
-    expect((await h.claim()).claimed).toHaveLength(0);
-  });
 
   it("never exposes an older idle checkpoint through newer recent activity", async () => {
     const h = await harness();

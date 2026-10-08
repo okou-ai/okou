@@ -1,18 +1,15 @@
-import { command, computed, type Computed } from "ccstate";
-import { Readable } from "node:stream";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
-  CreateMultipartUploadCommand,
   CopyObjectCommand,
+  CreateMultipartUploadCommand,
   DeleteObjectsCommand,
   GetObjectCommand,
   type GetObjectCommandOutput,
   HeadObjectCommand,
-  ListPartsCommand,
   ListMultipartUploadsCommand,
   ListObjectsV2Command,
+  ListPartsCommand,
   PutObjectCommand,
   type PutObjectCommandOutput,
   S3Client,
@@ -20,19 +17,25 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import {
+  CURRENT_LINK_LAYOUT,
+  linkLayoutSegment,
+} from "@okouai/api-contracts/contracts/link-layout";
+import {
   SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
   SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT,
   type SessionHistoryDownloadSource,
 } from "@okouai/api-contracts/contracts/runners";
+import { command, computed, type Computed } from "ccstate";
+import { Readable } from "node:stream";
 
-import { env } from "../../lib/env";
-import { detach, Mechanism, settle } from "../utils";
+import { PRIVATE_ARTIFACT_CACHE_CONTROL } from "@okouai/api-contracts/contracts/artifact-cache";
 import {
   artifactDeliveryKey,
   artifactDeliveryRecordSchema,
 } from "@okouai/api-contracts/contracts/artifact-delivery";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
-import { PRIVATE_ARTIFACT_CACHE_CONTROL } from "@okouai/api-contracts/contracts/artifact-cache";
+import { env } from "../../lib/env";
+import { detach, Mechanism, settle } from "../utils";
 const S3_DELETE_OBJECTS_LIMIT = 1000;
 
 export interface S3Object {
@@ -62,12 +65,13 @@ async function registerLegacyArtifactWrite(
       "Private artifacts cannot use public delivery registration",
     );
   }
-  // Historical public writers without brand/filename metadata use the same
-  // interpretation as migration 014; #32492 owns this persisted-data boundary.
+  // Historical public writers without layout/filename metadata stored legacy
+  // links, matching migration 014; #32492 owns this persisted-data boundary.
   const record = artifactDeliveryRecordSchema.parse({
     version: 1,
     kind: "legacy-file",
-    publicBrand: write.metadata?.["public-brand"] ?? "vm0",
+    publicBrand:
+      write.metadata?.["public-brand"] ?? linkLayoutSegment("legacy"),
     audience: "public",
     key: write.key,
     filename: decodeURIComponent(
@@ -187,14 +191,6 @@ export interface S3DownloadFailureDiagnostics {
   readonly providerRetryDelayMs?: number;
   readonly signalAborted: boolean;
 }
-
-export type ConditionalS3BufferDownload =
-  | { readonly kind: "not-modified" }
-  | {
-      readonly kind: "downloaded";
-      readonly buffer: Buffer;
-      readonly etag: string | null;
-    };
 
 export class S3ObjectSizeLimitError extends Error {
   constructor(
@@ -329,6 +325,61 @@ function s3ClientForBucket(
   return usePublicEndpoint ? publicS3Client$ : s3Client$;
 }
 
+export type PresignedGetUrlSigner = (
+  bucket: string,
+  key: string,
+  options?: {
+    readonly filename?: string;
+    readonly responseCacheControl?: string;
+    readonly signingDate?: Date;
+  },
+) => Promise<string>;
+
+function createPresignedGetUrlSigner(client$: Computed<S3Client>) {
+  return computed((get): PresignedGetUrlSigner => {
+    const client = get(client$);
+    return (bucket, key, options) => {
+      return signPresignedGetUrl(client, bucket, key, options);
+    };
+  });
+}
+
+const presignedGetUrlSigner$ = createPresignedGetUrlSigner(s3Client$);
+export const publicPresignedGetUrlSigner$ =
+  createPresignedGetUrlSigner(publicS3Client$);
+const userArtifactsGetUrlSigner$ = createPresignedGetUrlSigner(
+  userArtifactsS3Client$,
+);
+const userArtifactsPublicGetUrlSigner$ = createPresignedGetUrlSigner(
+  userArtifactsPublicS3Client$,
+);
+const privateArtifactsGetUrlSigner$ = createPresignedGetUrlSigner(
+  privateArtifactsS3Client$,
+);
+const privateArtifactsPublicGetUrlSigner$ = createPresignedGetUrlSigner(
+  privateArtifactsPublicS3Client$,
+);
+
+/** Select a preconstructed signer without creating request-scoped signals. */
+export function presignedGetUrlSignerForBucket(
+  bucket: string,
+  usePublicEndpoint = false,
+): Computed<PresignedGetUrlSigner> {
+  if (bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")) {
+    return usePublicEndpoint
+      ? privateArtifactsPublicGetUrlSigner$
+      : privateArtifactsGetUrlSigner$;
+  }
+  if (bucket === env("R2_USER_ARTIFACTS_BUCKET_NAME")) {
+    return usePublicEndpoint
+      ? userArtifactsPublicGetUrlSigner$
+      : userArtifactsGetUrlSigner$;
+  }
+  return usePublicEndpoint
+    ? publicPresignedGetUrlSigner$
+    : presignedGetUrlSigner$;
+}
+
 const hostedSitesS3Client$ = computed((): S3Client => {
   return createS3Client(
     env("S3_ENDPOINT") ?? defaultS3Endpoint(),
@@ -349,21 +400,6 @@ export function listS3Objects(
   prefix: string,
 ): Computed<Promise<readonly S3Object[]>> {
   return listS3ObjectsWithClient(s3ClientForBucket(bucket), bucket, prefix);
-}
-
-/** Hosted sites hold their own credentials, so `s3ClientForBucket` does not
- * reach them. This is the hosted-bucket listing counterpart to
- * `deleteArtifactSnapshotObjects(..., hosted: true, ...)`.
- */
-export function listHostedSitesObjectsUnderPrefix(
-  bucket: string,
-  prefix: string,
-): Computed<Promise<readonly S3Object[]>> {
-  return listS3ObjectsWithClient(
-    hostedSitesS3Client$,
-    bucket,
-    boundedListPrefix(prefix),
-  );
 }
 
 function listS3ObjectsWithClient(
@@ -411,6 +447,7 @@ export function listS3ObjectsPage(
   bucket: string,
   prefix: string,
   maxKeys: number,
+  signal?: AbortSignal,
 ): Computed<Promise<S3ObjectPage>> {
   if (!Number.isInteger(maxKeys) || maxKeys <= 0 || maxKeys > 1000) {
     throw new Error("S3 list page size must be an integer between 1 and 1000");
@@ -423,7 +460,9 @@ export function listS3ObjectsPage(
         Prefix: prefix,
         MaxKeys: maxKeys,
       }),
+      { abortSignal: signal },
     );
+    signal?.throwIfAborted();
     const objects = (response.Contents ?? []).flatMap((item) => {
       if (!item.Key || item.Size === undefined || !item.LastModified) {
         return [];
@@ -465,6 +504,14 @@ export function deleteS3Objects(
     keys,
     signal,
   );
+}
+
+export function deleteHostedSitesS3Objects(
+  bucket: string,
+  keys: readonly string[],
+  signal: AbortSignal,
+): Computed<Promise<void>> {
+  return deleteS3ObjectsWithClient(hostedSitesS3Client$, bucket, keys, signal);
 }
 
 export function deleteArtifactSnapshotObjects(
@@ -559,40 +606,6 @@ export function downloadS3BufferWithMaxBytes(
   );
 }
 
-export function downloadS3BufferWithMaxBytesIfChanged(
-  bucket: string,
-  key: string,
-  maxBytes: number,
-  ifNoneMatch: string | null,
-  signal?: AbortSignal,
-): Computed<Promise<ConditionalS3BufferDownload>> {
-  return computed(async (get): Promise<ConditionalS3BufferDownload> => {
-    const client = get(s3ClientForBucket(bucket));
-    const downloaded = await settle(
-      client.send(
-        new GetObjectCommand({
-          Bucket: bucket,
-          Key: key,
-          IfNoneMatch: ifNoneMatch ?? undefined,
-        }),
-        { abortSignal: signal },
-      ),
-    );
-    if (!downloaded.ok) {
-      if (isS3NotModifiedError(downloaded.error)) {
-        return { kind: "not-modified" };
-      }
-      throw downloaded.error;
-    }
-    const response: GetObjectCommandOutput = downloaded.value;
-    return {
-      kind: "downloaded",
-      buffer: await readS3ObjectBody(response, key, { maxBytes }, signal),
-      etag: response.ETag ?? null,
-    };
-  });
-}
-
 function isAsyncIterableByteStream(
   value: unknown,
 ): value is AsyncIterable<Uint8Array> {
@@ -611,19 +624,6 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   }
   const then = (value as { then?: unknown }).then;
   return typeof then === "function";
-}
-
-function isS3NotModifiedError(value: unknown): boolean {
-  if (typeof value !== "object" || value === null || !("$metadata" in value)) {
-    return false;
-  }
-  const metadata = value.$metadata;
-  return (
-    typeof metadata === "object" &&
-    metadata !== null &&
-    "httpStatusCode" in metadata &&
-    metadata.httpStatusCode === 304
-  );
 }
 
 function closeS3Body(body: unknown): void {
@@ -739,6 +739,12 @@ async function readS3ObjectBody(
         }
         chunks.push(chunk);
       }
+      if (
+        response.ContentLength !== undefined &&
+        totalLength !== response.ContentLength
+      ) {
+        throw new Error(`S3 object body length mismatch for ${key}`);
+      }
       return Buffer.concat(
         chunks.map((chunk) => {
           return Buffer.from(chunk);
@@ -792,6 +798,10 @@ export function generatePresignedPutUrl(
   options: {
     readonly usePublicEndpoint?: boolean;
     readonly metadata?: Readonly<Record<string, string>>;
+    /** Bind a browser File PUT to the declared byte length as well. */
+    readonly contentLength?: number;
+    /** Short-lived upload permissions may override the shared artifact URL lifetime. */
+    readonly expiresInSeconds?: number;
   },
   signal?: AbortSignal,
 ): Computed<Promise<string>> {
@@ -977,7 +987,8 @@ function generatePresignedPutUrlWithClient(
     readonly key: string;
     readonly contentType: string;
     readonly metadata?: Readonly<Record<string, string>>;
-    readonly checksumSha256?: string;
+    readonly contentLength?: number;
+    readonly expiresInSeconds?: number;
   },
   signal?: AbortSignal,
 ): Computed<Promise<string>> {
@@ -999,14 +1010,12 @@ function generatePresignedPutUrlWithClient(
       Key: key,
       ContentType: contentType,
       Metadata: options.metadata,
-      ChecksumSHA256: options.checksumSha256,
+      ContentLength: options.contentLength,
     });
     return getSignedUrl(client, command, {
-      expiresIn: PRESIGNED_URL_TTL_SECONDS,
+      expiresIn: options.expiresInSeconds ?? PRESIGNED_URL_TTL_SECONDS,
       ...(metadataHeaders
-        ? {
-            unhoistableHeaders: new Set(Object.keys(metadataHeaders)),
-          }
+        ? { unhoistableHeaders: new Set(Object.keys(metadataHeaders)) }
         : {}),
     });
   });
@@ -1016,7 +1025,6 @@ export function generateHostedSitesPresignedPutUrl(
   bucket: string,
   key: string,
   contentType: string,
-  sha256: string,
   usePublicEndpoint = false,
 ): Computed<Promise<string>> {
   return generatePresignedPutUrlWithClient(
@@ -1025,9 +1033,6 @@ export function generateHostedSitesPresignedPutUrl(
       bucket,
       key,
       contentType,
-      // The signed query binds every retry to the same bytes without requiring
-      // new request headers from already-running CLI versions.
-      checksumSha256: Buffer.from(sha256, "hex").toString("base64"),
     },
   );
 }
@@ -1118,23 +1123,36 @@ function generatePresignedGetUrlWithClient(
   },
 ): Computed<Promise<string>> {
   return computed((get): Promise<string> => {
-    const client = get(client$);
-    const command = new GetObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      ...(options?.responseCacheControl
-        ? { ResponseCacheControl: options.responseCacheControl }
-        : {}),
-      ...(options?.filename
-        ? {
-            ResponseContentDisposition: `attachment; filename="${options.filename}"`,
-          }
-        : {}),
-    });
-    return getSignedUrl(client, command, {
-      expiresIn: PRESIGNED_URL_TTL_SECONDS,
-      ...(options?.signingDate ? { signingDate: options.signingDate } : {}),
-    });
+    return signPresignedGetUrl(get(client$), bucket, key, options);
+  });
+}
+
+/** Sign with an already resolved client without allocating a signal. */
+function signPresignedGetUrl(
+  client: S3Client,
+  bucket: string,
+  key: string,
+  options?: {
+    readonly filename?: string;
+    readonly responseCacheControl?: string;
+    readonly signingDate?: Date;
+  },
+): Promise<string> {
+  const command = new GetObjectCommand({
+    Bucket: bucket,
+    Key: key,
+    ...(options?.responseCacheControl
+      ? { ResponseCacheControl: options.responseCacheControl }
+      : {}),
+    ...(options?.filename
+      ? {
+          ResponseContentDisposition: `attachment; filename="${options.filename}"`,
+        }
+      : {}),
+  });
+  return getSignedUrl(client, command, {
+    expiresIn: PRESIGNED_URL_TTL_SECONDS,
+    ...(options?.signingDate ? { signingDate: options.signingDate } : {}),
   });
 }
 
@@ -1404,7 +1422,6 @@ export const copyPublicArtifactObject$ = command(
       readonly filename: string;
       readonly contentType: string;
       readonly size: number;
-      readonly publicBrand: PublicBrand;
     },
     signal: AbortSignal,
   ): Promise<void> => {
@@ -1421,7 +1438,7 @@ export const copyPublicArtifactObject$ = command(
     }
     const metadata = {
       filename: encodeURIComponent(args.filename),
-      "public-brand": args.publicBrand,
+      "public-brand": linkLayoutSegment(CURRENT_LINK_LAYOUT),
     };
     await get(
       publicArtifactWriteRegistration(
@@ -1740,35 +1757,6 @@ export function hostedSitesS3ObjectExists(
   key: string,
 ): Computed<Promise<boolean>> {
   return s3ObjectExistsWithClient(hostedSitesS3Client$, bucket, key);
-}
-
-export function verifyS3FilesExist(
-  bucket: string,
-  s3Key: string,
-  fileCount: number,
-  options?: {
-    readonly allowMissingObjectsForEmptyVersion?: boolean;
-  },
-): Computed<Promise<boolean>> {
-  return computed(async (get): Promise<boolean> => {
-    if (
-      fileCount === 0 &&
-      options?.allowMissingObjectsForEmptyVersion === true
-    ) {
-      return true;
-    }
-
-    const manifestKey = `${s3Key}/manifest.json`;
-    const archiveKey = `${s3Key}/archive.tar.gz`;
-    const [manifestExists, archiveExists] = await Promise.all([
-      get(s3ObjectExists(bucket, manifestKey)),
-      fileCount > 0
-        ? get(s3ObjectExists(bucket, archiveKey))
-        : Promise.resolve(true),
-    ]);
-
-    return manifestExists && archiveExists;
-  });
 }
 
 /** One small page, including uploads whose creation receipt was never saved. */

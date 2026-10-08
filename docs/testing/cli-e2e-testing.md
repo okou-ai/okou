@@ -10,8 +10,8 @@ entry points. The current suite covers:
 - sign-up and sign-in through Clerk's hosted UI;
 - onboarding, chat submission, runner dispatch, and the assistant result through
   the deployed web application;
-- real Claude BYOK, built-in Codex, and built-in Pi execution, including
-  public usage attribution;
+- real Auto/OpenRouter Pi execution and personal-subscription harnesses,
+  including public usage attribution;
 - active-run cancellation through the public run and chat-events APIs;
 - ordinary and empty chat attachments across continuation, plus runner-mounted
   workflow files and agent instructions;
@@ -106,25 +106,34 @@ Name runner BATS files `run-tNN-<behavior>.bats`, using the next unused `NN`.
 The number is a stable file identifier, not an execution order. Test titles
 should describe behavior without repeating the file identifier.
 
-The workflow prepares separate real Codex BYOK, real Codex built-in, and
-real Claude/Pi identities. Bootstrap disables Pi for the shared Runner, mock
-Claude, Codex BYOK, and Codex built-in identities so their tests retain Runner
-execution. The real Claude/Pi account enables Pi in its dedicated smoke test.
+The workflow uses five isolated identities.
+Platform identities use `runner-auto-bootstrap.bash`, verify the read-only
+`/api/run-models` response (Auto is the first entry, with `model: null`) and
+select Auto by saving a `null` model preference. Their real/mock runtime flags
+remain isolated. The mock-Claude identity also hosts a personal Codex
+subscription: shell-driven BATS select it with
+`runner_e2e_use_mock_codex_profile`, while personal Claude coverage uses that
+identity's Claude subscription. Mock-only helpers reject a missing profile
+rather than silently selecting a real model. Synthetic subscription credentials
+are provisioned only after the preview runtime has been pinned to mock mode.
+The Auto smoke, steering, billing and continuation cases exercise the fixed
+OpenRouter preset; personal native-harness cases keep their subscription choices.
 The shared mock-runner identity starts with `UTC` as its timezone.
 Runner BATS must not mutate shared account-level preferences from parallel
 shards. Coverage that needs mutable account-level state requires a dedicated
 identity or a serialized lane.
 
-Real GPT model calls in `e2e/tests` must use `gpt-5.6-luna`;
-`e2e/scripts/model-policy.test.ts` enforces this cost boundary in CI before
-runner account preparation. Run it locally with
-`cd e2e && pnpm exec tsx --test scripts/model-policy.test.ts`, independently of
-the Playwright fixture suite. Claude, DeepSeek, and mock-runtime coverage is
-unchanged.
+Real platform model calls in `e2e/tests` must use Auto, which the API receives as
+`model: null` (pass `auto` as the `runner_chat_send` model argument);
+`e2e/scripts/runner-model-selection.test.ts` enforces that boundary in CI before runner
+account preparation. Run it locally with
+`cd e2e && pnpm exec tsx --test scripts/runner-model-selection.test.ts`, independently of
+the Playwright fixture suite. Personal subscription choices remain available in
+the isolated mocked native-harness profiles.
 
 The default runner and feature-test accounts use limited-free onboarding. The
-dedicated Codex BYOK, Codex built-in, Claude, and mock-Claude accounts use Pro
-to preserve their existing billing and provider test prerequisites.
+remaining dedicated real and mock identities use Pro to preserve billing and
+personal-subscription test prerequisites.
 Runner preparation completes onboarding through
 the public API, creates a public usage-pack checkout, completes hosted Stripe
 payment, and verifies the resulting public entitlement before publishing tokens.

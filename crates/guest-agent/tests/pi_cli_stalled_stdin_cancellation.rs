@@ -15,7 +15,7 @@ use tokio_util::sync::CancellationToken;
 
 const RUN_ID: &str = "00000000-0000-4000-8000-000000000145";
 const SESSION_ID: &str = "11111111-1111-4111-8111-111111111145";
-const DELIVERY_ID: &str = "22222222-2222-4222-8222-222222222145";
+const EVENT_ID: &str = "22222222-2222-4222-8222-222222222145";
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
 async fn pi_cancellation_reaps_child_with_stalled_steer_write()
@@ -31,7 +31,6 @@ async fn pi_cancellation_reaps_child_with_stalled_steer_write()
         r#"#!/bin/sh
 set -eu
 printf '%s\n' "$$" > "$PI_CHILD_PID_PATH"
-printf '%s\n' '{"type":"vm0_pi_api_first_turn_boundary","schemaVersion":2,"sandboxEventSequenceStart":1,"ownershipTransferMode":"pending-tool-continuation"}'
 IFS= read -r state_command
 case "$state_command" in
   *'"type":"get_state"'*) ;;
@@ -83,9 +82,7 @@ done
             &runtime_dir,
             &guest_contracts::env::RunPayload {
                 prompt: "cancel Pi while steer is blocked on stdin".to_string(),
-                pi_launch_config:
-                    r#"{"schemaVersion":2,"apiFirstTurn":{"sandboxEventSequenceStart":1}}"#
-                        .to_string(),
+                pi_launch_config: r#"{"schemaVersion":2}"#.to_string(),
                 pi_model_config: "{}".to_string(),
                 pi_session_id: SESSION_ID.to_string(),
                 ..guest_contracts::env::RunPayload::default()
@@ -114,16 +111,13 @@ done
 
     let runtime = common::guest_runtime_from_process_env()?;
     let _run_files = common::RunFilesGuard::new_for_paths(&runtime.paths);
-    let journal_path = guest_contracts::runtime_paths::active_input_receipt_journal_file(
-        runtime.paths.runtime_dir(),
-    );
     let active_input = common::active_input_runtime(&runtime)?;
     let controller = active_input.controller();
     let payload_limit =
         api_contracts::generated::constants::runners::ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES
             as usize;
     let payload = guest_contracts::active_input::encode_active_input(
-        DELIVERY_ID,
+        EVENT_ID,
         &"x".repeat(payload_limit - 256),
     )?;
     assert!(payload.len() <= payload_limit);
@@ -170,7 +164,6 @@ done
         .await
         .expect("Pi cancellation should terminate the stalled child")?;
 
-    assert!(result.active_input_delivery_ids.is_empty());
     let control_error = result
         .control_error
         .as_ref()
@@ -185,13 +178,6 @@ done
             .ok_or_else(|| std::io::Error::other("Pi cancellation omitted termination details"))?
             .reason,
         CliTerminationReason::UserCancellation
-    );
-    assert!(
-        guest_contracts::active_input_receipts::read_active_input_receipt_journal(
-            &journal_path,
-            RUN_ID,
-        )?
-        .is_empty()
     );
     assert!(
         !child_process_path.exists(),

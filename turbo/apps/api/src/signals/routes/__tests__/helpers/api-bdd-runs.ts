@@ -1,101 +1,87 @@
-import { mockClerkUsers } from "./clerk-users";
 import { randomUUID } from "node:crypto";
+import { flushWaitUntilForTest } from "../../../context/wait-until";
+import { mockClaudeCodeTokenEndpoint } from "./api-bdd-auth-device";
+import { createChatFilesBddApi } from "./api-bdd-chat-files";
+import { mockClerkUsers } from "./clerk-users";
 
-import type StripeSDK from "stripe";
-import type { z } from "zod";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
+import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import {
   cliAuthApproveContract,
   cliAuthDeviceContract,
   cliAuthTokenContract,
 } from "@okouai/api-contracts/contracts/cli-auth";
-import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import { webhookStripeContract } from "@okouai/api-contracts/contracts/webhooks";
-import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
-import {
-  userPermissionGrantsContract,
-  type ApplyUserPermissionGrant,
-  type ApplyUserPermissionGrantsRequest,
-  type UserPermissionGrantResponse,
-} from "@okouai/api-contracts/contracts/user-permission-grants";
-import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
-import { modelPoliciesMainContract } from "@okouai/api-contracts/contracts/model-policies";
-import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
-import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import {
   cronProcessUsageEventsContract,
   cronTelegramCleanupContract,
 } from "@okouai/api-contracts/contracts/cron";
-import { testBillingReconciliationStateContract } from "@okouai/api-contracts/contracts/test-billing-reconciliation-state";
+import type { UpsertModelProviderRequest } from "@okouai/api-contracts/contracts/model-providers";
+import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
+import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
+import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import {
-  NATIVE_GPT_6_LUNA_HEADER,
-  runnersActiveInputsContract,
+  runContextContract,
+  runRunnerContract,
+  runsByIdContract,
+  runsCancelContract,
+  runsQueueContract,
+} from "@okouai/api-contracts/contracts/run-routes";
+import {
   runnersCancellationContract,
   runnersConnectorRuntimeSyncContract,
   runnersHeartbeatContract,
   runnersJobClaimContract,
   runnersModelProviderFailuresContract,
   runnersPollContract,
+  runnersSteerContract,
   type CanonicalStorageManifest,
   type StorageManifest,
 } from "@okouai/api-contracts/contracts/runners";
-import {
-  runsCancelContract,
-  runCreateBodySchema,
-  runContextContract,
-  runRunnerContract,
-  runsByIdContract,
-  runsQueueContract,
-} from "@okouai/api-contracts/contracts/run-routes";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
-
-import { createAppWithRoutes } from "../../../../app-factory-core";
+import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import {
-  setupAppWithRoutes,
-  setupRawAppRequestWithRoutes,
-} from "../../../../__tests__/test-app";
-import { accept, type TestContext } from "../../../../__tests__/test-context";
+  userPermissionGrantsContract,
+  type ApplyUserPermissionGrant,
+  type ApplyUserPermissionGrantsRequest,
+  type UserPermissionGrantResponse,
+} from "@okouai/api-contracts/contracts/user-permission-grants";
+import { webhookStripeContract } from "@okouai/api-contracts/contracts/webhooks";
+import type StripeSDK from "stripe";
+import type { z } from "zod";
+
 import { apiTestS3PresignedUrl } from "../../../../__tests__/mocks";
+import { setupAppWithRoutes } from "../../../../__tests__/test-app";
+import { accept, type TestContext } from "../../../../__tests__/test-context";
+import { createAppWithRoutes } from "../../../../app-factory-core";
 import { mockEnv, mockOptionalEnv } from "../../../../lib/env";
 import { now, withNowScopeForTest } from "../../../../lib/time";
-import { createDeferredPromise } from "../../../utils";
-import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
-import type { SystemSkillStorageResolution } from "../../../context/system-skill-storage-resolution";
-import {
-  createDirectAgentExecutionFixture,
-  createDirectRunFixture,
-  listAgentRunsFixture,
-  type DirectAgentExecutionConfig,
-  type DirectRunFixtureRequest,
-} from "../../../../test-fixtures/agent-runs";
+import { listAgentRunsFixture } from "../../../../test-fixtures/agent-runs";
 import {
   generateSandboxToken,
   signSandboxJwtForTests,
 } from "../../../auth/tokens";
+import type { SystemSkillStorageResolution } from "../../../context/system-skill-storage-resolution";
+import type { UsagePricingResolution } from "../../../context/usage-pricing-resolution";
 import { mockStripeClient } from "../../../external/stripe-client";
+import { agentsRoutes } from "../../agents";
+import { billingStatusRoutes } from "../../billing-status";
 import { cliAuthRoutes } from "../../cli-auth";
 import { cronProcessUsageEventsRoutes } from "../../cron-process-usage-events";
 import { cronTelegramCleanupRoutes } from "../../cron-telegram-cleanup";
-import { runnersRoutes } from "../../runners";
-import { runnerCancellationRoutes } from "../../runner-cancellation";
-import { webhooksStripeRoutes } from "../../webhooks-stripe";
-import { agentsRoutes } from "../../agents";
-import { billingStatusRoutes } from "../../billing-status";
-import { modelPoliciesRoutes } from "../../model-policies";
-import { modelProvidersRoutes } from "../../model-providers";
+import { meModelProvidersUpsertRoutes } from "../../me-model-providers-upsert";
 import { runDetailRoutes } from "../../run-detail";
-import { runsCancelRoutes } from "../../runs-cancel";
+import { runModelsRoutes } from "../../run-models";
+import { runnerCancellationRoutes } from "../../runner-cancellation";
+import { runnersRoutes } from "../../runners";
 import { runsRoutes } from "../../runs";
-import { runFixtureContract, runFixtureRoutes } from "../../test-run-fixture";
-import { testBillingReconciliationStateRoutes } from "../../test-billing-reconciliation-state";
+import { runsCancelRoutes } from "../../runs-cancel";
+import { userModelPreferenceRoutes } from "../../user-model-preference";
 import { userPermissionGrantsRoutes } from "../../user-permission-grants";
+import { webhooksStripeRoutes } from "../../webhooks-stripe";
 import { createBddApi, type ApiTestUser } from "./api-bdd";
-import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { createRouteMocks } from "./route-test";
 
 type AuthHeaders = { readonly authorization?: string };
-type AgentRunRequest = z.infer<typeof runCreateBodySchema>;
-type DirectRunRequest = DirectRunFixtureRequest;
 interface RunsListQuery {
   readonly status?: string;
   readonly agent?: string;
@@ -108,7 +94,7 @@ type RunnerJobClaimRequestBody = z.infer<
 >;
 /** Test claims advertise every current Pi model-config generation unless a scenario narrows them. */
 function defaultClaimCapabilities(): RunnerJobClaimRequestBody["capabilities"] {
-  return { piModelConfigGenerations: [1, 2, 3, 4] };
+  return { piModelConfigGenerations: [1, 2, 3] };
 }
 type RunnerJobClaimRequest = Omit<RunnerJobClaimRequestBody, "capabilities"> & {
   readonly capabilities?: RunnerJobClaimRequestBody["capabilities"];
@@ -120,13 +106,11 @@ type RunnerConnectorRuntimeSyncRequest = z.input<
   (typeof runnersConnectorRuntimeSyncContract.sync)["body"]
 >;
 type RunnerConnectorRuntimeSyncStatus = 200 | 400 | 401 | 403 | 404 | 409 | 500;
-type RunnerActiveInputDeliveryStatus = 200 | 400 | 401 | 403 | 500;
-type OrgModelPolicyRequest = z.infer<
-  (typeof modelPoliciesMainContract.update)["body"]
->;
-type OrgModelProviderUpsertRequest = z.infer<
-  (typeof modelProvidersMainContract.upsert)["body"]
->;
+type RunnerNextSteerableInputStatus = 200 | 400 | 401 | 403 | 500;
+type RunnerSteeredInputStatus = 200 | 400 | 401 | 403 | 404 | 409 | 500;
+export type RunModel = z.infer<
+  (typeof runModelsMainContract.list)["responses"][200]
+>["models"][number]["model"];
 type RunnerHeartbeatBody = z.infer<
   (typeof runnersHeartbeatContract.heartbeat)["body"]
 >;
@@ -178,14 +162,14 @@ const runRoutes = [
   ...runnersRoutes,
   ...webhooksStripeRoutes,
   ...billingStatusRoutes,
-  ...modelPoliciesRoutes,
-  ...modelProvidersRoutes,
+  ...runModelsRoutes,
+  ...meModelProvidersUpsertRoutes,
   ...runDetailRoutes,
-  ...runFixtureRoutes,
   ...runsRoutes,
   ...runsCancelRoutes,
   ...agentsRoutes,
   ...userPermissionGrantsRoutes,
+  ...userModelPreferenceRoutes,
 ] as const;
 
 function runApp(
@@ -272,6 +256,8 @@ function runnerHeartbeatBody(
     readonly runningCount?: RunnerHeartbeatBody["runningCount"];
     readonly heldSandboxStates?: RunnerHeartbeatBody["heldSandboxStates"];
     readonly heldWorkspaceStates?: RunnerHeartbeatBody["heldWorkspaceStates"];
+    readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
+    readonly wssIngressServiceActive?: boolean;
     readonly mode?: RunnerHeartbeatBody["mode"];
   } = {},
 ): RunnerHeartbeatBody {
@@ -289,6 +275,10 @@ function runnerHeartbeatBody(
     admittableProfiles: args.admittableProfiles ?? ["vm0/default"],
     heldSandboxStates: args.heldSandboxStates ?? [],
     heldWorkspaceStates: args.heldWorkspaceStates ?? [],
+    activeReuseProducers: args.activeReuseProducers ?? [],
+    ...(args.wssIngressServiceActive === undefined
+      ? {}
+      : { wssIngressServiceActive: args.wssIngressServiceActive }),
     mode: args.mode ?? "running",
   };
 }
@@ -297,6 +287,173 @@ export function createRunsApi(
   context: TestContext,
   systemSkillStorageResolution?: SystemSkillStorageResolution,
 ) {
+  /**
+   * A run started through the real Thread entrypoint: a chat send on a new
+   * thread, picked once its enqueue-owned background work completes.
+   */
+  async function createThreadRun(
+    actor: ApiTestUser,
+    body: {
+      readonly agentId: string;
+      readonly prompt: string;
+      /**
+       * An explicit send model (null is Auto); omitted, the thread or member
+       * selection applies.
+       */
+      readonly model?: string | null;
+      /** Continue an existing thread, which resumes its Agent session. */
+      readonly threadId?: string;
+      /** Request staff-only network body capture for the run. */
+      readonly captureNetworkBodies?: boolean;
+    },
+  ) {
+    const chat = createChatFilesBddApi(context);
+    const clientEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId: body.agentId,
+        prompt: body.prompt,
+        clientEventId,
+        ...(body.model === undefined ? {} : { model: body.model }),
+        ...(body.threadId === undefined ? {} : { threadId: body.threadId }),
+        ...(body.captureNetworkBodies === undefined
+          ? {}
+          : { captureNetworkBodies: body.captureNetworkBodies }),
+      },
+      [201],
+      systemSkillStorageResolution === undefined
+        ? {}
+        : { systemSkillStorageResolution },
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected the Thread run send to be accepted");
+    }
+    let runId = sent.body.runId;
+    if (runId === null) {
+      await flushWaitUntilForTest();
+      const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
+      runId =
+        events.find((event) => {
+          return event.revokesEventId === clientEventId;
+        })?.runId ?? null;
+    }
+    if (!runId) {
+      throw new Error("Expected the Thread run send to launch a run");
+    }
+    const run = await accept(
+      runApp(context)(runsByIdContract).getById({
+        headers: authenticate(context, actor),
+        params: { id: runId },
+      }),
+      [200],
+    );
+    return {
+      runId,
+      threadId: sent.body.threadId,
+      status: run.body.status,
+      createdAt: run.body.createdAt,
+      ...(run.body.error === undefined ? {} : { error: run.body.error }),
+    };
+  }
+
+  /**
+   * A Thread send the background pick rejects: no run is created and the
+   * thread records the rejection error on the revoked input.
+   */
+  async function readThreadRunRejection(
+    actor: ApiTestUser,
+    body: {
+      readonly agentId: string;
+      readonly prompt: string;
+      /** Null selects Auto. */
+      readonly model?: string | null;
+      readonly captureNetworkBodies?: boolean;
+    },
+  ): Promise<string | undefined> {
+    const chat = createChatFilesBddApi(context);
+    const clientEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId: body.agentId,
+        prompt: body.prompt,
+        clientEventId,
+        ...(body.model === undefined ? {} : { model: body.model }),
+        ...(body.captureNetworkBodies === undefined
+          ? {}
+          : { captureNetworkBodies: body.captureNetworkBodies }),
+      },
+      [201],
+    );
+    if (sent.status !== 201 || sent.body.runId !== null) {
+      throw new Error("Expected the Thread send to be queued without a run");
+    }
+    await flushWaitUntilForTest();
+    const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
+    const rejection = events.find((event) => {
+      return event.revokesEventId === clientEventId;
+    });
+    if (!rejection || rejection.runId !== undefined) {
+      throw new Error("Expected the Thread send to be rejected without a run");
+    }
+    return "error" in rejection ? rejection.error : undefined;
+  }
+
+  /**
+   * A Thread send whose pick fails before creating a run: returns the pick's
+   * error message and the error the thread records on the rejected input.
+   */
+  async function readThreadLaunchFailure(
+    actor: ApiTestUser,
+    body: {
+      readonly agentId: string;
+      readonly prompt: string;
+      /** Null selects Auto. */
+      readonly model?: string | null;
+      readonly threadId?: string;
+    },
+  ): Promise<{
+    readonly pickError: string;
+    readonly inputError: string | undefined;
+  }> {
+    const chat = createChatFilesBddApi(context);
+    const clientEventId = randomUUID();
+    const sent = await chat.requestSendEvent(
+      actor,
+      {
+        agentId: body.agentId,
+        prompt: body.prompt,
+        clientEventId,
+        ...(body.model === undefined ? {} : { model: body.model }),
+        ...(body.threadId === undefined ? {} : { threadId: body.threadId }),
+      },
+      [201],
+    );
+    if (sent.status !== 201 || sent.body.runId !== null) {
+      throw new Error("Expected the Thread send to be queued without a run");
+    }
+    const pickError = await flushWaitUntilForTest().then(
+      () => {
+        throw new Error("Expected the Thread pick to fail");
+      },
+      (error: unknown) => {
+        return error instanceof Error ? error.message : String(error);
+      },
+    );
+    const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
+    const rejection = events.find((event) => {
+      return event.revokesEventId === clientEventId;
+    });
+    if (!rejection || rejection.runId !== undefined) {
+      throw new Error("Expected the failed pick to reject the input");
+    }
+    return {
+      pickError,
+      inputError: "error" in rejection ? rejection.error : undefined,
+    };
+  }
+
   const defaultRunnerIdentity = {
     runnerId: randomUUID(),
     heartbeatGeneration: 1,
@@ -325,29 +482,6 @@ export function createRunsApi(
       grants: [grant],
     };
   };
-
-  async function createDirectRunThroughService(
-    actor: ApiTestUser | null,
-    body: DirectRunRequest,
-  ) {
-    if (!actor?.orgId) {
-      return {
-        status: 401 as const,
-        body: {
-          error: {
-            message: "Not authenticated",
-            code: "UNAUTHORIZED" as const,
-          },
-        },
-      };
-    }
-    return await createDirectRunFixture({
-      userId: actor.userId,
-      orgId: actor.orgId,
-      body,
-      signal: context.signal,
-    });
-  }
 
   return {
     configureRunnerGroup(): string {
@@ -381,7 +515,6 @@ export function createRunsApi(
         readonly periodEndUnix?: number;
         readonly subscriptionMetadata?: Record<string, string>;
         readonly cancelAtUnix?: number | null;
-        readonly preservePiLoopDefault?: boolean;
       } = {},
     ): Promise<{
       readonly customerId: string;
@@ -396,7 +529,8 @@ export function createRunsApi(
       mockOptionalEnv("STRIPE_WEBHOOK_SECRET", "whsec_bdd_stripe");
       const tier = options.tier ?? "pro";
 
-      const suffix = randomUUID().slice(0, 8);
+      // Stripe identities persist across files in the shared test database.
+      const suffix = randomUUID();
       const customerId = options.customerId ?? `cus_bdd_${suffix}`;
       const subscriptionId = options.subscriptionId ?? `sub_bdd_${suffix}`;
       const invoiceId = `in_bdd_${suffix}`;
@@ -474,6 +608,15 @@ export function createRunsApi(
       if (billingStatus.body.tier !== tier) {
         throw new Error(
           `Entitlement grant did not reach ${tier} tier: ${billingStatus.body.tier}`,
+          {
+            cause: {
+              orgId: actor.orgId,
+              customerId,
+              subscriptionId,
+              invoiceId,
+              billingStatus: billingStatus.body,
+            },
+          },
         );
       }
 
@@ -492,41 +635,13 @@ export function createRunsApi(
         );
       }
 
-      // Most run fixtures exercise the legacy Runner protocol. Opt those
-      // users out through the public switch API; Pi fixtures can retain the
-      // global default or explicitly turn Pi back on for their route tests.
-      if (!options.preservePiLoopDefault) {
-        if (!actor.orgId) {
-          throw new Error("Expected an organization-scoped run fixture actor");
-        }
-        await updateFeatureSwitchesForUser(
-          context,
-          {
-            userId: actor.userId,
-            orgId: actor.orgId,
-            ...(actor.orgRole ? { orgRole: actor.orgRole } : {}),
-          },
-          { [FeatureSwitchKey.PiLoop]: false },
-        );
-      }
-
       return { customerId, subscriptionId, invoiceId };
     },
 
-    async createRun(actor: ApiTestUser, body: AgentRunRequest) {
-      const response = await accept(
-        runApp(
-          context,
-          undefined,
-          systemSkillStorageResolution,
-        )(runFixtureContract).create({
-          headers: authenticate(context, actor),
-          body,
-        }),
-        [201],
-      );
-      return response.body;
-    },
+    /** Start an Agent run through the real Thread entrypoint (chat send + pick). */
+    createThreadRun,
+    readThreadRunRejection,
+    readThreadLaunchFailure,
 
     async claimRunnerJob(
       runId: string,
@@ -536,7 +651,7 @@ export function createRunsApi(
       const response = await accept(
         runApp(context)(runnersJobClaimContract).claim({
           headers: runnerHeaders(true),
-          extraHeaders: { [NATIVE_GPT_6_LUNA_HEADER]: "1", ...extraHeaders },
+          extraHeaders,
           params: { id: runId },
           body: {
             runnerIdentity: defaultRunnerIdentity,
@@ -582,49 +697,6 @@ export function createRunsApi(
       return response.body;
     },
 
-    async startRunnerModelProviderFailureWithDelayedBody(
-      runId: string,
-      body: RunnerModelProviderFailureRequest,
-    ) {
-      const bodyRequested = createDeferredPromise<void>(context.signal);
-      const bodyReleased = createDeferredPromise<void>(context.signal);
-      const encodedBody = new TextEncoder().encode(JSON.stringify(body));
-      const requestBody = new ReadableStream<Uint8Array>(
-        {
-          async pull(controller) {
-            if (!bodyRequested.settled()) {
-              bodyRequested.resolve(undefined);
-            }
-            await bodyReleased.promise;
-            controller.enqueue(encodedBody);
-            controller.close();
-          },
-        },
-        { highWaterMark: 0 },
-      );
-      const response = setupRawAppRequestWithRoutes({
-        context,
-        routes: runRoutes,
-      })(`/api/runners/runs/${runId}/model-provider-failures`, {
-        method: "POST",
-        headers: {
-          authorization: OFFICIAL_RUNNER_AUTHORIZATION,
-          "content-type": "application/json",
-        },
-        body: requestBody,
-        duplex: "half",
-      } as RequestInit & { readonly duplex: "half" });
-      await bodyRequested.promise;
-      return {
-        releaseBody: () => {
-          if (!bodyReleased.settled()) {
-            bodyReleased.resolve(undefined);
-          }
-        },
-        response,
-      };
-    },
-
     async requestRunnerModelProviderFailureAs(
       authorization: string | undefined,
       runId: string,
@@ -641,78 +713,60 @@ export function createRunsApi(
       );
     },
 
-    async requestRawRunnerModelProviderFailure(
-      validAuth: boolean,
-      runId: string,
-      statuses: readonly (200 | 400 | 401 | 403 | 500)[],
-      body: unknown,
-    ) {
-      return await accept(
-        runApp(context)(runnersModelProviderFailuresContract).report({
-          headers: runnerHeaders(validAuth),
-          params: { runId },
-          body: body as RunnerModelProviderFailureRequest,
-        }),
-        statuses,
-      );
-    },
-
-    async requestReserveRunnerActiveInputsAs<
-      TStatus extends RunnerActiveInputDeliveryStatus,
+    async requestNextSteerableInputAs<
+      TStatus extends RunnerNextSteerableInputStatus,
     >(
       authorization: string | undefined,
       runId: string,
       statuses: readonly TStatus[],
     ) {
       return await accept(
-        runApp(context)(runnersActiveInputsContract).reserve({
+        runApp(context)(runnersSteerContract).next({
           headers: authorization === undefined ? {} : { authorization },
           params: { runId },
-          body: {},
         }),
         statuses,
       );
     },
 
-    async reserveRunnerActiveInputs(sandboxToken: string, runId: string) {
+    async nextSteerableInput(sandboxToken: string, runId: string) {
       const response = await accept(
-        runApp(context)(runnersActiveInputsContract).reserve({
+        runApp(context)(runnersSteerContract).next({
           headers: { authorization: `Bearer ${sandboxToken}` },
           params: { runId },
-          body: {},
         }),
         [200],
       );
       return response.body;
     },
 
-    async requestRecordRunnerActiveInputDeliveryAs<
-      TStatus extends RunnerActiveInputDeliveryStatus,
+    async requestDeclareSteeredInputAs<
+      TStatus extends RunnerSteeredInputStatus,
     >(
       authorization: string | undefined,
       runId: string,
-      deliveryId: string,
+      eventId: string,
       statuses: readonly TStatus[],
     ) {
       return await accept(
-        runApp(context)(runnersActiveInputsContract).receipt({
+        runApp(context)(runnersSteerContract).steered({
           headers: authorization === undefined ? {} : { authorization },
-          params: { runId, deliveryId },
+          params: { runId, eventId },
           body: {},
         }),
         statuses,
       );
     },
 
-    async recordRunnerActiveInputDelivery(
+    async declareSteeredInput(
       sandboxToken: string,
       runId: string,
-      deliveryId: string,
+      eventId: string,
     ) {
       const response = await accept(
-        runApp(context)(runnersActiveInputsContract).receipt({
+        runApp(context)(runnersSteerContract).steered({
           headers: { authorization: `Bearer ${sandboxToken}` },
-          params: { runId, deliveryId },
+          params: { runId, eventId },
           body: {},
         }),
         [200],
@@ -873,47 +927,6 @@ export function createRunsApi(
       });
     },
 
-    async createDirectAgent(
-      actor: ApiTestUser,
-      content: DirectAgentExecutionConfig,
-    ): Promise<{ readonly agentId: string; readonly name: string }> {
-      if (!actor.orgId) {
-        throw new Error("Direct Agent fixtures require an org-scoped actor");
-      }
-      return await createDirectAgentExecutionFixture({
-        userId: actor.userId,
-        orgId: actor.orgId,
-        content,
-        signal: context.signal,
-      });
-    },
-
-    async createDirectRun(actor: ApiTestUser, body: DirectRunRequest) {
-      const response = await accept(
-        createDirectRunThroughService(actor, body),
-        [201],
-      );
-      return response.body;
-    },
-
-    async requestDirectRun(
-      actor: ApiTestUser | null,
-      body: DirectRunRequest,
-      statuses: readonly (
-        | 201
-        | 400
-        | 401
-        | 402
-        | 403
-        | 404
-        | 409
-        | 429
-        | 503
-      )[],
-    ) {
-      return await accept(createDirectRunThroughService(actor, body), statuses);
-    },
-
     async listAgentRuns(actor: ApiTestUser, query: RunsListQuery) {
       if (!actor.orgId) {
         throw new Error("Agent run list service requires an organization");
@@ -1028,28 +1041,36 @@ export function createRunsApi(
       return response.body.enabledConnectorSlugs;
     },
 
-    async listOrgModelProviders(
+    /** Stores the member's model preference, used when a run names no model. */
+    async updateUserModelPreference(
       actor: ApiTestUser,
-    ): Promise<readonly ModelProviderResponse[]> {
+      selectedModel: RunModel,
+    ): Promise<void> {
+      await accept(
+        runApp(context)(userModelPreferenceContract).update({
+          headers: authenticate(context, actor),
+          body: { selectedModel, serviceTier: null },
+        }),
+        [200],
+      );
+    },
+
+    async listRunModels(actor: ApiTestUser) {
       const response = await accept(
-        runApp(context)(modelProvidersMainContract).list({
+        runApp(context)(runModelsMainContract).list({
           headers: authenticate(context, actor),
         }),
         [200],
       );
-      return response.body.modelProviders;
+      return response.body;
     },
 
-    /**
-     * Upserts an org-level model provider with an arbitrary contract body
-     * (single secret or multi-auth secrets map) and returns the provider id.
-     */
-    async createOrgModelProvider(
+    async createPersonalModelProvider(
       actor: ApiTestUser,
-      body: OrgModelProviderUpsertRequest,
-    ): Promise<{ readonly providerId: string }> {
+      body: UpsertModelProviderRequest,
+    ) {
       const response = await accept(
-        runApp(context)(modelProvidersMainContract).upsert({
+        runApp(context)(personalModelProvidersMainContract).upsert({
           headers: authenticate(context, actor),
           body,
         }),
@@ -1058,68 +1079,20 @@ export function createRunsApi(
       return { providerId: response.body.provider.id };
     },
 
-    /**
-     * Replaces the org model-first policies with the given request-shaped
-     * list (the PUT is a wholesale replace of supported-run-model rows).
-     */
-    async updateOrgModelPolicies(
+    /** Native Runner prerequisites come from a connected personal subscription. */
+    async ensurePersonalSubscriptionModel(
       actor: ApiTestUser,
-      policies: OrgModelPolicyRequest["policies"],
-    ): Promise<void> {
-      const snapshot = await accept(
-        runApp(context)(modelPoliciesMainContract).list({
-          headers: authenticate(context, actor),
-        }),
-        [200],
+      options: { readonly model?: RunModel } = {},
+    ) {
+      mockClaudeCodeTokenEndpoint();
+      const { providerId } = await this.createPersonalModelProvider(actor, {
+        type: "claude-code-oauth-token",
+        secret: "bdd-personal-claude-token",
+      });
+      await this.updateUserModelPreference(
+        actor,
+        options.model ?? "claude-fable-5-1",
       );
-      await accept(
-        runApp(context)(modelPoliciesMainContract).update({
-          headers: authenticate(context, actor),
-          body: { policies, revision: snapshot.body.revision },
-        }),
-        [200],
-      );
-    },
-
-    async ensureOrgModelProvider(
-      actor: ApiTestUser,
-    ): Promise<{ readonly providerId: string }> {
-      const providerResponse = await accept(
-        runApp(context)(modelProvidersMainContract).upsert({
-          headers: authenticate(context, actor),
-          body: {
-            type: "anthropic-api-key",
-            secret: "test-anthropic-key",
-          },
-        }),
-        [200, 201],
-      );
-
-      const providerId = providerResponse.body.provider.id;
-      const policies: OrgModelPolicyRequest["policies"] = [
-        {
-          model: "claude-sonnet-5",
-          isDefault: true,
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: providerId,
-        },
-      ];
-
-      const snapshot = await accept(
-        runApp(context)(modelPoliciesMainContract).list({
-          headers: authenticate(context, actor),
-        }),
-        [200],
-      );
-      await accept(
-        runApp(context)(modelPoliciesMainContract).update({
-          headers: authenticate(context, actor),
-          body: { policies, revision: snapshot.body.revision },
-        }),
-        [200],
-      );
-
       return { providerId };
     },
 
@@ -1131,58 +1104,6 @@ export function createRunsApi(
         [200],
       );
       return response.body;
-    },
-
-    async requestCreateRun(
-      actor: ApiTestUser | null,
-      body: AgentRunRequest,
-      statuses: readonly (
-        | 201
-        | 400
-        | 401
-        | 402
-        | 403
-        | 404
-        | 409
-        | 429
-        | 503
-      )[],
-      extraHeaders?: Readonly<Record<string, string>>,
-    ) {
-      return await accept(
-        runApp(context)(runFixtureContract).create({
-          headers: {
-            ...authenticate(context, actor),
-            ...extraHeaders,
-          },
-          body,
-        }),
-        statuses,
-      );
-    },
-
-    async requestCreateRunUnchecked(
-      actor: ApiTestUser | null,
-      body: unknown,
-      statuses: readonly (
-        | 201
-        | 400
-        | 401
-        | 402
-        | 403
-        | 404
-        | 409
-        | 429
-        | 503
-      )[],
-    ) {
-      return await accept(
-        runApp(context)(runFixtureContract).create({
-          headers: authenticate(context, actor),
-          body: body as AgentRunRequest,
-        }),
-        statuses,
-      );
     },
 
     async readRun(actor: ApiTestUser, runId: string) {
@@ -1338,12 +1259,28 @@ export function createRunsApi(
         readonly runningCount?: RunnerHeartbeatBody["runningCount"];
         readonly heldSandboxStates?: RunnerHeartbeatBody["heldSandboxStates"];
         readonly heldWorkspaceStates?: RunnerHeartbeatBody["heldWorkspaceStates"];
+        readonly activeReuseProducers?: RunnerHeartbeatBody["activeReuseProducers"];
+        readonly wssIngressServiceActive?: boolean;
         readonly mode?: RunnerHeartbeatBody["mode"];
       } = {},
     ) {
       return await accept(
         runApp(context)(runnersHeartbeatContract).heartbeat({
           headers: runnerHeaders(validAuth),
+          body: runnerHeartbeatBody(args),
+        }),
+        statuses,
+      );
+    },
+
+    async requestHeartbeatRunnerAs(
+      authorization: string,
+      statuses: readonly (200 | 400 | 401 | 500)[],
+      args: Parameters<typeof runnerHeartbeatBody>[0] = {},
+    ) {
+      return await accept(
+        runApp(context)(runnersHeartbeatContract).heartbeat({
+          headers: { authorization },
           body: runnerHeartbeatBody(args),
         }),
         statuses,
@@ -1487,19 +1424,6 @@ export function createRunsApi(
         processUsageEvents,
         telegramCleanup,
       };
-    },
-
-    async reconcileBillingOrganizations(orgIds: readonly string[]) {
-      const client = setupAppWithRoutes({
-        context,
-        routes: testBillingReconciliationStateRoutes,
-      })(testBillingReconciliationStateContract);
-      return await accept(
-        client.reconcile({
-          body: { orgIds: [...orgIds] },
-        }),
-        [200],
-      );
     },
   };
 }

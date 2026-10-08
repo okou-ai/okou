@@ -1,6 +1,5 @@
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { marketingEventsContract } from "@okouai/api-contracts/contracts/marketing-events";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
@@ -26,15 +25,11 @@ vi.hoisted(() => {
 
 const context = testContext();
 
-const SOURCES_FIRST_ON = {
-  [FeatureSwitchKey.OnboardingSourcesFirst]: true,
-} as const;
-
 const INDUSTRY_QUESTION = "What kind of work do you do?";
-const SOURCES_QUESTION = "Okou is for you, and shared across your whole team.";
-const TEAM_QUESTION = "Bring the people who do this work with you.";
-const EXPERIENCE_QUESTION = "Have you used Codex or Claude Code?";
-const READY_TITLE = "Okou is ready for you";
+const SOURCES_QUESTION = "Connect a work tool";
+const TEAM_QUESTION = "Make Okou useful to your whole team";
+const EXPERIENCE_QUESTION = "How would you like to start with Okou?";
+const READY_TITLE = "Start with a task that matters";
 const MARKETING_FIELD = "Marketing & content";
 const TEAMMATE_EMAIL = "teammate@example.test";
 
@@ -105,7 +100,6 @@ async function openIndustryStep(): Promise<void> {
     locale: "en-US",
     path: ROUTES.onboarding,
     host: "app.okou.ai",
-    featureSwitches: SOURCES_FIRST_ON,
   });
   await expect(
     screen.findByRole("heading", { name: INDUSTRY_QUESTION }),
@@ -157,7 +151,7 @@ test("Each step reports its own funnel event, counting invitees rather than nami
         flow: "source_first",
         step_key: "industry",
         step_index: 0,
-        step_count: 7,
+        step_count: 6,
         route_path: ROUTES.onboarding,
         is_owner: true,
       }),
@@ -178,16 +172,16 @@ test("Each step reports its own funnel event, counting invitees rather than nami
   await expect(
     screen.findByRole("heading", { name: TEAM_QUESTION }),
   ).resolves.toBeInTheDocument();
-  await fill(screen.getByLabelText("Teammate’s email"), TEAMMATE_EMAIL);
+  await fill(screen.getByLabelText("Team member’s email"), TEAMMATE_EMAIL);
   click(getButtonByName("Send invite"));
 
   await expect(screen.findByText("Invited")).resolves.toBeInTheDocument();
-  click(getButtonByName("Not now"));
+  click(getButtonByName("Continue"));
 
   await expect(
     screen.findByRole("heading", { name: EXPERIENCE_QUESTION }),
   ).resolves.toBeInTheDocument();
-  click(choiceRadio("No, I’m new to this"));
+  click(choiceRadio("I'm new to AI agents"));
 
   await waitFor(() => {
     expect(posthog.events).toStrictEqual(
@@ -209,20 +203,23 @@ test("Each step reports its own funnel event, counting invitees rather than nami
       onboardingEvent("StepViewed", {
         step_key: "sources",
         step_index: 1,
-        step_count: 7,
+        step_count: 6,
         route_path: ROUTES.onboardingSources,
       }),
       onboardingEvent("StepViewed", {
         step_key: "team",
         step_index: 2,
-        step_count: 7,
+        step_count: 6,
       }),
       onboardingEvent("InviteAdded", {
         step_key: "team",
         invite_count: 1,
       }),
-      onboardingEvent("Skip", { step_key: "team" }),
     ]),
+  );
+  // An invite was sent, so leaving the step is not a skip.
+  expect(posthog.events).not.toStrictEqual(
+    expect.arrayContaining([onboardingEvent("Skip", { step_key: "team" })]),
   );
   // Who was invited stays in the browser; the funnel only counts them.
   expect(JSON.stringify(posthog.events)).not.toContain(TEAMMATE_EMAIL);
@@ -279,7 +276,6 @@ test("A source card starts OAuth directly and reports a successful connect", asy
     locale: "en-US",
     path: ROUTES.onboardingSources,
     host: "app.okou.ai",
-    featureSwitches: SOURCES_FIRST_ON,
   });
   await expect(
     screen.findByRole("heading", { name: SOURCES_QUESTION }),
@@ -329,7 +325,6 @@ test("The starting prompt reports its length, never the request itself", async (
     locale: "en-US",
     path: ROUTES.onboardingReady,
     host: "app.okou.ai",
-    featureSwitches: SOURCES_FIRST_ON,
   });
   await expect(
     screen.findByRole("heading", { name: READY_TITLE }),

@@ -85,25 +85,6 @@ function channelStateDetails(
   };
 }
 
-const realtimeDegradedToastShown$ = state(false);
-const realtimeDegradedNotifier$ = state<(() => void) | null>(null);
-
-export const setRealtimeDegradedNotifier$ = command(
-  ({ set }, notify: () => void): void => {
-    set(realtimeDegradedNotifier$, () => {
-      return notify;
-    });
-  },
-);
-
-const notifyRealtimeDegraded$ = command(({ get, set }) => {
-  if (get(realtimeDegradedToastShown$)) {
-    return;
-  }
-  set(realtimeDegradedToastShown$, true);
-  get(realtimeDegradedNotifier$)?.();
-});
-
 interface RealtimeMessage {
   readonly data: unknown;
   readonly name: string | null;
@@ -461,7 +442,6 @@ const runWithChannel$ = command(
                     error,
                   );
                   transientRetryCount = 0;
-                  set(notifyRealtimeDegraded$);
                   return false;
                 }
                 L.warn(`transient error in ably notification`, error);
@@ -502,7 +482,6 @@ const runSubscriptionBaseline$ = command(
     signal.throwIfAborted();
     if (!initialized.ok) {
       L.warn("realtime subscription initialization failed", initialized.error);
-      set(notifyRealtimeDegraded$);
       return false;
     }
     return initialized.value;
@@ -553,7 +532,6 @@ const runPayloadLoopIteration$ = command(
         L.warn(`dropping ably payload after repeated handler failures`, error);
         state.pendingPayloads.shift();
         state.transientRetryCount = 0;
-        set(notifyRealtimeDegraded$);
         if (state.pendingPayloads.length > 0) {
           pokeLoop();
         }
@@ -1012,8 +990,8 @@ const connectRealtimeClient$ = command(
     const createClient = get(apiClient$);
     const client = createClient(platformRealtimeTokenContract);
     const ably = createAblyRealtime({
-      // Ably TokenRequest is single-use — see lib/ably-auth.ts for why
-      // every invocation must fetch a freshly-signed request.
+      // See lib/ably-auth.ts for why every invocation must fetch a fresh
+      // token.
       authCallback: createAblyAuthCallback(client, signal),
       autoConnect: true,
       disconnectedRetryTimeout: 5000,

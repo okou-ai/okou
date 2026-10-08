@@ -4,54 +4,30 @@ import {
   integrationsTeamsUploadCompleteContract,
   type TeamsUploadCompleteBody,
 } from "@okouai/api-contracts/contracts/integrations";
-import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
-import { eq } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { sendTeamsMessage } from "../external/teams-bot-client";
 import {
   materializeUploadedArtifact$,
   uploadedArtifactFetchUrl$,
 } from "../services/uploaded-artifact.service";
 import { recordTeamsUploadedFile$ } from "../services/run-uploaded-files.service";
+import {
+  loadInstallation,
+  resolveTeamsMessageTarget,
+  routeError,
+  teamsErrorResponse,
+} from "../services/teams-message-target.service";
 import type { RouteEntry } from "../route-entry";
-
-interface TeamsInstallation {
-  readonly teamsTenantId: string;
-  readonly serviceUrl: string | null;
-}
 
 interface UploadedFileInfo {
   readonly key: string;
   readonly size: number;
   readonly filename: string;
   readonly fileUrl: string;
-}
-
-function routeError<Status extends 400 | 401 | 403 | 404 | 502>(
-  status: Status,
-  message: string,
-  code: string,
-) {
-  return { status, body: { error: { message, code } } };
-}
-
-async function loadInstallation(
-  db: Db,
-  orgId: string,
-): Promise<TeamsInstallation | undefined> {
-  const [installation] = await db
-    .select({
-      teamsTenantId: teamsOrgInstallations.teamsTenantId,
-      serviceUrl: teamsOrgInstallations.serviceUrl,
-    })
-    .from(teamsOrgInstallations)
-    .where(eq(teamsOrgInstallations.orgId, orgId))
-    .limit(1);
-  return installation;
 }
 
 function buildTeamsFileText(args: {
@@ -68,12 +44,13 @@ function buildTeamsFileText(args: {
 
 function buildMetadata(args: {
   readonly body: TeamsUploadCompleteBody;
+  readonly conversationId: string;
   readonly s3Key: string;
   readonly sourceUrl: string;
   readonly teamsActivityId: string | undefined;
 }): Record<string, unknown> {
   return {
-    conversationId: args.body.conversationId,
+    conversationId: args.conversationId,
     uploadId: args.body.uploadId,
     s3Key: args.s3Key,
     sourceUrl: args.sourceUrl,
@@ -83,19 +60,6 @@ function buildMetadata(args: {
       ? { activityId: args.teamsActivityId }
       : {},
   };
-}
-
-function teamsErrorResponse(
-  result: Extract<
-    Awaited<ReturnType<typeof sendTeamsMessage>>,
-    { readonly kind: "teams-error" }
-  >,
-) {
-  return routeError(
-    result.status >= 500 ? 502 : 400,
-    `Microsoft Teams API error: ${result.error}`,
-    "TEAMS_ERROR",
-  );
 }
 
 const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -138,6 +102,20 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
     return routeError(404, "Uploaded file not found", "NOT_FOUND");
   }
 
+  const target = await resolveTeamsMessageTarget(
+    {
+      db,
+      installation,
+      userId: auth.userId,
+      body,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
+  if ("status" in target) {
+    return target;
+  }
+
   const file: UploadedFileInfo = {
     key: object.key,
     size: object.size,
@@ -151,8 +129,8 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   const result = await sendTeamsMessage(
     {
       serviceUrl: installation.serviceUrl,
-      conversationId: body.conversationId,
-      activityId: body.activityId,
+      conversationId: target.conversationId,
+      activityId: target.activityId,
       tenantId: installation.teamsTenantId,
       text: buildTeamsFileText({
         body,
@@ -174,7 +152,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
 
   const externalId =
-    result.activityId ?? `${body.conversationId}:${body.uploadId}`;
+    result.activityId ?? `${target.conversationId}:${body.uploadId}`;
   await set(
     recordTeamsUploadedFile$,
     {
@@ -186,9 +164,10 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
       contentType: mimetype,
       sizeBytes: file.size,
       url: file.fileUrl,
-      publicBrand: object.publicBrand,
+      layout: object.layout,
       metadata: buildMetadata({
         body,
+        conversationId: target.conversationId,
         s3Key: file.key,
         sourceUrl: file.fileUrl,
         teamsActivityId: result.activityId,
@@ -202,7 +181,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
     status: 200 as const,
     body: {
       activityId: result.activityId,
-      conversationId: body.conversationId,
+      conversationId: target.conversationId,
       filename: file.filename,
       mimetype,
       size: file.size,

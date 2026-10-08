@@ -32,7 +32,9 @@
 //!
 //! Download diagnostics must not expose presigned URL query strings, and the
 //! downloaded bytes must satisfy the declared size, byte cap, and hash contract
-//! before they are restored into the sandbox.
+//! before they are restored into the sandbox. Download phase timings sum all
+//! attempts and retain any failed phase; the overall download reports the final
+//! outcome, so successful recovery does not erase an earlier transport failure.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -58,7 +60,12 @@ use crate::telemetry::{
     SessionHistoryTelemetryMetadata, SessionHistoryTransferEncodingState,
 };
 use runner_provider::http::HttpClient;
-use runner_storage::OBJECT_DOWNLOAD_TIMEOUT;
+use runner_storage::{
+    OBJECT_DOWNLOAD_BUDGET as SESSION_HISTORY_DOWNLOAD_BUDGET,
+    OBJECT_DOWNLOAD_MAX_ATTEMPTS as SESSION_HISTORY_DOWNLOAD_MAX_ATTEMPTS,
+    OBJECT_DOWNLOAD_RETRY_DELAY as SESSION_HISTORY_DOWNLOAD_RETRY_DELAY, OBJECT_DOWNLOAD_TIMEOUT,
+    object_download_http_retry_after, object_download_transient_transport_kind,
+};
 use runner_types::types::{
     ResumeSession, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
     ResumeSessionHistoryRefKind,
@@ -201,7 +208,7 @@ impl SessionHistoryDownloadTimings {
     }
 
     fn record_request_status(&mut self, elapsed: Duration, success: bool) {
-        self.request_status = Some(SessionHistoryDownloadPhaseTiming { elapsed, success });
+        merge_phase_timing(&mut self.request_status, elapsed, success);
     }
 
     #[cfg(test)]
@@ -224,7 +231,7 @@ impl SessionHistoryDownloadTimings {
     }
 
     fn record_body_read(&mut self, elapsed: Duration, success: bool) {
-        self.body_read = Some(SessionHistoryDownloadPhaseTiming { elapsed, success });
+        merge_phase_timing(&mut self.body_read, elapsed, success);
     }
 
     fn record_hash_verification(&mut self, elapsed: Duration, success: bool) {
@@ -887,11 +894,71 @@ async fn download_body(
     cancel: &CancellationToken,
     timings: &mut SessionHistoryDownloadTimings,
 ) -> RunnerResult<Vec<u8>> {
+    let deadline = tokio::time::Instant::now() + SESSION_HISTORY_DOWNLOAD_BUDGET;
     tokio::select! {
         biased;
         _ = cancel.cancelled() => Err(session_history_download_cancelled_error()),
-        result = download_body_once(http, url, expected_size, timings) => result.map_err(SessionHistoryDownloadBodyError::into_runner_error),
+        result = tokio::time::timeout_at(
+            deadline,
+            download_body_with_retries(http, url, expected_size, timings, deadline),
+        ) => result.unwrap_or_else(|_| Err(session_history_download_budget_error())),
     }
+}
+
+async fn download_body_with_retries(
+    http: &HttpClient,
+    url: &str,
+    expected_size: Option<u64>,
+    timings: &mut SessionHistoryDownloadTimings,
+    deadline: tokio::time::Instant,
+) -> RunnerResult<Vec<u8>> {
+    let mut attempt = 1usize;
+    loop {
+        // Timeout polls its inner future before the expired timer, so a late
+        // backoff wakeup and a ready response both need explicit budget checks.
+        if tokio::time::Instant::now() >= deadline {
+            return Err(session_history_download_budget_error());
+        }
+        let result = download_body_once(http, url, expected_size, timings).await;
+        if tokio::time::Instant::now() >= deadline {
+            return Err(session_history_download_budget_error());
+        }
+        match result {
+            Ok(body) => return Ok(body),
+            Err(error) => {
+                let Some(retry_after) = error.retry_after else {
+                    return Err(error.into_runner_error());
+                };
+                if attempt >= SESSION_HISTORY_DOWNLOAD_MAX_ATTEMPTS {
+                    return Err(error.into_runner_error());
+                }
+                let backoff = SESSION_HISTORY_DOWNLOAD_RETRY_DELAY * (1 << (attempt - 1));
+                let delay = backoff.max(retry_after);
+                if delay >= deadline.saturating_duration_since(tokio::time::Instant::now()) {
+                    return Err(error.into_runner_error());
+                }
+                tracing::info!(
+                    action = "session_history_download_retry",
+                    r2_key = runner_storage::r2_download::key_from_url(url).as_deref(),
+                    attempt,
+                    max_attempts = SESSION_HISTORY_DOWNLOAD_MAX_ATTEMPTS,
+                    failure_kind = error.failure_kind,
+                    retry_delay_ms = delay.as_millis() as u64,
+                    "retrying session history blob download"
+                );
+                // The caller's cancellation/deadline owns this sleep and the
+                // next request. Each attempt starts with an empty body buffer.
+                tokio::time::sleep(delay).await;
+                attempt += 1;
+            }
+        }
+    }
+}
+
+fn session_history_download_budget_error() -> RunnerError {
+    RunnerError::Internal(
+        "session history download exceeded its retry budget (cause=timeout)".into(),
+    )
 }
 
 fn session_history_download_cancelled_error() -> RunnerError {
@@ -910,14 +977,15 @@ async fn download_body_once(
         .timeout(OBJECT_DOWNLOAD_TIMEOUT)
         .send()
         .await
-        .map_err(|error| SessionHistoryDownloadBodyError::from_reqwest("GET", url, error))?;
+        .map_err(|error| {
+            timings.record_request_status(request_started.elapsed(), false);
+            SessionHistoryDownloadBodyError::from_reqwest("GET", url, error)
+        })?;
     if let Err(error) = response.error_for_status_ref() {
         timings.record_request_status(request_started.elapsed(), false);
-        return Err(SessionHistoryDownloadBodyError::from_reqwest(
-            "GET status",
-            url,
-            error,
-        ));
+        let mut failure = SessionHistoryDownloadBodyError::from_reqwest("GET status", url, error);
+        failure.retry_after = object_download_http_retry_after(&response);
+        return Err(failure);
     }
     timings.record_request_status(request_started.elapsed(), true);
     let mut response = response;
@@ -1003,24 +1071,47 @@ async fn download_body_once(
 #[derive(Debug)]
 struct SessionHistoryDownloadBodyError {
     message: String,
+    failure_kind: &'static str,
+    retry_after: Option<Duration>,
 }
 
 impl SessionHistoryDownloadBodyError {
     fn content_length_mismatch(message: String) -> Self {
-        Self { message }
+        Self::permanent(message, "content_length_mismatch")
     }
 
     fn downloaded_size_mismatch(message: String) -> Self {
-        Self { message }
+        Self::permanent(message, "downloaded_size_mismatch")
     }
 
     fn downloaded_too_large(message: String) -> Self {
-        Self { message }
+        Self::permanent(message, "downloaded_too_large")
+    }
+
+    fn permanent(message: String, failure_kind: &'static str) -> Self {
+        Self {
+            message,
+            failure_kind,
+            retry_after: None,
+        }
     }
 
     fn from_reqwest(phase: &str, url: &str, error: reqwest::Error) -> Self {
+        let retry_kind = object_download_transient_transport_kind(&error);
+        let failure_kind = match error.status() {
+            Some(status) if status.as_u16() == 429 => "http_429",
+            Some(status) if status.is_server_error() => "http_5xx",
+            Some(_) => "http_non_retryable",
+            None => retry_kind.unwrap_or("non_retryable"),
+        };
         Self {
-            message: format!("{phase} {}: {}", redact_url_query(url), error.without_url()),
+            message: format!(
+                "{phase} {}: {} (cause={failure_kind})",
+                redact_url_query(url),
+                error.without_url(),
+            ),
+            failure_kind,
+            retry_after: retry_kind.map(|_| Duration::ZERO),
         }
     }
 
@@ -1131,6 +1222,8 @@ fn redact_url_query(url: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    mod retry_tests;
+
     use std::io::{self, Write};
 
     use flate2::{Compression, write::GzEncoder};
@@ -1470,6 +1563,10 @@ mod tests {
     struct MultiShotSessionHistoryServer {
         url: String,
         task: Option<JoinHandle<io::Result<usize>>>,
+        requests: Arc<std::sync::atomic::AtomicUsize>,
+        response_sent: Arc<tokio::sync::Notify>,
+        client_closed: Arc<tokio::sync::Notify>,
+        retry_delays: Arc<Mutex<Vec<Duration>>>,
     }
 
     #[derive(Clone)]
@@ -1477,6 +1574,8 @@ mod tests {
         status: &'static str,
         body: Vec<u8>,
         content_length: Option<u64>,
+        retry_after: Vec<&'static str>,
+        stall: bool,
     }
 
     impl MultiShotSessionHistoryResponse {
@@ -1489,7 +1588,19 @@ mod tests {
                 status,
                 body: body.into(),
                 content_length,
+                retry_after: Vec::new(),
+                stall: false,
             }
+        }
+
+        fn with_retry_after(mut self, value: &'static str) -> Self {
+            self.retry_after.push(value);
+            self
+        }
+
+        fn stalled(mut self) -> Self {
+            self.stall = true;
+            self
         }
 
         fn ok(body: impl Into<Vec<u8>>, content_length: Option<u64>) -> Self {
@@ -1505,16 +1616,72 @@ mod tests {
         async fn respond_many(responses: Vec<MultiShotSessionHistoryResponse>) -> Self {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let address = listener.local_addr().unwrap();
-            let task = tokio::spawn(serve_session_history_many(listener, responses));
+            let requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let response_sent = Arc::new(tokio::sync::Notify::new());
+            let client_closed = Arc::new(tokio::sync::Notify::new());
+            let retry_delays = Arc::new(Mutex::new(Vec::new()));
+            let task = tokio::spawn(serve_session_history_many(
+                listener,
+                responses,
+                Arc::clone(&requests),
+                Arc::clone(&response_sent),
+                Arc::clone(&client_closed),
+                Arc::clone(&retry_delays),
+            ));
 
             Self {
                 url: format!("http://{address}/history.blob?token=secret"),
                 task: Some(task),
+                requests,
+                response_sent,
+                client_closed,
+                retry_delays,
             }
         }
 
         fn url(&self) -> String {
             self.url.clone()
+        }
+
+        async fn wait_for_response(&self, expected_requests: usize) {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    let notified = self.response_sent.notified();
+                    if self.requests.load(std::sync::atomic::Ordering::SeqCst) >= expected_requests
+                    {
+                        return;
+                    }
+                    notified.await;
+                }
+            })
+            .await
+            .expect("session history fixture should send the expected response");
+        }
+
+        async fn wait_for_client_close(&self) {
+            tokio::time::timeout(Duration::from_secs(5), self.client_closed.notified())
+                .await
+                .expect("session history fixture should observe the client closing its response");
+        }
+
+        fn observed_retry_delay(&self) -> Duration {
+            self.retry_delays
+                .lock()
+                .unwrap()
+                .first()
+                .copied()
+                .expect("session history fixture should have received a second GET")
+        }
+
+        async fn stop_and_assert_requests(mut self, expected_requests: usize) {
+            if let Some(task) = self.task.take() {
+                task.abort();
+                let _ = task.await;
+            }
+            assert_eq!(
+                self.requests.load(std::sync::atomic::Ordering::SeqCst),
+                expected_requests,
+            );
         }
 
         async fn assert_served(mut self, expected_requests: usize) {
@@ -1549,30 +1716,67 @@ mod tests {
     async fn serve_session_history_many(
         listener: TcpListener,
         responses: Vec<MultiShotSessionHistoryResponse>,
+        requests: Arc<std::sync::atomic::AtomicUsize>,
+        response_sent: Arc<tokio::sync::Notify>,
+        client_closed: Arc<tokio::sync::Notify>,
+        retry_delays: Arc<Mutex<Vec<Duration>>>,
     ) -> io::Result<usize> {
         let mut served = 0usize;
+        let mut previous_response: Option<Instant> = None;
         for response in responses {
             let (mut stream, _) = listener.accept().await?;
-            let mut request = [0u8; 1024];
-            let request_bytes = stream.read(&mut request).await?;
-            if request_bytes == 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "session history fixture received an empty request",
-                ));
+            // Consume the complete GET before watching for peer closure, so
+            // fragmented request headers cannot be mistaken for that signal.
+            let _ = crate::test_fixtures::raw_http::read_http_request(&mut stream).await?;
+            if let Some(previous_response) = previous_response {
+                retry_delays
+                    .lock()
+                    .unwrap()
+                    .push(previous_response.elapsed());
             }
 
             let content_length_header = response
                 .content_length
                 .map(|content_length| format!("Content-Length: {content_length}\r\n"))
                 .unwrap_or_default();
+            let retry_after_header: String = response
+                .retry_after
+                .iter()
+                .map(|value| format!("Retry-After: {value}\r\n"))
+                .collect();
             let response_head = format!(
-                "HTTP/1.1 {}\r\n{content_length_header}Connection: close\r\n\r\n",
+                "HTTP/1.1 {}\r\n{content_length_header}{retry_after_header}Connection: close\r\n\r\n",
                 response.status
             );
+            // Measure the next actual GET from this response's send boundary,
+            // excluding unrelated work after materialization completes.
+            previous_response = Some(Instant::now());
             stream.write_all(response_head.as_bytes()).await?;
             stream.write_all(&response.body).await?;
-            stream.shutdown().await?;
+            requests.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            response_sent.notify_one();
+            if response.stall {
+                // Keep the body incomplete until the client times out/cancels.
+                let mut byte = [0u8; 1];
+                match stream.read(&mut byte).await {
+                    Ok(0) => {}
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionAborted
+                        ) => {}
+                    Ok(_) => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "session history fixture received data after its complete GET",
+                        ));
+                    }
+                    Err(error) => return Err(error),
+                }
+                client_closed.notify_one();
+            } else {
+                stream.shutdown().await?;
+            }
             served += 1;
         }
         Ok(served)
@@ -2633,7 +2837,7 @@ mod tests {
     async fn attributed_materializer_preserves_body_read_failure() {
         let server = MultiShotSessionHistoryServer::respond_many(vec![
             MultiShotSessionHistoryResponse::ok(b"short", Some(999));
-            1
+            SESSION_HISTORY_DOWNLOAD_MAX_ATTEMPTS
         ])
         .await;
         let session = ref_session(
@@ -2661,7 +2865,9 @@ mod tests {
             }
             _ => panic!("expected failed download"),
         }
-        server.assert_served(1).await;
+        server
+            .assert_served(SESSION_HISTORY_DOWNLOAD_MAX_ATTEMPTS)
+            .await;
     }
 
     #[test]

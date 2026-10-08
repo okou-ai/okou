@@ -1,5 +1,5 @@
 //! Explicit independent OpenSSH plus TigerVNC acceptance.
-//! See `tests/VNC_SSH_INTEROPERABILITY.md`.
+//! See `crates/runner/tests/VNC_SSH_INTEROPERABILITY.md`.
 
 use runner_rpc_proto::stream::{Frame, Reader};
 use serde_json::{Value, json};
@@ -21,15 +21,18 @@ use super::{
     terminal,
 };
 use crate::{
-    test_fixtures::http::{HttpClientConfig, http_client},
+    test_fixtures::{
+        http::{HttpClientConfig, http_client},
+        vnc::supported_profiles,
+    },
     vnc::VncRuntime,
 };
 
-const OPENSSH_PACKAGE_VERSION: &str = "1:9.6p1-3ubuntu13.14";
 const TIGERVNC_PACKAGE_VERSION: &str = "1.13.1+dfsg-2build2";
 
 #[derive(Clone, Copy)]
 enum Security {
+    None,
     Vnc,
     Plain,
 }
@@ -37,6 +40,7 @@ enum Security {
 impl Security {
     const fn fixture_name(self) -> &'static str {
         match self {
+            Self::None => "X509None",
             Self::Vnc => "X509Vnc",
             Self::Plain => "X509Plain",
         }
@@ -44,8 +48,17 @@ impl Security {
 
     const fn api_name(self) -> &'static str {
         match self {
+            Self::None => "x509_none",
             Self::Vnc => "x509_vnc",
             Self::Plain => "x509_plain",
+        }
+    }
+
+    const fn subtype(self) -> u32 {
+        match self {
+            Self::None => 260,
+            Self::Vnc => 261,
+            Self::Plain => 262,
         }
     }
 }
@@ -76,7 +89,7 @@ impl TigerVnc {
             .stderr(Stdio::inherit())
             .kill_on_drop(true)
             .spawn()
-            .expect("run the isolated setup in tests/VNC_SSH_INTEROPERABILITY.md");
+            .expect("run the isolated setup in crates/runner/tests/VNC_SSH_INTEROPERABILITY.md");
         let input = child.stdin.take().unwrap();
         let output = BufReader::new(child.stdout.take().unwrap());
         let mut fixture = Self {
@@ -102,6 +115,24 @@ impl TigerVnc {
                 .unwrap();
         assert!(length > 0, "TigerVNC fixture exited before replying");
         serde_json::from_str(&line).unwrap()
+    }
+
+    async fn selected_subtype(&mut self, security: Security) {
+        self.input
+            .write_all(b"{\"command\":\"closed\"}\n")
+            .await
+            .unwrap();
+        self.input.flush().await.unwrap();
+        let log = self.read().await;
+        let expected = format!(
+            "Client requests security type {} ({})",
+            security.fixture_name(),
+            security.subtype()
+        );
+        assert!(
+            log["log"].as_str().unwrap().contains(&expected),
+            "TigerVNC did not observe {expected}: {log}"
+        );
     }
 
     async fn stop(mut self) {
@@ -184,13 +215,23 @@ async fn capture(harness: &Harness, session: &str) -> (Value, Vec<u8>) {
 }
 
 #[tokio::test]
-#[ignore = "requires the pinned disposable OpenSSH/TigerVNC host setup"]
-async fn pinned_openssh_tigervnc_vnc_transport_acceptance() {
-    assert_eq!(required("VNC_OPENSSH_VERSION"), OPENSSH_PACKAGE_VERSION);
+#[ignore = "requires the disposable OpenSSH/TigerVNC host setup"]
+async fn installed_openssh_tigervnc_vnc_transport_acceptance() {
+    eprintln!("openssh_server_version={}", required("VNC_OPENSSH_VERSION"));
     tokio::time::timeout(Duration::from_secs(240), async {
         for password in [true, false] {
-            for security in [Security::Vnc, Security::Plain] {
+            for security in [Security::None, Security::Vnc, Security::Plain] {
+                eprintln!(
+                    "matrix_case_start: ssh={} vnc={}",
+                    if password { "password" } else { "public-key" },
+                    security.api_name()
+                );
                 run_case(password, security).await;
+                eprintln!(
+                    "matrix_case_passed: ssh={} vnc={}",
+                    if password { "password" } else { "public-key" },
+                    security.api_name()
+                );
             }
         }
     })
@@ -199,11 +240,18 @@ async fn pinned_openssh_tigervnc_vnc_transport_acceptance() {
 }
 
 async fn run_case(password: bool, security: Security) {
-    let fixture = TigerVnc::start(security).await;
+    let mut fixture = TigerVnc::start(security).await;
     let ssh_port = required("VNC_OPENSSH_PORT").parse::<u16>().unwrap();
     let mut harness = Harness::new(Reply::default()).await;
     *harness.network.target.lock().unwrap() =
         SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), ssh_port);
+    // Keep the mock public DNS answer's port aligned with the isolated sshd.
+    // TestNetwork::connect redirects the validated address to its loopback target.
+    {
+        let mut answers = harness.network.answers.lock().unwrap();
+        assert_eq!(answers.len(), 1);
+        answers[0].set_port(ssh_port);
+    }
     let http = http_client(HttpClientConfig {
         api_url: harness.api.base_url(),
         vercel_bypass: None,
@@ -216,6 +264,7 @@ async fn run_case(password: bool, security: Security) {
 
     let ssh_resolve = harness.resolve(ssh_credential(password)).await;
     let authentication = match security {
+        Security::None => json!({"method":"none"}),
         Security::Vnc => json!({"method":"vnc_password","password":"testpass"}),
         Security::Plain => json!({
             "method":"username_password",
@@ -224,6 +273,11 @@ async fn run_case(password: bool, security: Security) {
         }),
     };
     let vnc_port = fixture.ready["port"].as_u64().unwrap();
+    eprintln!(
+        "matrix_case_destination: ssh={} vnc={} rfb=127.0.0.1:{vnc_port} tls_identity=localhost",
+        if password { "password" } else { "public-key" },
+        security.api_name()
+    );
     let ca_bundle = std::fs::read_to_string(fixture.ready["ca_pem"].as_str().unwrap()).unwrap();
     let vnc_resolve = harness
         .api
@@ -240,13 +294,7 @@ async fn run_case(password: bool, security: Security) {
                         "runnerId":harness.identity.runner_id(),
                         "heartbeatGeneration":27
                     },
-                    "supportedProfiles":[
-                        {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"direct"},
-                        {"authMethod":"username_password","securityType":"x509_plain","transportType":"direct"},
-                        {"authMethod":"vnc_password","securityType":"x509_vnc","transportType":"ssh"},
-                        {"authMethod":"username_password","securityType":"x509_plain","transportType":"ssh"},
-                        {"authMethod":"apple_dh_username_password","securityType":"apple_dh","transportType":"ssh"}
-                    ]
+                    "supportedProfiles":supported_profiles(true)
                 }));
             then.status(200).json_body(json!({
                 "outcome":"resolved_transport",
@@ -331,5 +379,6 @@ async fn run_case(password: bool, security: Security) {
     vnc_resolve.assert_calls_async(1).await;
     assert!(vnc_check.calls_async().await >= 3);
     harness.shutdown().await;
+    fixture.selected_subtype(security).await;
     fixture.stop().await;
 }

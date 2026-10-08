@@ -18,6 +18,7 @@ import {
   singleWorkerJavaScriptBundlePlugin,
 } from "./single-bundle.ts";
 import { clerkUiAssetPlugin } from "./clerk-ui.ts";
+import { sharedDatabaseWorkerHtmlPlugin } from "./shared-database-worker-html.ts";
 import { dependencyVendorChunks } from "./vendor-chunks.ts";
 import {
   domGlobalUsageCounts,
@@ -467,6 +468,22 @@ function assertClerkDiscoveryOrder(htmlSource: string): void {
   assert.ok(appModuleIndex > clerkBootstrapIndex);
 }
 
+function assertSharedDatabaseWorkerMeta(
+  htmlSource: string,
+  javaScriptOutputs: readonly { readonly fileName: string }[],
+): void {
+  const workerOutput = javaScriptOutputs.find((item) => {
+    return /^assets\/shared-database-worker-[^/]+\.js$/u.test(item.fileName);
+  });
+  assert.ok(workerOutput);
+  assert.ok(
+    htmlSource.includes(
+      `<meta name="okou-shared-database-worker" content="/${workerOutput.fileName}">`,
+    ),
+    "expected the built page to publish its SharedWorker path",
+  );
+}
+
 function assertApplicationStylesheetPreload(htmlSource: string): void {
   const criticalStyleIndex = htmlSource.indexOf(
     '<style id="app-bootstrap-critical-styles">',
@@ -516,6 +533,7 @@ function assertBuiltPageDiscovery(
   htmlSource: string,
   outputs: readonly { fileName: string }[],
 ) {
+  assertSharedDatabaseWorkerMeta(htmlSource, outputs);
   const uiAsset = outputs.find((item) => {
     return /^assets\/clerk-ui-[^/]+\.js$/u.test(item.fileName);
   });
@@ -626,6 +644,7 @@ await test("emits the fixed page topology and one external worker", async () => 
         clerkUiAssetPlugin(),
         applicationJavaScriptBundlePlugin(),
         applicationResourcePriorityHtmlPlugin(),
+        sharedDatabaseWorkerHtmlPlugin(),
       ],
       worker: {
         plugins: () => {

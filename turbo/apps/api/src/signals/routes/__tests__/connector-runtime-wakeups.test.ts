@@ -16,7 +16,7 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 const runs = createRunsApi(context);
@@ -28,7 +28,7 @@ async function prepareActor(tier: "pro" | "team" = "pro") {
   runs.acceptStorageDownloads();
   const runnerGroup = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor, { tier });
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   const { agentId } = await bdd.createAgent(actor);
   return { actor, agentId, runnerGroup };
 }
@@ -38,10 +38,9 @@ async function startRun(
   agentId: string,
   runnerGroup: string,
 ) {
-  const run = await runs.createRun(actor, {
+  const run = await runs.createThreadRun(actor, {
     agentId,
     prompt: "Exercise runtime wakeups",
-    modelProvider: "anthropic-api-key",
   });
   await runs.heartbeatRunner(runnerGroup);
   await runs.claimRunnerJob(run.runId, {

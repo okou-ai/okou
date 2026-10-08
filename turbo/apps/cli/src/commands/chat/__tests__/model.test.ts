@@ -3,7 +3,7 @@
  *
  * Tests command-level behavior via parseAsync() following CLI testing principles:
  * - Entry point: command.parseAsync()
- * - Mock (external): backend metadata, model policy, and model-selection routes via MSW
+ * - Mock (external): backend metadata, run-model, and model-selection routes via MSW
  * - Real (internal): CLI argument parsing, API client, env handling
  */
 
@@ -11,6 +11,7 @@ import chalk from "chalk";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { MODEL_CATALOG_RESPONSE } from "../../../mocks/handlers/model-catalog";
 import { server } from "../../../mocks/server";
 import { chatCommand } from "../index";
 
@@ -19,50 +20,46 @@ const OTHER_THREAD_ID = "00000000-0000-4000-8000-000000000002";
 const GET_URL = `http://localhost:3000/api/chat-threads/${THREAD_ID}/metadata`;
 const OTHER_GET_URL = `http://localhost:3000/api/chat-threads/${OTHER_THREAD_ID}/metadata`;
 const OTHER_MODEL_SELECTION_URL = `http://localhost:3000/api/chat-threads/${OTHER_THREAD_ID}/model-selection`;
-const MODEL_POLICIES_URL = "http://localhost:3000/api/model-policies";
+const MODEL_SELECTION_URL = `http://localhost:3000/api/chat-threads/${THREAD_ID}/model-selection`;
+const MODEL_RUN_MODELS_URL = "http://localhost:3000/api/run-models";
 
-const MODEL_POLICIES_RESPONSE = {
-  workspaceDefaultModel: "claude-sonnet-5",
-  workspaceDefaultPolicyId: "00000000-0000-4000-8000-000000000101",
-  policies: [
+const AVAILABLE_MODELS_RESPONSE = {
+  models: [
     {
-      id: "00000000-0000-4000-8000-000000000101",
       model: "claude-sonnet-5",
       modelLabel: "Claude Sonnet 5",
-      isDefault: true,
-      defaultProviderType: "claude-code-oauth-token",
-      credentialScope: "member",
       modelProviderId: null,
-      routeStatus: "valid",
-      routeStatusReason: null,
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
+      memberEffective: {
+        providerType: "claude-code-oauth-token",
+        runtimeProviderType: "claude-code-oauth-token",
+        credentialScope: "member",
+        availability: "available",
+        accountSelection: "capture_required",
+      },
     },
     {
-      id: "00000000-0000-4000-8000-000000000102",
       model: "gpt-5.6-luna",
       modelLabel: "GPT 5.6 Luna",
-      isDefault: false,
-      defaultProviderType: "codex-oauth-token",
-      credentialScope: "member",
       modelProviderId: null,
-      routeStatus: "missing_provider",
-      routeStatusReason: "No personal subscription connected",
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
+      memberEffective: {
+        providerType: "codex-oauth-token",
+        runtimeProviderType: "codex-oauth-token",
+        credentialScope: "member",
+        availability: "reconnect_required",
+        accountSelection: "capture_required",
+      },
     },
     {
-      id: "00000000-0000-4000-8000-000000000103",
-      model: "deepseek-v4-flash",
-      modelLabel: "DeepSeek V4 Flash",
-      isDefault: false,
-      defaultProviderType: "built-in",
-      credentialScope: "org",
+      model: null,
+      modelLabel: "Auto",
       modelProviderId: null,
-      routeStatus: "valid",
-      routeStatusReason: null,
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
+      memberEffective: {
+        providerType: "built-in",
+        runtimeProviderType: "openrouter-codex",
+        credentialScope: "org",
+        availability: "available",
+        accountSelection: "not_applicable",
+      },
     },
   ],
 };
@@ -94,8 +91,8 @@ describe("okou chat model command", () => {
   it("shows dynamic help with switchable models", async () => {
     vi.stubEnv("OKOU_CHAT_THREAD_ID", undefined);
     server.use(
-      http.get(MODEL_POLICIES_URL, () => {
-        return HttpResponse.json(MODEL_POLICIES_RESPONSE);
+      http.get(MODEL_RUN_MODELS_URL, () => {
+        return HttpResponse.json(AVAILABLE_MODELS_RESPONSE);
       }),
     );
 
@@ -107,8 +104,13 @@ describe("okou chat model command", () => {
     expect(output).toContain("Claude Sonnet 5");
     expect(output).toContain("claude-sonnet-5");
     expect(output).toContain("--thread <id>");
-    expect(output).not.toContain("No personal subscription connected");
+    expect(output).toContain("--effort <level>");
+    expect(output).toContain("Claude uses extra where Codex uses xhigh");
+    expect(output).toContain(
+      "efforts: low, medium, high, extra, max, ultracode",
+    );
     expect(output).not.toContain("gpt-5.6-luna");
+    expect(output).toContain("Auto (auto) (default)");
   });
 
   it("prints the current chat model and switchable models without an argument", async () => {
@@ -119,10 +121,11 @@ describe("okou chat model command", () => {
           id: THREAD_ID,
           title: "Launch plan",
           selectedModel: "claude-sonnet-5",
+          modelSettings: {},
         });
       }),
-      http.get(MODEL_POLICIES_URL, () => {
-        return HttpResponse.json(MODEL_POLICIES_RESPONSE);
+      http.get(MODEL_RUN_MODELS_URL, () => {
+        return HttpResponse.json(AVAILABLE_MODELS_RESPONSE);
       }),
     );
 
@@ -130,10 +133,51 @@ describe("okou chat model command", () => {
 
     const output = mockConsoleLog.mock.calls.flat().join("\n");
     expect(output).toContain("Chat thread loaded");
-    expect(output).toContain("Model:  Claude Sonnet 5 (claude-sonnet-5)");
+    expect(output).toContain(
+      "Model:  Claude Sonnet 5 (claude-sonnet-5) · effort high",
+    );
     expect(output).toContain("Switchable models:");
     expect(output).toContain("provider: built-in (Built-in model; built-in)");
     expect(output).toContain(`okou chat model --thread ${THREAD_ID} <model>`);
+  });
+
+  it("shows Auto for a null selection", async () => {
+    server.use(
+      http.get(GET_URL, () => {
+        return HttpResponse.json({
+          id: THREAD_ID,
+          title: "Launch plan",
+          selectedModel: null,
+        });
+      }),
+      http.get(MODEL_RUN_MODELS_URL, () => {
+        return HttpResponse.json(AVAILABLE_MODELS_RESPONSE);
+      }),
+    );
+
+    await chatCommand.parseAsync(["node", "cli", "model"]);
+
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(output).toContain("Model:  Auto\n");
+    expect(output).toContain("Auto (auto) (default)");
+  });
+
+  it("switches to Auto with auto by sending a null selection", async () => {
+    server.use(
+      http.get(MODEL_RUN_MODELS_URL, () => {
+        return HttpResponse.json(AVAILABLE_MODELS_RESPONSE);
+      }),
+      http.post(MODEL_SELECTION_URL, async ({ request }) => {
+        await expect(request.json()).resolves.toStrictEqual({ model: null });
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    await chatCommand.parseAsync(["node", "cli", "model", "auto"]);
+
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(output).toContain("Chat model updated");
+    expect(output).toContain("Model:  Auto");
   });
 
   it("shows the model for --thread outside a web chat environment", async () => {
@@ -146,8 +190,8 @@ describe("okou chat model command", () => {
           selectedModel: "claude-sonnet-5",
         });
       }),
-      http.get(MODEL_POLICIES_URL, () => {
-        return HttpResponse.json(MODEL_POLICIES_RESPONSE);
+      http.get(MODEL_RUN_MODELS_URL, () => {
+        return HttpResponse.json(AVAILABLE_MODELS_RESPONSE);
       }),
     );
 
@@ -167,8 +211,8 @@ describe("okou chat model command", () => {
   it("switches the model for --thread outside a web chat environment", async () => {
     vi.stubEnv("OKOU_CHAT_THREAD_ID", undefined);
     server.use(
-      http.get(MODEL_POLICIES_URL, () => {
-        return HttpResponse.json(MODEL_POLICIES_RESPONSE);
+      http.get(MODEL_RUN_MODELS_URL, () => {
+        return HttpResponse.json(AVAILABLE_MODELS_RESPONSE);
       }),
       http.post(OTHER_MODEL_SELECTION_URL, async ({ request }) => {
         expect(request.headers.get("authorization")).toBe("Bearer test-token");
@@ -194,10 +238,155 @@ describe("okou chat model command", () => {
     expect(output).toContain("Model:  Claude Sonnet 5 (claude-sonnet-5)");
   });
 
+  it("switches a model and effort together without a tier patch so the server preserves it", async () => {
+    server.use(
+      http.get(MODEL_RUN_MODELS_URL, () => {
+        return HttpResponse.json({
+          ...AVAILABLE_MODELS_RESPONSE,
+          models: [
+            {
+              ...AVAILABLE_MODELS_RESPONSE.models[0],
+              model: "claude-opus-5-5",
+              modelLabel: "Claude Opus 5.5",
+            },
+          ],
+        });
+      }),
+      http.post(OTHER_MODEL_SELECTION_URL, async ({ request }) => {
+        expect(await request.json()).toStrictEqual({
+          model: "claude-opus-5-5",
+          reasoningEffort: "extra",
+        });
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await chatCommand.parseAsync([
+      "node",
+      "cli",
+      "model",
+      "--thread",
+      OTHER_THREAD_ID,
+      "claude-opus-5-5",
+      "--effort",
+      "extra",
+    ]);
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+      "Model:  Claude Opus 5.5 (claude-opus-5-5) · effort extra",
+    );
+  });
+
+  it("updates only effort by reading and resending the selected model", async () => {
+    server.use(
+      http.get(GET_URL, () => {
+        return HttpResponse.json({
+          id: THREAD_ID,
+          selectedModel: "gpt-6-sol",
+          serviceTier: "priority",
+          modelSettings: { "gpt-6-sol": { effort: "high" } },
+        });
+      }),
+      http.post(MODEL_SELECTION_URL, async ({ request }) => {
+        expect(await request.json()).toStrictEqual({
+          model: "gpt-6-sol",
+          reasoningEffort: "max",
+        });
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await chatCommand.parseAsync(["node", "cli", "model", "--effort", "max"]);
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+      "gpt-6-sol) · effort max",
+    );
+  });
+
+  it("validates an effort-only change on an Auto thread against Auto", async () => {
+    let requests = 0;
+    server.use(
+      http.get(GET_URL, () => {
+        return HttpResponse.json({
+          id: THREAD_ID,
+          selectedModel: null,
+          modelSettings: {},
+        });
+      }),
+      http.post(MODEL_SELECTION_URL, () => {
+        requests++;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await expect(
+      chatCommand.parseAsync(["node", "cli", "model", "--effort", "max"]),
+    ).rejects.toThrow("process.exit called");
+    expect(requests).toBe(0);
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "Auto supports: none",
+    );
+  });
+
+  it("rejects an unsupported model-effort pair before sending a request", async () => {
+    let requests = 0;
+    server.use(
+      http.get(MODEL_RUN_MODELS_URL, () => {
+        return HttpResponse.json({
+          ...AVAILABLE_MODELS_RESPONSE,
+          models: [
+            {
+              ...AVAILABLE_MODELS_RESPONSE.models[0],
+              model: "claude-opus-5-5",
+              modelLabel: "Claude Opus 5.5",
+            },
+          ],
+        });
+      }),
+      http.post(MODEL_SELECTION_URL, () => {
+        requests++;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await expect(
+      chatCommand.parseAsync([
+        "node",
+        "cli",
+        "model",
+        "claude-opus-5-5",
+        "--effort",
+        "xhigh",
+      ]),
+    ).rejects.toThrow("process.exit called");
+    expect(requests).toBe(0);
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "claude-opus-5-5 supports: low, medium, high, extra, max, ultracode",
+    );
+  });
+
+  it("rejects extra for a Codex model before sending a request", async () => {
+    let requests = 0;
+    server.use(
+      http.get(GET_URL, () => {
+        return HttpResponse.json({
+          id: THREAD_ID,
+          selectedModel: "gpt-6-sol",
+          modelSettings: {},
+        });
+      }),
+      http.post(MODEL_SELECTION_URL, () => {
+        requests++;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await expect(
+      chatCommand.parseAsync(["node", "cli", "model", "--effort", "extra"]),
+    ).rejects.toThrow("process.exit called");
+    expect(requests).toBe(0);
+    expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+      "gpt-6-sol supports: low, medium, high, xhigh, max, ultra",
+    );
+  });
+
   it("rejects models that are not switchable for this user", async () => {
     server.use(
-      http.get(MODEL_POLICIES_URL, () => {
-        return HttpResponse.json(MODEL_POLICIES_RESPONSE);
+      http.get(MODEL_RUN_MODELS_URL, () => {
+        return HttpResponse.json(AVAILABLE_MODELS_RESPONSE);
       }),
     );
 
@@ -207,20 +396,121 @@ describe("okou chat model command", () => {
 
     const stderr = mockConsoleError.mock.calls.flat().join("\n");
     expect(stderr).toContain("Model is not switchable: gpt-5.6-luna");
-    expect(stderr).toContain("No personal subscription connected");
+    expect(stderr).toContain("Reconnect your personal subscription");
     expect(stderr).toContain("Run: okou chat model --help");
     expect(mockExit).toHaveBeenCalledWith(1);
   });
-  it("offers and switches a personal candidate despite a missing administrative provider", async () => {
+  it("lists and switches to a model that exists only in the catalog", async () => {
+    vi.stubEnv("OKOU_CHAT_THREAD_ID", undefined);
+    const model = "acme-nova-1";
     server.use(
-      http.get(MODEL_POLICIES_URL, () => {
+      http.get("http://localhost:3000/api/model-catalog", () => {
         return HttpResponse.json({
-          ...MODEL_POLICIES_RESPONSE,
-          policies: [
+          ...MODEL_CATALOG_RESPONSE,
+          models: [
+            ...MODEL_CATALOG_RESPONSE.models,
             {
-              ...MODEL_POLICIES_RESPONSE.policies[1],
-              defaultProviderType: "openai-api-key",
-              credentialScope: "org",
+              model,
+              displayName: "Acme Nova",
+              sortOrder: 100_000,
+              replacedBy: null,
+              resolvedModel: model,
+              builtInOnRestrictedPlans: false,
+            },
+          ],
+          routes: [
+            ...MODEL_CATALOG_RESPONSE.routes,
+            {
+              model,
+              providerType: "codex-oauth-token",
+              concreteProviderType: "openrouter-codex",
+              upstreamModel: "openai/gpt-6-luna",
+              enabled: true,
+              priority: 0,
+              serviceTiers: [],
+              efforts: ["low", "high"],
+              defaultEffort: "high",
+            },
+          ],
+        });
+      }),
+      http.get(MODEL_RUN_MODELS_URL, () => {
+        return HttpResponse.json({
+          models: [
+            ...AVAILABLE_MODELS_RESPONSE.models,
+            {
+              model,
+              modelLabel: "Acme Nova",
+              modelProviderId: null,
+              memberEffective: {
+                providerType: "codex-oauth-token",
+                runtimeProviderType: "codex-oauth-token",
+                credentialScope: "member",
+                availability: "available",
+                accountSelection: "capture_required",
+              },
+            },
+          ],
+        });
+      }),
+      http.post(OTHER_MODEL_SELECTION_URL, async ({ request }) => {
+        await expect(request.json()).resolves.toStrictEqual({ model });
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    await chatCommand.parseAsync(["node", "cli", "model", "--help"]);
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+      "Acme Nova (acme-nova-1)",
+    );
+    mockConsoleLog.mockClear();
+
+    await chatCommand.parseAsync([
+      "node",
+      "cli",
+      "model",
+      "--thread",
+      OTHER_THREAD_ID,
+      model,
+    ]);
+
+    const output = mockConsoleLog.mock.calls.flat().join("\n");
+    expect(output).toContain("Chat model updated");
+    expect(output).toContain("Model:  Acme Nova (acme-nova-1)");
+  });
+
+  it("applies an effort-only change to the replacement of a retired selection", async () => {
+    server.use(
+      http.get(GET_URL, () => {
+        return HttpResponse.json({
+          id: THREAD_ID,
+          selectedModel: "claude-opus-4-8",
+        });
+      }),
+      http.post(MODEL_SELECTION_URL, async ({ request }) => {
+        expect(await request.json()).toStrictEqual({
+          model: "claude-opus-5-5",
+          reasoningEffort: "extra",
+        });
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+
+    await chatCommand.parseAsync(["node", "cli", "model", "--effort", "extra"]);
+
+    expect(mockConsoleLog.mock.calls.flat().join("\n")).toContain(
+      "Model:  Claude Opus 5.5 (claude-opus-5-5) · effort extra",
+    );
+  });
+
+  it("offers and switches a connected personal subscription model", async () => {
+    server.use(
+      http.get(MODEL_RUN_MODELS_URL, () => {
+        return HttpResponse.json({
+          ...AVAILABLE_MODELS_RESPONSE,
+          models: [
+            {
+              ...AVAILABLE_MODELS_RESPONSE.models[1],
               memberEffective: {
                 providerType: "codex-oauth-token",
                 runtimeProviderType: "codex-oauth-token",
@@ -257,16 +547,16 @@ describe("okou chat model command", () => {
     );
   });
 
-  it.each(["reconnect_required", "plan_restricted", "unavailable"])(
-    "rejects a %s member route despite a valid administrative provider",
+  it.each(["reconnect_required", "plan_restricted"])(
+    "rejects a %s personal subscription route despite a valid route status",
     async (availability) => {
       server.use(
-        http.get(MODEL_POLICIES_URL, () => {
+        http.get(MODEL_RUN_MODELS_URL, () => {
           return HttpResponse.json({
-            ...MODEL_POLICIES_RESPONSE,
-            policies: [
+            ...AVAILABLE_MODELS_RESPONSE,
+            models: [
               {
-                ...MODEL_POLICIES_RESPONSE.policies[0],
+                ...AVAILABLE_MODELS_RESPONSE.models[0],
                 memberEffective: {
                   providerType: "claude-code-oauth-token",
                   runtimeProviderType: "claude-code-oauth-token",

@@ -115,11 +115,11 @@ storage in separate databases. These are test-owned data, not production rows.
 
 Contraction passed eight real PostgreSQL migration scenarios, the complete
 database migration-consistency chain, four actual account-deletion/lifecycle
-webhook cases and the signed Clerk erasure-compatibility route against the
+webhook cases and the signed Clerk deletion-compatibility route (since retired) against the
 database migrated through 1139. Prepared release source
 `8b9763e341ea8519c1aad5e62ad72dfa5c582eb8` also passed those five route cases
 against that contracted database and all six private-schema compatibility cases.
-This includes main's newer Pi erasure ingress and replay guards. Generated metadata
+This includes main's then-current Pi deletion ingress and replay guards. Generated metadata
 removes exactly the three tables; other schema objects are unchanged. Rollback
 resolver tests cover old targets, missing history and the canonical introduction
 after the preparation helper is deleted. API/database types, scoped lints and

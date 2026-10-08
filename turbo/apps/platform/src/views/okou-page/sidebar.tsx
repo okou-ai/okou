@@ -97,12 +97,7 @@ const MANAGE_NAV: readonly ManageNavItem[] = [
   },
   {
     id: "connectors",
-    activeKeys: [
-      "connectors",
-      "connectorSsh",
-      "connectorVnc",
-      "connectorCloudflareAccess",
-    ],
+    activeKeys: ["connectors"],
     pathname: "/connectors",
     icon: Plug as NavIcon,
   },
@@ -471,7 +466,7 @@ function ExpandedFooter() {
    what puts the workspace logo and the account mark the same distance from
    the corner they sit in as from the edge beside them. */
 const RAIL_FRAME =
-  "hidden md:flex h-full w-[72px] shrink-0 flex-col items-center border-r border-nav-border bg-nav-rail px-1.5 py-[18px]";
+  "hidden md:flex h-full w-[72px] shrink-0 flex-col items-center border-r border-nav-border bg-nav-rail py-[18px]";
 
 function LabeledRailLink({
   id,
@@ -525,7 +520,7 @@ function LabeledRailLink({
       aria-label={label}
       aria-current={isActive ? "page" : undefined}
       title={caption}
-      className="group flex w-full flex-col items-center gap-0.5 no-underline"
+      className="group flex w-full shrink-0 scroll-my-1 flex-col items-center gap-0.5 rounded-lg no-underline outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
     >
       <span
         className={`relative inline-flex size-9 items-center justify-center rounded-lg transition-colors duration-200 ${
@@ -652,11 +647,13 @@ function LabeledNavRail() {
           />
         </div>
       )}
+      {/* Keep focus-ring clearance inside the scrollport. The top margin
+          preserves the first item's position while adding room for its ring. */}
       <nav
         aria-label={t(($) => {
           return $.appShell.sidebar.ariaLabel;
         })}
-        className="flex min-h-0 w-full flex-1 flex-col items-center gap-3 overflow-y-auto pb-2"
+        className="-mt-1 flex min-h-0 w-full flex-1 flex-col items-center gap-3 overflow-y-auto px-1.5 pb-2 pt-1"
       >
         {navItems.map((item) => {
           const isActive =
@@ -677,14 +674,14 @@ function LabeledNavRail() {
           );
         })}
       </nav>
-      <div className="flex w-full shrink-0 flex-col items-center gap-2 pt-1">
+      <div className="flex w-full shrink-0 flex-col items-center gap-2 px-1.5 pt-1">
         <AccountDropdownContainer collapsed />
       </div>
     </aside>
   );
 }
 
-function ThreeColumnSearchDialogContainer() {
+export function ThreeColumnSearchDialogContainer() {
   const open = useGet(threeColumnSearchOpen$);
   const onOpenChange = useSet(setThreeColumnSearchOpen$);
   const navigate = useSet(detachedNavigateTo$);

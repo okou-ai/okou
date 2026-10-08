@@ -1,3 +1,4 @@
+import { command } from "ccstate";
 import {
   connectorRuntimeTargetKey,
   type ConnectorRuntimeTarget,
@@ -7,7 +8,7 @@ import { agentSessions } from "@okouai/db/schema/agent-session";
 import { and, eq, isNotNull, type SQL } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
-import type { ReadonlyDb } from "../external/db";
+import { writeDb$, type ReadonlyDb } from "../external/db";
 import { publishConnectorRuntimeSyncBatch } from "../external/realtime";
 import {
   connectorRuntimeWakeupBatches,
@@ -55,6 +56,26 @@ function uniqueConnectorRuntimeTargets(
   return [...targetsByKey.values()];
 }
 
+interface ConnectorRuntimeWakeupBusinessArgs {
+  readonly scope: ConnectorRuntimeWakeupScope;
+  readonly targets: readonly ConnectorRuntimeTarget[];
+}
+
+function connectorRuntimeWakeupCondition(scope: ConnectorRuntimeWakeupScope) {
+  const conditions: SQL[] = [
+    eq(agentRuns.orgId, scope.orgId),
+    eq(agentRuns.status, "running"),
+    isNotNull(agentRuns.runnerGroup),
+  ];
+  if (scope.userId !== undefined) {
+    conditions.push(eq(agentRuns.userId, scope.userId));
+  }
+  if (scope.agentId !== undefined) {
+    conditions.push(eq(agentSessions.agentId, scope.agentId));
+  }
+  return and(...conditions);
+}
+
 async function publishConnectorRuntimeSyncWakeupsInner(
   args: ConnectorRuntimeWakeupArgs,
 ): Promise<void> {
@@ -63,17 +84,6 @@ async function publishConnectorRuntimeSyncWakeupsInner(
     return;
   }
 
-  const conditions: SQL[] = [
-    eq(agentRuns.orgId, args.scope.orgId),
-    eq(agentRuns.status, "running"),
-    isNotNull(agentRuns.runnerGroup),
-  ];
-  if (args.scope.userId !== undefined) {
-    conditions.push(eq(agentRuns.userId, args.scope.userId));
-  }
-  if (args.scope.agentId !== undefined) {
-    conditions.push(eq(agentSessions.agentId, args.scope.agentId));
-  }
   const rows = await args.db
     .select({
       runId: agentRuns.id,
@@ -81,8 +91,20 @@ async function publishConnectorRuntimeSyncWakeupsInner(
     })
     .from(agentRuns)
     .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
-    .where(and(...conditions));
+    .where(connectorRuntimeWakeupCondition(args.scope));
 
+  await publishConnectorRuntimeWakeupRows({ scope: args.scope, targets, rows });
+}
+
+async function publishConnectorRuntimeWakeupRows(
+  args: ConnectorRuntimeWakeupBusinessArgs & {
+    readonly rows: readonly {
+      readonly runId: string;
+      readonly runnerGroup: string | null;
+    }[];
+  },
+): Promise<void> {
+  const { rows, targets } = args;
   const wakeups: ConnectorRuntimeWakeup[] = [];
   const wakeupKeys = new Set<string>();
   for (const row of rows) {
@@ -180,3 +202,47 @@ export async function publishConnectorRuntimeSyncWakeups(
     });
   }
 }
+
+/** Post-commit notification owns its read and never receives a database handle. */
+export const publishConnectorRuntimeSyncWakeups$ = command(
+  async (
+    { set },
+    args: ConnectorRuntimeWakeupBusinessArgs,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const targets = uniqueConnectorRuntimeTargets(args.targets);
+    if (targets.length === 0) {
+      signal.throwIfAborted();
+      return;
+    }
+    // A committed mutation must attempt its wakeup before observing cancellation.
+    // eslint-disable-next-line api/signal-check-await -- Finish the committed runtime wakeup before propagating cancellation.
+    const read = await settle(
+      db
+        .select({ runId: agentRuns.id, runnerGroup: agentRuns.runnerGroup })
+        .from(agentRuns)
+        .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
+        .where(connectorRuntimeWakeupCondition(args.scope)),
+    );
+    const result = read.ok
+      ? await settle(
+          publishConnectorRuntimeWakeupRows({
+            scope: args.scope,
+            targets,
+            rows: read.value,
+          }),
+        )
+      : read;
+    if (!result.ok) {
+      L.warn("Failed to discover connector runtime sync wakeups", {
+        orgId: args.scope.orgId,
+        scopedToUser: args.scope.userId !== undefined,
+        scopedToAgent: args.scope.agentId !== undefined,
+        targetCount: targets.length,
+        error: result.error,
+      });
+    }
+    signal.throwIfAborted();
+  },
+);

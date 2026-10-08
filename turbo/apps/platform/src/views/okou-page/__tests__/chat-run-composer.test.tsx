@@ -1,5 +1,5 @@
-import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import { pushSubscriptionsContract } from "@okouai/api-contracts/contracts/push-subscriptions";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -9,10 +9,6 @@ import {
   mockPushBrowserSupport,
   setupPage,
 } from "./chat-lifecycle-test-helpers.ts";
-import {
-  buildModelPolicy,
-  composerModelTrigger,
-} from "./chat-composer-test-helpers.ts";
 import {
   assistantEvent,
   context,
@@ -25,7 +21,6 @@ import {
   readyChat,
   RUN_PATH,
   sendText,
-  thinkingEvent,
 } from "./chat-run-test-fixtures.ts";
 
 const ACTIVE_RUN_ID = "a0000000-0000-4000-a000-000000000501";
@@ -127,12 +122,6 @@ test("Queue a visual attachment without requiring text", async () => {
         seqId: 1,
         text: "Prepare the campaign",
       }),
-      thinkingEvent({
-        id: "video-progress",
-        runId: ACTIVE_RUN_ID,
-        seqId: 2,
-        text: "Preparing the campaign",
-      }),
     ],
     onQueuedEventAppend(body) {
       queuedMessage = body;
@@ -169,30 +158,21 @@ test("Queue a visual attachment without requiring text", async () => {
   expect(document.body).not.toHaveTextContent("(see attached files)");
 });
 
-test("Send a large image with a fallback-enabled text model", async () => {
+test("Send a large image with Auto", async () => {
   const user = userEvent.setup({ delay: null });
   let sentMessage:
     | {
-        readonly model?: string;
+        readonly model?: string | null;
         readonly userMessage?: UserMessageDocument;
       }
     | undefined;
   installRunChat({
-    selectedModel: "deepseek-v4-pro",
+    selectedModel: null,
     onRunCreate(body) {
       sentMessage = { model: body.model, userMessage: body.userMessage };
     },
   });
-  context.mocks.data.orgModelPolicies([
-    buildModelPolicy({
-      model: "deepseek-v4-pro",
-      modelLabel: "DeepSeek V4 Pro",
-      isDefault: true,
-      defaultProviderType: "built-in",
-      credentialScope: "org",
-      modelProviderId: null,
-    }),
-  ]);
+  context.mocks.data.availableRunModels([]);
   context.mocks.upload.success({
     id: "large-image-upload",
     filename: "launch-board.png",
@@ -204,7 +184,6 @@ test("Send a large image with a fallback-enabled text model", async () => {
   await setupPage({ context, path: NEW_CHAT_PATH });
 
   await readyChat();
-  await expect(composerModelTrigger("DeepSeek V4 Pro")).resolves.toBeVisible();
   await uploadFile(
     user,
     new File([new Uint8Array(12_000_000)], "launch-board.png", {

@@ -1,12 +1,8 @@
 import { command, type Command } from "ccstate";
 import { createElement, type ComponentType } from "react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  OnboardingSkillsPage,
-  OnboardingSlackPage,
-} from "../../views/onboarding-sources-first/onboarding-import-pages.tsx";
+import { OnboardingSkillsPage } from "../../views/onboarding-sources-first/onboarding-import-pages.tsx";
+import { OnboardingSlackPage } from "../../views/onboarding-sources-first/onboarding-chat-channels-page.tsx";
 import { OnboardingReadyPage } from "../../views/onboarding-sources-first/onboarding-ready-page.tsx";
-import { OnboardingProfilePage } from "../../views/onboarding-sources-first/onboarding-profile-page.tsx";
 import {
   OnboardingExperiencePage,
   OnboardingIndustryPage,
@@ -14,11 +10,10 @@ import {
 } from "../../views/onboarding-sources-first/onboarding-setup-pages.tsx";
 import { OnboardingSourcesPage } from "../../views/onboarding-sources-first/onboarding-sources-page.tsx";
 import { i18n } from "../../i18n/index.ts";
-import { hideAppSkeleton$, showAppSkeleton$ } from "../app-skeleton.ts";
+import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
 import { captureSourceOnboardingStepViewed$ } from "../bootstrap/source-onboarding-telemetry.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
-import { featureSwitches$ } from "../external/feature-switch.ts";
 import { builtinConnectors$ } from "../external/connectors.ts";
 import { sendEvent$ } from "../marketing/events.ts";
 import {
@@ -28,14 +23,17 @@ import {
 import { onboardingStatus$ } from "../okou-page/onboarding.ts";
 import { watchSlackConnection$ } from "../okou-page/slack.ts";
 import { watchTeamsConnection$ } from "../okou-page/teams.ts";
-import { page$, updatePage$ } from "../react-router.ts";
+import {
+  startTelegramSettingsRealtime$,
+  telegramBots$,
+} from "../okou-page/telegram.ts";
+import { enterOnboardingPhoneCode$ } from "./onboarding-chat-channels.ts";
+import { updatePage$ } from "../react-router.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES, type RoutePath } from "../route-paths.ts";
 import { detach, Reason } from "../utils.ts";
-import {
-  promptHandoffParams,
-  setupOnboardingMakePage$,
-} from "./onboarding-page-setup.ts";
+import { promptHandoffParams } from "./onboarding-actions.ts";
+import { setupOnboardingPromptPage$ } from "./onboarding-page-setup.ts";
 import { enterSkillImport$ } from "./onboarding-skill-import.ts";
 import {
   allowOnboardingRecommendationFallback$,
@@ -45,7 +43,9 @@ import {
   claimSourcesFirstStartEvent$,
   clearSourcesFirstDraft$,
   restoreSourcesFirstDraft$,
+  saveSourcesFirstStep$,
   setSourcesFirstFlow$,
+  SOURCES_FIRST_STEP_ROUTES,
   sourcesFirstDraft$,
   sourcesFirstSteps,
   type SourcesFirstStep,
@@ -70,13 +70,18 @@ interface SourcesFirstPageConfig {
   readonly enter?: Command<Promise<void>, [AbortSignal]>;
 }
 
-const sourcesFirstEnabled$ = command(
-  async ({ get }, signal: AbortSignal): Promise<boolean> => {
-    const switches = await get(featureSwitches$);
-    signal.throwIfAborted();
-    return switches[FeatureSwitchKey.OnboardingSourcesFirst] ?? false;
-  },
-);
+/**
+ * A visitor who brings a `prompt` (every Marketing "try it" link does) gets
+ * the prompt handoff: the source-first flow ends on its own recommended
+ * request and would drop theirs. Only an admin runs the handoff, so an invited
+ * member stays in the source-first flow either way.
+ */
+function hasPromptHandoff(
+  searchParams: URLSearchParams,
+  status: { readonly isAdmin: boolean },
+): boolean {
+  return Boolean(searchParams.get("prompt")?.trim()) && status.isAdmin;
+}
 
 /**
  * A redirect inside the flow keeps the query it arrived with: the Marketing
@@ -91,8 +96,8 @@ const redirectTo$ = command(({ get, set }, path: RoutePath) => {
 });
 
 /**
- * Nothing is left to onboard, so the visitor goes where the make-something
- * flow sends them: to their prompt when they brought one, and home otherwise.
+ * Nothing is left to onboard, so the visitor goes to their prompt when they
+ * brought one, and home otherwise.
  */
 const forwardOnboardedVisitor$ = command(({ get, set }) => {
   const searchParams = get(searchParams$);
@@ -109,26 +114,31 @@ function createSourcesFirstPageSetup(
   config: SourcesFirstPageConfig,
 ): Command<Promise<void>, [AbortSignal]> {
   return command(async ({ get, set }, signal: AbortSignal) => {
-    if (!get(page$)) {
-      set(showAppSkeleton$);
-    }
-
-    if (!(await set(sourcesFirstEnabled$, signal))) {
-      signal.throwIfAborted();
-      set(redirectTo$, ROUTES.onboarding);
-      return;
-    }
-
     const status = await get(onboardingStatus$);
     signal.throwIfAborted();
+    let resumeStep: SourcesFirstStep | null = null;
     if (status.hasOrg) {
       const { orgId, userId } = await get(authenticatedIdentity$);
       signal.throwIfAborted();
-      set(restoreSourcesFirstDraft$, { orgId, userId });
+      resumeStep = set(restoreSourcesFirstDraft$, { orgId, userId });
     }
     if (!status.needsOnboarding) {
       set(clearSourcesFirstDraft$);
       set(forwardOnboardedVisitor$);
+      return;
+    }
+    if (hasPromptHandoff(get(searchParams$), status)) {
+      // A later step opened with a prompt, for example a shared
+      // `/onboarding/sources?prompt=…`: the entry hands it to the prompt page.
+      set(redirectTo$, ROUTES.onboarding);
+      return;
+    }
+    if (
+      config.step === "industry" &&
+      resumeStep !== null &&
+      resumeStep !== "industry"
+    ) {
+      set(redirectTo$, SOURCES_FIRST_STEP_ROUTES[resumeStep]);
       return;
     }
     set(resumeOnboardingRecommendation$, signal);
@@ -140,15 +150,11 @@ function createSourcesFirstPageSetup(
     }
 
     // A member invited into an existing org runs the flow without the invite
-    // and Slack steps.
+    // step.
     const flow = status.isAdmin ? "owner" : "member";
     set(setSourcesFirstFlow$, flow);
 
     const draft = get(sourcesFirstDraft$);
-    if (config.step === "profile" && draft.industry === null) {
-      set(redirectTo$, ROUTES.onboarding);
-      return;
-    }
     if (config.step !== "industry" && config.step !== "sources") {
       // The user's own connections, reloaded on connect, decide whether any
       // source is there yet; the catalog is not needed for that.
@@ -168,6 +174,7 @@ function createSourcesFirstPageSetup(
       return;
     }
 
+    set(saveSourcesFirstStep$, config.step);
     set(updatePage$, createElement(config.Page), "none");
     set(updateDocumentTitle$, config.title());
     // One integration's status decides what a step offers, never whether the
@@ -207,18 +214,21 @@ const setupOnboardingIndustryEntryPage$ = createSourcesFirstPageSetup({
 });
 
 /**
- * `/onboarding` keeps its public path: the switch decides whether it opens the
- * source-first flow's first question or the make-something page.
+ * `/onboarding` keeps its public path: it opens the source-first flow's first
+ * question, unless the visitor brought a prompt of their own to try.
  */
 export const setupOnboardingEntryPage$ = command(
-  async ({ set }, signal: AbortSignal): Promise<void> => {
-    if (await set(sourcesFirstEnabled$, signal)) {
+  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    const searchParams = get(searchParams$);
+    if (searchParams.get("prompt")?.trim()) {
+      const status = await get(onboardingStatus$);
       signal.throwIfAborted();
-      await set(setupOnboardingIndustryEntryPage$, signal);
-      return;
+      if (hasPromptHandoff(searchParams, status)) {
+        await set(setupOnboardingPromptPage$, signal);
+        return;
+      }
     }
-    signal.throwIfAborted();
-    await set(setupOnboardingMakePage$, signal);
+    await set(setupOnboardingIndustryEntryPage$, signal);
   },
 );
 
@@ -253,30 +263,19 @@ export const setupOnboardingSkillsPage$ = createSourcesFirstPageSetup({
   enter: enterSkillImport$,
 });
 
-export const setupOnboardingProfilePage$ = createSourcesFirstPageSetup({
-  step: "profile",
-  title: () => {
-    return i18n.t(($) => {
-      return $.onboarding.sourcesFirst.documentTitles.profile;
-    });
-  },
-  Page: OnboardingProfilePage,
-});
-
-/**
- * The AgentPhone tile shows a real link, so the step watches that link for as
- * long as it is open. It is behind the same switch as the Works page entry,
- * and the watcher only runs where the tile does.
- */
+/** Keep the inline phone connection current while this step is open. */
 const watchOnboardingAgentPhone$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const switches = await get(featureSwitches$);
-    signal.throwIfAborted();
-    if (!switches[FeatureSwitchKey.AgentPhoneEntry]) {
-      return;
-    }
+  async ({ set }, signal: AbortSignal): Promise<void> => {
     set(setAgentPhoneConnectDialogOpen$, false);
     await set(watchAgentPhoneConnection$, signal);
+  },
+);
+
+const watchOnboardingTelegram$ = command(
+  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    set(startTelegramSettingsRealtime$, signal);
+    await get(telegramBots$);
+    signal.throwIfAborted();
   },
 );
 
@@ -284,18 +283,20 @@ export const setupOnboardingSlackPage$ = createSourcesFirstPageSetup({
   step: "slack",
   title: () => {
     return i18n.t(($) => {
-      return $.onboarding.sourcesFirst.documentTitles.slack;
+      return $.onboarding.sourcesFirst.chatChannels.title;
     });
   },
   Page: OnboardingSlackPage,
   // The install finishes in the provider's own tab, so the step only learns it
-  // happened from the realtime change these watchers subscribe to. AgentPhone
-  // is linked from a phone, which the step never sees either.
+  // happened from the realtime change these watchers subscribe to. The phone
+  // link also completes outside this tab; the inline QR does not claim success.
   watch: [
     watchSlackConnection$,
     watchTeamsConnection$,
     watchOnboardingAgentPhone$,
+    watchOnboardingTelegram$,
   ],
+  enter: enterOnboardingPhoneCode$,
 });
 
 export const setupOnboardingReadyPage$ = createSourcesFirstPageSetup({

@@ -39,8 +39,7 @@ function isInlineOnlyCanonicalDeliveryCallback(
     internalKind === "slack:chat" ||
     internalKind === "feishu:chat" ||
     internalKind === "teams:chat" ||
-    internalKind === "telegram:chat" ||
-    internalKind === "github:chat"
+    internalKind === "telegram:chat"
   );
 }
 

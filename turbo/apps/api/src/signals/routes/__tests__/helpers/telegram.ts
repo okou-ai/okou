@@ -12,26 +12,13 @@ const TELEGRAM_STATE_ACTION_ROUTE = "/api/test/telegram-state/action";
 export interface TelegramFixture {
   readonly orgId: string;
   readonly composeIds: readonly string[];
-  readonly telegramBotIds: readonly string[];
   readonly userIds: readonly string[];
 }
 
 interface TelegramFixtureBuilder {
   readonly orgId: string;
   readonly composeIds: string[];
-  readonly telegramBotIds: string[];
   readonly userIds: string[];
-}
-
-interface SeedTelegramInstallationValues {
-  readonly orgId: string;
-  readonly ownerUserId: string;
-  readonly telegramBotId: string;
-  readonly botUsername?: string | null;
-  readonly defaultAgentId?: string;
-  readonly composeUserId?: string;
-  readonly composeName?: string;
-  readonly agentName?: string;
 }
 
 interface SeedOrgDefaultAgentValues {
@@ -45,14 +32,6 @@ interface SeedOfficialUserLinkValues {
   readonly orgId: string;
   readonly userId: string;
   readonly telegramUserId: string;
-  readonly telegramUsername?: string | null;
-  readonly telegramDisplayName?: string | null;
-}
-
-interface SeedTelegramUserLinkValues {
-  readonly installationId: string;
-  readonly telegramUserId: string;
-  readonly userId: string;
   readonly telegramUsername?: string | null;
   readonly telegramDisplayName?: string | null;
 }
@@ -95,40 +74,6 @@ async function postAction(
   signal.throwIfAborted();
   return await readJson<TestTelegramStateActionResponse>(response);
 }
-
-export const seedTelegramInstallation$ = command(
-  async (
-    _,
-    values: SeedTelegramInstallationValues,
-    signal: AbortSignal,
-  ): Promise<{
-    readonly composeId: string;
-    readonly telegramBotId: string;
-  }> => {
-    const response = await postAction(signal, {
-      action: "seed-installation",
-      org_id: values.orgId,
-      owner_user_id: values.ownerUserId,
-      telegram_bot_id: values.telegramBotId,
-      bot_username: values.botUsername,
-      default_agent_id: values.defaultAgentId,
-      compose_user_id: values.composeUserId,
-      compose_name: values.composeName,
-      agent_name: values.agentName,
-    });
-    const composeId =
-      typeof response.compose_id === "string" ? response.compose_id : null;
-    const telegramBotId =
-      typeof response.telegram_bot_id === "string"
-        ? response.telegram_bot_id
-        : null;
-    if (!composeId || !telegramBotId) {
-      throw new Error("seedTelegramInstallation$: response missing ids");
-    }
-
-    return { composeId, telegramBotId };
-  },
-);
 
 export const seedOrgDefaultAgent$ = command(
   async (
@@ -176,36 +121,12 @@ export const seedOfficialUserLink$ = command(
   },
 );
 
-export const seedTelegramUserLink$ = command(
-  async (
-    _,
-    values: SeedTelegramUserLinkValues,
-    signal: AbortSignal,
-  ): Promise<{ readonly userLinkId: string | null }> => {
-    const response = await postAction(signal, {
-      action: "seed-user-link",
-      installation_id: values.installationId,
-      telegram_user_id: values.telegramUserId,
-      user_id: values.userId,
-      telegram_username: values.telegramUsername,
-      telegram_display_name: values.telegramDisplayName,
-    });
-    return {
-      userLinkId:
-        typeof response.user_link_id === "string"
-          ? response.user_link_id
-          : null,
-    };
-  },
-);
-
 export const deleteTelegramFixture$ = command(
   async (_, fixture: TelegramFixture, signal: AbortSignal): Promise<void> => {
     await postAction(signal, {
       action: "delete-fixture",
       org_id: fixture.orgId,
       compose_ids: [...fixture.composeIds],
-      telegram_bot_ids: [...fixture.telegramBotIds],
     });
   },
 );
@@ -216,7 +137,6 @@ export function makeTelegramFixtureBuilder(
   return {
     orgId,
     composeIds: [],
-    telegramBotIds: [],
     userIds: [],
   };
 }
@@ -227,7 +147,6 @@ export function freezeTelegramFixture(
   return {
     orgId: builder.orgId,
     composeIds: [...builder.composeIds],
-    telegramBotIds: [...builder.telegramBotIds],
     userIds: [...builder.userIds],
   };
 }

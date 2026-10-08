@@ -1,3 +1,4 @@
+import { BROWSER_USER_ACTION_MAX_APPLY_BODY_BYTES } from "@okouai/api-contracts/contracts/browser-user-actions";
 import type {
   AppRoute,
   SchemaOutput,
@@ -134,8 +135,54 @@ export function queryOf<R extends RouteWithQuery>(
   return validatedQuery$ as Computed<InferQuery<R>>;
 }
 
+async function boundedBrowserApplyBody(request: {
+  readonly raw: Request;
+}): Promise<string | null> {
+  const limit = BROWSER_USER_ACTION_MAX_APPLY_BODY_BYTES;
+  const declared = Number(request.raw.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > limit) {
+    return null;
+  }
+  const stream = request.raw.body;
+  if (!stream) {
+    return "";
+  }
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  let size = 0;
+  const read = async (): Promise<string | null> => {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) {
+        break;
+      }
+      size += next.value.byteLength;
+      if (size > limit) {
+        await reader.cancel();
+        return null;
+      }
+      text += decoder.decode(next.value, { stream: true });
+    }
+    return text + decoder.decode();
+  };
+  return await read().finally(() => {
+    reader.releaseLock();
+  });
+}
+
 const bodyResult$ = computed(async (get): Promise<BodyResult<unknown>> => {
-  const text = await get(request$).text();
+  const route = get(route$);
+  const text =
+    route.path === "/api/browser/user-actions/:requestToken/apply"
+      ? await boundedBrowserApplyBody(get(request$))
+      : await get(request$).text();
+  if (text === null) {
+    return {
+      ok: false,
+      response: badRequestMessage("Browser input request is too large"),
+    };
+  }
 
   const parsed = text.length === 0 ? {} : safeJsonParse(text);
   if (parsed === undefined) {
@@ -145,7 +192,6 @@ const bodyResult$ = computed(async (get): Promise<BodyResult<unknown>> => {
     };
   }
 
-  const route = get(route$);
   const schema = "body" in route ? route.body : undefined;
   if (!isZodLikeSchema(schema)) {
     return { ok: true, data: parsed };

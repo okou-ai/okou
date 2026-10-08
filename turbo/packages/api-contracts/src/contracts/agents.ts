@@ -39,9 +39,6 @@ export const agentResponseSchema = z.object({
   displayName: z.string().nullable(),
   sound: z.string().nullable(),
   avatarUrl: z.string().nullable(),
-  modelProviderId: z.string().uuid().nullable().default(null),
-  selectedModel: z.string().nullable().default(null),
-  preferPersonalProvider: z.boolean().default(false),
   visibility: agentVisibilitySchema,
 });
 
@@ -213,6 +210,7 @@ export const agentInstructionsContract = c.router({
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
+      409: apiErrorSchema,
       422: apiErrorSchema,
     },
     summary: "Update agent instructions",

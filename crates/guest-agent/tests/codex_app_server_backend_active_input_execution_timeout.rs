@@ -17,7 +17,7 @@ use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 const RUN_ID: &str = "codex-app-server-backend-active-input-execution-timeout-test";
-const DELIVERY_ID: &str = "2532261d-b0e1-471e-b93d-1acae383d003";
+const EVENT_ID: &str = "2532261d-b0e1-471e-b93d-1acae383d003";
 
 #[test]
 fn execution_timeout_terminates_a_stuck_active_input_steer()
@@ -44,47 +44,32 @@ fn execution_timeout_terminates_a_stuck_active_input_steer()
     }
     let runtime = common::guest_runtime_from_process_env()?;
     let _run_files = common::RunFilesGuard::new_for_paths(&runtime.paths);
-    let receipt = server.mock(|when, then| {
+    let steered = server.mock(|when, then| {
         when.method(POST)
             .path(format!(
-                "/api/runners/runs/{RUN_ID}/active-inputs/deliveries/{DELIVERY_ID}/receipt"
+                "/api/runners/runs/{RUN_ID}/steerable-inputs/{EVENT_ID}/steered"
             ))
             .header("Authorization", "Bearer test-token")
             .json_body(json!({}));
         then.status(200)
             .header("Content-Type", "application/json")
-            .json_body(json!({ "outcome": "delivered" }));
+            .json_body(json!({ "outcome": "steered" }));
     });
-    let journal_path = guest_contracts::runtime_paths::active_input_receipt_journal_file(
-        runtime.paths.runtime_dir(),
-    );
     let receipt_runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
         .enable_all()
         .build()?;
-    let receipt_http =
+    let steer_http =
         HttpClient::with_api_config(server.base_url(), "test-token", "", RUN_ID, Duration::ZERO)?;
     let active_input = receipt_runtime.block_on(async {
-        ActiveInputRuntime::new_with_receipts(
-            RUN_ID,
-            &runtime.config.prompt,
-            &journal_path,
-            receipt_http,
-        )
-    })?;
+        ActiveInputRuntime::new_enabled(RUN_ID, &runtime.config.prompt, steer_http)
+    });
     let test_runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
     test_runtime.block_on(assert_execution_timeout(&tmp, &runtime, active_input))?;
 
-    receipt.assert_calls(0);
-    assert!(
-        guest_contracts::active_input_receipts::read_active_input_receipt_journal(
-            &journal_path,
-            RUN_ID,
-        )?
-        .is_empty()
-    );
+    steered.assert_calls(0);
 
     Ok(())
 }
@@ -98,7 +83,7 @@ async fn assert_execution_timeout(
     assert_eq!(
         active_input_controller.handle_control_payload(
             &guest_contracts::active_input::encode_active_input(
-                DELIVERY_ID,
+                EVENT_ID,
                 "save a resumable handoff before timeout",
             )?,
         ),
@@ -162,7 +147,6 @@ async fn assert_execution_timeout(
         std::io::Error::other("execution timeout should attach termination diagnostics")
     })?;
     assert_eq!(termination.reason, CliTerminationReason::ExecutionTimeout);
-    assert!(result.active_input_delivery_ids.is_empty());
 
     Ok(())
 }

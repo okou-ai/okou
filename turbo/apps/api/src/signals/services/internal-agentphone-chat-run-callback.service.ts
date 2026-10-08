@@ -3,9 +3,8 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { agentphoneChatThreadRoutes } from "@okouai/db/schema/agentphone-chat-thread-route";
 import { agentphoneUserLinks } from "@okouai/db/schema/agentphone-user-link";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { sendAgentPhoneMessage } from "../external/agentphone-client";
@@ -19,13 +18,11 @@ import {
 } from "./agentphone-chat-callback-payload";
 import {
   agentPhoneReplyDestination,
-  formatAgentPhoneAuditLink,
   markdownToImessagePlain,
-  resolveAgentPhoneAuditLogsUrl,
+  resolveAgentPhoneConversationVisibilityRecipients,
   resolveAgentPhoneReplyFooterText,
   storeOutboundAgentPhoneMessage,
 } from "./agentphone-shared.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 
@@ -214,33 +211,50 @@ async function loadAgentPhoneChatDeliveryContext(
 
 function buildAgentPhoneResponseText(args: {
   readonly mainText: string;
-  readonly logsUrl: string | undefined;
   readonly footerText: string | undefined;
 }): string {
-  return [
-    markdownToImessagePlain(args.mainText),
-    args.logsUrl ? formatAgentPhoneAuditLink(args.logsUrl) : undefined,
-    args.footerText,
-  ]
+  return [markdownToImessagePlain(args.mainText), args.footerText]
     .filter((part): part is string => {
       return Boolean(part);
     })
     .join("\n\n");
 }
 
+interface AgentPhoneChatSendResult {
+  readonly message: AgentPhoneSendResult;
+  readonly visibilityRecipients: readonly {
+    readonly orgId: string;
+    readonly userId: string;
+  }[];
+}
+
 async function sendAgentPhoneReply(
   args: {
+    readonly db: Db;
     readonly target: AgentPhoneDeliveryTarget;
     readonly body: string;
   },
   signal: AbortSignal,
-): Promise<AgentPhoneSendResult> {
+): Promise<AgentPhoneChatSendResult> {
   const toNumber = agentPhoneReplyDestination({
     isGroup: args.target.isGroup,
     groupId: args.target.groupId,
     phoneHandle: args.target.phoneHandle,
   });
-  const result = await sendAgentPhoneMessage(
+  if (args.target.isGroup && !args.target.conversationId) {
+    throw new Error("AgentPhone group reply is missing a conversation id");
+  }
+  const visibilityRecipients = args.target.isGroup
+    ? await resolveAgentPhoneConversationVisibilityRecipients(
+        args.db,
+        args.target.conversationId!,
+        nowDate(),
+        signal,
+      )
+    : [];
+  signal.throwIfAborted();
+
+  const message = await sendAgentPhoneMessage(
     {
       agentphoneAgentId: args.target.agentphoneAgentId,
       toNumber,
@@ -252,73 +266,32 @@ async function sendAgentPhoneReply(
     signal,
   );
   signal.throwIfAborted();
-  return result;
-}
-
-async function resolveAgentPhonePresentation(
-  args: {
-    readonly db: Db;
-    readonly runId: string;
-    readonly run: AgentPhoneChatRunContext;
-  },
-  signal: AbortSignal,
-): Promise<{
-  readonly logsUrl: string | undefined;
-  readonly footerText: string | undefined;
-}> {
-  const featureContext = await loadUserFeatureSwitchContext(
-    args.db,
-    args.run.orgId,
-    args.run.userId,
-  );
-  signal.throwIfAborted();
-  const [logsUrl, footerText] = await Promise.all([
-    resolveAgentPhoneAuditLogsUrl(
-      {
-        orgId: args.run.orgId,
-        userId: args.run.userId,
-        runId: args.runId,
-        getFeatureOverrides: () => {
-          return Promise.resolve(featureContext.overrides ?? {});
-        },
-      },
-      signal,
-    ),
-    resolveAgentPhoneReplyFooterText({
-      db: args.db,
-      orgId: args.run.orgId,
-      composeId: args.run.agentId,
-    }),
-  ]);
-  signal.throwIfAborted();
-  return { logsUrl, footerText };
+  return { message, visibilityRecipients };
 }
 
 async function recordAgentPhoneChatDelivery(args: {
   readonly db: Db;
   readonly target: AgentPhoneDeliveryTarget;
-  readonly sent: AgentPhoneSendResult;
+  readonly sent: AgentPhoneChatSendResult;
   readonly body: string;
-  readonly publicBrand: PublicBrand;
 }): Promise<void> {
   await storeOutboundAgentPhoneMessage(args.db, {
-    agentphoneMessageId: args.sent.id,
+    agentphoneMessageId: args.sent.message.id,
     conversationId: args.target.conversationId,
+    groupId: args.target.isGroup ? args.target.groupId : null,
     agentphoneAgentId: args.target.agentphoneAgentId,
-    publicBrand: args.publicBrand,
     userLinkId: args.target.userLinkId,
     phoneHandle: args.target.phoneHandle,
-    fromNumber: args.sent.fromNumber ?? args.target.toNumber,
-    toNumber:
-      args.sent.toNumber ??
-      agentPhoneReplyDestination({
-        isGroup: args.target.isGroup,
-        groupId: args.target.groupId,
-        phoneHandle: args.target.phoneHandle,
-      }),
+    fromNumber: args.target.isGroup
+      ? args.target.toNumber
+      : (args.sent.message.fromNumber ?? args.target.toNumber),
+    toNumber: args.sent.message.toNumber,
     body: args.body,
-    channel: args.sent.channel,
+    channel: args.target.isGroup
+      ? args.target.channel
+      : (args.sent.message.channel ?? args.target.channel),
     userChannel: args.target.channel,
+    visibilityRecipients: args.sent.visibilityRecipients,
   });
 }
 
@@ -335,21 +308,19 @@ async function deliverClaimedAgentPhoneChatCallback(
   if (!binding) {
     return "skipped_revoked";
   }
-  const presentation = await resolveAgentPhonePresentation(
-    {
-      db: args.db,
-      runId: args.callback.runId,
-      run,
-    },
-    signal,
-  );
+  const footerText = await resolveAgentPhoneReplyFooterText({
+    db: args.db,
+    orgId: run.orgId,
+    composeId: run.agentId,
+  });
+  signal.throwIfAborted();
   const body = buildAgentPhoneResponseText({
     mainText: messageContent,
-    logsUrl: presentation.logsUrl,
-    footerText: presentation.footerText,
+    footerText,
   });
   const sent = await sendAgentPhoneReply(
     {
+      db: args.db,
       target: payload,
       body,
     },
@@ -360,7 +331,6 @@ async function deliverClaimedAgentPhoneChatCallback(
     target: payload,
     sent,
     body,
-    publicBrand: payload.publicBrand,
   });
   return "delivered";
 }
@@ -425,7 +395,6 @@ interface AgentPhoneChatAdmissionFailureArgs {
   readonly agentId: string;
   readonly target: AgentPhoneDeliveryTarget;
   readonly chatEventId: string;
-  readonly publicBrand: PublicBrand;
 }
 
 export async function deliverAgentPhoneChatAdmissionFailure(
@@ -469,28 +438,26 @@ export async function deliverAgentPhoneChatAdmissionFailure(
   const body = markdownToImessagePlain(event.content);
   const sent = await sendAgentPhoneReply(
     {
+      db: args.db,
       target: args.target,
       body,
     },
     signal,
   );
   await storeOutboundAgentPhoneMessage(args.db, {
-    agentphoneMessageId: sent.id,
+    agentphoneMessageId: sent.message.id,
     conversationId: args.target.conversationId,
+    groupId: args.target.isGroup ? args.target.groupId : null,
     agentphoneAgentId: args.target.agentphoneAgentId,
-    publicBrand: args.publicBrand,
     userLinkId: args.target.userLinkId,
     phoneHandle: args.target.phoneHandle,
-    fromNumber: sent.fromNumber ?? args.target.toNumber,
-    toNumber:
-      sent.toNumber ??
-      agentPhoneReplyDestination({
-        isGroup: args.target.isGroup,
-        groupId: args.target.groupId,
-        phoneHandle: args.target.phoneHandle,
-      }),
+    fromNumber: args.target.isGroup
+      ? args.target.toNumber
+      : (sent.message.fromNumber ?? args.target.toNumber),
+    toNumber: sent.message.toNumber,
     body,
-    channel: sent.channel,
+    channel: args.target.isGroup ? args.target.channel : sent.message.channel,
     userChannel: args.target.channel,
+    visibilityRecipients: sent.visibilityRecipients,
   });
 }

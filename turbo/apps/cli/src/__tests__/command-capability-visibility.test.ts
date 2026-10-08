@@ -16,7 +16,6 @@ function buildCommands(): Command[] {
   return [
     new Command("org"),
     new Command("model"),
-    new Command("model-provider"),
     new Command("agent"),
     new Command("connector"),
     new Command("mcp"),
@@ -43,7 +42,6 @@ function buildCommands(): Command[] {
     new Command("people-search"),
     new Command("web-search"),
     new Command("social"),
-    new Command("image-recognition"),
     new Command("finance"),
     new Command("seo"),
     new Command("banking"),
@@ -195,11 +193,7 @@ describe("registerCommands", () => {
     vi.stubEnv("OKOU_TOKEN", undefined);
 
     const prog = buildProgram();
-    expect(hiddenCommandNames(prog)).toEqual([
-      "mcp",
-      "run",
-      "image-recognition",
-    ]);
+    expect(hiddenCommandNames(prog)).toEqual(["mcp", "run"]);
     expect(registeredCommandNames(prog)).toContain("upgrade");
     expect(visibleCommandNames(prog)).toContain("browser");
   });
@@ -232,7 +226,6 @@ describe("registerCommands", () => {
 
     expect(visibleCommandNames(prog)).toEqual([
       "model",
-      "model-provider",
       "agent",
       "upgrade",
       "resource",
@@ -262,7 +255,6 @@ describe("registerCommands", () => {
       "people-search",
       "web-search",
       "social",
-      "image-recognition",
       "finance",
       "seo",
       "banking",
@@ -274,11 +266,7 @@ describe("registerCommands", () => {
 
     const prog = buildProgram();
 
-    expect(hiddenCommandNames(prog)).toEqual([
-      "mcp",
-      "run",
-      "image-recognition",
-    ]);
+    expect(hiddenCommandNames(prog)).toEqual(["mcp", "run"]);
     expect(registeredCommandNames(prog)).toContain("upgrade");
     expect(visibleCommandNames(prog)).toContain("browser");
   });
@@ -292,11 +280,7 @@ describe("registerCommands", () => {
 
     const prog = buildProgram();
 
-    expect(hiddenCommandNames(prog)).toEqual([
-      "mcp",
-      "run",
-      "image-recognition",
-    ]);
+    expect(hiddenCommandNames(prog)).toEqual(["mcp", "run"]);
     expect(registeredCommandNames(prog)).toContain("upgrade");
     expect(visibleCommandNames(prog)).toContain("browser");
   });
@@ -324,7 +308,6 @@ describe("registerCommands", () => {
 
     expect(visibleCommandNames(prog)).toEqual([
       "model",
-      "model-provider",
       "upgrade",
       "resource",
       "whoami",
@@ -427,7 +410,7 @@ describe("registerCommands", () => {
     }
   });
 
-  it("should show model commands even without model-provider capabilities", () => {
+  it("should show the model command without any capabilities", () => {
     const token = buildOkouToken({
       scope: "okou",
       capabilities: [],
@@ -437,7 +420,6 @@ describe("registerCommands", () => {
     const prog = buildProgram();
 
     expect(visibleCommandNames(prog)).toContain("model");
-    expect(visibleCommandNames(prog)).toContain("model-provider");
   });
 
   it.each(["slack:read", "slack:write"])(
@@ -798,47 +780,6 @@ describe("registerCommands", () => {
     expect(visibleCommandNames(buildProgram())).toContain("browser");
   });
 
-  it("should expose canonical image recognition only to eligible Okou runs", () => {
-    vi.stubEnv("OKOU_TOKEN", undefined);
-    const noTokenProgram = buildProgram();
-    expect(registeredCommandNames(noTokenProgram)).toContain(
-      "image-recognition",
-    );
-    expect(hiddenCommandNames(noTokenProgram)).toContain("image-recognition");
-    expect(buildHelpText()).not.toContain("Recognize an image?");
-
-    const missingCapabilityToken = buildOkouToken({
-      scope: "okou",
-      userId: "user-1",
-      orgId: "org-1",
-      capabilities: [],
-    });
-    vi.stubEnv("OKOU_TOKEN", missingCapabilityToken);
-    const missingCapabilityProgram = buildProgram();
-    expect(hiddenCommandNames(missingCapabilityProgram)).toContain(
-      "image-recognition",
-    );
-    expect(
-      buildHelpText(decodeSandboxTokenPayload(missingCapabilityToken)),
-    ).not.toContain("Recognize an image?");
-
-    const eligibleToken = buildOkouToken({
-      scope: "okou",
-      userId: "user-1",
-      orgId: "org-1",
-      capabilities: ["image-recognition:write"],
-    });
-    vi.stubEnv("OKOU_TOKEN", eligibleToken);
-    const eligibleProgram = buildProgram();
-    expect(visibleCommandNames(eligibleProgram)).toContain("image-recognition");
-    expect(buildHelpText(decodeSandboxTokenPayload(eligibleToken))).toContain(
-      "Recognize an image?",
-    );
-    expect(buildHelpText(decodeSandboxTokenPayload(eligibleToken))).toContain(
-      "okou image-recognition --file",
-    );
-  });
-
   it("should show billing help examples only for billing capabilities", () => {
     const token = buildOkouToken({
       scope: "okou",
@@ -1115,7 +1056,7 @@ describe("registerCommands", () => {
     );
   });
 
-  it("should show the model help example in sandbox help", () => {
+  it("should show fixed Auto and personal model help in sandbox help", () => {
     const token = buildOkouToken({
       scope: "okou",
       capabilities: [],
@@ -1124,8 +1065,8 @@ describe("registerCommands", () => {
     expect(buildHelpText(decodeSandboxTokenPayload(token))).toContain(
       "List models?",
     );
-    expect(buildHelpText(decodeSandboxTokenPayload(token))).toContain(
-      "Model routing?",
+    expect(buildHelpText(decodeSandboxTokenPayload(token))).not.toContain(
+      "Personal models?",
     );
   });
 
@@ -1172,7 +1113,6 @@ describe("registerCommands", () => {
 
     expect(visibleCommandNames(prog)).toEqual([
       "model",
-      "model-provider",
       "connector",
       "mcp",
       "upgrade",

@@ -82,7 +82,7 @@ describe("withErrorHandler", () => {
   it("should show plan upgrade guidance for PRO_REQUIRED", async () => {
     const handler = withErrorHandler(async () => {
       throw new ApiRequestError(
-        "Built-in video generation requires a paid plan",
+        "This model requires a paid plan",
         "PRO_REQUIRED",
         402,
       );

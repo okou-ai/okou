@@ -21,7 +21,6 @@ const context = testContext();
 
 interface RunAssociation {
   readonly id: string;
-  readonly groupId?: string;
 }
 
 function textDocument(text: string): UserMessageDocument {
@@ -38,7 +37,6 @@ function promptRow(
   return continuityEventRow(caseId, sequence, threadId, "input.prompt", {
     payload: { userMessage: textDocument(text) },
     runId: run.id,
-    ...(run.groupId === undefined ? {} : { runGroupId: run.groupId }),
   });
 }
 
@@ -52,7 +50,6 @@ function outputRow(
   return continuityEventRow(caseId, sequence, threadId, "output.message", {
     payload: { content },
     runId: run.id,
-    ...(run.groupId === undefined ? {} : { runGroupId: run.groupId }),
   });
 }
 
@@ -258,28 +255,21 @@ test("Explain unavailable email cards in a conversation", async () => {
   expect(reconnectCard).toHaveTextContent("Need reconnect");
 });
 
-test("Keep the work being read expanded as conversation groups change", async () => {
+test("Keep the work being read expanded as a later run arrives", async () => {
   const thread = continuityThread(33, 1, "Protected reading position");
-  const firstRunId = "b1000000-0000-4000-a000-000000000331";
+  const runId = "b1000000-0000-4000-a000-000000000331";
   const laterRunId = "b1000000-0000-4000-a000-000000000332";
-  const runGroupId = "b2000000-0000-4000-a000-000000000033";
   const responseBeingRead = outputRow(
     33,
     2,
     thread.id,
     "Response the reader is reviewing",
-    { id: firstRunId, groupId: runGroupId },
+    { id: runId },
   );
   let rows = [
-    promptRow(33, 1, thread.id, "Investigate the rollout", {
-      id: firstRunId,
-      groupId: runGroupId,
-    }),
+    promptRow(33, 1, thread.id, "Investigate the rollout", { id: runId }),
     responseBeingRead,
-    outputRow(33, 3, thread.id, "Current rollout conclusion", {
-      id: firstRunId,
-      groupId: runGroupId,
-    }),
+    outputRow(33, 3, thread.id, "Current rollout conclusion", { id: runId }),
   ];
   const workspace = installContinuityWorkspace(context, {
     caseId: 33,
@@ -320,20 +310,16 @@ test("Keep the work being read expanded as conversation groups change", async ()
   ).getBoundingClientRect().top;
   rows = [
     ...rows,
-    promptRow(33, 4, thread.id, "Continue the grouped rollout work", {
+    promptRow(33, 4, thread.id, "Continue the rollout work", {
       id: laterRunId,
-      groupId: runGroupId,
     }),
-    outputRow(33, 5, thread.id, "Later grouped response", {
-      id: laterRunId,
-      groupId: runGroupId,
-    }),
+    outputRow(33, 5, thread.id, "Later rollout response", { id: laterRunId }),
   ];
   workspace.setChatEventRows(rows);
   createChatEvent(thread.id);
 
   await waitFor(() => {
-    expect(screen.getByText("Later grouped response")).toBeVisible();
+    expect(screen.getByText("Later rollout response")).toBeVisible();
     expect(fastButton("Collapse work history", container)).toBeVisible();
   });
   const workHistory = fastButton("Collapse work history", container);
@@ -350,7 +336,7 @@ test("Keep the work being read expanded as conversation groups change", async ()
 
   await waitFor(() => {
     const laterResponse = screen
-      .getByText("Later grouped response")
+      .getByText("Later rollout response")
       .closest('[data-role="assistant"]');
     expect(laterResponse).toHaveTextContent("Worked for");
     expect(fastButton("Collapse work history", container)).toBeVisible();

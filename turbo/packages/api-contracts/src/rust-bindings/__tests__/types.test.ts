@@ -11,10 +11,8 @@ import {
   rustTypeBindings,
 } from "../types";
 import { modelProviderCodexRuntimeConfigSchema } from "../../contracts/model-providers";
-import { MAX_EVENT_SEQUENCE_NUMBER } from "../../contracts/runs";
 import {
   piLaunchConfigSchema,
-  piApiFirstTurnConfigSchema,
   piModelConfigLegacySchema,
   piModelConfigV2Schema,
   sessionHistoryEncodingSchema,
@@ -99,17 +97,12 @@ const expectedBindings = [
     direction: "response",
   },
   {
-    rustModulePath: ["runners", "runs"],
-    rustTypeName: "PiModelConfigV4",
-    direction: "response",
-  },
-  {
-    rustModulePath: ["runners", "runs", "active_inputs", "reserve"],
+    rustModulePath: ["runners", "runs", "steerable_inputs", "next"],
     rustTypeName: "Response",
     direction: "response",
   },
   {
-    rustModulePath: ["runners", "runs", "active_inputs", "receipt"],
+    rustModulePath: ["runners", "runs", "steerable_inputs", "steered"],
     rustTypeName: "Response",
     direction: "response",
   },
@@ -411,10 +404,6 @@ describe("Rust type bindings", () => {
     expect(firstRender).toContain("pub struct StorageMountEntry {");
     expect(firstRender).toContain("pub struct CodexRuntimeConfig {");
     expect(firstRender).toContain("pub struct PiLaunchConfig {");
-    expect(firstRender).toContain("pub struct PiLaunchConfigApiFirstTurn {");
-    expect(firstRender).toContain(
-      "pub struct PiLaunchConfigApiFirstTurnBaseSession {",
-    );
     expect(firstRender).toContain("pub struct PiModelConfig {");
     expect(firstRender).toContain("pub enum PiModelConfigProvider {");
     expect(firstRender).toContain("pub enum PiModelConfigThinkingLevel {");
@@ -429,9 +418,6 @@ describe("Rust type bindings", () => {
     expect(firstRender).toContain("pub enum PiModelConfigV2Provider {");
     expect(firstRender).toContain(
       "pub enum PiModelConfigV2CredentialBinding {",
-    );
-    expect(firstRender).toContain(
-      "pub http_headers: Option<std::collections::BTreeMap<String, String>>",
     );
     expect(firstRender).toContain("pub requires_openai_auth: Option<bool>,");
     expect(firstRender).toContain(
@@ -453,7 +439,7 @@ describe("Rust type bindings", () => {
       "pub missing_root_policy: Option<ArtifactEntryMissingRootPolicy>,",
     );
     expect(firstRender).toMatch(
-      /#\[derive\(\n\s+Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize,\n\s+\)\]\n\s+pub enum ResponseRejectedReason \{/,
+      /#\[derive\(\n\s+Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize,\n\s+\)\]\n\s+pub enum SessionHistoryEncoding \{/,
     );
     expect(firstRender).toContain(
       "/// Request body for creating a recoverable agent checkpoint.",
@@ -521,9 +507,6 @@ describe("Rust type bindings", () => {
           "supportsWebsockets",
         ],
         properties: {
-          httpHeaders: {
-            additionalProperties: { type: "string" },
-          },
           requiresOpenaiAuth: { type: "boolean" },
           modelCatalog: {
             additionalProperties: {},
@@ -560,43 +543,16 @@ describe("Rust type bindings", () => {
     );
 
     if (!launchBinding) {
-      throw new Error("Missing legacy Pi launch binding");
+      throw new Error("Missing Pi launch binding");
     }
-    const legacyLaunchSchema = piLaunchConfigSchema
-      .unwrap()
-      .safeExtend({ apiFirstTurn: piApiFirstTurnConfigSchema });
     expect(z.toJSONSchema(launchBinding.schema)).toEqual(
-      z.toJSONSchema(legacyLaunchSchema),
+      z.toJSONSchema(piLaunchConfigSchema.unwrap()),
     );
     expect(modelBinding?.schema).toBe(piModelConfigLegacySchema);
     expect(modelV2Binding?.schema).toBe(piModelConfigV2Schema);
-    expect(z.toJSONSchema(legacyLaunchSchema)).toMatchObject({
-      required: ["schemaVersion", "apiFirstTurn"],
-      properties: {
-        schemaVersion: { const: 2 },
-        apiFirstTurn: {
-          required: [
-            "schemaVersion",
-            "resourceSnapshotDigest",
-            "manifestUrl",
-            "sessionUrl",
-            "deadlineAt",
-            "baseSession",
-            "sandboxEventSequenceStart",
-          ],
-          properties: {
-            schemaVersion: { const: 1 },
-            sandboxEventSequenceStart: {
-              type: "integer",
-              minimum: 1,
-              maximum: MAX_EVENT_SEQUENCE_NUMBER,
-            },
-            baseSession: {
-              required: ["sessionId", "sha256"],
-            },
-          },
-        },
-      },
+    expect(z.toJSONSchema(piLaunchConfigSchema.unwrap())).toMatchObject({
+      required: ["schemaVersion"],
+      properties: { schemaVersion: { const: 2 } },
     });
     expect(z.toJSONSchema(piModelConfigLegacySchema)).toMatchObject({
       required: [
@@ -608,29 +564,15 @@ describe("Rust type bindings", () => {
       ],
       properties: {
         provider: {
-          enum: [
-            "deepseek",
-            "moonshotai",
-            "openai",
-            "openrouter",
-            "vercel-ai-gateway",
-            "codex",
-          ],
+          enum: ["openrouter", "codex"],
         },
         apiKeyEnv: {
-          enum: [
-            "ANTHROPIC_AUTH_TOKEN",
-            "OPENAI_API_KEY",
-            "CHATGPT_ACCESS_TOKEN",
-          ],
+          enum: ["OPENAI_API_KEY", "CHATGPT_ACCESS_TOKEN"],
         },
         thinkingLevel: {
           enum: ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
         },
         catalogModel: { type: "string", minLength: 1 },
-        credentialHeader: {
-          required: ["name", "valueTemplate"],
-        },
         serviceTier: {
           enum: ["priority"],
         },
@@ -653,7 +595,7 @@ describe("Rust type bindings", () => {
         },
         transport: { const: "sse" },
         provider: {
-          enum: ["deepseek", "openai", "openrouter", "openai-codex"],
+          enum: ["openrouter", "openai-codex"],
         },
         credentialBindings: {
           minItems: 1,

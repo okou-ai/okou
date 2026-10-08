@@ -4,8 +4,6 @@ import { and, eq, inArray } from "drizzle-orm";
 import { onTestFinished } from "vitest";
 
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
 import { piMemoryPhase2Jobs } from "@okouai/db/schema/pi-memory-phase2-job";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
@@ -326,7 +324,9 @@ function phase2CandidateRow(
 }
 
 export async function insertPendingPhase2Job(
-  scope: Phase2TestScope,
+  scope: Pick<Phase2TestScope, "memoryStorageId" | "orgId" | "userId"> & {
+    readonly baseVersion: Pick<Phase2TestVersion, "versionId">;
+  },
   overrides: Partial<typeof piMemoryPhase2Jobs.$inferInsert> = {},
 ): Promise<void> {
   await db()
@@ -355,7 +355,9 @@ export async function insertPendingPhase2Job(
     });
 }
 
-export async function readPhase2Job(scope: Phase2TestScope) {
+export async function readPhase2Job(
+  scope: Pick<Phase2TestScope, "memoryStorageId" | "orgId" | "userId">,
+) {
   const [job] = await db()
     .select()
     .from(piMemoryPhase2Jobs)
@@ -367,60 +369,4 @@ export async function readPhase2Job(scope: Phase2TestScope) {
       ),
     );
   return job;
-}
-
-export interface Phase2SourceBinding {
-  readonly modelProvider: string | null;
-  readonly modelProviderId: string | null;
-  readonly modelProviderCredentialScope: string | null;
-}
-
-/** Historical source bindings and cron selections have no public authoring
- * API. Seed them explicitly; the real worker must create its own maintenance run. */
-export async function insertPhase2CandidatesWithSources(
-  scope: Phase2TestScope,
-  inputs: readonly Phase2CandidateInput[],
-  binding: Phase2SourceBinding = {
-    modelProvider: "built-in",
-    modelProviderId: null,
-    modelProviderCredentialScope: null,
-  },
-) {
-  const sources = inputs.map((input) => {
-    return {
-      ...input,
-      sourceRunId: input.sourceRunId ?? randomUUID(),
-    };
-  });
-  for (const source of sources) {
-    const [existing] = await db()
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .where(eq(agentRuns.id, source.sourceRunId));
-    if (existing) {
-      continue;
-    }
-    const sessionId = randomUUID();
-    await db()
-      .insert(agentSessions)
-      .values({ id: sessionId, orgId: scope.orgId, userId: scope.userId });
-    await db()
-      .insert(agentRuns)
-      .values({
-        id: source.sourceRunId,
-        sessionId,
-        orgId: scope.orgId,
-        userId: scope.userId,
-        status: "completed",
-        triggerSource: "web",
-        autonomyBudget: 0,
-        prompt: "Historical interactive source",
-        selectedModel: "gpt-5.6-terra",
-        ...binding,
-      });
-    onTestFinished(async () => {
-      await db().delete(agentSessions).where(eq(agentSessions.id, sessionId));
-    });
-  }
-  return await insertPhase2Candidates(scope, sources);
 }

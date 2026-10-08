@@ -1,3 +1,5 @@
+import { storages } from "@okouai/db/schema/storage";
+import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { command, computed, type Computed } from "ccstate";
 import {
   colorThemeSchema,
@@ -14,9 +16,8 @@ import type {
   UpdateUserModelPreferenceRequest,
   UserModelPreferenceResponse,
 } from "@okouai/api-contracts/contracts/user-model-preference";
-import { isActiveRunModel } from "@okouai/api-contracts/contracts/model-providers";
+import { isCatalogModelRunnable, modelCatalog$ } from "./model-catalog.service";
 import { isImageModelId } from "@okouai/api-contracts/contracts/image-models";
-import { isVideoModelId } from "@okouai/api-contracts/contracts/video-models";
 import {
   modelSettingsSchema,
   withModelReasoningEffort,
@@ -31,11 +32,9 @@ import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
 import { and, eq, sql } from "drizzle-orm";
-
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$ } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { isValidTimeZone } from "../utils";
-
 interface UserScopedQuery {
   readonly orgId: string;
   readonly userId: string;
@@ -107,28 +106,41 @@ export function userPreferences({
 }: UserScopedQuery): Computed<Promise<UserPreferencesResponse>> {
   return computed(async (get): Promise<UserPreferencesResponse> => {
     const db = get(db$);
-    const [row] = await db
-      .select({
-        timezone: orgMembersMetadata.timezone,
-        locale: orgMembersMetadata.locale,
-        pinnedAgentIds: orgMembersMetadata.pinnedAgentIds,
-        sendMode: orgMembersMetadata.sendMode,
-        cloudBrowserEnabledByDefault:
-          orgMembersMetadata.cloudBrowserEnabledByDefault,
-        theme: orgMembersMetadata.theme,
-        colorTheme: orgMembersMetadata.colorTheme,
-        voiceInputModel: orgMembersMetadata.voiceInputModel,
-        captureNetworkBodiesRemaining:
-          orgMembersMetadata.captureNetworkBodiesRemaining,
-      })
-      .from(orgMembersMetadata)
-      .where(
-        and(
-          eq(orgMembersMetadata.orgId, orgId),
-          eq(orgMembersMetadata.userId, userId),
-        ),
-      )
-      .limit(1);
+    const [[row], [memory]] = await Promise.all([
+      db
+        .select({
+          timezone: orgMembersMetadata.timezone,
+          locale: orgMembersMetadata.locale,
+          pinnedAgentIds: orgMembersMetadata.pinnedAgentIds,
+          sendMode: orgMembersMetadata.sendMode,
+          cloudBrowserEnabledByDefault:
+            orgMembersMetadata.cloudBrowserEnabledByDefault,
+          theme: orgMembersMetadata.theme,
+          colorTheme: orgMembersMetadata.colorTheme,
+          captureNetworkBodiesRemaining:
+            orgMembersMetadata.captureNetworkBodiesRemaining,
+        })
+        .from(orgMembersMetadata)
+        .where(
+          and(
+            eq(orgMembersMetadata.orgId, orgId),
+            eq(orgMembersMetadata.userId, userId),
+          ),
+        )
+        .limit(1),
+      db
+        .select({ headVersionId: storages.headVersionId })
+        .from(storages)
+        .where(
+          and(
+            eq(storages.orgId, orgId),
+            eq(storages.userId, userId),
+            eq(storages.name, MEMORY_ARTIFACT_NAME),
+          ),
+        )
+        .limit(1),
+    ]);
+    const memoryInitialized = (memory?.headVersionId ?? null) !== null;
 
     if (!row) {
       return {
@@ -140,8 +152,8 @@ export function userPreferences({
         cloudBrowserEnabledByDefault: true,
         theme: null,
         colorTheme: null,
-        voiceInputModel: null,
         captureNetworkBodiesRemaining: 0,
+        memoryInitialized,
       };
     }
 
@@ -156,8 +168,8 @@ export function userPreferences({
       cloudBrowserEnabledByDefault: row.cloudBrowserEnabledByDefault,
       theme: parseThemePreference(row.theme),
       colorTheme: parseColorTheme(row.colorTheme),
-      voiceInputModel: row.voiceInputModel,
       captureNetworkBodiesRemaining: row.captureNetworkBodiesRemaining ?? 0,
+      memoryInitialized,
     };
   });
 }
@@ -173,7 +185,6 @@ export function userModelPreference({
         selectedModel: orgMembersMetadata.selectedModel,
         modelSettings: orgMembersMetadata.modelSettings,
         serviceTier: orgMembersMetadata.serviceTier,
-        selectedVideoModel: orgMembersMetadata.selectedVideoModel,
         selectedImageModel: orgMembersMetadata.selectedImageModel,
         updatedAt: orgMembersMetadata.updatedAt,
       })
@@ -186,16 +197,16 @@ export function userModelPreference({
       )
       .limit(1);
 
-    const selectedModel = isActiveRunModel(row?.selectedModel)
-      ? row.selectedModel
-      : null;
+    // Only an active catalog model with a route is a current selection.
+    const catalog = await get(modelCatalog$);
+    const selectedModel =
+      row?.selectedModel && isCatalogModelRunnable(catalog, row.selectedModel)
+        ? row.selectedModel
+        : null;
     const serviceTier: ChatThreadServiceTier | null =
-      selectedModel && row?.serviceTier === "priority" ? "priority" : null;
+      selectedModel && row?.serviceTier === "priority" ? row.serviceTier : null;
     // A model retired from the catalog reads as unset rather than throwing:
     // the column is not re-validated when the catalog changes.
-    const selectedVideoModel = isVideoModelId(row?.selectedVideoModel)
-      ? row.selectedVideoModel
-      : null;
     const selectedImageModel = isImageModelId(row?.selectedImageModel)
       ? row.selectedImageModel
       : null;
@@ -204,11 +215,9 @@ export function userModelPreference({
       selectedModel,
       modelSettings,
       serviceTier,
-      selectedVideoModel,
       selectedImageModel,
       updatedAt:
         selectedModel ||
-        selectedVideoModel ||
         selectedImageModel ||
         Object.keys(modelSettings).length > 0
           ? (row?.updatedAt.toISOString() ?? null)
@@ -251,13 +260,10 @@ function mergeUserPreferences(
       existing.cloudBrowserEnabledByDefault,
     theme: preferences.theme ?? existing.theme ?? null,
     colorTheme: preferences.colorTheme ?? existing.colorTheme ?? null,
-    voiceInputModel:
-      preferences.voiceInputModel === undefined
-        ? existing.voiceInputModel
-        : preferences.voiceInputModel,
     captureNetworkBodiesRemaining:
       preferences.captureNetworkBodiesRemaining ??
       existing.captureNetworkBodiesRemaining,
+    memoryInitialized: existing.memoryInitialized,
   };
 }
 
@@ -281,9 +287,6 @@ function userPreferenceUpdateColumns(
     ...(preferences.theme !== undefined && { theme: preferences.theme }),
     ...(preferences.colorTheme !== undefined && {
       colorTheme: preferences.colorTheme,
-    }),
-    ...(preferences.voiceInputModel !== undefined && {
-      voiceInputModel: preferences.voiceInputModel,
     }),
     ...(preferences.captureNetworkBodiesRemaining !== undefined && {
       captureNetworkBodiesRemaining: preferences.captureNetworkBodiesRemaining,
@@ -329,7 +332,6 @@ export const updateUserPreferences$ = command(
         cloudBrowserEnabledByDefault: merged.cloudBrowserEnabledByDefault,
         theme: merged.theme,
         colorTheme: merged.colorTheme,
-        voiceInputModel: merged.voiceInputModel,
         captureNetworkBodiesRemaining: merged.captureNetworkBodiesRemaining,
         createdAt: updatedAt,
         updatedAt,
@@ -373,56 +375,61 @@ function userModelPreferenceColumns(
             preference.modelSettingsPatch,
           ),
         }),
-    // Absent means "leave it alone", so an older bundle that knows only the run
-    // model keeps its stored media defaults. Null clears one explicitly.
-    ...("selectedVideoModel" in preference
-      ? { selectedVideoModel: preference.selectedVideoModel ?? null }
-      : {}),
+    // Absent means "leave it alone"; null clears the image default.
     ...("selectedImageModel" in preference
       ? { selectedImageModel: preference.selectedImageModel ?? null }
       : {}),
   };
 }
 
+interface UserModelPreferenceWriteArgs extends UserScopedQuery {
+  readonly preference: UpdateUserModelPreferenceRequest;
+}
+
+/** Reuse canonical preference persistence inside an admitted transaction. */
+export async function updateUserModelPreferenceInDb(
+  writeDb: Pick<Db, "insert">,
+  args: UserModelPreferenceWriteArgs,
+  signal: AbortSignal,
+): Promise<void> {
+  const updatedAt = nowDate();
+  const columns = userModelPreferenceColumns(args.preference);
+  const modelSettingsPatch = args.preference.modelSettingsPatch;
+  await writeDb
+    .insert(orgMembersMetadata)
+    .values({
+      orgId: args.orgId,
+      userId: args.userId,
+      ...columns,
+      createdAt: updatedAt,
+      updatedAt,
+    })
+    .onConflictDoUpdate({
+      target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
+      set: {
+        ...columns,
+        ...(modelSettingsPatch === undefined
+          ? {}
+          : {
+              modelSettings: sql`${orgMembersMetadata.modelSettings} || jsonb_build_object(
+                cast(${modelSettingsPatch.model} as text),
+                COALESCE(${orgMembersMetadata.modelSettings} -> cast(${modelSettingsPatch.model} as text), '{}'::jsonb)
+                  || jsonb_build_object('effort', cast(${modelSettingsPatch.effort} as text))
+              )`,
+            }),
+        updatedAt,
+      },
+    });
+  signal.throwIfAborted();
+}
+
 export const updateUserModelPreference$ = command(
   async (
     { get, set },
-    args: UserScopedQuery & {
-      readonly preference: UpdateUserModelPreferenceRequest;
-    },
+    args: UserModelPreferenceWriteArgs,
     signal: AbortSignal,
   ): Promise<UserModelPreferenceResponse> => {
-    const writeDb = set(writeDb$);
-    const updatedAt = nowDate();
-    const columns = userModelPreferenceColumns(args.preference);
-    const modelSettingsPatch = args.preference.modelSettingsPatch;
-    await writeDb
-      .insert(orgMembersMetadata)
-      .values({
-        orgId: args.orgId,
-        userId: args.userId,
-        ...columns,
-        createdAt: updatedAt,
-        updatedAt,
-      })
-      .onConflictDoUpdate({
-        target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
-        set: {
-          ...columns,
-          ...(modelSettingsPatch === undefined
-            ? {}
-            : {
-                modelSettings: sql`${orgMembersMetadata.modelSettings} || jsonb_build_object(
-                  cast(${modelSettingsPatch.model} as text),
-                  COALESCE(${orgMembersMetadata.modelSettings} -> cast(${modelSettingsPatch.model} as text), '{}'::jsonb)
-                    || jsonb_build_object('effort', cast(${modelSettingsPatch.effort} as text))
-                )`,
-              }),
-          updatedAt,
-        },
-      });
-    signal.throwIfAborted();
-
+    await updateUserModelPreferenceInDb(set(writeDb$), args, signal);
     return get(userModelPreference({ orgId: args.orgId, userId: args.userId }));
   },
 );

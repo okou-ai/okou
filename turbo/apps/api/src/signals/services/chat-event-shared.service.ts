@@ -1,8 +1,12 @@
+import { chatEventAppendResultSchema } from "./chat-event-append.service";
+import {
+  parseRawRows,
+  pgTimestampWithoutTimezoneToDateSchema,
+} from "../../lib/db-raw-rows";
 import { command } from "ccstate";
-import { historicalRunGroupId } from "./run-event-provenance.service";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   and,
   eq,
@@ -14,28 +18,26 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
-import { writeDb$, type Db } from "../external/db";
-import { publishChatThreadMessageCreatedSafely } from "../external/realtime";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
+import { writeDb$ } from "../external/db";
+import { z } from "zod";
+import { settleIncludingAbort } from "../utils";
+import {
+  publishChatThreadMessageCreatedSafely,
+  publishChatThreadReadCursorUpdatedSafely,
+} from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import { assistantEventIdForRunEvent } from "./assistant-event-id";
-import { insertChatEvents } from "./chat-event.service";
+import { chatEventsInsertSql } from "./chat-event.service";
 import {
   chatEventTypeIn,
   runOwnedChatEventCondition,
 } from "./chat-event-type.service";
 import { canonicalChatEventError } from "./canonical-chat-event-read.service";
-import { publishFirstAssistantEventCreatedSafely } from "./chat-first-assistant-event-metric.service";
-import {
-  appendChatThreadEvent,
-  type ChatThreadEventTransaction,
-} from "./chat-thread-event.service";
+import { publishFirstAssistantEventCreatedSafely$ } from "./chat-first-assistant-event-metric.service";
+import { chatThreadEventInsertSql } from "./chat-thread-event.service";
+import { reportChatEventSideEffect } from "./chat-event-write-side-effects.service";
 import { chatThreadOrganizationCondition } from "./chat-thread-organization.service";
-
-import {
-  withRunContentWrite,
-  type RunContentOwnership,
-} from "./run-content-erasure-admission.service";
 
 const EXT_MIMETYPE_MAP: Readonly<Record<string, string>> = {
   png: "image/png",
@@ -80,16 +82,9 @@ type InsertAssistantEventItem =
       readonly runEventSequenceNumber: number;
       readonly error: string;
       readonly runEventId: string;
-    }
-  | {
-      readonly eventType: "output.thinking";
-      readonly runEventSequenceNumber: number;
-      readonly thinking: string;
-      readonly runEventId: string;
     };
 
 export interface InsertAssistantEventsInput {
-  readonly ownership: RunContentOwnership;
   readonly runId: string;
   readonly threadId: string;
   readonly userId: string;
@@ -115,43 +110,282 @@ interface AuthorizedChatThreadTouchScope {
   readonly orgId: string;
 }
 
-export async function touchChatThreadLastMessageAt(
-  tx: ChatThreadEventTransaction,
+interface ChatThreadTouchOptions {
+  readonly touchedAt?: Date;
+  readonly eventId?: string;
+  readonly authorizedScope?: AuthorizedChatThreadTouchScope;
+  /**
+   * The thread's organization, already validated by the caller, so its thread
+   * events skip the Agent lookup. Unlike `authorizedScope`, it does not add
+   * predicates to the thread read.
+   */
+  readonly orgId?: string;
+  /**
+   * Set only for a completed or failed run's terminal marker: that marker makes
+   * the thread unread, so an archived thread also returns to the default
+   * sidebar list. Cancellation is user-initiated and leaves it archived.
+   */
+  readonly unarchive?: boolean;
+  /** External notification delivery consumes unread state for the whole thread. */
+  readonly markRead?: boolean;
+}
+
+const appendThreadTouchEvent$ = command(
+  async (
+    { set },
+    event: Parameters<typeof chatThreadEventInsertSql>[0],
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    await set(writeDb$).execute(chatThreadEventInsertSql(event));
+    signal.throwIfAborted();
+  },
+);
+
+export const touchChatThreadLastMessageAtIndependently$ = command(
+  async (
+    { set },
+    threadId: string,
+    options: ChatThreadTouchOptions,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    const database = set(writeDb$);
+    const { touchedAt = nowDate(), eventId, authorizedScope } = options;
+    const orgId = authorizedScope?.orgId ?? options.orgId;
+    // Resolve identity before either independent write. Failure of the weak
+    // timestamp update must not suppress the separate ordering event attempt.
+    const [thread] = await database
+      .select({
+        id: chatThreads.id,
+        userId: chatThreads.userId,
+        agentId: chatThreads.agentId,
+        archived: chatThreads.archived,
+      })
+      .from(chatThreads)
+      .where(
+        and(
+          eq(chatThreads.id, threadId),
+          isNotNull(chatThreads.agentId),
+          authorizedScope
+            ? and(
+                eq(chatThreads.userId, authorizedScope.userId),
+                chatThreadOrganizationCondition(authorizedScope.orgId),
+              )
+            : undefined,
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!thread?.agentId) {
+      return;
+    }
+    const agentId = thread.agentId;
+    // The flag rides on the same single-row UPDATE; `archived` is not indexed.
+    // A concurrent re-archive between the read and this write loses, which is
+    // acceptable for a best-effort sidebar state.
+    const unarchive = options.unarchive === true && thread.archived;
+    const timestampStartedAt = performance.now();
+    const timestampWrite = await settleIncludingAbort(
+      database
+        .update(chatThreads)
+        .set({
+          lastMessageAt: sql`GREATEST(${chatThreads.lastMessageAt}, ${touchedAt.toISOString()}::timestamp)`,
+          ...(options.markRead
+            ? {
+                lastReadAt: sql`GREATEST(${chatThreads.lastReadAt}, ${chatThreads.lastMessageAt}, ${touchedAt.toISOString()}::timestamp)`,
+              }
+            : {}),
+          ...(unarchive
+            ? {
+                archived: sql`CASE WHEN ${chatThreads.muted} THEN ${chatThreads.archived} ELSE false END`,
+              }
+            : {}),
+        })
+        .where(eq(chatThreads.id, threadId))
+        .returning({
+          id: chatThreads.id,
+          archived: chatThreads.archived,
+          lastReadAt: chatThreads.lastReadAt,
+        }),
+    );
+    signal.throwIfAborted();
+    reportChatEventSideEffect(
+      "last_message_at",
+      threadId,
+      timestampStartedAt,
+      timestampWrite,
+    );
+    const lastReadAt = timestampWrite.ok && timestampWrite.value[0]?.lastReadAt;
+    if (options.markRead && orgId && lastReadAt) {
+      await publishChatThreadReadCursorUpdatedSafely(
+        { userId: thread.userId, orgId },
+        { threadId, agentId, lastReadAt: lastReadAt.toISOString() },
+      );
+      signal.throwIfAborted();
+    }
+    const unarchived =
+      unarchive &&
+      timestampWrite.ok &&
+      timestampWrite.value[0]?.archived === false;
+    const sortStartedAt = performance.now();
+    const sortWrite = await settleIncludingAbort(
+      set(
+        appendThreadTouchEvent$,
+        {
+          kind: "sort_touched",
+          userId: thread.userId,
+          orgId,
+          chatThreadId: threadId,
+          agentId,
+          eventId,
+          createdAt: touchedAt,
+        },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    reportChatEventSideEffect(
+      "sort_touched",
+      threadId,
+      sortStartedAt,
+      sortWrite,
+    );
+    if (!unarchived) {
+      return;
+    }
+    const unarchiveStartedAt = performance.now();
+    const unarchiveWrite = await settleIncludingAbort(
+      set(
+        appendThreadTouchEvent$,
+        {
+          kind: "unarchived",
+          userId: thread.userId,
+          orgId,
+          chatThreadId: threadId,
+          agentId,
+        },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    reportChatEventSideEffect(
+      "unarchived",
+      threadId,
+      unarchiveStartedAt,
+      unarchiveWrite,
+    );
+  },
+);
+
+/**
+ * A direct send's sidebar touch, run after the pick. The send already
+ * authorized the thread and knows its identity, so this does not re-read the
+ * thread; unlike a run's terminal touch, it never unarchives it.
+ */
+export const touchSentChatThreadSort$ = command(
+  async (
+    { set },
+    args: {
+      readonly threadId: string;
+      readonly userId: string;
+      readonly orgId: string;
+      readonly agentId: string;
+      readonly touchedAt: Date;
+      readonly eventId: string | undefined;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    const database = set(writeDb$);
+    const timestampStartedAt = performance.now();
+    const timestampWrite = await settleIncludingAbort(
+      database
+        .update(chatThreads)
+        .set({
+          lastMessageAt: sql`GREATEST(${chatThreads.lastMessageAt}, ${args.touchedAt.toISOString()}::timestamp)`,
+        })
+        .where(eq(chatThreads.id, args.threadId)),
+    );
+    signal.throwIfAborted();
+    reportChatEventSideEffect(
+      "last_message_at",
+      args.threadId,
+      timestampStartedAt,
+      timestampWrite,
+    );
+    const sortStartedAt = performance.now();
+    const sortWrite = await settleIncludingAbort(
+      set(
+        appendThreadTouchEvent$,
+        {
+          kind: "sort_touched",
+          userId: args.userId,
+          orgId: args.orgId,
+          chatThreadId: args.threadId,
+          agentId: args.agentId,
+          eventId: args.eventId,
+          createdAt: args.touchedAt,
+        },
+        signal,
+      ),
+    );
+    signal.throwIfAborted();
+    reportChatEventSideEffect(
+      "sort_touched",
+      args.threadId,
+      sortStartedAt,
+      sortWrite,
+    );
+  },
+);
+
+/** The caller executes this on its own transaction and decodes the returned identity. */
+export function chatThreadLastMessageTouchSql(
   threadId: string,
-  touchedAt: Date = nowDate(),
+  touchedAt: Date,
+  authorizedScope?: AuthorizedChatThreadTouchScope,
+): SQL {
+  const condition = and(
+    eq(chatThreads.id, threadId),
+    isNotNull(chatThreads.agentId),
+    authorizedScope
+      ? and(
+          eq(chatThreads.userId, authorizedScope.userId),
+          chatThreadOrganizationCondition(authorizedScope.orgId),
+        )
+      : undefined,
+  );
+  if (!condition) {
+    throw new Error("Thread touch predicate is empty");
+  }
+  return sql`UPDATE ${chatThreads}
+    SET last_message_at = GREATEST(${chatThreads.lastMessageAt}, ${touchedAt.toISOString()}::timestamp)
+    WHERE ${condition}
+    RETURNING id, user_id AS "userId", agent_id AS "agentId", last_message_at::text AS "lastMessageAt"`;
+}
+
+export const chatThreadLastMessageTouchSchema = z.object({
+  id: z.string().uuid(),
+  userId: z.string(),
+  agentId: z.string().uuid().nullable(),
+  lastMessageAt: pgTimestampWithoutTimezoneToDateSchema,
+});
+
+/** SQL-only continuation; a missing unscoped thread is a no-op, as before. */
+export function chatThreadLastMessageSortSql(
+  rows: readonly z.output<typeof chatThreadLastMessageTouchSchema>[],
   eventId?: string,
   authorizedScope?: AuthorizedChatThreadTouchScope,
-): Promise<void> {
-  const [thread] = await tx
-    .update(chatThreads)
-    .set({
-      lastMessageAt: sql`GREATEST(${chatThreads.lastMessageAt}, ${touchedAt})`,
-    })
-    .where(
-      and(
-        eq(chatThreads.id, threadId),
-        isNotNull(chatThreads.agentId),
-        authorizedScope
-          ? and(
-              eq(chatThreads.userId, authorizedScope.userId),
-              chatThreadOrganizationCondition(tx, authorizedScope.orgId),
-            )
-          : undefined,
-      ),
-    )
-    .returning({
-      id: chatThreads.id,
-      userId: chatThreads.userId,
-      agentId: chatThreads.agentId,
-      lastMessageAt: chatThreads.lastMessageAt,
-    });
+): SQL | null {
+  const thread = rows[0];
   if (!thread?.agentId) {
     if (authorizedScope) {
       throw new Error("Authorized chat thread changed before sort touch");
     }
-    return;
+    return null;
   }
-  await appendChatThreadEvent(tx, {
+  return chatThreadEventInsertSql({
     kind: "sort_touched",
     userId: thread.userId,
     ...(authorizedScope ? { orgId: authorizedScope.orgId } : {}),
@@ -162,9 +396,11 @@ export async function touchChatThreadLastMessageAt(
   });
 }
 
-export function visibleChatEventCondition(
-  db: Pick<Db, "select">,
-): SQL | undefined {
+export function visibleChatEventCondition(): SQL | undefined {
+  return visibleChatEventPredicate();
+}
+
+export function visibleChatEventPredicate(): SQL | undefined {
   const isUserInputEvent = chatEventTypeIn([
     "input.prompt",
     "input.automation",
@@ -177,9 +413,8 @@ export function visibleChatEventCondition(
     runOwnedChatEventCondition(),
   );
   return and(
-    not(chatEventTypeIn(["input.goal"])),
     notExists(
-      db
+      new QueryBuilder()
         .select({ id: revoker.id })
         .from(revoker)
         .where(eq(revoker.revokesEventId, chatEvents.id)),
@@ -194,148 +429,79 @@ export function visibleChatEventCondition(
   );
 }
 
-async function assistantEventRunContextForRun(
-  db: ChatThreadEventTransaction,
-  runId: string,
-): Promise<{
-  readonly shouldAttemptFirstAssistantEventClaim: boolean;
-}> {
-  const [run] = await db
-    .select({
-      apiStartedAt: agentRuns.apiStartedAt,
-      firstAssistantEventAcknowledgedAt:
-        agentRuns.firstAssistantEventAcknowledgedAt,
-    })
-    .from(agentRuns)
-    .where(and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)))
-    .limit(1);
-  return {
-    shouldAttemptFirstAssistantEventClaim:
-      run !== undefined &&
-      run.apiStartedAt !== null &&
-      run.firstAssistantEventAcknowledgedAt === null,
-  };
-}
-
-interface InsertAssistantEventsTransactionResult {
+interface AppendAssistantEventRowsResult {
   readonly insertedRowCount: number;
   readonly shouldAttemptFirstAssistantEventClaim: boolean;
 }
 
-export async function insertAssistantEventsInTransaction(
-  tx: ChatThreadEventTransaction,
-  args: Omit<InsertAssistantEventsInput, "ownership"> & {
-    readonly runGroupId: string | undefined;
-  },
-  signal: AbortSignal,
-): Promise<InsertAssistantEventsTransactionResult> {
-  if (args.items.length === 0) {
-    return {
-      insertedRowCount: 0,
-      shouldAttemptFirstAssistantEventClaim: false,
-    };
-  }
-
-  const runContext = await assistantEventRunContextForRun(tx, args.runId);
-  signal.throwIfAborted();
-
-  const insertedRows = await insertChatEvents(
-    tx,
-    args.items.map((item) => {
-      const eventIdentity = {
-        id: assistantEventIdForRunEvent(args.runId, item.runEventId),
-        chatThreadId: args.threadId,
-        runId: args.runId,
-        runGroupId: args.runGroupId,
-        runEventSequenceNumber: item.runEventSequenceNumber,
-        runEventId: item.runEventId,
-      };
-      if (item.eventType === "output.message") {
-        return {
-          ...eventIdentity,
-          eventType: item.eventType,
-          content: item.content,
-        };
-      }
-      if (item.eventType === "output.error") {
-        return {
-          ...eventIdentity,
-          eventType: item.eventType,
-          content: null,
-          error: item.error,
-        };
-      }
-      return {
-        ...eventIdentity,
-        eventType: item.eventType,
-        thinking: item.thinking,
-      };
-    }),
-  );
-  signal.throwIfAborted();
-
-  return {
-    insertedRowCount: insertedRows.length,
-    shouldAttemptFirstAssistantEventClaim:
-      runContext.shouldAttemptFirstAssistantEventClaim,
-  };
-}
-
-export async function insertAssistantEvents(
-  writeDb: Db,
-  args: InsertAssistantEventsInput,
-  signal: AbortSignal,
-): Promise<number> {
-  if (args.items.length === 0) {
-    return 0;
-  }
-
-  const runGroupId = await historicalRunGroupId(
-    writeDb,
-    args.runId,
-    undefined,
-    signal,
-  );
-  const admitted = await withRunContentWrite(
-    writeDb,
-    { runId: args.runId, destination: args, ownership: args.ownership },
-    async (tx) => {
-      return await insertAssistantEventsInTransaction(
-        tx,
-        { ...args, runGroupId },
-        signal,
-      );
-    },
-    signal,
-  );
-  if (admitted.outcome === "closed") {
-    return 0;
-  }
-  const result = admitted.value;
-  signal.throwIfAborted();
-
-  if (result.insertedRowCount > 0) {
-    if (result.shouldAttemptFirstAssistantEventClaim) {
-      await publishFirstAssistantEventCreatedSafely({
-        db: writeDb,
-        ownership: admitted.ownership,
-        orgId: args.orgId,
-        userId: args.userId,
-        threadId: args.threadId,
-        runId: args.runId,
-      });
-    } else {
-      await publishChatThreadMessageCreatedSafely({
-        userId: args.userId,
-        orgId: args.orgId,
-        threadId: args.threadId,
-      });
-    }
+export const appendAssistantEventRows$ = command(
+  async (
+    { set },
+    args: InsertAssistantEventsInput,
+    signal: AbortSignal,
+  ): Promise<AppendAssistantEventRowsResult> => {
     signal.throwIfAborted();
-  }
+    const database = set(writeDb$);
+    if (args.items.length === 0) {
+      return {
+        insertedRowCount: 0,
+        shouldAttemptFirstAssistantEventClaim: false,
+      };
+    }
 
-  return result.insertedRowCount;
-}
+    const [run] = await database
+      .select({
+        apiStartedAt: agentRuns.apiStartedAt,
+        firstAssistantEventAcknowledgedAt:
+          agentRuns.firstAssistantEventAcknowledgedAt,
+      })
+      .from(agentRuns)
+      .where(
+        and(eq(agentRuns.id, args.runId), isNotNull(agentRuns.triggerSource)),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+
+    const insertedRows = parseRawRows(
+      chatEventAppendResultSchema,
+      await database.execute(
+        chatEventsInsertSql(
+          args.items.map((item) => {
+            const eventIdentity = {
+              id: assistantEventIdForRunEvent(args.runId, item.runEventId),
+              chatThreadId: args.threadId,
+              runId: args.runId,
+              runEventSequenceNumber: item.runEventSequenceNumber,
+              runEventId: item.runEventId,
+            };
+            if (item.eventType === "output.message") {
+              return {
+                ...eventIdentity,
+                eventType: item.eventType,
+                content: item.content,
+              };
+            }
+            return {
+              ...eventIdentity,
+              eventType: item.eventType,
+              content: null,
+              error: item.error,
+            };
+          }),
+        ),
+      ),
+    );
+    signal.throwIfAborted();
+
+    return {
+      insertedRowCount: insertedRows.length,
+      shouldAttemptFirstAssistantEventClaim:
+        run !== undefined &&
+        run.apiStartedAt !== null &&
+        run.firstAssistantEventAcknowledgedAt === null,
+    };
+  },
+);
 
 export const insertAssistantEvents$ = command(
   async (
@@ -343,6 +509,28 @@ export const insertAssistantEvents$ = command(
     args: InsertAssistantEventsInput,
     signal: AbortSignal,
   ): Promise<number> => {
-    return await insertAssistantEvents(set(writeDb$), args, signal);
+    const result = await set(appendAssistantEventRows$, args, signal);
+    if (result.insertedRowCount > 0) {
+      if (result.shouldAttemptFirstAssistantEventClaim) {
+        await set(
+          publishFirstAssistantEventCreatedSafely$,
+          {
+            orgId: args.orgId,
+            userId: args.userId,
+            threadId: args.threadId,
+            runId: args.runId,
+          },
+          signal,
+        );
+      } else {
+        await publishChatThreadMessageCreatedSafely({
+          userId: args.userId,
+          orgId: args.orgId,
+          threadId: args.threadId,
+        });
+        signal.throwIfAborted();
+      }
+    }
+    return result.insertedRowCount;
   },
 );

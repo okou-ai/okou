@@ -2,16 +2,11 @@ import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { telegramChatThreadRoutes } from "@okouai/db/schema/telegram-chat-thread-route";
-import { telegramInstallations } from "@okouai/db/schema/telegram-installation";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
-import { telegramUserLinks } from "@okouai/db/schema/telegram-user-link";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { delay } from "signal-timers";
-import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { buildTelegramResponse, splitMessage } from "../../lib/telegram-format";
 import type { Db } from "../external/db";
@@ -28,8 +23,6 @@ import {
 } from "../external/telegram-official";
 import { now, nowDate } from "../../lib/time";
 import { bestEffort, settleIncludingAbort } from "../utils";
-import { decryptPersistentSecretValue } from "./crypto.utils";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import {
   telegramChatCallbackPayloadSchema,
   type TelegramDeliveryTarget,
@@ -120,9 +113,7 @@ async function claimTelegramChatDelivery(
 }
 
 function telegramOwnerWhere(ownerLink: TelegramOwnerLink) {
-  return ownerLink.kind === "custom"
-    ? eq(telegramChatThreadRoutes.telegramUserLinkId, ownerLink.id)
-    : eq(telegramChatThreadRoutes.telegramOfficialUserLinkId, ownerLink.id);
+  return eq(telegramChatThreadRoutes.telegramOfficialUserLinkId, ownerLink.id);
 }
 
 async function loadTelegramOwnerBinding(
@@ -134,69 +125,30 @@ async function loadTelegramOwnerBinding(
   },
   signal: AbortSignal,
 ): Promise<TelegramOwnerBinding | undefined> {
-  if (args.target.userLinkKind === "official") {
-    if (!isOfficialTelegramBotId(args.target.installationId)) {
-      return undefined;
-    }
-    const [link] = await args.db
-      .select({ id: telegramOfficialUserLinks.id })
-      .from(telegramOfficialUserLinks)
-      .where(
-        and(
-          eq(telegramOfficialUserLinks.id, args.target.userLinkId),
-          eq(telegramOfficialUserLinks.userId, args.userId),
-          eq(telegramOfficialUserLinks.orgId, args.orgId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    const botToken = getOfficialTelegramBotConfig().botToken;
-    return link && botToken
-      ? {
-          botToken,
-          ownerLink: { kind: "official", id: link.id },
-        }
-      : undefined;
-  }
-
-  if (isOfficialTelegramBotId(args.target.installationId)) {
+  // Self-hosted (custom) Telegram bots are retired; only the official shared
+  // bot can deliver run callbacks.
+  if (!isOfficialTelegramBotId(args.target.installationId)) {
     return undefined;
   }
-  const [binding] = await args.db
-    .select({
-      id: telegramUserLinks.id,
-      encryptedBotToken: telegramInstallations.encryptedBotToken,
-      ownerUserId: telegramInstallations.ownerUserId,
-    })
-    .from(telegramUserLinks)
-    .innerJoin(
-      telegramInstallations,
-      eq(telegramInstallations.telegramBotId, telegramUserLinks.installationId),
-    )
+  const [link] = await args.db
+    .select({ id: telegramOfficialUserLinks.id })
+    .from(telegramOfficialUserLinks)
     .where(
       and(
-        eq(telegramUserLinks.id, args.target.userLinkId),
-        eq(telegramUserLinks.userId, args.userId),
-        eq(telegramUserLinks.installationId, args.target.installationId),
-        eq(telegramInstallations.orgId, args.orgId),
+        eq(telegramOfficialUserLinks.id, args.target.userLinkId),
+        eq(telegramOfficialUserLinks.userId, args.userId),
+        eq(telegramOfficialUserLinks.orgId, args.orgId),
       ),
     )
     .limit(1);
   signal.throwIfAborted();
-  if (!binding) {
-    return undefined;
-  }
-  return {
-    botToken: await decryptPersistentSecretValue(
-      binding.encryptedBotToken,
-      await loadUserFeatureSwitchContext(
-        args.db,
-        args.orgId,
-        binding.ownerUserId,
-      ),
-    ),
-    ownerLink: { kind: "custom", id: binding.id },
-  };
+  const botToken = getOfficialTelegramBotConfig().botToken;
+  return link && botToken
+    ? {
+        botToken,
+        ownerLink: { kind: "official", id: link.id },
+      }
+    : undefined;
 }
 
 async function routeStillBindsRun(args: {
@@ -418,37 +370,6 @@ async function sendTelegramCompletionMessages(
   return { kind: "ok", messageIds };
 }
 
-async function resolveTelegramPresentation(
-  args: {
-    readonly db: Db;
-    readonly run: TelegramChatRunContext;
-    readonly runId: string;
-    readonly installationId: string;
-  },
-  signal: AbortSignal,
-): Promise<{
-  readonly logsUrl: string | undefined;
-  readonly footerText: string | undefined;
-}> {
-  const [featureContext, footerText] = await Promise.all([
-    loadUserFeatureSwitchContext(args.db, args.run.orgId, args.run.userId),
-    resolveTelegramAgentReplyFooterText({
-      db: args.db,
-      orgId: args.run.orgId,
-      runId: args.runId,
-      installationId: args.installationId,
-      agentId: args.run.agentId,
-    }),
-  ]);
-  signal.throwIfAborted();
-  return {
-    logsUrl: isFeatureEnabled(FeatureSwitchKey.OkouDebug, featureContext)
-      ? `${env("APP_URL")}/activities/${encodeURIComponent(args.runId)}`
-      : undefined,
-    footerText,
-  };
-}
-
 async function deleteThinkingMessageIfPresent(args: {
   readonly botToken: string;
   readonly target: TelegramDeliveryTarget;
@@ -480,17 +401,10 @@ async function persistTelegramChatDelivery(args: {
   }
   await storeTelegramBotMessage({
     db: args.db,
-    scope:
-      args.target.userLinkKind === "official"
-        ? {
-            kind: "official",
-            orgId: args.run.orgId,
-            userLinkId: args.target.userLinkId,
-          }
-        : {
-            kind: "custom",
-            installationId: args.target.installationId,
-          },
+    scope: {
+      orgId: args.run.orgId,
+      userLinkId: args.target.userLinkId,
+    },
     chatId: args.target.chatId,
     messageId: firstMessageId,
     text: args.responseText,
@@ -536,25 +450,20 @@ async function deliverClaimedTelegramChatCallback(
     sendChatAction(binding.botToken, payload.chatId, "typing"),
     signal,
   );
-  const presentation = await resolveTelegramPresentation(
-    {
-      db: args.db,
-      run,
-      runId: args.callback.runId,
-      installationId: payload.installationId,
-    },
-    signal,
-  );
+  const footerText = await resolveTelegramAgentReplyFooterText({
+    db: args.db,
+    orgId: run.orgId,
+    runId: args.callback.runId,
+    installationId: payload.installationId,
+    agentId: run.agentId,
+  });
+  signal.throwIfAborted();
   const responseText = args.status === "completed" ? messageContent : undefined;
   const sent = await sendTelegramCompletionMessages(
     {
       botToken: binding.botToken,
       target: payload,
-      htmlOutput: buildTelegramResponse(
-        messageContent,
-        presentation.logsUrl,
-        presentation.footerText,
-      ),
+      htmlOutput: buildTelegramResponse(messageContent, footerText),
     },
     signal,
   );
@@ -695,17 +604,10 @@ export async function deliverTelegramChatAdmissionFailure(
   }
   await storeTelegramBotMessage({
     db: args.db,
-    scope:
-      args.target.userLinkKind === "official"
-        ? {
-            kind: "official",
-            orgId: args.orgId,
-            userLinkId: args.target.userLinkId,
-          }
-        : {
-            kind: "custom",
-            installationId: args.target.installationId,
-          },
+    scope: {
+      orgId: args.orgId,
+      userLinkId: args.target.userLinkId,
+    },
     chatId: args.target.chatId,
     messageId: firstMessageId,
     text: undefined,

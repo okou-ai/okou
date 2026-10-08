@@ -20,7 +20,7 @@ import {
   ArtifactCatalogSkeleton,
 } from "../artifacts-page/artifact-catalog-page.tsx";
 import { BrowserSessionSidebar } from "./browser-session-sidebar.tsx";
-import { MailDraftSidebar } from "./mail-draft-sidebar.tsx";
+import { MailDraftPanel } from "./mail-draft-panel.tsx";
 import type { MailDraftSignals } from "../../signals/chat-page/mail-draft.ts";
 import { ArtifactSidebar } from "./artifact-sidebar.tsx";
 import type { ImageArtifactNavigationItem } from "./artifact-image-navigation.ts";
@@ -374,7 +374,7 @@ function ThreadMailDraftPanel({
   readonly signals: MailDraftSignals;
 }) {
   const close = useSet(thread.sidebar.close$);
-  return <MailDraftSidebar signals={signals} onClose={close} />;
+  return <MailDraftPanel signals={signals} onClose={close} />;
 }
 
 function ThreadBrowserSessionPanel({

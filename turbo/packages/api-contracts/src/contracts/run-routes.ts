@@ -15,7 +15,7 @@ import {
   networkLogsResponseSchema,
   createLogPaginationQuerySchema,
 } from "./runs";
-import { modelProviderWriteTypeSchema } from "./model-providers";
+import { modelProviderTypeSchema } from "./model-providers";
 import {
   runnerHeartbeatGenerationSchema,
   runnerHostnameSchema,
@@ -27,14 +27,13 @@ import {
 /**
  * Agent run request schema — subset of unified schema.
  * Server-side defaults are injected by agent-runs-create.service.ts:
- * artifacts, disallowedTools.
+ * disallowedTools.
  * Fields not used by unattended workflow runs are omitted:
  * triggerSource, vars, secrets, volumeVersions, permissionPolicies.
  */
 export const runCreateBodySchema = unifiedRunRequestSchema
   .omit({
     triggerSource: true,
-    artifacts: true,
     disallowedTools: true,
     volumeVersions: true,
     vars: true,
@@ -47,7 +46,7 @@ export const runCreateBodySchema = unifiedRunRequestSchema
     // This endpoint owns the source; never strip an obsolete execution request
     // into an ordinary launch. Callers must omit source authority entirely.
     triggerSource: z.never().optional(),
-    modelProvider: modelProviderWriteTypeSchema.optional(),
+    modelProvider: modelProviderTypeSchema.optional(),
   });
 
 const c = initContract();

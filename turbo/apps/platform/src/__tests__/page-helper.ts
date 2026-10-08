@@ -9,6 +9,10 @@ import {
   type mockUser,
 } from "./mock-auth";
 import { loadClerkJSScript } from "../test/mocks/clerk-resource.ts";
+import {
+  installBootstrapSkeleton,
+  queryBootstrapSkeleton,
+} from "../test/bootstrap-skeleton.ts";
 import { bootstrap$ } from "../signals/bootstrap";
 import { setupRouter } from "../views/main";
 import {
@@ -231,6 +235,7 @@ async function setupPageAsync(
 ): Promise<PageStartup> {
   ensureTestLocalStorage();
   applyPageEnvironment(options.env, signal);
+  installBootstrapSkeleton(signal);
   await initializeI18nWithResources(
     await loadInitialLocaleResources(options.locale ?? DEFAULT_LOCALE, signal),
     signal,
@@ -293,14 +298,6 @@ async function setupPageAsync(
     },
     signal,
   );
-  signal.addEventListener(
-    "abort",
-    () => {
-      toast.dismiss();
-    },
-    { once: true },
-  );
-
   signal.throwIfAborted();
   const ready = store.set(
     bootstrap$,
@@ -312,9 +309,17 @@ async function setupPageAsync(
         document.body.appendChild(container);
         const { unmount } = render(element, { container });
         pageRendered();
-        signal.addEventListener("abort", unmount, {
-          once: true,
-        });
+        signal.addEventListener(
+          "abort",
+          () => {
+            // Sonner schedules React updates when a toast is dismissed. Remove
+            // its subscriber before dismissing, so those updates cannot outlive
+            // the test's DOM environment.
+            unmount();
+            toast.dismiss();
+          },
+          { once: true },
+        );
       });
     },
     signal,
@@ -327,7 +332,6 @@ function waitForFirstPageContent(signal: AbortSignal): {
   readonly ready: Promise<void>;
 } {
   let pageHasRendered = false;
-  let skeletonHasMounted = false;
   // Some startPage callers inspect blocked startup without awaiting ready.
   // The deferred owns their cancellation rejection as well as awaited ones.
   const ready = createDeferredPromise<void>(signal);
@@ -343,11 +347,9 @@ function waitForFirstPageContent(signal: AbortSignal): {
     if (ready.settled()) {
       return;
     }
-    const skeleton = document.querySelector('[data-testid="app-skeleton"]');
-    skeletonHasMounted ||= skeleton !== null;
+    const skeleton = queryBootstrapSkeleton();
     if (
       pageHasRendered &&
-      skeletonHasMounted &&
       (skeleton === null || skeleton.getAttribute("aria-hidden") === "true")
     ) {
       dispose();
@@ -493,8 +495,24 @@ function createPushStateMock(signal: AbortSignal, initialUrl: URL): void {
       return;
     }
     updateLocation(entry);
-    window.dispatchEvent(new PopStateEvent("popstate", { state: entry.data }));
+    const event = new PopStateEvent("popstate", { state: entry.data });
+    Object.defineProperty(event, "hasUAVisualTransition", {
+      value: swipingBack,
+    });
+    window.dispatchEvent(event);
   });
+}
+
+let swipingBack = false;
+
+/**
+ * Go back the way an edge swipe does: the browser animates the page change
+ * itself and reports it on the popstate event.
+ */
+export function swipeBack(): void {
+  swipingBack = true;
+  window.history.back();
+  swipingBack = false;
 }
 
 /**

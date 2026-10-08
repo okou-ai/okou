@@ -7,7 +7,6 @@ import type {
   TestSlackStatePostResponse,
   TestSlackStateResponse,
 } from "@okouai/api-contracts/contracts/test-slack-state";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 
 import { createAppWithRoutes } from "../../../../app-factory-core";
 import { testSlackStateRoutes } from "../../slack-state-preview";
@@ -30,7 +29,6 @@ interface SeedValues {
   readonly slackWorkspaceId?: string;
   readonly slackUserId?: string;
   readonly installationOrgId?: string | null;
-  readonly publicBrand?: PublicBrand;
 }
 
 interface SlackConnection {
@@ -49,7 +47,6 @@ interface SlackInstallation {
   readonly botUserId: string;
   readonly botScopes: string | null;
   readonly installedByUserId: string | null;
-  readonly publicBrand: PublicBrand;
   readonly createdAt: string;
 }
 
@@ -167,7 +164,6 @@ export const seedSlackConnectOrg$ = command(
       user_id: userId,
       bot_token: "xoxb-test-bot-token",
       bot_user_id: "U_BOT_TEST",
-      public_brand: values.publicBrand,
       installation_org_id:
         values.installationOrgId === undefined
           ? orgId

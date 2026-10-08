@@ -1,6 +1,9 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
+import {
+  chatEventRowSchema,
+  type ChatEventRow,
+} from "@okouai/api-contracts/contracts/chat-event-rows";
 import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import {
@@ -17,9 +20,11 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import {
+  mockChatThreadSnapshotResponse,
   testContext,
   type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
+import { mockChatEventRowContextType } from "./chat-event-test-helpers.ts";
 
 const context = testContext();
 
@@ -27,6 +32,7 @@ const AGENT_ID = "c0000000-0000-4000-a000-000000000081";
 const ACTIVE_RUN_ID = "a0000000-0000-4000-a000-000000000081";
 const ACTIVE_PROMPT_THREAD_ID = "b0000000-0000-4000-a000-000000000091";
 const SKIP_EVENT_THREAD_ID = "b0000000-0000-4000-a000-000000000092";
+const FIFO_ORDER_THREAD_ID = "b0000000-0000-4000-a000-000000000093";
 
 function textDocument(text: string): UserMessageDocument {
   return { version: 1, parts: [{ type: "text", text }] };
@@ -48,14 +54,14 @@ function eventRow(
   options: Pick<ChatEventRow, "eventType" | "payload" | "runId">,
 ): ChatEventRow {
   const caseSuffix = threadId.slice(-8);
-  return {
+  return chatEventRowSchema.parse({
     id: `d0000000-0000-4000-a000-${caseSuffix}${sequence
       .toString()
       .padStart(4, "0")}`,
     chatThreadId: threadId,
     runId: options.runId,
     revokesEventId: null,
-    contextType: null,
+    contextType: mockChatEventRowContextType(options.eventType),
     contextId: null,
     runEventSequenceNumber: null,
     runEventId: null,
@@ -63,7 +69,7 @@ function eventRow(
     createdAt: `2026-08-01T00:00:${sequence.toString().padStart(2, "0")}.000Z`,
     eventType: options.eventType,
     payload: options.payload,
-  };
+  });
 }
 
 function activeRunRow(threadId: string): ChatEventRow {
@@ -104,39 +110,41 @@ function installWorkflowQueueFixture(
       id: threadId,
       agentId: AGENT_ID,
       title: "Workflow queue",
-      selectedModel: "claude-sonnet-4-6",
+      selectedModel: "claude-sonnet-5",
       modelSettings: {},
       serviceTier: null,
       pinnedAt: null,
+      archived: false,
+      muted: false,
       computerUseHostId: null,
       cloudBrowserEnabled: false,
-      selectedVideoModel: null,
-      selectedImageModel: null,
     });
   });
   testContextValue.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      chatThreads: [
-        {
-          id: threadId,
-          agentId: AGENT_ID,
-          title: "Workflow queue",
-          sortAt: "2026-08-01T00:00:00.000Z",
-          createdAt: "2026-08-01T00:00:00.000Z",
-          updatedAt: "2026-08-01T00:00:00.000Z",
-          pinnedAt: null,
-          renamedAt: null,
-          selectedModel: "claude-sonnet-4-6",
-          serviceTier: null,
-          computerUseHostId: null,
-          cloudBrowserEnabled: false,
-          selectedVideoModel: null,
-          selectedImageModel: null,
-        },
-      ],
-      latestEventId: null,
-      latestSeqId: null,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(testContextValue, {
+        chatThreads: [
+          {
+            id: threadId,
+            agentId: AGENT_ID,
+            title: "Workflow queue",
+            sortAt: "2026-08-01T00:00:00.000Z",
+            createdAt: "2026-08-01T00:00:00.000Z",
+            updatedAt: "2026-08-01T00:00:00.000Z",
+            pinnedAt: null,
+            archived: false,
+            renamedAt: null,
+            selectedModel: "claude-sonnet-5",
+            serviceTier: null,
+            computerUseHostId: null,
+            cloudBrowserEnabled: false,
+          },
+        ],
+        latestEventId: null,
+        latestSeqId: null,
+      }),
+    );
   });
   testContextValue.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });
@@ -188,7 +196,6 @@ function installWorkflowQueueFixture(
     return respond(201, {
       runId: null,
       threadId,
-      status: "pending",
       createdAt: "2026-08-01T00:01:00.000Z",
     });
   });
@@ -247,11 +254,6 @@ test("Active-run prompts stay in the conversation while automation events wait i
         ),
       },
     }),
-    eventRow(ACTIVE_PROMPT_THREAD_ID, 5, {
-      eventType: "goal.open",
-      runId: null,
-      payload: { content: "Keep the rollout healthy" },
-    }),
   ]);
 
   await setupPage({
@@ -274,6 +276,51 @@ test("Active-run prompts stay in the conversation while automation events wait i
   expect(rows[1]).toHaveTextContent("Summarize new incidents");
   expect(screen.getAllByText("Check rollout health")).toHaveLength(1);
   expect(screen.getAllByText("Summarize new incidents")).toHaveLength(1);
+});
+
+test("Pending automation events keep submission order around conversation prompts", async () => {
+  installWorkflowQueueFixture(context, FIFO_ORDER_THREAD_ID, [
+    activeRunRow(FIFO_ORDER_THREAD_ID),
+    eventRow(FIFO_ORDER_THREAD_ID, 2, {
+      eventType: "input.automation",
+      runId: null,
+      payload: {
+        userMessage: automationDocument("Release watcher", "Check rollout"),
+      },
+    }),
+    eventRow(FIFO_ORDER_THREAD_ID, 3, {
+      eventType: "input.prompt",
+      runId: null,
+      payload: { userMessage: textDocument("Draft the customer update") },
+    }),
+    eventRow(FIFO_ORDER_THREAD_ID, 4, {
+      eventType: "input.automation",
+      runId: null,
+      payload: {
+        userMessage: automationDocument("Incident watcher", "Triage alerts"),
+      },
+    }),
+  ]);
+
+  await setupPage({
+    context,
+    path: `/chats/${FIFO_ORDER_THREAD_ID}`,
+    auth: workflowAuth("fifo-order"),
+  });
+
+  await expect(
+    screen.findByText("2 events waiting"),
+  ).resolves.toBeInTheDocument();
+  const list = queueListForText("Check rollout");
+  const rows = Array.from(list.querySelectorAll('[role="listitem"]'));
+  expect(rows).toHaveLength(2);
+  expect(rows[0]).toHaveAccessibleName("Pending automation event");
+  expect(rows[0]).toHaveTextContent("Check rollout");
+  expect(rows[1]).toHaveAccessibleName("Pending automation event");
+  expect(rows[1]).toHaveTextContent("Triage alerts");
+  const prompt = screen.getByText("Draft the customer update");
+  expect(prompt).toBeInTheDocument();
+  expect(list).not.toContainElement(prompt);
 });
 
 test("Skip one pending automation event without removing the others", async () => {

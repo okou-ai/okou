@@ -1,8 +1,7 @@
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { exclusiveDurationBreakdown } from "@okouai/core/exclusive-duration";
-
-import { env } from "../../lib/env";
 import { normalizeBuildCommitSha } from "../../lib/build-info";
+import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { monotonicNow, nowDate } from "../../lib/time";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
@@ -11,23 +10,18 @@ import { settleIncludingAbort } from "../utils";
 export type AdmissionLockLeaf =
   | "official_workflow"
   | "thread_session"
-  | "compute_session"
   | "maintenance"
   | "subscription"
   | "concurrency"
   | "queue_first"
   | "persistence"
   | "maintenance_binding"
-  | "usage_allowance"
-  | "pi_memory_schedule";
+  | "usage_allowance";
 
 export type AdmissionAttemptOutcome =
   | "pending"
-  | "queued"
   | "rejected"
-  | "thread_session_snapshot_stale"
   | "queue_first_claim_lost"
-  | "queue_payload_required"
   | "rolled_back";
 
 interface AdmissionTimingRecord {
@@ -43,15 +37,9 @@ interface AdmissionAttemptTimingArgs {
   readonly profile: string;
   readonly triggerSource?: TriggerSource;
   readonly dimensions: Readonly<Record<string, string>>;
-  readonly commitInvocation: number;
-  readonly transactionAttempt: number;
 }
 
 const L = logger("ApiDispatchAdmissionTiming");
-
-function boundedAttempt(attempt: number): string {
-  return attempt <= 3 ? String(attempt) : "4_plus";
-}
 
 export class AdmissionAttemptTiming {
   private readonly startedAt: number;
@@ -77,7 +65,12 @@ export class AdmissionAttemptTiming {
     );
   }
 
-  lockAcquired(): void {
+  /**
+   * Start of final admission after transaction setup and any Official credit
+   * plan acquisition. No org advisory lock is taken; the existing
+   * `admission_lock_*` series names are kept.
+   */
+  admissionStarted(): void {
     this.heldStartedAt = this.nowMs();
   }
 
@@ -133,7 +126,7 @@ export class AdmissionAttemptTiming {
     }
 
     const emission = await settleIncludingAbort(() => {
-      const persisted = outcome === "pending" || outcome === "queued";
+      const persisted = outcome === "pending";
       const apiCommitSha = normalizeBuildCommitSha(env("GIT_COMMIT_SHA"));
       const dimensions = {
         ...this.args.dimensions,
@@ -141,8 +134,6 @@ export class AdmissionAttemptTiming {
         profile: this.args.profile,
         dispatch_path: "direct",
         span_kind: "nested",
-        commit_invocation: boundedAttempt(this.args.commitInvocation),
-        transaction_attempt: boundedAttempt(this.args.transactionAttempt),
         admission_outcome: outcome,
         run_persisted: persisted ? "true" : "false",
         query_count_coverage: "unavailable",

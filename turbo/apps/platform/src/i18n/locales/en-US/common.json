@@ -84,13 +84,9 @@
           "guidance": "Run credit diagnostics first. Buy credits only when the current plan allows it; otherwise return the plan upgrade link.",
           "title": "Credits depleted"
         },
-        "modelProviderUnavailable": {
-          "guidance": "The model provider used by this thread has been deleted. Start a new chat thread to continue.",
-          "title": "Model provider unavailable"
-        },
         "noModelProvider": {
-          "guidance": "Configure a model provider to start running agents.",
-          "title": "No model provider configured"
+          "guidance": "Try again shortly, or connect a personal Claude Code or Codex subscription in Settings.",
+          "title": "No model provider is available for this run"
         },
         "paidPlanRequired": {
           "guidance": "Built-in video generation is unavailable on the current plan.",
@@ -347,13 +343,13 @@
     },
     "sources": {
       "agent": "Agent",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "Automation event",
       "automationSchedule": "Automation schedule",
+      "discord": "Discord",
       "email": "Email",
       "feishu": "Feishu",
       "github": "GitHub",
-      "goal": "Goal",
       "lark": "Lark",
       "slack": "Slack",
       "teams": "Teams",
@@ -373,6 +369,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "Could not load agents",
+      "backToChats": "Back to chats",
+      "chatListUnavailable": "Could not load chats",
+      "chats": "Chats",
+      "me": "Me",
+      "navigation": "Main navigation",
+      "searchAgents": "Search agents",
+      "switchAgent": "Switch agent"
+    },
     "shortcutHelp": {
       "close": "Close keyboard shortcuts",
       "description": "Available shortcuts on this page",
@@ -571,7 +577,8 @@
       "video": "Video"
     },
     "metadata": {
-      "generated": "Generated {{date}}"
+      "generated": "Generated {{date}}",
+      "updated": "Updated at {{date}}"
     },
     "preview": {
       "audioLabel": "Audio preview for {{filename}}",
@@ -621,24 +628,8 @@
       "activeHtmlPreview": "{{title}} active HTML preview",
       "all": "All",
       "avatar": "Avatar",
-      "avatarWithId": "Avatar {{id}}",
-      "backToAvatars": "Back to avatars",
       "categories": "Template categories",
       "category": "Template category",
-      "chooseVoice": "Choose a voice for {{title}}",
-      "filters": {
-        "age": "Age",
-        "all": "All",
-        "aspectRatio": "Aspect ratio",
-        "clear": "Clear",
-        "ethnicity": "Ethnicity",
-        "gender": "Gender",
-        "language": "Language",
-        "scene": "Scene",
-        "style": "Style",
-        "title": "Filters",
-        "useCase": "Use case"
-      },
       "fullPreview": "{{title}} website full preview",
       "htmlPreview": "{{title}} HTML preview",
       "illustration": "Illustration",
@@ -649,25 +640,18 @@
       "importedSlides_other": "{{count}} slides",
       "importFile": "Import template",
       "multiAccent": "Multi-accent",
-      "needPro": "Need Pro",
       "nextSlide": "Preview next slide",
       "noMatches": "No matches",
       "placeholder": "{{title}} website preview placeholder",
-      "playVideo": "Play video template preview {{title}}",
-      "previewAvatarVideo": "Preview avatar video {{title}}",
       "previewCurrentSlide": "Preview {{title}} at current slide",
       "previewSlide": "Preview slide {{slideNumber}}",
-      "previewVoice": "Preview voice {{title}}",
       "previewWebsite": "Preview website template {{title}}",
       "previousSlide": "Preview previous slide",
-      "recommended": "Recommended",
       "renameImportedTemplate": "Rename template",
       "searchConnector": "Search templates",
       "searchConnectors": "Search templates",
       "selectStyle": "Select style {{style}}",
       "selectTemplate": "Select template {{title}}",
-      "selectVideo": "Select video template {{title}}",
-      "selectVoice": "Select voice {{title}}",
       "selectWebsite": "Select website template {{title}}",
       "selectWorkflow": "Select workflow template {{title}}",
       "showVariant": "Show variant {{variantNumber}}",
@@ -700,7 +684,6 @@
       "tryDifferentSearch": "Try a different search.",
       "use": "Use",
       "useThisTemplate": "Use this template",
-      "viewVideoPlans": "View plans for video template {{title}}",
       "visibility": {
         "change": "Change",
         "changeLabel": "Change template visibility",
@@ -1166,9 +1149,6 @@
       "downgradesOn": "Downgrades to {{plan}} on {{date}}",
       "downgradeTo": "Downgrade to {{plan}}",
       "endsOn": "Ends on {{date}}",
-      "features": {
-        "byok": "Bring your own LLM keys"
-      },
       "free": {
         "name": "Free"
       },
@@ -1183,18 +1163,13 @@
         "everythingInBuiltForTeams": "Everything in {{plan}}, built for teams",
         "included": "Included",
         "liveBrowser": "Watch an agent's live browser and take the wheel",
-        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4 Pro",
         "moreConnectorsChannels": "More custom connectors & channel integration",
         "supportEmail": "Email support",
         "supportPriority": "Priority support",
-        "videoGeneration": "Video and avatar generation",
         "voiceInput": "Voice input, {{requests}} requests and {{minutes}} minutes a day",
         "webhookAutomations": "Start a run from any system with one webhook"
       },
       "legacy": "Legacy",
-      "limitedFree": {
-        "name": "Limited free"
-      },
       "loadError": "Could not load billing status.",
       "namedPlan": "{{plan}} plan",
       "noActivePlan": "No active plan",
@@ -1421,7 +1396,6 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "{{amount}} added",
         "checkedIn": "Checked in",
         "checkin": {
           "action": "Check in",
@@ -1435,8 +1409,12 @@
           "name": "Connect a tool",
           "unit": "per connector"
         },
-        "earned": "{{amount}} earned",
         "howRewardsWork": "How rewards work",
+        "imessage": {
+          "action": "Add",
+          "description": "Text {{assistantName}} from your iPhone",
+          "name": "Add to iMessage"
+        },
         "inReview": "In review",
         "intro": {
           "checkin": {
@@ -1482,6 +1460,9 @@
         "pendingState": "{{amount}} pending",
         "rejected": {
           "alreadyRedeemed": "Post already used",
+          "authorAlreadyRewarded": "Account already rewarded",
+          "authorUnavailable": "Couldn't verify the author",
+          "officialAccount": "Official {{assistantName}} posts don't count",
           "postMustMention": "Must mention {{assistantName}}"
         },
         "rewardsNote": "Rewards expire 7 days after they are granted. Check-in resets at 00:00 UTC. Slack rewards go to the organization; other rewards go to your personal balance.",
@@ -1492,7 +1473,6 @@
         },
         "shareDialog": {
           "description": "Submit a public post for review. One successful reward per person.",
-          "draft": "Been running my Monday competitor report with {{assistantName}} — it reads the sources and hands back the table.",
           "helper": "The post has to be public and mention {{assistantName}}.",
           "inputLabel": "Post link",
           "openX": "Open X",
@@ -1507,7 +1487,8 @@
           "stepPaste": "Paste the link",
           "stepWrite": "Write the post",
           "submit": "Submit",
-          "title": "Share {{assistantName}} on X"
+          "title": "Share {{assistantName}} on X",
+          "writingPrompt": "Write about something you actually tried with {{assistantName}}, in your own words."
         },
         "slack": {
           "action": "Add",
@@ -1737,12 +1718,17 @@
       "cancelFailed": "Couldn't cancel this request. Try again.",
       "cancelled": "Request cancelled",
       "cancelling": "Cancelling…",
+      "checkFailed": "Couldn't check the browser. Your entries are still here; retry before adding them.",
       "completed": "Information added",
+      "confirmRangeValue": "Use current value",
       "continue": "Notify agent",
       "continuing": "Notifying…",
       "delivered": "Agent notified",
       "expired": "Request expired",
       "expiredDescription": "The browser closed or this request is no longer active.",
+      "fileLeave": "Leave website files unchanged",
+      "fileLimit": "Choose up to 3 files (1 on single-file sites), 10 MiB total.",
+      "fileNotice": "Choosing Add to browser transfers your selected file to this website. The site may upload or submit it when its file input changes:",
       "loadFailed": "Couldn't load this request",
       "loadFailedDescription": "Try again in a moment.",
       "loadingDescription": "Checking this request…",
@@ -1760,29 +1746,6 @@
       "uncertain": "Check the browser",
       "uncertainDescription": "The browser may have received the information. Ask the agent to check before trying again."
     },
-    "browserInteraction": {
-      "applying": "Completing browser interaction",
-      "applyingDescription": "The browser is finishing this request.",
-      "callbackFailed": "Agent not notified.",
-      "cancel": "Cancel",
-      "cancelFailed": "Couldn't cancel this request. Try again.",
-      "cancelled": "Request cancelled",
-      "cancelling": "Cancelling…",
-      "completed": "Browser interaction complete",
-      "completeFailed": "Couldn't complete this request. Try again.",
-      "completing": "Completing…",
-      "continue": "Notify agent",
-      "continuing": "Notifying…",
-      "delivered": "Agent notified",
-      "description": "Open the browser, complete this step, then choose Done.",
-      "done": "Done",
-      "finish": "Finish step",
-      "stale": "Browser no longer available",
-      "staleDescription": "Ask the agent to create a new request.",
-      "title": "Take over the browser",
-      "uncertain": "Check the browser",
-      "uncertainDescription": "The interaction may have completed. Ask the agent to check before trying again."
-    },
     "cards": {
       "viewDetails": "View details"
     },
@@ -1795,13 +1758,10 @@
         "addTemplate": "Add template",
         "imagePlaceholder": "Describe the image you want to create…",
         "presentationPlaceholder": "What is your presentation about?",
-        "settingsAdjusted": "Some video settings were adjusted for this model",
         "slideCount": "Slide count",
         "slideCountAuto": "Auto",
         "slideCountRange": "{{range}} slides"
       },
-      "createWorkflow": "Create workflow",
-      "imageModelForThisChat": "Image model for this chat",
       "message": "Message",
       "modelForThisChat": "Model for this chat",
       "placeholder": "Ask me to automate workflows, manage tasks...",
@@ -1816,12 +1776,10 @@
       "temporarilySwitchTo": "Temporarily switch to",
       "threadSuggestions": "Chat threads",
       "useForFutureChats": "Use this for future chats",
-      "videoModelForThisChat": "Video model for this chat",
       "workflows": {
         "empty": "No matching workflows",
         "loading": "Loading workflows...",
-        "title": "Workflows",
-        "viewAll": "View all workflows"
+        "title": "Workflows"
       }
     },
     "computerUse": {
@@ -1859,8 +1817,6 @@
       "add": "Add {{connectorName}}",
       "addConnectors": "Add connectors",
       "authorized": "{{connectorName}} connected and authorized for {{agentName}}",
-      "available_one": "Available connectors to connect ({{count}})",
-      "available_other": "Available connectors to connect ({{count}})",
       "back": "Back",
       "configurePermissions": "Configure {{connectorName}} permissions",
       "customAuthorizeDescription": "Review, connect, and authorize this custom connector for the agent.",
@@ -1909,10 +1865,8 @@
     "errors": {
       "genericTitle": "This run couldn't finish",
       "loadMessages": "Failed to load messages",
-      "noModelProviderAction": "Set one up in Workspace Settings",
-      "noModelProviderPrefix": "No model provider configured yet.",
-      "providerDeletedAction": "Start a new chat thread",
-      "providerDeletedPrefix": "The model provider used by this thread has been deleted.",
+      "noModelProviderAction": "Manage subscriptions",
+      "noModelProviderPrefix": "No model provider is available for this run. Try again, or connect a personal subscription.",
       "providerIncompatibleAction": "Start a new session",
       "providerIncompatiblePrefix": "This session was started with a different model provider and can't be continued with the current one.",
       "recovery": {
@@ -1932,19 +1886,18 @@
         "fiveHourReset": "5h resets {{time}}",
         "inputTooLargeDescription": "Shorten your message and send it again.",
         "inputTooLargeTitle": "Your message is too large",
-        "invalidApiKeyTitle": "The API key needs updating",
+        "invalidApiKeyTitle": "Your subscription sign-in needs updating",
         "invalidCredentialsTitle": "Your model connection needs attention",
         "newChat": "New chat",
         "newChatDescription": "Start a new chat and include any important details you want to carry over.",
         "openClaude": "Open Claude",
-        "originalAccount": "Personal subscription {{account}}",
-        "originalAccountUnavailable": "Personal subscription disconnected",
-        "originalAccountUnknown": "Personal subscription unverified",
         "outputLimitDescription": "The response stopped before it finished. Continue to pick up from there.",
         "outputLimitTitle": "The response reached its length limit",
-        "providerBalanceDescription": "Check your provider account's credit balance, then try again.",
-        "providerBalanceTitle": "Your provider account needs more credit",
-        "providerConnectionDescription": "Open Model Providers to reconnect or update your account, then try again.",
+        "personalAccount": "Personal subscription {{account}}",
+        "personalAccountDisconnected": "Personal subscription disconnected",
+        "providerBalanceDescription": "Check your subscription account's usage or credit balance, then try again.",
+        "providerBalanceTitle": "Your subscription account needs more credit",
+        "providerConnectionDescription": "Open Settings > Models to reconnect or update your account, then try again.",
         "providerQueueTimeoutTitle": "The model didn't start in time",
         "providerRateLimitedTitle": "Too many model requests right now",
         "providerServerErrorTitle": "The model provider had a temporary error",
@@ -2008,6 +1961,10 @@
       "newThread": "New chat",
       "reload": "Reload tasks"
     },
+    "lastReadMarker": {
+      "previouslyRead": "You last read up to here",
+      "unread": "Unread messages"
+    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",
@@ -2047,11 +2004,13 @@
     "newChat": "New chat",
     "origins": {
       "agentphone": "iMessage",
+      "discord": "Discord",
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "Open chat",
       "openChatIn": "Open chat in {{integration}}",
+      "openDiscordMessage": "Open original message in Discord",
       "openFeishuChat": "Open original chat in Feishu",
       "openGithubMessage": "Open original issue or pull request in GitHub",
       "openLarkChat": "Open original chat in Lark",
@@ -2091,24 +2050,33 @@
       "aboutAutomationEvent": "About this automation event",
       "aboutQueuedMessage": "About this queued message",
       "automationEvent": "Automation event",
-      "automationEventDescription": "Waits behind queued messages and runs once the current run finishes.",
+      "automationEventDescription": "Waits in line and runs automatically when it can start.",
       "cancellationRecoveryPending": "Finalizing the cancelled run before queued work continues.",
       "event_one": "{{count}} event",
       "event_other": "{{count}} events",
-      "goal": "Goal",
       "itemsWaiting": "{{items}} waiting",
       "itemsWaitingTogether": "{{messages}} and {{events}} waiting",
       "message_one": "{{count}} message",
       "message_other": "{{count}} messages",
       "pendingAutomationEvent": "Pending automation event",
       "queuedMessage": "Queued message",
-      "queuedMessageDescription": "Waits in line and sends once the current run finishes.",
+      "queuedMessageDescription": "Waits in line and sends automatically when it can start.",
       "removeQueuedMessage": "Remove queued message",
       "skipAutomationEvent": "Skip automation event"
     },
-    "replaceDraft": {
-      "description": "Continuing will clear your current composer draft and start a workflow prompt.",
-      "title": "Replace composer draft?"
+    "remoteAccess": {
+      "default": "Default",
+      "defaultEnabled": "Enabled by default for chats",
+      "enabledCount_one": "{{count}} enabled",
+      "enabledCount_other": "{{count}} enabled",
+      "loadFailed": "Couldn't load remote access.",
+      "loading": "Loading remote access…",
+      "off": "Off",
+      "on": "On",
+      "requiresSsh": "Requires SSH access to {{name}}.",
+      "retry": "Retry",
+      "title": "Remote access",
+      "unavailableSsh": "unavailable SSH host"
     },
     "run": {
       "collapseWorkHistory": "Collapse work history",
@@ -2125,12 +2093,13 @@
         "wrappedUp": "Wrapped up at {{time}}"
       },
       "duration": {
-        "hoursShort_one": "{{count}}h",
-        "hoursShort_other": "{{count}}h",
-        "minutesShort_one": "{{count}}m",
-        "minutesShort_other": "{{count}}m",
-        "secondsShort_one": "{{count}}s",
-        "secondsShort_other": "{{count}}s"
+        "hoursMinutesShort": "{{hours}} hr {{minutes}} min",
+        "hoursShort_one": "{{count}} hr",
+        "hoursShort_other": "{{count}} hr",
+        "minutesShort_one": "{{count}} min",
+        "minutesShort_other": "{{count}} min",
+        "secondsShort_one": "{{count}} sec",
+        "secondsShort_other": "{{count}} sec"
       },
       "expandWorkHistory": "Expand work history",
       "fastModelName": "{{model}} Fast",
@@ -2192,11 +2161,15 @@
       "deleteTitle": "Delete chat?",
       "draft": "Draft",
       "empty": "Start a conversation and it'll show up here",
+      "inbox": "Inbox",
       "markUnread": "Mark unread",
       "movePinDown": "Move down",
       "movePinUp": "Move up",
+      "mute": "Mute chat",
+      "muted": "Muted",
       "newChatWith": "New chat with {{agentName}}",
       "noArchived": "No archived chats",
+      "noMuted": "No muted chats",
       "noUnread": "No unread chats",
       "openChatMenu": "Open chat menu",
       "openListMenu": "Open chat list menu",
@@ -2208,17 +2181,13 @@
       "showArchivedChats": "Show archived chats",
       "titlePlaceholder": "Chat title",
       "unarchive": "Unarchive chat",
+      "unmute": "Unmute chat",
       "unpin": "Unpin chat",
       "unread": "Unread",
       "unreadOnly": "Unread"
     },
     "startCards": {
       "kinds": {
-        "avatar": {
-          "description": "Make a presenter for your next piece of content",
-          "prompt": "Create a talking avatar presenter for my next video.",
-          "title": "Create an avatar"
-        },
         "illustration": {
           "description": "Make a finished visual in the style you want",
           "prompt": "Create an illustration in the style I describe.",
@@ -2229,11 +2198,6 @@
           "prompt": "Create a presentation from a topic or document I give you.",
           "title": "Create a presentation"
         },
-        "video": {
-          "description": "Turn your idea or assets into a finished video",
-          "prompt": "Turn my idea or assets into a finished video.",
-          "title": "Create a video"
-        },
         "website": {
           "description": "Create and publish a shareable page",
           "prompt": "Build and publish a shareable web page for me.",
@@ -2242,7 +2206,38 @@
       },
       "openTemplatesAria": "Browse templates",
       "startWithPrompt": "Create",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "With your Claude Max 5x/20x or Codex plan",
+        "openSettingsAria": "Open model settings",
+        "title": "Run tasks for free"
+      },
       "templates": "Templates"
+    },
+    "subscriptionReset": {
+      "account": "{{provider}} · {{account}} · {{plan}}",
+      "alreadyRedeemed": "This reset request has already been redeemed.",
+      "confirm_one": "{{count}} reset",
+      "confirm_other": "{{count}} resets",
+      "confirmation": "Reset uses one reset credit. Only clicking Reset submits the request.",
+      "confirmUnknown": "— resets",
+      "credits_one": "Remaining resets: {{count}}",
+      "credits_other": "Remaining resets: {{count}}",
+      "creditsUnknown": "Remaining resets: unknown",
+      "error": "Reset failed. Retry with the same request.",
+      "expiresAt": "Credits expire: {{time}}",
+      "loadFailed": "Could not read subscription usage.",
+      "loading": "Loading subscription…",
+      "noCredit": "No reset credits are available.",
+      "nothingToReset": "There is no exhausted usage window to reset.",
+      "reconnect": "Reconnect this subscription in Settings > Models.",
+      "reset": "Usage reset successfully.",
+      "resetting": "Resetting…",
+      "title": "Reset card",
+      "unavailable": "This subscription is unavailable in the current workspace.",
+      "unknown": "Unknown",
+      "unsupported": "Manual reset is not supported; usage recovers naturally."
     },
     "taskChips": {
       "chooseTask": "Choose a task",
@@ -2569,7 +2564,7 @@
         "back": "Browse workflows",
         "browse": "Browse workflows",
         "close": "Close",
-        "contextPrefix": "What matters to me: {{context}}",
+        "contextPrefix": "What matters to me: {{preference}}",
         "items": {
           "competitors": {
             "cadence": "Daily or weekly",
@@ -2860,29 +2855,17 @@
       "importedLoading": "Loading uploaded templates…",
       "importedUnavailable": "Uploaded templates are temporarily unavailable.",
       "previewTemplate": "Preview template {{title}}",
-      "previewVideo": "Preview video template {{title}}",
       "previewWebsite": "Preview website template {{title}}",
       "previewWorkflow": "Preview workflow template {{title}}",
       "removeTemplate": "Remove template {{title}}",
-      "removeVideo": "Remove video template {{title}}",
       "removeWebsite": "Remove website template {{title}}",
       "removeWorkflow": "Remove workflow template {{title}}",
-      "retry": "Retry",
-      "videoOptions": "Video options",
-      "videoOptionsAudio": "Generate audio",
-      "videoOptionsAudioOff": "Audio off",
-      "videoOptionsAudioOn": "Audio on",
-      "videoOptionsDuration": "Duration",
-      "videoOptionsLabel": "Video options {{spec}}",
-      "videoOptionsModel": "Model",
-      "videoOptionsRatio": "Ratio",
-      "videoOptionsResolution": "Resolution"
+      "retry": "Retry"
     },
     "thread": {
       "ariaLabel": "Chat thread",
       "changeIcon": "Change icon",
       "emoji": {
-        "archive": "Archive",
         "done": "Done",
         "idea": "Idea",
         "no": "No",
@@ -2921,6 +2904,7 @@
       "checkingLimit": "Checking voice input limit",
       "cleanupFailed": "Text was added, but the saved recording could not be removed.",
       "confirmRecording": "Done",
+      "detectionFailed": "Speech detection is unavailable. Your recording is kept. Please retry.",
       "discarding": "Removing voice draft...",
       "input": "Voice input",
       "inputLimitReached": "Voice input limit reached. Upgrade to Pro or Team for higher limits.",
@@ -2929,6 +2913,7 @@
       "inputLimitReachedProMember": "Voice input limit reached. Ask a workspace admin to upgrade to Team for higher limits.",
       "inputLimitReachedReset": "Voice input limit reached. Please wait for your limit to reset.",
       "microphoneAccessDenied": "Microphone access was denied. Allow microphone access and try again.",
+      "noSpeechDetected": "No speech detected. Please record again.",
       "openingMicrophone": "Opening microphone...",
       "removeDraft": "Remove voice draft",
       "restoreFailed": "Couldn’t load your voice draft. Try again.",
@@ -2950,6 +2935,8 @@
   },
   "cloudflareAccess": {
     "add": "Add Cloudflare Access",
+    "affectedMembers_one": "{{count}} member",
+    "affectedMembers_other": "{{count}} members",
     "cancel": "Cancel",
     "changed": "This Cloudflare Access changed while you were editing. Review its latest settings before saving your changes.",
     "clientId": "Service Token Client ID",
@@ -2957,40 +2944,59 @@
     "clientSecret": "Service Token Client Secret",
     "clientSecretPlaceholder": "Paste the Service Token Client Secret",
     "configuration": "Cloudflare Access",
+    "convert": "Make personal",
+    "convertHelp": "This organization Cloudflare Access will become your own Personal configuration, even if someone else created it. Its Service Token stays the same, and your SSH hosts can stay connected.",
+    "convertUncertain": "We could not confirm the conversion. Review the latest configuration before trying again.",
     "createNew": "Create new Cloudflare Access",
     "delete": "Delete Cloudflare Access",
-    "deleteHelp": "Delete this unused Cloudflare Access? Its stored Service Token cannot be recovered.",
-    "description": "Access protected applications with Cloudflare Access Service Tokens.",
+    "deleteHelp": "Delete this Cloudflare Access? Its stored Service Token cannot be recovered. Your own hosts must be rebound first.",
+    "deleteUncertain": "We could not confirm the deletion. Review the latest impact before trying again.",
     "edit": "Edit Cloudflare Access",
-    "empty": "No Cloudflare Access yet. Add a Service Token to access protected applications.",
     "failed": "Could not save the Cloudflare Access change. Try again.",
-    "inUse": "This Cloudflare Access is used by a host. Review the affected hosts and rebind or delete them first.",
-    "inUseHelp": "Select another Cloudflare Access for these hosts, switch them explicitly to Direct, or delete them before deleting this one.",
+    "forbidden": "Only organization admins can change shared Cloudflare Access.",
+    "hostCount_one": "{{count}} SSH host",
+    "hostCount_other": "{{count}} SSH hosts",
+    "impactChanged": "The affected hosts changed. Review the latest impact before confirming again.",
+    "impactConfirm": "I understand these members' SSH hosts will remain saved but cannot connect until their owners rebind them or explicitly choose Direct.",
+    "impactSummary": "Affected: {{members}} and {{hosts}}. Their SSH hosts will stay saved but cannot connect until their owners rebind or explicitly choose Direct. No host switches to Direct automatically.",
+    "inUse": "This Cloudflare Access is used by an SSH host. Its owner must rebind or delete that host first.",
+    "inUseHelp": "Your SSH hosts still use this Cloudflare Access. Rebind them to another configuration, explicitly choose Direct, or delete them first.",
     "invalidInput": "Some Cloudflare Access settings are invalid. Check the fields and try again.",
     "keepChanges": "Keep my changes with this version",
     "latest": "Latest saved settings",
     "loadFailed": "Could not load Cloudflare Access. Try again.",
     "loading": "Loading Cloudflare Access…",
-    "manage": "Manage Cloudflare Access",
+    "memberIdentifier": " (ID {{identifier}})",
     "missing": "This Cloudflare Access is no longer available. Select another one or create one.",
     "name": "Name",
     "namePlaceholder": "e.g. Production access",
+    "nameUnavailable": "Name unavailable",
+    "organization": "Organization",
+    "organizationHelp": "Anyone in this organization can use this Service Token. Only admins can change it.",
+    "personal": "Personal",
+    "promote": "Make organization",
+    "promoteConfirm": "I understand everyone in this organization will be able to use this Service Token.",
+    "promoteHelp": "Share your personal Cloudflare Access with this organization. Its Service Token and your SSH host bindings stay unchanged.",
+    "promoteUncertain": "We could not confirm the conversion. Close this dialog and review the latest configuration before trying again.",
     "replace": "Replace Service Token",
     "resourceIdConflict": "This resource ID cannot be used. Close and reopen the form to try again.",
     "retry": "Retry",
     "reviewHelp": "Your draft is preserved. Confirm the latest saved settings before applying your changes.",
+    "reviewLatest": "Review latest impact",
     "revisionExhausted": "This configuration can no longer be updated. Create a new one.",
     "save": "Save",
     "saveUncertain": "We couldn't confirm whether your changes were saved. Retry the same save, or close and check the list before adding again.",
+    "scope": "Who can use this",
+    "sectionEmpty": "No configurations here yet.",
     "select": "Select Cloudflare Access",
     "summary_one": "{{count}} Cloudflare Access configured",
     "summary_other": "{{count}} Cloudflare Access configured",
     "title": "Cloudflare Access",
     "tokenHelp": "Access protected applications with Cloudflare Access Service Tokens.",
     "unavailable": "Cloudflare Access is not available for this account.",
-    "unused": "Not used by any hosts",
-    "usedBy_one": "Used by {{count}} host:",
-    "usedBy_other": "Used by {{count}} hosts:"
+    "unused": "Not used by any of your hosts",
+    "usedBy_one": "Used by {{count}} of your hosts:",
+    "usedBy_other": "Used by {{count}} of your hosts:"
   },
   "connectors": {
     "access": {
@@ -3096,7 +3102,6 @@
       "connectAria": "Connect {{connector}}",
       "connected": "Connected",
       "connectionExpired": "Connection expired",
-      "connectToContinue": "Connect this account to continue",
       "managePermissions": "Manage permissions",
       "managePermissionsFor": "Manage {{connector}} permissions",
       "optional": "Optional",
@@ -3166,7 +3171,6 @@
           "menu": "Sales and business"
         }
       },
-      "categoriesAria": "Connector categories",
       "description": "Connect third-party services for your agents to use.",
       "descriptionWithCount": "Connect {{value}} services for your agents to use.",
       "directory": {
@@ -3185,8 +3189,6 @@
       "empty": {
         "agent": "No connectors for this agent",
         "connected": "No connected connectors",
-        "matching": "{{message}} matching \"{{search}}\"",
-        "notConnected": "No connectors left to connect",
         "search": "No connectors matching \"{{search}}\"",
         "unshared": "Every connector is shared with an agent"
       },
@@ -3196,14 +3198,10 @@
         "all": "All",
         "allAgents": "All agents",
         "aria": "Filter connectors",
-        "connected": "Connected",
-        "notConnected": "Not connected",
-        "status": "Status",
         "unshared": "Not shared with any agent"
       },
       "filterWith": "Filter: {{category}}",
       "iconUnavailable": "Connector icon unavailable",
-      "newConnector": "New connector",
       "noConnectorsAlt": "No connectors",
       "otherCategory": "Other",
       "remoteAccess": "Remote access",
@@ -3230,10 +3228,6 @@
         "seeMore_one": "See {{names}} and {{count}} more",
         "seeMore_other": "See {{names}} and {{count}} more",
         "top": "Top connectors"
-      },
-      "tabs": {
-        "builtin": "Built-in",
-        "custom": "Custom"
       },
       "title": "Connectors",
       "unnamedAgent": "Unnamed"
@@ -3374,7 +3368,6 @@
       "edit": {
         "title": "Edit custom connector"
       },
-      "emptyAdmin": "No custom connectors yet. Create one to register an API for every member to use.",
       "emptyMember": "Your org hasn't registered any custom connectors yet.",
       "mcpStreamableHttp": "MCP · Streamable HTTP",
       "mcpType": "MCP",
@@ -3459,7 +3452,7 @@
         "invalidSignature": "The signature on this link is not valid.",
         "invalidTimestamp": "The timestamp on this link is not valid.",
         "invalidTitle": "Connect link is invalid",
-        "risk": "SMS and MMS replies may not be delivered reliably. For the most reliable experience, use iMessage with this AgentPhone number.",
+        "risk": "SMS and MMS replies may not be delivered reliably. For the most reliable experience, use iMessage with this number.",
         "successDescription": "{{phone}} is connected. Send a text message to start chatting with {{assistantName}}.",
         "successTitle": "Phone number connected"
       },
@@ -3542,21 +3535,12 @@
         "alreadyDescriptionNamed": "You're already connected to {{bot}}. Send a message in Telegram to start chatting.",
         "alreadyTitle": "Already connected to Telegram",
         "back": "Back to Telegram settings",
-        "botFallback": "this bot",
-        "botFatherHandle": "@BotFather",
         "checkingConnectionDescription": "Please wait while we check your Telegram connection.",
         "checkingConnectionTitle": "Checking connection...",
-        "checkingDomain": "Checking domain status...",
         "checkingSession": "Please wait while we verify your {{brandName}} session.",
         "connectDescription": "Link your account to this Telegram bot so you can interact with your agent directly from Telegram.",
         "connectTitle": "Connect to Telegram",
         "continue": "Continue with Telegram",
-        "domainDescription": "Telegram web login is not enabled for {{bot}}.",
-        "domainIn": "In ",
-        "domainInstructionsAfter": ", choose the bot, then set the domain to:",
-        "domainKeepOpen": "Keep this page open after saving the domain. You can also connect from Telegram with /connect.",
-        "domainSend": ", send ",
-        "domainTitle": "Set Telegram login domain",
         "errorFallback": "We couldn't connect Telegram. Try again from Telegram.",
         "invalidSignature": "The signature on this link is not valid.",
         "invalidTimestamp": "The timestamp on this link is not valid.",
@@ -3566,9 +3550,7 @@
         "linkIncomplete": "Open a fresh /connect link from Telegram and try again.",
         "linkIncompleteTitle": "Connect link is incomplete",
         "open": "Open Telegram",
-        "openBotFather": "Open BotFather",
         "refresh": "Refresh this page and try again.",
-        "setDomainCommand": "/setdomain",
         "signInButton": "Sign in to {{brandName}}",
         "signInCheckFailed": "Couldn't check sign-in",
         "signInDescription": "Use your {{brandName}} account before connecting this Telegram user.",
@@ -3581,9 +3563,10 @@
       "agentphone": {
         "authorizedSender": "Authorized sender",
         "codeExpiry": "Expires in 10 minutes",
+        "codeLabel": "Code",
         "connectAria": "Connect phone",
-        "connectDescription": "Scan the code or open Messages, then send the prefilled code.",
-        "connectTitle": "Connect phone",
+        "connectDescription": "Scan with your camera, then send the prefilled code.",
+        "connectTitle": "Text {{assistantName}} from your iPhone",
         "copyAria": "Copy {{phone}}",
         "copyCodeAria": "Copy connection code {{code}}",
         "copyCodeError": "Failed to copy connection code",
@@ -3594,80 +3577,16 @@
         "creatingCode": "Creating connection code…",
         "description": "Text-message access to {{assistantName}}",
         "destination": "iMessage or SMS to",
-        "manualSend": "or send",
-        "manualSendTo": "to",
         "openMessages": "Open Messages",
         "options": "Phone options",
         "phoneLabel": "Phone",
         "qrTitle": "Scan to open Messages with the connection code ready",
         "risk": "Use iMessage when possible. SMS and MMS replies may not arrive reliably.",
+        "sendToLabel": "Send to",
         "tryAgain": "Try again"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activated": "Activated",
-          "activeCatalogDigest": "Active catalog digest",
-          "activeVersion": "Active version",
-          "evaluated": "Evaluated",
-          "evaluation": "Evaluation",
-          "executableCapabilityDigest": "Executable capability digest",
-          "failureCode": "Failure code",
-          "filteredAuthMethods": "Filtered auth methods",
-          "lastAttempt": "Last attempt",
-          "lastAttemptAt": "Last attempt at",
-          "lastSuccess": "Last success",
-          "missingVersions": "Missing versions",
-          "rejectedCatalogDigest": "Rejected catalog digest",
-          "rejectedVersion": "Rejected version",
-          "rejectingBackend": "Rejecting backend",
-          "rejectionCache": "Rejection cache",
-          "rejectionFailure": "Rejection failure",
-          "syncState": "Sync state",
-          "unownedSecrets": "Unowned secrets",
-          "unownedVariables": "Unowned variables",
-          "unresolvedBridgeCredentials": "Unresolved bridge credentials"
-        },
-        "loading": "Loading",
-        "none": "None",
-        "notReused": "Not reused",
-        "reused": "Reused",
-        "sections": {
-          "compatibility": "Compatibility",
-          "credentialStorage": "Credential storage",
-          "rejectedCandidate": "Rejected candidate"
-        },
-        "title": "Connector catalog",
-        "unavailable": "Unavailable",
-        "values": {
-          "accepted": "Accepted",
-          "current": "Current",
-          "digestMismatch": "Digest mismatch",
-          "invalidArtifact": "Invalid artifact",
-          "invalidCompression": "Invalid compression",
-          "invalidJson": "Invalid JSON",
-          "invalidPointer": "Invalid pointer",
-          "invalidReference": "Invalid reference",
-          "missingAccessProvider": "Missing access provider",
-          "missingGrantProvider": "Missing grant provider",
-          "missingPlatformConfiguration": "Missing platform configuration",
-          "missingRevokeProvider": "Missing revoke provider",
-          "neverSynced": "Never synced",
-          "objectTooLarge": "Object too large",
-          "providerContractMismatch": "Provider contract mismatch",
-          "publicLeakage": "Public leakage",
-          "rejected": "Rejected",
-          "relationshipMismatch": "Relationship mismatch",
-          "sourceUnavailable": "Source unavailable",
-          "stale": "Stale",
-          "unchanged": "Unchanged",
-          "unsupportedProtocol": "Unsupported protocol",
-          "unsupportedSchema": "Unsupported schema"
-        }
-      },
       "errors": {
-        "githubAuthorizationWindow": "Failed to open authorization window",
-        "telegramDomain": "Domain is not visible to Telegram yet. Check BotFather and try again.",
-        "telegramPrivacy": "Privacy mode still appears to be on. Turn it off in BotFather, then try again."
+        "githubAuthorizationWindow": "Failed to open authorization window"
       },
       "feishu": {
         "addBot": "Add bot",
@@ -3935,83 +3854,21 @@
         "uninstallTitle": "Uninstall Lark bot?"
       },
       "telegram": {
-        "addBot": "Add bot",
-        "addDescription": "Complete each BotFather step, then create the workspace bot.",
-        "adding": "Adding...",
-        "addTitle": "Add Telegram bot",
-        "agentAria": "Default agent for {{bot}}",
         "backToIntegrations": "Back to integrations",
         "botFallback": "Telegram bot",
-        "bots": "Telegram bots",
-        "botToken": "Bot token",
-        "botTokenPlaceholder": "123456:ABC-DEF",
-        "checking": "Checking...",
-        "copied": "copied!",
-        "copyAria": "Copy {{value}}",
-        "copyTitle": "Click to copy",
-        "create": {
-          "description": "{{brandName}} will register this bot and configure its webhook. After setup, mention the bot in a group or send it a DM to talk with the selected agent.",
-          "descriptionNamed": "{{brandName}} will register {{bot}} and configure its webhook. After setup, mention the bot in a group or send it a DM to talk with the selected agent.",
-          "title": "Ready to create the integration"
-        },
-        "defaultAgent": "Default agent",
         "disconnectAria": "Disconnect {{bot}}",
         "documentTitle": "Telegram",
-        "domain": {
-          "detected": "Domain detected",
-          "instructionAfter": ", choose this bot, and set the domain to ",
-          "instructionEnd": ". Telegram uses this domain to allow the connect flow for this bot.",
-          "instructionStart": "In {{botFather}}, send ",
-          "title": "Set the Telegram login domain"
-        },
-        "emptyDescription": "Add a bot token to start routing Telegram messages to an agent.",
-        "emptyTitle": "No Telegram bots yet",
-        "invalidTokenDescription": "Reinstall the bot with a fresh token from BotFather.",
         "loadError": "Couldn't load Telegram settings.",
         "moreOptions": "More options for {{bot}}",
-        "newBotToken": "New bot token",
         "notConnected": "Not connected",
         "officialBot": "Official Telegram bot",
         "officialDescription": "Official bot provided by {{brandName}}.",
         "officialMissing": "Official bot configuration is missing.",
-        "pageDescription": "Manage bot routing for this workspace",
-        "privacy": {
-          "instructionAfter": ", choose this bot, then disable privacy mode. This lets the agent read group context around mentions and replies.",
-          "instructionStart": "In {{botFather}}, send ",
-          "off": "Privacy mode is off",
-          "title": "Optional: turn off privacy mode"
-        },
-        "registerAria": "Register Telegram bot",
-        "reinstall": "Reinstall",
-        "reinstallDescription": "Paste the fresh BotFather token for {{bot}}. The token must belong to this same bot.",
-        "reinstalling": "Reinstalling...",
-        "reinstallTargetFallback": "this bot",
-        "reinstallTitle": "Reinstall Telegram bot",
-        "selectAgent": "Select agent",
-        "steps": {
-          "back": "Back",
-          "create": "Create",
-          "domain": "Domain",
-          "next": "Next",
-          "privacy": "Privacy",
-          "token": "Token"
-        },
-        "token": {
-          "instructionAfter": ", choose a name and username, then paste the token below.",
-          "open": "Open ",
-          "send": ", send ",
-          "title": "Create a bot token in BotFather",
-          "verified": "Token verified"
-        },
-        "tokenInvalid": "Token invalid",
-        "uninstallAria": "Uninstall {{bot}}",
-        "uninstallDescription": "This removes {{bot}} from the workspace and disconnects Telegram access for users who use it. This action cannot be undone.",
-        "uninstallTargetFallback": "this bot",
-        "uninstallTitle": "Uninstall Telegram bot?"
+        "pageDescription": "Manage bot routing for this workspace"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone connected",
-        "agentphoneDisconnected": "AgentPhone disconnected",
+        "agentphoneConnected": "Phone number connected",
+        "agentphoneDisconnected": "Phone number disconnected",
         "slackConnected": "Slack connected successfully",
         "slackDisconnected": "Disconnected from Slack",
         "slackInstalled": "Slack installed successfully",
@@ -4023,12 +3880,7 @@
         "teamsInstalled": "Microsoft Teams installed successfully",
         "teamsUninstalled": "Microsoft Teams integration uninstalled",
         "teamsUpdated": "Microsoft Teams updated",
-        "telegramAgentUpdated": "Default agent updated",
-        "telegramBotAdded": "Telegram bot added",
-        "telegramBotReinstalled": "Telegram bot reinstalled",
-        "telegramBotUninstalled": "Telegram bot uninstalled",
-        "telegramDisconnected": "Telegram account disconnected",
-        "telegramUpdatingAgent": "Updating default agent..."
+        "telegramDisconnected": "Telegram account disconnected"
       },
       "works": {
         "connected": "Connected",
@@ -4053,9 +3905,6 @@
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Request failed"
-    },
-    "realtime": {
-      "degraded": "Live updates ran into a problem. Please refresh the page."
     }
   },
   "invitationRedirect": {
@@ -4136,132 +3985,66 @@
     }
   },
   "onboarding": {
-    "categories": {
-      "ceo": {
-        "description": "Briefings and the big picture",
-        "title": "CEO"
-      },
-      "data": {
-        "description": "Dashboards, metrics, queries",
-        "title": "Data"
-      },
-      "engineering": {
-        "description": "Ship, debug, automate code",
-        "title": "Engineer"
-      },
-      "everyone": {
-        "description": "Email, calendar, meetings",
-        "title": "Everyone"
-      },
-      "marketing": {
-        "description": "Content, SEO, campaigns",
-        "title": "Marketing"
-      },
-      "operations": {
-        "description": "Projects, scheduling, sync",
-        "title": "Operations"
-      },
-      "product": {
-        "description": "Specs, releases, feedback",
-        "title": "Product"
-      },
-      "sales": {
-        "description": "Pipeline and outreach",
-        "title": "Sales"
-      },
-      "support": {
-        "description": "Tickets and customer help",
-        "title": "Support"
-      }
-    },
     "common": {
-      "back": "Back",
-      "continue": "Continue",
-      "dialogPreview": "{{title}} preview",
-      "gotIt": "Got it",
       "next": "Next",
-      "previewWorkflowDetails": "Preview workflow details",
-      "selectTemplate": "Select this template",
-      "selectThisTemplate": "Select this template",
       "stepProgress": "Step {{current}} of {{total}}"
     },
     "documentTitles": {
-      "chooseImage": "Choose an image style",
-      "choosePresentation": "Choose a presentation template",
-      "chooseVideo": "Choose a video style",
-      "chooseWorkflow": "Choose a workflow",
-      "make": "Welcome to {{brandName}}",
-      "runImage": "Create your first image",
-      "runPresentation": "Create your first presentation",
-      "runVideo": "Create your first video",
-      "runWorkflow": "Run your first workflow"
+      "make": "Welcome to {{brandName}}"
     },
     "make": {
-      "description": "Pick a starting point, you can do everything else later.",
-      "options": {
-        "explore": {
-          "description": "Just connect with my tools",
-          "title": "I will explore on my own"
-        },
-        "images": {
-          "description": "Create high-quality visuals",
-          "title": "Generate images"
-        },
-        "presentation": {
-          "description": "Generate slides and speaker",
-          "title": "Generate a presentation"
-        },
-        "slack": {
-          "description": "Chat with your AI teammate in your workspace",
-          "title": "Chat with Okou in Slack"
-        },
-        "video": {
-          "description": "Turn your ideas into video",
-          "title": "Video production"
-        },
-        "website": {
-          "description": "Create and publish a shareable page",
-          "title": "Build a website"
-        },
-        "workflow": {
-          "description": "Explore from preset templates",
-          "title": "Workflow automation"
-        }
-      },
-      "projectTypeLabel": "First project type",
       "promptDescription": "Tweak it below or run it as-is. {{assistantName}} takes it from here. Your tools stay sandboxed and nothing leaves your workspace.",
       "promptLabel": "Onboarding prompt",
-      "promptTitle": "Try this prompt",
-      "title": "What do you want to make first"
-    },
-    "runAction": {
-      "checkingPlan": "Checking plan",
-      "runNow": "Run now",
-      "upgradePro": "Upgrade Pro to run"
+      "promptTitle": "Try this prompt"
     },
     "sourcesFirst": {
+      "chatChannels": {
+        "connectedTitle": "Your chat is connected",
+        "copy": "Text Okou for yourself, or add it to your team’s chat. Choose the way you already work.",
+        "imessageConnected": "iMessage is connected",
+        "imessageCopy": "Your work, one message away.",
+        "imessageExpired": "Your connection code has expired.",
+        "imessageRefresh": "Get a new code",
+        "imessageScan": "Open your iPhone camera, then send the prefilled message.",
+        "imessageTitle": "Text Okou in iMessage",
+        "othersLabel": "Also available in",
+        "title": "Keep Okou a message away"
+      },
       "common": {
         "back": "Back",
         "continue": "Continue",
-        "finish": "Finish setup",
-        "notNow": "Not now",
-        "skip": "Skip for now"
+        "notNow": "Not now"
+      },
+      "compliance": {
+        "frameworks": {
+          "ccpa": "CCPA / CPRA",
+          "gdpr": "GDPR",
+          "hipaa": "HIPAA",
+          "iso27001": "ISO/IEC 27001",
+          "soc2": "SOC 2 Type II"
+        },
+        "link": "Security details",
+        "status": {
+          "aligned": "Aligned",
+          "compliant": "Compliant",
+          "inProgress": "In progress"
+        },
+        "title": "Okou’s compliance, built for your trust"
       },
       "documentTitles": {
         "experience": "Your AI experience",
         "industry": "Choose your field",
-        "profile": "Your profile",
         "ready": "Okou is ready",
         "skills": "Import your skills",
-        "slack": "Add Okou to Slack",
         "sources": "Connect your work",
-        "team": "Invite a teammate"
+        "team": "Invite a team member"
       },
       "experience": {
-        "copy": "Connect the plan you already pay for and your work runs there, not on Okou credits.",
-        "no": "No, I’m new to this",
-        "noCopy": "Okou picks a first task for you.",
-        "title": "Have you used Codex or Claude Code?"
+        "copy": "Start with guidance, or bring the Codex or Claude Code plan you already use.",
+        "no": "I'm new to AI agents",
+        "noCopy": "Okou helps you choose a useful first task.",
+        "title": "How would you like to start with Okou?",
+        "trust": "Run tasks on your Codex or Claude Code plan instead of Okou credits, so you can do more without worrying about usage. Connect now or later."
       },
       "industries": {
         "coaching": {
@@ -4310,34 +4093,59 @@
         }
       },
       "industry": {
-        "copy": "Okou uses this to pick your first task and the sources it starts from.",
+        "copy": "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud. Pick your field for a first task that fits.",
         "title": "What kind of work do you do?"
       },
-      "profile": {
-        "communicationStyle": "How you communicate",
-        "copy": "A first look at your work, based on the accounts you connected.",
-        "failed": "We couldn't create your profile right now. Try again or continue.",
-        "heading": "Your profile",
-        "loading": "Creating your profile from your connected work…",
-        "priorities": "Likely priorities",
-        "professionalIdentity": "Your work",
-        "retry": "Try again",
-        "title": "Here's what we've learned about you"
+      "prompt": {
+        "intro": "Okou is the work assistant for you and your team. It turns scattered information into finished work, in the cloud."
       },
       "skills": {
         "copied": "Copied",
-        "copy": "Paste this prompt into your own {{provider}} session and it brings the skills on your machine into Okou.",
+        "copy": "Run this prompt in {{provider}} to import the skills you've already built, so Okou can use them from day one.",
         "copyError": "The prompt could not be copied.",
         "copyPrompt": "Copy prompt",
+        "guide": {
+          "claudeCode": {
+            "openApp": "Open the Claude app and switch to the {{control}} tab",
+            "openAppNote": "Code runs on your computer, so it can read your skill folders.",
+            "stayLocal": "Keep the session on {{control}}",
+            "stayLocalNote": "Chat and cloud sessions can’t see files on your computer."
+          },
+          "codex": {
+            "keepOpen": "Keep it open until your skills appear below",
+            "openApp": "Open the Codex app and start a {{control}}",
+            "openAppNote": "Use the app on your computer, so it can read your skill folders."
+          },
+          "controls": {
+            "codeTab": "Code",
+            "local": "Local",
+            "newChat": "New chat"
+          },
+          "copy": "Copy the prompt",
+          "label": "Where to run the prompt",
+          "paste": "Paste the prompt and send it",
+          "scene": {
+            "claudeArtifacts": "Artifacts",
+            "claudeCustomize": "Customize",
+            "claudeNew": "New",
+            "claudeProjects": "Projects",
+            "codexNoProjects": "No projects",
+            "codexProjects": "Projects"
+          }
+        },
+        "hideFullPrompt": "Hide full prompt",
         "importedCopy": "Imported as an Okou workflow.",
+        "importedCount_one": "{{count}} imported · listening for more",
+        "importedCount_other": "{{count}} imported · listening for more",
         "importedLabel": "Imported skills",
         "importedTitle": "Your skills are in Okou",
         "preparing": "Opening your import session…",
         "promptCopy": "It reads the skills on your machine and writes them into Okou.",
         "promptLabel": "Skill import prompt",
         "promptTitle": "Run this in {{provider}}",
+        "showFullPrompt": "Show full prompt",
         "startError": "The import session could not be opened.",
-        "title": "Bring the skills you already wrote.",
+        "title": "Bring your existing skills into Okou",
         "tryAgain": "Try again",
         "waiting": "Imported skills appear here as they arrive."
       },
@@ -4346,44 +4154,18 @@
         "channelAdminRequired": "Ask a workspace admin to add Okou to {{channel}}.",
         "channelUnavailable": "{{channel}} isn’t available for this workspace yet.",
         "connectAction": "Connect Slack",
-        "connectedCopy": "Open Slack and mention @Okou to give it a task.",
         "connectedStatus": "Added to your workspace",
-        "connectedTitle": "Slack is connected",
-        "copy": "Add it once, then mention @Okou where the work already happens.",
         "name": "Slack",
         "otherAdded": "Added",
         "otherImessage": "iMessage",
-        "othersLabel": "Add these later, or now",
         "otherTeams": "Teams",
-        "otherTelegram": "Telegram",
-        "previewAppBadge": "APP",
-        "previewAsk": "pull last week’s signups by source, reconcile them with the ads account, and put the table in a sheet.",
-        "previewAskAuthor": "Mia Chen",
-        "previewChannel": "# growth",
-        "previewChannelGeneral": "# general",
-        "previewChannelLaunch": "# launch",
-        "previewChannelsLabel": "Channels",
-        "previewChannelTopic": "Weekly numbers and what we ship next",
-        "previewComposer": "Message #growth",
-        "previewContext": "Board call is Thursday and I still owe them last week’s numbers.",
-        "previewContextAuthor": "Dan Rivera",
-        "previewContextTime": "9:06 AM",
-        "previewDirectMessagesLabel": "Direct messages",
-        "previewMention": "@Okou",
-        "previewReplies": "3 replies",
-        "previewReply": "1,284 signups last week, up 18% from 1,088. The sheet is in the thread.",
-        "previewReplyAuthor": "Okou",
-        "previewReplyTime": "9:16 AM",
-        "previewTime": "9:14 AM",
-        "previewWorkspace": "Northwind",
-        "rowCopy": "Works in any channel you add it to.",
-        "rowTitle": "Okou for Slack",
-        "title": "Give Okou a job without leaving Slack."
+        "otherTelegram": "Telegram"
       },
       "sources": {
-        "copy": "It works in the cloud, from the tools your team already uses. 10x the output, less operational friction, lower cost. Connect one source to start.",
-        "note": "You choose which accounts to connect.",
-        "title": "Okou is for you, and shared across your whole team."
+        "copy": "The more Okou knows about your work, the smarter it gets. Connect a tool you use every day to start with a task built on your real work.",
+        "permissions": "Okou uses a small sample to tailor your first task. You decide what Agents can do and for how long.",
+        "securityLink": "How Okou protects your data",
+        "title": "Connect a work tool"
       },
       "startingPrompt": {
         "exact": {
@@ -4717,1213 +4499,39 @@
         "connecting": "Connecting…",
         "failedNote": "We couldn’t connect {{provider}}. You can try again, or continue and connect it later.",
         "retry": "Try again",
-        "rowCopy": "Runs on your plan, not on Okou credits.",
+        "rowCopy": "Connect to run on your plan instead of Okou credits.",
         "unconfirmedNote": "We couldn’t check your {{provider}} connection. You can try again, or continue and connect it later."
       },
       "team": {
-        "copy": "Invite a teammate now, or do it later from the workspace menu.",
+        "copy": "Invite a team member to share your workflows, while each of you connects your own tools.",
+        "invalidEmail": "Enter a valid email address",
         "invite": "Send invite",
         "invited": "Invited",
-        "label": "Teammate’s email",
-        "note": "They join this workspace; their own accounts stay theirs.",
+        "label": "Team member’s email",
+        "note": "They can start working with Okou right away.",
         "notSent": "Not sent",
-        "panelTitle": "Invite a teammate",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "Invite a team member",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "Their connected accounts stay theirs — nothing is shared without them.",
-          "workflows": "Anyone here can run the workflows this workspace already has.",
-          "workspace": "They land in this workspace, with the sources you just connected."
+          "accounts": "They connect their own tools when they need them.",
+          "workflows": "They can run any workflow your team has built.",
+          "workspace": "They join your workspace."
         },
         "sending": "Sending…",
-        "title": "Bring the people who do this work with you."
+        "title": "Make Okou useful to your whole team"
       },
       "welcome": {
-        "copy": "Start with a first task, picked for the work you just connected.",
-        "offerTitle": "First hour of consulting is on us, plus up to 100 credits —",
+        "copy": "Review a suggested task for your work, adjust it to your goal, and let Okou get started.",
         "promptLabel": "Your starting prompt",
         "start": "Start with Okou",
-        "title": "Okou is ready for you"
-      }
-    },
-    "templatePicker": {
-      "image": {
-        "description": "Use it as a reference for the image you want to create.",
-        "selectTemplate": "Select {{title}} illustration template",
-        "showVariant": "Show {{title}} variant {{variant}}",
-        "title": "Pick an illustration template to start from"
-      },
-      "presentation": {
-        "description": "Use it as a reference for the deck you want to create.",
-        "nextSlide": "Show next slide",
-        "previousSlide": "Show previous slide",
-        "selectTemplate": "Select {{title}} presentation template",
-        "showSlide": "Show slide {{slide}}",
-        "slideAlt": "{{title}} slide {{slide}}",
-        "title": "Pick a presentation template to start from",
-        "viewTemplate": "View {{title}} presentation"
-      },
-      "video": {
-        "description": "Use it as a reference for the video you want to create.",
-        "selectTemplate": "Select {{title}} video template",
-        "title": "Pick a video template to start from"
-      }
-    },
-    "templateRun": {
-      "image": {
-        "noteLabel": "Custom illustration scene",
-        "notePlaceholder": "Add your custom scene to remix with your own illustration",
-        "previewLabel": "Illustration template preview",
-        "title": "Select one automation you would like to have a try"
-      },
-      "presentation": {
-        "noteLabel": "Presentation content and instruction",
-        "notePlaceholder": "Add your presentation's content and instruction",
-        "previewLabel": "Presentation template preview",
-        "title": "Fulfil your presentation"
-      },
-      "video": {
-        "noteLabel": "Custom video prompt",
-        "notePlaceholder": "Add your custom prompt to remix with your own video",
-        "previewLabel": "Video template preview",
-        "title": "Customize your video"
-      }
-    },
-    "templates": {
-      "illustration": {
-        "cozy-parlor": "Cozy Parlor",
-        "crowd-ink": "Crowd Ink",
-        "editorial-flatfolk": "Editorial Flatfolk",
-        "emboss-deboss": "Emboss & Deboss",
-        "endpaper": "Endpaper",
-        "flat-poster": "Flat Poster",
-        "folk-muse": "Folk Muse",
-        "folk-storybook": "Folk Storybook",
-        "grain-poster": "Grain Poster",
-        "grainy-duotone": "Grainy Duotone",
-        "iberian-vignette": "Iberian Vignette",
-        "ink-mascot": "Ink Mascot",
-        "ink-storefront": "Ink Storefront",
-        "inkdab": "Inkdab",
-        "inkstomp": "Inkstomp",
-        "iso-scene": "Iso Scene",
-        "jade-blockprint": "Jade Blockprint",
-        "light-pop-portrait": "Light Pop Portrait",
-        "loose-contour": "Loose Contour",
-        "mellow-pop": "Mellow Pop",
-        "mosaic-still-life": "Mosaic Still Life",
-        "notion-illustration": "Notion Illustration",
-        "op-ed-cover": "Op-Ed Cover",
-        "painterly-botanical": "Painterly Botanical",
-        "papernook": "Papernook",
-        "postcard-illustration": "Postcard Illustration",
-        "riso-relic": "Riso Relic",
-        "shadow-pop": "Shadow Pop",
-        "soft-vector": "Soft Vector",
-        "sticker-sheet": "Sticker Sheet",
-        "sunlit-gouache": "Sunlit Gouache",
-        "tiny-wanderer": "Tiny Wanderer"
-      },
-      "presentation": {
-        "bloom-pitch": "Petal pitch",
-        "blueprint-academy": "Drafting campus",
-        "botane-organic-deck": "Mauve garden",
-        "business-data-presentation": "Berry dashboard",
-        "crayon-learning-deck": "Crayon doodle",
-        "creative-agency-presentation": "Foliage gallery",
-        "data-report-presentation": "Candy charts",
-        "editorial-magazine-deck": "Paper magazine",
-        "landing-consulting-deck": "Neon browser",
-        "lumina-creative-studio": "Brush stickers",
-        "meridian": "Cobalt blocks",
-        "mosaic-geometric-pitch": "Bauhaus tiles",
-        "neo-brutalism": "Shadow shop",
-        "nocturne": "Midnight stage",
-        "pixel-glitch": "Arcade pixels",
-        "playful-launch-presentation": "Sunburst playroom",
-        "playful-pop-deck": "Neon candy",
-        "prospectus": "Homepage pitch",
-        "schoolhouse": "Kraft poster",
-        "sticker-scrapbook": "Sticker notebook",
-        "strata": "Red staircase",
-        "taped-consulting": "Polaroid wall",
-        "vantage": "Numbered boardroom"
-      },
-      "video": {
-        "chinese-ink-art": "Chinese Ink Painting",
-        "cyberpunk-anime": "Cyberpunk Anime",
-        "epic-grandeur": "Epic Grandeur",
-        "fashion-editorial": "Fashion Editorial",
-        "gourmet-documentary": "Gourmet Documentary",
-        "hand-drawn-fantasy-anime": "Hand Drawn Fantasy Anime",
-        "japanese-wabi-sabi": "Japanese Wabi-Sabi",
-        "luxury-product": "Luxury Product Macro",
-        "shortform-viral": "Shortform Viral",
-        "sports-performance-ad": "Sports Performance Ad"
-      }
-    },
-    "workflowDiagram": {
-      "preparedDescription": "{{assistantName}} prepares the next step from your tools.",
-      "preparedTitle": "Workflow prepared",
-      "reviewDescription": "{{assistantName}} completes the workflow and returns the result.",
-      "reviewTitle": "Ready for review",
-      "source": "Source"
-    },
-    "workflowPicker": {
-      "categoryDescription": "Ready-to-run setups you can adapt to your tools and goals.",
-      "categoryTitle": "{{category}} workflows",
-      "customDescription": "Describe what you want and {{assistantName}} builds it with you.",
-      "customTitle": "Talk to {{assistantName}} and make my own",
-      "description": "Pick a role to see the workflows that fit. You can switch anytime.",
-      "title": "What do you work on?",
-      "workflowCardLabel": "{{title}} {{description}}"
-    },
-    "workflowPreview": {
-      "howItWorks": "How it works",
-      "whatItDoes": "What it does"
-    },
-    "workflowRun": {
-      "continueWithAssistant": "Continue with {{assistantName}}",
-      "createWorkflow": "Create workflow",
-      "customNoteLabel": "Describe your workflow",
-      "customNotePlaceholder": "Describe what you want {{assistantName}} to build",
-      "customTitle": "Describe your workflow",
-      "noteLabel": "Anything else you would like to add?",
-      "notePlaceholder": "Anything else you would like to add?",
-      "reviewTitle": "Review your workflow draft"
-    },
-    "workflows": {
-      "alert-metric-moves-slack": {
-        "description": "Find material website changes and explain likely causes.",
-        "scenario": "A sharp metric change matters most when the context arrives with it. {{assistantName}} monitors Google Analytics and adds search or paid-channel evidence when connected.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads the selected traffic and conversion measures.",
-            "title": "Key metrics are checked"
-          },
-          "three": {
-            "description": "{{assistantName}} returns likely causes and the next diagnostic step.",
-            "title": "The shift is explained"
-          },
-          "two": {
-            "description": "{{assistantName}} compares current values with the expected range.",
-            "title": "Unusual movement is found"
-          }
-        },
-        "title": "Alert on traffic and conversion shifts"
-      },
-      "auto-merge-github-prs": {
-        "description": "Review ready pull requests, wait for CI, and merge approved changes.",
-        "scenario": "Merging a pull request means watching checks and rereading the diff. {{assistantName}} picks up your ready-to-merge label, reviews the change, waits for CI, and merges only under the rule you approve.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} detects the ready-to-merge label.",
-            "title": "A PR is ready"
-          },
-          "three": {
-            "description": "{{assistantName}} merges only after the approved safety conditions pass.",
-            "title": "Merged under your rule"
-          },
-          "two": {
-            "description": "{{assistantName}} checks the diff and waits for required CI.",
-            "title": "{{assistantName}} reviews the change"
-          }
-        },
-        "title": "Auto-merge GitHub PRs"
-      },
-      "blog-posts-to-x": {
-        "description": "Find decaying pages and turn them into prioritized update briefs.",
-        "scenario": "Existing content often has more upside than a new article. {{assistantName}} uses built-in Firecrawl and DataForSEO to find underperforming pages, map current demand, and recommend focused updates.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} crawls the site and identifies likely refresh candidates.",
-            "title": "Existing pages are reviewed"
-          },
-          "three": {
-            "description": "{{assistantName}} prioritizes pages and specifies the needed updates.",
-            "title": "Refresh briefs are created"
-          },
-          "two": {
-            "description": "{{assistantName}} checks search results, keywords, and competitive coverage.",
-            "title": "Current demand is mapped"
-          }
-        },
-        "title": "Build an SEO content refresh plan"
-      },
-      "build-weekly-deck-gamma": {
-        "description": "Track revenue, expenses, receivables, and cash flow in Sheets.",
-        "scenario": "Financial reviews slow down when the numbers must be rebuilt by hand. {{assistantName}} pulls the approved QuickBooks metrics and maintains a decision-ready dashboard in Google Sheets.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads revenue, expenses, receivables, and cash flow.",
-            "title": "Financial data is collected"
-          },
-          "three": {
-            "description": "{{assistantName}} writes the current finance view to Google Sheets.",
-            "title": "The dashboard is refreshed"
-          },
-          "two": {
-            "description": "{{assistantName}} calculates trends, exceptions, and reporting totals.",
-            "title": "Metrics are organized"
-          }
-        },
-        "title": "Build a QuickBooks finance dashboard"
-      },
-      "business-review-gamma": {
-        "description": "Combine financial, growth, and operating data into one review.",
-        "scenario": "A monthly review should explain the business, not just repeat dashboards. {{assistantName}} combines QuickBooks, Google Analytics, and Google Sheets and adds HubSpot context when available.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads financial, growth, and operating metrics.",
-            "title": "Business data is collected"
-          },
-          "three": {
-            "description": "{{assistantName}} returns a concise decision-ready monthly review.",
-            "title": "The review is prepared"
-          },
-          "two": {
-            "description": "{{assistantName}} connects trends, plan variance, wins, and risks.",
-            "title": "Performance is analyzed"
-          }
-        },
-        "title": "Build a monthly business review"
-      },
-      "catch-calendar-conflicts": {
-        "description": "Detect double-bookings and difficult scheduling windows early.",
-        "scenario": "Calendar conflicts are easiest to solve before the meeting day. {{assistantName}} checks new events for overlap, travel, and preparation conflicts and explains the options.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads the event and surrounding Calendar schedule.",
-            "title": "A new event is checked"
-          },
-          "three": {
-            "description": "{{assistantName}} explains the conflict and can draft a Gmail note.",
-            "title": "Resolution options are returned"
-          },
-          "two": {
-            "description": "{{assistantName}} detects overlaps and impossible transition windows.",
-            "title": "Conflicts are identified"
-          }
-        },
-        "title": "Catch Google Calendar conflicts"
-      },
-      "catch-leads-gmail": {
-        "description": "Summarize stage movement, stale deals, risks, and forecast changes.",
-        "scenario": "Pipeline reviews are clearer when changes arrive before the meeting. {{assistantName}} compares the current HubSpot pipeline with the prior snapshot and returns a concise weekly digest.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} collects deals, stages, owners, dates, and activity.",
-            "title": "The pipeline is read"
-          },
-          "three": {
-            "description": "{{assistantName}} returns next actions and optionally updates Google Sheets.",
-            "title": "The digest is created"
-          },
-          "two": {
-            "description": "{{assistantName}} finds changes, stale deals, blockers, and forecast drift.",
-            "title": "Movement and risk are analyzed"
-          }
-        },
-        "title": "Create a weekly HubSpot pipeline digest"
-      },
-      "chase-overdue-asana-tasks": {
-        "description": "Prepare owner-specific reminders without sending automatically.",
-        "scenario": "Overdue work needs context, not generic nudges. {{assistantName}} groups past-due Asana tasks by owner and drafts a concise Gmail reminder for each person.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads Asana tasks that are past due.",
-            "title": "Overdue work is found"
-          },
-          "three": {
-            "description": "{{assistantName}} creates reminders for human review and never sends them.",
-            "title": "Gmail drafts are prepared"
-          },
-          "two": {
-            "description": "{{assistantName}} prepares the relevant project and blocker context.",
-            "title": "Tasks are grouped by owner"
-          }
-        },
-        "title": "Draft Gmail reminders for overdue Asana tasks"
-      },
-      "check-posthog-signup-funnel": {
-        "description": "Compare Google Ads and Meta Ads on the same performance basis.",
-        "scenario": "Paid channels are hard to compare when each platform reports differently. {{assistantName}} normalizes spend, conversions, CPA, and ROAS across Google Ads and Meta Ads.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads both platforms for the same reporting window.",
-            "title": "Ad data is collected"
-          },
-          "three": {
-            "description": "{{assistantName}} highlights efficiency, pacing, and optionally updates Sheets.",
-            "title": "Channel differences are explained"
-          },
-          "two": {
-            "description": "{{assistantName}} calculates comparable spend, conversion, CPA, and ROAS metrics.",
-            "title": "Performance is normalized"
-          }
-        },
-        "title": "Compare paid acquisition channels"
-      },
-      "compare-google-ads-last-month": {
-        "description": "Track paid-media efficiency, pacing, and performance drift.",
-        "scenario": "Budget can drift before a campaign owner notices. {{assistantName}} compares Google Ads and Meta Ads on spend, conversions, CPA, and ROAS and highlights where action is needed.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads both ad platforms for the selected period.",
-            "title": "Campaign data is collected"
-          },
-          "three": {
-            "description": "{{assistantName}} returns the comparison and optionally updates Sheets.",
-            "title": "Actions are recommended"
-          },
-          "two": {
-            "description": "{{assistantName}} normalizes performance and identifies material drift.",
-            "title": "Efficiency is compared"
-          }
-        },
-        "title": "Compare Google Ads and Meta Ads"
-      },
-      "daily-company-brief-slack": {
-        "description": "Combine growth, pipeline, and optional financial context.",
-        "scenario": "The company picture is spread across several systems. {{assistantName}} combines Google Analytics and HubSpot, adds QuickBooks context when available, and returns the wins, risks, and decisions that matter.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads growth, pipeline, and available financial data.",
-            "title": "Company signals are gathered"
-          },
-          "three": {
-            "description": "{{assistantName}} summarizes priorities in the automation thread.",
-            "title": "The pulse is returned"
-          },
-          "two": {
-            "description": "{{assistantName}} connects movement across the business.",
-            "title": "Wins and risks are identified"
-          }
-        },
-        "title": "Create a daily company pulse"
-      },
-      "daily-industry-news-slack": {
-        "description": "Monitor QuickBooks cash position and receivables risk.",
-        "scenario": "Cash-flow issues are cheaper to handle before they become urgent. {{assistantName}} checks QuickBooks cash flow and overdue invoices, explains material risk, and can draft follow-up emails for review.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads cash flow, receivables, and overdue invoices.",
-            "title": "Financial risk is checked"
-          },
-          "three": {
-            "description": "{{assistantName}} explains the risk and can prepare Gmail follow-ups.",
-            "title": "The alert is returned"
-          },
-          "two": {
-            "description": "{{assistantName}} flags aging balances and cash-pressure signals.",
-            "title": "Material changes are identified"
-          }
-        },
-        "title": "Alert on cash flow and overdue invoices"
-      },
-      "draft-github-release-notes-notion": {
-        "description": "Turn merged pull requests into clear, user-facing release notes.",
-        "scenario": "Release notes should not require translating a commit log by hand. {{assistantName}} gathers the pull requests merged since the last release and turns them into a concise changelog in Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} collects pull requests since the previous release.",
-            "title": "Merged work is gathered"
-          },
-          "three": {
-            "description": "{{assistantName}} writes the release-note draft in Notion.",
-            "title": "Notes are saved"
-          },
-          "two": {
-            "description": "{{assistantName}} groups the work and explains the user impact.",
-            "title": "Changes are translated"
-          }
-        },
-        "title": "Draft GitHub release notes in Notion"
-      },
-      "draft-newsletter-mailchimp": {
-        "description": "Combine Analytics and Search Console into one organic report.",
-        "scenario": "Organic growth lives across traffic and search data. {{assistantName}} combines Google Analytics with Search Console, explains movement and opportunities, and optionally records follow-up work in Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads site behavior and search performance.",
-            "title": "Organic data is collected"
-          },
-          "three": {
-            "description": "{{assistantName}} returns priorities and optionally saves them in Notion.",
-            "title": "The brief is created"
-          },
-          "two": {
-            "description": "{{assistantName}} connects landing pages, queries, conversions, and trends.",
-            "title": "Growth is analyzed"
-          }
-        },
-        "title": "Create an organic growth brief"
-      },
-      "draft-replies-notion-faq": {
-        "description": "Ground support email drafts in an approved Notion FAQ.",
-        "scenario": "Most support questions already have an approved answer somewhere. {{assistantName}} reads the email, finds the relevant Notion guidance, and drafts a grounded reply for review.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads the Gmail conversation and customer context.",
-            "title": "A support question arrives"
-          },
-          "three": {
-            "description": "{{assistantName}} prepares a response and never sends automatically.",
-            "title": "A reply is drafted"
-          },
-          "two": {
-            "description": "{{assistantName}} finds the relevant approved guidance in Notion.",
-            "title": "The FAQ is checked"
-          }
-        },
-        "title": "Draft replies from the FAQ"
-      },
-      "file-gmail-invoices-drive": {
-        "description": "Store invoice files and record the corresponding accounting item.",
-        "scenario": "Invoices create cleanup work when files and accounting records drift apart. {{assistantName}} files Gmail attachments in Drive, records the bill or expense in QuickBooks, and can update a reconciliation sheet.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads selected Gmail messages and attachments.",
-            "title": "Invoice emails are identified"
-          },
-          "three": {
-            "description": "{{assistantName}} records the item and optionally updates Google Sheets.",
-            "title": "QuickBooks is updated"
-          },
-          "two": {
-            "description": "{{assistantName}} saves the document in Drive and extracts accounting data.",
-            "title": "Files and details are captured"
-          }
-        },
-        "title": "File Gmail invoices in Drive and QuickBooks"
-      },
-      "file-sentry-crashes-github": {
-        "description": "Rank new crashes by impact and file the most actionable issues.",
-        "scenario": "High-impact crashes can sit unnoticed in an error feed. {{assistantName}} reviews new Sentry failures, ranks them by severity and affected users, and files the ones that need engineering work.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} collects unresolved errors and impact signals from Sentry.",
-            "title": "{{assistantName}} reads new crashes"
-          },
-          "three": {
-            "description": "{{assistantName}} creates actionable issues and optionally links them in Linear.",
-            "title": "GitHub issues are filed"
-          },
-          "two": {
-            "description": "{{assistantName}} separates urgent regressions from lower-impact noise.",
-            "title": "Impact is ranked"
-          }
-        },
-        "title": "File Sentry crashes as GitHub issues"
-      },
-      "fixes-to-notion-help-docs": {
-        "description": "Convert confirmed GitHub fixes into reusable Notion guidance.",
-        "scenario": "The same support question returns when the fix is never documented. {{assistantName}} reads resolved GitHub issues and turns the approved resolution into a clear Notion help article.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads the GitHub issue, fix, and user impact.",
-            "title": "A resolved bug is selected"
-          },
-          "three": {
-            "description": "{{assistantName}} writes the reusable draft in Notion.",
-            "title": "The help article is saved"
-          },
-          "two": {
-            "description": "{{assistantName}} turns the resolution into clear troubleshooting steps.",
-            "title": "Guidance is drafted"
-          }
-        },
-        "title": "Turn resolved bugs into help docs"
-      },
-      "flag-figma-designs-no-task": {
-        "description": "Convert an approved product spec into scoped Linear work.",
-        "scenario": "Approved specs still need to become executable work. {{assistantName}} reads a Notion spec and creates a Linear project with milestones, scoped issues, dependencies, and acceptance criteria.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads the approved Notion product specification.",
-            "title": "The spec is reviewed"
-          },
-          "three": {
-            "description": "{{assistantName}} creates the project and optionally links GitHub context.",
-            "title": "The Linear project is created"
-          },
-          "two": {
-            "description": "{{assistantName}} identifies milestones, issues, dependencies, and criteria.",
-            "title": "Work is structured"
-          }
-        },
-        "title": "Turn a Notion spec into a Linear project"
-      },
-      "flagged-gmail-todoist-tasks": {
-        "description": "Create actionable tasks from messages with a selected label.",
-        "scenario": "Important emails become easier to finish when they leave the inbox as clear tasks. {{assistantName}} turns labeled Gmail messages into Todoist items with due dates and source context.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} detects the selected label and reads the message.",
-            "title": "A Gmail message is flagged"
-          },
-          "three": {
-            "description": "{{assistantName}} creates the task with a source link.",
-            "title": "A Todoist task is created"
-          },
-          "two": {
-            "description": "{{assistantName}} identifies the task, due date, and supporting context.",
-            "title": "The action is extracted"
-          }
-        },
-        "title": "Turn flagged Gmail into Todoist tasks"
-      },
-      "github-idea-to-notion-spec": {
-        "description": "Expand a labeled GitHub idea into a structured product spec.",
-        "scenario": "Good ideas often stop at a short issue description. {{assistantName}} turns a labeled GitHub idea into a clear Notion spec with the problem, evidence, scope, metrics, risks, and open questions.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads the labeled GitHub issue and related context.",
-            "title": "An idea is selected"
-          },
-          "three": {
-            "description": "{{assistantName}} writes the structured draft in Notion.",
-            "title": "The spec is saved"
-          },
-          "two": {
-            "description": "{{assistantName}} expands the problem, scope, success criteria, and risks.",
-            "title": "The spec is developed"
-          }
-        },
-        "title": "Turn a GitHub idea into a Notion spec"
-      },
-      "gmail-followups-auto": {
-        "description": "Prepare contextual sales follow-ups for human review.",
-        "scenario": "Good follow-ups need the deal record and the conversation. {{assistantName}} combines HubSpot context with the related Gmail thread and drafts a concise response without sending it.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads the HubSpot record and recent activity.",
-            "title": "Deal context is reviewed"
-          },
-          "three": {
-            "description": "{{assistantName}} prepares a Gmail draft for human review.",
-            "title": "A follow-up is drafted"
-          },
-          "two": {
-            "description": "{{assistantName}} identifies open questions, commitments, and timing.",
-            "title": "The email thread is checked"
-          }
-        },
-        "title": "Draft Gmail follow-ups from HubSpot"
-      },
-      "gmail-reconnect-reminders": {
-        "description": "Find important contacts who have gone quiet and draft outreach.",
-        "scenario": "Important relationships fade when no one notices the silence. {{assistantName}} reviews Gmail, adds Calendar history when available, and drafts thoughtful reconnect notes.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} checks recent Gmail activity and contact context.",
-            "title": "Relationship history is reviewed"
-          },
-          "three": {
-            "description": "{{assistantName}} drafts personal messages for human review.",
-            "title": "Reconnect drafts are prepared"
-          },
-          "two": {
-            "description": "{{assistantName}} identifies valuable contacts with no recent interaction.",
-            "title": "Quiet relationships are ranked"
-          }
-        },
-        "title": "Surface relationships to reconnect with"
-      },
-      "highlight-key-emails-gmail": {
-        "description": "Find the Gmail messages that most need an executive response.",
-        "scenario": "An executive inbox mixes important decisions with routine traffic. {{assistantName}} identifies the messages that matter, explains why, and drafts responses without sending them.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads recent Gmail messages and available calendar context.",
-            "title": "The inbox is reviewed"
-          },
-          "three": {
-            "description": "{{assistantName}} summarizes each item and drafts replies for review.",
-            "title": "Responses are prepared"
-          },
-          "two": {
-            "description": "{{assistantName}} prioritizes decisions, commitments, and sensitive requests.",
-            "title": "Important messages are ranked"
-          }
-        },
-        "title": "Highlight key emails"
-      },
-      "investor-update-google-docs": {
-        "description": "Combine financial and growth data into a Google Docs draft.",
-        "scenario": "Investor updates take time because the story and the numbers live apart. {{assistantName}} combines QuickBooks and Google Analytics, adds HubSpot context when available, and drafts the update in Google Docs.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads financial, growth, and available pipeline data.",
-            "title": "Current metrics are gathered"
-          },
-          "three": {
-            "description": "{{assistantName}} writes the investor update in Google Docs.",
-            "title": "The update is drafted"
-          },
-          "two": {
-            "description": "{{assistantName}} connects progress, lessons, risks, and next priorities.",
-            "title": "The narrative is developed"
-          }
-        },
-        "title": "Draft an investor update"
-      },
-      "log-gong-calls-hubspot": {
-        "description": "Turn meeting transcripts into CRM decisions and next actions.",
-        "scenario": "Important call details disappear when notes stay outside the CRM. {{assistantName}} turns Google Meet transcripts into decisions, objections, commitments, and action items in HubSpot.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads the latest transcript and meeting context.",
-            "title": "A Meet transcript arrives"
-          },
-          "three": {
-            "description": "{{assistantName}} logs the recap and can draft a Gmail follow-up.",
-            "title": "HubSpot is updated"
-          },
-          "two": {
-            "description": "{{assistantName}} identifies decisions, objections, commitments, and owners.",
-            "title": "Sales signals are extracted"
-          }
-        },
-        "title": "Log Google Meet action items in HubSpot"
-      },
-      "meeting-notes-asana-tasks": {
-        "description": "Create assigned project work from meeting transcripts.",
-        "scenario": "Meeting actions disappear when they remain inside notes. {{assistantName}} reads Google Meet transcripts, identifies commitments and owners, and creates clear Asana tasks.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads the meeting transcript and Calendar context.",
-            "title": "A Meet transcript arrives"
-          },
-          "three": {
-            "description": "{{assistantName}} creates assigned work with source context.",
-            "title": "Asana tasks are created"
-          },
-          "two": {
-            "description": "{{assistantName}} identifies tasks, owners, due dates, and dependencies.",
-            "title": "Actions are extracted"
-          }
-        },
-        "title": "Turn Google Meet notes into Asana tasks"
-      },
-      "meeting-recaps-slack": {
-        "description": "Turn meeting transcripts into concise recaps and action items.",
-        "scenario": "Meeting decisions are lost when the transcript is never processed. {{assistantName}} reads Google Meet transcripts and writes the key decisions, actions, and owners in Google Docs.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads the transcript and available Calendar context.",
-            "title": "A Meet transcript arrives"
-          },
-          "three": {
-            "description": "{{assistantName}} writes the structured recap in Google Docs.",
-            "title": "The recap is saved"
-          },
-          "two": {
-            "description": "{{assistantName}} identifies outcomes, owners, due dates, and open questions.",
-            "title": "Decisions and actions are extracted"
-          }
-        },
-        "title": "Save Google Meet recaps to Google Docs"
-      },
-      "morning-brief-slack": {
-        "description": "Combine important email, today's schedule, and optional Notion context.",
-        "scenario": "A useful morning plan needs both the inbox and the calendar. {{assistantName}} reviews Gmail and Google Calendar, adds Notion context when available, and returns a short daily brief.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads important email and the day's calendar.",
-            "title": "Today's inputs are gathered"
-          },
-          "three": {
-            "description": "{{assistantName}} creates a focused plan in the automation thread.",
-            "title": "The brief is returned"
-          },
-          "two": {
-            "description": "{{assistantName}} identifies commitments, preparation, and follow-up.",
-            "title": "Priorities are connected"
-          }
-        },
-        "title": "Create a morning brief"
-      },
-      "new-gmail-contacts-hubspot": {
-        "description": "Create or enrich CRM contacts from relevant email conversations.",
-        "scenario": "New relationships often stay trapped in the inbox. {{assistantName}} identifies relevant Gmail correspondents, checks HubSpot for duplicates, and creates or enriches the contact record.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reviews relevant Gmail conversations.",
-            "title": "New correspondents are identified"
-          },
-          "three": {
-            "description": "{{assistantName}} creates or enriches the HubSpot record.",
-            "title": "The contact is updated"
-          },
-          "two": {
-            "description": "{{assistantName}} finds existing records and missing details.",
-            "title": "HubSpot is checked"
-          }
-        },
-        "title": "Add new Gmail contacts to HubSpot"
-      },
-      "onboard-new-hires-asana": {
-        "description": "Turn approved intake submissions into an Asana onboarding plan.",
-        "scenario": "New-hire setup is more reliable when every approved intake follows the same plan. {{assistantName}} reads Google Forms submissions, creates the Asana tasks, and can file documents in Drive.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads the new-hire form and required details.",
-            "title": "A submission is approved"
-          },
-          "three": {
-            "description": "{{assistantName}} creates the plan and optionally files Drive documents.",
-            "title": "Asana is updated"
-          },
-          "two": {
-            "description": "{{assistantName}} maps the role and start date to tasks and owners.",
-            "title": "The onboarding plan is built"
-          }
-        },
-        "title": "Onboard new hires from Google Forms"
-      },
-      "post-daily-metrics-slack": {
-        "description": "Summarize traffic, acquisition, conversion, and notable changes.",
-        "scenario": "Daily website movement should not require opening several reports. {{assistantName}} reads Google Analytics, adds Search Console context when available, and returns a concise brief in the automation thread.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads traffic, acquisition, and conversion metrics.",
-            "title": "Website data is collected"
-          },
-          "three": {
-            "description": "{{assistantName}} summarizes what changed and what deserves attention.",
-            "title": "The brief is returned"
-          },
-          "two": {
-            "description": "{{assistantName}} compares performance and highlights meaningful movement.",
-            "title": "Changes are identified"
-          }
-        },
-        "title": "Create a daily website metrics brief"
-      },
-      "post-github-updates-slack": {
-        "description": "Review cloud access, service accounts, and exposed services.",
-        "scenario": "Cloud permissions drift as projects grow. {{assistantName}} reviews Google Cloud IAM, service accounts, keys, enabled services, and public exposure, then returns a read-only risk report with clear remediation.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} inventories IAM bindings, accounts, keys, and services.",
-            "title": "Cloud access is reviewed"
-          },
-          "three": {
-            "description": "{{assistantName}} recommends fixes and optionally drafts approved GitHub issues.",
-            "title": "Remediation is prepared"
-          },
-          "two": {
-            "description": "{{assistantName}} flags excess privilege, stale credentials, and public exposure.",
-            "title": "Risk is assessed"
-          }
-        },
-        "title": "Audit Google Cloud IAM and services"
-      },
-      "post-release-notes-slack": {
-        "description": "Turn recently shipped GitHub work into an approved changelog.",
-        "scenario": "Shipped work is easy to lose inside pull requests. {{assistantName}} gathers recent GitHub changes, drafts readable release notes, and publishes the approved version in Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} collects recently merged GitHub changes.",
-            "title": "Shipped work is gathered"
-          },
-          "three": {
-            "description": "{{assistantName}} saves the final release notes in Notion.",
-            "title": "The approved draft is published"
-          },
-          "two": {
-            "description": "{{assistantName}} groups changes and explains their user impact.",
-            "title": "Release notes are drafted"
-          }
-        },
-        "title": "Publish release notes in Notion"
-      },
-      "prep-google-calendar-meetings": {
-        "description": "Create a focused briefing for upcoming external meetings.",
-        "scenario": "Meeting preparation should not start five minutes before the call. {{assistantName}} reviews the calendar event and adds contact and CRM context when available.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads the selected Google Calendar window.",
-            "title": "Upcoming meetings are found"
-          },
-          "three": {
-            "description": "{{assistantName}} returns goals, context, risks, and suggested questions.",
-            "title": "The briefing is prepared"
-          },
-          "two": {
-            "description": "{{assistantName}} checks HubSpot when connected.",
-            "title": "Attendee context is gathered"
-          }
-        },
-        "title": "Prepare for Google Calendar meetings"
-      },
-      "publish-scheduled-posts-buffer": {
-        "description": "Compare a site with competitors and rank organic opportunities.",
-        "scenario": "Content plans improve when they start from real search gaps. {{assistantName}} uses built-in Firecrawl and DataForSEO to compare the user's site with named competitors and rank missing topics by intent and value.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} crawls the user's site and selected competitors.",
-            "title": "Sites are compared"
-          },
-          "three": {
-            "description": "{{assistantName}} returns a prioritized content opportunity list.",
-            "title": "Opportunities are ranked"
-          },
-          "two": {
-            "description": "{{assistantName}} finds missing keywords, topics, and intent coverage.",
-            "title": "Search gaps are identified"
-          }
-        },
-        "title": "Find keyword and content gaps"
-      },
-      "report-ai-model-costs-slack": {
-        "description": "Explain traffic or security incidents and the next response.",
-        "scenario": "Cloudflare incidents need context before they need noise. {{assistantName}} reviews traffic, security events, and service health, explains likely impact, and returns the next actions in the automation thread.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reviews service health, traffic shifts, and security events.",
-            "title": "Cloudflare is checked"
-          },
-          "three": {
-            "description": "{{assistantName}} recommends a response and can draft a GitHub issue.",
-            "title": "Next actions are returned"
-          },
-          "two": {
-            "description": "{{assistantName}} separates confirmed incidents from normal variation.",
-            "title": "Impact is explained"
-          }
-        },
-        "title": "Alert on Cloudflare incidents"
-      },
-      "research-calendar-meetings": {
-        "description": "Build concise briefings from Calendar and email context.",
-        "scenario": "Meeting preparation is faster when attendee and conversation history are already connected. {{assistantName}} reviews upcoming Calendar events and adds Gmail context when available.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads the selected Google Calendar window.",
-            "title": "Upcoming meetings are found"
-          },
-          "three": {
-            "description": "{{assistantName}} returns goals, context, and suggested questions.",
-            "title": "Briefings are prepared"
-          },
-          "two": {
-            "description": "{{assistantName}} checks related Gmail threads.",
-            "title": "Attendee context is gathered"
-          }
-        },
-        "title": "Prepare for upcoming meetings"
-      },
-      "research-new-signups-apollo": {
-        "description": "Find and qualify creator leads from X.",
-        "scenario": "Outbound stalls when the list is stale. {{assistantName}} finds creators and prospects on X that match the target profile, qualifies each one with built-in people search and Firecrawl, and returns a ranked outreach list.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} searches X for accounts that match the target profile.",
-            "title": "Candidates are found on X"
-          },
-          "three": {
-            "description": "{{assistantName}} scores fit, drafts an opener, and optionally saves leads to HubSpot.",
-            "title": "The outreach list is ranked"
-          },
-          "two": {
-            "description": "{{assistantName}} verifies role, company, and reach with built-in research.",
-            "title": "Each lead is qualified"
-          }
-        },
-        "title": "Find creator leads on X"
-      },
-      "run-daily-query-sheets": {
-        "description": "Write search visibility and query movement to Google Sheets.",
-        "scenario": "Organic performance is easier to act on when it has a consistent history. {{assistantName}} pulls Search Console metrics, adds Analytics context when available, and refreshes a reporting sheet.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads clicks, impressions, CTR, position, and queries.",
-            "title": "Search data is collected"
-          },
-          "three": {
-            "description": "{{assistantName}} writes the normalized results to Google Sheets.",
-            "title": "The sheet is refreshed"
-          },
-          "two": {
-            "description": "{{assistantName}} identifies winning, declining, and emerging search demand.",
-            "title": "Movement is analyzed"
-          }
-        },
-        "title": "Log organic search performance in Sheets"
-      },
-      "send-bugs-github-slack": {
-        "description": "Convert reproducible bug reports into structured engineering work.",
-        "scenario": "Bug reports lose value when evidence stays in the inbox. {{assistantName}} identifies reproducible support issues, extracts impact and steps, and files a structured GitHub issue.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reviews support emails for reproducible product failures.",
-            "title": "Bug reports are identified"
-          },
-          "three": {
-            "description": "{{assistantName}} creates the issue and can link it in Linear.",
-            "title": "A GitHub issue is filed"
-          },
-          "two": {
-            "description": "{{assistantName}} extracts impact, steps, expected behavior, and context.",
-            "title": "Evidence is structured"
-          }
-        },
-        "title": "Turn support emails into GitHub issues"
-      },
-      "sort-gmail-draft-replies": {
-        "description": "Triage new mail and prepare responses for human review.",
-        "scenario": "A busy inbox hides both urgent requests and easy replies. {{assistantName}} groups new Gmail messages by urgency and action, then drafts responses without sending them.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads the selected Gmail inbox or label.",
-            "title": "New mail is reviewed"
-          },
-          "three": {
-            "description": "{{assistantName}} prepares responses for human review.",
-            "title": "Replies are drafted"
-          },
-          "two": {
-            "description": "{{assistantName}} groups mail by urgency, request, and next action.",
-            "title": "Messages are triaged"
-          }
-        },
-        "title": "Sort Gmail and draft replies"
-      },
-      "sort-route-zendesk-tickets": {
-        "description": "Classify support mail and create actionable Linear issues.",
-        "scenario": "Support mail needs consistent priority and ownership. {{assistantName}} reads new Gmail conversations, identifies the issue type and urgency, and creates Linear work for items that need action.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reviews new conversations and available context.",
-            "title": "Support emails are read"
-          },
-          "three": {
-            "description": "{{assistantName}} creates actionable issues and links supporting evidence.",
-            "title": "Linear work is created"
-          },
-          "two": {
-            "description": "{{assistantName}} classifies urgency, topic, and responsible team.",
-            "title": "Priority and ownership are set"
-          }
-        },
-        "title": "Triage support emails into Linear"
-      },
-      "spot-churn-risk-stripe-zendesk": {
-        "description": "Summarize support volume, risk, themes, and unresolved work.",
-        "scenario": "A support queue is easier to manage when the important changes are visible. {{assistantName}} reviews Gmail conversations, highlights urgent or recurring issues, and links related Linear or GitHub work.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads new and unresolved Gmail conversations.",
-            "title": "Support activity is gathered"
-          },
-          "three": {
-            "description": "{{assistantName}} summarizes priorities in the automation thread.",
-            "title": "The digest is returned"
-          },
-          "two": {
-            "description": "{{assistantName}} groups recurring issues and flags urgent follow-up.",
-            "title": "Risk and themes are identified"
-          }
-        },
-        "title": "Create a daily support digest"
-      },
-      "summarize-gmail-newsletters": {
-        "description": "Turn selected newsletters into one useful recurring digest.",
-        "scenario": "Newsletter value disappears when every issue competes for inbox attention. {{assistantName}} summarizes selected Gmail newsletters into themes, useful links, and recommended reads.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads messages from the selected senders or label.",
-            "title": "Newsletters are collected"
-          },
-          "three": {
-            "description": "{{assistantName}} returns the summary and can save it in Notion.",
-            "title": "The digest is created"
-          },
-          "two": {
-            "description": "{{assistantName}} groups themes and identifies the strongest links.",
-            "title": "Useful content is distilled"
-          }
-        },
-        "title": "Summarize Gmail newsletters"
-      },
-      "summarize-user-feedback-notion": {
-        "description": "Cluster new form responses into ranked product insights.",
-        "scenario": "Feedback becomes useful when patterns are visible. {{assistantName}} reviews Google Forms responses, groups recurring pain points and requests, ranks the findings, and writes the summary in Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads the latest Google Forms submissions.",
-            "title": "Responses are collected"
-          },
-          "three": {
-            "description": "{{assistantName}} writes a prioritized summary in Notion.",
-            "title": "Insights are saved"
-          },
-          "two": {
-            "description": "{{assistantName}} clusters pain points, requests, and sentiment.",
-            "title": "Themes are ranked"
-          }
-        },
-        "title": "Summarize Google Forms feedback in Notion"
-      },
-      "summarize-zendesk-tickets-daily": {
-        "description": "Create approved support videos with the built-in avatar capability.",
-        "scenario": "Some support answers are easier to follow as a short presenter video. {{assistantName}} turns approved FAQ content into a script and storyboard, then uses the built-in avatar-video capability after review.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} identifies the approved answer and target audience.",
-            "title": "FAQ content is selected"
-          },
-          "three": {
-            "description": "{{assistantName}} generates only after the user approves the draft.",
-            "title": "The avatar video is generated"
-          },
-          "two": {
-            "description": "{{assistantName}} creates a concise, accurate support-video plan.",
-            "title": "A script and storyboard are drafted"
-          }
-        },
-        "title": "Turn FAQs into digital-human support videos"
-      },
-      "sync-asana-projects-notion": {
-        "description": "Keep a Notion project overview current with Asana.",
-        "scenario": "Project summaries drift when task status changes elsewhere. {{assistantName}} reads selected Asana projects and keeps the corresponding Notion overview current.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reviews status, owners, due dates, and blockers.",
-            "title": "Asana projects are read"
-          },
-          "three": {
-            "description": "{{assistantName}} updates the overview and highlights changes.",
-            "title": "Notion is synchronized"
-          },
-          "two": {
-            "description": "{{assistantName}} compares the current project state with the prior view.",
-            "title": "Meaningful changes are identified"
-          }
-        },
-        "title": "Sync Asana projects to Notion"
-      },
-      "sync-linear-roadmap-notion": {
-        "description": "Keep a Now, Next, and Later roadmap current in Notion.",
-        "scenario": "Roadmaps drift when delivery status changes elsewhere. {{assistantName}} reads selected Linear projects and issues, maps them into Now, Next, and Later, and keeps the Notion roadmap current.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reviews selected projects, issues, and milestones.",
-            "title": "Linear status is read"
-          },
-          "three": {
-            "description": "{{assistantName}} refreshes the roadmap and highlights meaningful changes.",
-            "title": "Notion is updated"
-          },
-          "two": {
-            "description": "{{assistantName}} converts delivery status into Now, Next, and Later.",
-            "title": "Roadmap stages are mapped"
-          }
-        },
-        "title": "Sync the Linear roadmap to Notion"
-      },
-      "track-feature-usage-posthog": {
-        "description": "Surface the largest weekly changes in product adoption.",
-        "scenario": "Feature adoption changes before a dashboard review catches it. {{assistantName}} compares the latest Google Analytics usage signals, identifies meaningful movement, and optionally records decisions in Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} collects the selected feature and audience signals.",
-            "title": "Adoption data is read"
-          },
-          "three": {
-            "description": "{{assistantName}} explains what moved and what to investigate next.",
-            "title": "Insights are returned"
-          },
-          "two": {
-            "description": "{{assistantName}} finds the largest gains, drops, and segment differences.",
-            "title": "Changes are compared"
-          }
-        },
-        "title": "Track feature adoption with Google Analytics"
-      },
-      "track-keyword-ranks-ahrefs": {
-        "description": "Crawl a site and return a prioritized technical SEO issue list.",
-        "scenario": "Technical SEO issues hide across hundreds of pages. {{assistantName}} uses built-in Firecrawl and DataForSEO to inspect crawlability, indexability, internal links, and live search visibility without requiring a connector.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} uses Firecrawl to inspect pages and internal links.",
-            "title": "The site is crawled"
-          },
-          "three": {
-            "description": "{{assistantName}} returns the highest-impact fixes with supporting evidence.",
-            "title": "Issues are prioritized"
-          },
-          "two": {
-            "description": "{{assistantName}} uses DataForSEO to validate visibility and indexation signals.",
-            "title": "Search evidence is checked"
-          }
-        },
-        "title": "Audit a website's technical SEO"
-      },
-      "track-signup-sources-sheets": {
-        "description": "Query Google Cloud data and publish a refreshable analysis.",
-        "scenario": "Important operational data often sits in BigQuery without a usable recurring view. {{assistantName}} runs the approved query, identifies trends and anomalies, and writes a result table and summary to Google Sheets.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} confirms the BigQuery scope and analysis question.",
-            "title": "A dataset and query are selected"
-          },
-          "three": {
-            "description": "{{assistantName}} publishes a refreshable table and decision-ready summary.",
-            "title": "Results are written to Sheets"
-          },
-          "two": {
-            "description": "{{assistantName}} runs the query and checks trends, segments, and anomalies.",
-            "title": "Cloud data is analyzed"
-          }
-        },
-        "title": "Analyze BigQuery data in Sheets"
-      },
-      "watch-brand-mentions": {
-        "description": "Turn approved videos into platform-native posts and threads.",
-        "scenario": "A strong video can support more than one channel. {{assistantName}} reviews a selected YouTube video, drafts X posts and threads, and optionally saves the approved plan in Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} reads the YouTube video, transcript, and context.",
-            "title": "A video is selected"
-          },
-          "three": {
-            "description": "{{assistantName}} saves the plan and never publishes without approval.",
-            "title": "Content is prepared for approval"
-          },
-          "two": {
-            "description": "{{assistantName}} creates concise X posts and thread options.",
-            "title": "Social variants are drafted"
-          }
-        },
-        "title": "Repurpose YouTube videos for X"
-      },
-      "watch-sentry-after-release": {
-        "description": "Compare post-release stability with the previous baseline.",
-        "scenario": "A release can look healthy while regressions build quietly. {{assistantName}} compares the latest Sentry signals with the previous baseline and explains whether to keep watching, fix forward, or roll back.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} finds the latest release and its comparison window.",
-            "title": "A release is identified"
-          },
-          "three": {
-            "description": "{{assistantName}} summarizes impact and the safest next action.",
-            "title": "A response is recommended"
-          },
-          "two": {
-            "description": "{{assistantName}} checks crash-free rate and new regressions against baseline.",
-            "title": "Stability is compared"
-          }
-        },
-        "title": "Watch Sentry after a release"
+        "title": "Start with a task that matters"
       }
     }
   },
   "queue": {
     "concurrentRuns_one": "{{count}} concurrent run",
     "concurrentRuns_other": "{{count}} concurrent runs",
-    "description": "View your position in the queue and upgrade to skip the wait.",
+    "description": "See how many concurrent runs are in use and upgrade to skip the wait.",
     "perMonth": "/month",
     "pricePerMonth": "{{price}}/month",
     "purchase": {
@@ -5948,7 +4556,6 @@
     "tiers": {
       "custom": "Custom",
       "free": "Free",
-      "limitedFree": "Limited free",
       "pro": "Pro",
       "team": "Team"
     },
@@ -5958,7 +4565,6 @@
       "features": {
         "creditsPerMonth": "{{credits}} credits / month",
         "emailSupport": "Email support",
-        "ownKeys": "Bring your own LLM keys",
         "payAsYouGo": "Pay as you go after that",
         "prioritySupport": "Priority support",
         "unlimitedAgents": "Unlimited total agents"
@@ -5971,17 +4577,14 @@
   "runErrors": {
     "actions": {
       "addCredits": "Add credits",
-      "openModelProviders": "Open Model Providers",
-      "reconnectClaude": "Reconnect Claude Code",
-      "shareWithAdmin": "Share with an admin"
+      "openModelSettings": "Open model settings",
+      "reconnectClaude": "Reconnect Claude Code"
     },
-    "anthropicKeyAdmin": "Claude Code could not authenticate with the configured Anthropic API key. Update or replace the API key in Model Providers, then retry.",
-    "anthropicKeyMember": "Claude Code could not authenticate with the configured Anthropic API key. Ask a workspace admin to update or replace the API key.",
     "askAdmin": "Ask a workspace admin to add credits or upgrade the workspace plan.",
-    "claudeReconnect": "Claude Code subscription authentication failed. Reconnect Claude Code in Model Providers, then retry.",
-    "claudeTerms": "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Model Providers, accept the updated terms and policy, then retry.",
+    "claudeReconnect": "Claude Code subscription authentication failed. Reconnect Claude Code in Settings > Models, then retry.",
+    "claudeTerms": "Claude Code requires acceptance of updated Consumer Terms and Privacy Policy. Sign in to https://claude.ai with the Claude account connected in Settings > Models, accept the updated terms and policy, then retry.",
     "codexOverloaded": "Selected model is at capacity. Please try a different model.",
-    "codexReconnect": "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Model Providers, then retry.",
+    "codexReconnect": "ChatGPT session needs reconnection. Reconnect ChatGPT (Codex) in Settings > Models, then retry.",
     "contentPolicyRejected": "The model provider rejected this request under its content safety policy. Retrying the same input will fail again. Try rephrasing the request, starting a new conversation, or switching to a different model.",
     "executionTimeout": "This run reached its execution time limit.",
     "failed": "Run failed",
@@ -5989,9 +4592,9 @@
     "modelTemporarilyUnavailable": "Model temporarily unavailable",
     "modelUnavailable": "The current model is unavailable.",
     "overloaded": "{{model}} is overloaded. Please wait a few minutes and try again, or switch to another model.",
-    "providerBalance": "Your connected model provider account has insufficient balance.",
+    "providerBalance": "Your connected subscription account has insufficient balance.",
     "transient": "Oops, something went wrong. Please try again later.",
-    "vm0Credits": "Insufficient credits. Add credits or configure your own API key to continue."
+    "vm0Credits": "Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue."
   },
   "serviceStatus": {
     "dismiss": "Dismiss service update",
@@ -6025,8 +4628,8 @@
         "usage": "{{provider}} usage",
         "usageRemaining": "{{provider}} {{window}} remaining",
         "windows": {
-          "fiveHour": "5h",
-          "week": "week"
+          "fiveHour": "5H",
+          "week": "Week"
         }
       },
       "switchAccount": "Switch account",
@@ -6067,7 +4670,7 @@
           "title": "Invoices"
         },
         "model": {
-          "description": "Choose which AI models your workspace and your runs use.",
+          "autoDescription": "Okou chooses the model for each task.",
           "title": "Models"
         },
         "people": {
@@ -6157,16 +4760,10 @@
     },
     "models": {
       "actions": {
-        "addModel": "Add model",
-        "deleteModel": "Delete model",
-        "editModel": "Edit model",
-        "resetUsage": "Reset usage",
-        "upgradePro": "Upgrade Pro to use",
-        "upgradeToPro": "Upgrade to Pro"
+        "resetUsage": "Reset usage"
       },
       "deviceAuth": {
         "claude": {
-          "approvalOpenError": "The approval page could not be opened. Use the link manually and paste the code here.",
           "authorizationCode": "Authorization code",
           "codePlaceholder": "Paste code from Claude",
           "codeRequired": "Paste the Claude authorization code to continue.",
@@ -6184,84 +4781,40 @@
           "usageNotice": "Sign in with your Claude subscription to use Claude models with Claude Code-backed agents."
         },
         "codex": {
-          "approvalOpened": "Approval page opened. Copy the device code before approving.",
-          "codeCopied": "Device code copied. Waiting for approval...",
-          "codeCopiedRetry": "Device code copied. Try opening the approval page again.",
           "connectedToast": "ChatGPT connected",
           "connectTitle": "Connect Codex",
-          "copyAndOpen": "Copy code and open approval page",
-          "copyAndOpenError": "Could not copy the device code or open the approval page. Copy the code manually and try again.",
-          "copyError": "Approval page opened, but the device code was not copied. Copy it manually before approving.",
           "deviceCode": "Device code",
           "error": "ChatGPT connection failed. Start again to retry.",
           "expired": "Codex connection session expired. Start again to retry.",
           "freePlanRejected": "Free ChatGPT plans cannot use Codex via {{brandName}}. Upgrade to Plus or Pro and try again.",
-          "instructions": "First click Copy code and open approval page. Then paste the device code into OpenAI when prompted. Finally approve access and keep this dialog open while {{brandName}} finishes the connection.",
+          "instructions": "First copy the device code using the copy button, then open the approval page. Then paste the device code into OpenAI when prompted. Finally approve access and keep this dialog open while {{brandName}} finishes the connection.",
           "invalidTokenFormat": "Codex produced a login token format {{brandName}} does not recognize. Update Codex and try again.",
-          "openError": "Device code copied, but the approval page could not be opened. Try again.",
+          "openApproval": "Open approval page",
           "preparing": "Preparing...",
           "reconnectAction": "Reconnect ChatGPT",
           "reconnectTitle": "Re-connect Codex",
           "signIn": "Sign in with ChatGPT"
         }
       },
-      "gateways": {
-        "actions": "Gateway actions",
-        "add": "Add provider",
-        "addTitle": "Add model provider",
-        "apiBaseUrl": "API base URL",
-        "apiBaseUrlPlaceholder": "https://gateway.example.com",
-        "apiKey": "API key",
-        "deleteConfirm": "Delete this model provider connection? Model routes using it will become unavailable.",
-        "description": "Connect an admin-managed gateway through Anthropic Messages, OpenAI Responses, or both.",
-        "dialogDescription": "Configure each protocol with the API base URL used by Claude Code or Codex.",
-        "editTitle": "Edit model provider",
-        "empty": "No custom model providers configured.",
-        "errors": {
-          "invalidMappings": "Model mappings must be a JSON object whose values are upstream model names.",
-          "missingProtocol": "Enable at least one protocol.",
-          "missingSecret": "Enter an API key."
-        },
-        "headerName": "Authentication header",
-        "headerValue": "Header value template",
-        "keepKey": "Leave blank to keep the current key",
-        "modelMappings": "Model mappings (JSON)",
-        "name": "Name",
-        "presets": {
-          "custom": "Custom",
-          "fireworks": "Fireworks AI",
-          "openrouter": "OpenRouter",
-          "vercel": "Vercel AI Gateway"
-        },
-        "protocols": {
-          "anthropicMessages": "Anthropic Messages",
-          "openaiResponses": "OpenAI Responses"
-        },
-        "requestPreview": "Requests",
-        "title": "Provider connections"
-      },
       "personal": {
         "accountFallback": "Account {{number}}",
-        "accountsDescription": "Choose the account each provider uses for new runs.",
-        "accountsSectionTitle": "Personal accounts",
-        "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Active",
-        "addAccount": "Add account",
-        "claudeDescription": "Sign in with your Claude subscription to use Claude models with Claude Code-backed agents.",
+        "autoDescription": "Connect your Claude or ChatGPT account to use more models.",
+        "autoTitle": "Use more models",
         "claudeTitle": "Claude",
-        "codexDescription": "Connect your ChatGPT account to use GPT models.",
         "codexTitle": "ChatGPT (Codex)",
-        "description": "Used only in your runs, with your own credentials.",
+        "connectAccount": "Connect account",
         "disconnectAccount": "Disconnect account",
         "disconnectDescription": "This removes the account from Okou. It won’t cancel your subscription with the provider.",
         "disconnecting": "Disconnecting…",
         "disconnectTitle": "Disconnect {{account}}?",
+        "loadError": "Couldn’t load your accounts.",
+        "loadingAccounts": "Loading accounts…",
         "noAccounts": "No accounts connected.",
         "reconnectAccount": "Reconnect",
-        "sectionTitle": "Personal",
+        "retry": "Try again",
         "status": {
           "connected": "Connected",
-          "connectedWithDetail": "Connected ({{detail}})",
           "fiveHour": "5h",
           "left": "{{percent}} left",
           "stale": "Attention",
@@ -6270,99 +4823,37 @@
         "useAccount": "Use"
       },
       "picker": {
-        "builtInModel": "Built-in model",
-        "byokHelp": "Uses your configured provider",
-        "categoryChat": "Chat",
-        "categoryImage": "Image",
-        "categoryVideo": "Video",
+        "auto": "Auto",
         "chatModels": "Chat models",
         "effort": "Effort",
         "effortScale": {
           "faster": "Faster",
+          "higherUsage": "Higher usage",
+          "lowerUsage": "Lower usage",
           "smarter": "Smarter"
         },
         "fast": "Fast",
         "fastImpact": {
-          "apiCost": "2× API token cost",
-          "chatGptUsage": "2.5× ChatGPT usage",
-          "fasterResponses": "Faster model responses",
-          "modelSpeed": "{{multiplier}}× model speed",
-          "okouCredits": "2× Okou model credits",
-          "providerSpeed": "Speed depends on provider",
           "providerUsage": "Usage depends on provider",
-          "solApiSpeed": "Up to 2.5× model speed",
-          "summary": "{{speed}} · {{usage}}"
+          "subscriptionUsage": "{{multiplier}}× subscription usage"
         },
+        "fastMode": "Fast mode",
         "generationPriceTiers": {
           "higher": "Higher cost per generation",
           "highest": "Highest cost per generation",
           "lowest": "Lowest cost per generation",
           "typical": "Typical cost per generation"
         },
-        "imageModels": "Image models",
-        "inheritDefault": "Inherit from org default",
+        "inheritDefault": "Default (Auto)",
         "loadError": "Unable to load models.",
         "loading": "Loading models...",
-        "menu": {
-          "backToModels": "Back to models",
-          "changeModel": "Change {{category}} model, {{model}}"
-        },
         "models": "Models",
         "noConfiguredModels": "No configured models",
-        "priceTiers": {
-          "balanced": "Balanced cost and performance",
-          "economy": "Economy tier for everyday simple tasks",
-          "frontier": "Frontier flagship model",
-          "premium": "Premium frontier model for the hardest tasks"
-        },
         "pro": "Pro",
-        "providerLabels": {
-          "azureFoundryPortal": "Azure foundry portal",
-          "claudeCodeOauth": "Claude Code (OAuth token)",
-          "deepseek": "Deepseek"
-        },
-        "standard": "Standard",
-        "videoModels": "Video models"
-      },
-      "policies": {
-        "actionsFor": "Actions for {{model}}",
-        "apiKey": "API key",
-        "apiKeyDescription": "A shared workspace key. Best when the team bills through one account.",
-        "apiKeyPlaceholder": "Enter your API key",
-        "apiKeyRequired": "API key is required",
-        "availableModels": "Available models",
-        "builtIn": "Built-in",
-        "builtInDescription": "Workspace credits cover usage.",
-        "claudeSubscription": "Claude subscription",
-        "claudeSubscriptionDescription": "Each member connects their own Pro, Max, or Team plan.",
-        "codexSubscription": "Codex subscription",
-        "codexSubscriptionDescription": "Each member connects their own Pro or Team plan.",
-        "defaultModel": "Default model",
-        "defaultModelDescription": "Used when a task doesn't choose its own model.",
-        "dialogDescription": "Decide how members access this model.",
-        "gateway": "Custom gateway",
-        "gatewayDescription": "Route through an admin-defined provider connection.",
-        "gatewayProvider": "Provider connection",
-        "getKey": "Get a key",
-        "invalidRoute": "Invalid route",
-        "missingProvider": "Missing provider",
-        "model": "Model",
-        "noAvailableModels": "No available models",
-        "noMappedGateway": "No provider connection maps this model.",
-        "pricing": "Pricing",
-        "providedBy": "Provided by",
-        "provider": "Provider",
-        "providerApiKey": "{{provider}} API key",
-        "runsThrough": "Runs through",
-        "secretStored": "Stored in workspace secrets.",
-        "selectDefaultModel": "Select a default model",
-        "selectGateway": "Select a provider connection",
-        "selectModel": "Select a model",
-        "selectProvider": "Select a provider",
-        "workspaceDescription": "Available to everyone in this workspace."
+        "standard": "Standard"
       },
       "reset": {
-        "confirmDescription": "Use one {{provider}} reset to reset your current usage windows. You have {{remaining}}.",
+        "confirmDescription": "Use one Codex reset to reset your current usage windows. You have {{remaining}}.",
         "progress": "Resetting...",
         "remaining_one": "{{value}} reset left",
         "remaining_other": "{{value}} resets left",
@@ -6370,26 +4861,14 @@
         "remainingUnknown": "Resets —",
         "remainingWithExpiry_one": "{{value}} reset left · expires {{expiry}}",
         "remainingWithExpiry_other": "{{value}} resets left · expires {{expiry}}",
-        "title": "Reset {{provider}} usage?"
-      },
-      "stale": {
-        "claudeExpired": "Your Claude Code session expired. Re-connect to continue.",
-        "claudeFailed": "Claude Code refresh failed. Re-connect to retry.",
-        "claudeTitle": "Claude Code session needs reconnection",
-        "codexExpired": "Your ChatGPT session expired. Re-connect to continue.",
-        "codexFailed": "ChatGPT refresh failed. Re-connect to retry.",
-        "codexInvalidated": "Your ChatGPT session was revoked. Re-connect.",
-        "codexReused": "Your ChatGPT session was used elsewhere. Re-connect.",
-        "codexTitle": "ChatGPT session needs reconnection"
+        "title": "Reset Codex usage?"
       },
       "toasts": {
         "accountDisconnected": "Account disconnected",
         "accountSwitched": "Active account switched",
-        "disconnected": "{{provider}} disconnected",
-        "policiesUpdated": "Model provider settings updated",
-        "reset": "{{provider}} usage reset",
-        "resetUnavailable": "No {{provider}} usage resets available",
-        "resetUnneeded": "{{provider}} usage does not need a reset right now"
+        "reset": "Codex usage reset",
+        "resetUnavailable": "No Codex usage resets available",
+        "resetUnneeded": "Codex usage does not need a reset right now"
       },
       "usage": {
         "inDays": "in {{days}}d",
@@ -6406,8 +4885,13 @@
       }
     },
     "paidTools": {
-      "description": "Choose the paid tools Okou can use in your tasks. Each use costs credits.",
+      "description": "These tools use built-in credits, and Okou uses them automatically as it works on your tasks. Turn a tool off and Okou won't use it.",
       "disabledForCreation": "{{tool}} is off for you",
+      "imageModel": {
+        "description": "Built-in image generation uses this model for your tasks.",
+        "label": "Model",
+        "saveError": "Your image model was not saved."
+      },
       "loadError": "Your tool settings could not be loaded.",
       "loading": "Loading your tool settings…",
       "openSettings": "Open settings",
@@ -6416,12 +4900,8 @@
       "saving": "Saving…",
       "scope": "These settings apply only to you in {{workspace}}.",
       "timing": "Changes apply to future runs. Tasks already running or prepared may keep their previous settings.",
-      "title": "Paid tools",
+      "title": "Built-in tools",
       "tools": {
-        "avatar-video-generation": {
-          "description": "Create talking-avatar videos.",
-          "name": "Avatar video generation"
-        },
         "finance": {
           "description": "Look up companies, quotes, and market data.",
           "name": "Financial data"
@@ -6429,10 +4909,6 @@
         "image-generation": {
           "description": "Create images with built-in models.",
           "name": "Image generation"
-        },
-        "image-recognition": {
-          "description": "Read and analyze images.",
-          "name": "Image recognition"
         },
         "maps": {
           "description": "Find places, addresses, and directions.",
@@ -6453,14 +4929,6 @@
         "social": {
           "description": "Research public social posts and collect media.",
           "name": "Social research"
-        },
-        "video-generation": {
-          "description": "Create videos with built-in models.",
-          "name": "Video generation"
-        },
-        "voice-generation": {
-          "description": "Create speech with built-in voices.",
-          "name": "Voice generation"
         },
         "web-search": {
           "description": "Find current information on the web.",
@@ -6511,26 +4979,6 @@
         "sectionTitle": "Chat"
       },
       "debug": {
-        "builtInModelCooldown": {
-          "cancelAction": "Cancel cooldown",
-          "cancelDescription": "Cancelling this global cooldown makes the route immediately eligible for every workspace.",
-          "cancelling": "Cancelling...",
-          "cancelTitle": "Cancel global cooldown?",
-          "cancelWarning": "A later qualifying failure can place this route back in cooldown.",
-          "description": "Inspect the built-in model routes temporarily excluded from fallback selection.",
-          "empty": "No built-in model routes are currently in global cooldown.",
-          "globalActive": "global active cooldowns",
-          "globalExplanation": "Cooldowns are global operational state and affect every workspace using built-in models.",
-          "keepCooldown": "Keep cooldown",
-          "loading": "Loading built-in model cooldown diagnostics...",
-          "providerType": "Provider type",
-          "refresh": "Refresh",
-          "selectedModel": "Selected model",
-          "title": "Built-in model fallback",
-          "unavailable": "Built-in model cooldown diagnostics are unavailable.",
-          "unavailableUntil": "Unavailable until",
-          "upstreamModel": "Upstream model"
-        },
         "capture": {
           "disabled": "Disabled",
           "enabled_one": "Enabled for the next {{count}} run",
@@ -6575,20 +5023,6 @@
           "title": "IndexedDB storage",
           "unavailable": "IndexedDB storage is unavailable."
         },
-        "morningBriefTrigger": {
-          "description": "Run a real Morning Brief now. It queues your own next run for the ordinary scheduler, which delivers a real brief and a real email within a minute. Triggering before your daily time gives you two briefs that morning.",
-          "failed": "Could not queue the Morning Brief. Try again.",
-          "queued": "Queued. The scheduler delivers the brief within a minute.",
-          "title": "Morning Brief",
-          "trigger": "Run Morning Brief now",
-          "triggering": "Queueing…"
-        },
-        "voiceInput": {
-          "default": "Default ({{model}})",
-          "description": "Choose the model for voice input v2. Speech-to-text models and GPT Audio recordings over 90 seconds use {{model}} for cleanup.",
-          "title": "Voice input model",
-          "unavailable": "Unavailable model ({{model}})"
-        },
         "welcomeThread": {
           "create": "Create welcome thread",
           "creating": "Creating…",
@@ -6600,9 +5034,6 @@
       "emailSubscription": {
         "description": "Receive briefs, reminders, and other workspace updates by email.",
         "descriptionWithEmail": "Receive briefs, reminders, and other workspace updates at {{email}}.",
-        "loading": "Checking email subscription…",
-        "retryMessage": "Could not save or load your email subscription. Try again.",
-        "saving": "Saving…",
         "sectionTitle": "Email subscriptions",
         "title": "Email updates",
         "unavailable": "Email unavailable",
@@ -6628,17 +5059,10 @@
         "title": "Language"
       },
       "morningBrief": {
-        "chatAndEmail": "Chat + email",
-        "chatOnly": "Chat only",
-        "checkEmailSubscription": "Check your email subscription above for delivery status.",
         "conflict": "Morning Brief is temporarily unavailable because its installation state is inconsistent. Retry when reconciliation finishes.",
         "description": "Daily priorities at 7:00 AM in your time zone.",
-        "lastDelivered": "Last delivered {{date}}",
-        "loading": "Loading Morning Brief settings...",
         "missingDefaultAgent": "Choose a usable default Agent before enabling Morning Brief.",
         "missingTimezone": "Set a valid time zone before enabling Morning Brief.",
-        "nextBrief": "Next {{date}}",
-        "paused": "Paused",
         "preparationFailed": "Morning Brief setup will retry automatically. You can also retry now.",
         "preparing": "Preparing your first Morning Brief. You can turn it off at any time.",
         "retry": "Retry",
@@ -6648,10 +5072,8 @@
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "Press ⌘/Ctrl+Enter to send, Enter for new line",
-        "description": "Choose how to send messages in chat.",
         "enter": "Enter",
         "enterDescription": "Press Enter to send, Shift+Enter for new line",
-        "sectionTitle": "Enter",
         "title": "Send message with"
       },
       "timezone": {
@@ -6688,17 +5110,12 @@
     "shared": {
       "cancel": "Cancel",
       "close": "Close",
-      "connect": "Connect",
       "connecting": "Connecting...",
       "delete": "Delete",
       "discard": "Discard",
-      "disconnect": "Disconnect",
-      "edit": "Edit",
       "loading": "Loading",
       "moreOptions": "More options",
-      "reconnect": "Reconnect",
       "remove": "Remove",
-      "replace": "Replace",
       "save": "Save",
       "saveChanges": "Save changes",
       "saving": "Saving..."
@@ -6870,8 +5287,6 @@
     "tryItYourself": "Try it yourself"
   },
   "ssh": {
-    "accessDescription": "Choose which Agents can use your SSH hosts.",
-    "accessHelp": "Allow this Agent to execute commands on all your current and future configured SSH hosts. This is separate from connector permissions.",
     "add": "Add host",
     "cancel": "Cancel",
     "chooseFile": "Choose file",
@@ -6881,8 +5296,10 @@
       "keepChanges": "Keep my changes with this version",
       "latest": "Latest saved settings",
       "mode": "Connection",
+      "needsRebind": "This host needs a new Cloudflare Access configuration. Edit it to rebind or choose Direct. It will not connect until you do.",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Published hostname",
+      "rebindHelp": "Choose a permitted Cloudflare Access configuration or Direct to restore this host. Nothing will change until you save.",
       "reviewHelp": "Your draft is preserved. Confirm the latest saved settings before applying your changes.",
       "title": "Cloudflare Access",
       "unavailable": "Cloudflare Access is not available for this account."
@@ -6928,16 +5345,14 @@
       "unused": "Not used by any hosts"
     },
     "credentialsHelp": "Credentials are write-only and stay outside the sandbox. Paste the complete key; whitespace is preserved. Fields are cleared when this form closes.",
-    "credentialsTab": "Credentials",
     "delete": "Delete host",
     "deleteHelp": "Delete this host? Its credential will be kept. Agents will no longer see this host in the live inventory.",
     "description": "Let your agents run commands on remote machines.",
     "displayName": "Display name",
     "edit": "Edit host",
     "editHelp": "Selecting a different credential changes only this host. Direct endpoint changes clear its learned host key; changes involving Cloudflare Access keep it.",
-    "empty": "No SSH hosts configured. Add a host to make it available to Agents with SSH access.",
+    "empty": "No SSH hosts configured. Add a host, then enable it by default or in individual chats.",
     "errors": {
-      "agentUnavailable": "This Agent is no longer available. Choose another Agent.",
       "configurationChanged": "This host changed while you were editing. Your draft is preserved. Review its latest settings before applying your changes.",
       "credentialChanged": "This credential changed while you were editing. Your draft is preserved. Review its latest settings and affected hosts before saving your changes.",
       "credentialInUse": "This credential is used by a host. Select another credential for its hosts or delete those hosts first.",
@@ -6955,11 +5370,9 @@
     "fingerprint": "Learned host key",
     "host": "Public hostname or IP address",
     "hostSection": "Host",
-    "hostsTab": "Hosts",
     "label": "SSH",
     "loadFailed": "Could not load SSH settings. Try again.",
     "loading": "Loading SSH hosts…",
-    "loadingAccess": "Loading Agent access…",
     "manage": "Manage SSH hosts",
     "notLearned": "Host key not learned yet",
     "passphrase": "Passphrase (optional)",
@@ -6984,7 +5397,10 @@
     },
     "summary_one": "{{count}} host configured",
     "summary_other": "{{count}} hosts configured",
-    "title": "SSH remote access",
+    "tailscale": {
+      "editUnavailable": "This host now uses Tailscale. Tailscale editing and rebinding are not available here yet. Cancel this edit to keep its saved transport.",
+      "needsRebind": "This host needs a new Tailscale configuration. Tailscale setup and rebinding are not available here yet."
+    },
     "unavailable": "SSH access is not available for this account.",
     "username": "SSH username"
   },
@@ -7077,8 +5493,6 @@
     }
   },
   "vnc": {
-    "accessDescription": "Choose which Agents can view and control your VNC desktops. Access is separate from SSH.",
-    "accessHelp": "Allow this Agent to view and control all your current and future configured VNC desktops.",
     "add": "Add host",
     "cancel": "Cancel",
     "close": "Close",
@@ -7087,7 +5501,12 @@
       "add": "Add credential",
       "appleDhFieldHelp": "1–63 UTF-8 bytes per field. NUL is not allowed.",
       "appleDhMethod": "Apple DH username and password",
+      "appleRsaSrpMethod": "Apple RSA/SRP username and password",
+      "appleRsaSrpUsernameHelp": "1–234 UTF-8 bytes for the RSA/SRP username. NUL is not allowed.",
+      "appleSrpMethod": "Apple Direct SRP username and password",
       "authentication": "Authentication method",
+      "certificateChain": "Client certificate chain (PEM)",
+      "clientKeyHelp": "Paste 1–8 client certificates and their matching unencrypted PKCS#8 key. Both are encrypted at rest. Replace both together when rotating; the key is never shown again.",
       "createNew": "Create new credential",
       "delete": "Delete credential",
       "deleteHelp": "Delete this unused credential? This cannot be undone.",
@@ -7101,6 +5520,9 @@
       "password": "VNC password",
       "passwordHelp": "Classic VNC passwords use 1–8 printable ASCII characters. Spaces are preserved.",
       "passwordHint": "Enter the server's VNC password",
+      "privateKey": "Unencrypted PKCS#8 private key (PEM)",
+      "qemuScramPasswordHelp": "1–1023 printable ASCII characters; spaces are preserved.",
+      "qemuScramUsernameHelp": "1–255 printable ASCII characters; no spaces, commas or equals signs.",
       "replace": "Replace authentication",
       "replaceHelp": "Leave this off to keep the saved authentication. Replacing it affects every host using this credential.",
       "select": "Select a credential",
@@ -7117,7 +5539,6 @@
       "usernamePasswordHint": "Enter the password for this username",
       "usernamePasswordMethod": "Username and password"
     },
-    "credentialsTab": "Credentials",
     "delete": "Delete host",
     "deleteHelp": "Delete this saved host? Its reusable credential will be kept.",
     "description": "Let your agents view and control remote desktops.",
@@ -7135,19 +5556,37 @@
       "invalidHost": "Enter a valid hostname or IP address without a URL, username, or port.",
       "invalidInput": "Check the VNC configuration and try again.",
       "invalidTrust": "Enter a valid bundle of up to 8 public CA certificates, no larger than 64 KiB.",
-      "ownerChanged": "Your workspace access changed. Refresh before continuing.",
       "revisionExhausted": "This configuration can no longer be updated. Create a new one."
     },
     "host": "RFB destination host",
     "hostHint": "e.g. desktop.example.com",
-    "hostsTab": "Hosts",
     "label": "VNC",
     "loadFailed": "Could not load VNC configuration.",
     "loading": "Loading VNC configuration…",
-    "loadingAccess": "Loading Agent access…",
     "manage": "Manage VNC",
     "port": "RFB destination port",
     "retry": "Retry",
+    "rsaAes": {
+      "fieldHelp": "Each field requires 1–255 UTF-8 bytes, no NUL. Spaces are preserved; this is not an eight-byte classic VNC password.",
+      "fullHelp": "RA2 and RA2_256 encrypt the entire RFB session with EAX. Independently verify the server's full RSA wire-key pin; CA trust cannot replace it.",
+      "importHelp": "Obtain PUBLIC KEY or RSA PUBLIC KEY PEM through trusted server administration. Never paste a private key/certificate or trust a live connection's key automatically. Conversion does not establish identity or save: verify the full pin, then explicitly Save.",
+      "importKey": "Import trusted public key",
+      "modulusBits": "Imported public-key size: {{bits}} bits",
+      "neHelp": "Only authentication is RSA-AES encrypted. Requires verified saved SSH to literal server loopback. SSH protects only its hop; an onward proxy may expose unencrypted RFB traffic.",
+      "passwordMethod": "RSA-AES password",
+      "pin": "Server RSA wire-key SHA256",
+      "pinHelp": "Import the independently trusted full 64-hex pin: SHA256 of U32 big-endian modulus bits plus equally fixed-width modulus and exponent. Not a PEM/SPKI hash or shortened fingerprint. Replace it and explicitly Save to rotate trust and invalidate sessions.",
+      "publicKey": "Independently trusted RSA public PEM (optional)",
+      "ra2256Password": "RA2_256 · AES-256 · password",
+      "ra2256UsernamePassword": "RA2_256 · AES-256 · username/password",
+      "ra2ne256Password": "RA2ne_256 · authentication only · password",
+      "ra2ne256UsernamePassword": "RA2ne_256 · authentication only · username/password",
+      "ra2nePassword": "RA2ne · authentication only · password",
+      "ra2neUsernamePassword": "RA2ne · authentication only · username/password",
+      "ra2Password": "RA2 · AES-128 · password",
+      "ra2UsernamePassword": "RA2 · AES-128 · username/password",
+      "usernamePasswordMethod": "RSA-AES username/password"
+    },
     "save": "Save",
     "saveRecovery": {
       "resourceIdConflict": "This resource could not be created. Close this dialog and try again.",
@@ -7156,18 +5595,31 @@
     },
     "saving": "Saving…",
     "security": {
-      "appleDh": "Mac Screen Sharing (Apple DH)",
-      "appleDhHelp": "Requires macOS Screen Sharing over a saved SSH connection. The RFB destination must be 127.0.0.1 or ::1 on that Mac. SSH protects the full VNC session. Use a Mac SSH host you control; its host key cannot rule out an onward proxy.",
+      "appleDh": "Mac VNC (Apple DH)",
+      "appleDhHelp": "Use a Mac VNC service over a saved SSH connection. Standalone macOS Screen Sharing remains unverified. The RFB destination must be 127.0.0.1 or ::1 on that Mac. SSH protects the full VNC session. Use a Mac SSH host you control; its host key cannot rule out an onward proxy.",
+      "appleRsaSrp": "Mac VNC (Apple RSA/SRP)",
+      "appleRsaSrpHelp": "Requires saved SSH to the Mac and an RFB destination of 127.0.0.1 or ::1. The RFB-issued RSA key is not a trusted host identity; SRP verifies the account and server proof, while SSH protects the full VNC session. The SSH host key identifies the selected endpoint but cannot rule out an onward proxy.",
+      "appleSrp": "Mac VNC (Apple Direct SRP)",
+      "appleSrpHelp": "Requires a saved SSH connection to the Mac and an RFB destination of 127.0.0.1 or ::1. SRP verifies the account and server proof; SSH protects the full VNC session. The SSH host key identifies the selected endpoint, but cannot rule out an onward proxy.",
+      "appleVncPassword": "Mac VNC (classic VNC password)",
+      "appleVncPasswordHelp": "Optional Mac VNC password (1–8 printable ASCII bytes). Bare type 2 does not verify server identity or encrypt the desktop. Saved verified SSH protects this Okou session, not the Mac's listener: other clients may reach port 5900 depending on your network. Enable the Mac option yourself only if you accept that risk.",
       "caBundle": "CA certificates (PEM)",
       "caHelp": "Up to 8 CA certificates, 64 KiB total. Do not paste a private key or a server certificate.",
       "caHint": "Paste the public CA certificates that issued the server certificate",
+      "clientCertificateHelp": "The client presents a certificate, but a successful handshake does not prove that the VNC server checks it. Configure the server to verify client certificates against the intended CA and restrict network ingress. SSH authenticates only the hop, not other VNC clients.",
+      "clientCertificateNone": "Client certificate without VNC password (X509None)",
+      "clientCertificateVnc": "Client certificate with VNC password (X509Vnc)",
       "custom": "Custom certificate authorities",
       "profileLabel": "Security profile",
+      "qemuX509Sasl": "QEMU SCRAM-SHA-256 (X509SASL)",
+      "qemuX509SaslHelp": "QEMU subtype 263 only. TLS verifies the server before SCRAM; no fallback to PLAIN or subtype 264.",
       "serverName": "TLS certificate identity",
       "serverNameHelp": "Optional. Leave blank to verify the certificate against the RFB destination host. Set this only when the certificate uses a different DNS name.",
       "serverNameHint": "e.g. desktop.internal.example.com",
       "system": "System certificate authorities",
       "title": "Server certificate trust",
+      "x509None": "Encrypted without a VNC password (X509None)",
+      "x509NoneHelp": "TLS verifies the server and encrypts this session, but does not authenticate you to the VNC server. Anyone else who can reach that server may control its desktop. SSH protects only the path to the selected SSH host, not access by other clients or an onward hop. Choose this only for an endpoint you control.",
       "x509Plain": "Encrypted username and password (X509Plain)",
       "x509PlainHelp": "Requires VeNCrypt X509Plain. TLS verifies the server before sending the username and password.",
       "x509Vnc": "Encrypted VNC (X509Vnc)",
@@ -7175,20 +5627,26 @@
     },
     "summary_one": "{{count}} host configured",
     "summary_other": "{{count}} hosts configured",
-    "title": "VNC remote access",
     "transport": {
       "appleDhDestinationHelp": "For Apple DH, enter 127.0.0.1 or ::1. This is the Mac's own loopback address reached through the selected SSH host.",
+      "appleRsaSrpDestinationHelp": "For Apple RSA/SRP, enter 127.0.0.1 or ::1 on the Mac reached through the selected SSH host.",
+      "appleSrpDestinationHelp": "For Apple Direct SRP, enter 127.0.0.1 or ::1. This is the Mac's own loopback address reached through the selected SSH host.",
+      "appleVncPasswordDestinationHelp": "For Mac classic VNC password, enter 127.0.0.1 or ::1 on the Mac reached through the saved SSH host.",
       "destination": "RFB destination",
       "destinationHelp": "For SSH routes, this host and port are reached from the selected SSH server, not directly from the Runner.",
       "direct": "Direct from Runner",
       "empty": "No saved SSH hosts are available. Add one in SSH settings before using this route.",
       "loadFailed": "Could not load saved SSH hosts.",
       "loading": "Loading saved SSH hosts…",
+      "privateDirectHelp": "Private and loopback IP addresses require a saved SSH host. Choose the SSH route above; the connection will not change automatically.",
       "select": "Select a saved SSH host",
       "selectionUnavailable": "The selected SSH host is no longer available. Select another host or switch explicitly to Direct.",
       "ssh": "Through saved SSH host",
       "sshConnection": "SSH host",
-      "sshHelp": "SSH protects the Runner-to-SSH-server hop. That server must be able to reach the RFB destination. The Agent needs both VNC and SSH access.",
+      "sshHelp": "SSH protects the Runner-to-SSH-server hop. That server must be able to reach the RFB destination. A chat can use this route only when that SSH host is also enabled.",
+      "sshNeedsRebind": "The SSH host for this VNC connection needs a new Cloudflare Access binding. Rebind it or explicitly choose Direct in SSH settings before connecting.",
+      "sshNeedsRebindStatus": "SSH needs rebind",
+      "sshTailscaleNeedsRebind": "The SSH host for this VNC connection needs a new Tailscale configuration. Tailscale setup and rebinding are not available here yet.",
       "title": "Connection route",
       "unavailable": "SSH settings are not available for this account.",
       "via": "SSH host:"
@@ -7908,6 +6366,18 @@
       "uninstallTitle": "Uninstall Official Workflow",
       "viewAndInstall": "View and install",
       "yes": "Yes"
+    },
+    "skillImport": {
+      "action": "Import skills",
+      "description": "Run this prompt where your skills live. Each one becomes a private workflow.",
+      "emptyAction": "Import from Claude Code or Codex",
+      "providerLabel": "Import from",
+      "source": {
+        "claudeCode": "Imported from Claude Code",
+        "codex": "Imported from Codex"
+      },
+      "title": "Import your skills",
+      "viewWorkflows": "View workflows"
     }
   },
   "works": {
@@ -7924,6 +6394,27 @@
     },
     "connected": "Connected",
     "connectedWithDetail": "Connected ({{detail}})",
+    "discord": {
+      "accountSetup": "Your account is not connected. Connecting a new Discord account is not available yet.",
+      "adminSetup": "Server setup is not available yet. Existing verified configurations can continue to use Discord.",
+      "chooseDmServer": "Choose a server",
+      "description": "Mention Okou in a server or send the bot a direct message.",
+      "disconnect": "Disconnect Discord",
+      "dmServer": "Default server for direct messages",
+      "limitedContext": "Limited context: Okou may not receive ordinary channel messages. Mention Okou and include the details it needs.",
+      "loadError": "Unable to load Discord status.",
+      "loading": "Loading Discord status…",
+      "memberSetup": "Ask an organization admin about Discord access. Server setup is not available yet.",
+      "moreOptions": "More Discord options",
+      "retry": "Retry",
+      "server": "Server: {{name}}",
+      "suspended": "Discord is temporarily unavailable. Existing connections are kept.",
+      "title": "Discord",
+      "unconfigured": "Discord is not available yet for this organization.",
+      "uninstall": "Remove Discord",
+      "uninstallDescription": "This disconnects everyone in this organization from Discord. Other organizations keep their connections.",
+      "uninstallTitle": "Remove Discord from this organization?"
+    },
     "documentTitle": "Works",
     "feishuConnected": "Feishu connected successfully",
     "github": {

@@ -197,7 +197,6 @@ runs:
           runner_default_group="vm0/production"
           concurrent_run_limit_cap="10"
           slack_redirect_base_url="$(repo_var SLACK_REDIRECT_BASE_URL)"
-          plausible_script_url="$(first_non_empty "$(repo_var PLAUSIBLE_SCRIPT_URL_PROD)" "$(repo_var PLAUSIBLE_SCRIPT_URL)")"
           strapi_url="$(repo_var STRAPI_URL)"
           private_artifacts_bucket="user-artifact-private-prod"
           private_artifacts_access_key_id="$(repo_secret R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID)"
@@ -216,7 +215,6 @@ runs:
           runner_default_group="vm0/development-${INPUT_JOB_REF}"
           concurrent_run_limit_cap="0"
           slack_redirect_base_url="$INPUT_WEB_URL"
-          plausible_script_url="$(repo_var PLAUSIBLE_SCRIPT_URL)"
           strapi_url=""
           private_artifacts_bucket="user-artifact-private-dev"
           private_artifacts_access_key_id="$(repo_secret R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID_DEV)"
@@ -325,21 +323,12 @@ runs:
         add_secret OPENROUTER_API_KEY OPENROUTER_API_KEY
         add_secret OPENAI_API_KEY OPENAI_API_KEY
         add_secret FAL_KEY FAL_KEY
-        add_secret JOGGAI_API_KEY JOGGAI_API_KEY
-        if [[ "$INPUT_APP" == "api" ]]; then
-          add_secret JOGGAI_WEBHOOK_SECRET JOGGAI_WEBHOOK_SECRET
-          add_secret HEYGEN_API_KEY HEYGEN_API_KEY
-        fi
-        add_secret BYTEPLUS_API_KEY BYTEPLUS_API_KEY
-        add_secret MINIMAX_API_KEY MINIMAX_API_KEY
-        add_secret BYTEPLUS_STT_API_KEY BYTEPLUS_STT_API_KEY
         add_var VAPID_PUBLIC_KEY VAPID_PUBLIC_KEY
         add_secret VAPID_PRIVATE_KEY VAPID_PRIVATE_KEY
         add_env CONCURRENT_RUN_LIMIT_CAP "$concurrent_run_limit_cap"
         if [[ "$INPUT_ENVIRONMENT" == "preview" ]]; then
           add_env OKOU_DEBUG "*"
         fi
-        add_var CLAUDE_CODE_VERSION_URL CLAUDE_CODE_VERSION_URL
         add_secret SLACK_SIGNING_SECRET SLACK_SIGNING_SECRET
         add_secret TELEGRAM_OFFICIAL_BOT_TOKEN TELEGRAM_OFFICIAL_BOT_TOKEN
         add_var TELEGRAM_OFFICIAL_BOT_USERNAME TELEGRAM_OFFICIAL_BOT_USERNAME
@@ -350,7 +339,6 @@ runs:
           add_var MICROSOFT_TEAMS_APP_TENANT_ID MICROSOFT_TEAMS_APP_TENANT_ID
         fi
         add_env SLACK_REDIRECT_BASE_URL "$slack_redirect_base_url"
-        add_env PLAUSIBLE_SCRIPT_URL "$plausible_script_url"
         if [[ "$INPUT_APP" == "web" && "$INPUT_ENVIRONMENT" == "production" ]]; then
           add_var POSTHOG_KEY POSTHOG_KEY
           add_var POSTHOG_HOST POSTHOG_HOST

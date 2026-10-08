@@ -3,10 +3,8 @@ import { z } from "zod";
 import { chatThreadServiceTierSchema } from "./chat-threads";
 import { mcpChatModelIdSchema } from "./mcp-chat-discovery";
 import { mcpChatOutputTimestampSchema } from "./mcp-chat-time";
-import { mcpChatThreadSchema } from "./mcp-chat-threads";
 
 export const mcpUpdateChatThreadInputSchema = z.strictObject({
-  requestId: z.uuid().toLowerCase(),
   threadId: z.uuid().toLowerCase(),
   patch: z
     .strictObject({
@@ -28,16 +26,12 @@ export const mcpUpdateChatThreadInputSchema = z.strictObject({
 });
 
 export const mcpUpdateChatThreadOutputSchema = z.strictObject({
-  requestId: z.uuid(),
   threadId: z.uuid(),
   title: z.string().max(1000).nullable(),
   titleTruncated: z.boolean(),
-  model: mcpChatThreadSchema.shape.model,
+  selectedModel: z.string().nullable(),
   serviceTier: chatThreadServiceTierSchema.nullable(),
   metadataUpdatedAt: mcpChatOutputTimestampSchema,
-  acceptedAt: mcpChatOutputTimestampSchema,
-  retryUntil: mcpChatOutputTimestampSchema,
-  replayed: z.boolean(),
   url: z.url(),
 });
 

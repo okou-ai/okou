@@ -1,54 +1,47 @@
 import { randomUUID } from "node:crypto";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { describe, expect, it, onTestFinished, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
-import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
-import {
-  API_TEST_CONNECTOR_CATALOG,
-  apiTestConnectorCatalogValidationAuthority,
-  clearApiTestConnectorCatalogExternalReaderIdentityReplacements,
-  clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements,
-  deleteApiTestConnectorCatalogRuntimeProjectionRow,
-  deleteApiTestConnectorCatalogRuntimeProjectionSet,
-  installApiTestConnectorCatalog,
-  replaceApiTestConnectorCatalogStoredBytes,
-  setApiTestConnectorCatalogExternalReaderIdentityReadHook,
-  setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook,
-} from "../../../test-fixtures/connector-catalog";
+import { env, mockEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
-import type { ApiTestUser } from "./helpers/api-bdd";
+import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
+import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
 import {
   readCustomConnectorCredentialStorageParent,
   setCustomConnectorCredentialStorageState,
 } from "./helpers/connector-credential-storage-state";
-import { useSecretKmsProbe } from "./helpers/secret-kms-probe";
 import {
   createChatEventsFixture,
   type EntitledChatActor,
 } from "./helpers/chat-events-fixture";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const {
   api,
   chat,
   connectors,
-  entitledChatActor,
+  entitledChatActor: createEntitledChatActor,
   sendChatRun,
   claimChatRun,
   completeChatRunOk,
   cancelChatRun,
-  modelProviderConnectionsClient,
-  chatThreadsClient,
   sessionHeaders,
 } = createChatEventsFixture(context);
+
+// Connector selection tests observe claimable native runs; Sonnet's Pi route
+// can finish API-first before these Runner assertions execute.
+async function entitledChatActor() {
+  const result = await createEntitledChatActor();
+  await api.updateUserModelPreference(result.actor, "claude-fable-5-1");
+  return result;
+}
 
 function chatThreadConnectorSelectionsClient() {
   return setupApp({ context, routes: chatThreadRoutes })(
@@ -64,16 +57,6 @@ interface SelectedThreadConnectorFixture extends EntitledChatActor {
 async function selectedThreadConnectorFixture(
   title: string,
 ): Promise<SelectedThreadConnectorFixture> {
-  // A unique version still shares the active source with other test files.
-  // Own the source so their catalog setup cannot invalidate this projection.
-  mockEnv(
-    "R2_USER_STORAGES_BUCKET_NAME",
-    `test-thread-runtime-context-${randomUUID()}`,
-  );
-  await installApiTestConnectorCatalog({
-    catalogVersion: `api-test-thread-runtime-overlap-${randomUUID()}`,
-    runtimeProjection: true,
-  });
   const entitled = await entitledChatActor();
   const connection = await connectors.connectManualGrant(
     entitled.actor,
@@ -104,109 +87,211 @@ async function selectedThreadConnectorFixture(
   };
 }
 
-async function configureRuntimeContextGateway(
+async function configurePersonalRuntimeContext(
   actor: ApiTestUser,
 ): Promise<void> {
-  const gateway = await accept(
-    modelProviderConnectionsClient().create({
-      headers: sessionHeaders(actor),
-      body: {
-        displayName: "Runtime context priority gateway",
-        secret: "runtime-context-priority-secret",
-        surfaces: [
-          {
-            protocol: "anthropic-messages",
-            apiBaseUrl:
-              "https://runtime-context-priority.example.com/anthropic",
-            authHeaderName: "Authorization",
-            authHeaderTemplate: "Bearer {{secret}}",
-            modelMappings: {
-              "claude-sonnet-5": "anthropic/claude-sonnet-4.6",
-            },
-          },
-        ],
-      },
-    }),
-    [201],
-  );
-  const surfaceId = gateway.body.surfaces[0]?.id;
-  if (!surfaceId) {
-    throw new Error("Expected the runtime context gateway to have a surface");
-  }
-  await api.updateOrgModelPolicies(actor, [
-    {
-      model: "claude-sonnet-5",
-      isDefault: true,
-      defaultProviderType: "custom-anthropic-messages",
-      credentialScope: "org",
-      modelProviderId: null,
-      modelProviderSurfaceId: surfaceId,
-    },
-  ]);
-}
-
-function setThreadConnectorCatalogReadHook(hook: () => Promise<void>): void {
-  // Admission first reads the run scope's projection and passes that result
-  // into preparation. Inject the failure/barrier only on the subsequent
-  // current-authority read for the stored thread account.
-  let admissionRead = true;
-  setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook(() => {
-    if (admissionRead) {
-      admissionRead = false;
-      return Promise.resolve();
-    }
-    return hook();
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
   });
 }
 
-describe("CHAT-02: thread connector account selection", () => {
-  it.each(["missing", "incomplete"] as const)(
-    "reads the selected account when the catalog projection is %s",
-    async (projectionState) => {
-      const fixture = await selectedThreadConnectorFixture(
-        "Thread catalog projection fallback",
-      );
-      // Advance authority so setup's cached selection cannot hide a missing row.
-      await installApiTestConnectorCatalog({
-        catalogVersion: `api-test-thread-fallback-${randomUUID()}`,
-        runtimeProjection: true,
-      });
-      // Model an older/incomplete persisted projection through the external
-      // database fixture; public APIs cannot create these rollout states.
-      if (projectionState === "missing") {
-        await deleteApiTestConnectorCatalogRuntimeProjectionSet();
-      } else {
-        await deleteApiTestConnectorCatalogRuntimeProjectionRow("openai");
-      }
-      const selections = await accept(
-        chatThreadConnectorSelectionsClient().get({
-          headers: sessionHeaders(fixture.actor),
-          params: { id: fixture.threadId },
-        }),
-        [200],
-      );
-      expect(selections.body.selectedConnections).toMatchObject([
-        {
-          id: fixture.connectionId,
-          target: { kind: "builtin", connectorSlug: "openai" },
-          connectionStatus: "connected",
-        },
-      ]);
-    },
-  );
+describe("chat eager connector credentials", () => {
+  it("does not decrypt firewall-only credentials at launch", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const figma = await connectors.connectManualGrant(
+      actor,
+      "figma",
+      "api-token",
+      { accessToken: "firewall-figma" },
+      agentId,
+    );
+    await connectors.connectManualGrant(
+      actor,
+      "gitlab",
+      "api-token",
+      { accessToken: "firewall-gitlab" },
+      agentId,
+    );
+    const kms = useSecretKmsProbe();
+    const run = await sendChatRun(actor, {
+      agentId,
+      model: "claude-fable-5-1",
+      prompt: "Use my firewall-only connectors",
+    });
+    expect(kms.decryptCalls).toBe(0);
+    const { claim, sandboxHeaders } = await claimChatRun(
+      runnerGroup,
+      run.runId,
+    );
+    expect(claim.environment).toMatchObject({
+      FIGMA_TOKEN: "fixture-figma-token",
+    });
+    expect(claim.secretConnectorMetadataMap?.FIGMA_TOKEN).toMatchObject({
+      sourceId: figma.id,
+      sourceType: "connector",
+    });
+    await cancelChatRun(actor, run.runId, sandboxHeaders);
+  });
 
-  it("uses a selected builtin account without reading the full catalog", async () => {
+  it("decrypts only the eager connector and delivers its plaintext to the runner", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const openai = await connectors.connectManualGrant(
+      actor,
+      "openai",
+      "api-token",
+      { apiKey: "eager-openai-token" },
+      agentId,
+    );
+    await connectors.connectManualGrant(
+      actor,
+      "figma",
+      "api-token",
+      { accessToken: "deferred-figma-token" },
+      agentId,
+    );
+    const kms = useSecretKmsProbe();
+    const run = await sendChatRun(actor, {
+      agentId,
+      model: "claude-fable-5-1",
+      prompt: "Use eager and deferred connector credentials",
+    });
+    expect(kms.decryptCalls).toBe(1);
+    const { claim, sandboxHeaders } = await claimChatRun(
+      runnerGroup,
+      run.runId,
+    );
+    expect(claim.environment).toMatchObject({
+      OPENAI_TOKEN: "eager-openai-token",
+      FIGMA_TOKEN: "fixture-figma-token",
+    });
+    expect(claim.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
+      sourceId: openai.id,
+    });
+    if (!claim.encryptedSecrets) {
+      throw new Error("Expected runner launch secrets");
+    }
+    const plaintext = await createFirewallApi(context).requestFirewallAuth(
+      sandboxHeaders,
+      {
+        encryptedSecrets: claim.encryptedSecrets,
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("OPENAI_TOKEN")}`,
+        },
+      },
+      [200],
+    );
+    expect(plaintext.body).toMatchObject({
+      headers: { Authorization: "Bearer eager-openai-token" },
+    });
+    const deferred = await createFirewallApi(context).requestFirewallAuth(
+      sandboxHeaders,
+      {
+        encryptedSecrets: claim.encryptedSecrets,
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("FIGMA_TOKEN")}`,
+        },
+        secretConnectorMap: claim.secretConnectorMap ?? undefined,
+        secretConnectorMetadataMap:
+          claim.secretConnectorMetadataMap ?? undefined,
+      },
+      [200],
+    );
+    expect(deferred.body).toMatchObject({
+      headers: { Authorization: "Bearer deferred-figma-token" },
+    });
+    await cancelChatRun(actor, run.runId, sandboxHeaders);
+  });
+
+  it("isolates an undecryptable unselected account from the selected eager account", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    let badAccount = true;
+    const kms = useSecretKmsProbe(
+      (request) => {
+        return badAccount
+          ? Promise.resolve({
+              keyId: request.keyId,
+              plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
+              encryptedDataKey: Buffer.from("unavailable-account-key"),
+            })
+          : undefined;
+      },
+      (request) => {
+        return Buffer.from(request.ciphertext).toString() ===
+          "unavailable-account-key"
+          ? Promise.reject(new Error("KMS account key unavailable"))
+          : undefined;
+      },
+    );
+    await connectors.connectManualGrant(
+      actor,
+      "openai",
+      "api-token",
+      { apiKey: "bad-account-token" },
+      agentId,
+    );
+    badAccount = false;
+    const good = await connectors.connectManualGrant(
+      actor,
+      "openai",
+      "api-token",
+      { apiKey: "good-account-token" },
+      agentId,
+    );
+    const thread = await chat.createThread(actor, {
+      agentId,
+      title: "Credential failure isolation",
+    });
+    await accept(
+      chatThreadConnectorSelectionsClient().update({
+        headers: sessionHeaders(actor),
+        params: { id: thread.id },
+        body: {
+          connectionId: good.id,
+          target: { kind: "builtin", connectorSlug: "openai" },
+        },
+      }),
+      [200],
+    );
+    const beforeLaunch = kms.decryptCalls;
+    const run = await sendChatRun(actor, {
+      agentId,
+      threadId: thread.id,
+      model: "claude-fable-5-1",
+      prompt: "Use only my selected healthy account",
+    });
+    expect(kms.decryptCalls - beforeLaunch).toBe(1);
+    const { claim, sandboxHeaders } = await claimChatRun(
+      runnerGroup,
+      run.runId,
+    );
+    expect(claim.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
+      sourceId: good.id,
+    });
+    if (!claim.encryptedSecrets) {
+      throw new Error("Expected runner launch secrets");
+    }
+    const resolved = await createFirewallApi(context).requestFirewallAuth(
+      sandboxHeaders,
+      {
+        encryptedSecrets: claim.encryptedSecrets,
+        authHeaders: {
+          Authorization: `Bearer ${secretTemplate("OPENAI_TOKEN")}`,
+        },
+      },
+      [200],
+    );
+    expect(resolved.body).toMatchObject({
+      headers: { Authorization: "Bearer good-account-token" },
+    });
+    await cancelChatRun(actor, run.runId, sandboxHeaders);
+  });
+});
+
+describe("CHAT-02: thread connector account selection", () => {
+  it("inspects and runs with the thread's selected builtin account", async () => {
     const fixture = await selectedThreadConnectorFixture(
       "Scoped thread catalog selection",
     );
-    onTestFinished(() => {
-      clearApiTestConnectorCatalogExternalReaderIdentityReplacements();
-    });
-    // Reject the external full-snapshot read while leaving real scoped
-    // PostgreSQL projections available to this API request.
-    setApiTestConnectorCatalogExternalReaderIdentityReadHook(() => {
-      return Promise.reject(new Error("Full catalog read is unavailable"));
-    });
 
     const selections = await accept(
       chatThreadConnectorSelectionsClient().get({
@@ -260,22 +345,9 @@ describe("CHAT-02: thread connector account selection", () => {
     beforeEach(async () => {
       preparedScenario = await prepareScenario();
     });
-    it("preserves an out-of-scope choice without requiring its catalog", async () => {
+    it("keeps an out-of-scope thread choice and uses it again after reauthorization", async () => {
       const { fixture } = preparedScenario;
       await api.enableAgentConnectors(fixture.actor, fixture.agentId, []);
-      onTestFinished(() => {
-        clearApiTestConnectorCatalogExternalReaderIdentityReplacements();
-        clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
-      });
-      const rejectCatalogRead = () => {
-        return Promise.reject(new Error("Connector catalog is unavailable"));
-      };
-      setApiTestConnectorCatalogExternalReaderIdentityReadHook(
-        rejectCatalogRead,
-      );
-      setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook(
-        rejectCatalogRead,
-      );
       const run = await sendChatRun(fixture.actor, {
         agentId: fixture.agentId,
         threadId: fixture.threadId,
@@ -286,9 +358,6 @@ describe("CHAT-02: thread connector account selection", () => {
         claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
       ).toBeUndefined();
       await cancelChatRun(fixture.actor, run.runId, claimed.sandboxHeaders);
-
-      clearApiTestConnectorCatalogExternalReaderIdentityReplacements();
-      clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
       await api.enableAgentConnectors(fixture.actor, fixture.agentId, [
         "openai",
       ]);
@@ -325,131 +394,24 @@ describe("CHAT-02: thread connector account selection", () => {
     });
   });
 
-  it("overlaps stored thread selection with model-provider resolution", async () => {
+  it("uses the selected connector with the personal subscription model", async () => {
     const fixture = await selectedThreadConnectorFixture(
-      "Runtime context overlap thread",
+      "Runtime context thread",
     );
-    await configureRuntimeContextGateway(fixture.actor);
-    onTestFinished(() => {
-      clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
-    });
-    const threadCatalogReadStarted = createDeferredPromise<void>(
-      context.signal,
-    );
-    onTestFinished(() => {
-      if (!threadCatalogReadStarted.settled()) {
-        threadCatalogReadStarted.resolve(undefined);
-      }
-    });
-    setThreadConnectorCatalogReadHook(() => {
-      if (!threadCatalogReadStarted.settled()) {
-        threadCatalogReadStarted.resolve(undefined);
-      }
-      return Promise.resolve();
-    });
-    const kms = useSecretKmsProbe(undefined, async () => {
-      await threadCatalogReadStarted.promise;
-      return Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
-    });
-
+    await configurePersonalRuntimeContext(fixture.actor);
     const run = await sendChatRun(fixture.actor, {
       agentId: fixture.agentId,
       threadId: fixture.threadId,
-      prompt: "Overlap stored thread selection with runtime context",
+      prompt: "Use the selected connector with my subscription",
     });
-    expect(threadCatalogReadStarted.settled()).toBeTruthy();
-    clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
     const claimed = await claimChatRun(fixture.runnerGroup, run.runId);
-    expect(kms.decryptCalls).toBeGreaterThan(0);
     expect(claimed.claim.environment).toMatchObject({
-      ANTHROPIC_BASE_URL:
-        "https://runtime-context-priority.example.com/anthropic",
-      ANTHROPIC_MODEL: "anthropic/claude-sonnet-4.6",
+      ANTHROPIC_MODEL: "claude-fable-5-1",
     });
     expect(
       claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
     ).toMatchObject({ sourceId: fixture.connectionId });
     await cancelChatRun(fixture.actor, run.runId, claimed.sandboxHeaders);
-  });
-
-  it("keeps abort priority over a concurrent thread-selection failure", async () => {
-    const fixture = await selectedThreadConnectorFixture(
-      "Runtime context abort priority thread",
-    );
-    onTestFinished(() => {
-      clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
-    });
-    const abortError = new Error("runtime context priority abort");
-    abortError.name = "AbortError";
-    const abortThreadError = new Error("thread selection below abort");
-    const abortController = new AbortController();
-    setThreadConnectorCatalogReadHook(() => {
-      abortController.abort(abortError);
-      return Promise.reject(abortThreadError);
-    });
-    context.mocks.sentry.captureException.mockClear();
-    await expect(
-      chat.requestSendEvent(
-        fixture.actor,
-        {
-          agentId: fixture.agentId,
-          threadId: fixture.threadId,
-          prompt: "Prefer abort over a thread-selection failure",
-          clientEventId: randomUUID(),
-        },
-        [201],
-        {},
-        abortController.signal,
-      ),
-    ).rejects.toThrow("Unknown response status 500");
-    expect(abortController.signal.reason).toBe(abortError);
-    expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
-  });
-
-  it("keeps thread-selection failure priority over a concurrent provider failure", async () => {
-    const fixture = await selectedThreadConnectorFixture(
-      "Runtime context thread priority thread",
-    );
-    await configureRuntimeContextGateway(fixture.actor);
-    onTestFinished(() => {
-      clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
-    });
-    const providerFailureStarted = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!providerFailureStarted.settled()) {
-        providerFailureStarted.resolve(undefined);
-      }
-    });
-    const threadError = new Error("runtime thread selection priority failure");
-    const providerError = new Error("model provider below thread failure");
-    setThreadConnectorCatalogReadHook(async () => {
-      await providerFailureStarted.promise;
-      throw threadError;
-    });
-    const kms = useSecretKmsProbe(undefined, () => {
-      if (!providerFailureStarted.settled()) {
-        providerFailureStarted.resolve(undefined);
-      }
-      return Promise.reject(providerError);
-    });
-    context.mocks.sentry.captureException.mockClear();
-    await expect(
-      chat.requestSendEvent(
-        fixture.actor,
-        {
-          agentId: fixture.agentId,
-          threadId: fixture.threadId,
-          prompt: "Prefer thread selection over provider failure",
-          clientEventId: randomUUID(),
-        },
-        [201],
-      ),
-    ).rejects.toThrow("Unknown response status 500");
-    expect(providerFailureStarted.settled()).toBeTruthy();
-    expect(kms.decryptCalls).toBeGreaterThan(0);
-    expect(context.mocks.sentry.captureException).toHaveBeenCalledWith(
-      threadError,
-    );
   });
 
   it.each(["revocation", "reauthorization"] as const)(
@@ -507,25 +469,11 @@ describe("CHAT-02: thread connector account selection", () => {
       }
 
       await api.enableAgentConnectors(actor, agentId, []);
-      const unauthorizedResponse = await chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          threadId,
-          prompt: "Continue while OpenAI is unauthorized",
-        },
-        [201],
-      );
-      if (unauthorizedResponse.status !== 201) {
-        throw new Error("Expected the unauthorized-connector send to succeed");
-      }
-      if (!unauthorizedResponse.body.runId) {
-        throw new Error("Expected the unauthorized-connector run to start");
-      }
-      const unauthorized = {
-        runId: unauthorizedResponse.body.runId,
-        threadId: unauthorizedResponse.body.threadId,
-      };
+      const unauthorized = await sendChatRun(actor, {
+        agentId,
+        threadId,
+        prompt: "Continue while OpenAI is unauthorized",
+      });
       const unauthorizedClaim = await claimChatRun(
         runnerGroup,
         unauthorized.runId,
@@ -560,107 +508,32 @@ describe("CHAT-02: thread connector account selection", () => {
     },
   );
 
-  it("does not persist connector overrides during concurrent first sends", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const orgId = actor.orgId;
-    if (!orgId) {
-      throw new Error("Expected an organization-scoped chat actor");
-    }
-    const connection = await connectors.connectManualGrant(
-      actor,
-      "openai",
-      "api-token",
-      { apiKey: "concurrent-thread-selected-openai-key" },
-      agentId,
-    );
-    const thread = await chat.createThread(actor, {
-      agentId,
-      title: "Concurrent connector selection thread",
-    });
-    const threadLock = await holdChatThreadRowLockFixture({
-      threadId: thread.id,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      threadLock.release();
-      await threadLock.done;
-    });
-
-    const clientEventIds = [randomUUID(), randomUUID()] as const;
-    const sends = clientEventIds.map((clientEventId, index) => {
-      return chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          threadId: thread.id,
-          prompt: `Concurrent connector selection send ${index + 1}`,
-          clientEventId,
-        },
-        [201],
-      );
-    });
-    await expect.poll(threadLock.blockedWaiterCount).toBeGreaterThanOrEqual(2);
-    threadLock.release();
-    await threadLock.done;
-
-    const responses = await Promise.all(sends);
-    const responseBodies = responses.map((response) => {
-      if (response.status !== 201) {
-        throw new Error("Expected both concurrent sends to be accepted");
-      }
-      return response.body;
-    });
-    const activeIndexes = responseBodies.flatMap((body, index) => {
-      return body.runId === null ? [] : [index];
-    });
-    expect(activeIndexes).toHaveLength(1);
-    const activeIndex = activeIndexes[0];
-    if (activeIndex === undefined) {
-      throw new Error("Expected one concurrent send to start a run");
-    }
-    const activeRunId = responseBodies[activeIndex]?.runId;
-    if (!activeRunId) {
-      throw new Error("Expected the active concurrent send to have a run id");
-    }
-    const queuedEventId = clientEventIds.find((_, index) => {
-      return index !== activeIndex;
-    });
-    if (!queuedEventId) {
-      throw new Error("Expected one concurrent send to remain queued");
-    }
-
-    const claimed = await claimChatRun(runnerGroup, activeRunId);
-    expect(
-      claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
-    ).toMatchObject({ sourceId: connection.id });
-    const selections = await accept(
-      chatThreadConnectorSelectionsClient().get({
-        headers: sessionHeaders(actor),
-        params: { id: thread.id },
-      }),
-      [200],
-    );
-    expect(selections.body.selections).toStrictEqual([]);
-
-    const recalled = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: thread.id,
-        revokesEventId: queuedEventId,
-        clientEventId: randomUUID(),
-      },
-      [201],
-    );
-    if (recalled.status !== 201) {
-      throw new Error("Expected the queued concurrent send to be recalled");
-    }
-    expect(recalled.body.runId).toBeNull();
-    await cancelChatRun(actor, activeRunId, claimed.sandboxHeaders);
-  });
-
   it("uses default custom HTTP and MCP accounts without persisting overrides", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const storage = context.mocks.s3.send.getMockImplementation();
+    const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
+    const kmsKeyId = env("SECRETS_KMS_KEY_ID");
+    const connectorIds: string[] = [];
+    let cleanupRun: (() => Promise<void>) | undefined;
+    let cleaned = false;
+    const cleanup = async () => {
+      if (cleaned) {
+        return;
+      }
+      if (!storage) {
+        throw new Error("Expected the owned Agent's storage implementation");
+      }
+      context.mocks.s3.send.mockImplementation(storage);
+      mockEnv("R2_USER_STORAGES_BUCKET_NAME", storageBucket);
+      mockEnv("SECRETS_KMS_KEY_ID", kmsKeyId);
+      await cleanupRun?.();
+      for (const connectorId of connectorIds) {
+        await connectors.deleteCustomConnector(actor, connectorId);
+      }
+      await createBddApi(context).deleteAgent(actor, agentId);
+      cleaned = true;
+    };
+    onTestFinished(cleanup);
     const orgId = actor.orgId;
     if (!orgId) {
       throw new Error("Expected an organization-scoped chat actor");
@@ -673,6 +546,7 @@ describe("CHAT-02: thread connector account selection", () => {
         prefixTemplates: ["https://thread-http-runtime.example.test/v1/"],
       }),
     );
+    connectorIds.push(httpConnector.id);
     const mcpConnector = await connectors.createCustomConnector(actor, {
       kind: "mcp",
       slug: `_thread-mcp-runtime-${randomUUID()}`,
@@ -696,6 +570,7 @@ describe("CHAT-02: thread connector account selection", () => {
       queryInjections: [],
       authMode: "manual",
     });
+    connectorIds.push(mcpConnector.id);
     await connectors.setCustomConnectorSecret(
       actor,
       httpConnector.id,
@@ -710,24 +585,20 @@ describe("CHAT-02: thread connector account selection", () => {
       httpConnector.id,
       mcpConnector.id,
     ]);
-    const httpConnection = await readCustomConnectorCredentialStorageParent(
-      context,
-      {
-        orgId,
-        userId: actor.userId,
-        customConnectorId: httpConnector.id,
-      },
+    const httpAccounts = await connectors.listCustomConnectorAccounts(
+      actor,
+      httpConnector.id,
     );
-    const mcpConnection = await readCustomConnectorCredentialStorageParent(
-      context,
-      {
-        orgId,
-        userId: actor.userId,
-        customConnectorId: mcpConnector.id,
-      },
+    const mcpAccounts = await connectors.listCustomConnectorAccounts(
+      actor,
+      mcpConnector.id,
     );
-    const httpConnectorId = httpConnection.connector?.id;
-    const mcpConnectorId = mcpConnection.connector?.id;
+    const httpConnectorId = httpAccounts.find((account) => {
+      return account.isDefault;
+    })?.id;
+    const mcpConnectorId = mcpAccounts.find((account) => {
+      return account.isDefault;
+    })?.id;
     if (!httpConnectorId || !mcpConnectorId) {
       throw new Error("Expected custom HTTP and MCP connector accounts");
     }
@@ -736,7 +607,14 @@ describe("CHAT-02: thread connector account selection", () => {
       agentId,
       prompt: "Use my selected HTTP and MCP connector accounts",
     });
+    cleanupRun = async () => {
+      await api.requestCancelRun(actor, run.runId, [200]);
+      await flushWaitUntilForTest();
+    };
     const claimed = await claimChatRun(runnerGroup, run.runId);
+    cleanupRun = async () => {
+      await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+    };
     expect(claimed.claim.connectorRuntimeTargets).toContainEqual({
       kind: "custom",
       customConnectorId: httpConnector.id,
@@ -757,7 +635,7 @@ describe("CHAT-02: thread connector account selection", () => {
       [200],
     );
     expect(selections.body.selections).toStrictEqual([]);
-    await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
+    await cleanup();
   });
 
   it("starts the run when a selected custom connector becomes unavailable", async () => {
@@ -800,19 +678,6 @@ describe("CHAT-02: thread connector account selection", () => {
       agentId,
       prompt: "Use my default custom connector account",
     });
-    onTestFinished(() => {
-      clearApiTestConnectorCatalogExternalReaderIdentityReplacements();
-      clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
-    });
-    const rejectBuiltinCatalogRead = () => {
-      return Promise.reject(new Error("Builtin catalog is unavailable"));
-    };
-    setApiTestConnectorCatalogExternalReaderIdentityReadHook(
-      rejectBuiltinCatalogRead,
-    );
-    setApiTestConnectorCatalogRuntimeProjectionIdentityReadHook(
-      rejectBuiltinCatalogRead,
-    );
     await accept(
       chatThreadConnectorSelectionsClient().update({
         headers: sessionHeaders(actor),
@@ -841,8 +706,6 @@ describe("CHAT-02: thread connector account selection", () => {
         connectionStatus: "connected",
       },
     ]);
-    clearApiTestConnectorCatalogExternalReaderIdentityReplacements();
-    clearApiTestConnectorCatalogRuntimeProjectionIdentityReplacements();
     await cancelChatRun(actor, first.runId);
     await setCustomConnectorCredentialStorageState(context, {
       orgId,
@@ -874,144 +737,5 @@ describe("CHAT-02: thread connector account selection", () => {
       target: { kind: "custom", customConnectorId: customConnector.id },
     });
     await cancelChatRun(actor, fallback.runId, claimed.sandboxHeaders);
-  });
-
-  it("starts the run when the runtime catalog no longer contains the selected built-in", async () => {
-    // Catalog rows are global by source, so isolate mutations from parallel test files.
-    mockEnv(
-      "R2_USER_STORAGES_BUCKET_NAME",
-      `test-chat-retired-catalog-connector-${randomUUID()}`,
-    );
-    await installApiTestConnectorCatalog({ runtimeProjection: true });
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    const orgId = actor.orgId;
-    if (!orgId) {
-      throw new Error("Expected an organization-scoped chat actor");
-    }
-    const connection = await connectors.connectManualGrant(
-      actor,
-      "openai",
-      "api-token",
-      { apiKey: "retired-thread-openai-key" },
-      agentId,
-    );
-    const runtimeConnection = await connectors.connectManualGrant(
-      actor,
-      "runtime",
-      "api-token",
-      { apiKey: "retired-thread-runtime-key" },
-      agentId,
-    );
-    const thread = await chat.createThread(actor, {
-      agentId,
-      title: "Retired catalog connector thread",
-    });
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: sessionHeaders(actor),
-        params: { id: thread.id },
-        body: {
-          connectionId: connection.id,
-          target: { kind: "builtin", connectorSlug: "openai" },
-        },
-      }),
-      [200],
-    );
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: sessionHeaders(actor),
-        params: { id: thread.id },
-        body: {
-          connectionId: runtimeConnection.id,
-          target: { kind: "builtin", connectorSlug: "runtime" },
-        },
-      }),
-      [200],
-    );
-
-    const catalogVersion = `api-test-without-openai-${randomUUID()}`;
-    const catalogWithoutOpenAi = {
-      ...API_TEST_CONNECTOR_CATALOG,
-      catalogVersion,
-      connectors: API_TEST_CONNECTOR_CATALOG.connectors.filter((connector) => {
-        return connector.slug !== "openai";
-      }),
-    };
-    await replaceApiTestConnectorCatalogStoredBytes({
-      catalogVersion,
-      rawBytes: Buffer.from(`${JSON.stringify(catalogWithoutOpenAi)}\n`),
-      catalogValidationAuthority: apiTestConnectorCatalogValidationAuthority(),
-    });
-
-    const run = await sendChatRun(actor, {
-      agentId,
-      threadId: thread.id,
-      prompt: "Continue after the selected connector leaves the catalog",
-    });
-    const claimed = await claimChatRun(runnerGroup, run.runId);
-    expect(
-      claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
-    ).toBeUndefined();
-
-    const selections = await accept(
-      chatThreadConnectorSelectionsClient().get({
-        headers: sessionHeaders(actor),
-        params: { id: thread.id },
-      }),
-      [200],
-    );
-    expect(selections.body.selections).toStrictEqual([
-      {
-        connectionId: runtimeConnection.id,
-        target: { kind: "builtin", connectorSlug: "runtime" },
-      },
-    ]);
-    await accept(
-      chatThreadConnectorSelectionsClient().update({
-        headers: sessionHeaders(actor),
-        params: { id: thread.id },
-        body: {
-          connectionId: connection.id,
-          target: { kind: "builtin", connectorSlug: "openai" },
-        },
-      }),
-      [400],
-    );
-    await accept(
-      chatThreadsClient().create({
-        headers: sessionHeaders(actor),
-        body: {
-          agentId,
-          model: "claude-sonnet-5",
-          connectorSelections: [
-            {
-              connectionId: connection.id,
-              target: { kind: "builtin", connectorSlug: "openai" },
-            },
-          ],
-        },
-      }),
-      [400],
-    );
-    await accept(
-      chatThreadConnectorSelectionsClient().clear({
-        headers: sessionHeaders(actor),
-        params: { id: thread.id },
-        body: { kind: "builtin", connectorSlug: "openai" },
-      }),
-      [204],
-    );
-    await installApiTestConnectorCatalog();
-    const restoredSelections = await accept(
-      chatThreadConnectorSelectionsClient().get({
-        headers: sessionHeaders(actor),
-        params: { id: thread.id },
-      }),
-      [200],
-    );
-    expect(restoredSelections.body.selections).toStrictEqual(
-      selections.body.selections,
-    );
-    await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
   });
 });

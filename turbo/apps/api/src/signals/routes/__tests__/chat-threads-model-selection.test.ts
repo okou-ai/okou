@@ -5,8 +5,6 @@ import {
   chatThreadModelSelectionContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
-import { DEFAULT_IMAGE_MODEL } from "@okouai/core/image-model-catalog";
-import { DEFAULT_VIDEO_MODEL } from "@okouai/core/video-model-catalog";
 import { createStore } from "ccstate";
 import { describe, expect, it } from "vitest";
 
@@ -39,21 +37,8 @@ interface ChatThreadFixture {
 async function seedChatThread(title: string): Promise<ChatThreadFixture> {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
-  const { providerId } = await api.ensureOrgModelProvider(actor);
-  await api.updateOrgModelPolicies(
-    actor,
-    (["claude-sonnet-5", "claude-sonnet-4-6", "claude-opus-4-8"] as const).map(
-      (model) => {
-        return {
-          model,
-          isDefault: model === "claude-sonnet-5",
-          defaultProviderType: "anthropic-api-key",
-          credentialScope: "org",
-          modelProviderId: providerId,
-        };
-      },
-    ),
-  );
+  await api.ensurePersonalSubscriptionModel(actor);
+
   const agent = await bdd.createAgent(actor, {
     displayName: "Chat thread model selection agent",
     visibility: "private",
@@ -61,7 +46,7 @@ async function seedChatThread(title: string): Promise<ChatThreadFixture> {
   const thread = await chat.createThread(actor, {
     agentId: agent.agentId,
     title,
-    model: "claude-sonnet-5",
+    model: "claude-sonnet-5-5",
   });
   if (!actor.orgId) {
     throw new Error("Expected the seeded actor to belong to an org");
@@ -114,11 +99,40 @@ function metadataClient() {
 }
 
 describe("POST /api/chat-threads/:id/model-selection", () => {
+  it("rejects an unavailable personal subscription without mutating selection", async () => {
+    const fixture = await seedChatThread("Personal subscription availability");
+
+    const rejected = await chat.requestUpdateThreadModelSelection(
+      fixture.actor,
+      fixture.threadId,
+      "gpt-6-luna",
+      [400],
+    );
+    expect(rejected.body).toMatchObject({
+      error: {
+        message:
+          "Select Auto or a model from your connected personal subscription",
+      },
+    });
+    await expect(
+      chat.readThreadMetadata(fixture.actor, fixture.threadId),
+    ).resolves.toMatchObject({ selectedModel: "claude-sonnet-5-5" });
+
+    await chat.updateThreadModelSelection(
+      fixture.actor,
+      fixture.threadId,
+      "claude-opus-5-5",
+    );
+    await expect(
+      chat.readThreadMetadata(fixture.actor, fixture.threadId),
+    ).resolves.toMatchObject({ selectedModel: "claude-opus-5-5" });
+  });
+
   it("rejects unsupported effort levels and persists supported ones", async () => {
     const fixture = await seedChatThread("Effort validation");
     for (const [model, reasoningEffort] of [
-      ["claude-sonnet-4-6", "extra"],
-      ["claude-sonnet-5", "xhigh"],
+      ["claude-opus-5-5", "xhigh"],
+      ["claude-sonnet-5-5", "xhigh"],
     ] as const) {
       const unsupported = await chat.requestUpdateThreadModelSelection(
         fixture.actor,
@@ -137,13 +151,13 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       await chat.updateThreadModelSelection(
         fixture.actor,
         fixture.threadId,
-        "claude-sonnet-5",
+        "claude-sonnet-5-5",
         { reasoningEffort },
       );
       await expect(
         chat.readThreadMetadata(fixture.actor, fixture.threadId),
       ).resolves.toMatchObject({
-        modelSettings: { "claude-sonnet-5": { effort: reasoningEffort } },
+        modelSettings: { "claude-sonnet-5-5": { effort: reasoningEffort } },
       });
     }
   });
@@ -153,32 +167,32 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-sonnet-5",
+      "claude-sonnet-5-5",
       { reasoningEffort: "high" },
     );
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5-5",
     );
     await expect(
       chat.readThreadMetadata(fixture.actor, fixture.threadId),
     ).resolves.toMatchObject({
-      selectedModel: "claude-opus-4-8",
-      modelSettings: { "claude-sonnet-5": { effort: "high" } },
+      selectedModel: "claude-opus-5-5",
+      modelSettings: { "claude-sonnet-5-5": { effort: "high" } },
     });
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-opus-4-8",
+      "claude-opus-5-5",
       { reasoningEffort: "extra" },
     );
     await expect(
       chat.readThreadMetadata(fixture.actor, fixture.threadId),
     ).resolves.toMatchObject({
       modelSettings: {
-        "claude-sonnet-5": { effort: "high" },
-        "claude-opus-4-8": { effort: "extra" },
+        "claude-sonnet-5-5": { effort: "high" },
+        "claude-opus-5-5": { effort: "extra" },
       },
     });
     const events = await chat.requestThreadEvents(fixture.actor, {}, [200]);
@@ -189,7 +203,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       expect.objectContaining({
         kind: "model_selection_updated",
         modelSettingsPatch: {
-          model: "claude-sonnet-5",
+          model: "claude-sonnet-5-5",
           effort: "high",
         },
       }),
@@ -198,7 +212,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       expect.objectContaining({
         kind: "model_selection_updated",
         modelSettingsPatch: {
-          model: "claude-opus-4-8",
+          model: "claude-opus-5-5",
           effort: "extra",
         },
       }),
@@ -210,49 +224,70 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-sonnet-5",
+      "claude-sonnet-5-5",
       { reasoningEffort: "extra" },
     );
     await chat.updateThreadModelSelection(
       fixture.actor,
       fixture.threadId,
-      "claude-sonnet-4-6",
+      "claude-opus-5-5",
     );
     const metadata = await chat.readThreadMetadata(
       fixture.actor,
       fixture.threadId,
     );
     expect(metadata).toMatchObject({
-      selectedModel: "claude-sonnet-4-6",
-      modelSettings: { "claude-sonnet-5": { effort: "extra" } },
+      selectedModel: "claude-opus-5-5",
+      modelSettings: { "claude-sonnet-5-5": { effort: "extra" } },
     });
   });
 
-  it("preserves the thread selection when an old client requests a retired model", async () => {
-    const fixture = await seedChatThread("Model retirement");
-    const token = okouToken({
-      userId: fixture.userId,
-      orgId: fixture.orgId,
-      capabilities: ["chat-thread:read", "chat-thread:write"],
-    });
-    const headers = { authorization: `Bearer ${token}` };
-    const rejected = await accept(
-      modelSelectionClient().update({
-        headers,
-        params: { id: fixture.threadId },
-        body: { model: "claude-fable-5" },
-      }),
-      [400],
-    );
-    expect(rejected.body.error.message).toBe(
-      "This model has been retired. Select another available model.",
-    );
-    const thread = await accept(
-      metadataClient().get({ headers, params: { id: fixture.threadId } }),
-      [200],
-    );
-    expect(thread.body.selectedModel).toBe("claude-sonnet-5");
-  });
+  it.each([
+    ["claude-fable-5", "claude-fable-5-1"],
+    ["claude-sonnet-4-6", "claude-sonnet-5-5"],
+    ["claude-opus-4-8", "claude-opus-5-5"],
+  ] as const)(
+    "stores and records the replacement when an old client requests retired %s",
+    async (retiredModel, replacement) => {
+      const fixture = await seedChatThread("Model retirement");
+
+      const token = okouToken({
+        userId: fixture.userId,
+        orgId: fixture.orgId,
+        capabilities: ["chat-thread:read", "chat-thread:write"],
+      });
+      const headers = { authorization: `Bearer ${token}` };
+      await accept(
+        modelSelectionClient().update({
+          headers,
+          params: { id: fixture.threadId },
+          body: { model: retiredModel },
+        }),
+        [204],
+      );
+      const thread = await accept(
+        metadataClient().get({ headers, params: { id: fixture.threadId } }),
+        [200],
+      );
+      expect(thread.body.selectedModel).toBe(replacement);
+      // The event carries the stored model, so replay never restores the
+      // retired id.
+      const events = await chat.requestThreadEvents(fixture.actor, {}, [200]);
+      if (events.status !== 200) {
+        throw new Error("Expected thread events");
+      }
+      expect(
+        events.body.events.filter((event) => {
+          return (
+            event.chatThreadId === fixture.threadId &&
+            event.kind === "model_selection_updated"
+          );
+        }),
+      ).toStrictEqual([
+        expect.objectContaining({ selectedModel: replacement }),
+      ]);
+    },
+  );
 
   it("updates thread model selection with an Okou run token carrying chat-thread:write", async () => {
     const fixture = await seedChatThread("Launch plan");
@@ -267,7 +302,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
         headers: { authorization: `Bearer ${token}` },
         params: { id: fixture.threadId },
         body: {
-          model: "claude-sonnet-5",
+          model: "claude-sonnet-5-5",
         },
       }),
       [204],
@@ -286,13 +321,13 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
       agentId: fixture.agentId,
       title: "Launch plan",
       pinnedAt: null,
-      selectedModel: "claude-sonnet-5",
+      archived: false,
+      muted: false,
+      selectedModel: "claude-sonnet-5-5",
       modelSettings: {},
       serviceTier: null,
       computerUseHostId: null,
-      cloudBrowserEnabled: false,
-      selectedVideoModel: DEFAULT_VIDEO_MODEL,
-      selectedImageModel: DEFAULT_IMAGE_MODEL,
+      cloudBrowserEnabled: true,
     });
   });
 
@@ -309,7 +344,7 @@ describe("POST /api/chat-threads/:id/model-selection", () => {
         headers: { authorization: `Bearer ${token}` },
         params: { id: fixture.threadId },
         body: {
-          model: "claude-sonnet-5",
+          model: "claude-sonnet-5-5",
         },
       }),
       [403],

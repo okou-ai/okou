@@ -1,5 +1,6 @@
 import {
   boolean,
+  check,
   index,
   pgTable,
   text,
@@ -8,7 +9,6 @@ import {
   uuid,
   varchar,
 } from "drizzle-orm/pg-core";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { sql } from "drizzle-orm";
 import { agentphoneUserLinks } from "./agentphone-user-link";
 
@@ -24,11 +24,10 @@ export const agentphoneMessages = pgTable(
       length: 255,
     }).notNull(),
     conversationId: varchar("conversation_id", { length: 255 }),
+    groupId: varchar("group_id", { length: 255 }),
     agentphoneAgentId: varchar("agentphone_agent_id", {
       length: 255,
     }).notNull(),
-    /** Product brand captured from ingress or delivery context; null only for pre-rollout rows. */
-    publicBrand: text("public_brand").$type<PublicBrand>(),
     agentphoneUserLinkId: uuid("agentphone_user_link_id").references(
       () => {
         return agentphoneUserLinks.id;
@@ -58,7 +57,17 @@ export const agentphoneMessages = pgTable(
         table.phoneHandle,
         table.createdAt,
       ),
+      index("idx_agentphone_messages_group_time").on(
+        table.agentphoneAgentId,
+        table.groupId,
+        table.receivedAt,
+        table.createdAt,
+      ),
       index("idx_agentphone_messages_user_link").on(table.agentphoneUserLinkId),
+      check(
+        "chk_agentphone_messages_group_received_at",
+        sql`${table.groupId} IS NULL OR ${table.receivedAt} IS NOT NULL`,
+      ),
     ];
   },
 );

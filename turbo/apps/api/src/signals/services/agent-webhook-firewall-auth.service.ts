@@ -1,32 +1,53 @@
 import {
-  personalSubscriptionAccountAccessCondition,
-  isPersonalSubscriptionProviderType,
-  coordinatePersonalSubscriptionCredentials,
-  reconcileLockedPersonalSubscriptionCredentials,
-  readPersonalSubscriptionCredentialBundle,
-} from "./model-provider-account.service";
-import {
-  publishModelPoliciesChangedForOrgSafely,
-  publishPersonalModelProvidersChangedSafely,
-} from "../external/realtime";
+  featureSwitchContextFromRows,
+  userFeatureSwitchRowCondition,
+} from "./feature-switch-scope";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { Buffer } from "node:buffer";
 import { performance } from "node:perf_hooks";
 import { isDeepStrictEqual } from "node:util";
+import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
+import {
+  isPersonalSubscriptionProviderType,
+  personalSubscriptionAccountAccessCondition,
+  readPersonalSubscriptionCredentialBundle,
+} from "./model-provider-account.service";
+import {
+  isFetchNetworkError,
+  isTransientOAuthRefreshFailure,
+} from "./oauth-refresh-failure.service";
 
 import { delay } from "signal-timers";
 
-import {
-  getSecretNameForType,
-  getModelProviderEnvBindings,
-  modelProviderTypeSchema,
-  type ModelProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
-import type { ConnectorReconnectReason } from "@okouai/api-contracts/contracts/connector-schemas";
-import type { SecretConnectorMetadata } from "@okouai/api-contracts/contracts/runners";
 import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
 } from "@okouai/api-contracts/contracts/connector-identity";
+import type { ConnectorReconnectReason } from "@okouai/api-contracts/contracts/connector-schemas";
+import {
+  getModelProviderEnvBindings,
+  getSecretNameForType,
+  modelProviderTypeSchema,
+  type ModelProviderType,
+} from "@okouai/api-contracts/contracts/model-providers";
+import type { SecretConnectorMetadata } from "@okouai/api-contracts/contracts/runners";
+import {
+  refreshConnectorAuthProviderAccessTokenWithMethod,
+  type ProviderEnv,
+} from "@okouai/connectors/auth-providers";
+import {
+  getModelProviderRefreshMetadata,
+  isModelProviderRefreshConfigured,
+  isModelProviderRefreshProviderKey,
+  refreshPreparedModelProviderAccess,
+  type ModelProviderRefreshProviderKey,
+} from "@okouai/connectors/auth-providers/model-provider-auth";
+import { isChatgptRefreshError } from "@okouai/connectors/auth-providers/model-providers/codex-oauth/oauth";
+import { isOAuthProviderHttpError } from "@okouai/connectors/auth-providers/oauth/error";
+import {
+  isProviderHttpError,
+  isProviderResponseError,
+} from "@okouai/connectors/auth-providers/provider-error";
 import {
   connectorAuthMethodAccessMetadata,
   connectorAuthMethodRuntimeMetadata,
@@ -34,98 +55,44 @@ import {
   getConnectorRuntimeBindingPlatformSecretName,
   getConnectorRuntimeBindingSecretName,
   resolveConnectorAuthClient,
-  type ConnectorAuthMethodAccessMetadata,
   type ConnectorAuthClient,
-  type ConnectorRefreshTokenInputMetadata,
+  type ConnectorAuthMethodAccessMetadata,
   type ConnectorAuthMethodRuntimeMetadata,
   type ConnectorOutputTarget,
+  type ConnectorRefreshTokenInputMetadata,
 } from "@okouai/connectors/connector-auth-method";
+import {
+  AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME,
+  AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH,
+} from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 import {
   parseBasicAuthTemplates,
   replaceBasicAuthTemplates,
   type BasicAuthTemplateArg,
   type BasicAuthTemplateMatch,
 } from "@okouai/connectors/firewall-types";
-import {
-  AUTOMATIC_MCP_RUNTIME_ACCESS_TOKEN_SECRET_NAME,
-  AUTOMATIC_MCP_RUNTIME_FIREWALL_AUTH,
-} from "@okouai/connectors/connector-catalog/artifacts/mcp-auth";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
-import {
-  refreshConnectorAuthProviderAccessTokenWithMethod,
-  type ProviderEnv,
-} from "@okouai/connectors/auth-providers";
-import {
-  isProviderHttpError,
-  isProviderResponseError,
-} from "@okouai/connectors/auth-providers/provider-error";
-import { isOAuthProviderHttpError } from "@okouai/connectors/auth-providers/oauth/error";
-import {
-  getModelProviderRefreshMetadata,
-  isModelProviderRefreshConfigured,
-  refreshPreparedModelProviderAccess,
-  isModelProviderRefreshProviderKey,
-  type ModelProviderRefreshProviderKey,
-} from "@okouai/connectors/auth-providers/model-provider-auth";
-import { isChatgptRefreshError } from "@okouai/connectors/auth-providers/model-providers/codex-oauth/oauth";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { connectors } from "@okouai/db/schema/connector";
 import {
   modelProviderAccounts,
   modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
-import { modelProviders } from "@okouai/db/schema/model-provider";
 import { secrets as secretsTable } from "@okouai/db/schema/secret";
 import { variables as variablesTable } from "@okouai/db/schema/variable";
-import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { z } from "zod";
+import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 
-import { executeRawRows, pgInt8ToBigIntSchema } from "../../lib/db-raw-rows";
-import {
-  pgInt8ToBigIntDecoder,
-  pgNullDecoder,
-  pgTextDecoder,
-} from "../../lib/db-structured-result";
+import { command } from "ccstate";
+import { pgNullDecoder, pgTextDecoder } from "../../lib/db-structured-result";
 import { optionalEnv } from "../../lib/env";
 import { badRequestMessage, insufficientCredits } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import type { SandboxAuth } from "../../types/auth";
-import type { Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
 import { safeSync, settle, settleIncludingAbort, tapError } from "../utils";
-import {
-  decryptPersistentSecretsMap,
-  decryptStoredSecretValue,
-  encryptStoredSecretValue,
-} from "./crypto.utils";
-import {
-  lockBuiltinConnectorState,
-  lockModelProviderState,
-} from "./auth-state-lock.service";
-import { loadUserFeatureSwitchContext } from "./feature-switches.service";
 import { resolveBuiltinConnectorAutomaticMcpCredential } from "./builtin-connector-automatic-oauth.service";
-import {
-  loadRunCreditAdmissionState,
-  resolveOrgCreditAvailability,
-  runHasActiveCreditAdmission,
-  type RunCreditAdmissionState,
-} from "./run-admission.service";
-import { resolveUsageAllowanceAvailabilityForRun } from "./usage-allowance.service";
-import {
-  connectorRuntimeCredentialStatusForAccess,
-  type ConnectorCredentialStatus,
-} from "./connector-credential-status.service";
-import {
-  getConnectorRuntimeConnector,
-  loadConnectorRuntimeSnapshot,
-  type ConnectorRuntimeMethod,
-  type ConnectorRuntimeSnapshot,
-} from "./connector-catalog-runtime.service";
-import {
-  upsertConnectorOwnedSecret,
-  upsertConnectorOwnedVariable,
-} from "./connector-credential-storage-write.service";
 import {
   builtinConnectorCredentialSecretReadCondition,
   builtinConnectorCredentialVariableReadCondition,
@@ -137,6 +104,24 @@ import {
   resolveConnectorAccounts,
   type ConnectorAccountResolutionRequest,
 } from "./connector-account-resolution.service";
+import type { ConnectorRuntimeMethod } from "./connector-catalog-runtime.service";
+import {
+  loadConnectorRuntimeAuthSelection,
+  type ConnectorRuntimeAuthSelection,
+} from "./connector-catalog-slug-source.service";
+import {
+  connectorRuntimeCredentialStatusForAccess,
+  type ConnectorCredentialStatus,
+} from "./connector-credential-status.service";
+import {
+  upsertConnectorOwnedSecret,
+  upsertConnectorOwnedVariable,
+} from "./connector-credential-storage-write.service";
+import {
+  decryptPersistentSecretsMap,
+  decryptStoredSecretValue,
+  encryptStoredSecretValue,
+} from "./crypto.utils";
 import {
   CustomConnectorOAuth2TokenRefreshError,
   resolveCurrentCustomConnectorOAuth2AccessToken,
@@ -146,6 +131,14 @@ import {
   customConnectorSecretKey,
   loadCustomConnectorRuntimeData,
 } from "./custom-connector.service";
+
+import {
+  loadRunCreditAdmissionState,
+  resolveOrgCreditAvailability,
+  runHasActiveCreditAdmission,
+  type RunCreditAdmissionState,
+} from "./run-admission.service";
+import { resolveUsageAllowanceAvailabilityForRun$ } from "./usage-allowance-run-availability.service";
 
 type AccessSecretSource = SecretConnectorMetadata["sourceType"];
 type StorageSecretSource = Exclude<AccessSecretSource, "platform-secret">;
@@ -158,9 +151,6 @@ const LOW_BILLABLE_FIREWALL_CREDIT_THRESHOLD = 1000;
 const FIREWALL_AUTH_REFRESH_TIMEOUT_MS = 30_000;
 const REFRESH_TIMEOUT_ERROR_CODE = "oauth_refresh_timeout";
 const ACTIVE_FIREWALL_AUTH_RUN_STATUSES = ["pending", "running"] as const;
-const databaseTimestampMicrosRowSchema = z.object({
-  now: pgInt8ToBigIntSchema,
-});
 
 function firewallAuthRefreshTimeoutMs(): number {
   const configured = optionalEnv("FIREWALL_AUTH_REFRESH_TIMEOUT_MS");
@@ -229,6 +219,32 @@ interface FirewallAuthResolutionContext {
     string,
     BuiltinConnectorAccessState
   >;
+  readonly subscriptionBundles: SubscriptionBundleReads;
+}
+
+/** Request-scoped subscription credential reads. One firewall request decrypts
+ * a bundle once; a refresh in the same request clears it so the rotated bundle
+ * is read once more. */
+type SubscriptionBundleReads = Map<
+  string,
+  ReturnType<typeof readPersonalSubscriptionCredentialBundle>
+>;
+
+function readSubscriptionBundle(
+  reads: SubscriptionBundleReads | undefined,
+  args: Parameters<typeof readPersonalSubscriptionCredentialBundle>[0],
+): ReturnType<typeof readPersonalSubscriptionCredentialBundle> {
+  if (!reads) {
+    return readPersonalSubscriptionCredentialBundle(args);
+  }
+  const key = JSON.stringify([args.type, args.userId, args.sourceId ?? null]);
+  const cached = reads.get(key);
+  if (cached) {
+    return cached;
+  }
+  const read = readPersonalSubscriptionCredentialBundle(args);
+  reads.set(key, read);
+  return read;
 }
 
 interface PreparedCustomFirewallAuth {
@@ -243,11 +259,10 @@ interface PreparedCustomFirewallAuth {
 interface PreparedNonCustomFirewallAuth {
   readonly kind: "non-custom";
   readonly builtinMcpExpiresAt: number | null;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSnapshot;
+  readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly secrets: Record<string, string>;
   readonly context: FirewallAuthResolutionContext;
-  readonly forceRefreshStartedAtMicros: bigint | null;
 }
 
 interface PreparedBuiltinConnectorAutomaticFirewallAuth {
@@ -442,63 +457,88 @@ function mergeExpiresAt(
   return Math.min(expiresAt, additionalExpiresAt);
 }
 
-async function resolveBillableFirewallCacheExpiry(params: {
-  readonly db: Db;
-  readonly auth: SandboxAuth;
-  readonly run: FirewallAuthRun;
-  readonly firewallBillable: boolean | undefined;
-}): Promise<
-  { readonly expiresAt?: number } | ReturnType<typeof insufficientCredits>
-> {
-  if (params.firewallBillable !== true) {
-    return {};
-  }
+type BillableFirewallCacheExpiry =
+  | { readonly expiresAt?: number }
+  | ReturnType<typeof insufficientCredits>
+  | ReturnType<typeof badRequestMessage>
+  | ReturnType<typeof forbiddenTerminalRun>;
 
-  const availability = await resolveOrgCreditAvailability({
-    db: params.db,
-    orgId: params.auth.orgId,
-    userId: params.auth.userId,
-  });
-  if (!availability) {
-    return insufficientCredits();
-  }
-  if (availability.status !== "active") {
-    return insufficientCredits();
-  }
-  if (runHasActiveCreditAdmission(params.run)) {
-    return {
-      expiresAt:
-        Math.floor(nowDate().getTime() / 1000) +
-        NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS,
-    };
-  }
-  const allowance =
-    availability.spendableCredits > 0
-      ? null
-      : await resolveUsageAllowanceAvailabilityForRun(params.db, {
-          orgId: params.auth.orgId,
-          runId: params.auth.runId,
-        });
-  const spendableUnits =
-    availability.usagePackCredits +
-    Math.max(availability.spendableCredits, 0) +
-    (allowance?.remainingUnits ?? 0);
-  if (spendableUnits <= 0) {
-    return insufficientCredits();
-  }
-
-  const leaseSeconds =
-    spendableUnits <= LOW_BILLABLE_FIREWALL_CREDIT_THRESHOLD
-      ? LOW_BILLABLE_FIREWALL_LEASE_SECONDS
-      : NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS;
-
-  return {
-    expiresAt: Math.floor(nowDate().getTime() / 1000) + leaseSeconds,
-  };
-}
+export const resolveBillableFirewallCacheExpiry$ = command(
+  async (
+    { set },
+    params: {
+      readonly auth: SandboxAuth;
+      readonly firewallBillable: boolean | undefined;
+    },
+    signal: AbortSignal,
+  ): Promise<BillableFirewallCacheExpiry> => {
+    if (params.firewallBillable !== true) {
+      return {};
+    }
+    const db = set(writeDb$);
+    const [run] = await db
+      .select({
+        status: agentRuns.status,
+        creditAdmitted: agentRuns.creditAdmitted,
+      })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.id, params.auth.runId),
+          eq(agentRuns.orgId, params.auth.orgId),
+          eq(agentRuns.userId, params.auth.userId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!run) {
+      return badRequestMessage("Run not found");
+    }
+    if (!firewallAuthRunIsActive(run.status)) {
+      return forbiddenTerminalRun();
+    }
+    const availability = await resolveOrgCreditAvailability({
+      db: set(writeDb$),
+      orgId: params.auth.orgId,
+      userId: params.auth.userId,
+    });
+    signal.throwIfAborted();
+    if (!availability || availability.status !== "active") {
+      return insufficientCredits();
+    }
+    if (runHasActiveCreditAdmission(run)) {
+      return {
+        expiresAt:
+          Math.floor(nowDate().getTime() / 1000) +
+          NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS,
+      };
+    }
+    const allowance =
+      availability.spendableCredits > 0
+        ? null
+        : await set(
+            resolveUsageAllowanceAvailabilityForRun$,
+            { orgId: params.auth.orgId, runId: params.auth.runId },
+            signal,
+          );
+    const spendableUnits =
+      availability.usagePackCredits +
+      Math.max(availability.spendableCredits, 0) +
+      (allowance?.remainingUnits ?? 0);
+    if (spendableUnits <= 0) {
+      return insufficientCredits();
+    }
+    const leaseSeconds =
+      spendableUnits <= LOW_BILLABLE_FIREWALL_CREDIT_THRESHOLD
+        ? LOW_BILLABLE_FIREWALL_LEASE_SECONDS
+        : NORMAL_BILLABLE_FIREWALL_LEASE_SECONDS;
+    return { expiresAt: Math.floor(nowDate().getTime() / 1000) + leaseSeconds };
+  },
+);
 
 interface SecretTokenLookupArgs {
   readonly runId?: string;
+  readonly subscriptionBundles?: SubscriptionBundleReads;
   readonly db: Db;
   readonly accessSourceKey: string;
   readonly orgId: string;
@@ -518,7 +558,6 @@ interface RefreshAccessTokenArgs extends SecretTokenLookupArgs {
   readonly connectorSecrets: Record<string, string>;
   readonly accessEnvVars: readonly string[];
   readonly forceRefresh: boolean;
-  readonly forceRefreshStartedAtMicros: bigint | null;
 }
 
 function requiredModelProviderMetadataKey(args: {
@@ -560,7 +599,6 @@ interface RefreshState {
   readonly needsReconnect: boolean;
   readonly reconnectReason: string | null;
   readonly lastRefreshErrorCode: string | null;
-  readonly updatedAtMicros: bigint;
 }
 
 interface RefreshStateRow {
@@ -571,7 +609,6 @@ interface RefreshStateRow {
   readonly needsReconnect: boolean;
   readonly reconnectReason: string | null;
   readonly lastRefreshErrorCode: string | null;
-  readonly updatedAtMicros: bigint;
 }
 
 interface ValidatedRefreshOutput {
@@ -668,7 +705,8 @@ function refreshFailedResult(
 
 interface RefreshExpiredTokensArgs {
   readonly db: Db;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSnapshot;
+  readonly subscriptionBundles: SubscriptionBundleReads;
+  readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
   readonly auth: SandboxAuth;
   readonly orgId: string;
   readonly featureSwitchContext: FeatureSwitchContext;
@@ -683,18 +721,17 @@ interface RefreshExpiredTokensArgs {
     BuiltinConnectorAccessState
   >;
   readonly forceRefresh: boolean;
-  readonly forceRefreshStartedAtMicros: bigint | null;
 }
 
 interface RefreshBatchContext {
   readonly db: Db;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSnapshot;
+  readonly subscriptionBundles: SubscriptionBundleReads;
+  readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
   readonly auth: SandboxAuth;
   readonly orgId: string;
   readonly userId: string;
   readonly secrets: Record<string, string>;
   readonly forceRefresh: boolean;
-  readonly forceRefreshStartedAtMicros: bigint | null;
   readonly metadataByAccessSource: Map<string, SecretConnectorMetadata>;
   readonly connectorAccessBySlug: ReadonlyMap<
     string,
@@ -726,7 +763,6 @@ interface BasicArgContext extends BasicAuthTemplateArg {
 }
 
 const L = logger("webhook:firewall-auth");
-const ORG_SENTINEL_USER_ID = "__org__";
 const CONNECTOR_SECRET_REF_PREFIX = "$secrets.";
 const REFRESH_BUFFER_SECS = 60;
 const DEFAULT_ACCESS_TOKEN_EXPIRES_IN_SECS = 15 * 60;
@@ -793,9 +829,10 @@ function resolveSecretUserId(
   userId: string,
   sourceUserId?: string,
 ): string {
-  return sourceType === "model-provider"
-    ? (sourceUserId ?? ORG_SENTINEL_USER_ID)
-    : userId;
+  if (sourceType === "model-provider" && sourceUserId !== userId) {
+    throw new Error("Personal subscription credential owner mismatch");
+  }
+  return userId;
 }
 
 function resolveRefreshMetadata(
@@ -853,29 +890,10 @@ function refreshFailureReasonFromError(
       ? "reconnect_required"
       : undefined;
   }
-  if (isOAuthProviderHttpError(error)) {
-    if (error.oauthError === "invalid_grant") {
-      return "reconnect_required";
-    }
-    if (
-      error.oauthError === "server_error" ||
-      error.oauthError === "temporarily_unavailable" ||
-      error.status >= 500 ||
-      error.status === 429
-    ) {
-      return "upstream_provider";
-    }
+  if (isOAuthProviderHttpError(error) && error.oauthError === "invalid_grant") {
+    return "reconnect_required";
   }
-  if (
-    isProviderHttpError(error) &&
-    (error.status >= 500 || error.status === 429)
-  ) {
-    return "upstream_provider";
-  }
-  if (isProviderResponseError(error)) {
-    return "upstream_provider";
-  }
-  if (isFetchNetworkError(error)) {
+  if (isTransientOAuthRefreshFailure(error)) {
     return "upstream_provider";
   }
   return undefined;
@@ -980,12 +998,6 @@ function connectorReconnectReasonFromRefreshFailure(
   return null;
 }
 
-function isFetchNetworkError(error: unknown): boolean {
-  return (
-    error instanceof TypeError && error.message.toLowerCase().includes("fetch")
-  );
-}
-
 function isRefreshTimeoutError(error: unknown, signal: AbortSignal): boolean {
   if (!signal.aborted || !(error instanceof Error)) {
     return false;
@@ -1039,7 +1051,7 @@ function isExpiredAwsSigninRefreshState(
   prepared: PreparedRefreshTokenContext,
   state: RefreshState,
 ): boolean {
-  // Reconnect clears this reason with the credentials under the same lock.
+  // Reconnect clears this reason when it replaces the credentials.
   // Other needsReconnect states retain their existing refresh/recovery policy.
   return (
     prepared.sourceType === "connector" &&
@@ -1069,7 +1081,6 @@ async function getBuiltinConnectorSecretValues(args: {
     .from(secretsTable)
     .where(
       builtinConnectorCredentialSecretReadCondition({
-        db: args.db,
         groups: [{ access: args.access, names: args.names }],
       }),
     );
@@ -1109,49 +1120,27 @@ async function getSecretValue(args: {
     });
     return values.get(args.name) ?? null;
   }
-  // Compatibility for subscription contexts created before #34012, including
-  // queued/pending work with a pre-preparation singleton credential source.
-  // Never backfill their identity from today's active account. Keep retention
-  // disabled until all such nonterminal contexts and old API writers drain.
-  // Remove this reader under #34010 after those contexts and retained rollback
-  // APIs are gone; two hours after disconnect is not the queue lifetime.
-  if (args.type === "model-provider" && args.sourceId) {
-    const [row] = await args.db
-      .select({ encryptedValue: modelProviderAccountSecrets.encryptedValue })
-      .from(modelProviderAccountSecrets)
-      .innerJoin(
-        modelProviderAccounts,
-        eq(
-          modelProviderAccountSecrets.modelProviderAccountId,
-          modelProviderAccounts.id,
-        ),
-      )
-      .where(
-        and(
-          eq(modelProviderAccounts.id, args.sourceId),
-          personalSubscriptionAccountAccessCondition(args.db, args.runId),
-          eq(modelProviderAccounts.orgId, args.orgId),
-          eq(modelProviderAccounts.userId, args.userId),
-          eq(modelProviderAccountSecrets.name, args.name),
-        ),
-      )
-      .limit(1);
-    return row
-      ? await decryptStoredSecretValue(
-          row.encryptedValue,
-          args.featureSwitchContext,
-        )
-      : null;
+  // Personal subscription credentials live only on their exact account.
+  if (!args.sourceId) {
+    return null;
   }
   const [row] = await args.db
-    .select({ encryptedValue: secretsTable.encryptedValue })
-    .from(secretsTable)
+    .select({ encryptedValue: modelProviderAccountSecrets.encryptedValue })
+    .from(modelProviderAccountSecrets)
+    .innerJoin(
+      modelProviderAccounts,
+      eq(
+        modelProviderAccountSecrets.modelProviderAccountId,
+        modelProviderAccounts.id,
+      ),
+    )
     .where(
       and(
-        eq(secretsTable.orgId, args.orgId),
-        eq(secretsTable.userId, args.userId),
-        eq(secretsTable.name, args.name),
-        eq(secretsTable.type, args.type),
+        eq(modelProviderAccounts.id, args.sourceId),
+        personalSubscriptionAccountAccessCondition(args.runId),
+        eq(modelProviderAccounts.orgId, args.orgId),
+        eq(modelProviderAccounts.userId, args.userId),
+        eq(modelProviderAccountSecrets.name, args.name),
       ),
     )
     .limit(1);
@@ -1178,7 +1167,6 @@ async function getVariableValue(args: {
     .from(variablesTable)
     .where(
       builtinConnectorCredentialVariableReadCondition({
-        db: args.db,
         groups: [
           {
             access: args.connectorAccess,
@@ -1209,12 +1197,12 @@ async function upsertModelProviderSecretValue(
   );
   if (args.sourceId) {
     const [account] = await db
-      .select({ isActive: modelProviderAccounts.isActive })
+      .select({ id: modelProviderAccounts.id })
       .from(modelProviderAccounts)
       .where(
         and(
           eq(modelProviderAccounts.id, args.sourceId),
-          personalSubscriptionAccountAccessCondition(db, args.runId),
+          personalSubscriptionAccountAccessCondition(args.runId),
           eq(modelProviderAccounts.orgId, args.orgId),
           eq(modelProviderAccounts.userId, args.userId),
         ),
@@ -1241,57 +1229,9 @@ async function upsertModelProviderSecretValue(
           updatedAt: nowDate(),
         },
       });
-    if (!account.isActive) {
-      return;
-    }
+    return;
   }
-  if (!args.sourceId) {
-    await db
-      .update(modelProviderAccountSecrets)
-      .set({ encryptedValue, updatedAt: nowDate() })
-      .where(
-        and(
-          eq(modelProviderAccountSecrets.name, args.name),
-          inArray(
-            modelProviderAccountSecrets.modelProviderAccountId,
-            db
-              .select({ id: modelProviderAccounts.id })
-              .from(modelProviderAccounts)
-              .where(
-                and(
-                  eq(modelProviderAccounts.orgId, args.orgId),
-                  eq(modelProviderAccounts.userId, args.userId),
-                  eq(modelProviderAccounts.isActive, true),
-                  isNull(modelProviderAccounts.disconnectedAt),
-                ),
-              ),
-          ),
-        ),
-      );
-  }
-  await db
-    .insert(secretsTable)
-    .values({
-      orgId: args.orgId,
-      userId: args.userId,
-      name: args.name,
-      encryptedValue,
-      type: "model-provider",
-      description: `Model provider secret: ${args.name}`,
-    })
-    .onConflictDoUpdate({
-      target: [
-        secretsTable.orgId,
-        secretsTable.userId,
-        secretsTable.name,
-        secretsTable.type,
-      ],
-      targetWhere: isNull(secretsTable.connectorId),
-      set: {
-        encryptedValue,
-        updatedAt: nowDate(),
-      },
-    });
+  throw new Error("Personal subscription refresh requires an account identity");
 }
 
 function modelProviderRuntimeSecretName(args: {
@@ -1313,9 +1253,6 @@ function modelProviderRuntimeSecretName(args: {
   }
 
   const valueRef = getModelProviderEnvBindings(providerType)?.[args.key];
-  if (valueRef === "$secret") {
-    return providerSecretName;
-  }
   if (valueRef?.startsWith(CONNECTOR_SECRET_REF_PREFIX)) {
     return valueRef.slice(CONNECTOR_SECRET_REF_PREFIX.length);
   }
@@ -1417,17 +1354,12 @@ async function getCurrentAccessSecrets(
           featureSwitchContext: args.featureSwitchContext,
         })
       : new Map();
-  } else if (
-    args.sourceType === "model-provider" &&
-    isPersonalSubscriptionProviderType(
-      args.metadata.metadataKey ?? args.accessSourceKey,
-    )
-  ) {
+  } else {
     const type = args.metadata.metadataKey ?? args.accessSourceKey;
-    if (!isPersonalSubscriptionProviderType(type)) {
-      throw new Error("Expected a subscription type");
+    if (!isPersonalSubscriptionProviderType(type) || !args.sourceId) {
+      throw new Error("Expected an exact personal subscription account");
     }
-    const bundle = await readPersonalSubscriptionCredentialBundle({
+    const bundle = await readSubscriptionBundle(args.subscriptionBundles, {
       db: args.db,
       orgId: args.orgId,
       userId: secretUserId,
@@ -1437,24 +1369,6 @@ async function getCurrentAccessSecrets(
       featureSwitchContext: args.featureSwitchContext,
     });
     values = bundle?.values ?? new Map();
-  } else {
-    const modelProviderValues = new Map<string, string>();
-    for (const secretName of secretNames) {
-      const value = await getSecretValue({
-        db: args.db,
-        orgId: args.orgId,
-        userId: secretUserId,
-        name: secretName,
-        type: args.sourceType,
-        sourceId: args.sourceId,
-        runId: args.runId,
-        featureSwitchContext: args.featureSwitchContext,
-      });
-      if (value !== null) {
-        modelProviderValues.set(secretName, value);
-      }
-    }
-    values = modelProviderValues;
   }
   return Object.fromEntries(
     Object.entries(runtimeOutputSecrets).map(([envName, secretName]) => {
@@ -1468,7 +1382,7 @@ async function loadBuiltinConnectorAccessStates(
   orgId: string,
   userId: string,
   requests: readonly ConnectorAccountResolutionRequest[],
-  snapshot: ConnectorRuntimeSnapshot,
+  snapshot: ConnectorRuntimeAuthSelection,
 ): Promise<Map<string, BuiltinConnectorAccessState>> {
   const result = new Map<string, BuiltinConnectorAccessState>();
   if (requests.length === 0) {
@@ -1548,7 +1462,7 @@ interface ModelProviderSourceLookup {
   readonly providerKey: string;
   readonly providerType: string;
   readonly userId: string;
-  readonly sourceId?: string;
+  readonly sourceId: string;
 }
 
 interface SourceStateSnapshot {
@@ -1563,11 +1477,14 @@ function modelProviderSourceLookup(args: {
   readonly providerKey: string;
   readonly userId: string;
   readonly metadataByAccessSource: Map<string, SecretConnectorMetadata>;
-}): ModelProviderSourceLookup {
+}): ModelProviderSourceLookup | null {
   const metadata = resolveRefreshMetadata(
     args.providerKey,
     args.metadataByAccessSource.get(args.providerKey),
   );
+  if (!metadata.sourceId) {
+    return null;
+  }
   return {
     providerKey: args.providerKey,
     providerType:
@@ -1579,7 +1496,7 @@ function modelProviderSourceLookup(args: {
       args.userId,
       metadata.sourceUserId,
     ),
-    ...(metadata.sourceId ? { sourceId: metadata.sourceId } : {}),
+    sourceId: metadata.sourceId,
   };
 }
 
@@ -1656,32 +1573,16 @@ async function loadModelProviderSourceStates(args: {
     return result;
   }
 
-  const sourceLookups = args.providerKeys.map((providerKey) => {
-    return modelProviderSourceLookup({
+  const sourceLookups = args.providerKeys.flatMap((providerKey) => {
+    const lookup = modelProviderSourceLookup({
       providerKey,
       userId: args.userId,
       metadataByAccessSource: args.metadataByAccessSource,
     });
+    return lookup ? [lookup] : [];
   });
-  for (const lookup of sourceLookups) {
-    if (isPersonalSubscriptionProviderType(lookup.providerType)) {
-      await coordinatePersonalSubscriptionCredentials({
-        ...args,
-        userId: lookup.userId,
-        type: lookup.providerType,
-        sourceId: lookup.sourceId,
-      });
-    }
-  }
-  const exactLookups = sourceLookups.filter(
-    (
-      lookup,
-    ): lookup is ModelProviderSourceLookup & { readonly sourceId: string } => {
-      return lookup.sourceId !== undefined;
-    },
-  );
   const exactEntries = await Promise.all(
-    exactLookups.map(async (lookup) => {
+    sourceLookups.map(async (lookup) => {
       const [row] = await args.db
         .select({
           tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
@@ -1708,57 +1609,6 @@ async function loadModelProviderSourceStates(args: {
     }
   }
 
-  const lookupsByUserId = new Map<string, ModelProviderSourceLookup[]>();
-  for (const lookup of sourceLookups) {
-    if (lookup.sourceId) {
-      continue;
-    }
-    const lookups = lookupsByUserId.get(lookup.userId) ?? [];
-    lookups.push(lookup);
-    lookupsByUserId.set(lookup.userId, lookups);
-  }
-
-  const stateEntries = await Promise.all(
-    [...lookupsByUserId].map(async ([sourceUserId, lookups]) => {
-      const providerTypes = [
-        ...new Set(
-          lookups.map((lookup) => {
-            return lookup.providerType;
-          }),
-        ),
-      ];
-      const rows = await args.db
-        .select({
-          type: modelProviders.type,
-          tokenExpiresAt: modelProviders.tokenExpiresAt,
-          needsReconnect: modelProviders.needsReconnect,
-        })
-        .from(modelProviders)
-        .where(
-          and(
-            eq(modelProviders.orgId, args.orgId),
-            eq(modelProviders.userId, sourceUserId),
-            inArray(modelProviders.type, providerTypes),
-          ),
-        );
-
-      const stateByType = new Map<string, RefreshSourceState>();
-      for (const row of rows) {
-        stateByType.set(row.type, refreshSourceStateFromRow(row));
-      }
-
-      return lookups.flatMap((lookup) => {
-        const state = stateByType.get(lookup.providerType);
-        return state ? [[lookup.providerKey, state] as const] : [];
-      });
-    }),
-  );
-
-  for (const entries of stateEntries) {
-    for (const [providerKey, state] of entries) {
-      result.set(providerKey, state);
-    }
-  }
   return result;
 }
 
@@ -1826,7 +1676,7 @@ async function loadAccessSourceStates(args: {
 async function loadCurrentSourceStateSnapshot(args: {
   readonly db: Db;
   readonly featureSwitchContext: FeatureSwitchContext;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSnapshot;
+  readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
   readonly orgId: string;
   readonly userId: string;
   readonly accessSourceKeys: readonly string[];
@@ -2040,30 +1890,6 @@ function nonNullRuntimeOutputValues(args: {
   return nonNullValues;
 }
 
-function sameStringRecord(
-  left: Readonly<Record<string, string | null>>,
-  right: Readonly<Record<string, string | null>>,
-): boolean {
-  const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
-  for (const key of keys) {
-    if (stringRecordValue(left, key) !== stringRecordValue(right, key)) {
-      return false;
-    }
-  }
-  return true;
-}
-
-function stringRecordValue(
-  record: Readonly<Record<string, string | null>>,
-  key: string,
-): string | null {
-  if (!Object.hasOwn(record, key)) {
-    return null;
-  }
-  const value = record[key];
-  return value === undefined ? null : value;
-}
-
 function refreshSourceStateFromRow(args: {
   readonly tokenExpiresAt: Date | null;
   readonly needsReconnect: boolean;
@@ -2076,24 +1902,9 @@ function refreshSourceStateFromRow(args: {
   };
 }
 
-async function currentDatabaseTimestampMicros(db: Db): Promise<bigint> {
-  const rows = await executeRawRows(
-    db,
-    sql`SELECT (EXTRACT(EPOCH FROM clock_timestamp()) * 1000000)::bigint AS now`,
-    databaseTimestampMicrosRowSchema,
-  );
-  const row = rows[0];
-  if (!row) {
-    throw new Error("Failed to read database timestamp");
-  }
-  return row.now;
-}
-
-function shouldUseLockedCurrentAccess(args: {
+function shouldUseCurrentAccess(args: {
   readonly refreshArgs: RefreshAccessTokenArgs;
   readonly context: RefreshTokenContext;
-  readonly initialState: RefreshState | null;
-  readonly requestStartedAtMicros: bigint | null;
   readonly state: RefreshState;
 }): boolean {
   if (
@@ -2111,6 +1922,8 @@ function shouldUseLockedCurrentAccess(args: {
     return true;
   }
 
+  // A forced refresh still serves the stored credential when the sandbox's
+  // snapshot is stale relative to it.
   const outputValues = runtimeOutputValues({
     context: args.context,
     state: args.state,
@@ -2121,132 +1934,16 @@ function shouldUseLockedCurrentAccess(args: {
       return true;
     }
   }
-
-  if (
-    args.requestStartedAtMicros !== null &&
-    args.state.updatedAtMicros > args.requestStartedAtMicros
-  ) {
-    return true;
-  }
-
-  if (!args.initialState) {
-    return true;
-  }
-
-  if (
-    !sameStringRecord(
-      args.initialState.outputValues,
-      args.state.outputValues,
-    ) ||
-    !sameStringRecord(args.initialState.inputValues, args.state.inputValues)
-  ) {
-    return true;
-  }
-
-  const initialExpiresAt = args.initialState.tokenExpiresAt
-    ? Math.floor(args.initialState.tokenExpiresAt.getTime() / 1000)
-    : null;
-  const lockedExpiresAt = args.state.tokenExpiresAt
-    ? Math.floor(args.state.tokenExpiresAt.getTime() / 1000)
-    : null;
-  return (
-    initialExpiresAt !== lockedExpiresAt ||
-    args.initialState.updatedAtMicros !== args.state.updatedAtMicros
-  );
-}
-
-function didLockedRefreshFailDuringRequest(args: {
-  readonly initialState: RefreshState | null;
-  readonly requestStartedAtMicros: bigint | null;
-  readonly state: RefreshState;
-}): boolean {
-  if (!args.state.needsReconnect) {
-    return lockedRefreshFailureReasonDuringRequest(args) !== undefined;
-  }
-  if (args.initialState) {
-    return (
-      !args.initialState.needsReconnect ||
-      args.initialState.updatedAtMicros !== args.state.updatedAtMicros
-    );
-  }
-  return (
-    args.requestStartedAtMicros !== null &&
-    args.state.updatedAtMicros > args.requestStartedAtMicros
-  );
-}
-
-function lockedRefreshFailureReasonDuringRequest(args: {
-  readonly initialState: RefreshState | null;
-  readonly requestStartedAtMicros: bigint | null;
-  readonly state: RefreshState;
-}): FirewallAuthFailureReason | undefined {
-  if (
-    args.requestStartedAtMicros === null ||
-    args.state.updatedAtMicros <= args.requestStartedAtMicros
-  ) {
-    return undefined;
-  }
-  if (
-    args.initialState &&
-    args.initialState.updatedAtMicros === args.state.updatedAtMicros
-  ) {
-    return undefined;
-  }
-
-  if (args.state.needsReconnect) {
-    return missingRefreshInputNames(args.state).length > 0 ||
-      isReconnectRequiredRefreshErrorCode(args.state.lastRefreshErrorCode)
-      ? "reconnect_required"
-      : undefined;
-  }
-
-  const tokenStateUnchanged = sameRefreshTokenState(
-    args.initialState,
-    args.state,
-  );
-  if (tokenExpiresAtNeedsRefresh(args.state.tokenExpiresAt)) {
-    return !args.initialState || tokenStateUnchanged
-      ? "upstream_provider"
-      : undefined;
-  }
-
-  if (tokenStateUnchanged) {
-    return "upstream_provider";
-  }
-  return undefined;
-}
-
-function sameRefreshTokenState(
-  initialState: RefreshState | null,
-  state: RefreshState,
-): boolean {
-  return (
-    initialState !== null &&
-    sameStringRecord(initialState.outputValues, state.outputValues) &&
-    sameStringRecord(initialState.inputValues, state.inputValues) &&
-    sameTokenExpiresAt(initialState.tokenExpiresAt, state.tokenExpiresAt)
-  );
-}
-
-function sameTokenExpiresAt(left: Date | null, right: Date | null): boolean {
-  return timestampMillisOrNull(left) === timestampMillisOrNull(right);
-}
-
-function timestampMillisOrNull(value: Date | null): number | null {
-  if (value === null) {
-    return null;
-  }
-  return value.getTime();
+  return false;
 }
 
 async function loadModelProviderRefreshStateRow(
   db: Db,
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
-  lockRow: boolean,
 ): Promise<RefreshStateRow | null> {
   if (args.sourceId) {
-    const query = db
+    const rows = await db
       .select({
         authMethod: sql`NULL`.mapWith(pgNullDecoder),
         connectorId: sql`NULL`.mapWith(pgNullDecoder),
@@ -2255,16 +1952,12 @@ async function loadModelProviderRefreshStateRow(
         needsReconnect: modelProviderAccounts.needsReconnect,
         lastRefreshErrorCode: modelProviderAccounts.lastRefreshErrorCode,
         reconnectReason: sql`NULL`.mapWith(pgNullDecoder),
-        updatedAtMicros:
-          sql`(EXTRACT(EPOCH FROM ${modelProviderAccounts.updatedAt}) * 1000000)::bigint`.mapWith(
-            pgInt8ToBigIntDecoder,
-          ),
       })
       .from(modelProviderAccounts)
       .where(
         and(
           eq(modelProviderAccounts.id, args.sourceId),
-          personalSubscriptionAccountAccessCondition(db, args.runId),
+          personalSubscriptionAccountAccessCondition(args.runId),
           eq(modelProviderAccounts.orgId, args.orgId),
           eq(modelProviderAccounts.userId, context.secretUserId),
           eq(
@@ -2275,50 +1968,16 @@ async function loadModelProviderRefreshStateRow(
             }),
           ),
         ),
-      );
-    const rows = lockRow
-      ? await query.for("update").limit(1)
-      : await query.limit(1);
+      )
+      .limit(1);
     return rows[0] ?? null;
   }
-  const query = db
-    .select({
-      authMethod: sql`NULL`.mapWith(pgNullDecoder),
-      connectorId: sql`NULL`.mapWith(pgNullDecoder),
-      storageVersion: sql`NULL`.mapWith(pgNullDecoder),
-      tokenExpiresAt: modelProviders.tokenExpiresAt,
-      needsReconnect: modelProviders.needsReconnect,
-      lastRefreshErrorCode: modelProviders.lastRefreshErrorCode,
-      reconnectReason: sql`NULL`.mapWith(pgNullDecoder),
-      updatedAtMicros:
-        sql`(EXTRACT(EPOCH FROM ${modelProviders.updatedAt}) * 1000000)::bigint`.mapWith(
-          pgInt8ToBigIntDecoder,
-        ),
-    })
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.orgId, args.orgId),
-        eq(modelProviders.userId, context.secretUserId),
-        eq(
-          modelProviders.type,
-          requiredModelProviderMetadataKey({
-            providerKey: args.accessSourceKey,
-            metadataKey: args.metadataKey,
-          }),
-        ),
-      ),
-    );
-  const rows = lockRow
-    ? await query.for("update").limit(1)
-    : await query.limit(1);
-  return rows[0] ?? null;
+  return null;
 }
 
 async function loadConnectorRefreshStateRow(
   db: Db,
   args: RefreshAccessTokenArgs,
-  lockRow: boolean,
 ): Promise<RefreshStateRow | null> {
   const connectorSlug = args.accessSourceKey;
   const connectorId =
@@ -2335,10 +1994,6 @@ async function loadConnectorRefreshStateRow(
       needsReconnect: connectors.needsReconnect,
       lastRefreshErrorCode: sql`NULL`.mapWith(pgNullDecoder),
       reconnectReason: connectors.reconnectReason,
-      updatedAtMicros:
-        sql`(EXTRACT(EPOCH FROM ${connectors.updatedAt}) * 1000000)::bigint`.mapWith(
-          pgInt8ToBigIntDecoder,
-        ),
     })
     .from(connectors)
     .where(
@@ -2349,9 +2004,7 @@ async function loadConnectorRefreshStateRow(
         eq(connectors.connectorSlug, connectorSlug),
       ),
     );
-  const rows = lockRow
-    ? await query.for("update").limit(1)
-    : await query.limit(1);
+  const rows = await query.limit(1);
   return rows[0] ?? null;
 }
 
@@ -2359,17 +2012,11 @@ async function loadRefreshState(
   db: Db,
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
-  options: { readonly lockRow?: boolean } = {},
 ): Promise<RefreshState | null> {
   const row =
     args.sourceType === "model-provider"
-      ? await loadModelProviderRefreshStateRow(
-          db,
-          args,
-          context,
-          options.lockRow === true,
-        )
-      : await loadConnectorRefreshStateRow(db, args, options.lockRow === true);
+      ? await loadModelProviderRefreshStateRow(db, args, context)
+      : await loadConnectorRefreshStateRow(db, args);
 
   if (!row) {
     return null;
@@ -2429,7 +2076,6 @@ async function loadRefreshState(
     needsReconnect: row.needsReconnect,
     lastRefreshErrorCode: row.lastRefreshErrorCode,
     reconnectReason: row.reconnectReason,
-    updatedAtMicros: row.updatedAtMicros,
   };
 }
 
@@ -2517,7 +2163,7 @@ async function markRefreshSuccess(
   );
   if (prepared.sourceType === "model-provider") {
     if (args.sourceId) {
-      const [account] = await args.db
+      await args.db
         .update(modelProviderAccounts)
         .set({
           tokenExpiresAt: expiresAt,
@@ -2531,69 +2177,12 @@ async function markRefreshSuccess(
             eq(modelProviderAccounts.orgId, args.orgId),
             eq(modelProviderAccounts.userId, context.secretUserId),
           ),
-        )
-        .returning({
-          isActive: modelProviderAccounts.isActive,
-          modelProviderId: modelProviderAccounts.modelProviderId,
-        });
-      if (account?.isActive) {
-        await args.db
-          .update(modelProviders)
-          .set({
-            tokenExpiresAt: expiresAt,
-            needsReconnect: false,
-            lastRefreshErrorCode: null,
-            updatedAt: sql`clock_timestamp()`,
-          })
-          .where(eq(modelProviders.id, account.modelProviderId));
-      }
+        );
       return Object.fromEntries(returnedSecretValues);
     }
-    await args.db
-      .update(modelProviderAccounts)
-      .set({
-        tokenExpiresAt: expiresAt,
-        needsReconnect: false,
-        lastRefreshErrorCode: null,
-        updatedAt: sql`clock_timestamp()`,
-      })
-      .where(
-        and(
-          eq(modelProviderAccounts.orgId, args.orgId),
-          eq(modelProviderAccounts.userId, context.secretUserId),
-          eq(
-            modelProviderAccounts.type,
-            requiredModelProviderMetadataKey({
-              providerKey: args.accessSourceKey,
-              metadataKey: args.metadataKey,
-            }),
-          ),
-          eq(modelProviderAccounts.isActive, true),
-          isNull(modelProviderAccounts.disconnectedAt),
-        ),
-      );
-    await args.db
-      .update(modelProviders)
-      .set({
-        tokenExpiresAt: expiresAt,
-        needsReconnect: false,
-        lastRefreshErrorCode: null,
-        updatedAt: sql`clock_timestamp()`,
-      })
-      .where(
-        and(
-          eq(modelProviders.orgId, args.orgId),
-          eq(modelProviders.userId, context.secretUserId),
-          eq(
-            modelProviders.type,
-            requiredModelProviderMetadataKey({
-              providerKey: args.accessSourceKey,
-              metadataKey: args.metadataKey,
-            }),
-          ),
-        ),
-      );
-    return Object.fromEntries(returnedSecretValues);
+    throw new Error(
+      "Personal subscription refresh requires an account identity",
+    );
   }
 
   await args.db
@@ -2622,21 +2211,25 @@ async function markRefreshSuccess(
 async function markRefreshFailure(
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
-  errorCode: string | null,
-  failureReason: FirewallAuthFailureReason | undefined,
-  connectorReconnectReason: ConnectorReconnectReason | null,
+  failure: {
+    readonly errorCode: string | null;
+    readonly failureReason: FirewallAuthFailureReason | undefined;
+    readonly connectorReconnectReason: ConnectorReconnectReason | null;
+  },
 ): Promise<void> {
+  const { errorCode, failureReason, connectorReconnectReason } = failure;
+  // A transient outage changed no credential or authority.
+  if (failureReason === "upstream_provider") {
+    return;
+  }
   if (args.sourceType === "model-provider") {
-    const updates =
-      failureReason === "upstream_provider"
-        ? { updatedAt: sql`clock_timestamp()` }
-        : {
-            needsReconnect: true,
-            lastRefreshErrorCode: errorCode,
-            updatedAt: sql`clock_timestamp()`,
-          };
+    const updates = {
+      needsReconnect: true,
+      lastRefreshErrorCode: errorCode,
+      updatedAt: sql`clock_timestamp()`,
+    };
     if (args.sourceId) {
-      const [account] = await args.db
+      await args.db
         .update(modelProviderAccounts)
         .set(updates)
         .where(
@@ -2645,54 +2238,12 @@ async function markRefreshFailure(
             eq(modelProviderAccounts.orgId, args.orgId),
             eq(modelProviderAccounts.userId, context.secretUserId),
           ),
-        )
-        .returning({
-          isActive: modelProviderAccounts.isActive,
-          modelProviderId: modelProviderAccounts.modelProviderId,
-        });
-      if (account?.isActive) {
-        await args.db
-          .update(modelProviders)
-          .set(updates)
-          .where(eq(modelProviders.id, account.modelProviderId));
-      }
+        );
       return;
     }
-    await args.db
-      .update(modelProviderAccounts)
-      .set(updates)
-      .where(
-        and(
-          eq(modelProviderAccounts.orgId, args.orgId),
-          eq(modelProviderAccounts.userId, context.secretUserId),
-          eq(
-            modelProviderAccounts.type,
-            requiredModelProviderMetadataKey({
-              providerKey: args.accessSourceKey,
-              metadataKey: args.metadataKey,
-            }),
-          ),
-          eq(modelProviderAccounts.isActive, true),
-          isNull(modelProviderAccounts.disconnectedAt),
-        ),
-      );
-    await args.db
-      .update(modelProviders)
-      .set(updates)
-      .where(
-        and(
-          eq(modelProviders.orgId, args.orgId),
-          eq(modelProviders.userId, context.secretUserId),
-          eq(
-            modelProviders.type,
-            requiredModelProviderMetadataKey({
-              providerKey: args.accessSourceKey,
-              metadataKey: args.metadataKey,
-            }),
-          ),
-        ),
-      );
-    return;
+    throw new Error(
+      "Personal subscription failure requires an account identity",
+    );
   }
 
   const connectorSlug = args.accessSourceKey;
@@ -2703,15 +2254,11 @@ async function markRefreshFailure(
   }
   await args.db
     .update(connectors)
-    .set(
-      failureReason === "upstream_provider"
-        ? { updatedAt: sql`clock_timestamp()` }
-        : {
-            needsReconnect: true,
-            reconnectReason: connectorReconnectReason,
-            updatedAt: sql`clock_timestamp()`,
-          },
-    )
+    .set({
+      needsReconnect: true,
+      reconnectReason: connectorReconnectReason,
+      updatedAt: sql`clock_timestamp()`,
+    })
     .where(
       and(
         eq(connectors.orgId, args.orgId),
@@ -2726,7 +2273,11 @@ async function markRefreshTokenMissing(
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
 ): Promise<RefreshAccessTokenResult> {
-  await markRefreshFailure(args, context, null, "reconnect_required", null);
+  await markRefreshFailure(args, context, {
+    errorCode: null,
+    failureReason: "reconnect_required",
+    connectorReconnectReason: null,
+  });
   return refreshTokenMissingResult();
 }
 
@@ -2736,13 +2287,14 @@ async function markRefreshTokenMissing(
 async function markAndReturnRefreshFailure(
   args: RefreshAccessTokenArgs,
   context: RefreshTokenContext,
-  error: unknown,
-  signal: AbortSignal,
   retry: {
+    readonly error: unknown;
     readonly attempted: boolean;
     readonly firstProviderStatus: number | null;
   },
+  signal: AbortSignal,
 ): Promise<RefreshAccessTokenResult> {
+  const { error } = retry;
   const connectorAccess = args.connectorAccessBySlug.get(args.accessSourceKey);
   if (
     args.sourceType === "connector" &&
@@ -2752,13 +2304,11 @@ async function markAndReturnRefreshFailure(
     error.status === 401 &&
     error.providerErrorCode === "TOKEN_EXPIRED"
   ) {
-    await markRefreshFailure(
-      args,
-      context,
-      "invalid_grant",
-      "reconnect_required",
-      "credential_expired",
-    );
+    await markRefreshFailure(args, context, {
+      errorCode: "invalid_grant",
+      failureReason: "reconnect_required",
+      connectorReconnectReason: "credential_expired",
+    });
     return refreshFailedResult("reconnect_required");
   }
   const { errorCode, failureReason } = classifyRefreshFailure(error, signal);
@@ -2774,13 +2324,14 @@ async function markAndReturnRefreshFailure(
       firstProviderStatus: retry.firstProviderStatus,
     });
   }
-  await markRefreshFailure(
-    args,
-    context,
+  await markRefreshFailure(args, context, {
     errorCode,
     failureReason,
-    connectorReconnectReasonFromRefreshFailure(error, failureReason),
-  );
+    connectorReconnectReason: connectorReconnectReasonFromRefreshFailure(
+      error,
+      failureReason,
+    ),
+  });
   return refreshFailedResult(failureReason);
 }
 
@@ -2848,27 +2399,6 @@ function refreshPreparedConnectorAccessToken(
   );
 }
 
-async function lockPreparedRefreshSource(
-  db: Db,
-  args: RefreshAccessTokenArgs,
-  prepared: PreparedRefreshTokenContext,
-): Promise<void> {
-  if (prepared.sourceType === "connector") {
-    await lockBuiltinConnectorState(db, {
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorSlug: prepared.connectorSlug,
-    });
-    return;
-  }
-
-  await lockModelProviderState(db, {
-    orgId: args.orgId,
-    userId: prepared.context.secretUserId,
-    type: args.metadataKey ?? prepared.providerKey,
-  });
-}
-
 function preparedRefreshSourceMatchesState(
   args: RefreshAccessTokenArgs,
   prepared: PreparedRefreshTokenContext,
@@ -2923,7 +2453,7 @@ function currentRefreshAccessResult(args: {
   };
 }
 
-function refreshInputsFromLockedState(args: {
+function refreshInputsFromState(args: {
   readonly accessSourceKey: string;
   readonly state: RefreshState;
 }): Record<string, string> {
@@ -3002,104 +2532,66 @@ function validateRefreshResultOutputs(args: {
   return { ok: true, outputs };
 }
 
-async function refreshLockedAccessToken(args: {
+async function refreshStoredAccessToken(args: {
   readonly refreshArgs: RefreshAccessTokenArgs;
   readonly prepared: PreparedRefreshTokenContext;
-  readonly initialState: RefreshState | null;
-  readonly requestStartedAtMicros: bigint | null;
 }): Promise<RefreshAccessTokenResult> {
-  const providerType =
-    args.refreshArgs.metadataKey ?? args.refreshArgs.accessSourceKey;
-  if (
-    args.prepared.sourceType === "model-provider" &&
-    isPersonalSubscriptionProviderType(providerType) &&
-    !(await reconcileLockedPersonalSubscriptionCredentials({
-      db: args.refreshArgs.db,
-      orgId: args.refreshArgs.orgId,
-      userId: args.prepared.context.secretUserId,
-      type: providerType,
-      sourceId: args.refreshArgs.sourceId,
-      runId: args.refreshArgs.runId,
-      featureSwitchContext: args.refreshArgs.featureSwitchContext,
-    }))
-  ) {
-    return sourceMissingResult();
-  }
-  const lockedState = currentPreparedRefreshState({
+  const state = currentPreparedRefreshState({
     refreshArgs: args.refreshArgs,
     prepared: args.prepared,
     state: await loadRefreshState(
       args.refreshArgs.db,
       args.refreshArgs,
       args.prepared.context,
-      { lockRow: true },
     ),
   });
-  if (!lockedState) {
+  if (!state) {
     return sourceMissingResult();
   }
 
   if (
-    isTerminalCodexRefreshState(args.prepared, lockedState) ||
-    isExpiredAwsSigninRefreshState(args.prepared, lockedState)
+    isTerminalCodexRefreshState(args.prepared, state) ||
+    isExpiredAwsSigninRefreshState(args.prepared, state)
   ) {
     return refreshFailedResult("reconnect_required");
   }
 
   if (
-    didLockedRefreshFailDuringRequest({
-      initialState: args.initialState,
-      requestStartedAtMicros: args.requestStartedAtMicros,
-      state: lockedState,
-    })
-  ) {
-    return refreshFailedResult(
-      lockedRefreshFailureReasonDuringRequest({
-        initialState: args.initialState,
-        requestStartedAtMicros: args.requestStartedAtMicros,
-        state: lockedState,
-      }),
-    );
-  }
-
-  if (
-    shouldUseLockedCurrentAccess({
+    shouldUseCurrentAccess({
       refreshArgs: args.refreshArgs,
       context: args.prepared.context,
-      initialState: args.initialState,
-      requestStartedAtMicros: args.requestStartedAtMicros,
-      state: lockedState,
+      state,
     })
   ) {
     return currentRefreshAccessResult({
       accessSourceKey: args.refreshArgs.accessSourceKey,
       context: args.prepared.context,
-      state: lockedState,
+      state,
     });
   }
 
-  if (missingRefreshInputNames(lockedState).length > 0) {
+  if (missingRefreshInputNames(state).length > 0) {
     return markRefreshTokenMissing(args.refreshArgs, args.prepared.context);
   }
 
-  return refreshPreparedLockedAccessToken({
+  return refreshPreparedStoredAccessToken({
     refreshArgs: args.refreshArgs,
     prepared: args.prepared,
-    lockedState,
+    state,
   });
 }
 
-async function refreshPreparedLockedAccessToken(args: {
+async function refreshPreparedStoredAccessToken(args: {
   readonly refreshArgs: RefreshAccessTokenArgs;
   readonly prepared: PreparedRefreshTokenContext;
-  readonly lockedState: RefreshState;
+  readonly state: RefreshState;
 }): Promise<RefreshAccessTokenResult> {
-  const { refreshArgs, prepared, lockedState } = args;
+  const { refreshArgs, prepared, state } = args;
 
   const refreshSignal = firewallAuthRefreshTimeoutSignal();
-  const inputs = refreshInputsFromLockedState({
+  const inputs = refreshInputsFromState({
     accessSourceKey: refreshArgs.accessSourceKey,
-    state: lockedState,
+    state,
   });
   let retryAttempted = false;
   let firstProviderStatus: number | null = null;
@@ -3132,9 +2624,12 @@ async function refreshPreparedLockedAccessToken(args: {
     return markAndReturnRefreshFailure(
       refreshArgs,
       prepared.context,
-      refreshResult.error,
+      {
+        error: refreshResult.error,
+        attempted: retryAttempted,
+        firstProviderStatus,
+      },
       refreshSignal,
-      { attempted: retryAttempted, firstProviderStatus },
     );
   }
 
@@ -3154,13 +2649,11 @@ async function refreshPreparedLockedAccessToken(args: {
       providerStatus: null,
       retryAttempted,
     });
-    await markRefreshFailure(
-      refreshArgs,
-      prepared.context,
-      null,
-      "upstream_provider",
-      null,
-    );
+    await markRefreshFailure(refreshArgs, prepared.context, {
+      errorCode: null,
+      failureReason: "upstream_provider",
+      connectorReconnectReason: null,
+    });
     return refreshFailedResult("upstream_provider");
   }
 
@@ -3208,49 +2701,21 @@ async function refreshAccessTokenForSource(
       : { ok: false, reason: preparation.reason };
   }
   const { prepared } = preparation;
-  const providerType = args.metadataKey ?? args.accessSourceKey;
-  if (
-    prepared.sourceType === "model-provider" &&
-    isPersonalSubscriptionProviderType(providerType) &&
-    !(await coordinatePersonalSubscriptionCredentials({
-      db: args.db,
-      orgId: args.orgId,
-      userId: prepared.context.secretUserId,
-      type: providerType,
-      sourceId: args.sourceId,
-      runId: args.runId,
-      featureSwitchContext: args.featureSwitchContext,
-    }))
-  ) {
-    return sourceMissingResult();
-  }
-  const requestStartedAtMicros = args.forceRefresh
-    ? args.forceRefreshStartedAtMicros
-    : await currentDatabaseTimestampMicros(args.db);
-  const initialState = await loadRefreshState(args.db, args, prepared.context);
-  const result = await args.db.transaction(async (tx) => {
-    await lockPreparedRefreshSource(tx, args, prepared);
-    return await refreshLockedAccessToken({
-      refreshArgs: { ...args, db: tx },
-      prepared,
-      initialState,
-      requestStartedAtMicros,
-    });
+  // Ordinary refresh with plain writes: concurrent refreshes resolve by
+  // last-writer-wins, and a lost one-use refresh token requires reconnect.
+  const result = await refreshStoredAccessToken({
+    refreshArgs: args,
+    prepared,
   });
-  // The reconnect projection is local metadata. Publish after the refresh
-  // transaction, never while holding the credential lifecycle locks.
+  // The reconnect projection is local metadata published after the refresh.
   if (
     prepared.sourceType === "model-provider" &&
     ((result.ok && result.status === "refreshed") ||
       (!result.ok && result.failureReason === "reconnect_required"))
   ) {
-    if (prepared.context.secretUserId === ORG_SENTINEL_USER_ID) {
-      await publishModelPoliciesChangedForOrgSafely(args.orgId);
-    } else {
-      await publishPersonalModelProvidersChangedSafely(
-        prepared.context.secretUserId,
-      );
-    }
+    await publishPersonalModelProvidersChangedSafely(
+      prepared.context.secretUserId,
+    );
   }
   return result;
 }
@@ -3293,8 +2758,12 @@ function hasForbiddenModelProviderOwner(
     }
     const providerKey = accessSourceKey;
 
-    const ownerUserId = metadata.sourceUserId ?? ORG_SENTINEL_USER_ID;
-    if (ownerUserId !== auth.userId && ownerUserId !== ORG_SENTINEL_USER_ID) {
+    const ownerUserId = metadata.sourceUserId;
+    if (
+      ownerUserId !== auth.userId ||
+      !metadata.sourceId ||
+      !isPersonalSubscriptionProviderType(metadata.metadataKey ?? providerKey)
+    ) {
       L.warn(`[${auth.runId}] Rejected forbidden model-provider owner`, {
         ownerUserId,
         providerKey,
@@ -3562,7 +3031,6 @@ async function syncStoredConnectorRuntimeSecrets(args: {
     .from(secretsTable)
     .where(
       builtinConnectorCredentialSecretReadCondition({
-        db: args.db,
         groups: [...namesByConnectorId.values()].map((group) => {
           return { access: group.access, names: [...group.names] };
         }),
@@ -3597,94 +3065,17 @@ async function getModelProviderRuntimeSecretValue(args: {
   readonly userId: string;
   readonly providerType: ModelProviderType;
   readonly secretName: string;
-  readonly sourceId?: string;
+  readonly sourceId: string;
   readonly featureSwitchContext: FeatureSwitchContext;
 }): Promise<string | null> {
-  if (isPersonalSubscriptionProviderType(args.providerType)) {
-    const bundle = await readPersonalSubscriptionCredentialBundle({
-      ...args,
-      type: args.providerType,
-    });
-    return bundle?.values.get(args.secretName) ?? null;
-  }
-  if (args.sourceId) {
-    const [row] = await args.db
-      .select({ encryptedValue: modelProviderAccountSecrets.encryptedValue })
-      .from(modelProviderAccountSecrets)
-      .innerJoin(
-        modelProviderAccounts,
-        eq(
-          modelProviderAccountSecrets.modelProviderAccountId,
-          modelProviderAccounts.id,
-        ),
-      )
-      .where(
-        and(
-          eq(modelProviderAccounts.id, args.sourceId),
-          personalSubscriptionAccountAccessCondition(args.db, args.runId),
-          eq(modelProviderAccounts.orgId, args.orgId),
-          eq(modelProviderAccounts.userId, args.userId),
-          eq(modelProviderAccounts.type, args.providerType),
-          eq(modelProviderAccountSecrets.name, args.secretName),
-        ),
-      )
-      .limit(1);
-    return row
-      ? await decryptStoredSecretValue(
-          row.encryptedValue,
-          args.featureSwitchContext,
-        )
-      : null;
-  }
-  const singleSecretName = getSecretNameForType(args.providerType);
-  if (singleSecretName && args.secretName === singleSecretName) {
-    const [row] = await args.db
-      .select({ encryptedValue: secretsTable.encryptedValue })
-      .from(modelProviders)
-      .leftJoin(secretsTable, eq(modelProviders.secretId, secretsTable.id))
-      .where(
-        and(
-          eq(modelProviders.orgId, args.orgId),
-          eq(modelProviders.userId, args.userId),
-          eq(modelProviders.type, args.providerType),
-          eq(secretsTable.orgId, args.orgId),
-          eq(secretsTable.userId, args.userId),
-          eq(secretsTable.name, args.secretName),
-          eq(secretsTable.type, "model-provider"),
-        ),
-      )
-      .limit(1);
-    return row?.encryptedValue
-      ? await decryptStoredSecretValue(
-          row.encryptedValue,
-          args.featureSwitchContext,
-        )
-      : null;
-  }
-
-  const [provider] = await args.db
-    .select({ id: modelProviders.id })
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.orgId, args.orgId),
-        eq(modelProviders.userId, args.userId),
-        eq(modelProviders.type, args.providerType),
-      ),
-    )
-    .limit(1);
-  if (!provider) {
+  if (!isPersonalSubscriptionProviderType(args.providerType)) {
     return null;
   }
-
-  return await getSecretValue({
-    db: args.db,
-    orgId: args.orgId,
-    userId: args.userId,
-    name: args.secretName,
-    type: "model-provider",
-    featureSwitchContext: args.featureSwitchContext,
+  const bundle = await readPersonalSubscriptionCredentialBundle({
+    ...args,
+    type: args.providerType,
   });
+  return bundle?.values.get(args.secretName) ?? null;
 }
 
 interface ModelProviderRuntimeSecretForApiArgs {
@@ -3700,6 +3091,7 @@ interface ModelProviderRuntimeSecretForApiArgs {
 
 interface ResolvedModelProviderRuntimeSecretLookup {
   readonly metadata: SecretConnectorMetadata;
+  readonly sourceId: string;
   readonly providerType: ModelProviderType;
   readonly secretName: string;
   readonly userId: string;
@@ -3750,12 +3142,13 @@ function resolveModelProviderRuntimeSecretLookup(
     providerKey: args.providerKey,
     metadata,
   });
-  if (!providerType || !secretName) {
+  if (!providerType || !secretName || !metadata.sourceId) {
     return null;
   }
 
   return {
     metadata,
+    sourceId: metadata.sourceId,
     providerType,
     secretName,
     userId: resolveSecretUserId(
@@ -3772,39 +3165,20 @@ async function loadModelProviderRuntimeRefreshState(args: {
   readonly runId?: string;
   readonly lookup: ResolvedModelProviderRuntimeSecretLookup;
 }): Promise<ModelProviderRuntimeRefreshState | null> {
-  if (args.lookup.metadata.sourceId) {
-    const [row] = await args.db
-      .select({
-        tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
-        needsReconnect: modelProviderAccounts.needsReconnect,
-        lastRefreshErrorCode: modelProviderAccounts.lastRefreshErrorCode,
-      })
-      .from(modelProviderAccounts)
-      .where(
-        and(
-          eq(modelProviderAccounts.id, args.lookup.metadata.sourceId),
-          personalSubscriptionAccountAccessCondition(args.db, args.runId),
-          eq(modelProviderAccounts.orgId, args.orgId),
-          eq(modelProviderAccounts.userId, args.lookup.userId),
-          eq(modelProviderAccounts.type, args.lookup.providerType),
-        ),
-      )
-      .limit(1);
-    return row ?? null;
-  }
-
   const [row] = await args.db
     .select({
-      tokenExpiresAt: modelProviders.tokenExpiresAt,
-      needsReconnect: modelProviders.needsReconnect,
-      lastRefreshErrorCode: modelProviders.lastRefreshErrorCode,
+      tokenExpiresAt: modelProviderAccounts.tokenExpiresAt,
+      needsReconnect: modelProviderAccounts.needsReconnect,
+      lastRefreshErrorCode: modelProviderAccounts.lastRefreshErrorCode,
     })
-    .from(modelProviders)
+    .from(modelProviderAccounts)
     .where(
       and(
-        eq(modelProviders.orgId, args.orgId),
-        eq(modelProviders.userId, args.lookup.userId),
-        eq(modelProviders.type, args.lookup.providerType),
+        eq(modelProviderAccounts.id, args.lookup.sourceId),
+        personalSubscriptionAccountAccessCondition(args.runId),
+        eq(modelProviderAccounts.orgId, args.orgId),
+        eq(modelProviderAccounts.userId, args.lookup.userId),
+        eq(modelProviderAccounts.type, args.lookup.providerType),
       ),
     )
     .limit(1);
@@ -3821,7 +3195,7 @@ async function readModelProviderRuntimeSecretForApi(
     userId: lookup.userId,
     providerType: lookup.providerType,
     secretName: lookup.secretName,
-    sourceId: lookup.metadata.sourceId,
+    sourceId: lookup.sourceId,
     runId: args.runId,
     featureSwitchContext: args.featureSwitchContext,
   });
@@ -3844,50 +3218,6 @@ async function unavailableModelProviderRuntimeSecretForApi(
   };
 }
 
-export async function resolveModelProviderRuntimeSecretForApi(
-  args: ModelProviderRuntimeSecretForApiArgs,
-): Promise<string | null> {
-  const lookup = resolveModelProviderRuntimeSecretLookup(args);
-  return lookup
-    ? await readModelProviderRuntimeSecretForApi(args, lookup)
-    : null;
-}
-
-/** Observe revocation without refreshing or replacing prepared credentials. */
-export async function readModelProviderRuntimeReconnectStateForApi(
-  args: ModelProviderRuntimeSecretForApiArgs,
-): Promise<ModelProviderRuntimeReconnectState | null> {
-  const lookup = resolveModelProviderRuntimeSecretLookup(args);
-  if (!lookup) {
-    return null;
-  }
-  if (isPersonalSubscriptionProviderType(lookup.providerType)) {
-    const bundle = await readPersonalSubscriptionCredentialBundle({
-      db: args.db,
-      orgId: args.orgId,
-      userId: lookup.userId,
-      type: lookup.providerType,
-      sourceId: lookup.metadata.sourceId,
-      runId: args.runId,
-      featureSwitchContext: args.featureSwitchContext,
-    });
-    return bundle
-      ? {
-          needsReconnect: bundle.account.needsReconnect,
-          lastRefreshErrorCode: bundle.account.lastRefreshErrorCode,
-        }
-      : null;
-  }
-  return modelProviderRuntimeReconnectState(
-    await loadModelProviderRuntimeRefreshState({
-      db: args.db,
-      orgId: args.orgId,
-      runId: args.runId,
-      lookup,
-    }),
-  );
-}
-
 async function resolveCurrentModelProviderRuntimeSecretForApi(
   args: ModelProviderRuntimeSecretForApiArgs,
   signal: AbortSignal,
@@ -3897,26 +3227,6 @@ async function resolveCurrentModelProviderRuntimeSecretForApi(
     return { status: "unavailable", reconnectState: null };
   }
 
-  if (
-    isPersonalSubscriptionProviderType(lookup.providerType) &&
-    !(await coordinatePersonalSubscriptionCredentials(
-      {
-        db: args.db,
-        orgId: args.orgId,
-        userId: lookup.userId,
-        type: lookup.providerType,
-        sourceId: lookup.metadata.sourceId,
-        runId: args.runId,
-        featureSwitchContext: args.featureSwitchContext,
-      },
-      signal,
-    ))
-  ) {
-    return {
-      status: "unavailable",
-      reconnectState: { needsReconnect: true, lastRefreshErrorCode: null },
-    };
-  }
   const refreshMetadata = getModelProviderRefreshMetadata(args.providerKey);
   if (!refreshMetadata?.refreshableSecrets.includes(lookup.secretName)) {
     const value = await readModelProviderRuntimeSecretForApi(args, lookup);
@@ -3967,13 +3277,12 @@ async function resolveCurrentModelProviderRuntimeSecretForApi(
     userId: args.userId,
     sourceType: "model-provider",
     sourceUserId: lookup.metadata.sourceUserId,
-    sourceId: lookup.metadata.sourceId,
+    sourceId: lookup.sourceId,
     runId: args.runId,
     metadataKey: lookup.metadata.metadataKey,
     connectorSecrets: {},
     accessEnvVars: [args.key],
     forceRefresh: false,
-    forceRefreshStartedAtMicros: null,
     connectorAccessBySlug: new Map<string, BuiltinConnectorAccessState>(),
     featureSwitchContext: args.featureSwitchContext,
   });
@@ -3996,6 +3305,7 @@ async function resolveCurrentModelProviderRuntimeSecretForApi(
 
 async function syncModelProviderRuntimeSecrets(args: {
   readonly runId?: string;
+  readonly subscriptionBundles?: SubscriptionBundleReads;
   readonly db: Db;
   readonly orgId: string;
   readonly userId: string;
@@ -4013,77 +3323,6 @@ async function syncModelProviderRuntimeSecrets(args: {
 
   // Resolve ancillary subscription keys together; refresh owns reconnect errors.
   await syncPersonalSubscriptionRuntimeBundles(args, false);
-
-  const lookups = [...args.referencedKeys].flatMap((key) => {
-    const accessSourceKey = getOwnConnectorOwner(args.secretConnectorMap, key);
-    if (!accessSourceKey) {
-      return [];
-    }
-    const metadata = resolveRefreshMetadata(
-      accessSourceKey,
-      args.secretConnectorMetadataMap?.[key],
-    );
-    if (metadata.sourceType !== "model-provider") {
-      return [];
-    }
-    const providerKey = accessSourceKey;
-    if (
-      modelProviderAccessSecretName({
-        key,
-        providerKey,
-        metadata,
-      }) !== undefined
-    ) {
-      return [];
-    }
-    const providerType = modelProviderTypeForMetadata(providerKey, metadata);
-    if (providerType && isPersonalSubscriptionProviderType(providerType)) {
-      return [];
-    }
-    const secretName = modelProviderRuntimeSecretName({
-      key,
-      providerKey,
-      metadata,
-    });
-    return providerType && secretName
-      ? [
-          {
-            key,
-            providerType,
-            secretName,
-            userId: resolveSecretUserId(
-              "model-provider",
-              args.userId,
-              metadata.sourceUserId,
-            ),
-            sourceId: metadata.sourceId,
-          },
-        ]
-      : [];
-  });
-  if (lookups.length === 0) {
-    return;
-  }
-
-  await Promise.all(
-    lookups.map(async (lookup) => {
-      const value = await getModelProviderRuntimeSecretValue({
-        db: args.db,
-        orgId: args.orgId,
-        userId: lookup.userId,
-        providerType: lookup.providerType,
-        secretName: lookup.secretName,
-        sourceId: lookup.sourceId,
-        runId: args.runId,
-        featureSwitchContext: args.featureSwitchContext,
-      });
-      if (value === null || value.trim().length === 0) {
-        delete args.secrets[lookup.key];
-      } else {
-        args.secrets[lookup.key] = value;
-      }
-    }),
-  );
 }
 
 function syncPlatformRuntimeSecrets(args: {
@@ -4142,6 +3381,7 @@ async function syncFirewallRuntimeSecrets(args: {
     BuiltinConnectorAccessState
   >;
   readonly featureSwitchContext: FeatureSwitchContext;
+  readonly subscriptionBundles: SubscriptionBundleReads;
 }): Promise<void> {
   await syncStoredConnectorRuntimeSecrets({
     db: args.db,
@@ -4157,6 +3397,7 @@ async function syncFirewallRuntimeSecrets(args: {
   await syncModelProviderRuntimeSecrets({
     db: args.db,
     runId: args.auth.runId,
+    subscriptionBundles: args.subscriptionBundles,
     orgId: args.orgId,
     userId: args.auth.userId,
     secrets: args.secrets,
@@ -4541,7 +3782,7 @@ function hasMissingFirewallVariables(args: {
  * override this account's proxy credentials. */
 function bindMatchedBuiltinMcpSecrets(args: {
   readonly body: FirewallAuthBody;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSnapshot;
+  readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
   readonly connectorAccessBySlug: ReadonlyMap<
     string,
     BuiltinConnectorAccessState
@@ -4551,7 +3792,7 @@ function bindMatchedBuiltinMcpSecrets(args: {
   const connectorSlug = args.body.matchedFirewall?.connectorSlug;
   if (
     connectorSlug === undefined ||
-    !getConnectorRuntimeConnector(args.connectorCatalogSnapshot, connectorSlug)
+    !args.connectorCatalogSnapshot.connectors.get(connectorSlug)
       ?.catalogConnector.mcp
   ) {
     return args.body;
@@ -4592,7 +3833,7 @@ function bindMatchedBuiltinMcpSecrets(args: {
 
 async function prepareFirewallConnectorBindings(args: {
   readonly db: Db;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSnapshot;
+  readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
   readonly auth: SandboxAuth;
   readonly body: FirewallAuthBody;
   readonly orgId: string;
@@ -4628,10 +3869,8 @@ async function prepareFirewallConnectorBindings(args: {
   }
   if (
     matchedConnectorSlug !== undefined &&
-    getConnectorRuntimeConnector(
-      args.connectorCatalogSnapshot,
-      matchedConnectorSlug,
-    )?.catalogConnector.mcp !== undefined
+    args.connectorCatalogSnapshot.connectors.get(matchedConnectorSlug)
+      ?.catalogConnector.mcp !== undefined
   ) {
     const matchedAccess = connectorAccessBySlug.get(matchedConnectorSlug);
     if (
@@ -4672,7 +3911,7 @@ async function prepareFirewallConnectorBindings(args: {
 
 async function prepareFirewallAuthResolutionContext(args: {
   readonly db: Db;
-  readonly connectorCatalogSnapshot: ConnectorRuntimeSnapshot;
+  readonly connectorCatalogSnapshot: ConnectorRuntimeAuthSelection;
   readonly auth: SandboxAuth;
   readonly body: FirewallAuthBody;
   readonly orgId: string;
@@ -4691,6 +3930,7 @@ async function prepareFirewallAuthResolutionContext(args: {
     return bindings;
   }
   const { body, connectorAccessBySlug } = bindings;
+  const subscriptionBundles: SubscriptionBundleReads = new Map();
   const modelProviderRefreshable = referencedModelProviderAccessMap({
     secretConnectorMap: body.secretConnectorMap,
     secretConnectorMetadataMap: body.secretConnectorMetadataMap,
@@ -4744,6 +3984,7 @@ async function prepareFirewallAuthResolutionContext(args: {
     referencedKeys: referenced.secrets,
     connectorAccessBySlug,
     featureSwitchContext: args.featureSwitchContext,
+    subscriptionBundles,
   });
   const hasMissingSecrets = hasMissingUnresolvableSecrets({
     secrets: args.secrets,
@@ -4769,6 +4010,7 @@ async function prepareFirewallAuthResolutionContext(args: {
       referenced,
       vars,
       connectorAccessBySlug,
+      subscriptionBundles,
     },
   };
 }
@@ -4811,7 +4053,6 @@ async function resolveMatchedBuiltinConnectorVariables(
           .from(variablesTable)
           .where(
             builtinConnectorCredentialVariableReadCondition({
-              db,
               groups: [
                 {
                   access: connectorAccess.access,
@@ -4906,26 +4147,52 @@ async function findFirewallAuthRun(
   });
 }
 
-async function admitFirewallAuthResponse(
-  db: Db,
-  auth: SandboxAuth,
-): Promise<boolean> {
-  return await db.transaction(async (tx) => {
-    const [run] = await tx
-      .select({ status: agentRuns.status })
-      .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.id, auth.runId),
-          eq(agentRuns.userId, auth.userId),
-          eq(agentRuns.orgId, auth.orgId),
-        ),
-      )
-      .for("update")
-      .limit(1);
-    return run !== undefined && firewallAuthRunIsActive(run.status);
-  });
-}
+/** Final admission owns its single statement. Credential/provider work has
+ * finished; no transaction handle or callback is passed in from preparation. */
+export const admitPreparedFirewallAuthResponse$ = command(
+  async (
+    { set },
+    args: {
+      readonly auth: SandboxAuth;
+      readonly response: ResolveFirewallAuthResult;
+    },
+    signal: AbortSignal,
+  ): Promise<ResolveFirewallAuthResult> => {
+    if (args.response.status !== 200) {
+      return args.response;
+    }
+    const db = set(writeDb$);
+    const startedAt = performance.now();
+    let success = false;
+    return await (async () => {
+      // The final owner/status check keeps its existing row-lock ordering. A
+      // single statement needs no larger application transaction boundary.
+      const [run] = await db
+        .select({ status: agentRuns.status })
+        .from(agentRuns)
+        .where(
+          and(
+            eq(agentRuns.id, args.auth.runId),
+            eq(agentRuns.userId, args.auth.userId),
+            eq(agentRuns.orgId, args.auth.orgId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+      signal.throwIfAborted();
+      success = run !== undefined && firewallAuthRunIsActive(run.status);
+      return success ? args.response : forbiddenTerminalRun();
+    })().finally(() => {
+      recordFirewallAuthTimings(args.auth.runId, [
+        {
+          actionType: "firewall_auth_admit",
+          durationMs: Math.max(0, performance.now() - startedAt),
+          success,
+        },
+      ]);
+    });
+  },
+);
 
 async function decryptFirewallAuthSecrets(
   db: Db,
@@ -4936,10 +4203,17 @@ async function decryptFirewallAuthSecrets(
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly secrets: Record<string, string> | null;
 }> {
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    db,
+  const featureSwitchContextRows0 = await db
+    .select({
+      userId: userFeatureSwitches.userId,
+      switches: userFeatureSwitches.switches,
+    })
+    .from(userFeatureSwitches)
+    .where(userFeatureSwitchRowCondition(orgId, auth.userId));
+  const featureSwitchContext = featureSwitchContextFromRows(
     orgId,
     auth.userId,
+    featureSwitchContextRows0,
   );
   const secrets = await tapError(
     decryptPersistentSecretsMap(encryptedSecrets, featureSwitchContext),
@@ -5012,7 +4286,6 @@ async function refreshSelectedTokens(
         connectorSecrets: context.secrets,
         accessEnvVars: context.envVarsByAccessSource.get(accessSourceKey) ?? [],
         forceRefresh: context.forceRefresh,
-        forceRefreshStartedAtMicros: context.forceRefreshStartedAtMicros,
         connectorAccessBySlug: context.connectorAccessBySlug,
         featureSwitchContext: context.featureSwitchContext,
       });
@@ -5032,6 +4305,9 @@ async function refreshSelectedTokens(
         };
       }
 
+      // "current" means the stored credential differs from the request
+      // snapshot, so earlier bundle reads may be stale too.
+      context.subscriptionBundles.clear();
       Object.assign(context.secrets, refreshResult.secrets);
       return { accessSourceKey, status: refreshResult.status };
     }),
@@ -5085,6 +4361,7 @@ async function syncSkippedTokens(
             context.envVarsByAccessSource.get(accessSourceKey) ?? [],
           connectorAccessBySlug: context.connectorAccessBySlug,
           featureSwitchContext: context.featureSwitchContext,
+          subscriptionBundles: context.subscriptionBundles,
         }),
       };
     }),
@@ -5211,6 +4488,38 @@ function earliestAccessSourceExpiry(
   return earliestExpiry;
 }
 
+function unusableRefreshLifetimeResults(
+  accessSourceKeys: readonly string[],
+  sourceStateMap: Map<string, RefreshSourceState>,
+  refreshResults: readonly RefreshExecutionResult[],
+): readonly RefreshExecutionResult[] {
+  const results: RefreshExecutionResult[] = [];
+  const nowSeconds = currentSecond();
+  for (const accessSourceKey of accessSourceKeys) {
+    const expiry = sourceStateMap.get(accessSourceKey)?.tokenExpiresAt;
+    if (
+      expiry !== undefined &&
+      expiry !== null &&
+      expiry <= nowSeconds + REFRESH_BUFFER_SECS &&
+      !refreshResults.some((result) => {
+        return (
+          result.accessSourceKey === accessSourceKey &&
+          (result.status === "failed" || result.status === "source-missing")
+        );
+      })
+    ) {
+      // Rotation is already persisted. Fail closed if this bounded refresh
+      // still cannot provide a positive effective lifetime; do not loop.
+      results.push({
+        accessSourceKey,
+        status: "failed",
+        failureReason: "upstream_provider",
+      });
+    }
+  }
+  return results;
+}
+
 async function refreshExpiredTokens(
   args: RefreshExpiredTokensArgs,
 ): Promise<RefreshResult> {
@@ -5251,13 +4560,13 @@ async function refreshExpiredTokens(
 
   const context = {
     db: args.db,
+    subscriptionBundles: args.subscriptionBundles,
     connectorCatalogSnapshot: args.connectorCatalogSnapshot,
     auth: args.auth,
     orgId: args.orgId,
     userId: args.auth.userId,
     secrets: args.secrets,
     forceRefresh: args.forceRefresh,
-    forceRefreshStartedAtMicros: args.forceRefreshStartedAtMicros,
     metadataByAccessSource,
     connectorAccessBySlug: args.connectorAccessBySlug,
     envVarsByAccessSource,
@@ -5292,10 +4601,6 @@ async function refreshExpiredTokens(
   );
   const refreshResults = [...selectedRefreshResults, ...skippedResults];
 
-  const summary = summarizeRefreshResults(
-    refreshResults,
-    envVarsByAccessSource,
-  );
   const hasCurrentOrRefreshed = refreshResults.some((result) => {
     return result.status === "current" || result.status === "refreshed";
   });
@@ -5326,12 +4631,24 @@ async function refreshExpiredTokens(
       })
     : new Map([...sourceStateMap, ...skippedStateSnapshot.sourceStateMap]);
 
+  const expiresAt = earliestAccessSourceExpiry(
+    accessSourceKeys,
+    finalSourceStateMap,
+  );
   return {
-    expiresAt: earliestAccessSourceExpiry(
-      accessSourceKeys,
-      finalSourceStateMap,
+    // Stop every Run's cache at the same boundary that triggers refresh.
+    expiresAt: expiresAt === null ? null : expiresAt - REFRESH_BUFFER_SECS,
+    ...summarizeRefreshResults(
+      [
+        ...refreshResults,
+        ...unusableRefreshLifetimeResults(
+          accessSourceKeys,
+          finalSourceStateMap,
+          refreshResults,
+        ),
+      ],
+      envVarsByAccessSource,
     ),
-    ...summary,
   };
 }
 
@@ -5786,10 +5103,17 @@ async function prepareCurrentCustomConnectorFirewallAuth(args: {
     return { ok: false, response: connectorNotConfigured() };
   }
 
-  const featureSwitchContext = await loadUserFeatureSwitchContext(
-    args.db,
+  const featureSwitchContextRows1 = await args.db
+    .select({
+      userId: userFeatureSwitches.userId,
+      switches: userFeatureSwitches.switches,
+    })
+    .from(userFeatureSwitches)
+    .where(userFeatureSwitchRowCondition(args.auth.orgId, args.auth.userId));
+  const featureSwitchContext = featureSwitchContextFromRows(
     args.auth.orgId,
     args.auth.userId,
+    featureSwitchContextRows1,
   );
   const currentSecrets: Record<string, string> = {};
   for (const alias of args.referenced.secrets) {
@@ -5932,7 +5256,7 @@ function applyCustomConnectorRoutingVariables(args: {
 }
 
 function requestedAutomaticMcpCatalogAuth(args: {
-  readonly snapshot: ConnectorRuntimeSnapshot;
+  readonly snapshot: ConnectorRuntimeAuthSelection;
   readonly body: FirewallAuthBody;
 }): "none" | "oauth" | "mismatch" | null {
   const connectorSlug = args.body.matchedFirewall?.connectorSlug;
@@ -5940,8 +5264,8 @@ function requestedAutomaticMcpCatalogAuth(args: {
   if (connectorSlug === undefined || matchedBase === undefined) {
     return null;
   }
-  const mcpEndpoint = getConnectorRuntimeConnector(args.snapshot, connectorSlug)
-    ?.catalogConnector.mcp?.endpoint;
+  const mcpEndpoint =
+    args.snapshot.connectors.get(connectorSlug)?.catalogConnector.mcp?.endpoint;
   if (matchedBase !== mcpEndpoint) {
     return null;
   }
@@ -5978,21 +5302,38 @@ function requestedAutomaticMcpCatalogAuth(args: {
     : "mismatch";
 }
 
+/**
+ * Every slug this request can resolve is the matched firewall or an access
+ * source named by the secret map; only the matched slug needs firewall rules.
+ */
+async function loadFirewallAuthConnectorCatalog(
+  db: Db,
+  body: FirewallAuthBody,
+): Promise<ConnectorRuntimeAuthSelection> {
+  const connectorSlug = body.matchedFirewall?.connectorSlug;
+  return await loadConnectorRuntimeAuthSelection(db, {
+    connectorSlugs: Object.values(body.secretConnectorMap ?? {}),
+    firewallConnectorSlugs: connectorSlug === undefined ? [] : [connectorSlug],
+  });
+}
+
 async function prepareNonCustomFirewallAuth(args: {
   readonly db: Db;
   readonly auth: SandboxAuth;
   readonly body: FirewallAuthBody;
   readonly orgId: string;
   readonly referenced: ReferencedAuthKeys;
-  readonly forceRefreshStartedAtMicros: bigint | null;
 }): Promise<
   FirewallAuthPreparation<
     | PreparedNonCustomFirewallAuth
     | PreparedBuiltinConnectorAutomaticFirewallAuth
   >
 > {
-  const connectorCatalogSnapshot = await loadConnectorRuntimeSnapshot(args.db);
   const connectorSlug = args.body.matchedFirewall?.connectorSlug;
+  const connectorCatalogSnapshot = await loadFirewallAuthConnectorCatalog(
+    args.db,
+    args.body,
+  );
   const requestedAutomaticMcpAuth = requestedAutomaticMcpCatalogAuth({
     snapshot: connectorCatalogSnapshot,
     body: args.body,
@@ -6002,8 +5343,8 @@ async function prepareNonCustomFirewallAuth(args: {
   // the lease before reading the account so slow resolution cannot extend it.
   const builtinMcpExpiresAt =
     connectorSlug !== undefined &&
-    getConnectorRuntimeConnector(connectorCatalogSnapshot, connectorSlug)
-      ?.catalogConnector.mcp !== undefined
+    connectorCatalogSnapshot.connectors.get(connectorSlug)?.catalogConnector
+      .mcp !== undefined
       ? Math.floor(nowDate().getTime() / 1000) + BUILTIN_MCP_AUTH_LEASE_SECONDS
       : null;
   if (
@@ -6032,10 +5373,9 @@ async function prepareNonCustomFirewallAuth(args: {
       .limit(1);
     if (
       account &&
-      getConnectorRuntimeConnector(
-        connectorCatalogSnapshot,
-        connectorSlug,
-      )?.methods.get(account.authMethod)?.method.grant.kind === "automatic"
+      connectorCatalogSnapshot.connectors
+        .get(connectorSlug)
+        ?.methods.get(account.authMethod)?.method.grant.kind === "automatic"
     ) {
       if (requestedAutomaticMcpAuth === "mismatch") {
         return { ok: false, response: connectorNotConfigured() };
@@ -6092,7 +5432,6 @@ async function prepareNonCustomFirewallAuth(args: {
       featureSwitchContext: decrypted.featureSwitchContext,
       secrets: decrypted.secrets,
       context: prepared.context,
-      forceRefreshStartedAtMicros: args.forceRefreshStartedAtMicros,
     },
   };
 }
@@ -6164,6 +5503,7 @@ async function resolveNonCustomFirewallAuthMaterial(args: {
   if (args.body.secretConnectorMap) {
     const result = await refreshExpiredTokens({
       db: args.db,
+      subscriptionBundles: args.prepared.context.subscriptionBundles,
       connectorCatalogSnapshot: args.prepared.connectorCatalogSnapshot,
       auth: args.auth,
       secrets: args.prepared.secrets,
@@ -6174,7 +5514,6 @@ async function resolveNonCustomFirewallAuthMaterial(args: {
       orgId: args.auth.orgId,
       featureSwitchContext: args.prepared.featureSwitchContext,
       forceRefresh: args.body.forceRefresh ?? false,
-      forceRefreshStartedAtMicros: args.prepared.forceRefreshStartedAtMicros,
     });
     expiresAt = mergeExpiresAt(expiresAt, result.expiresAt ?? undefined);
     refreshedConnectors = result.refreshedConnectors;
@@ -6196,6 +5535,7 @@ async function resolveNonCustomFirewallAuthMaterial(args: {
   const currentSubscriptionExpiry =
     await syncPersonalSubscriptionRuntimeBundles({
       db: args.db,
+      subscriptionBundles: args.prepared.context.subscriptionBundles,
       orgId: args.auth.orgId,
       userId: args.auth.userId,
       runId: args.auth.runId,
@@ -6422,6 +5762,7 @@ async function prepareFirewallAuthRequest(
   db: Db,
   auth: SandboxAuth,
   body: FirewallAuthBody,
+  billableCacheExpiry: BillableFirewallCacheExpiry,
 ): Promise<PreparedFirewallAuthRequest> {
   const matchedFirewall = body.matchedFirewall;
   const customConnectorId = matchedFirewall?.customConnectorId;
@@ -6434,10 +5775,6 @@ async function prepareFirewallAuthRequest(
     return { ok: false, response: forbiddenTerminalRun() };
   }
   const orgId = run.orgId;
-  const forceRefreshStartedAtMicros =
-    customConnectorId === undefined && body.forceRefresh === true
-      ? await currentDatabaseTimestampMicros(db)
-      : null;
   const referenced = collectReferencedKeys(
     body.authHeaders,
     body.authBase,
@@ -6480,18 +5817,11 @@ async function prepareFirewallAuthRequest(
       body,
       orgId,
       referenced,
-      forceRefreshStartedAtMicros,
     });
   }
   if (!preparation.ok) {
     return { ok: false, response: preparation.response };
   }
-  const billableCacheExpiry = await resolveBillableFirewallCacheExpiry({
-    db,
-    auth,
-    run,
-    firewallBillable: body.firewallBillable,
-  });
   if ("status" in billableCacheExpiry) {
     return { ok: false, response: billableCacheExpiry };
   }
@@ -6507,13 +5837,19 @@ async function resolveFirewallAuthWithTimings(
   db: Db,
   auth: SandboxAuth,
   body: FirewallAuthBody,
+  billableCacheExpiry: BillableFirewallCacheExpiry,
   timingRecords: FirewallAuthTimingRecord[],
 ): Promise<ResolveFirewallAuthResult> {
   const preparation = await measureFirewallAuthStage(
     timingRecords,
     "firewall_auth_prepare",
     async () => {
-      return await prepareFirewallAuthRequest(db, auth, body);
+      return await prepareFirewallAuthRequest(
+        db,
+        auth,
+        body,
+        billableCacheExpiry,
+      );
     },
     (result) => {
       return result.ok;
@@ -6546,38 +5882,29 @@ async function resolveFirewallAuthWithTimings(
       ? forbiddenTerminalRun()
       : resolution.response;
   }
-  const finalized = finalizeFirewallAuth({
+  return finalizeFirewallAuth({
     body,
     referenced: preparation.referenced,
     material: resolution.material,
     billableExpiresAt: preparation.billableExpiresAt,
   });
-  if (finalized.status !== 200) {
-    return finalized;
-  }
-  const admitted = await measureFirewallAuthStage(
-    timingRecords,
-    "firewall_auth_admit",
-    async () => {
-      return await admitFirewallAuthResponse(db, auth);
-    },
-    (result) => {
-      return result;
-    },
-  );
-  return admitted ? finalized : forbiddenTerminalRun();
 }
 
-export async function resolveFirewallAuth(
+/** Produces credential material only. The route must invoke
+ * admitPreparedFirewallAuthResponse$ before returning a successful response.
+ * Legacy credential preparation still has its separate Db-aware graph. */
+export async function prepareFirewallAuthResponse(
   db: Db,
   auth: SandboxAuth,
   body: FirewallAuthBody,
+  billableCacheExpiry: BillableFirewallCacheExpiry,
 ): Promise<ResolveFirewallAuthResult> {
   const timingRecords: FirewallAuthTimingRecord[] = [];
   return await resolveFirewallAuthWithTimings(
     db,
     auth,
     body,
+    billableCacheExpiry,
     timingRecords,
   ).finally(() => {
     recordFirewallAuthTimings(auth.runId, timingRecords);
@@ -6592,7 +5919,7 @@ function personalSubscriptionRuntimeGroups(
     {
       readonly type: "claude-code-oauth-token" | "codex-oauth-token";
       readonly userId: string;
-      readonly sourceId: string | undefined;
+      readonly sourceId: string;
       readonly outputs: { readonly key: string; readonly name: string }[];
     }
   >();
@@ -6610,7 +5937,12 @@ function personalSubscriptionRuntimeGroups(
     }
     const type = modelProviderTypeForMetadata(providerKey, metadata);
     const name = modelProviderRuntimeSecretName({ key, providerKey, metadata });
-    if (!type || !isPersonalSubscriptionProviderType(type) || !name) {
+    if (
+      !type ||
+      !isPersonalSubscriptionProviderType(type) ||
+      !name ||
+      !metadata.sourceId
+    ) {
       continue;
     }
     const userId = resolveSecretUserId(
@@ -6637,7 +5969,7 @@ async function syncPersonalSubscriptionRuntimeBundles(
 ): Promise<number | null> {
   let expiresAt: number | null = null;
   for (const group of personalSubscriptionRuntimeGroups(args)) {
-    const bundle = await readPersonalSubscriptionCredentialBundle({
+    const bundle = await readSubscriptionBundle(args.subscriptionBundles, {
       db: args.db,
       orgId: args.orgId,
       userId: group.userId,
@@ -6673,6 +6005,9 @@ export async function resolveCurrentPersonalSubscriptionBundleForApi(
   args: ModelProviderRuntimeSecretForApiArgs,
   signal: AbortSignal,
 ) {
+  if (!args.metadata.sourceId) {
+    return { status: "unavailable" as const, reconnectState: null };
+  }
   const lookup = resolveModelProviderRuntimeSecretLookup(args);
   if (!lookup || !isPersonalSubscriptionProviderType(lookup.providerType)) {
     throw new Error("Expected a personal subscription credential lookup");
@@ -6682,14 +6017,11 @@ export async function resolveCurrentPersonalSubscriptionBundleForApi(
     orgId: args.orgId,
     userId: lookup.userId,
     type: lookup.providerType,
-    sourceId: lookup.metadata.sourceId,
+    sourceId: lookup.sourceId,
     runId: args.runId,
     featureSwitchContext: args.featureSwitchContext,
   };
-  const initial = await readPersonalSubscriptionCredentialBundle(
-    bundleArgs,
-    signal,
-  );
+  const initial = await readPersonalSubscriptionCredentialBundle(bundleArgs);
   signal.throwIfAborted();
   const refreshMetadata = getModelProviderRefreshMetadata(args.providerKey);
   if (
@@ -6708,10 +6040,7 @@ export async function resolveCurrentPersonalSubscriptionBundleForApi(
   if (current.status === "unavailable") {
     return current;
   }
-  const bundle = await readPersonalSubscriptionCredentialBundle(
-    bundleArgs,
-    signal,
-  );
+  const bundle = await readPersonalSubscriptionCredentialBundle(bundleArgs);
   return bundle && !bundle.account.needsReconnect
     ? { status: "available" as const, values: bundle.values }
     : {

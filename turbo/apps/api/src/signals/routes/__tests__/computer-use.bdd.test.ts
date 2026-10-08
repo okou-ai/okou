@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
+import { HttpResponse, http } from "msw";
 import type {
   TestComputerUseStateGetResponse,
   TestComputerUseStatePostResponse,
@@ -16,9 +18,18 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { mockEnv } from "../../../lib/env";
-import { clearMockNow, mockNow, now } from "../../../lib/time";
+import {
+  clearMockNow,
+  mockNow,
+  now,
+  withMockNowForTest,
+} from "../../../lib/time";
 import { generateSandboxToken } from "../../auth/tokens";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { server } from "../../../mocks/server";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { teamsConnectRoutes } from "../teams-connect";
 import { computerUseRoutes } from "../computer-use";
 import { testComputerUseStateRoutes } from "../test-computer-use-state";
 import {
@@ -30,11 +41,24 @@ import {
   createComputerUseBddApi,
   computerUseToken,
 } from "./helpers/api-bdd-computer-use";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { uniqueSlackUserId } from "./helpers/slack-public-install";
+import {
+  installTeamsForTest,
+  postTeamsActivityForTest,
+  removeTeamsForTest,
+  setupTeamsConnectTestEnv,
+  teamsConnectFixture,
+  teamsMessageActivityForTest,
+} from "./helpers/teams-connect";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { readRunLaunchSnapshotFixture } from "./helpers/runtime-state";
-import { createFixtureTracker } from "./helpers/route-test";
+import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 
 /*
  * FILE-03 timing notes:
@@ -48,7 +72,7 @@ import { createFixtureTracker } from "./helpers/route-test";
  *   real time.
  */
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const api = createComputerUseBddApi(context);
 const COMPUTER_USE_STATE_ROUTE = "/api/test/computer-use-state";
@@ -157,6 +181,55 @@ async function readComputerUseRunState(
   return await readJson<TestComputerUseStateGetResponse>(response);
 }
 
+async function claimCanonicalIntegrationRun(args: {
+  readonly actor: ApiTestUser;
+  readonly source: "slack" | "teams";
+  readonly prompt: string;
+  readonly runs: ReturnType<typeof createRunsApi>;
+  readonly runnerGroup: string;
+}) {
+  await flushWaitUntilForTest();
+  const chat = createChatFilesBddApi(context);
+  const lifecycle = await chat.requestThreadEvents(args.actor, {}, [200]);
+  if (lifecycle.status !== 200) {
+    throw new Error("Expected the integration actor's thread lifecycle");
+  }
+  const created = lifecycle.body.events.filter((event) => {
+    return event.kind === "created";
+  });
+  expect(created).toHaveLength(1);
+  const threadId = created[0]?.chatThreadId;
+  if (!threadId) {
+    throw new Error("Expected one integration-created chat thread");
+  }
+  const { events } = await chat.listThreadEvents(args.actor, threadId);
+  const launched = events.filter((event) => {
+    return event.eventType === "input.prompt" && event.runId !== undefined;
+  });
+  expect(launched).toHaveLength(1);
+  const input = launched[0];
+  if (!input || input.eventType !== "input.prompt" || !input.runId) {
+    throw new Error("Expected one launched integration input");
+  }
+  expect(input.userMessage?.parts).toContainEqual(
+    expect.objectContaining({ type: "source", kind: args.source }),
+  );
+  await args.runs.heartbeatRunner(args.runnerGroup);
+  const claim = await args.runs.claimRunnerJob(input.runId);
+  expect(claim.prompt).toContain(args.prompt);
+  const log = await createRunReadsApi(context).requestReadLogById(
+    args.actor,
+    input.runId,
+    [200],
+  );
+  expect(log.body.triggerSource).toBe(args.source);
+  const token = claim.platformEnvironment.OKOU_TOKEN;
+  if (!token) {
+    throw new Error("Expected the Runner claim to issue an Okou token");
+  }
+  return { runId: input.runId, threadId, token };
+}
+
 function requestTokenFromUrl(authorizationUrl: string): string {
   const url = new URL(authorizationUrl);
   const prefix = "/computer-use/authorize/";
@@ -164,6 +237,67 @@ function requestTokenFromUrl(authorizationUrl: string): string {
     throw new Error(`Unexpected authorization URL: ${authorizationUrl}`);
   }
   return decodeURIComponent(url.pathname.slice(prefix.length));
+}
+
+// Cancel runs before shared teardown aborts and drains their background work.
+const trackAuthorizationRun = createFixtureTracker(
+  async (fixture: { readonly actor: ApiTestUser; readonly runId: string }) => {
+    await createRunsApi(context).requestCancelRun(
+      fixture.actor,
+      fixture.runId,
+      [200],
+    );
+  },
+);
+
+async function createAuthorizationScenario(actor: ApiTestUser) {
+  const runs = createRunsApi(context);
+  const chat = createChatFilesBddApi(context);
+  bdd.acceptAgentStorageWrites();
+  runs.acceptStorageDownloads();
+  runs.acceptTelemetryIngest();
+  const runnerGroup = runs.configureRunnerGroup();
+  await runs.grantProEntitlement(actor);
+  await runs.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
+  const agent = await bdd.createAgent(actor, {
+    displayName: "Computer Use authorization boundary",
+    visibility: "private",
+  });
+  const run = await runs.createThreadRun(actor, {
+    agentId: agent.agentId,
+    prompt: "Authorize this thread to use my desktop",
+  });
+  await trackAuthorizationRun(Promise.resolve({ actor, runId: run.runId }));
+  await runs.heartbeatRunner(runnerGroup);
+  const claim = await runs.claimRunnerJob(run.runId);
+  const token = claim.platformEnvironment.OKOU_TOKEN;
+  if (!token) {
+    throw new Error("Expected the Runner claim to issue an Okou token");
+  }
+  mockClerkMembership(context, actor, "org:admin");
+  const created = await api.createComputerUseAuthorizationRequest({
+    bearer: token,
+  });
+  return {
+    chat,
+    run,
+    created,
+    requestToken: requestTokenFromUrl(created.authorizationUrl),
+  };
+}
+
+async function readAuthorizationThreadLifecycle(actor: ApiTestUser) {
+  const response = await createChatFilesBddApi(context).requestThreadEvents(
+    actor,
+    {},
+    [200],
+  );
+  if (response.status !== 200) {
+    throw new Error("Expected the actor's thread lifecycle");
+  }
+  return response.body;
 }
 
 describe("FILE-03 desktop computer-use runtime", () => {
@@ -247,13 +381,260 @@ describe("FILE-03 desktop computer-use runtime", () => {
     expect(completed.computerUseHostId).toBe(host.hostId);
   });
 
+  it.each(["another user in the same org", "the same user in another org"])(
+    "denies authorization tokens to %s without changing their owner's state",
+    async (identity) => {
+      await withMockNowForTest(now(), async () => {
+        const actor = bdd.user();
+        const peer =
+          identity === "another user in the same org"
+            ? bdd.user({ orgId: requireOrg(actor) })
+            : bdd.user({ userId: actor.userId, orgId: `org_${randomUUID()}` });
+        const { chat, run, requestToken } =
+          await createAuthorizationScenario(actor);
+        const host = await api.startComputerUseHost(actor);
+        const requestBefore = await api.readComputerUseAuthorizationRequest(
+          actor,
+          requestToken,
+        );
+        const threadBefore = await chat.readThreadMetadata(actor, run.threadId);
+        const eventsBefore = await readAuthorizationThreadLifecycle(actor);
+        mockClerkMembership(context, peer, "org:admin");
+        const deniedRead = await api.requestReadComputerUseAuthorizationRequest(
+          peer,
+          requestToken,
+          [404],
+        );
+        expectApiError(deniedRead.body);
+        expect(deniedRead.body.error.message).toBe(
+          "Computer Use authorization request not found",
+        );
+        const deniedApply =
+          await api.requestApplyComputerUseAuthorizationRequest(
+            peer,
+            requestToken,
+            host.hostId,
+            [404],
+          );
+        expectApiError(deniedApply.body);
+        expect(deniedApply.body.error.message).toBe(
+          "Computer Use authorization request not found",
+        );
+        mockClerkMembership(context, actor, "org:admin");
+        await expect(
+          api.readComputerUseAuthorizationRequest(actor, requestToken),
+        ).resolves.toStrictEqual(requestBefore);
+        await expect(
+          chat.readThreadMetadata(actor, run.threadId),
+        ).resolves.toStrictEqual(threadBefore);
+        await expect(
+          readAuthorizationThreadLifecycle(actor),
+        ).resolves.toStrictEqual(eventsBefore);
+      });
+    },
+  );
+
+  it.each(["another user in the same org", "the same user in another org"])(
+    "rejects an online host owned by %s without completing authorization",
+    async (identity) => {
+      await withMockNowForTest(now(), async () => {
+        const actor = bdd.user();
+        const peer =
+          identity === "another user in the same org"
+            ? bdd.user({ orgId: requireOrg(actor) })
+            : bdd.user({ userId: actor.userId, orgId: `org_${randomUUID()}` });
+        const { chat, run, requestToken } =
+          await createAuthorizationScenario(actor);
+        const foreignHost = await api.startComputerUseHost(peer);
+        const requestBefore = await api.readComputerUseAuthorizationRequest(
+          actor,
+          requestToken,
+        );
+        expect(requestBefore).toMatchObject({
+          completedAt: null,
+          computerUseHostId: null,
+          hosts: [],
+        });
+        const threadBefore = await chat.readThreadMetadata(actor, run.threadId);
+        const eventsBefore = await readAuthorizationThreadLifecycle(actor);
+        const denied = await api.requestApplyComputerUseAuthorizationRequest(
+          actor,
+          requestToken,
+          foreignHost.hostId,
+          [404],
+        );
+        expectApiError(denied.body);
+        expect(denied.body.error.message).toBe("Computer-use host not found");
+        await expect(
+          api.readComputerUseAuthorizationRequest(actor, requestToken),
+        ).resolves.toStrictEqual(requestBefore);
+        await expect(
+          chat.readThreadMetadata(actor, run.threadId),
+        ).resolves.toStrictEqual(threadBefore);
+        await expect(
+          readAuthorizationThreadLifecycle(actor),
+        ).resolves.toStrictEqual(eventsBefore);
+      });
+    },
+  );
+
+  it.each([
+    { state: "pending", completeBeforeExpiry: false },
+    { state: "completed", completeBeforeExpiry: true },
+  ])(
+    "expires a $state authorization at the inclusive one-hour boundary",
+    async ({ completeBeforeExpiry }) => {
+      const base = now();
+      await withMockNowForTest(base, async () => {
+        const actor = bdd.user();
+        const { chat, run, created, requestToken } =
+          await createAuthorizationScenario(actor);
+        const host = await api.startComputerUseHost(actor);
+        const expiresAt = base + 60 * 60 * 1000;
+        expect(created.expiresAt).toBe(new Date(expiresAt).toISOString());
+        mockNow(expiresAt - 1);
+        await api.heartbeatComputerUseHost(host.hostToken);
+        const readable = await api.readComputerUseAuthorizationRequest(
+          actor,
+          requestToken,
+        );
+        expect(readable).toMatchObject({
+          completedAt: null,
+          computerUseHostId: null,
+          hosts: [expect.objectContaining({ id: host.hostId })],
+        });
+        if (completeBeforeExpiry) {
+          await expect(
+            api.applyComputerUseAuthorizationRequest(
+              actor,
+              requestToken,
+              host.hostId,
+            ),
+          ).resolves.toStrictEqual({
+            ok: true,
+            source: "chat",
+            computerUseHostId: host.hostId,
+          });
+          await expect(
+            api.readComputerUseAuthorizationRequest(actor, requestToken),
+          ).resolves.toMatchObject({
+            completedAt: new Date(expiresAt - 1).toISOString(),
+            computerUseHostId: host.hostId,
+          });
+        }
+        const threadBefore = await chat.readThreadMetadata(actor, run.threadId);
+        const eventsBefore = await readAuthorizationThreadLifecycle(actor);
+        mockNow(expiresAt);
+        const expiredRead =
+          await api.requestReadComputerUseAuthorizationRequest(
+            actor,
+            requestToken,
+            [410],
+          );
+        expectApiError(expiredRead.body);
+        expect(expiredRead.body.error.code).toBe("GONE");
+        const expiredApply =
+          await api.requestApplyComputerUseAuthorizationRequest(
+            actor,
+            requestToken,
+            host.hostId,
+            [410],
+          );
+        expectApiError(expiredApply.body);
+        expect(expiredApply.body.error.code).toBe("GONE");
+        await expect(
+          chat.readThreadMetadata(actor, run.threadId),
+        ).resolves.toStrictEqual(threadBefore);
+        await expect(
+          readAuthorizationThreadLifecycle(actor),
+        ).resolves.toStrictEqual(eventsBefore);
+      });
+    },
+  );
+
+  it("accepts repeat authorization with updated completion and distinct ordered events", async () => {
+    const base = now();
+    await withMockNowForTest(base, async () => {
+      const actor = bdd.user();
+      const { chat, run, created, requestToken } =
+        await createAuthorizationScenario(actor);
+      const host = await api.startComputerUseHost(actor);
+      for (const offset of [1000, 2000]) {
+        mockNow(base + offset);
+        await expect(
+          api.applyComputerUseAuthorizationRequest(
+            actor,
+            requestToken,
+            host.hostId,
+          ),
+        ).resolves.toStrictEqual({
+          ok: true,
+          source: "chat",
+          computerUseHostId: host.hostId,
+        });
+        await expect(
+          api.readComputerUseAuthorizationRequest(actor, requestToken),
+        ).resolves.toMatchObject({
+          expiresAt: created.expiresAt,
+          completedAt: new Date(base + offset).toISOString(),
+          computerUseHostId: host.hostId,
+        });
+        await expect(
+          chat.readThreadMetadata(actor, run.threadId),
+        ).resolves.toMatchObject({
+          computerUseHostId: host.hostId,
+          cloudBrowserEnabled: false,
+        });
+      }
+      const lifecycle = await readAuthorizationThreadLifecycle(actor);
+      const appliedEvents = lifecycle.events.filter((event) => {
+        return (
+          event.kind === "computer_use_host_updated" &&
+          event.chatThreadId === run.threadId
+        );
+      });
+      expect(appliedEvents).toStrictEqual([
+        expect.objectContaining({
+          computerUseHostId: host.hostId,
+          cloudBrowserEnabled: false,
+          createdAt: new Date(base + 1000).toISOString(),
+        }),
+        expect.objectContaining({
+          computerUseHostId: host.hostId,
+          cloudBrowserEnabled: false,
+          createdAt: new Date(base + 2000).toISOString(),
+        }),
+      ]);
+      const [first, second] = appliedEvents;
+      if (!first || !second) {
+        throw new Error("Expected both authorization events");
+      }
+      expect(second.seqId).toBeGreaterThan(first.seqId);
+      expect(second.id).not.toBe(first.id);
+    });
+  });
+
   it("only exposes online hosts for delegated authorization requests", async () => {
     const orgId = `org_${randomUUID()}`;
     const actor = bdd.user({ orgId });
-    const run = await seedAgentRun({ actor, triggerSource: "web" });
-    if (!run.threadId) {
-      throw new Error("Expected web run fixture to create a chat thread");
-    }
+    const runs = createRunsApi(context);
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    const runnerGroup = runs.configureRunnerGroup();
+    await runs.grantProEntitlement(actor);
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Online host authorization",
+      visibility: "private",
+    });
+    const run = await runs.createThreadRun(actor, {
+      agentId: agent.agentId,
+      prompt: "Select an online computer-use host",
+    });
+    await runs.heartbeatRunner(runnerGroup);
+    await runs.claimRunnerJob(run.runId);
 
     const base = now();
     mockNow(base);
@@ -321,37 +702,51 @@ describe("FILE-03 desktop computer-use runtime", () => {
       computerUseHostId: onlineHost.hostId,
     });
 
-    await expect(readComputerUseRunState(run.runId)).resolves.toStrictEqual({
-      source: "web",
-      computer_use_host_id: onlineHost.hostId,
-    });
+    await expect(
+      createChatFilesBddApi(context).readThreadMetadata(actor, run.threadId),
+    ).resolves.toMatchObject({ computerUseHostId: onlineHost.hostId });
+    await runs.requestCancelRun(actor, run.runId, [200]);
   });
 
   it("uses chat-thread authorization for a canonical Slack run", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const actor = bdd.user({ orgId });
-    const run = await seedAgentRun({
-      actor,
-      triggerSource: "slack",
-      canonicalThread: true,
+    const actor = bdd.user();
+    const runs = createRunsApi(context);
+    const integrations = createBddIntegrationApi(context);
+    const runnerGroup = runs.configureRunnerGroup();
+    integrations.configureSlackAppMocks();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    await runs.grantProEntitlement(actor);
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
     });
-    if (!run.threadId) {
-      throw new Error("Expected canonical Slack run to use a chat thread");
-    }
+    const slackUserId = uniqueSlackUserId();
+    const { teamId } = await integrations.installSlackWorkspace(actor, {
+      installerSlackUserId: slackUserId,
+    });
+    const prompt = "Authorize this Slack thread to use my desktop";
+    await integrations.postSlackEvent(teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      text: prompt,
+      ts: "2900.000100",
+      channel: `C_${randomUUID()}`,
+      channel_type: "channel",
+    });
+    const run = await claimCanonicalIntegrationRun({
+      actor,
+      source: "slack",
+      prompt,
+      runs,
+      runnerGroup,
+    });
 
     const host = await api.startComputerUseHost(actor, {
       hostName: "Canonical Slack Desktop",
     });
     mockClerkMembership(context, actor, "org:admin");
-    const token = computerUseToken({
-      userId: actor.userId,
-      orgId,
-      runId: run.runId,
-      capabilities: ["connector:read"],
-    }).token;
-
     const created = await api.createComputerUseAuthorizationRequest({
-      bearer: token,
+      bearer: run.token,
     });
     expect(created.source).toBe("chat");
 
@@ -367,37 +762,110 @@ describe("FILE-03 desktop computer-use runtime", () => {
       computerUseHostId: host.hostId,
     });
 
-    await expect(readComputerUseRunState(run.runId)).resolves.toStrictEqual({
-      source: "slack",
-      computer_use_host_id: host.hostId,
-    });
+    await expect(
+      createChatFilesBddApi(context).readThreadMetadata(actor, run.threadId),
+    ).resolves.toMatchObject({ computerUseHostId: host.hostId });
+    await runs.requestCancelRun(actor, run.runId, [200]);
+    await integrations.postSlackEvent(teamId, { type: "app_uninstalled" });
   });
 
   it("uses chat-thread authorization for a canonical Teams run", async () => {
-    const orgId = `org_${randomUUID()}`;
-    const actor = bdd.user({ orgId });
-    const run = await seedAgentRun({
-      actor,
-      triggerSource: "teams",
-      canonicalThread: true,
+    const fixture = teamsConnectFixture();
+    const actor = bdd.user({ userId: fixture.userId, orgId: fixture.orgId });
+    const runs = createRunsApi(context);
+    const runnerGroup = runs.configureRunnerGroup();
+    setupTeamsConnectTestEnv();
+    mockEnv("MICROSOFT_TEAMS_BOT_APP_PASSWORD", "computer-use-teams-password");
+    const serviceUrl = fixture.serviceUrl.replace(/\/+$/u, "");
+    server.use(
+      http.post(
+        "https://login.microsoftonline.com/:tenantId/oauth2/v2.0/token",
+        () => {
+          return HttpResponse.json({
+            access_token: "computer-use-teams-token",
+            token_type: "Bearer",
+            expires_in: 3600,
+          });
+        },
+      ),
+      http.post(`${serviceUrl}/v3/conversations/:id/activities`, () => {
+        return HttpResponse.json({ id: randomUUID() });
+      }),
+      http.post(
+        `${serviceUrl}/v3/conversations/:id/activities/:activityId`,
+        () => {
+          return HttpResponse.json({ id: randomUUID() });
+        },
+      ),
+      http.put(
+        `${serviceUrl}/v3/conversations/:id/activities/:activityId/reactions/:reaction`,
+        () => {
+          return new HttpResponse(null, { status: 200 });
+        },
+      ),
+      http.delete(
+        `${serviceUrl}/v3/conversations/:id/activities/:activityId/reactions/:reaction`,
+        () => {
+          return new HttpResponse(null, { status: 200 });
+        },
+      ),
+      http.get(
+        "https://graph.microsoft.com/v1.0/teams/:teamId/channels/:channelId/messages",
+        () => {
+          return HttpResponse.json({ value: [] });
+        },
+      ),
+    );
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    await runs.grantProEntitlement(actor);
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
     });
-    if (!run.threadId) {
-      throw new Error("Expected canonical Teams run to use a chat thread");
-    }
+    await installTeamsForTest(context.signal, fixture);
+    createRouteMocks(context).clerk.session(
+      actor.userId,
+      actor.orgId,
+      actor.orgRole,
+    );
+    await accept(
+      setupApp({ context, routes: teamsConnectRoutes })(
+        teamsConnectContract,
+      ).connect({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          tenantId: fixture.teamsTenantId,
+          teamsAadObjectId: fixture.teamsAadObjectId,
+          teamsUserDisplayName: "Ada Lovelace",
+          teamsUserPrincipalName: fixture.teamsUserPrincipalName,
+        },
+      }),
+      [200],
+    );
+    const prompt = "Authorize this Teams thread to use my desktop";
+    const message = await postTeamsActivityForTest({
+      signal: context.signal,
+      activity: teamsMessageActivityForTest(fixture, {
+        text: `<at>Nova</at> ${prompt}`,
+        replyToId: null,
+      }),
+    });
+    expect(message.status).toBe(200);
+    const run = await claimCanonicalIntegrationRun({
+      actor,
+      source: "teams",
+      prompt,
+      runs,
+      runnerGroup,
+    });
 
     const host = await api.startComputerUseHost(actor, {
       hostName: "Canonical Teams Desktop",
     });
     mockClerkMembership(context, actor, "org:admin");
-    const token = computerUseToken({
-      userId: actor.userId,
-      orgId,
-      runId: run.runId,
-      capabilities: ["connector:read"],
-    }).token;
-
     const created = await api.createComputerUseAuthorizationRequest({
-      bearer: token,
+      bearer: run.token,
     });
     expect(created.source).toBe("chat");
 
@@ -412,10 +880,10 @@ describe("FILE-03 desktop computer-use runtime", () => {
       source: "chat",
       computerUseHostId: host.hostId,
     });
-    await expect(readComputerUseRunState(run.runId)).resolves.toStrictEqual({
-      source: "teams",
-      computer_use_host_id: host.hostId,
-    });
+    const chat = createChatFilesBddApi(context);
+    await expect(
+      chat.readThreadMetadata(actor, run.threadId),
+    ).resolves.toMatchObject({ computerUseHostId: host.hostId });
 
     const completed = await api.readComputerUseAuthorizationRequest(
       actor,
@@ -424,14 +892,16 @@ describe("FILE-03 desktop computer-use runtime", () => {
     expect(completed.completedAt).not.toBeNull();
     expect(completed.computerUseHostId).toBe(host.hostId);
 
+    // Stopping an installation host leaves it offline but still bound.
     await api.stopComputerUseHost(host.hostToken);
-    await expect(readComputerUseRunState(run.runId)).resolves.toStrictEqual({
-      source: "teams",
-      computer_use_host_id: null,
-    });
+    await expect(
+      chat.readThreadMetadata(actor, run.threadId),
+    ).resolves.toMatchObject({ computerUseHostId: host.hostId });
+    await runs.requestCancelRun(actor, run.runId, [200]);
+    await removeTeamsForTest(context.signal, fixture);
   });
 
-  it("chains host start, command claim, completion, audit, and host deletion", async () => {
+  it("chains host start, command claim, completion, audit, and host stop", async () => {
     const orgId = `org_${randomUUID()}`;
     const actor = bdd.user({ orgId });
     const peer = bdd.user({ orgId });
@@ -506,12 +976,85 @@ describe("FILE-03 desktop computer-use runtime", () => {
     ).toStrictEqual(expect.arrayContaining(["completed"]));
 
     await api.stopComputerUseHost(host.hostToken);
-    const afterDelete = await api.listComputerUseHosts(actor);
-    expect(
-      afterDelete.hosts.some((item) => {
+    const afterStop = await api.listComputerUseHosts(actor);
+    expect(afterStop.hosts).toMatchObject([
+      { id: host.hostId, status: "offline" },
+    ]);
+    await api.requestComputerUseHeartbeat(host.hostToken, [401]);
+  });
+
+  it("rewrites the host row only when heartbeats carry news or liveness goes stale", async () => {
+    const actor = bdd.user();
+    const base = now();
+    mockNow(base);
+    const host = await api.startComputerUseHost(actor);
+    context.mocks.ably.publish.mockClear();
+    const lastSeenAt = async () => {
+      const listed = await api.listComputerUseHosts(actor);
+      return listed.hosts.find((item) => {
         return item.id === host.hostId;
-      }),
-    ).toBeFalsy();
+      })?.lastSeenAt;
+    };
+
+    // An unchanged heartbeat inside the refresh window writes nothing.
+    mockNow(base + 10_000);
+    await expect(
+      api.heartbeatComputerUseHost(host.hostToken),
+    ).resolves.toStrictEqual({ ok: true, hostId: host.hostId });
+    await expect(lastSeenAt()).resolves.toBe(new Date(base).toISOString());
+
+    // Once the stamp is 30s old it is refreshed, without a broadcast.
+    mockNow(base + 30_000);
+    await api.heartbeatComputerUseHost(host.hostToken);
+    await expect(lastSeenAt()).resolves.toBe(
+      new Date(base + 30_000).toISOString(),
+    );
+    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
+
+    // Changed runtime state is written and broadcast right away.
+    mockNow(base + 35_000);
+    await api.heartbeatComputerUseHost(host.hostToken, {
+      hostName: "Renamed Desktop",
+    });
+    const listed = await api.listComputerUseHosts(actor);
+    expect(listed.hosts).toMatchObject([
+      {
+        id: host.hostId,
+        hostName: "Renamed Desktop",
+        lastSeenAt: new Date(base + 35_000).toISOString(),
+      },
+    ]);
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "computerUseHostsChanged",
+      null,
+    );
+  });
+
+  it("refreshes host liveness from idle claim polls only when it is stale", async () => {
+    const actor = bdd.user();
+    const base = now();
+    mockNow(base);
+    const host = await api.startComputerUseHost(actor);
+    const lastSeenAt = async () => {
+      const listed = await api.listComputerUseHosts(actor);
+      return listed.hosts.find((item) => {
+        return item.id === host.hostId;
+      })?.lastSeenAt;
+    };
+
+    mockNow(base + 10_000);
+    await expect(
+      api.claimNextComputerUseCommand(host.hostToken),
+    ).resolves.toMatchObject({ status: "idle" });
+    await expect(lastSeenAt()).resolves.toBe(new Date(base).toISOString());
+
+    mockNow(base + 40_000);
+    await expect(
+      api.claimNextComputerUseCommand(host.hostToken),
+    ).resolves.toMatchObject({ status: "idle" });
+    await expect(lastSeenAt()).resolves.toBe(
+      new Date(base + 40_000).toISOString(),
+    );
   });
 
   it("keeps multiple active hosts and lets stale heartbeats recover", async () => {

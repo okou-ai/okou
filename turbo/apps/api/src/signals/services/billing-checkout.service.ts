@@ -11,12 +11,13 @@ import type {
 } from "@okouai/api-contracts/contracts/billing";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, lte, notExists, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { env } from "../../lib/env";
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import {
   getStripeClient,
   listAllStripeSubscriptions,
@@ -36,7 +37,12 @@ import {
   completeBillingOperationInvoice,
   completeBillingOperationInvoiceWithInvoice,
 } from "./billing-operation-invoice.service";
-import { lockBillingPurchaseOrg } from "./billing-purchase-lock.service";
+import {
+  inFlightUsagePackPurchaseQuery,
+  PLAN_PURCHASE_CLAIM_STALE_MS,
+  PLAN_PURCHASE_CLAIM_STATUS,
+} from "./billing-purchase-claim.service";
+import { onRejection } from "../utils";
 import {
   createBillingPreviewToken,
   parseBillingPreviewToken,
@@ -77,8 +83,6 @@ type ConfirmPlanPurchaseResult =
       readonly paidInvoice: StripeInvoice | null;
     }
   | { readonly status: "invalid_preview" };
-
-type WriteTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 interface CompleteCheckoutSessionArgs {
   readonly orgId: string;
@@ -172,19 +176,24 @@ export type SubscriptionCheckoutTier =
   (typeof STRIPE_SUBSCRIPTION_PRICE_TIERS)[number];
 export type BillingSubscriptionTier = SubscriptionCheckoutTier | "custom";
 
-export async function orgPlanSubscriptionId(
-  db: ReadonlyDb,
-  orgId: string,
-): Promise<string | null> {
-  const [plan] = await db
-    .select({
-      stripeSubscriptionId: orgPlanEntitlements.stripeSubscriptionId,
-    })
-    .from(orgPlanEntitlements)
-    .where(eq(orgPlanEntitlements.orgId, orgId))
-    .limit(1);
-  return plan?.stripeSubscriptionId ?? null;
-}
+export const orgPlanSubscriptionId$ = command(
+  async (
+    { set },
+    orgId: string,
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const db = set(writeDb$);
+    const [plan] = await db
+      .select({
+        stripeSubscriptionId: orgPlanEntitlements.stripeSubscriptionId,
+      })
+      .from(orgPlanEntitlements)
+      .where(eq(orgPlanEntitlements.orgId, orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    return plan?.stripeSubscriptionId ?? null;
+  },
+);
 
 const creditPurchasePreviewTokenSchema = z.object({
   version: z.literal(1),
@@ -390,7 +399,6 @@ function billingTierRank(tier: string | null | undefined): number {
     case "pro": {
       return 1;
     }
-    case "free":
     case "limited-free-1":
     default: {
       return 0;
@@ -409,14 +417,11 @@ function billingTierLabel(tier: string | null | undefined): string {
     case "pro": {
       return "Pro";
     }
-    case "free": {
+    case "limited-free-1": {
       return "Free";
     }
-    case "limited-free-1": {
-      return "Limited free";
-    }
     default: {
-      return tier ?? "Limited free";
+      return tier ?? "Free";
     }
   }
 }
@@ -468,26 +473,31 @@ interface ExistingCreditBilling {
   readonly subscriptionId: string | null;
 }
 
-async function existingCreditBilling(
-  orgId: string,
-  db: ReadonlyDb,
-): Promise<ExistingCreditBilling | null> {
-  const [org] = await db
-    .select({
-      customerId: orgMetadata.stripeCustomerId,
-      subscriptionId: orgMetadata.stripeSubscriptionId,
-    })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  if (!org?.customerId) {
-    return null;
-  }
-  return {
-    customerId: org.customerId,
-    subscriptionId: org.subscriptionId,
-  };
-}
+const existingCreditBilling$ = command(
+  async (
+    { set },
+    orgId: string,
+    signal: AbortSignal,
+  ): Promise<ExistingCreditBilling | null> => {
+    const db = set(writeDb$);
+    const [org] = await db
+      .select({
+        customerId: orgMetadata.stripeCustomerId,
+        subscriptionId: orgMetadata.stripeSubscriptionId,
+      })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (!org?.customerId) {
+      return null;
+    }
+    return {
+      customerId: org.customerId,
+      subscriptionId: org.subscriptionId,
+    };
+  },
+);
 
 async function existingCreditCouponId(
   stripe: StripeClient,
@@ -527,11 +537,11 @@ function creditPurchasePayableAmount(invoice: StripeInvoice): number {
 
 export const previewExistingBillingCreditPurchase$ = command(
   async (
-    { get },
+    { set },
     args: PreviewExistingBillingCreditPurchaseArgs,
     signal: AbortSignal,
   ): Promise<CreditPurchasePreviewResponse | null> => {
-    const billing = await existingCreditBilling(args.orgId, get(db$));
+    const billing = await set(existingCreditBilling$, args.orgId, signal);
     signal.throwIfAborted();
     if (!billing) {
       return null;
@@ -664,7 +674,7 @@ async function discardChangedCreditPurchaseInvoice(
 
 export const confirmExistingBillingCreditPurchase$ = command(
   async (
-    { get, set },
+    { set },
     orgId: string,
     previewToken: string,
     signal: AbortSignal,
@@ -679,7 +689,7 @@ export const confirmExistingBillingCreditPurchase$ = command(
       return { status: "invalid_preview" };
     }
 
-    const billing = await existingCreditBilling(orgId, get(db$));
+    const billing = await set(existingCreditBilling$, orgId, signal);
     signal.throwIfAborted();
     if (!billing || billing.customerId !== preview.customerId) {
       return { status: "billing_unavailable" };
@@ -833,6 +843,62 @@ function expandedLatestInvoice(
     : null;
 }
 
+function planPurchaseStateArgs(
+  stripe: StripeClient,
+  orgId: string,
+  preview: PlanPurchasePreviewToken,
+) {
+  return {
+    stripe,
+    orgId,
+    customerId: preview.customerId,
+    purchaseId: preview.purchaseId,
+    sourceSubscriptionId: preview.sourceSubscriptionId,
+    targetTier: preview.tier,
+    targetPriceId: preview.priceId,
+    immediateAmountCents: preview.immediateAmountCents,
+    currency: preview.currency,
+  };
+}
+
+function hasCompetingPlanPurchase(
+  subscriptions: readonly StripeSubscription[],
+  args: {
+    readonly orgId: string;
+    readonly sourceSubscriptionId: string | null;
+    readonly targetTier: SubscriptionCheckoutTier;
+  },
+  existingSummary: StripeSubscription | undefined,
+): boolean {
+  return subscriptions.some((subscription) => {
+    const tier = tierForKnownPriceId(
+      knownPlanPriceItem(subscription.items.data)?.price.id ?? "",
+    );
+    // A legacy incomplete binding can still have its former paid Plan.
+    // Only recovery of that exact bound purchase may replace it. An unrelated
+    // active Plan is a competing purchase, even when this preview wants Team.
+    const isReplaceableActivePlan =
+      existingSummary !== undefined &&
+      existingSummary.id === args.sourceSubscriptionId &&
+      tier !== null &&
+      (subscription.status === "active" ||
+        subscription.status === "trialing") &&
+      !checkoutWouldReplaceWithSameOrLowerTier({
+        currentTier: tier,
+        targetTier: args.targetTier,
+      });
+    return (
+      subscription.id !== args.sourceSubscriptionId &&
+      subscription.id !== existingSummary?.id &&
+      subscription.metadata?.orgId === args.orgId &&
+      tier !== null &&
+      !isReplaceableActivePlan &&
+      subscription.status !== "canceled" &&
+      subscription.status !== "incomplete_expired"
+    );
+  });
+}
+
 async function planPurchaseSubscriptionState(
   args: {
     readonly stripe: StripeClient;
@@ -868,29 +934,12 @@ async function planPurchaseSubscriptionState(
     );
   });
   const existingSummary = exactPurchase ?? resumablePurchase;
-  const hasCompetingPurchase = subscriptions.some((subscription) => {
-    const tier = tierForKnownPriceId(
-      knownPlanPriceItem(subscription.items.data)?.price.id ?? "",
-    );
-    const isReplaceableActivePlan =
-      tier !== null &&
-      (subscription.status === "active" ||
-        subscription.status === "trialing") &&
-      !checkoutWouldReplaceWithSameOrLowerTier({
-        currentTier: tier,
-        targetTier: args.targetTier,
-      });
-    return (
-      subscription.id !== args.sourceSubscriptionId &&
-      subscription.id !== existingSummary?.id &&
-      subscription.metadata?.orgId === args.orgId &&
-      tier !== null &&
-      !isReplaceableActivePlan &&
-      subscription.status !== "canceled" &&
-      subscription.status !== "incomplete_expired"
-    );
-  });
-  if (!existingSummary) {
+  const hasCompetingPurchase = hasCompetingPlanPurchase(
+    subscriptions,
+    args,
+    existingSummary,
+  );
+  if (hasCompetingPurchase || !existingSummary) {
     return { existing: null, hasCompetingPurchase };
   }
   const existing = await args.stripe.subscriptions.retrieve(
@@ -997,16 +1046,11 @@ export const startPlanPurchase$ = command(
   },
 );
 
-async function createConfirmedPlanSubscription(
-  args: {
-    readonly stripe: StripeClient;
-    readonly orgId: string;
-    readonly preview: PlanPurchasePreviewToken;
-    readonly paymentMethod: BillingPurchasePaymentMethod;
-  },
+async function planPurchasePreviewStillMatches(
+  stripe: StripeClient,
+  preview: PlanPurchasePreviewToken,
   signal: AbortSignal,
-): Promise<ConfirmPlanPurchaseResult> {
-  const { stripe, orgId, preview, paymentMethod } = args;
+): Promise<boolean> {
   const currentPreview = await stripe.invoices.createPreview({
     customer: preview.customerId,
     preview_mode: "next",
@@ -1016,15 +1060,31 @@ async function createConfirmedPlanSubscription(
   });
   signal.throwIfAborted();
   const nextRecurringAmountCents = creditPurchasePayableAmount(currentPreview);
-  if (
-    currentPreview.currency !== preview.currency ||
-    nextRecurringAmountCents !== preview.nextRecurringAmountCents ||
-    (preview.trialDays === undefined ? nextRecurringAmountCents : 0) !==
+  return (
+    currentPreview.currency === preview.currency &&
+    nextRecurringAmountCents === preview.nextRecurringAmountCents &&
+    (preview.trialDays === undefined ? nextRecurringAmountCents : 0) ===
       preview.immediateAmountCents
-  ) {
-    return { status: "invalid_preview" };
-  }
+  );
+}
 
+/**
+ * Only the claim winner reaches this. The Stripe idempotency key is the
+ * claimed purchase ID, so a repeated call can never create a second
+ * subscription for the same claim.
+ */
+async function createConfirmedPlanSubscription(
+  args: {
+    readonly stripe: StripeClient;
+    readonly orgId: string;
+    readonly preview: PlanPurchasePreviewToken;
+    readonly paymentMethod: BillingPurchasePaymentMethod;
+    /** Undo the purchase claim when Stripe did not create the subscription. */
+    readonly release: () => Promise<void>;
+  },
+  signal: AbortSignal,
+): Promise<ConfirmPlanPurchaseResult> {
+  const { stripe, orgId, preview, paymentMethod } = args;
   const metadata: StripeMetadataParam = {
     ...checkoutSessionMetadata({
       orgId,
@@ -1034,19 +1094,26 @@ async function createConfirmedPlanSubscription(
     }),
     billingPurchaseId: preview.purchaseId,
   };
-  const subscription = await stripe.subscriptions.create(
-    {
-      customer: preview.customerId,
-      items: [{ price: preview.priceId, quantity: 1 }],
-      ...stripeBillingPurchasePaymentParams(paymentMethod),
-      metadata,
-      payment_behavior: "default_incomplete",
-      ...(preview.trialDays === undefined
-        ? {}
-        : { trial_period_days: preview.trialDays }),
-      expand: ["latest_invoice"],
-    },
-    { idempotencyKey: `plan-purchase:${preview.purchaseId}:subscription` },
+  // A rejected create leaves no subscription to bind, so the claim is
+  // released and the previous status restored. If Stripe did create it
+  // anyway, the next confirm resumes it by purchase identity, and a webhook
+  // that already bound it is left untouched by the release predicate.
+  const subscription = await onRejection(
+    stripe.subscriptions.create(
+      {
+        customer: preview.customerId,
+        items: [{ price: preview.priceId, quantity: 1 }],
+        ...stripeBillingPurchasePaymentParams(paymentMethod),
+        metadata,
+        payment_behavior: "default_incomplete",
+        ...(preview.trialDays === undefined
+          ? {}
+          : { trial_period_days: preview.trialDays }),
+        expand: ["latest_invoice"],
+      },
+      { idempotencyKey: `plan-purchase:${preview.purchaseId}:subscription` },
+    ),
+    args.release,
   );
   signal.throwIfAborted();
   const completion = await completeBillingOperationInvoiceWithInvoice(
@@ -1101,65 +1168,171 @@ async function completeExistingPlanPurchase(
   };
 }
 
-async function confirmPlanPurchaseTransaction(
-  args: {
-    readonly tx: WriteTx;
-    readonly orgId: string;
-    readonly preview: PlanPurchasePreviewToken;
-  },
+const ATOM_GRANT_SUBSCRIPTION_STATUS = "atom_grant";
+
+interface PlanPurchaseOrgState {
+  readonly customerId: string | null;
+  readonly subscriptionId: string | null;
+  readonly subscriptionStatus: string | null;
+  readonly tier: string;
+  readonly rowVersion: string;
+}
+
+/**
+ * Local admission: one conditional write on the organization's existing
+ * billing row decides the unique Plan purchase winner before any Stripe call.
+ *
+ * Every claim is conditional on the binding the caller read, so of two
+ * concurrent confirms the second one's row re-check fails.
+ *
+ * Without a bound subscription the claim also persists: it moves
+ * `org_metadata.subscription_status` (which then describes no live
+ * subscription) into the existing "payment not complete" status until the
+ * subscription webhook or paid-invoice reconciliation binds the
+ * organization, so later confirms lose too. A claim unpublished past
+ * PLAN_PURCHASE_CLAIM_STALE_MS (crashed winner) may be taken over; the new
+ * winner still reads Stripe by purchase identity before creating anything.
+ *
+ * With a bound source subscription the status belongs to that subscription
+ * and webhooks read it, so it is left untouched; only the row version moves.
+ */
+async function claimPlanPurchase(
+  db: Pick<Db, "transaction">,
+  orgId: string,
+  preview: PlanPurchasePreviewToken,
+  org: PlanPurchaseOrgState,
+): Promise<boolean> {
+  const at = nowDate();
+  const staleBefore = new Date(at.getTime() - PLAN_PURCHASE_CLAIM_STALE_MS);
+  const persistsClaim = preview.sourceSubscriptionId === null;
+  return await db.transaction(async (tx) => {
+    // Best effort only: a concurrent Plan or pack purchase may still create a
+    // second Stripe subscription. Local entitlement binds once (conditional
+    // organization binding) and reconciliation refunds the extra payment.
+    const claimed = await tx
+      .update(orgMetadata)
+      .set({
+        ...(persistsClaim
+          ? { subscriptionStatus: PLAN_PURCHASE_CLAIM_STATUS }
+          : {}),
+        updatedAt: at,
+      })
+      .where(
+        and(
+          eq(orgMetadata.orgId, orgId),
+          // The status transition itself excludes a second unbound claim; a
+          // bound-source claim changes no business column, so its exclusion
+          // is the row version it was decided from.
+          persistsClaim
+            ? undefined
+            : sql`${orgMetadata}.xmin::text = ${org.rowVersion}`,
+          eq(orgMetadata.stripeCustomerId, preview.customerId),
+          preview.sourceSubscriptionId === null
+            ? isNull(orgMetadata.stripeSubscriptionId)
+            : eq(
+                orgMetadata.stripeSubscriptionId,
+                preview.sourceSubscriptionId,
+              ),
+          eq(orgMetadata.tier, org.tier),
+          org.subscriptionStatus === PLAN_PURCHASE_CLAIM_STATUS
+            ? and(
+                eq(orgMetadata.subscriptionStatus, PLAN_PURCHASE_CLAIM_STATUS),
+                isNull(orgMetadata.stripeSubscriptionId),
+                lte(orgMetadata.updatedAt, staleBefore),
+              )
+            : org.subscriptionStatus === null
+              ? isNull(orgMetadata.subscriptionStatus)
+              : eq(orgMetadata.subscriptionStatus, org.subscriptionStatus),
+          notExists(
+            inFlightUsagePackPurchaseQuery(tx, {
+              orgId,
+              sourceSubscriptionId: preview.sourceSubscriptionId,
+              excludeUsagePackSubscriptionId: null,
+            }),
+          ),
+        ),
+      )
+      .returning({ orgId: orgMetadata.orgId });
+    return claimed.length === 1;
+  });
+}
+
+/** Undo an unpublished claim; a binding that already moved is left alone. */
+async function releasePlanPurchaseClaim(
+  db: Pick<Db, "update">,
+  orgId: string,
+  preview: PlanPurchasePreviewToken,
+  previousStatus: string | null,
+): Promise<void> {
+  if (preview.sourceSubscriptionId !== null) {
+    // A bound-source claim persisted nothing beyond its row version.
+    return;
+  }
+  await db
+    .update(orgMetadata)
+    .set({ subscriptionStatus: previousStatus, updatedAt: nowDate() })
+    .where(
+      and(
+        eq(orgMetadata.orgId, orgId),
+        eq(orgMetadata.stripeCustomerId, preview.customerId),
+        preview.sourceSubscriptionId === null
+          ? isNull(orgMetadata.stripeSubscriptionId)
+          : eq(orgMetadata.stripeSubscriptionId, preview.sourceSubscriptionId),
+        eq(orgMetadata.subscriptionStatus, PLAN_PURCHASE_CLAIM_STATUS),
+      ),
+    );
+}
+
+type ClaimedPlanPurchaseAdmission =
+  | {
+      readonly kind: "result";
+      readonly result: ConfirmPlanPurchaseResult;
+    }
+  | {
+      readonly kind: "create";
+      readonly paymentMethod: BillingPurchasePaymentMethod;
+    };
+
+/**
+ * Winner-only provider reads. Any Plan subscription already recorded in Stripe
+ * for this purchase identity (a crashed earlier claim) is resumed instead of
+ * creating another one.
+ */
+async function admitClaimedPlanPurchase(
+  stripe: StripeClient,
+  orgId: string,
+  preview: PlanPurchasePreviewToken,
+  release: () => Promise<void>,
   signal: AbortSignal,
-): Promise<ConfirmPlanPurchaseResult> {
-  const { tx, orgId, preview } = args;
-  await lockBillingPurchaseOrg(tx, orgId);
-  signal.throwIfAborted();
-  const stripe = getStripeClient();
+): Promise<ClaimedPlanPurchaseAdmission> {
+  const released = async (
+    result: ConfirmPlanPurchaseResult,
+  ): Promise<ClaimedPlanPurchaseAdmission> => {
+    await release();
+    signal.throwIfAborted();
+    return { kind: "result", result };
+  };
+  const invalid = async () => {
+    return await released({ status: "invalid_preview" });
+  };
   const subscriptionState = await planPurchaseSubscriptionState(
-    {
-      stripe,
-      orgId,
-      customerId: preview.customerId,
-      purchaseId: preview.purchaseId,
-      sourceSubscriptionId: preview.sourceSubscriptionId,
-      targetTier: preview.tier,
-      targetPriceId: preview.priceId,
-      immediateAmountCents: preview.immediateAmountCents,
-      currency: preview.currency,
-    },
+    planPurchaseStateArgs(stripe, orgId, preview),
     signal,
   );
+  if (subscriptionState.hasCompetingPurchase) {
+    return await invalid();
+  }
   if (subscriptionState.existing) {
-    return await completeExistingPlanPurchase(
+    const result = await completeExistingPlanPurchase(
       stripe,
       preview,
       subscriptionState.existing,
       signal,
     );
+    return result.status === "confirmed"
+      ? { kind: "result", result }
+      : await released(result);
   }
-
-  const [org] = await tx
-    .select({
-      customerId: orgMetadata.stripeCustomerId,
-      subscriptionId: orgMetadata.stripeSubscriptionId,
-      tier: orgMetadata.tier,
-    })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .for("update")
-    .limit(1);
-  signal.throwIfAborted();
-  if (
-    !org ||
-    org.customerId !== preview.customerId ||
-    org.subscriptionId !== preview.sourceSubscriptionId ||
-    checkoutWouldReplaceWithSameOrLowerTier({
-      currentTier: org.tier,
-      targetTier: preview.tier,
-    }) ||
-    subscriptionState.hasCompetingPurchase
-  ) {
-    return { status: "invalid_preview" };
-  }
-
   const route = await resolveBillingPurchaseRoute(
     {
       stripe,
@@ -1170,6 +1343,8 @@ async function confirmPlanPurchaseTransaction(
     signal,
   );
   if (route.kind === "checkout") {
+    // Hosted Checkout is not payable until the customer completes it; its
+    // webhook publishes the result, so the claim is released afterwards.
     const url = await createPlanCheckoutSession(
       stripe,
       preview.customerId,
@@ -1185,27 +1360,20 @@ async function confirmPlanPurchaseTransaction(
       },
       signal,
     );
-    return {
+    return await released({
       status: "confirmed",
       response: { status: "checkout_required", checkoutUrl: url },
       paidInvoice: null,
-    };
+    });
   }
   if (
     route.customerId !== preview.customerId ||
-    route.paymentMethodId !== preview.paymentMethodId
+    route.paymentMethodId !== preview.paymentMethodId ||
+    !(await planPurchasePreviewStillMatches(stripe, preview, signal))
   ) {
-    return { status: "invalid_preview" };
+    return await invalid();
   }
-  return await createConfirmedPlanSubscription(
-    {
-      stripe,
-      orgId,
-      preview,
-      paymentMethod: route,
-    },
-    signal,
-  );
+  return { kind: "create", paymentMethod: route };
 }
 
 export const confirmPlanPurchase$ = command(
@@ -1226,16 +1394,100 @@ export const confirmPlanPurchase$ = command(
     }
 
     const db = set(writeDb$);
-    return await db.transaction(async (tx) => {
-      return await confirmPlanPurchaseTransaction(
-        {
-          tx,
-          orgId,
-          preview,
-        },
+    const [org] = await db
+      .select({
+        customerId: orgMetadata.stripeCustomerId,
+        subscriptionId: orgMetadata.stripeSubscriptionId,
+        subscriptionStatus: orgMetadata.subscriptionStatus,
+        tier: orgMetadata.tier,
+        rowVersion: sql`${orgMetadata}.xmin::text`.mapWith(pgTextDecoder),
+        planEntitlementSource: orgPlanEntitlements.source,
+      })
+      .from(orgMetadata)
+      .leftJoin(
+        orgPlanEntitlements,
+        eq(orgPlanEntitlements.orgId, orgMetadata.orgId),
+      )
+      .where(eq(orgMetadata.orgId, orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    if (
+      !org ||
+      org.customerId !== preview.customerId ||
+      org.subscriptionId !== preview.sourceSubscriptionId ||
+      checkoutWouldReplaceWithSameOrLowerTier({
+        currentTier: org.tier,
+        targetTier: preview.tier,
+      })
+    ) {
+      return { status: "invalid_preview" };
+    }
+
+    const stripe = getStripeClient();
+    if (
+      org.subscriptionId !== null &&
+      org.subscriptionStatus === PLAN_PURCHASE_CLAIM_STATUS
+    ) {
+      // An incomplete Plan subscription is already bound (or a claimed
+      // upgrade from it is in flight). Nothing new is created here: only a
+      // purchase Stripe already records can be resumed and paid.
+      const subscriptionState = await planPurchaseSubscriptionState(
+        planPurchaseStateArgs(stripe, orgId, preview),
         signal,
       );
-    });
+      if (
+        subscriptionState.hasCompetingPurchase ||
+        !subscriptionState.existing
+      ) {
+        return { status: "invalid_preview" };
+      }
+      return await completeExistingPlanPurchase(
+        stripe,
+        preview,
+        subscriptionState.existing,
+        signal,
+      );
+    }
+
+    if (!(await claimPlanPurchase(db, orgId, preview, org))) {
+      // Deterministic loser: another purchase owns the organization's
+      // billing row. No provider call was made.
+      return { status: "invalid_preview" };
+    }
+    signal.throwIfAborted();
+    // A stale claim taken over no longer shows the status it replaced; an
+    // unbound Atom grant is still identified by its Plan entitlement source,
+    // which the grant expiry cron relies on through the `atom_grant` status.
+    const previousStatus =
+      org.subscriptionStatus === PLAN_PURCHASE_CLAIM_STATUS
+        ? org.planEntitlementSource === "stripe_atom_grant"
+          ? ATOM_GRANT_SUBSCRIPTION_STATUS
+          : null
+        : org.subscriptionStatus;
+    const release = async () => {
+      await releasePlanPurchaseClaim(db, orgId, preview, previousStatus);
+    };
+    // Before creation nothing irreversible exists, so a failure releases the
+    // claim. After creation the claim stays until the subscription webhook
+    // (or paid-invoice reconciliation) binds the organization to it.
+    const admission = await onRejection(
+      admitClaimedPlanPurchase(stripe, orgId, preview, release, signal),
+      release,
+    );
+    signal.throwIfAborted();
+    if (admission.kind === "result") {
+      return admission.result;
+    }
+    return await createConfirmedPlanSubscription(
+      {
+        stripe,
+        orgId,
+        preview,
+        paymentMethod: admission.paymentMethod,
+        release,
+      },
+      signal,
+    );
   },
 );
 
@@ -1319,6 +1571,7 @@ export const completeCheckoutSession$ = command(
         stripeCustomerId: orgMetadata.stripeCustomerId,
         stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
         tier: orgMetadata.tier,
+        billingSnapshot: sql`${orgMetadata}::text`.mapWith(pgTextDecoder),
       })
       .from(orgMetadata)
       .where(eq(orgMetadata.orgId, args.orgId))
@@ -1374,7 +1627,7 @@ export const completeCheckoutSession$ = command(
     const alreadyPaidSubscription =
       org.stripeSubscriptionId === subscription.id && org.tier === tier;
 
-    await db
+    const [published] = await db
       .update(orgMetadata)
       .set({
         stripeSubscriptionId: subscription.id,
@@ -1386,9 +1639,16 @@ export const completeCheckoutSession$ = command(
         and(
           eq(orgMetadata.orgId, args.orgId),
           eq(orgMetadata.stripeCustomerId, customerId),
+          eq(sql`${orgMetadata}::text`, org.billingSnapshot),
         ),
-      );
+      )
+      .returning({ orgId: orgMetadata.orgId });
     signal.throwIfAborted();
+    if (!published) {
+      // Checkout/provider reads happen outside the write. A newer billing
+      // transition owns the binding; the client can retry from current state.
+      return { status: "pending" };
+    }
 
     const latestInvoice = expandedLatestInvoice(subscription);
     if (alreadyPaidSubscription) {
@@ -1487,9 +1747,10 @@ export const previewInitialConcurrencyPurchase$ = command(
     },
     signal: AbortSignal,
   ): Promise<PreviewInitialConcurrencyPurchaseResult> => {
-    const subscriptionId = await orgPlanSubscriptionId(
-      set(writeDb$),
+    const subscriptionId = await set(
+      orgPlanSubscriptionId$,
       args.orgId,
+      signal,
     );
     signal.throwIfAborted();
     if (!subscriptionId) {
@@ -1516,9 +1777,10 @@ export const startConcurrencyPurchase$ = command(
     args: StartConcurrencyPurchaseArgs,
     signal: AbortSignal,
   ): Promise<StartConcurrencyPurchaseResult> => {
-    const subscriptionId = await orgPlanSubscriptionId(
-      set(writeDb$),
+    const subscriptionId = await set(
+      orgPlanSubscriptionId$,
       args.orgId,
+      signal,
     );
     signal.throwIfAborted();
     if (!subscriptionId) {

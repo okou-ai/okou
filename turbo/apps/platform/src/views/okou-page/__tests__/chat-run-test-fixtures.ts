@@ -1,8 +1,8 @@
+import { mockCatalogHasModel } from "../../../mocks/handlers/api-model-catalog.ts";
 import type {
   ChatEventUsagePayload,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { isSupportedRunModel } from "@okouai/api-contracts/contracts/model-providers";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect } from "vitest";
@@ -23,7 +23,7 @@ export const RUN_THREAD_ID = "b0000000-0000-4000-a000-000000000801";
 export const RUN_PATH = `/chats/${RUN_THREAD_ID}`;
 export const NEW_CHAT_PATH = `/agents/${AGENT_ID}/chat`;
 
-const DEFAULT_MODEL = "claude-sonnet-4-6";
+const DEFAULT_MODEL = "claude-sonnet-5";
 
 type LifecycleOptions = NonNullable<
   Parameters<typeof mockChatLifecycleWithoutBrowserSession>[0]
@@ -32,10 +32,13 @@ type LifecycleOptions = NonNullable<
 export function installRunChat(
   options: LifecycleOptions = {},
 ): ReturnType<typeof mockChatLifecycleWithoutBrowserSession> {
-  const requestedModel = options.selectedModel ?? DEFAULT_MODEL;
-  const selectedModel = isSupportedRunModel(requestedModel)
-    ? requestedModel
-    : DEFAULT_MODEL;
+  // Null is Auto.
+  const requestedModel =
+    options.selectedModel === undefined ? DEFAULT_MODEL : options.selectedModel;
+  const selectedModel =
+    requestedModel === null || mockCatalogHasModel(requestedModel)
+      ? requestedModel
+      : DEFAULT_MODEL;
   context.mocks.data.agents([
     {
       agentId: AGENT_ID,
@@ -49,7 +52,6 @@ export function installRunChat(
       serviceTier:
         options.codexServiceTier === "fast" ? ("priority" as const) : null,
       modelSettings: options.modelSettings ?? {},
-      selectedVideoModel: null,
       selectedImageModel: null,
       updatedAt: null,
     });
@@ -260,23 +262,6 @@ export function assistantEvent(args: {
     createdAt:
       args.createdAt ??
       `2026-08-01T10:00:${String(args.seqId).padStart(2, "0")}.000Z`,
-  };
-}
-
-export function thinkingEvent(args: {
-  readonly id: string;
-  readonly runId: string;
-  readonly seqId: number;
-  readonly text: string;
-}): MockChatEventInput {
-  return {
-    id: args.id,
-    role: "assistant",
-    content: null,
-    thinking: args.text,
-    runId: args.runId,
-    seqId: args.seqId,
-    createdAt: `2026-08-01T10:00:${String(args.seqId).padStart(2, "0")}.000Z`,
   };
 }
 

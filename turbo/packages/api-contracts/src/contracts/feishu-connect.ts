@@ -2,7 +2,6 @@ import { z } from "zod";
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { publicBrandSchema } from "./public-brand";
 
 import { feishuPlatformSchema } from "./feishu-platform";
 
@@ -56,13 +55,7 @@ export const FEISHU_OAUTH_SCOPES = [
   "contact:user.id:readonly",
   "contact:user:search",
   "im:chat",
-  "im:chat:create_by_user",
   "im:chat.members:read",
-  "im:chat.members:write_only",
-  "im:message",
-  "im:message.p2p_msg:get_as_user",
-  "im:message.group_msg:get_as_user",
-  "im:message.send_as_user",
   "im:message.reactions:read",
   "im:message.reactions:write_only",
   "im:resource",
@@ -95,7 +88,6 @@ export const FEISHU_OAUTH_SCOPES = [
 
 const feishuInstallationStatusSchema = z.object({
   id: z.string().uuid(),
-  publicBrand: publicBrandSchema,
   platform: feishuPlatformSchema.optional(),
   isConnected: z.boolean(),
   connectedUserName: z.string().nullable().optional(),
@@ -111,13 +103,11 @@ const feishuInstallationStatusSchema = z.object({
   messageReceived: z.boolean(),
   tenantKey: z.string().nullable(),
   tenantName: z.string().nullable(),
-  defaultAgentId: z.string().uuid(),
+  defaultAgentId: z.string().uuid().nullable(),
   defaultAgentName: z.string().nullable(),
 });
 
 const feishuConnectStatusSchema = z.object({
-  /** Product brand of the Host that initiated this status flow. */
-  publicBrand: publicBrandSchema,
   platform: feishuPlatformSchema.optional(),
   isInstalled: z.boolean(),
   isConnected: z.boolean(),
@@ -176,7 +166,6 @@ export const feishuConnectContract = c.router({
       appSecret: z.string().trim().min(1),
       verificationToken: z.string().trim().min(1),
       encryptKey: z.string().trim().optional().default(""),
-      defaultAgentId: z.string().uuid(),
       installationId: z.string().uuid().optional(),
       createNew: z.boolean().optional(),
     }),
@@ -195,7 +184,6 @@ export const feishuConnectContract = c.router({
     headers: authHeadersSchema,
     pathParams: z.object({ installationId: z.string().uuid() }),
     body: z.object({
-      defaultAgentId: z.string().uuid(),
       setupCompleted: z.boolean().optional(),
     }),
     responses: {

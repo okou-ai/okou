@@ -84,7 +84,6 @@ export function agentRunColumns(sessionId: () => AnyPgColumn) {
     creditAdmitted: boolean("credit_admitted").notNull().default(false),
     startedAt: timestamp("started_at"),
     completedAt: timestamp("completed_at"),
-    lastHeartbeatAt: timestamp("last_heartbeat_at"),
     // Immutable winning official claim attribution. ID/generation is the
     // authority; hostname/version are diagnostic snapshots. Null covers
     // historical, rollout-omitting, and non-official claims.
@@ -125,10 +124,10 @@ export function agentRunColumns(sessionId: () => AnyPgColumn) {
     reasoningEffort: varchar("reasoning_effort", {
       length: 20,
     }).$type<ReasoningEffort>(),
+    /** Historical runs can still hold the retired `ultrafast` tier. */
     codexServiceTier: varchar("codex_service_tier", {
       length: 20,
-    }).$type<CodexServiceTier>(),
-    selectedVideoModel: varchar("selected_video_model", { length: 255 }),
+    }).$type<CodexServiceTier | "ultrafast">(),
     /** Built-in image model default snapshotted for this run. */
     selectedImageModel: varchar("selected_image_model", { length: 255 }),
     chatThreadId: uuid("chat_thread_id").references(

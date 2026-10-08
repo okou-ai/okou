@@ -27,7 +27,7 @@ import type { PiMemoryQuotaDecision } from "./pi-memory-quota.service";
 import {
   ACTIVE_ALLOWANCE_STATUSES,
   activeAllowanceCutoff,
-} from "./usage-allowance.service";
+} from "./usage-allowance-policy";
 
 function reserve(
   bucket: PiMemoryQuotaDecision["bucket"],

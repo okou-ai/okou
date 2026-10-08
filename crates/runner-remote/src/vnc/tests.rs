@@ -4,6 +4,7 @@ mod harness;
 mod list;
 mod list_lifecycle;
 pub(crate) mod peer;
+mod rsa_aes;
 
 use std::{io::Cursor, sync::Arc};
 
@@ -193,9 +194,74 @@ async fn invalid_and_duplicate_fields_are_rejected_before_api_or_network() {
 async fn malformed_or_cross_paired_credentials_fail_before_dns_or_connect() {
     for (authentication, security, reason) in [
         (
+            json!({"method":"none"}),
+            json!({"type":"x509_vnc","trust":{"mode":"system"}}),
+            "authority_failure",
+        ),
+        (
+            json!({"method":"vnc_password","password":"secret"}),
+            json!({"type":"x509_none","trust":{"mode":"system"}}),
+            "authority_failure",
+        ),
+        (
             json!({"method":"username_password","username":"operator","password":"secret"}),
             json!({"type":"x509_vnc","trust":{"mode":"system"}}),
             "authority_failure",
+        ),
+        (
+            json!({"method":"qemu_scram_sha256","username":"operator","password":"secret"}),
+            json!({"type":"x509_plain","trust":{"mode":"system"}}),
+            "authority_failure",
+        ),
+        (
+            json!({"method":"username_password","username":"operator","password":"secret"}),
+            json!({"type":"qemu_x509_sasl","trust":{"mode":"system"}}),
+            "authority_failure",
+        ),
+        (
+            json!({"method":"qemu_scram_sha256","username":"operator","password":"secret"}),
+            json!({"type":"x509_sasl","trust":{"mode":"system"}}),
+            "authority_failure",
+        ),
+        (
+            json!({"method":"qemu_scram_sha256","username":"operator","password":"secret"}),
+            json!({"type":"qemu_x509_sasl"}),
+            "authority_failure",
+        ),
+        (
+            json!({"method":"qemu_scram_sha256","username":"has,comma","password":"secret"}),
+            json!({"type":"qemu_x509_sasl","trust":{"mode":"system"}}),
+            "invalid_credential",
+        ),
+        (
+            json!({"method":"qemu_scram_sha256","username":"é","password":"secret"}),
+            json!({"type":"qemu_x509_sasl","trust":{"mode":"system"}}),
+            "invalid_credential",
+        ),
+        (
+            json!({"method":"qemu_scram_sha256","username":"operator","password":"sêcret"}),
+            json!({"type":"qemu_x509_sasl","trust":{"mode":"system"}}),
+            "invalid_credential",
+        ),
+        (
+            json!({"method":"client_certificate","certificateChainDer":["AAAA"],"privateKeyPkcs8Der":"AAAA"}),
+            json!({"type":"x509_vnc","trust":{"mode":"system"}}),
+            "authority_failure",
+        ),
+        (
+            json!({"method":"client_certificate_vnc_password","certificateChainDer":["AAAA"],"privateKeyPkcs8Der":"AAAA","password":"secret"}),
+            json!({"type":"x509_none","trust":{"mode":"system"}}),
+            "authority_failure",
+        ),
+        (
+            json!({"method":"client_certificate","certificateChainDer":["AAAA"],"privateKeyPkcs8Der":"AAAA"}),
+            json!({"type":"x509_none","trust":{"mode":"system"}}),
+            "invalid_credential",
+        ),
+        (
+            json!({"method":"client_certificate_vnc_password","certificateChainDer":["AAAA"],"privateKeyPkcs8Der":"AAAA","password":"ninebytes"}),
+            json!({"type":"x509_vnc","trust":{"mode":"system"}}),
+            "invalid_credential",
         ),
         (
             json!({"method":"vnc_password","password":"ninebytes"}),
@@ -242,29 +308,6 @@ async fn malformed_or_cross_paired_credentials_fail_before_dns_or_connect() {
         resolve.assert_calls_async(1).await;
         h.run.shutdown().await;
     }
-}
-
-#[tokio::test]
-async fn legacy_response_to_an_explicit_transport_request_fails_closed() {
-    let mut h = Harness::new().await;
-    let resolve = h
-        .resolve_response(json!({
-            "outcome":"resolved",
-            "host":"vnc.example.test",
-            "port":5900,
-            "generation":7,
-            "authentication":{"method":"vnc_password","password":" secret "},
-            "security":{"type":"x509_vnc","trust":{"mode":"custom_ca","caBundle":h.peer.ca}}
-        }))
-        .await;
-    let reply = h.start("shared").await;
-    assert_eq!(
-        reply.result(),
-        &json!({"outcome":"failed","reason":"authority_failure"})
-    );
-    assert!(h.network.attempts.lock().unwrap().is_empty());
-    resolve.assert_calls_async(1).await;
-    h.run.shutdown().await;
 }
 
 #[tokio::test]

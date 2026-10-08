@@ -18,14 +18,14 @@ beforeEach(() => {
 });
 
 describe("debug environment", () => {
-  it.each([
-    { description: "missing canonical input", value: undefined },
-    { description: "empty canonical input", value: "" },
-  ])("keeps the info level for $description", ({ value }) => {
-    configureDebug(value);
+  it.each([{ description: "missing canonical input", value: undefined }])(
+    "keeps the info level for $description",
+    ({ value }) => {
+      configureDebug(value);
 
-    expect(logger("debug-target").level).toBe("info");
-  });
+      expect(logger("debug-target").level).toBe("info");
+    },
+  );
 
   it.each([
     {

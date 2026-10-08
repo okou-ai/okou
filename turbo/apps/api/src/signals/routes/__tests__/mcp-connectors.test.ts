@@ -7,11 +7,13 @@ import {
   type CreateCustomConnectorBody,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
+import { afterEach } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -21,12 +23,12 @@ import {
   manualHttpCustomConnectorCreateBody,
   mockAutomaticMcpOAuthProvider,
 } from "./helpers/api-bdd-connectors";
-import { readCustomConnectorOAuthStorageState } from "./helpers/connector-credential-storage-state";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 import { mcpConnectorsRoutes } from "../mcp-connectors";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const connectors = createConnectorBddApi(context);
 const runs = createRunsApi(context);
@@ -84,12 +86,9 @@ function headers(token: string): { readonly authorization: string } {
 }
 
 async function createRunForAgent(actor: ApiTestUser, agentId: string) {
-  return await runs.createDirectRun(actor, {
+  return await runs.createThreadRun(actor, {
     agentId,
     prompt: "Discover MCP connectors",
-    modelProviderType: "anthropic-api-key",
-    vars: { OKOU_AGENT_ID: agentId },
-    secrets: { OKOU_TOKEN: "mcp-discovery-okou-token" },
   });
 }
 
@@ -140,7 +139,7 @@ describe("GET /api/mcp-connectors", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "MCP Discovery Agent",
     });
@@ -325,7 +324,7 @@ describe("GET /api/mcp-connectors", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "Public MCP Agent",
     });
@@ -386,7 +385,7 @@ describe("GET /api/mcp-connectors", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "MCP exact identity Agent",
     });
@@ -485,7 +484,7 @@ describe("GET /api/mcp-connectors", () => {
     runs.acceptTelemetryIngest();
     runs.configureRunnerGroup();
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "Legacy MCP discovery Agent",
     });
@@ -565,6 +564,57 @@ describe("GET /api/mcp-connectors", () => {
 });
 
 describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
+  const ownedReauthorizations: {
+    readonly actor: ApiTestUser;
+    agentId?: string;
+    connectorId?: string;
+    runId?: string;
+    sandboxToken?: string;
+  }[] = [];
+
+  afterEach(async () => {
+    for (const owned of ownedReauthorizations.splice(0)) {
+      const cleanupRuns = createRunsApi(context);
+      if (owned.runId) {
+        const current = await cleanupRuns.readRun(owned.actor, owned.runId);
+        if (
+          current.status === "queued" ||
+          current.status === "pending" ||
+          current.status === "running"
+        ) {
+          await cleanupRuns.requestCancelRun(owned.actor, owned.runId, [200]);
+        }
+        if (
+          owned.sandboxToken &&
+          (current.status === "pending" ||
+            current.status === "running" ||
+            current.status === "cancelled")
+        ) {
+          await createWebhookCallbackApi(context).requestAgentComplete(
+            {
+              runId: owned.runId,
+              exitCode: 1,
+              error: "Run cancelled by test cleanup",
+            },
+            { authorization: `Bearer ${owned.sandboxToken}` },
+            [200],
+          );
+        }
+      }
+      await flushWaitUntilForTest();
+      if (owned.agentId) {
+        await createBddApi(context).deleteAgent(owned.actor, owned.agentId);
+      }
+      if (owned.connectorId) {
+        await createConnectorBddApi(context).deleteCustomConnector(
+          owned.actor,
+          owned.connectorId,
+        );
+      }
+      await flushWaitUntilForTest();
+    }
+  });
+
   it.each(["cimd", "dcr"] as const)(
     "reauthorizes the exact Automatic OAuth account pinned to the run with %s",
     async (registration) => {
@@ -581,11 +631,14 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         authorizationCodeScopes: ["read", "read", "read admin"],
       });
       const actor = bdd.user({ orgRole: "org:admin" });
+      const owned: (typeof ownedReauthorizations)[number] = { actor };
+      ownedReauthorizations.push(owned);
       await runs.grantProEntitlement(actor);
-      await runs.ensureOrgModelProvider(actor);
+      await runs.ensurePersonalSubscriptionModel(actor);
       const agent = await bdd.createAgent(actor, {
         displayName: "MCP scope reauthorization Agent",
       });
+      owned.agentId = agent.agentId;
       const connector = await connectors.createCustomConnector(actor, {
         kind: "mcp",
         displayName: "MCP scope reauthorization",
@@ -596,6 +649,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         queryInjections: [],
         authMode: "automatic",
       });
+      owned.connectorId = connector.id;
       const firstAuthorization = await connectors.startCustomConnectorOAuth2(
         actor,
         connector.id,
@@ -603,19 +657,15 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
         { intent: "add", displayName: "Pinned account" },
       );
       const firstState = stateFromAuthorizationUrl(firstAuthorization);
-      await expect(
-        readCustomConnectorOAuthStorageState(context, firstState),
-      ).resolves.toMatchObject({
-        custom_oauth_state: {
-          auth_mode: "automatic",
-          context_valid: true,
-        },
-      });
-      await connectors.completeCustomConnectorOAuth2Callback({
-        code: "pinned-account-code",
-        state: firstState,
-        iss: provider.issuer,
-      });
+      const firstCallback =
+        await connectors.completeCustomConnectorOAuth2Callback({
+          code: "pinned-account-code",
+          state: firstState,
+          iss: provider.issuer,
+        });
+      expect(firstCallback.headers.get("location")).toBe(
+        "https://app.okou.ai/connectors/custom/callback/success",
+      );
       const secondAuthorization = await connectors.startCustomConnectorOAuth2(
         actor,
         connector.id,
@@ -643,14 +693,15 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       await connectors.updateAgentCustomConnectors(actor, agent.agentId, [
         connector.id,
       ]);
-      const run = await runs.createRun(actor, {
+      const run = await runs.createThreadRun(actor, {
         agentId: agent.agentId,
         prompt: "Use the MCP connector with incremental scope",
-        modelProvider: "anthropic-api-key",
       });
+      owned.runId = run.runId;
       expect(run.status).toBe("pending");
       await runs.heartbeatRunner(runnerGroup);
       const claim = await runs.claimRunnerJob(run.runId);
+      owned.sandboxToken = claim.sandboxToken;
       const okouToken = claim.platformEnvironment.OKOU_TOKEN;
       if (!okouToken) {
         throw new Error("Expected the claimed run to include an Okou token");
@@ -682,19 +733,15 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
       const reauthorizationState = stateFromAuthorizationUrl(
         response.body.authorizationUrl,
       );
-      await expect(
-        readCustomConnectorOAuthStorageState(context, reauthorizationState),
-      ).resolves.toMatchObject({
-        custom_oauth_state: {
-          auth_mode: "automatic",
-          context_valid: true,
-        },
-      });
-      await connectors.completeCustomConnectorOAuth2Callback({
-        code: "scope-upgrade-code",
-        state: reauthorizationState,
-        iss: provider.issuer,
-      });
+      const reauthorizationCallback =
+        await connectors.completeCustomConnectorOAuth2Callback({
+          code: "scope-upgrade-code",
+          state: reauthorizationState,
+          iss: provider.issuer,
+        });
+      expect(reauthorizationCallback.headers.get("location")).toBe(
+        "https://app.okou.ai/connectors/custom/callback/success",
+      );
       const upgradedAccounts = await connectors.listCustomConnectorAccounts(
         actor,
         connector.id,
@@ -745,7 +792,7 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
     });
     const actor = bdd.user({ orgRole: "org:admin" });
     await runs.grantProEntitlement(actor);
-    await runs.ensureOrgModelProvider(actor);
+    await runs.ensurePersonalSubscriptionModel(actor);
     const agent = await bdd.createAgent(actor, {
       displayName: "MCP no-auth reauthorization Agent",
     });
@@ -771,10 +818,9 @@ describe("POST /api/mcp-connectors/oauth2/reauthorize", () => {
     await connectors.updateAgentCustomConnectors(actor, agent.agentId, [
       connector.id,
     ]);
-    const run = await runs.createRun(actor, {
+    const run = await runs.createThreadRun(actor, {
       agentId: agent.agentId,
       prompt: "Use the no-auth MCP connector",
-      modelProvider: "anthropic-api-key",
     });
     expect(run.status).toBe("pending");
     await runs.heartbeatRunner(runnerGroup);

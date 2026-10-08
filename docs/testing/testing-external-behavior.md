@@ -48,12 +48,14 @@ test even though the product still works.
 
 In `turbo/apps/api`, the external user interface is the API endpoint.
 
-So API tests should construct cases by calling APIs and verify results by
-calling APIs.
+API tests must construct, drive, and observe cases through production interfaces
+available to the real caller. Trace the whole chain through shared fixtures and
+nested helpers; a public final response cannot validate privately seeded state.
 
 That means:
 
-1. When setting up state, call the real API that exists in production.
+1. When setting up state, call the real user-accessible API that exists in
+   production. An operator cron requiring `CRON_SECRET` is not that interface.
 2. When verifying results, call an API that an external user can call and
    assert its status, headers, body, or effects observable in a later request.
 3. Auth, validation, serialization, idempotency, permissions, and
@@ -82,20 +84,27 @@ endpoint, or assert on logger calls. The two exceptions, which must be stated as
 exceptions, are the logger's own suite and one redaction test proving a shared
 sanitizer keeps secrets out of records.
 
-For the API project, testing the DB, mutating the DB, asserting on the DB,
-calling services, asserting on services, or asserting on log records all test
-internal implementation. The only trusted boundary is the API endpoint.
+For the API project, business-row mutation or inspection, direct service or
+worker execution, and service return values all cross the internal boundary.
+Moving a test HTTP operation into an exported fixture function preserves the
+same problem, even if that function has no direct DB import. Follow the
+commands it invokes. A helper may wrap genuine authenticated API calls; its
+name is not evidence that its setup is public.
 
-## Exceptions
+## Cases Without Public Construction
 
-Exceptions should be rare.
+Delete cases whose decisive state or behavior cannot be constructed or driven
+through the user-accessible production boundary. Do not replace a retired test
+endpoint with a DB helper or private worker driver, relocate the case to another
+test layer, or add a product API solely to preserve it.
 
-Leave the external behavior boundary only when a case is completely impossible
-to construct through the production external interface. Examples might include
-some historical bad states, states that only infrastructure can trigger, or an
-internal cron state with no user-facing entry point.
+Fabricated legacy rows, DB fault triggers, notification-free state swaps,
+precise internal sweep counts, and operator-only cron execution are not public
+scenarios. Financial, security, clock, history, and recovery concerns do not
+automatically justify private construction. Preserve the real public security
+and failure behavior where it can be exercised through the actual endpoint.
 
-These are not exceptions:
+These are not reasons to bypass the boundary:
 
 1. API setup is verbose.
 2. Page setup takes several interactions.
@@ -105,10 +114,27 @@ These are not exceptions:
 If a state can be constructed through a real endpoint or page interaction, use
 that path.
 
-When an exception is truly needed, the test should state why the production
-external interface cannot construct the state and why the case is still worth
-testing. Do not hide exceptions inside generic fixtures where future tests
-inherit internal coupling by default.
+For a mixed case, keep independently public phases with meaningful assertions
+and remove private-only phases. For a parameterized declaration, assess each
+branch; removing one unsupported branch need not delete the whole declaration.
+Record exact names, dependencies, decisions, lost and retained coverage, and
+support code removed. If the real caller's boundary is ambiguous, identify the
+specific production entry point and authorization chain for review; do not
+grant a blanket fixture exception.
+
+## Infrastructure and External Providers
+
+Basic app construction, test identity setup at the Clerk boundary, database
+isolation, and resource teardown are test infrastructure. They do not by
+themselves fabricate application state. A fixture that seeds business rows or
+forces an internal worker still violates the boundary inside that infrastructure.
+
+Signed integration webhooks and authenticated Runner requests can represent
+real production callers. Exercise their genuine protocol and authorization
+instead of using a private shortcut. Mocking an external provider such as Clerk,
+S3, Resend, or Stripe is valid when the real internal application path remains
+in use. The logger-specific exceptions stated above concern the logger's own
+contract, not a waiver for constructing private business scenarios.
 
 ## Lint
 

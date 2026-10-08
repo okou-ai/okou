@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { publicBrandSchema } from "@okouai/api-contracts/contracts/public-brand";
 
 export const telegramDeliveryTargetSchema = z.object({
   installationId: z.string().min(1),
@@ -7,7 +6,7 @@ export const telegramDeliveryTargetSchema = z.object({
   messageId: z.string().min(1),
   rootMessageId: z.string().nullable(),
   userLinkId: z.string().uuid(),
-  userLinkKind: z.enum(["custom", "official"]),
+  userLinkKind: z.literal("official"),
   agentId: z.string().min(1),
   isDM: z.boolean(),
   messageThreadId: z.number().int().optional(),
@@ -21,5 +20,4 @@ export type TelegramDeliveryTarget = z.infer<
 export const telegramChatCallbackPayloadSchema =
   telegramDeliveryTargetSchema.extend({
     chatEventId: z.string().uuid(),
-    publicBrand: publicBrandSchema,
   });

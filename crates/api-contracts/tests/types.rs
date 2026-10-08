@@ -3,8 +3,7 @@ use std::collections::BTreeMap;
 use api_contracts::generated::types::{
     runners::{
         runs::{
-            CodexRuntimeConfig, PiLaunchConfig, PiLaunchConfigApiFirstTurn,
-            PiLaunchConfigApiFirstTurnBaseSession, PiLaunchConfigMemoryRecall, PiModelConfig,
+            CodexRuntimeConfig, PiLaunchConfig, PiLaunchConfigMemoryRecall, PiModelConfig,
             PiModelConfigApiKeyEnv, PiModelConfigProvider, PiModelConfigServiceTier,
             PiModelConfigV2, PiModelConfigV3, cancellation, model_provider_failures,
         },
@@ -129,14 +128,10 @@ fn generated_model_provider_failure_request_requires_connection_source() {
 #[test]
 fn generated_codex_runtime_config_round_trips_full_wire_shape() {
     let config = CodexRuntimeConfig {
-        provider_id: "gateway".to_string(),
-        name: "Gateway".to_string(),
-        base_url: "https://gateway.example.test/v1".to_string(),
+        provider_id: "openrouter-codex".to_string(),
+        name: "OpenRouter".to_string(),
+        base_url: "https://openrouter.ai/api/v1".to_string(),
         env_key: "OPENAI_API_KEY".to_string(),
-        http_headers: Some(BTreeMap::from([(
-            "x-api-key".to_string(),
-            "__VM0_OPENAI_API_KEY_PLACEHOLDER__".to_string(),
-        )])),
         requires_openai_auth: Some(false),
         wire_api: "responses".to_string(),
         supports_websockets: false,
@@ -152,13 +147,10 @@ fn generated_codex_runtime_config_round_trips_full_wire_shape() {
     assert_eq!(
         value,
         json!({
-            "providerId": "gateway",
-            "name": "Gateway",
-            "baseUrl": "https://gateway.example.test/v1",
+            "providerId": "openrouter-codex",
+            "name": "OpenRouter",
+            "baseUrl": "https://openrouter.ai/api/v1",
             "envKey": "OPENAI_API_KEY",
-            "httpHeaders": {
-                "x-api-key": "__VM0_OPENAI_API_KEY_PLACEHOLDER__",
-            },
             "requiresOpenaiAuth": false,
             "wireApi": "responses",
             "supportsWebsockets": false,
@@ -178,19 +170,18 @@ fn generated_codex_runtime_config_round_trips_full_wire_shape() {
 #[test]
 fn generated_codex_runtime_config_omits_absent_options_and_accepts_legacy_null() {
     let canonical = json!({
-        "providerId": "deepseek",
-        "name": "DeepSeek",
-        "baseUrl": "https://api.deepseek.com/",
+        "providerId": "openrouter",
+        "name": "OpenRouter",
+        "baseUrl": "https://openrouter.ai/api/v1",
         "envKey": "OPENAI_API_KEY",
         "wireApi": "responses",
         "supportsWebsockets": false,
     });
     let config = CodexRuntimeConfig {
-        provider_id: "deepseek".to_string(),
-        name: "DeepSeek".to_string(),
-        base_url: "https://api.deepseek.com/".to_string(),
+        provider_id: "openrouter".to_string(),
+        name: "OpenRouter".to_string(),
+        base_url: "https://openrouter.ai/api/v1".to_string(),
         env_key: "OPENAI_API_KEY".to_string(),
-        http_headers: None,
         requires_openai_auth: None,
         wire_api: "responses".to_string(),
         supports_websockets: false,
@@ -200,9 +191,9 @@ fn generated_codex_runtime_config_omits_absent_options_and_accepts_legacy_null()
     assert_eq!(serde_json::to_value(&config).unwrap(), canonical);
 
     let legacy: CodexRuntimeConfig = serde_json::from_value(json!({
-        "providerId": "deepseek",
-        "name": "DeepSeek",
-        "baseUrl": "https://api.deepseek.com/",
+        "providerId": "openrouter",
+        "name": "OpenRouter",
+        "baseUrl": "https://openrouter.ai/api/v1",
         "envKey": "OPENAI_API_KEY",
         "wireApi": "responses",
         "supportsWebsockets": false,
@@ -215,61 +206,24 @@ fn generated_codex_runtime_config_omits_absent_options_and_accepts_legacy_null()
 
 #[test]
 fn generated_pi_runtime_configs_round_trip_full_wire_shapes() {
-    let session_id = "22222222-2222-4222-8222-222222222222";
     let launch = PiLaunchConfig {
         schema_version: 2,
-        api_first_turn: PiLaunchConfigApiFirstTurn {
-            schema_version: 1,
-            resource_snapshot_digest: "a".repeat(64),
-            manifest_url: "https://storage.example/manifest.json".to_string(),
-            session_url: "https://storage.example/session.jsonl".to_string(),
-            deadline_at: 2_000_000_000_000,
-            base_session: PiLaunchConfigApiFirstTurnBaseSession {
-                session_id: session_id.to_string(),
-                sha256: Some("b".repeat(64)),
-            },
-            sandbox_event_sequence_start: 1,
-            required_pi_agent_runtime_version: Some("1.36.0".to_string()),
-            min_cli_version: Some("9.352.7".to_string()),
-            required_pi_session_construction_digest: Some("c".repeat(64)),
-        },
         memory_recall: None,
         maintenance: None,
     };
     let model = PiModelConfig {
-        provider: PiModelConfigProvider::Deepseek,
-        base_url: "https://api.deepseek.com/".to_string(),
-        model: "deepseek-v4-flash".to_string(),
+        provider: PiModelConfigProvider::Openrouter,
+        base_url: "https://openrouter.ai/api/v1".to_string(),
+        model: "openai/gpt-6-luna".to_string(),
         catalog_model: None,
         thinking_level: None,
         service_tier: None,
         api_key_env: PiModelConfigApiKeyEnv::OPENAIAPIKEY,
-        credential_secret_name: "DEEPSEEK_API_KEY".to_string(),
-        credential_header: None,
+        credential_secret_name: "OPENROUTER_API_KEY".to_string(),
     };
 
     let launch_value = serde_json::to_value(&launch).unwrap();
-    assert_eq!(
-        launch_value,
-        json!({
-            "schemaVersion": 2,
-            "apiFirstTurn": {
-                "schemaVersion": 1,
-                "resourceSnapshotDigest": "a".repeat(64),
-                "manifestUrl": "https://storage.example/manifest.json",
-                "sessionUrl": "https://storage.example/session.jsonl",
-                "deadlineAt": 2_000_000_000_000_i64,
-                "baseSession": {
-                    "sessionId": session_id,
-                    "sha256": "b".repeat(64),
-                },
-                "sandboxEventSequenceStart": 1,
-                "requiredPiAgentRuntimeVersion": "1.36.0",
-                "minCliVersion": "9.352.7",
-                "requiredPiSessionConstructionDigest": "c".repeat(64),
-            },
-        })
-    );
+    assert_eq!(launch_value, json!({ "schemaVersion": 2 }));
     assert_eq!(
         serde_json::from_value::<PiLaunchConfig>(launch_value).unwrap(),
         launch
@@ -279,11 +233,11 @@ fn generated_pi_runtime_configs_round_trip_full_wire_shapes() {
     assert_eq!(
         model_value,
         json!({
-            "provider": "deepseek",
-            "baseUrl": "https://api.deepseek.com/",
-            "model": "deepseek-v4-flash",
+            "provider": "openrouter",
+            "baseUrl": "https://openrouter.ai/api/v1",
+            "model": "openai/gpt-6-luna",
             "apiKeyEnv": "OPENAI_API_KEY",
-            "credentialSecretName": "DEEPSEEK_API_KEY",
+            "credentialSecretName": "OPENROUTER_API_KEY",
         })
     );
     assert_eq!(
@@ -308,13 +262,13 @@ fn generated_pi_runtime_configs_round_trip_full_wire_shapes() {
     }
 
     let priority_model_value = json!({
-        "provider": "openai",
-        "baseUrl": "https://api.openai.com/v1",
-        "model": "gpt-5.6-terra",
+        "provider": "openrouter",
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "model": "openai/gpt-6-luna",
         "thinkingLevel": "low",
         "serviceTier": "priority",
         "apiKeyEnv": "OPENAI_API_KEY",
-        "credentialSecretName": "OPENAI_API_KEY",
+        "credentialSecretName": "OPENROUTER_API_KEY",
     });
     let priority_model: PiModelConfig =
         serde_json::from_value(priority_model_value.clone()).unwrap();
@@ -329,45 +283,9 @@ fn generated_pi_runtime_configs_round_trip_full_wire_shapes() {
 }
 
 #[test]
-fn generated_pi_launch_config_round_trips_null_base_hash() {
-    let value = json!({
-        "schemaVersion": 2,
-        "apiFirstTurn": {
-            "schemaVersion": 1,
-            "resourceSnapshotDigest": "a".repeat(64),
-            "manifestUrl": "https://storage.example/manifest.json",
-            "sessionUrl": "https://storage.example/session.jsonl",
-            "deadlineAt": 2_000_000_000_000_i64,
-            "baseSession": {
-                "sessionId": "22222222-2222-4222-8222-222222222222",
-                "sha256": null,
-            },
-            "sandboxEventSequenceStart": 1,
-        },
-    });
-
-    let launch: PiLaunchConfig = serde_json::from_value(value.clone()).unwrap();
-
-    assert_eq!(launch.api_first_turn.base_session.sha256, None);
-    assert_eq!(serde_json::to_value(launch).unwrap(), value);
-}
-
-#[test]
 fn generated_pi_launch_config_round_trips_frozen_memory() {
     let value = json!({
         "schemaVersion": 2,
-        "apiFirstTurn": {
-            "schemaVersion": 1,
-            "resourceSnapshotDigest": "a".repeat(64),
-            "manifestUrl": "https://storage.example/manifest.json",
-            "sessionUrl": "https://storage.example/session.jsonl",
-            "deadlineAt": 2_000_000_000_000_i64,
-            "baseSession": {
-                "sessionId": "22222222-2222-4222-8222-222222222222",
-                "sha256": null,
-            },
-            "sandboxEventSequenceStart": 1,
-        },
         "memoryRecall": {
             "status": "ready",
             "memoryStorageId": "memory-storage",
@@ -402,11 +320,11 @@ fn generated_pi_model_config_rejects_unknown_enums() {
         ("serviceTier", "fast"),
     ] {
         let mut config = json!({
-            "provider": "deepseek",
-            "baseUrl": "https://api.deepseek.com/",
-            "model": "deepseek-v4-flash",
+            "provider": "openrouter",
+            "baseUrl": "https://openrouter.ai/api/v1",
+            "model": "openai/gpt-6-luna",
             "apiKeyEnv": "OPENAI_API_KEY",
-            "credentialSecretName": "DEEPSEEK_API_KEY",
+            "credentialSecretName": "OPENROUTER_API_KEY",
         });
         config[field] = json!(value);
 
@@ -423,14 +341,14 @@ fn generated_pi_model_config_v2_round_trips_both_dialects() {
         "schemaVersion": 2,
         "dialect": "openai-responses",
         "transport": "sse",
-        "provider": "openai",
-        "baseUrl": "https://api.openai.com/v1",
-        "model": "gpt-5.6-terra",
+        "provider": "openrouter",
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "model": "openai/gpt-6-luna",
         "thinkingLevel": "low",
         "credentialBindings": [{
             "kind": "api-key",
             "environment": "OPENAI_API_KEY",
-            "secretName": "OPENAI_API_KEY",
+            "secretName": "OPENROUTER_API_KEY",
         }],
     });
     let codex_responses = json!({
@@ -439,7 +357,7 @@ fn generated_pi_model_config_v2_round_trips_both_dialects() {
         "transport": "sse",
         "provider": "openai-codex",
         "baseUrl": "https://chatgpt.com/backend-api",
-        "model": "gpt-5.6-terra",
+        "model": "gpt-6-luna",
         "thinkingLevel": "low",
         "credentialBindings": [
             {
@@ -943,7 +861,7 @@ fn generated_pi_model_config_v3_preserves_native_fast() {
         "transport": "sse",
         "provider": "openai-codex",
         "baseUrl": "https://chatgpt.com/backend-api",
-        "model": "gpt-5.6-terra",
+        "model": "gpt-6-luna",
         "serviceTier": "fast",
         "credentialBindings": [
             { "kind": "access-token", "environment": "CHATGPT_ACCESS_TOKEN", "secretName": "CHATGPT_ACCESS_TOKEN" },
@@ -958,9 +876,9 @@ fn generated_pi_model_config_v3_preserves_native_fast() {
             let mut candidate = value.clone();
             candidate["dialect"] = serde_json::json!(dialect);
             if dialect == "openai-responses" {
-                candidate["provider"] = serde_json::json!("openai");
+                candidate["provider"] = serde_json::json!("openrouter");
                 candidate["credentialBindings"] = serde_json::json!([
-                    { "kind": "api-key", "environment": "OPENAI_API_KEY", "secretName": "OPENAI_API_KEY" }
+                    { "kind": "api-key", "environment": "OPENAI_API_KEY", "secretName": "OPENROUTER_API_KEY" }
                 ]);
             }
             if let Some(tier) = tier {

@@ -1,18 +1,24 @@
 import type { ReactNode } from "react";
-import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Play } from "lucide-react";
 import type { WorkflowTemplateItem } from "@okouai/core/workflow-template-items";
 import { surfaceVariants, Button } from "@okouai/ui";
 import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
+import { openSettingsDialogAt$ } from "../../signals/okou-page/settings/settings-dialog.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import {
+  connectStartCardSubscription$,
   startCardKinds$,
+  startCardSubscriptionPinned$,
+  type StartCardSubscriptionProvider,
   startCardWorkflowConnectorIcons$,
   startCardWorkflowTemplate$,
   type StartCardConnectorIcon,
   type StartCardKind,
 } from "../../signals/okou-page/start-cards.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
+import { ProviderIcon } from "./components/settings/provider-icons.tsx";
 import { localizedWorkflowTemplate } from "./workflow-template-copy.ts";
 
 // Every kind draws into the same square slot so the row reads as one family.
@@ -37,12 +43,6 @@ function kindAccent(kind: StartCardKind): string {
     }
     case "illustration": {
       return "#EDC43E";
-    }
-    case "video": {
-      return "#FF81B2";
-    }
-    case "avatar": {
-      return "#C77242";
     }
     case "workflow": {
       return "#97918A";
@@ -164,59 +164,6 @@ function IllustrationArt({ accent }: { accent: string }) {
   );
 }
 
-function VideoArt({ accent }: { accent: string }) {
-  return (
-    <div
-      className="grid h-[30px] w-[42px] place-items-center rounded-md border bg-card"
-      style={{ borderColor: `${accent}${LINE_ALPHA}` }}
-    >
-      <span
-        className="grid size-4 place-items-center rounded-full"
-        style={{ backgroundColor: `${accent}${SOFT_ALPHA}`, color: accent }}
-      >
-        <Play size={7} fill="currentColor" />
-      </span>
-    </div>
-  );
-}
-
-function AvatarArt({ accent }: { accent: string }) {
-  return (
-    // A round portrait chip beside a small waveform: the bust alone is the
-    // account glyph every product has, and it is the speaking that makes this
-    // an avatar video.
-    <div className="flex items-center gap-[5px]">
-      <span
-        className="relative size-[32px] shrink-0 overflow-hidden rounded-full border bg-card"
-        style={{ borderColor: `${accent}${LINE_ALPHA}` }}
-      >
-        <span
-          className="absolute left-1/2 top-[7px] size-[10px] -translate-x-1/2 rounded-full"
-          style={{ backgroundColor: accent }}
-        />
-        <span
-          className="absolute bottom-0 left-1/2 h-[13px] w-[21px] -translate-x-1/2 rounded-t-full"
-          style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
-        />
-      </span>
-      <span className="flex items-center gap-[2px]">
-        <span
-          className="h-[7px] w-[2px] rounded-full"
-          style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
-        />
-        <span
-          className="h-[13px] w-[2px] rounded-full"
-          style={{ backgroundColor: accent }}
-        />
-        <span
-          className="h-[9px] w-[2px] rounded-full"
-          style={{ backgroundColor: `${accent}${FILL_ALPHA}` }}
-        />
-      </span>
-    </div>
-  );
-}
-
 function WorkflowNode({
   icon,
   accent,
@@ -282,6 +229,128 @@ function WorkflowArt({ accent }: { accent: string }) {
       ) : (
         <WorkflowNode icon={steps[0]} accent={accent} />
       )}
+    </div>
+  );
+}
+
+// The subscription card draws the providers' own marks, so its tile takes the
+// neutral accent and leaves the colour to them.
+const SUBSCRIPTION_ACCENT = "#97918A";
+
+function SubscriptionArt() {
+  const edge = { borderColor: `${SUBSCRIPTION_ACCENT}${LINE_ALPHA}` };
+  return (
+    <div className="relative h-[34px] w-[50px]">
+      <span
+        className={`absolute left-0 top-0 grid size-[28px] -rotate-6 place-items-center ${NODE_CLASS}`}
+        style={edge}
+      >
+        <ProviderIcon type="claude-code-oauth-token" size={16} />
+      </span>
+      <span
+        className={`absolute bottom-0 right-0 grid size-[28px] rotate-6 place-items-center ${NODE_CLASS}`}
+        style={edge}
+      >
+        <ProviderIcon type="codex-oauth-token" size={16} />
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Pinned ahead of the rotating kinds: it connects a personal Claude or Codex
+ * subscription through the same device-auth dialogs as Settings > Models, both
+ * of which the chat landing page already mounts.
+ */
+function SubscriptionStartCard() {
+  const { t } = useTranslation();
+  const connectSubscription = useSet(connectStartCardSubscription$);
+  const openSettingsAt = useSet(openSettingsDialogAt$);
+  const pageSignal = useGet(pageSignal$);
+
+  const connect = (provider: StartCardSubscriptionProvider) => {
+    detach(connectSubscription(provider, pageSignal), Reason.DomCallback);
+  };
+
+  const providers = [
+    {
+      type: "codex-oauth-token",
+      label: t(($) => {
+        return $.chat.startCards.subscription.codex;
+      }),
+    },
+    {
+      type: "claude-code-oauth-token",
+      label: t(($) => {
+        return $.chat.startCards.subscription.claude;
+      }),
+    },
+  ] as const;
+
+  // The layout mirrors `StartCard` so the pinned card reads as one of the row;
+  // only the targets differ.
+  return (
+    <div
+      data-testid="start-card-subscription"
+      className={surfaceVariants({
+        className: "group relative flex flex-col justify-center p-4",
+      })}
+    >
+      {/* The card itself lands on Settings > Models, where every connected
+          account is listed; the provider buttons skip straight to sign-in. */}
+      <button
+        type="button"
+        className="absolute inset-0 rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        aria-label={t(($) => {
+          return $.chat.startCards.subscription.openSettingsAria;
+        })}
+        onClick={() => {
+          detach(openSettingsAt("model", pageSignal), Reason.DomCallback);
+        }}
+      />
+      <div className="pointer-events-none flex items-center gap-3">
+        <div
+          className={THUMBNAIL_CLASS}
+          style={{
+            backgroundColor: `${SUBSCRIPTION_ACCENT}${TILE_ALPHA}`,
+          }}
+        >
+          <SubscriptionArt />
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground">
+            {t(($) => {
+              return $.chat.startCards.subscription.title;
+            })}
+          </p>
+          <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-muted-foreground">
+            {t(($) => {
+              return $.chat.startCards.subscription.description;
+            })}
+          </p>
+        </div>
+      </div>
+      {/* Both buttons are short brand names, so unlike `StartCard` neither is
+          dropped on a narrow card. */}
+      <div className="pointer-events-none absolute inset-x-4 bottom-4 flex h-14 items-end gap-1 bg-gradient-to-t from-card from-[57%] to-transparent opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 group-focus-within:[&>button]:pointer-events-auto group-hover:[&>button]:pointer-events-auto">
+        {providers.map((provider) => {
+          return (
+            <Button
+              key={provider.type}
+              type="button"
+              size="xs"
+              variant="outline"
+              className="min-w-0 flex-1 gap-1.5 text-xs"
+              onClick={() => {
+                connect(provider.type);
+              }}
+            >
+              <ProviderIcon type={provider.type} size={12} />
+              <span className="truncate">{provider.label}</span>
+            </Button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -412,8 +481,15 @@ export function StartCards({
   onSelectPrompt: (prompt: string) => void;
 }) {
   const { t } = useTranslation();
-  const kindsLoadable = useLoadable(startCardKinds$);
-  const kinds = kindsLoadable.state === "hasData" ? kindsLoadable.data : [];
+  // Held back until the account list resolves: a member who already has an
+  // account must not see the card flash in, and a failed lookup keeps the row
+  // as it was.
+  const subscriptionPinned =
+    useLastResolved(startCardSubscriptionPinned$) ?? false;
+  const drawnKinds = useGet(startCardKinds$);
+  // The pinned card takes the first slot, so one drawn kind makes way for it
+  // and the row keeps its length.
+  const kinds = subscriptionPinned ? drawnKinds.slice(0, -1) : drawnKinds;
   const workflowTemplate = useGet(startCardWorkflowTemplate$);
   const composerSignals = useGet(agentChatComposerSignals$);
   const setTemplateCategory = useSet(
@@ -471,8 +547,6 @@ export function StartCards({
       slides: <SlidesArt accent={accent} />,
       website: <WebsiteArt accent={accent} />,
       illustration: <IllustrationArt accent={accent} />,
-      video: <VideoArt accent={accent} />,
-      avatar: <AvatarArt accent={accent} />,
       workflow: <WorkflowArt accent={accent} />,
     };
     return art[kind];
@@ -484,6 +558,7 @@ export function StartCards({
         data-testid="start-cards"
         className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
       >
+        {subscriptionPinned && <SubscriptionStartCard />}
         {kinds.map((kind) => {
           return (
             <StartCard

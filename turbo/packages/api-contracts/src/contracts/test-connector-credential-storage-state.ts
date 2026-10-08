@@ -1,7 +1,6 @@
 import { z } from "zod";
 
 import { initContract } from "./base";
-import { connectorAccountMutationIntentSchema } from "./connector-accounts";
 
 const c = initContract();
 
@@ -113,10 +112,6 @@ export const testConnectorCredentialStorageStateActionBodySchema =
       connector_account_id: z.uuid(),
     }),
     z.object({
-      action: z.literal("read-oauth-state-account-mutation"),
-      state: z.string(),
-    }),
-    z.object({
       action: z.literal("delete-custom-credential-values"),
       org_id: z.string(),
       user_id: z.string(),
@@ -159,22 +154,6 @@ export const testConnectorCredentialStorageStateActionBodySchema =
       storage_version: z.number().int().positive(),
     }),
     z.object({
-      action: z.literal("seed-custom-runtime-connectors"),
-      org_id: z.string(),
-      user_id: z.string(),
-      agent_id: z.uuid().optional(),
-      custom_connectors: z
-        .array(
-          z.object({
-            id: z.uuid(),
-            slug: z.string(),
-            display_name: z.string(),
-            prefix_template: z.string(),
-          }),
-        )
-        .min(1),
-    }),
-    z.object({
       action: z.literal("set-connector-state"),
       org_id: z.string(),
       user_id: z.string(),
@@ -204,14 +183,6 @@ export const testConnectorCredentialStorageStateActionBodySchema =
       user_id: z.string(),
       connector_id: z.uuid(),
       external_id: z.string().nullable(),
-    }),
-    z.object({
-      action: z.literal("set-connector-account-state"),
-      org_id: z.string(),
-      user_id: z.string(),
-      connector_id: z.uuid(),
-      needs_reconnect: z.boolean(),
-      storage_version: z.number().int().positive().optional(),
     }),
     z.object({
       action: z.literal("seed-builtin-thread-selection"),
@@ -260,9 +231,6 @@ export const testConnectorCredentialStorageStateActionResponseSchema = z.object(
     ok: z.literal(true),
     connector: connectorStateSchema.nullable().optional(),
     connector_id: z.uuid().optional(),
-    account_mutation: connectorAccountMutationIntentSchema
-      .nullable()
-      .optional(),
     custom_oauth_state: customOauthStateSchema.nullable().optional(),
     automatic_oauth_binding: automaticOauthBindingStateSchema.optional(),
     feishu_member_connection: feishuMemberConnectionStateSchema

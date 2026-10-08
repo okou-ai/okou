@@ -93,7 +93,7 @@ export const getStartedClaims = pgTable(
         .where(sql`${table.status} IN ('pending', 'reviewing')`),
       check(
         "get_started_quest_check",
-        sql`${table.questKey} IN ('connector', 'slack', 'workflow', 'invite', 'share', 'checkin')`,
+        sql`${table.questKey} IN ('connector', 'slack', 'imessage', 'workflow', 'invite', 'share', 'checkin')`,
       ),
       check(
         "get_started_status_check",
@@ -109,11 +109,11 @@ export const getStartedClaims = pgTable(
       ),
       check(
         "get_started_slot_check",
-        sql`(${table.status} <> 'granted' AND ${table.rewardSlot} IS NULL) OR (${table.status} = 'granted' AND ((${table.questKey} = 'invite' AND ${table.rewardSlot} BETWEEN 1 AND 15 AND ${table.rewardSlot} IS NOT NULL) OR (${table.questKey} IN ('workflow', 'share') AND ${table.rewardSlot} = 1 AND ${table.rewardSlot} IS NOT NULL) OR (${table.questKey} IN ('connector', 'slack', 'checkin') AND ${table.rewardSlot} IS NULL)))`,
+        sql`(${table.status} <> 'granted' AND ${table.rewardSlot} IS NULL) OR (${table.status} = 'granted' AND ((${table.questKey} = 'invite' AND ${table.rewardSlot} BETWEEN 1 AND 15 AND ${table.rewardSlot} IS NOT NULL) OR (${table.questKey} IN ('imessage', 'workflow', 'share') AND ${table.rewardSlot} = 1 AND ${table.rewardSlot} IS NOT NULL) OR (${table.questKey} IN ('connector', 'slack', 'checkin') AND ${table.rewardSlot} IS NULL)))`,
       ),
       check(
         "get_started_amount_check",
-        sql`${table.rewardAmount} = CASE ${table.questKey} WHEN 'slack' THEN 2000 WHEN 'share' THEN 2000 WHEN 'workflow' THEN 1000 ELSE 100 END`,
+        sql`${table.rewardAmount} = CASE ${table.questKey} WHEN 'slack' THEN 2000 WHEN 'share' THEN 2000 WHEN 'imessage' THEN 1000 WHEN 'workflow' THEN 1000 ELSE 100 END`,
       ),
     ];
   },

@@ -69,48 +69,28 @@ export async function ensureRunnerOrganizationReady(
   }
 }
 
-export async function completeExploreOnboarding(
+/**
+ * Onboards a fresh admin through the prompt handoff, the one onboarding path
+ * that needs no connected work source: the prompt it brings completes
+ * onboarding and starts the first chat with that request.
+ */
+export async function completePromptOnboarding(
   page: Page,
-  options: OnboardingFlowOptions,
-): Promise<void> {
-  await openOnboarding(page, options);
-  await submitExploreOnboarding(page);
-  await waitForChatPage(page, options.appUrl);
-}
-
-async function openOnboarding(
-  page: Page,
-  options: OnboardingFlowOptions,
+  options: OnboardingFlowOptions & { readonly prompt: string },
 ): Promise<void> {
   const onboardingUrl = new URL("/onboarding", options.appUrl);
-  const currentUrl = new URL(page.url());
-  const canReuseAppPage =
-    currentUrl.origin === onboardingUrl.origin &&
-    currentUrl.pathname === "/onboarding";
-
-  if (!canReuseAppPage) {
-    await page.goto(onboardingUrl.toString(), {
-      waitUntil: "domcontentloaded",
-    });
-  }
+  onboardingUrl.searchParams.set("prompt", options.prompt);
+  await page.goto(onboardingUrl.toString(), {
+    waitUntil: "domcontentloaded",
+  });
   await expect(
-    page.getByRole("heading", { name: "What do you want to make first" }),
+    page.getByRole("heading", { name: "Try this prompt" }),
   ).toBeVisible({ timeout: 60_000 });
-  expect(new URL(page.url()).pathname).toBe("/onboarding");
-}
-
-async function submitExploreOnboarding(page: Page): Promise<void> {
-  await expect(
-    page.getByRole("heading", { name: "What do you want to make first" }),
-  ).toBeVisible({ timeout: 60_000 });
-  await chooseMakeOption(page, "I will explore on my own");
-}
-
-async function chooseMakeOption(page: Page, name: string): Promise<void> {
-  await page
-    .getByRole("group", { name: "First project type" })
-    .getByRole("button", { name })
-    .click();
+  await expect(page.getByLabel("Onboarding prompt")).toHaveValue(
+    options.prompt,
+  );
+  await page.getByRole("button", { name: "Next", exact: true }).click();
+  await waitForChatPage(page, options.appUrl);
 }
 
 async function waitForChatPage(page: Page, appUrl: string): Promise<void> {

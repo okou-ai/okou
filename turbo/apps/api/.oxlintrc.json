@@ -4,6 +4,15 @@
   "plugins": ["import", "promise", "typescript", "unicorn", "eslint", "oxc"],
   "overrides": [
     {
+      "files": [
+        "src/signals/services/pick-chat-run.service.ts",
+        "src/signals/services/thread-claim-run.service.ts"
+      ],
+      "rules": {
+        "max-lines-per-function": "allow"
+      }
+    },
+    {
       "files": ["src/lib/log.ts"],
       "rules": {
         "no-console": "allow"
@@ -15,8 +24,7 @@
         "scripts/bench-p90-reporter.ts",
         "src/index.ts",
         "vite.config.ts",
-        "vitest.config.ts",
-        "vitest.maintenance.config.ts"
+        "vitest.config.ts"
       ],
       "rules": {
         "import/no-default-export": "off"

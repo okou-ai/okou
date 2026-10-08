@@ -7,12 +7,6 @@ export function currentPlanCanBuyCredits(
   return billing.canBuyCredits === true;
 }
 
-export function currentPlanAllowsVideo(
-  billing: BillingStatusResponse,
-): boolean {
-  return billing.videoGenerationAllowed === true;
-}
-
 export function currentTokenCanReadBilling(): boolean {
   const payload = decodeSandboxTokenPayload();
   return payload === undefined || payload.capabilities.includes("billing:read");

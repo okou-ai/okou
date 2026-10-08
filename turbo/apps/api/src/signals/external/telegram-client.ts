@@ -90,21 +90,6 @@ async function callTelegramApi<T>(
   return data as T;
 }
 
-interface TelegramBotInfo {
-  readonly id: number;
-  readonly username: string;
-  readonly first_name: string;
-  readonly can_read_all_group_messages?: boolean;
-}
-
-export async function getMe(token: string): Promise<TelegramBotInfo> {
-  const result = await callTelegramApi<{
-    readonly ok: true;
-    readonly result: TelegramBotInfo;
-  }>(token, "getMe");
-  return result.result;
-}
-
 interface TelegramFile {
   readonly file_id: string;
   readonly file_path?: string;
@@ -125,76 +110,6 @@ export async function getFile(
 
 export function buildFileDownloadUrl(token: string, filePath: string): string {
   return `https://api.telegram.org/file/bot${token}/${filePath}`;
-}
-
-export async function deleteWebhook(token: string): Promise<void> {
-  const response = await fetch(buildTelegramApiUrl(token, "deleteWebhook"), {
-    method: "POST",
-    headers: buildTelegramApiHeaders(),
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Telegram API error: ${response.status} ${response.statusText}`,
-    );
-  }
-
-  const data: unknown = await response.json();
-  if (isTelegramApiErrorPayload(data)) {
-    throw new Error(`Telegram API error: ${data.description}`);
-  }
-}
-
-export async function setWebhook(
-  token: string,
-  url: string,
-  secretToken: string,
-): Promise<void> {
-  const response = await fetch(buildTelegramApiUrl(token, "setWebhook"), {
-    method: "POST",
-    headers: buildTelegramApiHeaders(),
-    body: JSON.stringify({
-      url,
-      secret_token: secretToken,
-      allowed_updates: ["message"],
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Telegram API error: ${response.status} ${response.statusText}`,
-    );
-  }
-
-  const data: unknown = await response.json();
-  if (isTelegramApiErrorPayload(data)) {
-    throw new Error(`Telegram API error: ${data.description}`);
-  }
-}
-
-export async function setMyCommands(
-  token: string,
-  commands: readonly {
-    readonly command: string;
-    readonly description: string;
-  }[],
-): Promise<void> {
-  const response = await fetch(buildTelegramApiUrl(token, "setMyCommands"), {
-    method: "POST",
-    headers: buildTelegramApiHeaders(),
-    body: JSON.stringify({ commands }),
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Telegram API error: ${response.status} ${response.statusText}`,
-    );
-  }
-
-  const data: unknown = await response.json();
-  if (isTelegramApiErrorPayload(data)) {
-    throw new Error(`Telegram API error: ${data.description}`);
-  }
 }
 
 export interface TelegramUserProfilePhoto {

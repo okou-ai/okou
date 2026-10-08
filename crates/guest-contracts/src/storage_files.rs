@@ -201,11 +201,14 @@ pub fn encode_input(manifest: &[u8], groups: &[(&str, &[StorageFile])]) -> io::R
     if manifest.len() > MAX_MANIFEST_BYTES {
         return Err(invalid());
     }
-    let files = encode(groups)?;
-    let mut out = Vec::with_capacity(16 + manifest.len() + files.len());
+    // Validate every group before constructing any output, then write directly
+    // into the final input buffer instead of allocating and copying the payload.
+    let payload_len = encoded_payload_len(groups)?;
+    let mut out = Vec::with_capacity(16 + manifest.len() + payload_len);
     out.extend_from_slice(INPUT_MAGIC);
     put_bytes(&mut out, manifest);
-    put_bytes(&mut out, &files);
+    out.extend_from_slice(&(payload_len as u32).to_be_bytes());
+    encode_groups_into(&mut out, groups);
     Ok(out)
 }
 
@@ -290,18 +293,22 @@ pub fn validate_files(files: &[StorageFile]) -> io::Result<()> {
 pub fn encode(groups: &[(&str, &[StorageFile])]) -> io::Result<Vec<u8>> {
     let size = encoded_payload_len(groups)?;
     let mut out = Vec::with_capacity(size);
+    encode_groups_into(&mut out, groups);
+    Ok(out)
+}
+
+fn encode_groups_into(out: &mut Vec<u8>, groups: &[(&str, &[StorageFile])]) {
     out.extend_from_slice(&(groups.len() as u32).to_be_bytes());
     for (mount, files) in groups {
-        put_bytes(&mut out, mount.as_bytes());
+        put_bytes(out, mount.as_bytes());
         out.extend_from_slice(&(files.len() as u32).to_be_bytes());
         for file in *files {
-            put_bytes(&mut out, file.path.as_bytes());
+            put_bytes(out, file.path.as_bytes());
             out.extend_from_slice(&file.mode.to_be_bytes());
             out.extend_from_slice(&file.mtime.to_be_bytes());
-            put_bytes(&mut out, &file.content);
+            put_bytes(out, &file.content);
         }
     }
-    Ok(out)
 }
 
 /// Validate the complete group set and return its encoded length without copying file content.
@@ -467,6 +474,97 @@ mod tests {
     }
 
     #[test]
+    fn final_input_matches_existing_payload_framing_for_multiple_groups() {
+        let first = [StorageFile {
+            path: "a".into(),
+            mode: 0o644,
+            mtime: 7,
+            content: vec![42],
+        }];
+        let second = [StorageFile {
+            path: "b".into(),
+            mode: 0o755,
+            mtime: 8,
+            content: vec![1, 2],
+        }];
+        let groups = [("/first", first.as_slice()), ("/second", second.as_slice())];
+        let payload = encode(&groups).unwrap();
+        let mut expected = Vec::new();
+        expected.extend_from_slice(INPUT_MAGIC);
+        expected.extend_from_slice(&2_u32.to_be_bytes());
+        expected.extend_from_slice(b"{}");
+        expected.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+        expected.extend_from_slice(&payload);
+        assert_eq!(encode_input(b"{}", &groups).unwrap(), expected);
+        assert_eq!(split_input(&expected).unwrap().1, payload);
+
+        // Pin a simple wire fixture independently of either payload writer.
+        let one = [("/m", first.as_slice())];
+        let mut fixture = Vec::new();
+        fixture.extend_from_slice(INPUT_MAGIC);
+        fixture.extend_from_slice(&2_u32.to_be_bytes());
+        fixture.extend_from_slice(b"{}");
+        fixture.extend_from_slice(&36_u32.to_be_bytes());
+        fixture.extend_from_slice(&1_u32.to_be_bytes());
+        fixture.extend_from_slice(&2_u32.to_be_bytes());
+        fixture.extend_from_slice(b"/m");
+        fixture.extend_from_slice(&1_u32.to_be_bytes());
+        fixture.extend_from_slice(&1_u32.to_be_bytes());
+        fixture.extend_from_slice(b"a");
+        fixture.extend_from_slice(&0o644_u32.to_be_bytes());
+        fixture.extend_from_slice(&7_u64.to_be_bytes());
+        fixture.extend_from_slice(&1_u32.to_be_bytes());
+        fixture.push(42);
+        assert_eq!(encode_input(b"{}", &one).unwrap(), fixture);
+    }
+
+    #[test]
+    fn final_input_accepts_exact_payload_cap_and_rejects_one_extra_byte() {
+        let mounts: Vec<_> = (0..15).map(|i| format!("/mount-{i}")).collect();
+        let mut files: Vec<Vec<StorageFile>> = (0..15)
+            .map(|_| {
+                (0..4)
+                    .map(|index| StorageFile {
+                        path: format!("file-{index}"),
+                        mode: 0o644,
+                        mtime: 1,
+                        content: vec![0; MAX_FILE_BYTES],
+                    })
+                    .collect()
+            })
+            .collect();
+        files[14][3].content.clear();
+        let groups: Vec<_> = mounts
+            .iter()
+            .zip(&files)
+            .map(|(mount, files)| (mount.as_str(), files.as_slice()))
+            .collect();
+        let remaining = MAX_PAYLOAD_BYTES - encoded_payload_len(&groups).unwrap();
+        assert!(remaining < MAX_FILE_BYTES);
+        files[14][3].content.resize(remaining, 0);
+        let groups: Vec<_> = mounts
+            .iter()
+            .zip(&files)
+            .map(|(mount, files)| (mount.as_str(), files.as_slice()))
+            .collect();
+        assert_eq!(encoded_payload_len(&groups).unwrap(), MAX_PAYLOAD_BYTES);
+        let encoded = encode_input(&vec![b' '; MAX_MANIFEST_BYTES], &groups).unwrap();
+        assert_eq!(encoded.len(), MAX_INPUT_BYTES);
+        let (manifest, payload) = split_input(&encoded).unwrap();
+        assert_eq!(manifest.len(), MAX_MANIFEST_BYTES);
+        assert_eq!(payload.len(), MAX_PAYLOAD_BYTES);
+
+        files[14][3].content.push(0);
+        let groups: Vec<_> = mounts
+            .iter()
+            .zip(&files)
+            .map(|(mount, files)| (mount.as_str(), files.as_slice()))
+            .collect();
+        assert!(encode_input(b"{}", &groups).is_err());
+        assert_eq!(files[14][3].content.len(), remaining + 1);
+    }
+
+    #[test]
     fn enforces_storage_count_path_metadata_and_manifest_bounds() {
         let mut files: Vec<_> = (0..MAX_FILES)
             .map(|index| StorageFile {
@@ -522,10 +620,10 @@ mod tests {
         assert_eq!(encode(&groups[..14]).unwrap().len(), size);
         assert!(encoded_payload_len(&groups).is_err());
         assert!(encode(&groups).is_err());
-        assert!(
-            encoded_payload_len(&[("/mount", files.as_slice()), ("/mount", files.as_slice())])
-                .is_err()
-        );
+        let duplicate = [("/mount", files.as_slice()), ("/mount", files.as_slice())];
+        assert!(encoded_payload_len(&duplicate).is_err());
+        assert!(encode_input(b"{}", &duplicate).is_err());
+        assert!(encode_input(b"{}", &[]).is_err());
     }
 
     #[test]

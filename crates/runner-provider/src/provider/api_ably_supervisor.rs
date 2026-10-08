@@ -567,6 +567,9 @@ async fn run_supervisor(config: SupervisorTaskConfig) {
             result = recv_retry(&mut ably_retry.handle) => {
                 match handle_ably_connect_result(result, &mut ably, &mut ably_retry) {
                     Ok(()) => {
+                        // `subscribe` queues `Event::Connected` as the new
+                        // subscription's first event; its handler wakes the
+                        // active-input readers once.
                         disconnect.mark_connected();
                         config.poll_wakeups.mark_ably_connected();
                     }
@@ -635,11 +638,11 @@ async fn handle_ably_event(
             .await;
         }
         Some(ably_subscriber::Event::Connected) => {
-            if !disconnect.is_connected() {
-                info!("ably reconnected");
-            }
-            disconnect.mark_connected();
-            config.poll_wakeups.mark_ably_connected();
+            handle_ably_connected(
+                disconnect,
+                &config.poll_wakeups,
+                &config.active_input_notifications,
+            );
         }
         Some(ably_subscriber::Event::Disconnected { reason }) => {
             let reason = reason.unwrap_or_else(|| "unknown".to_string());
@@ -662,6 +665,22 @@ async fn handle_ably_event(
             ably_retry.schedule();
         }
     }
+}
+
+// Every subscription and every reconnect, resumed or fresh, emits
+// `Event::Connected`. An `active-input` push published while disconnected is
+// lost, so each active run reads its next steerable input once.
+fn handle_ably_connected(
+    disconnect: &mut AblyDisconnectState,
+    poll_wakeups: &PollWakeups,
+    active_input_notifications: &ActiveInputNotifications,
+) {
+    if !disconnect.is_connected() {
+        info!("ably reconnected");
+    }
+    disconnect.mark_connected();
+    poll_wakeups.mark_ably_connected();
+    active_input_notifications.notify_all();
 }
 
 #[cfg(test)]
@@ -1335,6 +1354,30 @@ mod tests {
 
         wakeups.record_poll_result(due, PollOutcome::Failure, Duration::from_secs(5));
         assert!(wakeups.snapshot().wakeup_retry_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn ably_connected_wakes_every_active_input_reader_once() {
+        let notifications = ActiveInputNotifications::new();
+        let mut first = notifications.subscribe(RunId::new_v4());
+        let mut second = notifications.subscribe(RunId::new_v4());
+        let wakeups = PollWakeups::new(false);
+        let mut disconnect = AblyDisconnectState::disconnected("transport lost".to_string());
+
+        handle_ably_connected(&mut disconnect, &wakeups, &notifications);
+
+        assert!(disconnect.is_connected());
+        for subscription in [&mut first, &mut second] {
+            tokio::time::timeout(Duration::from_secs(5), subscription.wait())
+                .await
+                .expect("reconnect wakes every active run");
+            assert!(
+                tokio::time::timeout(Duration::from_millis(20), subscription.wait())
+                    .await
+                    .is_err(),
+                "one reconnect wakes each run once"
+            );
+        }
     }
 
     #[tokio::test(start_paused = true)]

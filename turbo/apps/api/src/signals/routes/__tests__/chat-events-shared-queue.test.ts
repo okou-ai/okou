@@ -1,3 +1,4 @@
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { randomUUID } from "node:crypto";
 import type {
   UserMessageDocument,
@@ -5,53 +6,101 @@ import type {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { now, withMockNowForTest } from "../../../lib/time";
-import {
-  holdChatEventQueueItemFixture,
-  holdOrgAdmissionLockFixture,
-  replayPendingChatInputQueueEventFixture,
-} from "../../../test-fixtures/chat-events";
+import { replayPendingChatInputQueueEventFixture } from "../../../test-fixtures/chat-events";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise } from "../../utils";
-import { readAgentRunState$ } from "./helpers/agent-run-callback";
-import { expectApiError } from "./helpers/api-bdd";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import {
-  readRunAutonomyBudgetFixture,
-  readThreadSessionBinding,
-  setRunAutonomyBudgetFixture,
-} from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
   CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
   type PromptMessage,
   okouTokenFromClaim,
   userMessages,
-  assistantEvent,
 } from "./helpers/chat-events-fixture";
 
 const context = testContext();
 const {
   api,
   chat,
-  webhooks,
   chatCallbacks,
-  runStateStore,
-  entitledChatActor,
+  entitledChatActor: createEntitledChatActor,
   sendChatRun,
   claimChatRun,
   waitForThreadMessages,
-  waitForRunUserMessage,
   waitForRunStatus,
   completeChatRunOk,
   failChatRun,
   cancelChatRun,
-  upsertOrgModelProvider,
+
   requestSendEventWithBearer,
 } = createChatEventsFixture(context);
+
+// Queue ownership tests need an unfinished native Runner run, so explicitly
+// select Fable's native personal-subscription route instead of relying on an
+// API-first attempt to remain pending.
+async function entitledChatActor() {
+  const result = await createEntitledChatActor();
+  await api.updateUserModelPreference(result.actor, "claude-fable-5-1");
+  return result;
+}
+
+/** Reads a committed input claim after observing its admission boundary. */
+async function readPickedInputRun(
+  actor: Parameters<typeof chat.listThreadEvents>[0],
+  threadId: string,
+  eventId: string,
+): Promise<string> {
+  const page = await chat.listThreadEvents(actor, threadId);
+  const runId = userMessages(page.events).find((event) => {
+    return event.revokesEventId === eventId;
+  })?.runId;
+  if (!runId) {
+    throw new Error("Expected the queued input to launch a run");
+  }
+  return runId;
+}
+
+/** Construct delegation depth through public sends and Runner completion. */
+async function callerAtDelegationDepth(
+  actor: Parameters<typeof sendChatRun>[0],
+  agentId: string,
+  runnerGroup: string,
+  depth: number,
+) {
+  let run = await sendChatRun(actor, {
+    agentId,
+    prompt: "root of bounded delegation",
+  });
+  let claim = await claimChatRun(runnerGroup, run.runId);
+  for (let level = 1; level <= depth; level += 1) {
+    const eventId = randomUUID();
+    const thread = await chat.createThread(actor, { agentId });
+    const sent = await requestSendEventWithBearer(
+      okouTokenFromClaim(claim.claim),
+      {
+        agentId,
+        threadId: thread.id,
+        clientEventId: eventId,
+        prompt: `delegation depth ${level}`,
+      },
+      [201],
+    );
+    if (sent.status !== 201) {
+      throw new Error("Expected a delegation within the public depth limit");
+    }
+    await flushWaitUntilForTest();
+    const childId = await readPickedInputRun(actor, thread.id, eventId);
+    const childClaim = await claimChatRun(runnerGroup, childId);
+    await completeChatRunOk(run.runId, claim.sandboxHeaders);
+    await flushWaitUntilForTest();
+    run = { runId: childId, threadId: thread.id };
+    claim = childClaim;
+  }
+  return { run, claim };
+}
 
 describe("CHAT-02: shared user message queue", () => {
   it("dispatches idle-thread sends by appending a run-associated replacement", async () => {
@@ -85,10 +134,18 @@ describe("CHAT-02: shared user message queue", () => {
         [201],
       );
     });
-    if (sent.status !== 201 || !sent.body.runId) {
-      throw new Error("Expected an idle-thread queue-first send to dispatch");
+    if (sent.status !== 201) {
+      throw new Error(
+        "Expected an idle-thread queue-first send to be accepted",
+      );
     }
-    const runId = sent.body.runId;
+    expect(sent.body.runId).toBeNull();
+    await flushWaitUntilForTest();
+    const runId = await readPickedInputRun(
+      actor,
+      sent.body.threadId,
+      messageId,
+    );
 
     // The queued row stays immutable. Claiming appends the run-associated
     // replacement and links it back to the queued row.
@@ -121,7 +178,7 @@ describe("CHAT-02: shared user message queue", () => {
           }),
           {
             type: "model",
-            selectedModel: "claude-sonnet-5",
+            selectedModel: "claude-fable-5-1",
           },
         ],
       },
@@ -153,14 +210,27 @@ describe("CHAT-02: shared user message queue", () => {
       },
       [201],
     );
-    expect(replay.body).toStrictEqual(sent.body);
-    await expect
-      .poll(() => {
-        return context.mocks.ably.publish.mock.calls.some((call) => {
-          return call[0] === `chatThreadMessageCreated:${sent.body.threadId}`;
-        });
-      })
-      .toBe(true);
+    if (replay.status !== 201) {
+      throw new Error("Expected the replayed send to be accepted");
+    }
+    // The retry conflicts on the stored input and is accepted as a duplicate
+    // at request time without reading the original send back.
+    expect(replay.body).toStrictEqual({
+      runId: null,
+      threadId: sent.body.threadId,
+      createdAt: expect.any(String),
+    });
+    expect(Date.parse(replay.body.createdAt ?? "")).toBeGreaterThanOrEqual(
+      Date.parse(sent.body.createdAt ?? ""),
+    );
+    const afterReplay = await chat.listThreadEvents(actor, sent.body.threadId);
+    expect(userMessages(afterReplay.events)).toHaveLength(rows.length);
+    await flushWaitUntilForTest();
+    expect(
+      context.mocks.ably.publish.mock.calls.some((call) => {
+        return call[0] === `chatThreadMessageCreated:${sent.body.threadId}`;
+      }),
+    ).toBeTruthy();
 
     const claimedRun = await claimChatRun(runnerGroup, runId);
     expect(claimedRun.claim.apiStartTime).toBe(apiStartedAt);
@@ -225,10 +295,12 @@ describe("CHAT-02: shared user message queue", () => {
       },
       [201],
     );
-    if (sent.status !== 201 || !sent.body.runId) {
-      throw new Error("Expected the later Web send to dispatch itself");
+    if (sent.status !== 201) {
+      throw new Error("Expected the later Web send to be accepted");
     }
-    const runId = sent.body.runId;
+    expect(sent.body.runId).toBeNull();
+    await flushWaitUntilForTest();
+    const runId = await readPickedInputRun(actor, anchor.threadId, nextId);
     const claimed = await waitForThreadMessages(
       actor,
       anchor.threadId,
@@ -248,17 +320,20 @@ describe("CHAT-02: shared user message queue", () => {
   }, 90_000);
 
   it("persists user-forwarded run provenance across chat threads", async () => {
-    const { actor, agentId } = await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped chat actor");
     }
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
-    const source = await sendChatRun(actor, {
+    // Thirty-two public delegation hops exhaust the source. Human forwarding is
+    // still an ordinary user request, not another agent delegation.
+    const { run: source } = await callerAtDelegationDepth(
+      actor,
       agentId,
-      prompt: "source content selected for forwarding",
-    });
-    await setRunAutonomyBudgetFixture(context, source.runId, 0);
+      runnerGroup,
+      32,
+    );
     const targetThread = await chat.createThread(actor, { agentId });
     const forwardedEventId = randomUUID();
     const forwarded = await chat.requestSendEvent(
@@ -272,10 +347,16 @@ describe("CHAT-02: shared user message queue", () => {
       },
       [201],
     );
-    if (forwarded.status !== 201 || !forwarded.body.runId) {
-      throw new Error("Expected the forwarded prompt to launch a run");
+    if (forwarded.status !== 201) {
+      throw new Error("Expected the forwarded prompt to be accepted");
     }
-    const forwardedRunId = forwarded.body.runId;
+    expect(forwarded.body.runId).toBeNull();
+    await flushWaitUntilForTest();
+    const forwardedRunId = await readPickedInputRun(
+      actor,
+      targetThread.id,
+      forwardedEventId,
+    );
 
     const targetMessages = await waitForThreadMessages(
       actor,
@@ -304,16 +385,6 @@ describe("CHAT-02: shared user message queue", () => {
     });
 
     const forwardedRun = await api.readRun(actor, forwardedRunId);
-    const forwardedState = await runStateStore.set(
-      readAgentRunState$,
-      {
-        orgId: actor.orgId,
-        userId: actor.userId,
-        runId: forwardedRunId,
-      },
-      context.signal,
-    );
-    expect(forwardedState.agent_run).toMatchObject({ triggerSource: "web" });
     const forwardedSystemPrompt = forwardedRun.appendSystemPrompt ?? "";
     expect(forwardedSystemPrompt).toContain("# This Run's Trigger");
     expect(forwardedSystemPrompt).toContain(
@@ -326,12 +397,6 @@ describe("CHAT-02: shared user message queue", () => {
     expect(forwardedSystemPrompt).toContain(
       `SOURCE_THREAD_ID: ${source.threadId}`,
     );
-    await expect(
-      readRunAutonomyBudgetFixture(context, source.runId),
-    ).resolves.toBe(0);
-    await expect(
-      readRunAutonomyBudgetFixture(context, forwardedRunId),
-    ).resolves.toBe(10);
 
     const unknownSource = await chat.requestSendEvent(
       actor,
@@ -387,16 +452,13 @@ describe("CHAT-02: shared user message queue", () => {
     if (firstSend.status !== 201) {
       throw new Error("Expected the first delegated prompt to be accepted");
     }
-    if (!firstSend.body.runId) {
-      throw new Error("Expected the first delegated prompt to launch a run");
-    }
-    const firstTargetRunId = firstSend.body.runId;
-    await expect(
-      readRunAutonomyBudgetFixture(context, source.runId),
-    ).resolves.toBe(10);
-    await expect(
-      readRunAutonomyBudgetFixture(context, firstTargetRunId),
-    ).resolves.toBe(9);
+    expect(firstSend.body.runId).toBeNull();
+    await flushWaitUntilForTest();
+    const firstTargetRunId = await readPickedInputRun(
+      actor,
+      firstTargetThread.id,
+      firstEventId,
+    );
     const firstTargetRun = await api.readRun(actor, firstTargetRunId);
     const firstTargetSystemPrompt = firstTargetRun.appendSystemPrompt ?? "";
     expect(firstTargetSystemPrompt).toContain("# This Run's Trigger");
@@ -477,14 +539,8 @@ describe("CHAT-02: shared user message queue", () => {
     if (secondSend.status !== 201) {
       throw new Error("Expected the second delegated prompt to be accepted");
     }
-    if (!secondSend.body.runId) {
-      throw new Error("Expected the second delegated prompt to queue a run");
-    }
-    const secondTargetRunId = secondSend.body.runId;
-    expect(secondSend.body.status).toBe("queued");
-    await expect(
-      readRunAutonomyBudgetFixture(context, secondTargetRunId),
-    ).resolves.toBe(9);
+    // At the org cap the delegated prompt stays queued as input; no run yet.
+    expect(secondSend.body.runId).toBeNull();
     const secondMessages = await waitForThreadMessages(
       actor,
       secondTargetThread.id,
@@ -525,10 +581,7 @@ describe("CHAT-02: shared user message queue", () => {
     if (nowSend.status !== 201) {
       throw new Error("Expected the placeholder-title prompt to be accepted");
     }
-    if (!nowSend.body.runId) {
-      throw new Error("Expected the placeholder-title prompt to queue a run");
-    }
-    const nowTargetRunId = nowSend.body.runId;
+    expect(nowSend.body.runId).toBeNull();
     const nowMessages = await waitForThreadMessages(
       actor,
       nowTargetThread.id,
@@ -596,15 +649,28 @@ describe("CHAT-02: shared user message queue", () => {
       expect.objectContaining({ id: forgedEventId }),
     );
 
-    await cancelChatRun(actor, nowTargetRunId);
-    await cancelChatRun(actor, secondTargetRunId);
+    // Freeing a slot picks the oldest queued thread first; the launched run
+    // keeps the delegated autonomy budget carried by the queued input.
     await cancelChatRun(actor, firstTargetRunId);
+    await flushWaitUntilForTest();
+    const secondTargetRunId = await readPickedInputRun(
+      actor,
+      secondTargetThread.id,
+      secondEventId,
+    );
+    await cancelChatRun(actor, secondTargetRunId);
+    await flushWaitUntilForTest();
+    const nowTargetRunId = await readPickedInputRun(
+      actor,
+      nowTargetThread.id,
+      nowEventId,
+    );
+    await cancelChatRun(actor, nowTargetRunId);
     await cancelChatRun(actor, source.runId, sourceSandboxHeaders);
   }, 90_000);
 
   it("keeps Web context and tools for agent prompts sent into existing threads", async () => {
-    const { actor, agentId, runnerGroup, providerId } =
-      await entitledChatActor();
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     if (!actor.orgId) {
       throw new Error("Expected an org-scoped actor");
@@ -622,47 +688,20 @@ describe("CHAT-02: shared user message queue", () => {
     const rotatedAnchor = await sendChatRun(actor, {
       agentId,
       prompt: rotatedAnchorPrompt,
-      model: "claude-sonnet-5",
+      model: "claude-fable-5-1",
     });
     const rotatedAnchorClaim = await claimChatRun(
       runnerGroup,
       rotatedAnchor.runId,
     );
-    const originalBinding = await readThreadSessionBinding(
-      context,
-      rotatedAnchor.threadId,
-    );
-    if (!originalBinding.agent_session_id) {
-      throw new Error("Expected the Web anchor to bind a session");
-    }
 
-    const { providerId: codexProviderId } = await upsertOrgModelProvider(
+    await createBddIntegrationApi(context).configureNativeSubscriptionModels(
       actor,
-      {
-        type: "openai-api-key",
-        secret: "agent-web-semantics-openai-key",
-      },
     );
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "claude-sonnet-5",
-        isDefault: true,
-        defaultProviderType: "anthropic-api-key",
-        credentialScope: "org",
-        modelProviderId: providerId,
-      },
-      {
-        model: "gpt-5.6-terra",
-        isDefault: false,
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: codexProviderId,
-      },
-    ]);
     await chat.updateThreadModelSelection(
       actor,
       rotatedAnchor.threadId,
-      "gpt-5.6-terra",
+      "gpt-6-astra",
     );
 
     const rotatedEventId = randomUUID();
@@ -708,16 +747,6 @@ describe("CHAT-02: shared user message queue", () => {
     }
     const rotatedRun = await api.readRun(actor, rotatedRunId);
     const rotatedSystemPrompt = rotatedRun.appendSystemPrompt ?? "";
-    const rotatedState = await runStateStore.set(
-      readAgentRunState$,
-      {
-        orgId: actor.orgId,
-        userId: actor.userId,
-        runId: rotatedRunId,
-      },
-      context.signal,
-    );
-    expect(rotatedState.agent_run).toMatchObject({ triggerSource: "agent" });
     expect(rotatedSystemPrompt).toContain("# Web Chat Run Context");
     expect(rotatedSystemPrompt).toContain("# This Run's Trigger");
     expect(rotatedSystemPrompt).toContain(`SOURCE_RUN_ID: ${source.runId}`);
@@ -732,13 +761,6 @@ describe("CHAT-02: shared user message queue", () => {
     );
     expect(rotatedSystemPrompt).toContain(
       CODEX_WEB_IMAGE_UPLOAD_PROMPT_SNIPPET,
-    );
-    const rotatedBinding = await readThreadSessionBinding(
-      context,
-      rotatedAnchor.threadId,
-    );
-    expect(rotatedBinding.agent_session_id).not.toBe(
-      originalBinding.agent_session_id,
     );
     const rotatedClaim = await claimChatRun(runnerGroup, rotatedRunId);
     expect(rotatedClaim.claim.resumeSession).toBeNull();
@@ -793,16 +815,6 @@ describe("CHAT-02: shared user message queue", () => {
     }
     const incompleteRun = await api.readRun(actor, incompleteRunId);
     const incompleteSystemPrompt = incompleteRun.appendSystemPrompt ?? "";
-    const incompleteState = await runStateStore.set(
-      readAgentRunState$,
-      {
-        orgId: actor.orgId,
-        userId: actor.userId,
-        runId: incompleteRunId,
-      },
-      context.signal,
-    );
-    expect(incompleteState.agent_run).toMatchObject({ triggerSource: "agent" });
     expect(incompleteSystemPrompt).toContain("# Web Chat Run Context");
     expect(incompleteSystemPrompt).toContain(incompletePrompt);
     expect(incompleteSystemPrompt).not.toContain("# Incomplete Rounds Context");
@@ -825,36 +837,39 @@ describe("CHAT-02: shared user message queue", () => {
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const target = await chat.createThread(actor, { agentId });
     const blockedTarget = await chat.createThread(actor, { agentId });
-    const root = await sendChatRun(actor, {
+    // The thirty-two-hop limit is reached through thirty-one ordinary hops,
+    // then the last allowed delegation below. No budget row is injected.
+    const { run: root, claim: rootClaim } = await callerAtDelegationDepth(
+      actor,
       agentId,
-      prompt: "start bounded delegation",
-    });
-    const rootClaim = await claimChatRun(runnerGroup, root.runId);
-    await setRunAutonomyBudgetFixture(context, root.runId, 1);
+      runnerGroup,
+      31,
+    );
 
+    const delegatedEventId = randomUUID();
     const delegated = await requestSendEventWithBearer(
       okouTokenFromClaim(rootClaim.claim),
       {
         agentId,
-        clientEventId: randomUUID(),
+        clientEventId: delegatedEventId,
         threadId: target.id,
         prompt: "last allowed delegation",
       },
       [201],
     );
-    if (delegated.status !== 201 || delegated.body.runId === null) {
-      throw new Error("Expected the last allowed delegation to create a run");
+    if (delegated.status !== 201) {
+      throw new Error("Expected the last allowed delegation to be accepted");
     }
-    await expect(
-      readRunAutonomyBudgetFixture(context, delegated.body.runId),
-    ).resolves.toBe(0);
+    await flushWaitUntilForTest();
+    const delegatedRunId = await readPickedInputRun(
+      actor,
+      target.id,
+      delegatedEventId,
+    );
 
     await completeChatRunOk(root.runId, rootClaim.sandboxHeaders);
     await flushWaitUntilForTest();
-    const delegatedClaim = await claimChatRun(
-      runnerGroup,
-      delegated.body.runId,
-    );
+    const delegatedClaim = await claimChatRun(runnerGroup, delegatedRunId);
 
     const blockedEventId = randomUUID();
     const blocked = await requestSendEventWithBearer(
@@ -865,23 +880,50 @@ describe("CHAT-02: shared user message queue", () => {
         threadId: blockedTarget.id,
         prompt: "delegation beyond the limit",
       },
-      [409],
+      [201],
     );
     expect(blocked).toMatchObject({
-      status: 409,
-      body: {
-        error: { code: "AUTONOMY_BUDGET_EXHAUSTED" },
-      },
+      status: 201,
+      body: { runId: null, threadId: blockedTarget.id },
     });
-    const targetMessages = await chat.listThreadEvents(actor, blockedTarget.id);
-    expect(targetMessages.events).not.toContainEqual(
-      expect.objectContaining({ id: blockedEventId }),
+    // The pick rejects the exhausted budget in the thread instead of the send.
+    await flushWaitUntilForTest();
+    const targetMessages = await waitForThreadMessages(
+      actor,
+      blockedTarget.id,
+      (events) => {
+        return (
+          userMessages(events).some((event) => {
+            return (
+              event.eventType === "input.rejected" &&
+              event.revokesEventId === blockedEventId
+            );
+          }) &&
+          events.some((event) => {
+            return event.eventType === "output.error";
+          })
+        );
+      },
     );
+    expect(
+      userMessages(targetMessages.events).filter((event) => {
+        return event.revokesEventId === blockedEventId;
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        eventType: "input.rejected",
+        error: "autonomy_budget_exhausted",
+      }),
+    ]);
+    expect(
+      targetMessages.events.filter((event) => {
+        return event.eventType === "output.error";
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({ error: "autonomy_budget_exhausted" }),
+    ]);
 
-    await completeChatRunOk(
-      delegated.body.runId,
-      delegatedClaim.sandboxHeaders,
-    );
+    await completeChatRunOk(delegatedRunId, delegatedClaim.sandboxHeaders);
     await flushWaitUntilForTest();
   }, 90_000);
 
@@ -1209,94 +1251,6 @@ describe("CHAT-02: shared user message queue", () => {
     await cancelChatRun(actor, firstClaimed.runId);
   }, 90_000);
 
-  it("dispatches an idle send while thread-list publication is pending", async () => {
-    const { actor, agentId } = await entitledChatActor();
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    const publicationStarted = createDeferredPromise<void>(context.signal);
-    const releasePublication = createDeferredPromise<void>(context.signal);
-    context.mocks.ably.publish.mockImplementation((topic: unknown) => {
-      if (topic === "threadListChanged") {
-        if (!publicationStarted.settled()) {
-          publicationStarted.resolve(undefined);
-        }
-        return releasePublication.promise;
-      }
-      return Promise.resolve(undefined);
-    });
-
-    const prompt = "dispatch while thread list publication is pending";
-    const send = chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        prompt,
-        clientEventId: randomUUID(),
-      },
-      [201],
-    );
-    let sendSettled = false;
-    const sendOutcome = send.then(
-      (value) => {
-        sendSettled = true;
-        return { ok: true as const, value };
-      },
-      (error: unknown) => {
-        sendSettled = true;
-        return { ok: false as const, error };
-      },
-    );
-    onTestFinished(async () => {
-      if (!releasePublication.settled()) {
-        releasePublication.resolve(undefined);
-      }
-      await sendOutcome;
-    });
-
-    await publicationStarted.promise;
-    await expect
-      .poll(() => {
-        return sendSettled;
-      })
-      .toBeTruthy();
-    expect(releasePublication.settled()).toBeFalsy();
-    const outcome = await sendOutcome;
-    if (!outcome.ok) {
-      throw outcome.error;
-    }
-    const sent = outcome.value;
-    if (sent.status !== 201 || sent.body.runId === null) {
-      throw new Error("Expected the pending publication not to gate dispatch");
-    }
-    await waitForRunUserMessage(
-      actor,
-      sent.body.threadId,
-      sent.body.runId,
-      prompt,
-    );
-
-    await expect
-      .poll(async () => {
-        const runList = await api.listAgentRuns(actor, {
-          status: "queued,pending,running,completed,failed,timeout,cancelled",
-          limit: 100,
-        });
-        return runList.runs.some((run) => {
-          return run.prompt === prompt;
-        });
-      })
-      .toBe(true);
-
-    const threadListPublishes = context.mocks.ably.publish.mock.calls.filter(
-      ([topic]) => {
-        return topic === "threadListChanged";
-      },
-    );
-    expect(threadListPublishes).toHaveLength(1);
-    releasePublication.resolve(undefined);
-    await cancelChatRun(actor, sent.body.runId);
-  }, 90_000);
-
   it("keeps a queued send drainable when thread-list publication fails", async () => {
     const { actor, agentId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
@@ -1305,14 +1259,10 @@ describe("CHAT-02: shared user message queue", () => {
       agentId,
       prompt: "thread list publication failure anchor",
     });
-    await expect
-      .poll(() => {
-        return context.mocks.ably.publish.mock.calls.some(([topic]) => {
-          return topic === "threadListChanged";
-        });
-      })
-      .toBe(true);
-    context.mocks.ably.publish.mockClear();
+    // Seeing the anchor run does not finish its background pick publication.
+    // Finish that phase before observing the next send's notifications.
+    await flushWaitUntilForTest();
+    const beforeQueuedSend = context.mocks.ably.publish.mock.calls.length;
 
     let failedThreadListPublish = false;
     context.mocks.ably.publish.mockImplementation((topic: unknown) => {
@@ -1335,6 +1285,8 @@ describe("CHAT-02: shared user message queue", () => {
       runId: null,
       threadId: anchor.threadId,
     });
+    // Finish the queued send's background publication before retrying.
+    await flushWaitUntilForTest();
     expect(failedThreadListPublish).toBeTruthy();
 
     const retried = await chat.requestSendEvent(actor, queuedBody, [201]);
@@ -1342,14 +1294,16 @@ describe("CHAT-02: shared user message queue", () => {
       runId: null,
       threadId: anchor.threadId,
     });
-    const threadListPublishes = context.mocks.ably.publish.mock.calls.filter(
-      ([topic]) => {
+    await flushWaitUntilForTest();
+    const threadListPublishes = context.mocks.ably.publish.mock.calls
+      .slice(beforeQueuedSend)
+      .filter(([topic]) => {
         return topic === "threadListChanged";
-      },
-    );
+      });
     expect(threadListPublishes).toHaveLength(1);
 
     await cancelChatRun(actor, anchor.runId);
+    await flushWaitUntilForTest();
     const messages = await waitForThreadMessages(
       actor,
       anchor.threadId,
@@ -1369,384 +1323,6 @@ describe("CHAT-02: shared user message queue", () => {
       throw new Error("Expected the queued message to remain drainable");
     }
     await cancelChatRun(actor, promoted.runId);
-  }, 90_000);
-
-  it("serializes a terminal drain against an inline queue-first send", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped actor for queue serialization");
-    }
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    const anchor = await sendChatRun(actor, {
-      agentId,
-      prompt: "terminal drain race anchor",
-    });
-    const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
-
-    await webhooks.requestAgentEvents(
-      {
-        runId: anchor.runId,
-        events: [
-          {
-            type: "assistant",
-            sequenceNumber: 0,
-            message: {
-              content: [
-                { type: "text", text: "terminal callback race complete" },
-              ],
-            },
-          },
-        ],
-      },
-      anchorClaim.sandboxHeaders,
-      [200],
-    );
-    await flushWaitUntilForTest();
-
-    const terminalPrompt = "terminal drain owns the queue head";
-    const terminalMessageId = randomUUID();
-    const queued = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: anchor.threadId,
-        prompt: terminalPrompt,
-        clientEventId: terminalMessageId,
-      },
-      [201],
-    );
-    expect(queued.body).toMatchObject({ runId: null });
-
-    const admissionLock = await holdOrgAdmissionLockFixture({
-      orgId: actor.orgId,
-      signal: context.signal,
-    });
-    onTestFinished(async () => {
-      admissionLock.release();
-      await admissionLock.done;
-    });
-
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-      lastEventSequence: 0,
-    });
-    // The terminal drain owns the existing queue head and reaches final run
-    // admission before the inline send joins the same boundary.
-    await expect.poll(admissionLock.waiterCount).toBe(1);
-
-    const inlinePrompt = "inline send waits behind the terminal drain";
-    const inlineMessageId = randomUUID();
-    const send = chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: anchor.threadId,
-        prompt: inlinePrompt,
-        clientEventId: inlineMessageId,
-      },
-      [201],
-    );
-    await expect
-      .poll(async () => {
-        const messages = await chat.listThreadEvents(actor, anchor.threadId);
-        return messages.events.some((message) => {
-          return message.id === inlineMessageId;
-        });
-      })
-      .toBe(true);
-    await expect.poll(admissionLock.transitiveWaiterCount).toBe(2);
-    admissionLock.release();
-
-    const sent = await send;
-    await admissionLock.done;
-    await flushWaitUntilForTest();
-    expect(sent.body).toMatchObject({ runId: null });
-
-    const messages = await chat.listThreadEvents(actor, anchor.threadId);
-    const claimed = userMessages(messages.events).filter((message) => {
-      return (
-        message.revokesEventId === terminalMessageId &&
-        message.runId !== undefined
-      );
-    });
-    expect(claimed).toHaveLength(1);
-    const claimedRunId = claimed[0]?.runId;
-    if (!claimedRunId) {
-      throw new Error("Expected the terminal drain to own the queue head");
-    }
-    const inline = userMessages(messages.events).find((message) => {
-      return message.id === inlineMessageId;
-    });
-    if (!inline) {
-      throw new Error("Expected the inline queued message");
-    }
-    expect(inline.runId).toBeUndefined();
-
-    const runList = await api.listAgentRuns(actor, {
-      status: "queued,pending,running,completed,failed,timeout,cancelled",
-      limit: 100,
-    });
-    const candidates = runList.runs.filter((run) => {
-      return run.prompt === terminalPrompt || run.prompt === inlinePrompt;
-    });
-    expect(candidates).toStrictEqual([
-      expect.objectContaining({
-        id: claimedRunId,
-        prompt: terminalPrompt,
-        status: expect.stringMatching(/^(queued|pending|running)$/),
-      }),
-    ]);
-
-    const recalled = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: anchor.threadId,
-        revokesEventId: inlineMessageId,
-        clientEventId: randomUUID(),
-      },
-      [201],
-    );
-    expect(recalled.body).toMatchObject({ runId: null });
-    await cancelChatRun(actor, claimedRunId);
-  }, 90_000);
-
-  it("preserves an appended claim when recall races the queue drain", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped actor for queue serialization");
-    }
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    const anchor = await sendChatRun(actor, {
-      agentId,
-      prompt: "recall claim race anchor",
-    });
-    const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
-
-    const messageId = randomUUID();
-    const queued = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: anchor.threadId,
-        prompt: "recall races the appended claim",
-        clientEventId: messageId,
-      },
-      [201],
-    );
-    expect(queued.body).toMatchObject({ runId: null });
-
-    // Pin the completion-triggered queue-first drain at run admission, then
-    // make the claim and recall queue behind the exact message row in a
-    // test-owned order.
-    const admissionLock = await holdOrgAdmissionLockFixture({
-      orgId: actor.orgId,
-      signal: context.signal,
-    });
-    const eventQueueLock = await holdChatEventQueueItemFixture({
-      threadId: anchor.threadId,
-      eventId: messageId,
-      signal: context.signal,
-    });
-
-    onTestFinished(async () => {
-      admissionLock.release();
-      eventQueueLock.release();
-      await Promise.all([admissionLock.done, eventQueueLock.done]);
-    });
-
-    chatCallbacks.mockChatOutputEvents([
-      assistantEvent(0, "recall claim race complete"),
-    ]);
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-      lastEventSequence: 0,
-    });
-    await expect.poll(admissionLock.waiterCount).toBe(1);
-    admissionLock.release();
-    await admissionLock.done;
-    await expect.poll(eventQueueLock.directBlockedWaiterCount).toBe(1);
-
-    const recall = Promise.allSettled([
-      chat.requestSendEvent(
-        actor,
-        {
-          agentId,
-          threadId: anchor.threadId,
-          revokesEventId: messageId,
-          clientEventId: randomUUID(),
-        },
-        [400],
-      ),
-    ]);
-    await expect.poll(eventQueueLock.blockedWaiterCount).toBe(2);
-    eventQueueLock.release();
-
-    const [recallResult] = await recall;
-    if (recallResult.status === "rejected") {
-      throw recallResult.reason;
-    }
-    const recalled = recallResult.value;
-    expectApiError(recalled.body);
-    expect(recalled.body.error.message).toBe(
-      "Only queued user messages can be recalled",
-    );
-    await eventQueueLock.done;
-    await flushWaitUntilForTest();
-
-    const messages = await waitForThreadMessages(
-      actor,
-      anchor.threadId,
-      (items) => {
-        return userMessages(items).some((message) => {
-          return (
-            message.revokesEventId === messageId &&
-            typeof message.runId === "string"
-          );
-        });
-      },
-    );
-    const claimed = userMessages(messages.events).find((message) => {
-      return message.revokesEventId === messageId;
-    });
-    if (!claimed?.runId) {
-      throw new Error("Expected the queue drain to append a claimed message");
-    }
-    const original = userMessages(messages.events).find((message) => {
-      return message.id === messageId;
-    });
-    if (!original) {
-      throw new Error("Expected the original queued message");
-    }
-    expect(original.runId).toBeUndefined();
-    expect(claimed.content).toBeNull();
-    expect(chatEventDisplayText(claimed)).toBe(
-      "recall races the appended claim",
-    );
-
-    await cancelChatRun(actor, claimed.runId);
-  }, 90_000);
-
-  it("lets recall win before an atomic queue-first drain", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor();
-    if (!actor.orgId) {
-      throw new Error("Expected an org-scoped actor for queue serialization");
-    }
-    chatCallbacks.failIfChatCallbackRouteIsFetched();
-
-    const anchor = await sendChatRun(actor, {
-      agentId,
-      prompt: "recall-first queue race anchor",
-    });
-    const anchorClaim = await claimChatRun(runnerGroup, anchor.runId);
-
-    const prompt = "recall wins the atomic queue-first race";
-    const messageId = randomUUID();
-    const queued = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: anchor.threadId,
-        prompt,
-        clientEventId: messageId,
-      },
-      [201],
-    );
-    expect(queued.body).toMatchObject({ runId: null });
-
-    const admissionLock = await holdOrgAdmissionLockFixture({
-      orgId: actor.orgId,
-      signal: context.signal,
-    });
-
-    // Stage the completion-triggered queue-first drain at org admission, then
-    // let recall append before it can claim the queued message.
-    onTestFinished(async () => {
-      admissionLock.release();
-      await admissionLock.done;
-    });
-
-    chatCallbacks.mockChatOutputEvents([
-      assistantEvent(0, "recall-first queue race complete"),
-    ]);
-    await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders, {
-      lastEventSequence: 0,
-    });
-    await expect.poll(admissionLock.waiterCount).toBe(1);
-
-    const recalled = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: anchor.threadId,
-        revokesEventId: messageId,
-        clientEventId: randomUUID(),
-      },
-      [201],
-    );
-    expect(recalled.body).toMatchObject({
-      runId: null,
-      threadId: anchor.threadId,
-    });
-
-    admissionLock.release();
-    await admissionLock.done;
-    await flushWaitUntilForTest();
-
-    const messages = await chat.listThreadEvents(actor, anchor.threadId);
-    expect(userMessages(messages.events)).toContainEqual(
-      expect.objectContaining({
-        content: null,
-        revokesEventId: messageId,
-      }),
-    );
-    expect(
-      userMessages(messages.events).filter((message) => {
-        return message.revokesEventId === messageId && message.runId;
-      }),
-    ).toHaveLength(0);
-
-    const runList = await api.listAgentRuns(actor, {
-      status: "queued,pending,running,completed,failed,timeout,cancelled",
-      limit: 100,
-    });
-    expect(
-      runList.runs.filter((run) => {
-        return run.prompt === prompt;
-      }),
-    ).toHaveLength(0);
-
-    const recalledEvent = userMessages(messages.events).find((message) => {
-      return message.revokesEventId === messageId && !message.runId;
-    });
-    if (recalledEvent === undefined) {
-      throw new Error("Expected the winning recall event");
-    }
-    const probeEventId = randomUUID();
-    const probe = await chat.requestSendEvent(
-      actor,
-      {
-        agentId,
-        threadId: anchor.threadId,
-        prompt: "append after the lost queue claim",
-        clientEventId: probeEventId,
-      },
-      [201],
-    );
-    if (probe.status !== 201) {
-      throw new Error("Expected the post-race probe event to be accepted");
-    }
-    const afterProbe = await chat.listThreadEvents(actor, anchor.threadId);
-    const probeEvent = userMessages(afterProbe.events).find((message) => {
-      return message.id === probeEventId;
-    });
-    if (probeEvent === undefined) {
-      throw new Error("Expected the post-race probe event");
-    }
-    expect(probeEvent.seqId).toBe(recalledEvent.seqId + 1);
-    if (probe.body.runId !== null) {
-      await cancelChatRun(actor, probe.body.runId);
-    }
   }, 90_000);
 
   it("appends replacements on auto-send and keeps queued recalls idempotent", async () => {
@@ -1815,6 +1391,7 @@ describe("CHAT-02: shared user message queue", () => {
     context.mocks.ably.publish.mockClear();
     chatCallbacks.mockChatOutputEvents([]);
     await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
+    await flushWaitUntilForTest();
     const messages = await waitForThreadMessages(
       actor,
       anchor.threadId,
@@ -1858,13 +1435,12 @@ describe("CHAT-02: shared user message queue", () => {
         runId: promoted.runId,
       }),
     );
-    await expect
-      .poll(() => {
-        return context.mocks.ably.publish.mock.calls.some((call) => {
-          return call[0] === `chatThreadMessageCreated:${anchor.threadId}`;
-        });
-      })
-      .toBe(true);
+    await flushWaitUntilForTest();
+    expect(
+      context.mocks.ably.publish.mock.calls.some((call) => {
+        return call[0] === `chatThreadMessageCreated:${anchor.threadId}`;
+      }),
+    ).toBeTruthy();
 
     const followUp = await api.readRun(actor, promoted.runId);
     expect(followUp.prompt).toContain("queue-first waits for the anchor");

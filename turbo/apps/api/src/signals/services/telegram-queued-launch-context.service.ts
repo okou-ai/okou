@@ -1,12 +1,9 @@
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
-import { telegramInstallations } from "@okouai/db/schema/telegram-installation";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-user-link";
-import { telegramUserLinks } from "@okouai/db/schema/telegram-user-link";
 import { and, eq } from "drizzle-orm";
 
 import type { Db } from "../external/db";
@@ -22,7 +19,6 @@ import { buildTelegramPrompt } from "./telegram-prompt";
 export interface TelegramQueuedLaunchMaterial {
   readonly prompt: string;
   readonly appendSystemPrompt: string;
-  readonly publicBrand: PublicBrand;
   readonly telegramDelivery: TelegramDeliveryTarget;
   readonly userInfoExtras: {
     readonly telegramDisplayName?: string;
@@ -41,7 +37,6 @@ type TelegramLaunchContextRow = Pick<
   | "threadContext"
   | "rootMessageId"
   | "thinkingMessageId"
-  | "publicBrand"
   | "userLinkId"
   | "userLinkKind"
   | "chatType"
@@ -51,9 +46,6 @@ type TelegramLaunchContextRow = Pick<
   | "senderLanguage"
 > & {
   readonly agentId: string;
-  readonly customUserLinkId: string | null;
-  readonly customInstallationId: string | null;
-  readonly customBotUsername: string | null;
   readonly officialUserLinkId: string | null;
 };
 
@@ -70,13 +62,9 @@ function requiredTelegramLaunchContext(
   ) {
     return null;
   }
-  if (
-    row.userLinkKind === "custom" &&
-    (row.customUserLinkId === null || row.customInstallationId === null)
-  ) {
-    return null;
-  }
-  if (row.userLinkKind === "official" && row.officialUserLinkId === null) {
+  // Self-hosted (custom) Telegram bots are retired; only the official shared
+  // bot can deliver queued launches.
+  if (row.userLinkKind !== "official" || row.officialUserLinkId === null) {
     return null;
   }
   return {
@@ -107,7 +95,6 @@ async function loadTelegramLaunchContext(
       threadContext: chatTelegramContext.threadContext,
       rootMessageId: chatTelegramContext.rootMessageId,
       thinkingMessageId: chatTelegramContext.thinkingMessageId,
-      publicBrand: chatTelegramContext.publicBrand,
       userLinkId: chatTelegramContext.userLinkId,
       userLinkKind: chatTelegramContext.userLinkKind,
       chatType: chatTelegramContext.chatType,
@@ -116,9 +103,6 @@ async function loadTelegramLaunchContext(
       senderUsername: chatTelegramContext.senderUsername,
       senderLanguage: chatTelegramContext.senderLanguage,
       agentId: agents.id,
-      customUserLinkId: telegramUserLinks.id,
-      customInstallationId: telegramInstallations.telegramBotId,
-      customBotUsername: telegramInstallations.botUsername,
       officialUserLinkId: telegramOfficialUserLinks.id,
     })
     .from(chatEvents)
@@ -137,24 +121,6 @@ async function loadTelegramLaunchContext(
       ),
     )
     .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-    .leftJoin(
-      telegramUserLinks,
-      and(
-        eq(chatTelegramContext.userLinkKind, "custom"),
-        eq(telegramUserLinks.id, chatTelegramContext.userLinkId),
-        eq(telegramUserLinks.userId, args.userId),
-      ),
-    )
-    .leftJoin(
-      telegramInstallations,
-      and(
-        eq(
-          telegramInstallations.telegramBotId,
-          telegramUserLinks.installationId,
-        ),
-        eq(telegramInstallations.orgId, args.orgId),
-      ),
-    )
     .leftJoin(
       telegramOfficialUserLinks,
       and(
@@ -209,28 +175,11 @@ export async function loadTelegramQueuedLaunchMaterial(
     return null;
   }
   const officialBotConfig = getOfficialTelegramBotConfig();
-  const deliveryInstallationId =
-    context.userLinkKind === "custom"
-      ? context.customInstallationId
-      : OFFICIAL_TELEGRAM_BOT_ID;
-  if (deliveryInstallationId === null) {
-    return null;
-  }
-  const providerBotId =
-    context.userLinkKind === "custom"
-      ? context.customInstallationId
-      : officialBotConfig.botId;
+  const providerBotId = officialBotConfig.botId;
   if (providerBotId === null) {
     return null;
   }
-  const botUsername =
-    context.userLinkKind === "custom"
-      ? context.customBotUsername
-      : officialBotConfig.botUsername;
-  const publicBrand = context.publicBrand;
-  if (!publicBrand) {
-    return null;
-  }
+  const botUsername = officialBotConfig.botUsername;
   return {
     prompt: context.messageText,
     appendSystemPrompt: buildTelegramPrompt(
@@ -249,9 +198,8 @@ export async function loadTelegramQueuedLaunchMaterial(
       }),
       context.threadContext,
     ),
-    publicBrand,
     telegramDelivery: telegramDeliveryTargetSchema.parse({
-      installationId: deliveryInstallationId,
+      installationId: OFFICIAL_TELEGRAM_BOT_ID,
       chatId: context.chatId,
       messageId: context.messageId,
       rootMessageId: context.rootMessageId,

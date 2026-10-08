@@ -1,13 +1,9 @@
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
-import { and, asc, count, eq, gt, inArray, sql, sum } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, sql, sum } from "drizzle-orm";
 import { pgIntegerDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import type { Db } from "../external/db";
-import { sandboxCapacityPredicate } from "./pi-inference-lifecycle.service";
 
 export const CONCURRENCY_SUBSCRIPTION_PURPOSE = "concurrency_subscription";
 const CONCURRENCY_SUBSCRIPTION_ACTIVE_STATUSES = [
@@ -29,12 +25,6 @@ export interface ActiveConcurrencySubscription {
   readonly cancelAtPeriodEnd: boolean;
   readonly scheduledQuantity: number | null;
   readonly scheduledChangeAt: Date | null;
-}
-
-interface OrgConcurrencyState {
-  readonly baseConcurrencyLimit: number;
-  readonly paidSlots: number;
-  readonly activeRunCount: number;
 }
 
 function dbTimestamp(value: Date | string | null | undefined): Date | null {
@@ -77,7 +67,10 @@ function activePaidThroughCutoff(at: Date): Date {
   return new Date(at.getTime() - CONCURRENCY_PAYMENT_FAILURE_GRACE_MS);
 }
 
-function activeConcurrencySubscriptionPredicate(orgId: string, at: Date) {
+export function activeConcurrencySubscriptionPredicate(
+  orgId: string,
+  at: Date,
+) {
   return and(
     eq(orgConcurrencySubscriptions.orgId, orgId),
     inArray(orgConcurrencySubscriptions.subscriptionStatus, [
@@ -107,114 +100,6 @@ export async function activePaidConcurrencySlots(
     .where(activeConcurrencySubscriptionPredicate(orgId, at));
 
   return row?.slots ?? 0;
-}
-
-function orgConcurrencyStateTotals(
-  db: ReadDb,
-  args: {
-    readonly orgId: string;
-    readonly at: Date;
-    readonly activePendingAfter: Date;
-  },
-) {
-  const paidSlotTotals = db
-    .select({
-      slots: sql`COALESCE(${sum(orgConcurrencySubscriptions.slots)}, 0)::int`
-        .mapWith(pgIntegerDecoder)
-        .as("slots"),
-    })
-    .from(orgConcurrencySubscriptions)
-    .where(activeConcurrencySubscriptionPredicate(args.orgId, args.at))
-    .as("paid_concurrency_slot_totals");
-  const activeRunTotals = db
-    .select({
-      count: count().as("active_run_count"),
-    })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.orgId, args.orgId),
-        sandboxCapacityPredicate(db, args.orgId, args.activePendingAfter),
-      ),
-    )
-    .as("active_concurrency_run_totals");
-  return { paidSlotTotals, activeRunTotals };
-}
-
-export async function loadOrgConcurrencyState(
-  db: ReadDb,
-  args: {
-    readonly orgId: string;
-    readonly at: Date;
-    readonly activePendingAfter: Date;
-  },
-): Promise<OrgConcurrencyState> {
-  const { paidSlotTotals, activeRunTotals } = orgConcurrencyStateTotals(
-    db,
-    args,
-  );
-  const [row] = await db
-    .select({
-      entitlementOrgId: orgPlanEntitlements.orgId,
-      metadataOrgId: orgMetadata.orgId,
-      baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
-      paidSlots: paidSlotTotals.slots,
-      activeRunCount: activeRunTotals.count,
-    })
-    .from(paidSlotTotals)
-    .crossJoin(activeRunTotals)
-    .leftJoin(orgPlanEntitlements, eq(orgPlanEntitlements.orgId, args.orgId))
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, args.orgId));
-  if (!row) {
-    throw new Error("Concurrency state aggregate returned no row");
-  }
-  if (row.entitlementOrgId === null && row.metadataOrgId !== null) {
-    throw new Error(`Missing org plan entitlement for ${args.orgId}`);
-  }
-
-  return {
-    baseConcurrencyLimit: row.baseConcurrencyLimit ?? 0,
-    paidSlots: row.paidSlots,
-    activeRunCount: row.activeRunCount,
-  };
-}
-
-/** Fresh direct admission only, ordered at the caller's single captured `at`. */
-export async function loadOrgConcurrencyAdmissionState(
-  db: ReadDb,
-  args: {
-    readonly orgId: string;
-    readonly at: Date;
-    readonly activePendingAfter: Date;
-  },
-): Promise<OrgConcurrencyState> {
-  const { paidSlotTotals, activeRunTotals } = orgConcurrencyStateTotals(
-    db,
-    args,
-  );
-  const [row] = await db
-    .select({
-      entitlementOrgId: orgPlanEntitlements.orgId,
-      metadataOrgId: orgMetadata.orgId,
-      baseConcurrencyLimit: orgPlanEntitlements.baseConcurrencyLimit,
-      paidSlots: paidSlotTotals.slots,
-      activeRunCount: activeRunTotals.count,
-    })
-    .from(paidSlotTotals)
-    .crossJoin(activeRunTotals)
-    .leftJoin(orgPlanEntitlements, eq(orgPlanEntitlements.orgId, args.orgId))
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, args.orgId));
-  if (!row) {
-    throw new Error("Concurrency admission aggregate returned no row");
-  }
-  if (row.entitlementOrgId === null && row.metadataOrgId !== null) {
-    throw new Error(`Missing org plan entitlement for ${args.orgId}`);
-  }
-  return {
-    baseConcurrencyLimit: row.baseConcurrencyLimit ?? 0,
-    paidSlots: row.paidSlots,
-    activeRunCount: row.activeRunCount,
-  };
 }
 
 export async function activeConcurrencySubscriptions(

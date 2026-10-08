@@ -1,45 +1,41 @@
-//! Durable active-input forwarding from a Runner source to Guest control.
+//! Active-input forwarding from a Runner source to Guest control.
+//!
+//! The API source reads the next prompt or time-budget warning targeted at the
+//! run. Both use the same event identity and materialized text. The Guest declares
+//! an accepted input steered; the Runner only forwards it once.
+//!
+//! An API source reads when the run starts and after each wakeup (an
+//! `active-input` push for the run, or an Ably reconnect). A failed read or a
+//! forward the Guest did not accept is not retried; the next wakeup reads
+//! again. An unsteered prompt stays queued for the next run; a budget warning
+//! expires with its target run.
 
 use std::time::Duration;
 
-use api_contracts::generated::types::runners::runs::active_inputs::{
-    receipt::Response as ActiveInputReceiptResponse,
-    reserve::{Response as ActiveInputReserveResponse, ResponseRejectedReason},
-};
+use api_contracts::generated::types::runners::runs::steerable_inputs::next::ResponseInput;
 use guest_contracts::active_input::{ACTIVE_INPUT_CLOSED_DIAGNOSTIC, encode_active_input};
 use sandbox::{
     GuestProcessControlHandle, ProcessControlFailureKind, ProcessControlGuestStatus,
-    ProcessControlOutcome, ProcessControlWriteState, Sandbox,
+    ProcessControlOutcome, ProcessControlWriteState,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use runner_provider::{
-    ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES, ActiveInputBatch, ActiveInputSource,
-    ApiActiveInputRecovery, local_active_input_delivery_id,
+    ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES, ActiveInputBatch, ActiveInputSource, ProviderError,
+    local_active_input_event_id,
 };
 use runner_types::ids::RunId;
-
-mod read_failures;
 
 #[cfg(test)]
 mod tests;
 
-use read_failures::ReadFailures;
-
-const ACTIVE_INPUT_READ_RETRY_INTERVAL: Duration = Duration::from_millis(250);
 const ACTIVE_INPUT_CONTROL_TIMEOUT: Duration = Duration::from_secs(1);
-pub(super) const ACTIVE_INPUT_CONTROL_RETRY_INITIAL_INTERVAL: Duration = Duration::from_millis(250);
-pub(super) const ACTIVE_INPUT_CONTROL_RETRY_MAX_INTERVAL: Duration = Duration::from_secs(4);
-const ACTIVE_INPUT_JOURNAL_READ_TIMEOUT: Duration = Duration::from_secs(5);
-const ACTIVE_INPUT_RECEIPT_RECOVERY_TIMEOUT: Duration = Duration::from_secs(5);
 const FIRST_ACTIVE_INPUT_SEQUENCE: u64 = 1;
 
 pub(super) struct ActiveInputForwarder {
-    run_id: RunId,
     stop: CancellationToken,
     task: tokio::task::JoinHandle<()>,
-    recovery: Option<ApiActiveInputRecovery>,
 }
 
 impl ActiveInputForwarder {
@@ -52,34 +48,23 @@ impl ActiveInputForwarder {
         let (Some(source), Some(control)) = (source, control) else {
             return None;
         };
-        let recovery = source.api_recovery();
         let stop = CancellationToken::new();
         let stop_for_task = stop.clone();
         let task = tokio::spawn(async move {
             run_forwarder(run_id, source, control, job_cancel, stop_for_task).await;
         });
-        Some(Self {
-            run_id,
-            stop,
-            task,
-            recovery,
-        })
+        Some(Self { stop, task })
     }
 
-    /// Stop live forwarding and recover Guest-persisted receipts while the
-    /// caller still owns the live sandbox.
-    pub(super) async fn stop(self, sandbox: &dyn Sandbox) -> Vec<String> {
+    /// Stop live forwarding while the caller still owns the live sandbox.
+    pub(super) async fn stop(self) {
         self.stop.cancel();
         // A cancelled process-control future has an unknown write outcome. The
         // provider already bounds each control call, so retain ownership until
-        // it resolves before reading the Guest receipt journal.
+        // it resolves.
         if let Err(error) = self.task.await {
             warn!(error = %error, "active-input forwarder task failed");
         }
-        let Some(recovery) = self.recovery else {
-            return Vec::new();
-        };
-        recover_active_input_receipts(self.run_id, sandbox, &recovery).await
     }
 }
 
@@ -91,14 +76,10 @@ enum DeliveryMode {
 
 enum ForwardDisposition {
     Accepted,
-    Retry,
+    /// The Guest did not take the input; it stays unforwarded until a later read.
+    NotForwarded,
     Suppress,
     Stop,
-}
-
-struct PreparedActiveInput {
-    delivery_id: String,
-    payload: Vec<u8>,
 }
 
 async fn run_forwarder(
@@ -109,9 +90,10 @@ async fn run_forwarder(
     stop: CancellationToken,
 ) {
     let mut next_local_sequence = FIRST_ACTIVE_INPUT_SEQUENCE;
-    let mut suppressed_api_delivery_id: Option<String> = None;
-    let mut read_failures = ReadFailures::default();
-    let mut warned_payload_too_large = false;
+    // The API keeps returning a forwarded input until the Guest declares it
+    // steered; an uncertain forward is never sent again. An input the Guest
+    // did not take is not recorded, so a later read forwards it.
+    let mut forwarded_api_event_id: Option<String> = None;
     loop {
         let batch = tokio::select! {
             biased;
@@ -119,10 +101,7 @@ async fn run_forwarder(
             () = job_cancel.cancelled() => return,
             batch = source.read(next_local_sequence) => batch,
         };
-        if let Ok(batch) = &batch {
-            read_failures.recover(run_id, batch);
-        }
-        let retry_after_read_error = match batch {
+        match batch {
             Ok(ActiveInputBatch::Local(entries)) => {
                 for entry in entries {
                     if entry.sequence < next_local_sequence {
@@ -131,10 +110,10 @@ async fn run_forwarder(
                     if entry.sequence > next_local_sequence {
                         break;
                     }
-                    let delivery_id = local_active_input_delivery_id(run_id, entry.sequence);
-                    let disposition = forward_with_retry(
+                    let event_id = local_active_input_event_id(run_id, entry.sequence);
+                    let disposition = forward(
                         run_id,
-                        delivery_id,
+                        event_id,
                         entry.text,
                         DeliveryMode::Local,
                         &control,
@@ -146,26 +125,18 @@ async fn run_forwarder(
                         ForwardDisposition::Accepted => {
                             next_local_sequence = next_local_sequence.saturating_add(1);
                         }
-                        ForwardDisposition::Suppress
-                        | ForwardDisposition::Retry
-                        | ForwardDisposition::Stop => return,
+                        // The next local poll reads this sequence again.
+                        ForwardDisposition::NotForwarded => break,
+                        ForwardDisposition::Suppress | ForwardDisposition::Stop => return,
                     }
                 }
-                false
             }
-            Ok(ActiveInputBatch::Api(response)) => match response {
-                ActiveInputReserveResponse::Reserved {
-                    delivery_id,
-                    event_ids: _,
-                    prompt,
-                } => {
-                    warned_payload_too_large = false;
-                    if suppressed_api_delivery_id.as_deref() == Some(&delivery_id) {
-                        false
-                    } else {
-                        let disposition = forward_with_retry(
+            Ok(ActiveInputBatch::Api(response)) => match response.input {
+                Some(ResponseInput { event_id, prompt }) => {
+                    if forwarded_api_event_id.as_deref() != Some(&event_id) {
+                        let disposition = forward(
                             run_id,
-                            delivery_id.clone(),
+                            event_id.clone(),
                             prompt,
                             DeliveryMode::Api,
                             &control,
@@ -175,70 +146,69 @@ async fn run_forwarder(
                         .await;
                         match disposition {
                             ForwardDisposition::Accepted | ForwardDisposition::Suppress => {
-                                suppressed_api_delivery_id = Some(delivery_id);
-                                false
+                                forwarded_api_event_id = Some(event_id);
                             }
-                            ForwardDisposition::Retry | ForwardDisposition::Stop => return,
+                            ForwardDisposition::NotForwarded => {}
+                            ForwardDisposition::Stop => return,
                         }
                     }
                 }
-                ActiveInputReserveResponse::Empty => {
-                    suppressed_api_delivery_id = None;
-                    warned_payload_too_large = false;
-                    false
+                None => {
+                    forwarded_api_event_id = None;
                 }
-                ActiveInputReserveResponse::Terminal => return,
-                ActiveInputReserveResponse::Held {
-                    delivery_id: _,
-                    event_ids: _,
-                } => return,
-                ActiveInputReserveResponse::Rejected { reason } => match reason {
-                    ResponseRejectedReason::PayloadTooLarge => {
-                        suppressed_api_delivery_id = None;
-                        if !warned_payload_too_large {
-                            warn!(
-                                run_id = %run_id,
-                                outcome = "payload_too_large",
-                                "active-input reserve rejected pending input"
-                            );
-                            warned_payload_too_large = true;
-                        }
-                        false
-                    }
-                    ResponseRejectedReason::RunNotRunning => return,
-                },
             },
-            Err(error) => {
-                read_failures.record(run_id, &error);
-                true
-            }
-        };
+            Err(error) => log_read_error(run_id, &error),
+        }
 
         tokio::select! {
             biased;
             () = stop.cancelled() => return,
             () = job_cancel.cancelled() => return,
-            () = async {
-                if retry_after_read_error {
-                    source.wait_after_read_error().await;
-                } else {
-                    source.wait_until_next_read().await;
-                }
-            } => {}
+            () = source.wait_until_next_read() => {}
         }
     }
 }
 
-async fn forward_with_retry(
+fn log_read_error(run_id: RunId, error: &ProviderError) {
+    const MESSAGE: &str = "active-input source read failed; waiting for the next wakeup";
+    match error {
+        ProviderError::ApiTransport(api_error) => error!(
+            target: "runner::executor::active_input",
+            run_id = %run_id,
+            error = %error,
+            endpoint = api_error.request.endpoint_label,
+            method = %api_error.request.method,
+            host = %api_error.request.host,
+            path = %api_error.request.path,
+            client_request_id = %api_error.request.client_request_id,
+            client_session_id = %api_error.request.client_session_id,
+            client_version = %api_error.request.client_version,
+            failure_kind = api_error.failure_kind.as_str(),
+            failure_cause = api_error.failure_cause.as_str(),
+            error_summary = %api_error.summary,
+            "{MESSAGE}"
+        ),
+        _ => error!(
+            target: "runner::executor::active_input",
+            run_id = %run_id,
+            error = %error,
+            "{MESSAGE}"
+        ),
+    }
+}
+
+/// Offer one input to the Guest exactly once; the caller never resends it
+/// before its next read.
+async fn forward(
     run_id: RunId,
-    delivery_id: String,
+    event_id: String,
     text: String,
     mode: DeliveryMode,
     control: &GuestProcessControlHandle,
     job_cancel: &CancellationToken,
     stop: &CancellationToken,
 ) -> ForwardDisposition {
-    let payload = match encode_active_input(&delivery_id, &text) {
+    let payload = match encode_active_input(&event_id, &text) {
         Ok(payload) if payload.len() <= ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES => payload,
         Ok(_) => {
             warn!(
@@ -259,81 +229,42 @@ async fn forward_with_retry(
         }
     };
     drop(text);
-    let prepared = PreparedActiveInput {
-        delivery_id,
-        payload,
-    };
-    let mut warn_retryable_failure = true;
-    let mut retry_interval = ACTIVE_INPUT_CONTROL_RETRY_INITIAL_INTERVAL;
-    loop {
-        if stop.is_cancelled() || job_cancel.is_cancelled() {
-            return ForwardDisposition::Stop;
-        }
-        // Once started, retain the control future until its write outcome is known.
-        let disposition =
-            forward_once(run_id, &prepared, mode, control, warn_retryable_failure).await;
-        if !matches!(disposition, ForwardDisposition::Retry) {
-            return disposition;
-        }
-        warn_retryable_failure = false;
-        tokio::select! {
-            biased;
-            () = stop.cancelled() => return ForwardDisposition::Stop,
-            () = job_cancel.cancelled() => return ForwardDisposition::Stop,
-            () = tokio::time::sleep(retry_interval) => {}
-        }
-        retry_interval = (retry_interval * 2).min(ACTIVE_INPUT_CONTROL_RETRY_MAX_INTERVAL);
+    if stop.is_cancelled() || job_cancel.is_cancelled() {
+        return ForwardDisposition::Stop;
     }
-}
-
-async fn forward_once(
-    run_id: RunId,
-    prepared: &PreparedActiveInput,
-    mode: DeliveryMode,
-    control: &GuestProcessControlHandle,
-    warn_retryable_failure: bool,
-) -> ForwardDisposition {
+    // Once started, retain the control future until its write outcome is known.
     let outcome = control
-        .control_owned_outcome(
-            prepared.delivery_id.clone(),
-            prepared.payload.clone(),
-            ACTIVE_INPUT_CONTROL_TIMEOUT,
-        )
+        .control_owned_outcome(event_id, payload, ACTIVE_INPUT_CONTROL_TIMEOUT)
         .await;
-    classify_control_outcome(run_id, mode, outcome, warn_retryable_failure)
+    classify_control_outcome(run_id, mode, outcome)
 }
 
 fn classify_control_outcome(
     run_id: RunId,
     mode: DeliveryMode,
     outcome: ProcessControlOutcome,
-    warn_retryable_failure: bool,
 ) -> ForwardDisposition {
     match outcome {
         ProcessControlOutcome::Delivered(_) => ForwardDisposition::Accepted,
         ProcessControlOutcome::GuestStatus { status, diagnostic } => match status {
             ProcessControlGuestStatus::QueueFull | ProcessControlGuestStatus::SinkUnavailable => {
-                if warn_retryable_failure {
-                    warn!(
-                        run_id = %run_id,
-                        outcome = guest_status_label(status),
-                        diagnostic = %diagnostic,
-                        "active-input control will retry"
-                    );
-                }
-                ForwardDisposition::Retry
+                warn!(
+                    run_id = %run_id,
+                    outcome = guest_status_label(status),
+                    diagnostic = %diagnostic,
+                    "active-input control not accepted; waiting for the next read"
+                );
+                ForwardDisposition::NotForwarded
             }
             ProcessControlGuestStatus::SinkTimeout
             | ProcessControlGuestStatus::SinkError
             | ProcessControlGuestStatus::SinkClosed => {
-                if warn_retryable_failure {
-                    warn!(
-                        run_id = %run_id,
-                        outcome = guest_status_label(status),
-                        diagnostic = %diagnostic,
-                        "active-input control acknowledgement is unknown"
-                    );
-                }
+                warn!(
+                    run_id = %run_id,
+                    outcome = guest_status_label(status),
+                    diagnostic = %diagnostic,
+                    "active-input control acknowledgement is unknown"
+                );
                 uncertain_disposition(mode)
             }
             ProcessControlGuestStatus::Inactive => ForwardDisposition::Stop,
@@ -359,14 +290,12 @@ fn classify_control_outcome(
             }
         },
         ProcessControlOutcome::GuestError(error) => {
-            if warn_retryable_failure {
-                warn!(
-                    run_id = %run_id,
-                    outcome = "guest_error",
-                    error = %error,
-                    "active-input control acknowledgement is unknown"
-                );
-            }
+            warn!(
+                run_id = %run_id,
+                outcome = "guest_error",
+                error = %error,
+                "active-input control acknowledgement is unknown"
+            );
             uncertain_disposition(mode)
         }
         ProcessControlOutcome::Failed {
@@ -391,17 +320,15 @@ fn classify_control_outcome(
                     ProcessControlWriteState::PossiblyWritten,
                 ) => "backend_crashed_possibly_written",
             };
-            if warn_retryable_failure {
-                warn!(
-                    run_id = %run_id,
-                    outcome,
-                    error = %error,
-                    "active-input control failed"
-                );
-            }
+            warn!(
+                run_id = %run_id,
+                outcome,
+                error = %error,
+                "active-input control failed"
+            );
             match (kind, write_state) {
                 (ProcessControlFailureKind::Operation, ProcessControlWriteState::NotWritten) => {
-                    ForwardDisposition::Retry
+                    ForwardDisposition::NotForwarded
                 }
                 (
                     ProcessControlFailureKind::Operation,
@@ -425,7 +352,7 @@ fn classify_control_outcome(
 fn uncertain_disposition(mode: DeliveryMode) -> ForwardDisposition {
     match mode {
         DeliveryMode::Api => ForwardDisposition::Suppress,
-        DeliveryMode::Local => ForwardDisposition::Retry,
+        DeliveryMode::Local => ForwardDisposition::NotForwarded,
     }
 }
 
@@ -440,108 +367,5 @@ fn guest_status_label(status: ProcessControlGuestStatus) -> &'static str {
         ProcessControlGuestStatus::QueueFull => "queue_full",
         ProcessControlGuestStatus::SinkError => "sink_error",
         ProcessControlGuestStatus::SinkClosed => "sink_closed",
-    }
-}
-
-async fn recover_active_input_receipts(
-    run_id: RunId,
-    sandbox: &dyn Sandbox,
-    recovery: &ApiActiveInputRecovery,
-) -> Vec<String> {
-    let path = match super::guest_runtime_path(
-        run_id,
-        guest_contracts::runtime_paths::active_input_receipt_journal_file,
-    ) {
-        Ok(path) => path,
-        Err(error) => {
-            warn!(run_id = %run_id, error = %error, "failed to resolve active-input receipt journal");
-            return Vec::new();
-        }
-    };
-    let bytes = match read_active_input_receipt_journal(sandbox, run_id, &path).await {
-        Some(bytes) => bytes,
-        None => return Vec::new(),
-    };
-    let delivery_ids =
-        match guest_contracts::active_input_receipts::parse_active_input_receipt_journal(
-            &bytes,
-            &run_id.to_string(),
-        ) {
-            Ok(delivery_ids) => delivery_ids,
-            Err(error) => {
-                warn!(run_id = %run_id, error = %error, "invalid active-input receipt journal");
-                return Vec::new();
-            }
-        };
-
-    let deadline = tokio::time::Instant::now() + ACTIVE_INPUT_RECEIPT_RECOVERY_TIMEOUT;
-    let mut remaining = Vec::new();
-    let mut delivery_ids = delivery_ids.into_iter();
-    let mut warned_rejected = false;
-    let mut warned_failed = false;
-    while let Some(delivery_id) = delivery_ids.next() {
-        match tokio::time::timeout_at(deadline, recovery.record_delivery(&delivery_id)).await {
-            Ok(Ok(ActiveInputReceiptResponse::Delivered)) => {}
-            Ok(Ok(ActiveInputReceiptResponse::Rejected)) => {
-                if !warned_rejected {
-                    warn!(run_id = %run_id, "active-input recovery receipt was rejected");
-                    warned_rejected = true;
-                }
-            }
-            Ok(Err(error)) => {
-                if !warned_failed {
-                    warn!(run_id = %run_id, error = %error, "active-input recovery receipt failed");
-                    warned_failed = true;
-                }
-                remaining.push(delivery_id);
-            }
-            Err(_) => {
-                warn!(run_id = %run_id, "active-input recovery receipt deadline reached");
-                remaining.push(delivery_id);
-                remaining.extend(delivery_ids);
-                break;
-            }
-        }
-    }
-    remaining
-}
-
-async fn read_active_input_receipt_journal(
-    sandbox: &dyn Sandbox,
-    run_id: RunId,
-    path: &str,
-) -> Option<Vec<u8>> {
-    let deadline = tokio::time::Instant::now() + ACTIVE_INPUT_JOURNAL_READ_TIMEOUT;
-    let mut warned = false;
-    loop {
-        match tokio::time::timeout_at(
-            deadline,
-            sandbox.read_file(
-                path,
-                guest_contracts::active_input_receipts::MAX_ACTIVE_INPUT_RECEIPT_JOURNAL_BYTES
-                    as u64,
-            ),
-        )
-        .await
-        {
-            Ok(Ok(bytes)) => return bytes,
-            Ok(Err(error)) => {
-                if !warned {
-                    warn!(run_id = %run_id, error = %error, "failed to read active-input receipt journal; retrying");
-                    warned = true;
-                }
-            }
-            Err(_) => {
-                warn!(run_id = %run_id, "active-input receipt journal read timed out");
-                return None;
-            }
-        }
-
-        let retry_at = tokio::time::Instant::now() + ACTIVE_INPUT_READ_RETRY_INTERVAL;
-        if retry_at >= deadline {
-            warn!(run_id = %run_id, "active-input receipt journal read deadline reached");
-            return None;
-        }
-        tokio::time::sleep_until(retry_at).await;
     }
 }

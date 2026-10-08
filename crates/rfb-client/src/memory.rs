@@ -69,9 +69,18 @@ pub(crate) struct Reservation {
     bytes: usize,
 }
 
+impl Reservation {
+    fn release(&mut self) {
+        self.budget
+            .0
+            .used
+            .fetch_sub(std::mem::take(&mut self.bytes), Ordering::Relaxed);
+    }
+}
+
 impl Drop for Reservation {
     fn drop(&mut self) {
-        self.budget.0.used.fetch_sub(self.bytes, Ordering::Relaxed);
+        self.release();
     }
 }
 
@@ -90,5 +99,46 @@ impl Deref for Buffer {
 impl DerefMut for Buffer {
     fn deref_mut(&mut self) -> &mut [u8] {
         &mut self.bytes
+    }
+}
+
+impl Buffer {
+    pub(crate) fn capacity(&self) -> usize {
+        self.bytes.capacity()
+    }
+
+    /// Charge a possible realloc's new allocation before releasing the old one.
+    pub(crate) fn try_reserve_capacity(&mut self, capacity: usize) -> Result<(), Error> {
+        if capacity <= self.bytes.capacity() {
+            return Ok(());
+        }
+        let budget = &self._reservation.budget;
+        let mut next = budget.reserve(capacity)?;
+        self.bytes
+            .try_reserve_exact(capacity - self.bytes.len())
+            .map_err(|_| Error::ResourceLimit)?;
+        if self.bytes.capacity() > capacity {
+            let extra = match budget.reserve(self.bytes.capacity() - capacity) {
+                Ok(extra) => extra,
+                Err(error) => {
+                    // Do not retain capacity that cannot be charged. The writer
+                    // will abort and drop this now-empty buffer.
+                    self.bytes = Vec::new();
+                    self._reservation.release();
+                    return Err(error);
+                }
+            };
+            next.bytes += extra.bytes;
+            let mut extra = extra;
+            extra.bytes = 0;
+        }
+        let old = std::mem::replace(&mut self._reservation, next);
+        drop(old);
+        Ok(())
+    }
+
+    pub(crate) fn append(&mut self, bytes: &[u8]) {
+        assert!(bytes.len() <= self.bytes.capacity() - self.bytes.len());
+        self.bytes.extend_from_slice(bytes);
     }
 }

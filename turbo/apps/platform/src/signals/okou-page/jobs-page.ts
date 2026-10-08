@@ -32,6 +32,18 @@ export const setJobsNewName$ = command(({ set }, name: string) => {
   set(internalNewName$, name);
 });
 
+// -- Responsibility ---------------------------------------------------------
+
+const internalResponsibility$ = state("");
+export const jobsResponsibility$ = computed((get) => {
+  return get(internalResponsibility$);
+});
+export const setJobsResponsibility$ = command(
+  ({ set }, responsibility: string) => {
+    set(internalResponsibility$, responsibility);
+  },
+);
+
 // -- Visibility -------------------------------------------------------------
 
 const internalVisibility$ = state<"public" | "private">("private");
@@ -71,6 +83,7 @@ export const setJobsAvatarUrl$ = command(({ set }, url: string) => {
 export const resetJobsDialog$ = command(({ set }) => {
   set(closeAvatarMaker$);
   set(internalNewName$, "");
+  set(internalResponsibility$, "");
   set(internalVisibility$, "private");
   set(internalAvatarUrl$, randomSvgAvatarUrl());
 });

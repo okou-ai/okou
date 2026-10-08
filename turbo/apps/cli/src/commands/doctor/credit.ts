@@ -5,10 +5,7 @@ import { getBillingStatus } from "../../lib/api/domains/billing";
 import { getOrg } from "../../lib/api/domains/orgs";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { getPlatformOrigin } from "../../lib/platform-url";
-import {
-  currentPlanAllowsVideo,
-  currentPlanCanBuyCredits,
-} from "../shared/billing-capabilities";
+import { currentPlanCanBuyCredits } from "../shared/billing-capabilities";
 import { planUpgradeUrl } from "../shared/billing-links";
 
 export const creditCommand = new Command()
@@ -35,13 +32,6 @@ export const creditCommand = new Command()
         }`,
       );
       console.log(
-        `  Built-in video generation: ${
-          currentPlanAllowsVideo(billing)
-            ? chalk.green("available")
-            : chalk.yellow("unavailable")
-        }`,
-      );
-      console.log(
         `  Auto-recharge: ${
           billing.autoRecharge.enabled ? chalk.green("enabled") : "disabled"
         }`,
@@ -63,14 +53,8 @@ export const creditCommand = new Command()
         return;
       }
 
-      if (billing.tier === "free") {
-        console.log(
-          "\nWorkspace admins can upgrade to Pro from billing or buy credits with `okou credit <credits>`.",
-        );
-      } else {
-        console.log(
-          "\nWorkspace admins can use `okou credit <credits>` to buy more credits.",
-        );
-      }
+      console.log(
+        "\nWorkspace admins can use `okou credit <credits>` to buy more credits.",
+      );
     }),
   );

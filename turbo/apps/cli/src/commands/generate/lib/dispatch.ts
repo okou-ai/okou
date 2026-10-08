@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { printConnectorGuidance } from "./connector-guidance";
-import { runLister, type GenerationType } from "./lister";
+import { runLister } from "./lister";
+import type { GenerationType } from "./generation-type";
 
 interface DispatchOptions {
   readonly generationType: GenerationType;

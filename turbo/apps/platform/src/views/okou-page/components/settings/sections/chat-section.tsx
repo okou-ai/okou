@@ -1,23 +1,22 @@
-import { useGet, useLastResolved, useLoadable } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
-import { useTranslation } from "react-i18next";
-import { Cpu, Globe, Keyboard } from "lucide-react";
+import type { SendMode } from "@okouai/api-contracts/contracts/user-preferences";
 import { ToggleButton } from "@okouai/ui";
 import { Switch } from "@okouai/ui/components/ui/switch";
-import type { SendMode } from "@okouai/api-contracts/contracts/user-preferences";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { useGet, useLastResolved, useLoadable } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
+import { Cpu, Globe, Keyboard } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
-import { orgModelPolicies$ } from "../../../../../signals/external/org-model-policies.ts";
-import { featureSwitch$ } from "../../../../../signals/external/feature-switch.ts";
+import { cloudBrowserEnabledByDefault$ } from "../../../../../signals/cloud-browser-preference.ts";
+import { modelCatalog$ } from "../../../../../signals/external/model-catalog.ts";
+import { availableRunModels$ } from "../../../../../signals/external/run-models.ts";
 import { userModelPreference$ } from "../../../../../signals/external/user-model-preference.ts";
+import { resolveModelFirstStoredUserSelection } from "../../../../../signals/okou-page/model-default-selection.ts";
+import { updateCloudBrowserEnabledByDefault$ } from "../../../../../signals/okou-page/settings/cloud-browser-preference.ts";
+import { updateDefaultModelPreference$ } from "../../../../../signals/okou-page/settings/default-model-preference.ts";
+import { updateSendMode$ } from "../../../../../signals/okou-page/settings/send-mode-preference.ts";
 import { pageSignal$ } from "../../../../../signals/page-signal.ts";
 import { sendMode$ } from "../../../../../signals/send-mode.ts";
-import { cloudBrowserEnabledByDefault$ } from "../../../../../signals/cloud-browser-preference.ts";
 import { detach, Reason } from "../../../../../signals/utils.ts";
-import { resolveModelFirstStoredUserSelection } from "../../../../../signals/okou-page/model-default-selection.ts";
-import { updateDefaultModelPreference$ } from "../../../../../signals/okou-page/settings/default-model-preference.ts";
-import { updateCloudBrowserEnabledByDefault$ } from "../../../../../signals/okou-page/settings/cloud-browser-preference.ts";
-import { updateSendMode$ } from "../../../../../signals/okou-page/settings/send-mode-preference.ts";
 import { ModelProviderPicker } from "../../model-provider-picker.tsx";
 import { PreferenceCardRow } from "../preference-card-row.tsx";
 
@@ -26,14 +25,16 @@ const SEND_OPTIONS: readonly SendMode[] = ["enter", "cmd-enter"];
 function DefaultModelPreference() {
   const { t } = useTranslation();
   const userPreference = useLastResolved(userModelPreference$);
-  const policies = useLastResolved(orgModelPolicies$);
+  const models = useLastResolved(availableRunModels$);
+  const catalog = useLastResolved(modelCatalog$);
   const [updateLoadable, updatePreference] = useLoadableSet(
     updateDefaultModelPreference$,
   );
   const pageSignal = useGet(pageSignal$);
   const current = resolveModelFirstStoredUserSelection({
     userPreference,
-    policies,
+    models,
+    catalog,
   });
   const mutating = updateLoadable.state === "loading";
 
@@ -56,9 +57,11 @@ function DefaultModelPreference() {
         onChange={handleChange}
         triggerClassName="h-9 w-full sm:w-[260px]"
         disabled={
-          userPreference === undefined || policies === undefined || mutating
+          userPreference === undefined ||
+          models === undefined ||
+          catalog === undefined ||
+          mutating
         }
-        showInheritOption
       />
     </PreferenceCardRow>
   );
@@ -101,7 +104,7 @@ function CloudBrowserDefaultPreference() {
   );
 }
 
-export function SendModePreference() {
+function SendModePreference() {
   const { t } = useTranslation();
   const prefsLoadable = useLoadable(sendMode$);
   const current: SendMode =
@@ -161,18 +164,11 @@ export function SendModePreference() {
 }
 
 export function ChatSection() {
-  const features = useGet(featureSwitch$);
-  const showChatPreferences =
-    features[FeatureSwitchKey.ChatPreference] ?? false;
   return (
     <section className="flex flex-col gap-3">
-      {showChatPreferences ? (
-        <>
-          <DefaultModelPreference />
-          <CloudBrowserDefaultPreference />
-          <SendModePreference />
-        </>
-      ) : null}
+      <DefaultModelPreference />
+      <CloudBrowserDefaultPreference />
+      <SendModePreference />
     </section>
   );
 }

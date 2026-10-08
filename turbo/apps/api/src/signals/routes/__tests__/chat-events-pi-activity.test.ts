@@ -1,48 +1,34 @@
-import { sessionOutputDeltaSchema } from "@okouai/api-contracts/contracts/realtime";
+import {
+  mockGoogleText,
+  VERTEX_TEXT_URL,
+  vertexTextRequest,
+} from "./helpers/google-text";
+import { expectThreadModelTokens } from "./helpers/public-thread-usage";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { chatThreadActivitySummaryRoutes } from "../chat-threads-activity-summary";
 import { createHash, randomUUID } from "node:crypto";
-import {
-  PI_MEMORY_ROOT,
-  piApiFirstTurnManifestSchema,
-} from "@okouai/api-contracts/contracts/runners";
+import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { env, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import {
-  holdAgentRunRowLockFixture,
-  holdThreadSessionConversationClearFixture,
-  readRunUsageEventsFixture,
-  timeoutRunWithoutCallbacksFixture,
-} from "../../../test-fixtures/chat-events";
-import {
-  readPiConversationIdentityFixture,
-  readPiMemoryStage1CandidateFixture,
-} from "../../../test-fixtures/pi-memory-stage1-candidates";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { commitMemoryVersion } from "./helpers/memory";
-import { readThreadSessionConversation } from "./helpers/runtime-state";
 import {
   createChatEventsFixture,
-  openRouterBodySchema,
   requireOrgId,
-  createGptUsagePricingResolution,
+  createPiUsagePricingResolution,
   claimEnvironment,
   eventBackedContents,
 } from "./helpers/chat-events-fixture";
-import {
-  piResponsesContentSse,
-  piResponsesToolSse,
-} from "./helpers/pi-responses";
 
 const context = testContext();
 const {
@@ -51,44 +37,47 @@ const {
   webhooks,
   entitledChatActor,
   configureBuiltInPiModelOnOpenRouter,
-  sendChatRun,
+  sendChatRunAfterPick,
   claimChatRun,
-  waitForThreadMessages,
   waitForRunStatus,
   cancelChatRun,
   sessionHeaders,
   mockPiCheckpointObjectStore,
   mockPiResourceArchiveDownloads,
+  piSandboxBaseSession,
 } = createChatEventsFixture(context);
 
-async function expectPiActivitySummaryBeforeGuestReplay(
+async function expectPiActivitySummary(
   actor: ApiTestUser,
   run: { readonly threadId: string; readonly runId: string },
 ): Promise<void> {
-  // The API-first projection must capture tools before any guest replay/result.
+  // Guest tool events are captured as activity while the run is still active.
   await flushWaitUntilForTest();
-  mockOptionalEnv("OPENROUTER_API_KEY", "activity-summary-key");
+  mockGoogleText();
   let activityInput = "";
   server.use(
-    http.post(
-      "https://openrouter.ai/api/v1/chat/completions",
-      async ({ request }) => {
-        const body = openRouterBodySchema.parse(await request.json());
-        activityInput = body.messages
-          .map((message) => {
-            return message.content;
-          })
-          .join("\n");
-        return HttpResponse.json({
-          choices: [
-            {
-              finish_reason: "stop",
-              message: { content: "Checking the CLI and preparing the note" },
+    http.post(VERTEX_TEXT_URL, async ({ request }) => {
+      const body = vertexTextRequest(await request.json(), request.url);
+      activityInput = body.messages
+        .map((message) => {
+          return message.content;
+        })
+        .join("\n");
+      return HttpResponse.json({
+        candidates: [
+          {
+            finishReason: "STOP",
+            content: {
+              parts: [
+                {
+                  text: "Checking the CLI and preparing the note",
+                },
+              ],
             },
-          ],
-        });
-      },
-    ),
+          },
+        ],
+      });
+    }),
   );
   const activity = await accept(
     setupApp({ context, routes: chatThreadActivitySummaryRoutes })(
@@ -111,246 +100,156 @@ async function expectPiActivitySummaryBeforeGuestReplay(
   });
   expect(activityInput).toContain("okou --help");
   expect(activityInput).toContain("add_ad_hoc_note");
-  expect(activityInput).not.toContain(
-    "API-first reasoning preserved for Sandbox resume",
-  );
-  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
 }
 
-describe("CHAT-02: model-first provider policies", () => {
+function boundedPiCheckpointHistory(jsonl: string): {
+  readonly original: string;
+  readonly bounded: string;
+} {
+  // Keep the exact native pre-compact path and settled leaf while removing
+  // one old parent. The API accepts only the smaller candidate as H2.
+  const nativeLines = jsonl.trimEnd().split("\n");
+  const headerLine = nativeLines[0];
+  if (!headerLine) {
+    throw new Error("Expected a native Pi session header");
+  }
+  const piEntry = z
+    .object({
+      type: z.string(),
+      id: z.string(),
+      parentId: z.string().nullable(),
+    })
+    .passthrough();
+  const firstKept = piEntry.parse(JSON.parse(nativeLines[1] ?? "null"));
+  const finalAssistant = piEntry.parse(
+    JSON.parse(nativeLines.at(-1) ?? "null"),
+  );
+  if (
+    firstKept.parentId !== null ||
+    finalAssistant.type !== "message" ||
+    !finalAssistant.parentId
+  ) {
+    throw new Error("Expected a root and a settled native Pi leaf");
+  }
+  const oldId = randomUUID();
+  const compactId = randomUUID();
+  const compactLine = JSON.stringify({
+    type: "compaction",
+    id: compactId,
+    parentId: finalAssistant.parentId,
+    timestamp: "2026-09-27T00:00:00Z",
+    summary: "prior work summarized by Pi",
+    firstKeptEntryId: firstKept.id,
+    tokensBefore: 90_000,
+  });
+  const settledLine = JSON.stringify({
+    ...finalAssistant,
+    parentId: compactId,
+  });
+  const middleLines = nativeLines.slice(2, -1);
+  const oldLine = JSON.stringify({
+    type: "message",
+    id: oldId,
+    parentId: null,
+    timestamp: "2026-09-27T00:00:00Z",
+    message: { role: "user", content: "older work ".repeat(8192) },
+  });
+  return {
+    original: [
+      headerLine,
+      oldLine,
+      JSON.stringify({ ...firstKept, parentId: oldId }),
+      ...middleLines,
+      compactLine,
+      settledLine,
+      "",
+    ].join("\n"),
+    bounded: [
+      headerLine,
+      JSON.stringify(firstKept),
+      ...middleLines,
+      compactLine,
+      settledLine,
+      "",
+    ].join("\n"),
+  };
+}
+
+describe("CHAT-02: model-first routing", () => {
   async function piActivityScenario(): Promise<void> {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const orgId = requireOrgId(actor);
-    const usagePricingResolution = await createGptUsagePricingResolution();
-    const withOpenRouterRoute = await configureBuiltInPiModelOnOpenRouter(
-      actor,
-      "gpt-5.6-terra",
-    );
+    const usagePricingResolution =
+      await createPiUsagePricingResolution("okou-1.0");
+    const model = await configureBuiltInPiModelOnOpenRouter(actor, "okou-1.0");
     await updateFeatureSwitchesForUser(
       context,
       { ...actor, orgId },
       {
-        [FeatureSwitchKey.PiLoop]: true,
         [FeatureSwitchKey.PiMemory]: true,
       },
     );
     mockPiResourceArchiveDownloads();
     const okouCliCommand = `npx --yes --package="\${CLI_PKG_URL}" okou --help`;
-    const adHocNoteFilename = "2026-09-05T16-15-00-api-first-checkpoint.md";
+    const adHocNoteFilename = "2026-09-05T16-15-00-sandbox-checkpoint.md";
     const adHocNote =
-      "# API-first checkpoint\n\nPersist this staged sandbox note.\n";
-    let modelCalls = 0;
-    const terraModelRequests: unknown[] = [];
-    server.use(
-      http.post(
-        "https://openrouter.ai/api/v1/responses",
-        async ({ request }) => {
-          modelCalls += 1;
-          terraModelRequests.push(await request.json());
-          return new HttpResponse(
-            modelCalls === 1
-              ? piResponsesContentSse({
-                  blocks: [
-                    { type: "text", text: "before parallel tools" },
-                    {
-                      type: "toolCall",
-                      callId: "call_pi_read",
-                      name: "bash",
-                      arguments: {
-                        command: okouCliCommand,
-                      },
-                    },
-                    {
-                      type: "toolCall",
-                      callId: "call_pi_write",
-                      name: "add_ad_hoc_note",
-                      arguments: {
-                        filename: adHocNoteFilename,
-                        note: adHocNote,
-                      },
-                    },
-                    { type: "text", text: "after parallel tools" },
-                  ],
-                  sequence: modelCalls,
-                  includeReasoning: true,
-                  observedServiceTier: "priority",
-                })
-              : piResponsesToolSse({
-                  callId: "call_pi_read",
-                  name: "bash",
-                  arguments: {
-                    command: okouCliCommand,
-                  },
-                  sequence: modelCalls,
-                  observedServiceTier: "priority",
-                }),
-            { headers: { "content-type": "text/event-stream" } },
-          );
-        },
-      ),
-    );
+      "# Sandbox checkpoint\n\nPersist this staged sandbox note.\n";
     const checkpointObjects = mockPiCheckpointObjectStore();
-    const prompt = "use the Okou CLI through the Sandbox handoff";
-    const run = await withOpenRouterRoute(async () => {
-      return await sendChatRun(
-        actor,
-        {
-          agentId,
-          prompt,
-          model: "gpt-5.6-terra",
-          runOptions: { codexServiceTier: "fast" },
-        },
-        usagePricingResolution,
-      );
-    });
-    const manifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/manifest.json`;
-    await expect
-      .poll(() => {
-        return checkpointObjects.has(manifestKey);
-      })
-      .toBe(true);
-    expect(modelCalls).toBe(1);
-    const terraTools = z
-      .object({
-        tools: z.array(z.object({ name: z.string() }).passthrough()),
-        service_tier: z.literal("priority"),
-      })
-      .passthrough()
-      .parse(terraModelRequests[0])
-      .tools.map((tool) => {
-        return tool.name;
-      });
-    expect(terraTools).toStrictEqual(
-      expect.arrayContaining([
-        "read",
-        "write",
-        "edit",
-        "bash",
-        "add_ad_hoc_note",
-      ]),
-    );
-    const manifestBytes = checkpointObjects.get(manifestKey);
-    if (!manifestBytes) {
-      throw new Error("Expected pending-tool ownership-transfer manifest");
-    }
-    const manifest = piApiFirstTurnManifestSchema.parse(
-      JSON.parse(manifestBytes.toString("utf8")),
-    );
-    expect(manifest).toMatchObject({
-      schemaVersion: 3,
-      outcome: "ownership-transfer",
-      mode: "pending-tool-continuation",
-      baseSession: { sessionId: run.threadId, sha256: null },
-      session: {
-        sessionId: run.threadId,
-        sha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
-        rawSize: expect.any(Number),
-      },
-      sandboxEventSequenceStart: 4,
-    });
-    const projected = await waitForThreadMessages(
+    const prompt = "use the Okou CLI in the Sandbox";
+    const run = await sendChatRunAfterPick(
       actor,
-      run.threadId,
-      (messages) => {
-        return eventBackedContents(messages, run.runId).length === 2;
+      {
+        agentId,
+        prompt,
+        model,
       },
-    );
-    expect(
-      eventBackedContents(projected.events, run.runId).map((message) => {
-        return {
-          content: message.content,
-          sequenceNumber: message.sequenceNumber,
-        };
-      }),
-    ).toStrictEqual([
-      { content: "before parallel tools", sequenceNumber: 0 },
-      { content: "after parallel tools", sequenceNumber: 3 },
-    ]);
-    await expect
-      .poll(() => {
-        return context.mocks.ably.publish.mock.calls.filter(([topic]) => {
-          return topic === run.runId;
-        }).length;
-      })
-      .toBe(2);
-    const streamed = context.mocks.ably.publish.mock.calls
-      .filter(([topic]) => {
-        return topic === run.runId;
-      })
-      .map(([_topic, payload]) => {
-        return sessionOutputDeltaSchema.parse(payload);
-      });
-    expect(
-      streamed.map((chunk) => {
-        return chunk.delta;
-      }),
-    ).toStrictEqual(["before parallel tools", "after parallel tools"]);
-    expect(
-      streamed.every((chunk) => {
-        return chunk.chunkIndex === 0;
-      }),
-    ).toBeTruthy();
-    expect(projected.events).toStrictEqual(
-      expect.arrayContaining(
-        streamed.map((chunk) => {
-          return expect.objectContaining({
-            id: chunk.eventId,
-            eventType: "output.message",
-            runId: run.runId,
-            runEventId: chunk.runEventId,
-            content: chunk.delta,
-          });
-        }),
-      ),
+      usagePricingResolution,
     );
     const claimed = await claimChatRun(runnerGroup, run.runId);
     expect(claimed.claim.cliAgentType).toBe("pi");
     expect(claimed.claim.piSessionId).toBe(run.threadId);
+    // The first turn has no stored history, so the Sandbox starts fresh.
+    expect(claimed.claim.resumeSession).toBeNull();
+    const h2Session = MemoryPiSession.fromJsonl(
+      piSandboxBaseSession(claimed.claim, checkpointObjects).toString("utf8"),
+    );
     expect(claimed.claim.piModelConfig).toMatchObject({
       provider: "openrouter",
-      serviceTier: "priority",
+      model: "@preset/okou-1-0",
     });
     expect(claimed.claim.piModelConfig).not.toHaveProperty("api");
-    expect(claimed.claim.piLaunchConfig).toMatchObject({
-      schemaVersion: 2,
-      apiFirstTurn: {
-        schemaVersion: 1,
-        baseSession: { sessionId: run.threadId, sha256: null },
-        sandboxEventSequenceStart: 1,
-      },
-    });
-    const terraEnvironment = claimEnvironment(claimed.claim);
-    expect(terraEnvironment.OKOU_TOKEN).toBeTruthy();
-    expect(terraEnvironment.CLI_PKG_URL).toBeTruthy();
-    const terraInstructions = claimed.claim.appendSystemPrompt;
-    if (!terraInstructions) {
-      throw new Error("Expected Terra Web instructions");
+    expect(claimed.claim.piLaunchConfig).toMatchObject({ schemaVersion: 2 });
+    const lunaEnvironment = claimEnvironment(claimed.claim);
+    expect(lunaEnvironment.OKOU_TOKEN).toBeTruthy();
+    expect(lunaEnvironment.CLI_PKG_URL).toBeTruthy();
+    const lunaInstructions = claimed.claim.appendSystemPrompt;
+    if (!lunaInstructions) {
+      throw new Error("Expected Luna Web instructions");
     }
-    expect(terraInstructions).toContain(
-      "You are currently running inside: Web",
-    );
-    expect(terraInstructions).toContain("okou web download-file -h");
-    expect(terraInstructions).toContain("Run commands with: `okou <command>`");
-    expect(terraInstructions).not.toMatch(/auto.?memory/iu);
-    const terraStorageManifest = expectCanonicalStorageManifest(
+    expect(lunaInstructions).toContain("You are currently running inside: Web");
+    expect(lunaInstructions).toContain("okou web download-file -h");
+    expect(lunaInstructions).toContain("Run commands with: `okou <command>`");
+    expect(lunaInstructions).not.toMatch(/auto.?memory/iu);
+    const lunaStorageManifest = expectCanonicalStorageManifest(
       claimed.claim.storageManifest,
     );
-    if (!terraStorageManifest) {
-      throw new Error("Expected Terra storage manifest");
+    if (!lunaStorageManifest) {
+      throw new Error("Expected Luna storage manifest");
     }
-    const terraMounts = terraStorageManifest.storageMounts;
-    const terraMemoryMount = terraMounts.find((mount) => {
+    const lunaMounts = lunaStorageManifest.storageMounts;
+    const lunaMemoryMount = lunaMounts.find((mount) => {
       return mount.name === "memory" && mount.mountPath === PI_MEMORY_ROOT;
     });
-    if (!terraMemoryMount) {
+    if (!lunaMemoryMount) {
       throw new Error("Expected the Pi memory mount");
     }
     expect(claimed.claim.prompt).toBe(prompt);
     const sandboxUsageEvent = {
       idempotencyKey: randomUUID(),
       kind: "model" as const,
-      provider: "gpt-5.6-terra",
-      category: "tokens.output.fast",
+      provider: "okou-1.0",
+      category: "tokens.output",
       quantity: 2,
     };
     const sandboxUsageReceipts = await Promise.all([
@@ -372,73 +271,6 @@ describe("CHAT-02: model-first provider policies", () => {
         return receipt.body;
       }),
     ).toStrictEqual([{ success: true }, { success: true }]);
-    const h1Bytes = checkpointObjects.get(
-      `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/session.jsonl`,
-    );
-    if (!h1Bytes) {
-      throw new Error("Expected pending-tool ownership-transfer session");
-    }
-    const h1 = h1Bytes.toString("utf8");
-    expect(h1).toContain('"type":"thinking_level_change"');
-    expect(h1).toContain('"thinkingLevel":"max"');
-    expect(h1).not.toContain("serviceTier");
-    const h2Session = MemoryPiSession.fromJsonl(h1);
-    const h1Assistant = [...h2Session.buildSessionContext().messages]
-      .reverse()
-      .find((message) => {
-        return message.role === "assistant";
-      });
-    const h1Thinking =
-      h1Assistant?.role === "assistant"
-        ? h1Assistant.content.find((content) => {
-            return content.type === "thinking";
-          })
-        : undefined;
-    expect(h1Thinking?.type).toBe("thinking");
-    expect(
-      h1Thinking?.type === "thinking"
-        ? JSON.parse(h1Thinking.thinkingSignature ?? "{}")
-        : {},
-    ).toMatchObject({
-      type: "reasoning",
-      content: [
-        {
-          type: "reasoning_text",
-          text: "API-first reasoning preserved for Sandbox resume",
-        },
-      ],
-    });
-    expect(
-      h1Assistant?.role === "assistant"
-        ? h1Assistant.content
-            .filter((content) => {
-              return content.type !== "thinking";
-            })
-            .map((content) => {
-              return content.type === "text"
-                ? { type: content.type, text: content.text }
-                : {
-                    type: content.type,
-                    id: content.id,
-                    name: content.name,
-                  };
-            })
-        : [],
-    ).toStrictEqual([
-      { type: "text", text: "before parallel tools" },
-      {
-        type: "toolCall",
-        id: "call_pi_read|fc_pi_content_1_1",
-        name: "bash",
-      },
-      {
-        type: "toolCall",
-        id: "call_pi_write|fc_pi_content_1_2",
-        name: "add_ad_hoc_note",
-      },
-      { type: "text", text: "after parallel tools" },
-    ]);
-    await expectPiActivitySummaryBeforeGuestReplay(actor, run);
 
     await webhooks.requestAgentEvents(
       {
@@ -446,19 +278,19 @@ describe("CHAT-02: model-first provider policies", () => {
         events: [
           {
             type: "assistant",
-            sequenceNumber: 0,
+            sequenceNumber: 1,
             message: {
               content: [{ type: "text", text: "before parallel tools" }],
             },
           },
           {
             type: "assistant",
-            sequenceNumber: 1,
+            sequenceNumber: 2,
             message: {
               content: [
                 {
                   type: "tool_use",
-                  id: "call_pi_read|fc_pi_content_1_1",
+                  id: "call_pi_read",
                   name: "bash",
                   input: {
                     command: okouCliCommand,
@@ -469,12 +301,12 @@ describe("CHAT-02: model-first provider policies", () => {
           },
           {
             type: "assistant",
-            sequenceNumber: 2,
+            sequenceNumber: 3,
             message: {
               content: [
                 {
                   type: "tool_use",
-                  id: "call_pi_write|fc_pi_content_1_2",
+                  id: "call_pi_write",
                   name: "add_ad_hoc_note",
                   input: {
                     filename: adHocNoteFilename,
@@ -486,7 +318,7 @@ describe("CHAT-02: model-first provider policies", () => {
           },
           {
             type: "assistant",
-            sequenceNumber: 3,
+            sequenceNumber: 4,
             message: {
               content: [{ type: "text", text: "after parallel tools" }],
             },
@@ -508,21 +340,60 @@ describe("CHAT-02: model-first provider policies", () => {
         };
       }),
     ).toStrictEqual([
-      { content: "before parallel tools", sequenceNumber: 0 },
-      { content: "after parallel tools", sequenceNumber: 3 },
+      { content: "before parallel tools", sequenceNumber: 1 },
+      { content: "after parallel tools", sequenceNumber: 4 },
     ]);
+    await expectPiActivitySummary(actor, run);
+
     h2Session.appendMessage({
-      role: "toolResult",
-      toolCallId: "call_pi_read|fc_pi_content_1_1",
-      toolName: "bash",
-      content: [{ type: "text", text: "Okou CLI help output" }],
-      details: {},
-      isError: false,
+      role: "user",
+      content: prompt,
+      timestamp: 1,
+    });
+    h2Session.appendMessage({
+      role: "assistant",
+      content: [
+        { type: "text", text: "before parallel tools" },
+        {
+          type: "toolCall",
+          id: "call_pi_read",
+          name: "bash",
+          arguments: { command: okouCliCommand },
+        },
+        {
+          type: "toolCall",
+          id: "call_pi_write",
+          name: "add_ad_hoc_note",
+          arguments: { filename: adHocNoteFilename, note: adHocNote },
+        },
+        { type: "text", text: "after parallel tools" },
+      ],
+      api: "openai-responses",
+      provider: "openrouter",
+      model: "@preset/okou-1-0",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "toolUse",
       timestamp: 2,
     });
     h2Session.appendMessage({
       role: "toolResult",
-      toolCallId: "call_pi_write|fc_pi_content_1_2",
+      toolCallId: "call_pi_read",
+      toolName: "bash",
+      content: [{ type: "text", text: "Okou CLI help output" }],
+      details: {},
+      isError: false,
+      timestamp: 3,
+    });
+    h2Session.appendMessage({
+      role: "toolResult",
+      toolCallId: "call_pi_write",
       toolName: "add_ad_hoc_note",
       content: [
         {
@@ -532,14 +403,14 @@ describe("CHAT-02: model-first provider policies", () => {
       ],
       details: {},
       isError: false,
-      timestamp: 3,
+      timestamp: 4,
     });
     h2Session.appendMessage({
       role: "assistant",
       content: [{ type: "text", text: "Sandbox H2 complete" }],
       api: "openai-responses",
       provider: "openrouter",
-      model: "openai/gpt-5.6-terra",
+      model: "@preset/okou-1-0",
       usage: {
         input: 5,
         output: 3,
@@ -549,9 +420,23 @@ describe("CHAT-02: model-first provider policies", () => {
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
       },
       stopReason: "stop",
-      timestamp: 4,
+      timestamp: 5,
     });
-    const h2 = h2Session.toJsonl();
+    // Exercise the API H2 endpoint with a compacted native candidate; the
+    // larger original remains test-owned and is never persisted as H2.
+    const { original: originalH2, bounded: h2 } = boundedPiCheckpointHistory(
+      h2Session.toJsonl(),
+    );
+    expect(Buffer.byteLength(originalH2)).toBeGreaterThan(
+      Buffer.byteLength(h2),
+    );
+    const originalNative = MemoryPiSession.fromJsonl(originalH2);
+    const boundedNative = MemoryPiSession.fromJsonl(h2);
+    expect(boundedNative.buildSessionContext()).toStrictEqual(
+      originalNative.buildSessionContext(),
+    );
+    expect(boundedNative.isSettledCheckpoint()).toBeTruthy();
+    expect(boundedNative.getSessionId()).toBe(run.threadId);
     const h2Hash = createHash("sha256").update(h2).digest("hex");
     const preparedH2 = await webhooks.requestAgentCheckpointPrepareHistory(
       {
@@ -578,16 +463,16 @@ describe("CHAT-02: model-first provider policies", () => {
         content: adHocNote,
       },
     ]);
-    expect(checkpointedMemory.storageId).toBe(terraMemoryMount.storageId);
+    expect(checkpointedMemory.storageId).toBe(lunaMemoryMount.storageId);
     const memoryArtifactSnapshots = [
       {
-        name: terraMemoryMount.name,
+        name: lunaMemoryMount.name,
         version: checkpointedMemory.versionId,
-        mountPath: terraMemoryMount.mountPath,
-        ...(terraMemoryMount.missingRootPolicy === undefined
+        mountPath: lunaMemoryMount.mountPath,
+        ...(lunaMemoryMount.missingRootPolicy === undefined
           ? {}
           : {
-              missingRootPolicy: terraMemoryMount.missingRootPolicy,
+              missingRootPolicy: lunaMemoryMount.missingRootPolicy,
             }),
       },
     ];
@@ -618,33 +503,6 @@ describe("CHAT-02: model-first provider policies", () => {
         artifact: { memory: checkpointedMemory.versionId },
       },
     });
-    const combinedUsage = await readRunUsageEventsFixture(run.runId);
-    expect(
-      combinedUsage.filter((row) => {
-        return row.category === "tokens.input.fast" && row.quantity === 5;
-      }),
-    ).toHaveLength(1);
-    expect(
-      combinedUsage.filter((row) => {
-        return row.category === "tokens.output.fast" && row.quantity === 3;
-      }),
-    ).toHaveLength(1);
-    expect(
-      combinedUsage.filter((row) => {
-        return row.category === "tokens.output.fast" && row.quantity === 2;
-      }),
-    ).toHaveLength(1);
-    expect(combinedUsage).toHaveLength(3);
-    expect(
-      combinedUsage.every((row) => {
-        return (
-          row.provider === "gpt-5.6-terra" &&
-          row.status === "processed" &&
-          row.billingError === null &&
-          row.category.endsWith(".fast")
-        );
-      }),
-    ).toBeTruthy();
     const committedH2 = await webhooks.requestAgentCheckpoint(
       {
         runId: run.runId,
@@ -662,34 +520,6 @@ describe("CHAT-02: model-first provider policies", () => {
         `Expected H2 checkpoint success: ${committedH2Body.error.message}`,
       );
     }
-    expect(modelCalls).toBe(1);
-    expect(checkpointObjects.has(manifestKey)).toBeFalsy();
-    expect(
-      checkpointObjects.has(
-        `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${run.runId}/session.jsonl`,
-      ),
-    ).toBeFalsy();
-    const canonicalConversation = await readThreadSessionConversation(
-      context,
-      run.threadId,
-    );
-    expect(canonicalConversation).toMatchObject({
-      conversation_run_id: run.runId,
-    });
-    const sandboxConversation = await readPiConversationIdentityFixture(
-      run.runId,
-    );
-    await expect(
-      readPiMemoryStage1CandidateFixture({
-        orgId,
-        userId: actor.userId,
-      }),
-    ).resolves.toBeNull();
-    expect(sandboxConversation).toMatchObject({
-      piSessionId: run.threadId,
-      sourceHistoryHash: h2Hash,
-    });
-
     const idempotentH2 = await webhooks.requestAgentCheckpoint(
       {
         runId: run.runId,
@@ -711,7 +541,7 @@ describe("CHAT-02: model-first provider policies", () => {
       content: [{ type: "text", text: "late replacement H2" }],
       api: "openai-responses",
       provider: "openrouter",
-      model: "openai/gpt-5.6-terra",
+      model: "@preset/okou-1-0",
       usage: {
         input: 0,
         output: 0,
@@ -758,30 +588,18 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(JSON.stringify(replacementCheckpoint.body)).toContain(
       "[PI_H2_ALREADY_COMMITTED]",
     );
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
-    expect(modelCalls).toBe(1);
 
-    const failedHandoff = await withOpenRouterRoute(async () => {
-      return await sendChatRun(actor, {
-        agentId,
-        threadId: run.threadId,
-        prompt: "reject a non-native Sandbox H2",
-      });
+    const failedRun = await sendChatRunAfterPick(actor, {
+      agentId,
+      threadId: run.threadId,
+      prompt: "reject a non-native Sandbox H2",
     });
-    const failedManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${failedHandoff.runId}/manifest.json`;
-    await expect
-      .poll(() => {
-        return checkpointObjects.has(failedManifestKey);
-      })
-      .toBe(true);
-    const failedClaim = await claimChatRun(runnerGroup, failedHandoff.runId);
+    const failedClaim = await claimChatRun(runnerGroup, failedRun.runId);
     const invalidH2 = Buffer.from(`${h2}{malformed\n`, "utf8");
     const invalidH2Hash = createHash("sha256").update(invalidH2).digest("hex");
     await webhooks.requestAgentCheckpointPrepareHistory(
       {
-        runId: failedHandoff.runId,
+        runId: failedRun.runId,
         hash: invalidH2Hash,
         rawSize: invalidH2.length,
         encodedSize: invalidH2.length,
@@ -796,7 +614,7 @@ describe("CHAT-02: model-first provider policies", () => {
     );
     const invalidCheckpoint = await webhooks.requestAgentComplete(
       {
-        runId: failedHandoff.runId,
+        runId: failedRun.runId,
         exitCode: 1,
         error: "reject invalid native checkpoint",
         checkpoint: {
@@ -811,25 +629,20 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(JSON.stringify(invalidCheckpoint.body)).toContain(
       "[PI_H2_JSONL_INVALID]",
     );
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
     await webhooks.requestAgentComplete(
       {
-        runId: failedHandoff.runId,
+        runId: failedRun.runId,
         exitCode: 1,
         error: "[PI_H2_JSONL_INVALID] rejected native checkpoint",
       },
       failedClaim.sandboxHeaders,
       [200],
     );
-    await waitForRunStatus(actor, failedHandoff.runId, "failed");
+    await waitForRunStatus(actor, failedRun.runId, "failed");
     await flushWaitUntilForTest();
-    expect(modelCalls).toBe(1);
-    expect(checkpointObjects.has(failedManifestKey)).toBeFalsy();
     const lateFailedH2 = await webhooks.requestAgentComplete(
       {
-        runId: failedHandoff.runId,
+        runId: failedRun.runId,
         exitCode: 1,
         checkpoint: {
           cliAgentType: "pi",
@@ -843,7 +656,7 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(JSON.stringify(lateFailedH2.body)).toContain("[PI_H2_RUN_TERMINAL]");
     const spoofedFailedH2 = await webhooks.requestAgentCheckpoint(
       {
-        runId: failedHandoff.runId,
+        runId: failedRun.runId,
         cliAgentType: "claude-code",
         cliAgentSessionId: run.threadId,
         cliAgentSessionHistoryHash: h2Hash,
@@ -854,51 +667,21 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(JSON.stringify(spoofedFailedH2.body)).toContain(
       "[PI_H2_TYPE_MISMATCH]",
     );
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
-    expect(modelCalls).toBe(1);
-
-    if (!canonicalConversation.agent_session_id) {
-      throw new Error("Expected the completed Pi run to own an AgentSession");
-    }
-    const explicitResume = await api.createRun(actor, {
+    const cancelledRun = await sendChatRunAfterPick(actor, {
       agentId,
-      sessionId: canonicalConversation.agent_session_id,
-      prompt: "keep an incompatible direct run off the Pi checkpoint",
+      threadId: run.threadId,
+      model,
+      prompt: "reject H2 after an explicit Pi run is cancelled",
     });
-    const explicitResumeClaim = await api.claimRunnerJob(explicitResume.runId);
-    expect(explicitResumeClaim.cliAgentType).toBe("claude-code");
-    expect(explicitResumeClaim.resumeSession).toBeNull();
-    expect(modelCalls).toBe(1);
-    await api.requestCancelRun(actor, explicitResume.runId, [200]);
-    await waitForRunStatus(actor, explicitResume.runId, "cancelled");
-
-    const cancelledHandoff = await withOpenRouterRoute(async () => {
-      return await sendChatRun(actor, {
-        agentId,
-        threadId: run.threadId,
-        prompt: "reject H2 after an explicit Pi handoff is cancelled",
-      });
-    });
-    const cancelledManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${cancelledHandoff.runId}/manifest.json`;
-    await expect
-      .poll(() => {
-        return checkpointObjects.has(cancelledManifestKey);
-      })
-      .toBe(true);
-    const cancelledClaim = await claimChatRun(
-      runnerGroup,
-      cancelledHandoff.runId,
-    );
+    const cancelledClaim = await claimChatRun(runnerGroup, cancelledRun.runId);
     await cancelChatRun(
       actor,
-      cancelledHandoff.runId,
+      cancelledRun.runId,
       cancelledClaim.sandboxHeaders,
     );
     const lateCancelledH2 = await webhooks.requestAgentComplete(
       {
-        runId: cancelledHandoff.runId,
+        runId: cancelledRun.runId,
         exitCode: 1,
         checkpoint: {
           cliAgentType: "pi",
@@ -912,148 +695,56 @@ describe("CHAT-02: model-first provider policies", () => {
     expect(JSON.stringify(lateCancelledH2.body)).toContain(
       "[PI_H2_RUN_TERMINAL]",
     );
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
-    expect(modelCalls).toBe(1);
 
-    const racedHandoff = await withOpenRouterRoute(async () => {
-      return await sendChatRun(actor, {
-        agentId,
-        threadId: run.threadId,
-        prompt: "reject standalone H2 during an early successful completion",
-      });
+    const retry = await sendChatRunAfterPick(actor, {
+      agentId,
+      threadId: run.threadId,
+      prompt: "resume only the last completed Pi checkpoint",
     });
-    const racedManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${racedHandoff.runId}/manifest.json`;
-    await expect
-      .poll(() => {
-        return checkpointObjects.has(racedManifestKey);
-      })
-      .toBe(true);
-    const racedClaim = await claimChatRun(runnerGroup, racedHandoff.runId);
-    const lifecycleGate = await holdAgentRunRowLockFixture({
-      runId: racedHandoff.runId,
-      signal: context.signal,
+    const retryClaim = await claimChatRun(runnerGroup, retry.runId);
+    expect(retryClaim.claim.resumeSession).toMatchObject({
+      sessionId: run.threadId,
+      historyRef: { kind: "blob", hash: h2Hash },
     });
-    const ownedRequests: Promise<unknown>[] = [];
-    onTestFinished(async () => {
-      lifecycleGate.release();
-      await Promise.all(ownedRequests);
-      await lifecycleGate.done;
-    });
-    const racedCompletion = webhooks.requestAgentComplete(
-      { runId: racedHandoff.runId, exitCode: 0 },
-      racedClaim.sandboxHeaders,
+    const retryFailure = await webhooks.requestAgentComplete(
+      {
+        runId: retry.runId,
+        exitCode: 1,
+        error: "guest reported Pi failure without a new checkpoint",
+      },
+      retryClaim.sandboxHeaders,
       [200],
     );
-    ownedRequests.push(Promise.allSettled([racedCompletion]));
-    await expect.poll(lifecycleGate.waiterCount).toBe(1);
-    const racedCheckpoint = webhooks.requestAgentCheckpoint(
-      {
-        runId: racedHandoff.runId,
-        cliAgentType: "pi",
-        cliAgentSessionId: run.threadId,
-        cliAgentSessionHistoryHash: h2Hash,
-      },
-      racedClaim.sandboxHeaders,
-      [400],
-    );
-    ownedRequests.push(Promise.allSettled([racedCheckpoint]));
-    const racedCheckpointResult = await racedCheckpoint;
-    expect(JSON.stringify(racedCheckpointResult.body)).toContain(
-      "[CHECKPOINT_RUN_NOT_SETTLED]",
-    );
-    lifecycleGate.release();
-    const [, racedCompletionResult] = await Promise.all([
-      lifecycleGate.done,
-      racedCompletion,
-    ] as const);
-    expect(racedCompletionResult).toMatchObject({
-      body: { success: true, status: "failed" },
+    expect(retryFailure.body).toStrictEqual({
+      success: true,
+      status: "failed",
     });
-    await waitForRunStatus(actor, racedHandoff.runId, "failed");
-    await flushWaitUntilForTest();
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
-    expect(modelCalls).toBe(1);
-
-    const retry = await withOpenRouterRoute(async () => {
-      return await sendChatRun(actor, {
-        agentId,
-        threadId: run.threadId,
-        prompt: "resume only the last completed Pi checkpoint",
-      });
-    });
-    const retryManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${retry.runId}/manifest.json`;
-    await expect
-      .poll(() => {
-        return checkpointObjects.has(retryManifestKey);
-      })
-      .toBe(true);
-    const retryManifest = JSON.parse(
-      checkpointObjects.get(retryManifestKey)?.toString("utf8") ?? "{}",
-    ) as {
-      readonly baseSession?: {
-        readonly sessionId?: unknown;
-        readonly sha256?: unknown;
-      };
-    };
-    expect(retryManifest.baseSession).toStrictEqual({
-      sessionId: run.threadId,
-      sha256: h2Hash,
-    });
-    expect(modelCalls).toBe(1);
-    const timedOutClaim = await claimChatRun(runnerGroup, retry.runId);
-    await timeoutRunWithoutCallbacksFixture({ runId: retry.runId });
-    await waitForRunStatus(actor, retry.runId, "timeout");
-    const lateTimedOutH2 = await webhooks.requestAgentCheckpoint(
+    await waitForRunStatus(actor, retry.runId, "failed");
+    const retryLateFailedH2 = await webhooks.requestAgentCheckpoint(
       {
         runId: retry.runId,
         cliAgentType: "pi",
         cliAgentSessionId: run.threadId,
         cliAgentSessionHistoryHash: h2Hash,
       },
-      timedOutClaim.sandboxHeaders,
+      retryClaim.sandboxHeaders,
       [400],
     );
-    expect(JSON.stringify(lateTimedOutH2.body)).toContain(
+    expect(JSON.stringify(retryLateFailedH2.body)).toContain(
       "[PI_H2_RUN_TERMINAL]",
     );
-    const timedOutCompletion = await webhooks.requestAgentComplete(
-      { runId: retry.runId, exitCode: 0 },
-      timedOutClaim.sandboxHeaders,
-      [200],
-    );
-    expect(timedOutCompletion.body).toStrictEqual({
-      success: true,
-      status: "failed",
-    });
-    await waitForRunStatus(actor, retry.runId, "timeout");
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
-    expect(modelCalls).toBe(1);
 
-    const reportedFailureHandoff = await withOpenRouterRoute(async () => {
-      return await sendChatRun(actor, {
-        agentId,
-        threadId: run.threadId,
-        prompt: "retry one atomically reported Pi failure",
-      });
+    const reportedFailureRun = await sendChatRunAfterPick(actor, {
+      agentId,
+      threadId: run.threadId,
+      prompt: "retry one atomically reported Pi failure",
     });
-    const reportedFailureManifestKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/pi-api-first-turn/${reportedFailureHandoff.runId}/manifest.json`;
-    await expect
-      .poll(() => {
-        return checkpointObjects.has(reportedFailureManifestKey);
-      })
-      .toBe(true);
     const reportedFailureClaim = await claimChatRun(
       runnerGroup,
-      reportedFailureHandoff.runId,
+      reportedFailureRun.runId,
     );
     const reportedFailureBody = {
-      runId: reportedFailureHandoff.runId,
+      runId: reportedFailureRun.runId,
       exitCode: 1,
       error: "guest reported Pi failure",
       checkpoint: {
@@ -1071,7 +762,7 @@ describe("CHAT-02: model-first provider policies", () => {
       success: true,
       status: "failed",
     });
-    await waitForRunStatus(actor, reportedFailureHandoff.runId, "failed");
+    await waitForRunStatus(actor, reportedFailureRun.runId, "failed");
     await flushWaitUntilForTest();
     const repeatedReportedFailure = await webhooks.requestAgentComplete(
       reportedFailureBody,
@@ -1079,17 +770,6 @@ describe("CHAT-02: model-first provider policies", () => {
       [200],
     );
     expect(repeatedReportedFailure.body).toStrictEqual(reportedFailure.body);
-    await expect(
-      readThreadSessionConversation(context, run.threadId),
-    ).resolves.toStrictEqual(canonicalConversation);
-    expect(modelCalls).toBe(1);
-
-    const conversationClear = await holdThreadSessionConversationClearFixture({
-      threadId: run.threadId,
-      signal: context.signal,
-    });
-    conversationClear.release();
-    await conversationClear.done;
     const repeatedCombinedH2 = await webhooks.requestAgentComplete(
       {
         runId: run.runId,
@@ -1105,10 +785,39 @@ describe("CHAT-02: model-first provider policies", () => {
       [200],
     );
     expect(repeatedCombinedH2.body).toStrictEqual(combinedH2.body);
+    await expectThreadModelTokens(context, actor, run.threadId, 2);
+    const probe = await sendChatRunAfterPick(actor, {
+      agentId,
+      threadId: run.threadId,
+      prompt: "verify the canonical completed checkpoint after rejected writes",
+    });
+    const probeClaim = await claimChatRun(runnerGroup, probe.runId);
+    expect(probeClaim.claim.resumeSession).toMatchObject({
+      sessionId: run.threadId,
+      historyRef: { kind: "blob", hash: h2Hash },
+    });
+    await cancelChatRun(actor, probe.runId, probeClaim.sandboxHeaders);
+
+    // Switching the thread to the Claude Code route must not resume the Pi
+    // checkpoint; the org keeps the Pi route as its default.
+
+    await api.updateUserModelPreference(actor, model);
+    const explicitResume = await api.createThreadRun(actor, {
+      agentId,
+      threadId: run.threadId,
+      prompt: "keep an incompatible run off the Pi checkpoint",
+      model: "claude-fable-5-1",
+    });
+    const explicitResumeClaim = await api.claimRunnerJob(explicitResume.runId);
+    expect(explicitResumeClaim.cliAgentType).toBe("claude-code");
+    expect(explicitResumeClaim.resumeSession).toBeNull();
+    await cancelChatRun(actor, explicitResume.runId, {
+      authorization: `Bearer ${explicitResumeClaim.sandboxToken}`,
+    });
   }
 
   it(
-    "publishes OpenRouter Responses blocks, hands tools to H2, and checkpoints Pi memory notes",
+    "launches fixed Auto in the Sandbox, captures guest tool activity, and checkpoints Pi memory notes",
     piActivityScenario,
     150_000,
   );

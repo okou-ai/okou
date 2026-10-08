@@ -15,18 +15,6 @@ import type {
   BuiltInGenerationAcceptedResponse,
   BuiltInGenerationResponse,
 } from "@okouai/api-contracts/contracts/built-in-generation";
-import type {
-  AvatarVideoAvatar,
-  AvatarVideoAvatarsQuery,
-  AvatarVideoGenerateRequest,
-  AvatarVideoGenerateResponse,
-  AvatarVideoVoice,
-  AvatarVideoVoicesQuery,
-} from "@okouai/api-contracts/contracts/avatar-video";
-import {
-  avatarVideoAvatarsResponseSchema,
-  avatarVideoVoicesResponseSchema,
-} from "@okouai/api-contracts/contracts/avatar-video";
 import { ApiRequestError, getBaseUrl } from "../core/client-factory";
 import { getActiveToken } from "../config";
 import { headersWithCliClientHeaders } from "../client-headers";
@@ -34,14 +22,21 @@ import { assertPrivateArtifactUrl } from "../../artifact-url";
 import { getPlatformOrigin } from "../../platform-url";
 import { downloadHostedSiteFiles } from "../../host/clone-hosted-site";
 
-const BUILT_IN_GENERATION_POLL_INTERVAL_MS = 2_000;
-const BUILT_IN_GENERATION_WAIT_TIMEOUT_MS_BY_TYPE = {
-  image: 15 * 60 * 1000,
-  video: 30 * 60 * 1000,
-  presentation: 60 * 60 * 1000,
-  website: 60 * 60 * 1000,
-} as const satisfies Record<BuiltInGenerationAcceptedResponse["type"], number>;
+const IMAGE_GENERATION_POLL_INTERVAL_MS = 2_000;
+const IMAGE_GENERATION_WAIT_TIMEOUT_MS = 15 * 60 * 1000;
 const ABLY_CONNECT_TIMEOUT_MS = 10_000;
+
+type ImageGenerationAcceptedResponse = BuiltInGenerationAcceptedResponse & {
+  readonly type: "image";
+};
+
+type ImageGenerationResponse = Omit<
+  BuiltInGenerationResponse,
+  "type" | "result"
+> & {
+  readonly type: "image";
+  readonly result?: GenerateWebImageResult;
+};
 
 /**
  * Known extension → MIME map for accurate upload metadata. Unknown extensions
@@ -202,13 +197,6 @@ export async function webFileReferenceId(
   return id;
 }
 
-export async function fetchGenerationReference(
-  url: string | URL,
-): Promise<Response> {
-  const id = await webFileReferenceId(String(url));
-  return id ? fetchWebFile(id) : fetch(url);
-}
-
 async function fetchWebFile(fileId: string): Promise<Response> {
   const baseUrl = await getBaseUrl();
   const token = await getActiveToken();
@@ -305,30 +293,9 @@ interface UploadWebFileResult {
   url: string;
 }
 
-interface GenerateWebVoiceOptions {
-  requirePrivateArtifact?: boolean;
-  text: string;
-  voice?: string;
-  instructions?: string;
-}
-
-interface GenerateWebVoiceResult {
-  privateArtifacts?: boolean;
-  id: string;
-  filename: string;
-  contentType: string;
-  size: number;
-  url: string;
-  durationSeconds: number;
-  creditsCharged: number;
-  model: string;
-  voice: string;
-}
-
 interface GenerateWebImageOptions {
   requirePrivateArtifact?: boolean;
   prompt: string;
-  model?: string;
   size?: string;
   quality?: string;
   background?: string;
@@ -379,92 +346,6 @@ interface GenerateWebImageResult {
   imagePromptStrength?: number;
 }
 
-interface GenerateWebVideoOptions {
-  requirePrivateArtifact?: boolean;
-  prompt: string;
-  model?: string;
-  aspectRatio?: string;
-  duration?: string;
-  resolution?: string;
-  generateAudio?: boolean;
-  negativePrompt?: string;
-  seed?: number;
-  autoFix?: boolean;
-  safetyTolerance?: string;
-  imageUrls?: string[];
-  videoUrls?: string[];
-  audioUrls?: string[];
-  firstFrameImageUrl?: string;
-  lastFrameImageUrl?: string;
-}
-
-interface GenerateWebVideoResult {
-  privateArtifacts?: boolean;
-  id: string;
-  filename: string;
-  contentType: string;
-  size: number;
-  url: string;
-  durationSeconds: number;
-  creditsCharged: number;
-  model: string;
-  aspectRatio: string;
-  duration: string;
-  resolution: string;
-  generateAudio: boolean;
-  sourceUrl: string;
-  requestId?: string;
-}
-
-interface ListWebAvatarVideoAvatarsResult {
-  readonly avatars: readonly AvatarVideoAvatar[];
-}
-
-interface ListWebAvatarVideoVoicesResult {
-  readonly voices: readonly AvatarVideoVoice[];
-  readonly hasMore: boolean;
-}
-
-function shouldIncludePayloadValue(value: unknown): boolean {
-  if (value === undefined) {
-    return false;
-  }
-  return !Array.isArray(value) || value.length > 0;
-}
-
-function compactPayload(
-  entries: readonly (readonly [string, unknown])[],
-): Record<string, unknown> {
-  return Object.fromEntries(
-    entries.filter(([, value]) => {
-      return shouldIncludePayloadValue(value);
-    }),
-  );
-}
-
-function generateWebVideoPayload(
-  options: GenerateWebVideoOptions,
-): Record<string, unknown> {
-  return compactPayload([
-    ["requirePrivateArtifact", options.requirePrivateArtifact],
-    ["prompt", options.prompt],
-    ["model", options.model],
-    ["aspectRatio", options.aspectRatio],
-    ["duration", options.duration],
-    ["resolution", options.resolution],
-    ["generateAudio", options.generateAudio],
-    ["negativePrompt", options.negativePrompt],
-    ["seed", options.seed],
-    ["autoFix", options.autoFix],
-    ["safetyTolerance", options.safetyTolerance],
-    ["imageUrls", options.imageUrls],
-    ["videoUrls", options.videoUrls],
-    ["audioUrls", options.audioUrls],
-    ["firstFrameImageUrl", options.firstFrameImageUrl],
-    ["lastFrameImageUrl", options.lastFrameImageUrl],
-  ]);
-}
-
 interface PrepareUploadResponse {
   id: string;
   filename: string;
@@ -513,39 +394,33 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isBuiltInGenerationAcceptedResponse(
+function isImageGenerationAcceptedResponse(
   value: unknown,
-): value is BuiltInGenerationAcceptedResponse {
+): value is ImageGenerationAcceptedResponse {
   if (!isRecord(value)) {
     return false;
   }
   return (
     typeof value.generationId === "string" &&
     value.status === "queued" &&
-    (value.type === "image" ||
-      value.type === "video" ||
-      value.type === "presentation" ||
-      value.type === "website") &&
+    value.type === "image" &&
     isRecord(value.realtime)
   );
 }
 
-interface BuiltInGenerationNotifier {
+interface ImageGenerationNotifier {
   wait(timeoutMs: number): Promise<void>;
   close(): void;
 }
 
-function createBuiltInGenerationRealtime(
-  accepted: BuiltInGenerationAcceptedResponse,
+function createImageGenerationRealtime(
+  accepted: ImageGenerationAcceptedResponse,
 ): Realtime {
-  let nextAuthRequest = accepted.realtime.tokenRequest;
   const authCallback: NonNullable<AuthOptions["authCallback"]> = (
     _params,
     callback,
   ) => {
-    const current = nextAuthRequest;
-    nextAuthRequest = accepted.realtime.tokenRequest;
-    callback(null, current);
+    callback(null, accepted.realtime.tokenRequest);
   };
 
   return new Realtime({
@@ -587,10 +462,10 @@ function waitForRealtimeConnected(
   });
 }
 
-async function createBuiltInGenerationNotifier(
-  accepted: BuiltInGenerationAcceptedResponse,
-): Promise<BuiltInGenerationNotifier | null> {
-  const ably = createBuiltInGenerationRealtime(accepted);
+async function createImageGenerationNotifier(
+  accepted: ImageGenerationAcceptedResponse,
+): Promise<ImageGenerationNotifier | null> {
+  const ably = createImageGenerationRealtime(accepted);
 
   try {
     await waitForRealtimeConnected(ably);
@@ -651,11 +526,11 @@ async function createBuiltInGenerationNotifier(
   }
 }
 
-async function getBuiltInGenerationStatus(
+async function getImageGenerationStatus(
   baseUrl: string,
   token: string,
   generationId: string,
-): Promise<BuiltInGenerationResponse> {
+): Promise<ImageGenerationResponse> {
   const response = await fetch(
     new URL(`/api/built-in-generations/${generationId}`, baseUrl),
     { headers: authenticatedJsonHeaders(token) },
@@ -669,13 +544,13 @@ async function getBuiltInGenerationStatus(
     throw new ApiRequestError(message, code, response.status);
   }
 
-  return (await response.json()) as BuiltInGenerationResponse;
+  return (await response.json()) as ImageGenerationResponse;
 }
 
-function readBuiltInGenerationResult<T>(
-  status: BuiltInGenerationResponse,
+function readImageGenerationResult(
+  status: ImageGenerationResponse,
   fallback: string,
-): T | undefined {
+): GenerateWebImageResult | undefined {
   if (status.status === "completed") {
     if (!status.result) {
       throw new ApiRequestError(
@@ -684,7 +559,7 @@ function readBuiltInGenerationResult<T>(
         502,
       );
     }
-    return status.result as T;
+    return status.result;
   }
 
   if (status.status === "failed") {
@@ -726,50 +601,40 @@ function statusForBuiltInGenerationError(code: string): number {
   if (code === "GENERATION_PROVIDER_UNAVAILABLE") {
     return 503;
   }
-  if (
-    code.startsWith("BYTEPLUS_INVALID_PARAMETER") ||
-    code.startsWith("BYTEPLUS_INPUT_")
-  ) {
-    return 400;
-  }
-  if (code.startsWith("BYTEPLUS_")) {
-    return 502;
-  }
   if (code.startsWith("NO_") || code.endsWith("_FAILED")) {
     return 502;
   }
   return 500;
 }
 
-async function waitForBuiltInGenerationResult<T>(args: {
-  readonly accepted: BuiltInGenerationAcceptedResponse;
+async function waitForImageGenerationResult(args: {
+  readonly accepted: ImageGenerationAcceptedResponse;
   readonly baseUrl: string;
   readonly token: string;
   readonly fallback: string;
-}): Promise<T> {
-  let notifier: BuiltInGenerationNotifier | null = null;
+}): Promise<GenerateWebImageResult> {
+  let notifier: ImageGenerationNotifier | null = null;
   let notifierCreated = false;
   const startedAt = Date.now();
-  const timeoutMs =
-    BUILT_IN_GENERATION_WAIT_TIMEOUT_MS_BY_TYPE[args.accepted.type];
+  const timeoutMs = IMAGE_GENERATION_WAIT_TIMEOUT_MS;
 
   try {
     while (Date.now() - startedAt < timeoutMs) {
-      const status = await getBuiltInGenerationStatus(
+      const status = await getImageGenerationStatus(
         args.baseUrl,
         args.token,
         args.accepted.generationId,
       );
-      const result = readBuiltInGenerationResult<T>(status, args.fallback);
+      const result = readImageGenerationResult(status, args.fallback);
       if (result) {
         return result;
       }
 
       const elapsed = Date.now() - startedAt;
       const remaining = timeoutMs - elapsed;
-      const waitMs = Math.min(BUILT_IN_GENERATION_POLL_INTERVAL_MS, remaining);
+      const waitMs = Math.min(IMAGE_GENERATION_POLL_INTERVAL_MS, remaining);
       if (!notifierCreated) {
-        notifier = await createBuiltInGenerationNotifier(args.accepted);
+        notifier = await createImageGenerationNotifier(args.accepted);
         notifierCreated = true;
       }
       if (notifier) {
@@ -789,17 +654,15 @@ async function waitForBuiltInGenerationResult<T>(args: {
   );
 }
 
-async function readBuiltInGenerationResponse<
-  T extends { readonly url: string },
->(args: {
+async function readImageGenerationResponse(args: {
   readonly response: Response;
   readonly baseUrl: string;
   readonly token: string;
   readonly fallback: string;
-}): Promise<T> {
+}): Promise<GenerateWebImageResult> {
   const body: unknown = await args.response.json();
-  if (isBuiltInGenerationAcceptedResponse(body)) {
-    const result = await waitForBuiltInGenerationResult<T>({
+  if (isImageGenerationAcceptedResponse(body)) {
+    const result = await waitForImageGenerationResult({
       accepted: body,
       baseUrl: args.baseUrl,
       token: args.token,
@@ -814,7 +677,7 @@ async function readBuiltInGenerationResponse<
       502,
     );
   }
-  return body as T;
+  return body as GenerateWebImageResult;
 }
 
 /**
@@ -953,55 +816,6 @@ export async function uploadWebFile(
 }
 
 /**
- * Generate billed speech audio from text and receive the public CDN URL.
- * Authenticates via OKOU_TOKEN (`file:write` capability) or a CLI PAT /
- * Clerk session.
- */
-export async function generateWebVoice(
-  options: GenerateWebVoiceOptions,
-): Promise<GenerateWebVoiceResult> {
-  const baseUrl = await getBaseUrl();
-  const token = await getActiveToken();
-  if (!token) {
-    throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
-  }
-
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-  };
-
-  const response = await fetch(
-    new URL(
-      options.requirePrivateArtifact
-        ? "/api/voice-io/speech/private"
-        : "/api/voice-io/speech",
-      baseUrl,
-    ),
-    {
-      method: "POST",
-      headers: headersWithCliClientHeaders(headers),
-      body: JSON.stringify({
-        text: options.text,
-        requirePrivateArtifact: options.requirePrivateArtifact,
-        ...(options.voice ? { voice: options.voice } : {}),
-        ...(options.instructions ? { instructions: options.instructions } : {}),
-      }),
-    },
-  );
-
-  if (!response.ok) {
-    const { message, code } = await parseErrorBody(
-      response,
-      "Failed to generate voice",
-    );
-    throw new ApiRequestError(message, code, response.status);
-  }
-
-  return (await response.json()) as GenerateWebVoiceResult;
-}
-
-/**
  * Generate a billed image from a prompt and receive the public CDN URL.
  * Authenticates via OKOU_TOKEN (`file:write` capability) or a CLI PAT /
  * Clerk session.
@@ -1033,7 +847,6 @@ export async function generateWebImage(
       body: JSON.stringify({
         prompt: options.prompt,
         requirePrivateArtifact: options.requirePrivateArtifact,
-        ...(options.model ? { model: options.model } : {}),
         ...(options.size ? { size: options.size } : {}),
         ...(options.quality ? { quality: options.quality } : {}),
         ...(options.background ? { background: options.background } : {}),
@@ -1071,221 +884,10 @@ export async function generateWebImage(
     throw new ApiRequestError(message, code, response.status);
   }
 
-  return readBuiltInGenerationResponse<GenerateWebImageResult>({
+  return readImageGenerationResponse({
     response,
     baseUrl,
     token,
     fallback: "Failed to generate image",
   });
-}
-
-/**
- * Generate a billed video from a prompt and receive the public CDN URL.
- * Authenticates via OKOU_TOKEN (`file:write` capability) or a CLI PAT /
- * Clerk session.
- */
-export async function generateWebVideo(
-  options: GenerateWebVideoOptions,
-): Promise<GenerateWebVideoResult> {
-  const baseUrl = await getBaseUrl();
-  const token = await getActiveToken();
-  if (!token) {
-    throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
-  }
-
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-  };
-
-  const response = await fetch(
-    new URL(
-      options.requirePrivateArtifact
-        ? "/api/video-io/generate/private"
-        : "/api/video-io/generate",
-      baseUrl,
-    ),
-    {
-      method: "POST",
-      headers: headersWithCliClientHeaders(headers),
-      body: JSON.stringify(generateWebVideoPayload(options)),
-    },
-  );
-
-  if (!response.ok) {
-    const { message, code } = await parseErrorBody(
-      response,
-      "Failed to generate video",
-    );
-    throw new ApiRequestError(message, code, response.status);
-  }
-
-  return readBuiltInGenerationResponse<GenerateWebVideoResult>({
-    response,
-    baseUrl,
-    token,
-    fallback: "Failed to generate video",
-  });
-}
-
-/**
- * Generate a billed JoggAI talking-avatar video and receive its public CDN URL.
- */
-export async function generateWebAvatarVideo(
-  options: AvatarVideoGenerateRequest,
-): Promise<AvatarVideoGenerateResponse> {
-  const baseUrl = await getBaseUrl();
-  const token = await getActiveToken();
-  if (!token) {
-    throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
-  }
-  const response = await fetch(
-    new URL(
-      options.requirePrivateArtifact
-        ? "/api/avatar-video/generate/private"
-        : "/api/avatar-video/generate",
-      baseUrl,
-    ),
-    {
-      method: "POST",
-      headers: headersWithCliClientHeaders({
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      }),
-      body: JSON.stringify(options),
-    },
-  );
-  if (!response.ok) {
-    const { message, code } = await parseErrorBody(
-      response,
-      "Failed to generate avatar video",
-    );
-    throw new ApiRequestError(message, code, response.status);
-  }
-  return readBuiltInGenerationResponse<AvatarVideoGenerateResponse>({
-    response,
-    baseUrl,
-    token,
-    fallback: "Failed to generate avatar video",
-  });
-}
-
-function avatarVideoCollectionUrl(
-  baseUrl: string,
-  collection: "avatars" | "voices",
-  query: Record<string, string | number | undefined>,
-): URL {
-  const url = new URL(`/api/avatar-video/${collection}`, baseUrl);
-  for (const [key, value] of Object.entries(query)) {
-    if (value !== undefined) {
-      url.searchParams.set(key, String(value));
-    }
-  }
-  return url;
-}
-
-async function getAvatarVideoCollection(
-  url: URL,
-  fallback: string,
-): Promise<unknown> {
-  const token = await getActiveToken();
-  if (!token) {
-    throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
-  }
-  const response = await fetch(url, {
-    headers: headersWithCliClientHeaders({
-      Authorization: `Bearer ${token}`,
-    }),
-  });
-  if (!response.ok) {
-    const { message, code } = await parseErrorBody(response, fallback);
-    throw new ApiRequestError(message, code, response.status);
-  }
-  return await response.json();
-}
-
-export async function listWebAvatarVideoAvatars(
-  query: AvatarVideoAvatarsQuery,
-): Promise<ListWebAvatarVideoAvatarsResult> {
-  const baseUrl = await getBaseUrl();
-  return avatarVideoAvatarsResponseSchema.parse(
-    await getAvatarVideoCollection(
-      avatarVideoCollectionUrl(baseUrl, "avatars", query),
-      "Failed to list JoggAI avatars",
-    ),
-  );
-}
-
-export async function listWebAvatarVideoVoices(
-  query: AvatarVideoVoicesQuery,
-): Promise<ListWebAvatarVideoVoicesResult> {
-  const baseUrl = await getBaseUrl();
-  return avatarVideoVoicesResponseSchema.parse(
-    await getAvatarVideoCollection(
-      avatarVideoCollectionUrl(baseUrl, "voices", query),
-      "Failed to list JoggAI voices",
-    ),
-  );
-}
-
-export interface TranscribeAudioSegment {
-  readonly start: number;
-  readonly end: number;
-  readonly text: string;
-}
-
-interface TranscribeAudioResult {
-  readonly text: string;
-  readonly segments?: readonly TranscribeAudioSegment[];
-}
-
-export async function transcribeAudio(
-  audioPath: string,
-  options: { readonly verbose?: boolean } = {},
-): Promise<TranscribeAudioResult> {
-  const baseUrl = await getBaseUrl();
-  const token = await getActiveToken();
-  if (!token) {
-    throw new ApiRequestError("Not authenticated", "UNAUTHORIZED", 401);
-  }
-
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-  };
-
-  const url = new URL("/api/voice-io/stt", baseUrl);
-  if (options.verbose) {
-    url.searchParams.set("verbose", "true");
-  }
-
-  const audioData = readFileSync(audioPath);
-  const filename = basename(audioPath);
-  const ext = extname(filename).toLowerCase();
-  const mimeMap: Record<string, string> = {
-    ".mp3": "audio/mpeg",
-    ".mp4": "audio/mp4",
-    ".m4a": "audio/m4a",
-    ".wav": "audio/wav",
-    ".webm": "audio/webm",
-  };
-  const mimeType = mimeMap[ext] ?? "audio/mpeg";
-
-  const formData = new FormData();
-  formData.append("file", new Blob([audioData], { type: mimeType }), filename);
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: headersWithCliClientHeaders(headers),
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const { message, code } = await parseErrorBody(
-      response,
-      "Transcription failed",
-    );
-    throw new ApiRequestError(message, code, response.status);
-  }
-
-  return (await response.json()) as TranscribeAudioResult;
 }

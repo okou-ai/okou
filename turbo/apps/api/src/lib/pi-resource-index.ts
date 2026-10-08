@@ -136,16 +136,6 @@ export function piResourceIndexFits(
   );
 }
 
-export function readPiDiscoveryText(file: PiResourceIndexFile): string {
-  if (!file.text) {
-    throw new Error("Pi resource index is missing selected discovery text");
-  }
-  if (file.text.kind === "invalid_utf8") {
-    throw new TypeError("The encoded data was not valid for encoding utf-8");
-  }
-  return file.text.value;
-}
-
 /** A valid Storage can exceed Pi discovery limits without invalidating its write. */
 export function preparePiResourceIndex(
   archive: Buffer,

@@ -1403,6 +1403,56 @@ class TestFetchFirewallHeaders:
         assert endpoint.requests[0].path == "/api/webhooks/agent/firewall/auth"
 
 
+class TestFirewallAuthEffectiveExpiry:
+    @pytest.mark.parametrize("billable", [False, True])
+    async def test_two_runs_refetch_and_coalesce_at_effective_expiry(self, mitm_ctx, billable):
+        now = 1_800_000_000.0
+        provider_expiry = now + 900
+        effective_expiry = provider_expiry - 60
+        old_headers = {"Authorization": "Bearer old-synthetic-token"}
+        new_headers = {"Authorization": "Bearer rotated-synthetic-token"}
+        endpoint = FakeAuthEndpoint()
+        for headers, expiry in [
+            (old_headers, effective_expiry),
+            (old_headers, effective_expiry),
+            (new_headers, effective_expiry + 840),
+            (new_headers, effective_expiry + 840),
+        ]:
+            endpoint.queue_json_response(firewall_auth_success_response(headers, expires_at=expiry))
+        request = firewall_auth_request(
+            auth_headers={"Authorization": "Bearer ${{ secrets.TOKEN }}"},
+            firewall_billable=billable,
+        )
+        keys = [auth_cache_key(run_id="run-one"), auth_cache_key(run_id="run-two")]
+
+        with (
+            endpoint.run(),
+            mitm_ctx(api_url=endpoint.api_url),
+            patch.object(platform_api, "VERCEL_BYPASS", ""),
+            patch.object(auth_cache.time, "time", return_value=now) as clock,
+        ):
+            for key in keys:
+                first = await auth_cache.get_firewall_headers(key, request)
+                assert first["headers"] == old_headers
+                assert first["cache_hit"] is False
+            clock.return_value = effective_expiry - 1
+            for key in keys:
+                cached = await auth_cache.get_firewall_headers(key, request)
+                assert cached["headers"] == old_headers
+                assert cached["cache_hit"] is True
+            clock.return_value = effective_expiry
+            assert clock.return_value < provider_expiry
+            for key in reversed(keys):
+                results = await asyncio.gather(
+                    *(auth_cache.get_firewall_headers(key, request) for _ in range(4))
+                )
+                assert all(result["headers"] == new_headers for result in results)
+                assert sum(not result["cache_hit"] for result in results) == 1
+
+        assert endpoint.request_count == 4
+        assert all("forceRefresh" not in item.json_body() for item in endpoint.requests)
+
+
 class TestFirewallAuthSuccessParser:
     @pytest.mark.parametrize(
         "body",

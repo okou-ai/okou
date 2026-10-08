@@ -5,6 +5,8 @@ import { toast } from "@okouai/ui/components/ui/sonner";
 import { navigateToChat$ } from "../okou-page/nav.ts";
 import { currentChatThreadId$, chatThreads$ } from "../agent-chat.ts";
 import {
+  chatThreadArchiveContract,
+  chatThreadMuteContract,
   chatThreadByIdContract,
   chatThreadPinContract,
   chatThreadUnpinContract,
@@ -40,9 +42,10 @@ type UserMessageAgentSourcePart = Extract<
   UserMessageSourcePart,
   { kind: "agent" }
 >;
+type UserMessageMcpSourcePart = Extract<UserMessageSourcePart, { kind: "mcp" }>;
 type UserMessageExternalSourcePart = Exclude<
   UserMessageSourcePart,
-  UserMessageAgentSourcePart
+  UserMessageAgentSourcePart | UserMessageMcpSourcePart
 >;
 
 export type UserMessageFeedbackNoteRenderPart =
@@ -94,12 +97,13 @@ export type UserMessageRenderPart =
       readonly part: UserMessageExternalSourcePart;
     }
   | {
-      readonly type: "automation";
-      readonly part: UserMessagePartOfType<"automation">;
+      readonly type: "source";
+      readonly kind: "mcp";
+      readonly part: UserMessageMcpSourcePart;
     }
   | {
-      readonly type: "goal";
-      readonly part: UserMessagePartOfType<"goal">;
+      readonly type: "automation";
+      readonly part: UserMessagePartOfType<"automation">;
     }
   | {
       readonly type: "file";
@@ -129,6 +133,8 @@ export type EnrichedChatEvent = ChatEvent & {
   isQueued: boolean;
   /** The user's submission time, preserved across delivery replacement events. */
   inputCreatedAt?: string;
+  /** The first input of a delivery replacement chain, for a stable identity. */
+  inputOriginId?: string;
   userMessageRenderDocument: UserMessageRenderDocument | undefined;
 };
 
@@ -277,6 +283,81 @@ export const pinChatThread$ = command(
 export const unpinChatThread$ = command(
   ({ set }, threadId: string, signal: AbortSignal) => {
     return set(setChatThreadPinned$, { threadId, pinned: false }, signal);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Archive / unarchive thread
+// ---------------------------------------------------------------------------
+
+export const setChatThreadArchived$ = command(
+  async (
+    { get, set },
+    {
+      threadId,
+      archived,
+    }: { readonly threadId: string; readonly archived: boolean },
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted();
+    const eventId = crypto.randomUUID();
+    const existingThread = get(eventDrivenChatThreads$).find((thread) => {
+      return thread.id === threadId;
+    });
+    if (existingThread) {
+      set(registerOptimisticChatThreadEvent$, {
+        id: eventId,
+        kind: archived ? "archived" : "unarchived",
+        chatThreadId: threadId,
+        agentId: existingThread.agentId,
+      });
+    }
+    const client = get(apiClient$)(chatThreadArchiveContract);
+    const request = {
+      params: { id: threadId },
+      query: { eventId },
+      fetchOptions: { signal },
+    };
+    await accept(
+      archived ? client.archive(request) : client.unarchive(request),
+      [204],
+    );
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Mute / unmute thread
+// ---------------------------------------------------------------------------
+
+export const setChatThreadMuted$ = command(
+  async (
+    { get, set },
+    { threadId, muted }: { readonly threadId: string; readonly muted: boolean },
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted();
+    const eventId = crypto.randomUUID();
+    const thread = get(eventDrivenChatThreads$).find((item) => {
+      return item.id === threadId;
+    });
+    if (thread) {
+      set(registerOptimisticChatThreadEvent$, {
+        id: eventId,
+        kind: "sort_touched",
+        chatThreadId: threadId,
+        agentId: thread.agentId,
+        muted,
+        createdAt: thread.sortAt,
+      });
+    }
+    const client = get(apiClient$)(chatThreadMuteContract);
+    const request = {
+      params: { id: threadId },
+      query: { eventId },
+      fetchOptions: { signal },
+    };
+    await accept(muted ? client.mute(request) : client.unmute(request), [204]);
+    signal.throwIfAborted();
   },
 );
 

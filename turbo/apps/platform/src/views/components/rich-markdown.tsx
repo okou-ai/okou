@@ -21,8 +21,10 @@ import {
   escapeHtmlTags,
   parseMarkdownTree,
 } from "../../lib/markdown/pipeline.ts";
+import { parseChatThreadLink } from "../../lib/chat-thread-link.ts";
 import { openImageLightbox$ } from "../../signals/okou-page/attachment-chips.ts";
 import { openMarkdownArtifact$ } from "../../signals/okou-page/markdown-artifact-preview.ts";
+import { openThreadMailDraft$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import type {
   ArtifactKind,
@@ -48,6 +50,7 @@ import {
   SitePreviewContent,
   SitePreviewViewport,
 } from "../okou-page/attachment-preview.tsx";
+import { ChatThreadLinkChip } from "./chat-thread-link-chip.tsx";
 import { CodeBlockCopyButton } from "./code-block-copy-button.tsx";
 import { MarkdownColorPreview } from "./markdown-color-preview.tsx";
 import { MarkdownFrame } from "./markdown-frame.tsx";
@@ -249,6 +252,7 @@ function ArtifactLinkIcon({ kind }: { readonly kind: ArtifactKind }) {
 
 function MediaLink({ href, children, ...rest }: MarkdownAnchorProps) {
   const openArtifact = useSet(openMarkdownArtifact$);
+  const openMailDraft = useSet(openThreadMailDraft$);
   const openImageLightbox = useSet(openImageLightbox$);
   const card = rest.node?.data?.card;
   return (
@@ -259,7 +263,10 @@ function MediaLink({ href, children, ...rest }: MarkdownAnchorProps) {
         if (shouldUseNativeAnchorNavigation(event)) {
           return;
         }
-        if (card?.kind === "artifact") {
+        if (card?.kind === "mail-draft") {
+          event.preventDefault();
+          openMailDraft(card.signals);
+        } else if (card?.kind === "artifact") {
           event.preventDefault();
           openArtifact(card);
         } else if (href && isSafeMediaUrl(href) && isImageUrl(href)) {
@@ -313,6 +320,25 @@ function MediaLinkRenderer(
   props: { children?: ReactNode } & MarkdownAnchorProps,
 ) {
   const { children, ...rest } = props;
+  const node = props.node;
+  const chatThreadLink =
+    node !== undefined &&
+    node.data?.card === undefined &&
+    !containsMarkdownImage(node) &&
+    typeof props.href === "string"
+      ? parseChatThreadLink(props.href, window.location.origin)
+      : null;
+  if (chatThreadLink !== null && node !== undefined) {
+    // The chip reads as the link's own text: an autolinked URL shows itself,
+    // an authored label such as a serialized chat mention is kept.
+    return (
+      <ChatThreadLinkChip
+        {...chatThreadLink}
+        title={markdownNodeText(node)}
+        insideMarkdown
+      />
+    );
+  }
   return <MediaLink {...rest}>{children}</MediaLink>;
 }
 
@@ -417,6 +443,16 @@ function LinkedArtifactImage({
       resolutionFailed={thumbnail.state === "hasError"}
     />
   );
+}
+
+/** Whether a Markdown link wraps an image, which a chip would drop. */
+function containsMarkdownImage(node: Element): boolean {
+  return node.children.some((child) => {
+    return (
+      child.type === "element" &&
+      (child.tagName === "img" || containsMarkdownImage(child))
+    );
+  });
 }
 
 /** The words a Markdown node reads as, which is the label its author wrote. */

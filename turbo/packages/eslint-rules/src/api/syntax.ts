@@ -14,7 +14,8 @@ const SCHEMA_MODULE_PREFIX = "@okouai/db/schema/";
 function isSchemaModule(source: string | undefined): boolean {
   return (
     source?.startsWith(SCHEMA_MODULE_PREFIX) === true ||
-    source === "@okouai/db/runtime/agent-run"
+    source === "@okouai/db/runtime/agent-run" ||
+    source === "@okouai/db/runtime/chat-thread"
   );
 }
 const DATABASE_NAMES = new Set([

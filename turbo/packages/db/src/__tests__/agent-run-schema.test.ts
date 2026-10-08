@@ -21,7 +21,7 @@ describe("agentRuns circular foreign keys", () => {
   it("resolves physical circular foreign keys and the runtime projection from the root schema", async () => {
     const referenceRegistry = await import("../schema/agent-run-reference");
     expect(() => {
-      return referenceRegistry.resolveAgentRunId();
+      return referenceRegistry.resolveAgentSessionId();
     }).toThrow(
       "Agent-run schema references were resolved before schema initialization",
     );
@@ -29,8 +29,6 @@ describe("agentRuns circular foreign keys", () => {
     const { schema } = await import("../index");
     const { agentRuns } =
       await import("../schema/agent-run-session-conversation");
-    const { chatThreadEvents, chatThreadEventKind } =
-      await import("../schema/chat-thread-event");
     const { chatThreads } = await import("../schema/chat-thread");
     const { orgMembersMetadata } =
       await import("../schema/org-members-metadata");
@@ -107,15 +105,12 @@ describe("agentRuns circular foreign keys", () => {
     expect(agentRuns.runnerVersion.hasDefault).toBe(false);
     for (const column of [
       agentRuns.selectedImageModel,
-      chatThreadEvents.selectedImageModel,
-      chatThreads.selectedImageModel,
       orgMembersMetadata.selectedImageModel,
     ]) {
       expect(column.name).toBe("selected_image_model");
       expect(column.notNull).toBe(false);
       expect(column.hasDefault).toBe(false);
     }
-    expect(chatThreadEventKind.enumValues).toContain("image_model_updated");
 
     const metadataPresenceCheck = agentRunConfig.checks.find((check) => {
       return check.name === "agent_runs_metadata_presence_check";
@@ -139,7 +134,6 @@ describe("agentRuns circular foreign keys", () => {
       "model_runtime_model",
       "built_in_model_key_id",
       "codex_service_tier",
-      "selected_video_model",
       "selected_image_model",
       "chat_thread_id",
       "api_started_at",
@@ -150,7 +144,7 @@ describe("agentRuns circular foreign keys", () => {
     for (const column of metadataColumns) {
       expect(metadataPresenceSql).toContain(`"agent_runs"."${column}" IS NULL`);
     }
-    expect(metadataPresenceSql.match(/ IS NULL/gu)).toHaveLength(18);
+    expect(metadataPresenceSql.match(/ IS NULL/gu)).toHaveLength(17);
     expect(metadataPresenceSql.match(/ IS NOT NULL/gu)).toHaveLength(2);
     expect(metadataPresenceSql).toContain(
       '"agent_runs"."trigger_source" IS NOT NULL',
@@ -227,19 +221,5 @@ describe("agentRuns circular foreign keys", () => {
     expect(officialWorkflowProvenanceSql).toContain("__system__");
     expect(officialWorkflowProvenanceSql).toContain("__org__");
     expect(officialWorkflowProvenanceSql).toContain("^[0-9a-f]{64}$");
-
-    const agentSessionRun = foreignKeyReference(
-      chatThreads,
-      "agent_session_run_id",
-    );
-    expect(agentSessionRun.foreignKey.getName()).toBe(
-      "chat_threads_agent_session_run_id_agent_runs_id_fk",
-    );
-    expect(agentSessionRun.foreignKey.onDelete).toBe("set null");
-    expect(agentSessionRun.reference.columns).toEqual([
-      chatThreads.agentSessionRunId,
-    ]);
-    expect(agentSessionRun.reference.foreignTable).toBe(agentRuns);
-    expect(agentSessionRun.reference.foreignColumns).toEqual([agentRuns.id]);
   });
 });

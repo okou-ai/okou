@@ -1,11 +1,12 @@
 import type { AppRoute } from "@okouai/api-contracts/contracts/trpc-contract";
-import type { SignalRouteHandler } from "./context/route";
+import type { JsonResponseObserver, SignalRouteHandler } from "./context/route";
 
 export type { SignalRouteHandler };
 
 export interface RouteEntry {
   readonly route: AppRoute;
   readonly handler: SignalRouteHandler<unknown>;
+  readonly observeJsonResponse?: JsonResponseObserver;
 }
 
 function routeRegistrationKey(entry: RouteEntry): string {

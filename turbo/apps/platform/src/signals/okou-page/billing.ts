@@ -1,51 +1,51 @@
-import { command, computed, state } from "ccstate";
 import {
-  billingStatusContract,
+  billingAutoRechargeContract,
   billingCheckoutContract,
-  billingUsagePackCatalogContract,
-  billingUsagePackCheckoutContract,
-  billingUsagePackManagementContract,
-  billingUsagePackCreditsContract,
-  billingUsagePackMigrationContract,
   billingConcurrencyCheckoutContract,
   billingConcurrencySubscriptionContract,
   billingCreditCheckoutContract,
-  billingPortalContract,
-  billingAutoRechargeContract,
-  billingInvoicesContract,
   billingDowngradeContract,
+  billingInvoicesContract,
+  billingPortalContract,
   billingRestoreContract,
+  billingStatusContract,
+  billingUsagePackCatalogContract,
+  billingUsagePackCheckoutContract,
+  billingUsagePackCreditsContract,
+  billingUsagePackManagementContract,
+  billingUsagePackMigrationContract,
   type BillingStatusResponse,
   type CheckoutRequest,
   type ConcurrencySubscriptionChangePreviewResponse,
   type CreditPurchasePreviewResponse,
   type MemberUsagePack,
   type PlanPurchasePreviewResponse,
-  type UsagePackCreditsResponse,
   type UsagePackCheckoutRequest,
-  type UsagePackPurchasePreviewResponse,
+  type UsagePackCreditsResponse,
   type UsagePackMigrationStateResponse,
+  type UsagePackPurchasePreviewResponse,
 } from "@okouai/api-contracts/contracts/billing";
+import { isOrgTier, type OrgTier } from "@okouai/api-contracts/contracts/orgs";
 import { toast } from "@okouai/ui/components/ui/sonner";
-import { apiClient$ } from "../api-client.ts";
-import { replaceSearchParams$, searchParams$ } from "../route.ts";
-import { reloadUsageRecords$ } from "./settings/personal-usage-record.ts";
-import { setAblyLoop$ } from "../realtime.ts";
-import { isOrgAdmin$ } from "../org.ts";
-import { settle, tapError, withCleanup } from "../utils.ts";
+import { command, computed, state } from "ccstate";
+import { currentLocale, i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
+import { apiClient$ } from "../api-client.ts";
+import { completePaidCheckout$ } from "../bootstrap/paid-checkout.ts";
 import {
   capturePaidOnboardingCheckoutCreated$,
   capturePaidOnboardingRedirectToStripe$,
 } from "../bootstrap/paid-funnel-telemetry.ts";
-import { completePaidCheckout$ } from "../bootstrap/paid-checkout.ts";
-import { currentLocale, i18n } from "../../i18n/index.ts";
 import { refreshOrgMembers$ } from "../external/org-members.ts";
-import { invalidateOrgModelPolicies$ } from "../external/org-model-policies.ts";
-import { sessionStorageSignals } from "../external/session-storage.ts";
+import { invalidateAvailableRunModels$ } from "../external/run-models.ts";
+import { isOrgAdmin$ } from "../org.ts";
+import { setAblyLoop$ } from "../realtime.ts";
+import { replaceSearchParams$, searchParams$ } from "../route.ts";
+import { settle, tapError, withCleanup } from "../utils.ts";
+import { reloadUsageRecords$ } from "./settings/personal-usage-record.ts";
 import {
-  setUsagePackMigrationRevisionPreview$,
   setUsagePackMigrationPreview$,
+  setUsagePackMigrationRevisionPreview$,
   setUsagePackSubscriptionChangePreview$,
   usagePackMigrationRevisionPreview$,
   usagePackSubscriptionChangePreview$,
@@ -56,7 +56,7 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
-export type BillingTier = "free" | "limited-free-1" | "pro" | "team" | "custom";
+export type BillingTier = OrgTier;
 type DowngradeTargetTier = "limited-free-1" | "pro";
 export type CreditCheckoutSelection =
   | { readonly credits: number; readonly customAmount?: false }
@@ -65,14 +65,13 @@ type CreditPurchaseOrigin = "billing" | "chat";
 type ConcurrencyPurchaseOrigin = "billing" | "queue";
 export type ConcurrencyChangeMode = "quantity" | "cancel";
 
-const RESTORE_PAYMENT_PENDING_KEY = "vm0:billing:restore-payment-pending";
-const DOWNGRADE_PAYMENT_PENDING_KEY = "vm0:billing:downgrade-payment-pending";
-const restorePaymentPendingStorage = sessionStorageSignals(
-  RESTORE_PAYMENT_PENDING_KEY,
-);
-const downgradePaymentPendingStorage = sessionStorageSignals(
-  DOWNGRADE_PAYMENT_PENDING_KEY,
-);
+// Hosted payment return URLs name the pending plan change. The value moves
+// into memory on arrival so a later billing refresh can still confirm it.
+const BILLING_PENDING_PARAM = "billing_pending";
+const RESTORE_PENDING_VALUE = "restore";
+const DOWNGRADE_PENDING_PREFIX = "downgrade-";
+const restorePaymentPending$ = state(false);
+const downgradePaymentPendingTier$ = state<DowngradeTargetTier | null>(null);
 export const CONCURRENCY_SUBSCRIPTION_QUANTITY_MIN = 1;
 export const CONCURRENCY_SUBSCRIPTION_QUANTITY_MAX = 1000;
 
@@ -94,24 +93,15 @@ function formatEffectiveDate(effectiveDate: string | null): string | null {
 }
 
 export function apiTierToBillingTier(tier: string | undefined): BillingTier {
-  if (
-    tier === "free" ||
-    tier === "limited-free-1" ||
-    tier === "pro" ||
-    tier === "team" ||
-    tier === "custom"
-  ) {
-    return tier;
-  }
-  return "limited-free-1";
+  return isOrgTier(tier) ? tier : "limited-free-1";
 }
 
 const rememberPendingRestorePayment$ = command(({ set }) => {
-  set(restorePaymentPendingStorage.set$, "1");
+  set(restorePaymentPending$, true);
 });
 
 const clearPendingRestorePayment$ = command(({ set }) => {
-  set(restorePaymentPendingStorage.clear$);
+  set(restorePaymentPending$, false);
 });
 
 function downgradeSuccessToastMessage(
@@ -146,35 +136,24 @@ function downgradeSuccessToastMessage(
 
 const rememberPendingDowngradePayment$ = command(
   ({ set }, targetTier: DowngradeTargetTier) => {
-    set(downgradePaymentPendingStorage.set$, targetTier);
+    set(downgradePaymentPendingTier$, targetTier);
   },
 );
 
 const clearPendingDowngradePayment$ = command(({ set }) => {
-  set(downgradePaymentPendingStorage.clear$);
+  set(downgradePaymentPendingTier$, null);
 });
 
-function pendingDowngradeTargetTier(
-  value: string | null,
-): DowngradeTargetTier | null {
+function pendingDowngradeTargetTier(value: string): DowngradeTargetTier | null {
   if (value === "pro" || value === "limited-free-1") {
     return value;
-  }
-  if (value === "pro-suspend") {
-    // A previous App build stored the retired cancellation literal before
-    // redirecting to Stripe. Surface: old app state -> new app. Remove once
-    // every tab session started on that build has ended, which sessionStorage
-    // bounds to the tab lifetime. See docs/deployment-compatibility.md.
-    return "limited-free-1";
   }
   return null;
 }
 
 const maybeShowPendingDowngradeToast$ = command(
   ({ get, set }, status: BillingStatusResponse): void => {
-    const targetTier = pendingDowngradeTargetTier(
-      get(downgradePaymentPendingStorage.get$),
-    );
+    const targetTier = get(downgradePaymentPendingTier$);
     if (!targetTier) {
       return;
     }
@@ -189,7 +168,7 @@ const maybeShowPendingDowngradeToast$ = command(
       return;
     }
 
-    set(downgradePaymentPendingStorage.clear$);
+    set(downgradePaymentPendingTier$, null);
     toast.success(
       downgradeSuccessToastMessage(
         targetTier,
@@ -201,7 +180,7 @@ const maybeShowPendingDowngradeToast$ = command(
 
 const maybeShowPendingRestoreToast$ = command(
   ({ get, set }, status: BillingStatusResponse): void => {
-    if (get(restorePaymentPendingStorage.get$) !== "1") {
+    if (!get(restorePaymentPending$)) {
       return;
     }
 
@@ -215,7 +194,7 @@ const maybeShowPendingRestoreToast$ = command(
       return;
     }
 
-    set(restorePaymentPendingStorage.clear$);
+    set(restorePaymentPending$, false);
     toast.success(
       i18n.t(($) => {
         return $.billing.toasts.planRestored;
@@ -500,7 +479,7 @@ export const usagePackMigrationAsync$ = computed(
 
 /** Force a refetch of billing status (e.g. after onboarding creates the org row). */
 export const reloadBillingStatus$ = command(({ set }) => {
-  set(invalidateOrgModelPolicies$);
+  set(invalidateAvailableRunModels$);
   set(billingReload$, (x) => {
     return x + 1;
   });
@@ -605,9 +584,7 @@ const reloadUsagePackMigration$ = command(({ set }) => {
 const reconcilePendingBillingPayment$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const hasPendingPayment =
-      get(restorePaymentPendingStorage.get$) === "1" ||
-      pendingDowngradeTargetTier(get(downgradePaymentPendingStorage.get$)) !==
-        null;
+      get(restorePaymentPending$) || get(downgradePaymentPendingTier$) !== null;
     if (!hasPendingPayment) {
       return;
     }
@@ -619,8 +596,36 @@ const reconcilePendingBillingPayment$ = command(
   },
 );
 
+function returnUrlWithPendingPayment(pending: string): string {
+  const url = new URL(window.location.href);
+  url.searchParams.set(BILLING_PENDING_PARAM, pending);
+  return url.toString();
+}
+
+const adoptPendingBillingPayment$ = command(({ get, set }) => {
+  const searchParams = new URLSearchParams(get(searchParams$));
+  const pending = searchParams.get(BILLING_PENDING_PARAM);
+  if (pending === null) {
+    return;
+  }
+
+  if (pending === RESTORE_PENDING_VALUE) {
+    set(restorePaymentPending$, true);
+  } else if (pending.startsWith(DOWNGRADE_PENDING_PREFIX)) {
+    const targetTier = pendingDowngradeTargetTier(
+      pending.slice(DOWNGRADE_PENDING_PREFIX.length),
+    );
+    if (targetTier) {
+      set(downgradePaymentPendingTier$, targetTier);
+    }
+  }
+  searchParams.delete(BILLING_PENDING_PARAM);
+  set(replaceSearchParams$, searchParams);
+});
+
 export const handleBillingRedirect$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    set(adoptPendingBillingPayment$);
     await set(reconcilePendingBillingPayment$, signal);
 
     const searchParams = new URLSearchParams(get(searchParams$));
@@ -717,7 +722,6 @@ export const setupBillingRealtime$ = command(({ set }, signal: AbortSignal) => {
     {
       topic: "billing:changed",
       loopCommand$: reloadBillingStatusFromRealtime$,
-      options: { runOnSubscribe: true },
     },
     signal,
   );
@@ -1615,7 +1619,12 @@ export const confirmDowngrade$ = command(
     const client = createClient(billingDowngradeContract);
     const result = await accept(
       client.create({
-        body: { targetTier, returnUrl: window.location.href },
+        body: {
+          targetTier,
+          returnUrl: returnUrlWithPendingPayment(
+            `${DOWNGRADE_PENDING_PREFIX}${targetTier}`,
+          ),
+        },
         fetchOptions: { signal },
       }),
       [200],
@@ -1647,7 +1656,7 @@ export const restorePlan$ = command(
     const client = createClient(billingRestoreContract);
     const result = await accept(
       client.create({
-        body: { returnUrl: window.location.href },
+        body: { returnUrl: returnUrlWithPendingPayment(RESTORE_PENDING_VALUE) },
         fetchOptions: { signal },
       }),
       [200],

@@ -1,40 +1,46 @@
 import { command } from "ccstate";
-import { and, eq, isNotNull } from "drizzle-orm";
 import {
   type CodexServiceTier,
+  type ChatThreadServiceTier,
   chatThreadsContract,
   MODEL_FIRST_SELECTION_PROVIDER_ID,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  isImageModelId,
-  type ImageModelId,
-} from "@okouai/api-contracts/contracts/image-models";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
-
+import type { InitialRemoteAccessOverride } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { organizationAuthContext$ } from "../auth/auth-context";
+import { clerk$ } from "../external/clerk";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
-import { type Db, writeDb$ } from "../external/db";
+
 import { publishThreadListChanged } from "../external/realtime";
-import { badRequestMessage, notFound } from "../../lib/error";
+import {
+  badRequestMessage,
+  notFound,
+  resourceUnavailable,
+} from "../../lib/error";
 import {
   createChatThread$,
   type CreatedChatThread,
   type ExistingChatThread,
 } from "../services/chat-thread.service";
 import { agentExistsInOrg } from "../services/agent-deletion.service";
-import { loadNewChatThreadMediaModels } from "../services/chat-thread-media-model.service";
 import {
-  resolveModelSelectionPin,
+  autoSelectionPin,
+  resolveDefaultModelFirstPin$,
+  resolveModelSelectionPin$,
   validateCodexServiceTier,
 } from "../services/model-selection.service";
-import { chatThreadModelPinColumns } from "../services/chat-thread-model.service";
 import { chatThreadServiceTierFromCodex } from "../services/chat-thread-event.service";
-import { loadNewChatThreadModelSettings } from "../services/chat-thread-model-settings.service";
+import { userFeatureSwitchContext } from "../services/feature-switches.service";
+import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
+import { loadNewChatThreadDefaults$ } from "../services/chat-thread-defaults.service";
 import { resolveChatReasoningEffort } from "../services/chat-reasoning-effort.service";
+import {
+  modelCatalog$,
+  type ModelCatalog,
+} from "../services/model-catalog.service";
 import type { RouteEntry } from "../route-entry";
-
 const createBody$ = bodyResultOf(chatThreadsContract.create);
 
 function modelFirstSelection(selectedModel: string) {
@@ -46,7 +52,7 @@ function modelFirstSelection(selectedModel: string) {
 
 interface ChatThreadCreateSettings {
   readonly title: string | null;
-  readonly selectedModel: string;
+  readonly selectedModel: string | null;
   readonly codexServiceTier: CodexServiceTier | null;
 }
 
@@ -84,54 +90,82 @@ function chatThreadCreateResponse(
   }
   return chatThreadCreatedResponse(thread, {
     title: thread.title,
-    selectedModel: thread.selectedModel ?? requested.selectedModel,
+    selectedModel: thread.selectedModel,
     codexServiceTier: thread.codexServiceTier,
   });
 }
 
-/**
- * Model, priority, and media models a caller inherits when it omits them. The
- * model belongs to the run that owns its token; the other settings belong to
- * that run's chat thread.
- */
-async function inheritedRunChatSettings(
-  db: Db,
-  runId: string | undefined,
-): Promise<{
-  readonly selectedModel: string | null;
-  readonly codexServiceTier: CodexServiceTier | null;
-  readonly selectedVideoModel: string | null;
-  readonly selectedImageModel: ImageModelId | null;
-}> {
-  if (!runId) {
-    return {
-      selectedModel: null,
-      codexServiceTier: null,
-      selectedVideoModel: null,
-      selectedImageModel: null,
-    };
-  }
+const validateInitialRemoteAccess$ = command(
+  async (
+    { get },
+    args: {
+      readonly owner: { readonly orgId: string; readonly userId: string };
+      readonly tokenType: string;
+      readonly overrides: readonly InitialRemoteAccessOverride[];
+    },
+    signal: AbortSignal,
+  ) => {
+    if (args.overrides.length === 0) {
+      return null;
+    }
+    if (args.tokenType !== "session") {
+      return resourceUnavailable("Remote access selection is not available");
+    }
+    const featureContext = await get(
+      userFeatureSwitchContext(args.owner.orgId, args.owner.userId),
+    );
+    signal.throwIfAborted();
+    if (
+      args.overrides.some((item) => {
+        return item.protocol === "vnc";
+      }) &&
+      (!isFeatureEnabled(FeatureSwitchKey.VncAccess, featureContext) ||
+        !(await hasCurrentVncMembership(get(clerk$), args.owner, signal)))
+    ) {
+      return badRequestMessage("VNC access is not available");
+    }
+    return null;
+  },
+);
 
-  const [run] = await db
-    .select({
-      selectedModel: agentRuns.selectedModel,
-      codexServiceTier: chatThreads.codexServiceTier,
-      selectedVideoModel: chatThreads.selectedVideoModel,
-      selectedImageModel: chatThreads.selectedImageModel,
-    })
-    .from(agentRuns)
-    .leftJoin(chatThreads, eq(agentRuns.chatThreadId, chatThreads.id))
-    .where(and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)))
-    .limit(1);
-  return {
-    selectedModel: run?.selectedModel ?? null,
-    codexServiceTier: run?.codexServiceTier ?? null,
-    selectedVideoModel: run?.selectedVideoModel ?? null,
-    selectedImageModel: isImageModelId(run?.selectedImageModel)
-      ? run.selectedImageModel
-      : null,
-  };
-}
+const initialThreadModel$ = command(
+  async (
+    { set },
+    owner: { readonly orgId: string; readonly userId: string },
+    requested: {
+      readonly model?: string | null;
+      readonly serviceTier?: ChatThreadServiceTier | null;
+    },
+    catalog: ModelCatalog,
+    signal: AbortSignal,
+  ): Promise<{
+    readonly selectedModel: string | null;
+    readonly codexServiceTier: CodexServiceTier | null;
+  }> => {
+    const initial =
+      requested.model === undefined
+        ? await set(
+            resolveDefaultModelFirstPin$,
+            {
+              orgId: owner.orgId,
+              userId: owner.userId,
+              orgPlanCapabilities: undefined,
+              catalog,
+            },
+            signal,
+          )
+        : { selectedModel: requested.model, serviceTier: null };
+    signal.throwIfAborted();
+    const serviceTier =
+      requested.serviceTier === undefined
+        ? initial.serviceTier
+        : requested.serviceTier;
+    return {
+      selectedModel: initial.selectedModel,
+      codexServiceTier: serviceTier === "priority" ? "fast" : null,
+    };
+  },
+);
 
 const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -139,6 +173,21 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   if (!body.ok) {
     return body.response;
+  }
+
+  const initialRemoteAccessOverrides =
+    body.data.initialRemoteAccessOverrides ?? [];
+  const remoteAccessError = await set(
+    validateInitialRemoteAccess$,
+    {
+      owner: auth,
+      tokenType: auth.tokenType,
+      overrides: initialRemoteAccessOverrides,
+    },
+    signal,
+  );
+  if (remoteAccessError) {
+    return remoteAccessError;
   }
 
   const exists = await get(
@@ -152,52 +201,37 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return notFound("Agent not found");
   }
 
-  const writeDb = set(writeDb$);
+  const catalog = await get(modelCatalog$);
+  signal.throwIfAborted();
   const connectorSelections = body.data.connectorSelections ?? [];
-  const callerRunId =
-    auth.tokenType === "sandbox" || auth.tokenType === "agent"
-      ? auth.runId
-      : undefined;
-  const inherited = await inheritedRunChatSettings(writeDb, callerRunId);
+  const { selectedModel, codexServiceTier } = await set(
+    initialThreadModel$,
+    auth,
+    body.data,
+    catalog,
+    signal,
+  );
   signal.throwIfAborted();
-  const selectedModel = body.data.model ?? inherited.selectedModel;
-  if (!selectedModel) {
-    return badRequestMessage("A model selection is required");
-  }
-  const codexServiceTier: CodexServiceTier | null =
-    body.data.serviceTier === undefined
-      ? inherited.codexServiceTier
-      : body.data.serviceTier === "priority"
-        ? "fast"
-        : null;
-  // Explicit request, then what the caller's own thread pinned, then the
-  // member and catalog defaults. The last step is what keeps a thread from
-  // following a default the member changes after this thread exists.
-  const mediaDefaults = await loadNewChatThreadMediaModels(writeDb, {
-    orgId: auth.orgId,
-    userId: auth.userId,
-  });
-  signal.throwIfAborted();
-  const selectedVideoModel =
-    body.data.videoModel ??
-    inherited.selectedVideoModel ??
-    mediaDefaults.selectedVideoModel;
-  const selectedImageModel =
-    body.data.imageModel ??
-    inherited.selectedImageModel ??
-    mediaDefaults.selectedImageModel;
-
-  const pin = await resolveModelSelectionPin({
-    db: writeDb,
-    orgId: auth.orgId,
-    userId: auth.userId,
-    modelSelection: modelFirstSelection(selectedModel),
-  });
+  const pin =
+    selectedModel === null
+      ? autoSelectionPin()
+      : await set(
+          resolveModelSelectionPin$,
+          {
+            purpose: "configure",
+            orgId: auth.orgId,
+            userId: auth.userId,
+            modelSelection: modelFirstSelection(selectedModel),
+            catalog,
+          },
+          signal,
+        );
   signal.throwIfAborted();
   if ("status" in pin) {
     return pin;
   }
   const codexServiceTierError = validateCodexServiceTier({
+    catalog,
     pin,
     codexServiceTier,
   });
@@ -205,14 +239,20 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return codexServiceTierError;
   }
 
-  const modelSettings = await loadNewChatThreadModelSettings(writeDb, {
-    orgId: auth.orgId,
-    userId: auth.userId,
-  });
+  const defaults = await set(
+    loadNewChatThreadDefaults$,
+    {
+      orgId: auth.orgId,
+      userId: auth.userId,
+    },
+    signal,
+  );
   signal.throwIfAborted();
   const effort = resolveChatReasoningEffort({
+    catalog,
     selectedModel: pin.selectedModel,
-    modelSettings,
+    modelProviderType: pin.modelProviderType,
+    modelSettings: defaults.modelSettings,
     requested: body.data.reasoningEffort,
   });
   if ("status" in effort) {
@@ -228,17 +268,20 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       title: body.data.title,
       clientThreadId: body.data.clientThreadId,
       eventId: body.data.eventId,
-      ...chatThreadModelPinColumns(pin),
+      selectedModel: pin.selectedModel,
       modelSettings: effort.modelSettings,
+      cloudBrowserEnabled: defaults.cloudBrowserEnabled,
       codexServiceTier,
-      selectedVideoModel,
-      selectedImageModel,
       connectorSelections,
+      initialRemoteAccessOverrides,
     },
     signal,
   );
   signal.throwIfAborted();
   if (thread.kind === "invalid_connector_selection") {
+    return badRequestMessage(thread.message);
+  }
+  if (thread.kind === "invalid_remote_access_selection") {
     return badRequestMessage(thread.message);
   }
   // The id already belongs to another member, org, or agent. Answer exactly

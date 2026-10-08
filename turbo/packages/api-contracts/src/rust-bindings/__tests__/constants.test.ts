@@ -1,8 +1,4 @@
 import {
-  PI_MODEL_CONFIG_NATIVE_GENERATION,
-  PI_NATIVE_CREDENTIAL_PLACEHOLDER,
-} from "../../contracts/pi-native";
-import {
   normalizeConstantBindings,
   renderRustConstants,
   type NormalizedConstantBinding,
@@ -205,23 +201,6 @@ function placeholderRustDoc(name: string): readonly string[] {
 }
 
 const expectedBindings = [
-  {
-    rustModulePath: ["runners"],
-    rustConstName: "PI_MODEL_CONFIG_NATIVE_GENERATION",
-    value: rustU32(PI_MODEL_CONFIG_NATIVE_GENERATION),
-    rustDoc: [
-      "Native Messages and Bedrock reader generation; activation is separate.",
-    ],
-  },
-  {
-    rustModulePath: ["runners"],
-    rustConstName: "PI_NATIVE_CREDENTIAL_PLACEHOLDER",
-    value: rustString(PI_NATIVE_CREDENTIAL_PLACEHOLDER),
-    rustDoc: [
-      "Opaque native Pi sandbox marker; never a real signing credential.",
-    ],
-  },
-
   {
     rustModulePath: ["runners"],
     rustConstName: "OFFICIAL_RUNNER_TOKEN_PREFIX",
@@ -485,18 +464,6 @@ const expectedBindings = [
     rustConstName: "CHATGPT_REFRESH_TOKEN",
     value: rustString(codexOauthPlaceholders.CHATGPT_REFRESH_TOKEN),
     rustDoc: placeholderRustDoc("CHATGPT_REFRESH_TOKEN"),
-  },
-  {
-    rustModulePath: ["model_provider_env", "placeholders"],
-    rustConstName: "ANTHROPIC_API_KEY",
-    value: rustString(MODEL_PROVIDER_ENV_PLACEHOLDERS.ANTHROPIC_API_KEY),
-    rustDoc: placeholderRustDoc("ANTHROPIC_API_KEY"),
-  },
-  {
-    rustModulePath: ["model_provider_env", "placeholders"],
-    rustConstName: "ANTHROPIC_AUTH_TOKEN",
-    value: rustString(MODEL_PROVIDER_ENV_PLACEHOLDERS.ANTHROPIC_AUTH_TOKEN),
-    rustDoc: placeholderRustDoc("ANTHROPIC_AUTH_TOKEN"),
   },
   {
     rustModulePath: ["model_provider_env", "placeholders"],

@@ -31,9 +31,6 @@ const WORKFLOW_ID = "e0000000-0000-4000-a000-000000000861";
 const AUTOMATION_ID = "e0000000-0000-4000-a000-000000000862";
 const WORKFLOW_AGENT_ID = "e0000000-0000-4000-a000-000000000863";
 const OWNER_USER_ID = "test-user-123";
-const CREATE_WORKFLOW_PROMPT =
-  "Help me create a workflow for this agent. Use the workflow-setup skill, then ask me for the desired outcome, automation, and action before creating the workflow and automation.";
-
 type ScheduleAutomation = Extract<
   ChatThreadWorkflowAutomation,
   { readonly kind: "schedule" }
@@ -180,14 +177,6 @@ async function openAutomationEditor(): Promise<HTMLElement> {
   });
   click(await findButton("Edit", sidebar));
   return await screen.findByRole("dialog", { name: "Edit automation" });
-}
-
-function currentComposer(): HTMLElement {
-  return screen.getByRole("textbox", { name: "Message" });
-}
-
-function composerText(): string {
-  return normalizedText(currentComposer());
 }
 
 test("Edit schedule and Gmail workflow triggers", async () => {
@@ -393,46 +382,4 @@ test("Present workflow trigger events as meaningful chat history", async () => {
   expect(
     screen.queryByRole("listitem", { name: "Queued message" }),
   ).not.toBeInTheDocument();
-});
-
-test("Start creating a workflow from the chat composer", async () => {
-  const originalDraft = "Keep this unsent customer follow-up.";
-  installCapabilityChat({
-    events: completedConversation("The composer is ready."),
-  });
-
-  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
-
-  await readyChat();
-  click(await findButton("Create workflow"));
-  await waitFor(() => {
-    expect(composerText()).toBe(CREATE_WORKFLOW_PROMPT);
-  });
-
-  await fill(currentComposer(), originalDraft);
-  click(await findButton("Create workflow"));
-  let dialog = await screen.findByRole("dialog", {
-    name: "Replace composer draft?",
-  });
-  expect(dialog).toHaveTextContent(
-    "Continuing will clear your current composer draft and start a workflow prompt.",
-  );
-  click(await findButton("Cancel", dialog));
-
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Replace composer draft?" }),
-    ).not.toBeInTheDocument();
-    expect(composerText()).toBe(originalDraft);
-  });
-
-  click(await findButton("Create workflow"));
-  dialog = await screen.findByRole("dialog", {
-    name: "Replace composer draft?",
-  });
-  click(await findButton("Continue", dialog));
-
-  await waitFor(() => {
-    expect(composerText()).toBe(CREATE_WORKFLOW_PROMPT);
-  });
 });

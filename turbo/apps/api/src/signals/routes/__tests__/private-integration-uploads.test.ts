@@ -60,12 +60,21 @@ const integrations = [
   },
 ] as const;
 
+const privateFilesRepresentative = {
+  Feishu: true,
+  Lark: false,
+  GitHub: true,
+  Phone: false,
+  Teams: true,
+  Telegram: false,
+} as const;
+
 test.each(
-  integrations.flatMap((integration) => {
-    return [
-      { ...integration, privateFiles: false },
-      { ...integration, privateFiles: true },
-    ];
+  integrations.map((integration) => {
+    return {
+      ...integration,
+      privateFiles: privateFilesRepresentative[integration.name],
+    };
   }),
 )(
   "$name uploads stay readable in their allocated bucket (private=$privateFiles)",

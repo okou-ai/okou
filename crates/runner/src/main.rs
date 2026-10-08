@@ -7,25 +7,25 @@ mod duration;
 mod error;
 use runner_executor::executor;
 mod group;
+use runner_host::idle_prune_control;
 use runner_lifecycle::guest_timezone;
 use runner_lifecycle::idle_pool;
 #[cfg(test)]
 use runner_lifecycle::idle_reuse_preparation;
 use runner_provider::http;
-mod idle_prune_control;
 mod image_hash;
 mod io_limits;
+use runner_host::live_runner_instances;
 use runner_lifecycle::lifecycle;
-mod live_runner_instances;
 mod network_log_http_adapter;
 use runner_executor::pre_spawn_admission;
-mod prefetch;
+use runner_lifecycle::prefetch;
 mod profile;
 #[cfg(test)]
 mod provider_test_support;
 use runner_lifecycle::resource_budget;
+#[cfg(test)]
 use runner_lifecycle::restored_session_identity;
-mod retry;
 mod run_resolution;
 mod runtime_overrides;
 use runner_lifecycle::status;
@@ -37,6 +37,7 @@ use runner_executor::test_fixtures;
 mod test_fixtures_http_body;
 use runner_lifecycle::workspace_image_cache;
 use runner_lifecycle::workspace_mount;
+#[cfg(test)]
 use runner_lifecycle::workspace_promotion;
 
 use runner_network::{
@@ -45,8 +46,6 @@ use runner_network::{
 use runner_remote::{guest_rpc, run_usage, ssh, vnc};
 use runner_storage::{r2_cache, storage_cache, storage_fingerprints};
 
-#[cfg(test)]
-use runner_storage::storage_plan;
 #[cfg(test)]
 use sandbox::helper_exec;
 
@@ -299,6 +298,9 @@ async fn main() -> ExitCode {
     let result = match cli.command {
         Command::Setup => cmd::run_setup().await.map(|()| ExitCode::SUCCESS),
         Command::Build(args) => {
+            // Retain the package bytes until rootfs installation consumes them.
+            #[cfg(bundled_okou_cli)]
+            let _ = std::hint::black_box(cmd::embedded_cli_package());
             cmd::run_build(args, &sandbox_firecracker::FirecrackerSnapshotProvider)
                 .await
                 .map(|()| ExitCode::SUCCESS)

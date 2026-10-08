@@ -11,6 +11,11 @@ import { applicationResourcePriorityHtmlPlugin } from "./scripts/app-resource-pr
 import { clerkCoreHtmlPlugin } from "./scripts/clerk-html.ts";
 import { clerkUiAssetPlugin } from "./scripts/clerk-ui.ts";
 import {
+  SHARED_DATABASE_WORKER_FILE_PATTERN,
+  sharedDatabaseWorkerHtmlPlugin,
+  sharedDatabaseWorkerPath,
+} from "./scripts/shared-database-worker-html.ts";
+import {
   APPLICATION_LAZY_CHUNK,
   applicationJavaScriptBundlePlugin,
   singleWorkerJavaScriptBundlePlugin,
@@ -58,9 +63,9 @@ export default defineConfig(({ command }) => ({
       if (
         hostType === "js" &&
         type === "asset" &&
-        /^assets\/shared-database-worker-[^/]+\.js$/u.test(filename)
+        SHARED_DATABASE_WORKER_FILE_PATTERN.test(filename)
       ) {
-        const workerPath = new URL(filename, APP_ASSET_BASE).pathname;
+        const workerPath = sharedDatabaseWorkerPath(filename, APP_ASSET_BASE);
         return { runtime: `location.origin + ${JSON.stringify(workerPath)}` };
       }
       return undefined;
@@ -89,6 +94,7 @@ export default defineConfig(({ command }) => ({
     vendor.plugin,
     applicationJavaScriptBundlePlugin(VENDOR_GROUP_IDS.length),
     applicationResourcePriorityHtmlPlugin(),
+    sharedDatabaseWorkerHtmlPlugin(),
     // Sentry source map upload (production builds only)
     Boolean(process.env.SENTRY_AUTH_TOKEN) &&
       sentryVitePlugin({

@@ -29,15 +29,21 @@ import { testOverride } from "../../lib/singleton";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
 import {
-  ensureAutomationEventWatchReconfiguration,
-  reconcileAutomationEventWatchInventoryForOwner,
-  reconcileAutomationEventWatches,
-  reconcileAutomationEventWatchReconfiguration,
+  ensureAutomationEventWatchReconfiguration$,
+  reconcileAutomationEventWatchInventoryForOwner$,
+  reconcileAutomationEventWatches$,
+  reconcileAutomationEventWatchReconfiguration$,
 } from "./automation-event-watch-lifecycle.service";
-import { lockConnectorAccountTarget } from "./auth-state-lock.service";
-import { notionConfigWithConnectorId } from "./notion-automation-account.service";
-import { OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK } from "./official-workflow-constants";
 import {
+  googleFormsCursorMustReset,
+  googleFormsCursorPublicationStatement,
+} from "./google-forms-cursor-lifecycle";
+import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import { reconcileOfficialGoogleFormsConfiguration$ } from "./official-google-forms-reconfiguration.service";
+import { observedWorkflowAutomationCondition } from "./workflow-automation-snapshot";
+import { notionConfigWithConnectorId } from "./notion-automation-account.service";
+import {
+  lockAcceptedOfficialWorkflowCatalog,
   readAcceptedOfficialWorkflowCatalog,
   readAcceptedOfficialWorkflowRevision,
 } from "./official-workflow-catalog-read.service";
@@ -73,13 +79,6 @@ import {
   type WorkflowAutomationAccountConnectorSlug,
 } from "./workflow-automation-account-classification.service";
 import { resolveStripeInvoicePaidAutomationBinding } from "./stripe-invoice-paid-workflow-automation.service";
-import {
-  lockMorningBriefLegacyWriterAuthority,
-  lockMorningBriefNativeSchedule,
-  prepareMorningBriefLegacyReconciliationMutation,
-  type MorningBriefLegacyWriterAuthority,
-  type MorningBriefLegacyWriterFence,
-} from "./morning-brief-native-schedule.service";
 
 const DORMANT_CREATION_LEASE_MS = 5 * 60 * 1000;
 
@@ -87,14 +86,6 @@ type StripeAutomationBinding = Pick<
   StripeInvoicePaidEventConfig,
   "connectorId" | "stripeAccountId" | "mode"
 >;
-
-type DormantMaterializationReservedHook = (args: {
-  readonly definitionName: string;
-  readonly workflowId: string;
-  readonly automationId: string;
-  readonly blueprintKey: string;
-  readonly fingerprint: string;
-}) => Promise<void>;
 
 type AutomationStructureTransitionPreparedHook = (args: {
   readonly definitionName: string;
@@ -112,12 +103,6 @@ type ReconfigurationPersistedHook = (args: {
   readonly fingerprint: string;
 }) => Promise<void>;
 
-const dormantMaterializationReservedHookForTest = testOverride<
-  DormantMaterializationReservedHook | undefined
->(() => {
-  return undefined;
-});
-
 const automationStructureTransitionPreparedHookForTest = testOverride<
   AutomationStructureTransitionPreparedHook | undefined
 >(() => {
@@ -130,16 +115,6 @@ const reconfigurationPersistedHookForTest = testOverride<
   return undefined;
 });
 
-export function setDormantMaterializationReservedHookForTest(
-  hook: DormantMaterializationReservedHook,
-): void {
-  dormantMaterializationReservedHookForTest.set(hook);
-}
-
-export function clearDormantMaterializationReservedHookForTest(): void {
-  dormantMaterializationReservedHookForTest.clear();
-}
-
 export function setAutomationStructureTransitionPreparedHookForTest(
   hook: AutomationStructureTransitionPreparedHook,
 ): void {
@@ -148,16 +123,6 @@ export function setAutomationStructureTransitionPreparedHookForTest(
 
 export function clearAutomationStructureTransitionPreparedHookForTest(): void {
   automationStructureTransitionPreparedHookForTest.clear();
-}
-
-export function setReconfigurationPersistedHookForTest(
-  hook: ReconfigurationPersistedHook,
-): void {
-  reconfigurationPersistedHookForTest.set(hook);
-}
-
-export function clearReconfigurationPersistedHookForTest(): void {
-  reconfigurationPersistedHookForTest.clear();
 }
 
 export type ReconcileOfficialWorkflowInstallationArgs =
@@ -175,8 +140,20 @@ interface ReconciliationContext {
 interface PersistedReconfiguration {
   readonly previous: OfficialAutomationRow;
   readonly current: OfficialAutomationRow;
-  readonly googleFormsCursor: string | undefined;
-  readonly morningBriefFence: MorningBriefLegacyWriterFence | undefined;
+}
+
+/** Reconfiguration must leave the current Official claim's empty slot for its completion callback. */
+function reconciledScheduleAnchor(
+  automation: OfficialAutomationRow,
+  nextRunAt: Date | null,
+) {
+  if (
+    automation.officialBlueprintKey !== MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY ||
+    nextRunAt === null
+  ) {
+    return nextRunAt;
+  }
+  return sql`CASE WHEN (SELECT settlement FROM morning_brief_schedule_claims WHERE automation_id = ${automation.id}::uuid ORDER BY claim_sequence DESC LIMIT 1) = 'unsettled' THEN NULL ELSE ${nextRunAt}::timestamp END`;
 }
 
 function isMorningBriefReconciliation(args: {
@@ -189,23 +166,6 @@ function isMorningBriefReconciliation(args: {
   );
 }
 
-function morningBriefReconciliationFence(
-  args: {
-    readonly definitionName: string;
-    readonly blueprintKey: string | null;
-  },
-  authority: Exclude<MorningBriefLegacyWriterAuthority, { kind: "stale" }>,
-): MorningBriefLegacyWriterFence | undefined {
-  return isMorningBriefReconciliation(args) ? authority.fence : undefined;
-}
-
-function ordinaryMorningBriefWriterAuthority(): Exclude<
-  MorningBriefLegacyWriterAuthority,
-  { kind: "stale" }
-> {
-  return { kind: "ordinary", fence: { kind: "ordinary" } };
-}
-
 interface ReconciliationMutationLockArgs {
   readonly orgId: string;
   readonly userId: string;
@@ -214,52 +174,16 @@ interface ReconciliationMutationLockArgs {
   readonly definitionName: string;
   readonly blueprintKey: string | null;
 }
-
-async function lockReconciliationMorningBriefAuthority(
-  tx: Tx,
-  args: ReconciliationMutationLockArgs,
-  expected?: MorningBriefLegacyWriterFence,
-): Promise<MorningBriefLegacyWriterAuthority> {
-  if (!isMorningBriefReconciliation(args)) {
-    return ordinaryMorningBriefWriterAuthority();
-  }
-  return await lockMorningBriefLegacyWriterAuthority(
-    tx,
-    {
-      orgId: args.orgId,
-      userId: args.userId,
-      workflowId: args.workflowId,
-      automationId: args.automationId,
-    },
-    expected,
-  );
-}
-
 async function lockReconciliationMutationContext(
   tx: Tx,
   args: ReconciliationMutationLockArgs,
-  expected?: MorningBriefLegacyWriterFence,
-): Promise<Exclude<
-  MorningBriefLegacyWriterAuthority,
-  { readonly kind: "stale" }
-> | null> {
-  const authority = await lockReconciliationMorningBriefAuthority(
-    tx,
-    args,
-    expected,
-  );
-  if (
-    authority.kind === "stale" ||
-    !(await lockInstalledWorkflow(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      workflowId: args.workflowId,
-      definitionName: args.definitionName,
-    }))
-  ) {
-    return null;
-  }
-  return authority;
+): Promise<boolean> {
+  return await lockInstalledWorkflow(tx, {
+    orgId: args.orgId,
+    userId: args.userId,
+    workflowId: args.workflowId,
+    definitionName: args.definitionName,
+  });
 }
 
 function failureMessage(result: AutomationResult) {
@@ -276,8 +200,7 @@ function eventWatchFailureMessage(result: {
     ? result.message
     : "Official Workflow event-watch reconciliation failed";
 }
-
-async function lockOfficialAutomationAccountProjection(
+async function readOfficialAutomationAccountProjection(
   db: Db,
   args: {
     readonly orgId: string;
@@ -288,9 +211,11 @@ async function lockOfficialAutomationAccountProjection(
   },
   signal: AbortSignal,
 ): Promise<
-  | { readonly kind: "not-required" }
   | {
-      readonly kind: "locked";
+      readonly kind: "not-required";
+    }
+  | {
+      readonly kind: "projected";
       readonly connectorSlug: WorkflowAutomationAccountConnectorSlug | null;
       readonly eventConnectorId: string | null;
       readonly stripeBinding: StripeAutomationBinding | null;
@@ -313,13 +238,10 @@ async function lockOfficialAutomationAccountProjection(
   if (connectorSlugs.length === 0) {
     return { kind: "not-required" };
   }
-  for (const connectorSlug of connectorSlugs) {
-    await lockConnectorAccountTarget(db, {
-      orgId: args.orgId,
-      userId: args.userId,
-      target: { kind: "builtin", connectorSlug },
-    });
-  }
+  // No account row is locked. The projection is read from current rows and
+  // published by this transaction; an account set, default or credential
+  // change committing concurrently converges through its own reprojection of
+  // this automation or the projection repair paths.
   const stripeReadiness =
     nextConnectorSlug === "stripe"
       ? await resolveStripeInvoicePaidAutomationBinding(
@@ -336,7 +258,7 @@ async function lockOfficialAutomationAccountProjection(
   const stripeBinding =
     stripeReadiness?.kind === "ok" ? stripeReadiness.binding : null;
   return {
-    kind: "locked",
+    kind: "projected",
     connectorSlug: nextConnectorSlug,
     eventConnectorId:
       nextConnectorSlug === null
@@ -355,7 +277,7 @@ async function lockOfficialAutomationAccountProjection(
 
 function accountProjectionMatchesPatch(
   projection: Awaited<
-    ReturnType<typeof lockOfficialAutomationAccountProjection>
+    ReturnType<typeof readOfficialAutomationAccountProjection>
   >,
   patch: OfficialAutomationPatch,
 ): boolean {
@@ -388,16 +310,6 @@ function accountProjectionMatchesPatch(
     config.data.stripeAccountId === projection.stripeBinding.stripeAccountId &&
     config.data.mode === projection.stripeBinding.mode
   );
-}
-
-async function acquireReconciliationLocks(
-  db: Db,
-  orgId: string,
-): Promise<void> {
-  await db.execute(
-    sql`SELECT pg_advisory_xact_lock_shared(hashtext(${OFFICIAL_WORKFLOW_CATALOG_ACTIVATION_LOCK}))`,
-  );
-  await db.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${orgId}))`);
 }
 
 async function acceptedBlueprintIsCurrent(
@@ -503,7 +415,7 @@ async function loadReconciliationContext(
   }
   const [automations, identities] = await Promise.all([
     db
-      .select()
+      .select(workflowAutomationColumns())
       .from(workflowAutomations)
       .where(eq(workflowAutomations.workflowId, args.workflowId))
       .orderBy(asc(workflowAutomations.officialBlueprintKey)),
@@ -571,6 +483,16 @@ function sameAutomationConfigurationBaseline(
     ) &&
     expected.officialResultEmailEnabled === current.officialResultEmailEnabled
   );
+}
+
+function reconfigurationSourceCondition(expected: OfficialAutomationRow) {
+  // Forms preparation belongs to one exact consumption interval. Other
+  // configuration preparation may overlap an independent user pause: reread
+  // that intent under ownership, validate the configuration below and retain
+  // the current enabled/intended-enabled values when applying the patch.
+  return expected.eventType === "google-forms-response-submitted"
+    ? observedWorkflowAutomationCondition(expected)
+    : eq(workflowAutomations.id, expected.id);
 }
 
 async function upsertActiveIdentity(
@@ -656,7 +578,7 @@ async function persistReconfigurationPatch(
   signal: AbortSignal,
 ): Promise<PersistedReconfiguration | null> {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedBlueprintIsCurrent(
         tx,
@@ -671,7 +593,7 @@ async function persistReconfigurationPatch(
     ) {
       return null;
     }
-    const accountProjection = await lockOfficialAutomationAccountProjection(
+    const accountProjection = await readOfficialAutomationAccountProjection(
       tx,
       {
         orgId: args.orgId,
@@ -682,19 +604,7 @@ async function persistReconfigurationPatch(
       },
       signal,
     );
-    const morningBriefAuthority = await lockReconciliationMorningBriefAuthority(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.expected.workflowId,
-        automationId: args.expected.id,
-        definitionName: args.definitionName,
-        blueprintKey: args.blueprint.key,
-      },
-    );
     if (
-      morningBriefAuthority.kind === "stale" ||
       !(await lockInstalledWorkflow(tx, {
         orgId: args.orgId,
         userId: args.userId,
@@ -705,9 +615,9 @@ async function persistReconfigurationPatch(
       return null;
     }
     const [current] = await tx
-      .select()
+      .select(workflowAutomationColumns())
       .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, args.expected.id))
+      .where(reconfigurationSourceCondition(args.expected))
       .for("update")
       .limit(1);
     if (
@@ -719,11 +629,6 @@ async function persistReconfigurationPatch(
     if (!accountProjectionMatchesPatch(accountProjection, args.patch)) {
       return null;
     }
-    const [formsCursor] = await tx
-      .select({ cursor: googleFormsAutomationCursors.lastSeenSubmittedTime })
-      .from(googleFormsAutomationCursors)
-      .where(eq(googleFormsAutomationCursors.automationId, current.id))
-      .limit(1);
     const currentTime = nowDate();
     const enabled = current.officialIntendedEnabled === true || current.enabled;
     const refreshed = refreshOfficialAutomationPatch(
@@ -731,47 +636,37 @@ async function persistReconfigurationPatch(
       { ...args.patch, enabled },
       currentTime,
     );
-    const morningBrief = await prepareMorningBriefLegacyReconciliationMutation(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: current.workflowId,
-        automationId: current.id,
-      },
-      morningBriefAuthority,
-      { mode: "configured", proposed: refreshed, at: currentTime },
-    );
     const [updated] = await tx
       .update(workflowAutomations)
-      .set({ ...refreshed, ...morningBrief.automation })
+      .set({
+        ...refreshed,
+        nextRunAt: reconciledScheduleAnchor(current, refreshed.nextRunAt),
+      })
       .where(eq(workflowAutomations.id, current.id))
-      .returning();
+      .returning(workflowAutomationColumns());
     if (!updated) {
       throw new Error("Official Workflow automation disappeared");
+    }
+    if (googleFormsCursorMustReset(current, updated)) {
+      await tx
+        .delete(googleFormsAutomationCursors)
+        .where(eq(googleFormsAutomationCursors.automationId, current.id));
     }
     await upsertActiveIdentity(tx, updated, currentTime);
     return {
       previous: current,
       current: updated,
-      googleFormsCursor: formsCursor?.cursor,
-      morningBriefFence: isMorningBriefReconciliation({
-        definitionName: args.definitionName,
-        blueprintKey: args.blueprint.key,
-      })
-        ? morningBrief.authority.fence
-        : undefined,
     };
   });
 }
 
 function restoredNotionEventConfig(
   projection: Awaited<
-    ReturnType<typeof lockOfficialAutomationAccountProjection>
+    ReturnType<typeof readOfficialAutomationAccountProjection>
   >,
   previous: OfficialAutomationRow,
 ) {
-  return projection.kind === "locked" &&
+  return projection.kind === "projected" &&
     projection.eventConnectorId !== null &&
     workflowAutomationAccountConnectorSlug(previous.eventType) === "notion"
     ? notionConfigWithConnectorId(
@@ -781,157 +676,152 @@ function restoredNotionEventConfig(
       )
     : null;
 }
-
-async function reconcileRestoredAutomationWatch(
-  db: Db,
-  persisted: PersistedReconfiguration,
-  restored: OfficialAutomationRow,
-  signal: AbortSignal,
-): Promise<void> {
-  await reconcileAutomationEventWatchReconfiguration(
-    db,
-    {
-      previous: [persisted.current],
-      current: [restored],
-      googleForms:
-        persisted.googleFormsCursor === undefined
-          ? []
-          : [
-              {
-                automationId: restored.id,
-                seedCursor: persisted.googleFormsCursor,
-              },
-            ],
-    },
-    signal,
-  );
+const reconcileRestoredAutomationWatch$ = command(
+  async (
+    { set },
+    persisted: PersistedReconfiguration,
+    restored: OfficialAutomationRow,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await set(
+      reconcileAutomationEventWatchReconfiguration$,
+      {
+        previous: [persisted.current],
+        current: [restored],
+        googleForms: [],
+      },
+      signal,
+    );
+  },
+);
+function restoredStripeEventConfig(
+  projection: OfficialAutomationAccountProjection,
+  eventConfig: unknown,
+) {
+  const binding =
+    projection.kind === "projected" ? projection.stripeBinding : null;
+  return binding === null
+    ? {}
+    : {
+        eventConfig: {
+          ...stripeInvoicePaidEventConfigSchema.parse(eventConfig),
+          ...binding,
+        },
+      };
 }
 
-async function restoreFailedReconfiguration(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly definitionName: string;
-    readonly persisted: PersistedReconfiguration;
-  },
-): Promise<void> {
-  const cleanupSignal = new AbortController().signal;
-  const restored = await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
-    const accountProjection = await lockOfficialAutomationAccountProjection(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.persisted.previous.workflowId,
-        currentEventType: args.persisted.current.eventType,
-        nextEventType: args.persisted.previous.eventType,
-      },
-      cleanupSignal,
-    );
-    const morningBriefAuthority = await lockReconciliationMutationContext(
-      tx,
-      {
+function restoredAutomationAccountFields(
+  projection: Awaited<
+    ReturnType<typeof readOfficialAutomationAccountProjection>
+  >,
+  previous: OfficialAutomationRow,
+  eventConfig: OfficialAutomationRow["eventConfig"],
+) {
+  const notion = restoredNotionEventConfig(projection, previous);
+  return {
+    ...(projection.kind === "projected"
+      ? {
+          eventConnectorId: projection.eventConnectorId,
+          ...(notion === null ? {} : { eventConfig: notion }),
+        }
+      : {}),
+    ...restoredStripeEventConfig(projection, eventConfig),
+  };
+}
+
+const restoreFailedReconfiguration$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly definitionName: string;
+      readonly persisted: PersistedReconfiguration;
+    },
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const cleanupSignal = new AbortController().signal;
+    const restored = await db.transaction(async (tx) => {
+      await lockAcceptedOfficialWorkflowCatalog(tx);
+      const accountProjection = await readOfficialAutomationAccountProjection(
+        tx,
+        {
+          orgId: args.orgId,
+          userId: args.userId,
+          workflowId: args.persisted.previous.workflowId,
+          currentEventType: args.persisted.current.eventType,
+          nextEventType: args.persisted.previous.eventType,
+        },
+        cleanupSignal,
+      );
+      const installationLocked = await lockReconciliationMutationContext(tx, {
         orgId: args.orgId,
         userId: args.userId,
         workflowId: args.persisted.previous.workflowId,
         automationId: args.persisted.previous.id,
         definitionName: args.definitionName,
         blueprintKey: args.persisted.previous.officialBlueprintKey,
-      },
-      args.persisted.morningBriefFence,
-    );
-    if (morningBriefAuthority === null) {
-      return null;
+      });
+      if (!installationLocked) {
+        return null;
+      }
+      const [current] = await tx
+        .select(workflowAutomationColumns())
+        .from(workflowAutomations)
+        .where(observedWorkflowAutomationCondition(args.persisted.current))
+        .for("update")
+        .limit(1);
+      if (
+        !current ||
+        current.updatedAt.getTime() !==
+          args.persisted.current.updatedAt.getTime()
+      ) {
+        return null;
+      }
+      const currentTime = nowDate();
+      const restorePatch = officialAutomationRestorePatch(
+        args.persisted.previous,
+        args.persisted.previous.nextRunAt,
+        currentTime,
+      );
+      const [row] = await tx
+        .update(workflowAutomations)
+        .set({
+          ...restorePatch,
+          nextRunAt: reconciledScheduleAnchor(current, restorePatch.nextRunAt),
+          ...restoredAutomationAccountFields(
+            accountProjection,
+            args.persisted.previous,
+            restorePatch.eventConfig,
+          ),
+          enabled: args.persisted.previous.enabled,
+          officialIntendedEnabled:
+            args.persisted.previous.officialIntendedEnabled,
+          officialReconciliationStatus: "failed",
+        })
+        .where(eq(workflowAutomations.id, current.id))
+        .returning(workflowAutomationColumns());
+      if (!row) {
+        return null;
+      }
+      if (googleFormsCursorMustReset(current, row)) {
+        await tx
+          .delete(googleFormsAutomationCursors)
+          .where(eq(googleFormsAutomationCursors.automationId, current.id));
+      }
+      await upsertActiveIdentity(tx, row, currentTime);
+      return row;
+    });
+    if (restored) {
+      await set(
+        reconcileRestoredAutomationWatch$,
+        args.persisted,
+        restored,
+        cleanupSignal,
+      );
     }
-    const [current] = await tx
-      .select()
-      .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, args.persisted.previous.id))
-      .for("update")
-      .limit(1);
-    if (
-      !current ||
-      current.updatedAt.getTime() !== args.persisted.current.updatedAt.getTime()
-    ) {
-      return null;
-    }
-    const restoredNotionConfig = restoredNotionEventConfig(
-      accountProjection,
-      args.persisted.previous,
-    );
-    const currentTime = nowDate();
-    const restorePatch = officialAutomationRestorePatch(
-      args.persisted.previous,
-      args.persisted.previous.nextRunAt,
-      currentTime,
-    );
-    const stripeBinding =
-      accountProjection.kind === "locked"
-        ? accountProjection.stripeBinding
-        : null;
-    const morningBrief = await prepareMorningBriefLegacyReconciliationMutation(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: current.workflowId,
-        automationId: current.id,
-      },
-      morningBriefAuthority,
-      { mode: "configured", proposed: restorePatch, at: currentTime },
-    );
-    const [row] = await tx
-      .update(workflowAutomations)
-      .set({
-        ...restorePatch,
-        ...morningBrief.automation,
-        ...(accountProjection.kind === "locked"
-          ? {
-              eventConnectorId: accountProjection.eventConnectorId,
-              ...(restoredNotionConfig === null
-                ? {}
-                : { eventConfig: restoredNotionConfig }),
-            }
-          : {}),
-        ...(stripeBinding
-          ? {
-              eventConfig: {
-                ...stripeInvoicePaidEventConfigSchema.parse(
-                  restorePatch.eventConfig,
-                ),
-                ...stripeBinding,
-              },
-            }
-          : {}),
-        enabled:
-          morningBriefAuthority.kind === "selected"
-            ? morningBrief.automation.enabled
-            : args.persisted.previous.enabled,
-        officialIntendedEnabled:
-          morningBriefAuthority.kind === "selected"
-            ? morningBrief.automation.officialIntendedEnabled
-            : args.persisted.previous.officialIntendedEnabled,
-        officialReconciliationStatus: "failed",
-      })
-      .where(eq(workflowAutomations.id, current.id))
-      .returning();
-    if (!row) {
-      return null;
-    }
-    await upsertActiveIdentity(tx, row, currentTime);
-    return row;
-  });
-  if (restored) {
-    await reconcileRestoredAutomationWatch(
-      db,
-      args.persisted,
-      restored,
-      cleanupSignal,
-    );
-  }
-}
+  },
+);
 
 async function finalizeReconfiguration(
   db: Db,
@@ -946,7 +836,7 @@ async function finalizeReconfiguration(
   signal: AbortSignal,
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedBlueprintIsCurrent(
         tx,
@@ -961,25 +851,21 @@ async function finalizeReconfiguration(
     ) {
       return false;
     }
-    const morningBriefAuthority = await lockReconciliationMutationContext(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.persisted.current.workflowId,
-        automationId: args.persisted.current.id,
-        definitionName: args.definitionName,
-        blueprintKey: args.blueprint.key,
-      },
-      args.persisted.morningBriefFence,
-    );
-    if (morningBriefAuthority === null) {
+    const installationLocked = await lockReconciliationMutationContext(tx, {
+      orgId: args.orgId,
+      userId: args.userId,
+      workflowId: args.persisted.current.workflowId,
+      automationId: args.persisted.current.id,
+      definitionName: args.definitionName,
+      blueprintKey: args.blueprint.key,
+    });
+    if (!installationLocked) {
       return false;
     }
     const [current] = await tx
-      .select()
+      .select(workflowAutomationColumns())
       .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, args.persisted.current.id))
+      .where(observedWorkflowAutomationCondition(args.persisted.current))
       .for("update")
       .limit(1);
     if (
@@ -999,7 +885,7 @@ async function finalizeReconfiguration(
         updatedAt: currentTime,
       })
       .where(eq(workflowAutomations.id, current.id))
-      .returning();
+      .returning(workflowAutomationColumns());
     if (!finalized) {
       return false;
     }
@@ -1022,135 +908,123 @@ function needsReconfigurationResult(
     message: `Official Workflow Blueprint requires configuration: ${blueprintKey}`,
   };
 }
+function retryReconciliation(
+  workflowId: string,
+  message = "Official Workflow reconciliation was superseded",
+): OfficialWorkflowReconciliationResult {
+  return { kind: "retry", workflowId, message };
+}
 
-async function pauseForReconfiguration(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly definitionName: string;
-    readonly blueprint: OfficialWorkflowAcceptedBlueprint;
-    readonly activeDefinitionOnly: boolean;
-    readonly automation: OfficialAutomationRow;
-    readonly bindings: readonly OfficialWorkflowParameterBinding[];
-  },
-  signal: AbortSignal,
-): Promise<OfficialWorkflowReconciliationResult> {
-  const persisted = await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
-    if (
-      !(await acceptedBlueprintIsCurrent(
-        tx,
-        {
-          definitionName: args.definitionName,
-          blueprintKey: args.blueprint.key,
-          fingerprint: args.blueprint.fingerprint,
-          activeDefinitionOnly: args.activeDefinitionOnly,
-        },
-        signal,
-      ))
-    ) {
-      return null;
-    }
-    const morningBriefAuthority = await lockReconciliationMutationContext(tx, {
-      orgId: args.orgId,
-      userId: args.userId,
-      workflowId: args.automation.workflowId,
-      automationId: args.automation.id,
-      definitionName: args.definitionName,
-      blueprintKey: args.blueprint.key,
-    });
-    if (morningBriefAuthority === null) {
-      return null;
-    }
-    const [current] = await tx
-      .select()
-      .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, args.automation.id))
-      .for("update")
-      .limit(1);
-    if (!current || !sameAutomationBaseline(args.automation, current)) {
-      return null;
-    }
-    const currentTime = nowDate();
-    const morningBrief = await prepareMorningBriefLegacyReconciliationMutation(
-      tx,
-      {
+interface PauseForReconfigurationArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly definitionName: string;
+  readonly blueprint: OfficialWorkflowAcceptedBlueprint;
+  readonly activeDefinitionOnly: boolean;
+  readonly automation: OfficialAutomationRow;
+  readonly bindings: readonly OfficialWorkflowParameterBinding[];
+}
+const pauseForReconfiguration$ = command(
+  async (
+    { set },
+    args: PauseForReconfigurationArgs,
+    signal: AbortSignal,
+  ): Promise<OfficialWorkflowReconciliationResult> => {
+    const db = set(writeDb$);
+    // eslint-disable-next-line api/signal-check-await -- Complete the committed automation handoff and its watch compensation before propagating cancellation.
+    const persisted = await db.transaction(async (tx) => {
+      await lockAcceptedOfficialWorkflowCatalog(tx);
+      if (
+        !(await acceptedBlueprintIsCurrent(
+          tx,
+          {
+            definitionName: args.definitionName,
+            blueprintKey: args.blueprint.key,
+            fingerprint: args.blueprint.fingerprint,
+            activeDefinitionOnly: args.activeDefinitionOnly,
+          },
+          signal,
+        ))
+      ) {
+        return null;
+      }
+      const installationLocked = await lockReconciliationMutationContext(tx, {
         orgId: args.orgId,
         userId: args.userId,
-        workflowId: current.workflowId,
-        automationId: current.id,
-      },
-      morningBriefAuthority,
-      { mode: "paused", at: currentTime },
-    );
-    const [paused] = await tx
-      .update(workflowAutomations)
-      .set({
-        enabled: false,
-        nextRunAt: null,
-        ...morningBrief.automation,
-        officialParameterBindings: [...args.bindings],
-        officialReconciliationStatus: "needs_reconfiguration",
-        updatedAt: currentTime,
-      })
-      .where(eq(workflowAutomations.id, current.id))
-      .returning();
-    if (!paused) {
-      return null;
-    }
-    await upsertActiveIdentity(tx, paused, currentTime);
-    return {
-      previous: current,
-      current: paused,
-      morningBriefFence: morningBriefReconciliationFence(
-        {
-          definitionName: args.definitionName,
-          blueprintKey: args.blueprint.key,
-        },
-        morningBrief.authority,
-      ),
-    };
-  });
-  if (!persisted) {
-    return {
-      kind: "retry",
-      workflowId: args.automation.workflowId,
-      message: "Official Workflow reconciliation was superseded",
-    };
-  }
-  const lifecycle = await settle(
-    reconcileAutomationEventWatchReconfiguration(
-      db,
-      {
-        previous: [persisted.previous],
-        current: [persisted.current],
-        googleForms: [],
-      },
-      signal,
-    ),
-    signal,
-  );
-  if (!lifecycle.ok || lifecycle.value.kind !== "ok") {
-    await restoreFailedReconfiguration(db, {
-      orgId: args.orgId,
-      userId: args.userId,
-      definitionName: args.definitionName,
-      persisted: { ...persisted, googleFormsCursor: undefined },
+        workflowId: args.automation.workflowId,
+        automationId: args.automation.id,
+        definitionName: args.definitionName,
+        blueprintKey: args.blueprint.key,
+      });
+      if (!installationLocked) {
+        return null;
+      }
+      const [current] = await tx
+        .select(workflowAutomationColumns())
+        .from(workflowAutomations)
+        .where(observedWorkflowAutomationCondition(args.automation))
+        .for("update")
+        .limit(1);
+      if (!current || !sameAutomationBaseline(args.automation, current)) {
+        return null;
+      }
+      const currentTime = nowDate();
+      const [paused] = await tx
+        .update(workflowAutomations)
+        .set({
+          enabled: false,
+          nextRunAt: null,
+          officialParameterBindings: [...args.bindings],
+          officialReconciliationStatus: "needs_reconfiguration",
+          updatedAt: currentTime,
+        })
+        .where(eq(workflowAutomations.id, current.id))
+        .returning(workflowAutomationColumns());
+      if (!paused) {
+        return null;
+      }
+      await upsertActiveIdentity(tx, paused, currentTime);
+      return {
+        previous: current,
+        current: paused,
+      };
     });
-    return {
-      kind: "retry",
-      workflowId: args.automation.workflowId,
-      message: lifecycle.ok
-        ? eventWatchFailureMessage(lifecycle.value)
-        : "Official Workflow event-watch reconciliation failed",
-    };
-  }
-  return needsReconfigurationResult(
-    args.automation.workflowId,
-    args.blueprint.key,
-  );
-}
+    if (!persisted) {
+      return retryReconciliation(args.automation.workflowId);
+    }
+    const lifecycle = await settle(
+      set(
+        reconcileAutomationEventWatchReconfiguration$,
+        {
+          previous: [persisted.previous],
+          current: [persisted.current],
+          googleForms: [],
+        },
+        signal,
+      ),
+      signal,
+    );
+    if (!lifecycle.ok || lifecycle.value.kind !== "ok") {
+      await set(restoreFailedReconfiguration$, {
+        orgId: args.orgId,
+        userId: args.userId,
+        definitionName: args.definitionName,
+        persisted,
+      });
+      signal.throwIfAborted();
+      return retryReconciliation(
+        args.automation.workflowId,
+        lifecycle.ok
+          ? eventWatchFailureMessage(lifecycle.value)
+          : "Official Workflow event-watch reconciliation failed",
+      );
+    }
+    return needsReconfigurationResult(
+      args.automation.workflowId,
+      args.blueprint.key,
+    );
+  },
+);
 
 interface ExistingAutomationReconciliationArgs {
   readonly orgId: string;
@@ -1177,107 +1051,109 @@ type PreparedExistingAutomationReconfiguration =
       readonly kind: "result";
       readonly result: OfficialWorkflowReconciliationResult;
     };
-
-async function prepareExistingAutomationReconfiguration(
-  db: Db,
-  args: ExistingAutomationReconciliationArgs,
-  signal: AbortSignal,
-): Promise<PreparedExistingAutomationReconfiguration> {
-  const resolution = resolveOfficialWorkflowBlueprintForReconciliation(
-    args.blueprint,
-    args.automation.officialParameterBindings ?? [],
-    args.overrides,
-    args.userTimezone,
-  );
-  if (!resolution.ok) {
-    return {
-      kind: "result",
-      result: await pauseForReconfiguration(
-        db,
-        {
-          orgId: args.orgId,
-          userId: args.member.userId,
-          definitionName: args.definitionName,
-          blueprint: args.blueprint,
-          activeDefinitionOnly: args.activeDefinitionOnly,
-          automation: args.automation,
-          bindings: resolution.bindings,
-        },
-        signal,
-      ),
-    };
-  }
-  let preparation: OfficialAutomationEventPreparation | undefined;
-  if (!("schedule" in resolution.resolved.createRequest)) {
-    const prepared = await args.prepareEvent(
-      args.automation.id,
-      createInput(
-        {
-          orgId: args.orgId,
-          member: args.member,
-          workflowId: args.automation.workflowId,
-          definitionName: args.definitionName,
-        },
-        resolution.resolved,
-        { enabled: args.automation.enabled },
-      ),
+const prepareExistingAutomationReconfiguration$ = command(
+  async (
+    { set },
+    args: ExistingAutomationReconciliationArgs,
+    signal: AbortSignal,
+  ): Promise<PreparedExistingAutomationReconfiguration> => {
+    const db = set(writeDb$);
+    const resolution = resolveOfficialWorkflowBlueprintForReconciliation(
+      args.blueprint,
+      args.automation.officialParameterBindings ?? [],
+      args.overrides,
+      args.userTimezone,
     );
-    signal.throwIfAborted();
-    if (prepared.kind !== "ok") {
-      await markActiveAutomationFailed(
-        db,
-        {
-          orgId: args.orgId,
-          userId: args.member.userId,
-          workflowId: args.automation.workflowId,
-          definitionName: args.definitionName,
-          blueprint: args.blueprint,
-          activeDefinitionOnly: args.activeDefinitionOnly,
-          automationId: args.automation.id,
-          expected: args.automation,
-        },
-        signal,
-      );
+    if (!resolution.ok) {
       return {
         kind: "result",
-        result: {
-          kind: "retry",
-          workflowId: args.automation.workflowId,
-          message:
-            "message" in prepared
-              ? prepared.message
-              : "Official Workflow event preparation failed",
-        },
+        result: await set(
+          pauseForReconfiguration$,
+          {
+            orgId: args.orgId,
+            userId: args.member.userId,
+            definitionName: args.definitionName,
+            blueprint: args.blueprint,
+            activeDefinitionOnly: args.activeDefinitionOnly,
+            automation: args.automation,
+            bindings: resolution.bindings,
+          },
+          signal,
+        ),
       };
     }
-    preparation = prepared.preparation;
-  }
-  const patch = buildOfficialAutomationPatch(
-    args.automation,
-    resolution.resolved,
-    preparation,
-    nowDate(),
-  );
-  if (!patch.ok) {
-    return {
-      kind: "result",
-      result: await pauseForReconfiguration(
-        db,
-        {
-          orgId: args.orgId,
-          userId: args.member.userId,
-          definitionName: args.definitionName,
-          blueprint: args.blueprint,
-          activeDefinitionOnly: args.activeDefinitionOnly,
-          automation: args.automation,
-          bindings: resolution.resolved.bindings,
-        },
-        signal,
-      ),
-    };
-  }
-  return { kind: "ready", patch: patch.patch, preparation };
-}
+    let preparation: OfficialAutomationEventPreparation | undefined;
+    if (!("schedule" in resolution.resolved.createRequest)) {
+      const prepared = await args.prepareEvent(
+        args.automation.id,
+        createInput(
+          {
+            orgId: args.orgId,
+            member: args.member,
+            workflowId: args.automation.workflowId,
+            definitionName: args.definitionName,
+          },
+          resolution.resolved,
+          { enabled: args.automation.enabled },
+        ),
+      );
+      signal.throwIfAborted();
+      if (prepared.kind !== "ok") {
+        await markActiveAutomationFailed(
+          db,
+          {
+            orgId: args.orgId,
+            userId: args.member.userId,
+            workflowId: args.automation.workflowId,
+            definitionName: args.definitionName,
+            blueprint: args.blueprint,
+            activeDefinitionOnly: args.activeDefinitionOnly,
+            automationId: args.automation.id,
+            expected: args.automation,
+          },
+          signal,
+        );
+        return {
+          kind: "result",
+          result: {
+            kind: "retry",
+            workflowId: args.automation.workflowId,
+            message:
+              "message" in prepared
+                ? prepared.message
+                : "Official Workflow event preparation failed",
+          },
+        };
+      }
+      preparation = prepared.preparation;
+    }
+    const patch = buildOfficialAutomationPatch(
+      args.automation,
+      resolution.resolved,
+      preparation,
+      nowDate(),
+    );
+    if (!patch.ok) {
+      return {
+        kind: "result",
+        result: await set(
+          pauseForReconfiguration$,
+          {
+            orgId: args.orgId,
+            userId: args.member.userId,
+            definitionName: args.definitionName,
+            blueprint: args.blueprint,
+            activeDefinitionOnly: args.activeDefinitionOnly,
+            automation: args.automation,
+            bindings: resolution.resolved.bindings,
+          },
+          signal,
+        ),
+      };
+    }
+    return { kind: "ready", patch: patch.patch, preparation };
+  },
+);
 
 function automationStructureChanged(
   automation: OfficialAutomationRow,
@@ -1295,7 +1171,7 @@ async function stageAutomationStructureTransition(
   signal: AbortSignal,
 ): Promise<PersistedReconfiguration | null> {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedBlueprintIsCurrent(
         tx,
@@ -1310,19 +1186,7 @@ async function stageAutomationStructureTransition(
     ) {
       return null;
     }
-    const morningBriefAuthority = await lockReconciliationMorningBriefAuthority(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.member.userId,
-        workflowId: args.automation.workflowId,
-        automationId: args.automation.id,
-        definitionName: args.definitionName,
-        blueprintKey: args.blueprint.key,
-      },
-    );
     if (
-      morningBriefAuthority.kind === "stale" ||
       !(await lockInstalledWorkflow(tx, {
         orgId: args.orgId,
         userId: args.member.userId,
@@ -1333,9 +1197,9 @@ async function stageAutomationStructureTransition(
       return null;
     }
     const [current] = await tx
-      .select()
+      .select(workflowAutomationColumns())
       .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, args.automation.id))
+      .where(reconfigurationSourceCondition(args.automation))
       .for("update")
       .limit(1);
     if (
@@ -1344,34 +1208,17 @@ async function stageAutomationStructureTransition(
     ) {
       return null;
     }
-    const [formsCursor] = await tx
-      .select({ cursor: googleFormsAutomationCursors.lastSeenSubmittedTime })
-      .from(googleFormsAutomationCursors)
-      .where(eq(googleFormsAutomationCursors.automationId, current.id))
-      .limit(1);
     const currentTime = nowDate();
-    const morningBrief = await prepareMorningBriefLegacyReconciliationMutation(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.member.userId,
-        workflowId: current.workflowId,
-        automationId: current.id,
-      },
-      morningBriefAuthority,
-      { mode: "paused", at: currentTime },
-    );
     const [staged] = await tx
       .update(workflowAutomations)
       .set({
         enabled: false,
         nextRunAt: null,
-        ...morningBrief.automation,
         officialReconciliationStatus: "reconciling",
         updatedAt: currentTime,
       })
       .where(eq(workflowAutomations.id, current.id))
-      .returning();
+      .returning(workflowAutomationColumns());
     if (!staged) {
       throw new Error("Official Workflow automation disappeared");
     }
@@ -1379,13 +1226,6 @@ async function stageAutomationStructureTransition(
     return {
       previous: current,
       current: staged,
-      googleFormsCursor: formsCursor?.cursor,
-      morningBriefFence: isMorningBriefReconciliation({
-        definitionName: args.definitionName,
-        blueprintKey: args.blueprint.key,
-      })
-        ? morningBrief.authority.fence
-        : undefined,
     };
   });
 }
@@ -1410,115 +1250,123 @@ function structureTransitionGoogleFormsPreparation(
         },
       ];
 }
-
-async function compensateAutomationStructureTransition(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly definitionName: string;
-    readonly persisted: PersistedReconfiguration;
-    readonly desired: OfficialAutomationRow;
-  },
-): Promise<void> {
-  const cleanupSignal = new AbortController().signal;
-  await settle(
-    reconcileAutomationEventWatchReconfiguration(
-      db,
-      {
-        previous: [args.desired],
-        current: [args.persisted.current],
-        googleForms: [],
-      },
+const compensateAutomationStructureTransition$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly definitionName: string;
+      readonly persisted: PersistedReconfiguration;
+      readonly desired: OfficialAutomationRow;
+    },
+  ): Promise<void> => {
+    const cleanupSignal = new AbortController().signal;
+    await settle(
+      set(
+        reconcileAutomationEventWatchReconfiguration$,
+        {
+          previous: [args.desired],
+          current: [args.persisted.current],
+          googleForms: [],
+        },
+        cleanupSignal,
+      ),
       cleanupSignal,
-    ),
-    cleanupSignal,
-  );
-  await settle(
-    reconcileAutomationEventWatchInventoryForOwner(
-      db,
-      { orgId: args.orgId, userId: args.userId },
+    );
+    await settle(
+      set(
+        reconcileAutomationEventWatchInventoryForOwner$,
+        { orgId: args.orgId, userId: args.userId },
+        cleanupSignal,
+      ),
       cleanupSignal,
-    ),
-    cleanupSignal,
-  );
-  await restoreFailedReconfiguration(db, {
-    orgId: args.orgId,
-    userId: args.userId,
-    definitionName: args.definitionName,
-    persisted: args.persisted,
-  });
-}
-
-async function prepareAutomationStructureTransitionWatch(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly persisted: PersistedReconfiguration;
-    readonly desired: OfficialAutomationRow;
-    readonly preparation: OfficialAutomationEventPreparation | undefined;
+    );
+    await set(restoreFailedReconfiguration$, {
+      orgId: args.orgId,
+      userId: args.userId,
+      definitionName: args.definitionName,
+      persisted: args.persisted,
+    });
   },
-  signal: AbortSignal,
-): Promise<string | null> {
-  const oldWatch = await settle(
-    reconcileAutomationEventWatchReconfiguration(
-      db,
-      {
-        previous: [args.persisted.previous],
-        current: [args.persisted.current],
-        googleForms: [],
-      },
+);
+const prepareAutomationStructureTransitionWatch$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly persisted: PersistedReconfiguration;
+      readonly desired: OfficialAutomationRow;
+      readonly preparation: OfficialAutomationEventPreparation | undefined;
+    },
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const oldWatch = await settle(
+      set(
+        reconcileAutomationEventWatchReconfiguration$,
+        {
+          previous: [args.persisted.previous],
+          current: [args.persisted.current],
+          googleForms: [],
+        },
+        signal,
+      ),
       signal,
-    ),
-    signal,
-  );
-  if (!oldWatch.ok || oldWatch.value.kind !== "ok") {
-    return oldWatch.ok
-      ? eventWatchFailureMessage(oldWatch.value)
-      : "Official Workflow event-watch transition failed";
-  }
-  const inventory = await settle(
-    reconcileAutomationEventWatchInventoryForOwner(
-      db,
-      { orgId: args.orgId, userId: args.userId },
+    );
+    if (!oldWatch.ok || oldWatch.value.kind !== "ok") {
+      return oldWatch.ok
+        ? eventWatchFailureMessage(oldWatch.value)
+        : "Official Workflow event-watch transition failed";
+    }
+    const inventory = await settle(
+      set(
+        reconcileAutomationEventWatchInventoryForOwner$,
+        { orgId: args.orgId, userId: args.userId },
+        signal,
+      ),
       signal,
-    ),
-    signal,
-  );
-  if (!inventory.ok || !inventory.value) {
-    return "Official Workflow event-watch inventory reconciliation failed";
-  }
-  const newWatch = await settle(
-    ensureAutomationEventWatchReconfiguration(
-      db,
-      {
-        current: [args.desired],
-        googleForms: structureTransitionGoogleFormsPreparation(
-          args.desired.id,
-          args.preparation,
-        ),
-        allowStagedOfficialTargets: true,
-      },
+    );
+    if (!inventory.ok || !inventory.value) {
+      return "Official Workflow event-watch inventory reconciliation failed";
+    }
+    const newWatch = await settle(
+      set(
+        ensureAutomationEventWatchReconfiguration$,
+        {
+          current: [args.desired],
+          googleForms: structureTransitionGoogleFormsPreparation(
+            args.desired.id,
+            args.preparation,
+          ),
+          allowStagedOfficialTargets: true,
+        },
+        signal,
+      ),
       signal,
-    ),
-    signal,
-  );
-  if (!newWatch.ok || newWatch.value.kind !== "ok") {
-    return newWatch.ok
-      ? eventWatchFailureMessage(newWatch.value)
-      : "Official Workflow event-watch transition failed";
-  }
-  return null;
-}
-
+    );
+    if (!newWatch.ok || newWatch.value.kind !== "ok") {
+      return newWatch.ok
+        ? eventWatchFailureMessage(newWatch.value)
+        : "Official Workflow event-watch transition failed";
+    }
+    return null;
+  },
+);
 type FinalizeAutomationStructureTransitionResult =
-  | { readonly kind: "current" }
-  | { readonly kind: "superseded" }
-  | { readonly kind: "failed"; readonly message: string };
+  | {
+      readonly kind: "current";
+    }
+  | {
+      readonly kind: "superseded";
+    }
+  | {
+      readonly kind: "failed";
+      readonly message: string;
+    };
 
 type OfficialAutomationAccountProjection = Awaited<
-  ReturnType<typeof lockOfficialAutomationAccountProjection>
+  ReturnType<typeof readOfficialAutomationAccountProjection>
 >;
 
 interface FinalizeAutomationStructureTransitionArgs {
@@ -1531,23 +1379,17 @@ interface FinalizeAutomationStructureTransitionArgs {
   readonly patch: OfficialAutomationPatch;
   readonly preparation: OfficialAutomationEventPreparation | undefined;
 }
-
 async function commitAutomationStructureTransition(
   tx: Tx,
   input: {
     readonly args: FinalizeAutomationStructureTransitionArgs;
     readonly current: OfficialAutomationRow;
-    readonly authority: Exclude<
-      MorningBriefLegacyWriterAuthority,
-      { kind: "stale" }
-    >;
     readonly accountProjection: OfficialAutomationAccountProjection;
     readonly webhookTierEligible: boolean;
   },
   signal: AbortSignal,
 ): Promise<FinalizeAutomationStructureTransitionResult> {
-  const { args, current, authority, accountProjection, webhookTierEligible } =
-    input;
+  const { args, current, accountProjection, webhookTierEligible } = input;
   if (!accountProjectionMatchesPatch(accountProjection, args.patch)) {
     return { kind: "superseded" };
   }
@@ -1557,17 +1399,6 @@ async function commitAutomationStructureTransition(
     current,
     args.patch,
     currentTime,
-  );
-  const morningBrief = await prepareMorningBriefLegacyReconciliationMutation(
-    tx,
-    {
-      orgId: args.orgId,
-      userId: args.userId,
-      workflowId: current.workflowId,
-      automationId: current.id,
-    },
-    authority,
-    { mode: "configured", proposed: refreshed, at: currentTime },
   );
   const subtypeFailure = await syncOfficialAutomationSubtypeRows(
     tx,
@@ -1582,22 +1413,35 @@ async function commitAutomationStructureTransition(
   if (subtypeFailure) {
     return { kind: "failed", message: failureMessage(subtypeFailure) };
   }
-  if (desired.eventType !== "google-forms-response-submitted") {
-    await tx
-      .delete(googleFormsAutomationCursors)
-      .where(eq(googleFormsAutomationCursors.automationId, current.id));
-  }
   const [finalized] = await tx
     .update(workflowAutomations)
     .set({
       ...refreshed,
-      ...morningBrief.automation,
+      nextRunAt: reconciledScheduleAnchor(current, refreshed.nextRunAt),
       officialReconciliationStatus: "current",
     })
     .where(eq(workflowAutomations.id, current.id))
-    .returning();
+    .returning(workflowAutomationColumns());
   if (!finalized) {
     throw new Error("Official Workflow automation disappeared");
+  }
+  if (googleFormsCursorMustReset(current, finalized)) {
+    await tx
+      .delete(googleFormsAutomationCursors)
+      .where(eq(googleFormsAutomationCursors.automationId, current.id));
+  }
+  const cursorPublication = googleFormsCursorPublicationStatement(
+    finalized,
+    args.preparation?.googleFormsSeedCursor ?? null,
+    currentTime,
+  );
+  if (cursorPublication !== null) {
+    const published = await tx.execute(cursorPublication);
+    if (published.rowCount !== 1) {
+      throw new Error(
+        "Google Forms structure watch disappeared before publication",
+      );
+    }
   }
   await upsertActiveIdentity(tx, finalized, currentTime);
   await tx
@@ -1613,7 +1457,7 @@ async function finalizeAutomationStructureTransition(
   signal: AbortSignal,
 ): Promise<FinalizeAutomationStructureTransitionResult> {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedBlueprintIsCurrent(
         tx,
@@ -1635,7 +1479,7 @@ async function finalizeAutomationStructureTransition(
         { orgId: args.orgId },
         signal,
       ));
-    const accountProjection = await lockOfficialAutomationAccountProjection(
+    const accountProjection = await readOfficialAutomationAccountProjection(
       tx,
       {
         orgId: args.orgId,
@@ -1646,25 +1490,21 @@ async function finalizeAutomationStructureTransition(
       },
       signal,
     );
-    const morningBriefAuthority = await lockReconciliationMutationContext(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.persisted.current.workflowId,
-        automationId: args.persisted.current.id,
-        definitionName: args.definitionName,
-        blueprintKey: args.blueprint.key,
-      },
-      args.persisted.morningBriefFence,
-    );
-    if (morningBriefAuthority === null) {
+    const installationLocked = await lockReconciliationMutationContext(tx, {
+      orgId: args.orgId,
+      userId: args.userId,
+      workflowId: args.persisted.current.workflowId,
+      automationId: args.persisted.current.id,
+      definitionName: args.definitionName,
+      blueprintKey: args.blueprint.key,
+    });
+    if (!installationLocked) {
       return { kind: "superseded" };
     }
     const [current] = await tx
-      .select()
+      .select(workflowAutomationColumns())
       .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, args.persisted.current.id))
+      .where(observedWorkflowAutomationCondition(args.persisted.current))
       .for("update")
       .limit(1);
     if (
@@ -1681,7 +1521,6 @@ async function finalizeAutomationStructureTransition(
       {
         args,
         current,
-        authority: morningBriefAuthority,
         accountProjection,
         webhookTierEligible,
       },
@@ -1689,63 +1528,265 @@ async function finalizeAutomationStructureTransition(
     );
   });
 }
-
-async function reconcileAutomationStructureTransition(
-  db: Db,
-  args: ExistingAutomationReconciliationArgs,
-  prepared: Extract<
-    PreparedExistingAutomationReconfiguration,
-    { kind: "ready" }
-  >,
-  signal: AbortSignal,
-): Promise<OfficialWorkflowReconciliationResult> {
-  const persisted = await stageAutomationStructureTransition(db, args, signal);
-  if (!persisted) {
-    return {
-      kind: "retry",
+const reconcileAutomationStructureTransition$ = command(
+  async (
+    { set },
+    args: ExistingAutomationReconciliationArgs,
+    prepared: Extract<
+      PreparedExistingAutomationReconfiguration,
+      {
+        kind: "ready";
+      }
+    >,
+    signal: AbortSignal,
+  ): Promise<OfficialWorkflowReconciliationResult> => {
+    const db = set(writeDb$);
+    const persisted = await stageAutomationStructureTransition(
+      db,
+      args,
+      signal,
+    );
+    if (!persisted) {
+      return {
+        kind: "retry",
+        workflowId: args.automation.workflowId,
+        message: "Official Workflow reconciliation was superseded",
+      };
+    }
+    const desired = structureTransitionWatchAutomation(
+      persisted.current,
+      prepared.patch,
+    );
+    const watchFailure = await set(
+      prepareAutomationStructureTransitionWatch$,
+      {
+        orgId: args.orgId,
+        userId: args.member.userId,
+        persisted,
+        desired,
+        preparation: prepared.preparation,
+      },
+      signal,
+    );
+    if (watchFailure) {
+      await set(compensateAutomationStructureTransition$, {
+        orgId: args.orgId,
+        userId: args.member.userId,
+        definitionName: args.definitionName,
+        persisted,
+        desired,
+      });
+      signal.throwIfAborted();
+      return {
+        kind: "retry",
+        workflowId: args.automation.workflowId,
+        message: watchFailure,
+      };
+    }
+    await automationStructureTransitionPreparedHookForTest.get()?.({
+      definitionName: args.definitionName,
       workflowId: args.automation.workflowId,
-      message: "Official Workflow reconciliation was superseded",
-    };
-  }
-  const desired = structureTransitionWatchAutomation(
-    persisted.current,
-    prepared.patch,
-  );
-  const watchFailure = await prepareAutomationStructureTransitionWatch(
-    db,
-    {
-      orgId: args.orgId,
-      userId: args.member.userId,
-      persisted,
-      desired,
-      preparation: prepared.preparation,
-    },
-    signal,
-  );
-  if (watchFailure) {
-    await compensateAutomationStructureTransition(db, {
+      automationId: args.automation.id,
+      blueprintKey: args.blueprint.key,
+      fingerprint: args.blueprint.fingerprint,
+    });
+    signal.throwIfAborted();
+    const finalization = await settle(
+      finalizeAutomationStructureTransition(
+        db,
+        {
+          orgId: args.orgId,
+          userId: args.member.userId,
+          definitionName: args.definitionName,
+          blueprint: args.blueprint,
+          activeDefinitionOnly: args.activeDefinitionOnly,
+          persisted,
+          patch: prepared.patch,
+          preparation: prepared.preparation,
+        },
+        signal,
+      ),
+      signal,
+    );
+    if (finalization.ok && finalization.value.kind === "current") {
+      return { kind: "current", workflowId: args.automation.workflowId };
+    }
+    const cleanupSignal = new AbortController().signal;
+    // eslint-disable-next-line api/signal-check-await -- Complete both watch cleanup steps and state restoration before propagating cancellation.
+    await set(
+      reconcileAutomationEventWatchReconfiguration$,
+      {
+        previous: [desired],
+        current: [persisted.current],
+        googleForms: [],
+      },
+      cleanupSignal,
+    );
+    // eslint-disable-next-line api/signal-check-await -- Complete both watch cleanup steps and state restoration before propagating cancellation.
+    await set(
+      reconcileAutomationEventWatchInventoryForOwner$,
+      { orgId: args.orgId, userId: args.member.userId },
+      cleanupSignal,
+    );
+    if (finalization.ok && finalization.value.kind === "superseded") {
+      return {
+        kind: "retry",
+        workflowId: args.automation.workflowId,
+        message: "Official Workflow reconciliation was superseded",
+      };
+    }
+    await set(restoreFailedReconfiguration$, {
       orgId: args.orgId,
       userId: args.member.userId,
       definitionName: args.definitionName,
       persisted,
-      desired,
     });
+    signal.throwIfAborted();
     return {
       kind: "retry",
       workflowId: args.automation.workflowId,
-      message: watchFailure,
+      message:
+        finalization.ok && finalization.value.kind === "failed"
+          ? finalization.value.message
+          : "Official Workflow structure transition failed",
     };
+  },
+);
+function formsReconfigurationInput(
+  args: ExistingAutomationReconciliationArgs,
+  prepared: Extract<
+    PreparedExistingAutomationReconfiguration,
+    { readonly kind: "ready" }
+  >,
+) {
+  if (
+    args.automation.eventType !== "google-forms-response-submitted" ||
+    prepared.patch.eventType !== "google-forms-response-submitted" ||
+    isMorningBriefReconciliation({
+      definitionName: args.definitionName,
+      blueprintKey: args.blueprint.key,
+    })
+  ) {
+    return null;
   }
-  await automationStructureTransitionPreparedHookForTest.get()?.({
+  const seedCursor = prepared.preparation?.googleFormsSeedCursor;
+  if (seedCursor === undefined) {
+    throw new Error(
+      "Official Forms reconfiguration requires its prepared baseline",
+    );
+  }
+  return {
+    orgId: args.orgId,
+    userId: args.member.userId,
     definitionName: args.definitionName,
-    workflowId: args.automation.workflowId,
-    automationId: args.automation.id,
-    blueprintKey: args.blueprint.key,
-    fingerprint: args.blueprint.fingerprint,
-  });
-  signal.throwIfAborted();
-  const finalization = await settle(
-    finalizeAutomationStructureTransition(
+    blueprint: args.blueprint,
+    activeDefinitionOnly: args.activeDefinitionOnly,
+    expected: args.automation,
+    patch: prepared.patch,
+    seedCursor,
+  };
+}
+const reconcileExistingAutomation$ = command(
+  async (
+    { set },
+    args: ExistingAutomationReconciliationArgs,
+    signal: AbortSignal,
+  ): Promise<OfficialWorkflowReconciliationResult> => {
+    const db = set(writeDb$);
+    const prepared = await set(
+      prepareExistingAutomationReconfiguration$,
+      args,
+      signal,
+    );
+    if (prepared.kind === "result") {
+      return prepared.result;
+    }
+    const formsInput = formsReconfigurationInput(args, prepared);
+    if (formsInput !== null) {
+      return await set(
+        reconcileOfficialGoogleFormsConfiguration$,
+        formsInput,
+        signal,
+      );
+    }
+    if (
+      automationStructureChanged(args.automation, prepared.patch) ||
+      args.automation.officialReconciliationStatus === "reconciling" ||
+      args.automation.officialReconciliationStatus === "failed"
+    ) {
+      return await set(
+        reconcileAutomationStructureTransition$,
+        args,
+        prepared,
+        signal,
+      );
+    }
+    const persisted = await persistReconfigurationPatch(
+      db,
+      {
+        orgId: args.orgId,
+        userId: args.member.userId,
+        definitionName: args.definitionName,
+        blueprint: args.blueprint,
+        activeDefinitionOnly: args.activeDefinitionOnly,
+        expected: args.automation,
+        patch: prepared.patch,
+        preparation: prepared.preparation,
+      },
+      signal,
+    );
+    if (!persisted) {
+      return {
+        kind: "retry",
+        workflowId: args.automation.workflowId,
+        message: "Official Workflow reconciliation was superseded",
+      };
+    }
+    await reconfigurationPersistedHookForTest.get()?.({
+      definitionName: args.definitionName,
+      workflowId: args.automation.workflowId,
+      automationId: args.automation.id,
+      blueprintKey: args.blueprint.key,
+      fingerprint: args.blueprint.fingerprint,
+    });
+    signal.throwIfAborted();
+    const watch = await settle(
+      set(
+        reconcileAutomationEventWatchReconfiguration$,
+        {
+          previous: [persisted.previous],
+          current: [persisted.current],
+          googleForms:
+            prepared.preparation?.googleFormsSeedCursor === undefined
+              ? []
+              : [
+                  {
+                    automationId: persisted.current.id,
+                    seedCursor: prepared.preparation.googleFormsSeedCursor,
+                  },
+                ],
+        },
+        signal,
+      ),
+      signal,
+    );
+    if (!watch.ok || watch.value.kind !== "ok") {
+      await set(restoreFailedReconfiguration$, {
+        orgId: args.orgId,
+        userId: args.member.userId,
+        definitionName: args.definitionName,
+        persisted,
+      });
+      signal.throwIfAborted();
+      return {
+        kind: "retry",
+        workflowId: args.automation.workflowId,
+        message: watch.ok
+          ? eventWatchFailureMessage(watch.value)
+          : "Official Workflow event-watch reconciliation failed",
+      };
+    }
+    const finalized = await finalizeReconfiguration(
       db,
       {
         orgId: args.orgId,
@@ -1754,171 +1795,26 @@ async function reconcileAutomationStructureTransition(
         blueprint: args.blueprint,
         activeDefinitionOnly: args.activeDefinitionOnly,
         persisted,
-        patch: prepared.patch,
-        preparation: prepared.preparation,
       },
-      signal,
-    ),
-    signal,
-  );
-  if (finalization.ok && finalization.value.kind === "current") {
-    return { kind: "current", workflowId: args.automation.workflowId };
-  }
-
-  const cleanupSignal = new AbortController().signal;
-  await reconcileAutomationEventWatchReconfiguration(
-    db,
-    {
-      previous: [desired],
-      current: [persisted.current],
-      googleForms: [],
-    },
-    cleanupSignal,
-  );
-  await reconcileAutomationEventWatchInventoryForOwner(
-    db,
-    { orgId: args.orgId, userId: args.member.userId },
-    cleanupSignal,
-  );
-  if (finalization.ok && finalization.value.kind === "superseded") {
-    return {
-      kind: "retry",
-      workflowId: args.automation.workflowId,
-      message: "Official Workflow reconciliation was superseded",
-    };
-  }
-  await restoreFailedReconfiguration(db, {
-    orgId: args.orgId,
-    userId: args.member.userId,
-    definitionName: args.definitionName,
-    persisted,
-  });
-  return {
-    kind: "retry",
-    workflowId: args.automation.workflowId,
-    message:
-      finalization.ok && finalization.value.kind === "failed"
-        ? finalization.value.message
-        : "Official Workflow structure transition failed",
-  };
-}
-
-async function reconcileExistingAutomation(
-  db: Db,
-  args: ExistingAutomationReconciliationArgs,
-  signal: AbortSignal,
-): Promise<OfficialWorkflowReconciliationResult> {
-  const prepared = await prepareExistingAutomationReconfiguration(
-    db,
-    args,
-    signal,
-  );
-  if (prepared.kind === "result") {
-    return prepared.result;
-  }
-  if (
-    automationStructureChanged(args.automation, prepared.patch) ||
-    args.automation.officialReconciliationStatus === "reconciling" ||
-    args.automation.officialReconciliationStatus === "failed"
-  ) {
-    return await reconcileAutomationStructureTransition(
-      db,
-      args,
-      prepared,
       signal,
     );
-  }
-  const persisted = await persistReconfigurationPatch(
-    db,
-    {
-      orgId: args.orgId,
-      userId: args.member.userId,
-      definitionName: args.definitionName,
-      blueprint: args.blueprint,
-      activeDefinitionOnly: args.activeDefinitionOnly,
-      expected: args.automation,
-      patch: prepared.patch,
-      preparation: prepared.preparation,
-    },
-    signal,
-  );
-  if (!persisted) {
-    return {
-      kind: "retry",
-      workflowId: args.automation.workflowId,
-      message: "Official Workflow reconciliation was superseded",
-    };
-  }
-  await reconfigurationPersistedHookForTest.get()?.({
-    definitionName: args.definitionName,
-    workflowId: args.automation.workflowId,
-    automationId: args.automation.id,
-    blueprintKey: args.blueprint.key,
-    fingerprint: args.blueprint.fingerprint,
-  });
-  signal.throwIfAborted();
-  const watch = await settle(
-    reconcileAutomationEventWatchReconfiguration(
-      db,
-      {
-        previous: [persisted.previous],
-        current: [persisted.current],
-        googleForms:
-          prepared.preparation?.googleFormsSeedCursor === undefined
-            ? []
-            : [
-                {
-                  automationId: persisted.current.id,
-                  seedCursor: prepared.preparation.googleFormsSeedCursor,
-                },
-              ],
-      },
-      signal,
-    ),
-    signal,
-  );
-  if (!watch.ok || watch.value.kind !== "ok") {
-    await restoreFailedReconfiguration(db, {
-      orgId: args.orgId,
-      userId: args.member.userId,
-      definitionName: args.definitionName,
-      persisted,
-    });
-    return {
-      kind: "retry",
-      workflowId: args.automation.workflowId,
-      message: watch.ok
-        ? eventWatchFailureMessage(watch.value)
-        : "Official Workflow event-watch reconciliation failed",
-    };
-  }
-  const finalized = await finalizeReconfiguration(
-    db,
-    {
-      orgId: args.orgId,
-      userId: args.member.userId,
-      definitionName: args.definitionName,
-      blueprint: args.blueprint,
-      activeDefinitionOnly: args.activeDefinitionOnly,
-      persisted,
-    },
-    signal,
-  );
-  if (!finalized) {
-    await restoreFailedReconfiguration(db, {
-      orgId: args.orgId,
-      userId: args.member.userId,
-      definitionName: args.definitionName,
-      persisted,
-    });
-    return {
-      kind: "retry",
-      workflowId: args.automation.workflowId,
-      message: "Official Workflow reconciliation was superseded",
-    };
-  }
-  return { kind: "current", workflowId: args.automation.workflowId };
-}
+    if (!finalized) {
+      await set(restoreFailedReconfiguration$, {
+        orgId: args.orgId,
+        userId: args.member.userId,
+        definitionName: args.definitionName,
+        persisted,
+      });
+      signal.throwIfAborted();
+      return {
+        kind: "retry",
+        workflowId: args.automation.workflowId,
+        message: "Official Workflow reconciliation was superseded",
+      };
+    }
+    return { kind: "current", workflowId: args.automation.workflowId };
+  },
+);
 
 function createInput(
   args: {
@@ -1979,7 +1875,7 @@ async function markActiveAutomationFailed(
   signal: AbortSignal,
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedBlueprintIsCurrent(
         tx,
@@ -1994,19 +1890,7 @@ async function markActiveAutomationFailed(
     ) {
       return false;
     }
-    const morningBriefAuthority = await lockReconciliationMorningBriefAuthority(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.workflowId,
-        automationId: args.automationId,
-        definitionName: args.definitionName,
-        blueprintKey: args.blueprint.key,
-      },
-    );
     if (
-      morningBriefAuthority.kind === "stale" ||
       !(await lockInstalledWorkflow(tx, {
         orgId: args.orgId,
         userId: args.userId,
@@ -2017,7 +1901,7 @@ async function markActiveAutomationFailed(
       return false;
     }
     const [current] = await tx
-      .select()
+      .select(workflowAutomationColumns())
       .from(workflowAutomations)
       .where(eq(workflowAutomations.id, args.automationId))
       .for("update")
@@ -2040,7 +1924,7 @@ async function markActiveAutomationFailed(
         updatedAt: currentTime,
       })
       .where(eq(workflowAutomations.id, current.id))
-      .returning();
+      .returning(workflowAutomationColumns());
     if (!failed) {
       return false;
     }
@@ -2054,35 +1938,17 @@ interface DormantIdentityReservation {
   readonly id: string;
   readonly intendedEnabled: boolean;
 }
-
 function resolveDormantReservationChoice(args: {
-  readonly schedule:
-    | Awaited<ReturnType<typeof lockMorningBriefNativeSchedule>>
-    | undefined;
   readonly identity:
     | typeof officialWorkflowAutomationIdentities.$inferSelect
     | undefined;
-  readonly workflowId: string;
   readonly fallbackIntendedEnabled: boolean;
-}): { readonly id: string | null; readonly intendedEnabled: boolean } | null {
-  const durableAutomationId =
-    args.schedule?.legacyWorkflowId === args.workflowId
-      ? args.schedule.legacyAutomationId
-      : null;
-  if (
-    args.identity !== undefined &&
-    durableAutomationId !== null &&
-    args.identity.id !== durableAutomationId
-  ) {
-    return null;
-  }
-  const id = args.identity?.id ?? durableAutomationId;
-  const intendedEnabled =
-    durableAutomationId !== null && id === durableAutomationId
-      ? (args.schedule?.enabled ?? args.fallbackIntendedEnabled)
-      : (args.identity?.retainedIntendedEnabled ??
-        args.fallbackIntendedEnabled);
-  return { id, intendedEnabled };
+}): { readonly id: string | null; readonly intendedEnabled: boolean } {
+  return {
+    id: args.identity?.id ?? null,
+    intendedEnabled:
+      args.identity?.retainedIntendedEnabled ?? args.fallbackIntendedEnabled,
+  };
 }
 
 async function persistDormantIdentityReservation(
@@ -2158,7 +2024,7 @@ async function reserveDormantIdentity(
   signal: AbortSignal,
 ): Promise<DormantIdentityReservation | null> {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedBlueprintIsCurrent(
         tx,
@@ -2173,15 +2039,6 @@ async function reserveDormantIdentity(
     ) {
       return null;
     }
-    const morningBriefSchedule = isMorningBriefReconciliation({
-      definitionName: args.definitionName,
-      blueprintKey: args.blueprint.key,
-    })
-      ? await lockMorningBriefNativeSchedule(tx, {
-          orgId: args.orgId,
-          userId: args.userId,
-        })
-      : undefined;
     if (
       !(await lockInstalledWorkflow(tx, {
         orgId: args.orgId,
@@ -2226,16 +2083,9 @@ async function reserveDormantIdentity(
       .limit(1);
     const currentTime = nowDate();
     const choice = resolveDormantReservationChoice({
-      schedule: morningBriefSchedule,
       identity,
-      workflowId: args.workflowId,
       fallbackIntendedEnabled: args.fallbackIntendedEnabled,
     });
-    if (choice === null) {
-      // Two identities claim the selected slot. Fail closed rather than
-      // manufacturing another lineage.
-      return null;
-    }
     return await persistDormantIdentityReservation(tx, {
       identity,
       reservationId: choice.id,
@@ -2265,7 +2115,7 @@ async function retainDormantIdentity(
   signal: AbortSignal,
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedBlueprintIsCurrent(
         tx,
@@ -2280,15 +2130,6 @@ async function retainDormantIdentity(
     ) {
       return false;
     }
-    const morningBriefSchedule = isMorningBriefReconciliation({
-      definitionName: args.definitionName,
-      blueprintKey: args.blueprint.key,
-    })
-      ? await lockMorningBriefNativeSchedule(tx, {
-          orgId: args.orgId,
-          userId: args.userId,
-        })
-      : undefined;
     if (
       !(await lockInstalledWorkflow(tx, {
         orgId: args.orgId,
@@ -2329,14 +2170,9 @@ async function retainDormantIdentity(
       .limit(1);
     const currentTime = nowDate();
     const choice = resolveDormantReservationChoice({
-      schedule: morningBriefSchedule,
       identity,
-      workflowId: args.workflowId,
       fallbackIntendedEnabled: args.fallbackIntendedEnabled,
     });
-    if (choice === null) {
-      return false;
-    }
     const { id: retainedIdentityId, intendedEnabled } = choice;
     if (identity) {
       await tx
@@ -2366,123 +2202,118 @@ async function retainDormantIdentity(
     return true;
   });
 }
-
-async function removeDormantCreationOrphan(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly workflowId: string;
-    readonly definitionName: string;
-    readonly blueprint: OfficialWorkflowAcceptedBlueprint;
-    readonly activeDefinitionOnly: boolean;
-    readonly reservationId: string;
-  },
-  signal: AbortSignal,
-): Promise<boolean> {
-  const result = await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
-    if (
-      !(await acceptedBlueprintIsCurrent(
-        tx,
-        {
+const removeDormantCreationOrphan$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly workflowId: string;
+      readonly definitionName: string;
+      readonly blueprint: OfficialWorkflowAcceptedBlueprint;
+      readonly activeDefinitionOnly: boolean;
+      readonly reservationId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    // eslint-disable-next-line api/signal-check-await -- Finish the paired watch cleanup after deleting the local automation.
+    const result = await db.transaction(async (tx) => {
+      await lockAcceptedOfficialWorkflowCatalog(tx);
+      if (
+        !(await acceptedBlueprintIsCurrent(
+          tx,
+          {
+            definitionName: args.definitionName,
+            blueprintKey: args.blueprint.key,
+            fingerprint: args.blueprint.fingerprint,
+            activeDefinitionOnly: args.activeDefinitionOnly,
+          },
+          signal,
+        ))
+      ) {
+        return { kind: "blocked" as const };
+      }
+      if (
+        !(await lockInstalledWorkflow(tx, {
+          orgId: args.orgId,
+          userId: args.userId,
+          workflowId: args.workflowId,
           definitionName: args.definitionName,
-          blueprintKey: args.blueprint.key,
-          fingerprint: args.blueprint.fingerprint,
-          activeDefinitionOnly: args.activeDefinitionOnly,
-        },
-        signal,
-      ))
-    ) {
-      return { kind: "blocked" as const };
-    }
-    const morningBriefAuthority = await lockReconciliationMorningBriefAuthority(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.workflowId,
-        automationId: args.reservationId,
-        definitionName: args.definitionName,
-        blueprintKey: args.blueprint.key,
-      },
-    );
-    if (
-      morningBriefAuthority.kind === "stale" ||
-      !(await lockInstalledWorkflow(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.workflowId,
-        definitionName: args.definitionName,
-      }))
-    ) {
-      return { kind: "blocked" as const };
-    }
-    const [automation] = await tx
-      .select()
-      .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, args.reservationId))
-      .for("update")
-      .limit(1);
-    const [identity] = await tx
-      .select()
-      .from(officialWorkflowAutomationIdentities)
-      .where(
-        and(
-          eq(officialWorkflowAutomationIdentities.id, args.reservationId),
-          eq(officialWorkflowAutomationIdentities.workflowId, args.workflowId),
-          eq(
-            officialWorkflowAutomationIdentities.blueprintKey,
-            args.blueprint.key,
+        }))
+      ) {
+        return { kind: "blocked" as const };
+      }
+      const [automation] = await tx
+        .select(workflowAutomationColumns())
+        .from(workflowAutomations)
+        .where(eq(workflowAutomations.id, args.reservationId))
+        .for("update")
+        .limit(1);
+      const [identity] = await tx
+        .select()
+        .from(officialWorkflowAutomationIdentities)
+        .where(
+          and(
+            eq(officialWorkflowAutomationIdentities.id, args.reservationId),
+            eq(
+              officialWorkflowAutomationIdentities.workflowId,
+              args.workflowId,
+            ),
+            eq(
+              officialWorkflowAutomationIdentities.blueprintKey,
+              args.blueprint.key,
+            ),
           ),
+        )
+        .for("update")
+        .limit(1);
+      if (
+        !identity ||
+        identity.state !== "reconciling" ||
+        identity.automationId !== null ||
+        identity.retainedAppliedFingerprint !== args.blueprint.fingerprint
+      ) {
+        return { kind: "blocked" as const };
+      }
+      if (!automation) {
+        return { kind: "none" as const };
+      }
+      const isRecoverableOrphan =
+        automation.orgId === args.orgId &&
+        automation.ownerUserId === args.userId &&
+        automation.workflowId === args.workflowId &&
+        !automation.enabled &&
+        automation.officialBlueprintKey === null &&
+        automation.officialAppliedFingerprint === null &&
+        automation.officialReconciliationStatus === null &&
+        automation.officialParameterBindings === null &&
+        automation.officialIntendedEnabled === null;
+      if (!isRecoverableOrphan) {
+        return { kind: "blocked" as const };
+      }
+      await tx
+        .delete(workflowAutomations)
+        .where(eq(workflowAutomations.id, automation.id));
+      return { kind: "deleted" as const, automation };
+    });
+    if (result.kind === "blocked") {
+      return false;
+    }
+    if (result.kind === "deleted") {
+      const cleanup = await settle(
+        set(
+          reconcileAutomationEventWatches$,
+          { automations: [result.automation] },
+          signal,
         ),
-      )
-      .for("update")
-      .limit(1);
-    if (
-      !identity ||
-      identity.state !== "reconciling" ||
-      identity.automationId !== null ||
-      identity.retainedAppliedFingerprint !== args.blueprint.fingerprint
-    ) {
-      return { kind: "blocked" as const };
-    }
-    if (!automation) {
-      return { kind: "none" as const };
-    }
-    const isRecoverableOrphan =
-      automation.orgId === args.orgId &&
-      automation.ownerUserId === args.userId &&
-      automation.workflowId === args.workflowId &&
-      !automation.enabled &&
-      automation.officialBlueprintKey === null &&
-      automation.officialAppliedFingerprint === null &&
-      automation.officialReconciliationStatus === null &&
-      automation.officialParameterBindings === null &&
-      automation.officialIntendedEnabled === null;
-    if (!isRecoverableOrphan) {
-      return { kind: "blocked" as const };
-    }
-    await tx
-      .delete(workflowAutomations)
-      .where(eq(workflowAutomations.id, automation.id));
-    return { kind: "deleted" as const, automation };
-  });
-  if (result.kind === "blocked") {
-    return false;
-  }
-  if (result.kind === "deleted") {
-    const cleanup = await settle(
-      reconcileAutomationEventWatches(
-        { db, automations: [result.automation] },
         signal,
-      ),
-      signal,
-    );
-    return cleanup.ok;
-  }
-  return true;
-}
+      );
+      return cleanup.ok;
+    }
+    return true;
+  },
+);
 
 interface DormantMaterializationOwnershipArgs {
   readonly orgId: string;
@@ -2497,7 +2328,6 @@ interface DormantMaterializationOwnershipArgs {
   readonly intendedEnabled: boolean;
   readonly resultEmailEnabled: boolean;
 }
-
 async function lockDormantMaterializationOwnership(
   db: Tx,
   args: DormantMaterializationOwnershipArgs,
@@ -2512,34 +2342,15 @@ async function lockDormantMaterializationOwnership(
   }
   return rows.automation;
 }
-
 async function lockDormantMaterializationRows(
   db: Tx,
   args: DormantMaterializationOwnershipArgs,
 ): Promise<{
   readonly automation: OfficialAutomationRow;
   readonly identity: typeof officialWorkflowAutomationIdentities.$inferSelect;
-  readonly morningBriefAuthority: Exclude<
-    MorningBriefLegacyWriterAuthority,
-    { kind: "stale" }
-  >;
 } | null> {
-  const morningBriefAuthority = await lockReconciliationMorningBriefAuthority(
-    db,
-    {
-      orgId: args.orgId,
-      userId: args.userId,
-      workflowId: args.workflowId,
-      automationId: args.automationId,
-      definitionName: args.definitionName,
-      blueprintKey: args.blueprintKey,
-    },
-  );
-  if (morningBriefAuthority.kind === "stale") {
-    return null;
-  }
   const [automation] = await db
-    .select()
+    .select(workflowAutomationColumns())
     .from(workflowAutomations)
     .where(eq(workflowAutomations.id, args.automationId))
     .for("update")
@@ -2559,12 +2370,11 @@ async function lockDormantMaterializationRows(
     )
     .for("update")
     .limit(1);
-  const selected = morningBriefAuthority.kind === "selected";
   if (
     !identity ||
     identity.automationId !== null ||
     identity.retainedAppliedFingerprint !== args.fingerprint ||
-    (!selected && identity.retainedIntendedEnabled !== args.intendedEnabled) ||
+    identity.retainedIntendedEnabled !== args.intendedEnabled ||
     !isDeepStrictEqual(identity.retainedParameterBindings, args.bindings) ||
     !automation ||
     automation.orgId !== args.orgId ||
@@ -2573,14 +2383,13 @@ async function lockDormantMaterializationRows(
     automation.officialBlueprintKey !== args.blueprintKey ||
     automation.officialAppliedFingerprint !== args.fingerprint ||
     automation.officialReconciliationStatus === null ||
-    (!selected &&
-      automation.officialIntendedEnabled !== args.intendedEnabled) ||
+    automation.officialIntendedEnabled !== args.intendedEnabled ||
     automation.officialResultEmailEnabled !== args.resultEmailEnabled ||
     !isDeepStrictEqual(automation.officialParameterBindings, args.bindings)
   ) {
     return null;
   }
-  return { automation, identity, morningBriefAuthority };
+  return { automation, identity };
 }
 
 async function validateDormantMaterialization(
@@ -2589,7 +2398,7 @@ async function validateDormantMaterialization(
   signal: AbortSignal,
 ): Promise<OfficialAutomationRow | null> {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedBlueprintIsCurrent(
         tx,
@@ -2600,14 +2409,12 @@ async function validateDormantMaterialization(
           activeDefinitionOnly: args.activeDefinitionOnly,
         },
         signal,
-      )) ||
-      !(await lockInstalledWorkflow(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.workflowId,
-        definitionName: args.definitionName,
-      }))
+      ))
     ) {
+      return null;
+    }
+    const authority = await lockReconciliationMutationContext(tx, args);
+    if (!authority) {
       return null;
     }
     return await lockDormantMaterializationOwnership(tx, args);
@@ -2620,7 +2427,7 @@ async function finalizeDormantMaterialization(
   signal: AbortSignal,
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedBlueprintIsCurrent(
         tx,
@@ -2631,21 +2438,16 @@ async function finalizeDormantMaterialization(
           activeDefinitionOnly: args.activeDefinitionOnly,
         },
         signal,
-      )) ||
-      !(await lockInstalledWorkflow(tx, {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.workflowId,
-        definitionName: args.definitionName,
-      }))
+      ))
     ) {
       return false;
     }
+    const authority = await lockReconciliationMutationContext(tx, args);
+    if (!authority) {
+      return false;
+    }
     const rows = await lockDormantMaterializationRows(tx, args);
-    const expectedEnabled =
-      rows?.morningBriefAuthority.kind === "selected"
-        ? rows.morningBriefAuthority.row.enabled
-        : args.intendedEnabled;
+    const expectedEnabled = args.intendedEnabled;
     if (
       !rows ||
       rows.identity.state !== "reconciling" ||
@@ -2656,21 +2458,9 @@ async function finalizeDormantMaterialization(
     }
     const automation = rows.automation;
     const currentTime = nowDate();
-    const morningBrief = await prepareMorningBriefLegacyReconciliationMutation(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.workflowId,
-        automationId: args.automationId,
-      },
-      rows.morningBriefAuthority,
-      { mode: "configured", proposed: automation, at: currentTime },
-    );
     const [finalized] = await tx
       .update(workflowAutomations)
       .set({
-        ...morningBrief.automation,
         officialReconciliationStatus: "current",
         updatedAt: currentTime,
       })
@@ -2712,107 +2502,99 @@ async function finalizeDormantMaterialization(
     return true;
   });
 }
-
-async function discardDormantMaterialization(
-  db: Db,
-  args: DormantMaterializationOwnershipArgs,
-  signal: AbortSignal,
-): Promise<boolean> {
-  const persisted = await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
-    const rows = await lockDormantMaterializationRows(tx, args);
-    if (
-      !rows ||
-      !(
-        (rows.automation.officialReconciliationStatus === "reconciling" &&
-          rows.identity.state === "reconciling") ||
-        (rows.automation.officialReconciliationStatus === "failed" &&
-          rows.identity.state === "failed")
-      )
-    ) {
-      return null;
-    }
-    const previous = rows.automation;
-    const currentTime = nowDate();
-    const morningBrief = await prepareMorningBriefLegacyReconciliationMutation(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.workflowId,
-        automationId: args.automationId,
-      },
-      rows.morningBriefAuthority,
-      { mode: "paused", at: currentTime },
-    );
-    const [current] = await tx
-      .update(workflowAutomations)
-      .set({
-        enabled: false,
-        nextRunAt: null,
-        ...morningBrief.automation,
-        officialReconciliationStatus: "failed",
-        updatedAt: currentTime,
-      })
-      .where(eq(workflowAutomations.id, previous.id))
-      .returning();
-    if (!current) {
-      return null;
-    }
-    const [identity] = await tx
-      .update(officialWorkflowAutomationIdentities)
-      .set({ state: "failed", updatedAt: currentTime })
-      .where(
-        and(
-          eq(officialWorkflowAutomationIdentities.id, previous.id),
-          eq(officialWorkflowAutomationIdentities.state, rows.identity.state),
-          eq(
-            officialWorkflowAutomationIdentities.updatedAt,
-            rows.identity.updatedAt,
+const discardDormantMaterialization$ = command(
+  async (
+    { set },
+    args: DormantMaterializationOwnershipArgs,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    // eslint-disable-next-line api/signal-check-await -- Complete the committed automation handoff and its watch compensation before propagating cancellation.
+    const persisted = await db.transaction(async (tx) => {
+      await lockAcceptedOfficialWorkflowCatalog(tx);
+      const rows = await lockDormantMaterializationRows(tx, args);
+      if (
+        !rows ||
+        !(
+          (rows.automation.officialReconciliationStatus === "reconciling" &&
+            rows.identity.state === "reconciling") ||
+          (rows.automation.officialReconciliationStatus === "failed" &&
+            rows.identity.state === "failed")
+        )
+      ) {
+        return null;
+      }
+      const previous = rows.automation;
+      const currentTime = nowDate();
+      const [current] = await tx
+        .update(workflowAutomations)
+        .set({
+          enabled: false,
+          nextRunAt: null,
+          officialReconciliationStatus: "failed",
+          updatedAt: currentTime,
+        })
+        .where(eq(workflowAutomations.id, previous.id))
+        .returning(workflowAutomationColumns());
+      if (!current) {
+        return null;
+      }
+      const [identity] = await tx
+        .update(officialWorkflowAutomationIdentities)
+        .set({ state: "failed", updatedAt: currentTime })
+        .where(
+          and(
+            eq(officialWorkflowAutomationIdentities.id, previous.id),
+            eq(officialWorkflowAutomationIdentities.state, rows.identity.state),
+            eq(
+              officialWorkflowAutomationIdentities.updatedAt,
+              rows.identity.updatedAt,
+            ),
+            isNull(officialWorkflowAutomationIdentities.automationId),
           ),
-          isNull(officialWorkflowAutomationIdentities.automationId),
-        ),
-      )
-      .returning({ id: officialWorkflowAutomationIdentities.id });
-    if (!identity) {
-      throw new Error(
-        "Official Workflow materialization discard lost identity",
-      );
-    }
-    return { previous, current };
-  });
-  if (!persisted) {
-    return false;
-  }
-  const watch = await settle(
-    reconcileAutomationEventWatches(
-      { db, automations: [persisted.previous] },
-      signal,
-    ),
-    signal,
-  );
-  if (!watch.ok || !watch.value) {
-    return false;
-  }
-  return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
-    const rows = await lockDormantMaterializationRows(tx, args);
-    if (
-      !rows ||
-      rows.automation.enabled ||
-      rows.automation.officialReconciliationStatus !== "failed" ||
-      rows.automation.updatedAt.getTime() !==
-        persisted.current.updatedAt.getTime() ||
-      rows.identity.state !== "failed"
-    ) {
+        )
+        .returning({ id: officialWorkflowAutomationIdentities.id });
+      if (!identity) {
+        throw new Error(
+          "Official Workflow materialization discard lost identity",
+        );
+      }
+      return { previous, current };
+    });
+    if (!persisted) {
       return false;
     }
-    await tx
-      .delete(workflowAutomations)
-      .where(eq(workflowAutomations.id, rows.automation.id));
-    return true;
-  });
-}
+    const watch = await settle(
+      set(
+        reconcileAutomationEventWatches$,
+        { automations: [persisted.previous] },
+        signal,
+      ),
+      signal,
+    );
+    if (!watch.ok || !watch.value) {
+      return false;
+    }
+    return await db.transaction(async (tx) => {
+      await lockAcceptedOfficialWorkflowCatalog(tx);
+      const rows = await lockDormantMaterializationRows(tx, args);
+      if (
+        !rows ||
+        rows.automation.enabled ||
+        rows.automation.officialReconciliationStatus !== "failed" ||
+        rows.automation.updatedAt.getTime() !==
+          persisted.current.updatedAt.getTime() ||
+        rows.identity.state !== "failed"
+      ) {
+        return false;
+      }
+      await tx
+        .delete(workflowAutomations)
+        .where(eq(workflowAutomations.id, rows.automation.id));
+      return true;
+    });
+  },
+);
 
 interface DormantBlueprintReconciliationArgs {
   readonly orgId: string;
@@ -2857,93 +2639,212 @@ function dormantMaterializationOwnershipArgs(
     ...materialization,
   };
 }
-
-async function resumeDormantMaterialization(
-  db: Db,
-  args: DormantBlueprintReconciliationArgs,
-  materialization: {
-    readonly automationId: string;
-    readonly bindings: readonly OfficialWorkflowParameterBinding[];
-    readonly intendedEnabled: boolean;
-  },
-  signal: AbortSignal,
-): Promise<OfficialWorkflowReconciliationResult> {
-  const ownership = dormantMaterializationOwnershipArgs(args, materialization);
-  const staged = await validateDormantMaterialization(db, ownership, signal);
-  if (!staged) {
-    await discardDormantMaterialization(db, ownership, signal);
+const resumeDormantMaterialization$ = command(
+  async (
+    { set },
+    args: DormantBlueprintReconciliationArgs,
+    materialization: {
+      readonly automationId: string;
+      readonly bindings: readonly OfficialWorkflowParameterBinding[];
+      readonly intendedEnabled: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<OfficialWorkflowReconciliationResult> => {
+    const db = set(writeDb$);
+    const ownership = dormantMaterializationOwnershipArgs(
+      args,
+      materialization,
+    );
+    const staged = await validateDormantMaterialization(db, ownership, signal);
+    if (!staged) {
+      await set(discardDormantMaterialization$, ownership, signal);
+      return {
+        kind: "retry",
+        workflowId: args.workflowId,
+        message: "Official Workflow reconciliation was superseded",
+      };
+    }
+    if (staged.enabled && !materialization.intendedEnabled) {
+      await set(discardDormantMaterialization$, ownership, signal);
+      return {
+        kind: "retry",
+        workflowId: args.workflowId,
+        message: "Official Workflow materialization state is inconsistent",
+      };
+    }
+    if (materialization.intendedEnabled && !staged.enabled) {
+      const enabled = await settle(
+        args.enableMaterializingAutomation(materialization.automationId),
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!enabled.ok || enabled.value.kind !== "ok") {
+        await set(discardDormantMaterialization$, ownership, signal);
+        return {
+          kind: "retry",
+          workflowId: args.workflowId,
+          message: enabled.ok
+            ? failureMessage(enabled.value)
+            : "Official Workflow materialization lifecycle failed",
+        };
+      }
+    }
+    if (await finalizeDormantMaterialization(db, ownership, signal)) {
+      return { kind: "current", workflowId: args.workflowId };
+    }
+    await set(discardDormantMaterialization$, ownership, signal);
     return {
       kind: "retry",
       workflowId: args.workflowId,
       message: "Official Workflow reconciliation was superseded",
     };
-  }
-  if (staged.enabled && !materialization.intendedEnabled) {
-    await discardDormantMaterialization(db, ownership, signal);
-    return {
-      kind: "retry",
-      workflowId: args.workflowId,
-      message: "Official Workflow materialization state is inconsistent",
-    };
-  }
-  if (materialization.intendedEnabled && !staged.enabled) {
-    const enabled = await settle(
-      args.enableMaterializingAutomation(materialization.automationId),
+  },
+);
+const materializeReservedDormantAutomation$ = command(
+  async (
+    { set },
+    args: DormantBlueprintReconciliationArgs,
+    resolved: ResolvedBlueprint,
+    reservation: {
+      readonly id: string;
+      readonly intendedEnabled: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<OfficialWorkflowReconciliationResult> => {
+    const db = set(writeDb$);
+    const created = await settle(
+      args.createAutomation(
+        createInput(
+          {
+            orgId: args.orgId,
+            member: args.member,
+            workflowId: args.workflowId,
+            definitionName: args.definitionName,
+          },
+          resolved,
+          {
+            enabled: false,
+            automationId: reservation.id,
+            intendedEnabled: reservation.intendedEnabled,
+            stagedMaterialization: true,
+          },
+        ),
+      ),
       signal,
     );
-    signal.throwIfAborted();
-    if (!enabled.ok || enabled.value.kind !== "ok") {
-      await discardDormantMaterialization(db, ownership, signal);
+    if (!created.ok || created.value.kind !== "ok") {
+      await set(
+        removeDormantCreationOrphan$,
+        {
+          orgId: args.orgId,
+          userId: args.member.userId,
+          workflowId: args.workflowId,
+          definitionName: args.definitionName,
+          blueprint: args.blueprint,
+          activeDefinitionOnly: args.activeDefinitionOnly,
+          reservationId: reservation.id,
+        },
+        signal,
+      );
+      await retainDormantIdentity(
+        db,
+        {
+          orgId: args.orgId,
+          userId: args.member.userId,
+          workflowId: args.workflowId,
+          definitionName: args.definitionName,
+          blueprint: args.blueprint,
+          activeDefinitionOnly: args.activeDefinitionOnly,
+          bindings: resolved.bindings,
+          state: "failed",
+          fallbackIntendedEnabled: reservation.intendedEnabled,
+        },
+        signal,
+      );
       return {
         kind: "retry",
         workflowId: args.workflowId,
-        message: enabled.ok
-          ? failureMessage(enabled.value)
-          : "Official Workflow materialization lifecycle failed",
+        message: created.ok
+          ? failureMessage(created.value)
+          : "Official Workflow Automation creation failed",
       };
     }
-  }
-  if (await finalizeDormantMaterialization(db, ownership, signal)) {
-    return { kind: "current", workflowId: args.workflowId };
-  }
-  await discardDormantMaterialization(db, ownership, signal);
-  return {
-    kind: "retry",
-    workflowId: args.workflowId,
-    message: "Official Workflow reconciliation was superseded",
-  };
-}
-
-async function materializeReservedDormantAutomation(
-  db: Db,
-  args: DormantBlueprintReconciliationArgs,
-  resolved: ResolvedBlueprint,
-  reservation: { readonly id: string; readonly intendedEnabled: boolean },
-  signal: AbortSignal,
-): Promise<OfficialWorkflowReconciliationResult> {
-  const created = await settle(
-    args.createAutomation(
-      createInput(
+    return await set(
+      resumeDormantMaterialization$,
+      args,
+      {
+        automationId: reservation.id,
+        bindings: resolved.bindings,
+        intendedEnabled: reservation.intendedEnabled,
+      },
+      signal,
+    );
+  },
+);
+const reconcileDormantBlueprint$ = command(
+  async (
+    { set },
+    args: DormantBlueprintReconciliationArgs,
+    signal: AbortSignal,
+  ): Promise<OfficialWorkflowReconciliationResult> => {
+    const db = set(writeDb$);
+    const resolution = resolveOfficialWorkflowBlueprintForReconciliation(
+      args.blueprint,
+      args.identity?.retainedParameterBindings ?? [],
+      args.overrides,
+      args.userTimezone,
+    );
+    if (!resolution.ok) {
+      const retained = await retainDormantIdentity(
+        db,
         {
           orgId: args.orgId,
-          member: args.member,
+          userId: args.member.userId,
           workflowId: args.workflowId,
           definitionName: args.definitionName,
+          blueprint: args.blueprint,
+          activeDefinitionOnly: args.activeDefinitionOnly,
+          bindings: resolution.bindings,
+          state: "needs_reconfiguration",
+          fallbackIntendedEnabled: false,
         },
-        resolved,
-        {
-          enabled: false,
-          automationId: reservation.id,
-          intendedEnabled: reservation.intendedEnabled,
-          stagedMaterialization: true,
-        },
-      ),
-    ),
-    signal,
-  );
-  if (!created.ok || created.value.kind !== "ok") {
-    await removeDormantCreationOrphan(
+        signal,
+      );
+      return retained
+        ? {
+            kind: "needs-reconfiguration",
+            workflowId: args.workflowId,
+            message: resolution.message,
+          }
+        : {
+            kind: "retry",
+            workflowId: args.workflowId,
+            message: "Official Workflow reconciliation was superseded",
+          };
+    }
+    const reservation = await reserveDormantIdentity(
       db,
+      {
+        orgId: args.orgId,
+        userId: args.member.userId,
+        workflowId: args.workflowId,
+        definitionName: args.definitionName,
+        blueprint: args.blueprint,
+        activeDefinitionOnly: args.activeDefinitionOnly,
+        bindings: resolution.resolved.bindings,
+        fallbackIntendedEnabled: false,
+      },
+      signal,
+    );
+    if (!reservation || reservation.kind !== "reserved") {
+      return {
+        kind: "retry",
+        workflowId: args.workflowId,
+        message: "Official Workflow Automation identity is busy",
+      };
+    }
+    const orphanRemoved = await set(
+      removeDormantCreationOrphan$,
       {
         orgId: args.orgId,
         userId: args.member.userId,
@@ -2955,137 +2856,23 @@ async function materializeReservedDormantAutomation(
       },
       signal,
     );
-    await retainDormantIdentity(
-      db,
-      {
-        orgId: args.orgId,
-        userId: args.member.userId,
+    if (!orphanRemoved) {
+      return {
+        kind: "retry",
         workflowId: args.workflowId,
-        definitionName: args.definitionName,
-        blueprint: args.blueprint,
-        activeDefinitionOnly: args.activeDefinitionOnly,
-        bindings: resolved.bindings,
-        state: "failed",
-        fallbackIntendedEnabled: reservation.intendedEnabled,
-      },
+        message: "Official Workflow Automation creation recovery is busy",
+      };
+    }
+    signal.throwIfAborted();
+    return await set(
+      materializeReservedDormantAutomation$,
+      args,
+      resolution.resolved,
+      reservation,
       signal,
     );
-    return {
-      kind: "retry",
-      workflowId: args.workflowId,
-      message: created.ok
-        ? failureMessage(created.value)
-        : "Official Workflow Automation creation failed",
-    };
-  }
-  return await resumeDormantMaterialization(
-    db,
-    args,
-    {
-      automationId: reservation.id,
-      bindings: resolved.bindings,
-      intendedEnabled: reservation.intendedEnabled,
-    },
-    signal,
-  );
-}
-
-async function reconcileDormantBlueprint(
-  db: Db,
-  args: DormantBlueprintReconciliationArgs,
-  signal: AbortSignal,
-): Promise<OfficialWorkflowReconciliationResult> {
-  const resolution = resolveOfficialWorkflowBlueprintForReconciliation(
-    args.blueprint,
-    args.identity?.retainedParameterBindings ?? [],
-    args.overrides,
-    args.userTimezone,
-  );
-  if (!resolution.ok) {
-    const retained = await retainDormantIdentity(
-      db,
-      {
-        orgId: args.orgId,
-        userId: args.member.userId,
-        workflowId: args.workflowId,
-        definitionName: args.definitionName,
-        blueprint: args.blueprint,
-        activeDefinitionOnly: args.activeDefinitionOnly,
-        bindings: resolution.bindings,
-        state: "needs_reconfiguration",
-        fallbackIntendedEnabled: false,
-      },
-      signal,
-    );
-    return retained
-      ? {
-          kind: "needs-reconfiguration",
-          workflowId: args.workflowId,
-          message: resolution.message,
-        }
-      : {
-          kind: "retry",
-          workflowId: args.workflowId,
-          message: "Official Workflow reconciliation was superseded",
-        };
-  }
-  const reservation = await reserveDormantIdentity(
-    db,
-    {
-      orgId: args.orgId,
-      userId: args.member.userId,
-      workflowId: args.workflowId,
-      definitionName: args.definitionName,
-      blueprint: args.blueprint,
-      activeDefinitionOnly: args.activeDefinitionOnly,
-      bindings: resolution.resolved.bindings,
-      fallbackIntendedEnabled: false,
-    },
-    signal,
-  );
-  if (!reservation || reservation.kind !== "reserved") {
-    return {
-      kind: "retry",
-      workflowId: args.workflowId,
-      message: "Official Workflow Automation identity is busy",
-    };
-  }
-  const orphanRemoved = await removeDormantCreationOrphan(
-    db,
-    {
-      orgId: args.orgId,
-      userId: args.member.userId,
-      workflowId: args.workflowId,
-      definitionName: args.definitionName,
-      blueprint: args.blueprint,
-      activeDefinitionOnly: args.activeDefinitionOnly,
-      reservationId: reservation.id,
-    },
-    signal,
-  );
-  if (!orphanRemoved) {
-    return {
-      kind: "retry",
-      workflowId: args.workflowId,
-      message: "Official Workflow Automation creation recovery is busy",
-    };
-  }
-  await dormantMaterializationReservedHookForTest.get()?.({
-    definitionName: args.definitionName,
-    workflowId: args.workflowId,
-    automationId: reservation.id,
-    blueprintKey: args.blueprint.key,
-    fingerprint: args.blueprint.fingerprint,
-  });
-  signal.throwIfAborted();
-  return await materializeReservedDormantAutomation(
-    db,
-    args,
-    resolution.resolved,
-    reservation,
-    signal,
-  );
-}
+  },
+);
 
 interface RemoveAutomationConfigurationArgs {
   readonly orgId: string;
@@ -3124,12 +2911,11 @@ async function pauseRemovedAutomationConfiguration(
   | {
       readonly previous: OfficialAutomationRow;
       readonly current: OfficialAutomationRow;
-      readonly morningBriefFence: MorningBriefLegacyWriterFence | undefined;
     }
   | undefined
 > {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedDefinitionOmitsBlueprint(
         tx,
@@ -3141,19 +2927,7 @@ async function pauseRemovedAutomationConfiguration(
     ) {
       return undefined;
     }
-    const morningBriefAuthority = await lockReconciliationMorningBriefAuthority(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: args.automation.workflowId,
-        automationId: args.automation.id,
-        definitionName: args.definition.name,
-        blueprintKey: args.automation.officialBlueprintKey,
-      },
-    );
     if (
-      morningBriefAuthority.kind === "stale" ||
       !(await lockInstalledWorkflow(tx, {
         orgId: args.orgId,
         userId: args.userId,
@@ -3164,47 +2938,29 @@ async function pauseRemovedAutomationConfiguration(
       return undefined;
     }
     const [current] = await tx
-      .select()
+      .select(workflowAutomationColumns())
       .from(workflowAutomations)
-      .where(eq(workflowAutomations.id, args.automation.id))
+      .where(observedWorkflowAutomationCondition(args.automation))
       .for("update")
       .limit(1);
     if (!current || !sameAutomationBaseline(args.automation, current)) {
       return undefined;
     }
     const currentTime = nowDate();
-    const morningBrief = await prepareMorningBriefLegacyReconciliationMutation(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: current.workflowId,
-        automationId: current.id,
-      },
-      morningBriefAuthority,
-      { mode: "paused", at: currentTime },
-    );
     const [row] = await tx
       .update(workflowAutomations)
       .set({
         enabled: false,
         nextRunAt: null,
-        ...morningBrief.automation,
         officialReconciliationStatus: "reconciling",
         updatedAt: currentTime,
       })
       .where(eq(workflowAutomations.id, current.id))
-      .returning();
+      .returning(workflowAutomationColumns());
     return row
       ? {
           previous: current,
           current: row,
-          morningBriefFence: isMorningBriefReconciliation({
-            definitionName: args.definition.name,
-            blueprintKey: args.automation.officialBlueprintKey,
-          })
-            ? morningBrief.authority.fence
-            : undefined,
         }
       : undefined;
   });
@@ -3215,12 +2971,11 @@ async function deleteRemovedAutomationConfiguration(
   args: RemoveAutomationConfigurationArgs,
   paused: {
     readonly current: OfficialAutomationRow;
-    readonly morningBriefFence: MorningBriefLegacyWriterFence | undefined;
   },
   signal: AbortSignal,
 ): Promise<boolean> {
   return await db.transaction(async (tx) => {
-    await acquireReconciliationLocks(tx, args.orgId);
+    await lockAcceptedOfficialWorkflowCatalog(tx);
     if (
       !(await acceptedDefinitionOmitsBlueprint(
         tx,
@@ -3232,20 +2987,7 @@ async function deleteRemovedAutomationConfiguration(
     ) {
       return false;
     }
-    const morningBriefAuthority = await lockReconciliationMorningBriefAuthority(
-      tx,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        workflowId: paused.current.workflowId,
-        automationId: paused.current.id,
-        definitionName: args.definition.name,
-        blueprintKey: paused.current.officialBlueprintKey,
-      },
-      paused.morningBriefFence,
-    );
     if (
-      morningBriefAuthority.kind === "stale" ||
       !(await lockInstalledWorkflow(tx, {
         orgId: args.orgId,
         userId: args.userId,
@@ -3256,7 +2998,7 @@ async function deleteRemovedAutomationConfiguration(
       return false;
     }
     const [current] = await tx
-      .select()
+      .select(workflowAutomationColumns())
       .from(workflowAutomations)
       .where(eq(workflowAutomations.id, paused.current.id))
       .for("update")
@@ -3306,68 +3048,72 @@ async function deleteRemovedAutomationConfiguration(
     return true;
   });
 }
-
-async function removeAutomationConfiguration(
-  db: Db,
-  args: RemoveAutomationConfigurationArgs,
-  signal: AbortSignal,
-): Promise<OfficialWorkflowReconciliationResult> {
-  const paused = await pauseRemovedAutomationConfiguration(db, args, signal);
-  if (!paused) {
-    return {
-      kind: "retry",
-      workflowId: args.automation.workflowId,
-      message: "Official Workflow reconciliation was superseded",
-    };
-  }
-  const watch = await settle(
-    reconcileAutomationEventWatchReconfiguration(
-      db,
-      {
-        previous: [paused.previous],
-        current: [paused.current],
-        googleForms: [],
-      },
+const removeAutomationConfiguration$ = command(
+  async (
+    { set },
+    args: RemoveAutomationConfigurationArgs,
+    signal: AbortSignal,
+  ): Promise<OfficialWorkflowReconciliationResult> => {
+    const db = set(writeDb$);
+    const paused = await pauseRemovedAutomationConfiguration(db, args, signal);
+    if (!paused) {
+      return {
+        kind: "retry",
+        workflowId: args.automation.workflowId,
+        message: "Official Workflow reconciliation was superseded",
+      };
+    }
+    const watch = await settle(
+      set(
+        reconcileAutomationEventWatchReconfiguration$,
+        {
+          previous: [paused.previous],
+          current: [paused.current],
+          googleForms: [],
+        },
+        signal,
+      ),
       signal,
-    ),
-    signal,
-  );
-  if (!watch.ok || watch.value.kind !== "ok") {
-    await restoreFailedReconfiguration(db, {
-      orgId: args.orgId,
-      userId: args.userId,
-      definitionName: args.definition.name,
-      persisted: { ...paused, googleFormsCursor: undefined },
-    });
-    return {
-      kind: "retry",
-      workflowId: args.automation.workflowId,
-      message: watch.ok
-        ? eventWatchFailureMessage(watch.value)
-        : "Official Workflow event-watch removal failed",
-    };
-  }
-  const removed = await deleteRemovedAutomationConfiguration(
-    db,
-    args,
-    paused,
-    signal,
-  );
-  if (!removed) {
-    await restoreFailedReconfiguration(db, {
-      orgId: args.orgId,
-      userId: args.userId,
-      definitionName: args.definition.name,
-      persisted: { ...paused, googleFormsCursor: undefined },
-    });
-    return {
-      kind: "retry",
-      workflowId: args.automation.workflowId,
-      message: "Official Workflow Blueprint removal was superseded",
-    };
-  }
-  return { kind: "removed", workflowId: args.automation.workflowId };
-}
+    );
+    if (!watch.ok || watch.value.kind !== "ok") {
+      await set(restoreFailedReconfiguration$, {
+        orgId: args.orgId,
+        userId: args.userId,
+        definitionName: args.definition.name,
+        persisted: paused,
+      });
+      signal.throwIfAborted();
+      return {
+        kind: "retry",
+        workflowId: args.automation.workflowId,
+        message: watch.ok
+          ? eventWatchFailureMessage(watch.value)
+          : "Official Workflow event-watch removal failed",
+      };
+    }
+    const removed = await deleteRemovedAutomationConfiguration(
+      db,
+      args,
+      paused,
+      signal,
+    );
+    if (!removed) {
+      await set(restoreFailedReconfiguration$, {
+        orgId: args.orgId,
+        userId: args.userId,
+        definitionName: args.definition.name,
+        persisted: paused,
+      });
+      signal.throwIfAborted();
+      return {
+        kind: "retry",
+        workflowId: args.automation.workflowId,
+        message: "Official Workflow Blueprint removal was superseded",
+      };
+    }
+    return { kind: "removed", workflowId: args.automation.workflowId };
+  },
+);
 
 function mergeResults(
   workflowId: string,
@@ -3412,9 +3158,7 @@ interface ReconciliationOperations {
     automationId: string,
   ) => Promise<AutomationResult>;
 }
-
 interface InstallationReconciliationExecution {
-  readonly db: Db;
   readonly args: ReconcileOfficialWorkflowInstallationArgs;
   readonly context: ReconciliationContext;
   readonly indexes: ReconciliationIndexes;
@@ -3523,264 +3267,266 @@ function validateReconciliationOverrides(
   }
   return { ok: true, overridesByKey };
 }
-
-async function reconcileReservedDormantMaterialization(
-  execution: InstallationReconciliationExecution,
-  blueprint: OfficialWorkflowAcceptedBlueprint,
-  automation: OfficialAutomationRow,
-  identity: typeof officialWorkflowAutomationIdentities.$inferSelect,
-  signal: AbortSignal,
-): Promise<OfficialWorkflowReconciliationResult | null> {
-  const { args, context, db, operations, userTimezone } = execution;
-  const overrides = execution.overridesByKey.get(blueprint.key) ?? [];
-  const matchingPhase =
-    (automation.officialReconciliationStatus === "reconciling" &&
-      identity.state === "reconciling") ||
-    (automation.officialReconciliationStatus === "failed" &&
-      identity.state === "failed");
-  if (
-    identity.id !== automation.id ||
-    identity.automationId !== null ||
-    !matchingPhase
-  ) {
-    return null;
-  }
-  if (
-    automation.officialBlueprintKey === null ||
-    automation.officialAppliedFingerprint === null ||
-    automation.officialParameterBindings === null ||
-    automation.officialIntendedEnabled === null ||
-    automation.officialResultEmailEnabled === null
-  ) {
-    return {
-      kind: "retry",
-      workflowId: args.workflowId,
-      message: "Official Workflow materialization state is incomplete",
-    };
-  }
-  const cleanupOnly =
-    automation.officialReconciliationStatus === "failed" ||
-    overrides.length !== 0 ||
-    automation.officialAppliedFingerprint !== blueprint.fingerprint;
-  if (cleanupOnly) {
-    await discardDormantMaterialization(
-      db,
-      {
-        orgId: args.orgId,
-        userId: args.member.userId,
+const reconcileReservedDormantMaterialization$ = command(
+  async (
+    { set },
+    execution: InstallationReconciliationExecution,
+    candidate: {
+      readonly blueprint: OfficialWorkflowAcceptedBlueprint;
+      readonly automation: OfficialAutomationRow;
+      readonly identity: typeof officialWorkflowAutomationIdentities.$inferSelect;
+    },
+    signal: AbortSignal,
+  ): Promise<OfficialWorkflowReconciliationResult | null> => {
+    const { blueprint, automation, identity } = candidate;
+    const { args, context, operations, userTimezone } = execution;
+    const overrides = execution.overridesByKey.get(blueprint.key) ?? [];
+    const matchingPhase =
+      (automation.officialReconciliationStatus === "reconciling" &&
+        identity.state === "reconciling") ||
+      (automation.officialReconciliationStatus === "failed" &&
+        identity.state === "failed");
+    if (
+      identity.id !== automation.id ||
+      identity.automationId !== null ||
+      !matchingPhase
+    ) {
+      return null;
+    }
+    if (
+      automation.officialBlueprintKey === null ||
+      automation.officialAppliedFingerprint === null ||
+      automation.officialParameterBindings === null ||
+      automation.officialIntendedEnabled === null ||
+      automation.officialResultEmailEnabled === null
+    ) {
+      return {
+        kind: "retry",
         workflowId: args.workflowId,
-        definitionName: context.definition.name,
-        blueprintKey: automation.officialBlueprintKey,
-        fingerprint: automation.officialAppliedFingerprint,
-        activeDefinitionOnly: args.activeDefinitionOnly === true,
-        automationId: automation.id,
-        bindings: automation.officialParameterBindings,
-        intendedEnabled: automation.officialIntendedEnabled,
-        resultEmailEnabled: automation.officialResultEmailEnabled,
-      },
-      signal,
-    );
-    return {
-      kind: "retry",
-      workflowId: args.workflowId,
-      message: "Official Workflow materialization was superseded",
-    };
-  }
-  return await resumeDormantMaterialization(
-    db,
-    {
-      orgId: args.orgId,
-      member: args.member,
-      workflowId: args.workflowId,
-      definitionName: context.definition.name,
-      blueprint,
-      activeDefinitionOnly: args.activeDefinitionOnly === true,
-      identity,
-      overrides,
-      userTimezone,
-      createAutomation: operations.createAutomation,
-      enableAutomation: operations.enableAutomation,
-      enableMaterializingAutomation: operations.enableMaterializingAutomation,
-    },
-    {
-      automationId: automation.id,
-      bindings: automation.officialParameterBindings,
-      intendedEnabled: automation.officialIntendedEnabled,
-    },
-    signal,
-  );
-}
-
-async function reconcileCurrentBlueprintLifecycleGap(
-  execution: InstallationReconciliationExecution,
-  blueprint: OfficialWorkflowAcceptedBlueprint,
-  automation: OfficialAutomationRow,
-  signal: AbortSignal,
-): Promise<OfficialWorkflowReconciliationResult | null> {
-  const { args, context, db, operations } = execution;
-  const overrides = execution.overridesByKey.get(blueprint.key) ?? [];
-  // A selected Morning Brief must pass through the schedule-first persistence
-  // transaction even when reconciliation only needs to close a lifecycle gap.
-  // The generic enable composition represents a user choice and cannot carry
-  // this reconciliation's expected durable authority.
-  if (
-    isMorningBriefReconciliation({
-      definitionName: context.definition.name,
-      blueprintKey: blueprint.key,
-    })
-  ) {
-    return null;
-  }
-  if (
-    overrides.length !== 0 ||
-    automation.officialAppliedFingerprint !== blueprint.fingerprint ||
-    automation.officialReconciliationStatus !== "current"
-  ) {
-    return null;
-  }
-  if (automation.officialIntendedEnabled && !automation.enabled) {
-    const enabled = await operations.enableAutomation(automation.id);
-    signal.throwIfAborted();
-    if (enabled.kind !== "ok") {
-      await markActiveAutomationFailed(
-        db,
+        message: "Official Workflow materialization state is incomplete",
+      };
+    }
+    const cleanupOnly =
+      automation.officialReconciliationStatus === "failed" ||
+      overrides.length !== 0 ||
+      automation.officialAppliedFingerprint !== blueprint.fingerprint;
+    if (cleanupOnly) {
+      await set(
+        discardDormantMaterialization$,
         {
           orgId: args.orgId,
           userId: args.member.userId,
           workflowId: args.workflowId,
           definitionName: context.definition.name,
-          blueprint,
+          blueprintKey: automation.officialBlueprintKey,
+          fingerprint: automation.officialAppliedFingerprint,
           activeDefinitionOnly: args.activeDefinitionOnly === true,
           automationId: automation.id,
-          expected: automation,
+          bindings: automation.officialParameterBindings,
+          intendedEnabled: automation.officialIntendedEnabled,
+          resultEmailEnabled: automation.officialResultEmailEnabled,
         },
         signal,
       );
       return {
         kind: "retry",
         workflowId: args.workflowId,
-        message: failureMessage(enabled),
+        message: "Official Workflow materialization was superseded",
       };
     }
-  }
-  return { kind: "current", workflowId: args.workflowId };
-}
-
-async function reconcileDesiredBlueprint(
-  execution: InstallationReconciliationExecution,
-  blueprint: OfficialWorkflowAcceptedBlueprint,
-  signal: AbortSignal,
-): Promise<OfficialWorkflowReconciliationResult> {
-  const { args, context, db, indexes, operations, userTimezone } = execution;
-  const automation = indexes.automationByKey.get(blueprint.key);
-  const identity = indexes.identityByKey.get(blueprint.key);
-  const overrides = execution.overridesByKey.get(blueprint.key) ?? [];
-  if (automation && identity) {
-    const materialization = await reconcileReservedDormantMaterialization(
-      execution,
-      blueprint,
-      automation,
-      identity,
+    return await set(
+      resumeDormantMaterialization$,
+      {
+        orgId: args.orgId,
+        member: args.member,
+        workflowId: args.workflowId,
+        definitionName: context.definition.name,
+        blueprint,
+        activeDefinitionOnly: args.activeDefinitionOnly === true,
+        identity,
+        overrides,
+        userTimezone,
+        createAutomation: operations.createAutomation,
+        enableAutomation: operations.enableAutomation,
+        enableMaterializingAutomation: operations.enableMaterializingAutomation,
+      },
+      {
+        automationId: automation.id,
+        bindings: automation.officialParameterBindings,
+        intendedEnabled: automation.officialIntendedEnabled,
+      },
       signal,
     );
-    if (materialization) {
-      return materialization;
+  },
+);
+const reconcileCurrentBlueprintLifecycleGap$ = command(
+  async (
+    { set },
+    execution: InstallationReconciliationExecution,
+    blueprint: OfficialWorkflowAcceptedBlueprint,
+    automation: OfficialAutomationRow,
+    signal: AbortSignal,
+  ): Promise<OfficialWorkflowReconciliationResult | null> => {
+    const db = set(writeDb$);
+    const { args, context, operations } = execution;
+    const overrides = execution.overridesByKey.get(blueprint.key) ?? [];
+    if (
+      overrides.length !== 0 ||
+      automation.officialAppliedFingerprint !== blueprint.fingerprint ||
+      automation.officialReconciliationStatus !== "current"
+    ) {
+      return null;
     }
-  }
-  if (automation) {
-    const current = await reconcileCurrentBlueprintLifecycleGap(
-      execution,
-      blueprint,
-      automation,
-      signal,
-    );
-    if (current) {
-      return current;
-    }
-  }
-  return automation
-    ? await reconcileExistingAutomation(
-        db,
-        {
-          orgId: args.orgId,
-          member: args.member,
-          definitionName: context.definition.name,
-          blueprint,
-          activeDefinitionOnly: args.activeDefinitionOnly === true,
-          automation,
-          overrides,
-          userTimezone,
-          prepareEvent: operations.prepareEvent,
-        },
-        signal,
-      )
-    : await reconcileDormantBlueprint(
-        db,
-        {
-          orgId: args.orgId,
-          member: args.member,
+    if (automation.officialIntendedEnabled && !automation.enabled) {
+      const enabled = await operations.enableAutomation(automation.id);
+      signal.throwIfAborted();
+      if (enabled.kind !== "ok") {
+        await markActiveAutomationFailed(
+          db,
+          {
+            orgId: args.orgId,
+            userId: args.member.userId,
+            workflowId: args.workflowId,
+            definitionName: context.definition.name,
+            blueprint,
+            activeDefinitionOnly: args.activeDefinitionOnly === true,
+            automationId: automation.id,
+            expected: automation,
+          },
+          signal,
+        );
+        return {
+          kind: "retry",
           workflowId: args.workflowId,
-          definitionName: context.definition.name,
-          blueprint,
-          activeDefinitionOnly: args.activeDefinitionOnly === true,
-          identity: indexes.identityByKey.get(blueprint.key),
-          overrides,
-          userTimezone,
-          createAutomation: operations.createAutomation,
-          enableAutomation: operations.enableAutomation,
-          enableMaterializingAutomation:
-            operations.enableMaterializingAutomation,
-        },
-        signal,
-      );
-}
+          message: failureMessage(enabled),
+        };
+      }
+    }
+    return { kind: "current", workflowId: args.workflowId };
+  },
+);
 
-async function reconcileLoadedInstallation(
-  execution: InstallationReconciliationExecution,
-  target: OfficialAutomationRow | undefined,
-  signal: AbortSignal,
-): Promise<OfficialWorkflowReconciliationResult> {
-  const { args, context, db, indexes } = execution;
-  const results: OfficialWorkflowReconciliationResult[] = [];
-  const removedAutomations = (target ? [target] : context.automations).filter(
-    (automation) => {
-      return (
-        automation.officialBlueprintKey !== null &&
-        !indexes.blueprintByKey.has(automation.officialBlueprintKey)
-      );
-    },
-  );
-  for (const automation of removedAutomations) {
-    results.push(
-      await removeAutomationConfiguration(
-        db,
-        {
-          orgId: args.orgId,
-          userId: args.member.userId,
-          definition: context.definition,
-          activeDefinitionOnly: args.activeDefinitionOnly === true,
-          automation,
-        },
+const reconcileDesiredBlueprint$ = command(
+  async (
+    { set },
+    execution: InstallationReconciliationExecution,
+    blueprint: OfficialWorkflowAcceptedBlueprint,
+    signal: AbortSignal,
+  ): Promise<OfficialWorkflowReconciliationResult> => {
+    const { args, context, indexes, operations, userTimezone } = execution;
+    const automation = indexes.automationByKey.get(blueprint.key);
+    const identity = indexes.identityByKey.get(blueprint.key);
+    const overrides = execution.overridesByKey.get(blueprint.key) ?? [];
+    if (automation && identity) {
+      const materialization = await set(
+        reconcileReservedDormantMaterialization$,
+        execution,
+        { blueprint, automation, identity },
         signal,
-      ),
+      );
+      if (materialization) {
+        return materialization;
+      }
+    }
+    if (automation) {
+      const current = await set(
+        reconcileCurrentBlueprintLifecycleGap$,
+        execution,
+        blueprint,
+        automation,
+        signal,
+      );
+      if (current) {
+        return current;
+      }
+    }
+    return automation
+      ? await set(
+          reconcileExistingAutomation$,
+          {
+            orgId: args.orgId,
+            member: args.member,
+            definitionName: context.definition.name,
+            blueprint,
+            activeDefinitionOnly: args.activeDefinitionOnly === true,
+            automation,
+            overrides,
+            userTimezone,
+            prepareEvent: operations.prepareEvent,
+          },
+          signal,
+        )
+      : await set(
+          reconcileDormantBlueprint$,
+          {
+            orgId: args.orgId,
+            member: args.member,
+            workflowId: args.workflowId,
+            definitionName: context.definition.name,
+            blueprint,
+            activeDefinitionOnly: args.activeDefinitionOnly === true,
+            identity: indexes.identityByKey.get(blueprint.key),
+            overrides,
+            userTimezone,
+            createAutomation: operations.createAutomation,
+            enableAutomation: operations.enableAutomation,
+            enableMaterializingAutomation:
+              operations.enableMaterializingAutomation,
+          },
+          signal,
+        );
+  },
+);
+const reconcileLoadedInstallation$ = command(
+  async (
+    { set },
+    execution: InstallationReconciliationExecution,
+    target: OfficialAutomationRow | undefined,
+    signal: AbortSignal,
+  ): Promise<OfficialWorkflowReconciliationResult> => {
+    const { args, context, indexes } = execution;
+    const results: OfficialWorkflowReconciliationResult[] = [];
+    const removedAutomations = (target ? [target] : context.automations).filter(
+      (automation) => {
+        return (
+          automation.officialBlueprintKey !== null &&
+          !indexes.blueprintByKey.has(automation.officialBlueprintKey)
+        );
+      },
     );
-    signal.throwIfAborted();
-  }
-  if (target && removedAutomations.length > 0) {
-    return results[0] ?? { kind: "removed", workflowId: args.workflowId };
-  }
-  const desiredBlueprints = target
-    ? context.blueprints.filter((blueprint) => {
-        return blueprint.key === target.officialBlueprintKey;
-      })
-    : context.blueprints;
-  for (const blueprint of desiredBlueprints) {
-    results.push(await reconcileDesiredBlueprint(execution, blueprint, signal));
-    signal.throwIfAborted();
-  }
-  return mergeResults(args.workflowId, results);
-}
-
+    for (const automation of removedAutomations) {
+      results.push(
+        await set(
+          removeAutomationConfiguration$,
+          {
+            orgId: args.orgId,
+            userId: args.member.userId,
+            definition: context.definition,
+            activeDefinitionOnly: args.activeDefinitionOnly === true,
+            automation,
+          },
+          signal,
+        ),
+      );
+      signal.throwIfAborted();
+    }
+    if (target && removedAutomations.length > 0) {
+      return results[0] ?? { kind: "removed", workflowId: args.workflowId };
+    }
+    const desiredBlueprints = target
+      ? context.blueprints.filter((blueprint) => {
+          return blueprint.key === target.officialBlueprintKey;
+        })
+      : context.blueprints;
+    for (const blueprint of desiredBlueprints) {
+      results.push(
+        await set(reconcileDesiredBlueprint$, execution, blueprint, signal),
+      );
+      signal.throwIfAborted();
+    }
+    return mergeResults(args.workflowId, results);
+  },
+);
 export const reconcileOfficialWorkflowInstallation$ = command(
   async (
     { set },
@@ -3815,9 +3561,9 @@ export const reconcileOfficialWorkflowInstallation$ = command(
     if (args.targetAutomationId !== undefined && !target) {
       return { kind: "not-found" };
     }
-    return await reconcileLoadedInstallation(
+    return await set(
+      reconcileLoadedInstallation$,
       {
-        db,
         args,
         context,
         indexes,

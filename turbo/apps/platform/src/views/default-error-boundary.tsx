@@ -1,9 +1,9 @@
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { useTranslation } from "react-i18next";
 
 export function DefaultErrorFallback() {
   const { t } = useTranslation();
-  const contactEmail = PUBLIC_BRAND_PRESENTATION.contactEmail;
+  const contactEmail = BRAND_PRESENTATION.contactEmail;
 
   return (
     <div className="flex h-full items-center justify-center bg-white">

@@ -1,12 +1,14 @@
-import { computed, state } from "ccstate";
+import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
+import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import {
   WORKFLOW_TEMPLATE_ITEMS,
   type WorkflowTemplateItem,
 } from "@okouai/core/workflow-template-items";
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
+import { command, computed, state } from "ccstate";
 import { connectorCatalogItemBySlug } from "../external/connectors.ts";
-import { videoPickersVisible$ } from "./video-picker-visibility.ts";
+import { personalModelProviders$ } from "../external/personal-model-providers.ts";
+import { openClaudeCodeDeviceAuthDialogPersonal$ } from "./settings/claude-code-device-auth.ts";
+import { openCodexDeviceAuthDialogPersonal$ } from "./settings/codex-device-auth.ts";
 
 /**
  * Entry kinds on the chat landing page. The values match the template picker
@@ -16,8 +18,6 @@ const START_CARD_KINDS = [
   "slides",
   "website",
   "illustration",
-  "video",
-  "avatar",
   "workflow",
 ] as const;
 
@@ -80,20 +80,45 @@ export const startCardWorkflowConnectorIcons$ = computed(
   },
 );
 
-export const startCardKinds$ = computed(
-  async (get): Promise<readonly StartCardKind[]> => {
-    const showVideo = await get(videoPickersVisible$);
-    const workflowTemplate = get(startCardWorkflowTemplate$);
-    return get(internalStartCardOrder$)
-      .filter((kind) => {
-        if (kind === "video" || kind === "avatar") {
-          return showVideo;
-        }
-        if (kind === "workflow") {
-          return workflowTemplate !== undefined;
-        }
-        return true;
-      })
-      .slice(0, START_CARD_COUNT);
+export const startCardKinds$ = computed((get): readonly StartCardKind[] => {
+  const workflowTemplate = get(startCardWorkflowTemplate$);
+  return get(internalStartCardOrder$)
+    .filter((kind) => {
+      return kind !== "workflow" || workflowTemplate !== undefined;
+    })
+    .slice(0, START_CARD_COUNT);
+});
+
+/**
+ * Whether the subscription card leads the row: it stays until the member has
+ * any personal model account. Personal accounts are only ever Claude or Codex
+ * subscriptions, so an empty list is exactly "nothing connected yet". A
+ * successful connect reloads the list, which retires the card in place.
+ */
+export const startCardSubscriptionPinned$ = computed(
+  async (get): Promise<boolean> => {
+    const { modelProviders } = await get(personalModelProviders$);
+    return modelProviders.length === 0;
+  },
+);
+
+export type StartCardSubscriptionProvider =
+  | "codex-oauth-token"
+  | "claude-code-oauth-token";
+
+/** Opens the chosen personal subscription connection on every plan. */
+export const connectStartCardSubscription$ = command(
+  async (
+    { set },
+    provider: StartCardSubscriptionProvider,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    signal.throwIfAborted();
+    const args = { mode: "connect" as const };
+    if (provider === "codex-oauth-token") {
+      await set(openCodexDeviceAuthDialogPersonal$, args, signal);
+      return;
+    }
+    await set(openClaudeCodeDeviceAuthDialogPersonal$, args, signal);
   },
 );

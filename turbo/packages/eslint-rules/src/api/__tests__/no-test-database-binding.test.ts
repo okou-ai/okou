@@ -1,0 +1,45 @@
+import { RuleTester } from "@typescript-eslint/rule-tester";
+import { afterAll, describe, it } from "vitest";
+import { noTestDatabaseBinding } from "../rules/no-test-database-binding.ts";
+
+RuleTester.afterAll = afterAll;
+RuleTester.describe = describe;
+RuleTester.it = it;
+const tester = new RuleTester();
+
+tester.run("no-test-database-binding", noTestDatabaseBinding, {
+  valid: [
+    {
+      filename: "/api/src/test-fixtures/pglite-database.ts",
+      code: 'import { PGlite } from "@electric-sql/pglite"; new PGlite();',
+    },
+    {
+      code: 'import { setupApp } from "../__tests__/test-helpers";',
+    },
+  ],
+  invalid: [
+    {
+      filename:
+        "/api/src/signals/routes/__tests__/connector-catalog-immutable.test.ts",
+      code: 'import { drizzle } from "drizzle-orm/pglite";',
+      errors: [{ messageId: "harnessOnly" }],
+    },
+    {
+      code: 'import { PGlite } from "@electric-sql/pglite";',
+      errors: [{ messageId: "harnessOnly" }],
+    },
+    {
+      code: 'import { drizzle } from "drizzle-orm/pglite";',
+      errors: [{ messageId: "harnessOnly" }],
+    },
+    {
+      code: 'await import("@electric-sql/pglite");',
+      errors: [{ messageId: "harnessOnly" }],
+    },
+    {
+      code: 'await import("@electric-sql/pglite/contrib/pgcrypto");',
+      errors: [{ messageId: "harnessOnly" }],
+    },
+    { code: "new PGlite();", errors: [{ messageId: "harnessOnly" }] },
+  ],
+});

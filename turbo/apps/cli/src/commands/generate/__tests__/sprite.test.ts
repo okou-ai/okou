@@ -9,7 +9,6 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import chalk from "chalk";
-import { DEFAULT_IMAGE_MODEL_ENV } from "@okouai/core/image-model-catalog";
 import { generateCommand } from "../index";
 import { spriteCommand } from "../sprite";
 
@@ -65,7 +64,7 @@ describe("okou generate sprite command", () => {
     );
   });
 
-  it("should default unset flags to agent decides and recommend gpt-image-2", async () => {
+  it("should default unset flags to agent decides and defer the image model to Settings", async () => {
     await generateCommand.parseAsync([
       "node",
       "cli",
@@ -77,8 +76,12 @@ describe("okou generate sprite command", () => {
     const stdout = mockConsoleLog.mock.calls.flat().join("\n");
     expect(stdout).toContain("- Asset type: agent decides");
     expect(stdout).toContain("- Sheet / grid: auto");
-    expect(stdout).toContain("Use `gpt-image-2`");
-    expect(stdout).toContain("--model gpt-image-2 --raw-prompt");
+    expect(stdout).toContain(
+      '`okou generate image --provider built-in --raw-prompt "..."`',
+    );
+    expect(stdout).toContain(
+      "uses the image model selected in Settings › Built-in tools",
+    );
     expect(stdout).toContain("okou web upload-file -f <file>`");
     expect(stdout).toContain(
       "With privateArtifacts enabled, new artifacts default to only-me.",
@@ -112,43 +115,6 @@ describe("okou generate sprite command", () => {
       expect(rawGeneration).not.toContain("--visibility");
     },
   );
-
-  it("should keep Sprite's implicit model inside a run with a default image model", async () => {
-    vi.stubEnv(DEFAULT_IMAGE_MODEL_ENV, "flux-pro-1.1");
-
-    await generateCommand.parseAsync([
-      "node",
-      "cli",
-      "sprite",
-      "--prompt",
-      "A fireball projectile",
-    ]);
-
-    const stdout = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(stdout).toContain("Use `gpt-image-2`");
-    expect(stdout).toContain("--model gpt-image-2 --raw-prompt");
-    expect(stdout).not.toContain("Use the run default");
-    expect(stdout).not.toContain("--model flux-pro-1.1 --raw-prompt");
-  });
-
-  it("should preserve Sprite's explicit model inside a gated run", async () => {
-    vi.stubEnv(DEFAULT_IMAGE_MODEL_ENV, "flux-pro-1.1");
-
-    await generateCommand.parseAsync([
-      "node",
-      "cli",
-      "sprite",
-      "--prompt",
-      "A fireball projectile",
-      "--model",
-      "seedream4",
-    ]);
-
-    const stdout = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(stdout).toContain("Use `seedream4`");
-    expect(stdout).toContain("--model seedream4 --raw-prompt");
-    expect(stdout).not.toContain("Use the run default `flux-pro-1.1`");
-  });
 
   it("should reject an unknown asset type", async () => {
     await expect(async () => {

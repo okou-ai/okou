@@ -527,6 +527,11 @@ exit 18
             VERIFY_SCRIPT.contains("--okou-cli-version)"),
             "verify-rootfs.sh must accept --okou-cli-version"
         );
+        assert!(
+            VERIFY_SCRIPT.contains("--okou-cli-manifest)")
+                && VERIFY_SCRIPT.contains("cmp -s \"$OKOU_CLI_MANIFEST\""),
+            "verify-rootfs.sh must compare the entire installed CLI identity"
+        );
     }
 
     /// Guard: customize-rootfs.sh must verify the CA actually made it into the
@@ -732,7 +737,7 @@ exit 18
             shell_quoted_var(TEMPLATE_BUILD_SCRIPT, "AGENT_BROWSER_VERSION")
                 .expect("build-template.sh should declare AGENT_BROWSER_VERSION");
         assert_eq!(
-            agent_browser_version, "0.33.0-vm0.1",
+            agent_browser_version, "0.38.1-vm0.1",
             "build-template.sh should pin the immutable vm0 agent-browser release"
         );
 

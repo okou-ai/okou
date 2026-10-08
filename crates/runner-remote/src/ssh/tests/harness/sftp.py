@@ -12,6 +12,7 @@ import sys
 mode = sys.argv[1]
 handles = {}
 serial = 0
+deferred_file_reply = None
 
 
 def integer(value):
@@ -37,6 +38,24 @@ def send(kind, body):
 
 def status(request, code):
     send(101, integer(request) + integer(code) + string("peer diagnostic canary") + string("en"))
+
+
+def file_reply(kind, body):
+    global deferred_file_reply
+    if mode != "reordered":
+        send(kind, body)
+    elif deferred_file_reply is None:
+        # A sequential client deadlocks here; a pipeline receives the pair in
+        # reverse order without relying on a wall-clock latency assertion.
+        deferred_file_reply = (kind, body)
+    else:
+        send(kind, body)
+        send(*deferred_file_reply)
+        deferred_file_reply = None
+
+
+def file_status(request, code):
+    file_reply(101, integer(request) + integer(code) + string("peer diagnostic canary") + string("en"))
 
 
 class Fields:
@@ -107,17 +126,25 @@ while True:
             status(request, 0)
         elif kind == 5:
             fd, offset, size = handles[fields.string()], fields.offset(), fields.number()
-            value = os.pread(fd, size, offset)
+            value = os.pread(fd, size - 1 if mode == "short-read" and size > 1 else size, offset)
             if value:
-                send(103, integer(request) + string(value))
+                file_reply(103, integer(request) + string(value))
                 if mode == "mutate":
                     os.utime(fd, (1, 1))
             else:
-                status(request, 1)
+                file_status(request, 1)
         elif kind == 6:
             fd, offset, value = handles[fields.string()], fields.offset(), fields.string()
-            assert os.pwrite(fd, value, offset) == len(value)
-            status(request, 0)
+            if mode == "write-denied" and offset >= 32768:
+                file_status(request, 3)
+            else:
+                assert os.pwrite(fd, value, offset) == len(value)
+                if mode == "lost-write" and offset >= 32768:
+                    break
+                if mode == "mismatched-file":
+                    file_status(request + 1000, 0)
+                elif mode != "hold-write":
+                    file_status(request, 0)
         elif kind == 14:
             path = fields.string()
             assert fields.number() == 4

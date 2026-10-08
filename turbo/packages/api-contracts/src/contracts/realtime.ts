@@ -72,7 +72,6 @@ export type HomeTaskRecommendationsChangedPayload = z.infer<
  */
 export const userPreferenceKinds = [
   "defaultModel",
-  "defaultVideoModel",
   "defaultImageModel",
   "cloudBrowserEnabledByDefault",
 ] as const;
@@ -93,10 +92,6 @@ function isUserPreferenceKind(kind: string): kind is UserPreferenceKind {
  * added would reject the whole push and silently stop honoring the kinds it
  * does understand. Old web clients stay open for ~2 days
  * (`docs/fallback.md` §7), so every future kind addition needs this.
- *
- * This does not retroactively fix bundles already in browsers — see the
- * `defaultVideoModel` and `defaultImageModel` notes in
- * `user-model-preference.ts`.
  */
 export const userPreferenceChangedPayloadSchema = z.object({
   kinds: z.array(z.string()).transform((kinds) => {
@@ -119,6 +114,17 @@ export const ablyTokenRequestSchema = z.object({
   clientId: z.string().optional(),
   nonce: z.string(),
   mac: z.string(),
+});
+
+/**
+ * Ably token details schema (matches Ably SDK's TokenDetails type)
+ */
+const ablyTokenDetailsSchema = z.object({
+  token: z.string(),
+  expires: z.number(),
+  issued: z.number(),
+  capability: z.string(),
+  clientId: z.string().optional(),
 });
 
 /**
@@ -164,7 +170,9 @@ export const platformRealtimeTokenContract = c.router({
     headers: authHeadersSchema,
     body: z.object({}),
     responses: {
-      200: ablyTokenRequestSchema,
+      // Token details when the server exchanged the token; a token request
+      // when that exchange failed and the client must exchange it itself.
+      200: z.union([ablyTokenDetailsSchema, ablyTokenRequestSchema]),
       401: apiErrorSchema,
       500: apiErrorSchema,
     },

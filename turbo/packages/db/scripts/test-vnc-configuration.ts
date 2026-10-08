@@ -14,7 +14,11 @@ async function rejects(
   expected: { code: string | RegExp; constraint?: string },
 ) {
   await client.query("SAVEPOINT invalid_write");
-  await assert.rejects(client.query(query), expected);
+  await assert.rejects(
+    client.query(query),
+    expected,
+    `Synthetic VNC constraint query: ${query}`,
+  );
   await client.query("ROLLBACK TO SAVEPOINT invalid_write");
   await client.query("RELEASE SAVEPOINT invalid_write");
 }
@@ -86,6 +90,13 @@ try {
     "1196_dizzy_archangel.sql",
     "1197_puzzling_aaron_stack.sql",
     "1207_smart_oracle.sql",
+    "1211_daily_diamondback.sql",
+    "1229_peaceful_mathemanic.sql",
+    "1253_unique_zarek.sql",
+    "1289_thick_bruce_banner.sql",
+    "1296_little_electro.sql",
+    "1304_bright_grim_reaper.sql",
+    "1313_rsa_aes_vnc.sql",
   ]) {
     await client.query(
       (await migration(name)).replaceAll('"public".', `"${schema}".`),
@@ -295,6 +306,66 @@ try {
     );
   }
 
+  await client.query(
+    "INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,credential_id,auth_method,security_type,trust_mode) VALUES ('00000000-0000-4000-8000-000000000099','org','owner','Credentialless','none.example.com',NULL,'none','x509_none','system')",
+  );
+  const credentialless = await client.query(
+    "SELECT credential_id,auth_method,security_type FROM vnc_connections WHERE id='00000000-0000-4000-8000-000000000099'",
+  );
+  assert.deepEqual(credentialless.rows, [
+    { credential_id: null, auth_method: "none", security_type: "x509_none" },
+  ]);
+  await rejects(
+    "UPDATE vnc_connections SET security_type='x509_vnc' WHERE id='00000000-0000-4000-8000-000000000099'",
+    { code: "23514", constraint: "chk_vnc_connections_profile" },
+  );
+  await rejects(
+    "UPDATE vnc_connections SET credential_id='00000000-0000-4000-8000-000000000001' WHERE id='00000000-0000-4000-8000-000000000099'",
+    { code: "23514", constraint: "chk_vnc_connections_profile" },
+  );
+  await client.query(
+    "DELETE FROM vnc_connections WHERE id='00000000-0000-4000-8000-000000000099'",
+  );
+
+  // New certificate-bearing records are distinct from both existing certificate-free pairs.
+  await client.query(`
+    INSERT INTO vnc_credentials (id,org_id,user_id,name,auth_method,encrypted_password,encrypted_client_identity)
+      VALUES ('00000000-0000-4000-8000-000000000080','org','owner','Client cert','client_certificate',NULL,'kms-key'),
+             ('00000000-0000-4000-8000-000000000081','org','owner','Client cert and password','client_certificate_vnc_password','kms-password','kms-key');
+    INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,credential_id,auth_method,security_type,trust_mode)
+      VALUES ('00000000-0000-4000-8000-000000000082','org','owner','Mutual TLS','mtls.example.com','00000000-0000-4000-8000-000000000080','client_certificate','x509_none','system'),
+             ('00000000-0000-4000-8000-000000000083','org','owner','Mutual TLS VNC','mtlsvnc.example.com','00000000-0000-4000-8000-000000000081','client_certificate_vnc_password','x509_vnc','system');
+  `);
+  for (const [assignment, constraint] of [
+    ["encrypted_client_identity=NULL", "chk_vnc_credentials_password"],
+    ["encrypted_password='unexpected'", "chk_vnc_credentials_password"],
+    ["username='unexpected'", "chk_vnc_credentials_auth"],
+  ] as const) {
+    await rejects(
+      `UPDATE vnc_credentials SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000080'`,
+      { code: "23514", constraint },
+    );
+  }
+  for (const assignment of [
+    "security_type='x509_vnc'",
+    "auth_method='none'",
+  ] as const) {
+    await rejects(
+      `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000082'`,
+      { code: "23514", constraint: "chk_vnc_connections_profile" },
+    );
+  }
+  await rejects(
+    "UPDATE vnc_connections SET credential_id='00000000-0000-4000-8000-000000000081' WHERE id='00000000-0000-4000-8000-000000000082'",
+    { code: "23503", constraint: "vnc_connections_credential_profile_fk" },
+  );
+  await client.query(
+    "DELETE FROM vnc_connections WHERE id IN ('00000000-0000-4000-8000-000000000082','00000000-0000-4000-8000-000000000083')",
+  );
+  await client.query(
+    "DELETE FROM vnc_credentials WHERE id IN ('00000000-0000-4000-8000-000000000080','00000000-0000-4000-8000-000000000081')",
+  );
+
   await rejects(
     "UPDATE vnc_credentials SET username='operator',auth_method='username_password' WHERE id='00000000-0000-4000-8000-000000000001'",
     { code: "23503", constraint: "vnc_connections_credential_profile_fk" },
@@ -335,7 +406,7 @@ try {
   }
   await rejects(
     "UPDATE vnc_credentials SET encrypted_password=NULL WHERE id='00000000-0000-4000-8000-000000000001'",
-    { code: "23502" },
+    { code: "23514", constraint: "chk_vnc_credentials_password" },
   );
   await rejects(
     "UPDATE vnc_credentials SET auth_method=NULL WHERE id='00000000-0000-4000-8000-000000000001'",
@@ -384,6 +455,66 @@ try {
     "UPDATE vnc_credentials SET revision=2147483647 WHERE id='00000000-0000-4000-8000-000000000001'",
   );
 
+  // QEMU SCRAM is a distinct verified-TLS pair; the migration preserves old rows.
+  await client.query(`
+    INSERT INTO vnc_credentials (id,org_id,user_id,name,username,auth_method,encrypted_password)
+      VALUES ('00000000-0000-4000-8000-000000000021','org','owner','QEMU SCRAM','operator','qemu_scram_sha256','scram-ciphertext');
+    INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,credential_id,auth_method,security_type,trust_mode,x509_server_name)
+      VALUES ('00000000-0000-4000-8000-000000000022','org','owner','QEMU SCRAM','qemu.example.com','00000000-0000-4000-8000-000000000021','qemu_scram_sha256','qemu_x509_sasl','system','qemu.example.com');
+  `);
+  for (const assignment of [
+    "username='has space'",
+    "username='has,comma'",
+    "username='has=equal'",
+    "username='é'",
+    "username=''",
+  ]) {
+    await rejects(
+      `UPDATE vnc_credentials SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000021'`,
+      { code: "23514", constraint: "chk_vnc_credentials_auth" },
+    );
+  }
+  await rejects(
+    "UPDATE vnc_credentials SET username=repeat('x',256) WHERE id='00000000-0000-4000-8000-000000000021'",
+    { code: "22001" },
+  );
+  for (const securityType of ["x509_plain", "x509_vnc", "x509_none"]) {
+    await rejects(
+      `UPDATE vnc_connections SET security_type='${securityType}' WHERE id='00000000-0000-4000-8000-000000000022'`,
+      { code: "23514", constraint: "chk_vnc_connections_profile" },
+    );
+  }
+  await rejects(
+    "UPDATE vnc_connections SET credential_id='00000000-0000-4000-8000-000000000002' WHERE id='00000000-0000-4000-8000-000000000022'",
+    { code: "23503", constraint: "vnc_connections_credential_profile_fk" },
+  );
+
+  // One existing classic password can be explicitly selected for either X509Vnc
+  // or Mac type 2; the saved security remains a distinct, constrained profile.
+  await client.query(`
+    INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,transport_type,ssh_connection_id,credential_id,auth_method,security_type,trust_mode)
+      VALUES ('00000000-0000-4000-8000-000000000018','org','owner','Mac classic password','127.0.0.1','ssh','00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000001','vnc_password','apple_vnc_password','none');
+  `);
+  for (const [assignment, constraint] of [
+    ["host='localhost'", "chk_vnc_connections_profile"],
+    [
+      "transport_type='direct',ssh_connection_id=NULL",
+      "chk_vnc_connections_profile",
+    ],
+    ["x509_server_name='mac.example.com'", "chk_vnc_connections_profile"],
+    ["trust_mode='system'", "chk_vnc_connections_trust"],
+    ["ca_bundle='unexpected'", "chk_vnc_connections_trust"],
+    ["security_type='apple_dh'", "chk_vnc_connections_profile"],
+  ] as const) {
+    await rejects(
+      `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000018'`,
+      { code: "23514", constraint },
+    );
+  }
+  await client.query(
+    "UPDATE vnc_connections SET host='::1' WHERE id='00000000-0000-4000-8000-000000000018'",
+  );
+
   await client.query(`
     INSERT INTO vnc_credentials (id,org_id,user_id,name,username,auth_method,encrypted_password)
       VALUES ('00000000-0000-4000-8000-000000000012','org','owner','Mac login','operator','apple_dh_username_password','apple-ciphertext');
@@ -417,12 +548,134 @@ try {
     "UPDATE vnc_connections SET host='::1' WHERE id='00000000-0000-4000-8000-000000000013'",
   );
 
+  await client.query(`
+    INSERT INTO vnc_credentials (id,org_id,user_id,name,username,auth_method,encrypted_password)
+      VALUES ('00000000-0000-4000-8000-000000000014','org','owner','Mac SRP login','operator','apple_srp_username_password','apple-srp-ciphertext');
+    INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,transport_type,ssh_connection_id,credential_id,auth_method,security_type,trust_mode)
+      VALUES ('00000000-0000-4000-8000-000000000015','org','owner','Mac Screen Sharing SRP','127.0.0.1','ssh','00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000014','apple_srp_username_password','apple_srp','none');
+  `);
+  for (const [assignment, constraint] of [
+    ["host='localhost'", "chk_vnc_connections_profile"],
+    [
+      "transport_type='direct',ssh_connection_id=NULL",
+      "chk_vnc_connections_profile",
+    ],
+    ["security_type='apple_dh'", "chk_vnc_connections_profile"],
+    ["trust_mode='system'", "chk_vnc_connections_trust"],
+  ] as const) {
+    await rejects(
+      `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000015'`,
+      { code: "23514", constraint },
+    );
+  }
+  await rejects(
+    "UPDATE vnc_credentials SET username=repeat('é',128) WHERE id='00000000-0000-4000-8000-000000000014'",
+    { code: "23514", constraint: "chk_vnc_credentials_auth" },
+  );
+  await client.query(
+    "UPDATE vnc_credentials SET username=repeat('x',255) WHERE id='00000000-0000-4000-8000-000000000014'",
+  );
+
+  await client.query(`
+    INSERT INTO vnc_credentials (id,org_id,user_id,name,username,auth_method,encrypted_password)
+      VALUES ('00000000-0000-4000-8000-000000000016','org','owner','Mac RSA/SRP login','operator','apple_rsa_srp_username_password','rsa-srp-ciphertext');
+    INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,transport_type,ssh_connection_id,credential_id,auth_method,security_type,trust_mode)
+      VALUES ('00000000-0000-4000-8000-000000000017','org','owner','Mac Screen Sharing RSA/SRP','127.0.0.1','ssh','00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000016','apple_rsa_srp_username_password','apple_rsa_srp','none');
+  `);
+  for (const [assignment, constraint] of [
+    ["host='localhost'", "chk_vnc_connections_profile"],
+    [
+      "transport_type='direct',ssh_connection_id=NULL",
+      "chk_vnc_connections_profile",
+    ],
+    ["security_type='apple_srp'", "chk_vnc_connections_profile"],
+    ["trust_mode='system'", "chk_vnc_connections_trust"],
+  ] as const) {
+    await rejects(
+      `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000017'`,
+      { code: "23514", constraint },
+    );
+  }
+  await rejects(
+    "UPDATE vnc_credentials SET username=repeat('é',118) WHERE id='00000000-0000-4000-8000-000000000016'",
+    { code: "23514", constraint: "chk_vnc_credentials_auth" },
+  );
+  await client.query(
+    "UPDATE vnc_credentials SET username=repeat('é',117) WHERE id='00000000-0000-4000-8000-000000000016'",
+  );
+  await client.query(
+    "UPDATE vnc_connections SET host='::1' WHERE id='00000000-0000-4000-8000-000000000017'",
+  );
+
+  await client.query(`
+    INSERT INTO vnc_credentials (id,org_id,user_id,name,auth_method,username,encrypted_password) VALUES
+      ('00000000-0000-4000-8000-000000000018','org','owner','RSA password','rsa_aes_password',NULL,'rsa-password-ciphertext'),
+      ('00000000-0000-4000-8000-000000000019','org','owner','RSA user','rsa_aes_username_password',repeat('界',85),'rsa-user-ciphertext');
+  `);
+  for (const method of ["rsa_aes_password", "rsa_aes_username_password"]) {
+    const credential =
+      method === "rsa_aes_password"
+        ? "00000000-0000-4000-8000-000000000018"
+        : "00000000-0000-4000-8000-000000000019";
+    for (const security of [
+      "rsa_aes_ra2",
+      "rsa_aes_ra2_256",
+      "rsa_aes_ra2ne",
+      "rsa_aes_ra2ne_256",
+    ]) {
+      const id = randomUUID();
+      await client.query(`INSERT INTO vnc_connections (id,org_id,user_id,display_name,host,transport_type,ssh_connection_id,credential_id,auth_method,security_type,trust_mode,rsa_server_key_sha256)
+        VALUES ('${id}','org','owner','RSA loopback','127.0.0.1','ssh','00000000-0000-4000-8000-000000000010','${credential}','${method}','${security}','none',repeat('a',64))`);
+      for (const assignment of [
+        "rsa_server_key_sha256=NULL",
+        "rsa_server_key_sha256=repeat('A',64)",
+        "rsa_server_key_sha256=repeat('a',40)",
+        "ca_bundle='not-a-ca'",
+        "x509_server_name='other.example.com'",
+        "trust_mode='system'",
+      ]) {
+        await rejects(
+          `UPDATE vnc_connections SET ${assignment} WHERE id='${id}'`,
+          { code: "23514" },
+        );
+      }
+      if (security.includes("ra2ne")) {
+        for (const assignment of [
+          "transport_type='direct',ssh_connection_id=NULL",
+          "host='localhost'",
+          "host='other.example.com'",
+        ]) {
+          await rejects(
+            `UPDATE vnc_connections SET ${assignment} WHERE id='${id}'`,
+            { code: "23514" },
+          );
+        }
+      } else {
+        await client.query(
+          `UPDATE vnc_connections SET transport_type='direct',ssh_connection_id=NULL,host='rsa.example.com' WHERE id='${id}'`,
+        );
+      }
+      await client.query(`DELETE FROM vnc_connections WHERE id='${id}'`);
+    }
+  }
+  await rejects(
+    "UPDATE vnc_credentials SET username=repeat('é',128) WHERE id='00000000-0000-4000-8000-000000000019'",
+    { code: "23514", constraint: "chk_vnc_credentials_auth" },
+  );
+  await rejects(
+    "UPDATE vnc_credentials SET username='not-password-only' WHERE id='00000000-0000-4000-8000-000000000018'",
+    { code: "23514", constraint: "chk_vnc_credentials_auth" },
+  );
+  await rejects(
+    "UPDATE vnc_connections SET rsa_server_key_sha256=repeat('a',64) WHERE id='00000000-0000-4000-8000-000000000003'",
+    { code: "23514", constraint: "chk_vnc_connections_rsa_pin" },
+  );
   await client.query("DELETE FROM vnc_connections");
   await client.query("DELETE FROM ssh_connections");
   assert.deepEqual(
     (await client.query("SELECT count(*)::int AS count FROM vnc_credentials"))
       .rows,
-    [{ count: 5 }],
+    [{ count: 10 }],
   );
   await client.query("DELETE FROM vnc_credentials");
   console.log("VNC preservation migrations and storage constraints passed");

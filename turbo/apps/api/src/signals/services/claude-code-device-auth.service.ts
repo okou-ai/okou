@@ -1,46 +1,36 @@
 import { createHash, randomBytes } from "node:crypto";
+import type { DeviceAuthSessionPublication } from "./model-provider-device-session-publication";
 
-import { command } from "ccstate";
-import type {
-  ClaudeCodeDeviceAuthMode,
-  ClaudeCodeDeviceAuthScope,
-} from "@okouai/api-contracts/contracts/claude-code-device-auth";
+import type { ClaudeCodeDeviceAuthMode } from "@okouai/api-contracts/contracts/claude-code-device-auth";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
+import { command } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import {
   detach,
   Mechanism,
-  onRejection,
   safeJsonParse,
   safeSync,
   settle,
   tapError,
 } from "../utils";
+import { fetchClaudeCodeSubscriptionMetadata } from "./claude-code-usage.service";
 import {
   decryptPersistentSecretValue,
   decryptSecretValue,
   encryptPersistentSecretValue,
   encryptSecretValue,
 } from "./crypto.utils";
-import { fetchClaudeCodeSubscriptionMetadata } from "./claude-code-usage.service";
+import { userFeatureSwitchContext } from "./feature-switches.service";
 import {
-  upsertPersonalModelProviderAccount,
+  upsertPersonalModelProviderAccount$,
   type PersonalProviderAccountErrorResponse,
   type PersonalProviderAccountMutation,
 } from "./model-provider-account.service";
-import { userFeatureSwitchContext } from "./feature-switches.service";
-import {
-  upsertOrgModelProvider$,
-  upsertUserModelProvider$,
-  type ModelProviderInfo,
-} from "./model-provider.service";
 
 const CLAUDE_CODE_DEVICE_AUTH_AUTHORIZE_URL =
   "https://claude.com/cai/oauth/authorize";
@@ -64,7 +54,7 @@ const claudeCodeDeviceAuthSessionTokenSchema = z.object({
 const claudeCodeDeviceAuthProviderStateSchema = z.object({
   version: z.literal(1),
   type: z.literal("claude-code"),
-  scope: z.enum(["org", "personal"]),
+  scope: z.literal("personal"),
   mode: z.enum(["add", "reconnect"]).optional(),
   modelProviderId: z.string().uuid().optional(),
   state: z.string().min(1),
@@ -98,7 +88,6 @@ type ClaudeCodeDeviceAuthStartResult =
   | {
       readonly ok: true;
       readonly sessionToken: string;
-      readonly scope: ClaudeCodeDeviceAuthScope;
       readonly browserUrl: string;
       readonly expiresIn: number;
     }
@@ -278,183 +267,204 @@ function sessionWhere(args: {
   );
 }
 
-async function cancelActiveSessions(args: {
-  readonly writeDb: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly now: Date;
-}): Promise<void> {
-  await args.writeDb
-    .update(modelProviderAuthSessions)
-    .set(
-      terminalSessionSet({
-        status: "cancelled",
-        now: args.now,
-        message: "Claude Code device auth session was superseded",
-      }),
-    )
-    .where(
-      and(
-        ownerWhere(args),
-        inArray(modelProviderAuthSessions.status, [
-          ...CLAUDE_CODE_DEVICE_AUTH_ACTIVE_STATUSES,
-        ]),
-      ),
-    );
-}
-
-async function cancelSession(args: {
-  readonly writeDb: Db;
-  readonly sessionId: string;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly message: string;
-}): Promise<void> {
-  await args.writeDb
-    .update(modelProviderAuthSessions)
-    .set(
-      terminalSessionSet({
-        status: "cancelled",
-        now: nowDate(),
-        message: args.message,
-      }),
-    )
-    .where(
-      and(
-        sessionWhere({
-          sessionId: args.sessionId,
-          orgId: args.orgId,
-          userId: args.userId,
+const cancelActiveSessions$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly now: Date;
+    },
+  ): Promise<void> => {
+    const writeDb = set(writeDb$);
+    await writeDb
+      .update(modelProviderAuthSessions)
+      .set(
+        terminalSessionSet({
+          status: "cancelled",
+          now: args.now,
+          message: "Claude Code device auth session was superseded",
         }),
-        inArray(modelProviderAuthSessions.status, [
-          ...CLAUDE_CODE_DEVICE_AUTH_ACTIVE_STATUSES,
-        ]),
-      ),
-    );
-}
-
-async function createSession(args: {
-  readonly writeDb: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly expiresAt: Date;
-}): Promise<ModelProviderAuthSession> {
-  const [session] = await args.writeDb
-    .insert(modelProviderAuthSessions)
-    .values({
-      orgId: args.orgId,
-      userId: args.userId,
-      connectorType: CLAUDE_CODE_DEVICE_AUTH_CONNECTOR_TYPE,
-      source: CLAUDE_CODE_DEVICE_AUTH_SOURCE,
-      status: "initializing",
-      expiresAt: args.expiresAt,
-    })
-    .returning();
-  if (!session) {
-    throw new Error("Failed to create Claude Code device auth session");
-  }
-  return session;
-}
-
-function registerStartAbortCancellation(
-  args: {
-    readonly writeDb: Db;
-    readonly session: ModelProviderAuthSession;
-    readonly orgId: string;
-    readonly userId: string;
+      )
+      .where(
+        and(
+          ownerWhere(args),
+          inArray(modelProviderAuthSessions.status, [
+            ...CLAUDE_CODE_DEVICE_AUTH_ACTIVE_STATUSES,
+          ]),
+        ),
+      );
   },
-  signal: AbortSignal,
-): () => void {
-  const cleanupOnAbort = () => {
-    detach(
-      cancelSession({
-        writeDb: args.writeDb,
-        sessionId: args.session.id,
+);
+
+const cancelSession$ = command(
+  async (
+    { set },
+    args: {
+      readonly sessionId: string;
+      readonly orgId: string;
+      readonly userId: string;
+      readonly message: string;
+    },
+  ): Promise<void> => {
+    const writeDb = set(writeDb$);
+    await writeDb
+      .update(modelProviderAuthSessions)
+      .set(
+        terminalSessionSet({
+          status: "cancelled",
+          now: nowDate(),
+          message: args.message,
+        }),
+      )
+      .where(
+        and(
+          sessionWhere({
+            sessionId: args.sessionId,
+            orgId: args.orgId,
+            userId: args.userId,
+          }),
+          inArray(modelProviderAuthSessions.status, [
+            ...CLAUDE_CODE_DEVICE_AUTH_ACTIVE_STATUSES,
+          ]),
+        ),
+      );
+  },
+);
+
+const createSession$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly expiresAt: Date;
+    },
+  ): Promise<ModelProviderAuthSession> => {
+    const writeDb = set(writeDb$);
+    const [session] = await writeDb
+      .insert(modelProviderAuthSessions)
+      .values({
         orgId: args.orgId,
         userId: args.userId,
-        message: "Claude Code device auth session was cancelled",
-      }),
-      Mechanism.WaitUntil,
-      "cancel aborted Claude Code device auth session",
+        connectorType: CLAUDE_CODE_DEVICE_AUTH_CONNECTOR_TYPE,
+        source: CLAUDE_CODE_DEVICE_AUTH_SOURCE,
+        status: "initializing",
+        expiresAt: args.expiresAt,
+      })
+      .returning();
+    if (!session) {
+      throw new Error("Failed to create Claude Code device auth session");
+    }
+    return session;
+  },
+);
+
+const markSessionError$ = command(
+  async (
+    { set },
+    args: {
+      readonly sessionId: string;
+      readonly message: string;
+    },
+  ) => {
+    const writeDb = set(writeDb$);
+    await writeDb
+      .update(modelProviderAuthSessions)
+      .set(
+        terminalSessionSet({
+          status: "error",
+          now: nowDate(),
+          message: args.message,
+        }),
+      )
+      .where(
+        and(
+          eq(modelProviderAuthSessions.id, args.sessionId),
+          inArray(modelProviderAuthSessions.status, [
+            ...CLAUDE_CODE_DEVICE_AUTH_ACTIVE_STATUSES,
+          ]),
+        ),
+      );
+  },
+);
+
+const markSessionExpired$ = command(
+  async (
+    { set },
+    args: {
+      readonly session: ModelProviderAuthSession;
+    },
+  ) => {
+    const writeDb = set(writeDb$);
+    await writeDb
+      .update(modelProviderAuthSessions)
+      .set(
+        terminalSessionSet({
+          status: "expired",
+          now: nowDate(),
+        }),
+      )
+      .where(
+        and(
+          eq(modelProviderAuthSessions.id, args.session.id),
+          inArray(modelProviderAuthSessions.status, [
+            ...CLAUDE_CODE_DEVICE_AUTH_ACTIVE_STATUSES,
+          ]),
+        ),
+      );
+  },
+);
+
+const moveSessionToAwaitingApproval$ = command(
+  async (
+    { set },
+    args: {
+      readonly session: ModelProviderAuthSession;
+      readonly mode?: ClaudeCodeDeviceAuthMode;
+      readonly modelProviderId?: string;
+      readonly state: string;
+      readonly codeVerifier: string;
+      readonly approvalUrl: string;
+    },
+  ): Promise<ModelProviderAuthSession> => {
+    const encryptedProviderState = await encodeProviderState(
+      {
+        version: 1,
+        type: "claude-code",
+        scope: "personal",
+        ...(args.mode ? { mode: args.mode } : {}),
+        ...(args.modelProviderId
+          ? { modelProviderId: args.modelProviderId }
+          : {}),
+        state: args.state,
+        codeVerifier: args.codeVerifier,
+      },
+      args.session,
     );
-  };
-  signal.addEventListener("abort", cleanupOnAbort, { once: true });
-  return () => {
-    signal.removeEventListener("abort", cleanupOnAbort);
-  };
-}
-
-async function markSessionError(args: {
-  readonly writeDb: Db;
-  readonly sessionId: string;
-  readonly message: string;
-}) {
-  await args.writeDb
-    .update(modelProviderAuthSessions)
-    .set(
-      terminalSessionSet({
-        status: "error",
-        now: nowDate(),
-        message: args.message,
-      }),
-    )
-    .where(eq(modelProviderAuthSessions.id, args.sessionId));
-}
-
-async function markSessionExpired(args: {
-  readonly writeDb: Db;
-  readonly session: ModelProviderAuthSession;
-}) {
-  await args.writeDb
-    .update(modelProviderAuthSessions)
-    .set(
-      terminalSessionSet({
-        status: "expired",
-        now: nowDate(),
-      }),
-    )
-    .where(eq(modelProviderAuthSessions.id, args.session.id));
-}
-
-async function moveSessionToAwaitingApproval(args: {
-  readonly writeDb: Db;
-  readonly session: ModelProviderAuthSession;
-  readonly scope: ClaudeCodeDeviceAuthScope;
-  readonly mode?: ClaudeCodeDeviceAuthMode;
-  readonly modelProviderId?: string;
-  readonly state: string;
-  readonly codeVerifier: string;
-  readonly approvalUrl: string;
-}): Promise<ModelProviderAuthSession> {
-  const [updated] = await args.writeDb
-    .update(modelProviderAuthSessions)
-    .set({
-      status: "awaiting_user_approval",
-      approvalUrl: args.approvalUrl,
-      verificationCode: null,
-      encryptedProviderState: await encodeProviderState(
-        {
-          version: 1,
-          type: "claude-code",
-          scope: args.scope,
-          ...(args.mode ? { mode: args.mode } : {}),
-          ...(args.modelProviderId
-            ? { modelProviderId: args.modelProviderId }
-            : {}),
-          state: args.state,
-          codeVerifier: args.codeVerifier,
-        },
-        args.session,
-      ),
-      updatedAt: nowDate(),
-    })
-    .where(eq(modelProviderAuthSessions.id, args.session.id))
-    .returning();
-  if (!updated) {
-    throw new Error("Failed to update Claude Code device auth session");
-  }
-  return updated;
-}
+    const writeDb = set(writeDb$);
+    const [updated] = await writeDb
+      .update(modelProviderAuthSessions)
+      .set({
+        status: "awaiting_user_approval",
+        approvalUrl: args.approvalUrl,
+        verificationCode: null,
+        encryptedProviderState,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(modelProviderAuthSessions.id, args.session.id),
+          eq(modelProviderAuthSessions.status, "initializing"),
+        ),
+      )
+      .returning();
+    if (!updated) {
+      throw new Error("Failed to update Claude Code device auth session");
+    }
+    return updated;
+  },
+);
 
 function buildApprovalUrl(args: {
   readonly state: string;
@@ -572,50 +582,62 @@ async function exchangeClaudeCodeAuthorizationCode(
   return { accessToken: parsed.data.access_token };
 }
 
-export async function startClaudeCodeDeviceAuth(
-  args: {
-    readonly writeDb: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly scope: ClaudeCodeDeviceAuthScope;
-    readonly mode?: ClaudeCodeDeviceAuthMode;
-    readonly modelProviderId?: string;
-  },
-  signal: AbortSignal,
-): Promise<ClaudeCodeDeviceAuthStartResult> {
-  const startedAt = nowDate();
-  await cancelActiveSessions({
-    writeDb: args.writeDb,
-    orgId: args.orgId,
-    userId: args.userId,
-    now: startedAt,
-  });
-
-  const session = await createSession({
-    writeDb: args.writeDb,
-    orgId: args.orgId,
-    userId: args.userId,
-    expiresAt: expiresAt(startedAt),
-  });
-  const unregisterAbortCancellation = registerStartAbortCancellation(
-    {
-      writeDb: args.writeDb,
-      session,
+export const startClaudeCodeDeviceAuth$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly mode?: ClaudeCodeDeviceAuthMode;
+      readonly modelProviderId?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<ClaudeCodeDeviceAuthStartResult> => {
+    const startedAt = nowDate();
+    await set(cancelActiveSessions$, {
       orgId: args.orgId,
       userId: args.userId,
-    },
-    signal,
-  );
+      now: startedAt,
+    });
+    signal.throwIfAborted();
 
-  const codeVerifier = randomBase64Url();
-  const state = randomBase64Url();
-  const approvalUrl = buildApprovalUrl({ state, codeVerifier });
-  const updatedResult = await onRejection(
-    settle(
-      moveSessionToAwaitingApproval({
-        writeDb: args.writeDb,
+    const session = await set(createSession$, {
+      orgId: args.orgId,
+      userId: args.userId,
+      expiresAt: expiresAt(startedAt),
+    });
+    if (signal.aborted) {
+      await set(cancelSession$, {
+        sessionId: session.id,
+        orgId: args.orgId,
+        userId: args.userId,
+        message: "Claude Code device auth session was cancelled",
+      });
+      signal.throwIfAborted();
+    }
+    const cancelStartedSession = () => {
+      detach(
+        set(cancelSession$, {
+          sessionId: session.id,
+          orgId: args.orgId,
+          userId: args.userId,
+          message: "Claude Code device auth session was cancelled",
+        }),
+        Mechanism.WaitUntil,
+        "cancel aborted Claude Code device auth session",
+      );
+    };
+    signal.addEventListener("abort", cancelStartedSession, { once: true });
+    const unregisterAbortCancellation = () => {
+      signal.removeEventListener("abort", cancelStartedSession);
+    };
+
+    const codeVerifier = randomBase64Url();
+    const state = randomBase64Url();
+    const approvalUrl = buildApprovalUrl({ state, codeVerifier });
+    const updatedResult = await settle(
+      set(moveSessionToAwaitingApproval$, {
         session,
-        scope: args.scope,
         mode: args.mode,
         modelProviderId: args.modelProviderId,
         state,
@@ -623,83 +645,75 @@ export async function startClaudeCodeDeviceAuth(
         approvalUrl,
       }),
       signal,
-    ),
-    unregisterAbortCancellation,
-  );
-  unregisterAbortCancellation();
-  signal.throwIfAborted();
+    ).finally(unregisterAbortCancellation);
+    signal.throwIfAborted();
 
-  if (!updatedResult.ok) {
-    const message = unknownErrorMessage(
-      updatedResult.error,
-      "Claude Code device auth session failed",
-    );
-    await markSessionError({
-      writeDb: args.writeDb,
-      sessionId: session.id,
-      message,
-    });
+    if (!updatedResult.ok) {
+      const message = unknownErrorMessage(
+        updatedResult.error,
+        "Claude Code device auth session failed",
+      );
+      await set(markSessionError$, {
+        sessionId: session.id,
+        message,
+      });
+      signal.throwIfAborted();
+      return {
+        ok: false,
+        code: "CLAUDE_CODE_DEVICE_AUTH_UNAVAILABLE",
+        message,
+      };
+    }
+
     return {
-      ok: false,
-      code: "CLAUDE_CODE_DEVICE_AUTH_UNAVAILABLE",
-      message,
+      ok: true,
+      sessionToken: encodeSession({ version: 1, sessionId: session.id }),
+      browserUrl: approvalUrl,
+      expiresIn: remainingTtlSeconds(updatedResult.value.expiresAt, nowDate()),
     };
-  }
+  },
+);
 
-  return {
-    ok: true,
-    sessionToken: encodeSession({ version: 1, sessionId: session.id }),
-    scope: args.scope,
-    browserUrl: approvalUrl,
-    expiresIn: remainingTtlSeconds(updatedResult.value.expiresAt, nowDate()),
-  };
-}
+const loadSession$ = command(
+  async (
+    { set },
+    args: {
+      readonly sessionId: string;
+      readonly orgId: string;
+      readonly userId: string;
+    },
+  ): Promise<ModelProviderAuthSession | null> => {
+    const writeDb = set(writeDb$);
+    const [session] = await writeDb
+      .select()
+      .from(modelProviderAuthSessions)
+      .where(sessionWhere(args))
+      .limit(1);
+    return session ?? null;
+  },
+);
 
-async function loadSession(args: {
-  readonly writeDb: Db;
-  readonly sessionId: string;
-  readonly orgId: string;
-  readonly userId: string;
-}): Promise<ModelProviderAuthSession | null> {
-  const [session] = await args.writeDb
-    .select()
-    .from(modelProviderAuthSessions)
-    .where(sessionWhere(args))
-    .limit(1);
-  return session ?? null;
-}
-
-async function claimCompleting(args: {
-  readonly writeDb: Db;
-  readonly session: ModelProviderAuthSession;
-}): Promise<boolean> {
-  const [updated] = await args.writeDb
-    .update(modelProviderAuthSessions)
-    .set({ status: "completing", updatedAt: nowDate() })
-    .where(
-      and(
-        eq(modelProviderAuthSessions.id, args.session.id),
-        eq(modelProviderAuthSessions.status, "awaiting_user_approval"),
-      ),
-    )
-    .returning({ id: modelProviderAuthSessions.id });
-  return Boolean(updated);
-}
-
-async function markSessionImported(args: {
-  readonly writeDb: Db;
-  readonly session: ModelProviderAuthSession;
-}) {
-  await args.writeDb
-    .update(modelProviderAuthSessions)
-    .set(
-      terminalSessionSet({
-        status: "imported",
-        now: nowDate(),
-      }),
-    )
-    .where(eq(modelProviderAuthSessions.id, args.session.id));
-}
+const claimCompleting$ = command(
+  async (
+    { set },
+    args: {
+      readonly session: ModelProviderAuthSession;
+    },
+  ): Promise<boolean> => {
+    const writeDb = set(writeDb$);
+    const [updated] = await writeDb
+      .update(modelProviderAuthSessions)
+      .set({ status: "completing", updatedAt: nowDate() })
+      .where(
+        and(
+          eq(modelProviderAuthSessions.id, args.session.id),
+          eq(modelProviderAuthSessions.status, "awaiting_user_approval"),
+        ),
+      )
+      .returning({ id: modelProviderAuthSessions.id });
+    return Boolean(updated);
+  },
+);
 
 function isSessionExpired(session: ModelProviderAuthSession): boolean {
   return session.expiresAt.getTime() <= nowDate().getTime();
@@ -718,35 +732,11 @@ function personalAccountMutation(args: {
   return { kind: "replace-active" };
 }
 
-function toModelProviderResponse(
-  provider: ModelProviderInfo,
-): ModelProviderResponse {
-  return {
-    id: provider.id,
-    type: provider.type,
-    framework: provider.framework,
-    secretName: provider.secretName,
-    authMethod: provider.authMethod,
-    secretNames: provider.secretNames,
-    isDefault: provider.isDefault,
-    selectedModel: provider.selectedModel,
-    workspaceName: provider.workspaceName,
-    planType: provider.planType,
-    subscriptionResetPeriod: provider.subscriptionResetPeriod,
-    subscriptionNextResetAt:
-      provider.subscriptionNextResetAt?.toISOString() ?? null,
-    needsReconnect: provider.needsReconnect,
-    lastRefreshErrorCode: provider.lastRefreshErrorCode,
-    createdAt: provider.createdAt.toISOString(),
-    updatedAt: provider.updatedAt.toISOString(),
-  };
-}
-
 const importClaudeCodeOAuthToken$ = command(
   async (
     { get, set },
     args: {
-      readonly scope: ClaudeCodeDeviceAuthScope;
+      readonly authSession?: DeviceAuthSessionPublication;
       readonly orgId: string;
       readonly userId: string;
       readonly accessToken: string;
@@ -765,86 +755,33 @@ const importClaudeCodeOAuthToken$ = command(
       fetchClaudeCodeSubscriptionMetadata(
         {
           accessToken: args.accessToken,
-          // Reset credits are read live for display and are not persisted on
-          // the provider row, so connecting an account never reads them.
-          includeResetGrants: false,
         },
         signal,
       ),
     );
     signal.throwIfAborted();
 
-    if (args.scope === "org") {
-      const result = await set(
-        upsertOrgModelProvider$,
-        {
-          orgId: args.orgId,
-          type: CLAUDE_CODE_DEVICE_AUTH_CONNECTOR_TYPE,
-          secret: args.accessToken,
-          metadata,
-        },
-        signal,
-      );
-      if ("status" in result) {
-        throw new Error(
-          "Claude Code OAuth token import returned an unexpected response",
-        );
-      }
-      return {
-        provider: toModelProviderResponse(result.provider),
-        created: result.created,
-      };
-    }
-
     const featureSwitchContext = await get(
       userFeatureSwitchContext(args.orgId, args.userId),
     );
     signal.throwIfAborted();
-    if (
-      isFeatureEnabled(
-        FeatureSwitchKey.PersonalModelProviderAccounts,
-        featureSwitchContext,
-      )
-    ) {
-      const result = await upsertPersonalModelProviderAccount(
-        {
-          db: set(writeDb$),
-          orgId: args.orgId,
-          userId: args.userId,
-          type: CLAUDE_CODE_DEVICE_AUTH_CONNECTOR_TYPE,
-          authMethod: null,
-          secretValues: {
-            CLAUDE_CODE_OAUTH_TOKEN: args.accessToken,
-          },
-          metadata,
-          mode: personalAccountMutation(args),
-          featureSwitchContext,
-        },
-        signal,
-      );
-      return result;
-    }
-
-    const result = await set(
-      upsertUserModelProvider$,
+    return await set(
+      upsertPersonalModelProviderAccount$,
       {
         orgId: args.orgId,
+        authSession: args.authSession,
         userId: args.userId,
         type: CLAUDE_CODE_DEVICE_AUTH_CONNECTOR_TYPE,
-        secret: args.accessToken,
+        authMethod: null,
+        secretValues: {
+          CLAUDE_CODE_OAUTH_TOKEN: args.accessToken,
+        },
         metadata,
+        mode: personalAccountMutation(args),
+        featureSwitchContext,
       },
       signal,
     );
-    if ("status" in result) {
-      throw new Error(
-        "Claude Code OAuth token import returned an unexpected response",
-      );
-    }
-    return {
-      provider: toModelProviderResponse(result.provider),
-      created: result.created,
-    };
   },
 );
 
@@ -852,18 +789,16 @@ const completeLoadedClaudeCodeDeviceAuth$ = command(
   async (
     { set },
     args: {
-      readonly writeDb: Db;
       readonly session: ModelProviderAuthSession;
       readonly orgId: string;
       readonly userId: string;
-      readonly orgRole: "admin" | "member" | undefined;
       readonly authorizationCode: string;
     },
     signal: AbortSignal,
   ): Promise<ClaudeCodeDeviceAuthCompleteResult> => {
-    const { writeDb, session } = args;
+    const { session } = args;
     if (isSessionExpired(session)) {
-      await markSessionExpired({ writeDb, session });
+      await set(markSessionExpired$, { session });
       signal.throwIfAborted();
       return {
         status: "invalid_token",
@@ -889,12 +824,6 @@ const completeLoadedClaudeCodeDeviceAuth$ = command(
         message: "Claude Code device auth session state is invalid",
       };
     }
-    if (providerState.scope === "org" && args.orgRole !== "admin") {
-      return {
-        status: "forbidden",
-        message: "Only admins can manage org model providers",
-      };
-    }
 
     const parsedAuthorizationCode = safeSync(() => {
       return parseAuthorizationCodeInput({
@@ -913,7 +842,7 @@ const completeLoadedClaudeCodeDeviceAuth$ = command(
     }
     const authorizationCode = parsedAuthorizationCode.ok;
 
-    const claimed = await claimCompleting({ writeDb, session });
+    const claimed = await set(claimCompleting$, { session });
     signal.throwIfAborted();
     if (!claimed) {
       return {
@@ -925,9 +854,7 @@ const completeLoadedClaudeCodeDeviceAuth$ = command(
     return await set(
       importClaimedClaudeCodeDeviceAuth$,
       {
-        writeDb,
         session,
-        scope: providerState.scope,
         mode: providerState.mode,
         modelProviderId: providerState.modelProviderId,
         orgId: args.orgId,
@@ -945,9 +872,7 @@ const importClaimedClaudeCodeDeviceAuth$ = command(
   async (
     { set },
     args: {
-      readonly writeDb: Db;
       readonly session: ModelProviderAuthSession;
-      readonly scope: ClaudeCodeDeviceAuthScope;
       readonly mode: ClaudeCodeDeviceAuthMode | undefined;
       readonly modelProviderId: string | undefined;
       readonly orgId: string;
@@ -976,8 +901,7 @@ const importClaimedClaudeCodeDeviceAuth$ = command(
         tokens.error,
         "Claude Code device auth token exchange failed",
       );
-      await markSessionError({
-        writeDb: args.writeDb,
+      await set(markSessionError$, {
         sessionId: args.session.id,
         message,
       });
@@ -993,7 +917,11 @@ const importClaimedClaudeCodeDeviceAuth$ = command(
       set(
         importClaudeCodeOAuthToken$,
         {
-          scope: args.scope,
+          authSession: {
+            id: args.session.id,
+            userId: args.userId,
+            source: "claude-code-device-auth",
+          },
           orgId: args.orgId,
           userId: args.userId,
           accessToken: tokens.value.accessToken,
@@ -1011,8 +939,7 @@ const importClaimedClaudeCodeDeviceAuth$ = command(
         imported.error,
         "Claude Code device auth import failed",
       );
-      await markSessionError({
-        writeDb: args.writeDb,
+      await set(markSessionError$, {
         sessionId: args.session.id,
         message,
       });
@@ -1025,8 +952,7 @@ const importClaimedClaudeCodeDeviceAuth$ = command(
     }
 
     if ("status" in imported.value) {
-      await markSessionError({
-        writeDb: args.writeDb,
+      await set(markSessionError$, {
         sessionId: args.session.id,
         message: imported.value.body.error.message,
       });
@@ -1037,8 +963,6 @@ const importClaimedClaudeCodeDeviceAuth$ = command(
       };
     }
 
-    await markSessionImported({ writeDb: args.writeDb, session: args.session });
-    signal.throwIfAborted();
     return {
       status: "complete",
       body: imported.value,
@@ -1052,7 +976,6 @@ export const completeClaudeCodeDeviceAuth$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly orgRole: "admin" | "member" | undefined;
       readonly sessionToken: string;
       readonly authorizationCode: string;
     },
@@ -1066,9 +989,7 @@ export const completeClaudeCodeDeviceAuth$ = command(
       };
     }
 
-    const writeDb = set(writeDb$);
-    const session = await loadSession({
-      writeDb,
+    const session = await set(loadSession$, {
       sessionId: decoded.sessionId,
       orgId: args.orgId,
       userId: args.userId,
@@ -1084,11 +1005,9 @@ export const completeClaudeCodeDeviceAuth$ = command(
     return await set(
       completeLoadedClaudeCodeDeviceAuth$,
       {
-        writeDb,
         session,
         orgId: args.orgId,
         userId: args.userId,
-        orgRole: args.orgRole,
         authorizationCode: args.authorizationCode,
       },
       signal,
@@ -1114,9 +1033,7 @@ export const cancelClaudeCodeDeviceAuth$ = command(
       };
     }
 
-    const writeDb = set(writeDb$);
-    const session = await loadSession({
-      writeDb,
+    const session = await set(loadSession$, {
       sessionId: decoded.sessionId,
       orgId: args.orgId,
       userId: args.userId,
@@ -1130,8 +1047,7 @@ export const cancelClaudeCodeDeviceAuth$ = command(
       };
     }
 
-    await cancelSession({
-      writeDb,
+    await set(cancelSession$, {
       sessionId: session.id,
       orgId: args.orgId,
       userId: args.userId,

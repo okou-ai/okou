@@ -22,3 +22,13 @@ export const db$ = computed((): ReadonlyDb => {
 export const writeDb$ = command(() => {
   return db();
 });
+
+/**
+ * Connection for handwritten raw-SQL reads. `ReadonlyDb` omits `execute`, so
+ * these read-only statements take the full connection type until the
+ * handwritten SQL moves to the typed builder. Nodes read it here instead of
+ * receiving a handle through state or inputs.
+ */
+export const rawSqlReadDb$ = computed((): Db => {
+  return db();
+});

@@ -10,8 +10,6 @@ import {
   skillImportSkillsContract,
   type SkillImportRequest,
 } from "@okouai/api-contracts/contracts/skill-import";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 
 import { apiBackendUrl } from "../../lib/api-backend-url";
@@ -28,7 +26,6 @@ import { authorization$, request$, setResHeader$ } from "../context/hono";
 import { bodyResultOf } from "../context/request";
 import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { userFeatureSwitchOverrides } from "../services/feature-switches.service";
 import {
   countSkillsImportedInSession,
   findOwnPrivateWorkflowIdByName,
@@ -85,47 +82,15 @@ function uploadUrl(): string {
   ).toString();
 }
 
-function skillImportDisabled() {
-  return {
-    status: 403 as const,
-    body: {
-      error: { message: "Skill import is not enabled", code: "FORBIDDEN" },
-    },
-  };
-}
-
-/**
- * Skill import is the onboarding skills step's backend, so it rolls out with
- * that flow. Both routes check it: the session route so no token can be minted
- * while the flow is off, and the upload route so turning it off also stops a
- * session that already holds one.
- */
-const skillImportEnabled$ = command(
-  async (
-    { get },
-    identity: { readonly orgId: string; readonly userId: string },
-  ): Promise<boolean> => {
-    const overrides = await get(
-      userFeatureSwitchOverrides(identity.orgId, identity.userId),
-    );
-    return isFeatureEnabled(FeatureSwitchKey.OnboardingSourcesFirst, {
-      orgId: identity.orgId,
-      userId: identity.userId,
-      overrides,
-    });
-  },
-);
+const sessionBody$ = bodyResultOf(skillImportSessionsContract.create);
 
 const createSessionInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const enabled = await set(skillImportEnabled$, {
-      orgId: auth.orgId,
-      userId: auth.userId,
-    });
+    const bodyResult = await get(sessionBody$);
     signal.throwIfAborted();
-    if (!enabled) {
-      return skillImportDisabled();
+    if (!bodyResult.ok) {
+      return bodyResult.response;
     }
 
     const agentId = await resolveSkillImportAgentId(get(db$), {
@@ -137,7 +102,12 @@ const createSessionInner$ = command(
       return notFound("This organization has no default agent to import into");
     }
 
-    const session = generateSkillImportToken(auth.userId, auth.orgId, agentId);
+    const session = generateSkillImportToken(
+      auth.userId,
+      auth.orgId,
+      agentId,
+      bodyResult.data.provider,
+    );
     // The token is a credential; keep it out of every cache on the way back.
     set(setResHeader$, "Cache-Control", "no-store");
     return {
@@ -276,15 +246,6 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
 
-  const enabled = await set(skillImportEnabled$, {
-    orgId: session.orgId,
-    userId: session.userId,
-  });
-  signal.throwIfAborted();
-  if (!enabled) {
-    return skillImportDisabled();
-  }
-
   // Reject an oversize upload on its declared length before buffering it.
   const declaredLength = Number(get(request$).header("content-length"));
   if (declaredLength > SKILL_IMPORT_LIMITS.maxRequestBytes) {
@@ -377,6 +338,7 @@ const uploadSkillInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         ...(body.files ? { files: body.files } : {}),
       },
       visibility: "private" as const,
+      importSource: session.provider,
     },
     signal,
   );

@@ -62,24 +62,23 @@ def write_registration(tmp_path, *, run_id="run-1", billable=False, generation="
         sandbox_info=_single_firewall_sandbox(
             tmp_path,
             run_id=run_id,
-            firewall_name="model-provider:openai-api-key",
+            firewall_name="model-provider:openrouter-codex",
             api_entry={
-                "base": "https://api.openai.com",
+                "base": "https://openrouter.ai",
                 "auth": {"headers": {}},
                 "permissions": [
                     {
                         "name": "inference",
                         "rules": [
-                            "POST /v1/responses",
-                            "POST /v1/chat/completions",
-                            "POST /v1/messages",
-                            "GET /v1/responses",
+                            "POST /api/v1/responses",
+                            "POST /api/v1/chat/completions",
+                            "GET /api/v1/responses",
                         ],
                     }
                 ],
             },
             network_policy={"allow": ["inference"], "deny": [], "ask": [], "unknownPolicy": "deny"},
-            billable_firewalls=["model-provider:openai-api-key"] if billable else [],
+            billable_firewalls=["model-provider:openrouter-codex"] if billable else [],
             sandbox_fields={
                 "usageGeneration": generation,
                 "cliAgentType": "codex",
@@ -89,9 +88,27 @@ def write_registration(tmp_path, *, run_id="run-1", billable=False, generation="
     )
 
 
-async def admit(real_flow, *, path="/v1/responses"):
+def write_subscription_registration(tmp_path):
+    return _write_registry(
+        tmp_path,
+        sandbox_info=_single_firewall_sandbox(
+            tmp_path,
+            run_id="run-1",
+            firewall_name="model-provider:claude-code-oauth-token",
+            api_entry={
+                "base": "https://api.anthropic.com",
+                "auth": {"headers": {}},
+                "permissions": [{"name": "inference", "rules": ["POST /v1/messages"]}],
+            },
+            network_policy={"allow": ["inference"], "deny": [], "ask": [], "unknownPolicy": "deny"},
+            sandbox_fields={"usageGeneration": "generation-1", "cliAgentType": "claude-code"},
+        ),
+    )
+
+
+async def admit(real_flow, *, host="openrouter.ai", path="/api/v1/responses"):
     flow = real_flow(
-        with_response=False, host="api.openai.com", client_ip="10.200.0.5", method="POST", path=path
+        with_response=False, host=host, client_ip="10.200.0.5", method="POST", path=path
     )
     await mitm_addon.request(flow)
     assert flow.response is None
@@ -225,7 +242,7 @@ async def test_chat_sse_uses_disjoint_categories(
 ):
     path = write_registration(tmp_path)
     with mitm_ctx(registry_path=str(path)), fake_firewall_headers():
-        flow = await admit(real_flow, path="/v1/chat/completions")
+        flow = await admit(real_flow, path="/api/v1/chat/completions")
         flow.response = tutils.tresp(headers=header_map({"content-type": "text/event-stream"}))
         mitm_addon.responseheaders(flow)
         data = {
@@ -419,13 +436,14 @@ async def test_known_usage_survives_later_malformed_event_in_same_chunk(
     fake_firewall_headers,
     protocol,
 ):
-    path = write_registration(tmp_path)
     if protocol == "messages":
-        contents = json.loads(path.read_text())
-        contents["sandboxes"]["10.200.0.5"]["cliAgentType"] = "claude-code"
-        path.write_text(json.dumps(contents))
+        path = write_subscription_registration(tmp_path)
+        flow_target = {"host": "api.anthropic.com", "path": "/v1/messages"}
+    else:
+        path = write_registration(tmp_path)
+        flow_target = {"host": "openrouter.ai", "path": "/api/v1/" + protocol}
     with mitm_ctx(registry_path=str(path)), fake_firewall_headers():
-        flow = await admit(real_flow, path="/v1/" + protocol)
+        flow = await admit(real_flow, **flow_target)
         flow.response = tutils.tresp(headers=header_map({"content-type": "text/event-stream"}))
         mitm_addon.responseheaders(flow)
         if protocol == "responses":
@@ -435,7 +453,7 @@ async def test_known_usage_survives_later_malformed_event_in_same_chunk(
             event = {
                 "type": "message_start",
                 "message": {
-                    "id": "anthropic-1",
+                    "id": "msg-1",
                     "usage": {
                         "input_tokens": 25,
                         "output_tokens": 20,

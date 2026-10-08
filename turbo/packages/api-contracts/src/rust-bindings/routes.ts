@@ -2,7 +2,6 @@ import { runnerRealtimeTokenContract } from "../contracts/realtime";
 import { runnerSshContract } from "../contracts/runner-ssh";
 import { runnerVncContract } from "../contracts/runner-vnc";
 import {
-  runnersActiveInputsContract,
   runnersCancellationContract,
   runnersConnectorRuntimeSyncContract,
   runnersBuiltinFirewallsResolveContract,
@@ -10,6 +9,7 @@ import {
   runnersJobClaimContract,
   runnersModelProviderFailuresContract,
   runnersPollContract,
+  runnersSteerContract,
 } from "../contracts/runners";
 import {
   webhookCheckpointsContract,
@@ -74,28 +74,27 @@ export const rustRouteBindings = [
     rustConstName: "CLAIM",
   },
   {
-    route: runnersActiveInputsContract.reserve,
+    route: runnersSteerContract.next,
     rustModulePath: [
       "runners",
       "runs",
       "by_run_id",
-      "active_inputs",
-      "reserve",
+      "steerable_inputs",
+      "next",
     ],
-    rustConstName: "RESERVE",
+    rustConstName: "NEXT",
   },
   {
-    route: runnersActiveInputsContract.receipt,
+    route: runnersSteerContract.steered,
     rustModulePath: [
       "runners",
       "runs",
       "by_run_id",
-      "active_inputs",
-      "deliveries",
-      "by_delivery_id",
-      "receipt",
+      "steerable_inputs",
+      "by_event_id",
+      "steered",
     ],
-    rustConstName: "RECEIPT",
+    rustConstName: "STEERED",
   },
   {
     route: runnersModelProviderFailuresContract.report,

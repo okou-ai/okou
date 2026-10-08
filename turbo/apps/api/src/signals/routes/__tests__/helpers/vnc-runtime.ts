@@ -1,30 +1,27 @@
 import { randomUUID } from "node:crypto";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import {
   runnerVncContract,
   type RunnerVncResolveRequest,
 } from "@okouai/api-contracts/contracts/runner-vnc";
-import { agentSshAccessContract } from "@okouai/api-contracts/contracts/ssh-access";
 import {
   testSshConnectionStateContract,
   type TestSshConnectionStateActionBody,
 } from "@okouai/api-contracts/contracts/test-ssh-connection-state";
-import { testVncAuthorityStateContract } from "@okouai/api-contracts/contracts/test-vnc-authority-state";
-import { agentVncAccessContract } from "@okouai/api-contracts/contracts/vnc-access";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { vncCredentialsContract } from "@okouai/api-contracts/contracts/vnc-credentials";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { mockEnv } from "../../../../lib/env";
+import { chatRemoteAccessRoutes } from "../../chat-remote-access";
 import { runnerVncRoutes } from "../../runner-vnc";
-import { sshAccessRoutes } from "../../ssh-access";
 import { testSshConnectionStateRoutes } from "../../test-ssh-connection-state";
-import { testVncAuthorityStateRoutes } from "../../test-vnc-authority-state";
-import { vncAccessRoutes } from "../../vnc-access";
 import { vncConnectionsRoutes } from "../../vnc-connections";
 import { updateFeatureSwitchesForUser } from "./feature-switches";
 import { createRouteMocks } from "./route-test";
 import { useSecretKmsProbe } from "./secret-kms-probe";
+import { requireVncCredentialId } from "./vnc-response";
 
 export const vncSessionHeaders = Object.freeze({
   authorization: "Bearer clerk-session",
@@ -37,24 +34,26 @@ export const vncSecurity = Object.freeze({
   type: "x509_vnc" as const,
   trust: Object.freeze({ mode: "system" as const }),
 });
-export const vncX509VncProfiles = Object.freeze([
-  { authMethod: "vnc_password" as const, securityType: "x509_vnc" as const },
-]);
-export const vncProfiles = Object.freeze([
-  ...vncX509VncProfiles,
-  {
-    authMethod: "username_password" as const,
-    securityType: "x509_plain" as const,
-  },
-]);
-export const vncTransportProfiles = Object.freeze(
-  vncProfiles.flatMap((profile) => {
-    return [
-      { ...profile, transportType: "direct" as const },
-      { ...profile, transportType: "ssh" as const },
-    ];
+const vncTransportTypes = ["direct", "ssh"] as const;
+export const vncX509VncProfiles = Object.freeze(
+  vncTransportTypes.map((transportType) => {
+    return {
+      authMethod: "vnc_password" as const,
+      securityType: "x509_vnc" as const,
+      transportType,
+    };
   }),
 );
+export const vncProfiles = Object.freeze([
+  ...vncX509VncProfiles,
+  ...vncTransportTypes.map((transportType) => {
+    return {
+      authMethod: "username_password" as const,
+      securityType: "x509_plain" as const,
+      transportType,
+    };
+  }),
+]);
 export const vncPassword = " secret ";
 type Owner = { readonly orgId: string; readonly userId: string };
 type RuntimeBody = Extract<
@@ -98,21 +97,6 @@ export function createVncRuntimeApi(context: TestContext) {
   const credentials = () => {
     return setupApp({ context, routes: vncConnectionsRoutes })(
       vncCredentialsContract,
-    );
-  };
-  const access = () => {
-    return setupApp({ context, routes: vncAccessRoutes })(
-      agentVncAccessContract,
-    );
-  };
-  const sshAccess = () => {
-    return setupApp({ context, routes: sshAccessRoutes })(
-      agentSshAccessContract,
-    );
-  };
-  const state = () => {
-    return setupApp({ context, routes: testVncAuthorityStateRoutes })(
-      testVncAuthorityStateContract,
     );
   };
   function authenticate(owner: Owner) {
@@ -159,8 +143,7 @@ export function createVncRuntimeApi(context: TestContext) {
           ...runnerIdentity,
           triggerSource: "web",
           status: "running",
-          chat: false,
-          access: false,
+          chat: true,
           ...overrides,
         },
       }),
@@ -175,42 +158,41 @@ export function createVncRuntimeApi(context: TestContext) {
     }
     return {
       runId: result.body.runId,
+      threadId: result.body.threadId,
       agentId: result.body.agentId,
       sandboxToken: result.body.sandboxToken,
       runnerIdentity,
     };
   }
-  async function grant(
-    owner: Owner & { readonly agentId: string },
+  async function setDefault(
+    owner: Owner,
+    protocol: "ssh" | "vnc",
+    connectionId: string,
     enabled: boolean,
   ) {
     authenticate(owner);
-    return await accept(
-      access().update({
+    const remote = setupApp({ context, routes: chatRemoteAccessRoutes })(
+      chatRemoteAccessContract,
+    );
+    await accept(
+      remote.updateHostDefault({
         headers: vncSessionHeaders,
-        params: { agentId: owner.agentId },
+        params: { protocol, connectionId },
         body: { enabled },
       }),
       [200],
     );
   }
-  async function grantSsh(
-    owner: Owner & { readonly agentId: string },
-    enabled: boolean,
+  async function enableDefault(
+    owner: Owner,
+    protocol: "ssh" | "vnc",
+    connectionId: string,
   ) {
-    authenticate(owner);
-    return await accept(
-      sshAccess().update({
-        headers: vncSessionHeaders,
-        params: { agentId: owner.agentId },
-        body: { enabled },
-      }),
-      [200],
-    );
+    await setDefault(owner, protocol, connectionId, true);
   }
   async function fixture(
     options: {
-      readonly grant?: boolean;
+      readonly defaultEnabled?: boolean;
       readonly runtime?: Partial<RuntimeBody>;
     } = {},
   ) {
@@ -229,16 +211,16 @@ export function createVncRuntimeApi(context: TestContext) {
       }),
       [201],
     );
+    if (options.defaultEnabled !== false) {
+      await enableDefault(owner, "vnc", connection.body.id);
+    }
     const running = await runtime(owner, options.runtime);
     const result = {
       ...owner,
       ...running,
       connectionId: connection.body.id,
-      credentialId: connection.body.credentialId,
+      credentialId: requireVncCredentialId(connection.body),
     };
-    if (options.grant !== false) {
-      await grant(result, true);
-    }
     return result;
   }
   async function resolve(
@@ -266,7 +248,7 @@ export function createVncRuntimeApi(context: TestContext) {
   }
   async function resolved(f: Parameters<typeof resolve>[0]) {
     const result = await resolve(f);
-    if (result.outcome !== "resolved") {
+    if (result.outcome !== "resolved_transport") {
       throw new Error(`VNC fixture did not resolve: ${result.outcome}`);
     }
     return result;
@@ -275,12 +257,10 @@ export function createVncRuntimeApi(context: TestContext) {
     runner,
     connections,
     credentials,
-    access,
-    state,
     authenticate,
     runtime,
-    grant,
-    grantSsh,
+    setDefault,
+    enableDefault,
     fixture,
     resolve,
     resolved,

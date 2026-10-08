@@ -3,9 +3,9 @@ import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event
 import { createStore, type Store } from "ccstate";
 import { afterEach, beforeAll, beforeEach } from "vitest";
 import { installPlatformLifecycle } from "../../test/platform-lifecycle.ts";
+import { installSharedDatabaseWorkerBootstrap } from "../../test/shared-database-worker-bootstrap.ts";
 import { logger, resetLoggerForTest } from "../log";
 import { resetLocalStorageForTest$ } from "../external/local-storage";
-import { resetSessionStorageForTest$ } from "../external/session-storage.ts";
 import { resetAllMockHandlers } from "../../mocks/handlers";
 import { createTestMocks, type TestMocks } from "./test-mocks.ts";
 
@@ -62,6 +62,38 @@ export function chatEventRowsResponse(
   };
 }
 
+export function mockChatThreadSnapshotResponse(
+  context: TestContext,
+  snapshot: {
+    readonly chatThreads: readonly unknown[];
+    readonly latestEventId: string | null;
+    readonly latestSeqId: number | null;
+  },
+) {
+  if (
+    snapshot.chatThreads.length === 0 &&
+    snapshot.latestEventId === null &&
+    snapshot.latestSeqId === null
+  ) {
+    return {
+      chatThreads: [] as [],
+      latestEventId: null,
+      latestSeqId: null,
+    };
+  }
+
+  const url = `https://r2.example.com/chat-thread-snapshots/${crypto.randomUUID()}.json`;
+  context.mocks.http.get(url, () => {
+    return Response.json({ chatThreads: snapshot.chatThreads });
+  });
+  return {
+    url,
+    expiresInSeconds: 900,
+    latestEventId: snapshot.latestEventId,
+    latestSeqId: snapshot.latestSeqId,
+  };
+}
+
 export interface TestContext {
   readonly mocks: TestMocks;
   readonly resourceId: string;
@@ -106,7 +138,6 @@ export function testContext(): TestContext {
         store = createStore();
         context.signal.addEventListener("abort", () => {
           store?.set(resetLocalStorageForTest$);
-          store?.set(resetSessionStorageForTest$);
           resetLoggerForTest();
 
           store = null;
@@ -132,6 +163,7 @@ export function testContext(): TestContext {
 
   beforeEach(() => {
     installPlatformLifecycle(context.signal);
+    installSharedDatabaseWorkerBootstrap(context.signal);
   });
 
   afterEach(() => {

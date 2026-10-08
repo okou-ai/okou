@@ -56,7 +56,7 @@ export const peopleSearchResponseSchema = z.object({
   provider: z.literal("perplexity"),
   billingCategory: z.literal("request"),
   billingQuantity: z.literal(1),
-  creditsCharged: z.number().int().nonnegative(),
+  creditsCharged: z.number().int().nonnegative().nullable(),
   profiles: z.array(peopleSearchProfileSchema).max(PEOPLE_SEARCH_MAX_LIMIT),
 });
 

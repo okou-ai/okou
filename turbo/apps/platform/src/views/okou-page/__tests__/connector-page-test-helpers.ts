@@ -1,4 +1,6 @@
+import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
+import { connectorAgentAccessContract } from "@okouai/api-contracts/contracts/connector-agent-access";
 import {
   type ConnectorAccountConnection,
   type ConnectorAccountSummary,
@@ -6,7 +8,6 @@ import {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import {
-  type PublicConnectorCatalogCategoryMetadata,
   type PublicConnectorCatalogStatusItem,
   connectorCatalogContract,
 } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -28,6 +29,7 @@ import {
 import { screen, within } from "@testing-library/react";
 
 import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { mockAgentIds } from "../../../mocks/handlers/api-agents.ts";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 
 export function mockOAuthCompletions(
@@ -124,11 +126,39 @@ export function listAgent(
     description: null,
     sound: null,
     avatarUrl,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility: "public",
   };
+}
+
+export function mockConnectorAgentAccess(
+  context: TestContext,
+  read: (agentId: string) => {
+    readonly enabledConnectorSlugs?: readonly ConnectorSlug[];
+    readonly grants?: readonly AgentCustomConnectorGrant[];
+  },
+): void {
+  context.mocks.api(connectorAgentAccessContract.get, ({ respond }) => {
+    const visibleAgentIds = mockAgentIds();
+    return respond(200, {
+      visibleAgentIds,
+      builtin: visibleAgentIds.flatMap((agentId) => {
+        return (read(agentId).enabledConnectorSlugs ?? []).map(
+          (connectorSlug) => {
+            return { connectorSlug, agentId };
+          },
+        );
+      }),
+      custom: visibleAgentIds.flatMap((agentId) => {
+        return (read(agentId).grants ?? []).map((grant) => {
+          return {
+            connectorId: grant.customConnectorId,
+            agentId,
+            permissionNames: grant.permissionNames,
+          };
+        });
+      }),
+    });
+  });
 }
 
 export function mockConnectors(
@@ -273,14 +303,10 @@ function browseSlice<
 export function mockPublicConnectorStatus(
   context: TestContext,
   connectors: readonly PublicConnectorCatalogStatusItem[],
-  categoryMetadata?: PublicConnectorCatalogCategoryMetadata,
   categoryConnectorCounts?: Readonly<Record<string, number>>,
 ): void {
   context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
-    return respond(200, {
-      connectors: [...connectors],
-      ...(categoryMetadata ? { categoryMetadata } : {}),
-    });
+    return respond(200, { connectors: [...connectors] });
   });
   context.mocks.api(
     connectorCatalogContract.discovery,
@@ -297,7 +323,6 @@ export function mockPublicConnectorStatus(
       return respond(200, {
         connectors: [...scoped],
         totalConnectorCount: connectors.length,
-        ...(categoryMetadata ? { categoryMetadata } : {}),
         ...(categoryConnectorCounts ? { categoryConnectorCounts } : {}),
       });
     },

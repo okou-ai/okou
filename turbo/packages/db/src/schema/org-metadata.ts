@@ -27,6 +27,7 @@ function orgMetadataColumnsBeforeFirstPartySource() {
       .notNull()
       .default(false),
     onboardingComplete: boolean("onboarding_complete").notNull().default(false),
+    openrouterPreset: text("openrouter_preset"),
     // The field answered in the source-first onboarding flow. Null for every
     // org that finished onboarding without being asked, so readers must treat
     // an absent answer as "not collected" rather than a missing value.
@@ -113,6 +114,11 @@ export const orgMetadata = pgTable(
   },
   (table) => {
     return [
+      check("chk_org_metadata_tier_not_free", sql`${table.tier} <> 'free'`),
+      check(
+        "chk_org_metadata_pending_target_not_free",
+        sql`${table.pendingSubscriptionTargetTier} IS NULL OR ${table.pendingSubscriptionTargetTier} <> 'free'`,
+      ),
       check(
         "chk_org_metadata_tier_not_pro_suspend",
         sql`${table.tier} <> 'pro-suspend'`,

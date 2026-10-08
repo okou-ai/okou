@@ -1,11 +1,11 @@
-import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import type {
   ChatRunOptionsRequest,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
   click,
@@ -13,15 +13,15 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
   AGENT_ID,
   context,
   findComposerEditor,
   mockAgent,
   mockBillingCapabilities,
-  mockOrgModelRoutes,
+  mockPersonalModelRoutes,
 } from "./chat-composer-test-helpers.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 interface SubmittedMessage {
   readonly userMessage?: UserMessageDocument;
@@ -50,9 +50,8 @@ function setupModels(): void {
     });
   });
   mockAgent();
-  mockOrgModelRoutes("claude-fable-5-1");
+  mockPersonalModelRoutes();
   mockBillingCapabilities({
-    supportByok: true,
     restrictedBuiltInModels: false,
   });
 }
@@ -62,7 +61,6 @@ async function setupComposer(): Promise<HTMLElement> {
     context,
     path: `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
-      [FeatureSwitchKey.ComposerSlashTemplatePanel]: true,
       [FeatureSwitchKey.ComposerTaskChips]: true,
     },
   });
@@ -95,7 +93,7 @@ function visibleText(message: SubmittedMessage | undefined): string {
   );
 }
 
-test("Presentation sends Auto as hidden additional info while keeping the message unchanged", async () => {
+test("Presentation sends Auto as additional info without changing the message", async () => {
   setupModels();
   const submissions: SubmittedMessage[] = [];
   mockChatLifecycle(context, {
@@ -127,11 +125,21 @@ test("Presentation sends Auto as hidden additional info while keeping the messag
     ),
   });
   expect(visibleText(submissions[0])).toBe("Our launch");
-  const text = await screen.findByText("Our launch");
-  const message = text.closest<HTMLElement>('[data-role="user"]');
-  expect(message).toBeVisible();
-  expect(message).not.toHaveTextContent("Slide count");
-  expect(message).not.toHaveTextContent("Create a presentation.");
+});
+
+test("Presentation instructions stay out of the sent message bubble", async () => {
+  setupModels();
+  mockChatLifecycle(context);
+  const editor = await setupComposer();
+  await enterPresentation(editor);
+  click(button("Send"));
+  await waitFor(() => {
+    const message = document.querySelector<HTMLElement>('[data-role="user"]');
+    expect(message).toBeVisible();
+    expect(message).toHaveTextContent("Our launch");
+    expect(message).not.toHaveTextContent("Slide count");
+    expect(message).not.toHaveTextContent("Create a presentation.");
+  });
 });
 
 test("Presentation sends the chosen slide count in additional info", async () => {

@@ -30,9 +30,9 @@ export const chatThreadEventKind = pgEnum("chat_thread_event_kind", [
   "model_selection_updated",
   "service_tier_updated",
   "computer_use_host_updated",
-  "video_model_updated",
-  "image_model_updated",
   "sort_touched",
+  "archived",
+  "unarchived",
 ]);
 
 export type ChatThreadEventKind =
@@ -46,7 +46,10 @@ export const chatThreadEventSequences = pgTable(
     lastSeqId: bigint("last_seq_id", { mode: "number" }).default(0).notNull(),
   },
   (table) => {
-    return [primaryKey({ columns: [table.userId, table.orgId] })];
+    return [
+      primaryKey({ columns: [table.userId, table.orgId] }),
+      index("chat_thread_event_sequences_org_idx").on(table.orgId),
+    ];
   },
 );
 
@@ -61,8 +64,12 @@ export const chatThreadEvents = pgTable(
     chatThreadId: uuid("chat_thread_id").notNull(),
     kind: chatThreadEventKind("kind").notNull(),
     agentId: uuid("agent_id"),
+    /** Only canonical agent reassignment carries this identity update. */
+    reassignedAgentId: uuid("reassigned_agent_id"),
     title: text("title"),
     pinOrder: text("pin_order"),
+    /** Metadata-only sort_touched payload; NULL means no mute change. */
+    muted: boolean("muted"),
     selectedModel: varchar("selected_model", { length: 255 }),
     /** Full map for created events. */
     modelSettings: jsonb("model_settings").$type<ModelSettings>(),
@@ -74,15 +81,14 @@ export const chatThreadEvents = pgTable(
     reasoningEffort: varchar("reasoning_effort", {
       length: 20,
     }).$type<ReasoningEffort | "default">(),
+    // Immutable history can still hold the retired `ultrafast` tier.
     serviceTier: varchar("service_tier", {
       length: 20,
-    }).$type<ChatThreadServiceTier>(),
+    }).$type<ChatThreadServiceTier | "ultrafast">(),
     computerUseHostId: uuid("computer_use_host_id"),
     cloudBrowserEnabled: boolean("cloud_browser_enabled")
       .default(false)
       .notNull(),
-    selectedVideoModel: varchar("selected_video_model", { length: 255 }),
-    selectedImageModel: varchar("selected_image_model", { length: 255 }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => {
@@ -97,6 +103,7 @@ export const chatThreadEvents = pgTable(
         table.createdAt,
         table.id,
       ),
+      index("chat_thread_events_org_idx").on(table.orgId),
       index("idx_chat_thread_events_thread_created").on(
         table.chatThreadId,
         table.createdAt,

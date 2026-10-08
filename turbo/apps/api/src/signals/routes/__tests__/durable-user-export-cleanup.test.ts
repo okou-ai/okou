@@ -195,6 +195,7 @@ test("does not delete staged data or abort uploads while an export worker still 
     },
   });
   onTestFinished(async () => {
+    clearMockNow();
     if (!release.settled()) {
       release.resolve();
     }
@@ -214,12 +215,13 @@ test("does not delete staged data or abort uploads while an export worker still 
   const prefix = `exports/${user.userId}/${started.body.jobId}/staging/`;
   const before = storage.objectKeys(prefix);
 
-  await work(user, started.body.jobId, "make-cleanup-due");
+  mockNow(new Date(nowDate().getTime() + 3 * 60_000));
   await expect(
     work(user, started.body.jobId, "cleanup"),
   ).resolves.toMatchObject({ processed: 0 });
   expect(storage.objectKeys(prefix)).toStrictEqual(before);
   expect(storage.hasMultipartUpload(upload)).toBeTruthy();
+  clearMockNow();
   release.resolve();
   await flushWaitUntilForTest();
 });

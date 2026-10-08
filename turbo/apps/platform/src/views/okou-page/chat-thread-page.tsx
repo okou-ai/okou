@@ -1,5 +1,5 @@
 import type { ChatLayoutSignals } from "../../signals/chat-page/chat-layout.ts";
-import type { ThinkingSummaries } from "../../signals/chat-page/thread-activity-summary.ts";
+import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ScrollArea } from "@base-ui/react/scroll-area";
 import { Toolbar } from "@base-ui/react/toolbar";
@@ -63,7 +63,6 @@ import {
   Package,
   Route,
   Search,
-  Target,
   X,
   Clock,
   Hourglass,
@@ -130,9 +129,13 @@ import type {
   ChatThreadWorkflowAutomation,
   WorkflowSchedule,
 } from "@okouai/api-contracts/contracts/workflows";
-import { getModelDisplayName } from "@okouai/core/model-display-name";
+import {
+  modelCatalog$,
+  type ModelCatalog,
+} from "../../signals/external/model-catalog.ts";
 import { emptyChatImg, thinkingSpinnerImg } from "./platform-assets.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { ChatLastReadMarker } from "../../signals/chat-page/chat-last-read-marker.ts";
 import { ChatThreadPinButton } from "./chat-thread-header-actions.tsx";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { Markdown, MarkdownEventBody } from "../components/markdown.tsx";
@@ -165,6 +168,8 @@ import {
   PreviewableAudioAttachmentChip,
   PreviewableFileAttachmentChip,
 } from "./attachment-chips.tsx";
+import { DiscordMark } from "./components/discord-mark.tsx";
+import { McpMark } from "./components/mcp-mark.tsx";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
 import type {
@@ -174,6 +179,7 @@ import type {
 import {
   activeChatConnectorAction$,
   closeChatConnectorActionConnectDialog$,
+  completeExactReconnectChatAction$,
 } from "../../signals/chat-page/connector-action-block.ts";
 import {
   chatEventDisplayError,
@@ -188,8 +194,13 @@ import {
   type RunWorkFolding,
   type RunWorkSection,
 } from "../../signals/chat-page/run-work-folding.ts";
+import {
+  chatEventGroupKeys,
+  chatEventRenderKey,
+} from "../../signals/chat-page/chat-event-group-keys.ts";
 import { chatGroupForSharing } from "../../signals/chat-page/chat-thread-sharing.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
+import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
 import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
 import {
   defaultBuiltinConnectorAccountOptions,
@@ -259,23 +270,27 @@ import type {
   ChatEvent,
 } from "../../signals/chat-page/chat-event-types.ts";
 import { optimisticEventIds$ } from "../../signals/chat-page/optimistic-chat-events.ts";
+import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
 import type { ChatRunModelSelection } from "../../signals/chat-page/chat-event-state.ts";
 import type { AgentReferenceSignals } from "../../signals/chat-page/agent-reference-signals.ts";
 import type { RunDetailSignals } from "../../signals/chat-page/run-detail.ts";
 import type { AssistantErrorRecovery } from "../../signals/chat-page/assistant-error-recovery.ts";
 import { localizedRunError } from "../../lib/run-error.ts";
 import { PlainTextWithLinks } from "../components/plain-text-with-links.tsx";
+import {
+  ChatThreadLinkChip,
+  STRUCTURED_INLINE_LINK_REFERENCE_CLASS,
+  STRUCTURED_INLINE_REFERENCE_CLASS,
+} from "../components/chat-thread-link-chip.tsx";
 import { userMessageFileAttachments } from "../../signals/chat-page/user-message-files.ts";
 import type {
   ChatPanelSignals,
   RecommendedFollowupSource,
-  ThinkingIndicatorMode,
+  ThinkingIndicators,
 } from "../../signals/chat-page/chat-panel-signals.ts";
 import {
   applyChatThreadEmoji,
-  isChatThreadArchived,
   removeChatThreadEmoji,
-  unarchiveChatThreadTitle,
   CHAT_THREAD_EMOJI_OPTIONS,
 } from "../../signals/chat-page/chat-thread-title.ts";
 import {
@@ -357,26 +372,24 @@ type RecommendedFollowup = ChatRecommendedFollowup;
 
 type UserMessageNonContentPart = Extract<
   UserMessagePart,
-  { readonly type: "source" | "automation" | "goal" }
+  { readonly type: "source" | "automation" }
 >;
 
 type UserMessageAnnotationRenderPart = Extract<
   UserMessageRenderPart,
-  { readonly type: "source" | "automation" | "goal" }
+  { readonly type: "source" | "automation" }
 >;
 
 function isUserMessageNonContentPart(
   part: UserMessagePart,
 ): part is UserMessageNonContentPart {
-  return (
-    part.type === "source" || part.type === "automation" || part.type === "goal"
-  );
+  return part.type === "source" || part.type === "automation";
 }
 
 type UserMessageHiddenPart = Extract<
   UserMessagePart,
   {
-    readonly type: "source" | "automation" | "goal" | "model";
+    readonly type: "source" | "automation" | "model";
   }
 >;
 
@@ -390,7 +403,6 @@ function isInputChatEvent(event: ChatEvent): event is ChatInputEvent {
   return (
     event.eventType === "input.prompt" ||
     event.eventType === "input.automation" ||
-    event.eventType === "input.goal" ||
     event.eventType === "input.rejected"
   );
 }
@@ -445,8 +457,10 @@ function fastModeEnabled(selection: ChatRunModelSelection): boolean {
 function runModelDisplayName(
   t: TFunction<"common">,
   selection: ChatRunModelSelection,
+  catalog: ModelCatalog | undefined,
 ): string {
-  const model = getModelDisplayName(selection.selectedModel);
+  const model =
+    catalog?.displayName(selection.selectedModel) ?? selection.selectedModel;
   return fastModeEnabled(selection)
     ? t(
         ($) => {
@@ -512,11 +526,7 @@ function userMessageAnnotationRenderPart(
 ): UserMessageAnnotationRenderPart | undefined {
   return document?.parts.find(
     (renderPart): renderPart is UserMessageAnnotationRenderPart => {
-      return (
-        renderPart.type === "source" ||
-        renderPart.type === "automation" ||
-        renderPart.type === "goal"
-      );
+      return renderPart.type === "source" || renderPart.type === "automation";
     },
   );
 }
@@ -723,8 +733,6 @@ export function SettledChatThreadActions({
 
 function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
-  const headerActionsEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadHeaderActions];
   const pageSignal = useGet(pageSignal$);
   const sharingPhase = useGet(thread.sharing.phase$);
   const selectedCount = useGet(thread.sharing.selectedCount$);
@@ -762,16 +770,12 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
 
   return (
     <header className={CHAT_THREAD_HEADER_CLASS}>
-      {headerActionsEnabled ? (
-        <div className="flex min-w-0 items-center gap-2 pr-3">
-          <ChatThreadHeaderTitle thread={thread} />
-          <SettledChatThreadActions thread={thread}>
-            <ChatThreadPinButton thread={thread} />
-          </SettledChatThreadActions>
-        </div>
-      ) : (
+      <div className="flex min-w-0 items-center gap-2 pr-3">
         <ChatThreadHeaderTitle thread={thread} />
-      )}
+        <SettledChatThreadActions thread={thread}>
+          <ChatThreadPinButton thread={thread} />
+        </SettledChatThreadActions>
+      </div>
       <SettledChatThreadActions thread={thread}>
         <div className="flex shrink-0 items-center gap-0.5">
           <TooltipProvider>
@@ -828,8 +832,6 @@ function useChatThreadEmojiMenuActions({
   const closeChatThreadEmojiMenu = useSet(closeChatThreadEmojiMenu$);
   const renameChatThread = useSet(renameChatThread$);
   const pageSignal = useGet(pageSignal$);
-  const archiveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const open = emojiMenuThreadId === threadId;
 
   function closeMenu() {
@@ -861,11 +863,7 @@ function useChatThreadEmojiMenuActions({
     if (!activeThreadId) {
       return;
     }
-    const currentTitle = emojiMenuTitle ?? title;
-    const nextTitle =
-      archiveEnabled && isChatThreadArchived(currentTitle)
-        ? unarchiveChatThreadTitle(currentTitle)
-        : removeChatThreadEmoji(currentTitle);
+    const nextTitle = removeChatThreadEmoji(emojiMenuTitle ?? title);
     if (!nextTitle) {
       closeMenu();
       return;
@@ -994,16 +992,10 @@ function ChatThreadEmojiMenuButton({
 
 function useFrequentlyUsedEmoji(): ChatThreadEmojiItem[] {
   const { t } = useTranslation();
-  const archiveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const labels = [
-    archiveEnabled
-      ? t(($) => {
-          return $.chat.thread.emoji.archive;
-        })
-      : t(($) => {
-          return $.chat.thread.emoji.done;
-        }),
+    t(($) => {
+      return $.chat.thread.emoji.done;
+    }),
     t(($) => {
       return $.chat.thread.emoji.urgent;
     }),
@@ -2176,7 +2168,7 @@ function HeaderWorkflowAutomationCard({
               type="button"
               variant="neutral"
               size="sm"
-              className="h-8 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-medium"
+              className="ml-auto h-8 shrink-0 gap-1.5 rounded-lg px-3 text-xs font-medium"
               disabled={running}
               onClick={() => {
                 detach(
@@ -3098,21 +3090,79 @@ function ChatThreadScrollCommitMarker({
   );
 }
 
-function assistantGroupIdForRunWorkIndicator(
+const DEFAULT_THINKING_INDICATORS: ThinkingIndicators = Object.freeze({
+  kind: "thinking",
+  runId: null,
+  messages: [],
+});
+
+function equalThinkingMessages(
+  previous: ThinkingMessage,
+  next: ThinkingMessage,
+): boolean {
+  return previous.id === next.id && previous.text === next.text;
+}
+
+// Every summary refresh resolves a new object, even when nothing changed. This
+// component renders the whole message list, so only a changed indicator should
+// render it again.
+function equalThinkingIndicators(
+  previous: ThinkingIndicators | null,
+  next: ThinkingIndicators | null,
+): boolean {
+  if (previous === null || next === null) {
+    return previous === next;
+  }
+  if (previous.kind === "queued" || next.kind === "queued") {
+    return previous.kind === next.kind;
+  }
+  return (
+    previous.runId === next.runId &&
+    equalArrays(previous.messages, next.messages, equalThinkingMessages)
+  );
+}
+
+type RunStatusRow =
+  | {
+      readonly kind: "thinking-indicators";
+      readonly indicators: ThinkingIndicators;
+    }
+  | { readonly kind: "finished" };
+
+// A status tail event (such as a run error) replaces the status row.
+function runStatusRow(
+  runWorkFolding: RunWorkFolding | null,
+  thinkingIndicators: ThinkingIndicators | null,
+  runFinished: boolean,
+): RunStatusRow | undefined {
+  if (runWorkFolding?.statusTail?.events.length) {
+    return undefined;
+  }
+  if (thinkingIndicators !== null) {
+    return { kind: "thinking-indicators", indicators: thinkingIndicators };
+  }
+  return runFinished ? { kind: "finished" } : undefined;
+}
+
+// The status row belongs to the run's work anchor group, otherwise to the
+// latest assistant turn.
+function statusRowAssistantGroupId(
   groups: readonly ChatEventGroup[],
   runWorkFolding: RunWorkFolding | null,
 ): string | null {
   const anchorEventId = runWorkFolding?.statusTail?.anchorEventId;
-  if (anchorEventId === undefined) {
-    return null;
-  }
-  return (
-    groups.find((group) => {
+  if (anchorEventId !== undefined) {
+    const anchorGroup = groups.find((group) => {
       return group.events.some((event) => {
         return event.id === anchorEventId;
       });
-    })?.beginEventId ?? null
-  );
+    });
+    if (anchorGroup !== undefined) {
+      return anchorGroup.beginEventId;
+    }
+  }
+  const lastGroup = groups.at(-1);
+  return lastGroup?.role === "assistant" ? lastGroup.beginEventId : null;
 }
 
 function ChatThreadRenderedEventGroups({
@@ -3130,10 +3180,7 @@ function ChatThreadRenderedEventGroups({
   const modelChanges = modelChangesByEventId(renderedActiveGroups);
   const scrollTargetEventId =
     useGet(thread.threadScrollPosition$)?.targetEventId ?? null;
-  const runWorkFolding = buildRunWorkFolding(
-    renderedActiveGroups,
-    new Set(modelChanges.keys()),
-  );
+  const runWorkFolding = buildRunWorkFolding(renderedActiveGroups);
   const runWorkExpandedKeys = useGet(runWorkExpandedKeys$);
   const effectiveRunWorkExpandedKeys = runWorkExpandedKeysForScrollTarget(
     runWorkFolding,
@@ -3142,15 +3189,26 @@ function ChatThreadRenderedEventGroups({
   );
   const toggleRunWorkExpanded = useSet(toggleRunWorkExpanded$);
   const visibleGroups = runWorkFolding?.visibleGroups ?? renderedActiveGroups;
-  const resolvedThinkingIndicatorMode =
-    useLastResolved(thread.thinkingIndicatorMode$) ?? null;
-  const thinkingIndicatorMode = runWorkFolding?.statusTail?.events.length
-    ? null
-    : resolvedThinkingIndicatorMode;
-  const runIndicatorAssistantGroupId = assistantGroupIdForRunWorkIndicator(
-    visibleGroups,
-    runWorkFolding,
+  // Before the first result, or when the summary request fails, show the
+  // default thinking label. A resolved null means the thread is idle.
+  const resolvedThinkingIndicators = useLastResolved(
+    thread.thinkingIndicators$,
+    { equalityFn: equalThinkingIndicators },
   );
+  const thinkingIndicators =
+    resolvedThinkingIndicators === undefined
+      ? DEFAULT_THINKING_INDICATORS
+      : resolvedThinkingIndicators;
+  const runFinished = useLastResolved(thread.runFinished$) ?? false;
+  const statusRow = runStatusRow(
+    runWorkFolding,
+    thinkingIndicators,
+    runFinished,
+  );
+  const statusRowGroupId =
+    statusRow === undefined
+      ? null
+      : statusRowAssistantGroupId(visibleGroups, runWorkFolding);
 
   return withChatScrollLayout(
     <>
@@ -3161,18 +3219,12 @@ function ChatThreadRenderedEventGroups({
         runWorkFolding={runWorkFolding}
         runWorkExpandedKeys={effectiveRunWorkExpandedKeys}
         onToggleRunWork={toggleRunWorkExpanded}
-        thinkingIndicatorMode={thinkingIndicatorMode}
-        runIndicatorAssistantGroupId={runIndicatorAssistantGroupId}
+        statusRow={statusRow}
+        statusRowGroupId={statusRowGroupId}
       />
       <ChatThreadScrollCommitMarker
         thread={thread}
         renderedGroups={resolvedRenderedGroups}
-      />
-      <ChatThreadThinkingIndicator
-        thread={thread}
-        mode={
-          runIndicatorAssistantGroupId === null ? thinkingIndicatorMode : null
-        }
       />
     </>,
   );
@@ -3253,19 +3305,6 @@ function ChatThreadEventsMain({ thread }: { thread: ChatPanelSignals }) {
   );
 }
 
-function ChatThreadThinkingIndicator({
-  thread,
-  mode,
-}: {
-  thread: ChatPanelSignals;
-  mode: ThinkingIndicatorMode;
-}) {
-  const sharingPhase = useGet(thread.sharing.phase$);
-  return sharingPhase === "idle" ? (
-    <ThinkingIndicator thread={thread} mode={mode} />
-  ) : null;
-}
-
 function ChatThreadNextRunModelNotice({
   thread,
 }: {
@@ -3278,6 +3317,7 @@ function ChatThreadNextRunModelNotice({
   const runningSelection = useLastResolved(
     thread.composer.model.runningModelSelection$,
   );
+  const catalog = useLastResolved(modelCatalog$);
   if (
     selectedSelection === undefined ||
     selectedSelection === null ||
@@ -3287,8 +3327,9 @@ function ChatThreadNextRunModelNotice({
     return withChatScrollLayout(null);
   }
 
+  // Runs record Auto under its internal run model.
   const selectedRunSelection: ChatRunModelSelection = {
-    selectedModel: selectedSelection.selectedModel,
+    selectedModel: selectedSelection.selectedModel ?? AUTO_RUN_MODEL,
     ...(selectedSelection.codexServiceTier === "fast"
       ? { serviceTier: "priority" as const }
       : {}),
@@ -3299,7 +3340,7 @@ function ChatThreadNextRunModelNotice({
       ($) => {
         return $.chat.run.selectedModelAppliesAfterCurrentRun;
       },
-      { model: runModelDisplayName(t, selectedRunSelection) },
+      { model: runModelDisplayName(t, selectedRunSelection, catalog) },
     );
   } else if (
     fastModeEnabled(selectedRunSelection) !== fastModeEnabled(runningSelection)
@@ -3370,8 +3411,8 @@ function ChatThreadEventGroups({
   runWorkFolding,
   runWorkExpandedKeys,
   onToggleRunWork,
-  thinkingIndicatorMode,
-  runIndicatorAssistantGroupId,
+  statusRow,
+  statusRowGroupId,
 }: {
   thread: ChatPanelSignals;
   groups: readonly ChatEventGroup[];
@@ -3379,18 +3420,20 @@ function ChatThreadEventGroups({
   runWorkFolding: RunWorkFolding | null;
   runWorkExpandedKeys: ReadonlySet<string>;
   onToggleRunWork: (key: string) => void;
-  thinkingIndicatorMode: ThinkingIndicatorMode;
-  runIndicatorAssistantGroupId: string | null;
+  statusRow: RunStatusRow | undefined;
+  statusRowGroupId: string | null;
 }) {
   // A run that ends re-forms the groups around it, so the messages the user
   // sent back to back can land in separate groups with nothing rendered in
   // between. Tracking the last group that actually put something on screen
   // keeps the stack from springing open the moment a run finishes.
+  const lastReadMarker = useGet(thread.lastReadMarker$);
   let previousVisibleGroup: ChatEventGroup | undefined;
+  const groupKeys = chatEventGroupKeys(groups, runWorkFolding);
 
   return (
     <>
-      {groups.map((group) => {
+      {groups.map((group, index) => {
         const runWorkSection = runWorkSectionForGroup(runWorkFolding, group);
         const stackFirstOnPrevious =
           previousVisibleGroup !== undefined &&
@@ -3399,16 +3442,14 @@ function ChatThreadEventGroups({
         if (groupRendersContent(group, runWorkSection)) {
           previousVisibleGroup = group;
         }
-        const runIndicatorMode =
-          group.beginEventId === runIndicatorAssistantGroupId &&
-          thinkingIndicatorMode !== null
-            ? thinkingIndicatorMode
-            : undefined;
+        const groupStatusRow =
+          group.beginEventId === statusRowGroupId ? statusRow : undefined;
         return (
-          <div
-            key={runWorkSection?.key ?? group.beginEventId}
-            className="contents"
-          >
+          <div key={groupKeys[index]} className="contents">
+            {lastReadMarker &&
+              group.events.some((event) => {
+                return event.id === lastReadMarker.eventId;
+              }) && <ChatLastReadDivider marker={lastReadMarker} />}
             <SelectablePagedGroupRow
               group={group}
               thread={thread}
@@ -3419,7 +3460,7 @@ function ChatThreadEventGroups({
                 runWorkExpandedKeys,
                 onToggleRunWork,
               )}
-              runIndicatorMode={runIndicatorMode}
+              statusRow={groupStatusRow}
               statusTailEvents={runWorkFolding?.statusTail?.events.filter(
                 (event) => {
                   return group.events.includes(event);
@@ -3430,6 +3471,27 @@ function ChatThreadEventGroups({
         );
       })}
     </>
+  );
+}
+
+function ChatLastReadDivider({ marker }: { marker: ChatLastReadMarker }) {
+  const { t } = useTranslation();
+  const label = t(($) => {
+    return marker.previouslyRead
+      ? $.chat.lastReadMarker.previouslyRead
+      : $.chat.lastReadMarker.unread;
+  });
+  return (
+    <div
+      role="separator"
+      aria-label={label}
+      data-chat-last-read-marker-event-id={marker.eventId}
+      className="flex items-center gap-3 py-2 text-xs text-muted-foreground"
+    >
+      <span className="flex-1 border-t border-divider" />
+      <span>{label}</span>
+      <span className="flex-1 border-t border-divider" />
+    </div>
   );
 }
 
@@ -3465,22 +3527,20 @@ function formatCompactDuration(totalSeconds: number): string {
   }
   const totalHours = Math.floor(totalMinutes / 60);
   const remainingMinutes = totalMinutes % 60;
-  const hours = i18n.t(
-    ($) => {
-      return $.chat.run.duration.hoursShort;
-    },
-    { count: totalHours },
-  );
   if (remainingMinutes === 0) {
-    return hours;
+    return i18n.t(
+      ($) => {
+        return $.chat.run.duration.hoursShort;
+      },
+      { count: totalHours },
+    );
   }
-  const minutes = i18n.t(
+  return i18n.t(
     ($) => {
-      return $.chat.run.duration.minutesShort;
+      return $.chat.run.duration.hoursMinutesShort;
     },
-    { count: remainingMinutes },
+    { hours: totalHours, minutes: remainingMinutes },
   );
-  return `${hours} ${minutes}`;
 }
 
 const RUN_SECTION_LABEL_CLASS =
@@ -3542,19 +3602,21 @@ function RunSectionDividerRow({
 
 function ModelChangeDividerRow({ change }: { change: RunModelChange }) {
   const { t } = useTranslation();
-  return <RunSectionDividerRow label={modelChangeLabel(t, change)} />;
+  const catalog = useLastResolved(modelCatalog$);
+  return <RunSectionDividerRow label={modelChangeLabel(t, change, catalog)} />;
 }
 
 function modelChangeLabel(
   t: TFunction<"common">,
   change: RunModelChange,
+  catalog: ModelCatalog | undefined,
 ): string {
   return change.kind === "model"
     ? t(
         ($) => {
           return $.chat.run.modelChangedTo;
         },
-        { model: runModelDisplayName(t, change.selection) },
+        { model: runModelDisplayName(t, change.selection, catalog) },
       )
     : change.enabled
       ? t(($) => {
@@ -3567,9 +3629,10 @@ function modelChangeLabel(
 
 function FoldedModelChangeDivider({ change }: { change: RunModelChange }) {
   const { t } = useTranslation();
+  const catalog = useLastResolved(modelCatalog$);
   return (
     <RunSectionDivider
-      label={modelChangeLabel(t, change)}
+      label={modelChangeLabel(t, change, catalog)}
       labelPosition="right"
     />
   );
@@ -3686,23 +3749,6 @@ function RunWorkSectionRow({
         <div className={className}>{content}</div>
       )}
     </div>
-  );
-}
-
-function isRejectedGoalUserMessage(event: EnrichedChatEvent): boolean {
-  return (
-    event.eventType === "input.rejected" &&
-    eventNonContentPart(event)?.type === "goal"
-  );
-}
-
-function isGoalUserMessage(
-  event: EnrichedChatEvent,
-): event is EnrichedChatEvent & ChatInputEvent {
-  return (
-    isInputChatEvent(event) &&
-    !isRejectedGoalUserMessage(event) &&
-    eventNonContentPart(event)?.type === "goal"
   );
 }
 
@@ -3995,9 +4041,6 @@ function RecommendedFollowupIcon({
 
   if (followup.generationType === "image") {
     return <Image size={16} />;
-  }
-  if (followup.generationType === "video") {
-    return <Video size={16} />;
   }
   if (followup.generationType === "presentation") {
     return <ChartLine size={16} />;
@@ -4299,7 +4342,7 @@ function ChatSkeleton() {
 
 interface ServerThinkingLabel {
   readonly id: string;
-  readonly messages: ThinkingSummaries["messages"];
+  readonly messages: readonly ThinkingMessage[];
 }
 
 function ShimmerText({
@@ -4344,6 +4387,8 @@ function ThinkingLabel({
   const { t } = useTranslation();
   const openQueueDrawer = useSet(openQueueDrawer$);
 
+  // The server holds input without a run. The queue drawer shows the org's
+  // slot usage by member and how to add slots.
   if (isQueued) {
     const waitingIn = t(($) => {
       return $.chat.run.waitingIn;
@@ -4374,6 +4419,7 @@ function ThinkingLabel({
           key={serverThinkingLabel.id}
           messages={serverThinkingLabel.messages}
           fallback={thinkingLabel}
+          intervalMs={5000}
         />
       </ShimmerText>
     );
@@ -4428,6 +4474,60 @@ function InlineThinkingRow({
   );
 }
 
+function RunStatusRowContent({
+  thread,
+  statusRow,
+}: {
+  thread: ChatPanelSignals;
+  statusRow: RunStatusRow;
+}) {
+  return statusRow.kind === "finished" ? (
+    <FinishedStatusRow thread={thread} />
+  ) : (
+    <ThinkingIndicatorRow thread={thread} indicators={statusRow.indicators} />
+  );
+}
+
+function ThinkingIndicatorRow({
+  thread,
+  indicators,
+}: {
+  thread: ChatPanelSignals;
+  indicators: ThinkingIndicators;
+}) {
+  const thinkingLabel = useGet(thread.thinkingPhrase$);
+  const isQueued = indicators.kind === "queued";
+  const serverThinkingLabel =
+    indicators.kind === "thinking" && indicators.messages.length > 0
+      ? { id: indicators.runId ?? "", messages: indicators.messages }
+      : undefined;
+  return (
+    <div
+      {...(isQueued ? {} : { "data-thinking-indicator": true })}
+      data-role="assistant-thinking"
+      className="animate-thinking-in min-w-0"
+    >
+      <InlineThinkingRow
+        isQueued={isQueued}
+        thinkingLabel={thinkingLabel}
+        serverThinkingLabel={serverThinkingLabel}
+      />
+    </div>
+  );
+}
+
+function FinishedStatusRow({ thread }: { thread: ChatPanelSignals }) {
+  const recommendedFollowupSource =
+    useLastResolved(thread.recommendedFollowupSource$, {
+      equalityFn: equalRecommendedFollowupSources,
+    }) ?? null;
+  return (
+    <div data-role="assistant-thinking" className="animate-thinking-in min-w-0">
+      <FinishedRunRow thread={thread} source={recommendedFollowupSource} />
+    </div>
+  );
+}
+
 function FinishedRunRow({
   thread,
   source,
@@ -4471,130 +4571,6 @@ function FinishedRunRow({
   );
 }
 
-function WaitingForAssistantResponse({
-  thread,
-  isQueued,
-  thinkingLabel,
-  serverThinkingLabel,
-  inAssistantGroup,
-}: {
-  thread: ChatPanelSignals;
-  isQueued: boolean;
-  thinkingLabel: string;
-  serverThinkingLabel?: ServerThinkingLabel;
-  inAssistantGroup: boolean;
-}) {
-  const thinkingIndicatorProps = isQueued
-    ? {}
-    : { "data-thinking-indicator": true };
-
-  if (inAssistantGroup) {
-    return (
-      <div
-        {...thinkingIndicatorProps}
-        data-role="assistant-thinking"
-        className="animate-thinking-in min-w-0"
-      >
-        <InlineThinkingRow
-          isQueued={isQueued}
-          thinkingLabel={thinkingLabel}
-          serverThinkingLabel={serverThinkingLabel}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div
-      {...thinkingIndicatorProps}
-      data-role="assistant"
-      className="animate-thinking-in flex flex-col gap-2"
-    >
-      <div className={CHAT_THREAD_ASSISTANT_MESSAGE_ROW_CLASS}>
-        <AssistantBubbleAvatar thread={thread} />
-        <div
-          className={cn(
-            "relative flex min-w-0 flex-col gap-2",
-            CHAT_THREAD_ASSISTANT_RESPONSE_COLUMN_CLASS,
-          )}
-        >
-          <ChatAssistantMessageBody>
-            <InlineThinkingRow
-              isQueued={isQueued}
-              thinkingLabel={thinkingLabel}
-              serverThinkingLabel={serverThinkingLabel}
-            />
-          </ChatAssistantMessageBody>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AssistantThinkingStatusRow({
-  active,
-  isQueued,
-  thinkingLabel,
-  serverThinkingLabel,
-  thread,
-  recommendedFollowupSource,
-  inAssistantGroup,
-}: {
-  active: boolean;
-  isQueued: boolean;
-  thinkingLabel: string;
-  serverThinkingLabel?: ServerThinkingLabel;
-  thread: ChatPanelSignals;
-  recommendedFollowupSource: RecommendedFollowupSource | null;
-  inAssistantGroup: boolean;
-}) {
-  const thinkingIndicatorProps =
-    active && !isQueued ? { "data-thinking-indicator": true } : {};
-
-  const content = active ? (
-    <InlineThinkingRow
-      isQueued={isQueued}
-      thinkingLabel={thinkingLabel}
-      serverThinkingLabel={serverThinkingLabel}
-    />
-  ) : (
-    <FinishedRunRow thread={thread} source={recommendedFollowupSource} />
-  );
-  if (inAssistantGroup) {
-    return (
-      <div
-        {...thinkingIndicatorProps}
-        data-role="assistant-thinking"
-        className="animate-thinking-in min-w-0"
-      >
-        {content}
-      </div>
-    );
-  }
-  return (
-    <div
-      {...thinkingIndicatorProps}
-      data-role="assistant-thinking"
-      className={RUN_SECTION_ROW_CLASS}
-    >
-      <div className="hidden @[900px]:block" />
-      <div className="min-w-0">{content}</div>
-    </div>
-  );
-}
-
-function runStatusIndicatorActive(mode: ThinkingIndicatorMode): boolean {
-  return mode !== null && mode !== "finished";
-}
-
-function thinkingIndicatorQueued(mode: ThinkingIndicatorMode): boolean {
-  return mode === "waiting-queued" || mode === "running-queued";
-}
-
-function thinkingIndicatorUsesStatusRow(mode: ThinkingIndicatorMode): boolean {
-  return mode === "running" || mode === "running-queued" || mode === "finished";
-}
-
 function equalRecommendedFollowupSources(
   previous: RecommendedFollowupSource | null,
   next: RecommendedFollowupSource | null,
@@ -4605,60 +4581,6 @@ function equalRecommendedFollowupSources(
       next !== null &&
       previous.eventId === next.eventId &&
       previous.followups === next.followups)
-  );
-}
-
-function ThinkingIndicator({
-  thread,
-  mode,
-  inAssistantGroup = false,
-}: {
-  thread: ChatPanelSignals;
-  mode: ThinkingIndicatorMode;
-  inAssistantGroup?: boolean;
-}) {
-  const summaries = useLastResolved(thread.thinkingSummaries$);
-  const thinkingRunId = useLastResolved(thread.thinkingRunId$);
-  const recommendedFollowupSource =
-    useLastResolved(thread.recommendedFollowupSource$, {
-      equalityFn: equalRecommendedFollowupSources,
-    }) ?? null;
-  const thinkingLabel = useGet(thread.thinkingPhrase$);
-  const active = runStatusIndicatorActive(mode);
-  const isQueued = thinkingIndicatorQueued(mode);
-  const serverThinkingLabel =
-    summaries && summaries.runId === thinkingRunId && active && !isQueued
-      ? { id: summaries.runId, messages: summaries.messages }
-      : undefined;
-
-  if (mode === null) {
-    return null;
-  }
-
-  // Active and finished states share the response line metrics.
-  if (thinkingIndicatorUsesStatusRow(mode)) {
-    return (
-      <AssistantThinkingStatusRow
-        active={active}
-        isQueued={isQueued}
-        thinkingLabel={thinkingLabel}
-        serverThinkingLabel={serverThinkingLabel}
-        thread={thread}
-        recommendedFollowupSource={recommendedFollowupSource}
-        inAssistantGroup={inAssistantGroup}
-      />
-    );
-  }
-
-  // Waiting for first assistant response — show bubble with avatar
-  return (
-    <WaitingForAssistantResponse
-      thread={thread}
-      isQueued={isQueued}
-      thinkingLabel={thinkingLabel}
-      serverThinkingLabel={serverThinkingLabel}
-      inAssistantGroup={inAssistantGroup}
-    />
   );
 }
 
@@ -4676,14 +4598,23 @@ function ActiveChatConnectorActionConnectModal() {
   const active = useGet(activeChatConnectorAction$);
   const close = useSet(closeChatConnectorActionConnectDialog$);
   const runCallback = useSet(runChatActionCallback$);
+  const completeExactReconnect = useSet(completeExactReconnectChatAction$);
   const pageSignal = useGet(pageSignal$);
   const customConnectors = useLastResolved(customConnectors$);
+  const accountLabelOf = useConnectorAccountLabel();
 
   if (!active) {
     return null;
   }
 
-  const onSuccess = async () => {
+  const onSuccess = async (
+    connectionId: string | null,
+    attemptSignal: AbortSignal,
+  ) => {
+    if (active.kind === "catalog-reconnect") {
+      await completeExactReconnect(active, connectionId, attemptSignal);
+      return;
+    }
     if (active.callbackPrompt && active.threadId) {
       await runCallback(
         {
@@ -4712,6 +4643,26 @@ function ActiveChatConnectorActionConnectModal() {
         onSuccess={onSuccess}
       />
     ) : null;
+  }
+
+  if (active.kind === "catalog-reconnect") {
+    return (
+      <ConnectModal
+        item={active.catalogItem}
+        agentId={active.agentId}
+        accountLabel={accountLabelOf(active.account)}
+        accountMode={{
+          kind: "reconnect",
+          connectionId: active.account.id,
+          authMethod: active.account.authMethod,
+        }}
+        accountOptions={{
+          account: { intent: "reconnect", connectionId: active.account.id },
+        }}
+        onClose={close}
+        onSuccess={onSuccess}
+      />
+    );
   }
 
   const accountOptions = defaultBuiltinConnectorAccountOptions(
@@ -5169,46 +5120,42 @@ function hasAssistantRecoveryModelPicker(
   );
 }
 
+/**
+ * The retry reads the thread's persisted model, so the card's actions wait for
+ * the selection write this picker starts. `onSelect` is owned by the actions
+ * row, which disables its buttons while the write is pending.
+ */
 function AssistantRecoveryModelPicker({
   recovery,
   thread,
+  onSelect,
 }: {
   readonly recovery: AssistantErrorRecovery;
   readonly thread: ChatPanelSignals;
+  readonly onSelect: (selection: ModelProviderSelection) => void;
 }) {
   const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
   const modelSelection =
     useLastResolved(thread.composer.model.modelSelection$) ?? null;
-  const setModelSelection = useSet(thread.composer.model.setModelSelection$);
   if (!hasAssistantRecoveryModelPicker(recovery)) {
     return null;
   }
-  const pickerValue =
-    recovery.kind === "model-unavailable" &&
-    modelSelection?.selectedModel === recovery.failedModel
-      ? null
-      : modelSelection;
   const handleModelSelection = (
     selection: ModelProviderSelection | null,
   ): void => {
     if (!selection) {
       return;
     }
-    detach(setModelSelection(selection, pageSignal), Reason.DomCallback);
+    onSelect(selection);
   };
   return (
     <ModelProviderPicker
-      value={pickerValue}
+      value={modelSelection}
       onChange={handleModelSelection}
       placeholder={t(($) => {
         return $.chat.errors.recovery.selectModel;
       })}
       triggerClassName="h-8 w-auto min-w-24 max-w-36 bg-background text-sm"
-      compactTrigger
-      {...(recovery.kind === "model-unavailable" && recovery.failedModel
-        ? { excludedModel: recovery.failedModel }
-        : {})}
     />
   );
 }
@@ -5233,7 +5180,7 @@ function AssistantRecoveryDestinationAction({
         }}
       >
         {t(($) => {
-          return $.runErrors.actions.openModelProviders;
+          return $.runErrors.actions.openModelSettings;
         })}
       </Button>
     );
@@ -5286,8 +5233,13 @@ function AssistantRecoveryActions({
   const [resetLoadable, resetAndRetry] = useLoadableSet(
     thread.resetCodexSubscriptionAndRetry$,
   );
+  const [selectModelLoadable, selectModel] = useLoadableSet(
+    thread.composer.model.setModelSelection$,
+  );
   const retrying = retryLoadable.state === "loading";
   const resetting = resetLoadable.state === "loading";
+  const selectingModel = selectModelLoadable.state === "loading";
+  const actionsDisabled = retrying || resetting || selectingModel;
   const resetAction = recovery.actions.resetAndTryAgain;
   const hasRetryAction = recovery.actions.tryAgain !== null;
   const continueAction =
@@ -5297,14 +5249,20 @@ function AssistantRecoveryActions({
 
   return (
     <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
-      <AssistantRecoveryModelPicker recovery={recovery} thread={thread} />
+      <AssistantRecoveryModelPicker
+        recovery={recovery}
+        thread={thread}
+        onSelect={(selection) => {
+          detach(selectModel(selection, pageSignal), Reason.DomCallback);
+        }}
+      />
       {hasRetryAction && (
         <Button
           type="button"
           size="sm"
           variant="neutral"
           className={ERROR_CARD_ACTION_CLASS}
-          disabled={retrying || resetting}
+          disabled={actionsDisabled}
           onClick={() => {
             detach(retry(pageSignal), Reason.DomCallback);
           }}
@@ -5325,7 +5283,7 @@ function AssistantRecoveryActions({
           size="sm"
           variant="outline"
           className={ERROR_CARD_ACTION_CLASS}
-          disabled={retrying || resetting}
+          disabled={actionsDisabled}
           onClick={() => {
             detach(resetAndRetry(pageSignal), Reason.DomCallback);
           }}
@@ -5761,26 +5719,18 @@ function assistantRecoverySourceDescription(
   recovery: AssistantErrorRecovery,
   t: TFunction<"common">,
 ): string | null {
-  if (
-    recovery.kind !== "usage-limit" ||
-    recovery.source?.credentialScope !== "member"
-  ) {
+  if (recovery.personalSubscription === null) {
     return null;
   }
-  if (recovery.source.account.status === "unavailable") {
+  if (recovery.personalSubscription === "disconnected") {
     return t(($) => {
-      return $.chat.errors.recovery.originalAccountUnavailable;
-    });
-  }
-  if (recovery.source.account.status === "unknown") {
-    return t(($) => {
-      return $.chat.errors.recovery.originalAccountUnknown;
+      return $.chat.errors.recovery.personalAccountDisconnected;
     });
   }
   return recovery.accountLabel
     ? t(
         ($) => {
-          return $.chat.errors.recovery.originalAccount;
+          return $.chat.errors.recovery.personalAccount;
         },
         { account: recovery.accountLabel },
       )
@@ -5903,8 +5853,7 @@ function assistantErrorRecoveryContent(
     description: description.content,
     descriptionTitle: description.title,
     ...(recovery.kind === "usage-limit" &&
-    (recovery.source?.credentialScope === "member" ||
-      recovery.resetWindows.length > 0)
+    (recovery.personalSubscription !== null || recovery.resetWindows.length > 0)
       ? { descriptionClassName: USAGE_RECOVERY_DESCRIPTION_CLASS }
       : {}),
     ...(hasActions
@@ -6065,38 +6014,6 @@ function assistantErrorFallbackContent(
     };
   }
 
-  const deletedGuidance = RUN_ERROR_GUIDANCE.PROVIDER_DELETED;
-  const isProviderDeleted =
-    deletedGuidance !== undefined &&
-    (error.toLowerCase().includes(deletedGuidance.title.toLowerCase()) ||
-      error.toLowerCase().includes(deletedGuidance.guidance.toLowerCase()));
-
-  if (isProviderDeleted) {
-    return {
-      icon: AlertCircle,
-      title: t(($) => {
-        return $.chat.errors.genericTitle;
-      }),
-      description: t(($) => {
-        return $.chat.errors.providerDeletedPrefix;
-      }),
-      actions: (
-        <Link
-          pathname="/"
-          className={cn(
-            buttonVariants({ size: "sm", variant: "neutral" }),
-            ERROR_CARD_ACTION_CLASS,
-          )}
-        >
-          {t(($) => {
-            return $.chat.errors.providerDeletedAction;
-          })}
-        </Link>
-      ),
-      reserveActions: true,
-    };
-  }
-
   const description = localizedRunError(error);
   const showDetails = /[\r\n]/u.test(description) || description.length > 240;
   const legacyUsageLimit = isLegacyUsageLimitError(error, failureReason);
@@ -6212,7 +6129,7 @@ function PagedGroupRow({
   modelChanges,
   stackFirstOnPrevious = false,
   runWorkSection,
-  runIndicatorMode,
+  statusRow,
   statusTailEvents,
 }: {
   group: ChatEventGroup;
@@ -6220,7 +6137,7 @@ function PagedGroupRow({
   modelChanges: ReadonlyMap<string, RunModelChange>;
   stackFirstOnPrevious?: boolean;
   runWorkSection?: RunWorkSectionControl;
-  runIndicatorMode?: Exclude<ThinkingIndicatorMode, null>;
+  statusRow?: RunStatusRow;
   statusTailEvents?: readonly EnrichedChatEvent[];
 }) {
   if (group.role === "user") {
@@ -6239,7 +6156,7 @@ function PagedGroupRow({
       thread={thread}
       modelChanges={modelChanges}
       runWorkSection={runWorkSection}
-      runIndicatorMode={runIndicatorMode}
+      statusRow={statusRow}
       statusTailEvents={statusTailEvents}
     />
   );
@@ -6283,7 +6200,7 @@ function SelectablePagedGroupRow({
   modelChanges,
   stackFirstOnPrevious,
   runWorkSection,
-  runIndicatorMode,
+  statusRow,
   statusTailEvents,
 }: Parameters<typeof PagedGroupRow>[0]) {
   const { t } = useTranslation();
@@ -6299,7 +6216,7 @@ function SelectablePagedGroupRow({
       modelChanges={modelChanges}
       stackFirstOnPrevious={sharing ? false : stackFirstOnPrevious}
       runWorkSection={sharing ? undefined : runWorkSection}
-      runIndicatorMode={sharing ? undefined : runIndicatorMode}
+      statusRow={sharing ? undefined : statusRow}
       statusTailEvents={sharing ? undefined : statusTailEvents}
     />
   );
@@ -6314,8 +6231,7 @@ function SelectablePagedGroupRow({
     return selectedEventIds.has(event.id);
   }).length;
   const allSelected = selectedCount === events.length;
-  const checked =
-    selectedCount === 0 ? false : allSelected ? true : "indeterminate";
+  const indeterminate = selectedCount > 0 && !allSelected;
 
   const toggleGroup = () => {
     if (phase !== "selecting") {
@@ -6339,10 +6255,7 @@ function SelectablePagedGroupRow({
           ? [
               ...group.events,
               ...(runWorkSection
-                ? [
-                    ...runWorkSection.hiddenGroups,
-                    ...runWorkSection.hiddenGroupsAfterAnchor,
-                  ].flatMap((hiddenGroup) => {
+                ? runWorkSection.hiddenGroups.flatMap((hiddenGroup) => {
                     return hiddenGroup.events;
                   })
                 : []),
@@ -6371,7 +6284,8 @@ function SelectablePagedGroupRow({
           })}
         </Field.Label>
         <Checkbox
-          checked={checked}
+          checked={allSelected}
+          indeterminate={indeterminate}
           disabled={phase !== "selecting"}
           className="absolute top-1/2 right-3 -translate-y-1/2"
           onCheckedChange={toggleGroup}
@@ -6417,7 +6331,7 @@ function PagedUserGroup({
             ? rendersUserBubble(previousEvent)
             : stackFirstOnPrevious);
         return (
-          <div key={event.id} className="contents">
+          <div key={chatEventRenderKey(event)} className="contents">
             {modelChange === undefined ? null : (
               <ModelChangeDividerRow change={modelChange} />
             )}
@@ -6433,15 +6347,10 @@ function PagedUserGroup({
   );
 }
 
-// A user event does not always render as a bubble: a workflow run, a historical
-// goal, and a rejected historical goal each render as their own card or as
-// nothing at all.
+// A user event does not always render as a bubble: a workflow run renders as
+// its own card.
 function rendersUserBubble(event: EnrichedChatEvent): boolean {
-  return (
-    !isRejectedGoalUserMessage(event) &&
-    !isWorkflowUserMessage(event) &&
-    !isGoalUserMessage(event)
-  );
+  return !isWorkflowUserMessage(event);
 }
 
 function isWorkflowUserMessage(
@@ -6739,33 +6648,31 @@ function UserMessageActions({
       data-chat-user-message-actions
       className={CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS}
     >
-      {showCopy ? (
-        <span className="[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 focus-within:opacity-100">
-          <CopyButton
-            copyAction={onCopy}
-            render={({ onClick, ref }, { copied }) => {
-              return (
-                <Button
-                  ref={ref}
-                  type="button"
-                  variant="quiet"
-                  size="icon-xs"
-                  iconSize="sm"
-                  showTooltip
-                  onClick={onClick}
-                  className="text-muted-foreground/60"
-                  aria-label={t(($) => {
-                    return $.chat.actions.copyMessage;
-                  })}
-                >
-                  {copied ? <Check /> : <Copy />}
-                </Button>
-              );
-            }}
-          />
-        </span>
-      ) : null}
       {showActivityLogs && runId && <RunLogsAction runId={runId} />}
+      {showCopy ? (
+        <CopyButton
+          copyAction={onCopy}
+          render={({ onClick, ref }, { copied }) => {
+            return (
+              <Button
+                ref={ref}
+                type="button"
+                variant="quiet"
+                size="icon-xs"
+                iconSize="sm"
+                showTooltip
+                onClick={onClick}
+                className="text-muted-foreground/60"
+                aria-label={t(($) => {
+                  return $.chat.actions.copyMessage;
+                })}
+              >
+                {copied ? <Check /> : <Copy />}
+              </Button>
+            );
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -6884,19 +6791,13 @@ function MessageAnnotation({
       </div>
     );
   }
-  if (renderPart.type === "goal") {
+  if (renderPart.kind === "mcp") {
+    const label = renderPart.part.clientName ?? "MCP";
     return (
-      <div
-        aria-label={t(($) => {
-          return $.chat.queue.goal;
-        })}
-        className={className}
-      >
-        <Target size={15} className="shrink-0" />
-        <span>
-          {t(($) => {
-            return $.chat.queue.goal;
-          })}
+      <div className={className}>
+        <McpMark size={15} />
+        <span className="min-w-0 truncate" title={label}>
+          {label}
         </span>
       </div>
     );
@@ -6904,6 +6805,23 @@ function MessageAnnotation({
   return (
     <SourceMessageAnnotation renderPart={renderPart} className={className} />
   );
+}
+
+// Discord permalinks always point at discord.com; any other destination is
+// shown as an unlinked source instead of an off-site link.
+const DISCORD_MESSAGE_URL =
+  /^https:\/\/discord\.com\/channels\/(?:\d+|@me)\/\d+\/\d+$/u;
+
+function sourceMessageHref(
+  part: Extract<
+    UserMessageAnnotationRenderPart,
+    { type: "source"; kind: "external" }
+  >["part"],
+): string | undefined {
+  if (part.kind === "discord" && !DISCORD_MESSAGE_URL.test(part.href ?? "")) {
+    return undefined;
+  }
+  return part.href;
 }
 
 function sourceMessageLinkText(
@@ -6943,6 +6861,11 @@ function sourceMessageLabel(
   >["part"]["kind"],
 ): string {
   switch (kind) {
+    case "discord": {
+      return t(($) => {
+        return $.chat.origins.discord;
+      });
+    }
     case "slack": {
       return t(($) => {
         return $.chat.origins.slack;
@@ -6985,7 +6908,10 @@ function SourceMessageAnnotation({
   renderPart,
   className,
 }: {
-  renderPart: Extract<UserMessageAnnotationRenderPart, { type: "source" }>;
+  renderPart: Extract<
+    UserMessageAnnotationRenderPart,
+    { type: "source"; kind: "agent" | "external" }
+  >;
   className: string;
 }) {
   const { t } = useTranslation();
@@ -7007,6 +6933,7 @@ function SourceMessageAnnotation({
       ? "lark"
       : part.kind;
   const sourceLabel = sourceMessageLabel(t, sourceKind);
+  const href = sourceMessageHref(part);
   const { opensChat, openLabel } = sourceMessageLinkText(t, part);
   const ariaLabel =
     opensChat && sourceKind !== "feishu" && sourceKind !== "lark"
@@ -7020,29 +6947,35 @@ function SourceMessageAnnotation({
         ? t(($) => {
             return $.chat.origins.openSlackMessage;
           })
-        : sourceKind === "feishu" || sourceKind === "lark"
+        : sourceKind === "discord"
           ? t(($) => {
-              return $.chat.origins[
-                sourceKind === "lark" ? "openLarkChat" : "openFeishuChat"
-              ];
+              return $.chat.origins.openDiscordMessage;
             })
-          : sourceKind === "teams"
+          : sourceKind === "feishu" || sourceKind === "lark"
             ? t(($) => {
-                return $.chat.origins.openTeamsMessage;
+                return $.chat.origins[
+                  sourceKind === "lark" ? "openLarkChat" : "openFeishuChat"
+                ];
               })
-            : sourceKind === "telegram"
+            : sourceKind === "teams"
               ? t(($) => {
-                  return $.chat.origins.openTelegramMessage;
+                  return $.chat.origins.openTeamsMessage;
                 })
-              : sourceKind === "github"
+              : sourceKind === "telegram"
                 ? t(($) => {
-                    return $.chat.origins.openGithubMessage;
+                    return $.chat.origins.openTelegramMessage;
                   })
-                : openLabel;
+                : sourceKind === "github"
+                  ? t(($) => {
+                      return $.chat.origins.openGithubMessage;
+                    })
+                  : openLabel;
   const content = (
     <>
       {sourceKind === "slack" ? (
         <BrandSlack size={15} className="shrink-0" />
+      ) : sourceKind === "discord" ? (
+        <DiscordMark size={15} />
       ) : (
         <img
           src={annotationIconImgs[sourceKind]}
@@ -7051,7 +6984,7 @@ function SourceMessageAnnotation({
         />
       )}
       <span className="shrink-0">{sourceLabel}</span>
-      {part.href ? (
+      {href ? (
         <>
           <span className="shrink-0">·</span>
           <span className="min-w-0 truncate">{openLabel}</span>
@@ -7060,12 +6993,12 @@ function SourceMessageAnnotation({
       ) : null}
     </>
   );
-  if (!part.href) {
+  if (!href) {
     return <div className={className}>{content}</div>;
   }
   return (
     <a
-      href={part.href}
+      href={href}
       target="_blank"
       rel="noreferrer"
       aria-label={ariaLabel}
@@ -7120,16 +7053,6 @@ function AgentRunSourceMessageAnnotation({
 // File chips carry their own border, so they need more breathing room from the
 // surrounding sentence than a borderless inline mention does.
 const INLINE_FILE_REFERENCE_SPACING_CLASS = "mx-1";
-const STRUCTURED_INLINE_REFERENCE_CLASS =
-  "relative -top-px mx-0.5 inline-flex h-7 max-w-[240px] items-center " +
-  "gap-1.5 rounded-md bg-orange-500/10 px-2 align-middle text-[13px] " +
-  "font-medium text-orange-600 dark:bg-orange-400/15 dark:text-orange-300";
-const STRUCTURED_INLINE_INTERACTIVE_CLASS =
-  "transition-colors hover:bg-orange-500/15 focus-visible:outline-none " +
-  "focus-visible:ring-2 focus-visible:ring-orange-500/30 " +
-  "active:bg-orange-500/20 dark:hover:bg-orange-400/20 " +
-  "dark:active:bg-orange-400/25";
-const STRUCTURED_INLINE_LINK_REFERENCE_CLASS = `${STRUCTURED_INLINE_REFERENCE_CLASS} ${STRUCTURED_INLINE_INTERACTIVE_CLASS}`;
 
 function UserMessageTemplateReference({
   part,
@@ -7235,33 +7158,6 @@ function UserMessageFileReference({
   );
 }
 
-function UserMessageChatThreadReference({
-  threadId,
-  title,
-}: {
-  threadId: string;
-  title: string;
-}) {
-  const { t } = useTranslation();
-  return (
-    <Link
-      pathname={ROUTES.chat}
-      options={{ pathParams: { threadId } }}
-      aria-label={t(
-        ($) => {
-          return $.chat.thread.openNamedChat;
-        },
-        { title },
-      )}
-      className={STRUCTURED_INLINE_LINK_REFERENCE_CLASS}
-      title={title}
-    >
-      <MessageCircle size={13} className="shrink-0" />
-      <span className="min-w-0 truncate">{title}</span>
-    </Link>
-  );
-}
-
 function UserMessageAgentReference({
   agentId,
   name,
@@ -7312,7 +7208,7 @@ function UserMessageFeedbackNote({
         const key = `${identity}:${String(occurrence)}`;
         if (renderPart.type === "chat_thread") {
           return (
-            <UserMessageChatThreadReference
+            <ChatThreadLinkChip
               key={key}
               threadId={renderPart.part.threadId}
               title={renderPart.part.titleSnapshot}
@@ -7334,7 +7230,13 @@ function UserMessageFeedbackNote({
             <UserMessageTemplateReference key={key} part={renderPart.part} />
           );
         }
-        return <PlainTextWithLinks key={key} text={renderPart.part.text} />;
+        return (
+          <PlainTextWithLinks
+            key={key}
+            text={renderPart.part.text}
+            chatThreadChips
+          />
+        );
       })}
     </div>
   );
@@ -7463,7 +7365,7 @@ function UserMessageFeedbackGroup({
 type UserMessageContentRenderPart = Exclude<
   UserMessageRenderPart,
   {
-    readonly type: "source" | "automation" | "goal" | "model";
+    readonly type: "source" | "automation" | "model";
   }
 >;
 type UserMessageStandaloneRenderPart = Exclude<
@@ -7477,11 +7379,11 @@ function UserMessagePartView({
   renderPart: UserMessageStandaloneRenderPart;
 }): ReactNode {
   if (renderPart.type === "text") {
-    return <PlainTextWithLinks text={renderPart.part.text} />;
+    return <PlainTextWithLinks text={renderPart.part.text} chatThreadChips />;
   }
   if (renderPart.type === "chat_thread") {
     return (
-      <UserMessageChatThreadReference
+      <ChatThreadLinkChip
         threadId={renderPart.part.threadId}
         title={renderPart.part.titleSnapshot}
       />
@@ -7647,6 +7549,33 @@ function UserMessageContent({
   );
 }
 
+function UserMessageTextActions({
+  event,
+  text,
+  thread,
+}: {
+  event: EnrichedChatEvent & ChatInputEvent;
+  text: string;
+  thread: ChatPanelSignals;
+}) {
+  const copyEvent = useSet(thread.copyEvent$);
+  const pageSignal = useGet(pageSignal$);
+  const sharingPhase = useGet(thread.sharing.phase$);
+  if (sharingPhase !== "idle") {
+    return null;
+  }
+
+  return (
+    <UserMessageActions
+      showCopy
+      runId={event.runId}
+      onCopy={() => {
+        return copyEvent({ text, attachments: [] }, pageSignal);
+      }}
+    />
+  );
+}
+
 function WorkflowUserMessage({
   event,
   thread,
@@ -7687,45 +7616,12 @@ function WorkflowUserMessage({
         <div className="flex w-full flex-col items-end">
           <MessageAnnotation renderPart={renderPart} />
           {body}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function GoalUserMessage({
-  event,
-  thread,
-}: {
-  event: EnrichedChatEvent & ChatInputEvent;
-  thread: ChatPanelSignals;
-}) {
-  const turnOnRef = useSet(thread.locator.turnOnRef$);
-  const renderPart = userMessageAnnotationRenderPart(
-    event.userMessageRenderDocument,
-  );
-  if (renderPart?.type !== "goal") {
-    return null;
-  }
-  const { part } = renderPart;
-  const goalBrief = part.goalBrief.trim();
-  return (
-    <div
-      data-role="user"
-      data-chat-scroll-anchor-event-id={event.id}
-      data-turn-created-at={event.createdAt}
-      className="relative group"
-      ref={turnOnRef}
-    >
-      <ChatConversationLandingHighlight thread={thread} eventId={event.id} />
-      <div className={CHAT_THREAD_USER_MESSAGE_ROW_CLASS}>
-        <div className="hidden @[900px]:block @[900px]:w-9 @[900px]:h-9 @[900px]:shrink-0" />
-        <div className="flex w-full flex-col items-end">
-          <MessageAnnotation renderPart={renderPart} />
-          {goalBrief ? (
-            <div className="rounded-xl max-w-[85%] text-[0.9375rem] leading-[1.7] [overflow-wrap:anywhere] overflow-hidden ring-1 ring-emerald-900/10 bg-gray-200 text-foreground">
-              <div className="px-4 py-3 whitespace-pre-wrap">{goalBrief}</div>
-            </div>
+          {workflowBody ? (
+            <UserMessageTextActions
+              event={event}
+              text={workflowBody}
+              thread={thread}
+            />
           ) : null}
         </div>
       </div>
@@ -7846,16 +7742,8 @@ function PagedUserMessage({
     );
   };
 
-  if (isRejectedGoalUserMessage(event)) {
-    return null;
-  }
-
   if (isWorkflowUserMessage(event)) {
     return <WorkflowUserMessage event={event} thread={thread} />;
-  }
-
-  if (isGoalUserMessage(event)) {
-    return <GoalUserMessage event={event} thread={thread} />;
   }
 
   const nonContentRenderPart = userMessageAnnotationRenderPart(renderDocument);
@@ -7915,7 +7803,7 @@ type PagedAssistantGroupProps = {
   readonly thread: ChatPanelSignals;
   readonly modelChanges: ReadonlyMap<string, RunModelChange>;
   readonly runWorkSection?: RunWorkSectionControl;
-  readonly runIndicatorMode?: Exclude<ThinkingIndicatorMode, null>;
+  readonly statusRow?: RunStatusRow;
   readonly statusTailEvents?: readonly EnrichedChatEvent[];
 };
 
@@ -8007,14 +7895,6 @@ function buildPagedAssistantTimeline({
       event: anchorEvent,
     });
   }
-  if (showAllHistory) {
-    items.push(
-      ...foldedRunWorkTimelineItems(
-        runWorkSection.hiddenGroupsAfterAnchor,
-        modelChanges,
-      ),
-    );
-  }
   return items;
 }
 
@@ -8096,7 +7976,7 @@ function PagedRunWorkAssistantContent({
   thread,
   modelChanges,
   runWorkSection,
-  runIndicatorMode,
+  statusRow,
   statusTailEvents,
 }: Pick<
   PagedAssistantGroupProps,
@@ -8104,7 +7984,7 @@ function PagedRunWorkAssistantContent({
   | "thread"
   | "modelChanges"
   | "runWorkSection"
-  | "runIndicatorMode"
+  | "statusRow"
   | "statusTailEvents"
 >) {
   const timelineItems = buildPagedAssistantTimeline({
@@ -8141,7 +8021,7 @@ function PagedRunWorkAssistantContent({
         thread={thread}
         mainActions={mainActions}
       />
-      {(statusTailEvents?.length ?? 0) > 0 || runIndicatorMode !== undefined ? (
+      {(statusTailEvents?.length ?? 0) > 0 || statusRow !== undefined ? (
         <div
           data-chat-run-status-tail
           className={CHAT_THREAD_RESPONSE_STACK_CLASS}
@@ -8156,12 +8036,8 @@ function PagedRunWorkAssistantContent({
                 />
               );
             })
-          ) : runIndicatorMode !== undefined ? (
-            <ThinkingIndicator
-              thread={thread}
-              mode={runIndicatorMode}
-              inAssistantGroup
-            />
+          ) : statusRow !== undefined ? (
+            <RunStatusRowContent thread={thread} statusRow={statusRow} />
           ) : null}
         </div>
       ) : null}
@@ -8174,14 +8050,14 @@ function PagedAssistantGroup({
   thread,
   modelChanges,
   runWorkSection,
-  runIndicatorMode,
+  statusRow,
   statusTailEvents,
 }: PagedAssistantGroupProps) {
   const turnOnRef = useSet(thread.locator.turnOnRef$);
   const hasRenderableEvent = group.events.some((event) => {
     return isRenderableAssistantEvent(event);
   });
-  if (!hasRenderableEvent && !runWorkSection) {
+  if (!hasRenderableEvent && !runWorkSection && statusRow === undefined) {
     return null;
   }
 
@@ -8195,7 +8071,7 @@ function PagedAssistantGroup({
     .join("\n\n");
   const usesRunWorkPresentation =
     runWorkSection !== undefined ||
-    runIndicatorMode !== undefined ||
+    statusRow !== undefined ||
     (statusTailEvents?.length ?? 0) > 0;
 
   return (
@@ -8229,7 +8105,7 @@ function PagedAssistantGroup({
               thread={thread}
               modelChanges={modelChanges}
               runWorkSection={runWorkSection}
-              runIndicatorMode={runIndicatorMode}
+              statusRow={statusRow}
               statusTailEvents={statusTailEvents}
             />
           ) : (
@@ -8347,6 +8223,7 @@ function UsageChip({
   setOpen: (open: boolean) => void;
 }) {
   const total = formatCredits(usage.totalCredits);
+  const catalog = useLastResolved(modelCatalog$);
   const displayRows = buildCreditUsageDisplayRows(
     usage.breakdown.flatMap((kindBreakdown) => {
       return kindBreakdown.providers.map((providerBreakdown) => {
@@ -8357,6 +8234,7 @@ function UsageChip({
         };
       });
     }),
+    catalog,
   );
 
   return (
@@ -8715,7 +8593,6 @@ function PagedGroupPrimaryActions({
   const { t } = useTranslation();
   const switches = useGet(featureSwitch$);
   const showDebugActions = switches[FeatureSwitchKey.OkouDebug];
-  const showShare = switches[FeatureSwitchKey.ChatMessageShare] && onShare;
   const hasLeadingIconAction = Boolean(
     (showDebugActions && firstRunId) || hasContent,
   );
@@ -8773,7 +8650,7 @@ function PagedGroupPrimaryActions({
           }}
         />
       )}
-      {showShare && <MessageShareAction onShare={showShare} />}
+      {onShare && <MessageShareAction onShare={onShare} />}
       {relatedArtifacts ? (
         <RelatedArtifactsDialog cards={relatedArtifacts} />
       ) : null}

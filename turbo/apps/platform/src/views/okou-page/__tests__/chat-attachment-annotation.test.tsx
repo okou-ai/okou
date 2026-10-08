@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
@@ -76,7 +75,6 @@ test("Pressing outside the editor keeps the session and every mark drawn in it",
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: true },
   });
 
   const surface = await openAnnotationEditor("stray-press.png");
@@ -110,7 +108,6 @@ test("A user can click an annotation note, edit it, and close only the note", as
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: true },
   });
 
   await openAnnotationEditor("annotated-plan.png");
@@ -155,7 +152,6 @@ test("A tool shortcut works on open and text is typed onto the image", async () 
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: true },
   });
 
   const surface = await openAnnotationEditor("typed-label.png");
@@ -198,7 +194,6 @@ test("The pill deletes the open mark and is dead until one is", async () => {
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: true },
   });
 
   await openAnnotationEditor("pill-delete.png");
@@ -239,7 +234,6 @@ test("A confirmed annotation blocks sending while its image uploads", async () =
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: true },
   });
 
   await fillComposer(
@@ -293,7 +287,6 @@ test("A user can attach marks to a private image through its public URL", async 
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: true },
   });
 
   const surface = await openAnnotationEditor("annotated-billing.png");
@@ -341,7 +334,6 @@ test("A user can attach marks after previewing a public image", async () => {
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: true },
   });
 
   const surface = await openAnnotationEditor("cached-preview.png");
@@ -398,7 +390,6 @@ test("A draft with marks but no annotated copy rebuilds it and can send", async 
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: true },
   });
 
   await waitFor(() => {
@@ -422,7 +413,6 @@ test("An arrow can be selected and re-aimed by dragging its tip", async () => {
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: true },
   });
 
   const surface = await openAnnotationEditor("arrow-flow.png");
@@ -469,7 +459,6 @@ test("A freehand stroke can be selected and moved", async () => {
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: true },
   });
 
   const surface = await openAnnotationEditor("sketch.png");
@@ -511,7 +500,6 @@ test("Enter confirms a note and one drag is a single undo step", async () => {
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerImageAnnotation]: true },
   });
 
   const surface = await openAnnotationEditor("keyboard-plan.png");

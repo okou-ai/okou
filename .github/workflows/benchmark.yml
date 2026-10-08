@@ -84,6 +84,7 @@ jobs:
             turbo/apps/api/bench-results.json
             turbo/apps/api/bench-results-p90.json
           if-no-files-found: warn
+          retention-days: 7
   bench-app:
     needs: [detect-turbo-ts-checks]
     runs-on: ubuntu-latest
@@ -111,3 +112,4 @@ jobs:
             turbo/apps/platform/bench-results.json
             turbo/apps/platform/bench-results-p90.json
           if-no-files-found: warn
+          retention-days: 7

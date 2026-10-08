@@ -908,6 +908,45 @@ function cachedRows(
   );
 }
 
+test("Refresh unread indicators after thread metadata changes without warming messages", async () => {
+  const threadId = crypto.randomUUID();
+  const agentId = crypto.randomUUID();
+  let muted = false;
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+    return respond(
+      200,
+      muted
+        ? { agents: {}, threads: {}, unreadAt: {} }
+        : {
+            agents: { [agentId]: "unread" },
+            threads: { [threadId]: "unread" },
+            unreadAt: { [threadId]: "2026-03-10T00:00:00Z" },
+          },
+    );
+  });
+  initializeWorker();
+  const { bridge } = connectProtocolTransport(context.signal);
+  await bridge.registerTab(context.signal);
+  await vi.waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(
+        credentialChannel(),
+        "threadListChanged",
+      ),
+    ).toBeTruthy();
+  });
+  await expect(
+    bridge.getComputed("chat-thread-indicators"),
+  ).resolves.toMatchObject({ threads: { [threadId]: "unread" } });
+  muted = true;
+  context.mocks.ably.triggerOnChannel(credentialChannel(), "threadListChanged");
+  await vi.waitFor(async () => {
+    await expect(
+      bridge.getComputed("chat-thread-indicators"),
+    ).resolves.toStrictEqual({ agents: {}, threads: {}, unreadAt: {} });
+  });
+});
+
 test("Warm unread chats only after chat message notifications", async () => {
   const startedAt = 10_000;
   mockNow(startedAt, context.signal);
@@ -938,10 +977,13 @@ test("Warm unread chats only after chat message notifications", async () => {
   });
   await bridge.registerTab(context.signal);
   await vi.waitFor(() => {
-    expect(indicatorReloadCount).toBeGreaterThan(0);
+    for (const topic of ["threadListChanged", "chatThreadReadCursorUpdated"]) {
+      expect(
+        context.mocks.ably.hasSubscriptionOnChannel(credentialChannel(), topic),
+      ).toBeTruthy();
+    }
   });
 
-  const reloadsBeforeNotifications = indicatorReloadCount;
   context.mocks.ably.triggerOnChannel(credentialChannel(), "threadListChanged");
   context.mocks.ably.triggerOnChannel(
     credentialChannel(),
@@ -949,10 +991,11 @@ test("Warm unread chats only after chat message notifications", async () => {
     { threadId, lastReadAt: null },
   );
   await vi.waitFor(() => {
-    expect(indicatorReloadCount).toBeGreaterThanOrEqual(
-      reloadsBeforeNotifications + 2,
-    );
+    expect(indicatorReloadCount).toBeGreaterThanOrEqual(4);
   });
+  // Both metadata and read-cursor notifications invalidate and settle indicators.
+  // Neither notification warms chat content.
+  expect(indicatorReloadCount).toBe(4);
   expect(catchUpRequestCount).toBe(0);
 
   const firstWarmed = warming.next();

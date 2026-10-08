@@ -49,10 +49,9 @@ describe("Pi sandbox RPC preparation observability", () => {
         cwd,
         agentDir: join(directory, "agent"),
         appendSystemPrompt: null,
-        ownershipTransferMode: "sandbox-first",
         model: {
-          provider: "openai",
-          model: "gpt-5.6-terra",
+          provider: "openrouter",
+          model: "openai/gpt-6-luna",
           dialect: "openai-responses" as const,
           transport: "sse" as const,
           apiKey: "synthetic-key",
@@ -70,6 +69,8 @@ describe("Pi sandbox RPC preparation observability", () => {
       }),
     ).toEqual(
       expect.arrayContaining([
+        "session_manager",
+        "runtime_initialize",
         "resources_prompt",
         "model_runtime",
         "session_services",
@@ -81,6 +82,8 @@ describe("Pi sandbox RPC preparation observability", () => {
     for (const observation of observed) {
       expect(observation.outcome).toBe("success");
       expect(observation.durationMs).toBeGreaterThanOrEqual(0);
+      expect(Number.isFinite(observation.startedAt)).toBe(true);
+      expect(Number.isFinite(observation.finishedAt)).toBe(true);
     }
   });
 });

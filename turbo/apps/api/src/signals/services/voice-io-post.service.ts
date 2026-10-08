@@ -1,83 +1,22 @@
-import { Buffer } from "node:buffer";
-import { randomUUID } from "node:crypto";
-import { command, computed, type Computed } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
-import { usageEvent } from "@okouai/db/schema/usage-event";
-import { usagePricing } from "@okouai/db/schema/usage-pricing";
+import { command } from "ccstate";
 import { userBehaviorCount } from "@okouai/db/schema/user-behavior-count";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { parseBuffer } from "music-metadata";
 
-import { env } from "../../lib/env";
-import { logger } from "../../lib/log";
-import {
-  resolveUsagePricingProvider,
-  usagePricingResolution$,
-} from "../context/usage-pricing-resolution";
 import { db$, writeDb$ } from "../external/db";
-import { checkBillableOperationCredits$ } from "./billable-operation-admission.service";
 import { nowDate } from "../../lib/time";
 import { tapError } from "../utils";
-import { storeGeneratedArtifactObject$ } from "./artifact-storage.service";
-import { recordWebUploadedFile$ } from "./run-uploaded-files.service";
 import {
   AUDIO_INPUT_BEHAVIOR_KEY,
   sttDailyDurationKey,
   sttDailyRateKey,
 } from "./voice-io-limits";
-import { processOrgUsageEvents$ } from "./credit-usage.service";
 import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
-const L = logger("VoiceIoPost");
-
-export const OPENAI_AUDIO_SPEECH_URL = "https://api.openai.com/v1/audio/speech";
-const BYTEPLUS_ASR_FLASH_URL =
-  "https://byteplus-proxy.vm0.ai/api/v3/auc/bigmodel/recognize/flash";
-const BYTEPLUS_ASR_RESOURCE_ID = "volc.seedasr.auc_turbo";
-const BYTEPLUS_ASR_MODEL = "bigmodel";
-const BYTEPLUS_ERROR_BODY_LOG_MAX_LENGTH = 4000;
-export const VOICE_IO_TTS_MODEL = "gpt-4o-mini-tts";
-const SPEECH_CONTENT_TYPE = "audio/wav";
-export const SPEECH_RESPONSE_FORMAT = "wav";
-export const SPEECH_MAX_INPUT_TOKENS = 2000;
 export const MAX_STT_FILE_SIZE = 25 * 1024 * 1024;
-export const MAX_STT_REQUEST_DURATION_SECONDS = 5 * 60;
-
-const USAGE_KIND = "audio";
-const USAGE_PROVIDER = VOICE_IO_TTS_MODEL;
-const USAGE_CATEGORY = "output_audio_seconds";
 const MAX_DURATION_READ_BYTES = 4096;
 const DEFAULT_TIMECODE_SCALE_NS = 1_000_000;
 const EBML_HEADER = [0x1a, 0x45, 0xdf, 0xa3] as const;
-
-const ALLOWED_STT_MIME_TYPES = [
-  "audio/webm",
-  "audio/wav",
-  "audio/wave",
-  "audio/x-wav",
-  "audio/mpeg",
-  "audio/mp3",
-  "audio/mp4",
-  "audio/m4a",
-  "audio/x-m4a",
-  "audio/mpga",
-] as const;
-
-const SPEECH_VOICES = [
-  "alloy",
-  "ash",
-  "ballad",
-  "coral",
-  "echo",
-  "fable",
-  "nova",
-  "onyx",
-  "sage",
-  "shimmer",
-  "verse",
-  "marin",
-  "cedar",
-] as const;
 
 type ErrorStatus = 400 | 402 | 403 | 429 | 500 | 502 | 503;
 
@@ -100,50 +39,11 @@ type ErrorResponse = {
   readonly body: ErrorBody | QuotaErrorBody;
 };
 
-interface VoiceInputSttSegment {
-  readonly start: number;
-  readonly end: number;
-  readonly text: string;
-}
-
-interface VoiceInputSttTranscript {
-  readonly text: string;
-  readonly segments?: readonly VoiceInputSttSegment[];
-}
-
-type VoiceInputSttProviderResult = VoiceInputSttTranscript | ErrorResponse;
-
-interface BytePlusSttAttempt {
-  readonly response: Response;
-  readonly requestId: string;
-  readonly providerStatus: string | null;
-  readonly providerDurationMs: number;
-  readonly attempt: number;
-}
-
 interface SttDailyPolicy {
   readonly recordLifetimeUsage: boolean;
   readonly rateKey: string;
   readonly durationKey: string;
   readonly durationSeconds: number;
-}
-
-export interface SpeechPricing {
-  readonly unitPrice: number;
-  readonly unitSize: number;
-}
-
-interface RecordedSpeech {
-  readonly id: string;
-  readonly filename: string;
-  readonly contentType: string;
-  readonly size: number;
-  readonly url: string;
-  readonly privateArtifacts: boolean;
-  readonly durationSeconds: number;
-  readonly creditsCharged: number;
-  readonly model: string;
-  readonly voice: string;
 }
 
 interface WavFormat {
@@ -160,31 +60,6 @@ export function badRequest(message: string, code = "BAD_REQUEST") {
   return { status: 400 as const, body: errorBody(message, code) };
 }
 
-export function internalError(message: string) {
-  return {
-    status: 500 as const,
-    body: errorBody(message, "INTERNAL_SERVER_ERROR"),
-  };
-}
-
-export function badGateway(message: string, code: string) {
-  return { status: 502 as const, body: errorBody(message, code) };
-}
-
-export function serviceUnavailable(message: string, code: string) {
-  return { status: 503 as const, body: errorBody(message, code) };
-}
-
-export function insufficientCredits() {
-  return {
-    status: 402 as const,
-    body: errorBody(
-      "Insufficient credits. Please add credits to continue.",
-      "INSUFFICIENT_CREDITS",
-    ),
-  };
-}
-
 function quotaError(
   status: 402 | 429,
   message: string,
@@ -199,342 +74,6 @@ function quotaError(
       quota: { count, limit },
     },
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function bytePlusAudioFormatForKey(value: string): string | undefined {
-  if (isBytePlusWavFormat(value)) {
-    return "wav";
-  }
-  if (isBytePlusMp3Format(value)) {
-    return "mp3";
-  }
-  if (isBytePlusOggFormat(value)) {
-    return "ogg";
-  }
-  if (isBytePlusWebmFormat(value)) {
-    return "webm";
-  }
-  if (isBytePlusM4aFormat(value)) {
-    return "m4a";
-  }
-  return undefined;
-}
-
-function isBytePlusWavFormat(value: string): boolean {
-  return (
-    value === "audio/wav" ||
-    value === "audio/wave" ||
-    value === "audio/x-wav" ||
-    value === "wav"
-  );
-}
-
-function isBytePlusMp3Format(value: string): boolean {
-  return (
-    value === "audio/mpeg" ||
-    value === "audio/mp3" ||
-    value === "audio/mpga" ||
-    value === "mp3" ||
-    value === "mpga" ||
-    value === "mpeg"
-  );
-}
-
-function isBytePlusOggFormat(value: string): boolean {
-  return value === "audio/ogg" || value === "ogg";
-}
-
-function isBytePlusWebmFormat(value: string): boolean {
-  return value === "audio/webm" || value === "webm";
-}
-
-function isBytePlusM4aFormat(value: string): boolean {
-  return (
-    value === "audio/mp4" ||
-    value === "audio/m4a" ||
-    value === "audio/x-m4a" ||
-    value === "mp4" ||
-    value === "m4a"
-  );
-}
-
-function bytePlusAudioFormat(file: File): string {
-  const baseMimeType = file.type.split(";")[0]?.toLowerCase() ?? file.type;
-  const extension = file.name.toLowerCase().split(".").pop();
-  const mimeFormat = bytePlusAudioFormatForKey(baseMimeType);
-  if (mimeFormat) {
-    return mimeFormat;
-  }
-
-  if (extension) {
-    return bytePlusAudioFormatForKey(extension) ?? extension;
-  }
-  return "raw";
-}
-
-function bytePlusAudioCodec(file: File): string | undefined {
-  const mimeType = file.type.toLowerCase();
-  if (mimeType.includes("opus") || mimeType.startsWith("audio/webm")) {
-    return "opus";
-  }
-  return undefined;
-}
-
-async function providerErrorBodyForLog(
-  response: Response,
-): Promise<string | undefined> {
-  const body = await tapError(response.text());
-  if (!body) {
-    return undefined;
-  }
-  return body.length > BYTEPLUS_ERROR_BODY_LOG_MAX_LENGTH
-    ? `${body.slice(0, BYTEPLUS_ERROR_BODY_LOG_MAX_LENGTH)}...`
-    : body;
-}
-
-function bytePlusTranscriptionStatus(response: Response): string | null {
-  return (
-    response.headers.get("x-api-status-code") ??
-    response.headers.get("X-Api-Status-Code")
-  );
-}
-
-function isBytePlusTranscriptionSuccessStatus(
-  providerStatus: string | null,
-): boolean {
-  return (
-    providerStatus === null ||
-    providerStatus === "20000000" ||
-    providerStatus === "20000003"
-  );
-}
-
-function isRetryableBytePlusStatus(status: number): boolean {
-  return status === 502 || status === 503 || status === 504;
-}
-
-async function sendBytePlusSttRequest(
-  apiKey: string,
-  requestBody: string,
-  signal: AbortSignal,
-  attempt: number,
-): Promise<BytePlusSttAttempt> {
-  const requestId = randomUUID();
-  const providerRequestStartedAt = performance.now();
-  const response = await fetch(BYTEPLUS_ASR_FLASH_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Api-Key": apiKey,
-      "X-Api-Resource-Id": BYTEPLUS_ASR_RESOURCE_ID,
-      "X-Api-Request-Id": requestId,
-      "X-Api-Sequence": "-1",
-    },
-    body: requestBody,
-    signal,
-  });
-  signal.throwIfAborted();
-
-  const providerStatus = bytePlusTranscriptionStatus(response);
-  const providerDurationMs = Math.round(
-    performance.now() - providerRequestStartedAt,
-  );
-  L.debug("BytePlus STT response received", {
-    requestId,
-    attempt,
-    status: response.status,
-    statusText: response.statusText,
-    providerStatus,
-    providerDurationMs,
-  });
-  return {
-    response,
-    requestId,
-    providerStatus,
-    providerDurationMs,
-    attempt,
-  };
-}
-
-function isBytePlusTranscriptionBody(value: unknown): value is {
-  readonly result: {
-    readonly text: string;
-    readonly utterances?: readonly unknown[];
-  };
-} {
-  return (
-    isRecord(value) &&
-    isRecord(value.result) &&
-    typeof value.result.text === "string"
-  );
-}
-
-function isBytePlusUtterance(value: unknown): value is {
-  readonly start_time: number;
-  readonly end_time: number;
-  readonly text: string;
-} {
-  return (
-    isRecord(value) &&
-    typeof value.start_time === "number" &&
-    typeof value.end_time === "number" &&
-    typeof value.text === "string"
-  );
-}
-
-function bytePlusSegments(
-  utterances: readonly unknown[] | undefined,
-): readonly VoiceInputSttSegment[] | undefined {
-  if (!utterances) {
-    return undefined;
-  }
-  return utterances.filter(isBytePlusUtterance).map((utterance) => {
-    return {
-      start: utterance.start_time / 1000,
-      end: utterance.end_time / 1000,
-      text: utterance.text,
-    };
-  });
-}
-
-export async function transcribeBytePlusVoiceInputFile(
-  file: File,
-  signal: AbortSignal,
-): Promise<VoiceInputSttProviderResult> {
-  const apiKey = env("BYTEPLUS_STT_API_KEY");
-  if (!apiKey) {
-    return serviceUnavailable(
-      "BytePlus STT is not configured",
-      "BYTEPLUS_STT_NOT_CONFIGURED",
-    );
-  }
-
-  const fileBytes = await file.arrayBuffer();
-  signal.throwIfAborted();
-  const fileBytesView = new Uint8Array(fileBytes);
-  const audioFormat = bytePlusAudioFormat(file);
-  const audioCodec = bytePlusAudioCodec(file);
-  const hasWebmEbmlHeader =
-    audioFormat === "webm"
-      ? fileBytes.byteLength >= EBML_HEADER.length &&
-        EBML_HEADER.every((byte, index) => {
-          return fileBytesView[index] === byte;
-        })
-      : null;
-  const audio: Record<string, unknown> = {
-    data: Buffer.from(fileBytes).toString("base64"),
-    format: audioFormat,
-  };
-  if (audioCodec) {
-    audio.codec = audioCodec;
-  }
-
-  L.debug("BytePlus STT request prepared", {
-    fileMime: file.type,
-    fileSize: file.size,
-    fileName: file.name,
-    audioByteLength: fileBytes.byteLength,
-    audioFormat,
-    audioCodec: audioCodec ?? null,
-    hasWebmEbmlHeader,
-  });
-
-  const requestBody = JSON.stringify({
-    audio,
-    request: {
-      model_name: BYTEPLUS_ASR_MODEL,
-      enable_itn: true,
-      enable_punc: true,
-      enable_ddc: true,
-      enable_speaker_info: false,
-      show_utterances: true,
-    },
-  });
-  let providerAttempt = await sendBytePlusSttRequest(
-    apiKey,
-    requestBody,
-    signal,
-    1,
-  );
-  if (isRetryableBytePlusStatus(providerAttempt.response.status)) {
-    L.warn("Retrying BytePlus STT after transient response", {
-      requestId: providerAttempt.requestId,
-      status: providerAttempt.response.status,
-      statusText: providerAttempt.response.statusText,
-      providerDurationMs: providerAttempt.providerDurationMs,
-    });
-    await providerAttempt.response.arrayBuffer();
-    signal.throwIfAborted();
-    providerAttempt = await sendBytePlusSttRequest(
-      apiKey,
-      requestBody,
-      signal,
-      2,
-    );
-  }
-
-  const {
-    response: bytePlusResponse,
-    requestId,
-    providerStatus,
-    providerDurationMs,
-    attempt,
-  } = providerAttempt;
-  if (
-    !bytePlusResponse.ok ||
-    !isBytePlusTranscriptionSuccessStatus(providerStatus)
-  ) {
-    const responseBody = await providerErrorBodyForLog(bytePlusResponse);
-    signal.throwIfAborted();
-    L.error("BytePlus STT API error", {
-      status: bytePlusResponse.status,
-      statusText: bytePlusResponse.statusText,
-      providerStatus,
-      providerDurationMs,
-      responseBody,
-      fileMime: file.type,
-      fileSize: file.size,
-      fileName: file.name,
-      requestId,
-      attempt,
-    });
-    return internalError("Transcription failed");
-  }
-
-  const result: unknown = await bytePlusResponse.json();
-  signal.throwIfAborted();
-  if (!isBytePlusTranscriptionBody(result)) {
-    return internalError("Transcription failed");
-  }
-
-  const segments = bytePlusSegments(result.result.utterances);
-  return {
-    text: result.result.text,
-    ...(segments !== undefined && { segments }),
-  };
-}
-
-export function isAllowedSttMimeType(value: string): boolean {
-  return ALLOWED_STT_MIME_TYPES.some((mimeType) => {
-    return mimeType === value;
-  });
-}
-
-export function isSpeechVoice(value: string): boolean {
-  return SPEECH_VOICES.some((voice) => {
-    return voice === value;
-  });
-}
-
-function estimatedSpeechCredits(
-  durationSeconds: number,
-  pricing: SpeechPricing,
-): number {
-  return Math.ceil((durationSeconds * pricing.unitPrice) / pricing.unitSize);
 }
 
 function readAscii(bytes: Uint8Array, offset: number, length: number): string {
@@ -578,9 +117,7 @@ function hasUsableWavFormat(format: WavFormat): boolean {
   );
 }
 
-export function parseSpeechWavDurationSeconds(
-  bytes: Uint8Array,
-): number | null {
+function parseSpeechWavDurationSeconds(bytes: Uint8Array): number | null {
   if (bytes.byteLength < 44) {
     return null;
   }
@@ -878,47 +415,6 @@ export async function getAudioDuration(file: File): Promise<number | null> {
   return parseCompressedAudioDurationSeconds(file);
 }
 
-export const speechPricing$: Computed<Promise<SpeechPricing | null>> = computed(
-  async (get): Promise<SpeechPricing | null> => {
-    const db = get(db$);
-    const provider = resolveUsagePricingProvider(
-      get(usagePricingResolution$),
-      USAGE_KIND,
-      USAGE_PROVIDER,
-    );
-    const [pricing] = await db
-      .select({
-        unitPrice: usagePricing.unitPrice,
-        unitSize: usagePricing.unitSize,
-      })
-      .from(usagePricing)
-      .where(
-        and(
-          eq(usagePricing.kind, USAGE_KIND),
-          eq(usagePricing.provider, provider),
-          eq(usagePricing.category, USAGE_CATEGORY),
-        ),
-      )
-      .limit(1);
-
-    return pricing ?? null;
-  },
-);
-
-export const checkSpeechCredits$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly runId?: string;
-    },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    return await set(checkBillableOperationCredits$, args, signal);
-  },
-);
-
 export const sttDailyPolicy$ = command(
   async (
     { get },
@@ -1059,95 +555,5 @@ export const recordSttUsage$ = command(
         : Promise.resolve(),
     ]);
     signal.throwIfAborted();
-  },
-);
-
-export const recordGeneratedSpeech$ = command(
-  async (
-    { set },
-    params: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly runId: string | undefined;
-      readonly publicBrand: PublicBrand;
-      readonly privateArtifacts: boolean;
-      readonly voice: string;
-      readonly audioBytes: Uint8Array;
-      readonly durationSeconds: number;
-      readonly pricing: SpeechPricing;
-    },
-    signal: AbortSignal,
-  ): Promise<RecordedSpeech> => {
-    const writeDb = set(writeDb$);
-    const artifact = await set(
-      storeGeneratedArtifactObject$,
-      {
-        userId: params.userId,
-        orgId: params.orgId,
-        privateArtifacts: params.privateArtifacts,
-        filenamePrefix: "voice",
-        extension: "wav",
-        body: Buffer.from(params.audioBytes),
-        contentType: SPEECH_CONTENT_TYPE,
-        publicBrand: params.publicBrand,
-      },
-      signal,
-    );
-    const { id: fileId, filename, key: s3Key, url } = artifact;
-    await set(
-      recordWebUploadedFile$,
-      {
-        runId: params.runId,
-        externalId: fileId,
-        userId: params.userId,
-        orgId: params.orgId,
-        filename,
-        contentType: SPEECH_CONTENT_TYPE,
-        sizeBytes: params.audioBytes.byteLength,
-        url,
-        s3Key,
-        publicBrand: params.publicBrand,
-        metadata: {
-          generatedBy: "zero-official-voice",
-          model: VOICE_IO_TTS_MODEL,
-          voice: params.voice,
-          durationSeconds: params.durationSeconds,
-        },
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-
-    await writeDb.insert(usageEvent).values({
-      runId: params.runId ?? null,
-      billingContext: params.runId ? "run" : "runless",
-      idempotencyKey: randomUUID(),
-      orgId: params.orgId,
-      userId: params.userId,
-      kind: USAGE_KIND,
-      provider: USAGE_PROVIDER,
-      category: USAGE_CATEGORY,
-      quantity: params.durationSeconds,
-    });
-    signal.throwIfAborted();
-
-    await set(processOrgUsageEvents$, params.orgId, signal);
-    signal.throwIfAborted();
-
-    return {
-      id: fileId,
-      filename,
-      contentType: SPEECH_CONTENT_TYPE,
-      size: params.audioBytes.byteLength,
-      url,
-      privateArtifacts: artifact.isPrivate,
-      durationSeconds: params.durationSeconds,
-      creditsCharged: estimatedSpeechCredits(
-        params.durationSeconds,
-        params.pricing,
-      ),
-      model: VOICE_IO_TTS_MODEL,
-      voice: params.voice,
-    };
   },
 );

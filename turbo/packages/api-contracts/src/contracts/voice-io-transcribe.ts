@@ -3,7 +3,7 @@ import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { VOICE_IO_POLISH_MAX_TEXT_CHARS } from "./voice-io-polish";
-import { voiceIoSttQuotaErrorSchema } from "./voice-io-stt";
+import { voiceIoQuotaErrorSchema } from "./voice-io-quota";
 
 const c = initContract();
 
@@ -78,9 +78,9 @@ export const voiceIoTranscribeContract = c.router({
       204: c.noBody(),
       400: apiErrorSchema,
       401: apiErrorSchema,
-      402: voiceIoSttQuotaErrorSchema,
+      402: voiceIoQuotaErrorSchema,
       403: apiErrorSchema,
-      429: voiceIoSttQuotaErrorSchema,
+      429: voiceIoQuotaErrorSchema,
       502: apiErrorSchema,
       503: apiErrorSchema,
     },

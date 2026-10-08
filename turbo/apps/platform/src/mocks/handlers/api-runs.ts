@@ -7,7 +7,6 @@ import {
   runNetworkLogsContract,
 } from "@okouai/api-contracts/contracts/run-routes";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { queuePositionContract } from "@okouai/api-contracts/contracts/queue-position";
 import { mockApi } from "../msw-contract.ts";
 
 export const apiRunsHandlers = [
@@ -44,15 +43,13 @@ export const apiRunsHandlers = [
   mockApi(runsQueueContract.getQueue, ({ respond }) =>
     respond(200, {
       concurrency: {
-        tier: "free",
+        tier: "limited-free-1",
         limit: 2,
         active: 0,
         available: 2,
         memberUsage: [],
       },
-      queue: [],
       runningTasks: [],
-      estimatedTimePerRun: 30_000,
     }),
   ),
 
@@ -93,13 +90,7 @@ export const apiRunsHandlers = [
     respond(201, {
       runId: "a0000000-0000-4000-a000-000000000001",
       threadId: "b0000000-0000-4000-a000-000000000001",
-      status: "pending",
       createdAt: "2026-03-10T00:00:00Z",
     }),
-  ),
-
-  // GET /api/queue-position
-  mockApi(queuePositionContract.getPosition, ({ respond }) =>
-    respond(200, { position: 0, total: 0 }),
   ),
 ];

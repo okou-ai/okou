@@ -56,7 +56,8 @@ export interface MailAttachmentPreviews {
 }
 
 export interface MailDraftSignals extends MailDraftDescriptor {
-  readonly threadId: string;
+  /** Present only when the mail is displayed inside a chat. */
+  readonly threadId: string | undefined;
   readonly draft$: Computed<Promise<MailDraft | null>>;
   readonly sidebarDraft$: Computed<Promise<MailDraft | null>>;
   readonly attachmentPreviews$: Computed<Promise<MailAttachmentPreviews>>;
@@ -277,9 +278,9 @@ function createMailDraftMutationSignals(
   return { delete$, send$ };
 }
 
-function createMailDraftSignals(
-  threadId: string,
+export function createMailDraftSignals(
   descriptor: MailDraftDescriptor,
+  threadId?: string,
 ): MailDraftSignals {
   const resources = createMailDraftResourceSignals(descriptor);
   const mutations = createMailDraftMutationSignals(descriptor, resources);
@@ -309,7 +310,7 @@ export function createMailDraftCardSignalsRegistry(
       return descriptor.mailDraftId;
     },
     (descriptor) => {
-      return createMailDraftSignals(threadId, descriptor);
+      return createMailDraftSignals(descriptor, threadId);
     },
   );
 }

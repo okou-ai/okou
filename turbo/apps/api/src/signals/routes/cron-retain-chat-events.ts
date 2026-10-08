@@ -15,7 +15,7 @@ import { cronUnauthorized, hasValidCronSecret$ } from "./cron-auth";
 const COMPLETION_DATASET = "web-logs";
 const COMPLETION_CONTEXT = "api:cron:retain-chat-events";
 
-export function recordChatEventRetentionCompleted(
+function recordChatEventRetentionCompleted(
   result: ChatEventRetentionStats,
 ): void {
   const traceId = trace.getActiveSpan()?.spanContext().traceId;
@@ -40,7 +40,7 @@ const retainChatEventsRoute$ = command(
       return cronUnauthorized();
     }
 
-    const result = await set(retainChatEvents$, { kind: "global" }, signal);
+    const result = await set(retainChatEvents$, signal);
     signal.throwIfAborted();
     recordChatEventRetentionCompleted(result);
     return {

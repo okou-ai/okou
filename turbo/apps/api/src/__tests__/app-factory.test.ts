@@ -1,17 +1,16 @@
 import { initContract } from "@okouai/api-contracts/contracts/trpc-contract";
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
-  CHAT_THREAD_SNAPSHOT_R2_HEADER,
   CLIENT_FORCE_UPGRADE_STATUS,
-  CHAT_EVENT_SCHEMA_VERSION_HEADER,
-  CLIENT_PRODUCT_HEADER,
+  CLIENT_REQUEST_ID_HEADER,
+  CLIENT_SESSION_ID_HEADER,
   CLIENT_TYPE_APP,
   CLIENT_TYPE_CLI,
   CLIENT_TYPE_DESKTOP,
   CLIENT_TYPE_HEADER,
   CLIENT_VERSION_HEADER,
-  DESKTOP_PRODUCT_OKOU,
-  DESKTOP_PRODUCT_ZERO,
 } from "@okouai/api-contracts/contracts/client-headers";
+import { AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT } from "@okouai/core/temporary-auth-diagnostics";
 import { EVENT } from "@axiomhq/logging";
 import { computed } from "ccstate";
 import { HTTPException } from "hono/http-exception";
@@ -20,11 +19,13 @@ import { vi } from "vitest";
 import { createApp } from "../app-factory";
 import { createAppWithRoutes } from "../app-factory-core";
 import { mockEnv } from "../lib/env";
+import { mockNow } from "../lib/time";
 import webClientCompatibility from "../lib/web-client-compatibility.json";
 import { flushWaitUntilForTest } from "../signals/context/wait-until";
 import { recordWebDownloadFailure$ } from "../signals/context/hono";
 import { downloadS3Buffer } from "../signals/external/s3";
 import { healthRoutes } from "../signals/routes/health";
+import { chatThreadRoutes } from "../signals/routes/chat-threads";
 import { mailRoutes } from "../signals/routes/mail";
 import { accept, testContext } from "./test-context";
 import { setupApp } from "./test-helpers";
@@ -127,8 +128,30 @@ const errorTestContract = c.router({
   },
 });
 
+// Registered literal-first, as production registers `/api/chat-threads/events`
+// before `/api/chat-threads/:id`: a request to the literal path also matches
+// the parameterized sibling.
+const siblingTestContract = c.router({
+  literal: {
+    method: "GET",
+    path: "/__test/siblings/literal",
+    responses: {
+      200: z.object({ matched: z.literal("literal") }),
+      500: z.object({ error: z.string() }),
+    },
+  },
+  byId: {
+    method: "GET",
+    path: "/__test/siblings/:id",
+    pathParams: z.object({ id: z.string() }),
+    responses: {
+      200: z.object({ matched: z.literal("byId") }),
+    },
+  },
+});
+
 describe("createApp", () => {
-  const context = testContext({ connectorCatalog: true });
+  const context = testContext();
 
   it.each([
     [
@@ -447,6 +470,30 @@ describe("createApp", () => {
     expect(serialized).not.toContain("client-secret");
     expect(serialized).not.toContain("refresh-secret");
     expect(serialized).not.toContain("basic-secret");
+  });
+
+  it("logs the literal route that threw, not a later parameterized sibling", async () => {
+    const literal$ = computed((): never => {
+      throw new Error("literal failure");
+    });
+    const byId$ = computed(() => {
+      return { status: 200 as const, body: { matched: "byId" as const } };
+    });
+    const client = setupApp({
+      context,
+      routes: [
+        { route: siblingTestContract.literal, handler: literal$ },
+        { route: siblingTestContract.byId, handler: byId$ },
+      ],
+    })(siblingTestContract);
+
+    await accept(client.literal(), [500]);
+
+    const [, fields] = context.mocks.axiomLogging.error.mock.calls.at(-1) ?? [];
+    expect(fields).toMatchObject({
+      type: "unhandled_request_error",
+      route: "/__test/siblings/literal",
+    });
   });
 
   it("handles cyclic error causes while logging unhandled errors", async () => {
@@ -984,7 +1031,7 @@ describe("createApp", () => {
           origin: "https://app.okou.ai",
           "access-control-request-method": "GET",
           "access-control-request-headers":
-            "authorization,x-client-version,x-client-type,x-client-product,x-client-session-id,x-client-request-id,x-chat-thread-snapshot-r2,x-chat-event-schema-version",
+            "authorization,x-client-version,x-client-type,x-client-session-id,x-client-request-id",
         },
       });
 
@@ -1001,14 +1048,8 @@ describe("createApp", () => {
       expect(allowHeaders).toContain("X-Vercel-Protection-Bypass");
       expect(allowHeaders).toContain("X-Client-Version");
       expect(allowHeaders).toContain("X-Client-Type");
-      expect(allowHeaders).toContain("X-Client-Product");
       expect(allowHeaders).toContain("X-Client-Session-Id");
       expect(allowHeaders).toContain("X-Client-Request-Id");
-      expect(allowHeaders).toContain(CHAT_THREAD_SNAPSHOT_R2_HEADER);
-      expect(allowHeaders).toContain(CHAT_EVENT_SCHEMA_VERSION_HEADER);
-      expect(
-        response.headers.get("access-control-expose-headers") ?? "",
-      ).toContain(CHAT_EVENT_SCHEMA_VERSION_HEADER);
     });
 
     it("answers preview preflight before enforcing the automation bypass", async () => {
@@ -1183,6 +1224,22 @@ describe("createApp", () => {
       },
     );
 
+    it("force-upgrades the pre-MCP-reader App before it can read MCP-sourced events", async () => {
+      const app = createApp({
+        signal: context.signal,
+        routes: TEST_APP_ROUTES,
+      });
+      const response = await app.request("/health", {
+        headers: {
+          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
+          [CLIENT_VERSION_HEADER]: "0.981.0",
+        },
+      });
+
+      expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+    });
+
     it("force-upgrades prereleases below the supported App release", async () => {
       const app = createApp({
         signal: context.signal,
@@ -1214,6 +1271,28 @@ describe("createApp", () => {
       expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
       expect(response.headers.get("cache-control")).toBe("no-store");
     });
+
+    it.each(["conversion-preview", "deletion-preview"])(
+      "force-upgrades App 0.970.0 before matching the retired %s path",
+      async (path) => {
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+        const response = await app.request(
+          `/api/cloudflare-access/configs/00000000-0000-0000-0000-000000000000/${path}`,
+          {
+            headers: {
+              [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
+              [CLIENT_VERSION_HEADER]: "0.970.0",
+            },
+          },
+        );
+
+        expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+      },
+    );
 
     it.each([
       MINIMUM_WEB_CLIENT_VERSION,
@@ -1268,7 +1347,7 @@ describe("createApp", () => {
       },
     );
 
-    it.each([undefined, "", "development"])(
+    it.each([undefined, "development"])(
       "preserves App requests without a parseable version (%s)",
       async (version) => {
         const app = createApp({
@@ -1301,134 +1380,301 @@ describe("createApp", () => {
     });
   });
 
+  describe("temporary authentication log wiring", () => {
+    const requestId = "6c1d4566-fbe6-4cd4-8d54-b83febde3d66";
+    const clientSessionId = "ae6b1576-b9f7-4f15-8c3d-b167b3975e81";
+
+    function authClient() {
+      return setupApp({ context, routes: chatThreadRoutes })(
+        chatThreadsContract,
+      );
+    }
+
+    function appHeaders() {
+      return {
+        [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
+        [CLIENT_VERSION_HEADER]: NEWER_WEB_CLIENT_VERSION,
+        [CLIENT_REQUEST_ID_HEADER]: requestId,
+        [CLIENT_SESSION_ID_HEADER]: clientSessionId,
+      };
+    }
+
+    beforeEach(() => {
+      mockNow(AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT - 1);
+    });
+
+    it.each([
+      {
+        reason: "missing_credentials",
+        hasBearerToken: false,
+        clerkState: undefined,
+      },
+      {
+        reason: "clerk_rejected",
+        hasBearerToken: true,
+        clerkState: { isAuthenticated: false, reason: "token-expired" },
+      },
+      {
+        reason: "missing_org",
+        hasBearerToken: true,
+        clerkState: {
+          isAuthenticated: true,
+          toAuth: () => {
+            return { userId: "user_auth_diagnostics", orgId: null };
+          },
+        },
+      },
+    ])(
+      "preserves the 401 response for $reason",
+      async ({ hasBearerToken, clerkState }) => {
+        context.mocks.clerk.authenticateRequest.mockResolvedValue(clerkState);
+        const response = await accept(
+          authClient().snapshot({
+            headers: hasBearerToken
+              ? { authorization: "Bearer clerk-session" }
+              : {},
+            extraHeaders: appHeaders(),
+          }),
+          [401],
+        );
+        expect(response.body).toStrictEqual({
+          error: { message: "Not authenticated", code: "UNAUTHORIZED" },
+        });
+        expect(context.mocks.clerk.authenticateRequest).toHaveBeenCalledTimes(
+          hasBearerToken ? 1 : 0,
+        );
+      },
+    );
+
+    it.each([
+      {
+        sdkReason: "session-token-expired-refresh-non-eligible-non-get",
+        loggedReason: "session-token-expired-refresh-non-eligible-non-get",
+      },
+      {
+        sdkReason: "session-token-expired-refresh-fetch-error",
+        loggedReason: "session-token-expired-refresh-fetch-error",
+      },
+      {
+        sdkReason: "session-token-expired-refresh-private-provider-detail",
+        loggedReason: "session-token-expired-refresh-other",
+      },
+    ])(
+      "classifies an expired session refresh outcome without logging arbitrary SDK text ($loggedReason)",
+      async ({ sdkReason, loggedReason }) => {
+        context.mocks.clerk.authenticateRequest.mockResolvedValue({
+          isAuthenticated: false,
+          reason: sdkReason,
+          message: "private-sdk-error-message",
+        });
+        const headers = { authorization: "Bearer synthetic-session" };
+        const extraHeaders = appHeaders();
+        const api = authClient();
+        const response = sdkReason.endsWith("non-eligible-non-get")
+          ? await accept(
+              api.create({
+                body: { agentId: "agent_auth_diagnostics" },
+                headers,
+                extraHeaders,
+              }),
+              [401],
+            )
+          : await accept(api.snapshot({ headers, extraHeaders }), [401]);
+        expect(response.body).toStrictEqual({
+          error: { message: "Not authenticated", code: "UNAUTHORIZED" },
+        });
+        const diagnosticLogs =
+          context.mocks.axiomLogging.info.mock.calls.filter(([message]) => {
+            return message === "temporary auth failure";
+          });
+        expect(diagnosticLogs.at(-1)?.[1]).toMatchObject({
+          auth_failure_reason: "clerk_rejected",
+          clerk_reason: loggedReason,
+          has_bearer_token: true,
+        });
+        expect(JSON.stringify(diagnosticLogs)).not.toContain(
+          "private-provider-detail",
+        );
+        expect(JSON.stringify(diagnosticLogs)).not.toContain(
+          "private-sdk-error-message",
+        );
+      },
+    );
+
+    it("keeps an unauthenticated Clerk response without a reason at 401", async () => {
+      context.mocks.clerk.authenticateRequest.mockResolvedValue({
+        isAuthenticated: false,
+      });
+
+      const response = await accept(
+        authClient().snapshot({
+          headers: { authorization: "Bearer synthetic-session" },
+          extraHeaders: appHeaders(),
+        }),
+        [401],
+      );
+      expect(response.body).toStrictEqual({
+        error: { message: "Not authenticated", code: "UNAUTHORIZED" },
+      });
+      const diagnosticLogs = context.mocks.axiomLogging.info.mock.calls.filter(
+        ([message]) => {
+          return message === "temporary auth failure";
+        },
+      );
+      expect(diagnosticLogs.at(-1)?.[1]).toMatchObject({
+        auth_failure_reason: "clerk_rejected",
+        clerk_reason: "unknown",
+        has_bearer_token: true,
+      });
+    });
+
+    // The single redaction exception verifies credentials never reach logs.
+    it("excludes credentials, arbitrary SDK text and malformed correlation headers", async () => {
+      const secret = "private-auth-diagnostic-value";
+      context.mocks.clerk.authenticateRequest.mockResolvedValue({
+        isAuthenticated: false,
+        reason: secret,
+        message: secret,
+        token: secret,
+      });
+
+      await accept(
+        authClient().snapshot({
+          headers: {
+            authorization: `Bearer ${secret}`,
+          },
+          extraHeaders: {
+            ...appHeaders(),
+            cookie: `__session=${secret}`,
+            [CLIENT_REQUEST_ID_HEADER]: secret,
+            [CLIENT_SESSION_ID_HEADER]: secret,
+            [CLIENT_VERSION_HEADER]: secret,
+          },
+        }),
+        [401],
+      );
+
+      const diagnosticLogs = context.mocks.axiomLogging.info.mock.calls.filter(
+        ([message]) => {
+          return message === "temporary auth failure";
+        },
+      );
+      expect(diagnosticLogs).not.toHaveLength(0);
+      expect(JSON.stringify(diagnosticLogs)).not.toContain(secret);
+    });
+
+    it("preserves the 401 if diagnostic delivery fails", async () => {
+      context.mocks.axiomLogging.info.mockImplementation(() => {
+        throw new Error("Diagnostic transport unavailable");
+      });
+
+      const response = await accept(
+        authClient().snapshot({ extraHeaders: appHeaders() }),
+        [401],
+      );
+      expect(response.body).toStrictEqual({
+        error: { message: "Not authenticated", code: "UNAUTHORIZED" },
+      });
+    });
+  });
+
   // This suite owns request-log wiring, so log fields are the tested contract.
   describe("axiom request log", () => {
-    it.each([DESKTOP_PRODUCT_ZERO, DESKTOP_PRODUCT_OKOU])(
-      "records client headers for explicit %s Desktop requests",
-      async (product) => {
-        context.mocks.axiom.flush.mockResolvedValue(undefined);
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-        const response = await app.request("https://api.okou.test/health", {
-          method: "GET",
-          headers: {
-            "user-agent": "okou-test-agent",
-            "x-forwarded-for": "203.0.113.10, 198.51.100.5",
-            "x-client-version": MINIMUM_WEB_CLIENT_VERSION,
-            "x-client-type": CLIENT_TYPE_DESKTOP,
-            [CLIENT_PRODUCT_HEADER]: product,
-            "x-client-session-id": "session-test",
-            "x-client-request-id": "request-test",
-          },
-        });
-
-        expect(response.status).toBe(200);
-        await expect(response.json()).resolves.toStrictEqual({ status: "ok" });
-        await flushWaitUntilForTest();
-
-        const [event] = axiomRequestLogEvents(context);
-        expect(event).toMatchObject({
-          method: "GET",
-          status: 200,
-          host: "api.okou.test",
-          path_template: "/health",
-          remote_addr: "203.0.113.10",
-          user_agent: "okou-test-agent",
-          x_client_version: MINIMUM_WEB_CLIENT_VERSION,
-          x_client_type: CLIENT_TYPE_DESKTOP,
-          x_client_product: product,
-          x_client_session_id: "session-test",
-          x_client_request_id: "request-test",
-        });
-        expect(event?._time).toStrictEqual(expect.any(String));
-        expect(event?.request_time_ms).toStrictEqual(expect.any(Number));
-        expect(context.mocks.axiom.flush).toHaveBeenCalledWith({
-          client: "telemetry",
-        });
-      },
-    );
-
-    it.each([undefined, "", "unknown", "Okou", "zero,okou"])(
-      "preserves Desktop requests and metadata with unclassified product %s",
-      async (product) => {
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-        const headers = new Headers({
+    it("records client headers for Desktop requests", async () => {
+      context.mocks.axiom.flush.mockResolvedValue(undefined);
+      const app = createApp({
+        signal: context.signal,
+        routes: TEST_APP_ROUTES,
+      });
+      const response = await app.request("https://api.okou.test/health", {
+        method: "GET",
+        headers: {
           "user-agent": "okou-test-agent",
           "x-forwarded-for": "203.0.113.10, 198.51.100.5",
-          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_DESKTOP,
-          [CLIENT_VERSION_HEADER]: MINIMUM_WEB_CLIENT_VERSION,
+          "x-client-version": MINIMUM_WEB_CLIENT_VERSION,
+          "x-client-type": CLIENT_TYPE_DESKTOP,
           "x-client-session-id": "session-test",
           "x-client-request-id": "request-test",
-        });
-        if (product !== undefined) {
-          headers.set(CLIENT_PRODUCT_HEADER, product);
-        }
-        const response = await app.request("https://api.okou.test/health", {
-          method: "GET",
-          headers,
-        });
+        },
+      });
 
-        expect(response.status).toBe(200);
-        await expect(response.json()).resolves.toStrictEqual({ status: "ok" });
-        await flushWaitUntilForTest();
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toStrictEqual({ status: "ok" });
+      await flushWaitUntilForTest();
 
-        const [event] = axiomRequestLogEvents(context);
-        expect(event).toMatchObject({
-          method: "GET",
-          status: 200,
-          host: "api.okou.test",
-          path_template: "/health",
-          remote_addr: "203.0.113.10",
-          user_agent: "okou-test-agent",
-          x_client_version: MINIMUM_WEB_CLIENT_VERSION,
-          x_client_type: CLIENT_TYPE_DESKTOP,
-          x_client_session_id: "session-test",
-          x_client_request_id: "request-test",
-        });
-        expect(event?._time).toStrictEqual(expect.any(String));
-        expect(event?.request_time_ms).toStrictEqual(expect.any(Number));
-        expect(event).not.toHaveProperty("x_client_product");
-      },
-    );
+      const [event] = axiomRequestLogEvents(context);
+      expect(event).toMatchObject({
+        method: "GET",
+        status: 200,
+        host: "api.okou.test",
+        path_template: "/health",
+        remote_addr: "203.0.113.10",
+        user_agent: "okou-test-agent",
+        x_client_version: MINIMUM_WEB_CLIENT_VERSION,
+        x_client_type: CLIENT_TYPE_DESKTOP,
+        x_client_session_id: "session-test",
+        x_client_request_id: "request-test",
+      });
+      expect(event?._time).toStrictEqual(expect.any(String));
+      expect(event?.request_time_ms).toStrictEqual(expect.any(Number));
+      expect(context.mocks.axiom.flush).toHaveBeenCalledWith({
+        client: "telemetry",
+      });
+    });
 
-    it.each([CLIENT_TYPE_APP, CLIENT_TYPE_CLI, undefined])(
-      "preserves non-Desktop client type %s with a product header",
-      async (clientType) => {
-        const app = createApp({
-          signal: context.signal,
-          routes: TEST_APP_ROUTES,
-        });
-        const headers = new Headers({
-          [CLIENT_PRODUCT_HEADER]: DESKTOP_PRODUCT_OKOU,
-        });
-        if (clientType !== undefined) {
-          headers.set(CLIENT_TYPE_HEADER, clientType);
-        }
-        const response = await app.request("/health", { headers });
+    it("records the literal route that answered, not a later parameterized sibling", async () => {
+      const literal$ = computed(() => {
+        return { status: 200 as const, body: { matched: "literal" as const } };
+      });
+      const byId$ = computed(() => {
+        return { status: 200 as const, body: { matched: "byId" as const } };
+      });
+      const app = createApp({
+        signal: context.signal,
+        routes: [
+          { route: siblingTestContract.literal, handler: literal$ },
+          { route: siblingTestContract.byId, handler: byId$ },
+        ],
+      });
 
-        expect(response.status).toBe(200);
-        await expect(response.json()).resolves.toStrictEqual({ status: "ok" });
-        await flushWaitUntilForTest();
+      const literalResponse = await app.request("/__test/siblings/literal");
+      await expect(literalResponse.json()).resolves.toStrictEqual({
+        matched: "literal",
+      });
+      const byIdResponse = await app.request("/__test/siblings/thread-1");
+      await expect(byIdResponse.json()).resolves.toStrictEqual({
+        matched: "byId",
+      });
+      await flushWaitUntilForTest();
 
-        const [event] = axiomRequestLogEvents(context);
-        expect(event).toMatchObject({
-          method: "GET",
-          status: 200,
-          path_template: "/health",
-        });
-        expect(event).not.toHaveProperty("x_client_product");
-        if (clientType === undefined) {
-          expect(event).not.toHaveProperty("x_client_type");
-        } else {
-          expect(event).toMatchObject({ x_client_type: clientType });
-        }
-      },
-    );
+      expect(
+        axiomRequestLogEvents(context).map((event) => {
+          return event.path_template;
+        }),
+      ).toStrictEqual(["/__test/siblings/literal", "/__test/siblings/:id"]);
+    });
+
+    it("records the route a middleware answered for before route matching", async () => {
+      const app = createApp({
+        signal: context.signal,
+        routes: TEST_APP_ROUTES,
+      });
+      const response = await app.request("/health", {
+        headers: {
+          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
+          [CLIENT_VERSION_HEADER]: "0.843.0",
+        },
+      });
+
+      expect(response.status).toBe(CLIENT_FORCE_UPGRADE_STATUS);
+      await flushWaitUntilForTest();
+
+      const [event] = axiomRequestLogEvents(context);
+      expect(event).toMatchObject({
+        status: CLIENT_FORCE_UPGRADE_STATUS,
+        path_template: "/health",
+      });
+    });
 
     it("omits client header fields when they are absent", async () => {
       const app = createApp({
@@ -1448,7 +1694,6 @@ describe("createApp", () => {
       });
       expect(event).not.toHaveProperty("x_client_version");
       expect(event).not.toHaveProperty("x_client_type");
-      expect(event).not.toHaveProperty("x_client_product");
       expect(event).not.toHaveProperty("x_client_session_id");
       expect(event).not.toHaveProperty("x_client_request_id");
     });

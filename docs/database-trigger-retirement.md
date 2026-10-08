@@ -105,7 +105,7 @@ each schema. Their scenario results, persisted projections and invariant counts
 match. The 26-file matrix above remains evidence for its recorded prior base.
 
 After main `9d3e9f181a3b86c2c215bd15549eeee84b10bd69` added the independent
-erasure-journal check, both validators remain registered. Its journal test,
+decision-journal check (since retired), both validators remain registered. Its journal test,
 all 19 retirement scenarios, permanent schema checks and 230 private cases
 passed. The hosting slug-helper extraction was also verified with the same
 13 API cases on each schema; their persisted state matches and all eight
@@ -383,6 +383,11 @@ does not admit an additional pending purchase.
 ### Pending writer inventory
 
 Paths below are relative to `turbo/apps/api/src/` unless stated otherwise.
+This is the historical preparation inventory. Its scoped test cron and private
+state writers are not recommendations for current API tests; the corrected
+[#37440 boundary](testing/testing-external-behavior.md) requires deleting
+scenarios that depend on them when no user-public lifecycle constructs the
+same behavior. Production reconciliation remains a product responsibility.
 
 | Writer                                                                                                             | Transaction and companion behavior                                                                                                                                                                                                                                                                                                                                        |
 | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -405,9 +410,8 @@ This preparation does not introduce such an endpoint or move existing data.
 
 ### Lock order and old/new writer protocol
 
-1. If the caller already needs the `usage_pack_billing:<org>` advisory lock,
-   acquire all needed organization locks in sorted order first. Never acquire
-   this lock inside a pending callback.
+1. The former `usage_pack_billing:<org>` advisory lock is retired; no caller
+   acquires it before this protocol.
 2. Acquire `billing_purchase:<org>` advisory transaction locks for every
    affected organization in sorted, deduplicated order. Current outgoing
    purchase creation already shares this lock.

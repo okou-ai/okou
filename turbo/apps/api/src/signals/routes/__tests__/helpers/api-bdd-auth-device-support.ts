@@ -7,7 +7,6 @@ import {
   personalModelProvidersMainContract,
   personalModelProviderAccountsByIdContract,
 } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { modelProvidersMainContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
@@ -18,7 +17,6 @@ import { featureSwitchesRoutes } from "../../feature-switches";
 import { meModelProvidersDeleteRoutes } from "../../me-model-providers-delete";
 import { meModelProviderAccountRoutes } from "../../me-model-provider-accounts";
 import { meModelProvidersListRoutes } from "../../me-model-providers-list";
-import { modelProvidersRoutes } from "../../model-providers";
 import { userPreferencesRoutes } from "../../user-preferences";
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
@@ -33,7 +31,6 @@ const authDeviceSupportRoutes: readonly RouteEntry[] = [
   ...meModelProviderAccountRoutes,
   ...meModelProvidersDeleteRoutes,
   ...meModelProvidersListRoutes,
-  ...modelProvidersRoutes,
   ...userPreferencesRoutes,
 ];
 
@@ -94,15 +91,6 @@ export function createAuthDeviceSupportApi(context: TestContext) {
           headers: authenticate(context, actor),
         }),
         [409],
-      );
-    },
-
-    async listModelProviders(actor: ApiTestUser) {
-      return await accept(
-        authDeviceSupportApp(context)(modelProvidersMainContract).list({
-          headers: authenticate(context, actor),
-        }),
-        [200],
       );
     },
 

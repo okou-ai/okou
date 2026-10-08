@@ -51,4 +51,10 @@ if [[ $checked -eq 0 ]]; then
   fail "no executable neonctl connection-string invocations found"
 fi
 
-echo "neon connection-string SSL checks passed (${checked} invocations)"
+# The API-based preview branch script builds its connection string itself.
+if ! rg --quiet --fixed-strings 'url.searchParams.set("sslmode", "verify-full");' \
+  "${repo_root}/.github/scripts/neon-preview-branch.sh"; then
+  fail "neon-preview-branch.sh must set sslmode=verify-full"
+fi
+
+echo "neon connection-string SSL checks passed (${checked} invocations and neon-preview-branch.sh)"

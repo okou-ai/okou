@@ -131,12 +131,13 @@ async fn metrics_loop_reports_steal_and_preserves_cpu_state_across_invalid_sampl
     let temp = tempfile::tempdir()?;
     let metrics_path = temp.path().join("runtime").join("metrics.jsonl");
     let proc_stat = temp.path().join("proc-stat");
-    std::fs::write(&proc_stat, "cpu 10 0 0 90 0 0 0 0\n")?;
+    // guest and guest_nice are already included in user and nice.
+    std::fs::write(&proc_stat, "cpu 8 2 0 90 0 0 0 0 4 1\n")?;
     let sources = guest_agent::metrics::MetricsSources::new(proc_stat.clone(), None);
     let (shutdown, handle) = spawn_metrics_loop(metrics_path.clone(), sources);
 
     wait_for_line_count(&metrics_path, 1).await?;
-    std::fs::write(&proc_stat, "cpu 20 0 0 170 0 0 0 10\n")?;
+    std::fs::write(&proc_stat, "cpu 16 4 0 170 0 0 0 10 8 2\n")?;
     tokio::time::advance(METRICS_INTERVAL).await;
     wait_for_line_count(&metrics_path, 2).await?;
 
@@ -152,7 +153,7 @@ async fn metrics_loop_reports_steal_and_preserves_cpu_state_across_invalid_sampl
     tokio::time::advance(METRICS_INTERVAL).await;
     wait_for_line_count(&metrics_path, 5).await?;
 
-    std::fs::write(&proc_stat, "cpu 30 0 0 250 0 0 0 20\n")?;
+    std::fs::write(&proc_stat, "cpu 24 6 0 250 0 0 0 20 12 3\n")?;
     tokio::time::advance(METRICS_INTERVAL).await;
     wait_for_line_count(&metrics_path, 6).await?;
 

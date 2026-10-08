@@ -84,13 +84,9 @@
           "guidance": "Jalankan diagnostik kredit dulu. Beli kredit hanya jika paket saat ini mengizinkannya; jika tidak, kembalikan tautan upgrade paket.",
           "title": "Kredit habis"
         },
-        "modelProviderUnavailable": {
-          "guidance": "Provider model yang digunakan thread ini telah dihapus. Mulai thread chat baru untuk melanjutkan.",
-          "title": "Provider model tidak tersedia"
-        },
         "noModelProvider": {
-          "guidance": "Konfigurasikan provider model untuk mulai menjalankan agen.",
-          "title": "Belum ada provider model yang dikonfigurasi"
+          "guidance": "Coba lagi sebentar lagi, atau hubungkan langganan pribadi Claude Code atau Codex di Pengaturan.",
+          "title": "Tidak ada penyedia model yang tersedia untuk eksekusi ini"
         },
         "paidPlanRequired": {
           "guidance": "Pembuatan video bawaan tidak tersedia pada paket ini.",
@@ -347,13 +343,13 @@
     },
     "sources": {
       "agent": "Agen",
-      "agentphone": "AgentPhone",
+      "agentphone": "iMessage",
       "automationEvent": "Peristiwa otomatisasi",
       "automationSchedule": "Jadwal otomatisasi",
+      "discord": "Discord",
       "email": "Email",
       "feishu": "Feishu",
       "github": "GitHub",
-      "goal": "Tujuan",
       "lark": "Lark",
       "slack": "Slack",
       "teams": "Teams",
@@ -373,6 +369,16 @@
     }
   },
   "appShell": {
+    "pwaNavigation": {
+      "agentsUnavailable": "Tidak dapat memuat agen",
+      "backToChats": "Kembali ke obrolan",
+      "chatListUnavailable": "Tidak dapat memuat obrolan",
+      "chats": "Obrolan",
+      "me": "Saya",
+      "navigation": "Navigasi utama",
+      "searchAgents": "Cari agen",
+      "switchAgent": "Ganti agen"
+    },
     "shortcutHelp": {
       "close": "Tutup pintasan keyboard",
       "description": "Pintasan yang tersedia di halaman ini",
@@ -570,7 +576,8 @@
       "video": "Video"
     },
     "metadata": {
-      "generated": "Dibuat {{date}}"
+      "generated": "Dibuat {{date}}",
+      "updated": "Diperbarui {{date}}"
     },
     "preview": {
       "audioLabel": "Pratinjau audio untuk {{filename}}",
@@ -620,24 +627,8 @@
       "activeHtmlPreview": "Pratinjau HTML aktif {{title}}",
       "all": "Semua",
       "avatar": "Avatar",
-      "avatarWithId": "Avatar {{id}}",
-      "backToAvatars": "Kembali ke avatar",
       "categories": "Kategori template",
       "category": "Kategori template",
-      "chooseVoice": "Pilih suara untuk {{title}}",
-      "filters": {
-        "age": "Usia",
-        "all": "Semua",
-        "aspectRatio": "Rasio aspek",
-        "clear": "Hapus",
-        "ethnicity": "Etnis",
-        "gender": "Gender",
-        "language": "Bahasa",
-        "scene": "Adegan",
-        "style": "Gaya",
-        "title": "Filter",
-        "useCase": "Kasus penggunaan"
-      },
       "fullPreview": "pratinjau penuh website {{title}}",
       "htmlPreview": "pratinjau HTML {{title}}",
       "illustration": "Ilustrasi",
@@ -648,25 +639,18 @@
       "importedSlides_other": "{{count}} slide",
       "importFile": "Impor template",
       "multiAccent": "Multi-aksen",
-      "needPro": "Perlu Pro",
       "nextSlide": "Pratinjau slide berikutnya",
       "noMatches": "Tidak ada hasil",
       "placeholder": "placeholder pratinjau website {{title}}",
-      "playVideo": "Putar pratinjau template video {{title}}",
-      "previewAvatarVideo": "Pratinjau video avatar {{title}}",
       "previewCurrentSlide": "Pratinjau {{title}} pada slide saat ini",
       "previewSlide": "Pratinjau slide {{slideNumber}}",
-      "previewVoice": "Dengarkan suara {{title}}",
       "previewWebsite": "Pratinjau template website {{title}}",
       "previousSlide": "Pratinjau slide sebelumnya",
-      "recommended": "Direkomendasikan",
       "renameImportedTemplate": "Ganti nama templat",
       "searchConnector": "Cari templat",
       "searchConnectors": "Cari templat",
       "selectStyle": "Pilih gaya {{style}}",
       "selectTemplate": "Pilih template {{title}}",
-      "selectVideo": "Pilih template video {{title}}",
-      "selectVoice": "Pilih suara {{title}}",
       "selectWebsite": "Pilih template website {{title}}",
       "selectWorkflow": "Pilih template alur kerja {{title}}",
       "showVariant": "Tampilkan varian {{variantNumber}}",
@@ -699,7 +683,6 @@
       "tryDifferentSearch": "Coba pencarian lain.",
       "use": "Gunakan",
       "useThisTemplate": "Gunakan template ini",
-      "viewVideoPlans": "Lihat paket untuk template video {{title}}",
       "visibility": {
         "change": "Ubah",
         "changeLabel": "Ubah visibilitas templat",
@@ -1165,9 +1148,6 @@
       "downgradesOn": "Turun ke {{plan}} pada {{date}}",
       "downgradeTo": "Turun ke {{plan}}",
       "endsOn": "Berakhir pada {{date}}",
-      "features": {
-        "byok": "Gunakan kunci LLM Anda sendiri"
-      },
       "free": {
         "name": "Gratis"
       },
@@ -1182,18 +1162,13 @@
         "everythingInBuiltForTeams": "Semua di {{plan}}, dibuat untuk tim",
         "included": "Termasuk",
         "liveBrowser": "Pantau browser langsung agen dan ambil alih kendali",
-        "models": "Claude Opus 5, GPT 5.6 Sol, DeepSeek V4 Pro",
         "moreConnectorsChannels": "Lebih banyak custom connector & integrasi saluran",
         "supportEmail": "Dukungan email",
         "supportPriority": "Dukungan prioritas",
-        "videoGeneration": "Pembuatan video dan avatar",
         "voiceInput": "Input suara: {{requests}} permintaan dan {{minutes}} menit per hari",
         "webhookAutomations": "Mulai run dari sistem mana pun lewat satu webhook"
       },
       "legacy": "Lama",
-      "limitedFree": {
-        "name": "Gratis terbatas"
-      },
       "loadError": "Tidak dapat memuat status penagihan.",
       "namedPlan": "Paket {{plan}}",
       "noActivePlan": "Tidak ada paket aktif",
@@ -1420,7 +1395,6 @@
     },
     "agentPage": {
       "getStarted": {
-        "addedState": "{{amount}} ditambahkan",
         "checkedIn": "Sudah check in",
         "checkin": {
           "action": "Check in",
@@ -1434,8 +1408,12 @@
           "name": "Hubungkan alat",
           "unit": "per konektor"
         },
-        "earned": "{{amount}} diperoleh",
         "howRewardsWork": "Cara kerja hadiah",
+        "imessage": {
+          "action": "Tambahkan",
+          "description": "Kirim pesan ke {{assistantName}} dari iPhone kamu",
+          "name": "Tambahkan ke iMessage"
+        },
         "inReview": "Sedang ditinjau",
         "intro": {
           "checkin": {
@@ -1481,6 +1459,9 @@
         "pendingState": "{{amount}} tertunda",
         "rejected": {
           "alreadyRedeemed": "Postingan sudah dipakai",
+          "authorAlreadyRewarded": "Akun sudah diberi hadiah",
+          "authorUnavailable": "Penulis tidak dapat diverifikasi",
+          "officialAccount": "Postingan resmi {{assistantName}} tidak dihitung",
           "postMustMention": "Harus menyebut {{assistantName}}"
         },
         "rewardsNote": "Hadiah kedaluwarsa 7 hari setelah diberikan. Check in direset pukul 00:00 UTC. Hadiah Slack masuk ke organisasi; hadiah lainnya ke saldo pribadi Anda.",
@@ -1491,7 +1472,6 @@
         },
         "shareDialog": {
           "description": "Kirim postingan publik untuk ditinjau. Satu hadiah yang disetujui per orang.",
-          "draft": "Laporan kompetitor tiap Senin saya kerjakan dengan {{assistantName}} — dia membaca sumbernya dan mengembalikan tabelnya.",
           "helper": "Postingan harus publik dan menyebut {{assistantName}}.",
           "inputLabel": "Tautan postingan",
           "openX": "Buka X",
@@ -1506,7 +1486,8 @@
           "stepPaste": "Tempel tautannya",
           "stepWrite": "Tulis postingannya",
           "submit": "Kirim",
-          "title": "Bagikan {{assistantName}} di X"
+          "title": "Bagikan {{assistantName}} di X",
+          "writingPrompt": "Tulis dengan kata-katamu sendiri tentang sesuatu yang benar-benar kamu coba dengan {{assistantName}}."
         },
         "slack": {
           "action": "Tambahkan",
@@ -1734,12 +1715,17 @@
       "cancelFailed": "Permintaan tidak dapat dibatalkan. Coba lagi.",
       "cancelled": "Permintaan dibatalkan",
       "cancelling": "Membatalkan…",
+      "checkFailed": "Browser tidak dapat diperiksa. Isian Anda tetap tersimpan; coba lagi sebelum mengirim.",
       "completed": "Informasi ditambahkan",
+      "confirmRangeValue": "Gunakan nilai saat ini",
       "continue": "Beri tahu agen",
       "continuing": "Memberi tahu agen…",
       "delivered": "Agen diberi tahu",
       "expired": "Permintaan kedaluwarsa",
       "expiredDescription": "Browser ditutup atau permintaan ini sudah tidak aktif.",
+      "fileLeave": "Biarkan berkas situs web tetap sama",
+      "fileLimit": "Pilih hingga 3 berkas (1 untuk situs dengan satu berkas), total 10 MiB.",
+      "fileNotice": "Menambahkan ke browser akan mengirim berkas ke situs ini. Situs dapat mengunggahnya atau mengirim formulir saat pilihan berkas berubah:",
       "loadFailed": "Permintaan ini tidak dapat dimuat",
       "loadFailedDescription": "Coba lagi sebentar lagi.",
       "loadingDescription": "Memeriksa permintaan ini…",
@@ -1757,29 +1743,6 @@
       "uncertain": "Periksa browser",
       "uncertainDescription": "Browser mungkin telah menerima informasi. Minta agen memeriksanya sebelum mencoba lagi."
     },
-    "browserInteraction": {
-      "applying": "Menyelesaikan interaksi browser",
-      "applyingDescription": "Browser sedang menyelesaikan permintaan ini.",
-      "callbackFailed": "Agen belum diberi tahu.",
-      "cancel": "Batal",
-      "cancelFailed": "Permintaan ini tidak dapat dibatalkan. Coba lagi.",
-      "cancelled": "Permintaan dibatalkan",
-      "cancelling": "Membatalkan…",
-      "completed": "Interaksi browser selesai",
-      "completeFailed": "Permintaan ini tidak dapat diselesaikan. Coba lagi.",
-      "completing": "Menyelesaikan…",
-      "continue": "Beri tahu agen",
-      "continuing": "Memberi tahu agen…",
-      "delivered": "Agen diberi tahu",
-      "description": "Buka browser, selesaikan langkah ini, lalu pilih Selesai.",
-      "done": "Selesai",
-      "finish": "Selesaikan langkah",
-      "stale": "Browser tidak lagi tersedia",
-      "staleDescription": "Minta agen membuat permintaan baru.",
-      "title": "Ambil alih browser",
-      "uncertain": "Periksa browser",
-      "uncertainDescription": "Interaksi mungkin telah selesai. Minta agen memeriksanya sebelum mencoba lagi."
-    },
     "cards": {
       "viewDetails": "Lihat detail"
     },
@@ -1792,13 +1755,10 @@
         "addTemplate": "Tambahkan templat",
         "imagePlaceholder": "Jelaskan gambar yang ingin Anda buat…",
         "presentationPlaceholder": "Apa topik presentasi Anda?",
-        "settingsAdjusted": "Beberapa pengaturan video disesuaikan untuk model ini",
         "slideCount": "Jumlah slide",
         "slideCountAuto": "Otomatis",
         "slideCountRange": "{{range}} slide"
       },
-      "createWorkflow": "Buat alur kerja",
-      "imageModelForThisChat": "Model gambar untuk chat ini",
       "message": "Pesan",
       "modelForThisChat": "Model untuk chat ini",
       "placeholder": "Minta saya mengotomatiskan alur kerja, mengelola tugas...",
@@ -1813,12 +1773,10 @@
       "temporarilySwitchTo": "Beralih sementara ke",
       "threadSuggestions": "Thread chat",
       "useForFutureChats": "Gunakan ini untuk chat berikutnya",
-      "videoModelForThisChat": "Model video untuk chat ini",
       "workflows": {
         "empty": "Tidak ada alur kerja yang cocok",
         "loading": "Memuat alur kerja...",
-        "title": "Alur kerja",
-        "viewAll": "Lihat semua alur kerja"
+        "title": "Alur kerja"
       }
     },
     "computerUse": {
@@ -1856,8 +1814,6 @@
       "add": "Tambahkan {{connectorName}}",
       "addConnectors": "Tambahkan konektor",
       "authorized": "{{connectorName}} terhubung dan diotorisasi untuk {{agentName}}",
-      "available_one": "Konektor yang tersedia untuk dihubungkan ({{count}})",
-      "available_other": "Konektor yang tersedia untuk dihubungkan ({{count}})",
       "back": "Kembali",
       "configurePermissions": "Konfigurasikan izin {{connectorName}}",
       "customAuthorizeDescription": "Tinjau, hubungkan, dan otorisasi konektor kustom ini untuk agen.",
@@ -1902,10 +1858,8 @@
     "errors": {
       "genericTitle": "Proses ini tidak dapat diselesaikan",
       "loadMessages": "Gagal memuat pesan",
-      "noModelProviderAction": "Siapkan di Pengaturan Workspace",
-      "noModelProviderPrefix": "Belum ada provider model yang dikonfigurasi.",
-      "providerDeletedAction": "Mulai thread chat baru",
-      "providerDeletedPrefix": "Provider model yang digunakan oleh thread ini telah dihapus.",
+      "noModelProviderAction": "Kelola langganan",
+      "noModelProviderPrefix": "Tidak ada penyedia model yang tersedia untuk eksekusi ini. Coba lagi, atau hubungkan langganan pribadi.",
       "providerIncompatibleAction": "Mulai sesi baru",
       "providerIncompatiblePrefix": "Sesi ini dimulai dengan provider model yang berbeda dan tidak bisa dilanjutkan dengan yang saat ini.",
       "recovery": {
@@ -1925,19 +1879,18 @@
         "fiveHourReset": "Batas 5 jam direset {{time}}",
         "inputTooLargeDescription": "Persingkat pesan Anda lalu kirim lagi.",
         "inputTooLargeTitle": "Pesan Anda terlalu besar",
-        "invalidApiKeyTitle": "Kunci API perlu diperbarui",
+        "invalidApiKeyTitle": "Login langganan Anda perlu diperbarui",
         "invalidCredentialsTitle": "Koneksi model Anda perlu diperiksa",
         "newChat": "Chat baru",
         "newChatDescription": "Mulai chat baru dan sertakan informasi penting yang ingin Anda bawa.",
         "openClaude": "Buka Claude",
-        "originalAccount": "Langganan pribadi {{account}}",
-        "originalAccountUnavailable": "Langganan pribadi terputus",
-        "originalAccountUnknown": "Langganan pribadi belum terverifikasi",
         "outputLimitDescription": "Jawaban berhenti sebelum selesai. Pilih Lanjutkan untuk meneruskannya.",
         "outputLimitTitle": "Jawaban mencapai batas panjang",
-        "providerBalanceDescription": "Periksa saldo kredit akun penyedia Anda, lalu coba lagi.",
-        "providerBalanceTitle": "Saldo akun penyedia model tidak cukup",
-        "providerConnectionDescription": "Buka Penyedia Model untuk menghubungkan ulang atau memperbarui akun, lalu coba lagi.",
+        "personalAccount": "Langganan pribadi {{account}}",
+        "personalAccountDisconnected": "Langganan pribadi terputus",
+        "providerBalanceDescription": "Periksa penggunaan atau saldo kredit akun langganan Anda, lalu coba lagi.",
+        "providerBalanceTitle": "Akun langganan Anda memerlukan lebih banyak kredit",
+        "providerConnectionDescription": "Buka Setelan > Model untuk menghubungkan ulang atau memperbarui akun, lalu coba lagi.",
         "providerQueueTimeoutTitle": "Model tidak mulai tepat waktu",
         "providerRateLimitedTitle": "Saat ini ada terlalu banyak permintaan model",
         "providerServerErrorTitle": "Penyedia model mengalami kesalahan sementara",
@@ -2001,6 +1954,10 @@
       "newThread": "Chat baru",
       "reload": "Muat ulang tugas"
     },
+    "lastReadMarker": {
+      "previouslyRead": "Terakhir Anda membaca sampai di sini",
+      "unread": "Pesan belum dibaca"
+    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",
@@ -2040,11 +1997,13 @@
     "newChat": "Chat baru",
     "origins": {
       "agentphone": "iMessage",
+      "discord": "Discord",
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
       "openChat": "Buka chat",
       "openChatIn": "Buka chat di {{integration}}",
+      "openDiscordMessage": "Buka pesan asli di Discord",
       "openFeishuChat": "Buka chat asli di Feishu",
       "openGithubMessage": "Buka masalah atau pull request asli di GitHub",
       "openLarkChat": "Buka chat asli di Lark",
@@ -2084,24 +2043,32 @@
       "aboutAutomationEvent": "Tentang peristiwa otomatisasi ini",
       "aboutQueuedMessage": "Tentang pesan yang menunggu ini",
       "automationEvent": "Peristiwa otomatisasi",
-      "automationEventDescription": "Menunggu di belakang pesan yang menunggu dan dijalankan setelah eksekusi saat ini selesai.",
+      "automationEventDescription": "Menunggu giliran dan dijalankan otomatis saat dapat dimulai.",
       "cancellationRecoveryPending": "Menyelesaikan eksekusi yang dibatalkan sebelum melanjutkan pekerjaan dalam antrean.",
       "event_one": "{{count}} peristiwa",
       "event_other": "{{count}} peristiwa",
-      "goal": "Tujuan",
       "itemsWaiting": "{{items}} menunggu",
       "itemsWaitingTogether": "{{messages}} dan {{events}} menunggu",
       "message_one": "{{count}} pesan",
       "message_other": "{{count}} pesan",
       "pendingAutomationEvent": "Peristiwa otomatisasi tertunda",
       "queuedMessage": "Pesan dalam antrean",
-      "queuedMessageDescription": "Menunggu giliran dan dikirim setelah eksekusi saat ini selesai.",
+      "queuedMessageDescription": "Menunggu giliran dan dikirim otomatis saat dapat dimulai.",
       "removeQueuedMessage": "Hapus pesan dalam antrean",
       "skipAutomationEvent": "Lewati peristiwa otomatisasi"
     },
-    "replaceDraft": {
-      "description": "Melanjutkan akan menghapus draf composer saat ini dan memulai prompt alur kerja.",
-      "title": "Ganti draf composer?"
+    "remoteAccess": {
+      "default": "Default",
+      "defaultEnabled": "Aktif secara default untuk chat",
+      "enabledCount_other": "{{count}} aktif",
+      "loadFailed": "Gagal memuat akses jarak jauh.",
+      "loading": "Memuat akses jarak jauh…",
+      "off": "Nonaktif",
+      "on": "Aktif",
+      "requiresSsh": "Juga memerlukan akses ke host SSH {{name}}.",
+      "retry": "Coba lagi",
+      "title": "Akses jarak jauh",
+      "unavailableSsh": "host SSH tidak tersedia"
     },
     "run": {
       "collapseWorkHistory": "Ciutkan riwayat kerja",
@@ -2118,12 +2085,13 @@
         "wrappedUp": "Diselesaikan pada {{time}}"
       },
       "duration": {
-        "hoursShort_one": "{{count}}j",
-        "hoursShort_other": "{{count}}j",
-        "minutesShort_one": "{{count}}m",
-        "minutesShort_other": "{{count}}m",
-        "secondsShort_one": "{{count}}d",
-        "secondsShort_other": "{{count}}d"
+        "hoursMinutesShort": "{{hours}} jam {{minutes}} menit",
+        "hoursShort_one": "{{count}} jam",
+        "hoursShort_other": "{{count}} jam",
+        "minutesShort_one": "{{count}} menit",
+        "minutesShort_other": "{{count}} menit",
+        "secondsShort_one": "{{count}} detik",
+        "secondsShort_other": "{{count}} detik"
       },
       "expandWorkHistory": "Kembangkan riwayat kerja",
       "fastModelName": "{{model}} Fast",
@@ -2184,11 +2152,15 @@
       "deleteTitle": "Hapus chat?",
       "draft": "Draf",
       "empty": "Mulai percakapan dan percakapan itu akan muncul di sini",
+      "inbox": "Kotak masuk",
       "markUnread": "Tandai belum dibaca",
       "movePinDown": "Pindahkan ke bawah",
       "movePinUp": "Pindahkan ke atas",
+      "mute": "Bisukan chat",
+      "muted": "Dibisukan",
       "newChatWith": "Chat baru dengan {{agentName}}",
       "noArchived": "Tidak ada chat yang diarsipkan",
+      "noMuted": "Tidak ada chat yang dibisukan",
       "noUnread": "Tidak ada chat belum dibaca",
       "openChatMenu": "Buka menu chat",
       "openListMenu": "Buka menu daftar chat",
@@ -2200,17 +2172,13 @@
       "showArchivedChats": "Tampilkan chat yang diarsipkan",
       "titlePlaceholder": "Judul chat",
       "unarchive": "Batalkan pengarsipan",
+      "unmute": "Aktifkan notifikasi chat",
       "unpin": "Lepas sematan chat",
       "unread": "Belum dibaca",
       "unreadOnly": "Belum dibaca"
     },
     "startCards": {
       "kinds": {
-        "avatar": {
-          "description": "Buat presenter untuk konten Anda berikutnya",
-          "prompt": "Buatkan presenter avatar yang berbicara untuk video saya berikutnya.",
-          "title": "Buat avatar"
-        },
         "illustration": {
           "description": "Buat visual jadi dengan gaya yang Anda inginkan",
           "prompt": "Buatkan ilustrasi dengan gaya yang saya jelaskan.",
@@ -2221,11 +2189,6 @@
           "prompt": "Buatkan presentasi dari topik atau dokumen yang saya berikan.",
           "title": "Buat presentasi"
         },
-        "video": {
-          "description": "Ubah ide atau aset Anda menjadi video jadi",
-          "prompt": "Ubah ide atau aset saya menjadi video jadi.",
-          "title": "Buat video"
-        },
         "website": {
           "description": "Buat halaman yang bisa dibagikan",
           "prompt": "Buat dan terbitkan halaman web yang bisa saya bagikan.",
@@ -2234,7 +2197,36 @@
       },
       "openTemplatesAria": "Jelajahi templat",
       "startWithPrompt": "Buat",
+      "subscription": {
+        "claude": "Claude",
+        "codex": "Codex",
+        "description": "Dengan paket Claude Max 5x/20x atau Codex Anda",
+        "openSettingsAria": "Buka pengaturan model",
+        "title": "Jalankan tugas gratis"
+      },
       "templates": "Templat"
+    },
+    "subscriptionReset": {
+      "account": "{{provider}} · {{account}} · {{plan}}",
+      "alreadyRedeemed": "Permintaan reset ini sudah digunakan.",
+      "confirm_other": "{{count}} reset",
+      "confirmation": "Reset memakai satu kredit. Permintaan hanya dikirim saat Anda mengeklik Reset.",
+      "confirmUnknown": "— reset",
+      "credits_other": "Sisa reset: {{count}}",
+      "creditsUnknown": "Sisa reset: tidak diketahui",
+      "error": "Reset gagal. Coba lagi permintaan yang sama.",
+      "expiresAt": "Kredit kedaluwarsa: {{time}}",
+      "loadFailed": "Tidak dapat membaca penggunaan langganan.",
+      "loading": "Memuat langganan…",
+      "noCredit": "Tidak ada kredit reset yang tersedia.",
+      "nothingToReset": "Tidak ada periode penggunaan yang habis untuk direset.",
+      "reconnect": "Hubungkan kembali langganan ini di Setelan > Model.",
+      "reset": "Penggunaan berhasil direset.",
+      "resetting": "Mereset…",
+      "title": "Reset card",
+      "unavailable": "Langganan ini tidak tersedia di ruang kerja saat ini.",
+      "unknown": "Tidak diketahui",
+      "unsupported": "Reset manual tidak didukung; penggunaan akan pulih secara otomatis."
     },
     "taskChips": {
       "chooseTask": "Pilih tugas",
@@ -2561,7 +2553,7 @@
         "back": "Jelajahi workflow",
         "browse": "Jelajahi workflow",
         "close": "Tutup",
-        "contextPrefix": "Yang penting bagi saya: {{context}}",
+        "contextPrefix": "Yang penting bagi saya: {{preference}}",
         "items": {
           "competitors": {
             "cadence": "Harian atau mingguan",
@@ -2852,29 +2844,17 @@
       "importedLoading": "Memuat templat yang diunggah…",
       "importedUnavailable": "Templat yang diunggah untuk sementara tidak tersedia.",
       "previewTemplate": "Pratinjau template {{title}}",
-      "previewVideo": "Pratinjau template video {{title}}",
       "previewWebsite": "Pratinjau template situs web {{title}}",
       "previewWorkflow": "Pratinjau template alur kerja {{title}}",
       "removeTemplate": "Hapus template {{title}}",
-      "removeVideo": "Hapus template video {{title}}",
       "removeWebsite": "Hapus template situs web {{title}}",
       "removeWorkflow": "Hapus template alur kerja {{title}}",
-      "retry": "Coba lagi",
-      "videoOptions": "Opsi video",
-      "videoOptionsAudio": "Hasilkan audio",
-      "videoOptionsAudioOff": "Audio nonaktif",
-      "videoOptionsAudioOn": "Audio aktif",
-      "videoOptionsDuration": "Durasi",
-      "videoOptionsLabel": "Opsi video {{spec}}",
-      "videoOptionsModel": "Model",
-      "videoOptionsRatio": "Rasio",
-      "videoOptionsResolution": "Resolusi"
+      "retry": "Coba lagi"
     },
     "thread": {
       "ariaLabel": "Thread chat",
       "changeIcon": "Ubah ikon",
       "emoji": {
-        "archive": "Arsipkan",
         "done": "Selesai",
         "idea": "Ide",
         "no": "Tidak",
@@ -2913,6 +2893,7 @@
       "checkingLimit": "Memeriksa batas input suara",
       "cleanupFailed": "Teks ditambahkan, tetapi rekaman yang tersimpan tidak dapat dihapus.",
       "confirmRecording": "Selesai",
+      "detectionFailed": "Deteksi ucapan tidak tersedia. Rekaman Anda tetap disimpan. Silakan coba lagi.",
       "discarding": "Menghapus draf suara...",
       "input": "Input suara",
       "inputLimitReached": "Batas input suara tercapai. Upgrade ke Pro atau Team untuk batas yang lebih tinggi.",
@@ -2921,6 +2902,7 @@
       "inputLimitReachedProMember": "Batas input suara tercapai. Minta admin ruang kerja untuk upgrade ke Team agar mendapatkan batas yang lebih tinggi.",
       "inputLimitReachedReset": "Batas input suara tercapai. Tunggu hingga batas Anda direset.",
       "microphoneAccessDenied": "Akses mikrofon ditolak. Izinkan akses mikrofon dan coba lagi.",
+      "noSpeechDetected": "Tidak ada ucapan yang terdeteksi. Silakan rekam lagi.",
       "openingMicrophone": "Membuka mikrofon...",
       "removeDraft": "Hapus draf suara",
       "restoreFailed": "Draf suara Anda tidak dapat dimuat. Coba lagi.",
@@ -2942,6 +2924,7 @@
   },
   "cloudflareAccess": {
     "add": "Tambah Cloudflare Access",
+    "affectedMembers_other": "{{count}} anggota",
     "cancel": "Batal",
     "changed": "Cloudflare Access ini berubah saat Anda mengedit. Tinjau pengaturan terbaru sebelum menyimpan.",
     "clientId": "ID klien Service Token",
@@ -2949,38 +2932,56 @@
     "clientSecret": "Rahasia klien Service Token",
     "clientSecretPlaceholder": "Tempel Client Secret Service Token",
     "configuration": "Cloudflare Access",
+    "convert": "Jadikan pribadi",
+    "convertHelp": "Cloudflare Access organisasi ini akan menjadi konfigurasi pribadi milik Anda sendiri, meskipun dibuat oleh orang lain. Service Token tetap sama dan host SSH Anda dapat tetap terhubung.",
+    "convertUncertain": "Konversi belum dapat dikonfirmasi. Tinjau konfigurasi terbaru sebelum mencoba lagi.",
     "createNew": "Buat Cloudflare Access baru",
     "delete": "Hapus Cloudflare Access",
-    "deleteHelp": "Hapus Cloudflare Access yang tidak digunakan ini? Service Token yang tersimpan tidak dapat dipulihkan.",
-    "description": "Akses aplikasi terlindungi dengan Token Layanan Cloudflare Access.",
+    "deleteHelp": "Hapus Cloudflare Access ini? Service Token yang tersimpan tidak dapat dipulihkan. Hubungkan kembali host milik Anda terlebih dahulu.",
+    "deleteUncertain": "Penghapusan tidak dapat dipastikan. Tinjau dampak terbaru sebelum mencoba lagi.",
     "edit": "Edit Cloudflare Access",
-    "empty": "Belum ada Cloudflare Access. Tambahkan Token Layanan untuk mengakses aplikasi terlindungi.",
     "failed": "Tidak dapat menyimpan perubahan Cloudflare Access. Coba lagi.",
-    "inUse": "Cloudflare Access ini digunakan oleh host. Tinjau host terkait dan ubah konfigurasinya atau hapus terlebih dahulu.",
-    "inUseHelp": "Pilih Cloudflare Access lain untuk host ini, alihkan secara eksplisit ke Langsung, atau hapus host sebelum menghapus yang ini.",
+    "forbidden": "Hanya admin organisasi yang dapat mengubah Cloudflare Access bersama.",
+    "hostCount_other": "{{count}} host SSH",
+    "impactChanged": "Host yang terdampak berubah. Tinjau dampak terbaru sebelum mengonfirmasi lagi.",
+    "impactConfirm": "Saya memahami bahwa host SSH milik anggota ini tetap tersimpan, tetapi tidak dapat terhubung sampai pemiliknya menghubungkannya kembali atau secara eksplisit memilih Langsung.",
+    "impactSummary": "Terdampak: {{members}} dan {{hosts}}. Host SSH tetap tersimpan, tetapi tidak dapat terhubung sampai pemiliknya menghubungkan ulang atau memilih Langsung secara eksplisit. Tidak ada host yang beralih ke Langsung secara otomatis.",
+    "inUse": "Sebuah host SSH menggunakan Cloudflare Access ini. Pemiliknya harus mengikat ulang atau menghapus host tersebut terlebih dahulu.",
+    "inUseHelp": "Host SSH Anda masih menggunakan konfigurasi ini. Hubungkan kembali ke konfigurasi lain, pilih Langsung secara eksplisit, atau hapus host tersebut terlebih dahulu.",
     "invalidInput": "Beberapa pengaturan Cloudflare Access tidak valid. Periksa kolom dan coba lagi.",
     "keepChanges": "Terapkan perubahan saya ke versi ini",
     "latest": "Pengaturan terakhir yang disimpan",
     "loadFailed": "Tidak dapat memuat Cloudflare Access. Coba lagi.",
     "loading": "Memuat Cloudflare Access…",
-    "manage": "Kelola Cloudflare Access",
+    "memberIdentifier": " (ID {{identifier}})",
     "missing": "Cloudflare Access ini tidak tersedia lagi. Pilih yang lain atau buat yang baru.",
     "name": "Nama",
     "namePlaceholder": "mis. Akses produksi",
+    "nameUnavailable": "Nama tidak tersedia",
+    "organization": "Organisasi",
+    "organizationHelp": "Semua anggota organisasi ini dapat menggunakan Service Token ini. Hanya admin yang dapat mengubahnya.",
+    "personal": "Pribadi",
+    "promote": "Bagikan ke organisasi",
+    "promoteConfirm": "Saya memahami semua anggota organisasi dapat menggunakan Service Token ini.",
+    "promoteHelp": "Bagikan Cloudflare Access pribadi Anda ke organisasi. Service Token dan ikatan host SSH Anda tetap sama.",
+    "promoteUncertain": "Konversi tidak dapat dipastikan. Tutup dialog ini dan periksa konfigurasi terbaru sebelum mencoba lagi.",
     "replace": "Ganti Service Token",
     "resourceIdConflict": "ID sumber daya ini tidak dapat digunakan. Tutup dan buka kembali formulir untuk mencoba lagi.",
     "retry": "Coba lagi",
     "reviewHelp": "Draf Anda tetap disimpan. Konfirmasikan pengaturan terakhir sebelum menerapkan perubahan.",
+    "reviewLatest": "Tinjau dampak terbaru",
     "revisionExhausted": "Konfigurasi ini tidak dapat diperbarui lagi. Buat yang baru.",
     "save": "Simpan",
     "saveUncertain": "Kami tidak dapat memastikan apakah perubahanmu tersimpan. Coba simpan ulang isian yang sama, atau tutup dan periksa daftar sebelum menambahkannya lagi.",
+    "scope": "Siapa yang dapat menggunakan",
+    "sectionEmpty": "Belum ada konfigurasi di sini.",
     "select": "Pilih Cloudflare Access",
     "summary_other": "{{count}} Cloudflare Access telah diatur",
     "title": "Cloudflare Access",
     "tokenHelp": "Akses aplikasi terlindungi dengan Token Layanan Cloudflare Access.",
     "unavailable": "Cloudflare Access tidak tersedia untuk akun ini.",
-    "unused": "Tidak digunakan oleh host mana pun",
-    "usedBy_other": "Digunakan oleh {{count}} host:"
+    "unused": "Tidak digunakan oleh host Anda",
+    "usedBy_other": "Digunakan oleh {{count}} host Anda:"
   },
   "connectors": {
     "access": {
@@ -3090,7 +3091,6 @@
       "connectAria": "Hubungkan {{connector}}",
       "connected": "Terhubung",
       "connectionExpired": "Koneksi kedaluwarsa",
-      "connectToContinue": "Hubungkan akun ini untuk melanjutkan",
       "managePermissions": "Kelola izin",
       "managePermissionsFor": "Kelola izin {{connector}}",
       "optional": "Opsional",
@@ -3160,7 +3160,6 @@
           "menu": "Penjualan dan Bisnis"
         }
       },
-      "categoriesAria": "Kategori konektor",
       "description": "Hubungkan layanan pihak ketiga agar agen Anda dapat menggunakannya.",
       "descriptionWithCount": "Hubungkan {{value}} layanan agar agen Anda dapat menggunakannya.",
       "directory": {
@@ -3179,8 +3178,6 @@
       "empty": {
         "agent": "Tidak ada konektor untuk agen ini",
         "connected": "Tidak ada konektor yang terhubung",
-        "matching": "{{message}} yang cocok dengan \"{{search}}\"",
-        "notConnected": "Tidak ada konektor lagi untuk dihubungkan",
         "search": "Tidak ada konektor yang cocok dengan \"{{search}}\"",
         "unshared": "Setiap konektor sudah dibagikan ke sebuah agen"
       },
@@ -3190,14 +3187,10 @@
         "all": "Semua",
         "allAgents": "Semua agen",
         "aria": "Filter konektor",
-        "connected": "Terhubung",
-        "notConnected": "Tidak terhubung",
-        "status": "Status",
         "unshared": "Tidak dibagikan ke agen mana pun"
       },
       "filterWith": "Filter: {{category}}",
       "iconUnavailable": "Ikon konektor tidak tersedia",
-      "newConnector": "Konektor baru",
       "noConnectorsAlt": "Tidak ada konektor",
       "otherCategory": "Lainnya",
       "remoteAccess": "Akses jarak jauh",
@@ -3224,10 +3217,6 @@
         "seeMore_one": "Lihat {{names}} dan {{count}} lainnya",
         "seeMore_other": "Lihat {{names}} dan {{count}} lainnya",
         "top": "Konektor teratas"
-      },
-      "tabs": {
-        "builtin": "Bawaan",
-        "custom": "Kustom"
       },
       "title": "Konektor",
       "unnamedAgent": "Tanpa nama"
@@ -3368,7 +3357,6 @@
       "edit": {
         "title": "Edit konektor kustom"
       },
-      "emptyAdmin": "Belum ada konektor kustom. Buat satu untuk mendaftarkan API agar bisa digunakan semua anggota.",
       "emptyMember": "Org Anda belum mendaftarkan konektor kustom apa pun.",
       "mcpStreamableHttp": "MCP · Streamable HTTP",
       "mcpType": "MCP",
@@ -3453,7 +3441,7 @@
         "invalidSignature": "Tanda tangan pada tautan ini tidak valid.",
         "invalidTimestamp": "Stempel waktu pada tautan ini tidak valid.",
         "invalidTitle": "Tautan koneksi tidak valid",
-        "risk": "Balasan SMS dan MMS mungkin tidak terkirim dengan andal. Untuk pengalaman paling andal, gunakan iMessage dengan nomor AgentPhone ini.",
+        "risk": "Balasan SMS dan MMS mungkin tidak terkirim dengan andal. Untuk pengalaman paling andal, gunakan iMessage dengan nomor ini.",
         "successDescription": "{{phone}} terhubung. Kirim pesan teks untuk mulai mengobrol dengan {{assistantName}}.",
         "successTitle": "Nomor telepon terhubung"
       },
@@ -3536,21 +3524,12 @@
         "alreadyDescriptionNamed": "Anda sudah tersambung ke {{bot}}. Kirim pesan di Telegram untuk mulai mengobrol.",
         "alreadyTitle": "Sudah tersambung ke Telegram",
         "back": "Kembali ke pengaturan Telegram",
-        "botFallback": "bot ini",
-        "botFatherHandle": "@BotFather",
         "checkingConnectionDescription": "Harap tunggu saat kami memeriksa koneksi Telegram Anda.",
         "checkingConnectionTitle": "Memeriksa koneksi...",
-        "checkingDomain": "Memeriksa status domain...",
         "checkingSession": "Harap tunggu saat kami memverifikasi sesi {{brandName}} Anda.",
         "connectDescription": "Tautkan akun Anda ke bot Telegram ini agar Anda dapat berinteraksi dengan agen Anda langsung dari Telegram.",
         "connectTitle": "Hubungkan ke Telegram",
         "continue": "Lanjutkan dengan Telegram",
-        "domainDescription": "Login web Telegram belum diaktifkan untuk {{bot}}.",
-        "domainIn": "Di ",
-        "domainInstructionsAfter": ", pilih botnya, lalu atur domain ke:",
-        "domainKeepOpen": "Tetap buka halaman ini setelah menyimpan domain. Anda juga dapat menghubungkan dari Telegram dengan /connect.",
-        "domainSend": ", kirim ",
-        "domainTitle": "Atur domain login Telegram",
         "errorFallback": "Kami tidak dapat menghubungkan Telegram. Coba lagi dari Telegram.",
         "invalidSignature": "Tanda tangan pada tautan ini tidak valid.",
         "invalidTimestamp": "Stempel waktu pada tautan ini tidak valid.",
@@ -3560,9 +3539,7 @@
         "linkIncomplete": "Buka tautan /connect baru dari Telegram dan coba lagi.",
         "linkIncompleteTitle": "Tautan koneksi tidak lengkap",
         "open": "Buka Telegram",
-        "openBotFather": "Buka BotFather",
         "refresh": "Muat ulang halaman ini dan coba lagi.",
-        "setDomainCommand": "/setdomain",
         "signInButton": "Masuk ke {{brandName}}",
         "signInCheckFailed": "Tidak dapat memeriksa status masuk",
         "signInDescription": "Gunakan akun {{brandName}} Anda sebelum menghubungkan pengguna Telegram ini.",
@@ -3575,9 +3552,10 @@
       "agentphone": {
         "authorizedSender": "Pengirim yang diizinkan",
         "codeExpiry": "Kedaluwarsa dalam 10 menit",
+        "codeLabel": "Kode",
         "connectAria": "Hubungkan telepon",
-        "connectDescription": "Pindai kode atau buka Pesan, lalu kirim kode yang sudah terisi.",
-        "connectTitle": "Hubungkan telepon",
+        "connectDescription": "Pindai dengan kamera, lalu kirim kode yang sudah terisi.",
+        "connectTitle": "Kirim pesan ke {{assistantName}} dari iPhone",
         "copyAria": "Salin {{phone}}",
         "copyCodeAria": "Salin kode koneksi {{code}}",
         "copyCodeError": "Gagal menyalin kode koneksi",
@@ -3588,80 +3566,16 @@
         "creatingCode": "Membuat kode koneksi…",
         "description": "Akses {{assistantName}} lewat pesan teks",
         "destination": "iMessage atau SMS ke",
-        "manualSend": "atau kirim",
-        "manualSendTo": "ke",
         "openMessages": "Buka Pesan",
         "options": "Opsi telepon",
         "phoneLabel": "Telepon",
         "qrTitle": "Pindai untuk membuka Pesan dengan kode koneksi yang sudah terisi",
         "risk": "Gunakan iMessage jika memungkinkan. Balasan SMS dan MMS mungkin tidak selalu terkirim.",
+        "sendToLabel": "Kirim ke",
         "tryAgain": "Coba lagi"
       },
-      "catalogDiagnostics": {
-        "fields": {
-          "activated": "Diaktifkan",
-          "activeCatalogDigest": "Digest katalog aktif",
-          "activeVersion": "Versi aktif",
-          "evaluated": "Dievaluasi",
-          "evaluation": "Evaluasi",
-          "executableCapabilityDigest": "Digest kemampuan eksekusi",
-          "failureCode": "Kode kegagalan",
-          "filteredAuthMethods": "Metode autentikasi yang difilter",
-          "lastAttempt": "Percobaan terakhir",
-          "lastAttemptAt": "Percobaan terakhir pada",
-          "lastSuccess": "Keberhasilan terakhir",
-          "missingVersions": "Versi yang hilang",
-          "rejectedCatalogDigest": "Digest katalog yang ditolak",
-          "rejectedVersion": "Versi yang ditolak",
-          "rejectingBackend": "Backend yang menolak",
-          "rejectionCache": "Cache penolakan",
-          "rejectionFailure": "Kegagalan penolakan",
-          "syncState": "Status sinkronisasi",
-          "unownedSecrets": "Secret yang tidak dimiliki",
-          "unownedVariables": "Variabel yang tidak dimiliki",
-          "unresolvedBridgeCredentials": "Kredensial bridge yang belum terselesaikan"
-        },
-        "loading": "Memuat",
-        "none": "Tidak ada",
-        "notReused": "Tidak digunakan ulang",
-        "reused": "Digunakan ulang",
-        "sections": {
-          "compatibility": "Kompatibilitas",
-          "credentialStorage": "Penyimpanan kredensial",
-          "rejectedCandidate": "Kandidat ditolak"
-        },
-        "title": "Katalog konektor",
-        "unavailable": "Tidak tersedia",
-        "values": {
-          "accepted": "Diterima",
-          "current": "Saat ini",
-          "digestMismatch": "Ketidakcocokan digest",
-          "invalidArtifact": "Artefak tidak valid",
-          "invalidCompression": "Kompresi tidak valid",
-          "invalidJson": "JSON tidak valid",
-          "invalidPointer": "Pointer tidak valid",
-          "invalidReference": "Referensi tidak valid",
-          "missingAccessProvider": "Penyedia akses tidak ada",
-          "missingGrantProvider": "Penyedia pemberian akses tidak ada",
-          "missingPlatformConfiguration": "Konfigurasi platform tidak ada",
-          "missingRevokeProvider": "Penyedia pencabutan tidak ada",
-          "neverSynced": "Belum pernah disinkronkan",
-          "objectTooLarge": "Objek terlalu besar",
-          "providerContractMismatch": "Ketidakcocokan kontrak penyedia",
-          "publicLeakage": "Kebocoran publik",
-          "rejected": "Ditolak",
-          "relationshipMismatch": "Ketidakcocokan relasi",
-          "sourceUnavailable": "Sumber tidak tersedia",
-          "stale": "Usang",
-          "unchanged": "Tidak berubah",
-          "unsupportedProtocol": "Protokol tidak didukung",
-          "unsupportedSchema": "Skema tidak didukung"
-        }
-      },
       "errors": {
-        "githubAuthorizationWindow": "Gagal membuka jendela otorisasi",
-        "telegramDomain": "Domain belum terlihat oleh Telegram. Periksa BotFather dan coba lagi.",
-        "telegramPrivacy": "Mode privasi masih tampaknya aktif. Matikan di BotFather, lalu coba lagi."
+        "githubAuthorizationWindow": "Gagal membuka jendela otorisasi"
       },
       "feishu": {
         "addBot": "Tambahkan bot",
@@ -3929,83 +3843,21 @@
         "uninstallTitle": "Uninstall bot Lark?"
       },
       "telegram": {
-        "addBot": "Tambahkan bot",
-        "addDescription": "Selesaikan setiap langkah BotFather, lalu buat bot ruang kerja.",
-        "adding": "Menambahkan...",
-        "addTitle": "Tambahkan bot Telegram",
-        "agentAria": "Agen default untuk {{bot}}",
         "backToIntegrations": "Kembali ke integrasi",
         "botFallback": "Bot Telegram",
-        "bots": "Bot Telegram",
-        "botToken": "Token bot",
-        "botTokenPlaceholder": "123456:ABC-DEF",
-        "checking": "Memeriksa...",
-        "copied": "disalin!",
-        "copyAria": "Salin {{value}}",
-        "copyTitle": "Klik untuk menyalin",
-        "create": {
-          "description": "{{brandName}} akan mendaftarkan bot ini dan mengonfigurasi webhook-nya. Setelah penyiapan, sebut bot di grup atau kirim DM untuk berbicara dengan agen yang dipilih.",
-          "descriptionNamed": "{{brandName}} akan mendaftarkan {{bot}} dan mengonfigurasi webhook-nya. Setelah penyiapan, sebut bot di grup atau kirim DM untuk berbicara dengan agen yang dipilih.",
-          "title": "Siap membuat integrasi"
-        },
-        "defaultAgent": "Agen default",
         "disconnectAria": "Putuskan sambungan {{bot}}",
         "documentTitle": "Telegram",
-        "domain": {
-          "detected": "Domain terdeteksi",
-          "instructionAfter": ", pilih bot ini, lalu setel domain ke ",
-          "instructionEnd": ". Telegram menggunakan domain ini untuk mengizinkan alur connect untuk bot ini.",
-          "instructionStart": "Di {{botFather}}, kirim ",
-          "title": "Setel domain login Telegram"
-        },
-        "emptyDescription": "Tambahkan token bot untuk mulai merutekan pesan Telegram ke agen.",
-        "emptyTitle": "Belum ada bot Telegram",
-        "invalidTokenDescription": "Pasang ulang bot dengan token baru dari BotFather.",
         "loadError": "Tidak dapat memuat setelan Telegram.",
         "moreOptions": "Opsi lainnya untuk {{bot}}",
-        "newBotToken": "Token bot baru",
         "notConnected": "Tidak terhubung",
         "officialBot": "Bot Telegram resmi",
         "officialDescription": "Bot resmi yang disediakan oleh {{brandName}}.",
         "officialMissing": "Konfigurasi bot resmi tidak ada.",
-        "pageDescription": "Kelola perutean bot untuk ruang kerja ini",
-        "privacy": {
-          "instructionAfter": ", pilih bot ini, lalu nonaktifkan mode privasi. Ini memungkinkan agen membaca konteks grup di sekitar mention dan balasan.",
-          "instructionStart": "Di {{botFather}}, kirim ",
-          "off": "Mode privasi nonaktif",
-          "title": "Opsional: nonaktifkan mode privasi"
-        },
-        "registerAria": "Daftarkan bot Telegram",
-        "reinstall": "Pasang ulang",
-        "reinstallDescription": "Tempel token BotFather yang baru untuk {{bot}}. Token harus milik bot yang sama.",
-        "reinstalling": "Memasang ulang...",
-        "reinstallTargetFallback": "bot ini",
-        "reinstallTitle": "Pasang ulang bot Telegram",
-        "selectAgent": "Pilih agen",
-        "steps": {
-          "back": "Kembali",
-          "create": "Buat",
-          "domain": "Domain",
-          "next": "Lanjut",
-          "privacy": "Privasi",
-          "token": "Token"
-        },
-        "token": {
-          "instructionAfter": ", pilih nama dan nama pengguna, lalu tempel token di bawah.",
-          "open": "Buka ",
-          "send": ", kirim ",
-          "title": "Buat token bot di BotFather",
-          "verified": "Token terverifikasi"
-        },
-        "tokenInvalid": "Token tidak valid",
-        "uninstallAria": "Uninstall {{bot}}",
-        "uninstallDescription": "Ini akan menghapus {{bot}} dari ruang kerja dan memutus akses Telegram untuk pengguna yang memakainya. Tindakan ini tidak dapat dibatalkan.",
-        "uninstallTargetFallback": "bot ini",
-        "uninstallTitle": "Uninstall bot Telegram?"
+        "pageDescription": "Kelola perutean bot untuk ruang kerja ini"
       },
       "toasts": {
-        "agentphoneConnected": "AgentPhone terhubung",
-        "agentphoneDisconnected": "AgentPhone terputus",
+        "agentphoneConnected": "Nomor telepon terhubung",
+        "agentphoneDisconnected": "Nomor telepon terputus",
         "slackConnected": "Slack berhasil terhubung",
         "slackDisconnected": "Terputus dari Slack",
         "slackInstalled": "Slack berhasil diinstal",
@@ -4017,12 +3869,7 @@
         "teamsInstalled": "Microsoft Teams berhasil diinstal",
         "teamsUninstalled": "Integrasi Microsoft Teams dihapus",
         "teamsUpdated": "Microsoft Teams diperbarui",
-        "telegramAgentUpdated": "Agen default diperbarui",
-        "telegramBotAdded": "Bot Telegram ditambahkan",
-        "telegramBotReinstalled": "Bot Telegram dipasang ulang",
-        "telegramBotUninstalled": "Bot Telegram dihapus",
-        "telegramDisconnected": "Akun Telegram terputus",
-        "telegramUpdatingAgent": "Memperbarui agen default..."
+        "telegramDisconnected": "Akun Telegram terputus"
       },
       "works": {
         "connected": "Terhubung",
@@ -4047,9 +3894,6 @@
     "errors": {
       "httpStatus": "HTTP {{status}}",
       "requestFailed": "Permintaan gagal"
-    },
-    "realtime": {
-      "degraded": "Pembaruan langsung mengalami masalah. Segarkan halaman."
     }
   },
   "invitationRedirect": {
@@ -4130,132 +3974,66 @@
     }
   },
   "onboarding": {
-    "categories": {
-      "ceo": {
-        "description": "Ringkasan dan gambaran besar",
-        "title": "CEO"
-      },
-      "data": {
-        "description": "Dasbor, metrik, kueri",
-        "title": "Data"
-      },
-      "engineering": {
-        "description": "Rilis, debug, otomatisasi kode",
-        "title": "Engineer"
-      },
-      "everyone": {
-        "description": "Email, kalender, rapat",
-        "title": "Semua orang"
-      },
-      "marketing": {
-        "description": "Konten, SEO, kampanye",
-        "title": "Marketing"
-      },
-      "operations": {
-        "description": "Proyek, penjadwalan, sinkronisasi",
-        "title": "Operations"
-      },
-      "product": {
-        "description": "Spesifikasi, rilis, masukan",
-        "title": "Product"
-      },
-      "sales": {
-        "description": "Pipeline dan outreach",
-        "title": "Sales"
-      },
-      "support": {
-        "description": "Tiket dan bantuan pelanggan",
-        "title": "Support"
-      }
-    },
     "common": {
-      "back": "Kembali",
-      "continue": "Lanjutkan",
-      "dialogPreview": "Pratinjau {{title}}",
-      "gotIt": "Mengerti",
       "next": "Berikutnya",
-      "previewWorkflowDetails": "Pratinjau detail alur kerja",
-      "selectTemplate": "Pilih template ini",
-      "selectThisTemplate": "Pilih template ini",
       "stepProgress": "Langkah {{current}} dari {{total}}"
     },
     "documentTitles": {
-      "chooseImage": "Pilih gaya gambar",
-      "choosePresentation": "Pilih template presentasi",
-      "chooseVideo": "Pilih gaya video",
-      "chooseWorkflow": "Pilih alur kerja",
-      "make": "Selamat datang di {{brandName}}",
-      "runImage": "Buat gambar pertama Anda",
-      "runPresentation": "Buat presentasi pertama Anda",
-      "runVideo": "Buat video pertama Anda",
-      "runWorkflow": "Jalankan alur kerja pertama Anda"
+      "make": "Selamat datang di {{brandName}}"
     },
     "make": {
-      "description": "Pilih titik awal, sisanya bisa Anda lakukan nanti.",
-      "options": {
-        "explore": {
-          "description": "Cukup hubungkan dengan alat saya",
-          "title": "Saya akan menjelajah sendiri"
-        },
-        "images": {
-          "description": "Buat visual berkualitas tinggi",
-          "title": "Hasilkan gambar"
-        },
-        "presentation": {
-          "description": "Hasilkan slide dan narasi",
-          "title": "Buat presentasi"
-        },
-        "slack": {
-          "description": "Chat dengan rekan tim AI Anda di ruang kerja",
-          "title": "Chat dengan Okou di Slack"
-        },
-        "video": {
-          "description": "Ubah ide Anda menjadi video",
-          "title": "Produksi video"
-        },
-        "website": {
-          "description": "Buat halaman yang bisa dibagikan",
-          "title": "Buat situs web"
-        },
-        "workflow": {
-          "description": "Jelajahi dari template prasetel",
-          "title": "Otomatisasi alur kerja"
-        }
-      },
-      "projectTypeLabel": "Jenis proyek pertama",
       "promptDescription": "Sesuaikan di bawah atau jalankan apa adanya. {{assistantName}} akan menanganinya dari sini. Alat Anda tetap dalam sandbox dan tidak ada yang keluar dari ruang kerja Anda.",
       "promptLabel": "Prompt onboarding",
-      "promptTitle": "Coba prompt ini",
-      "title": "Apa yang ingin Anda buat terlebih dahulu"
-    },
-    "runAction": {
-      "checkingPlan": "Memeriksa paket",
-      "runNow": "Jalankan sekarang",
-      "upgradePro": "Upgrade ke Pro untuk menjalankan"
+      "promptTitle": "Coba prompt ini"
     },
     "sourcesFirst": {
+      "chatChannels": {
+        "connectedTitle": "Chat Anda terhubung",
+        "copy": "Kirim pesan ke Okou atau tambahkan ke chat tim Anda. Pilih cara kerja yang sudah biasa Anda gunakan.",
+        "imessageConnected": "iMessage terhubung",
+        "imessageCopy": "Pekerjaan Anda, cukup lewat satu pesan.",
+        "imessageExpired": "Kode koneksi Anda telah kedaluwarsa.",
+        "imessageRefresh": "Dapatkan kode baru",
+        "imessageScan": "Buka kamera iPhone, lalu kirim pesan yang sudah diisi.",
+        "imessageTitle": "Chat dengan Okou di iMessage",
+        "othersLabel": "Juga tersedia di",
+        "title": "Okou hanya sejauh satu pesan"
+      },
       "common": {
         "back": "Kembali",
         "continue": "Lanjutkan",
-        "finish": "Selesaikan penyiapan",
-        "notNow": "Nanti saja",
-        "skip": "Lewati dulu"
+        "notNow": "Nanti saja"
+      },
+      "compliance": {
+        "frameworks": {
+          "ccpa": "CCPA / CPRA",
+          "gdpr": "GDPR",
+          "hipaa": "HIPAA",
+          "iso27001": "ISO/IEC 27001",
+          "soc2": "SOC 2 Type II"
+        },
+        "link": "Detail keamanan",
+        "status": {
+          "aligned": "Selaras",
+          "compliant": "Patuh",
+          "inProgress": "Berlangsung"
+        },
+        "title": "Kepatuhan Okou, dibangun untuk kepercayaan Anda"
       },
       "documentTitles": {
         "experience": "Pengalaman AI Anda",
         "industry": "Pilih bidang Anda",
-        "profile": "Profil Anda",
         "ready": "Okou sudah siap",
         "skills": "Impor skill Anda",
-        "slack": "Tambahkan Okou ke Slack",
         "sources": "Hubungkan pekerjaan Anda",
-        "team": "Undang rekan kerja"
+        "team": "Undang anggota tim"
       },
       "experience": {
-        "copy": "Hubungkan paket yang sudah Anda bayar dan pekerjaan Anda berjalan di sana, bukan memakai kredit Okou.",
-        "no": "Belum, ini yang pertama",
-        "noCopy": "Okou memilihkan tugas pertama untuk Anda.",
-        "title": "Pernah memakai Codex atau Claude Code?"
+        "copy": "Mulai dengan panduan, atau gunakan paket Codex atau Claude Code yang sudah Anda miliki.",
+        "no": "Saya baru mengenal agen AI",
+        "noCopy": "Okou membantu Anda memilih tugas pertama yang berguna.",
+        "title": "Bagaimana Anda ingin memulai dengan Okou?",
+        "trust": "Tugas berjalan dengan paket Codex atau Claude Code Anda, bukan kredit Okou, jadi Anda bisa melakukan lebih banyak tanpa khawatir soal pemakaian. Hubungkan sekarang atau nanti."
       },
       "industries": {
         "coaching": {
@@ -4304,34 +4082,58 @@
         }
       },
       "industry": {
-        "copy": "Okou memakai ini untuk memilih tugas pertama Anda dan sumber yang jadi titik awalnya.",
+        "copy": "Okou adalah asisten kerja untuk Anda dan tim Anda. Okou mengubah informasi yang tersebar menjadi pekerjaan yang selesai, di cloud. Pilih bidang Anda untuk tugas pertama yang pas.",
         "title": "Pekerjaan Anda seperti apa?"
       },
-      "profile": {
-        "communicationStyle": "Cara Anda berkomunikasi",
-        "copy": "Gambaran awal pekerjaan Anda berdasarkan akun yang terhubung.",
-        "failed": "Kami belum bisa membuat profil Anda. Coba lagi atau lanjutkan.",
-        "heading": "Profil Anda",
-        "loading": "Membuat profil dari pekerjaan yang terhubung…",
-        "priorities": "Kemungkinan prioritas",
-        "professionalIdentity": "Pekerjaan Anda",
-        "retry": "Coba lagi",
-        "title": "Inilah yang kami pelajari tentang Anda"
+      "prompt": {
+        "intro": "Okou adalah asisten kerja untuk Anda dan tim Anda. Okou mengubah informasi yang tersebar menjadi pekerjaan yang selesai, di cloud."
       },
       "skills": {
         "copied": "Tersalin",
-        "copy": "Tempel prompt ini di sesi {{provider}} Anda sendiri, dan skill di komputer Anda akan masuk ke Okou.",
+        "copy": "Jalankan prompt ini di {{provider}} untuk mengimpor skill yang sudah Anda buat, agar Okou dapat langsung menggunakannya.",
         "copyError": "Prompt tidak dapat disalin.",
         "copyPrompt": "Salin prompt",
+        "guide": {
+          "claudeCode": {
+            "openApp": "Buka aplikasi Claude dan beralih ke tab {{control}}",
+            "openAppNote": "Code berjalan di komputer Anda, jadi bisa membaca folder skill Anda.",
+            "stayLocal": "Tetap gunakan sesi {{control}}",
+            "stayLocalNote": "Chat dan sesi cloud tidak bisa melihat file di komputer Anda."
+          },
+          "codex": {
+            "keepOpen": "Biarkan terbuka sampai skill Anda muncul di bawah",
+            "openApp": "Buka aplikasi Codex dan mulai {{control}}",
+            "openAppNote": "Gunakan aplikasi di komputer Anda agar bisa membaca folder skill Anda."
+          },
+          "controls": {
+            "codeTab": "Code",
+            "local": "Local",
+            "newChat": "New chat"
+          },
+          "copy": "Salin prompt",
+          "label": "Tempat menjalankan prompt",
+          "paste": "Tempel prompt lalu kirim",
+          "scene": {
+            "claudeArtifacts": "Artifacts",
+            "claudeCustomize": "Customize",
+            "claudeNew": "New",
+            "claudeProjects": "Projects",
+            "codexNoProjects": "No projects",
+            "codexProjects": "Projects"
+          }
+        },
+        "hideFullPrompt": "Sembunyikan prompt lengkap",
         "importedCopy": "Diimpor sebagai workflow Okou.",
+        "importedCount_other": "{{count}} diimpor · menunggu lainnya",
         "importedLabel": "Skill yang diimpor",
         "importedTitle": "Skill Anda sudah ada di Okou",
         "preparing": "Membuka sesi impor Anda…",
         "promptCopy": "Ia membaca skill di komputer Anda dan menuliskannya ke Okou.",
         "promptLabel": "Prompt impor skill",
         "promptTitle": "Jalankan ini di {{provider}}",
+        "showFullPrompt": "Tampilkan prompt lengkap",
         "startError": "Sesi impor tidak dapat dibuka.",
-        "title": "Bawa skill yang sudah Anda tulis.",
+        "title": "Bawa skill Anda ke Okou",
         "tryAgain": "Coba lagi",
         "waiting": "Skill yang diimpor muncul di sini begitu tiba."
       },
@@ -4340,44 +4142,18 @@
         "channelAdminRequired": "Minta admin workspace untuk menambahkan Okou ke {{channel}}.",
         "channelUnavailable": "{{channel}} belum tersedia di workspace ini.",
         "connectAction": "Hubungkan Slack",
-        "connectedCopy": "Buka Slack dan sebut @Okou untuk memberinya tugas.",
         "connectedStatus": "Ditambahkan ke workspace Anda",
-        "connectedTitle": "Slack terhubung",
-        "copy": "Tambahkan sekali, lalu sebut @Okou di tempat pekerjaan sudah berjalan.",
         "name": "Slack",
         "otherAdded": "Ditambahkan",
         "otherImessage": "iMessage",
-        "othersLabel": "Tambahkan nanti, atau sekarang",
         "otherTeams": "Teams",
-        "otherTelegram": "Telegram",
-        "previewAppBadge": "APP",
-        "previewAsk": "tarik pendaftaran minggu lalu per sumber, cocokkan dengan akun iklan, lalu taruh tabelnya di spreadsheet.",
-        "previewAskAuthor": "Mia Chen",
-        "previewChannel": "# growth",
-        "previewChannelGeneral": "# general",
-        "previewChannelLaunch": "# launch",
-        "previewChannelsLabel": "Kanal",
-        "previewChannelTopic": "Angka mingguan dan yang akan kami rilis",
-        "previewComposer": "Pesan ke #growth",
-        "previewContext": "Rapat dewan hari Kamis dan saya masih berutang angka minggu lalu.",
-        "previewContextAuthor": "Dan Rivera",
-        "previewContextTime": "9:06 AM",
-        "previewDirectMessagesLabel": "Pesan langsung",
-        "previewMention": "@Okou",
-        "previewReplies": "3 balasan",
-        "previewReply": "1.284 pendaftaran minggu lalu, naik 18% dari 1.088. Sheet-nya ada di thread.",
-        "previewReplyAuthor": "Okou",
-        "previewReplyTime": "9:16 AM",
-        "previewTime": "9:14 AM",
-        "previewWorkspace": "Northwind",
-        "rowCopy": "Bekerja di kanal mana pun tempat Anda menambahkannya.",
-        "rowTitle": "Okou for Slack",
-        "title": "Beri Okou pekerjaan tanpa meninggalkan Slack."
+        "otherTelegram": "Telegram"
       },
       "sources": {
-        "copy": "Ia bekerja di cloud, dari alat yang sudah dipakai tim Anda. Hasil 10x lipat, hambatan operasional lebih sedikit, biaya lebih rendah. Hubungkan satu sumber untuk memulai.",
-        "note": "Anda yang memilih akun mana yang dihubungkan.",
-        "title": "Okou untuk Anda, dan dipakai bersama seluruh tim."
+        "copy": "Semakin Okou memahami pekerjaan Anda, semakin cerdas ia bekerja. Hubungkan alat yang Anda gunakan setiap hari untuk memulai dengan tugas dari pekerjaan nyata Anda.",
+        "permissions": "Okou menggunakan sedikit sampel untuk menyesuaikan tugas pertama Anda. Anda yang menentukan apa yang dapat dilakukan Agent dan berapa lama.",
+        "securityLink": "Cara Okou melindungi data Anda",
+        "title": "Hubungkan alat kerja"
       },
       "startingPrompt": {
         "exact": {
@@ -4711,1213 +4487,39 @@
         "connecting": "Menghubungkan…",
         "failedNote": "Kami tidak dapat menghubungkan {{provider}}. Coba lagi atau hubungkan nanti.",
         "retry": "Coba lagi",
-        "rowCopy": "Berjalan di paket Anda, bukan kredit Okou.",
+        "rowCopy": "Hubungkan agar tugas memakai paket Anda, bukan kredit Okou.",
         "unconfirmedNote": "Kami tidak dapat memeriksa koneksi {{provider}} Anda. Coba lagi atau hubungkan nanti."
       },
       "team": {
-        "copy": "Undang rekan kerja sekarang, atau nanti dari menu workspace.",
+        "copy": "Undang anggota tim untuk berbagi alur kerja Anda, sementara setiap orang menghubungkan alatnya sendiri.",
+        "invalidEmail": "Masukkan alamat email yang valid",
         "invite": "Kirim undangan",
         "invited": "Diundang",
-        "label": "Email rekan kerja",
-        "note": "Mereka bergabung ke workspace ini; akun mereka tetap milik mereka.",
+        "label": "Email anggota tim",
+        "note": "Mereka dapat langsung mulai bekerja dengan Okou.",
         "notSent": "Tidak terkirim",
-        "panelTitle": "Undang rekan kerja",
-        "placeholder": "teammate@company.com",
+        "panelTitle": "Undang anggota tim",
+        "placeholder": "name@company.com",
         "points": {
-          "accounts": "Akun yang mereka hubungkan tetap milik mereka — tidak ada yang dibagikan tanpa mereka.",
-          "workflows": "Siapa pun di sini bisa menjalankan workflow yang sudah ada di workspace ini.",
-          "workspace": "Mereka masuk ke workspace ini, dengan sumber yang baru Anda hubungkan."
+          "accounts": "Menghubungkan alat mereka sendiri saat dibutuhkan.",
+          "workflows": "Dapat menjalankan semua alur kerja tim Anda.",
+          "workspace": "Bergabung ke workspace Anda."
         },
         "sending": "Mengirim…",
-        "title": "Bawa serta orang-orang yang mengerjakan ini bersama Anda."
+        "title": "Buat Okou berguna bagi seluruh tim Anda"
       },
       "welcome": {
-        "copy": "Mulai dengan tugas pertama, dipilih untuk pekerjaan yang baru Anda hubungkan.",
-        "offerTitle": "Satu jam pertama konsultasi gratis dari kami, plus hingga 100 kredit —",
+        "copy": "Tinjau tugas yang disarankan untuk pekerjaan Anda, sesuaikan dengan tujuan, lalu biarkan Okou memulai.",
         "promptLabel": "Prompt awal Anda",
         "start": "Mulai dengan Okou",
-        "title": "Okou siap untuk Anda"
-      }
-    },
-    "templatePicker": {
-      "image": {
-        "description": "Gunakan ini sebagai referensi untuk gambar yang ingin Anda buat.",
-        "selectTemplate": "Pilih template ilustrasi {{title}}",
-        "showVariant": "Tampilkan varian {{variant}} dari {{title}}",
-        "title": "Pilih template ilustrasi untuk memulai"
-      },
-      "presentation": {
-        "description": "Gunakan ini sebagai referensi untuk deck yang ingin Anda buat.",
-        "nextSlide": "Tampilkan slide berikutnya",
-        "previousSlide": "Tampilkan slide sebelumnya",
-        "selectTemplate": "Pilih template presentasi {{title}}",
-        "showSlide": "Tampilkan slide {{slide}}",
-        "slideAlt": "{{title}} slide {{slide}}",
-        "title": "Pilih template presentasi untuk memulai",
-        "viewTemplate": "Lihat presentasi {{title}}"
-      },
-      "video": {
-        "description": "Gunakan ini sebagai referensi untuk video yang ingin Anda buat.",
-        "selectTemplate": "Pilih template video {{title}}",
-        "title": "Pilih template video untuk memulai"
-      }
-    },
-    "templateRun": {
-      "image": {
-        "noteLabel": "Skena ilustrasi khusus",
-        "notePlaceholder": "Tambahkan skena khusus Anda untuk di-remix dengan ilustrasi Anda sendiri",
-        "previewLabel": "Pratinjau template ilustrasi",
-        "title": "Pilih satu otomatisasi yang ingin Anda coba"
-      },
-      "presentation": {
-        "noteLabel": "Konten dan instruksi presentasi",
-        "notePlaceholder": "Tambahkan konten dan instruksi presentasi Anda",
-        "previewLabel": "Pratinjau template presentasi",
-        "title": "Lengkapi presentasi Anda"
-      },
-      "video": {
-        "noteLabel": "Prompt video khusus",
-        "notePlaceholder": "Tambahkan prompt khusus Anda untuk di-remix dengan video Anda sendiri",
-        "previewLabel": "Pratinjau template video",
-        "title": "Sesuaikan video Anda"
-      }
-    },
-    "templates": {
-      "illustration": {
-        "cozy-parlor": "Cozy Parlor",
-        "crowd-ink": "Crowd Ink",
-        "editorial-flatfolk": "Editorial Flatfolk",
-        "emboss-deboss": "Embos & Debos",
-        "endpaper": "Endpaper",
-        "flat-poster": "Flat Poster",
-        "folk-muse": "Folk Muse",
-        "folk-storybook": "Folk Storybook",
-        "grain-poster": "Grain Poster",
-        "grainy-duotone": "Grainy Duotone",
-        "iberian-vignette": "Iberian Vignette",
-        "ink-mascot": "Ink Mascot",
-        "ink-storefront": "Ink Storefront",
-        "inkdab": "Inkdab",
-        "inkstomp": "Inkstomp",
-        "iso-scene": "Iso Scene",
-        "jade-blockprint": "Jade Blockprint",
-        "light-pop-portrait": "Light Pop Portrait",
-        "loose-contour": "Loose Contour",
-        "mellow-pop": "Mellow Pop",
-        "mosaic-still-life": "Still Life Mosaik",
-        "notion-illustration": "Ilustrasi Notion",
-        "op-ed-cover": "Sampul Op-Ed",
-        "painterly-botanical": "Botani Bergaya Lukis",
-        "papernook": "Papernook",
-        "postcard-illustration": "Ilustrasi Kartu Pos",
-        "riso-relic": "Relik Riso",
-        "shadow-pop": "Pop Bayangan",
-        "soft-vector": "Vektor Lembut",
-        "sticker-sheet": "Lembar Stiker",
-        "sunlit-gouache": "Gouache Bercahaya Matahari",
-        "tiny-wanderer": "Pengembara Kecil"
-      },
-      "presentation": {
-        "bloom-pitch": "Presentasi Kelopak",
-        "blueprint-academy": "Kampus Gambar Teknik",
-        "botane-organic-deck": "Kebun Mauve",
-        "business-data-presentation": "Dasbor Berry",
-        "crayon-learning-deck": "Coretan Krayon",
-        "creative-agency-presentation": "Galeri Foliage",
-        "data-report-presentation": "Bagan Permen",
-        "editorial-magazine-deck": "Majalah Kertas",
-        "landing-consulting-deck": "Browser Neon",
-        "lumina-creative-studio": "Stiker Kuas",
-        "meridian": "Blok Kobalt",
-        "mosaic-geometric-pitch": "Ubin Bauhaus",
-        "neo-brutalism": "Toko Bayangan",
-        "nocturne": "Panggung Tengah Malam",
-        "pixel-glitch": "Piksel Arkade",
-        "playful-launch-presentation": "Ruang Bermain Semburat Matahari",
-        "playful-pop-deck": "Permen Neon",
-        "prospectus": "Presentasi Beranda",
-        "schoolhouse": "Poster Kraft",
-        "sticker-scrapbook": "Buku Stiker",
-        "strata": "Tangga Merah",
-        "taped-consulting": "Dinding Polaroid",
-        "vantage": "Ruang Rapat Bernomor"
-      },
-      "video": {
-        "chinese-ink-art": "Lukisan Tinta Tiongkok",
-        "cyberpunk-anime": "Anime Cyberpunk",
-        "epic-grandeur": "Keagungan Epik",
-        "fashion-editorial": "Editorial Mode",
-        "gourmet-documentary": "Dokumenter Kuliner",
-        "hand-drawn-fantasy-anime": "Anime Fantasi Gambar Tangan",
-        "japanese-wabi-sabi": "Wabi-Sabi Jepang",
-        "luxury-product": "Makro Produk Mewah",
-        "shortform-viral": "Viral Format Pendek",
-        "sports-performance-ad": "Iklan Performa Olahraga"
-      }
-    },
-    "workflowDiagram": {
-      "preparedDescription": "{{assistantName}} menyiapkan langkah berikutnya dari alat Anda.",
-      "preparedTitle": "Alur kerja siap",
-      "reviewDescription": "{{assistantName}} menyelesaikan alur kerja dan mengembalikan hasilnya.",
-      "reviewTitle": "Siap ditinjau",
-      "source": "Sumber"
-    },
-    "workflowPicker": {
-      "categoryDescription": "Pengaturan siap jalan yang bisa Anda sesuaikan dengan alat dan tujuan Anda.",
-      "categoryTitle": "Alur kerja {{category}}",
-      "customDescription": "Jelaskan yang Anda inginkan dan {{assistantName}} membangunnya bersama Anda.",
-      "customTitle": "Bicara dengan {{assistantName}} dan buat sendiri",
-      "description": "Pilih peran untuk melihat alur kerja yang sesuai. Anda bisa beralih kapan saja.",
-      "title": "Apa yang Anda kerjakan?",
-      "workflowCardLabel": "{{title}} {{description}}"
-    },
-    "workflowPreview": {
-      "howItWorks": "Cara kerjanya",
-      "whatItDoes": "Yang dilakukan"
-    },
-    "workflowRun": {
-      "continueWithAssistant": "Lanjutkan dengan {{assistantName}}",
-      "createWorkflow": "Buat alur kerja",
-      "customNoteLabel": "Jelaskan alur kerja Anda",
-      "customNotePlaceholder": "Jelaskan apa yang ingin Anda bangun dengan {{assistantName}}",
-      "customTitle": "Jelaskan alur kerja Anda",
-      "noteLabel": "Ada hal lain yang ingin Anda tambahkan?",
-      "notePlaceholder": "Ada hal lain yang ingin Anda tambahkan?",
-      "reviewTitle": "Tinjau draf alur kerja Anda"
-    },
-    "workflows": {
-      "alert-metric-moves-slack": {
-        "description": "Temukan perubahan website yang signifikan dan jelaskan penyebabnya yang mungkin.",
-        "scenario": "Perubahan metrik yang tajam paling penting ketika konteksnya juga hadir. {{assistantName}} memantau Google Analytics dan menambahkan bukti pencarian atau saluran bayar ketika terhubung.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca metrik lalu lintas dan konversi yang dipilih.",
-            "title": "Metrik kunci dicek"
-          },
-          "three": {
-            "description": "{{assistantName}} mengembalikan penyebab yang mungkin dan langkah pengecekan selanjutnya.",
-            "title": "Pergeseran dijelaskan"
-          },
-          "two": {
-            "description": "{{assistantName}} membandingkan nilai saat ini dengan rentang yang diharapkan.",
-            "title": "Pergerakan yang tidak biasa ditemukan"
-          }
-        },
-        "title": "Beri peringatan pada pergeseran lalu lintas dan konversi"
-      },
-      "auto-merge-github-prs": {
-        "description": "Tinjau PR siap, tunggu CI, dan gabungkan perubahan yang disetujui.",
-        "scenario": "Menggabungkan PR berarti memantau cek dan membaca perbedaan. {{assistantName}} mengambil label siap untuk digabungkan, memeriksa perubahan, menunggu CI, dan hanya menggabungkan jika Anda setuju.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} mendeteksi label siap untuk digabungkan.",
-            "title": "PR siap"
-          },
-          "three": {
-            "description": "{{assistantName}} hanya menggabungkan setelah kondisi keselamatan yang disetujui dilewati.",
-            "title": "Diguangkan berdasarkan aturan Anda"
-          },
-          "two": {
-            "description": "{{assistantName}} memeriksa perbedaan dan menunggu CI yang diperlukan.",
-            "title": "{{assistantName}} memeriksa perubahan"
-          }
-        },
-        "title": "Otomatis gabungkan PR GitHub"
-      },
-      "blog-posts-to-x": {
-        "description": "Temukan halaman yang memburuk dan ubah menjadi ringkasan pembaruan yang terprioritaskan.",
-        "scenario": "Konten yang ada sering memiliki potensi lebih dari artikel baru. {{assistantName}} menggunakan Firecrawl dan DataForSEO yang bawaan untuk menemukan halaman yang tidak efektif, menilai permintaan saat ini, dan merekomendasikan pembaruan yang fokus.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} mengrawl situs dan mengidentifikasi kandidat pembaruan yang mungkin.",
-            "title": "Halaman yang ada diperiksa"
-          },
-          "three": {
-            "description": "{{assistantName}} memprioritaskan halaman dan menentukan perbaikan yang diperlukan.",
-            "title": "Ringkasan pembaruan dibuat"
-          },
-          "two": {
-            "description": "{{assistantName}} memeriksa hasil pencarian, kata kunci, dan penutupan kompetitif.",
-            "title": "Permintaan saat ini ditetapkan"
-          }
-        },
-        "title": "Bangun rencana pembaruan SEO konten"
-      },
-      "build-weekly-deck-gamma": {
-        "description": "Telusuri pendapatan, pengeluaran, dana yang diterima, dan aliran kas di Sheets.",
-        "scenario": "Ulasan keuangan memperlambat ketika angka harus dibangun secara manual. {{assistantName}} menarik metrik QuickBooks yang disetujui dan mempertahankan dashboard keuangan yang siap untuk diambil keputusan di Google Sheets.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca pendapatan, pengeluaran, dana yang diterima, dan aliran kas.",
-            "title": "Data keuangan dikumpulkan"
-          },
-          "three": {
-            "description": "{{assistantName}} menulis pandangan keuangan yang saat ini ke Google Sheets.",
-            "title": "Dashboard diperbarui"
-          },
-          "two": {
-            "description": "{{assistantName}} menghitung tren, pengecualian, dan total laporan.",
-            "title": "Metrik disusun"
-          }
-        },
-        "title": "Bangun dashboard keuangan QuickBooks"
-      },
-      "business-review-gamma": {
-        "description": "Gabungkan data finansial, pertumbuhan, dan operasional menjadi satu tinjauan.",
-        "scenario": "Tinjauan bulanan harus menjelaskan bisnis, bukan hanya mengulang dashboard. {{assistantName}} menggabungkan QuickBooks, Google Analytics, dan Google Sheets dan menambahkan konteks HubSpot ketika tersedia.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca metrik finansial, pertumbuhan, dan operasional.",
-            "title": "Data bisnis dikumpulkan"
-          },
-          "three": {
-            "description": "{{assistantName}} mengembalikan tinjauan bulanan yang ringkas dan siap untuk keputusan.",
-            "title": "Tinjauan disiapkan"
-          },
-          "two": {
-            "description": "{{assistantName}} menghubungkan tren, perbedaan rencana, kemenangan, dan risiko.",
-            "title": "Kinerja dianalisis"
-          }
-        },
-        "title": "Bangun tinjauan bisnis bulanan"
-      },
-      "catch-calendar-conflicts": {
-        "description": "Deteksi konflik ganda dan jendela pemesanan yang sulit sejak dini.",
-        "scenario": "Konflik kalender paling mudah diselesaikan sebelum hari rapat. {{assistantName}} memeriksa acara baru untuk overalap, perjalanan, dan konflik persiapan dan menjelaskan pilihan.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca acara dan jadwal kalender sekitarnya.",
-            "title": "Acara baru diperiksa"
-          },
-          "three": {
-            "description": "{{assistantName}} menjelaskan konflik dan dapat membuat catatan Gmail.",
-            "title": "Pilihan penyelesaian dikembalikan"
-          },
-          "two": {
-            "description": "{{assistantName}} mendeteksi overalap dan jendela pindah yang mustahil.",
-            "title": "Konflik teridentifikasi"
-          }
-        },
-        "title": "Temukan konflik Google Calendar"
-      },
-      "catch-leads-gmail": {
-        "description": "Ringkas perpindahan tahap, transaksi yang lama, risiko, dan perubahan proyeksi.",
-        "scenario": "Ringkasan pipa lebih jelas ketika perubahan tiba sebelum pertemuan. {{assistantName}} membandingkan pipa HubSpot saat ini dengan snapshot sebelumnya dan mengembalikan ringkasan mingguan yang singkat.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} mengumpulkan transaksi, tahap, pemilik, tanggal, dan aktivitas.",
-            "title": "Pipa dibaca"
-          },
-          "three": {
-            "description": "{{assistantName}} mengembalikan tindakan selanjutnya dan pilihan untuk memperbarui Google Sheets.",
-            "title": "Ringkasan dibuat"
-          },
-          "two": {
-            "description": "{{assistantName}} menemukan perubahan, transaksi yang lama, penghalang, dan pergeseran proyeksi.",
-            "title": "Perpindahan dan risiko dianalisis"
-          }
-        },
-        "title": "Buat ringkasan pipa HubSpot mingguan"
-      },
-      "chase-overdue-asana-tasks": {
-        "description": "Siapkan pengingat spesifik pemilik tanpa mengirim otomatis.",
-        "scenario": "Pekerjaan yang terlambat membutuhkan konteks, bukan nudge umum. {{assistantName}} mengelompokkan tugas Asana yang terlambat oleh pemilik dan menulis pengingat Gmail yang singkat untuk setiap orang.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca tugas Asana yang terlambat.",
-            "title": "Pekerjaan yang terlambat ditemukan"
-          },
-          "three": {
-            "description": "{{assistantName}} membuat pengingat untuk diproses manusia dan tidak pernah mengirimnya.",
-            "title": "Draft Gmail dibuat"
-          },
-          "two": {
-            "description": "{{assistantName}} menyiapkan konteks proyek dan penghalang yang relevan.",
-            "title": "Tugas dielompokkan berdasarkan pemilik"
-          }
-        },
-        "title": "Drafting pengingat Gmail untuk tugas Asana yang terlambat"
-      },
-      "check-posthog-signup-funnel": {
-        "description": "Bandingkan Google Ads dan Meta Ads pada basis performa yang sama.",
-        "scenario": "Sulit membandingkan saluran bayar ketika setiap platform melaporkannya dengan cara yang berbeda. {{assistantName}} mengnormalisasi pengeluaran, konversi, CPA, dan ROAS di Google Ads dan Meta Ads.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca keduanya untuk jendela laporan yang sama.",
-            "title": "Data iklan dikumpulkan"
-          },
-          "three": {
-            "description": "{{assistantName}} menyoroti efisiensi, penjadwalan, dan opsional memperbarui Sheets.",
-            "title": "Perbedaan saluran dijelaskan"
-          },
-          "two": {
-            "description": "{{assistantName}} menghitung metrik yang dapat dibandingkan pengeluaran, konversi, CPA, dan ROAS.",
-            "title": "Performa diperlakukan"
-          }
-        },
-        "title": "Bandingkan saluran pengambilan bayar"
-      },
-      "compare-google-ads-last-month": {
-        "description": "Monitor efisiensi media berbayar, penjadwalan, dan pergeseran kinerja.",
-        "scenario": "Anggaran dapat bergerak sebelum pemilik kampanye menyadarinya. {{assistantName}} membandingkan Google Ads dan Meta Ads pada pengeluaran, konversi, CPA, dan ROAS dan menyoroti di mana tindakan diperlukan.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca kedua platform iklan untuk periode yang dipilih.",
-            "title": "Data kampanye dikumpulkan"
-          },
-          "three": {
-            "description": "{{assistantName}} kembalikan perbandingan dan opsionalnya memperbarui Sheets.",
-            "title": "Tindakan direkomendasikan"
-          },
-          "two": {
-            "description": "{{assistantName}} normalisasi kinerja dan mengidentifikasi pergeseran material.",
-            "title": "Efisiensi dibandingkan"
-          }
-        },
-        "title": "Bandingkan Google Ads dan Meta Ads"
-      },
-      "daily-company-brief-slack": {
-        "description": "Gabungkan pertumbuhan, pipeline, dan konteks finansial opsional.",
-        "scenario": "Gambaran perusahaan tersebar di beberapa sistem. {{assistantName}} menggabungkan Google Analytics dan HubSpot, menambahkan konteks QuickBooks ketika tersedia, dan mengembalikan kemenangan, risiko, dan keputusan yang penting.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca pertumbuhan, pipeline, dan data finansial yang tersedia.",
-            "title": "Sinyal perusahaan dikumpulkan"
-          },
-          "three": {
-            "description": "{{assistantName}} meringkas prioritas dalam thread otomasi.",
-            "title": "Pulse dikembalikan"
-          },
-          "two": {
-            "description": "{{assistantName}} menghubungkan pergerakan di seluruh bisnis.",
-            "title": "Kemenangan dan risiko diidentifikasi"
-          }
-        },
-        "title": "Buat pulse perusahaan harian"
-      },
-      "daily-industry-news-slack": {
-        "description": "Monitor posisi kas QuickBooks dan risiko penerimaan.",
-        "scenario": "Masalah aliran kas lebih murah untuk ditangani sebelum menjadi mendesak. {{assistantName}} memeriksa aliran kas QuickBooks dan faktur yang terlambat, menjelaskan risiko material, dan dapat menyiapkan email Gmail untuk diproses.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca aliran kas, penerimaan, dan faktur yang terlambat.",
-            "title": "Risiko finansial dicek"
-          },
-          "three": {
-            "description": "{{assistantName}} menjelaskan risiko dan dapat menyiapkan Gmail follow-up.",
-            "title": "Peringatan dikembalikan"
-          },
-          "two": {
-            "description": "{{assistantName}} menandai saldo yang lama dan sinyal tekanan kas.",
-            "title": "Perubahan penting diidentifikasi"
-          }
-        },
-        "title": "Peringatkan tentang aliran kas dan faktur yang terlambat"
-      },
-      "draft-github-release-notes-notion": {
-        "description": "Ubah PR yang telah digabungkan menjadi catatan rilis yang jelas dan dapat dipahami pengguna.",
-        "scenario": "Catatan rilis tidak harus menulis log commit secara manual. {{assistantName}} mengumpulkan PR yang telah digabungkan sejak rilis terakhir dan mengubahnya menjadi catatan perubahan yang ringkas di Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} mengumpulkan PR sejak rilis terakhir.",
-            "title": "Kerja yang telah digabungkan diumpamakan"
-          },
-          "three": {
-            "description": "{{assistantName}} menulis draft catatan rilis di Notion.",
-            "title": "Catatan disimpan"
-          },
-          "two": {
-            "description": "{{assistantName}} mengelompokkan kerja dan menjelaskan dampak pengguna.",
-            "title": "Perubahan diterjemahkan"
-          }
-        },
-        "title": "Draft catatan rilis GitHub di Notion"
-      },
-      "draft-newsletter-mailchimp": {
-        "description": "Gabungkan Analytics dan Search Console menjadi laporan organik yang satu.",
-        "scenario": "Pertumbuhan organik hidup di atas data lalu lintas dan pencarian. {{assistantName}} menggabungkan Google Analytics dengan Search Console, menjelaskan pergerakan dan peluang, dan opsionalnya merekam pekerjaan berikutnya di Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca perilaku situs dan kinerja pencarian.",
-            "title": "Data organik dikumpulkan"
-          },
-          "three": {
-            "description": "{{assistantName}} kembalikan prioritas dan opsionalnya menyimpannya di Notion.",
-            "title": "Ringkasan dibuat"
-          },
-          "two": {
-            "description": "{{assistantName}} menghubungkan halaman tujuan, query, konversi, dan tren.",
-            "title": "Pertumbuhan dianalisis"
-          }
-        },
-        "title": "Buat ringkasan pertumbuhan organik"
-      },
-      "draft-replies-notion-faq": {
-        "description": "Ground email dukungan dalam FAQ Notion yang disetujui.",
-        "scenario": "Sebanyak mungkin pertanyaan dukungan sudah memiliki jawaban yang disetujui di mana-mana. {{assistantName}} membaca email, menemukan panduan Notion yang relevan, dan menulis balasan yang diberdayakan untuk dipelajari.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca percakapan Gmail dan konteks pelanggan.",
-            "title": "Sebuah pertanyaan dukungan datang"
-          },
-          "three": {
-            "description": "{{assistantName}} mempersiapkan balasan dan tidak mengirim secara otomatis.",
-            "title": "Balasan disusun"
-          },
-          "two": {
-            "description": "{{assistantName}} menemukan panduan Notion yang relevan.",
-            "title": "FAQ dicek"
-          }
-        },
-        "title": "Draft balasan dari FAQ"
-      },
-      "file-gmail-invoices-drive": {
-        "description": "Simpan file faktur dan catat item akuntansi yang sesuai.",
-        "scenario": "Faktur menciptakan pekerjaan bersih ketika file dan catatan akuntansi terpisah. {{assistantName}} menyimpan lampiran Gmail di Drive, mencatat tagihan atau pengeluaran di QuickBooks, dan dapat memperbarui lembar koreksi.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca pesan Gmail dan lampirannya yang dipilih.",
-            "title": "Faktur email teridentifikasi"
-          },
-          "three": {
-            "description": "{{assistantName}} mencatat item dan memperbarui Google Sheets opsional.",
-            "title": "QuickBooks diperbarui"
-          },
-          "two": {
-            "description": "{{assistantName}} menyimpan dokumen di Drive dan mengekstrak data akuntansi.",
-            "title": "File dan detail terkumpul"
-          }
-        },
-        "title": "Simpan faktur Gmail di Drive dan QuickBooks"
-      },
-      "file-sentry-crashes-github": {
-        "description": "Urutkan crash baru berdasarkan dampak dan laporkan masalah yang paling dapat diambil tindakan.",
-        "scenario": "Crash dengan dampak tinggi dapat tersembunyi di feed kesalahan. {{assistantName}} memeriksa kegagalan baru dari Sentry, menilai berdasarkan keparahan dan pengguna yang terpengaruh, dan melaporkan yang memerlukan kerja engineering.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} mengumpulkan kesalahan yang belum diselesaikan dan sinyal dampak dari Sentry.",
-            "title": "{{assistantName}} membaca crash baru"
-          },
-          "three": {
-            "description": "{{assistantName}} membuat masalah yang dapat diambil tindakan dan opsional menghubungkannya di Linear.",
-            "title": "Masalah GitHub dilaporkan"
-          },
-          "two": {
-            "description": "{{assistantName}} memisahkan regressi penting dari noise dampak rendah.",
-            "title": "Dampak dinilai"
-          }
-        },
-        "title": "File Sentry crash menjadi masalah GitHub"
-      },
-      "fixes-to-notion-help-docs": {
-        "description": "Konversikan penyelesaian GitHub yang terkonfirmasi menjadi panduan Notion yang dapat digunakan.",
-        "scenario": "Pertanyaan dukungan yang sama kembali ketika penyelesaian tidak pernah didokumentasikan. {{assistantName}} membaca isu GitHub yang terpecahkan dan mengubah penyelesaian yang disetujui menjadi artikel panduan Notion yang jelas.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca isu GitHub, penyelesaian, dan dampak pengguna.",
-            "title": "Bug yang terpecahkan dipilih"
-          },
-          "three": {
-            "description": "{{assistantName}} menulis sketsa yang dapat digunakan di Notion.",
-            "title": "Artikel panduan disimpan"
-          },
-          "two": {
-            "description": "{{assistantName}} mengubah penyelesaian menjadi langkah-langkah troubleshooting yang jelas.",
-            "title": "Panduan disusun"
-          }
-        },
-        "title": "Ubah bug yang terpecahkan menjadi panduan bantuan"
-      },
-      "flag-figma-designs-no-task": {
-        "description": "Konversi spesifikasi produk yang disetujikan menjadi pekerjaan Linear yang terstruktur.",
-        "scenario": "Spesifikasi yang disetujikan masih perlu menjadi pekerjaan yang dapat dijalankan. {{assistantName}} membaca spesifikasi Notion dan membuat proyek Linear dengan milestone, isu yang terstruktur, ketergantungan, dan kriteria persetujuan.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca spesifikasi produk Notion yang disetujikan.",
-            "title": "Spesifikasi diperiksa"
-          },
-          "three": {
-            "description": "{{assistantName}} membuat proyek dan secara opsional menghubungkan konteks GitHub.",
-            "title": "Proyek Linear dibuat"
-          },
-          "two": {
-            "description": "{{assistantName}} mengidentifikasi milestone, isu, ketergantungan, dan kriteria.",
-            "title": "Pekerjaan diteruskan"
-          }
-        },
-        "title": "Ubah spesifikasi Notion menjadi proyek Linear"
-      },
-      "flagged-gmail-todoist-tasks": {
-        "description": "Buat tugas yang dapat diambil dari pesan dengan label yang dipilih.\\n",
-        "scenario": "Email penting menjadi lebih mudah diselesaikan ketika mereka keluar dari inbox sebagai tugas yang jelas. {{assistantName}} mengubah pesan Gmail yang dilabeli menjadi item Todoist dengan tanggal jatuh tempo dan konteks sumber.\\n",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} mendeteksi label yang dipilih dan membaca pesan.\\n",
-            "title": "Pesan Gmail ditandai\\n"
-          },
-          "three": {
-            "description": "{{assistantName}} membuat tugas dengan tautan sumber.\\n",
-            "title": "Tugas Todoist dibuat\\n"
-          },
-          "two": {
-            "description": "{{assistantName}} mengidentifikasi tugas, tanggal jatuh tempo, dan konteks mendukung.\\n",
-            "title": "Tindakan diambil"
-          }
-        },
-        "title": "Ubah surat Gmail yang ditandai menjadi tugas Todoist\\n"
-      },
-      "github-idea-to-notion-spec": {
-        "description": "Perluas ide GitHub yang dilabeli menjadi spesifikasi produk yang struktur.",
-        "scenario": "Ide yang baik sering berhenti pada deskripsi isu yang singkat. {{assistantName}} mengubah ide GitHub yang dilabeli menjadi spesifikasi Notion yang jelas dengan masalah, bukti, skop, metrik, risiko, dan pertanyaan terbuka.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca isu GitHub yang dilabeli dan konteks terkait.",
-            "title": "Pilihlah ide"
-          },
-          "three": {
-            "description": "{{assistantName}} menulis sketsa yang terstruktur di Notion.",
-            "title": "Spesifikasi disimpan"
-          },
-          "two": {
-            "description": "{{assistantName}} memperluas masalah, skop, kriteria keberhasilan, dan risiko.",
-            "title": "Spesifikasi dikembangkan"
-          }
-        },
-        "title": "Ubah ide GitHub menjadi spesifikasi Notion"
-      },
-      "gmail-followups-auto": {
-        "description": "Siapkan follow-up penjualan yang kontekstual untuk review manusia.",
-        "scenario": "Follow-up yang baik memerlukan catatan transaksi dan percakapan. {{assistantName}} menggabungkan konteks HubSpot dengan thread Gmail yang terkait dan menyiapkan tanggapan yang singkat tanpa mengirimnya.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca catatan transaksi HubSpot dan aktivitas terbaru.",
-            "title": "Konteks transaksi diperiksa"
-          },
-          "three": {
-            "description": "{{assistantName}} menyiapkan draft Gmail untuk review manusia.",
-            "title": "Follow-up disusun"
-          },
-          "two": {
-            "description": "{{assistantName}} mengidentifikasi pertanyaan terbuka, komitmen, dan waktu.",
-            "title": "Thread email diperiksa"
-          }
-        },
-        "title": "Draft follow-up Gmail dari HubSpot"
-      },
-      "gmail-reconnect-reminders": {
-        "description": "Temukan kontak penting yang telah diam dan draft upaya hubungan.",
-        "scenario": "Hubungan penting pudar ketika tidak ada yang menyadari ketidaktahuan. {{assistantName}} memeriksa Gmail, menambahkan riwayat kalender ketika tersedia, dan menyiapkan catatan reconnect yang mendalam.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} memeriksa aktivitas Gmail terbaru dan konteks kontak.",
-            "title": "Riwayat hubungan diperiksa"
-          },
-          "three": {
-            "description": "{{assistantName}} menyiapkan pesan pribadi untuk diproses manusia.",
-            "title": "Draft merekam kembali disiapkan"
-          },
-          "two": {
-            "description": "{{assistantName}} mengidentifikasi kontak berharga tanpa interaksi terbaru.",
-            "title": "Hubungan yang diam diurutkan"
-          }
-        },
-        "title": "Tampilkan hubungan untuk merekam kembali"
-      },
-      "highlight-key-emails-gmail": {
-        "description": "Temukan email Gmail yang paling memerlukan respons eksekutif.",
-        "scenario": "Inbox eksekutif mencampurkan keputusan penting dengan lalu lintas rutin. {{assistantName}} mengidentifikasi email yang penting, menjelaskan mengapa, dan menyiapkan balasan tanpa mengirimnya.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca email Gmail terbaru dan konteks kalender yang tersedia.",
-            "title": "Inbox diperiksa"
-          },
-          "three": {
-            "description": "{{assistantName}} meringkas setiap item dan menyiapkan balasan untuk diproses.",
-            "title": "Balasan disiapkan"
-          },
-          "two": {
-            "description": "{{assistantName}} memprioritaskan keputusan, komitmen, dan permintaan sensitif.",
-            "title": "Pesan penting diurutkan"
-          }
-        },
-        "title": "Ungkap email kunci"
-      },
-      "investor-update-google-docs": {
-        "description": "Gabungkan data finansial dan pertumbuhan ke dalam draft Google Docs.",
-        "scenario": "Perbaruan investor membutuhkan waktu karena cerita dan angka hidup terpisah. {{assistantName}} menggabungkan QuickBooks dan Google Analytics, menambahkan konteks HubSpot ketika tersedia, dan menulis perbaruan dalam Google Docs.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca metrik finansial, pertumbuhan, dan pipeline yang tersedia.",
-            "title": "Metrik saat ini dikumpulkan"
-          },
-          "three": {
-            "description": "{{assistantName}} menulis perbaruan investor dalam Google Docs.",
-            "title": "Perbaruan disusun"
-          },
-          "two": {
-            "description": "{{assistantName}} menghubungkan kemajuan, pelajaran, risiko, dan prioritas berikutnya.",
-            "title": "Naskah dikembangkan"
-          }
-        },
-        "title": "Susun perbaruan investor"
-      },
-      "log-gong-calls-hubspot": {
-        "description": "Ubah catatan rapat Google Meet menjadi keputusan dan tindakan selanjutnya di CRM.",
-        "scenario": "Detail penting panggilan penting hilang ketika catatan tetap di luar CRM. {{assistantName}} mengubah catatan rapat Google Meet menjadi keputusan, objeksi, komitmen, dan tindakan selanjutnya di HubSpot.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca transcript terbaru dan konteks panggilan.",
-            "title": "Transcript Meet tiba"
-          },
-          "three": {
-            "description": "{{assistantName}} mencatat ringkasan dan dapat menyiapkan follow-up Gmail.",
-            "title": "HubSpot diperbarui"
-          },
-          "two": {
-            "description": "{{assistantName}} mengidentifikasi keputusan, objeksi, komitmen, dan pemilik.",
-            "title": "Sinyal penjualan diambil"
-          }
-        },
-        "title": "Catat tindak lanjut Google Meet di HubSpot"
-      },
-      "meeting-notes-asana-tasks": {
-        "description": "Buat pekerjaan proyek yang ditugaskan dari transkrip rapat.",
-        "scenario": "Tindakan rapat hilang ketika mereka tetap berada di dalam catatan. {{assistantName}} membaca transkrip Google Meet, mengidentifikasi komitmen dan pemilik, dan membuat tugas Asana yang jelas.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca transkrip rapat dan konteks Kalender.",
-            "title": "Transkrip rapat tiba"
-          },
-          "three": {
-            "description": "{{assistantName}} membuat pekerjaan yang ditugaskan dengan konteks sumber.",
-            "title": "Tugas Asana dibuat"
-          },
-          "two": {
-            "description": "{{assistantName}} mengidentifikasi tugas, pemilik, tanggal jatuh tempo, dan ketergantungan.",
-            "title": "Tindakan diambil"
-          }
-        },
-        "title": "Ubah catatan Google Meet menjadi tugas Asana"
-      },
-      "meeting-recaps-slack": {
-        "description": "Ubah transcript rapat menjadi ringkasan yang singkat dan tindakan.\\n",
-        "scenario": "Keputusan rapat hilang ketika transcript tidak pernah diproses. {{assistantName}} membaca transcript Google Meet dan menulis keputusan kunci, tindakan, dan pemiliknya di Google Docs.\\n",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca transcript dan konteks Calendar yang tersedia.\\n",
-            "title": "Transcript rapat tiba\\n"
-          },
-          "three": {
-            "description": "{{assistantName}} menulis ringkasan yang terstruktur di Google Docs.\\n",
-            "title": "Ringkasan disimpan\\n"
-          },
-          "two": {
-            "description": "{{assistantName}} mengidentifikasi hasil, pemilik, tanggal jatuh tempo, dan pertanyaan terbuka.\\n",
-            "title": "Keputusan dan tindakan diambil\\n"
-          }
-        },
-        "title": "Simpan ringkasan Google Meet ke Google Docs\\n"
-      },
-      "morning-brief-slack": {
-        "description": "Gabungkan email penting, jadwal hari ini, dan konteks Notion opsional.\\n",
-        "scenario": "Rencana pagi yang berguna membutuhkan inbox dan kalender. {{assistantName}} memeriksa Gmail dan Google Calendar, menambahkan konteks Notion jika tersedia, dan mengembalikan ringkasan harian singkat.\\n",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca email penting dan jadwal hari ini.\\n",
-            "title": "Input hari ini dikumpulkan\\n"
-          },
-          "three": {
-            "description": "{{assistantName}} membuat rencana terfokus di thread otomasi.\\n",
-            "title": "Ringkasan dikembalikan\\n"
-          },
-          "two": {
-            "description": "{{assistantName}} mengidentifikasi komitmen, persiapan, dan tindak lanjut.\\n",
-            "title": "Prioritas terhubung\\n"
-          }
-        },
-        "title": "Buat ringkasan pagi\\n"
-      },
-      "new-gmail-contacts-hubspot": {
-        "description": "Buat atau kayakan data kontak CRM dari percakapan email yang relevan.",
-        "scenario": "Hubungan baru sering terjebak di inbox. {{assistantName}} mengidentifikasi kontak Gmail yang relevan, memeriksa HubSpot untuk duplikat, dan membuat atau kayakan data kontak.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} memeriksa percakapan email Gmail yang relevan.",
-            "title": "Kontak baru diidentifikasi"
-          },
-          "three": {
-            "description": "{{assistantName}} membuat atau memperkaya data kontak di HubSpot.",
-            "title": "Kontak diperbarui"
-          },
-          "two": {
-            "description": "{{assistantName}} menemukan catatan yang ada dan detail yang hilang.",
-            "title": "HubSpot diperiksa"
-          }
-        },
-        "title": "Tambahkan kontak baru Gmail ke HubSpot"
-      },
-      "onboard-new-hires-asana": {
-        "description": "Ubah pengajuan penerimaan yang disetujui menjadi rencana onboarding Asana.",
-        "scenario": "Onboarding karyawan baru lebih andal ketika setiap pengajuan penerimaan yang disetujui mengikuti rencana yang sama. {{assistantName}} membaca pengisian Google Forms, membuat tugas Asana, dan dapat menyimpan dokumen di Drive.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca formulir onboarding baru dan detail yang diperlukan.",
-            "title": "Pengisian disetujui"
-          },
-          "three": {
-            "description": "{{assistantName}} membuat rencana dan dapat menyimpan dokumen Drive opsional.",
-            "title": "Asana diperbarui"
-          },
-          "two": {
-            "description": "{{assistantName}} menetapkan peran dan tanggal mulai ke tugas dan pemilik.",
-            "title": "Rencana onboarding dibangun"
-          }
-        },
-        "title": "Onboarding karyawan baru dari Google Forms"
-      },
-      "post-daily-metrics-slack": {
-        "description": "Ringkaskan lalu lintas, pengambilan, konversi, dan perubahan yang menonjol.",
-        "scenario": "Ringkasan website harian tidak perlu membuka beberapa laporan. {{assistantName}} membaca Google Analytics, menambahkan konteks Search Console ketika tersedia, dan mengembalikan ringkasan yang singkat dalam thread otomasi.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca lalu lintas, pengambilan, dan metrik konversi.",
-            "title": "Data website dikumpulkan"
-          },
-          "three": {
-            "description": "{{assistantName}} meringkas apa yang berubah dan apa yang perlu diperhatikan.",
-            "title": "Ringkasan dikembalikan"
-          },
-          "two": {
-            "description": "{{assistantName}} membandingkan performa dan menyoroti pergerakan yang signifikan.",
-            "title": "Perubahan diidentifikasi"
-          }
-        },
-        "title": "Buat ringkasan metrik website harian"
-      },
-      "post-github-updates-slack": {
-        "description": "Tinjau akses cloud, akun layanan, dan layanan yang terpapar.",
-        "scenario": "Hak akses cloud bergerak seiring proyek bertumbuh. {{assistantName}} memeriksa Google Cloud IAM, akun layanan, kunci, layanan yang diaktifkan, dan paparan publik, lalu mengembalikan laporan risiko hanya baca dengan petunjuk penyelesaian yang jelas.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} menginventarisikasi ikatan IAM, akun, kunci, dan layanan.",
-            "title": "Akses cloud dipertinjau"
-          },
-          "three": {
-            "description": "{{assistantName}} menyarankan perbaikan dan opsional menulis isu GitHub yang disetujui.",
-            "title": "Penyelesaian dipersiapkan"
-          },
-          "two": {
-            "description": "{{assistantName}} menandai hak akses berlebihan, kredensial kadaluarsa, dan paparan publik.",
-            "title": "Risiko dinilai"
-          }
-        },
-        "title": "Audit Google Cloud IAM dan layanan"
-      },
-      "post-release-notes-slack": {
-        "description": "Ubah perubahan terbaru di GitHub menjadi catatan perubahan yang disetujui.",
-        "scenario": "Perubahan yang terkirim mudah hilang di dalam permintaan penarikan. {{assistantName}} mengumpulkan perubahan GitHub terkirim terbaru, menulis catatan rilis yang mudah dibaca, dan mempublikasikan versi yang disetujui di Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} mengumpulkan perubahan GitHub yang terkirim terbaru.",
-            "title": "Perubahan yang terkirim dikumpulkan"
-          },
-          "three": {
-            "description": "{{assistantName}} menyimpan catatan rilis akhir di Notion.",
-            "title": "Draft yang disetujui dipublikasikan"
-          },
-          "two": {
-            "description": "{{assistantName}} mengelompokkan perubahan dan menjelaskan dampak pengguna.",
-            "title": "Catatan rilis ditulis"
-          }
-        },
-        "title": "Publikasikan catatan rilis di Notion"
-      },
-      "prep-google-calendar-meetings": {
-        "description": "Buat ringkasan fokus untuk rapat eksternal yang akan datang.",
-        "scenario": "Persiapan rapat tidak harus dimulai lima menit sebelum panggilan. {{assistantName}} memeriksa acara kalender dan menambahkan konteks kontak dan CRM ketika tersedia.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca jendela Google Calendar yang dipilih.",
-            "title": "Rapat yang akan datang ditemukan"
-          },
-          "three": {
-            "description": "{{assistantName}} mengembalikan tujuan, konteks, risiko, dan pertanyaan yang disarankan.",
-            "title": "Ringkasan disiapkan"
-          },
-          "two": {
-            "description": "{{assistantName}} memeriksa HubSpot ketika terhubung.",
-            "title": "Konteks peserta dikumpulkan"
-          }
-        },
-        "title": "Persiapan rapat Google Calendar"
-      },
-      "publish-scheduled-posts-buffer": {
-        "description": "Bandingkan situs dengan kompetitor dan peringkat peluang organik.",
-        "scenario": "Rencana konten meningkat ketika dimulai dari celah pencarian nyata. {{assistantName}} menggunakan Firecrawl dan DataForSEO yang bawaan untuk membandingkan situs pengguna dengan kompetitor yang ditentukan dan menilai topik yang hilang berdasarkan tujuan dan nilai.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} mengrawl situs pengguna dan kompetitor yang dipilih.",
-            "title": "Situs dibandingkan"
-          },
-          "three": {
-            "description": "{{assistantName}} kembalikan daftar peluang konten yang terprioritaskan.",
-            "title": "Peluang terperingkat"
-          },
-          "two": {
-            "description": "{{assistantName}} menemukan kata kunci, topik, dan penutupan tujuan yang hilang.",
-            "title": "Celah pencarian diidentifikasi"
-          }
-        },
-        "title": "Temukan celah kata kunci dan konten"
-      },
-      "report-ai-model-costs-slack": {
-        "description": "Jelaskan insiden lalu lintas atau keamanan dan tindakan selanjutnya.",
-        "scenario": "Insiden Cloudflare memerlukan konteks sebelum menjadi noise. {{assistantName}} memeriksa lalu lintas, peristiwa keamanan, dan kesehatan layanan, menjelaskan dampak yang mungkin, dan mengembalikan tindakan selanjutnya di thread otomasi.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} memeriksa kesehatan layanan, pergeseran lalu lintas, dan peristiwa keamanan.",
-            "title": "Cloudflare diperiksa"
-          },
-          "three": {
-            "description": "{{assistantName}} menyarankan tindakan dan dapat menulis isu GitHub.",
-            "title": "Tindakan selanjutnya dikembalikan"
-          },
-          "two": {
-            "description": "{{assistantName}} memisahkan insiden yang terkonfirmasi dari variasi normal.",
-            "title": "Dampak dijelaskan"
-          }
-        },
-        "title": "Peringatkan pada insiden Cloudflare"
-      },
-      "research-calendar-meetings": {
-        "description": "Bangun ringkasan yang singkat dari Calendar dan konteks email.\n",
-        "scenario": "Persiapan rapat lebih cepat ketika peserta dan riwayat percakapan sudah terhubung. {{assistantName}} memeriksa acara Calendar mendatang dan menambahkan konteks Gmail ketika tersedia.\n",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca jendela Calendar Google yang dipilih.\\n",
-            "title": "Rapat mendatang ditemukan\\n"
-          },
-          "three": {
-            "description": "{{assistantName}} mengembalikan tujuan, konteks, dan pertanyaan yang disarankan.\\n",
-            "title": "Ringkasan dibuat\\n"
-          },
-          "two": {
-            "description": "{{assistantName}} memeriksa tautan Gmail terkait.\n",
-            "title": "Konteks peserta dikumpulkan\\n"
-          }
-        },
-        "title": "Persiapkan untuk rapat mendatang\\n"
-      },
-      "research-new-signups-apollo": {
-        "description": "Temukan dan kualifikasi lead kreator dari X.",
-        "scenario": "Outbound melambat ketika daftarnya usang. {{assistantName}} menemukan kreator dan prospek di X yang cocok dengan profil target, mengualifikasi setiap kandidat dengan pencarian orang bawaan dan Firecrawl, lalu mengembalikan daftar outreach yang diperingkat.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} mencari akun di X yang cocok dengan profil target.",
-            "title": "Kandidat ditemukan di X"
-          },
-          "three": {
-            "description": "{{assistantName}} menilai kecocokan, menyusun pesan pembuka, dan opsional menyimpan lead ke HubSpot.",
-            "title": "Daftar outreach diperingkat"
-          },
-          "two": {
-            "description": "{{assistantName}} memverifikasi peran, perusahaan, dan jangkauan dengan riset bawaan.",
-            "title": "Setiap lead dikualifikasi"
-          }
-        },
-        "title": "Temukan lead kreator di X"
-      },
-      "run-daily-query-sheets": {
-        "description": "Tulis visibilitas pencarian dan pergerakan query ke Google Sheets.",
-        "scenario": "Performa pencarian lebih mudah diambil tindakan ketika memiliki riwayat yang konsisten. {{assistantName}} menarik metrik Search Console, menambahkan konteks Analytics ketika tersedia, dan memperbarui lembar laporan.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca klik, impresi, CTR, posisi, dan query.",
-            "title": "Data pencarian dikumpulkan"
-          },
-          "three": {
-            "description": "{{assistantName}} menulis hasil yang dinyatakan dalam bentuk standar ke Google Sheets.",
-            "title": "Lembar kerja diperbarui"
-          },
-          "two": {
-            "description": "{{assistantName}} mengidentifikasi permintaan pencarian yang menang, menurun, dan berkembang.",
-            "title": "Pergerakan dianalisis"
-          }
-        },
-        "title": "Catat performa pencarian organik di Sheets"
-      },
-      "send-bugs-github-slack": {
-        "description": "Konversikan laporan bug yang dapat diulang menjadi kerja teknis yang terstruktur.",
-        "scenario": "Nilai laporan bug hilang ketika bukti tetap berada di inbox. {{assistantName}} mengenal masalah dukungan yang dapat diulang, mengekstrak dampak dan langkah-langkah, dan menyimpan isu GitHub yang terstruktur.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} memeriksa email dukungan untuk masalah produk yang gagal yang dapat diulang.",
-            "title": "Laporan bug diidentifikasi"
-          },
-          "three": {
-            "description": "{{assistantName}} membuat isu dan dapat menghubungkannya ke Linear.",
-            "title": "Isu GitHub disimpan"
-          },
-          "two": {
-            "description": "{{assistantName}} mengekstrak dampak, langkah-langkah, perilaku yang diharapkan, dan konteks.",
-            "title": "Bukti diterstrukturkan"
-          }
-        },
-        "title": "Ubah email dukungan menjadi isu GitHub"
-      },
-      "sort-gmail-draft-replies": {
-        "description": "Tindak surat baru dan siapkan balasan untuk diproses oleh manusia.\\n",
-        "scenario": "Inbox yang sibuk menyembunyikan permintaan yang mendesak dan balasan yang mudah. {{assistantName}} mengelompokkan surat baru Gmail berdasarkan kepentingan dan tindakan, kemudian membuat draft balasan tanpa mengirimnya.\\n",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca inbox Gmail atau label yang dipilih.\\n",
-            "title": "Surat baru diproses\\n"
-          },
-          "three": {
-            "description": "{{assistantName}} siapkan balasan untuk diproses oleh manusia.\\n",
-            "title": "Balasan dibuat\\n"
-          },
-          "two": {
-            "description": "{{assistantName}} mengelompokkan surat berdasarkan kepentingan, permintaan, dan tindakan berikutnya.\\n",
-            "title": "Surat diproses\\n"
-          }
-        },
-        "title": "Urutkan Gmail dan balas draft\\n"
-      },
-      "sort-route-zendesk-tickets": {
-        "description": "Kelas email dukungan dan buat isu Linear yang dapat diambil tindakan.",
-        "scenario": "Email dukungan memerlukan prioriti dan kepemilikan yang konsisten. {{assistantName}} membaca percakapan baru di Gmail, mengenal jenis masalah dan kepentingannya, dan membuat isu Linear untuk item yang memerlukan tindakan.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} memeriksa percakapan baru dan konteks yang tersedia.",
-            "title": "Email dukungan dibaca"
-          },
-          "three": {
-            "description": "{{assistantName}} membuat isu yang dapat diambil tindakan dan menghubungkan bukti mendukung.",
-            "title": "Isu Linear dibuat"
-          },
-          "two": {
-            "description": "{{assistantName}} mengklasifikasikan kepentingan, topik, dan tim yang bertanggungjawab.",
-            "title": "Prioriti dan kepemilikan ditetapkan"
-          }
-        },
-        "title": "Triase email dukungan ke Linear"
-      },
-      "spot-churn-risk-stripe-zendesk": {
-        "description": "Ringkas volume dukungan, risiko, tema, dan pekerjaan yang belum diselesaikan.",
-        "scenario": "Antrian dukungan lebih mudah dielola ketika perubahan penting terlihat. {{assistantName}} memeriksa percakapan Gmail, menyoroti masalah yang mendesak atau berulang, dan menghubungkan pekerjaan Linear atau GitHub yang terkait.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca percakapan Gmail baru dan yang belum diselesaikan.",
-            "title": "Aktivitas dukungan dikumpulkan"
-          },
-          "three": {
-            "description": "{{assistantName}} meringkas prioritas dalam thread otomasi.",
-            "title": "Ringkasan dikembalikan"
-          },
-          "two": {
-            "description": "{{assistantName}} mengelompokkan masalah yang berulang dan menandai tindak lanjut mendesak.",
-            "title": "Risiko dan tema diidentifikasi"
-          }
-        },
-        "title": "Buat ringkasan dukungan harian"
-      },
-      "summarize-gmail-newsletters": {
-        "description": "Ubah surat berita yang dipilih menjadi ringkasan berulang yang berguna.\\n",
-        "scenario": "Nilai surat berita hilang ketika setiap isu bersaing untuk perhatian inbox. {{assistantName}} meringkas surat berita Gmail yang dipilih menjadi tema, tautan berguna, dan bacaan yang direkomendasikan.\\n",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca pesan dari pengirim yang dipilih atau label.\\n",
-            "title": "Surat berita dikumpulkan\\n"
-          },
-          "three": {
-            "description": "{{assistantName}} mengembalikan ringkasan dan dapat menyimpannya di Notion.\\n",
-            "title": "Ringkasan dibuat\\n"
-          },
-          "two": {
-            "description": "{{assistantName}} mengelompokkan tema dan mengidentifikasi tautan terkuat.\\n",
-            "title": "Konten berguna dikonsentrasikan\\n"
-          }
-        },
-        "title": "Ringkaskan surat berita Gmail\\n"
-      },
-      "summarize-user-feedback-notion": {
-        "description": "Kelompokkan respons formulir baru menjadi inisiatif produk yang terurut.",
-        "scenario": "Umpan balik menjadi berguna ketika pola menjadi jelas. {{assistantName}} memeriksa respons Google Forms, mengelompokkan titik sakit dan permintaan yang berulang, menarik rangking temuan, dan menulis ringkasan di Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca pengisian formulir Google Forms terbaru.",
-            "title": "Respons dikumpulkan"
-          },
-          "three": {
-            "description": "{{assistantName}} menulis ringkasan yang terprioritaskan di Notion.",
-            "title": "Temuan disimpan"
-          },
-          "two": {
-            "description": "{{assistantName}} mengelompokkan titik sakit, permintaan, dan perasaan.",
-            "title": "Tema ditarik rangking"
-          }
-        },
-        "title": "Ringkaskan umpan balik Google Forms di Notion"
-      },
-      "summarize-zendesk-tickets-daily": {
-        "description": "Buat video bantuan yang disetujui dengan kapabilitas avatar bawaan.",
-        "scenario": "Beberapa jawaban dukungan lebih mudah dipahami sebagai video presenter singkat. {{assistantName}} mengubah konten FAQ yang disetujui menjadi skrip dan storyboard, kemudian menggunakan kapabilitas avatar-video bawaan setelah disetujui.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} mengenal jawaban yang disetujui dan audiens yang dituju.",
-            "title": "Konten FAQ dipilih"
-          },
-          "three": {
-            "description": "{{assistantName}} hanya menghasilkan setelah pengguna menyetujui draft.",
-            "title": "Video avatar dihasilkan"
-          },
-          "two": {
-            "description": "{{assistantName}} membuat rencana dukungan-video yang ringkas dan akurat.",
-            "title": "Skrip dan storyboard disusun"
-          }
-        },
-        "title": "Ubah FAQ menjadi video bantuan digital-manusia"
-      },
-      "sync-asana-projects-notion": {
-        "description": "Jaga ringkasan proyek Notion tetap terkini dengan Asana.",
-        "scenario": "Ringkasan proyek berubah saat status tugas berubah di tempat lain. {{assistantName}} membaca proyek Asana yang dipilih dan menjaga ringkasan Notion yang sesuai tetap terkini.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} memeriksa status, pemilik, tanggal jatuh tempo, dan penghalang.",
-            "title": "Proyek Asana dibaca"
-          },
-          "three": {
-            "description": "{{assistantName}} memperbarui ringkasan dan menyoroti perubahan.",
-            "title": "Notion disinkronkan"
-          },
-          "two": {
-            "description": "{{assistantName}} membandingkan kondisi proyek saat ini dengan pandangan sebelumnya.",
-            "title": "Perubahan yang bermakna teridentifikasi"
-          }
-        },
-        "title": "Sinkronkan proyek Asana ke Notion"
-      },
-      "sync-linear-roadmap-notion": {
-        "description": "Jaga jalan rayap Now, Next, dan Later di Notion tetap terkini.",
-        "scenario": "Jalan rayap akan bergerak ketika status pengiriman berubah di tempat lain. {{assistantName}} membaca proyek dan isu yang dipilih di Linear, memetakkannya ke Now, Next, dan Later, dan memperbarui jalan rayap Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} memeriksa proyek dan isu yang dipilih, serta milestone.",
-            "title": "Status Linear dibaca"
-          },
-          "three": {
-            "description": "{{assistantName}} memperbarui jalan rayap dan menyoroti perubahan yang berarti.",
-            "title": "Notion diperbarui"
-          },
-          "two": {
-            "description": "{{assistantName}} mengubah status pengiriman menjadi Now, Next, dan Later.",
-            "title": "Tahap jalan rayap dipetakan"
-          }
-        },
-        "title": "Sinkronkan jalan rayap Linear ke Notion"
-      },
-      "track-feature-usage-posthog": {
-        "description": "Tampilkan perubahan terbesar mingguan dalam adopsi produk.",
-        "scenario": "Adopsi fitur berubah sebelum perubahan terdeteksi di dashboard. {{assistantName}} membandingkan sinyal adopsi Google Analytics terbaru, mengidentifikasi pergerakan yang signifikan, dan secara opsional merekam keputusan di Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} mengumpulkan sinyal fitur dan audiens yang dipilih.",
-            "title": "Data adopsi dibaca"
-          },
-          "three": {
-            "description": "{{assistantName}} menjelaskan apa yang bergerak dan apa yang perlu ditelusuri selanjutnya.",
-            "title": "Temuan dikembalikan"
-          },
-          "two": {
-            "description": "{{assistantName}} menemukan peningkatan, penurunan, dan perbedaan segmentasi yang besar.",
-            "title": "Perubahan dibandingkan"
-          }
-        },
-        "title": "Pantau adopsi fitur dengan Google Analytics"
-      },
-      "track-keyword-ranks-ahrefs": {
-        "description": "Crawl situs dan kembalikan daftar masalah SEO teknis yang terprioritaskan.",
-        "scenario": "Masalah SEO teknis tersembunyi di ratusan halaman. {{assistantName}} menggunakan Firecrawl dan DataForSEO yang bawaan untuk memeriksa crawlability, indexability, internal links, dan visibilitas live search tanpa memerlukan connector.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} menggunakan Firecrawl untuk memeriksa halaman dan internal links.",
-            "title": "Situs telah dicrawl"
-          },
-          "three": {
-            "description": "{{assistantName}} kembalikan perbaikan yang paling berdampak dengan bukti mendukung.",
-            "title": "Masalah terprioritaskan"
-          },
-          "two": {
-            "description": "{{assistantName}} menggunakan DataForSEO untuk memvalidasi sinyal visibilitas dan indexasi.",
-            "title": "Bukti pencarian diperiksa"
-          }
-        },
-        "title": "Audit situs web untuk SEO teknis"
-      },
-      "track-signup-sources-sheets": {
-        "description": "Query data Google Cloud dan publikasikan analisis yang dapat diperbarui.",
-        "scenario": "Data operasional penting sering berada di BigQuery tanpa pandangan yang dapat digunakan secara berulang. {{assistantName}} menjalankan query yang disetujui, mengidentifikasi tren dan anomali, dan menulis tabel hasil dan ringkasan ke Google Sheets.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} memastikan skop BigQuery dan pertanyaan analisis.",
-            "title": "Sebuah dataset dan query dipilih"
-          },
-          "three": {
-            "description": "{{assistantName}} mempublikasikan tabel yang dapat diperbarui dan ringkasan yang siap untuk diambil keputusan.",
-            "title": "Hasil ditulis ke Sheets"
-          },
-          "two": {
-            "description": "{{assistantName}} menjalankan query dan memeriksa tren, segmentasi, dan anomali.",
-            "title": "Data cloud dianalisis"
-          }
-        },
-        "title": "Analisis data BigQuery di Sheets"
-      },
-      "watch-brand-mentions": {
-        "description": "Ubah video yang disetujui menjadi postingan dan thread platform yang sesuai.",
-        "scenario": "Video yang kuat dapat mendukung lebih dari satu saluran. {{assistantName}} memeriksa video YouTube yang dipilih, menulis X postingan dan thread, dan opsionalnya menyimpan rencana yang disetujui di Notion.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} membaca video YouTube, transcript, dan konteks.",
-            "title": "Video dipilih"
-          },
-          "three": {
-            "description": "{{assistantName}} menyimpan rencana dan tidak mempublikasikannya tanpa disetujui.",
-            "title": "Konten disiapkan untuk disetujui"
-          },
-          "two": {
-            "description": "{{assistantName}} membuat postingan X dan opsi thread yang ringkas.",
-            "title": "Variasi sosial ditulis"
-          }
-        },
-        "title": "Remajakan video YouTube untuk X"
-      },
-      "watch-sentry-after-release": {
-        "description": "Bandingkan stabilitas setelah rilis dengan baseline sebelumnya.",
-        "scenario": "Rilis bisa terlihat sehat sementara regressi berkembang secara diam-diam. {{assistantName}} membandingkan sinyal terbaru dari Sentry dengan baseline sebelumnya dan menjelaskan apakah harus terus memantau, memperbaiki, atau membalikkan.",
-        "steps": {
-          "one": {
-            "description": "{{assistantName}} menemukan rilis terbaru dan jendela bandingannya.",
-            "title": "Rilis teridentifikasi"
-          },
-          "three": {
-            "description": "{{assistantName}} merangkum dampak dan tindakan teraman selanjutnya.",
-            "title": "Saran diusulkan"
-          },
-          "two": {
-            "description": "{{assistantName}} memeriksa tingkat crash-free dan regressi baru terhadap baseline.",
-            "title": "Stabilitas dibandingkan"
-          }
-        },
-        "title": "Pantau Sentry setelah rilis"
+        "title": "Mulai dengan tugas yang berarti"
       }
     }
   },
   "queue": {
     "concurrentRuns_one": "{{count}} eksekusi bersamaan",
     "concurrentRuns_other": "{{count}} eksekusi bersamaan",
-    "description": "Lihat posisi Anda di antrean dan upgrade untuk melewati waktu tunggu.",
+    "description": "Lihat berapa banyak eksekusi bersamaan yang sedang digunakan dan upgrade untuk melewati waktu tunggu.",
     "perMonth": "/bulan",
     "pricePerMonth": "{{price}}/bulan",
     "purchase": {
@@ -5942,7 +4544,6 @@
     "tiers": {
       "custom": "Kustom",
       "free": "Gratis",
-      "limitedFree": "Gratis terbatas",
       "pro": "Pro",
       "team": "Tim"
     },
@@ -5952,7 +4553,6 @@
       "features": {
         "creditsPerMonth": "{{credits}} kredit / bulan",
         "emailSupport": "Dukungan email",
-        "ownKeys": "Gunakan kunci LLM Anda sendiri",
         "payAsYouGo": "Bayar sesuai pemakaian setelah itu",
         "prioritySupport": "Dukungan prioritas",
         "unlimitedAgents": "Total agen tak terbatas"
@@ -5965,17 +4565,14 @@
   "runErrors": {
     "actions": {
       "addCredits": "Tambah kredit",
-      "openModelProviders": "Buka Penyedia Model",
-      "reconnectClaude": "Hubungkan kembali Claude Code",
-      "shareWithAdmin": "Bagikan kepada admin"
+      "openModelSettings": "Buka setelan model",
+      "reconnectClaude": "Hubungkan kembali Claude Code"
     },
-    "anthropicKeyAdmin": "Claude Code tidak dapat melakukan autentikasi dengan kunci API Anthropic yang dikonfigurasi. Perbarui atau ganti kunci API di Penyedia Model, lalu coba lagi.",
-    "anthropicKeyMember": "Claude Code tidak dapat melakukan autentikasi dengan kunci API Anthropic yang dikonfigurasi. Minta admin ruang kerja untuk memperbarui atau mengganti kunci API.",
     "askAdmin": "Minta admin ruang kerja untuk menambah kredit atau meningkatkan paket ruang kerja.",
-    "claudeReconnect": "Autentikasi langganan Claude Code gagal. Hubungkan kembali Claude Code di Penyedia Model, lalu coba lagi.",
-    "claudeTerms": "Claude Code memerlukan persetujuan atas Ketentuan Penggunaan dan Kebijakan Privasi yang diperbarui. Masuk ke https://claude.ai dengan akun Claude yang terhubung di Penyedia Model, setujui pembaruan tersebut, lalu coba lagi.",
+    "claudeReconnect": "Autentikasi langganan Claude Code gagal. Hubungkan kembali Claude Code di Setelan > Model, lalu coba lagi.",
+    "claudeTerms": "Claude Code memerlukan persetujuan atas Ketentuan Penggunaan dan Kebijakan Privasi yang diperbarui. Masuk ke https://claude.ai dengan akun Claude yang terhubung di Setelan > Model, setujui pembaruan tersebut, lalu coba lagi.",
     "codexOverloaded": "Model yang dipilih sedang mencapai kapasitas maksimum. Silakan coba model lain.",
-    "codexReconnect": "Sesi ChatGPT perlu dihubungkan kembali. Hubungkan kembali ChatGPT (Codex) di Penyedia Model, lalu coba lagi.",
+    "codexReconnect": "Sesi ChatGPT perlu dihubungkan kembali. Hubungkan kembali ChatGPT (Codex) di Setelan > Model, lalu coba lagi.",
     "contentPolicyRejected": "Penyedia model menolak permintaan ini berdasarkan kebijakan keamanan kontennya. Mencoba lagi dengan masukan yang sama akan tetap gagal. Ubah kalimat permintaan, mulai percakapan baru, atau beralih ke model lain.",
     "executionTimeout": "Proses ini mencapai batas waktu eksekusi.",
     "failed": "Eksekusi gagal",
@@ -5983,9 +4580,9 @@
     "modelTemporarilyUnavailable": "Model sementara tidak tersedia",
     "modelUnavailable": "Model saat ini tidak tersedia.",
     "overloaded": "{{model}} sedang kelebihan beban. Tunggu beberapa menit dan coba lagi, atau beralih ke model lain.",
-    "providerBalance": "Saldo akun penyedia model yang terhubung tidak mencukupi.",
+    "providerBalance": "Saldo akun langganan yang terhubung tidak mencukupi.",
     "transient": "Terjadi kesalahan. Silakan coba lagi nanti.",
-    "vm0Credits": "Kredit tidak mencukupi. Tambah kredit atau konfigurasikan kunci API Anda sendiri untuk melanjutkan."
+    "vm0Credits": "Kredit tidak mencukupi. Tambah kredit atau hubungkan langganan Codex atau Claude pribadi Anda untuk melanjutkan."
   },
   "serviceStatus": {
     "dismiss": "Tutup pembaruan layanan",
@@ -6061,7 +4658,7 @@
           "title": "Faktur"
         },
         "model": {
-          "description": "Pilih model AI yang digunakan oleh ruang kerja dan eksekusi Anda.",
+          "autoDescription": "Okou memilih model untuk setiap tugas.",
           "title": "Model"
         },
         "people": {
@@ -6151,16 +4748,10 @@
     },
     "models": {
       "actions": {
-        "addModel": "Tambah model",
-        "deleteModel": "Hapus model",
-        "editModel": "Edit model",
-        "resetUsage": "Reset penggunaan",
-        "upgradePro": "Upgrade ke Pro untuk menggunakan",
-        "upgradeToPro": "Upgrade ke Pro"
+        "resetUsage": "Reset penggunaan"
       },
       "deviceAuth": {
         "claude": {
-          "approvalOpenError": "Halaman persetujuan tidak dapat dibuka. Gunakan tautan secara manual dan tempelkan kode di sini.",
           "authorizationCode": "Kode otorisasi",
           "codePlaceholder": "Tempel kode dari Claude",
           "codeRequired": "Tempel kode otorisasi Claude untuk melanjutkan.",
@@ -6178,84 +4769,40 @@
           "usageNotice": "Masuk dengan langganan Claude Anda untuk menggunakan model Claude dengan agen berbasis Claude Code."
         },
         "codex": {
-          "approvalOpened": "Halaman persetujuan dibuka. Salin kode perangkat sebelum menyetujui.",
-          "codeCopied": "Kode perangkat disalin. Menunggu persetujuan...",
-          "codeCopiedRetry": "Kode perangkat disalin. Coba buka lagi halaman persetujuan.",
           "connectedToast": "ChatGPT terhubung",
           "connectTitle": "Hubungkan Codex",
-          "copyAndOpen": "Salin kode dan buka halaman persetujuan",
-          "copyAndOpenError": "Tidak dapat menyalin kode perangkat atau membuka halaman persetujuan. Salin kode secara manual lalu coba lagi.",
-          "copyError": "Halaman persetujuan terbuka, tetapi kode perangkat tidak disalin. Salin secara manual sebelum menyetujui.",
           "deviceCode": "Kode perangkat",
           "error": "Koneksi ChatGPT gagal. Mulai lagi untuk mencoba kembali.",
           "expired": "Sesi koneksi Codex kedaluwarsa. Mulai lagi untuk mencoba kembali.",
           "freePlanRejected": "Paket ChatGPT gratis tidak dapat menggunakan Codex melalui {{brandName}}. Tingkatkan ke Plus atau Pro lalu coba lagi.",
-          "instructions": "Klik dulu Salin kode dan buka halaman persetujuan. Lalu tempel kode perangkat ke OpenAI saat diminta. Terakhir, setujui akses dan biarkan dialog ini tetap terbuka sampai {{brandName}} selesai menyambungkan.",
+          "instructions": "Salin dulu kode perangkat dengan tombol salin, lalu buka halaman persetujuan. Lalu tempel kode perangkat ke OpenAI saat diminta. Terakhir, setujui akses dan biarkan dialog ini tetap terbuka sampai {{brandName}} selesai menyambungkan.",
           "invalidTokenFormat": "Codex menghasilkan format token masuk yang tidak dikenali {{brandName}}. Perbarui Codex lalu coba lagi.",
-          "openError": "Kode perangkat disalin, tetapi halaman persetujuan tidak dapat dibuka. Coba lagi.",
+          "openApproval": "Buka halaman persetujuan",
           "preparing": "Menyiapkan...",
           "reconnectAction": "Sambungkan ulang ChatGPT",
           "reconnectTitle": "Sambungkan ulang Codex",
           "signIn": "Masuk dengan ChatGPT"
         }
       },
-      "gateways": {
-        "actions": "Tindakan gateway",
-        "add": "Tambahkan penyedia",
-        "addTitle": "Tambahkan penyedia model",
-        "apiBaseUrl": "URL dasar API",
-        "apiBaseUrlPlaceholder": "https://gateway.example.com",
-        "apiKey": "Kunci API",
-        "deleteConfirm": "Hapus koneksi penyedia model ini? Rute model yang menggunakannya tidak akan tersedia.",
-        "description": "Hubungkan gateway yang dikelola admin melalui Anthropic Messages, OpenAI Responses, atau keduanya.",
-        "dialogDescription": "Konfigurasikan setiap protokol dengan URL dasar API yang digunakan oleh Claude Code atau Codex.",
-        "editTitle": "Edit penyedia model",
-        "empty": "Belum ada penyedia model kustom yang dikonfigurasi.",
-        "errors": {
-          "invalidMappings": "Pemetaan model harus berupa objek JSON dengan nilai berupa nama model upstream.",
-          "missingProtocol": "Aktifkan setidaknya satu protokol.",
-          "missingSecret": "Masukkan kunci API."
-        },
-        "headerName": "Header autentikasi",
-        "headerValue": "Templat nilai header",
-        "keepKey": "Biarkan kosong untuk mempertahankan kunci saat ini",
-        "modelMappings": "Pemetaan model (JSON)",
-        "name": "Nama",
-        "presets": {
-          "custom": "Kustom",
-          "fireworks": "Fireworks AI",
-          "openrouter": "OpenRouter",
-          "vercel": "Vercel AI Gateway"
-        },
-        "protocols": {
-          "anthropicMessages": "Anthropic Messages",
-          "openaiResponses": "OpenAI Responses"
-        },
-        "requestPreview": "Permintaan",
-        "title": "Koneksi penyedia"
-      },
       "personal": {
         "accountFallback": "Akun {{number}}",
-        "accountsDescription": "Pilih akun yang digunakan setiap penyedia untuk eksekusi baru.",
-        "accountsSectionTitle": "Akun pribadi",
-        "actionForProvider": "{{action}} {{provider}}",
         "activeAccount": "Aktif",
-        "addAccount": "Tambah akun",
-        "claudeDescription": "Masuk dengan langganan Claude Anda untuk menggunakan model Claude dengan agen berbasis Claude Code.",
+        "autoDescription": "Hubungkan akun Claude atau ChatGPT Anda untuk menggunakan lebih banyak model.",
+        "autoTitle": "Gunakan lebih banyak model",
         "claudeTitle": "Claude",
-        "codexDescription": "Hubungkan akun ChatGPT Anda untuk menggunakan model GPT.",
         "codexTitle": "ChatGPT (Codex)",
-        "description": "Hanya digunakan di eksekusi Anda, dengan kredensial Anda sendiri.",
+        "connectAccount": "Hubungkan akun",
         "disconnectAccount": "Putuskan akun",
         "disconnectDescription": "Ini menghapus akun dari Okou. Langganan Anda dengan penyedia tidak akan dibatalkan.",
         "disconnecting": "Memutuskan…",
         "disconnectTitle": "Putuskan {{account}}?",
+        "loadError": "Akun Anda tidak dapat dimuat.",
+        "loadingAccounts": "Memuat akun…",
         "noAccounts": "Belum ada akun terhubung.",
         "reconnectAccount": "Hubungkan ulang",
-        "sectionTitle": "Pribadi",
+        "retry": "Coba lagi",
         "status": {
           "connected": "Terhubung",
-          "connectedWithDetail": "Terhubung ({{detail}})",
           "fiveHour": "5 jam",
           "left": "Sisa {{percent}}",
           "stale": "Perhatian",
@@ -6264,125 +4811,51 @@
         "useAccount": "Gunakan"
       },
       "picker": {
-        "builtInModel": "Model bawaan",
-        "byokHelp": "Menggunakan provider yang Anda atur",
-        "categoryChat": "Chat",
-        "categoryImage": "Gambar",
-        "categoryVideo": "Video",
+        "auto": "Auto",
         "chatModels": "Model chat",
         "effort": "Upaya",
         "effortScale": {
           "faster": "Lebih cepat",
+          "higherUsage": "Penggunaan lebih tinggi",
+          "lowerUsage": "Penggunaan lebih rendah",
           "smarter": "Lebih cerdas"
         },
         "fast": "Cepat",
         "fastImpact": {
-          "apiCost": "2× biaya token API",
-          "chatGptUsage": "2,5× penggunaan ChatGPT",
-          "fasterResponses": "Respons model lebih cepat",
-          "modelSpeed": "{{multiplier}}× kecepatan model",
-          "okouCredits": "2× kredit model Okou",
-          "providerSpeed": "Kecepatan bergantung pada penyedia",
           "providerUsage": "Penggunaan bergantung pada penyedia",
-          "solApiSpeed": "Hingga 2,5× kecepatan model",
-          "summary": "{{speed}} · {{usage}}"
+          "subscriptionUsage": "{{multiplier}}× penggunaan langganan"
         },
+        "fastMode": "Mode cepat",
         "generationPriceTiers": {
           "higher": "Biaya lebih tinggi per generasi",
           "highest": "Biaya tertinggi per generasi",
           "lowest": "Biaya terendah per generasi",
           "typical": "Biaya umum per generasi"
         },
-        "imageModels": "Model gambar",
-        "inheritDefault": "Warisi dari default organisasi",
+        "inheritDefault": "Default (Auto)",
         "loadError": "Tidak dapat memuat model.",
         "loading": "Memuat model...",
-        "menu": {
-          "backToModels": "Kembali ke model",
-          "changeModel": "Ubah model {{category}}, {{model}}"
-        },
         "models": "Model",
         "noConfiguredModels": "Tidak ada model yang dikonfigurasi",
-        "priceTiers": {
-          "balanced": "Biaya dan performa seimbang",
-          "economy": "Tingkat ekonomis untuk tugas sederhana sehari-hari",
-          "frontier": "Model andalan terdepan",
-          "premium": "Model terdepan premium untuk tugas tersulit"
-        },
         "pro": "Pro",
-        "providerLabels": {
-          "azureFoundryPortal": "portal Azure foundry",
-          "claudeCodeOauth": "Claude Code (token OAuth)",
-          "deepseek": "Deepseek"
-        },
-        "standard": "Standar",
-        "videoModels": "Model video"
-      },
-      "policies": {
-        "actionsFor": "Tindakan untuk {{model}}",
-        "apiKey": "Kunci API",
-        "apiKeyDescription": "Kunci ruang kerja bersama. Paling cocok saat tim menagih melalui satu akun.",
-        "apiKeyPlaceholder": "Masukkan kunci API Anda",
-        "apiKeyRequired": "Kunci API wajib diisi",
-        "availableModels": "Model yang tersedia",
-        "builtIn": "Bawaan",
-        "builtInDescription": "Kredit ruang kerja menanggung penggunaan.",
-        "claudeSubscription": "Langganan Claude",
-        "claudeSubscriptionDescription": "Setiap anggota menghubungkan paket Pro, Max, atau Team miliknya sendiri.",
-        "codexSubscription": "Langganan Codex",
-        "codexSubscriptionDescription": "Setiap anggota menghubungkan paket Pro atau Team miliknya sendiri.",
-        "defaultModel": "Model default",
-        "defaultModelDescription": "Digunakan saat tugas tidak memilih modelnya sendiri.",
-        "dialogDescription": "Tentukan bagaimana anggota mengakses model ini.",
-        "gateway": "Gateway kustom",
-        "gatewayDescription": "Rutekan melalui koneksi penyedia yang ditentukan admin.",
-        "gatewayProvider": "Koneksi penyedia",
-        "getKey": "Dapatkan kunci",
-        "invalidRoute": "Rute tidak valid",
-        "missingProvider": "Provider tidak ada",
-        "model": "Model",
-        "noAvailableModels": "Tidak ada model yang tersedia",
-        "noMappedGateway": "Tidak ada koneksi penyedia yang memetakan model ini.",
-        "pricing": "Harga",
-        "providedBy": "Disediakan oleh",
-        "provider": "Provider",
-        "providerApiKey": "Kunci API {{provider}}",
-        "runsThrough": "Dijalankan melalui",
-        "secretStored": "Disimpan di rahasia ruang kerja.",
-        "selectDefaultModel": "Pilih model default",
-        "selectGateway": "Pilih koneksi penyedia",
-        "selectModel": "Pilih model",
-        "selectProvider": "Pilih provider",
-        "workspaceDescription": "Tersedia untuk semua orang di ruang kerja ini."
+        "standard": "Standar"
       },
       "reset": {
-        "confirmDescription": "Gunakan satu reset {{provider}} untuk mereset jendela penggunaan saat ini. Anda memiliki {{remaining}}.",
+        "confirmDescription": "Gunakan satu reset Codex untuk mereset jendela penggunaan saat ini. Anda memiliki {{remaining}}.",
         "progress": "Mereset...",
         "remaining_one": "{{value}} reset tersisa",
         "remaining_other": "{{value}} reset tersisa",
         "remainingUnavailable": "Sisa reset tidak tersedia",
         "remainingUnknown": "Reset —",
         "remainingWithExpiry_other": "{{value}} reset tersisa · kedaluwarsa {{expiry}}",
-        "title": "Reset penggunaan {{provider}}?"
-      },
-      "stale": {
-        "claudeExpired": "Sesi Claude Code Anda kedaluwarsa. Sambungkan ulang untuk melanjutkan.",
-        "claudeFailed": "Penyegaran Claude Code gagal. Sambungkan ulang untuk mencoba lagi.",
-        "claudeTitle": "Sesi Claude Code perlu disambungkan ulang",
-        "codexExpired": "Sesi ChatGPT Anda kedaluwarsa. Sambungkan ulang untuk melanjutkan.",
-        "codexFailed": "Penyegaran ChatGPT gagal. Sambungkan ulang untuk mencoba lagi.",
-        "codexInvalidated": "Sesi ChatGPT Anda dicabut. Sambungkan ulang.",
-        "codexReused": "Sesi ChatGPT Anda digunakan di tempat lain. Sambungkan ulang.",
-        "codexTitle": "Sesi ChatGPT perlu disambungkan ulang"
+        "title": "Reset penggunaan Codex?"
       },
       "toasts": {
         "accountDisconnected": "Akun diputuskan",
         "accountSwitched": "Akun aktif diganti",
-        "disconnected": "{{provider}} terputus",
-        "policiesUpdated": "Pengaturan provider model diperbarui",
-        "reset": "Penggunaan {{provider}} direset",
-        "resetUnavailable": "Tidak ada reset penggunaan {{provider}} yang tersedia",
-        "resetUnneeded": "Penggunaan {{provider}} tidak perlu direset saat ini"
+        "reset": "Penggunaan Codex direset",
+        "resetUnavailable": "Tidak ada reset penggunaan Codex yang tersedia",
+        "resetUnneeded": "Penggunaan Codex tidak perlu direset saat ini"
       },
       "usage": {
         "inDays": "dalam {{days}}d",
@@ -6399,8 +4872,13 @@
       }
     },
     "paidTools": {
-      "description": "Pilih alat berbayar yang dapat digunakan Okou dalam tugas Anda. Setiap penggunaan memakai kredit.",
+      "description": "Alat-alat ini menggunakan kredit bawaan, dan Okou menggunakannya secara otomatis saat mengerjakan tugas Anda. Matikan alat agar Okou tidak menggunakannya.",
       "disabledForCreation": "{{tool}} nonaktif untuk Anda",
+      "imageModel": {
+        "description": "Pembuatan gambar bawaan menggunakan model ini untuk tugas Anda.",
+        "label": "Model",
+        "saveError": "Model gambar Anda tidak tersimpan."
+      },
       "loadError": "Pengaturan alat tidak dapat dimuat.",
       "loading": "Memuat pengaturan alat…",
       "openSettings": "Buka pengaturan",
@@ -6409,12 +4887,8 @@
       "saving": "Menyimpan…",
       "scope": "Pengaturan ini hanya berlaku untuk Anda di {{workspace}}.",
       "timing": "Perubahan berlaku untuk proses berikutnya. Tugas yang sedang berjalan atau sudah disiapkan dapat tetap memakai pengaturan sebelumnya.",
-      "title": "Alat berbayar",
+      "title": "Alat bawaan",
       "tools": {
-        "avatar-video-generation": {
-          "description": "Buat video avatar berbicara.",
-          "name": "Pembuatan video avatar"
-        },
         "finance": {
           "description": "Cari perusahaan, harga, dan data pasar.",
           "name": "Data keuangan"
@@ -6422,10 +4896,6 @@
         "image-generation": {
           "description": "Buat gambar dengan model bawaan.",
           "name": "Pembuatan gambar"
-        },
-        "image-recognition": {
-          "description": "Baca dan analisis gambar.",
-          "name": "Pengenalan gambar"
         },
         "maps": {
           "description": "Temukan tempat, alamat, dan rute.",
@@ -6446,14 +4916,6 @@
         "social": {
           "description": "Teliti postingan sosial publik dan kumpulkan media.",
           "name": "Riset sosial"
-        },
-        "video-generation": {
-          "description": "Buat video dengan model bawaan.",
-          "name": "Pembuatan video"
-        },
-        "voice-generation": {
-          "description": "Buat ucapan dengan suara bawaan.",
-          "name": "Pembuatan suara"
         },
         "web-search": {
           "description": "Temukan informasi terkini di web.",
@@ -6504,26 +4966,6 @@
         "sectionTitle": "Chat"
       },
       "debug": {
-        "builtInModelCooldown": {
-          "cancelAction": "Batalkan cooldown",
-          "cancelDescription": "Membatalkan cooldown global ini membuat rute langsung tersedia untuk setiap workspace.",
-          "cancelling": "Membatalkan...",
-          "cancelTitle": "Batalkan cooldown global?",
-          "cancelWarning": "Kegagalan berikutnya yang memenuhi syarat dapat menempatkan rute ini kembali dalam cooldown.",
-          "description": "Periksa rute model bawaan yang sementara dikecualikan dari pemilihan fallback.",
-          "empty": "Saat ini tidak ada rute model bawaan dalam cooldown global.",
-          "globalActive": "cooldown global aktif",
-          "globalExplanation": "Cooldown adalah status operasional global dan memengaruhi setiap workspace yang menggunakan model bawaan.",
-          "keepCooldown": "Pertahankan cooldown",
-          "loading": "Memuat diagnostik cooldown model bawaan...",
-          "providerType": "Jenis penyedia",
-          "refresh": "Segarkan",
-          "selectedModel": "Model terpilih",
-          "title": "Fallback model bawaan",
-          "unavailable": "Diagnostik cooldown model bawaan tidak tersedia.",
-          "unavailableUntil": "Tidak tersedia hingga",
-          "upstreamModel": "Model upstream"
-        },
         "capture": {
           "disabled": "Dinonaktifkan",
           "enabled_one": "Diaktifkan untuk {{count}} eksekusi berikutnya",
@@ -6568,20 +5010,6 @@
           "title": "Penyimpanan IndexedDB",
           "unavailable": "Penyimpanan IndexedDB tidak tersedia."
         },
-        "morningBriefTrigger": {
-          "description": "Jalankan Morning Brief sungguhan sekarang. Ini mengantrekan proses berikutnya milikmu ke penjadwal biasa, yang mengirimkan brief nyata dan email nyata dalam satu menit. Memicunya sebelum waktu harianmu menghasilkan dua brief pagi itu.",
-          "failed": "Tidak dapat mengantrekan Morning Brief. Coba lagi.",
-          "queued": "Masuk antrean. Penjadwal akan mengirimkan brief dalam satu menit.",
-          "title": "Morning Brief",
-          "trigger": "Jalankan Morning Brief sekarang",
-          "triggering": "Mengantrekan…"
-        },
-        "voiceInput": {
-          "default": "Default ({{model}})",
-          "description": "Pilih model untuk input suara v2. Model transkripsi menggunakan {{model}} untuk merapikan teks.",
-          "title": "Model input suara",
-          "unavailable": "Model tidak tersedia ({{model}})"
-        },
         "welcomeThread": {
           "create": "Buat obrolan sambutan",
           "creating": "Membuat…",
@@ -6593,9 +5021,6 @@
       "emailSubscription": {
         "description": "Terima ringkasan, pengingat, dan pembaruan ruang kerja lainnya melalui email.",
         "descriptionWithEmail": "Terima ringkasan, pengingat, dan pembaruan ruang kerja lainnya di {{email}}.",
-        "loading": "Memeriksa langganan email…",
-        "retryMessage": "Tidak dapat menyimpan atau memuat langganan email. Coba lagi.",
-        "saving": "Menyimpan…",
         "sectionTitle": "Langganan email",
         "title": "Pembaruan email",
         "unavailable": "Email tidak tersedia",
@@ -6621,17 +5046,10 @@
         "title": "Bahasa"
       },
       "morningBrief": {
-        "chatAndEmail": "Chat + email",
-        "chatOnly": "Hanya Chat",
-        "checkEmailSubscription": "Periksa langganan email di atas untuk status pengiriman.",
         "conflict": "Morning Brief untuk sementara tidak tersedia karena status instalasinya tidak konsisten. Coba lagi setelah rekonsiliasi selesai.",
         "description": "Prioritas harian pukul 07.00 sesuai zona waktu Anda.",
-        "lastDelivered": "Terakhir dikirim: {{date}}",
-        "loading": "Memuat pengaturan Morning Brief...",
         "missingDefaultAgent": "Pilih Agent default yang dapat digunakan sebelum mengaktifkan Morning Brief.",
         "missingTimezone": "Tetapkan zona waktu yang valid sebelum mengaktifkan Morning Brief.",
-        "nextBrief": "Ringkasan berikutnya {{date}}",
-        "paused": "Dijeda",
         "preparationFailed": "Penyiapan akan dicoba lagi secara otomatis. Anda juga dapat mencoba lagi sekarang.",
         "preparing": "Menyiapkan ringkasan pagi pertama Anda. Anda dapat menonaktifkannya kapan saja.",
         "retry": "Coba lagi",
@@ -6641,10 +5059,8 @@
       "send": {
         "cmdEnter": "⌘ Enter",
         "cmdEnterDescription": "Tekan ⌘/Ctrl+Enter untuk mengirim, Enter untuk baris baru",
-        "description": "Pilih cara mengirim pesan di chat.",
         "enter": "Enter",
         "enterDescription": "Tekan Enter untuk mengirim, Shift+Enter untuk baris baru",
-        "sectionTitle": "Enter",
         "title": "Kirim pesan dengan"
       },
       "timezone": {
@@ -6681,17 +5097,12 @@
     "shared": {
       "cancel": "Batal",
       "close": "Tutup",
-      "connect": "Hubungkan",
       "connecting": "Menghubungkan...",
       "delete": "Hapus",
       "discard": "Buang",
-      "disconnect": "Putuskan sambungan",
-      "edit": "Edit",
       "loading": "Memuat",
       "moreOptions": "Opsi lainnya",
-      "reconnect": "Hubungkan kembali",
       "remove": "Hapus",
-      "replace": "Ganti",
       "save": "Simpan",
       "saveChanges": "Simpan perubahan",
       "saving": "Menyimpan..."
@@ -6863,8 +5274,6 @@
     "tryItYourself": "Coba sendiri"
   },
   "ssh": {
-    "accessDescription": "Pilih Agen yang dapat menggunakan host SSH Anda.",
-    "accessHelp": "Izinkan Agent ini menjalankan perintah pada semua host SSH Anda yang dikonfigurasi sekarang maupun nanti. Ini terpisah dari izin konektor.",
     "add": "Tambahkan host",
     "cancel": "Batal",
     "chooseFile": "Pilih file",
@@ -6874,8 +5283,10 @@
       "keepChanges": "Terapkan perubahan saya ke versi ini",
       "latest": "Pengaturan terakhir yang disimpan",
       "mode": "Koneksi",
+      "needsRebind": "Host ini perlu ditautkan ulang ke konfigurasi Cloudflare Access. Edit host untuk memilih konfigurasi lain atau Direct. Host tidak dapat tersambung sebelum itu.",
       "protectedHost": "Cloudflare Access · {{name}}",
       "publishedHost": "Nama host yang dipublikasikan",
+      "rebindHelp": "Pilih konfigurasi Cloudflare Access yang diizinkan atau Direct untuk memulihkan host ini. Tidak ada perubahan hingga Anda menyimpan.",
       "reviewHelp": "Draf Anda tetap disimpan. Konfirmasikan pengaturan terakhir sebelum menerapkan perubahan.",
       "title": "Cloudflare Access",
       "unavailable": "Cloudflare Access tidak tersedia untuk akun ini."
@@ -6918,16 +5329,14 @@
       "unused": "Tidak digunakan oleh host mana pun"
     },
     "credentialsHelp": "Kredensial hanya dapat ditulis dan tetap berada di luar sandbox. Tempelkan kunci lengkap; spasi dipertahankan. Kolom dikosongkan saat formulir ditutup.",
-    "credentialsTab": "Kredensial",
     "delete": "Hapus host",
     "deleteHelp": "Hapus host ini? Kredensialnya akan tetap disimpan. Agent tidak lagi melihat host ini dalam inventaris.",
     "description": "Konfigurasikan host SSH agar Agen Anda dapat menjalankan perintah jarak jauh.",
     "displayName": "Nama tampilan",
     "edit": "Edit host",
     "editHelp": "Memilih kredensial lain hanya mengubah host ini. Perubahan tujuan langsung menghapus kunci host tersimpan; perubahan yang melibatkan Cloudflare Access mempertahankannya.",
-    "empty": "Belum ada host SSH yang dikonfigurasi. Tambahkan host agar tersedia bagi Agent dengan akses SSH.",
+    "empty": "Belum ada host SSH yang dikonfigurasi. Tambahkan host, lalu aktifkan secara default atau di chat tertentu.",
     "errors": {
-      "agentUnavailable": "Agen ini tidak lagi tersedia. Pilih Agen lain.",
       "configurationChanged": "Host ini berubah saat Anda mengeditnya. Draf Anda tetap tersimpan. Tinjau pengaturan terbarunya sebelum menerapkan perubahan Anda.",
       "credentialChanged": "Kredensial ini berubah saat Anda mengeditnya. Draf Anda tetap tersimpan. Tinjau pengaturan terbaru dan host yang terpengaruh sebelum menyimpan.",
       "credentialInUse": "Kredensial ini sedang digunakan. Pilih kredensial lain untuk host terkait atau hapus host tersebut terlebih dahulu.",
@@ -6945,11 +5354,9 @@
     "fingerprint": "Kunci host tersimpan",
     "host": "Nama host publik atau alamat IP",
     "hostSection": "Host",
-    "hostsTab": "Host",
     "label": "SSH",
     "loadFailed": "Tidak dapat memuat pengaturan SSH. Coba lagi.",
     "loading": "Memuat host SSH…",
-    "loadingAccess": "Memuat akses Agen…",
     "manage": "Kelola host SSH",
     "notLearned": "Kunci host belum tersimpan",
     "passphrase": "Frasa sandi (opsional)",
@@ -6974,7 +5381,10 @@
     },
     "summary_one": "{{count}} host dikonfigurasi",
     "summary_other": "{{count}} host dikonfigurasi",
-    "title": "Host SSH",
+    "tailscale": {
+      "editUnavailable": "Host ini kini menggunakan Tailscale. Pengeditan dan pengikatan ulang Tailscale belum tersedia di sini. Batalkan pengeditan ini untuk mempertahankan transport yang tersimpan.",
+      "needsRebind": "Host ini memerlukan konfigurasi Tailscale baru. Penyiapan dan pengikatan ulang Tailscale belum tersedia di sini."
+    },
     "unavailable": "Akses SSH tidak tersedia untuk akun ini.",
     "username": "Nama pengguna SSH"
   },
@@ -7067,8 +5477,6 @@
     }
   },
   "vnc": {
-    "accessDescription": "Pilih Agen yang dapat melihat dan mengendalikan desktop VNC Anda. Akses ini terpisah dari SSH.",
-    "accessHelp": "Izinkan Agen ini melihat dan mengendalikan semua desktop VNC Anda yang dikonfigurasi sekarang maupun nanti.",
     "add": "Tambahkan host",
     "cancel": "Batal",
     "close": "Tutup",
@@ -7077,7 +5485,12 @@
       "add": "Tambah kredensial",
       "appleDhFieldHelp": "Setiap kolom harus berisi 1–63 byte UTF-8. NUL tidak diizinkan.",
       "appleDhMethod": "Nama pengguna dan kata sandi Apple DH",
+      "appleRsaSrpMethod": "Nama pengguna dan kata sandi Apple RSA/SRP",
+      "appleRsaSrpUsernameHelp": "Nama pengguna RSA/SRP harus 1–234 byte UTF-8. NUL tidak diizinkan.",
+      "appleSrpMethod": "Nama pengguna dan kata sandi Apple Direct SRP",
       "authentication": "Metode autentikasi",
+      "certificateChain": "Rantai sertifikat klien (PEM)",
+      "clientKeyHelp": "Tempel 1–8 sertifikat dan kunci yang cocok. Keduanya dienkripsi saat disimpan. Ganti keduanya saat rotasi; kunci tidak akan ditampilkan lagi.",
       "createNew": "Buat kredensial baru",
       "delete": "Hapus kredensial",
       "deleteHelp": "Hapus kredensial yang tidak digunakan ini? Tindakan ini tidak dapat dibatalkan.",
@@ -7091,6 +5504,9 @@
       "password": "Kata sandi VNC",
       "passwordHelp": "Kata sandi VNC klasik menggunakan 1–8 karakter ASCII yang dapat dicetak. Spasi dipertahankan.",
       "passwordHint": "Masukkan kata sandi VNC server",
+      "privateKey": "Kunci privat PKCS#8 tanpa enkripsi (PEM)",
+      "qemuScramPasswordHelp": "1–1023 karakter ASCII yang dapat dicetak; spasi tetap dipertahankan.",
+      "qemuScramUsernameHelp": "1–255 karakter ASCII yang dapat dicetak; tanpa spasi, koma, atau tanda sama dengan.",
       "replace": "Ganti autentikasi",
       "replaceHelp": "Biarkan opsi ini nonaktif untuk mempertahankan autentikasi tersimpan. Menggantinya memengaruhi setiap host yang menggunakan kredensial ini.",
       "select": "Pilih kredensial",
@@ -7106,7 +5522,6 @@
       "usernamePasswordHint": "Masukkan kata sandi untuk nama pengguna ini",
       "usernamePasswordMethod": "Nama pengguna dan kata sandi"
     },
-    "credentialsTab": "Kredensial",
     "delete": "Hapus host",
     "deleteHelp": "Hapus host tersimpan ini? Kredensialnya yang dapat digunakan kembali akan tetap disimpan.",
     "description": "Izinkan agen Anda melihat dan mengendalikan desktop jarak jauh Anda.",
@@ -7124,19 +5539,37 @@
       "invalidHost": "Masukkan nama host atau alamat IP yang valid tanpa URL, nama pengguna, atau port.",
       "invalidInput": "Periksa konfigurasi VNC dan coba lagi.",
       "invalidTrust": "Masukkan kumpulan valid berisi maksimal 8 sertifikat CA publik, dengan ukuran total tidak lebih dari 64 KiB.",
-      "ownerChanged": "Akses ruang kerja Anda telah berubah. Segarkan sebelum melanjutkan.",
       "revisionExhausted": "Konfigurasi ini tidak dapat diperbarui lagi. Buat yang baru."
     },
     "host": "Nama host atau alamat IP",
     "hostHint": "mis. desktop.example.com",
-    "hostsTab": "Host",
     "label": "VNC",
     "loadFailed": "Tidak dapat memuat konfigurasi VNC.",
     "loading": "Memuat konfigurasi VNC…",
-    "loadingAccess": "Memuat akses Agen…",
     "manage": "Kelola VNC",
     "port": "Port",
     "retry": "Coba lagi",
+    "rsaAes": {
+      "fieldHelp": "Setiap bidang memerlukan 1–255 byte UTF-8 tanpa NUL. Spasi dipertahankan; bukan kata sandi VNC klasik delapan byte.",
+      "fullHelp": "RA2 dan RA2_256 mengenkripsi seluruh sesi RFB dengan EAX. Verifikasi pin lengkap kunci RSA format protokol secara independen; kepercayaan CA tidak menggantikannya.",
+      "importHelp": "Dapatkan PUBLIC KEY atau RSA PUBLIC KEY PEM melalui administrasi server tepercaya. Jangan tempel kunci privat/sertifikat atau percaya otomatis pada kunci koneksi langsung. Konversi tidak membuktikan identitas atau menyimpan: verifikasi pin lengkap, lalu Simpan secara eksplisit.",
+      "importKey": "Impor kunci publik tepercaya",
+      "modulusBits": "Ukuran kunci publik yang diimpor: {{bits}} bit",
+      "neHelp": "RSA-AES hanya mengenkripsi autentikasi. Memerlukan SSH tersimpan yang terverifikasi ke loopback literal server. SSH hanya melindungi hop-nya; proksi lanjutan dapat mengekspos lalu lintas RFB tanpa enkripsi.",
+      "passwordMethod": "Kata sandi RSA-AES",
+      "pin": "SHA256 kunci RSA format protokol server",
+      "pinHelp": "Impor pin lengkap 64 digit heksadesimal dari sumber independen tepercaya: SHA256 atas bit modulus U32 big-endian dan modulus/eksponen berlebar tetap yang sama. Bukan hash PEM/SPKI atau sidik jari pendek. Ganti dan Simpan secara eksplisit untuk merotasi kepercayaan dan membatalkan sesi.",
+      "publicKey": "PEM publik RSA dari sumber independen tepercaya (opsional)",
+      "ra2256Password": "RA2_256 · AES-256 · kata sandi",
+      "ra2256UsernamePassword": "RA2_256 · AES-256 · nama pengguna/kata sandi",
+      "ra2ne256Password": "RA2ne_256 · hanya autentikasi · kata sandi",
+      "ra2ne256UsernamePassword": "RA2ne_256 · hanya autentikasi · nama pengguna/kata sandi",
+      "ra2nePassword": "RA2ne · hanya autentikasi · kata sandi",
+      "ra2neUsernamePassword": "RA2ne · hanya autentikasi · nama pengguna/kata sandi",
+      "ra2Password": "RA2 · AES-128 · kata sandi",
+      "ra2UsernamePassword": "RA2 · AES-128 · nama pengguna/kata sandi",
+      "usernamePasswordMethod": "Nama pengguna/kata sandi RSA-AES"
+    },
     "save": "Simpan",
     "saveRecovery": {
       "resourceIdConflict": "Sumber daya ini tidak dapat dibuat. Tutup dialog ini dan coba lagi.",
@@ -7145,18 +5578,31 @@
     },
     "saving": "Menyimpan…",
     "security": {
-      "appleDh": "Berbagi Layar Mac (Apple DH)",
-      "appleDhHelp": "Memerlukan Berbagi Layar macOS melalui koneksi SSH yang tersimpan. Tujuan RFB harus 127.0.0.1 atau ::1 pada Mac tersebut. SSH melindungi seluruh sesi VNC. Gunakan host SSH Mac yang Anda kendalikan; kunci host tidak dapat memastikan tidak ada proksi lanjutan.",
+      "appleDh": "VNC Mac (Apple DH)",
+      "appleDhHelp": "Memerlukan layanan VNC Mac melalui koneksi SSH yang tersimpan. Mode Berbagi Layar macOS mandiri belum diverifikasi. Tujuan RFB harus 127.0.0.1 atau ::1 pada Mac tersebut. SSH melindungi seluruh sesi VNC. Gunakan host SSH Mac yang Anda kendalikan; kunci host tidak dapat memastikan tidak ada proksi lanjutan.",
+      "appleRsaSrp": "VNC Mac (Apple RSA/SRP)",
+      "appleRsaSrpHelp": "Memerlukan SSH tersimpan ke Mac dan tujuan RFB 127.0.0.1 atau ::1. Kunci RSA dari RFB tidak secara mandiri membuktikan identitas host. SRP memverifikasi akun dan bukti server; SSH melindungi seluruh sesi. Kunci host SSH mengenali endpoint pilihan, tetapi tidak meniadakan proksi lanjutan.",
+      "appleSrp": "VNC Mac (Apple Direct SRP)",
+      "appleSrpHelp": "Memerlukan koneksi SSH tersimpan ke Mac dan tujuan RFB 127.0.0.1 atau ::1. SRP memverifikasi akun dan bukti server; SSH melindungi seluruh sesi VNC. Kunci host SSH mengenali endpoint yang dipilih, tetapi tidak dapat meniadakan proksi lanjutan.",
+      "appleVncPassword": "VNC Mac (kata sandi VNC klasik)",
+      "appleVncPasswordHelp": "Kata sandi VNC opsional Mac berisi 1–8 byte ASCII yang dapat dicetak. Type 2 saja tidak memverifikasi identitas server atau mengenkripsi desktop. SSH terverifikasi melindungi sesi Okou ini, bukan port Mac; klien lain mungkin dapat mengakses port 5900 tergantung jaringan. Aktifkan opsi di Mac sendiri hanya jika Anda menerima risikonya.",
       "caBundle": "Sertifikat CA (PEM)",
       "caHelp": "Maksimal 8 sertifikat CA, total 64 KiB. Jangan tempel kunci privat atau sertifikat server.",
       "caHint": "Tempel sertifikat CA publik yang menerbitkan sertifikat server",
+      "clientCertificateHelp": "Handshake TLS berhasil tidak membuktikan server memverifikasi sertifikat klien. Pastikan verifikasi CA di server dan batasi akses jaringan secara terpisah. SSH hanya mengautentikasi host perantara.",
+      "clientCertificateNone": "Sertifikat klien tanpa sandi VNC (X509None)",
+      "clientCertificateVnc": "Sertifikat klien dengan sandi VNC (X509Vnc)",
       "custom": "Otoritas sertifikat khusus",
       "profileLabel": "Profil keamanan",
+      "qemuX509Sasl": "QEMU SCRAM-SHA-256 (X509SASL)",
+      "qemuX509SaslHelp": "Hanya subtipe QEMU 263. TLS memverifikasi server sebelum SCRAM; tidak beralih ke PLAIN atau subtipe 264.",
       "serverName": "Identitas sertifikat TLS",
       "serverNameHelp": "Opsional. Kosongkan untuk memverifikasi sertifikat terhadap host tujuan RFB. Atur hanya jika sertifikat menggunakan nama DNS yang berbeda.",
       "serverNameHint": "mis. desktop.internal.example.com",
       "system": "Otoritas sertifikat sistem",
       "title": "Kepercayaan sertifikat server",
+      "x509None": "Terenkripsi tanpa kata sandi VNC (X509None)",
+      "x509NoneHelp": "TLS memverifikasi server dan mengenkripsi sesi, tetapi tidak mengautentikasi Anda ke server VNC. Orang lain yang dapat menjangkau server tersebut mungkin dapat mengendalikan desktop. SSH hanya melindungi jalur ke host SSH yang dipilih, bukan akses klien lain atau penerusan lanjutan. Pilih hanya untuk tujuan yang Anda kendalikan.",
       "x509Plain": "Nama pengguna dan kata sandi terenkripsi (X509Plain)",
       "x509PlainHelp": "Memerlukan VeNCrypt X509Plain. TLS memverifikasi server sebelum mengirim nama pengguna dan kata sandi.",
       "x509Vnc": "VNC terenkripsi (X509Vnc)",
@@ -7164,20 +5610,26 @@
     },
     "summary_one": "{{count}} host terkonfigurasi",
     "summary_other": "{{count}} host terkonfigurasi",
-    "title": "Akses jarak jauh VNC",
     "transport": {
       "appleDhDestinationHelp": "Untuk Apple DH, masukkan 127.0.0.1 atau ::1. Ini adalah alamat loopback Mac yang dijangkau melalui host SSH pilihan.",
+      "appleRsaSrpDestinationHelp": "Untuk Apple RSA/SRP, masukkan 127.0.0.1 atau ::1 pada Mac melalui host SSH pilihan.",
+      "appleSrpDestinationHelp": "Untuk Apple Direct SRP, masukkan 127.0.0.1 atau ::1. Ini adalah alamat loopback Mac yang dijangkau melalui host SSH pilihan.",
+      "appleVncPasswordDestinationHelp": "Untuk kata sandi VNC klasik Mac, isi 127.0.0.1 atau ::1 pada Mac yang diakses melalui SSH tersimpan.",
       "destination": "Tujuan RFB",
       "destinationHelp": "Untuk rute SSH, host dan port ini dijangkau dari server SSH yang dipilih, bukan langsung dari Runner.",
       "direct": "Langsung dari Runner",
       "empty": "Tidak ada host SSH tersimpan. Tambahkan satu di pengaturan SSH sebelum menggunakan rute ini.",
       "loadFailed": "Host SSH tersimpan tidak dapat dimuat.",
       "loading": "Memuat host SSH tersimpan…",
+      "privateDirectHelp": "Alamat IP privat atau loopback memerlukan host SSH yang tersimpan. Pilih rute SSH di atas; koneksi tidak akan berubah secara otomatis.",
       "select": "Pilih host SSH tersimpan",
       "selectionUnavailable": "Host SSH yang dipilih tidak lagi tersedia. Pilih host lain atau ubah secara eksplisit ke Langsung.",
       "ssh": "Melalui host SSH tersimpan",
       "sshConnection": "Host SSH",
-      "sshHelp": "SSH melindungi jalur Runner ke server SSH. Server tersebut harus dapat menjangkau tujuan RFB. Agent memerlukan akses VNC dan SSH.",
+      "sshHelp": "SSH melindungi jalur Runner ke server SSH. Server tersebut harus dapat menjangkau tujuan RFB. Chat hanya dapat menggunakan rute ini jika host SSH tersebut juga diaktifkan di chat itu.",
+      "sshNeedsRebind": "Host SSH untuk koneksi VNC ini perlu ditautkan kembali ke Cloudflare Access. Tautkan kembali di pengaturan SSH atau pilih Direct secara eksplisit di sana sebelum menyambung.",
+      "sshNeedsRebindStatus": "SSH perlu ditautkan kembali",
+      "sshTailscaleNeedsRebind": "Host SSH untuk koneksi VNC ini memerlukan konfigurasi Tailscale baru. Pengaturan dan penautan ulang Tailscale belum tersedia di sini.",
       "title": "Rute koneksi",
       "unavailable": "Pengaturan SSH tidak tersedia untuk akun ini.",
       "via": "Host SSH:"
@@ -7897,6 +6349,18 @@
       "uninstallTitle": "Hapus instalasi Workflow Resmi",
       "viewAndInstall": "Lihat dan instal",
       "yes": "Ya"
+    },
+    "skillImport": {
+      "action": "Impor skill",
+      "description": "Jalankan prompt ini di tempat skill Anda berada. Setiap skill menjadi alur kerja pribadi.",
+      "emptyAction": "Impor dari Claude Code atau Codex",
+      "providerLabel": "Impor dari",
+      "source": {
+        "claudeCode": "Diimpor dari Claude Code",
+        "codex": "Diimpor dari Codex"
+      },
+      "title": "Impor skill Anda",
+      "viewWorkflows": "Lihat alur kerja"
     }
   },
   "works": {
@@ -7913,6 +6377,27 @@
     },
     "connected": "Terhubung",
     "connectedWithDetail": "Terhubung ({{detail}})",
+    "discord": {
+      "accountSetup": "Akun Anda belum terhubung. Menghubungkan akun Discord baru belum tersedia.",
+      "adminSetup": "Penyiapan server belum tersedia. Konfigurasi yang sudah terverifikasi dapat terus menggunakan Discord.",
+      "chooseDmServer": "Pilih server",
+      "description": "Tandai Okou di server atau kirim pesan langsung ke bot.",
+      "disconnect": "Putuskan koneksi Discord",
+      "dmServer": "Server default untuk pesan langsung",
+      "limitedContext": "Konteks terbatas: Okou mungkin tidak menerima pesan biasa di kanal. Tandai Okou dan sertakan detail yang dibutuhkannya.",
+      "loadError": "Tidak dapat memuat status Discord.",
+      "loading": "Memuat status Discord…",
+      "memberSetup": "Tanyakan akses Discord kepada admin organisasi. Penyiapan server belum tersedia.",
+      "moreOptions": "Opsi Discord lainnya",
+      "retry": "Coba lagi",
+      "server": "Server: {{name}}",
+      "suspended": "Discord untuk sementara tidak tersedia. Koneksi yang ada tetap disimpan.",
+      "title": "Discord",
+      "unconfigured": "Discord belum tersedia untuk organisasi ini.",
+      "uninstall": "Hapus Discord",
+      "uninstallDescription": "Ini memutuskan koneksi Discord untuk semua orang di organisasi ini. Organisasi lain tetap terhubung.",
+      "uninstallTitle": "Hapus Discord dari organisasi ini?"
+    },
     "documentTitle": "Berfungsi",
     "feishuConnected": "Feishu berhasil terhubung",
     "github": {

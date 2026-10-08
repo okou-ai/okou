@@ -1,128 +1,215 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { http, HttpResponse } from "msw";
+import type { AvailableRunModelsResponse } from "@okouai/api-contracts/contracts/model-providers";
 import chalk from "chalk";
+import { http, HttpResponse } from "msw";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { server } from "../../../mocks/server";
-import { switchCommand, modelCommand } from "../index";
+import { modelCommand } from "../index";
 
-const MODEL_POLICIES_RESPONSE = {
-  workspaceDefaultModel: "claude-sonnet-4-6",
-  workspaceDefaultPolicyId: "00000000-0000-4000-8000-000000000001",
-  policies: [
+const available: AvailableRunModelsResponse = {
+  models: [
     {
-      id: "00000000-0000-4000-8000-000000000001",
-      model: "claude-sonnet-4-6",
-      modelLabel: "Claude Sonnet 4.6",
-      isDefault: true,
-      defaultProviderType: "built-in",
-      credentialScope: "org",
+      model: null,
+      modelLabel: "Auto",
       modelProviderId: null,
-      routeStatus: "valid",
-      routeStatusReason: null,
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
+      memberEffective: {
+        providerType: "built-in",
+        runtimeProviderType: "openrouter-codex",
+        credentialScope: "org",
+        availability: "available",
+        accountSelection: "not_applicable",
+      },
     },
     {
-      id: "00000000-0000-4000-8000-000000000002",
-      model: "gpt-5.6-luna",
-      modelLabel: "GPT 5.6 Luna",
-      isDefault: false,
-      defaultProviderType: "openai-api-key",
-      credentialScope: "org",
+      model: "gpt-6-sol",
+      modelLabel: "GPT 6 Sol",
       modelProviderId: "00000000-0000-4000-8000-000000000102",
-      routeStatus: "valid",
-      routeStatusReason: null,
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
+      memberEffective: {
+        providerType: "codex-oauth-token",
+        runtimeProviderType: "codex-oauth-token",
+        credentialScope: "member",
+        availability: "available",
+        accountSelection: "capture_required",
+      },
+      subscriptionOptions: {
+        efforts: ["medium", "high"],
+        serviceTier: "priority",
+      },
+    },
+    {
+      model: "gpt-6-sol-mini",
+      modelLabel: "GPT 6 Sol Mini",
+      modelProviderId: "00000000-0000-4000-8000-000000000102",
+      memberEffective: {
+        providerType: "codex-oauth-token",
+        runtimeProviderType: "codex-oauth-token",
+        credentialScope: "member",
+        availability: "available",
+        accountSelection: "capture_required",
+      },
+      subscriptionOptions: {
+        efforts: ["medium", "high"],
+        serviceTier: "priority",
+      },
+    },
+    {
+      model: "claude-sonnet-5",
+      modelLabel: "Claude Sonnet 5",
+      modelProviderId: "00000000-0000-4000-8000-000000000103",
+      memberEffective: {
+        providerType: "claude-code-oauth-token",
+        runtimeProviderType: "claude-code-oauth-token",
+        credentialScope: "member",
+        availability: "available",
+        accountSelection: "capture_required",
+      },
     },
   ],
 };
 
 describe("okou model command", () => {
-  const mockConsoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
-
+  const log = vi.spyOn(console, "log").mockImplementation(() => {});
   beforeEach(() => {
     chalk.level = 0;
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
-    mockConsoleLog.mockClear();
+    log.mockClear();
+    server.use(
+      http.get("http://localhost:3000/api/run-models", () => {
+        return HttpResponse.json(available);
+      }),
+    );
   });
-
   afterEach(() => {
-    vi.unstubAllEnvs();
+    return vi.unstubAllEnvs();
   });
 
-  it("should expose model discovery and switching subcommands", () => {
-    expect(modelCommand.name()).toBe("model");
-    expect(modelCommand.description()).toBe(
-      "List available models and model-switching guidance",
-    );
-    expect(
-      modelCommand.commands.map((command) => {
-        return command.name();
-      }),
-    ).toEqual(["list", "switch"]);
-  });
-
-  it("should list allowed models, providers, and built-in price tiers", async () => {
-    server.use(
-      http.get("http://localhost:3000/api/model-policies", () => {
-        return HttpResponse.json(MODEL_POLICIES_RESPONSE);
-      }),
-    );
-
+  it("lists Auto and connected personal subscription models", async () => {
     await modelCommand.parseAsync(["node", "cli", "ls"]);
-
-    const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(logCalls).toContain("Allowed Models:");
-    expect(logCalls).toContain("Claude Sonnet 4.6");
-    expect(logCalls).toContain("provider: built-in (Built-in model; built-in)");
-    expect(logCalls).toContain("price tier: $$");
-    expect(logCalls).toContain("GPT 5.6 Luna");
-    expect(logCalls).toContain("provider: api key");
-    expect(logCalls).not.toContain("price tier: $$$");
-    expect(logCalls).toContain("okou model-provider set --help");
+    const output = log.mock.calls.flat().join("\n");
+    expect(output).toContain("Auto (auto) (default)");
+    expect(output).toContain("GPT 6 Sol (gpt-6-sol)");
+    expect(output).toContain("Claude Sonnet 5 (claude-sonnet-5)");
+    expect(output).toContain("provider: subscription");
+    expect(output).toContain("okou model select <model>");
   });
 
-  it("lists the effective subscription without organization API prices", async () => {
+  function serveSelection(stored: {
+    readonly selectedModel: string | null;
+    readonly serviceTier: "priority" | "ultrafast" | null;
+  }): { saved?: unknown } {
+    const captured: { saved?: unknown } = {};
     server.use(
-      http.get("http://localhost:3000/api/model-policies", () => {
+      http.get("http://localhost:3000/api/user-model-preference", () => {
         return HttpResponse.json({
-          ...MODEL_POLICIES_RESPONSE,
-          policies: MODEL_POLICIES_RESPONSE.policies.map((policy) => {
-            return {
-              ...policy,
-              memberEffective: {
-                providerType: policy.model.startsWith("claude")
-                  ? "claude-code-oauth-token"
-                  : "codex-oauth-token",
-                runtimeProviderType: policy.model.startsWith("claude")
-                  ? "claude-code-oauth-token"
-                  : "codex-oauth-token",
-                credentialScope: "member",
-                availability: "available",
-                accountSelection: "capture_required",
-              },
-            };
-          }),
+          ...stored,
+          modelSettings: {},
+          selectedImageModel: null,
+          updatedAt: "2026-10-01T00:00:00Z",
         });
       }),
+      http.put(
+        "http://localhost:3000/api/user-model-preference",
+        async ({ request }) => {
+          const body = (await request.json()) as {
+            selectedModel: string | null;
+            serviceTier: string | null;
+          };
+          captured.saved = body;
+          return HttpResponse.json({
+            ...body,
+            modelSettings: {},
+            selectedImageModel: null,
+            updatedAt: "2026-10-02T00:00:00Z",
+          });
+        },
+      ),
     );
+    return captured;
+  }
 
-    await modelCommand.parseAsync(["node", "cli", "ls"]);
+  async function select(...args: string[]): Promise<string> {
+    // Commander keeps parsed option values on the command between runs.
+    for (const command of modelCommand.commands) {
+      command.setOptionValue("priority", undefined);
+    }
+    await modelCommand.parseAsync(["node", "cli", "select", ...args]);
+    return log.mock.calls.flat().join("\n");
+  }
 
-    const output = mockConsoleLog.mock.calls.flat().join("\n");
-    expect(output).toContain("provider: subscription");
-    expect(output).toContain("codex-oauth-token");
-    expect(output).not.toContain("price tier:");
-    expect(output).not.toContain("provider: built-in");
-    expect(output).not.toContain("provider: api key");
+  it("selects Auto with auto by saving a null selection", async () => {
+    const request = serveSelection({
+      selectedModel: "gpt-6-sol",
+      serviceTier: null,
+    });
+    const output = await select("auto");
+    expect(request.saved).toEqual({ selectedModel: null, serviceTier: null });
+    expect(output).toContain("Default model selected: Auto");
   });
 
-  it("should show Web switching guidance", async () => {
-    await switchCommand.parseAsync(["node", "cli"]);
+  it("selects a subscription model as the default for new chats", async () => {
+    const request = serveSelection({ selectedModel: null, serviceTier: null });
+    const output = await select("gpt-6-sol");
+    expect(request.saved).toEqual({
+      selectedModel: "gpt-6-sol",
+      serviceTier: null,
+    });
+    expect(output).toContain("Default model selected: gpt-6-sol");
+  });
 
-    expect(mockConsoleLog).toHaveBeenCalledWith(
-      "Open https://app.okou.ai and switch models from the model selector next to the input box.",
-    );
+  it("keeps the saved Fast preference when reselecting the same model", async () => {
+    const request = serveSelection({
+      selectedModel: "gpt-6-sol",
+      serviceTier: "priority",
+    });
+    const output = await select("gpt-6-sol");
+    expect(request.saved).toEqual({
+      selectedModel: "gpt-6-sol",
+      serviceTier: "priority",
+    });
+    expect(output).toContain("Service tier: priority");
+  });
+
+  it("keeps the saved Fast preference on another subscription model that offers it", async () => {
+    const request = serveSelection({
+      selectedModel: "gpt-6-sol",
+      serviceTier: "priority",
+    });
+    await select("gpt-6-sol-mini");
+    expect(request.saved).toEqual({
+      selectedModel: "gpt-6-sol-mini",
+      serviceTier: "priority",
+    });
+  });
+
+  it("drops the saved Fast preference for a model that does not offer it", async () => {
+    const request = serveSelection({
+      selectedModel: "gpt-6-sol",
+      serviceTier: "priority",
+    });
+    const output = await select("claude-sonnet-5");
+    expect(request.saved).toEqual({
+      selectedModel: "claude-sonnet-5",
+      serviceTier: null,
+    });
+    expect(output).not.toContain("Service tier");
+  });
+
+  it("writes the tier requested by --priority and --no-priority", async () => {
+    const enabled = serveSelection({ selectedModel: null, serviceTier: null });
+    await select("gpt-6-sol", "--priority");
+    expect(enabled.saved).toEqual({
+      selectedModel: "gpt-6-sol",
+      serviceTier: "priority",
+    });
+
+    const disabled = serveSelection({
+      selectedModel: "gpt-6-sol",
+      serviceTier: "priority",
+    });
+    await select("gpt-6-sol", "--no-priority");
+    expect(disabled.saved).toEqual({
+      selectedModel: "gpt-6-sol",
+      serviceTier: null,
+    });
   });
 });

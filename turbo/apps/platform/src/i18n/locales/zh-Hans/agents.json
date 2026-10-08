@@ -102,21 +102,9 @@
             "description": "批量优化和转换图片",
             "title": "Cloudinary媒体优化"
           },
-          "elevenlabs-audio-content": {
-            "description": "把Notion文章转成配音并存入Drive",
-            "title": "ElevenLabs音频内容"
-          },
           "fal-ai-image-generation": {
             "description": "根据Notion里的描述生成产品图",
             "title": "Fal AI图像生成"
-          },
-          "heygen-video-from-script": {
-            "description": "Notion脚本变成HeyGen视频，并通知团队",
-            "title": "脚本生成HeyGen视频"
-          },
-          "runway-video-from-brief": {
-            "description": "根据创意简报生成短视频",
-            "title": "简报生成Runway视频"
           }
         },
         "title": "创意"
@@ -510,6 +498,9 @@
       "description": "给智能体起个名字，并设置谁可以使用。",
       "namePlaceholder": "例如：调研助理",
       "newAgentAlt": "新建智能体",
+      "responsibilityLabel": "你想要这个智能体帮你做什么？",
+      "responsibilityPlaceholder": "例如：每周一汇总 HubSpot 上周的销售管道，并标出需要跟进的商机。",
+      "setupFailed": "智能体设置未完成。请先检查智能体列表，再决定是否重试。",
       "success": "{{agentName}}创建成功",
       "title": "创建新智能体",
       "visibility": {

@@ -2,7 +2,7 @@ import Foundation
 
 struct ChatThread: Identifiable, Equatable, Sendable {
   let id: String
-  let agentID: String
+  var agentID: String
   var title: String
   var selectedModel: String?
   var createdAt: Date
@@ -10,6 +10,12 @@ struct ChatThread: Identifiable, Equatable, Sendable {
   var sortAt: Date
   var pinnedAt: Date?
   var pinOrder: String?
+  var renamedAt: Date? = nil
+  var modelSettings: [String: ThreadModelSetting] = [:]
+  var serviceTier: String? = nil
+  var computerUseHostId: String? = nil
+  var cloudBrowserEnabled = false
+  var isArchived = false
   var indicator: ChatIndicator?
 
   var displayTitle: String { title.isEmpty ? "New chat" : title }
@@ -69,13 +75,12 @@ struct ChatHistory: Equatable, Sendable {
 
 struct SendReceipt: Sendable {
   let threadID: String
-  let runID: String?
   let clientEventID: String
 }
 
-enum ChatServiceError: LocalizedError, Sendable {
+enum ChatError: LocalizedError, Sendable {
   case noDefaultAgent
-  case noDefaultModel
+  case agentUnavailable
   case invalidContract(String)
   case settingsChanged
   case operationInProgress
@@ -85,8 +90,8 @@ enum ChatServiceError: LocalizedError, Sendable {
     switch self {
     case .noDefaultAgent:
       "This workspace has no default agent. Complete setup on the Okou website, then refresh."
-    case .noDefaultModel:
-      "This workspace has no default model. Choose one on the Okou website, then refresh."
+    case .agentUnavailable:
+      "This agent is no longer available. Choose another agent and try again."
     case .invalidContract(let detail):
       "Chat data could not be read. Refresh or update the TestFlight app. \(detail)"
     case .settingsChanged:

@@ -1997,6 +1997,74 @@ describe("findMatchingPermissions", () => {
     },
   );
 
+  it.each([
+    {
+      name: "action",
+      rule: "POST /?Version=2016-11-15 AWS sigv4=ec2 action=DescribeInstances",
+      service: "ec2",
+      predicate: { action: "DescribeInstances" },
+    },
+    {
+      name: "target",
+      rule: "POST /?Version=2012-08-10 AWS sigv4=dynamodb target=DynamoDB_20120810.GetItem",
+      service: "dynamodb",
+      predicate: { target: "DynamoDB_20120810.GetItem" },
+    },
+  ])(
+    "enforces URL query requirements alongside AWS $name predicates",
+    ({ rule, service, predicate }) => {
+      const firewalls = [
+        {
+          name: "aws",
+          apis: [
+            {
+              base: "https://aws.example.com",
+              auth: {},
+              awsSigv4Capability: true,
+              permissions: [{ name: "operation", rules: [rule] }],
+            },
+          ],
+        },
+      ];
+      const match = (query: FirewallAwsDiagnosticContext["query"]) => {
+        return matchFirewallRequestDecision(
+          firewalls,
+          "POST",
+          "https://aws.example.com/",
+          { aws: { unknownPolicy: "ask" } },
+          { status: "present", value: "aws" },
+          {
+            awsDiagnostic: {
+              context: {
+                sigv4Service: service,
+                ...predicate,
+                query,
+                headerNames: [],
+              },
+            },
+          },
+        );
+      };
+      const version = service === "ec2" ? "2016-11-15" : "2012-08-10";
+
+      expect(match([{ key: "Version", value: version }])).toMatchObject({
+        kind: "allow",
+        permission: "operation",
+      });
+      expect(match([])).toMatchObject({
+        kind: "block",
+        reason: "unknown_endpoint",
+        awsContextIncomplete: true,
+      });
+      const wrongVersion = match([{ key: "Version", value: "wrong" }]);
+      expect(wrongVersion).toMatchObject({
+        kind: "block",
+        reason: "unknown_endpoint",
+      });
+      expect(wrongVersion).not.toHaveProperty("awsContextIncomplete");
+    },
+  );
+
   it("keeps incomplete context on an allow-policy unknown without changing its outcome", () => {
     const result = matchFirewallRequestDecision(
       [

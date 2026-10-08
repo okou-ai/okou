@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
+import {
+  captureFixtureRunBilling,
+  captureFixtureRunBillings,
+} from "../billing-run-fixture";
 import { readFile } from "node:fs/promises";
 
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { asc, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { describe, expect, it, test, onTestFinished } from "vitest";
@@ -12,16 +16,17 @@ import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/schema/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { conversations } from "@okouai/db/schema/conversation";
 import { checkpoints } from "@okouai/db/schema/checkpoint";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storages } from "@okouai/db/schema/storage";
 
-import { createDeferredPromise } from "../../utils";
-import { deleteClerkAgentLifecycleData } from "../agent-lifecycle.service";
-import { persistAgentCheckpointInTransaction } from "../agent-webhook-checkpoints.service";
-import { lockAgentRunCheckpointLifecycle } from "../agent-run-checkpoint-lifecycle-lock.service";
+import { createDeferredPromise, settle } from "../../utils";
+import { deleteClerkAgentLifecycleData$ } from "../clerk-agent-lifecycle.service";
+import type { ClerkDeletionScope } from "../clerk-lifecycle-plan";
+import { createStore } from "ccstate";
+import { closeDbPool } from "../../../lib/db";
 import {
   deleteLockedRuns,
   deleteRunConversations,
@@ -29,8 +34,8 @@ import {
 } from "../conversation-history-deletion.service";
 import { testContext } from "../../../__tests__/test-context";
 import { executeRawRows } from "../../../lib/db-raw-rows";
-import type { ApiDb, Tx } from "../../../lib/db-types";
-import { env } from "../../../lib/env";
+import type { ApiDb } from "../../../lib/db-types";
+import { env, mockEnv } from "../../../lib/env";
 import {
   deleteFeatureSwitchesForUser,
   updateFeatureSwitchesForUser,
@@ -41,7 +46,6 @@ import {
   deletePiMemoryStage1Candidates,
   deleteStoragesWithPiMemoryCandidates,
   insertPiMemoryStage1Candidates,
-  lockPiMemoryCandidateStorage,
 } from "../pi-memory-stage1-candidate.service";
 
 // Infrastructure-only exception: HTTP cannot choose the physical trigger,
@@ -138,7 +142,29 @@ async function harness(trigger: boolean, lifecycle = false) {
       AFTER INSERT OR DELETE OR UPDATE OF source_history_hash ON pi_memory_stage1_candidates
       FOR EACH ROW EXECUTE FUNCTION pi_memory_stage1_candidate_blob_ref_count()`);
   }
-  return { db, pool };
+  return { db, pool, schema };
+}
+
+async function deleteClerkFixtureLifecycle(
+  schema: string,
+  scope: ClerkDeletionScope,
+) {
+  const original = env("DATABASE_URL");
+  const url = new URL(original);
+  url.searchParams.set(
+    "options",
+    `-c search_path=${schema},public -c statement_timeout=10000`,
+  );
+  await closeDbPool();
+  mockEnv("DATABASE_URL", url.toString());
+  const result = await settle(
+    createStore().set(deleteClerkAgentLifecycleData$, scope, context.signal),
+  );
+  await closeDbPool();
+  mockEnv("DATABASE_URL", original);
+  if (!result.ok) {
+    throw result.error;
+  }
 }
 
 async function owner(db: ApiDb, orgId = randomUUID(), userId = randomUUID()) {
@@ -213,16 +239,19 @@ async function source(
   await h.db
     .insert(chatThreads)
     .values({ id: threadId, agentId, userId: parent.userId });
-  await h.db.insert(agentRuns).values({
-    id: runId,
-    sessionId,
-    orgId: parent.orgId,
-    userId: parent.userId,
-    status: "completed",
-    prompt: "fixture",
-    chatThreadId: threadId,
-    triggerSource: "web",
-    autonomyBudget: 0,
+  await h.db.transaction(async (tx) => {
+    await tx.insert(agentRuns).values({
+      id: runId,
+      sessionId,
+      orgId: parent.orgId,
+      userId: parent.userId,
+      status: "completed",
+      prompt: "fixture",
+      chatThreadId: threadId,
+      triggerSource: "web",
+      autonomyBudget: 0,
+    });
+    await captureFixtureRunBilling(tx, runId);
   });
   await h.db.insert(conversations).values({
     runId,
@@ -242,31 +271,6 @@ async function source(
     completedAt: completionTime(),
     idleDelayMs: 0,
   };
-}
-
-async function pid(tx: Tx) {
-  const [row] = await executeRawRows(
-    tx,
-    sql`SELECT pg_backend_pid() AS pid`,
-    z.object({ pid: z.number().int() }),
-  );
-  if (!row) {
-    throw new Error("Missing test backend PID");
-  }
-  return row.pid;
-}
-
-async function blocked(db: ApiDb, backend: number) {
-  await expect
-    .poll(async () => {
-      const [row] = await executeRawRows(
-        db,
-        sql`SELECT cardinality(pg_blocking_pids(${backend})) > 0 AS blocked`,
-        z.object({ blocked: z.boolean() }),
-      );
-      return row?.blocked;
-    })
-    .toBe(true);
 }
 
 describe("API C with the migrated schema", () => {
@@ -527,276 +531,6 @@ describe("API C with the migrated schema", () => {
       { hash: oldHash, count: 2 },
     ]);
   });
-
-  it("keeps replacement outside the child-accounting/parent-deletion interval", async () => {
-    const h = await harness(false);
-    const parent = await owner(h.db);
-    await blob(h.db);
-    await blob(h.db, newHash);
-    const session = randomUUID();
-    const first = await source(h, parent, oldHash, session);
-    const next = await source(h, parent, newHash, session);
-    await h.db.transaction(async (tx) => {
-      await admitPiMemoryStage1Candidate(tx, first);
-    });
-    const gate = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!gate.settled()) {
-        gate.resolve();
-      }
-    });
-    const ready = createDeferredPromise<void>(context.signal);
-    const replacement = h.db.transaction(async (tx) => {
-      await lockPiMemoryCandidateStorage(tx, parent);
-      ready.resolve();
-      await gate.promise;
-      return await admitPiMemoryStage1Candidate(tx, {
-        ...next,
-        completedAt: new Date("2026-09-13T13:00:00Z"),
-      });
-    });
-    await ready.promise;
-    const backend = createDeferredPromise<number>(context.signal);
-    const deletion = h.db.transaction(async (tx) => {
-      backend.resolve(await pid(tx));
-      return await deleteStoragesWithPiMemoryCandidates(
-        tx,
-        eq(storages.id, parent.id),
-      );
-    });
-    await blocked(h.db, await backend.promise);
-    gate.resolve();
-    expect((await replacement).outcome).toBe("replaced");
-    await expect(deletion).resolves.toBe(1);
-    await expect(refs(h.db)).resolves.toStrictEqual([
-      { hash: oldHash, count: 1 },
-      { hash: newHash, count: 1 },
-    ]);
-    await expect(
-      h.db.select().from(piMemoryStage1Candidates),
-    ).resolves.toHaveLength(0);
-  });
-});
-
-async function usesExplicitCandidateReferences(tx: Tx): Promise<boolean> {
-  // ROW EXCLUSIVE is compatible with other writers and blocks trigger DDL.
-  // The catalog SELECT must be a separate READ COMMITTED statement AFTER the
-  // lock: a statement snapshot taken before a waiting lock could be stale.
-  await tx.execute(
-    sql`LOCK TABLE ${piMemoryStage1Candidates} IN ROW EXCLUSIVE MODE`,
-  );
-  const [settings] = await executeRawRows(
-    tx,
-    sql`SELECT current_setting('transaction_isolation') AS isolation,
-      current_setting('session_replication_role') AS replication_role`,
-    z.object({
-      isolation: z.literal("read committed"),
-      replication_role: z.literal("origin"),
-    }),
-  );
-  if (!settings) {
-    throw new Error("Missing Pi candidate transaction settings");
-  }
-  const triggers = await executeRawRows(
-    tx,
-    sql`SELECT t.tgname AS name,
-      (t.tgenabled = 'O' AND t.tgtype = 29 AND NOT t.tgdeferrable
-        AND NOT t.tginitdeferred AND t.tgqual IS NULL
-        AND t.tgnargs = 0 AND octet_length(t.tgargs) = 0
-        AND t.tgattr::text = a.attnum::text
-        AND p.proname = 'pi_memory_stage1_candidate_blob_ref_count'
-        AND p.pronamespace = c.relnamespace
-        AND p.proconfig IS NULL AND NOT p.prosecdef AND p.provolatile = 'v'
-        AND p.pronargs = 0 AND p.prorettype = 'trigger'::regtype
-        AND p.prolang = (SELECT oid FROM pg_language WHERE lanname = 'plpgsql')
-        AND md5(p.prosrc) = '576154890be37fff1ec9f9f4c318428c') AS valid
-      FROM pg_trigger t
-      JOIN pg_class c ON c.oid = t.tgrelid
-      JOIN pg_proc p ON p.oid = t.tgfoid
-      JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'source_history_hash'
-      WHERE t.tgrelid = 'pi_memory_stage1_candidates'::regclass
-        AND NOT t.tgisinternal`,
-    z.object({ name: z.string(), valid: z.boolean() }),
-  );
-  if (triggers.length === 0) {
-    return true;
-  }
-  if (
-    triggers.length !== 1 ||
-    triggers[0]?.name !== "pi_memory_stage1_candidate_blob_ref_count_trigger" ||
-    !triggers[0].valid
-  ) {
-    throw new Error("Unexpected Pi candidate reference trigger configuration");
-  }
-  return false;
-}
-
-// The B insertion path is retained only for the still-supported migration and
-// rollback boundary (preparation cfdc9cd3c36cede429281e6f97ddf35a9ead2bef).
-// Preserve its separate lock/settings/catalog statements; C never imports this.
-async function insertBCandidates(
-  tx: Tx,
-  rows: readonly (typeof piMemoryStage1Candidates.$inferInsert)[],
-) {
-  await tx
-    .select({ id: storages.id })
-    .from(storages)
-    .where(
-      inArray(storages.id, [
-        ...new Set(
-          rows.map((row) => {
-            return row.memoryStorageId;
-          }),
-        ),
-      ]),
-    )
-    .orderBy(asc(storages.id))
-    .for("no key update");
-  const explicit = await usesExplicitCandidateReferences(tx);
-  const created = await tx
-    .insert(piMemoryStage1Candidates)
-    .values([...rows])
-    .onConflictDoNothing()
-    .returning({ hash: piMemoryStage1Candidates.sourceHistoryHash });
-  if (explicit) {
-    for (const row of [...created].sort((a, b) => {
-      return a.hash.localeCompare(b.hash);
-    })) {
-      const [retained] = await tx
-        .update(blobs)
-        .set({ refCount: sql`${blobs.refCount} + 1` })
-        .where(eq(blobs.hash, row.hash))
-        .returning({ hash: blobs.hash });
-      if (!retained) {
-        throw new Error("Pi memory candidate source blob does not exist");
-      }
-    }
-  }
-  return created;
-}
-
-test("holds a DML-compatible lock through commit while DROP TRIGGER waits", async () => {
-  const h = await harness(true);
-  const first = await owner(h.db);
-  const second = await owner(h.db);
-  await blob(h.db);
-  await blob(h.db, newHash);
-  const gate = createDeferredPromise<void>(context.signal);
-  onTestFinished(() => {
-    if (!gate.settled()) {
-      gate.resolve();
-    }
-  });
-  const ready = createDeferredPromise<void>(context.signal);
-  const writer = h.db.transaction(async (tx) => {
-    await insertBCandidates(tx, [candidate(first)]);
-    ready.resolve();
-    await gate.promise;
-  });
-  await ready.promise;
-  // Different owners and hashes commit before the first writer releases its lock.
-  await h.db.transaction(async (tx) => {
-    await insertBCandidates(tx, [candidate(second, newHash)]);
-  });
-  const backend = createDeferredPromise<number>(context.signal);
-  const ddl = h.db.transaction(async (tx) => {
-    backend.resolve(await pid(tx));
-    await tx.execute(
-      sql`DROP TRIGGER pi_memory_stage1_candidate_blob_ref_count_trigger ON pi_memory_stage1_candidates`,
-    );
-  });
-  await blocked(h.db, await backend.promise);
-  gate.resolve();
-  await writer;
-  await ddl;
-  await h.db.transaction(async (tx) => {
-    await insertBCandidates(tx, [candidate(first)]);
-  });
-  await expect(refs(h.db)).resolves.toStrictEqual([
-    { hash: oldHash, count: 3 },
-    { hash: newHash, count: 2 },
-  ]);
-});
-
-test.each(["COMMIT", "ROLLBACK"] as const)(
-  "b observes DDL %s in its post-lock statement despite an earlier snapshot",
-  async (finish) => {
-    const h = await harness(true);
-    const parent = await owner(h.db);
-    await blob(h.db);
-    const gate = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!gate.settled()) {
-        gate.resolve();
-      }
-    });
-    const ready = createDeferredPromise<void>(context.signal);
-    const ddl = h.db.transaction(async (tx) => {
-      await tx.execute(
-        sql`DROP TRIGGER pi_memory_stage1_candidate_blob_ref_count_trigger ON pi_memory_stage1_candidates`,
-      );
-      await tx.execute(
-        sql`DROP FUNCTION pi_memory_stage1_candidate_blob_ref_count()`,
-      );
-      ready.resolve();
-      await gate.promise;
-      if (finish === "ROLLBACK") {
-        throw new Error("injected DDL rollback");
-      }
-    });
-    const ddlOutcome = Promise.allSettled([ddl]);
-    await ready.promise;
-    const backend = createDeferredPromise<number>(context.signal);
-    const writer = h.db.transaction(async (tx) => {
-      backend.resolve(await pid(tx)); // Establish a pre-DDL-commit snapshot.
-      await insertBCandidates(tx, [candidate(parent)]);
-    });
-    await blocked(h.db, await backend.promise);
-    gate.resolve();
-    await expect(ddlOutcome).resolves.toStrictEqual([
-      finish === "ROLLBACK"
-        ? { status: "rejected", reason: new Error("injected DDL rollback") }
-        : { status: "fulfilled", value: undefined },
-    ]);
-    await writer;
-    await expect(refs(h.db)).resolves.toStrictEqual([
-      { hash: oldHash, count: 2 },
-    ]);
-  },
-);
-
-test("protects a zero-count source from concurrent GC until candidate accounting commits", async () => {
-  const h = await harness(false);
-  const parent = await owner(h.db);
-  await blob(h.db, oldHash, 0);
-  const gate = createDeferredPromise<void>(context.signal);
-  onTestFinished(() => {
-    if (!gate.settled()) {
-      gate.resolve();
-    }
-  });
-  const ready = createDeferredPromise<void>(context.signal);
-  const writer = h.db.transaction(async (tx) => {
-    await insertPiMemoryStage1Candidates(tx, [candidate(parent)]);
-    ready.resolve();
-    await gate.promise;
-  });
-  await ready.promise;
-  const backend = createDeferredPromise<number>(context.signal);
-  const gc = h.db.transaction(async (tx) => {
-    backend.resolve(await pid(tx));
-    return await tx
-      .delete(blobs)
-      .where(and(eq(blobs.hash, oldHash), eq(blobs.refCount, 0)))
-      .returning({ hash: blobs.hash });
-  });
-  await blocked(h.db, await backend.promise);
-  gate.resolve();
-  await writer;
-  await expect(gc).resolves.toStrictEqual([]);
-  await expect(refs(h.db)).resolves.toStrictEqual([
-    { hash: oldHash, count: 1 },
-  ]);
 });
 
 test("audits known conversation and candidate ownership without exporting content or identities", async () => {
@@ -881,75 +615,6 @@ test("audits known conversation and candidate ownership without exporting conten
   ]) {
     expect(exported).not.toContain(identity);
   }
-});
-
-test("takes the worker parent FK lock before waiting for a candidate during cleanup", async () => {
-  const h = await harness(false);
-  const parent = await owner(h.db);
-  await blob(h.db);
-  const row = candidate(parent);
-  const leaseToken = randomUUID();
-  await h.db.transaction(async (tx) => {
-    await insertPiMemoryStage1Candidates(tx, [
-      {
-        ...row,
-        status: "leased",
-        leaseToken,
-        leaseExpiresAt: new Date("2026-09-13T14:00:00Z"),
-      },
-    ]);
-  });
-  const gate = createDeferredPromise<void>(context.signal);
-  onTestFinished(() => {
-    if (!gate.settled()) {
-      gate.resolve();
-    }
-  });
-  const ready = createDeferredPromise<void>(context.signal);
-  const blocker = h.db.transaction(async (tx) => {
-    await tx.select().from(piMemoryStage1Candidates).for("update");
-    ready.resolve();
-    await gate.promise;
-  });
-  await ready.promise;
-  const workerBackend = createDeferredPromise<number>(context.signal);
-  const worker = h.db.transaction(async (tx) => {
-    workerBackend.resolve(await pid(tx));
-    return await commitPiMemoryStage1Candidate(tx, {
-      ...row,
-      leaseToken,
-      committedAt: new Date("2026-09-13T13:00:00Z"),
-      result: { kind: "succeeded_no_output" },
-    });
-  });
-  const workerPid = await workerBackend.promise;
-  await blocked(h.db, workerPid);
-  const cleanupBackend = createDeferredPromise<number>(context.signal);
-  const cleanup = h.db.transaction(async (tx) => {
-    cleanupBackend.resolve(await pid(tx));
-    return await deleteStoragesWithPiMemoryCandidates(
-      tx,
-      eq(storages.id, parent.id),
-    );
-  });
-  const cleanupPid = await cleanupBackend.promise;
-  await expect
-    .poll(async () => {
-      const [waiting] = await executeRawRows(
-        h.db,
-        sql`SELECT ${workerPid} = ANY(pg_blocking_pids(${cleanupPid})) AS blocked`,
-        z.object({ blocked: z.boolean() }),
-      );
-      return waiting?.blocked;
-    })
-    .toBe(true);
-  gate.resolve();
-  await blocker;
-  await expect(worker).resolves.toBeTruthy();
-  await expect(cleanup).resolves.toBe(1);
-  await expect(refs(h.db)).resolves.toStrictEqual([
-    { hash: oldHash, count: 1 },
-  ]);
 });
 
 // Infrastructure-only historical fixture: this represents the exact accepted
@@ -1153,7 +818,7 @@ describe("conversation history deletion accounting", () => {
         kind === "user"
           ? { kind, userId: parent.userId }
           : { kind, orgId: parent.orgId };
-      await deleteClerkAgentLifecycleData(h.db, scope);
+      await deleteClerkFixtureLifecycle(h.schema, scope);
       await expect(
         h.db.select({ id: agentRuns.id }).from(agentRuns),
       ).resolves.toStrictEqual([{ id: survivor.runId }]);
@@ -1165,7 +830,7 @@ describe("conversation history deletion accounting", () => {
       await expect(refs(h.db)).resolves.toStrictEqual([
         { hash: oldHash, count: 3 },
       ]);
-      await deleteClerkAgentLifecycleData(h.db, scope);
+      await deleteClerkFixtureLifecycle(h.schema, scope);
       await expect(refs(h.db)).resolves.toStrictEqual([
         { hash: oldHash, count: 3 },
       ]);
@@ -1187,18 +852,21 @@ describe("conversation history deletion accounting", () => {
     const ids = Array.from({ length: 1002 }, () => {
       return randomUUID();
     });
-    await h.db.insert(agentRuns).values(
-      ids.map((id) => {
-        return {
-          id,
-          sessionId: run.sessionId,
-          userId: parent.userId,
-          orgId: parent.orgId,
-          status: "completed",
-          prompt: "",
-        };
-      }),
-    );
+    await h.db.transaction(async (tx) => {
+      await tx.insert(agentRuns).values(
+        ids.map((id) => {
+          return {
+            id,
+            sessionId: run.sessionId,
+            userId: parent.userId,
+            orgId: parent.orgId,
+            status: "completed",
+            prompt: "",
+          };
+        }),
+      );
+      await captureFixtureRunBillings(tx, ids);
+    });
     await h.db.insert(conversations).values(
       ids.map((id, index) => {
         return {
@@ -1236,7 +904,7 @@ describe("conversation history deletion accounting", () => {
       await attachCheckpoint(h, valid.runId);
       await attachCheckpoint(h, invalid.runId);
       await expect(
-        deleteClerkAgentLifecycleData(h.db, {
+        deleteClerkFixtureLifecycle(h.schema, {
           kind: "user",
           userId: parent.userId,
         }),
@@ -1304,151 +972,4 @@ describe("conversation history deletion accounting", () => {
       { hash: oldHash, count: 0 },
     ]);
   });
-
-  it.each(["commit", "rollback"])(
-    "keeps zero-count GC behind an uncommitted conversation %s",
-    async (finish) => {
-      const h = await harness(false, true);
-      const parent = await owner(h.db);
-      await blob(h.db);
-      const run = await source(h, parent);
-      const gate = createDeferredPromise<void>(context.signal);
-      const ready = createDeferredPromise<void>(context.signal);
-      onTestFinished(() => {
-        if (!gate.settled()) {
-          gate.resolve();
-        }
-      });
-      const deletion = Promise.allSettled([
-        h.db.transaction(async (tx) => {
-          await tx
-            .select({ id: agentRuns.id })
-            .from(agentRuns)
-            .where(eq(agentRuns.id, run.runId))
-            .for("update");
-          const removed = await deleteRunConversations(tx, [run.runId]);
-          await deleteLockedRuns(tx, [run.runId]);
-          await releaseDeletedConversationReferences(tx, removed);
-          ready.resolve();
-          await gate.promise;
-          if (finish === "rollback") {
-            throw new Error("rollback deletion");
-          }
-        }),
-      ]);
-      await ready.promise;
-      const backend = createDeferredPromise<number>(context.signal);
-      const gc = h.db.transaction(async (tx) => {
-        backend.resolve(await pid(tx));
-        // Lock first to exercise the recheck; an ordinary zero-count scan before
-        // commit cannot see the newly released row and simply does no work.
-        await tx
-          .select({ hash: blobs.hash })
-          .from(blobs)
-          .where(eq(blobs.hash, oldHash))
-          .for("update");
-        return await tx
-          .delete(blobs)
-          .where(and(eq(blobs.hash, oldHash), eq(blobs.refCount, 0)))
-          .returning({ hash: blobs.hash });
-      });
-      await blocked(h.db, await backend.promise);
-      gate.resolve();
-      await deletion;
-      await expect(gc).resolves.toStrictEqual(
-        finish === "commit" ? [{ hash: oldHash }] : [],
-      );
-      await expect(h.db.select().from(conversations)).resolves.toHaveLength(
-        finish === "commit" ? 0 : 1,
-      );
-    },
-  );
-});
-
-test("breaks the shared-blob and surviving-session checkpoint cycle without a deadlock", async () => {
-  const h = await harness(false, true);
-  const parent = await owner(h.db);
-  await blob(h.db);
-  const target = await source(h, parent);
-  await attachCheckpoint(h, target.runId);
-  const [targetRun] = await h.db
-    .select({ sessionId: agentRuns.sessionId })
-    .from(agentRuns)
-    .where(eq(agentRuns.id, target.runId));
-  if (!targetRun) {
-    throw new Error("Expected target Run");
-  }
-  const writerRunId = randomUUID();
-  await h.db.insert(agentRuns).values({
-    id: writerRunId,
-    sessionId: targetRun.sessionId,
-    orgId: parent.orgId,
-    userId: parent.userId,
-    status: "failed",
-    prompt: "",
-    storageMounts: [],
-  });
-  const gate = createDeferredPromise<void>(context.signal);
-  const ready = createDeferredPromise<void>(context.signal);
-  onTestFinished(() => {
-    if (!gate.settled()) {
-      gate.resolve();
-    }
-  });
-  const deletion = Promise.allSettled([
-    h.db.transaction(async (tx) => {
-      await tx
-        .select({ id: agentRuns.id })
-        .from(agentRuns)
-        .where(eq(agentRuns.id, target.runId))
-        .for("update");
-      const removed = await deleteRunConversations(tx, [target.runId]);
-      ready.resolve(); // SET NULL now holds the Session needed by the other Run.
-      await gate.promise;
-      await deleteLockedRuns(tx, [target.runId]);
-      await releaseDeletedConversationReferences(tx, removed);
-    }),
-  ]);
-  await ready.promise;
-  const backend = createDeferredPromise<number>(context.signal);
-  const writer = h.db.transaction(async (tx) => {
-    backend.resolve(await pid(tx));
-    await lockAgentRunCheckpointLifecycle(tx, writerRunId);
-    return await persistAgentCheckpointInTransaction(
-      tx,
-      {
-        auth: {
-          orgId: parent.orgId,
-          userId: parent.userId,
-          runId: writerRunId,
-        },
-        body: {
-          runId: writerRunId,
-          cliAgentType: "claude-code",
-          cliAgentSessionId: writerRunId,
-          cliAgentSessionHistoryHash: oldHash,
-        },
-      },
-      {},
-      context.signal,
-      { source: "standalone-webhook" },
-    );
-  });
-  await blocked(h.db, await backend.promise);
-  gate.resolve();
-  await expect(deletion).resolves.toMatchObject([
-    { status: "rejected", reason: { cause: { code: "55P03" } } },
-  ]);
-  await expect(writer).resolves.toMatchObject({ status: 200 });
-  await expect(refs(h.db)).resolves.toStrictEqual([
-    { hash: oldHash, count: 2 },
-  ]);
-  await expect(h.db.select().from(conversations)).resolves.toHaveLength(2);
-  await deleteSourceLifecycle(h, [target.runId]);
-  await expect(refs(h.db)).resolves.toStrictEqual([
-    { hash: oldHash, count: 1 },
-  ]);
-  await expect(
-    h.db.select({ runId: conversations.runId }).from(conversations),
-  ).resolves.toStrictEqual([{ runId: writerRunId }]);
 });

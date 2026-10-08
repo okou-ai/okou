@@ -19,7 +19,6 @@ import {
   SegmentControlItem,
 } from "@okouai/ui/components/ui/segment-control";
 import { Button, cn } from "@okouai/ui";
-import type { PublicConnectorCatalogCategoryMetadata } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import { connectorAccountSummaryByTarget$ } from "../../signals/okou-page/connector-accounts.ts";
 import { vncSummary$ } from "../../signals/vnc.ts";
@@ -33,7 +32,6 @@ import {
 } from "../../signals/okou-page/settings/connector-category-rail.ts";
 import { measureRail } from "../../signals/okou-page/rail-travel.ts";
 import { RailPager } from "./rail-pager.tsx";
-import { REMOTE_ACCESS_CATEGORY } from "../../signals/okou-page/settings/ssh-connector.ts";
 import type {
   ComposerConnectorUiState,
   ConnectorDirectoryTab,
@@ -59,6 +57,9 @@ import {
   buildConnectorDirectoryModel,
   type ConnectorDirectoryModel,
 } from "./connector-directory-model.ts";
+
+/** SSH and VNC sit in the directory under a category of their own. */
+const REMOTE_ACCESS_CATEGORY = "remote-access";
 
 /**
  * The scroll region runs to the sheet edge and fades into it at both ends.
@@ -514,8 +515,8 @@ function DirectoryRemoteCards({
         return $.connectors.catalog.remoteAccess;
       })}
     >
-      {showSsh && <SshConnectorCard configuredCount={0} />}
-      {showVnc && <VncConnectorCard configuredCount={0} />}
+      {showSsh && <SshConnectorCard />}
+      {showVnc && <VncConnectorCard />}
     </DirectorySection>
   );
 }
@@ -1063,13 +1064,6 @@ interface ConnectorDirectoryDialogProps {
   readonly onUpdateState: UpdateDirectoryState;
   /** Category totals from discovery; a shelf's closing cell stands for these. */
   readonly categoryCounts: Readonly<Record<string, number>> | undefined;
-  /**
-   * The catalog's category names, from the same discovery response as the
-   * connectors. Reading them from the full-catalog status endpoint instead
-   * made every chip wait on a 6.7 MB response and show an id-derived name
-   * until it arrived.
-   */
-  readonly categoryMetadata: PublicConnectorCatalogCategoryMetadata | undefined;
   readonly loading: boolean;
   /** Every connector the browse response carried, for the chip row. */
   readonly chipCatalog: readonly PlatformConnectorCatalogStatusItem[];
@@ -1091,7 +1085,6 @@ export function ConnectorDirectoryDialog({
   state,
   onUpdateState,
   categoryCounts,
-  categoryMetadata,
   loading,
   chipCatalog,
   connected,
@@ -1124,7 +1117,6 @@ export function ConnectorDirectoryDialog({
     unconnectedCustom,
     search,
     category,
-    categoryMetadata,
     otherCategoryLabel: t(($) => {
       return $.chat.connectors.directory.otherCategory;
     }),

@@ -1,37 +1,35 @@
-import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { DEFAULT_USER_TIMEZONE, isValidTimeZone } from "@okouai/core/timezone";
-import { and, eq } from "drizzle-orm";
-import { writeDb$, type Db } from "../external/db";
 import {
-  publishMorningBriefChangedSafely,
-  publishUserPreferenceChangedForUserSafely,
-} from "../external/realtime";
-import { command, computed } from "ccstate";
-import {
-  DEFAULT_USER_LOCALE,
   USER_PREFERENCES_UNINITIALIZED,
   userLocaleSchema,
   userPreferencesContract,
   type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
+import { DEFAULT_USER_TIMEZONE, isValidTimeZone } from "@okouai/core/timezone";
+import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { command, computed } from "ccstate";
+import { and, eq } from "drizzle-orm";
+import { writeDb$, type Db } from "../external/db";
+import { publishUserPreferenceChangedForUserSafely } from "../external/realtime";
+import { synchronizeMorningBriefTimezone$ } from "../services/morning-brief-timezone.service";
 
-import { badRequestMessage } from "../../lib/error";
+import { badRequestMessage, conflict } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import type { RouteEntry } from "../route-entry";
+import { initializeMemberMemory$ } from "../services/member-memory-initialization.service";
+import { prepareMorningBriefEnrollment$ } from "../services/morning-brief-enrollment-retry.service";
 import {
   ensureMorningBriefDefaultEnabled$,
-  synchronizeMorningBriefTimezone$,
   type EnsureMorningBriefDefaultEnabledResult,
 } from "../services/morning-brief-preference.service";
 import {
   updateUserPreferences$,
   userPreferences,
 } from "../services/user-data.service";
-import { prepareMorningBriefEnrollment } from "../services/morning-brief-enrollment-retry.service";
+
 import { settle, tapError } from "../utils";
 
 const L = logger("user-preferences");
@@ -122,7 +120,7 @@ const updateUserPreferencesInner$ = command(
       ]);
     }
     if (body.data.timezone !== undefined) {
-      await set(
+      const synchronized = await set(
         synchronizeMorningBriefTimezone$,
         {
           orgId: auth.orgId,
@@ -130,6 +128,13 @@ const updateUserPreferencesInner$ = command(
         },
         signal,
       );
+      if (synchronized === "conflict") {
+        // The preference is saved; the Morning Brief schedule lost a race and
+        // is left unchanged. Repeating the same update re-applies it.
+        return conflict(
+          "Morning Brief schedule changed concurrently. Retry the time zone update.",
+        );
+      }
       enqueueMorningBriefProvisioning(
         set(
           ensureMorningBriefDefaultEnabled$,
@@ -161,7 +166,7 @@ async function fillMissingUserPreferenceFields(
   existing:
     | Pick<typeof orgMembersMetadata.$inferSelect, "timezone" | "locale">
     | undefined,
-  requested: { readonly timezone?: string; readonly locale?: UserLocale },
+  requested: { readonly timezone?: string; readonly locale: UserLocale },
 ): Promise<
   | {
       readonly kind: "unchanged";
@@ -188,9 +193,7 @@ async function fillMissingUserPreferenceFields(
     !existingTimezone || !isValidTimeZone(existingTimezone);
   const localeMissing = !isValidUserLocale(existingLocale);
   const timezone = requested.timezone ?? DEFAULT_USER_TIMEZONE;
-  // Old App -> new API: timezone-only initialize omits locale. Reassess the
-  // optional request after the client-version floor excludes that App; #36270.
-  const locale = requested.locale ?? DEFAULT_USER_LOCALE;
+  const locale = requested.locale;
   if (!isValidTimeZone(timezone)) {
     return { kind: "invalid-timezone" };
   }
@@ -242,6 +245,13 @@ const initializeUserPreferencesInner$ = command(
       body.data,
     );
     signal.throwIfAborted();
+    if (writeOutcome.kind === "invalid-timezone") {
+      return badRequestMessage("Invalid timezone");
+    }
+    // Existing members without memory are initialized here on demand; this
+    // only creates missing memory or an empty HEAD and never rewrites content.
+    await set(initializeMemberMemory$, identity, signal);
+    signal.throwIfAborted();
     if (writeOutcome.kind === "unchanged") {
       const current = await get(userPreferences(identity));
       signal.throwIfAborted();
@@ -254,10 +264,8 @@ const initializeUserPreferencesInner$ = command(
         },
       };
     }
-    if (writeOutcome.kind === "invalid-timezone") {
-      return badRequestMessage("Invalid timezone");
-    }
-    await prepareMorningBriefEnrollment(db, identity);
+    await set(prepareMorningBriefEnrollment$, identity, signal);
+
     signal.throwIfAborted();
     const enrollment = await settle(
       set(
@@ -280,7 +288,6 @@ const initializeUserPreferencesInner$ = command(
     } else {
       L.info("Morning Brief initialization outcome", details);
     }
-    await publishMorningBriefChangedSafely(identity);
     signal.throwIfAborted();
     const [stored] = await db
       .select({

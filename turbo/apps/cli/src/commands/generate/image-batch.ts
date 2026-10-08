@@ -32,7 +32,6 @@ import {
 } from "../shared/artifact-visibility";
 
 const MAX_CONCURRENCY = 3;
-const DEFAULT_SIZE = "816x816";
 const POLL_INTERVAL_MS = 500;
 const RETRY_DELAY_MS = 1_000;
 const BATCH_PRESENTATION_CONTEXT =
@@ -61,7 +60,7 @@ type ImageBatchArtifact = z.infer<
 interface ImageBatchJob {
   readonly id: string;
   readonly prompt: string;
-  readonly size: string;
+  readonly size: string | undefined;
 }
 
 interface ImageBatchWaitOptions {
@@ -131,7 +130,7 @@ async function readManifest(manifestPath: string): Promise<ImageBatchJob[]> {
     }
     const id = idField.trim();
     const prompt = promptField.trim();
-    const size = fields[2]?.trim() || DEFAULT_SIZE;
+    const size = fields[2]?.trim() || undefined;
     if (!/^[A-Za-z0-9._-]+$/.test(id)) {
       throw new Error(
         `Image batch manifest line ${index + 1} has an invalid ID: ${id}`,
@@ -170,7 +169,6 @@ async function generateOne(
     try {
       const result = await generateWebImage({
         prompt: job.prompt,
-        model: "seedream4",
         size: job.size,
         quality: "low",
         background: "auto",
@@ -552,5 +550,5 @@ export const imageBatchCommand = new Command("image-batch")
   .addCommand(runCommand, { hidden: true })
   .addHelpText(
     "after",
-    `\nManifest format:\n  asset-id<TAB>raw prompt[<TAB>size]\n  Size is optional per image and defaults to ${DEFAULT_SIZE}; the image API validates it.\n\nResult format:\n  asset-id<TAB>image URL or relative asset path\n  results.tsv retains the asset index; artifacts.json adds stable chat references and Markdown forms.\n  Use wait --json for the presentation metadata as one JSON object.\n  Private images are downloaded to <state-dir>/assets/ and optimized as WebP without resizing. Requires ffmpeg with libwebp on PATH. Resolve relative paths against <state-dir>, then copy assets into the authored bundle. Never embed preview signatures in HTML.\n\nExamples:\n  okou generate image-batch start images.tsv .image-batch\n  okou generate image-batch wait .image-batch`,
+    `\nManifest format:\n  asset-id<TAB>raw prompt[<TAB>size]\n  Size is optional per image; when omitted, the image API applies the default size for the image model selected in Settings › Built-in tools. The image API validates any size given.\n\nResult format:\n  asset-id<TAB>image URL or relative asset path\n  results.tsv retains the asset index; artifacts.json adds stable chat references and Markdown forms.\n  Use wait --json for the presentation metadata as one JSON object.\n  Private images are downloaded to <state-dir>/assets/ and optimized as WebP without resizing. Requires ffmpeg with libwebp on PATH. Resolve relative paths against <state-dir>, then copy assets into the authored bundle. Never embed preview signatures in HTML.\n\nExamples:\n  okou generate image-batch start images.tsv .image-batch\n  okou generate image-batch wait .image-batch`,
   );

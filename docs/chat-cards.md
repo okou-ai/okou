@@ -27,6 +27,29 @@ state creation inside React render. Artifact resources use the same registration
 boundary while preserving the Markdown link or image syntax that chooses their
 presentation.
 
+For a provisional streaming `output.message`, do not promote a bare action URL
+at the current text tail into a card: later deltas can still extend its path or
+query. Promote it once a following boundary arrives (such as whitespace), and
+promote a syntactically closed Markdown link or artifact image as soon as it is
+complete. When the durable event replaces the provisional event under the same
+ID, re-evaluate even if its text is identical: a final bare URL needs no
+following boundary.
+
+### Keep the URL usable outside Web Chat
+
+Only Web Chat upgrades recognized URLs into cards. In Slack and other surfaces,
+the recipient sees the original URL. A link-backed card is an enhanced way to
+use that URL, so its destination must also open directly in a browser and
+provide the relevant page, form, authorization step, or resource. Do not make
+completion depend on a mounted Web Chat card. For action URLs, the direct route
+must enforce authentication, validate the URL's claims, and check the current
+action state, just as the card does.
+
+The card may use a more convenient in-chat control, such as a dialog, without
+opening the URL when that control is selected. Keep the original URL route
+functional for people who receive or copy the link. Permission requests and
+Browser input actions both follow this rule.
+
 ## Fixed Height and Stable Layout
 
 Every card in the chat transcript keeps a stable outer height across
@@ -209,6 +232,29 @@ saves geometry only. Exercise action dialogs and their completed/error states
 in the page integration tests and in preview acceptance as well; this read-only
 loading regression does not authorize or execute those actions.
 
+## Subscription Reset Cards
+
+`/subscriptions/<account-id>/reset?idempotencyKey=<uuid>` becomes a Reset Card
+through the trusted action-link pipeline and also opens an authenticated
+standalone page. Both read live usage, natural reset times, remaining reset
+credits and credit expiry for the exact account. Rendering and opening never
+reset usage; only the user clicks Reset. Repeated occurrences share signals
+and retries retain the URL's original idempotency key. The existing server
+checks account ownership and organization; agent credentials cannot execute
+reset. Claude Code shows natural recovery information without a reset button.
+
+The outer `SubscriptionResetCard` frame remains mounted through loading,
+error, unavailable, refresh, submission and completion. It mirrors Permission
+Cards: 88px at an available container width of at least 640px, and 136px below
+that width, independently of the window viewport. One common content row owns
+the provider icon, account identity, compact status, usage rings and controls.
+The usage rings are shared with personal account settings; their card popovers
+expose recovery times, remaining credits, expiry and confirmation copy outside
+the fixed frame, including on keyboard and touch. Inner copy uses div/span
+slots rather than Markdown headings or paragraphs, preventing transcript
+margins from squeezing required content. See
+[subscription controls](subscription-controls.md) for CLI commands and authorization.
+
 ## Failure Recovery Classification
 
 The authoritative error category for a failed run is its optional
@@ -230,7 +276,7 @@ none of those uses make it a classification authority.
 New error types must be classified at the authoritative guest or runner
 boundary and propagated through `failureReason`. Do not add a downstream error
 text matcher as the normal implementation of a new recovery category. See
-[Chat Event schema versioning](./chat-event-schema-versioning.md#optional-v7-failure-reasons)
+[Chat Event schema versioning](./chat-event-schema-versioning.md#failure-reasons)
 for the transport and rollout contract.
 
 ## Recognized Link Shapes
@@ -255,8 +301,10 @@ unavailable card instead of a link or command.
 
 Current link-backed card patterns include:
 
-- `/connectors/:connectorSlug/connect` and
-  `/connectors/:connectorSlug/authorize`
+- `/connectors/:connectorSlug/connect`,
+  `/connectors/:connectorSlug/authorize`, and
+  `/connectors/:connectorSlug/reconnect/:connectionId` for an exact builtin account.
+  Both absolute platform URLs and root-relative paths are recognized.
 - `/connectors/custom/proposal?p=...`
 - `/agents/:agentId/permissions?...`
 - `/agents/:agentId/connector-accounts/:connectionId/select?...`
@@ -536,6 +584,22 @@ The React card can show whether the connector is available, connected, and
 authorized, then invoke `activate$` from a user action. All occurrences of that
 connector `resourceKey` in the thread observe the same computed graph.
 
+An exact-account reconnect URL reuses the connector card appearance but not the
+catalog default-account activation. It validates the account ID and chat claims,
+reads the account scoped to the builtin connector, and displays that account's
+identity and connection status. Unnamed manual accounts use the same auth-method
+label as account management instead of appearing as only the connector name.
+Because this is an explicit reconnect action, the Reconnect button remains
+available even when that account is already connected. A missing, wrong-target,
+or unsupported-auth-method account is unavailable; other lookup errors retain a
+retry action. Clicking the card rechecks the exact account and opens the existing
+chat connection dialog, showing that account's label and restricting reconnection
+to its stored auth method and ID without a default-account projection. A callback
+runs only after that exact account reconnects successfully while the same dialog
+is still active; closing it or receiving a late result from an earlier attempt
+must not continue the chat. The direct reconnect URL remains available for
+external navigation and older clients.
+
 ### Complex shared data: permission card
 
 A permission URL matches `/agents/:agentId/permissions` and encodes the
@@ -639,20 +703,13 @@ replaces the thread's previous immutable preview object. Viewer lease
 heartbeats do not capture screenshots, and screenshot failure does not affect
 the browser lease.
 
-Starting or resuming appends a payload-free `browser.open` chat event; clicking
-the sidebar close button appends a payload-free `browser.close` event without
-stopping the provider instance. Automatic reclamation for an existing thread
-also appends `browser.close` without inspecting the current sidebar state. The
-frontend supplies each mutation's event UUID so it can optimistically
-project the same event without duplicating it when the server response or
-realtime delivery arrives. Folding these events in order yields the thread's
-browser sidebar state. Opening a thread waits for the authoritative initial
-event page before using that projection to auto-open the sidebar, so stale
-IndexedDB events cannot override a later server close. A `browser.open`
-projection opens the sidebar only when no other utility sidebar is already open;
-a later `browser.close` projection does not auto-open it. The browser icon in
-the thread header remains available in either state, and both a never-created
-browser and a non-live browser keep the Start action. When a screenshot exists,
+Browser lifecycle is not a chat event. Starting or resuming the browser changes
+only the browser session. Closing the sidebar hides it without stopping the
+provider instance, and entering a thread never opens the sidebar
+automatically. The open and close endpoints accept an empty request body; open
+returns the browser session and close returns an empty acknowledgement. The
+browser icon in the thread header remains available in either state, and both a
+never-created browser and a non-live browser keep the Start action. When a screenshot exists,
 the suspended sidebar reuses it at full width and top-aligns it beneath a
 half-transparent blurred mask, so the small preview fills the available surface
 without being presented as a live browser.
@@ -677,25 +734,91 @@ provider's CDP URL is reserved for the Okou CLI to connect `agent-browser` and
 is never returned by the card read, lease, or resume endpoints, nor printed in
 CLI output.
 
-### Stateful actions: Browser input and direct interaction
+### Stateful actions: Browser input
 
-A Browser input action matches `/browser/actions/:requestToken` with exact
-`agentId`, `threadId`, and `callbackPrompt` query claims. The parser accepts it
-only in an authoritative assistant event and binds the claims to the current
-chat context. The API read then verifies the same ownership, current request
-state, safe site origin, and display-field metadata before the card becomes
-actionable. Malformed, mismatched, unsupported, expired, or feature-disabled
-requests render an inert state.
+A Browser input action URL matches `/browser/actions/:requestToken` with exact
+`agentId`, `threadId`, and `callbackPrompt` query claims. In Web Chat, the card
+parser accepts it only in an authoritative assistant event and binds the claims
+to the current chat context. Direct navigation to the URL uses the standalone
+route without requiring a rendered chat card. The API read verifies ownership,
+current request state, safe site origin, and display-field metadata before
+either entry becomes actionable. Malformed, mismatched, unsupported, expired,
+or feature-disabled requests render an inert state.
 
-The fixed-height transcript card links to the authenticated full-page form in
-a new tab. The full-page route automatically calls the token-only Browser
-preflight before mounting any editable field. A confirmed page or control
-change makes the request stale; a temporary provider failure leaves
-a Retry action. The form does not poll while open, and submit revalidates the
-exact target before writing. The draft and mutation lock are local to the form
-page, while the API serializes effects across tabs. Password fields clear when
-the form unmounts, terminal and non-retryable states clear the complete draft,
-and nothing is persisted across page reload.
+Only Web Chat turns this URL into a fixed-height transcript card. Other
+surfaces, including Slack, present the original URL. The card's **Enter
+information** button opens the form in a dialog without navigation. Opening
+the original URL directly presents an authenticated full-page form. Both entry
+points show the persisted fields immediately after the authenticated request
+read, then run the token-only Browser preflight in the background. Reopening
+the dialog runs preflight again. Users can fill and submit while the check is
+pending for text/number controls. Preflight returns the observed textarea,
+input, or native select subtype and current site constraints, including
+multiple email addresses, number and native date/time `min`, `max`, and `step`
+attributes, and a bounded snapshot of select option labels, disabled states, and selected states.
+The form switches to those observed controls without clearing the draft.
+Select submission waits for preflight, identifies options by their position
+rather than their possibly duplicated value, and carries a snapshot fingerprint.
+An untouched optional select stays unchanged and can be explicitly cleared;
+a required select must be chosen or explicitly confirmed even when the website
+already has a valid selection. Choice drafts are tied to the snapshot they
+were made against: after an option change during Retry, the user must choose
+again or explicitly keep the current website selection. Required selects reject
+empty placeholder choices. A required multi-select cannot confirm a website
+selection containing a disabled option; a new choice excludes disabled options
+that the website had already selected. The API checks the
+current options again before writing; option drift makes the action stale, and
+post-write mismatch yields an uncertain state instead of claiming success.
+Native checkboxes use the observed checkedness, not their `.value` attribute.
+An indeterminate checkbox cannot be represented as a Boolean and falls back to
+Browser takeover. An optional checkbox left untouched preserves the website's state; explicitly
+checking or unchecking it submits a Boolean bound to the preflight state. An
+Agent-required checkbox needs deliberate checking or confirmation when already
+checked, and a website-required checkbox must be checked. Changed checkedness
+before apply makes an explicit choice stale; after a possible write, failed
+readback is uncertain. Filling the checkbox does not submit the website form.
+Native radio groups use one server-discovered, bounded set of same-name and
+same-form controls in the main document. Each option has a verified member
+identity, label, disabled state and selectedness; duplicate website values do
+not identify a choice. The card preserves an untouched optional selection and
+can explicitly clear an optional group only when its selected member is
+writable. Agent-required groups require a deliberate selection or confirmation;
+website-required groups cannot be cleared. The API rechecks all member
+identities, grouping name, form owner and state before applying an indexed
+choice; changed membership, grouping or selection makes a choice stale, and
+post-handler mismatch is uncertain. A second, read-only Browser check catches
+radio state reverted by handlers' queued microtasks before reporting success.
+In a mixed request, a site-required untouched scalar that becomes invalid
+through those handlers also makes the write uncertain.
+Empty-name, unlabeled, oversized or unsupported groups require
+Browser takeover. Okou does not invoke website form submission when setting a
+radio choice; the website's own `input` or `change` handlers may still react,
+including by submitting the form.
+Option values and submitted selections do not appear in the action URL or
+chat callback. A confirmed page or control change makes the request
+stale; a temporary provider failure blocks submission, preserves the draft,
+and offers Retry. The form does not poll while open. Preflight releases the
+thread write lock during remote Browser I/O, so it does not delay a submission.
+Apply independently revalidates the exact target and site constraints before
+writing, including when the check is still pending. The draft and mutation
+lock are local to each form entry, while the API serializes effects across tabs.
+Dismissing the dialog leaves the Browser request pending. Password fields
+clear when the form unmounts, terminal and non-retryable states clear the
+complete draft, and nothing is persisted across page reload.
+
+General number fields use the same form and Input styling as other controls,
+with a native number input and browser validity feedback. Their values remain
+strings throughout the handoff; optional number fields distinguish untouched
+from an explicit clear. Native `date`, `time`, `datetime-local`, `month`, and
+`week` controls likewise keep canonical HTML strings without timezone conversion.
+The card passes the site's date/time bounds and step to matching native pickers;
+optional controls keep an untouched website value unless the user explicitly
+clears it. The API checks the actual browser's canonical value and validity
+before writing, then verifies type, constraints, validity and value after
+website handlers, including a separate check for queued microtasks. Failed
+readback after a possible write is uncertain, not an automatic retry. Okou
+does not explicitly submit the website form, but its event handlers may do so.
+One-time codes remain text inputs so leading zeroes survive. The inline transcript card remains a link to the standalone form.
 
 Apply or cancel completes before the form sends its normal chat callback.
 Request-owned event IDs make callback-only Continue retries idempotent without
@@ -704,27 +827,24 @@ reads resolve callback delivery from the matching canonical Chat input event in
 the owning thread. A pending transcript input card or terminal card with an
 unconfirmed callback refreshes when its page regains focus or visibility, so
 completing a standalone action updates the original transcript card on return.
-The standalone form keeps its draft mounted when the user switches tabs; submit
-revalidates the Browser target. The Platform and API both enforce
+The inline dialog defers that return refresh until it closes, so switching
+tabs does not dismiss the form or lose its draft, while a request completed
+elsewhere still updates the transcript afterward. The standalone form also
+keeps its draft mounted when the user switches tabs; submit revalidates the
+Browser target. The Platform and API both enforce
 `BrowserNativeInput`.
 
-A verified `direct_interaction` response uses the same action URL, ownership
-checks, mutation lock, and callback-only recovery, but it never carries or
-collects input values. The compact transcript card shows the API-provided
-reason and opens its Browser handoff in `ChatCardDetails`, preserving the
-card's fixed geometry while the existing thread-owned `BrowserSessionCard`
-loads. That Browser card keeps its normal sidebar behavior. The authenticated
-standalone action route shows the same handoff directly and opens the existing
-`/browsers/:threadId` full-page viewer in a new tab so Done and Cancel remain
-available on the action page.
-
-Done calls the direct-action completion endpoint before sending the URL's
-bounded callback prompt and stable success event IDs. Cancel records the
-terminal state before sending the fixed direct-interaction cancellation prompt
-with stable cancellation IDs. A failed callback exposes Continue without
-repeating either Browser mutation. Neither path adds a Browser-opening action
-endpoint, captures page or DOM state, or changes the existing Browser viewer
-and lease ownership.
+For user-held values in supported exact controls (including a password or
+one-time code), the agent prefers native input while the `BrowserNativeInput`
+switch is enabled. Direct Browser takeover is a last resort for unsupported
+interactions or when native input is unavailable. The agent then shares the
+current `okou browser view` link and explains the step in its response. The
+user opens the existing thread Browser card or viewer, then replies in chat
+when finished or blocked. The ordinary user message starts the next agent
+round; no Browser user-action request or Done/Cancel callback is created.
+Browser reconciliation removes
+retired direct-action rows in bounded batches even while their Browser remains
+live, so old action URLs become unavailable without blocking Browser cleanup.
 
 ## Adding a Card Type
 

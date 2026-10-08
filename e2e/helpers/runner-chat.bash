@@ -321,6 +321,10 @@ runner_chat_send() {
         "$capture_network_bodies"
 }
 
+# Sends one chat input and waits for the background pick to launch it. The send
+# only enqueues the input and answers `runId: null`; the launched run appears
+# as an `input.prompt` that revokes the sent input and carries its `runId`.
+# Prints the send response with that `runId` filled in.
 runner_chat_send_parts() {
     local agent_id="$1"
     local prompt="$2"
@@ -329,11 +333,93 @@ runner_chat_send_parts() {
     local selected_model="$5"
     local client_event_id="${6:-}"
     local capture_network_bodies="${7:-false}"
-    local payload
+    local send_response resolved_thread_id run_id
 
     if [[ -z "$client_event_id" ]]; then
         client_event_id="$(_runner_uuid)"
     fi
+    send_response="$(_runner_chat_post_parts \
+        "$agent_id" \
+        "$prompt" \
+        "$parts" \
+        "$thread_id" \
+        "$selected_model" \
+        "$client_event_id" \
+        "$capture_network_bodies")" || return 1
+    resolved_thread_id="$(jq -er '.threadId | select(type == "string" and length > 0)' \
+        <<< "$send_response")" || {
+        echo "# Chat send response is missing its thread id: $send_response" >&2
+        return 1
+    }
+    run_id="$(_runner_chat_wait_for_input_run \
+        "$resolved_thread_id" \
+        "$client_event_id")" || return 1
+    jq -c --arg runId "$run_id" '.runId = $runId' <<< "$send_response"
+}
+
+# Waits until the queued input `client_event_id` is launched into a run and
+# prints that run's id. Fails as soon as the input is rejected instead.
+_runner_chat_wait_for_input_run() {
+    local thread_id="$1"
+    local client_event_id="$2"
+    local timeout="${3:-${RUNNER_CHAT_LAUNCH_TIMEOUT_SECONDS:-90}}"
+    local interval="${RUNNER_CHAT_EVENT_POLL_INTERVAL_SECONDS:-2}"
+    local start=$SECONDS
+    local response="" rejection="" run_id=""
+
+    while (( SECONDS - start < timeout )); do
+        if response="$(runner_chat_event_rows "$thread_id" 2>&1)"; then
+            if rejection="$(jq -ce --arg eventId "$client_event_id" '
+                first(.rows[]?
+                    | select(
+                        .eventType == "input.rejected" and
+                        .revokesEventId == $eventId
+                    ))
+            ' <<< "$response")"; then
+                echo "# Chat input $client_event_id was rejected instead of starting a run: $rejection" >&2
+                echo "# Chat events: $response" >&2
+                return 1
+            fi
+            if run_id="$(jq -er --arg eventId "$client_event_id" '
+                first(.rows[]?
+                    | select(
+                        .eventType == "input.prompt" and
+                        .revokesEventId == $eventId
+                    )
+                    | .runId
+                    | select(type == "string" and length > 0))
+            ' <<< "$response")"; then
+                printf '%s\n' "$run_id"
+                return 0
+            fi
+        fi
+        sleep "$interval"
+    done
+
+    echo "# Timed out (${timeout}s) waiting for chat input $client_event_id to start a run" >&2
+    echo "# Last chat event response: $response" >&2
+    return 1
+}
+
+# Posts one chat input and prints the raw send response without waiting for a
+# run. `client_event_id` is required so callers can follow the input.
+_runner_chat_post_parts() {
+    local agent_id="$1"
+    local prompt="$2"
+    local parts="$3"
+    local thread_id="$4"
+    local selected_model="$5"
+    local client_event_id="$6"
+    local capture_network_bodies="${7:-false}"
+    local payload
+
+    # Mock Codex probes select their model through the profile; explicit real
+    # model probes pass a model directly rather than inheriting this default.
+    # The selection `auto` is sent as `model: null`, the only Auto selection.
+    if [[ -z "$thread_id" && -z "$selected_model" ]]; then
+        selected_model="${E2E_MOCK_CODEX_MODEL:-}"
+    fi
+
     if [[ -n "$thread_id" ]]; then
         payload="$(jq -nc \
             --arg agentId "$agent_id" \
@@ -361,11 +447,13 @@ runner_chat_send_parts() {
             '{
                 agentId: $agentId,
                 prompt: $prompt,
-                model: $model,
                 clientEventId: $clientEventId,
                 userMessage: {version: 1, parts: $parts},
                 hasTextContent: true
-            } + if $captureNetworkBodies then {captureNetworkBodies: true} else {} end')"
+            } + (if $model == "" then {}
+                 elif $model == "auto" then {model: null}
+                 else {model: $model} end)
+              + if $captureNetworkBodies then {captureNetworkBodies: true} else {} end')"
     fi
 
     runner_api_curl "/api/chat/events" -X POST -d "$payload"
@@ -572,10 +660,13 @@ runner_chat_steer() {
 
     runner_wait_for_run_running "$run_id" 60 >/dev/null || return 1
 
+    # A steer is delivered to the running run rather than launched as a new
+    # one, so it is posted without waiting for a run of its own.
     steer_event_id="$(_runner_uuid)"
-    steer_response="$(runner_chat_send \
+    steer_response="$(_runner_chat_post_parts \
         "$agent_id" \
         "$steer_prompt" \
+        "$(jq -nc --arg prompt "$steer_prompt" '[{type: "text", text: $prompt}]')" \
         "$thread_id" \
         "" \
         "$steer_event_id")" || return 1
@@ -715,10 +806,18 @@ _runner_chat_execute() {
     printf '%s\n' "$chat_output"
 }
 
-runner_chat_start() {
+runner_e2e_require_mock_codex_profile() {
+    if [[ "${E2E_RUNNER_PROFILE:-}" != "mock-codex" || "${E2E_MOCK_CODEX_MODEL:-}" != "gpt-6-astra" ]]; then
+        echo "Select the mock Codex profile with runner_e2e_use_mock_codex_profile before starting a chat run" >&2
+        return 1
+    fi
+}
+
+runner_chat_start_mock_codex() {
     local agent_id="$1"
     local prompt="$2"
-    _runner_chat_execute "$agent_id" "$prompt" "" "deepseek-v4-flash"
+    runner_e2e_require_mock_codex_profile || return 1
+    _runner_chat_execute "$agent_id" "$prompt" "" "$E2E_MOCK_CODEX_MODEL"
 }
 
 runner_chat_continue() {

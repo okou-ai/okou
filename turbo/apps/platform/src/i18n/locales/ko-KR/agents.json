@@ -102,21 +102,9 @@
             "description": "대량으로 이미지 최적화 및 변환",
             "title": "Cloudinary 미디어 최적화기"
           },
-          "elevenlabs-audio-content": {
-            "description": "Notion 기사에서 음성 내레이션을 생성하여 Drive에 저장",
-            "title": "ElevenLabs 오디오 콘텐츠"
-          },
           "fal-ai-image-generation": {
             "description": "Notion 설명에서 제품 이미지 생성",
             "title": "Fal AI 이미지 생성"
-          },
-          "heygen-video-from-script": {
-            "description": "Notion 스크립트가 팀 알림과 함께 HeyGen 영상으로 변환",
-            "title": "스크립트 기반 HeyGen 영상"
-          },
-          "runway-video-from-brief": {
-            "description": "크리에이티브 브리프에서 짧은 영상 생성",
-            "title": "브리프 기반 Runway 영상"
           }
         },
         "title": "크리에이티브"
@@ -510,6 +498,9 @@
       "description": "에이전트 이름을 지정하고 사용 권한을 설정하세요.",
       "namePlaceholder": "예: 연구 보조",
       "newAgentAlt": "새 에이전트",
+      "responsibilityLabel": "이 에이전트가 어떤 일을 도와주길 원하시나요?",
+      "responsibilityPlaceholder": "예: 매주 월요일 HubSpot에서 지난주 파이프라인을 요약하고 주의가 필요한 거래를 알려 주세요.",
+      "setupFailed": "에이전트 설정이 완료되지 않았습니다. 다시 시도하기 전에 에이전트 목록을 확인하세요.",
       "success": "{{agentName}}이(가) 성공적으로 생성되었습니다",
       "title": "새 에이전트 생성",
       "visibility": {

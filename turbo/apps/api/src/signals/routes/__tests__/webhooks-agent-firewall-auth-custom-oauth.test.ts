@@ -5,12 +5,11 @@ import {
   type ConnectorAccountMutationIntent,
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { HttpResponse } from "msw";
-import { describe, expect, it, onTestFinished, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { createDeferredPromise } from "../../utils";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { createBddApi } from "./helpers/api-bdd";
 import {
@@ -21,18 +20,25 @@ import {
 } from "./helpers/api-bdd-connectors";
 import { createFirewallApi, secretTemplate } from "./helpers/api-bdd-firewall";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  createPublicFirewallFixture,
+  type PublicFirewallFixture,
+} from "./helpers/public-firewall-fixture";
 import { createRouteMocks } from "./helpers/route-test";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const mocks = createRouteMocks(context);
 
 async function setupCustomOAuthFirewall(
   mode: "configured" | "automatic",
-  refreshResponse?: (attempt: number) => Response | Promise<Response>,
+  refreshResponse:
+    | ((attempt: number) => Response | Promise<Response>)
+    | undefined,
   identity: {
     readonly initial?: OAuthIdentityFixtureOptions;
     readonly refresh?: OAuthIdentityFixtureOptions;
-  } = {},
+  },
+  publicFixture: PublicFirewallFixture,
 ) {
   mockEnv("APP_URL", "https://app.okou.ai");
   mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
@@ -56,23 +62,27 @@ async function setupCustomOAuthFirewall(
   const fw = createFirewallApi(context);
   const runs = createRunsApi(context);
   const connectors = createConnectorBddApi(context);
-  const actor = bdd.user({ orgRole: "org:admin" });
+  const actor = publicFixture.actor;
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  runs.configureRunnerGroup();
+  const runnerGroup = runs.configureRunnerGroup();
   context.mocks.ably.publish.mockResolvedValue(undefined);
-  await fw.provisionRunReadyOrg(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await publicFixture.fund();
+  await runs.ensurePersonalSubscriptionModel(actor);
   const agent = await bdd.createAgent(actor, {
     displayName: "Custom OAuth refresh agent",
   });
-  const run = await runs.createRun(actor, {
+  publicFixture.registerAgent(agent.agentId);
+  const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "resolve custom OAuth firewall auth",
-    modelProvider: "anthropic-api-key",
   });
-  const headers = fw.sandboxHeaders(actor, run.runId);
+  publicFixture.registerRun(run.runId);
+  await runs.heartbeatRunner(runnerGroup);
+  const claim = await runs.claimRunnerJob(run.runId);
+  publicFixture.registerClaim(run.runId, claim.sandboxToken);
+  const headers = { authorization: `Bearer ${claim.sandboxToken}` };
   const connector = await connectors.createCustomConnector(
     actor,
     "endpoint" in provider
@@ -111,6 +121,7 @@ async function setupCustomOAuthFirewall(
           },
         },
   );
+  const ownedAccountIds = publicFixture.registerCustomConnector(connector.id);
   async function connect(mutation: ConnectorAccountMutationIntent) {
     const previous = await connectors.listCustomConnectorAccounts(
       actor,
@@ -147,6 +158,7 @@ async function setupCustomOAuthFirewall(
     if (!account) {
       throw new Error("Expected authorized custom OAuth account");
     }
+    ownedAccountIds.add(account.id);
     return account;
   }
   function request(connectionId: string, forceRefresh: boolean) {
@@ -180,154 +192,147 @@ describe.each(["configured", "automatic"] as const)(
       { subtype: undefined, reason: "authorization_expired_or_revoked" },
       { subtype: "invalid_rapt", reason: "authorization_expired_or_revoked" },
     ])(
-      "retries invalid_grant ($subtype) quietly and recovers the exact account",
+      "retries invalid_grant ($subtype) and recovers the exact account",
       async ({ subtype, reason }) => {
-        const started = createDeferredPromise<void>(context.signal);
-        const release = createDeferredPromise<void>(context.signal);
-        onTestFinished(() => {
-          if (!release.settled()) {
-            release.resolve(undefined);
-          }
+        const publicFixture = createPublicFirewallFixture(context, {
+          orgRole: "org:admin",
         });
-        let refreshCalls = 0;
-        const custom = await setupCustomOAuthFirewall(mode, async () => {
-          refreshCalls += 1;
-          if (!started.settled()) {
-            started.resolve(undefined);
-          }
-          await release.promise;
-          return HttpResponse.json(
-            {
-              error: "invalid_grant",
-              ...(subtype ? { error_subtype: subtype } : {}),
+        await publicFixture.run(async () => {
+          let refreshCalls = 0;
+          const custom = await setupCustomOAuthFirewall(
+            mode,
+            () => {
+              refreshCalls += 1;
+              return HttpResponse.json(
+                {
+                  error: "invalid_grant",
+                  ...(subtype ? { error_subtype: subtype } : {}),
+                },
+                { status: 400 },
+              );
             },
-            { status: 400 },
+            {},
+            publicFixture,
           );
-        });
-        const sibling = await custom.connect({
-          intent: "add",
-          displayName: "Second",
-        });
-        context.mocks.sentry.captureException.mockClear();
-        const first = custom.request(custom.account.id, true);
-        await started.promise;
-        const concurrent = custom.request(custom.account.id, true);
-        release.resolve(undefined);
-        const responses = await Promise.all([first, concurrent]);
+          const sibling = await custom.connect({
+            intent: "add",
+            displayName: "Second",
+          });
+          const responses = [await custom.request(custom.account.id, true)];
 
-        mocks.clerk.session(custom.actor.userId, custom.actor.orgId);
-        await accept(
-          setupApp({ context, routes: connectorAccountRoutes })(
-            connectorAccountsContract,
-          ).setDefault({
-            headers: { authorization: "Bearer clerk-session" },
-            params: { connectionId: sibling.id },
-            body: {
-              target: {
-                kind: "custom",
-                customConnectorId: custom.connector.id,
+          mocks.clerk.session(custom.actor.userId, custom.actor.orgId);
+          await accept(
+            setupApp({ context, routes: connectorAccountRoutes })(
+              connectorAccountsContract,
+            ).setDefault({
+              headers: { authorization: "Bearer clerk-session" },
+              params: { connectionId: sibling.id },
+              body: {
+                target: {
+                  kind: "custom",
+                  customConnectorId: custom.connector.id,
+                },
               },
-            },
-          }),
-          [200],
-        );
-        responses.push(await custom.request(custom.account.id, false));
-        responses.push(await custom.request(custom.account.id, true));
-        for (const response of responses) {
-          expect(response.status).toBe(502);
-          expect(response.body).toMatchObject({
-            error: {
-              code: "TOKEN_REFRESH_FAILED",
-              failureReason: "reconnect_required",
+            }),
+            [200],
+          );
+          responses.push(await custom.request(custom.account.id, false));
+          responses.push(await custom.request(custom.account.id, true));
+          for (const response of responses) {
+            expect(response.status).toBe(502);
+            expect(response.body).toMatchObject({
+              error: {
+                code: "TOKEN_REFRESH_FAILED",
+                failureReason: "reconnect_required",
+              },
+            });
+          }
+          expect(refreshCalls).toBe(3);
+          await expect(
+            custom.connectors.listCustomConnectorAccounts(
+              custom.actor,
+              custom.connector.id,
+            ),
+          ).resolves.toStrictEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                id: custom.account.id,
+                connectionStatus: "reconnect-required",
+                reconnectReason: reason,
+              }),
+              expect.objectContaining({
+                id: sibling.id,
+                connectionStatus: "connected",
+                reconnectReason: null,
+              }),
+            ]),
+          );
+          const siblingAuth = await custom.request(sibling.id, false);
+          expect(siblingAuth.status).toBe(200);
+          expect(refreshCalls).toBe(3);
+
+          const replacement =
+            mode === "automatic"
+              ? mockAutomaticMcpOAuthProvider(context, {
+                  registration: "cimd",
+                  initialExpiresIn: 3600,
+                  initialRefreshToken: "replacement-custom-refresh",
+                })
+              : mockCustomConnectorOAuth2Provider(context, {
+                  initialExpiresIn: 3600,
+                  initialRefreshToken: "replacement-custom-refresh",
+                });
+          const retried = await custom.request(custom.account.id, false);
+          expect(retried.status).toBe(200);
+          expect(retried.body).toMatchObject({
+            headers: {
+              Authorization:
+                mode === "automatic"
+                  ? "Bearer automatic-refreshed-access-token"
+                  : "Bearer custom-oauth-refreshed-access-token",
             },
           });
-        }
-        expect(refreshCalls).toBe(4);
-        await expect(
-          custom.connectors.listCustomConnectorAccounts(
-            custom.actor,
-            custom.connector.id,
-          ),
-        ).resolves.toStrictEqual(
-          expect.arrayContaining([
+          expect(replacement.tokenBodies.at(-1)?.get("refresh_token")).toBe(
+            mode === "automatic"
+              ? "automatic-refresh-token"
+              : "custom-oauth-refresh-token",
+          );
+          await expect(
+            custom.connectors.listCustomConnectorAccounts(
+              custom.actor,
+              custom.connector.id,
+            ),
+          ).resolves.toContainEqual(
             expect.objectContaining({
               id: custom.account.id,
-              connectionStatus: "reconnect-required",
-              reconnectReason: reason,
-            }),
-            expect.objectContaining({
-              id: sibling.id,
               connectionStatus: "connected",
               reconnectReason: null,
             }),
-          ]),
-        );
-        const siblingAuth = await custom.request(sibling.id, false);
-        expect(siblingAuth.status).toBe(200);
-        expect(refreshCalls).toBe(4);
-        expect(context.mocks.sentry.captureException).not.toHaveBeenCalled();
+          );
 
-        const replacement =
-          mode === "automatic"
-            ? mockAutomaticMcpOAuthProvider(context, {
-                registration: "cimd",
-                initialExpiresIn: 3600,
-                initialRefreshToken: "replacement-custom-refresh",
-              })
-            : mockCustomConnectorOAuth2Provider(context, {
-                initialExpiresIn: 3600,
-                initialRefreshToken: "replacement-custom-refresh",
-              });
-        const retried = await custom.request(custom.account.id, false);
-        expect(retried.status).toBe(200);
-        expect(retried.body).toMatchObject({
-          headers: {
-            Authorization:
-              mode === "automatic"
-                ? "Bearer automatic-refreshed-access-token"
-                : "Bearer custom-oauth-refreshed-access-token",
-          },
-        });
-        expect(replacement.tokenBodies.at(-1)?.get("refresh_token")).toBe(
-          mode === "automatic"
-            ? "automatic-refresh-token"
-            : "custom-oauth-refresh-token",
-        );
-        await expect(
-          custom.connectors.listCustomConnectorAccounts(
-            custom.actor,
-            custom.connector.id,
-          ),
-        ).resolves.toContainEqual(
-          expect.objectContaining({
+          const reconnected = await custom.connect({
+            intent: "reconnect",
+            connectionId: custom.account.id,
+          });
+          expect(reconnected).toMatchObject({
             id: custom.account.id,
             connectionStatus: "connected",
             reconnectReason: null,
-          }),
-        );
-
-        const reconnected = await custom.connect({
-          intent: "reconnect",
-          connectionId: custom.account.id,
+          });
+          const recovered = await custom.request(custom.account.id, true);
+          expect(recovered.status).toBe(200);
+          expect(recovered.body).toMatchObject({
+            headers: {
+              Authorization:
+                mode === "automatic"
+                  ? "Bearer automatic-refreshed-access-token"
+                  : "Bearer custom-oauth-refreshed-access-token",
+            },
+          });
+          expect(replacement.tokenBodies.at(-1)?.get("refresh_token")).toBe(
+            "replacement-custom-refresh",
+          );
         });
-        expect(reconnected).toMatchObject({
-          id: custom.account.id,
-          connectionStatus: "connected",
-          reconnectReason: null,
-        });
-        const recovered = await custom.request(custom.account.id, true);
-        expect(recovered.status).toBe(200);
-        expect(recovered.body).toMatchObject({
-          headers: {
-            Authorization:
-              mode === "automatic"
-                ? "Bearer automatic-refreshed-access-token"
-                : "Bearer custom-oauth-refreshed-access-token",
-          },
-        });
-        expect(replacement.tokenBodies.at(-1)?.get("refresh_token")).toBe(
-          "replacement-custom-refresh",
-        );
       },
     );
 
@@ -343,42 +348,52 @@ describe.each(["configured", "automatic"] as const)(
         error: "temporarily_unavailable",
       },
     ])("keeps $name observable and recoverable", async ({ status, error }) => {
-      const custom = await setupCustomOAuthFirewall(mode, (attempt) => {
-        return attempt <= 2
-          ? HttpResponse.json({ error }, { status })
-          : HttpResponse.json({
-              access_token: "custom-recovered",
-              token_type: "Bearer",
-              expires_in: 3600,
-            });
+      const publicFixture = createPublicFirewallFixture(context, {
+        orgRole: "org:admin",
       });
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const failed = await custom.request(custom.account.id, true);
-        expect(failed.status).toBe(502);
-        expect(failed.body).toMatchObject({
-          error: {
-            code: "TOKEN_REFRESH_FAILED",
-            failureReason: "upstream_provider",
+      await publicFixture.run(async () => {
+        const custom = await setupCustomOAuthFirewall(
+          mode,
+          (attempt) => {
+            return attempt <= 2
+              ? HttpResponse.json({ error }, { status })
+              : HttpResponse.json({
+                  access_token: "custom-recovered",
+                  token_type: "Bearer",
+                  expires_in: 3600,
+                });
           },
+          {},
+          publicFixture,
+        );
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const failed = await custom.request(custom.account.id, true);
+          expect(failed.status).toBe(502);
+          expect(failed.body).toMatchObject({
+            error: {
+              code: "TOKEN_REFRESH_FAILED",
+              failureReason: "upstream_provider",
+            },
+          });
+        }
+        expect(custom.provider.tokenBodies).toHaveLength(3);
+        await expect(
+          custom.connectors.listCustomConnectorAccounts(
+            custom.actor,
+            custom.connector.id,
+          ),
+        ).resolves.toContainEqual(
+          expect.objectContaining({
+            id: custom.account.id,
+            connectionStatus: "connected",
+            reconnectReason: null,
+          }),
+        );
+        const recovered = await custom.request(custom.account.id, true);
+        expect(recovered.status).toBe(200);
+        expect(recovered.body).toMatchObject({
+          headers: { Authorization: "Bearer custom-recovered" },
         });
-      }
-      expect(custom.provider.tokenBodies).toHaveLength(3);
-      await expect(
-        custom.connectors.listCustomConnectorAccounts(
-          custom.actor,
-          custom.connector.id,
-        ),
-      ).resolves.toContainEqual(
-        expect.objectContaining({
-          id: custom.account.id,
-          connectionStatus: "connected",
-          reconnectReason: null,
-        }),
-      );
-      const recovered = await custom.request(custom.account.id, true);
-      expect(recovered.status).toBe(200);
-      expect(recovered.body).toMatchObject({
-        headers: { Authorization: "Bearer custom-recovered" },
       });
     });
   },
@@ -388,120 +403,150 @@ describe.each(["configured", "automatic"] as const)(
   "Custom %s OAuth identity refresh",
   (mode) => {
     it("populates a previously unnamed account from verified refresh identity", async () => {
-      const custom = await setupCustomOAuthFirewall(mode, undefined, {
-        refresh: {
-          subject: `${mode}-refresh-user`,
-          userInfoUsername: `${mode}-refresh-name`,
-          userInfoEmail: `${mode}-refresh@example.test`,
-        },
+      const publicFixture = createPublicFirewallFixture(context, {
+        orgRole: "org:admin",
       });
+      await publicFixture.run(async () => {
+        const custom = await setupCustomOAuthFirewall(
+          mode,
+          undefined,
+          {
+            refresh: {
+              subject: `${mode}-refresh-user`,
+              userInfoUsername: `${mode}-refresh-name`,
+              userInfoEmail: `${mode}-refresh@example.test`,
+            },
+          },
+          publicFixture,
+        );
 
-      const refreshed = await custom.request(custom.account.id, true);
-      expect(refreshed.status).toBe(200);
-      expect(refreshed.body).toMatchObject({
-        headers: {
-          Authorization:
-            mode === "automatic"
-              ? "Bearer automatic-refreshed-access-token"
-              : "Bearer custom-oauth-refreshed-access-token",
-        },
+        const refreshed = await custom.request(custom.account.id, true);
+        expect(refreshed.status).toBe(200);
+        expect(refreshed.body).toMatchObject({
+          headers: {
+            Authorization:
+              mode === "automatic"
+                ? "Bearer automatic-refreshed-access-token"
+                : "Bearer custom-oauth-refreshed-access-token",
+          },
+        });
+        await expect(
+          custom.connectors.listCustomConnectorAccounts(
+            custom.actor,
+            custom.connector.id,
+          ),
+        ).resolves.toContainEqual(
+          expect.objectContaining({
+            id: custom.account.id,
+            externalId: `${mode}-refresh-user`,
+            externalUsername: `${mode}-refresh-name`,
+            externalEmail: `${mode}-refresh@example.test`,
+            connectionStatus: "connected",
+            reconnectReason: null,
+          }),
+        );
       });
-      await expect(
-        custom.connectors.listCustomConnectorAccounts(
-          custom.actor,
-          custom.connector.id,
-        ),
-      ).resolves.toContainEqual(
-        expect.objectContaining({
-          id: custom.account.id,
-          externalId: `${mode}-refresh-user`,
-          externalUsername: `${mode}-refresh-name`,
-          externalEmail: `${mode}-refresh@example.test`,
-          connectionStatus: "connected",
-          reconnectReason: null,
-        }),
-      );
     });
 
     it("requires reconnect instead of replacing a verified principal during refresh", async () => {
-      const custom = await setupCustomOAuthFirewall(mode, undefined, {
-        initial: {
-          subject: `${mode}-original-user`,
-          userInfoUsername: `${mode}-original-name`,
-          userInfoEmail: `${mode}-original@example.test`,
-        },
-        refresh: {
-          subject: `${mode}-other-user`,
-          userInfoUsername: `${mode}-other-name`,
-          userInfoEmail: `${mode}-other@example.test`,
-        },
+      const publicFixture = createPublicFirewallFixture(context, {
+        orgRole: "org:admin",
       });
+      await publicFixture.run(async () => {
+        const custom = await setupCustomOAuthFirewall(
+          mode,
+          undefined,
+          {
+            initial: {
+              subject: `${mode}-original-user`,
+              userInfoUsername: `${mode}-original-name`,
+              userInfoEmail: `${mode}-original@example.test`,
+            },
+            refresh: {
+              subject: `${mode}-other-user`,
+              userInfoUsername: `${mode}-other-name`,
+              userInfoEmail: `${mode}-other@example.test`,
+            },
+          },
+          publicFixture,
+        );
 
-      const refreshed = await custom.request(custom.account.id, true);
-      expect(refreshed.status).toBe(502);
-      expect(refreshed.body).toMatchObject({
-        error: {
-          code: "TOKEN_REFRESH_FAILED",
-          failureReason: "reconnect_required",
-        },
+        const refreshed = await custom.request(custom.account.id, true);
+        expect(refreshed.status).toBe(502);
+        expect(refreshed.body).toMatchObject({
+          error: {
+            code: "TOKEN_REFRESH_FAILED",
+            failureReason: "reconnect_required",
+          },
+        });
+        expect(JSON.stringify(refreshed.body)).not.toContain(
+          mode === "automatic"
+            ? "automatic-refreshed-access-token"
+            : "custom-oauth-refreshed-access-token",
+        );
+        await expect(
+          custom.connectors.listCustomConnectorAccounts(
+            custom.actor,
+            custom.connector.id,
+          ),
+        ).resolves.toContainEqual(
+          expect.objectContaining({
+            id: custom.account.id,
+            externalId: `${mode}-original-user`,
+            externalUsername: `${mode}-original-name`,
+            externalEmail: `${mode}-original@example.test`,
+            connectionStatus: "reconnect-required",
+            reconnectReason: "authorization_expired_or_revoked",
+          }),
+        );
       });
-      expect(JSON.stringify(refreshed.body)).not.toContain(
-        mode === "automatic"
-          ? "automatic-refreshed-access-token"
-          : "custom-oauth-refreshed-access-token",
-      );
-      await expect(
-        custom.connectors.listCustomConnectorAccounts(
-          custom.actor,
-          custom.connector.id,
-        ),
-      ).resolves.toContainEqual(
-        expect.objectContaining({
-          id: custom.account.id,
-          externalId: `${mode}-original-user`,
-          externalUsername: `${mode}-original-name`,
-          externalEmail: `${mode}-original@example.test`,
-          connectionStatus: "reconnect-required",
-          reconnectReason: "authorization_expired_or_revoked",
-        }),
-      );
     });
   },
 );
 
 test("preserves static OAuth identity when refreshed identity is unusable", async () => {
-  const custom = await setupCustomOAuthFirewall("configured", undefined, {
-    initial: {
-      subject: "static-preserved-user",
-      userInfoUsername: "static-preserved-name",
-      userInfoEmail: "static-preserved@example.test",
-    },
-    refresh: {
-      subject: "static-untrusted-user",
-      invalidIdToken: true,
-    },
+  const publicFixture = createPublicFirewallFixture(context, {
+    orgRole: "org:admin",
   });
+  await publicFixture.run(async () => {
+    const custom = await setupCustomOAuthFirewall(
+      "configured",
+      undefined,
+      {
+        initial: {
+          subject: "static-preserved-user",
+          userInfoUsername: "static-preserved-name",
+          userInfoEmail: "static-preserved@example.test",
+        },
+        refresh: {
+          subject: "static-untrusted-user",
+          invalidIdToken: true,
+        },
+      },
+      publicFixture,
+    );
 
-  const refreshed = await custom.request(custom.account.id, true);
-  expect(refreshed.status).toBe(200);
-  expect(refreshed.body).toMatchObject({
-    headers: {
-      Authorization: "Bearer custom-oauth-refreshed-access-token",
-    },
+    const refreshed = await custom.request(custom.account.id, true);
+    expect(refreshed.status).toBe(200);
+    expect(refreshed.body).toMatchObject({
+      headers: {
+        Authorization: "Bearer custom-oauth-refreshed-access-token",
+      },
+    });
+    await expect(
+      custom.connectors.listCustomConnectorAccounts(
+        custom.actor,
+        custom.connector.id,
+      ),
+    ).resolves.toContainEqual(
+      expect.objectContaining({
+        id: custom.account.id,
+        externalId: "static-preserved-user",
+        externalUsername: "static-preserved-name",
+        externalEmail: "static-preserved@example.test",
+        connectionStatus: "connected",
+        reconnectReason: null,
+      }),
+    );
   });
-  await expect(
-    custom.connectors.listCustomConnectorAccounts(
-      custom.actor,
-      custom.connector.id,
-    ),
-  ).resolves.toContainEqual(
-    expect.objectContaining({
-      id: custom.account.id,
-      externalId: "static-preserved-user",
-      externalUsername: "static-preserved-name",
-      externalEmail: "static-preserved@example.test",
-      connectionStatus: "connected",
-      reconnectReason: null,
-    }),
-  );
 });

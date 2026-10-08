@@ -1,25 +1,17 @@
-import { mockClerkUsers } from "./helpers/clerk-users";
 import { randomUUID } from "node:crypto";
-
-import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { mockClerkUsers } from "./helpers/clerk-users";
 
 import { testContext } from "../../../__tests__/test-context";
-import {
-  deleteUsagePricingRows,
-  seedUsagePricingRows,
-} from "../../../test-fixtures/system-config-seeds";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockEnv } from "../../../lib/env";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
-import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
-import { createEmailApi } from "./helpers/api-bdd-email";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
 const context = testContext();
 const resendMocks = context.mocks.resend;
 const bdd = createBddApi(context);
-const email = createEmailApi(context);
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 
@@ -66,7 +58,7 @@ async function emailOrg(): Promise<EmailOrgFixture> {
   runs.acceptTelemetryIngest();
 
   await runs.grantProEntitlement(actor);
-  await runs.ensureOrgModelProvider(actor);
+  await runs.ensurePersonalSubscriptionModel(actor);
   await runs.heartbeatRunner(runnerGroup);
 
   mockClerkUsers(context, [clerkUserListEntry(actor.userId, actor.email)]);
@@ -103,141 +95,6 @@ beforeEach(() => {
   mockEnv("RESEND_FROM_DOMAIN", "okou.io");
   mockEnv("APP_URL", "https://app.okou.ai");
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
-  // Resend pacing is not part of these transactional delivery assertions.
-  mockOptionalEnv("EMAIL_OUTBOX_DRAIN_DELAY_MS", "0");
-});
-
-describe("low-credit email delivery", () => {
-  it("sends branded low-credit alerts with billing and unsubscribe links", async () => {
-    const actor = bdd.user();
-    const billing = createBillingMediaApi(context);
-    bdd.acceptAgentStorageWrites();
-    runs.acceptStorageDownloads();
-    runs.acceptTelemetryIngest();
-    await runs.grantProEntitlement(actor);
-
-    const before = await billing.readBillingStatus(actor);
-    expect(before.credits).toBeGreaterThan(5000);
-    const modelProvider = `bdd-low-credit-${randomUUID()}`;
-    onTestFinished(async () => {
-      await deleteUsagePricingRows({
-        kind: "model",
-        provider: modelProvider,
-        categories: ["tokens.output"],
-      });
-    });
-    await seedUsagePricingRows([
-      {
-        kind: "model",
-        provider: modelProvider,
-        category: "tokens.output",
-        unitPrice: before.credits - 4999,
-        unitSize: 1,
-      },
-    ]);
-
-    const agentName = `bdd-low-credit-${randomUUID().slice(0, 8)}`;
-    const compose = await runs.createDirectAgent(actor, {
-      version: "1.0",
-      agents: {
-        [agentName]: {
-          framework: "claude-code",
-          environment: { ANTHROPIC_API_KEY: "bdd-inline-key" },
-        },
-      },
-    });
-    const run = await runs.createDirectRun(actor, {
-      agentId: compose.agentId,
-      prompt: "cross the low-credit alert threshold",
-      triggerSource: "web",
-    });
-    await webhooks.requestAgentUsageEvent(
-      {
-        runId: run.runId,
-        events: [
-          {
-            idempotencyKey: randomUUID(),
-            kind: "model",
-            provider: modelProvider,
-            category: "tokens.output",
-            quantity: 1,
-          },
-        ],
-      },
-      {
-        authorization: `Bearer ${runs.sandboxTokenForRun(actor, run.runId)}`,
-      },
-      [200],
-    );
-
-    // Refresh the current Clerk membership mocks before settlement resolves
-    // the organization's admin recipients.
-    await billing.readBillingStatus(actor);
-    await billing.processOrgUsageEvents(actor);
-    const item = await email.findEmailOutboxItem({
-      to: actor.email,
-      subject: "Your credit balance is running low",
-    });
-    expect(item).toMatchObject({
-      from_address: "Okou Team <support@okou.io>",
-      public_brand: "okou",
-      headers: {
-        "List-Unsubscribe": expect.stringContaining(
-          "<https://api.okou.ai/api/email/unsubscribe?token=",
-        ),
-        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-      },
-      template: {
-        template: "credit-low-balance",
-        props: {
-          billingUrl:
-            "https://app.okou.ai/?settings=billing&billingView=credits",
-          unsubscribeUrl: expect.stringContaining(
-            "https://app.okou.ai/email/unsubscribe?token=",
-          ),
-        },
-      },
-    });
-    const drained = await email.drainEmailOutboxItems([item.id]);
-
-    expect(drained).toBe(1);
-    expect(resendMocks.send).toHaveBeenCalledTimes(1);
-    expect(context.mocks.resend.send).toHaveBeenCalledWith(
-      expect.objectContaining({
-        from: "Okou Team <support@okou.io>",
-        to: actor.email,
-        subject: "Your credit balance is running low",
-        html: expect.stringContaining("https://app.okou.ai/"),
-        headers: {
-          "List-Unsubscribe": expect.stringContaining(
-            "<https://api.okou.ai/api/email/unsubscribe?token=",
-          ),
-          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-        },
-      }),
-      { idempotencyKey: `okou-email-outbox/v1/${item.id}` },
-    );
-    const sent = resendMocks.send.mock.calls[0]?.[0];
-    for (const content of [
-      "Your credit balance is running low",
-      "4,999 credits",
-      "5,000 credits or less",
-      "Manage billing",
-      "The Okou Team",
-      "https://app.okou.ai/email/unsubscribe?token=",
-    ]) {
-      expect(sent).toMatchObject({
-        html: expect.stringContaining(content),
-        text: expect.stringContaining(content),
-      });
-    }
-    expect(sent).toMatchObject({
-      html: expect.stringContaining('alt="Okou"'),
-      text: expect.stringContaining(
-        "https://app.okou.ai/?settings=billing&billingView=credits",
-      ),
-    });
-  });
 });
 
 describe("POST /api/email/inbound", () => {
@@ -263,75 +120,6 @@ describe("POST /api/email/inbound", () => {
     expect(invalidSignature.body).toStrictEqual({
       error: "Invalid signature",
     });
-  });
-
-  it("sends branded transactional data-export email to eligible recipients", async () => {
-    const controlActor = bdd.user();
-
-    const locator = await email.enqueueDataExportEmail(controlActor);
-    const item = await email.findEmailOutboxItem(locator);
-    const drained = await email.drainEmailOutboxItems([item.id]);
-
-    expect(drained).toBe(1);
-    expect(resendMocks.send).toHaveBeenCalledTimes(1);
-    expect(resendMocks.send).toHaveBeenCalledWith(
-      expect.objectContaining({ to: controlActor.email }),
-      { idempotencyKey: `okou-email-outbox/v1/${item.id}` },
-    );
-    const sent = resendMocks.send.mock.calls[0]?.[0];
-    if (!sent) {
-      throw new Error("Expected a data-export email");
-    }
-    expect(sent).toMatchObject({
-      from: "Okou <okou@okou.io>",
-      subject: "Your data export is ready",
-      html: expect.stringContaining("Download data"),
-      text: expect.stringContaining(
-        "Your requested data export has been completed and is ready to download.",
-      ),
-    });
-    expect(sent).not.toHaveProperty("headers.List-Unsubscribe");
-  });
-
-  it("keeps bounced recipients out of transactional sends", async () => {
-    const bouncedActor = bdd.user();
-
-    await postInbound({
-      type: "email.bounced",
-      data: {
-        email_id: `email_${randomUUID()}`,
-        to: [bouncedActor.email],
-      },
-    });
-
-    const locator = await email.enqueueDataExportEmail(bouncedActor);
-    const item = await email.findEmailOutboxItem(locator);
-    const drained = await email.drainEmailOutboxItems([item.id]);
-
-    expect(drained).toBe(1);
-    expect(resendMocks.send).toHaveBeenCalledTimes(0);
-  });
-
-  it("keeps complained recipients out of transactional sends", async () => {
-    const complainedActor = bdd.user();
-    mockClerkUsers(context, [
-      clerkUserListEntry(complainedActor.userId, complainedActor.email),
-    ]);
-
-    await postInbound({
-      type: "email.complained",
-      data: {
-        email_id: `email_${randomUUID()}`,
-        to: [complainedActor.email],
-      },
-    });
-
-    const locator = await email.enqueueDataExportEmail(complainedActor);
-    const item = await email.findEmailOutboxItem(locator);
-    const drained = await email.drainEmailOutboxItems([item.id]);
-
-    expect(drained).toBe(1);
-    expect(resendMocks.send).toHaveBeenCalledTimes(0);
   });
 
   it("acknowledges new and reply-address email without creating Agent runs", async () => {

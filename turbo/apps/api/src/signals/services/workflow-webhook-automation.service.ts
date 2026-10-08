@@ -1,41 +1,39 @@
-import { Buffer } from "node:buffer";
-import { createHash, randomBytes } from "node:crypto";
-import { command } from "ccstate";
-import { and, eq, gte } from "drizzle-orm";
 import type { WebhookReceivedEventConfig } from "@okouai/api-contracts/contracts/workflows";
 import {
-  workflowUserAutomationThreads,
   workflowAutomations,
-  workflowWebhookDeliveries,
+  workflowUserAutomationThreads,
   workflowWebhookAutomations,
+  workflowWebhookDeliveries,
   workflows,
 } from "@okouai/db/schema/workflow";
+import { command } from "ccstate";
+import { and, eq, gte } from "drizzle-orm";
+import { Buffer } from "node:buffer";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { verifyCallbackRequest } from "../../lib/event-consumer/verify-signature";
-import { resolveImmutableDedupeInsert } from "../../lib/immutable-dedupe-insert";
-import { testOverride } from "../../lib/singleton";
+import { isUniqueViolation } from "../../lib/pg-errors";
+import { nowDate } from "../../lib/time";
 import { webUrl } from "../../lib/web-url";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
-import { nowDate } from "../../lib/time";
 import { safeJsonParse, settle } from "../utils";
-import { dispatchFailedRunCallbacks } from "./agent-run-callback.service";
+import {
+  AutomationEventSourceTiming,
+  type AutomationEventRunTiming,
+} from "./automation-event-source-timing.service";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
   decryptPersistentSecretValue,
   encryptPersistentSecretValue,
 } from "./crypto.utils";
-import {
-  AutomationEventSourceTiming,
-  type AutomationEventRunTiming,
-} from "./automation-event-source-timing.service";
-import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
-import type {
-  RunWorkflowAutomationResult,
-  AutomationRow,
-} from "./workflow-automation-launch.service";
+import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
+import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
-import { workflowAutomationCanFire } from "./workflow-automation-access.service";
-import { ensureWorkflowUserAutomationThread } from "./workflow-user-automation-thread.service";
-import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import type {
+  AutomationRow,
+  RunWorkflowAutomationResult,
+} from "./workflow-automation-enqueue.service";
+import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
+import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
 
 export const WORKFLOW_WEBHOOK_BODY_LIMIT_BYTES = 1_000_000;
 const WORKFLOW_WEBHOOK_BODY_PREVIEW_CHARS = 16_000;
@@ -114,6 +112,25 @@ async function decryptWorkflowWebhookSecret(
   });
 }
 
+export function workflowWebhookSummaryFields(
+  webhook: WebhookAutomationRow,
+  args: { readonly webhookToken?: string; readonly webhookSecret?: string },
+) {
+  return {
+    ...(args.webhookToken
+      ? {
+          webhookUrl: workflowWebhookUrlForToken(args.webhookToken),
+        }
+      : {}),
+    secretLastFour: webhook.secretLastFour,
+    disabledReason: webhook.disabledReason,
+    lastReceivedAt: webhook.lastReceivedAt
+      ? webhook.lastReceivedAt.toISOString()
+      : null,
+    ...(args.webhookSecret ? { webhookSecret: args.webhookSecret } : {}),
+  };
+}
+
 export async function buildWorkflowWebhookSummaryFields(
   db: ReadonlyDb,
   args: { readonly automation: AutomationRow } & (
@@ -144,19 +161,7 @@ export async function buildWorkflowWebhookSummaryFields(
     );
   }
 
-  return {
-    ...(args.webhookToken
-      ? {
-          webhookUrl: workflowWebhookUrlForToken(args.webhookToken),
-        }
-      : {}),
-    secretLastFour: webhook.secretLastFour,
-    disabledReason: webhook.disabledReason,
-    lastReceivedAt: webhook.lastReceivedAt
-      ? webhook.lastReceivedAt.toISOString()
-      : null,
-    ...(args.webhookSecret ? { webhookSecret: args.webhookSecret } : {}),
-  };
+  return workflowWebhookSummaryFields(webhook, args);
 }
 
 export async function revealWorkflowWebhookSecretFields(
@@ -197,31 +202,11 @@ interface WorkflowWebhookAutomationDispatchRow {
   readonly chatThreadId: string;
 }
 
-interface AcceptedWebhookDelivery {
+interface PreparedWebhookDelivery {
   readonly id: string;
   readonly deliveryKey: string;
   readonly bodySha256: string;
 }
-
-interface WorkflowWebhookRunStartTestInput {
-  readonly automationId: string;
-  readonly workflowName: string;
-  readonly deliveryKey: string;
-  readonly bodySha256: string;
-  readonly contentType: string | null;
-}
-
-type WorkflowWebhookRunStarterTestOverride = (
-  args: WorkflowWebhookRunStartTestInput,
-) => Promise<
-  Extract<RunWorkflowAutomationResult, { readonly kind: "ok" }> | "error"
->;
-
-const workflowWebhookRunStarterOverride = testOverride<
-  WorkflowWebhookRunStarterTestOverride | undefined
->(() => {
-  return undefined;
-});
 
 function headerValue(
   headers: Readonly<Record<string, string>>,
@@ -329,100 +314,106 @@ function workflowWebhookTriggerContext(args: {
   };
 }
 
-async function loadWebhookAutomationForToken(
-  args: {
-    readonly db: Db;
-    readonly token: string;
-  },
-  signal: AbortSignal,
-): Promise<WorkflowWebhookAutomationDispatchRow | null> {
-  const [row] = await args.db
-    .select({
-      automation: workflowAutomationColumns(),
-      webhook: workflowWebhookAutomations,
-      agentId: workflows.agentId,
-      workflowName: workflows.name,
-      workflowDisplayName: workflows.displayName,
-      chatThreadId: workflowUserAutomationThreads.chatThreadId,
-    })
-    .from(workflowWebhookAutomations)
-    .innerJoin(
-      workflowAutomations,
-      eq(workflowWebhookAutomations.automationId, workflowAutomations.id),
-    )
-    .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
-    .leftJoin(
-      workflowUserAutomationThreads,
-      and(
-        eq(workflowUserAutomationThreads.orgId, workflowAutomations.orgId),
-        eq(
-          workflowUserAutomationThreads.userId,
-          workflowAutomations.ownerUserId,
-        ),
-        eq(
-          workflowUserAutomationThreads.workflowId,
-          workflowAutomations.workflowId,
-        ),
-      ),
-    )
-    .where(
-      and(
-        eq(
-          workflowWebhookAutomations.tokenHash,
-          hashWorkflowWebhookToken(args.token),
-        ),
-        eq(workflowAutomations.kind, "event"),
-        eq(workflowAutomations.eventType, "webhook-received"),
-        eq(workflowAutomations.enabled, true),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!row) {
-    return null;
-  }
-  const capabilities = await loadOrgPlanCapabilities(
-    args.db,
-    row.automation.orgId,
-  );
-  signal.throwIfAborted();
-  if (capabilities?.workflowWebhookAutomationAllowed !== true) {
-    return null;
-  }
-  const canFire = await workflowAutomationCanFire(
-    args.db,
-    {
-      automation: row.automation,
-      agentId: row.agentId,
+const loadWebhookAutomationForToken$ = command(
+  async (
+    { set },
+    args: {
+      readonly token: string;
     },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (!canFire) {
-    return null;
-  }
-  const currentTime = nowDate();
-  const chatThreadId =
-    row.chatThreadId ??
-    (await args.db.transaction(async (tx) => {
-      return await ensureWorkflowUserAutomationThread(tx, {
-        orgId: row.automation.orgId,
-        userId: row.automation.ownerUserId,
-        workflowId: row.automation.workflowId,
+    signal: AbortSignal,
+  ): Promise<WorkflowWebhookAutomationDispatchRow | null> => {
+    const db = set(writeDb$);
+    const [row] = await db
+      .select({
+        automation: workflowAutomationColumns(),
+        webhook: workflowWebhookAutomations,
+        agentId: workflows.agentId,
+        workflowName: workflows.name,
+        workflowDisplayName: workflows.displayName,
+        chatThreadId: workflowUserAutomationThreads.chatThreadId,
+      })
+      .from(workflowWebhookAutomations)
+      .innerJoin(
+        workflowAutomations,
+        eq(workflowWebhookAutomations.automationId, workflowAutomations.id),
+      )
+      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .leftJoin(
+        workflowUserAutomationThreads,
+        and(
+          eq(workflowUserAutomationThreads.orgId, workflowAutomations.orgId),
+          eq(
+            workflowUserAutomationThreads.userId,
+            workflowAutomations.ownerUserId,
+          ),
+          eq(
+            workflowUserAutomationThreads.workflowId,
+            workflowAutomations.workflowId,
+          ),
+        ),
+      )
+      .where(
+        and(
+          eq(
+            workflowWebhookAutomations.tokenHash,
+            hashWorkflowWebhookToken(args.token),
+          ),
+          eq(workflowAutomations.kind, "event"),
+          eq(workflowAutomations.eventType, "webhook-received"),
+          eq(workflowAutomations.enabled, true),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!row) {
+      return null;
+    }
+    const capabilities = await set(
+      loadOrgPlanCapabilities$,
+      row.automation.orgId,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (capabilities?.workflowWebhookAutomationAllowed !== true) {
+      return null;
+    }
+    const canFire = await set(
+      workflowAutomationCanFire$,
+      {
+        automation: row.automation,
         agentId: row.agentId,
-        workflowTitle: row.workflowDisplayName ?? row.workflowName,
-        currentTime,
-      });
-    }));
-  signal.throwIfAborted();
-  return {
-    automation: row.automation,
-    webhook: row.webhook,
-    agentId: row.agentId,
-    workflowName: row.workflowName,
-    chatThreadId,
-  };
-}
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!canFire) {
+      return null;
+    }
+    const currentTime = nowDate();
+    const chatThreadId =
+      row.chatThreadId ??
+      (await set(
+        ensureWorkflowUserAutomationThread$,
+        {
+          orgId: row.automation.orgId,
+          userId: row.automation.ownerUserId,
+          workflowId: row.automation.workflowId,
+          agentId: row.agentId,
+          workflowTitle: row.workflowDisplayName ?? row.workflowName,
+          currentTime,
+        },
+        signal,
+      ));
+    signal.throwIfAborted();
+    return {
+      automation: row.automation,
+      webhook: row.webhook,
+      agentId: row.agentId,
+      workflowName: row.workflowName,
+      chatThreadId,
+    };
+  },
+);
 
 async function rateLimitExceeded(args: {
   readonly db: Db;
@@ -454,10 +445,8 @@ type DispatchWorkflowWebhookResult =
   | { readonly kind: "ok"; readonly duplicate: true }
   | { readonly kind: "not_found" }
   | { readonly kind: "unauthorized" }
-  | { readonly kind: "bad_request"; readonly message: string }
   | { readonly kind: "payload_too_large" }
-  | { readonly kind: "rate_limited" }
-  | { readonly kind: "run_error"; readonly message: string };
+  | { readonly kind: "rate_limited" };
 
 type PreparedWorkflowWebhookDispatch =
   | {
@@ -470,70 +459,6 @@ type PreparedWorkflowWebhookDispatch =
   | { readonly kind: "not_found" }
   | { readonly kind: "unauthorized" }
   | { readonly kind: "rate_limited" };
-
-async function insertWebhookDelivery(
-  db: Db,
-  args: {
-    readonly automationId: string;
-    readonly deliveryKey: string;
-    readonly bodySha256: string;
-    readonly currentTime: Date;
-  },
-): Promise<{ readonly id: string } | null> {
-  return resolveImmutableDedupeInsert(
-    await settle(
-      db
-        .insert(workflowWebhookDeliveries)
-        .values({
-          automationId: args.automationId,
-          deliveryKey: args.deliveryKey,
-          bodySha256: args.bodySha256,
-          status: "accepted",
-          receivedAt: args.currentTime,
-          createdAt: args.currentTime,
-        })
-        .returning({ id: workflowWebhookDeliveries.id }),
-    ),
-  );
-}
-
-async function deleteWebhookDelivery(
-  db: Db,
-  deliveryId: string,
-): Promise<void> {
-  await db
-    .delete(workflowWebhookDeliveries)
-    .where(eq(workflowWebhookDeliveries.id, deliveryId));
-}
-
-async function recordWebhookDeliveryDispatched(
-  db: Db,
-  args: {
-    readonly deliveryId: string;
-    readonly automationId: string;
-    // Null when the event was accepted into the workflow queue; the run id is
-    // not known until the event is dequeued.
-    readonly runId: string | null;
-    readonly currentTime: Date;
-  },
-): Promise<void> {
-  await db
-    .update(workflowWebhookDeliveries)
-    .set({ status: "dispatched", runId: args.runId })
-    .where(eq(workflowWebhookDeliveries.id, args.deliveryId));
-
-  await db
-    .update(workflowWebhookAutomations)
-    .set({ lastReceivedAt: args.currentTime, updatedAt: args.currentTime })
-    .where(eq(workflowWebhookAutomations.automationId, args.automationId));
-}
-
-function workflowWebhookRunError(): DispatchWorkflowWebhookResult {
-  return {
-    kind: "run_error",
-    message: "Failed to start webhook workflow run",
-  };
-}
 
 function webhookSignatureValid(args: {
   readonly rawBody: string;
@@ -552,7 +477,7 @@ function webhookSignatureValid(args: {
 async function prepareWorkflowWebhookDispatch(
   args: {
     readonly db: Db;
-    readonly token: string;
+    readonly row: WorkflowWebhookAutomationDispatchRow | null;
     readonly rawBody: string;
     readonly signature: string;
     readonly timestamp: string;
@@ -560,19 +485,7 @@ async function prepareWorkflowWebhookDispatch(
   },
   signal: AbortSignal,
 ): Promise<PreparedWorkflowWebhookDispatch> {
-  const row = await args.sourceTiming.measure(
-    "api_dispatch_pre_create_agent_automation_event_load_source_state",
-    async () => {
-      return await loadWebhookAutomationForToken(
-        {
-          db: args.db,
-          token: args.token,
-        },
-        signal,
-      );
-    },
-  );
-  signal.throwIfAborted();
+  const row = args.row;
   if (!row) {
     return { kind: "not_found" };
   }
@@ -628,7 +541,7 @@ async function prepareWorkflowWebhookDispatch(
   };
 }
 
-async function acceptWebhookDelivery(
+async function prepareWebhookDelivery(
   db: Db,
   args: {
     readonly automationId: string;
@@ -636,21 +549,24 @@ async function acceptWebhookDelivery(
     readonly signature: string;
     readonly timestamp: string;
     readonly headers: Readonly<Record<string, string>>;
-    readonly currentTime: Date;
   },
-): Promise<AcceptedWebhookDelivery | null> {
+): Promise<PreparedWebhookDelivery | null> {
   const deliveryKey = deliveryKeyForRequest(args);
-  const bodySha256 = sha256Hex(args.rawBody);
-  const delivery = await insertWebhookDelivery(db, {
-    automationId: args.automationId,
-    deliveryKey,
-    bodySha256,
-    currentTime: args.currentTime,
-  });
-  if (!delivery) {
-    return null;
-  }
-  return { id: delivery.id, deliveryKey, bodySha256 };
+  const [existing] = await db
+    .select({ id: workflowWebhookDeliveries.id })
+    .from(workflowWebhookDeliveries)
+    .where(
+      and(
+        eq(workflowWebhookDeliveries.automationId, args.automationId),
+        eq(workflowWebhookDeliveries.deliveryKey, deliveryKey),
+      ),
+    )
+    .limit(1);
+  // A recorded delivery stays a duplicate regardless of later automation
+  // changes. The unique index still arbitrates concurrent first deliveries.
+  return existing
+    ? null
+    : { id: randomUUID(), deliveryKey, bodySha256: sha256Hex(args.rawBody) };
 }
 
 const startWorkflowWebhookRun$ = command(
@@ -658,7 +574,7 @@ const startWorkflowWebhookRun$ = command(
     { set },
     args: {
       readonly row: WorkflowWebhookAutomationDispatchRow;
-      readonly delivery: AcceptedWebhookDelivery;
+      readonly delivery: PreparedWebhookDelivery;
       readonly rawBody: string;
       readonly headers: Readonly<Record<string, string>>;
       readonly currentTime: Date;
@@ -666,18 +582,7 @@ const startWorkflowWebhookRun$ = command(
       readonly timing: AutomationEventRunTiming;
     },
     signal: AbortSignal,
-  ): Promise<RunWorkflowAutomationResult | "error"> => {
-    const runStarterOverride = workflowWebhookRunStarterOverride.get();
-    if (runStarterOverride) {
-      return await runStarterOverride({
-        automationId: args.row.automation.id,
-        workflowName: args.row.workflowName,
-        deliveryKey: args.delivery.deliveryKey,
-        bodySha256: args.delivery.bodySha256,
-        contentType: headerValue(args.headers, "content-type"),
-      });
-    }
-
+  ): Promise<RunWorkflowAutomationResult> => {
     const runInput = await args.timing.measure(
       "api_dispatch_pre_create_agent_automation_event_build_run_input",
       () => {
@@ -706,8 +611,12 @@ const startWorkflowWebhookRun$ = command(
         automationContext: runInput.context,
         apiStartTime: args.apiStartTime,
         triggerSource: "automation-event",
-        dispatchFailedCallbacks: dispatchFailedRunCallbacks,
         timing: args.timing.collectorForRunStart(),
+        sourcePlan: {
+          kind: "webhook",
+          delivery: args.delivery,
+          receivedAt: args.currentTime,
+        },
       },
       signal,
     );
@@ -744,10 +653,15 @@ export const dispatchWorkflowWebhook$ = command(
       args.apiStartTime,
     );
     const db = set(writeDb$);
+    const row = await set(
+      loadWebhookAutomationForToken$,
+      { token: args.token },
+      signal,
+    );
     const prepared = await prepareWorkflowWebhookDispatch(
       {
         db,
-        token: args.token,
+        row,
         rawBody: args.rawBody,
         signature,
         timestamp,
@@ -761,15 +675,14 @@ export const dispatchWorkflowWebhook$ = command(
 
     const runTiming = sourceTiming.createRunTiming();
     const delivery = await runTiming.measure(
-      "api_dispatch_pre_create_agent_automation_event_record_processed_event",
+      "api_dispatch_pre_create_agent_automation_event_load_source_state",
       async () => {
-        return await acceptWebhookDelivery(db, {
+        return await prepareWebhookDelivery(db, {
           automationId: prepared.row.automation.id,
           rawBody: args.rawBody,
           signature: prepared.signature,
           timestamp: prepared.timestamp,
           headers: args.headers,
-          currentTime: prepared.currentTime,
         });
       },
     );
@@ -778,41 +691,34 @@ export const dispatchWorkflowWebhook$ = command(
       return { kind: "ok", duplicate: true };
     }
 
-    const startResult = await set(
-      startWorkflowWebhookRun$,
-      {
-        row: prepared.row,
-        delivery,
-        rawBody: args.rawBody,
-        headers: args.headers,
-        currentTime: prepared.currentTime,
-        apiStartTime: args.apiStartTime,
-        timing: runTiming,
-      },
-      signal,
+    const admitted = await settle(
+      set(
+        startWorkflowWebhookRun$,
+        {
+          row: prepared.row,
+          delivery,
+          rawBody: args.rawBody,
+          headers: args.headers,
+          currentTime: prepared.currentTime,
+          apiStartTime: args.apiStartTime,
+          timing: runTiming,
+        },
+        signal,
+      ),
     );
     signal.throwIfAborted();
-
-    if (startResult === "error") {
-      await deleteWebhookDelivery(db, delivery.id);
-      signal.throwIfAborted();
-      return workflowWebhookRunError();
+    if (!admitted.ok) {
+      if (
+        isUniqueViolation(
+          admitted.error,
+          "idx_workflow_webhook_deliveries_automation_key",
+        )
+      ) {
+        return { kind: "ok", duplicate: true };
+      }
+      throw admitted.error;
     }
-    if (startResult.kind !== "ok" && startResult.kind !== "enqueued") {
-      await deleteWebhookDelivery(db, delivery.id);
-      signal.throwIfAborted();
-      return workflowWebhookRunError();
-    }
 
-    const runId = startResult.kind === "ok" ? startResult.runId : null;
-    await recordWebhookDeliveryDispatched(db, {
-      deliveryId: delivery.id,
-      automationId: prepared.row.automation.id,
-      runId,
-      currentTime: prepared.currentTime,
-    });
-    signal.throwIfAborted();
-
-    return { kind: "ok", duplicate: false, runId };
+    return { kind: "ok", duplicate: false, runId: null };
   },
 );

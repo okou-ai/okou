@@ -7,6 +7,10 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { SKILL_IMPORT_SESSION_TTL_SECONDS } from "@okouai/api-contracts/contracts/skill-import";
+import {
+  workflowImportSourceSchema,
+  type WorkflowImportSource,
+} from "@okouai/api-contracts/contracts/workflows";
 import { z } from "zod";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
 
@@ -37,6 +41,8 @@ const CONDITIONAL_CAPABILITIES = [
   ["artifact:write", FeatureSwitchKey.PrivateArtifacts],
   ["banking:read", FeatureSwitchKey.Banking],
   ["lark:write", FeatureSwitchKey.LarkIntegration],
+  ["discord:read", FeatureSwitchKey.DiscordIntegration],
+  ["discord:write", FeatureSwitchKey.DiscordIntegration],
   ["presentation-convert:write", FeatureSwitchKey.PresentationConvert],
   ["user-template:write", FeatureSwitchKey.CustomTemplates],
   ["vnc:read", FeatureSwitchKey.VncAccess],
@@ -50,7 +56,6 @@ const AGENT_EXCLUDED_CAPABILITIES = [
 interface OkouTokenOptions {
   readonly computerUseHostId?: string;
   readonly cloudBrowserEnabled?: boolean;
-  readonly imageRecognitionAvailable?: boolean;
   readonly customConnectorSourceIds?: Readonly<Record<string, string>>;
   readonly builtinConnectorSourceIds?: Readonly<Record<string, string>>;
 }
@@ -116,6 +121,7 @@ const skillImportTokenPayloadSchema = jwtBaseSchema.extend({
   scope: z.literal("skill-import"),
   orgId: z.string().min(1),
   agentId: z.string().min(1),
+  provider: workflowImportSourceSchema,
 });
 
 export type SkillImportTokenPayload = z.infer<
@@ -187,9 +193,6 @@ function isCapabilityAvailableToAgent(
   }
   if (capability === "browser:read" || capability === "browser:write") {
     return options?.cloudBrowserEnabled === true;
-  }
-  if (capability === "image-recognition:write") {
-    return options?.imageRecognitionAvailable === true;
   }
   return true;
 }
@@ -427,6 +430,7 @@ export function verifySkillImportToken(token: string): SkillImportAuth | null {
     userId: parsed.data.userId,
     orgId: parsed.data.orgId,
     agentId: parsed.data.agentId,
+    provider: parsed.data.provider,
     issuedAtSeconds: parsed.data.iat,
   };
 }
@@ -435,6 +439,7 @@ export function generateSkillImportToken(
   userId: string,
   orgId: string,
   agentId: string,
+  provider: WorkflowImportSource,
 ): { readonly token: string; readonly expiresAt: Date } {
   const nowSeconds = Math.floor(now() / 1000);
   const expiresAtSeconds = nowSeconds + SKILL_IMPORT_SESSION_TTL_SECONDS;
@@ -443,6 +448,7 @@ export function generateSkillImportToken(
     userId,
     orgId,
     agentId,
+    provider,
     iat: nowSeconds,
     exp: expiresAtSeconds,
   };

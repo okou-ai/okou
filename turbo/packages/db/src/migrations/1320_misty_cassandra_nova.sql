@@ -1,0 +1,1 @@
+ALTER TABLE "org_metadata" ALTER COLUMN "model_mode" SET DEFAULT 'auto';

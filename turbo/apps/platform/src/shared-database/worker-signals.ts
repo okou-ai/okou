@@ -4,7 +4,6 @@ import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { derivePlatformServiceOrigin } from "@okouai/core/platform-service-origin";
 
 import { resolvePlatformEnvironment } from "../lib/platform-host.ts";
-import { CONNECTION_DIAGNOSTICS_PARAM } from "../lib/connection-diagnostics-param.ts";
 import { VERCEL_PROTECTION_BYPASS_NAME } from "../lib/preview-bypass-name.ts";
 import { apiClient$ } from "../signals/api-client.ts";
 import { setApiClientRuntime$ } from "../signals/api-client-runtime.ts";
@@ -13,7 +12,6 @@ import { setAuthenticatedIdentity$ } from "../signals/auth-context.ts";
 import {
   connectionDiagnostics$,
   setupConnectionDiagnostics$,
-  writeConnectionDiagnostic$,
 } from "../signals/connection-diagnostics.ts";
 import {
   computerUseHosts$,
@@ -65,6 +63,9 @@ const L = logger("SharedDatabaseWorker");
 
 const workerRuntimeState$ = state<SharedDatabaseWorkerRuntime | null>(null);
 const workerDaemonsStartedState$ = state(false);
+const pendingChatThreadIndicatorsRefresh$ = state<Promise<boolean> | null>(
+  null,
+);
 interface BootstrapSharedDatabaseWorkerOptions {
   readonly appVersion: string;
   readonly identity: SharedDatabaseIdentity;
@@ -85,6 +86,7 @@ function requireRuntime(
 }
 
 const CHAT_EVENT_CATCH_UP_THROTTLE_MS = 1000;
+const CHAT_THREAD_INDICATORS_RELOAD_THROTTLE_MS = 1000;
 const RECENT_CHAT_EVENT_CATCH_UP_THREAD_COUNT = 100;
 
 const executeCatchUpChatEvent$ = command(
@@ -150,12 +152,21 @@ const startChatEventWarming$ = command(({ get, set }): void => {
 /**
  * Indicators carry no ChatEvent data, and every thread reader already falls
  * back to its own catch-up, so warming is a head start rather than a data
- * dependency. A tab reading indicators therefore waits only for their fetch:
- * neither the warming throttle nor a warming failure belongs to this read.
+ * dependency. A tab reading indicators waits for their pending coalesced
+ * refresh, not for the warming throttle or a warming failure.
  */
 const readWorkerChatThreadIndicators$ = command(
-  ({ get }): Promise<ChatThreadIndicators> => {
-    return get(chatThreadIndicators$);
+  async ({ get }, signal: AbortSignal): Promise<ChatThreadIndicators> => {
+    signal.throwIfAborted();
+    const pendingRefresh = get(pendingChatThreadIndicatorsRefresh$);
+    if (pendingRefresh) {
+      // Readers must not use a stale unread watermark while the coalesced
+      // refresh is pending. A failed refresh must not poison later reads.
+      await settle(pendingRefresh, signal);
+    }
+    const indicators = await get(chatThreadIndicators$);
+    signal.throwIfAborted();
+    return indicators;
   },
 );
 
@@ -178,6 +189,7 @@ export const initializeSharedDatabaseWorker$ = command(
     signal.throwIfAborted();
     set(initializeAppVersion$, options.appVersion);
     set(setRootSignal$, signal);
+    set(pendingChatThreadIndicatorsRefresh$, null);
     set(setApiClientRuntime$, {
       getToken: options.getToken,
       apiBaseUrl: options.apiBaseUrl,
@@ -220,12 +232,6 @@ export const bootstrapWorker$ = command(
     const apiBaseUrl = derivePlatformServiceOrigin(location.origin, "api");
     const vercelProtectionBypass = params.get(VERCEL_PROTECTION_BYPASS_NAME);
     set(setupConnectionDiagnostics$, signal);
-    // The tab bakes the capture decision into the Worker URL, so a Worker
-    // started for a debugging tab records from its very first event.
-    set(writeConnectionDiagnostic$, {
-      action: "set-enabled",
-      enabled: params.has(CONNECTION_DIAGNOSTICS_PARAM),
-    });
     const oauthApiBaseUrl =
       resolvePlatformEnvironment() === "production"
         ? derivePlatformServiceOrigin(location.origin, "www")
@@ -264,9 +270,13 @@ export const handleSharedDatabaseRealtimeMessage$ = command(
         : topic === "threadListChanged"
           ? { kind: "chat-thread-event" }
           : null;
-    if (dataKey?.kind === "chat-event") {
-      // Refresh indicators before the tab handles the message invalidation.
-      set(reloadWorkerComputed$, "chat-thread-indicators");
+    if (
+      dataKey?.kind === "chat-event" ||
+      dataKey?.kind === "chat-thread-event"
+    ) {
+      // Metadata changes (including mute) also affect unread aggregation.
+      // Coalesce indicator refreshes without delaying the thread invalidation.
+      set(startChatThreadIndicatorsRefresh$);
     }
     if (dataKey) {
       set(broadcastSharedDatabaseWorkerMessage$, {
@@ -316,10 +326,10 @@ export const refreshWorkerComputed$ = command(
 );
 
 const refreshWorkerChatIndicators$ = command(
-  async ({ set }, signal: AbortSignal): Promise<void> => {
+  async ({ get, set }, signal: AbortSignal): Promise<void> => {
     signal.throwIfAborted();
     set(reloadWorkerComputed$, "chat-thread-indicators");
-    await set(readWorkerChatThreadIndicators$);
+    await get(chatThreadIndicators$);
     signal.throwIfAborted();
   },
 );
@@ -332,6 +342,24 @@ const reloadWorkerChatIndicatorsFromRealtime$ = command(
     return false;
   },
 );
+
+const chatThreadIndicatorsRefreshThrottle$ = computed((get) => {
+  get(rootVersion$);
+  return throttleCommand(
+    reloadWorkerChatIndicatorsFromRealtime$,
+    CHAT_THREAD_INDICATORS_RELOAD_THROTTLE_MS,
+  );
+});
+
+const startChatThreadIndicatorsRefresh$ = command(({ get, set }): void => {
+  const signal = get(rootSignal$);
+  const refresh = set(get(chatThreadIndicatorsRefreshThrottle$), signal);
+  set(pendingChatThreadIndicatorsRefresh$, refresh);
+  // Invalidate tab reads immediately; they await the shared refresh while
+  // thread invalidations and message rendering continue independently.
+  set(reloadComputedForConnections$, "chat-thread-indicators");
+  detach(refresh, Reason.Daemon, "chat thread indicators refresh");
+});
 
 const reloadWorkerChatIndicatorsFromReadCursor$ = command(
   async ({ set }, payload: unknown, signal: AbortSignal): Promise<boolean> => {
@@ -389,10 +417,9 @@ const runSharedDatabaseWorkerDaemons$ = command(
         scope: "credential",
         topic: "threadListChanged",
         loopCommand$: reloadWorkerChatIndicatorsFromRealtime$,
-        options: {
-          onError,
-          runOnSubscribe: true,
-        },
+        // Indicators load lazily on the first tab read, so subscribing must not
+        // fetch them again. Continuity gaps still reload through onResync.
+        options: { onError },
       },
       signal,
     );
@@ -522,7 +549,7 @@ export const getComputedStoreMessage$ = command(
     }
     const value =
       message.computedKey === "chat-thread-indicators"
-        ? await set(readWorkerChatThreadIndicators$)
+        ? await set(readWorkerChatThreadIndicators$, signal)
         : message.computedKey === "computer-use-hosts"
           ? await get(computerUseHosts$)
           : await get(queueData$);

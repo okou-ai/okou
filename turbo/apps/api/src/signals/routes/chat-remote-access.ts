@@ -9,14 +9,13 @@ import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { clerk$ } from "../external/clerk";
-import { db$, writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
-  clearThreadRemoteAccessOverride,
-  listRemoteHostDefaults,
-  listThreadRemoteAccess,
-  setThreadRemoteAccessOverride,
-  updateRemoteHostDefault,
+  clearThreadRemoteAccessOverride$,
+  listRemoteHostDefaults$,
+  listThreadRemoteAccess$,
+  setThreadRemoteAccessOverride$,
+  updateRemoteHostDefault$,
 } from "../services/chat-remote-access.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { hasCurrentVncMembership } from "../services/vnc-owner-lifecycle.service";
@@ -38,9 +37,6 @@ const accessContext$ = command(async ({ get, set }, signal: AbortSignal) => {
     userFeatureSwitchContext(auth.orgId, auth.userId),
   );
   signal.throwIfAborted();
-  if (!isFeatureEnabled(FeatureSwitchKey.ThreadRemoteAccess, featureContext)) {
-    return null;
-  }
   return {
     auth,
     owner: { orgId: auth.orgId, userId: auth.userId },
@@ -50,17 +46,10 @@ const accessContext$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const listHostDefaults$ = command(async ({ get, set }, signal: AbortSignal) => {
   const context = await set(accessContext$, signal);
-  if (!context) {
-    return unavailable;
-  }
   const includeVnc =
     context.vncEnabled &&
     (await hasCurrentVncMembership(get(clerk$), context.auth, signal));
-  const body = await listRemoteHostDefaults(
-    get(db$),
-    context.owner,
-    includeVnc,
-  );
+  const body = await set(listRemoteHostDefaults$, context.owner, includeVnc);
   signal.throwIfAborted();
   return { status: 200 as const, body };
 });
@@ -68,9 +57,6 @@ const listHostDefaults$ = command(async ({ get, set }, signal: AbortSignal) => {
 const updateHostDefault$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const context = await set(accessContext$, signal);
-    if (!context) {
-      return unavailable;
-    }
     const params = get(
       pathParamsOf(chatRemoteAccessContract.updateHostDefault),
     );
@@ -88,8 +74,8 @@ const updateHostDefault$ = command(
     if (!body.ok) {
       return body.response;
     }
-    const result = await updateRemoteHostDefault(
-      set(writeDb$),
+    const result = await set(
+      updateRemoteHostDefault$,
       { ...context.owner, connectionId: params.connectionId },
       params.protocol,
       body.data.enabled,
@@ -101,15 +87,12 @@ const updateHostDefault$ = command(
 
 const listThreadAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
   const context = await set(accessContext$, signal);
-  if (!context) {
-    return unavailable;
-  }
   const params = get(pathParamsOf(chatRemoteAccessContract.listThreadAccess));
   const includeVnc =
     context.vncEnabled &&
     (await hasCurrentVncMembership(get(clerk$), context.auth, signal));
-  const result = await listThreadRemoteAccess(
-    get(db$),
+  const result = await set(
+    listThreadRemoteAccess$,
     { ...context.owner, chatThreadId: params.threadId },
     includeVnc,
   );
@@ -120,9 +103,6 @@ const listThreadAccess$ = command(async ({ get, set }, signal: AbortSignal) => {
 const setThreadOverride$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const context = await set(accessContext$, signal);
-    if (!context) {
-      return unavailable;
-    }
     const params = get(
       pathParamsOf(chatRemoteAccessContract.setThreadOverride),
     );
@@ -140,8 +120,8 @@ const setThreadOverride$ = command(
     if (!body.ok) {
       return body.response;
     }
-    const result = await setThreadRemoteAccessOverride(
-      set(writeDb$),
+    const result = await set(
+      setThreadRemoteAccessOverride$,
       {
         ...context.owner,
         chatThreadId: params.threadId,
@@ -149,6 +129,7 @@ const setThreadOverride$ = command(
       },
       params.protocol,
       body.data.enabled,
+      signal,
     );
     signal.throwIfAborted();
     return result ? { status: 200 as const, body: result } : missingHost;
@@ -158,9 +139,6 @@ const setThreadOverride$ = command(
 const clearThreadOverride$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const context = await set(accessContext$, signal);
-    if (!context) {
-      return unavailable;
-    }
     const params = get(
       pathParamsOf(chatRemoteAccessContract.clearThreadOverride),
     );
@@ -171,14 +149,15 @@ const clearThreadOverride$ = command(
     ) {
       return unavailable;
     }
-    const result = await clearThreadRemoteAccessOverride(
-      set(writeDb$),
+    const result = await set(
+      clearThreadRemoteAccessOverride$,
       {
         ...context.owner,
         chatThreadId: params.threadId,
         connectionId: params.connectionId,
       },
       params.protocol,
+      signal,
     );
     signal.throwIfAborted();
     return result ? { status: 200 as const, body: result } : missingHost;

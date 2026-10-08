@@ -330,7 +330,7 @@ export const apiHandlers = [
         id: "org-default",
         slug: "user-default",
         name: "Default Workspace",
-        tier: "free",
+        tier: "limited-free-1",
       },
       { status: 200 },
     );

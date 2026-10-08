@@ -1,7 +1,5 @@
 // oxlint-disable max-lines-per-function
-import type { ReactNode } from "react";
-import { useGet, useSet, useLoadable } from "ccstate-react";
-import { useTranslation } from "react-i18next";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Dialog,
   DialogContent,
@@ -14,8 +12,8 @@ import {
   SelectValue,
   cn,
 } from "@okouai/ui";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import {
-  SlidersHorizontal,
   Bug,
   Building,
   Coins,
@@ -24,35 +22,37 @@ import {
   History,
   MessageCircle,
   ReceiptText,
-  Wrench,
+  SlidersHorizontal,
   Users,
+  Wrench,
 } from "lucide-react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
-import { isOrgAdmin$ } from "../../../../signals/org.ts";
 import { featureSwitch$ } from "../../../../signals/external/feature-switch.ts";
-import { billingPlansStandalone$ } from "../../../../signals/okou-page/settings/workspace-settings-state.ts";
 import {
   closeSettingsModal$,
   completeSettingsModalClose$,
   resolveAvailableSettingsSection,
+  setSettingsActiveSection$,
   settingsActiveSection$,
   settingsDialogOpen$,
   settingsDialogSessionActive$,
-  setSettingsActiveSection$,
   type SettingsSection,
 } from "../../../../signals/okou-page/settings/settings-dialog.ts";
-import { PreferenceSection } from "./sections/preference-section.tsx";
+import { billingPlansStandalone$ } from "../../../../signals/okou-page/settings/workspace-settings-state.ts";
+import { isOrgAdmin$ } from "../../../../signals/org.ts";
+import { BillingSection } from "./sections/billing-section.tsx";
 import { ChatSection } from "./sections/chat-section.tsx";
-import { ToolsSection } from "./sections/paid-tools-section.tsx";
-import { ModelSection } from "./sections/model-section.tsx";
+import { CreditBalanceSection } from "./sections/credit-balance-section.tsx";
 import { DebugSection } from "./sections/debug-section.tsx";
 import { GeneralSection } from "./sections/general-section.tsx";
-import { PeopleSection } from "./sections/people-section.tsx";
-import { BillingSection } from "./sections/billing-section.tsx";
-import { CreditBalanceSection } from "./sections/credit-balance-section.tsx";
-import { UsageRecordsSection } from "./sections/usage-records-section.tsx";
 import { InvoicesSection } from "./sections/invoices-section.tsx";
+import { ModelSection } from "./sections/model-section.tsx";
+import { ToolsSection } from "./sections/paid-tools-section.tsx";
+import { PeopleSection } from "./sections/people-section.tsx";
+import { PreferenceSection } from "./sections/preference-section.tsx";
+import { UsageRecordsSection } from "./sections/usage-records-section.tsx";
 
 type NavIcon = (props: { size?: number; className?: string }) => ReactNode;
 
@@ -152,10 +152,6 @@ function SettingsDialog({
   const isAdmin =
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
   const showDebug = features[FeatureSwitchKey.OkouDebug] ?? false;
-  const showChat = features[FeatureSwitchKey.ChatPreference] ?? false;
-  const showTools =
-    (features[FeatureSwitchKey.SettingsToolsTab] ?? false) &&
-    (features[FeatureSwitchKey.PaidToolControls] ?? false);
 
   const sectionMeta = {
     preference: {
@@ -187,7 +183,7 @@ function SettingsDialog({
         return $.settings.dialog.sections.model.title;
       }),
       description: t(($) => {
-        return $.settings.dialog.sections.model.description;
+        return $.settings.dialog.sections.model.autoDescription;
       }),
     },
     debug: {
@@ -253,24 +249,16 @@ function SettingsDialog({
       label: sectionMeta.preference.title,
       icon: SlidersHorizontal,
     },
-    ...(showChat
-      ? [
-          {
-            id: "chat" as const,
-            label: sectionMeta.chat.title,
-            icon: MessageCircle,
-          },
-        ]
-      : []),
-    ...(showTools
-      ? [
-          {
-            id: "tools" as const,
-            label: sectionMeta.tools.title,
-            icon: Wrench,
-          },
-        ]
-      : []),
+    {
+      id: "chat",
+      label: sectionMeta.chat.title,
+      icon: MessageCircle,
+    },
+    {
+      id: "tools",
+      label: sectionMeta.tools.title,
+      icon: Wrench,
+    },
     { id: "debug", label: sectionMeta.debug.title, icon: Bug },
   ];
   const personalGroup: SidebarGroup = {
@@ -347,8 +335,6 @@ function SettingsDialog({
   // If the user lost admin while the dialog is open, fall back to a safe section
   const availableSection = resolveAvailableSettingsSection(activeSection, {
     isAdmin,
-    chatPreferenceEnabled: showChat,
-    toolsTabEnabled: showTools,
   });
   const resolvedSection: SettingsSection =
     !showDebug && availableSection === "debug"
@@ -471,17 +457,24 @@ function SettingsDialog({
 
           {/* Content area */}
           <div className="relative flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden bg-background">
-            <header className="shrink-0 px-4 sm:px-10 pt-6 sm:pt-8 pb-1">
-              <div className="flex min-h-7 items-center gap-2">
-                <h2 className="hidden h-7 items-center text-xl font-semibold tracking-tight text-foreground sm:flex">
-                  {meta.title}
-                </h2>
-              </div>
-              <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-                {meta.description}
-              </p>
-            </header>
-            <div className="flex-1 overflow-y-auto px-4 sm:px-10 pb-10 pt-4 sm:pt-6 [scrollbar-gutter:stable]">
+            {resolvedSection !== "model" && (
+              <header className="shrink-0 px-4 sm:px-10 pt-6 sm:pt-8 pb-1">
+                <div className="flex min-h-7 items-center gap-2">
+                  <h2 className="hidden h-7 items-center text-xl font-semibold tracking-tight text-foreground sm:flex">
+                    {meta.title}
+                  </h2>
+                </div>
+                <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+                  {meta.description}
+                </p>
+              </header>
+            )}
+            <div
+              className={cn(
+                "flex-1 overflow-y-auto px-4 sm:px-10 pt-4 sm:pt-6 pb-10 [scrollbar-gutter:stable]",
+                resolvedSection === "model" && "pt-6 sm:pt-8",
+              )}
+            >
               <SectionContent section={resolvedSection} />
             </div>
           </div>

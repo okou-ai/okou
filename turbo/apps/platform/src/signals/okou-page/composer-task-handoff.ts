@@ -53,9 +53,9 @@ export const adoptComposerTaskHandoff$ = command(
     if (task === null) {
       return;
     }
-    // Each surface gates itself on its own switch: the task chips own the
-    // three general tasks, and a create mode is also what a slash command
-    // leaves behind when the chips are off.
+    // The task chips own the three general tasks and gate them on their own
+    // switch; a create mode is also what a slash command leaves behind when
+    // the chips are off.
     if (task === "workflow" || task === "website" || task === "visualization") {
       set(composer.taskChips.selectTask$, task);
     } else {

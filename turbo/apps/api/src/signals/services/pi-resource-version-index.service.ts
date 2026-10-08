@@ -3,13 +3,9 @@ import { randomUUID } from "node:crypto";
 
 import type { PiResourceVersionIndex } from "@okouai/db/jsonb-contracts/pi-resource-version-index";
 import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
-import {
-  piStableContextArtifactResources,
-  piStableContextHeads,
-} from "@okouai/db/schema/pi-stable-context";
 import { storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
-import { and, asc, eq, exists, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, lte, or, sql } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import {
@@ -22,12 +18,14 @@ import {
 } from "../../lib/pi-resource-index";
 import { now, nowDate } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
-import { downloadS3BufferWithMaxBytes } from "../external/s3";
+import {
+  downloadS3BufferWithMaxBytes,
+  S3ObjectSizeLimitError,
+} from "../external/s3";
 import { safeSync, settle } from "../utils";
 
 const tracer = trace.getTracer("pi-resource-index");
 const WORK_BATCH_SIZE = 32;
-const HEAD_INVALIDATION_BATCH_SIZE = 256;
 const WORK_LEASE_MS = 5 * 60 * 1000;
 
 function indexQueueValues(
@@ -45,87 +43,6 @@ function indexQueueValues(
       sourceArchiveSize,
     };
   });
-}
-
-function repairedVersionHeadCondition(
-  db: Pick<Db, "select">,
-  changedVersionIds: readonly string[],
-) {
-  return or(
-    exists(
-      db
-        .select({ ordinal: piStableContextArtifactResources.ordinal })
-        .from(piStableContextArtifactResources)
-        .where(
-          and(
-            eq(
-              piStableContextArtifactResources.artifactDigest,
-              piStableContextHeads.artifactDigest,
-            ),
-            inArray(
-              piStableContextArtifactResources.storageVersionId,
-              changedVersionIds,
-            ),
-          ),
-        ),
-    ),
-    // Pending/running heads have no artifact edge yet. Their captured immutable
-    // mounts still bind the repaired Storage encoding.
-    sql`EXISTS (
-      SELECT 1
-      FROM jsonb_array_elements(
-        COALESCE(${piStableContextHeads.input}->'storageMounts', '[]'::jsonb)
-      ) AS mount
-      WHERE ${inArray(sql`mount->>'versionId'`, changedVersionIds)}
-    )`,
-  );
-}
-
-async function invalidateRepairedVersionHeads(
-  db: Pick<Db, "select" | "update">,
-  changedVersionIds: readonly string[],
-  signal?: AbortSignal,
-): Promise<void> {
-  const condition = repairedVersionHeadCondition(db, changedVersionIds);
-  const heads = await db
-    .select({ id: piStableContextHeads.id })
-    .from(piStableContextHeads)
-    .where(condition)
-    .orderBy(asc(piStableContextHeads.id))
-    .for("update");
-  signal?.throwIfAborted();
-  const invalidatedAt = nowDate();
-  // Every bulk head writer uses the same UUID order. Update only the exact
-  // prelocked snapshot so a concurrent insert cannot enter an unlocked batch.
-  for (
-    let offset = 0;
-    offset < heads.length;
-    offset += HEAD_INVALIDATION_BATCH_SIZE
-  ) {
-    const ids = heads
-      .slice(offset, offset + HEAD_INVALIDATION_BATCH_SIZE)
-      .map((head) => {
-        return head.id;
-      });
-    await db
-      .update(piStableContextHeads)
-      .set({
-        generation: sql`${piStableContextHeads.generation} + 1`,
-        status: "missing",
-        input: null,
-        inputDigest: null,
-        artifactDigest: null,
-        validityHorizon: null,
-        leaseId: null,
-        leaseExpiresAt: null,
-        availableAt: invalidatedAt,
-        attemptCount: 0,
-        lastErrorClass: null,
-        updatedAt: invalidatedAt,
-      })
-      .where(inArray(piStableContextHeads.id, ids));
-    signal?.throwIfAborted();
-  }
 }
 
 export async function enqueuePiResourceVersionIndexes(
@@ -163,17 +80,16 @@ export async function enqueuePiResourceVersionIndexes(
       return row.storageVersionId;
     }),
   );
-  const changedVersionIds: string[] = [];
   // A first insert establishes indexing work but is not an encoding repair.
-  // Only a pre-existing row whose immutable archive encoding changed may clear
-  // stable-context demand. Insert-first also serializes concurrent enqueues
-  // without relying on PostgreSQL's internal tuple metadata.
+  // Only a pre-existing row whose immutable archive encoding changed is reset.
+  // Insert-first also serializes concurrent enqueues without relying on
+  // PostgreSQL's internal tuple metadata.
   for (const value of values) {
     if (insertedVersionIds.has(value.storageVersionId)) {
       continue;
     }
     const enqueuedAt = nowDate();
-    const [changed] = await db
+    await db
       .update(piResourceVersionIndexes)
       .set({
         status: "pending",
@@ -195,28 +111,19 @@ export async function enqueuePiResourceVersionIndexes(
           ),
           sql`${piResourceVersionIndexes.sourceArchiveSize} IS DISTINCT FROM ${value.sourceArchiveSize}`,
         ),
-      )
-      .returning({
-        storageVersionId: piResourceVersionIndexes.storageVersionId,
-      });
-    if (changed) {
-      changedVersionIds.push(changed.storageVersionId);
-    }
-  }
-  if (changedVersionIds.length > 0) {
-    await invalidateRepairedVersionHeads(db, changedVersionIds, signal);
+      );
   }
   signal?.throwIfAborted();
 }
 
-function projectionValues(
+export function piResourceProjectionValues(
   projection: PiResourceVersionIndex | undefined,
   archiveSize: number,
+  updatedAt = nowDate(),
 ) {
-  const ready =
-    projection !== undefined &&
-    archiveSize <= RESOURCE_ARCHIVE_MAX_BYTES &&
-    piResourceIndexFits(projection);
+  // Only a materialized archive's actual bytes determine its size limit.
+  // archiveSize is the registered source revision, not a byte identity.
+  const ready = projection !== undefined && piResourceIndexFits(projection);
   return {
     status: ready ? ("ready" as const) : ("unindexable" as const),
     projection: ready ? projection : null,
@@ -224,7 +131,7 @@ function projectionValues(
     sourceArchiveSize: archiveSize,
     leaseId: null,
     leaseExpiresAt: null,
-    updatedAt: nowDate(),
+    updatedAt,
   };
 }
 
@@ -239,7 +146,7 @@ export async function publishPiResourceVersionIndex(
   signal?: AbortSignal,
 ): Promise<void> {
   const { db, versionId, projection, archiveSize, source } = args;
-  const values = projectionValues(projection, archiveSize);
+  const values = piResourceProjectionValues(projection, archiveSize);
   await db
     .insert(piResourceVersionIndexes)
     .values({
@@ -444,10 +351,7 @@ export const executePiResourceIndexWork$ = command(
         let projection: PiResourceVersionIndex | undefined;
         if (item.archiveSize === 0 && item.fileCount === 0) {
           projection = { schemaVersion: 1, files: [] };
-        } else if (
-          item.archiveSize > 0 &&
-          item.archiveSize <= RESOURCE_ARCHIVE_MAX_BYTES
-        ) {
+        } else {
           const downloaded = await settle(
             get(
               downloadS3BufferWithMaxBytes(
@@ -459,7 +363,10 @@ export const executePiResourceIndexWork$ = command(
             ),
             signal,
           );
-          if (!downloaded.ok) {
+          if (
+            !downloaded.ok &&
+            !(downloaded.error instanceof S3ObjectSizeLimitError)
+          ) {
             const currentTime = nowDate();
             const updated = await db
               .update(piResourceVersionIndexes)
@@ -489,17 +396,16 @@ export const executePiResourceIndexWork$ = command(
             }
             return;
           }
-          const archive = downloaded.value;
-          if (archive.length === item.archiveSize) {
+          if (downloaded.ok) {
             const parsed = safeSync(() => {
-              return indexPiResourceArchive(archive);
+              return indexPiResourceArchive(downloaded.value);
             });
             if ("ok" in parsed) {
               projection = parsed.ok;
             }
           }
         }
-        const values = projectionValues(projection, item.archiveSize);
+        const values = piResourceProjectionValues(projection, item.archiveSize);
         const updated = await db
           .update(piResourceVersionIndexes)
           .set(values)

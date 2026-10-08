@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { imageModelIdSchema } from "../image-models";
 import {
   chatThreadByIdContract,
   chatEventsContract,
   chatThreadComputerUseHostContract,
+  chatThreadModelSelectionContract,
   chatThreadDraftSchema,
-  chatThreadEventSchema,
   chatThreadArtifactGoogleDriveSyncSchema,
   chatThreadsContract,
   chatEventSchema,
+  chatThreadSnapshotArchiveSchema,
   generationTemplateRequestSchema,
   userMessageDocumentSchema,
   userMessageInputDocumentSchema,
@@ -199,46 +199,13 @@ describe("chat thread event sequence contract", () => {
     });
   });
 
-  it("accepts video model fields and pre-image-model payloads", () => {
-    const selectedImageModel = imageModelIdSchema.parse("fal-ai/flux-pro/v1.1");
-    const createdAt = "2026-08-17T00:00:00.000Z";
-    const imageModelEvent = {
-      id: "11111111-1111-4111-8111-111111111111",
-      seqId: 1,
-      kind: "image_model_updated" as const,
-      chatThreadId: "22222222-2222-4222-8222-222222222222",
-      agentId: "33333333-3333-4333-8333-333333333333",
-      title: null,
-      selectedVideoModel: null,
-      selectedImageModel,
-      createdAt,
-    };
-
-    expect(chatThreadEventSchema.parse(imageModelEvent)).toMatchObject({
-      kind: "image_model_updated",
-      selectedImageModel,
-    });
-
-    const snapshotThread = {
-      id: "22222222-2222-4222-8222-222222222222",
-      agentId: "33333333-3333-4333-8333-333333333333",
-      title: "Cached before image model persistence",
-      sortAt: createdAt,
-      createdAt,
-      updatedAt: createdAt,
-      pinnedAt: null,
-      renamedAt: null,
-      selectedVideoModel: null,
-    };
-    const snapshotResponse = {
-      chatThreads: [snapshotThread],
-      latestEventId: null,
-      latestSeqId: null,
-    };
-
+  it("accepts an empty response when no snapshot row exists", () => {
     expect(
-      chatThreadsContract.snapshot.responses[200].safeParse(snapshotResponse)
-        .success,
+      chatThreadsContract.snapshot.responses[200].safeParse({
+        chatThreads: [],
+        latestEventId: null,
+        latestSeqId: null,
+      }).success,
     ).toBe(true);
   });
 });
@@ -311,7 +278,7 @@ describe("chat thread generation template contract", () => {
         version: 1,
         parts: [
           { type: "text", text: "Visible content" },
-          { type: "goal", goalBrief: "Finish the rollout" },
+          { type: "automation", workflowName: "daily-digest" },
         ],
       }),
     ).toMatchObject({ success: true });
@@ -347,6 +314,75 @@ describe("chat thread generation template contract", () => {
       type: "text",
       text: "Explain the product",
     });
+  });
+
+  it("reads bounded MCP client snapshots alongside legacy source annotations", () => {
+    const document = {
+      version: 1,
+      parts: [
+        { type: "text", text: "Check the launch" },
+        {
+          type: "source",
+          kind: "mcp",
+          clientId: "https://claude.ai/oauth/claude-code-client-metadata",
+          clientName: "Claude Code",
+        },
+      ],
+    };
+    expect(userMessageDocumentSchema.parse(document)).toStrictEqual(document);
+    expect(
+      chatEventSchema.parse({
+        id: "mcp-event-1",
+        threadId: "mcp-thread-1",
+        eventType: "input.prompt",
+        content: null,
+        userMessage: document,
+        seqId: 1,
+        createdAt: "2026-09-28T00:00:00.000Z",
+      }),
+    ).toMatchObject({ userMessage: document });
+    expect(
+      userMessageDocumentSchema.safeParse({
+        version: 1,
+        parts: [
+          { type: "text", text: "Unnamed client" },
+          { type: "source", kind: "mcp", clientId: "client_public" },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(
+      userMessageDocumentSchema.safeParse({
+        version: 1,
+        parts: [{ type: "source", kind: "slack" }],
+      }).success,
+    ).toBe(true);
+    // Client-facing input contracts may parse this for backward compatibility;
+    // the API send path rejects it as server-owned provenance.
+    expect(userMessageInputDocumentSchema.safeParse(document).success).toBe(
+      true,
+    );
+  });
+
+  it("rejects malformed MCP source snapshots on read", () => {
+    for (const source of [
+      { kind: "mcp", clientId: "" },
+      { kind: "mcp", clientId: "   " },
+      { kind: "mcp", clientId: "x".repeat(2049) },
+      { kind: "mcp", clientId: "client_public", clientName: "  " },
+      {
+        kind: "mcp",
+        clientId: "client_public",
+        clientName: "x".repeat(121),
+      },
+      { kind: "mcp", clientId: "client_public", href: "https://fake.example" },
+    ]) {
+      expect(
+        userMessageDocumentSchema.safeParse({
+          version: 1,
+          parts: [{ type: "source", ...source }],
+        }).success,
+      ).toBe(false);
+    }
   });
 
   it("accepts an internal agent-run source annotation", () => {
@@ -674,30 +710,77 @@ describe("chat thread generation template contract", () => {
   });
 });
 
-describe("live message admission and retained Goal drafts", () => {
-  it("rejects Goal work at send while decoding historical parts and saved drafts", () => {
-    const legacy = {
-      version: 1,
-      parts: [{ type: "goal", goalBrief: "Retained objective" }],
-    };
-    expect(userMessageInputDocumentSchema.parse(legacy)).toStrictEqual(legacy);
-    expect(userMessageDocumentSchema.parse(legacy)).toStrictEqual(legacy);
-    const send = {
-      agentId: "agent-1",
-      prompt: "Retained objective",
-      hasTextContent: false,
-      userMessage: legacy,
-    };
-    expect(chatEventsContract.send.body.safeParse(send).success).toBe(false);
+describe("retired Ultrafast service tier", () => {
+  const thread = {
+    id: "00000000-0000-4000-8000-000000000001",
+    agentId: "00000000-0000-4000-8000-000000000002",
+    title: null,
+    sortAt: "2026-10-07T00:00:00.000Z",
+    createdAt: "2026-10-07T00:00:00.000Z",
+    updatedAt: "2026-10-07T00:00:00.000Z",
+    pinnedAt: null,
+    archived: false,
+    renamedAt: null,
+  };
+
+  it("reads a persisted Ultrafast snapshot tier as Standard", () => {
+    const archive = chatThreadSnapshotArchiveSchema.parse({
+      chatThreads: [
+        { ...thread, serviceTier: "ultrafast" },
+        { ...thread, serviceTier: "priority" },
+      ],
+    });
+
     expect(
-      chatEventsContract.send.body.safeParse({
-        ...send,
-        hasTextContent: true,
-        userMessage: {
-          version: 1,
-          parts: [{ type: "text", text: "Ordinary work" }],
+      archive.chatThreads.map((entry) => {
+        return entry.serviceTier;
+      }),
+    ).toStrictEqual([null, "priority"]);
+  });
+
+  it("reads a stored Ultrafast model part as the Standard tier", () => {
+    const message = userMessageDocumentSchema.parse({
+      version: 1,
+      parts: [
+        { type: "text", text: "hello" },
+        {
+          type: "model",
+          selectedModel: "gpt-6-astra",
+          serviceTier: "ultrafast",
         },
-      }).success,
-    ).toBe(true);
+      ],
+    });
+
+    expect(message.parts[1]).toStrictEqual({
+      type: "model",
+      selectedModel: "gpt-6-astra",
+      serviceTier: undefined,
+    });
+    expect(
+      userMessageDocumentSchema.parse({
+        version: 1,
+        parts: [
+          { type: "text", text: "hello" },
+          {
+            type: "model",
+            selectedModel: "gpt-6-astra",
+            serviceTier: "priority",
+          },
+        ],
+      }).parts[1],
+    ).toStrictEqual({
+      type: "model",
+      selectedModel: "gpt-6-astra",
+      serviceTier: "priority",
+    });
+  });
+
+  it("rejects Ultrafast on run option requests", () => {
+    const body = chatThreadModelSelectionContract.update.body.safeParse({
+      model: "gpt-6-astra",
+      codexServiceTier: "ultrafast",
+    });
+
+    expect(body.success).toBe(false);
   });
 });

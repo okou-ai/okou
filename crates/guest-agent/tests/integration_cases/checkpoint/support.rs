@@ -108,13 +108,7 @@ pub(super) async fn report_prepared_checkpoint(
     checkpoint: guest_agent::checkpoint::PreparedCheckpoint,
 ) -> Result<(), guest_agent::error::AgentError> {
     guest_agent::complete::report_checkpoint_for_run(
-        runtime,
-        exit_code,
-        None,
-        None,
-        None,
-        &[],
-        checkpoint,
+        runtime, exit_code, None, None, None, checkpoint,
     )
     .await
 }

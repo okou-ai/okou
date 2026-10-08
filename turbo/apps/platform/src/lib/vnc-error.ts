@@ -18,14 +18,34 @@ export function localizedVncError(code: string): string | undefined {
         return $.vnc.errors.invalidInput;
       });
     }
+    case VNC_ERROR_CODES.INVALID_APPLE_VNC_PASSWORD_ROUTE: {
+      return i18n.t(($) => {
+        return $.vnc.transport.appleVncPasswordDestinationHelp;
+      });
+    }
     case VNC_ERROR_CODES.INVALID_APPLE_DH_ROUTE: {
       return i18n.t(($) => {
         return $.vnc.transport.appleDhDestinationHelp;
       });
     }
+    case VNC_ERROR_CODES.INVALID_APPLE_SRP_ROUTE: {
+      return i18n.t(($) => {
+        return $.vnc.transport.appleSrpDestinationHelp;
+      });
+    }
+    case VNC_ERROR_CODES.INVALID_APPLE_RSA_SRP_ROUTE: {
+      return i18n.t(($) => {
+        return $.vnc.transport.appleRsaSrpDestinationHelp;
+      });
+    }
     case VNC_ERROR_CODES.INVALID_HOST: {
       return i18n.t(($) => {
         return $.vnc.errors.invalidHost;
+      });
+    }
+    case VNC_ERROR_CODES.INVALID_CLIENT_IDENTITY: {
+      return i18n.t(($) => {
+        return $.vnc.errors.invalidInput;
       });
     }
     case VNC_ERROR_CODES.INVALID_TRUST: {
@@ -66,11 +86,6 @@ export function localizedVncError(code: string): string | undefined {
     case VNC_ERROR_CODES.REVISION_EXHAUSTED: {
       return i18n.t(($) => {
         return $.vnc.errors.revisionExhausted;
-      });
-    }
-    case VNC_ERROR_CODES.OWNER_CHANGED: {
-      return i18n.t(($) => {
-        return $.vnc.errors.ownerChanged;
       });
     }
     default: {

@@ -8,7 +8,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::ActiveInputForwarder;
 use runner_provider::local_queue::{self, ActiveInputEntry, LocalQueue};
-use runner_provider::{ActiveInputSource, local_active_input_delivery_id};
+use runner_provider::{ActiveInputSource, local_active_input_event_id};
 use runner_types::ids::RunId;
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(5);
@@ -40,7 +40,7 @@ async fn assert_cancelled_local_batch(cancellation: CancelForwarding) {
             .unwrap();
     }
 
-    let first_id = local_active_input_delivery_id(run_id, 1);
+    let first_id = local_active_input_event_id(run_id, 1);
     let gated_id = first_id.clone();
     let release = Arc::new(Notify::new());
     let provider_release = Arc::clone(&release);
@@ -69,7 +69,6 @@ async fn assert_cancelled_local_batch(cancellation: CancelForwarding) {
     )
     .unwrap();
     let abort = forwarder.task.abort_handle();
-    let sandbox = sandbox_mock::MockSandbox::new("active-input-cancellation");
 
     let first_request = tokio::time::timeout(TEST_TIMEOUT, requests_rx.recv()).await;
     let completion = async {
@@ -78,9 +77,12 @@ async fn assert_cancelled_local_batch(cancellation: CancelForwarding) {
                 job_cancel.cancel();
                 // Observe job cancellation independently: calling stop here
                 // would also cancel the private token and mask a missing check.
-                forwarder.task.await.map(|()| Vec::new())
+                forwarder.task.await
             }
-            CancelForwarding::Stop => Ok(forwarder.stop(&sandbox).await),
+            CancelForwarding::Stop => {
+                forwarder.stop().await;
+                Ok(())
+            }
         }
     };
     tokio::pin!(completion);
@@ -100,7 +102,7 @@ async fn assert_cancelled_local_batch(cancellation: CancelForwarding) {
     // Assert after releasing the provider and reaping the task, including when
     // the first request or completion deadline failed.
     assert!(waited_for_in_flight);
-    assert!(completed.unwrap().unwrap().is_empty());
+    completed.unwrap().unwrap();
     assert_eq!(
         first_request.unwrap().unwrap(),
         (

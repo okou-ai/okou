@@ -9,18 +9,13 @@ import {
 } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  DEFAULT_VOICE_INPUT_MODEL,
-  VOICE_INPUT_MODELS,
-} from "@okouai/api-contracts/contracts/voice-input-models";
 import { command, computed } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { request$ } from "../context/hono";
-import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
-import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
+import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { audioInputLifetimeQuota } from "../services/voice-io.service";
 import {
   badRequest,
@@ -31,7 +26,6 @@ import {
 } from "../services/voice-io-post.service";
 import { transcribeVoiceSegment$ } from "../services/voice-io-transcribe.service";
 import { safeJsonParse } from "../utils";
-import { userPreferences } from "../services/user-data.service";
 
 const ALLOWED_VOICE_DRAFT_MIME_TYPES = [
   "audio/wav",
@@ -41,18 +35,7 @@ const ALLOWED_VOICE_DRAFT_MIME_TYPES = [
 
 const voiceIoFeatureContext$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  return await loadUserFeatureSwitchContext(get(db$), auth.orgId, auth.userId);
-});
-
-const selectedVoiceInputModel$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const preferences = await get(
-    userPreferences({ orgId: auth.orgId, userId: auth.userId }),
-  );
-  const modelId = preferences.voiceInputModel ?? DEFAULT_VOICE_INPUT_MODEL;
-  return VOICE_INPUT_MODELS.find((candidate) => {
-    return candidate.id === modelId;
-  });
+  return await get(userFeatureSwitchContext(auth.orgId, auth.userId));
 });
 
 function isAllowedVoiceDraftMimeType(value: string): boolean {
@@ -199,13 +182,6 @@ const voiceIoTranscribeHandler$ = command(
     signal.throwIfAborted();
 
     const auth = get(organizationAuthContext$);
-    const model = await get(selectedVoiceInputModel$);
-    signal.throwIfAborted();
-    if (!model) {
-      return badRequest(
-        "The selected voice input model is unavailable. Choose another model in Debug preferences.",
-      );
-    }
     const quota = await get(audioInputLifetimeQuota(auth.orgId, auth.userId));
     signal.throwIfAborted();
     if (!quota.allowed) {
@@ -249,7 +225,6 @@ const voiceIoTranscribeHandler$ = command(
 
     const input = {
       files,
-      model,
       audioDurationSeconds,
       debug: isFeatureEnabled(FeatureSwitchKey.OkouDebug, featureContext),
       ...(reference === undefined ? {} : { lastAssistantMessage: reference }),

@@ -1,6 +1,8 @@
 import type { AppRoute } from "@okouai/api-contracts/contracts/trpc-contract";
 import { HttpResponse } from "msw";
 import { posthog } from "posthog-js/dist/module.slim";
+import { Silero } from "@ricky0123/vad-web/dist/models/silero.js";
+import * as ort from "onnxruntime-web/wasm";
 import { vi } from "vitest";
 
 import {
@@ -16,21 +18,8 @@ import {
   type MockedClerkLoadOptions,
 } from "../../__tests__/mock-auth.ts";
 import {
-  clerkLocalizationFixtureForRequest,
-  type ClerkLocalizationLocale,
-} from "../../mocks/handlers/clerk-localizations.ts";
-import {
-  resetMockClerkAuthComponentMounted,
-  setMockClerkAuthComponentMounted,
-} from "../../test/mocks/clerk-react.ts";
-import { mockClerkResource } from "../../test/mocks/clerk-resource.ts";
-import {
-  mockSentry,
-  type SentryMock,
-} from "../../test/mocks/sentry-behavior.ts";
-import {
-  deferNextAblySubscribe,
   deferAblySubscribeOnChannel,
+  deferNextAblySubscribe,
   getAuthTokenHistory,
   hasChannelSubscription,
   hasChannelSubscriptionOnChannel,
@@ -39,9 +28,9 @@ import {
   hasSubscriptionOnChannel,
   rejectAblySubscribe,
   rejectNextAblySubscribe,
-  triggerAblyConnectionState,
   triggerAblyChannelEvent,
   triggerAblyConnectionClosed,
+  triggerAblyConnectionState,
   triggerAblyEvent,
   triggerAblyFailure,
   triggerAblyReauth,
@@ -61,13 +50,16 @@ import {
 } from "../../mocks/handlers/api-integrations-github.ts";
 import { setMockTelegramIntegration } from "../../mocks/handlers/api-integrations-telegram.ts";
 import { setMockOnboardingStatus } from "../../mocks/handlers/api-onboarding.ts";
-import { setMockOrg } from "../../mocks/handlers/api-org.ts";
 import { setMockOrgMembers } from "../../mocks/handlers/api-org-members.ts";
-import { setMockOrgModelPolicies } from "../../mocks/handlers/api-org-model-policies.ts";
-import { setMockOrgModelProviders } from "../../mocks/handlers/api-org-model-providers.ts";
+import { setMockOrg } from "../../mocks/handlers/api-org.ts";
 import { setMockPersonalModelProviders } from "../../mocks/handlers/api-personal-model-providers.ts";
+import { setMockAvailableRunModels } from "../../mocks/handlers/api-run-models.ts";
 import { setMockUserModelPreference } from "../../mocks/handlers/api-user-model-preference.ts";
 import { setMockUserPreferences } from "../../mocks/handlers/api-user-preferences.ts";
+import {
+  clerkLocalizationFixtureForRequest,
+  type ClerkLocalizationLocale,
+} from "../../mocks/handlers/clerk-localizations.ts";
 import {
   createMockApi,
   createMockHttp,
@@ -80,6 +72,15 @@ import {
   mockUploadPending,
   mockUploadSuccess,
 } from "../../mocks/upload-helpers.ts";
+import {
+  resetMockClerkAuthComponentMounted,
+  setMockClerkAuthComponentMounted,
+} from "../../test/mocks/clerk-react.ts";
+import { mockClerkResource } from "../../test/mocks/clerk-resource.ts";
+import {
+  mockSentry,
+  type SentryMock,
+} from "../../test/mocks/sentry-behavior.ts";
 import { createDeferredPromise } from "../utils.ts";
 
 interface WindowOpenCall {
@@ -178,6 +179,11 @@ interface BrowserMatchMediaMock {
   readonly setMatches: (
     matches: boolean | ((query: string) => boolean),
   ) => void;
+}
+
+interface BrowserViewTransitionMock {
+  /** Transition types of each started view transition, in start order. */
+  readonly startedTypes: (readonly string[])[];
 }
 
 interface BrowserVisibilityStateMock {
@@ -378,15 +384,10 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       ) => {
         setMockTelegramIntegration(...args);
       },
-      orgModelProviders: (
-        ...args: Parameters<typeof setMockOrgModelProviders>
+      availableRunModels: (
+        ...args: Parameters<typeof setMockAvailableRunModels>
       ) => {
-        setMockOrgModelProviders(...args);
-      },
-      orgModelPolicies: (
-        ...args: Parameters<typeof setMockOrgModelPolicies>
-      ) => {
-        setMockOrgModelPolicies(...args);
+        setMockAvailableRunModels(...args);
       },
       personalModelProviders: (
         ...args: Parameters<typeof setMockPersonalModelProviders>
@@ -440,10 +441,19 @@ export function createTestMocks(getSignal: () => AbortSignal) {
       authWindow: (): MockWindow => {
         return createMockWindow();
       },
+      message: (
+        data: unknown,
+        options: { origin: string; source: Window | null },
+      ): void => {
+        window.dispatchEvent(new MessageEvent("message", { data, ...options }));
+      },
       matchMedia: (
         matches: boolean | ((query: string) => boolean),
       ): BrowserMatchMediaMock => {
         return mockMatchMedia(matches);
+      },
+      viewTransition: (): BrowserViewTransitionMock => {
+        return mockViewTransition(getSignal());
       },
       standaloneDisplayMode: (enabled: boolean): void => {
         mockMatchMedia((query) => {
@@ -857,6 +867,43 @@ function createMockWindow(): MockWindow {
   return mockWindow;
 }
 
+// Same-document view transitions with transition types. The update runs
+// immediately because tests have no rendering steps to capture.
+function mockViewTransition(signal: AbortSignal): BrowserViewTransitionMock {
+  const startedTypes: (readonly string[])[] = [];
+  const startViewTransitionDescriptor = defineWindowProperty(
+    document,
+    "startViewTransition",
+    (options: StartViewTransitionOptions): ViewTransition => {
+      startedTypes.push([...(options.types ?? [])]);
+      options.update?.();
+      return { updateCallbackDone: Promise.resolve() } as ViewTransition;
+    },
+  );
+  const supports = CSS.supports.bind(CSS);
+  vi.spyOn(CSS, "supports").mockImplementation(
+    (conditionOrProperty: string, value?: string) => {
+      if (
+        value === undefined &&
+        conditionOrProperty === "selector(:active-view-transition-type(a))"
+      ) {
+        return true;
+      }
+      return value === undefined
+        ? supports(conditionOrProperty)
+        : supports(conditionOrProperty, value);
+    },
+  );
+  restoreOnAbort(signal, () => {
+    restoreWindowProperty(
+      document,
+      "startViewTransition",
+      startViewTransitionDescriptor,
+    );
+  });
+  return { startedTypes };
+}
+
 function mockMatchMedia(
   initialMatches: boolean | ((query: string) => boolean),
 ): BrowserMatchMediaMock {
@@ -1112,6 +1159,11 @@ function mockAudioContext(signal: AbortSignal): void {
 }
 
 interface VoiceInputMockOptions {
+  readonly vadModelReady?: () => Promise<void>;
+  readonly vadProbability?:
+    | number
+    | ((frame: Float32Array) => number | Promise<number>);
+  readonly onVadRelease?: () => void;
   readonly onPcmCapture?: (emit: (samples: Float32Array) => void) => void;
   readonly onPcmPortClose?: () => void;
   readonly onPcmDisconnect?: () => void;
@@ -1129,6 +1181,47 @@ function mockVoiceInput(
   signal: AbortSignal,
   options: VoiceInputMockOptions = {},
 ): void {
+  // Mock the third-party inference boundary, not the application's gate or
+  // Silero's framing/state adapter. Default recorded fixtures contain speech.
+  const vadMock = vi.spyOn(Silero, "new").mockImplementation(async () => {
+    await options.vadModelReady?.();
+    const session: ort.InferenceSession = {
+      inputNames: ["input", "state", "sr"],
+      outputNames: ["output", "stateN"],
+      inputMetadata: [],
+      outputMetadata: [],
+      async run(feeds) {
+        const input = feeds.input;
+        if (!input || !(input.data instanceof Float32Array)) {
+          throw new Error("Expected float32 VAD input");
+        }
+        const probability = options.vadProbability ?? 0.9;
+        const value =
+          typeof probability === "function"
+            ? await probability(input.data.subarray(64))
+            : probability;
+        return {
+          output: new ort.Tensor("float32", [value], [1, 1]),
+          stateN: new ort.Tensor("float32", new Float32Array(256), [2, 1, 128]),
+        };
+      },
+      release() {
+        options.onVadRelease?.();
+        return Promise.resolve();
+      },
+      startProfiling() {},
+      endProfiling() {},
+    };
+    return new Silero(
+      session,
+      new ort.Tensor("float32", new Float32Array(256), [2, 1, 128]),
+      new ort.Tensor("int64", [16_000n]),
+      ort,
+    );
+  });
+  restoreOnAbort(signal, () => {
+    return vadMock.mockRestore();
+  });
   const stream = {
     getTracks: () => {
       return [

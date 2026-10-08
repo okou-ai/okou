@@ -1,69 +1,42 @@
 import { z } from "zod";
+import { chatEventsContract } from "./chat-threads";
+import { mcpChatModelIdSchema } from "./mcp-chat-discovery";
 
-import {
-  mcpChatInputRefSchema,
-  mcpGetChatStatusNextActionSchema,
-} from "./mcp-chat-references";
-import { mcpChatOutputTimestampSchema } from "./mcp-chat-time";
-
-export const mcpChatMessageTextSchema = z
-  .string()
-  .max(32_000)
-  .regex(/\S/u, "Message text must not be blank");
-
+/** MCP adapts plain text to Web acceptance; each send is new intended work. */
 export const mcpSendChatMessageInputSchema = z.strictObject({
-  threadId: z.uuid().toLowerCase(),
-  text: mcpChatMessageTextSchema,
-  requestId: z.uuid().toLowerCase(),
+  agentId: z.uuid().toLowerCase(),
+  prompt: z.string().max(32_000).regex(/\S/u, "Prompt must not be blank"),
+  threadId: z.uuid().toLowerCase().optional(),
+  /** Null selects Auto; omission keeps the thread's selection. */
+  model: mcpChatModelIdSchema.nullable().optional(),
 });
-
-export const mcpChatInputReceiptSchema = z.strictObject({
-  inputRef: mcpChatInputRefSchema,
-  acceptedAt: mcpChatOutputTimestampSchema,
-  retryUntil: mcpChatOutputTimestampSchema,
-  disposition: z.enum([
-    "queued",
-    "reserved",
-    "associated",
-    "rejected",
-    "revoked",
-    "unavailable",
-  ]),
-  runId: z.uuid().nullable(),
-});
-
-export const mcpSendChatMessageOutputSchema = mcpChatInputReceiptSchema.extend({
-  replayed: z.boolean(),
-  url: z.url(),
-  nextAction: mcpGetChatStatusNextActionSchema,
-});
+const inputAcknowledgementShape = {
+  threadId: z.uuid(),
+  eventId: z.uuid(),
+  createdAt: chatEventsContract.send.responses[201].shape.createdAt.unwrap(),
+};
+/** Correlation identity, not a Run or an idempotent-send receipt. */
+export const mcpSendChatMessageOutputSchema = z.strictObject(
+  inputAcknowledgementShape,
+);
 
 export const mcpRevokeQueuedMessageInputSchema = z.strictObject({
-  inputRef: mcpChatInputRefSchema,
+  agentId: z.uuid().toLowerCase(),
+  threadId: z.uuid().toLowerCase(),
+  eventId: z.uuid().toLowerCase(),
 });
-
-export const mcpRevokeQueuedMessageOutputSchema = z.strictObject({
-  inputRef: mcpChatInputRefSchema,
-  outcome: z.enum([
-    "revoked",
-    "already_revoked",
-    "not_revocable",
-    "unavailable",
-  ]),
-  runId: z.uuid().nullable(),
-  reason: z.enum(["reserved_or_associated", "not_queued"]).optional(),
-});
+export const mcpRevokeQueuedMessageOutputSchema = z.strictObject(
+  inputAcknowledgementShape,
+);
 
 export const mcpCancelRunInputSchema = z.strictObject({
   runId: z.uuid().toLowerCase(),
 });
-
 export const mcpCancelRunOutputSchema = z.strictObject({
   runId: z.uuid(),
   status: z.literal("cancelled"),
   alreadyCancelled: z.boolean(),
 });
-
 export type McpSendChatMessageInput = z.infer<
   typeof mcpSendChatMessageInputSchema
 >;
@@ -78,7 +51,6 @@ export type McpRevokeQueuedMessageOutput = z.infer<
 >;
 export type McpCancelRunInput = z.infer<typeof mcpCancelRunInputSchema>;
 export type McpCancelRunOutput = z.infer<typeof mcpCancelRunOutputSchema>;
-
 export type McpChatMutationResult<T> =
   | { readonly kind: "ok"; readonly data: T }
   | {

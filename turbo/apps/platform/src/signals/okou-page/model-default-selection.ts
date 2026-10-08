@@ -1,17 +1,15 @@
-import { command } from "ccstate";
-import {
-  isCodexFastModeModel,
-  isSupportedRunModel,
-  type OrgModelPoliciesResponse,
+import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
+import type {
+  AvailableRunModel,
+  AvailableRunModelsResponse,
 } from "@okouai/api-contracts/contracts/model-providers";
-import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
-import { orgModelPolicies$ } from "../external/org-model-policies.ts";
-import { withChatModelSettings } from "./model-reasoning-effort.ts";
 import type { ModelSettings } from "@okouai/api-contracts/contracts/model-reasoning-effort";
-import {
-  modelPlanCapabilities$,
-  memberModelPolicyAllowedForPlan,
-} from "./model-plan-capabilities.ts";
+import { command } from "ccstate";
+import type { ModelProviderSelection } from "../../views/okou-page/components/model-provider-picker.tsx";
+import type { ModelCatalog } from "../external/model-catalog.ts";
+import { availableRunModels$ } from "../external/run-models.ts";
+import { memberRunModelAllowedForPlan } from "./model-plan-capabilities.ts";
+import { withChatModelSettings } from "./model-reasoning-effort.ts";
 
 interface UserModelDefaultSource {
   selectedModel: string | null;
@@ -19,71 +17,116 @@ interface UserModelDefaultSource {
   modelSettings?: ModelSettings;
 }
 
+/**
+ * A stored selection (member preference, thread pin) resolves along the
+ * catalog replacement chain; null is Auto. Unknown models are not selectable.
+ */
 function createModelFirstSelection(
   selectedModel: string | null | undefined,
+  catalog: ModelCatalog | null | undefined,
   modelSettings: ModelSettings = {},
 ): ModelProviderSelection | null {
-  if (!isSupportedRunModel(selectedModel)) {
+  if (selectedModel === null) {
+    return { selectedModel: null, modelSettings };
+  }
+  const resolvedModel = catalog?.resolve(selectedModel);
+  if (!resolvedModel) {
     return null;
   }
   return {
-    selectedModel,
+    selectedModel: resolvedModel,
     modelSettings,
   };
 }
 
-function resolveModelFirstWorkspaceDefaultSelection(
-  policies: OrgModelPoliciesResponse | null | undefined,
-  modelSettings: ModelSettings = {},
-): ModelProviderSelection | null {
-  const defaultPolicy = policies?.policies.find((policy) => {
-    return policy.isDefault && policy.routeStatus === "valid";
+/** Whether the selected subscription model offers the service tier. */
+export function isServiceTierAvailableForSelection(params: {
+  readonly models: AvailableRunModelsResponse | null | undefined;
+  readonly selectedModel: string | null | undefined;
+  readonly tier: "priority";
+}): boolean {
+  const runModel = params.models?.models.find((candidate) => {
+    return candidate.model === params.selectedModel;
   });
-  return createModelFirstSelection(
-    defaultPolicy?.model ?? policies?.workspaceDefaultModel,
-    modelSettings,
+  // Availability can change without changing this model's Fast capability.
+  // Preserve the saved choice through reconnect and plan restrictions; send
+  // readiness and admission own whether it can run now.
+  return runModel?.subscriptionOptions?.serviceTier === params.tier;
+}
+
+/** Whether a configurable runModel row offers the Fast (priority) toggle. */
+export function isRunModelFastModeAvailable(
+  runModel: AvailableRunModel | undefined,
+): boolean {
+  return (
+    !!runModel &&
+    runModel.model !== null &&
+    isMemberRunModelConfigurable(runModel) &&
+    runModel.subscriptionOptions?.serviceTier === "priority"
   );
 }
 
 export function isCodexFastModeAvailableForSelection(params: {
-  readonly policies: OrgModelPoliciesResponse | null | undefined;
+  readonly models: AvailableRunModelsResponse | null | undefined;
   readonly selectedModel: string | null | undefined;
 }): boolean {
-  if (!isCodexFastModeModel(params.selectedModel)) {
-    return false;
-  }
-  const policy = params.policies?.policies.find((candidate) => {
-    return candidate.model === params.selectedModel;
-  });
-  // Availability can change without changing this model's Fast capability.
-  // Preserve the saved choice through reconnect, plan restrictions and outages;
-  // send readiness and admission own whether it can run now.
-  return (
-    policy !== undefined &&
-    (policy.memberEffective !== undefined || policy.routeStatus === "valid")
-  );
+  return isServiceTierAvailableForSelection({ ...params, tier: "priority" });
 }
 
-export function resolveModelFirstUserDefaultSelection(params: {
+function hasUsableModelRoute(
+  models: AvailableRunModelsResponse | null | undefined,
+  model: string | null,
+): boolean {
+  // Before models load there is no route evidence to reject the preference.
+  // Auto is always offered.
+  if (!models || model === null) {
+    return true;
+  }
+  // A plan-restricted route stays selected so the composer can offer the
+  // upgrade instead of silently switching models.
+  return models.models.some((runModel) => {
+    return (
+      runModel.model === model &&
+      (isMemberRunModelConfigurable(runModel) ||
+        runModel.memberEffective.availability === "plan_restricted")
+    );
+  });
+}
+
+/**
+ * Default for a new chat: the member's saved preference (resolved through the
+ * catalog) when its route is usable, otherwise Auto. Null until the catalog
+ * loads: a saved preference cannot be resolved without it.
+ */
+export function resolveDefaultModelSelection(params: {
   userPreference: UserModelDefaultSource | null | undefined;
-  policies: OrgModelPoliciesResponse | null | undefined;
+  models: AvailableRunModelsResponse | null | undefined;
+  catalog: ModelCatalog | null | undefined;
 }): ModelProviderSelection | null {
+  if (!params.catalog) {
+    return null;
+  }
   const userSelection = resolveModelFirstStoredUserSelection(params);
-  return (
-    userSelection ??
-    resolveModelFirstWorkspaceDefaultSelection(
-      params.policies,
-      params.userPreference?.modelSettings,
-    )
-  );
+  if (
+    userSelection &&
+    hasUsableModelRoute(params.models, userSelection.selectedModel)
+  ) {
+    return userSelection;
+  }
+  return {
+    selectedModel: null,
+    modelSettings: params.userPreference?.modelSettings ?? {},
+  };
 }
 
 export function resolveModelFirstStoredUserSelection(params: {
   userPreference: UserModelDefaultSource | null | undefined;
-  policies: OrgModelPoliciesResponse | null | undefined;
+  models: AvailableRunModelsResponse | null | undefined;
+  catalog: ModelCatalog | null | undefined;
 }): ModelProviderSelection | null {
   const userSelection = createModelFirstSelection(
     params.userPreference?.selectedModel,
+    params.catalog,
     params.userPreference?.modelSettings,
   );
   if (!userSelection) {
@@ -92,7 +135,7 @@ export function resolveModelFirstStoredUserSelection(params: {
   if (
     params.userPreference?.serviceTier === "priority" &&
     isCodexFastModeAvailableForSelection({
-      policies: params.policies,
+      models: params.models,
       selectedModel: userSelection.selectedModel,
     })
   ) {
@@ -114,18 +157,15 @@ export const resolveExplicitModelSelection$ = command(
     },
     signal: AbortSignal,
   ): Promise<ExplicitModelSelectionResult> => {
-    const [policies, modelCapabilities] = await Promise.all([
-      get(orgModelPolicies$),
-      get(modelPlanCapabilities$),
-    ]);
+    const models = await get(availableRunModels$);
     signal.throwIfAborted();
     const selectedModel = params.selection?.selectedModel;
-    const selectedPolicy = policies.policies.find((policy) => {
-      return policy.model === selectedModel;
+    const selectedRunModel = models.models.find((runModel) => {
+      return runModel.model === selectedModel;
     });
     if (
-      selectedPolicy !== undefined &&
-      !memberModelPolicyAllowedForPlan(selectedPolicy, modelCapabilities)
+      selectedRunModel !== undefined &&
+      !memberRunModelAllowedForPlan(selectedRunModel)
     ) {
       return { kind: "compare-plans" };
     }

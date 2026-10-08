@@ -317,11 +317,15 @@ export const integrationsFeishuUploadCompleteContract = c.router({
  * Integration Telegram message contract
  * POST /api/integrations/telegram/message
  *
- * Sends a Telegram message via an org-owned bot token.
+ * Sends a Telegram message through the official shared Okou bot.
+ * `chatId` may be `"me"` to target the caller's private chat with the bot
+ * (resolved from the caller's official Telegram link in the current org); the response
+ * `chatId` is the resolved chat.
  * Requires `telegram:write` capability (via OKOU_TOKEN).
  */
 const sendTelegramMessageBodySchema = z.object({
   botId: z.string().min(1, "Bot ID is required"),
+  /** Telegram chat ID, or `"me"` for the caller's private chat with the bot. */
   chatId: z.string().min(1, "Chat ID is required"),
   text: z.string().min(1, "Message text is required"),
   replyToMessageId: z.number().int().positive().optional(),
@@ -356,7 +360,7 @@ export const integrationsTelegramMessageContract = c.router({
       404: apiErrorSchema,
       502: apiErrorSchema,
     },
-    summary: "Send a Telegram message via org bot token",
+    summary: "Send a Telegram message through the official Okou bot",
   },
 });
 
@@ -452,15 +456,11 @@ export type IntegrationsTeamsMessageContract =
  * Integration AgentPhone message contract
  * POST /api/integrations/phone/message
  *
- * Sends an AgentPhone text message to the connected phone handle.
+ * Sends an AgentPhone text message to the caller's own linked phone handle.
  * Requires `phone:write` capability (via OKOU_TOKEN).
  */
 const sendPhoneMessageBodySchema = z.object({
-  agentphoneAgentId: z
-    .string()
-    .min(1, "AgentPhone agent ID is required")
-    .optional(),
-  toNumber: z.string().min(1, "Phone number is required"),
+  agentphoneAgentId: z.string().min(1, "Phone agent ID is required").optional(),
   text: z.string().min(1, "Message text is required"),
 });
 
@@ -491,7 +491,7 @@ export const integrationsPhoneMessageContract = c.router({
       404: apiErrorSchema,
       502: apiErrorSchema,
     },
-    summary: "Send an AgentPhone message",
+    summary: "Send a phone message",
   },
 });
 
@@ -517,7 +517,7 @@ export const integrationsPhoneDownloadFileContract = c.router({
       413: apiErrorSchema,
       502: apiErrorSchema,
     },
-    summary: "Download an AgentPhone media attachment",
+    summary: "Download a phone media attachment",
   },
 });
 
@@ -528,7 +528,7 @@ export type IntegrationsPhoneDownloadFileContract =
  * Integration Telegram bot list contract
  * GET /api/integrations/telegram/bots
  *
- * Lists Telegram bots available in the authenticated user's org.
+ * Reports the official Telegram bot for older CLI clients.
  * Requires `telegram:read` capability (via OKOU_TOKEN).
  */
 const telegramBotTokenStatusSchema = z.enum(["valid", "invalid", "unknown"]);
@@ -541,7 +541,7 @@ const telegramConnectedUserSchema = z.object({
 
 const telegramBotListItemSchema = z.object({
   id: z.string(),
-  kind: z.enum(["custom", "official"]).optional(),
+  kind: z.literal("official").optional(),
   username: z.string().nullable(),
   agent: z.object({ id: z.string(), name: z.string() }).nullable(),
   isOwner: z.boolean(),
@@ -576,7 +576,7 @@ export const integrationsTelegramBotListContract = c.router({
       401: apiErrorSchema,
       403: apiErrorSchema,
     },
-    summary: "List Telegram bots available in the authenticated user's org",
+    summary: "Get the official Telegram bot status",
   },
 });
 
@@ -620,6 +620,9 @@ export type IntegrationsSlackDownloadFileContract =
  *
  * Requests a pre-signed upload URL from Slack via the org's bot token.
  * The CLI then uploads the file directly to that URL (no auth needed).
+ * A canonical destination names exactly one of `channel` or `user` (a Slack
+ * user ID or `"me"`); a user is resolved to a DM channel, which is persisted
+ * and returned as `channel`.
  * Requires `slack:write` capability (via OKOU_TOKEN).
  */
 const slackUploadInitBodySchema = z.object({
@@ -630,11 +633,18 @@ const slackUploadInitBodySchema = z.object({
       operationId: z.string().uuid(),
       contentType: z.string().min(1).max(200),
       checksumSha256: z.string().regex(/^[a-f0-9]{64}$/),
-      channel: z.string().min(1, "Channel ID is required"),
+      channel: z.string().min(1, "Channel ID is required").optional(),
+      user: z.string().min(1, "User ID is required").optional(),
       threadTs: z.string().optional(),
       title: z.string().optional(),
       initialComment: z.string().optional(),
     })
+    .refine(
+      (data) => {
+        return Boolean(data.channel) !== Boolean(data.user);
+      },
+      { message: "Exactly one of 'channel' or 'user' must be provided" },
+    )
     .optional(),
 });
 
@@ -649,6 +659,8 @@ const canonicalSlackUploadInitResponseSchema = z.object({
   kind: z.literal("canonical"),
   assetId: z.string().uuid(),
   operationId: z.string().uuid(),
+  /** Resolved destination channel ID (a DM channel when `user` was sent). */
+  channel: z.string(),
   uploadUrl: z.string().url().optional(),
   uploadHeaders: z.record(z.string(), z.string()).optional(),
   url: artifactUrlSchema,
@@ -897,12 +909,15 @@ export const integrationsTeamsUploadInitContract = c.router({
  * POST /api/integrations/telegram/upload-file/complete
  *
  * Sends an uploaded file URL to a Telegram chat via sendDocument using the
- * requested org-owned bot token.
+ * official shared Okou bot token. `chatId` may be `"me"` to target the
+ * caller's private chat with the bot; the response `chatId` is the resolved
+ * chat.
  * Requires `telegram:write` capability (via OKOU_TOKEN).
  */
 const telegramUploadCompleteBodySchema = z.object({
   uploadId: z.string().uuid("Upload ID must be a UUID"),
   botId: z.string().min(1, "Bot ID is required"),
+  /** Telegram chat ID, or `"me"` for the caller's private chat with the bot. */
   chatId: z.string().min(1, "Chat ID is required"),
   contentType: z.string().min(1).max(200).optional(),
   caption: z.string().max(1024).optional(),
@@ -950,16 +965,38 @@ export const integrationsTelegramUploadCompleteContract = c.router({
  * POST /api/integrations/teams/upload-file/complete
  *
  * Sends an uploaded file URL to a Microsoft Teams conversation using the org's
- * installed Teams bot.
+ * installed Teams bot. The target is exactly one of `conversationId` or `user`
+ * (a Teams user ID or `"me"`, resolved to a personal conversation); the
+ * response `conversationId` is the resolved conversation.
  * Requires `teams:write` capability (via OKOU_TOKEN).
  */
-const teamsUploadCompleteBodySchema = z.object({
-  uploadId: z.string().uuid("Upload ID must be a UUID"),
-  conversationId: z.string().min(1, "Conversation ID is required"),
-  activityId: z.string().min(1, "Activity ID is required").optional(),
-  contentType: z.string().min(1).max(200).optional(),
-  text: z.string().max(4000).optional(),
-});
+const teamsUploadCompleteBodySchema = z
+  .object({
+    uploadId: z.string().uuid("Upload ID must be a UUID"),
+    conversationId: z.string().min(1, "Conversation ID is required").optional(),
+    user: z.string().min(1, "Teams user ID is required").optional(),
+    activityId: z.string().min(1, "Activity ID is required").optional(),
+    contentType: z.string().min(1).max(200).optional(),
+    text: z.string().max(4000).optional(),
+  })
+  .refine(
+    (body) => {
+      return Boolean(body.conversationId) !== Boolean(body.user);
+    },
+    {
+      message: "Exactly one of conversationId or user is required",
+      path: ["conversationId"],
+    },
+  )
+  .refine(
+    (body) => {
+      return !(body.user && body.activityId);
+    },
+    {
+      message: "activityId can only be used with conversationId",
+      path: ["activityId"],
+    },
+  );
 
 export type TeamsUploadCompleteBody = z.infer<
   typeof teamsUploadCompleteBodySchema
@@ -1182,7 +1219,7 @@ export const integrationsPhoneUploadInitContract = c.router({
       401: apiErrorSchema,
       403: apiErrorSchema,
     },
-    summary: "Get a pre-signed upload URL for AgentPhone file delivery",
+    summary: "Get a pre-signed upload URL for phone file delivery",
   },
 });
 
@@ -1190,16 +1227,12 @@ export const integrationsPhoneUploadInitContract = c.router({
  * Integration AgentPhone file upload — complete contract
  * POST /api/integrations/phone/upload-file/complete
  *
- * Sends an uploaded file URL to a connected phone handle through AgentPhone.
- * Requires `phone:write` capability (via OKOU_TOKEN).
+ * Sends an uploaded file URL to the caller's own linked phone handle through
+ * AgentPhone. Requires `phone:write` capability (via OKOU_TOKEN).
  */
 const phoneUploadCompleteBodySchema = z.object({
   uploadId: z.string().uuid("Upload ID must be a UUID"),
-  agentphoneAgentId: z
-    .string()
-    .min(1, "AgentPhone agent ID is required")
-    .optional(),
-  toNumber: z.string().min(1, "Phone number is required"),
+  agentphoneAgentId: z.string().min(1, "Phone agent ID is required").optional(),
   contentType: z.string().min(1).max(200).optional(),
   caption: z.string().max(1024).optional(),
 });
@@ -1236,7 +1269,7 @@ export const integrationsPhoneUploadCompleteContract = c.router({
       404: apiErrorSchema,
       502: apiErrorSchema,
     },
-    summary: "Finalize AgentPhone file upload and send it to a phone handle",
+    summary: "Finalize phone file upload and send it to a phone handle",
   },
 });
 
@@ -1245,18 +1278,29 @@ export const integrationsPhoneUploadCompleteContract = c.router({
  * POST /api/integrations/slack/upload-file/complete
  *
  * Finalizes a Slack file upload and shares it to a channel/thread.
+ * Direct completions name exactly one of `channel` or `user` (a Slack user ID
+ * or `"me"`, resolved to a DM channel). Canonical completions deliver to the
+ * destination persisted at init and ignore `channel`/`user`.
  * Requires `slack:write` capability (via OKOU_TOKEN).
  */
-const slackUploadCompleteBodySchema = z.object({
-  fileId: z.string().min(1, "File ID is required"),
-  channel: z.string().min(1, "Channel ID is required"),
-  threadTs: z.string().optional(),
-  title: z.string().optional(),
-  initialComment: z.string().optional(),
-  canonicalAssetId: z.string().uuid().optional(),
-  operationId: z.string().uuid().optional(),
-  uploadError: z.string().max(2000).optional(),
-});
+const slackUploadCompleteBodySchema = z
+  .object({
+    fileId: z.string().min(1, "File ID is required"),
+    channel: z.string().min(1, "Channel ID is required").optional(),
+    user: z.string().min(1, "User ID is required").optional(),
+    threadTs: z.string().optional(),
+    title: z.string().optional(),
+    initialComment: z.string().optional(),
+    canonicalAssetId: z.string().uuid().optional(),
+    operationId: z.string().uuid().optional(),
+    uploadError: z.string().max(2000).optional(),
+  })
+  .refine(
+    (data) => {
+      return Boolean(data.channel) !== Boolean(data.user);
+    },
+    { message: "Exactly one of 'channel' or 'user' must be provided" },
+  );
 
 export type SlackUploadCompleteBody = z.infer<
   typeof slackUploadCompleteBodySchema
@@ -1265,6 +1309,8 @@ export type SlackUploadCompleteBody = z.infer<
 const slackUploadCompleteResponseSchema = z.object({
   fileId: z.string(),
   permalink: z.string(),
+  /** Channel ID the file was shared to (a DM channel when `user` was sent). */
+  channel: z.string(),
   assetId: z.string().uuid().optional(),
   assetUrl: z.string().url().optional(),
   deliveryStatus: z.enum(["delivered", "failed"]).optional(),

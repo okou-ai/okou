@@ -192,7 +192,7 @@ describe("chat engagement telemetry", () => {
     });
 
     const expandWork = await findWorkHistoryToggle("collapsed");
-    expect(screen.getByText("Worked for 20s")).toBeVisible();
+    expect(screen.getByText("Worked for 20 sec")).toBeVisible();
 
     click(expandWork);
 

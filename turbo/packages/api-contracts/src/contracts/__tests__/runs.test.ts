@@ -59,18 +59,20 @@ describe("Claude tool entry contract", () => {
 });
 
 describe("unified run request contract", () => {
-  it("keeps historical Goal sources readable while accepting only supported live sources", () => {
-    expect(triggerSourceSchema.parse("goal")).toBe("goal");
+  it("accepts only catalog trigger sources on unified run requests", () => {
+    expect(triggerSourceSchema.safeParse("unknown-source").success).toBe(false);
     expect(
       runCreateBodySchema.safeParse({
-        prompt: "old request",
-        triggerSource: "goal",
+        prompt: "ordinary request",
+        triggerSource: "web",
       }).success,
     ).toBe(false);
     const input = { agentId: "agent-1", prompt: "ordinary work" };
     expect(
-      unifiedRunRequestSchema.safeParse({ ...input, triggerSource: "goal" })
-        .success,
+      unifiedRunRequestSchema.safeParse({
+        ...input,
+        triggerSource: "unknown-source",
+      }).success,
     ).toBe(false);
     expect(
       unifiedRunRequestSchema.safeParse({ ...input, triggerSource: "web" })

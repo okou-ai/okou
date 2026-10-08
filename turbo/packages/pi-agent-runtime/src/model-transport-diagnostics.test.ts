@@ -3,7 +3,10 @@ import { EventEmitter, once } from "node:events";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { fauxAssistantMessage, normalizeContext } from "@earendil-works/pi-ai";
 import { piAgentStreamForConfig, resolvePiAgentModel } from "./model";
-import { projectPiApiAssistantMessage } from "./api-turn";
+import {
+  piModelFailureReason,
+  piModelTransportFailure,
+} from "./model-request-diagnostics";
 import terminatedMessage from "./test/fixtures/codex-stream-terminated.json";
 import {
   modelTransportFailure,
@@ -30,7 +33,7 @@ async function provider(handler: RequestListener) {
   const config = {
     provider: "openai-codex",
     baseUrl: `http://127.0.0.1:${address.port}`,
-    model: "gpt-5.6-terra",
+    model: "gpt-6-luna",
     apiKey: "synthetic-token",
     accountId: "synthetic-account",
     dialect: "openai-codex-responses",
@@ -52,7 +55,7 @@ async function provider(handler: RequestListener) {
 
 describe("Pi causal transport evidence", () => {
   it.each(["events", "result"])(
-    "retains a prematurely ended HTTP body through %s and API projection",
+    "retains a prematurely ended HTTP body through %s and native diagnostics",
     async (consumer) => {
       const stream = await provider((request, response) => {
         request.resume();
@@ -95,15 +98,8 @@ describe("Pi causal transport evidence", () => {
           details: { httpStatus: 200, transportAttempts: 1, transportFailure },
         },
       ]);
-      expect(projectPiApiAssistantMessage(result, 200)).toMatchObject({
-        stopReason: "error",
-        failureReason: "response_connection_lost",
-        failureDiagnostic: {
-          category: "stream_terminated",
-          httpStatus: 200,
-          transportFailure,
-        },
-      });
+      expect(piModelFailureReason(result)).toBe("response_connection_lost");
+      expect(piModelTransportFailure(result)).toStrictEqual(transportFailure);
       expect(JSON.stringify(result.diagnostics)).not.toContain("127.0.0.1");
     },
   );
@@ -202,16 +198,15 @@ describe("Pi causal transport evidence", () => {
         },
       ],
     };
-    const projected = projectPiApiAssistantMessage(message, 200);
-    expect(projected.failureDiagnostic?.transportFailure).toStrictEqual({
+    const projected = piModelTransportFailure(message);
+    expect(projected).toStrictEqual({
       phase: "response_body",
       signalAborted: false,
       causeCode: "ECONNRESET",
     });
     expect(JSON.stringify(projected)).not.toContain("private");
     expect(
-      projectPiApiAssistantMessage({ ...message, stopReason: "aborted" }, 200)
-        .failureDiagnostic?.transportFailure,
+      piModelTransportFailure({ ...message, stopReason: "aborted" }),
     ).toBeUndefined();
   });
 

@@ -256,6 +256,9 @@ describe("VNC sessions and input", () => {
       entry.outputHelp();
     }
     expect(help).toContain("--mode <shared|exclusive>");
+    expect(help).toContain("availability.status=ready");
+    expect(help).toContain("blocked needs_rebind");
+    expect(help).toContain("explicitly choose Direct");
     expect(help).toContain("disconnect other viewers");
     expect(help).toContain("Success is not proof of exclusive control");
     expect(help).toContain("outcome=unknown");

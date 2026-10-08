@@ -282,11 +282,11 @@ mod tests {
     const CONTROL_TEST_READ_TIMEOUT: Duration = Duration::from_secs(3);
 
     fn active_input_payload(sequence: u64) -> Vec<u8> {
-        let delivery_id = uuid::Uuid::new_v5(
+        let event_id = uuid::Uuid::new_v5(
             &uuid::Uuid::NAMESPACE_OID,
             format!("vm0:control-test:active-input:{sequence}").as_bytes(),
         );
-        guest_contracts::active_input::encode_active_input(&delivery_id.to_string(), "hello")
+        guest_contracts::active_input::encode_active_input(&event_id.to_string(), "hello")
             .expect("active-input control payload should serialize")
     }
 
@@ -449,7 +449,7 @@ mod tests {
             &mut stream,
             &process_control_ipc::ControlRequest {
                 message_id: "bad-1".to_owned(),
-                payload: br#"{"type":"other","deliveryId":"00000000-0000-4000-8000-000000000001","text":"hello"}"#.to_vec(),
+                payload: br#"{"type":"other","eventId":"00000000-0000-4000-8000-000000000001","text":"hello"}"#.to_vec(),
             },
         )
         .unwrap();

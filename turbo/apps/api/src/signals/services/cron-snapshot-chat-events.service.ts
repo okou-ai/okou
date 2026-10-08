@@ -27,7 +27,7 @@ import {
   chatEventSnapshotScanState,
   chatEventSnapshots,
 } from "@okouai/db/schema/chat-event-snapshot";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { userExportEntries } from "@okouai/db/schema/user-export-entry";
 
 import { env, optionalEnv } from "../../lib/env";
@@ -86,14 +86,6 @@ interface ChatEventSnapshotStats {
   readonly r2GcSubpartitionedShards: number;
 }
 
-type ChatEventSnapshotScope =
-  | { readonly kind: "global" }
-  | {
-      readonly kind: "fixtures";
-      readonly chatThreadIds: readonly string[];
-      readonly r2ObjectKeys: readonly string[];
-    };
-
 interface SnapshotCandidate {
   readonly chatThreadId: string;
   readonly indexedSeqId: number;
@@ -114,7 +106,7 @@ interface SnapshotCandidate {
  */
 const ARCHIVE_CONTENT_TYPE = "application/x-ndjson";
 const ARCHIVE_CONTENT_ENCODING = "gzip";
-/** V7 wire shape is unchanged; this marks objects validated after Phase B. */
+/** Object-key revision for snapshots validated after Phase B. */
 const ARCHIVE_ROW_CONTRACT_REVISION = 1;
 const ARCHIVE_OBJECT_KEY_PREFIX_PATTERN = "^chat-events/[0-9a-f-]{36}/[0-9]+";
 const ARCHIVE_OBJECT_KEY_SUFFIX_PATTERN = "-[0-9a-f]{64}[.]ndjson[.]gz$";
@@ -419,7 +411,7 @@ function resolveSnapshotSource(
   };
 }
 
-function candidateSourceResolution(
+function candidateHeadResolution(
   candidate: SnapshotCandidate,
 ): SnapshotSourceResolution {
   return resolveSnapshotSource(
@@ -435,19 +427,6 @@ function candidateSourceResolution(
           schemaVersion: candidate.headArchiveSchemaVersion,
         },
   );
-}
-
-function candidateCurrentSource(
-  candidate: SnapshotCandidate,
-): SnapshotSource | null {
-  const resolved = candidateSourceResolution(candidate);
-  if (resolved.kind === "initial") {
-    return null;
-  }
-  if (resolved.kind === "skipped") {
-    throw new Error("Chat Event Snapshot pointer is not reusable");
-  }
-  return resolved.source;
 }
 
 type SnapshotPrefixResolution =
@@ -541,16 +520,18 @@ async function decodeSnapshotPrefix(
   await decodeSnapshotStage("prefix", () => {
     validateSnapshotPrefixRows(decodedRows, args);
   });
-  const terminal = decodedRows.at(-1);
-  const terminalSeqId = terminal?.seqId ?? 0;
-  const terminalEventId = terminal?.id ?? null;
   await decodeSnapshotStage("terminal", () => {
-    validateSnapshotPrefixTerminal(args, terminalSeqId, terminalEventId);
+    validateSnapshotPrefixTerminal(
+      args,
+      decodedRows.at(-1)?.seqId ?? 0,
+      decodedRows.at(-1)?.id ?? null,
+    );
   });
+  const terminal = decodedRows.at(-1);
   return {
     body: decompressed,
-    terminalSeqId,
-    terminalEventId,
+    terminalSeqId: terminal?.seqId ?? 0,
+    terminalEventId: terminal?.id ?? null,
   };
 }
 
@@ -623,19 +604,7 @@ async function publishSnapshotVersion(
   const { lastSeqId, lastEventId, terminalSeqId, terminalEventId, objectKey } =
     pointer;
   return await db.transaction(async (tx) => {
-    const current = candidateCurrentSource(candidate);
-    if (source !== null && source.id !== current?.id) {
-      const [lockedSource] = await tx
-        .select({ id: chatEventSnapshots.id })
-        .from(chatEventSnapshots)
-        .where(exactSnapshotPointer(source))
-        .for("update")
-        .limit(1);
-      if (lockedSource === undefined) {
-        return false;
-      }
-    }
-    if (current !== null) {
+    if (source !== null) {
       const updated = await tx
         .update(chatEventSnapshots)
         .set({
@@ -646,7 +615,7 @@ async function publishSnapshotVersion(
           objectKey,
           createdAt: nowDate(),
         })
-        .where(exactSnapshotPointer(current))
+        .where(exactSnapshotPointer(source))
         .returning({ id: chatEventSnapshots.id });
       if (updated.length === 0) {
         return false;
@@ -725,7 +694,7 @@ function resolveArchivePrefix(
   signal: AbortSignal,
 ): Computed<Promise<ArchivePrefixResolution>> {
   return computed(async (get): Promise<ArchivePrefixResolution> => {
-    const sourceResolution = candidateSourceResolution(args.candidate);
+    const sourceResolution = candidateHeadResolution(args.candidate);
     signal.throwIfAborted();
     if (sourceResolution.kind === "skipped") {
       return sourceResolution;
@@ -1065,7 +1034,6 @@ interface R2GcStats {
 
 interface R2GcOptions {
   readonly deleteQuota: number;
-  readonly ownedObjectKeys: ReadonlySet<string> | null;
 }
 
 function chatEventSnapshotGcPrefixes(now: Date): readonly string[] {
@@ -1123,9 +1091,8 @@ const collectR2SnapshotGarbage$ = command(
     let shardsScanned = 0;
     let subpartitionedShards = 0;
     let remainingDeleteQuota = options.deleteQuota;
-    const ownedObjectKeys = options.ownedObjectKeys;
 
-    if (remainingDeleteQuota === 0 || ownedObjectKeys?.size === 0) {
+    if (remainingDeleteQuota === 0) {
       return {
         scanned,
         measured,
@@ -1145,14 +1112,8 @@ const collectR2SnapshotGarbage$ = command(
         subpartitionedShards += 1;
       }
       for (const objects of pages) {
-        const scopedObjects =
-          ownedObjectKeys === null
-            ? objects
-            : objects.filter((object) => {
-                return ownedObjectKeys.has(object.key);
-              });
-        scanned += scopedObjects.length;
-        const oldObjects = scopedObjects.filter((object) => {
+        scanned += objects.length;
+        const oldObjects = objects.filter((object) => {
           return object.lastModified < olderThan;
         });
         if (oldObjects.length === 0) {
@@ -1661,29 +1622,12 @@ async function finalizeGlobalSnapshotScanState(
  * pointer CAS, so a lost race can only leave a collectable orphan object.
  */
 export const snapshotChatEvents$ = command(
-  async (
-    { set },
-    scope: ChatEventSnapshotScope,
-    signal: AbortSignal,
-  ): Promise<ChatEventSnapshotStats> => {
+  async ({ set }, signal: AbortSignal): Promise<ChatEventSnapshotStats> => {
     const db = set(writeDb$);
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    const ownedObjectKeys =
-      scope.kind === "global" ? null : new Set(scope.r2ObjectKeys);
-    const globalCandidatePage =
-      scope.kind === "global"
-        ? await loadGlobalSnapshotCandidatePage(db)
-        : null;
-    const candidates =
-      globalCandidatePage?.candidates ??
-      (await loadSnapshotCandidates(
-        db,
-        scope.kind === "fixtures" ? scope.chatThreadIds : null,
-        null,
-        null,
-        chatEventSnapshotThreadBatchSize(),
-      ));
+    const globalCandidatePage = await loadGlobalSnapshotCandidatePage(db);
     signal.throwIfAborted();
+    const candidates = globalCandidatePage.candidates;
 
     const candidateAgeMs = oldestCandidateAgeMs(candidates);
     const processed = await processSnapshotCandidates(
@@ -1707,21 +1651,17 @@ export const snapshotChatEvents$ = command(
         bucket,
         options: {
           deleteQuota: SNAPSHOT_GC_DELETE_QUOTA,
-          ownedObjectKeys,
         },
       },
       signal,
     );
     signal.throwIfAborted();
-    const scanCursorAdvanced =
-      globalCandidatePage === null
-        ? false
-        : await finalizeGlobalSnapshotScanState(
-            db,
-            globalCandidatePage,
-            processed.attemptedCandidates,
-            signal,
-          );
+    const scanCursorAdvanced = await finalizeGlobalSnapshotScanState(
+      db,
+      globalCandidatePage,
+      processed.attemptedCandidates,
+      signal,
+    );
     return {
       ...outcomeStats,
       selectedCandidates: candidates.length,
@@ -1729,7 +1669,7 @@ export const snapshotChatEvents$ = command(
       deferredCandidates: processed.deferredCandidates,
       oldestCandidateAgeMs: candidateAgeMs,
       scanCursorAdvanced,
-      scanWrapped: globalCandidatePage?.wrapped ?? false,
+      scanWrapped: globalCandidatePage.wrapped,
       r2ObjectsScanned: r2Gc.scanned,
       r2ObjectsMeasured: r2Gc.measured,
       r2ObjectsDeleted: r2Gc.deleted,

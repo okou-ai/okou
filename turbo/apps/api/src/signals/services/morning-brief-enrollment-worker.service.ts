@@ -5,24 +5,15 @@ import { and, asc, eq, inArray, isNotNull, isNull, lte } from "drizzle-orm";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
-import { publishMorningBriefChangedSafely } from "../external/realtime";
 import { settle } from "../utils";
-import {
-  loadMorningBriefEnrollment,
-  type MorningBriefMemberIdentity,
-  morningBriefEnrollmentWhere,
-} from "./morning-brief-enrollment-data.service";
-import { prepareMorningBriefEnrollment } from "./morning-brief-enrollment-retry.service";
+import { loadMorningBriefEnrollment$ } from "./morning-brief-enrollment-data.service";
+import { prepareMorningBriefEnrollment$ } from "./morning-brief-enrollment-retry.service";
 import { ensureMorningBriefDefaultEnabled$ } from "./morning-brief-preference.service";
 
 const log = logger("MorningBriefEnrollment");
 /** Shared enrollment admission owns the lease and backoff for every entry point. */
-const executeMorningBriefEnrollmentScope$ = command(
-  async (
-    { set },
-    identity: MorningBriefMemberIdentity | undefined,
-    signal: AbortSignal,
-  ): Promise<number> => {
+export const executeMorningBriefEnrollmentWork$ = command(
+  async ({ set }, signal: AbortSignal): Promise<number> => {
     const db = set(writeDb$);
     // Older members can have a timezone without an enrollment row. Admit a
     // bounded set before selecting due work; qualification checks eligibility.
@@ -45,15 +36,13 @@ const executeMorningBriefEnrollmentScope$ = command(
         and(
           isNotNull(orgMembersMetadata.timezone),
           isNull(morningBriefEnrollments.userId),
-          identity ? eq(orgMembersMetadata.orgId, identity.orgId) : undefined,
-          identity ? eq(orgMembersMetadata.userId, identity.userId) : undefined,
         ),
       )
       .orderBy(asc(orgMembersMetadata.orgId), asc(orgMembersMetadata.userId))
       .limit(20);
     signal.throwIfAborted();
     for (const member of missing) {
-      await prepareMorningBriefEnrollment(db, member);
+      await set(prepareMorningBriefEnrollment$, member, signal);
       signal.throwIfAborted();
     }
     const currentTime = nowDate();
@@ -64,7 +53,6 @@ const executeMorningBriefEnrollmentScope$ = command(
         and(
           inArray(morningBriefEnrollments.state, ["checking", "pending"]),
           lte(morningBriefEnrollments.availableAt, currentTime),
-          identity ? morningBriefEnrollmentWhere(identity) : undefined,
         ),
       )
       .orderBy(asc(morningBriefEnrollments.availableAt))
@@ -90,7 +78,11 @@ const executeMorningBriefEnrollmentScope$ = command(
         continue;
       }
       attempted++;
-      const currentEnrollment = await loadMorningBriefEnrollment(db, identity);
+      const currentEnrollment = await set(
+        loadMorningBriefEnrollment$,
+        identity,
+        signal,
+      );
       signal.throwIfAborted();
       const lastError = !result.ok
         ? String(result.error)
@@ -112,27 +104,9 @@ const executeMorningBriefEnrollmentScope$ = command(
         } else {
           log.info("Morning Brief enrollment changed", details);
         }
-        await publishMorningBriefChangedSafely(identity);
         signal.throwIfAborted();
       }
     }
     return attempted;
-  },
-);
-
-export const executeMorningBriefEnrollmentWork$ = command(
-  async ({ set }, signal: AbortSignal) => {
-    return await set(executeMorningBriefEnrollmentScope$, undefined, signal);
-  },
-);
-
-/** The test harness drives the same worker with an explicitly owned member. */
-export const executeMorningBriefEnrollmentForMember$ = command(
-  async (
-    { set },
-    identity: MorningBriefMemberIdentity,
-    signal: AbortSignal,
-  ) => {
-    return await set(executeMorningBriefEnrollmentScope$, identity, signal);
   },
 );

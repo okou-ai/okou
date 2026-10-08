@@ -6,6 +6,16 @@ import {
   initTeamsFileUpload,
 } from "../../lib/api/domains/integrations-teams";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import {
+  TO_OPTION_FLAGS,
+  toOptionDescription,
+} from "../../lib/command/message-target";
+import {
+  JSON_OPTION_DESCRIPTION,
+  JSON_OPTION_FLAGS,
+  printMessageOutput,
+} from "../../lib/command/message-output";
+import { resolveTeamsDestination } from "./message/target";
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   ".png": "image/png",
@@ -35,21 +45,27 @@ export const uploadFileCommand = new Command()
     "Upload a local file to a Microsoft Teams conversation as the bot",
   )
   .requiredOption("-f, --file <path>", "Local file path to upload")
-  .requiredOption("-c, --conversation-id <id>", "Teams conversation ID")
-  .option("--activity-id <id>", "Activity ID to reply to")
+  .requiredOption(
+    TO_OPTION_FLAGS,
+    toOptionDescription("19:… conversation, 29:… user"),
+  )
+  .option("--reply-to <activity-id>", "Activity ID to reply to in thread")
   .option("-t, --text <message>", "Message text to accompany the file")
   .option("--content-type <mime>", "Override inferred content type")
+  .option(JSON_OPTION_FLAGS, JSON_OPTION_DESCRIPTION)
   .addHelpText(
     "after",
     `
 Examples:
-  Upload a file:     okou teams upload-file -f /tmp/report.pdf -c 19:thread@thread.tacv2
-  Upload to thread:  okou teams upload-file -f /tmp/log.txt -c 19:thread@thread.tacv2 --activity-id root-activity
-  With message text: okou teams upload-file -f /tmp/data.csv -c 19:thread@thread.tacv2 -t "Daily report"
+  Upload a file:     okou teams upload-file -f /tmp/report.pdf --to 19:thread@thread.tacv2
+  Upload to thread:  okou teams upload-file -f /tmp/log.txt --to 19:thread@thread.tacv2 --reply-to root-activity
+  DM yourself:       okou teams upload-file -f /tmp/report.pdf --to me
+  With message text: okou teams upload-file -f /tmp/data.csv --to 19:thread@thread.tacv2 -t "Daily report"
 
 Output:
-  Prints a JSON object to stdout on success:
-    {"activityId":"...","conversationId":"19:...","filename":"report.pdf","mimetype":"application/pdf","size":12345,"url":"https://..."}
+  Prints "✓ File uploaded" with the activity ID, conversation ID, and file URL.
+  With --json, prints one JSON object:
+    {"integration":"teams","chatId":"19:...","messages":[{"id":"...","url":null}],"file":{"name":"report.pdf","contentType":"application/pdf","size":12345,"url":"https://..."}}
 
 Notes:
   - Uploads through Okou storage first, then sends the Teams message with the file URL
@@ -59,11 +75,17 @@ Notes:
     withErrorHandler(
       async (options: {
         file: string;
-        conversationId: string;
-        activityId?: string;
+        to: string;
+        replyTo?: string;
         text?: string;
         contentType?: string;
+        json?: boolean;
       }) => {
+        const destination = resolveTeamsDestination(
+          options.to,
+          options.replyTo,
+        );
+
         let fileSize: number;
         try {
           const stat = statSync(options.file);
@@ -109,13 +131,27 @@ Notes:
 
         const result = await completeTeamsFileUpload({
           uploadId: prepared.uploadId,
-          conversationId: options.conversationId,
-          activityId: options.activityId,
+          ...destination,
           contentType: prepared.contentType,
           text: options.text,
         });
 
-        console.log(JSON.stringify(result));
+        printMessageOutput(
+          {
+            integration: "teams",
+            chatId: result.conversationId,
+            messages: result.activityId
+              ? [{ id: result.activityId, url: null }]
+              : [],
+            file: {
+              name: result.filename,
+              contentType: result.mimetype,
+              size: result.size,
+              url: result.url,
+            },
+          },
+          options,
+        );
       },
     ),
   );

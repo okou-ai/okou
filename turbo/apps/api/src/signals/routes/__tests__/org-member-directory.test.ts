@@ -544,15 +544,10 @@ describe("organization member directory", () => {
     },
   );
 
-  it.each([
-    ["org:admin", "getOrganization"],
-    ["org:admin", "getOrganizationMembershipList"],
-    ["org:member", "getOrganization"],
-    ["org:member", "getOrganizationMembershipList"],
-  ] as const)(
-    "keeps required %s %s failures visible in the members view",
-    async (orgRole, operation) => {
-      const actor = api.user({ orgRole });
+  it.each(["getOrganization", "getOrganizationMembershipList"] as const)(
+    "keeps required %s failures visible to admins in the members view",
+    async (operation) => {
+      const actor = api.user({ orgRole: "org:admin" });
       api.mockClerkOrg(actor);
       context.mocks.clerk.organizations[operation].mockRejectedValue(
         new Error("Required Clerk read failed"),

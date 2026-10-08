@@ -16,12 +16,12 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { API_TEST_CONNECTOR_FIREWALL_CONFIGS } from "../../../test-fixtures/connector-catalog";
 import { runnersRoutes } from "../runners";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const OFFICIAL_RUNNER_AUTHORIZATION =
   "Bearer vm0_official_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
-const OPENAI_API_KEY_AUTH_HEADER = [
+const CLAUDE_CODE_OAUTH_TOKEN_AUTH_HEADER = [
   "Bearer $",
-  "{{ secrets.OPENAI_API_KEY }}",
+  "{{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}",
 ].join("");
 const CHATGPT_ACCESS_TOKEN_AUTH_HEADER = [
   "Bearer $",
@@ -122,7 +122,7 @@ describe("runner builtin firewall resolver", () => {
       client().resolve({
         headers: { authorization: OFFICIAL_RUNNER_AUTHORIZATION },
         body: {
-          names: ["github", "github", "model-provider:openai-api-key"],
+          names: ["github", "github", "model-provider:claude-code-oauth-token"],
         },
       }),
       [200],
@@ -137,16 +137,16 @@ describe("runner builtin firewall resolver", () => {
     );
     expect(Object.keys(body.firewalls).sort()).toStrictEqual([
       "github",
-      "model-provider:openai-api-key",
+      "model-provider:claude-code-oauth-token",
     ]);
     expect(body.firewalls.github?.name).toBe("github");
     expect(
-      body.firewalls["model-provider:openai-api-key"]?.apis[0],
+      body.firewalls["model-provider:claude-code-oauth-token"]?.apis[0],
     ).toStrictEqual({
-      base: "https://api.openai.com/v1/responses",
+      base: "https://api.anthropic.com/v1/messages",
       auth: {
         headers: {
-          Authorization: OPENAI_API_KEY_AUTH_HEADER,
+          Authorization: CLAUDE_CODE_OAUTH_TOKEN_AUTH_HEADER,
         },
       },
       permissions: [],
@@ -234,8 +234,8 @@ describe("runner builtin firewall resolver", () => {
         JSON.parse(bodyBytes.toString("utf8")),
       );
     expect(body.firewalls.github?.name).toBe("github");
-    expect(body.firewalls["model-provider:openai-api-key"]?.name).toBe(
-      "model-provider:openai-api-key",
+    expect(body.firewalls["model-provider:claude-code-oauth-token"]?.name).toBe(
+      "model-provider:claude-code-oauth-token",
     );
     expect(bodyBytes.byteLength).toBeLessThanOrEqual(
       BUILTIN_FIREWALL_CATALOG_MAX_BYTES,
@@ -268,12 +268,12 @@ describe("runner builtin firewall resolver", () => {
     ]);
     expect(body.firewalls.github?.name).toBe("github");
     expect(
-      body.firewalls["model-provider:openai-api-key"]?.apis[0],
+      body.firewalls["model-provider:claude-code-oauth-token"]?.apis[0],
     ).toStrictEqual({
-      base: "https://api.openai.com/v1/responses",
+      base: "https://api.anthropic.com/v1/messages",
       auth: {
         headers: {
-          Authorization: OPENAI_API_KEY_AUTH_HEADER,
+          Authorization: CLAUDE_CODE_OAUTH_TOKEN_AUTH_HEADER,
         },
       },
       permissions: [],

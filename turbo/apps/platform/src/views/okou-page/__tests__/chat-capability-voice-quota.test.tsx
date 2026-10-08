@@ -21,11 +21,11 @@ import {
 } from "./chat-run-test-fixtures.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 
-type VoicePlan = "free" | "pro" | "team" | "custom";
+type VoicePlan = "limited-free-1" | "pro" | "team" | "custom";
 type WorkspaceRole = "admin" | "member";
 
 function billingStatus(tier: VoicePlan): BillingStatusResponse {
-  const paid = tier !== "free";
+  const paid = tier !== "limited-free-1";
   return {
     showUsagePack: false,
     tier,
@@ -107,7 +107,7 @@ async function expectVoiceLimitMessage(message: string): Promise<void> {
 
 test("Offer role-aware recovery when voice quota is exhausted", async () => {
   context.mocks.browser.voiceInput();
-  installVoicePlan("free", "admin");
+  installVoicePlan("limited-free-1", "admin");
   installExhaustedVoiceQuota();
   installRunChat();
 
@@ -216,7 +216,7 @@ test("Keep a recorded draft retryable after a quota response", async () => {
 
 test("Ask an admin when a member exhausts voice quota", async () => {
   context.mocks.browser.voiceInput();
-  installVoicePlan("free", "member");
+  installVoicePlan("limited-free-1", "member");
   installExhaustedVoiceQuota();
   installRunChat();
 

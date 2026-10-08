@@ -1,19 +1,20 @@
 import { defineConfig } from "vitest/config";
+import { apiTestEnvironment } from "./src/__tests__/test-environment";
 
 export default defineConfig({
   test: {
+    name: "api",
     globals: true,
     environment: "node",
-    env: {
-      TZ: "UTC",
-    },
-    setupFiles: ["./src/__tests__/env-stub.ts", "./src/__tests__/setup.ts"],
-    exclude: [
-      "node_modules/**",
-      "dist/**",
-      "**/__benches__/**",
-      "**/*.boundary.test.ts",
+    env: { ...apiTestEnvironment, TZ: "UTC" },
+    globalSetup: ["./src/__tests__/global-setup.ts"],
+    setupFiles: [
+      "./src/__tests__/env-stub.ts",
+      "./src/__tests__/mocks.ts",
+      "./src/__tests__/setup.ts",
     ],
+    sequence: { setupFiles: "list" },
+    exclude: ["node_modules/**", "dist/**", "**/__benches__/**"],
     benchmark: {
       include: ["src/**/__benches__/**/*.bench.ts"],
       retainSamples: true,

@@ -1,8 +1,6 @@
 import * as getStartedClaimSchema from "./schema/get-started-claim";
-import * as accountErasureBridgeSchema from "./schema/account-erasure-bridge";
-import * as accountErasureSchema from "./schema/account-erasure";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
-import * as runActivitySnapshotSchema from "./schema/run-activity-snapshot";
+import * as activeAgentRunSchema from "./schema/active-agent-run";
 import * as homeTaskRecommendationSchema from "./schema/home-task-recommendation";
 import * as artifactShareSchema from "./schema/artifact-share";
 import * as userSchema from "./schema/user";
@@ -16,27 +14,29 @@ import * as conversationSchema from "./schema/conversation";
 import * as checkpointSchema from "./schema/checkpoint";
 import * as agentSessionSchema from "./schema/agent-session";
 import * as storageSchema from "./schema/storage";
+import * as storagePublicationFenceSchema from "./schema/storage-publication-fence";
 import * as systemStoragePresignedUrlCacheSchema from "./schema/system-storage-presigned-url-cache";
 import * as blobSchema from "./schema/blob";
 
 import * as sandboxTelemetrySchema from "./schema/sandbox-telemetry";
 import * as runnerSchema from "./schema/runner-job-queue";
 import * as runnerStateSchema from "./schema/runner-state";
-import * as agentRunQueueSchema from "./schema/agent-run-queue";
+import * as runnerWssTicketSchema from "./schema/runner-wss-ticket";
 import * as chatAgentRunContextSchema from "./schema/chat-agent-run-context";
+import * as chatNetworkBodyCaptureSchema from "./schema/chat-network-body-capture";
 import * as chatAgentphoneContextSchema from "./schema/chat-agentphone-context";
 import * as chatAutomationContextSchema from "./schema/chat-automation-context";
+import * as chatDiscordContextSchema from "./schema/chat-discord-context";
 import * as chatFeishuContextSchema from "./schema/chat-feishu-context";
-import * as chatGithubContextSchema from "./schema/chat-github-context";
 import * as chatSlackContextSchema from "./schema/chat-slack-context";
+import * as discordGatewayReceiptSchema from "./schema/discord-gateway-receipt";
 import * as chatTeamsContextSchema from "./schema/chat-teams-context";
 import * as chatTelegramContextSchema from "./schema/chat-telegram-context";
 import * as secretSchema from "./schema/secret";
 import * as modelProviderSchema from "./schema/model-provider";
 import * as modelProviderAccountSchema from "./schema/model-provider-account";
-import * as modelProviderGatewaySchema from "./schema/model-provider-gateway";
-import * as orgModelPolicySchema from "./schema/org-model-policy";
 import * as runModelCatalogSchema from "./schema/run-model-catalog";
+import * as modelRouteSchema from "./schema/model-route";
 import * as variableSchema from "./schema/variable";
 import * as composeJobSchema from "./schema/compose-job";
 import * as connectorSchema from "./schema/connector";
@@ -56,33 +56,32 @@ import * as usagePackSubscriptionSchema from "./schema/usage-pack-subscription";
 import * as runBuiltInAdmissionSchema from "./schema/run-built-in-admission";
 import * as githubInstallationSchema from "./schema/github-installation";
 import * as githubUserLinkSchema from "./schema/github-user-link";
-import * as githubChatThreadRouteSchema from "./schema/github-chat-thread-route";
-import * as telegramInstallationSchema from "./schema/telegram-installation";
 import * as telegramOfficialUserLinkSchema from "./schema/telegram-official-user-link";
-import * as telegramUserLinkSchema from "./schema/telegram-user-link";
-import * as telegramUserAgentPreferenceSchema from "./schema/telegram-user-agent-preference";
 import * as telegramChatThreadRouteSchema from "./schema/telegram-chat-thread-route";
 import * as telegramMessageSchema from "./schema/telegram-message";
 import * as agentphoneUserLinkSchema from "./schema/agentphone-user-link";
-import * as agentphoneUserAgentPreferenceSchema from "./schema/agentphone-user-agent-preference";
 import * as agentphoneChatThreadRouteSchema from "./schema/agentphone-chat-thread-route";
 import * as agentphoneMessageSchema from "./schema/agentphone-message";
+import * as agentphoneMessageVisibilitySchema from "./schema/agentphone-message-visibility";
+import * as agentphoneGroupMessageReceiptSchema from "./schema/agentphone-group-message-receipt";
 import * as agentphoneVerificationSendCooldownSchema from "./schema/agentphone-verification-send-cooldown";
 import * as slackOrgInstallationSchema from "./schema/slack-org-installation";
 import * as slackOrgConnectionSchema from "./schema/slack-org-connection";
 import * as slackChatThreadRouteSchema from "./schema/slack-chat-thread-route";
 import * as slackChatIngressSchema from "./schema/slack-chat-ingress";
-import * as slackUserAgentPreferenceSchema from "./schema/slack-user-agent-preference";
+import * as discordOrgInstallationSchema from "./schema/discord-org-installation";
+import * as discordOrgConnectionSchema from "./schema/discord-org-connection";
+import * as discordChatThreadRouteSchema from "./schema/discord-chat-thread-route";
+import * as discordChatIngressSchema from "./schema/discord-chat-ingress";
+import * as discordUserDmPreferenceSchema from "./schema/discord-user-dm-preference";
 import * as teamsOrgInstallationSchema from "./schema/teams-org-installation";
 import * as teamsOrgConnectionSchema from "./schema/teams-org-connection";
 import * as teamsChatThreadRouteSchema from "./schema/teams-chat-thread-route";
-import * as teamsUserAgentPreferenceSchema from "./schema/teams-user-agent-preference";
 import * as feishuOrgInstallationSchema from "./schema/feishu-org-installation";
 import * as feishuOrgConnectionSchema from "./schema/feishu-org-connection";
 import * as feishuOrgEventSchema from "./schema/feishu-org-event";
 import * as feishuChatThreadRouteSchema from "./schema/feishu-chat-thread-route";
 import * as feishuChatIngressSchema from "./schema/feishu-chat-ingress";
-import * as feishuUserAgentPreferenceSchema from "./schema/feishu-user-agent-preference";
 import * as orgSchema from "./schema/org-metadata";
 import * as orgPlanEntitlementSchema from "./runtime/org-plan-entitlement";
 import * as orgConcurrencyEntitlementSchema from "./schema/org-concurrency-entitlement";
@@ -104,16 +103,17 @@ import * as userPermissionGrantSchema from "./schema/user-permission-grant";
 import * as storageVersionLineageSchema from "./schema/storage-version-lineage";
 import * as runUploadedFileSchema from "./schema/run-uploaded-file";
 import * as builtInModelKeySchema from "./schema/built-in-model-key";
-import * as builtInModelCooldownSchema from "./schema/built-in-model-cooldown";
 import * as workflowSchema from "./schema/workflow";
+import * as workflowScheduleSkipSchema from "./schema/workflow-schedule-skip";
 import * as computerUseHostSchema from "./schema/computer-use-host";
 import * as userFeatureSwitchesSchema from "./schema/user-feature-switches";
 import * as userDisabledPaidToolsSchema from "./schema/user-disabled-paid-tools";
 import * as userBehaviorCountSchema from "./schema/user-behavior-count";
-import * as activeInputDeliverySchema from "./schema/active-input-delivery";
 import * as chatThreadSchema from "./schema/chat-thread";
+import * as chatEventSequenceSchema from "./schema/chat-event-sequence";
 import * as chatEventSchema from "./schema/chat-event";
 import * as chatEventSearchSchema from "./schema/chat-event-search";
+import * as chatEventRetentionCursorSchema from "./schema/chat-event-retention-cursor";
 import * as chatEventSnapshotSchema from "./schema/chat-event-snapshot";
 import * as chatThreadEventSchema from "./schema/chat-thread-event";
 import * as chatThreadSnapshotSchema from "./schema/chat-thread-snapshot";
@@ -146,9 +146,7 @@ import * as mailDraftSchema from "./schema/mail-draft";
 import * as browserSessionSchema from "./schema/browser-session";
 import * as presentationTemplateSchema from "./schema/presentation-template";
 import * as userTemplateSchema from "./schema/user-template";
-import * as piResourceSnapshotSchema from "./schema/pi-resource-snapshot";
 import * as piResourceVersionIndexSchema from "./schema/pi-resource-version-index";
-import * as piStableContextSchema from "./schema/pi-stable-context";
 import * as memorySummaryProjectionSchema from "./schema/memory-summary-projection";
 import * as piMemoryStage1CandidateSchema from "./schema/pi-memory-stage1-candidate";
 import * as piMemoryPhase2JobSchema from "./schema/pi-memory-phase2-job";
@@ -158,14 +156,11 @@ import * as sshConnectionSchema from "./schema/ssh-connection";
 import * as sshCredentialSchema from "./schema/ssh-credential";
 import * as vncCredentialSchema from "./schema/vnc-credential";
 import * as vncConnectionSchema from "./schema/vnc-connection";
-import * as agentSshAccessSchema from "./schema/agent-ssh-access";
 import * as cloudflareAccessConfigSchema from "./schema/cloudflare-access-config";
 
 export const schema = {
   ...getStartedClaimSchema,
-  ...accountErasureSchema,
-  ...accountErasureBridgeSchema,
-  ...runActivitySnapshotSchema,
+  ...activeAgentRunSchema,
   ...homeTaskRecommendationSchema,
   ...userSchema,
   ...artifactShareSchema,
@@ -179,42 +174,46 @@ export const schema = {
   ...checkpointSchema,
   ...agentSessionSchema,
   ...storageSchema,
+  ...storagePublicationFenceSchema,
   ...systemStoragePresignedUrlCacheSchema,
   ...blobSchema,
 
   ...sandboxTelemetrySchema,
   ...runnerSchema,
   ...runnerStateSchema,
-  ...agentRunQueueSchema,
+  ...runnerWssTicketSchema,
   ...chatAgentRunContextSchema,
+  ...chatNetworkBodyCaptureSchema,
   ...chatAgentphoneContextSchema,
   ...chatAutomationContextSchema,
+  ...chatDiscordContextSchema,
   ...chatFeishuContextSchema,
-  ...chatGithubContextSchema,
   ...chatSlackContextSchema,
   ...chatTeamsContextSchema,
+  ...discordGatewayReceiptSchema,
   ...chatTelegramContextSchema,
   ...secretSchema,
   ...modelProviderSchema,
   ...modelProviderAccountSchema,
-  ...modelProviderGatewaySchema,
-  ...orgModelPolicySchema,
   ...runModelCatalogSchema,
+  ...modelRouteSchema,
   ...slackOrgInstallationSchema,
   ...slackOrgConnectionSchema,
   ...slackChatThreadRouteSchema,
   ...slackChatIngressSchema,
-  ...slackUserAgentPreferenceSchema,
+  ...discordOrgInstallationSchema,
+  ...discordOrgConnectionSchema,
+  ...discordChatThreadRouteSchema,
+  ...discordChatIngressSchema,
+  ...discordUserDmPreferenceSchema,
   ...teamsOrgInstallationSchema,
   ...teamsOrgConnectionSchema,
   ...teamsChatThreadRouteSchema,
-  ...teamsUserAgentPreferenceSchema,
   ...feishuOrgInstallationSchema,
   ...feishuOrgConnectionSchema,
   ...feishuOrgEventSchema,
   ...feishuChatThreadRouteSchema,
   ...feishuChatIngressSchema,
-  ...feishuUserAgentPreferenceSchema,
   ...variableSchema,
   ...composeJobSchema,
   ...connectorSchema,
@@ -235,17 +234,14 @@ export const schema = {
   ...runBuiltInAdmissionSchema,
   ...githubInstallationSchema,
   ...githubUserLinkSchema,
-  ...githubChatThreadRouteSchema,
-  ...telegramInstallationSchema,
   ...telegramOfficialUserLinkSchema,
-  ...telegramUserLinkSchema,
-  ...telegramUserAgentPreferenceSchema,
   ...telegramChatThreadRouteSchema,
   ...telegramMessageSchema,
   ...agentphoneUserLinkSchema,
-  ...agentphoneUserAgentPreferenceSchema,
   ...agentphoneChatThreadRouteSchema,
   ...agentphoneMessageSchema,
+  ...agentphoneMessageVisibilitySchema,
+  ...agentphoneGroupMessageReceiptSchema,
   ...agentphoneVerificationSendCooldownSchema,
   ...orgSchema,
   ...orgPlanEntitlementSchema,
@@ -268,16 +264,17 @@ export const schema = {
   ...storageVersionLineageSchema,
   ...runUploadedFileSchema,
   ...builtInModelKeySchema,
-  ...builtInModelCooldownSchema,
   ...workflowSchema,
+  ...workflowScheduleSkipSchema,
   ...computerUseHostSchema,
   ...userFeatureSwitchesSchema,
   ...userDisabledPaidToolsSchema,
   ...userBehaviorCountSchema,
-  ...activeInputDeliverySchema,
   ...chatThreadSchema,
   ...chatEventSchema,
+  ...chatEventSequenceSchema,
   ...chatEventSearchSchema,
+  ...chatEventRetentionCursorSchema,
   ...chatEventSnapshotSchema,
   ...chatThreadEventSchema,
   ...chatThreadSnapshotSchema,
@@ -310,9 +307,7 @@ export const schema = {
   ...browserSessionSchema,
   ...presentationTemplateSchema,
   ...userTemplateSchema,
-  ...piResourceSnapshotSchema,
   ...piResourceVersionIndexSchema,
-  ...piStableContextSchema,
   ...memorySummaryProjectionSchema,
   ...piMemoryStage1CandidateSchema,
   ...piMemoryPhase2JobSchema,
@@ -322,7 +317,6 @@ export const schema = {
   ...sshCredentialSchema,
   ...vncCredentialSchema,
   ...vncConnectionSchema,
-  ...agentSshAccessSchema,
   ...cloudflareAccessConfigSchema,
 };
 

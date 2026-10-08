@@ -33,7 +33,10 @@ export async function observePiMemoryStage1Cost(
     (async () => {
       const observedAt = nowDate().toISOString();
       const entries = safeSync(() => {
-        return piMemoryStage1UsageEntries(args.model, args.usage);
+        return piMemoryStage1UsageEntries(
+          args.usage,
+          args.longContextMinTotalInputTokens,
+        );
       });
       const base = {
         operation: "pi_memory_stage1",
@@ -123,7 +126,7 @@ export async function observePiMemoryStage1Cost(
 
 /** No usable response usage: unknown vendor cost, never a zero-valued response. */
 export async function observePiMemoryStage1MissingUsage(
-  billingMode: "builtin" | "byok",
+  billingMode: "builtin" | "subscription",
   model: PiMemoryStage1Model,
 ): Promise<void> {
   await settleIncludingAbort(() => {

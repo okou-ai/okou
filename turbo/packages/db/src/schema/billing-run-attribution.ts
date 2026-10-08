@@ -43,7 +43,7 @@ export const billingRunAttribution = pgTable(
       ),
       check(
         "billing_run_attribution_source_check",
-        sql`${table.source} IN ('chat', 'automation', 'slack', 'teams', 'telegram', 'email', 'agentphone', 'github', 'agent', 'other')`,
+        sql`${table.source} IN ('chat', 'automation', 'slack', 'discord', 'teams', 'telegram', 'email', 'agentphone', 'github', 'agent', 'other')`,
       ),
       check(
         "billing_run_attribution_thread_context_check",

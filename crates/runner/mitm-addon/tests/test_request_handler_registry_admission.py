@@ -8,6 +8,7 @@ import flow_metadata_keys as metadata_keys
 import mitm_addon
 import registry
 from tests.auth_state_helpers import auth_cache_key, has_auth_state
+from tests.registry_helpers import write_multi_sandbox_registry
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
 
 
@@ -502,6 +503,64 @@ async def test_invalid_inline_apis_blocks_before_auth_injection(
     assert metadata_keys.FIREWALL_AUTH_CACHE_KEY not in flow.metadata
     assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "BLOCK"
     assert flow.metadata[metadata_keys.FIREWALL_ERROR] == "invalid_registry_sandbox"
+
+
+async def test_uncompilable_inline_api_passes_through_without_auth_injection(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+):
+    api_entry = {
+        "base": "https://api.github.com",
+        "auth": {"headers": {"Authorization": "Bearer secret"}},
+        "permissions": [{"name": "full-access", "rules": ["ANY /{path+}"]}],
+    }
+    network_policy = {
+        "allow": ["full-access"],
+        "deny": [],
+        "ask": [],
+        "unknownPolicy": "allow",
+    }
+    registry_path = tmp_path / "registry.json"
+    write_multi_sandbox_registry(
+        registry_path,
+        {
+            "10.200.0.5": _single_firewall_sandbox(
+                tmp_path,
+                run_id="run-malformed",
+                api_entry={**api_entry, "base": 123},
+                network_policy=network_policy,
+            ),
+            "10.200.0.6": _single_firewall_sandbox(
+                tmp_path,
+                run_id="run-valid",
+                api_entry=api_entry,
+                network_policy=network_policy,
+            ),
+        },
+    )
+    malformed_flow = real_flow(with_response=False, client_ip="10.200.0.5", host="api.github.com")
+    valid_flow = real_flow(with_response=False, client_ip="10.200.0.6", host="api.github.com")
+
+    with (
+        mitm_ctx(registry_path=str(registry_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers() as auth_fetch,
+    ):
+        assert mitm_addon.requestheaders(malformed_flow) is None
+        await mitm_addon.request(malformed_flow)
+        auth_fetch.assert_not_awaited()
+        await mitm_addon.request(valid_flow)
+
+    assert malformed_flow.response is None
+    assert malformed_flow.request.headers.get("Authorization") is None
+    assert malformed_flow.metadata[metadata_keys.SANDBOX_RUN_ID] == "run-malformed"
+    assert malformed_flow.metadata[metadata_keys.FIREWALL_ACTION] == "ALLOW"
+    assert metadata_keys.FIREWALL_BASE not in malformed_flow.metadata
+    assert metadata_keys.FIREWALL_AUTH_CACHE_KEY not in malformed_flow.metadata
+    assert valid_flow.response is None
+    assert valid_flow.request.headers["Authorization"] == "Bearer x"
+    auth_fetch.assert_awaited_once()
 
 
 async def test_registered_sandbox_null_firewalls_passes_through_without_auth_injection(

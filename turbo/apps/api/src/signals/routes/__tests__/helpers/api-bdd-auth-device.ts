@@ -30,7 +30,6 @@ import {
   type CodexDeviceAuthScope,
   codexDeviceAuthContract,
 } from "@okouai/api-contracts/contracts/codex-device-auth";
-import { modelProvidersByTypeContract } from "@okouai/api-contracts/contracts/model-provider-routes";
 import { http, HttpResponse } from "msw";
 
 import { setupAppWithRoutes } from "../../../../__tests__/test-app";
@@ -47,7 +46,6 @@ import { agentsRoutes } from "../../agents";
 import { billingStatusRoutes } from "../../billing-status";
 import { claudeCodeDeviceAuthRoutes } from "../../claude-code-device-auth";
 import { codexDeviceAuthRoutes } from "../../codex-device-auth";
-import { modelProvidersRoutes } from "../../model-providers";
 import { realtimeTokenRoutes } from "../../realtime-token";
 import type { ApiTestUser } from "./api-bdd";
 import { createRouteMocks } from "./route-test";
@@ -83,7 +81,6 @@ const authDeviceRoutes: readonly RouteEntry[] = [
   ...billingStatusRoutes,
   ...claudeCodeDeviceAuthRoutes,
   ...codexDeviceAuthRoutes,
-  ...modelProvidersRoutes,
   ...realtimeTokenRoutes,
 ];
 
@@ -218,7 +215,6 @@ function makeCodexIdToken(opts: {
 }
 
 function makeCodexTokenResponse(
-  scope: "org" | "personal",
   args: {
     readonly accessTokenExpiresAt?: number;
     readonly accountId?: string;
@@ -226,18 +222,17 @@ function makeCodexTokenResponse(
     readonly workspaceName?: string;
   } = {},
 ) {
-  const accountId = args.accountId ?? `ws_acct_from_id_token_${scope}`;
+  const accountId = args.accountId ?? "ws_acct_from_id_token_personal";
   return {
     access_token: makeCodexJwt({
       exp: args.accessTokenExpiresAt ?? Math.floor(now() / 1000) + 7200,
       account_id: accountId,
     }),
-    refresh_token: args.refreshToken ?? `rt_${scope}_synthetic_high_entropy`,
+    refresh_token: args.refreshToken ?? "rt_personal_synthetic_high_entropy",
     id_token: makeCodexIdToken({
       accountId,
       planType: "plus",
-      workspaceName:
-        args.workspaceName ?? (scope === "org" ? "Org Acme" : "Personal Acme"),
+      workspaceName: args.workspaceName ?? "Personal Acme",
     }),
   };
 }
@@ -296,9 +291,9 @@ interface CodexDeviceAuthProviderRecorder {
 
 export function mockCodexDeviceAuthProvider(
   options: {
+    readonly beforeTokenResponse?: () => Promise<void>;
     readonly accessTokenExpiresAt?: number;
     readonly refreshedAccessTokenExpiresAt?: number;
-    readonly tokenScope?: "org" | "personal";
     readonly accountId?: string;
     readonly refreshToken?: string;
     readonly workspaceName?: string;
@@ -342,19 +337,17 @@ export function mockCodexDeviceAuthProvider(
         ? new URLSearchParams(JSON.parse(rawBody) as Record<string, string>)
         : new URLSearchParams(rawBody);
       recorded.oauthToken.push(body);
-      const tokenResponse = makeCodexTokenResponse(
-        options.tokenScope ?? "org",
-        {
-          ...options,
-          ...(body.get("grant_type") === "refresh_token" &&
-          options.refreshedAccessTokenExpiresAt !== undefined
-            ? {
-                accessTokenExpiresAt: options.refreshedAccessTokenExpiresAt,
-              }
-            : {}),
-        },
-      );
+      const tokenResponse = makeCodexTokenResponse({
+        ...options,
+        ...(body.get("grant_type") === "refresh_token" &&
+        options.refreshedAccessTokenExpiresAt !== undefined
+          ? {
+              accessTokenExpiresAt: options.refreshedAccessTokenExpiresAt,
+            }
+          : {}),
+      });
       recorded.oauthTokenResponses.push(tokenResponse);
+      await options.beforeTokenResponse?.();
       return HttpResponse.json(tokenResponse);
     }),
   );
@@ -370,6 +363,7 @@ interface ClaudeCodeTokenEndpointRecorder {
 
 export function mockClaudeCodeTokenEndpoint(
   options: {
+    readonly beforeTokenResponse?: () => Promise<void>;
     readonly accountEmail?: string;
     readonly organizationName?: string;
   } = {},
@@ -388,6 +382,7 @@ export function mockClaudeCodeTokenEndpoint(
       "https://platform.claude.com/v1/oauth/token",
       async ({ request }) => {
         recorded.token.push(await request.json());
+        await options.beforeTokenResponse?.();
         return HttpResponse.json({
           access_token: "claude-code-access-token",
           expires_in: 31_536_000,
@@ -793,20 +788,6 @@ export function createAuthDeviceApiActions(context: TestContext) {
           body: { sessionToken },
         }),
         statuses,
-      );
-    },
-
-    async deleteOrgModelProvider(
-      actor: ApiTestUser,
-      type: "claude-code-oauth-token" | "codex-oauth-token",
-    ): Promise<void> {
-      const client = authDeviceApp(context)(modelProvidersByTypeContract);
-      await accept(
-        client.delete({
-          params: { type },
-          headers: authenticate(actor),
-        }),
-        [204],
       );
     },
   };

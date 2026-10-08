@@ -1,26 +1,16 @@
 import { createHash } from "node:crypto";
 
-import { z } from "zod";
-
 import {
   CONNECTOR_GENERIC_AUTH_CAPABILITY_VERSIONS,
   getConnectorAuthProviderRegistrationCapabilities,
   type ConnectorAuthProviderMethodContract,
   type ConnectorAuthProviderRegistrationCapability,
 } from "../auth-providers/connector-auth";
-import {
-  connectorAuthMethodIdSchema,
-  connectorSlugSchema,
-} from "../connector-identity";
-
 import type {
-  ConnectorCatalogArtifact,
+  ConnectorCatalogArtifactConnector,
   ConnectorCatalogAuthMethod,
 } from "./artifacts/artifacts";
-import {
-  connectorCatalogCompatibilityReasonSchema,
-  type ConnectorCatalogCompatibilityReason,
-} from "./contracts";
+import type { ConnectorCatalogCompatibilityReason } from "./contracts";
 
 const COMPATIBILITY_REASON_ORDER = [
   "unsupported-protocol",
@@ -30,20 +20,6 @@ const COMPATIBILITY_REASON_ORDER = [
   "provider-contract-mismatch",
   "missing-platform-configuration",
 ] as const satisfies readonly ConnectorCatalogCompatibilityReason[];
-
-export const connectorCatalogCompatibilityEvaluationSchema = z
-  .object({
-    filteredAuthMethods: z.array(
-      z
-        .object({
-          connectorSlug: connectorSlugSchema,
-          authMethodId: connectorAuthMethodIdSchema,
-          reasons: z.array(connectorCatalogCompatibilityReasonSchema).min(1),
-        })
-        .strict(),
-    ),
-  })
-  .strict();
 
 const EXECUTABLE_CAPABILITY_EVALUATOR_VERSION = 5;
 
@@ -277,7 +253,13 @@ function evaluateMethod(args: {
 }
 
 export function evaluateConnectorCatalogCompatibility(args: {
-  readonly artifact: ConnectorCatalogArtifact;
+  // Only identity, auth methods and MCP presence affect compatibility.
+  readonly artifact: {
+    readonly connectors: readonly Pick<
+      ConnectorCatalogArtifactConnector,
+      "slug" | "authMethods" | "mcp"
+    >[];
+  };
   readonly capability: ExecutableCapabilityState;
 }) {
   const registrations = new Map(

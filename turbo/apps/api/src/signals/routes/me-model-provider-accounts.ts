@@ -1,22 +1,23 @@
+import {
+  personalModelProviderAccountsByIdContract,
+  personalSubscriptionsContract,
+} from "@okouai/api-contracts/contracts/personal-model-providers";
 import { command } from "ccstate";
-import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { isNotFoundResponse, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { writeDb$ } from "../external/db";
+import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import {
-  activatePersonalModelProviderAccount,
-  deletePersonalModelProviderAccount,
+  activatePersonalModelProviderAccount$,
+  disconnectPersonalModelProviderAccounts$,
   personalModelProviderAccountById,
   personalModelProviderAccountResponseById,
 } from "../services/model-provider-account.service";
 import {
-  consumePersonalClaudeCodeSubscriptionReset$,
   consumePersonalCodexRateLimitResetCredit$,
   refreshPersonalModelProviderSubscriptionUsage$,
 } from "../services/model-provider-subscription-usage.service";
@@ -24,7 +25,7 @@ import {
   failedRunAccountIdentity,
   personalSubscriptionAccountIdentity,
 } from "../services/personal-subscription-recovery.service";
-import type { RouteEntry } from "../route-entry";
+import { resetDisconnectedMemberModelSelection } from "../services/member-subscription-models.service";
 
 const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -87,27 +88,45 @@ const getInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: response };
 });
 
+const getSubscriptionInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const params = get(pathParamsOf(personalSubscriptionsContract.get));
+    const provider = await personalModelProviderAccountResponseById({
+      db: set(writeDb$),
+      orgId: auth.orgId,
+      userId: auth.userId,
+      id: params.id,
+    });
+    signal.throwIfAborted();
+    if (!provider) {
+      return notFound("Resource not found");
+    }
+    const refreshed = await set(
+      refreshPersonalModelProviderSubscriptionUsage$,
+      {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        result: { modelProviders: [provider] },
+      },
+      signal,
+    );
+    const response = refreshed.modelProviders[0];
+    if (!response) {
+      throw new Error("Subscription usage refresh returned no account");
+    }
+    return { status: 200 as const, body: response };
+  },
+);
+
 const activateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const featureSwitchContext = await get(
-    userFeatureSwitchContext(auth.orgId, auth.userId),
-  );
-  signal.throwIfAborted();
-  if (
-    !isFeatureEnabled(
-      FeatureSwitchKey.PersonalModelProviderAccounts,
-      featureSwitchContext,
-    )
-  ) {
-    return notFound("Resource not found");
-  }
   const params = get(
     pathParamsOf(personalModelProviderAccountsByIdContract.activate),
   );
-  const result = await activatePersonalModelProviderAccount(
+  const result = await set(
+    activatePersonalModelProviderAccount$,
     {
-      featureSwitchContext,
-      db: set(writeDb$),
       orgId: auth.orgId,
       userId: auth.userId,
       id: params.id,
@@ -115,9 +134,7 @@ const activateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     signal,
   );
   signal.throwIfAborted();
-  return isNotFoundResponse(result)
-    ? result
-    : { status: 200 as const, body: result };
+  return "status" in result ? result : { status: 200 as const, body: result };
 });
 
 const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -126,31 +143,30 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     userFeatureSwitchContext(auth.orgId, auth.userId),
   );
   signal.throwIfAborted();
-  if (
-    !isFeatureEnabled(
-      FeatureSwitchKey.PersonalModelProviderAccounts,
-      featureSwitchContext,
-    )
-  ) {
-    return notFound("Resource not found");
-  }
   const params = get(
     pathParamsOf(personalModelProviderAccountsByIdContract.delete),
   );
-  const result = await deletePersonalModelProviderAccount(
+  const result = await set(
+    disconnectPersonalModelProviderAccounts$,
     {
       featureSwitchContext,
-      db: set(writeDb$),
       orgId: auth.orgId,
       userId: auth.userId,
-      id: params.id,
+      selection: { kind: "account", id: params.id },
     },
     signal,
   );
   signal.throwIfAborted();
-  return isNotFoundResponse(result)
-    ? result
-    : { status: 204 as const, body: undefined };
+  if (result) {
+    return result;
+  }
+  await resetDisconnectedMemberModelSelection(
+    set(writeDb$),
+    auth.orgId,
+    auth.userId,
+  );
+  signal.throwIfAborted();
+  return { status: 204 as const, body: undefined };
 });
 
 function resetAccountSubscriptionUsage(
@@ -162,19 +178,6 @@ function resetAccountSubscriptionUsage(
     const auth = get(organizationAuthContext$);
     const params = get(pathParamsOf(route));
     const runId = "runId" in params ? params.runId : undefined;
-    const featureSwitchContext = await get(
-      userFeatureSwitchContext(auth.orgId, auth.userId),
-    );
-    signal.throwIfAborted();
-    if (
-      !isFeatureEnabled(
-        FeatureSwitchKey.PersonalModelProviderAccounts,
-        featureSwitchContext,
-      ) &&
-      !runId
-    ) {
-      return notFound("Resource not found");
-    }
     const body = await get(bodyResultOf(route));
     signal.throwIfAborted();
     if (!body.ok) {
@@ -187,11 +190,7 @@ function resetAccountSubscriptionUsage(
       id: params.id,
     });
     signal.throwIfAborted();
-    if (
-      !account ||
-      (account.type !== "codex-oauth-token" &&
-        account.type !== "claude-code-oauth-token")
-    ) {
+    if (!account || account.type !== "codex-oauth-token") {
       return notFound("Resource not found");
     }
     const expectedIdentity = runId
@@ -212,9 +211,7 @@ function resetAccountSubscriptionUsage(
       return notFound("Resource not found");
     }
     const result = await set(
-      account.type === "claude-code-oauth-token"
-        ? consumePersonalClaudeCodeSubscriptionReset$
-        : consumePersonalCodexRateLimitResetCredit$,
+      consumePersonalCodexRateLimitResetCredit$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
@@ -247,6 +244,13 @@ const auth = {
 
 export const meModelProviderAccountRoutes: readonly RouteEntry[] = [
   {
+    route: personalSubscriptionsContract.get,
+    handler: authRoute(
+      { ...auth, requiredCapability: "subscription:read" },
+      getSubscriptionInner$,
+    ),
+  },
+  {
     route:
       personalModelProviderAccountsByIdContract.resetFailedRunSubscriptionUsage,
     handler: authRoute(auth, resetFailedRunInner$),
@@ -257,7 +261,10 @@ export const meModelProviderAccountRoutes: readonly RouteEntry[] = [
   },
   {
     route: personalModelProviderAccountsByIdContract.activate,
-    handler: authRoute(auth, activateInner$),
+    handler: authRoute(
+      { ...auth, requiredCapability: "subscription:switch" },
+      activateInner$,
+    ),
   },
   {
     route: personalModelProviderAccountsByIdContract.delete,

@@ -15,6 +15,14 @@
     ],
     "commit-batch-size": 100,
     "packages": {
+        "ios": {
+            "release-type": "simple",
+            "component": "ios",
+            "initial-version": "0.1.1",
+            "extra-files": [
+                {"type": "generic", "path": "Config/Shared.xcconfig"}
+            ]
+        },
         "turbo/packages/core": {
             "release-type": "node"
         },
@@ -31,8 +39,9 @@
         "turbo/apps/app-worker": {
             "release-type": "node"
         },
-        "turbo/apps/desktop": {
-            "release-type": "node",
+        "desktop": {
+            "release-type": "simple",
+            "version-file": "version.txt",
             "component": "desktop"
         },
         "turbo/apps/host-worker": {
@@ -146,6 +155,9 @@
         "crates/runner-storage": {
             "release-type": "rust"
         },
+        "crates/runner-supervisor": {
+            "release-type": "rust"
+        },
         "crates/runner-types": {
             "release-type": "rust"
         },
@@ -160,6 +172,10 @@
             "skip-changelog": true
         },
         "crates/shell-quote": {
+            "release-type": "rust",
+            "skip-changelog": true
+        },
+        "crates/kerberos-credentials": {
             "release-type": "rust",
             "skip-changelog": true
         },
@@ -192,6 +208,16 @@
         {
             "type": "cargo-workspace",
             "cargoWorkspacePath": "crates"
+        },
+        {
+            "type": "release-dependencies",
+            "rules": [
+                {
+                    "source": "turbo/apps/cli",
+                    "dependent": "crates/runner",
+                    "minimumBump": "patch"
+                }
+            ]
         }
     ]
 }

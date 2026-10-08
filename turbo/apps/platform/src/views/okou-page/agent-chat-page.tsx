@@ -31,11 +31,12 @@ import {
   finishChatGreetingEntrance$,
 } from "../../signals/okou-page/chat-page.ts";
 import { agentChatComposerSignals$ } from "../../signals/okou-page/agent-composer-signals.ts";
-import { avatarTextureEnabled$ } from "../../signals/external/feature-switch.ts";
 import { AgentAvatarImg, useAgentAvatarTexture } from "./sidebar-shared.tsx";
 import { Link } from "../router/link.tsx";
 import { PersonalClaudeCodeDeviceAuthDialog } from "./components/settings/claude-code-device-auth-dialog.tsx";
 import { PersonalCodexDeviceAuthDialog } from "./components/settings/codex-device-auth-dialog.tsx";
+import { pwaChatListVisible$ } from "../../signals/okou-page/pwa-navigation.ts";
+import { PwaChatListPage } from "./pwa-chat-list-page.tsx";
 
 function localizedAnonymousTaglines(t: TFunction<"common">): string[] {
   return [
@@ -318,10 +319,10 @@ function PinPill() {
  * a breakpoint: against a single line of tagline, 64px is 1.78x the line box and
  * reads as a standee beside the text.
  *
- * With `avatarTexture` on, the hairline comes back off. It was added so that
- * something visible would be answerable for the crop; an opaque texture fills
- * the frame edge to edge and is answerable for it by itself, which leaves the
- * border as a second, weaker edge just inside the first.
+ * With a brand texture behind the artwork, the hairline comes back off. It was
+ * added so that something visible would be answerable for the crop; an opaque
+ * texture fills the frame edge to edge and is answerable for it by itself,
+ * which leaves the border as a second, weaker edge just inside the first.
  */
 const AGENT_AVATAR_FRAME =
   "h-14 w-14 shrink-0 flex items-center justify-center overflow-hidden rounded-xl";
@@ -336,14 +337,10 @@ const AGENT_AVATAR_IMAGE = "h-full w-full object-cover object-top";
 
 function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
   const { t } = useTranslation("agents");
-  const textureEnabled = useGet(avatarTextureEnabled$);
   // Not every agent can take a texture: uploaded images and the flat default
-  // avatar have no sweater or hair colour to clear. The frame follows the
-  // answer rather than the switch, so those keep the hairline that is still
-  // their only edge.
-  const textureUrl = useAgentAvatarTexture(
-    textureEnabled && agentId ? agentId : null,
-  );
+  // avatar have no sweater or hair colour to clear. The frame follows that
+  // answer, so those keep the hairline that is still their only edge.
+  const textureUrl = useAgentAvatarTexture(agentId ?? null);
 
   return (
     <div className="relative shrink-0">
@@ -364,10 +361,11 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
                     AGENT_AVATAR_FRAME,
                     "cursor-pointer",
                     textureUrl
-                      ? // The frame's background is behind the texture and the
-                        // border this used to recolour is gone, so hover needs a
-                        // layer of its own above the artwork. Same token and the
-                        // same 150ms, so hover does not change how it feels.
+                      ? // The frame's background is behind the texture and a
+                        // textured frame has no border to recolour, so hover
+                        // needs a layer of its own above the artwork. Same token
+                        // and the same 150ms, so hover does not change how it
+                        // feels.
                         "group relative"
                       : cn(
                           AGENT_AVATAR_BORDER,
@@ -409,7 +407,7 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
   );
 }
 
-export function AgentChatPage() {
+function AgentComposerPage() {
   const currentChatAgentId = useLastResolved(currentChatAgentId$);
 
   const pageSignal = useGet(pageSignal$);
@@ -524,7 +522,14 @@ export function AgentChatPage() {
               The ordering the wrapper carried moved onto the section itself. */}
           <HomeTaskRecommendations agentId={currentChatAgentId} />
 
-          <div className="order-2 sm:order-none">
+          {/* Start cards are desktop-only. `hidden` rather than skipping the
+              render: a `display: none` wrapper leaves the flex flow, so the
+              phone column does not pay a `gap` for an empty box. */}
+          <div
+            className={
+              taskChipsEnabled ? "order-2 sm:order-none" : "hidden sm:block"
+            }
+          >
             {taskChipsEnabled ? (
               <ComposerTaskChips signals={composerSignals} />
             ) : (
@@ -537,4 +542,9 @@ export function AgentChatPage() {
       <PersonalCodexDeviceAuthDialog />
     </div>
   );
+}
+
+export function AgentChatPage() {
+  const showChatList = useGet(pwaChatListVisible$);
+  return showChatList ? <PwaChatListPage /> : <AgentComposerPage />;
 }

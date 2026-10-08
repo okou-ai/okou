@@ -144,10 +144,9 @@ async def test_builtin_catalog_auth_removal_and_reinsertion_keep_selected_owner(
         assert flow.request.headers.get("Authorization") == (
             "Bearer selected-account" if oauth else None
         )
-    assert metadata_keys.FIREWALL_NAME not in removed.metadata
-    assert "Authorization" not in removed.request.headers
-    assert custom.metadata[metadata_keys.FIREWALL_NAME] == _CUSTOM
-    assert custom.request.headers["Authorization"] == "Bearer custom-account"
+    for flow in (removed, custom):
+        assert flow.metadata[metadata_keys.FIREWALL_NAME] == _CUSTOM
+        assert flow.request.headers["Authorization"] == "Bearer custom-account"
     assert endpoint.request_count == (2 if oauth else 1)
     if oauth:
         matched = endpoint.requests[0].json_body()["matchedFirewall"]

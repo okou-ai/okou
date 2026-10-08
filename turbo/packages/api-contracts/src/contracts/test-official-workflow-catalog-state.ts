@@ -14,11 +14,6 @@ export const testOfficialWorkflowCatalogStateActionBodySchema =
   z.discriminatedUnion("action", [
     z
       .object({
-        action: z.literal("cleanup"),
-      })
-      .strict(),
-    z
-      .object({
         action: z.literal("seed-previous-schema-release"),
       })
       .strict(),
@@ -54,55 +49,7 @@ export const testOfficialWorkflowCatalogStateActionBodySchema =
       .strict(),
     z
       .object({
-        action: z.literal("simulate-dormant-materialization-crash"),
-        definitionName: workflowNameSchema,
-        automationId: z.uuid(),
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal("simulate-current-lifecycle-gap"),
-        definitionName: workflowNameSchema,
-        automationId: z.uuid(),
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal("simulate-structure-transition-crash"),
-        definitionName: workflowNameSchema,
-        automationId: z.uuid(),
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal("simulate-dormant-materialization-discard-crash"),
-        definitionName: workflowNameSchema,
-        automationId: z.uuid(),
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal("pause-next-dormant-materialization"),
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal("wait-for-dormant-materialization-pause"),
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal("resume-dormant-materialization"),
-      })
-      .strict(),
-    z
-      .object({
         action: z.literal("pause-next-structure-transition-promotion"),
-      })
-      .strict(),
-    z
-      .object({
-        action: z.literal("crash-next-structure-transition-promotion"),
       })
       .strict(),
     z
@@ -220,7 +167,7 @@ export const testOfficialWorkflowCatalogStateContract = c.router({
       400: z.object({ error: z.string() }),
       404: z.string(),
     },
-    summary: "Inspect and clean Official Workflow catalog API test state",
+    summary: "Inspect Official Workflow catalog API test state",
   },
 });
 

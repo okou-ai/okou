@@ -1,24 +1,19 @@
 import { randomUUID } from "node:crypto";
 
 import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
-import { createStore } from "ccstate";
 
 import { createApp } from "../../../app-factory";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
-import {
-  deleteSlackConnectOrg$,
-  seedSlackConnectOrg$,
-  type SlackConnectFixture,
-} from "./helpers/slack-connect";
+import { createRouteMocks } from "./helpers/route-test";
+import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 import { slackConnectRoutes } from "../slack-connect";
 
 const TEST_APP_ROUTES = Object.freeze([...slackConnectRoutes]);
 
-const context = testContext({ connectorCatalog: true });
-const store = createStore();
+const context = testContext();
 const mocks = createRouteMocks(context);
+const slackOrgs = createPublicSlackOrgApi(context);
 const SLACK_CONNECT_PATH = "/api/integrations/slack/connect";
 
 async function postRawSlackConnect(body: string): Promise<{
@@ -49,14 +44,8 @@ function expectErrorCode(
 }
 
 describe("GET /api/integrations/slack/connect", () => {
-  const track = createFixtureTracker<SlackConnectFixture>((fixture) => {
-    return store.set(deleteSlackConnectOrg$, fixture, context.signal);
-  });
-
   it("returns 401 when the authenticated session has no active organization", async () => {
-    const fixture = await track(
-      store.set(seedSlackConnectOrg$, {}, context.signal),
-    );
+    const fixture = await slackOrgs.installOrg();
     mocks.clerk.session(fixture.userId, null);
 
     const client = setupApp({ context, routes: slackConnectRoutes })(
@@ -79,9 +68,7 @@ describe("GET /api/integrations/slack/connect", () => {
   });
 
   it("returns isConnected: false when the user has no slack connection", async () => {
-    const fixture = await track(
-      store.set(seedSlackConnectOrg$, {}, context.signal),
-    );
+    const fixture = await slackOrgs.installOrg();
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
 
     const client = setupApp({ context, routes: slackConnectRoutes })(
@@ -102,13 +89,7 @@ describe("GET /api/integrations/slack/connect", () => {
   });
 
   it("returns isConnected: true with workspace info when the user is connected", async () => {
-    const fixture = await track(
-      store.set(
-        seedSlackConnectOrg$,
-        { withConnection: true, slackWorkspaceName: "Test Workspace" },
-        context.signal,
-      ),
-    );
+    const fixture = await slackOrgs.installOrg({ withConnection: true });
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
 
     const client = setupApp({ context, routes: slackConnectRoutes })(
@@ -125,15 +106,13 @@ describe("GET /api/integrations/slack/connect", () => {
     expect(response.body).toStrictEqual({
       isConnected: true,
       isAdmin: true,
-      workspaceName: "Test Workspace",
+      workspaceName: fixture.slackWorkspaceName,
       defaultAgentName: null,
     });
   });
 
   it("reports when the requested Slack account belongs to another Okou user", async () => {
-    const fixture = await track(
-      store.set(seedSlackConnectOrg$, { withConnection: true }, context.signal),
-    );
+    const fixture = await slackOrgs.installOrg({ withConnection: true });
     const currentUserId = `user_${randomUUID()}`;
     mocks.clerk.session(currentUserId, fixture.orgId, "org:admin");
 
@@ -159,20 +138,8 @@ describe("GET /api/integrations/slack/connect", () => {
   });
 
   it("reports when the requested Slack workspace belongs to another organization", async () => {
-    const current = await track(
-      store.set(
-        seedSlackConnectOrg$,
-        { withConnection: true, slackWorkspaceName: "Current Workspace" },
-        context.signal,
-      ),
-    );
-    const requested = await track(
-      store.set(
-        seedSlackConnectOrg$,
-        { withConnection: true, slackWorkspaceName: "Other Workspace" },
-        context.signal,
-      ),
-    );
+    const current = await slackOrgs.installOrg({ withConnection: true });
+    const requested = await slackOrgs.installOrg({ withConnection: true });
     mocks.clerk.session(current.userId, current.orgId, "org:admin");
 
     const client = setupApp({ context, routes: slackConnectRoutes })(
@@ -192,23 +159,17 @@ describe("GET /api/integrations/slack/connect", () => {
     expect(response.body).toStrictEqual({
       isConnected: true,
       isAdmin: true,
-      workspaceName: "Current Workspace",
+      workspaceName: current.slackWorkspaceName,
       defaultAgentName: null,
       linkStatus: {
         kind: "workspace_mismatch",
-        currentWorkspaceName: "Current Workspace",
+        currentWorkspaceName: current.slackWorkspaceName,
       },
     });
   });
 
   it("reports when the current user is linked to a different Slack account", async () => {
-    const fixture = await track(
-      store.set(
-        seedSlackConnectOrg$,
-        { withConnection: true, slackWorkspaceName: "Test Workspace" },
-        context.signal,
-      ),
-    );
+    const fixture = await slackOrgs.installOrg({ withConnection: true });
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
     const requestedSlackUserId = `U_${randomUUID()}`;
 
@@ -229,7 +190,7 @@ describe("GET /api/integrations/slack/connect", () => {
     expect(response.body).toStrictEqual({
       isConnected: true,
       isAdmin: true,
-      workspaceName: "Test Workspace",
+      workspaceName: fixture.slackWorkspaceName,
       defaultAgentName: null,
       linkStatus: {
         kind: "slack_account_mismatch",
@@ -239,60 +200,8 @@ describe("GET /api/integrations/slack/connect", () => {
     });
   });
 
-  it("reports a stale binding when the requested account is also connected", async () => {
-    const fixture = await track(
-      store.set(
-        seedSlackConnectOrg$,
-        { withConnection: true, slackWorkspaceName: "Test Workspace" },
-        context.signal,
-      ),
-    );
-    const staleSlackUserId = `U_STALE_${randomUUID()}`;
-    await store.set(
-      seedSlackConnectOrg$,
-      {
-        withConnection: true,
-        orgId: fixture.orgId,
-        userId: fixture.userId,
-        slackWorkspaceId: fixture.slackWorkspaceId,
-        slackWorkspaceName: fixture.slackWorkspaceName,
-        slackUserId: staleSlackUserId,
-      },
-      context.signal,
-    );
-    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
-
-    const client = setupApp({ context, routes: slackConnectRoutes })(
-      slackConnectContract,
-    );
-    const response = await accept(
-      client.getLinkStatus({
-        headers: { authorization: "Bearer clerk-session" },
-        query: {
-          workspaceId: fixture.slackWorkspaceId,
-          slackUserId: fixture.slackUserId,
-        },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({
-      isConnected: true,
-      isAdmin: true,
-      workspaceName: "Test Workspace",
-      defaultAgentName: null,
-      linkStatus: {
-        kind: "slack_account_mismatch",
-        currentSlackUserId: staleSlackUserId,
-        requestedSlackUserId: fixture.slackUserId,
-      },
-    });
-  });
-
   it("returns isAdmin: true for admin users", async () => {
-    const fixture = await track(
-      store.set(seedSlackConnectOrg$, { withConnection: true }, context.signal),
-    );
+    const fixture = await slackOrgs.installOrg({ withConnection: true });
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
 
     const client = setupApp({ context, routes: slackConnectRoutes })(
@@ -310,9 +219,7 @@ describe("GET /api/integrations/slack/connect", () => {
   });
 
   it("returns isAdmin: false for member users", async () => {
-    const fixture = await track(
-      store.set(seedSlackConnectOrg$, { withConnection: true }, context.signal),
-    );
+    const fixture = await slackOrgs.installOrg({ withConnection: true });
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
 
     const client = setupApp({ context, routes: slackConnectRoutes })(
@@ -331,10 +238,6 @@ describe("GET /api/integrations/slack/connect", () => {
 });
 
 describe("POST /api/integrations/slack/connect", () => {
-  const track = createFixtureTracker<SlackConnectFixture>((fixture) => {
-    return store.set(deleteSlackConnectOrg$, fixture, context.signal);
-  });
-
   it("returns 401 when not authenticated", async () => {
     const client = setupApp({ context, routes: slackConnectRoutes })(
       slackConnectContract,
@@ -361,9 +264,7 @@ describe("POST /api/integrations/slack/connect", () => {
   });
 
   it("returns 400 when body is missing required fields", async () => {
-    const fixture = await track(
-      store.set(seedSlackConnectOrg$, {}, context.signal),
-    );
+    const fixture = await slackOrgs.installOrg();
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
 
     const response = await postRawSlackConnect("{}");
@@ -373,9 +274,7 @@ describe("POST /api/integrations/slack/connect", () => {
   });
 
   it("returns 400 when body is not valid JSON", async () => {
-    const fixture = await track(
-      store.set(seedSlackConnectOrg$, {}, context.signal),
-    );
+    const fixture = await slackOrgs.installOrg();
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
 
     const response = await postRawSlackConnect("not-json");
@@ -390,9 +289,7 @@ describe("POST /api/integrations/slack/connect", () => {
   });
 
   it("returns 404 when workspace does not exist", async () => {
-    const fixture = await track(
-      store.set(seedSlackConnectOrg$, {}, context.signal),
-    );
+    const fixture = await slackOrgs.installOrg();
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
 
     const client = setupApp({ context, routes: slackConnectRoutes })(
@@ -419,9 +316,7 @@ describe("POST /api/integrations/slack/connect", () => {
   });
 
   it("member starts user OAuth before connecting to a bound workspace", async () => {
-    const fixture = await track(
-      store.set(seedSlackConnectOrg$, {}, context.signal),
-    );
+    const fixture = await slackOrgs.installOrg();
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
 
     const client = setupApp({ context, routes: slackConnectRoutes })(
@@ -452,13 +347,7 @@ describe("POST /api/integrations/slack/connect", () => {
   });
 
   it("returns 403 when non-admin tries to connect unbound workspace", async () => {
-    const fixture = await track(
-      store.set(
-        seedSlackConnectOrg$,
-        { installationOrgId: null },
-        context.signal,
-      ),
-    );
+    const fixture = await slackOrgs.installOrg({ installation: "unbound" });
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
 
     const client = setupApp({ context, routes: slackConnectRoutes })(
@@ -481,14 +370,7 @@ describe("POST /api/integrations/slack/connect", () => {
   });
 
   it("returns 404 when workspace is bound to a different org", async () => {
-    const targetOrgId = `org_${randomUUID()}`;
-    const fixture = await track(
-      store.set(
-        seedSlackConnectOrg$,
-        { installationOrgId: targetOrgId },
-        context.signal,
-      ),
-    );
+    const fixture = await slackOrgs.installOrg({ installation: "other-org" });
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
 
     const client = setupApp({ context, routes: slackConnectRoutes })(
@@ -513,10 +395,6 @@ describe("POST /api/integrations/slack/connect", () => {
 });
 
 describe("POST /api/integrations/slack/connect/switch", () => {
-  const track = createFixtureTracker<SlackConnectFixture>((fixture) => {
-    return store.set(deleteSlackConnectOrg$, fixture, context.signal);
-  });
-
   it("returns 401 when not authenticated", async () => {
     const client = setupApp({ context, routes: slackConnectRoutes })(
       slackConnectContract,
@@ -543,9 +421,7 @@ describe("POST /api/integrations/slack/connect/switch", () => {
   });
 
   it("uses a distinct route for switch intent", async () => {
-    const fixture = await track(
-      store.set(seedSlackConnectOrg$, {}, context.signal),
-    );
+    const fixture = await slackOrgs.installOrg();
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:member");
 
     const client = setupApp({ context, routes: slackConnectRoutes })(

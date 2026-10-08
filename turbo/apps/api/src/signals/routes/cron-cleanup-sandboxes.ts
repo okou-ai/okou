@@ -11,7 +11,7 @@ const cleanupSandboxesRoute$ = command(
       return cronUnauthorized();
     }
 
-    const body = await set(cleanupSandboxes$, { kind: "global" }, signal);
+    const body = await set(cleanupSandboxes$, signal);
     signal.throwIfAborted();
     return { status: 200 as const, body };
   },

@@ -48,7 +48,6 @@ test("A public conversation hides owner and agent identity", async () => {
     return respond(200, {
       ...sharedThread(),
       title: "Public launch plan",
-      publicBrand: "okou",
       messages: [
         {
           messageIndex: 0,
@@ -121,8 +120,6 @@ test("A link inside a public prompt is clickable for a signed-out visitor", asyn
 
   await setupSharedThreadPage(context, { host: "app.okou.ai" });
 
-  // A share link has no workspace to resolve a switch against, so the released
-  // default is what a visitor reads.
   const link = await waitFor(() => {
     const found = queryAllByRoleFast("link").find((candidate) => {
       return candidate.getAttribute("href") === "https://example.com/report";

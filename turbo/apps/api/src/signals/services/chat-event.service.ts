@@ -1,9 +1,14 @@
 /** Typed append-only commands for the canonical ChatEvent stream. */
+import {
+  chatInputModelSelectionSchema,
+  type ChatInputModelSelection,
+} from "@okouai/api-contracts/contracts/chat-input-model";
 import { randomUUID } from "node:crypto";
-import { isValidChatEventRevocation } from "@okouai/api-contracts/contracts/chat-events";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
+import {
+  chatEventTypeSchema,
+  isValidChatEventRevocation,
+} from "@okouai/api-contracts/contracts/chat-events";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import type { ChatFeishuMessageFiles } from "@okouai/db/jsonb-contracts/chat-feishu-context";
 import type {
   ChatSlackMentionDisplayNames,
@@ -15,42 +20,69 @@ import type { ChatEventPayload } from "@okouai/db/jsonb-contracts/chat-event";
 import { chatAgentRunContext } from "@okouai/db/schema/chat-agent-run-context";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
-import {
-  chatEventTerminalPredicate,
-  chatEvents,
-} from "@okouai/db/schema/chat-event";
+import { chatEvents } from "@okouai/db/schema/chat-event";
+import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
-import { chatGithubContext } from "@okouai/db/schema/chat-github-context";
 import { chatSlackContext } from "@okouai/db/schema/chat-slack-context";
 import { chatTeamsContext } from "@okouai/db/schema/chat-teams-context";
 import { chatTelegramContext } from "@okouai/db/schema/chat-telegram-context";
-import { chatThreads } from "@okouai/db/schema/chat-thread";
-import { eq, sql, type SQL } from "drizzle-orm";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
+import {
+  and,
+  eq,
+  getTableColumns,
+  sql,
+  type InferInsertModel,
+  type SQL,
+} from "drizzle-orm";
+import { PgDialect, QueryBuilder, type PgTable } from "drizzle-orm/pg-core";
+import { z } from "zod";
+import { pgTimestampWithoutTimezoneToDateSchema } from "../../lib/db-raw-rows";
+import { agents } from "@okouai/db/schema/agent";
 import { nowDate } from "../../lib/time";
 import type {
   WorkflowAutomationEventPayload,
   WorkflowAutomationEventType,
 } from "./workflow-automation-context.service";
-import type { Tx } from "../../lib/db-types";
+import {
+  appendCanonicalChatEventsSql,
+  type PreparedChatEventRow,
+} from "./chat-event-append.service";
+
+import { canonicalChatInputModelSelection } from "./canonical-chat-event-read.service";
 
 type CanonicalChatEventInsert = typeof chatEvents.$inferInsert;
-type ChatEventWriteTransaction = Tx;
 
 type ChatEventIdentity = {
   readonly id?: string;
   readonly chatThreadId: string;
   readonly runId?: string | null;
-  readonly runGroupId?: string | null;
   readonly createdAt?: Date;
 };
 
+/** Complete provider-owned snapshot; event identity and time belong to Chat. */
+export type DiscordChatEventContext = Readonly<
+  Omit<
+    typeof chatDiscordContext.$inferSelect,
+    "id" | "chatThreadId" | "createdAt"
+  >
+>;
+
 type ChatEventDisplayContext =
   | {
+      readonly discordContext: DiscordChatEventContext;
+      readonly slackContext?: never;
+      readonly feishuContext?: never;
+      readonly teamsContext?: never;
+      readonly telegramContext?: never;
+      readonly agentphoneContext?: never;
+    }
+  | {
+      readonly discordContext?: never;
       readonly slackContext: {
         readonly channelId: string;
         readonly messageTs: string;
         readonly botUserId: string;
-        readonly publicBrand: PublicBrand;
         readonly conversationContext: string;
         readonly messageText: string;
         readonly messageFiles: ChatSlackMessageFiles;
@@ -65,10 +97,10 @@ type ChatEventDisplayContext =
       readonly feishuContext?: never;
       readonly teamsContext?: never;
       readonly telegramContext?: never;
-      readonly githubContext?: never;
       readonly agentphoneContext?: never;
     }
   | {
+      readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext: {
         readonly conversationHistory: string;
@@ -83,14 +115,13 @@ type ChatEventDisplayContext =
         readonly senderOpenId: string;
         readonly connectionId: string;
         readonly installationId: string;
-        readonly publicBrand: PublicBrand;
       };
       readonly teamsContext?: never;
       readonly telegramContext?: never;
-      readonly githubContext?: never;
       readonly agentphoneContext?: never;
     }
   | {
+      readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext?: never;
       readonly teamsContext: {
@@ -108,17 +139,16 @@ type ChatEventDisplayContext =
         readonly threadId: string;
         readonly serviceUrl: string;
         readonly teamsAppId: string | null;
-        readonly publicBrand: PublicBrand;
         readonly senderUserId: string;
         readonly senderDisplayName: string | null;
         readonly senderPrincipalName: string | null;
         readonly connectionId: string;
       };
       readonly telegramContext?: never;
-      readonly githubContext?: never;
       readonly agentphoneContext?: never;
     }
   | {
+      readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext?: never;
       readonly teamsContext?: never;
@@ -130,42 +160,22 @@ type ChatEventDisplayContext =
         readonly threadContext: string;
         readonly rootMessageId: string | null;
         readonly thinkingMessageId: string | null;
-        readonly publicBrand: PublicBrand;
         readonly userLinkId: string;
-        readonly userLinkKind: "custom" | "official";
+        readonly userLinkKind: "official";
         readonly chatType: string;
         readonly senderUserId: string | null;
         readonly senderDisplayName: string | null;
         readonly senderUsername: string | null;
         readonly senderLanguage: string | null;
       };
-      readonly githubContext?: never;
       readonly agentphoneContext?: never;
     }
   | {
+      readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext?: never;
       readonly teamsContext?: never;
       readonly telegramContext?: never;
-      readonly githubContext: {
-        readonly repo: string;
-        readonly subjectNumber: number;
-        readonly subjectKind: "issue" | "pull_request";
-        readonly triggerCommentId: string | null;
-        readonly issueContext: string;
-        readonly messageText: string;
-        readonly triggerReactionId: string | null;
-        readonly triggerCommentBody: string | null;
-        readonly publicBrand: PublicBrand;
-      };
-      readonly agentphoneContext?: never;
-    }
-  | {
-      readonly slackContext?: never;
-      readonly feishuContext?: never;
-      readonly teamsContext?: never;
-      readonly telegramContext?: never;
-      readonly githubContext?: never;
       readonly agentphoneContext: {
         readonly messageText: string;
         readonly threadContext: string;
@@ -180,15 +190,14 @@ type ChatEventDisplayContext =
         readonly toNumber: string;
         readonly userLinkId: string;
         readonly agentphoneAgentId: string;
-        readonly publicBrand: PublicBrand;
       };
     }
   | {
+      readonly discordContext?: never;
       readonly slackContext?: never;
       readonly feishuContext?: never;
       readonly teamsContext?: never;
       readonly telegramContext?: never;
-      readonly githubContext?: never;
       readonly agentphoneContext?: never;
     };
 
@@ -214,6 +223,7 @@ type InputPromptEvent = ChatEventIdentity &
   ChatAgentRunDisplayContext &
   ChatEventInputPayload & {
     readonly eventType: "input.prompt";
+    readonly modelSelection?: ChatInputModelSelection;
     readonly content?: null;
     readonly contextType?: "web" | "agent_run";
     readonly contextId?: string;
@@ -223,13 +233,13 @@ type InputPromptEvent = ChatEventIdentity &
 type InputAutomationEvent = ChatEventIdentity &
   Pick<ChatEventInputPayload, "userMessage"> & {
     readonly eventType: "input.automation";
+    readonly modelSelection?: ChatInputModelSelection;
     readonly content?: null;
     readonly automationId: string;
     readonly workflowName?: string;
     readonly workflowAutomationEventType?: WorkflowAutomationEventType;
     readonly workflowAutomationEventPayload?: WorkflowAutomationEventPayload;
     readonly connectorSourceId?: string;
-    readonly publicBrand?: PublicBrand;
     readonly triggerBrief: string | null;
   };
 
@@ -246,6 +256,7 @@ type InputRejectedEvent = ChatEventIdentity &
   Pick<CanonicalChatEventInsert, "runEventSequenceNumber"> & {
     readonly eventType: "input.rejected";
     readonly content?: null;
+    readonly contextType?: "web";
     readonly error: string;
     readonly automationId?: string;
     readonly triggerBrief?: string | null;
@@ -264,30 +275,9 @@ type OutputErrorEvent = ChatEventIdentity &
     readonly error: string;
   };
 
-type OutputThinkingEvent = ChatEventIdentity &
-  ChatEventOutputSequence & {
-    readonly eventType: "output.thinking";
-    readonly content?: null;
-    readonly thinking: string;
-  };
-
 type OutputFollowupsEvent = ChatEventIdentity & {
   readonly eventType: "output.followups";
   readonly content: string;
-};
-
-type RunQueuedEvent = ChatEventIdentity & {
-  readonly eventType: "run.queued";
-  readonly runId: string;
-  readonly content: string;
-  readonly runEventId: "queue:queued";
-};
-
-type RunDequeuedEvent = ChatEventIdentity & {
-  readonly eventType: "run.dequeued";
-  readonly runId: string;
-  readonly content?: null;
-  readonly runEventId: "queue:dequeued";
 };
 
 type RunCompletedEvent = ChatEventIdentity & {
@@ -322,14 +312,6 @@ type ControlRevokeEvent = ChatEventIdentity & {
   readonly content?: null;
 };
 
-type BrowserLifecycleEvent = Pick<
-  ChatEventIdentity,
-  "id" | "chatThreadId" | "createdAt"
-> & {
-  readonly eventType: "browser.open" | "browser.close";
-  readonly content?: null;
-};
-
 type UsageRecordedEvent = ChatEventIdentity & {
   readonly eventType: "usage.recorded";
   readonly runId: string;
@@ -344,40 +326,15 @@ export type NewChatEvent =
   | InputRejectedEvent
   | OutputMessageEvent
   | OutputErrorEvent
-  | OutputThinkingEvent
   | OutputFollowupsEvent
-  | RunQueuedEvent
-  | RunDequeuedEvent
   | RunCompletedEvent
   | RunFailedEvent
   | RunCancelledEvent
   | ControlInterruptEvent
   | ControlRevokeEvent
-  | BrowserLifecycleEvent
   | UsageRecordedEvent;
 
-type AppendChatEvent = Exclude<
-  NewChatEvent,
-  RunDequeuedEvent | ControlRevokeEvent
->;
-
-interface ChatEventCommandResult {
-  readonly id: string;
-  readonly createdAt: Date;
-  readonly seqId: number;
-}
-
-export interface ChatEventSequenceReservation {
-  readonly chatThreadId: string;
-  readonly seqId: number;
-}
-
-interface ChatEventBatchCommandResult {
-  readonly id: string;
-  readonly createdAt: Date;
-  readonly seqId: number;
-  readonly sequenceNumber: number | null;
-}
+type AppendChatEvent = Exclude<NewChatEvent, ControlRevokeEvent>;
 
 type InsertChatEventConflict = "none" | "any" | "id" | "run-lifecycle";
 
@@ -388,7 +345,7 @@ type PersistedChatEvent = Omit<
   ChatEventContextPointer;
 
 type ChatEventContextPointer = {
-  readonly contextType?: CanonicalChatEventInsert["contextType"] | SQL;
+  readonly contextType?: string | null;
   readonly contextId?: CanonicalChatEventInsert["contextId"];
 };
 
@@ -398,6 +355,7 @@ interface StoredChatEventContextPointer {
 }
 
 export interface LoadedChatEventReplacementTarget extends StoredChatEventContextPointer {
+  readonly modelSelection?: ChatInputModelSelection | null;
   readonly id: string;
   readonly chatThreadId: string;
   readonly createdAt: Date;
@@ -405,6 +363,12 @@ export interface LoadedChatEventReplacementTarget extends StoredChatEventContext
 }
 
 type NewDisplayContext =
+  | {
+      readonly type: "discord";
+      readonly id: string;
+      readonly chatThreadId: string;
+      readonly snapshot: DiscordChatEventContext;
+    }
   | {
       readonly type: "agent_run";
       readonly id: string;
@@ -418,7 +382,6 @@ type NewDisplayContext =
       readonly channelId: string;
       readonly messageTs: string;
       readonly botUserId: string;
-      readonly publicBrand: PublicBrand;
       readonly conversationContext: string;
       readonly messageText: string;
       readonly messageFiles: ChatSlackMessageFiles;
@@ -446,7 +409,6 @@ type NewDisplayContext =
       readonly senderOpenId: string;
       readonly connectionId: string;
       readonly installationId: string;
-      readonly publicBrand: PublicBrand;
     }
   | {
       readonly type: "teams";
@@ -466,7 +428,6 @@ type NewDisplayContext =
       readonly threadId: string;
       readonly serviceUrl: string;
       readonly teamsAppId: string | null;
-      readonly publicBrand: PublicBrand;
       readonly senderUserId: string;
       readonly senderDisplayName: string | null;
       readonly senderPrincipalName: string | null;
@@ -483,28 +444,13 @@ type NewDisplayContext =
       readonly threadContext: string;
       readonly rootMessageId: string | null;
       readonly thinkingMessageId: string | null;
-      readonly publicBrand: PublicBrand;
       readonly userLinkId: string;
-      readonly userLinkKind: "custom" | "official";
+      readonly userLinkKind: "official";
       readonly chatType: string;
       readonly senderUserId: string | null;
       readonly senderDisplayName: string | null;
       readonly senderUsername: string | null;
       readonly senderLanguage: string | null;
-    }
-  | {
-      readonly type: "github";
-      readonly id: string;
-      readonly chatThreadId: string;
-      readonly repo: string;
-      readonly subjectNumber: number;
-      readonly subjectKind: "issue" | "pull_request";
-      readonly triggerCommentId: string | null;
-      readonly issueContext: string;
-      readonly messageText: string;
-      readonly triggerReactionId: string | null;
-      readonly triggerCommentBody: string | null;
-      readonly publicBrand: PublicBrand;
     }
   | {
       readonly type: "agentphone";
@@ -523,7 +469,6 @@ type NewDisplayContext =
       readonly toNumber: string;
       readonly userLinkId: string;
       readonly agentphoneAgentId: string;
-      readonly publicBrand: PublicBrand;
     }
   | {
       readonly type: "automation";
@@ -534,7 +479,6 @@ type NewDisplayContext =
       readonly workflowAutomationEventType: WorkflowAutomationEventType | null;
       readonly workflowAutomationEventPayload: WorkflowAutomationEventPayload | null;
       readonly connectorSourceId: string | null;
-      readonly publicBrand: PublicBrand;
       readonly triggerBrief: string | null;
     };
 
@@ -564,7 +508,6 @@ function newAutomationDisplayContext(
         : null,
     connectorSourceId:
       "connectorSourceId" in values ? (values.connectorSourceId ?? null) : null,
-    publicBrand: PUBLIC_BRAND,
     triggerBrief:
       "triggerBrief" in values ? (values.triggerBrief ?? null) : null,
   };
@@ -585,6 +528,17 @@ function newDisplayContext(
     };
   }
 
+  const discordContext =
+    "discordContext" in values ? values.discordContext : undefined;
+  if (discordContext !== undefined) {
+    return {
+      type: "discord",
+      id: eventId,
+      chatThreadId: values.chatThreadId,
+      snapshot: discordContext,
+    };
+  }
+
   const slackContext =
     "slackContext" in values ? values.slackContext : undefined;
   if (slackContext !== undefined) {
@@ -595,7 +549,6 @@ function newDisplayContext(
       channelId: slackContext.channelId,
       messageTs: slackContext.messageTs,
       botUserId: slackContext.botUserId,
-      publicBrand: PUBLIC_BRAND,
       conversationContext: slackContext.conversationContext,
       messageText: slackContext.messageText,
       messageFiles: slackContext.messageFiles,
@@ -617,7 +570,6 @@ function newDisplayContext(
       id: eventId,
       chatThreadId: values.chatThreadId,
       ...feishuContext,
-      publicBrand: PUBLIC_BRAND,
     };
   }
 
@@ -629,7 +581,6 @@ function newDisplayContext(
       id: eventId,
       chatThreadId: values.chatThreadId,
       ...teamsContext,
-      publicBrand: PUBLIC_BRAND,
     };
   }
 
@@ -641,19 +592,6 @@ function newDisplayContext(
       id: eventId,
       chatThreadId: values.chatThreadId,
       ...telegramContext,
-      publicBrand: PUBLIC_BRAND,
-    };
-  }
-
-  const githubContext =
-    "githubContext" in values ? values.githubContext : undefined;
-  if (githubContext !== undefined) {
-    return {
-      type: "github",
-      id: eventId,
-      chatThreadId: values.chatThreadId,
-      ...githubContext,
-      publicBrand: PUBLIC_BRAND,
     };
   }
 
@@ -665,7 +603,6 @@ function newDisplayContext(
       id: eventId,
       chatThreadId: values.chatThreadId,
       ...agentphoneContext,
-      publicBrand: PUBLIC_BRAND,
     };
   }
 
@@ -689,37 +626,31 @@ function displayContextPointer(
   };
 }
 
-function replacementContext(
-  target: StoredChatEventContextPointer,
-  eventId: string,
-  values: NewChatEvent,
-): {
-  readonly pointer: ChatEventContextPointer | undefined;
-  readonly displayContext: NewDisplayContext | undefined;
-} {
-  if (target.contextType !== null || values.eventType === "usage.recorded") {
-    return {
-      pointer: {
-        contextType:
-          target.contextType === null ? null : sql`${target.contextType}`,
-        contextId: target.contextId,
-      },
-      displayContext: undefined,
-    };
-  }
-  const displayContext = newDisplayContext(eventId, values);
-  return {
-    pointer: displayContextPointer(displayContext),
-    displayContext,
-  };
+/** Construct a schema-encoded INSERT without a session or database capability. */
+function contextInsertSql<T extends PgTable>(
+  table: T,
+  values: InferInsertModel<T>,
+  onConflict: SQL = sql`do nothing`,
+): SQL {
+  const columns = getTableColumns(table);
+  return new PgDialect().buildInsertQuery({
+    table,
+    values: [
+      Object.fromEntries(
+        Object.entries(values).map(([key, value]) => {
+          return [key, sql.param(value, columns[key])];
+        }),
+      ),
+    ],
+    onConflict,
+  });
 }
 
-async function insertAgentphoneDisplayContext(
-  tx: ChatEventWriteTransaction,
+function insertAgentphoneDisplayContext(
   context: Extract<NewDisplayContext, { readonly type: "agentphone" }>,
   createdAt: Date,
-): Promise<void> {
-  await tx.insert(chatAgentphoneContext).values({
+): SQL {
+  return contextInsertSql(chatAgentphoneContext, {
     id: context.id,
     chatThreadId: context.chatThreadId,
     messageText: context.messageText,
@@ -735,17 +666,15 @@ async function insertAgentphoneDisplayContext(
     toNumber: context.toNumber,
     userLinkId: context.userLinkId,
     agentphoneAgentId: context.agentphoneAgentId,
-    publicBrand: context.publicBrand,
     createdAt,
   });
 }
 
-async function insertTelegramDisplayContext(
-  tx: ChatEventWriteTransaction,
+function insertTelegramDisplayContext(
   context: Extract<NewDisplayContext, { readonly type: "telegram" }>,
   createdAt: Date,
-): Promise<void> {
-  await tx.insert(chatTelegramContext).values({
+): SQL {
+  return contextInsertSql(chatTelegramContext, {
     id: context.id,
     chatThreadId: context.chatThreadId,
     chatId: context.chatId,
@@ -755,7 +684,6 @@ async function insertTelegramDisplayContext(
     threadContext: context.threadContext,
     rootMessageId: context.rootMessageId,
     thinkingMessageId: context.thinkingMessageId,
-    publicBrand: context.publicBrand,
     userLinkId: context.userLinkId,
     userLinkKind: context.userLinkKind,
     chatType: context.chatType,
@@ -767,39 +695,82 @@ async function insertTelegramDisplayContext(
   });
 }
 
-async function insertAgentRunDisplayContext(
-  tx: ChatEventWriteTransaction,
+function insertAgentRunDisplayContext(
   context: Extract<NewDisplayContext, { readonly type: "agent_run" }>,
   createdAt: Date,
-): Promise<void> {
-  await tx
-    .insert(chatAgentRunContext)
-    .values({
-      id: context.id,
-      sourceChatThreadId: context.sourceChatThreadId,
-      sourceAgentId: context.sourceAgentId,
-      createdAt,
+): SQL {
+  const source = new QueryBuilder()
+    .select({
+      sourceUserId: chatThreads.userId,
+      sourceOrgId: agents.orgId,
     })
-    .onConflictDoNothing({ target: chatAgentRunContext.id });
+    .from(chatThreads)
+    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+    .where(
+      and(
+        eq(chatThreads.id, context.sourceChatThreadId),
+        eq(agents.id, context.sourceAgentId),
+      ),
+    );
+  return sql`INSERT INTO ${chatAgentRunContext} (
+    id, source_chat_thread_id, source_agent_id, source_user_id, source_org_id, created_at
+  ) SELECT ${context.id}::uuid, ${context.sourceChatThreadId}::uuid,
+    ${context.sourceAgentId}::uuid, source.user_id, source.org_id,
+    ${createdAt.toISOString()}::timestamp
+    FROM (${source.getSQL()}) AS source
+    ON CONFLICT (id) DO NOTHING`;
 }
 
-async function insertDisplayContext(
-  tx: ChatEventWriteTransaction,
+function insertAutomationDisplayContext(
+  context: Extract<NewDisplayContext, { readonly type: "automation" }>,
+  createdAt: Date,
+): SQL {
+  return contextInsertSql(chatAutomationContext, {
+    id: context.id,
+    chatThreadId: context.chatThreadId,
+    automationId: context.automationId,
+    workflowName: context.workflowName,
+    eventType: context.workflowAutomationEventType,
+    eventPayload: context.workflowAutomationEventPayload,
+    connectorSourceId: context.connectorSourceId,
+    triggerBrief: context.triggerBrief,
+    createdAt,
+  });
+}
+
+function insertDiscordDisplayContext(
+  context: Extract<NewDisplayContext, { readonly type: "discord" }>,
+  createdAt: Date,
+): SQL {
+  return contextInsertSql(
+    chatDiscordContext,
+    {
+      ...context.snapshot,
+      id: context.id,
+      chatThreadId: context.chatThreadId,
+      createdAt,
+    },
+    sql`(${sql.identifier("id")}) do nothing`,
+  );
+}
+
+function insertDisplayContext(
   context: NewDisplayContext,
   createdAt: Date,
-): Promise<void> {
+): SQL {
   if (context.type === "agent_run") {
-    await insertAgentRunDisplayContext(tx, context, createdAt);
-    return;
+    return insertAgentRunDisplayContext(context, createdAt);
+  }
+  if (context.type === "discord") {
+    return insertDiscordDisplayContext(context, createdAt);
   }
   if (context.type === "slack") {
-    await tx.insert(chatSlackContext).values({
+    return contextInsertSql(chatSlackContext, {
       id: context.id,
       chatThreadId: context.chatThreadId,
       channelId: context.channelId,
       messageTs: context.messageTs,
       botUserId: context.botUserId,
-      publicBrand: context.publicBrand,
       conversationContext: context.conversationContext,
       messageText: context.messageText,
       messageFiles: context.messageFiles,
@@ -812,10 +783,9 @@ async function insertDisplayContext(
       routeThreadTs: context.routeThreadTs,
       createdAt,
     });
-    return;
   }
   if (context.type === "feishu") {
-    await tx.insert(chatFeishuContext).values({
+    return contextInsertSql(chatFeishuContext, {
       id: context.id,
       chatThreadId: context.chatThreadId,
       conversationHistory: context.conversationHistory,
@@ -830,13 +800,11 @@ async function insertDisplayContext(
       senderOpenId: context.senderOpenId,
       connectionId: context.connectionId,
       installationId: context.installationId,
-      publicBrand: context.publicBrand,
       createdAt,
     });
-    return;
   }
   if (context.type === "teams") {
-    await tx.insert(chatTeamsContext).values({
+    return contextInsertSql(chatTeamsContext, {
       id: context.id,
       chatThreadId: context.chatThreadId,
       tenantId: context.tenantId,
@@ -853,54 +821,20 @@ async function insertDisplayContext(
       threadId: context.threadId,
       serviceUrl: context.serviceUrl,
       teamsAppId: context.teamsAppId,
-      publicBrand: context.publicBrand,
       senderUserId: context.senderUserId,
       senderDisplayName: context.senderDisplayName,
       senderPrincipalName: context.senderPrincipalName,
       connectionId: context.connectionId,
       createdAt,
     });
-    return;
   }
   if (context.type === "telegram") {
-    await insertTelegramDisplayContext(tx, context, createdAt);
-    return;
-  }
-  if (context.type === "github") {
-    await tx.insert(chatGithubContext).values({
-      id: context.id,
-      chatThreadId: context.chatThreadId,
-      repo: context.repo,
-      subjectNumber: context.subjectNumber,
-      subjectKind: context.subjectKind,
-      triggerCommentId: context.triggerCommentId,
-      issueContext: context.issueContext,
-      messageText: context.messageText,
-      triggerReactionId: context.triggerReactionId,
-      triggerCommentBody: context.triggerCommentBody,
-      publicBrand: context.publicBrand,
-      createdAt,
-    });
-    return;
+    return insertTelegramDisplayContext(context, createdAt);
   }
   if (context.type === "agentphone") {
-    return insertAgentphoneDisplayContext(tx, context, createdAt);
+    return insertAgentphoneDisplayContext(context, createdAt);
   }
-  if (context.type === "automation") {
-    await tx.insert(chatAutomationContext).values({
-      id: context.id,
-      chatThreadId: context.chatThreadId,
-      automationId: context.automationId,
-      workflowName: context.workflowName,
-      eventType: context.workflowAutomationEventType,
-      eventPayload: context.workflowAutomationEventPayload,
-      connectorSourceId: context.connectorSourceId,
-      publicBrand: context.publicBrand,
-      triggerBrief: context.triggerBrief,
-      createdAt,
-    });
-    return;
-  }
+  return insertAutomationDisplayContext(context, createdAt);
 }
 
 function canonicalChatEventPayload(
@@ -908,7 +842,6 @@ function canonicalChatEventPayload(
 ): ChatEventPayload | null {
   const content = "content" in values ? values.content : undefined;
   const userMessage = "userMessage" in values ? values.userMessage : undefined;
-  const thinking = "thinking" in values ? values.thinking : undefined;
   const error = "error" in values ? values.error : undefined;
   const usagePayload =
     "usagePayload" in values ? values.usagePayload : undefined;
@@ -917,7 +850,6 @@ function canonicalChatEventPayload(
     ...(userMessage === null || userMessage === undefined
       ? {}
       : { userMessage }),
-    ...(thinking === null || thinking === undefined ? {} : { thinking }),
     ...(error === null || error === undefined ? {} : { error }),
     ...(usagePayload === null || usagePayload === undefined
       ? {}
@@ -930,14 +862,10 @@ function canonicalChatEventContext(
   values: NewChatEvent,
   overrides?: ChatEventContextPointer,
 ) {
-  const runGroupId = "runGroupId" in values ? values.runGroupId : undefined;
-  const context =
-    runGroupId === null || runGroupId === undefined
-      ? {
-          contextType: "contextType" in values ? values.contextType : undefined,
-          contextId: "contextId" in values ? values.contextId : undefined,
-        }
-      : { contextType: "goal" as const, contextId: runGroupId };
+  const context = {
+    contextType: "contextType" in values ? values.contextType : undefined,
+    contextId: "contextId" in values ? values.contextId : undefined,
+  };
   // Replacement provenance is authoritative, including explicit null pointers.
   return { ...context, ...overrides };
 }
@@ -963,6 +891,8 @@ function canonicalChatEventValues(
           : undefined,
     eventType: values.eventType,
     payload: canonicalChatEventPayload(values),
+    modelSelection:
+      "modelSelection" in values ? values.modelSelection : undefined,
     failureReason:
       values.eventType === "run.failed" ? values.failureReason : undefined,
     requiredOfficialWorkflowIds:
@@ -980,217 +910,101 @@ function canonicalChatEventValues(
   };
 }
 
-async function reserveChatEventSeqIds(
-  tx: ChatEventWriteTransaction,
-  chatThreadId: string,
-  count: number,
-): Promise<number> {
-  if (!Number.isInteger(count) || count <= 0) {
-    throw new Error("chat event seq_id reservation count must be positive");
-  }
-
-  const [thread] = await tx
-    .update(chatThreads)
-    .set({
-      lastChatEventSeqId: sql`${chatThreads.lastChatEventSeqId} + ${count}`,
-    })
-    .where(eq(chatThreads.id, chatThreadId))
-    .returning({ lastSeqId: chatThreads.lastChatEventSeqId });
-  if (!thread) {
-    throw new Error(`Chat thread ${chatThreadId} not found`);
-  }
-  return thread.lastSeqId - count + 1;
+interface PreparedChatEvent {
+  readonly row: PreparedChatEventRow;
+  readonly displayContext: NewDisplayContext | undefined;
 }
 
-async function addSeqIdsToEvents(
-  tx: ChatEventWriteTransaction,
-  values: readonly PersistedChatEvent[],
-): Promise<readonly (PersistedChatEvent & { readonly seqId: number })[]> {
-  const counts = new Map<string, number>();
-  for (const value of values) {
-    counts.set(value.chatThreadId, (counts.get(value.chatThreadId) ?? 0) + 1);
-  }
-
-  const nextSeqIdByThread = new Map<string, number>();
-  for (const [chatThreadId, count] of [...counts].sort(([left], [right]) => {
-    return left.localeCompare(right);
-  })) {
-    nextSeqIdByThread.set(
-      chatThreadId,
-      await reserveChatEventSeqIds(tx, chatThreadId, count),
-    );
-  }
-
-  return values.map((value) => {
-    const seqId = nextSeqIdByThread.get(value.chatThreadId);
-    if (seqId === undefined) {
-      throw new Error(`Chat thread ${value.chatThreadId} was not reserved`);
-    }
-    nextSeqIdByThread.set(value.chatThreadId, seqId + 1);
-    return { ...value, seqId };
-  });
-}
-
-async function insertSequencedChatEvent(
-  tx: ChatEventWriteTransaction,
-  values: AppendChatEvent,
-  reservation: ChatEventSequenceReservation,
-  conflict: InsertChatEventConflict = "none",
-): Promise<ChatEventCommandResult | null> {
-  if (reservation.chatThreadId !== values.chatThreadId) {
-    throw new Error("Chat event sequence belongs to another thread");
-  }
-  if (!Number.isInteger(reservation.seqId) || reservation.seqId <= 0) {
-    throw new Error("Chat event sequence must be a positive integer");
-  }
-  const eventId = values.id ?? randomUUID();
-  const displayContext = newDisplayContext(eventId, values);
-  const valueWithSeqId = {
-    ...canonicalChatEventValues(values, {
-      id: eventId,
-      ...displayContextPointer(displayContext),
-    }),
-    seqId: reservation.seqId,
+/** Pure preparation: IDs, timestamps, payload and context do not require a lock. */
+export function prepareChatEvent(values: AppendChatEvent): PreparedChatEvent {
+  const id = values.id ?? randomUUID();
+  const createdAt = values.createdAt ?? nowDate();
+  const displayContext = newDisplayContext(id, values);
+  return {
+    row: {
+      ...canonicalChatEventValues(values, {
+        id,
+        ...displayContextPointer(displayContext),
+      }),
+      id,
+      createdAt,
+    },
+    displayContext,
   };
-
-  const query = tx.insert(chatEvents).values(valueWithSeqId);
-  const rows =
-    conflict === "any"
-      ? await query.onConflictDoNothing().returning({
-          id: chatEvents.id,
-          createdAt: chatEvents.createdAt,
-          seqId: chatEvents.seqId,
-        })
-      : conflict === "id"
-        ? await query.onConflictDoNothing({ target: chatEvents.id }).returning({
-            id: chatEvents.id,
-            createdAt: chatEvents.createdAt,
-            seqId: chatEvents.seqId,
-          })
-        : conflict === "run-lifecycle"
-          ? await query
-              .onConflictDoNothing({
-                target: chatEvents.runId,
-                where: chatEventTerminalPredicate(chatEvents.eventType),
-              })
-              .returning({
-                id: chatEvents.id,
-                createdAt: chatEvents.createdAt,
-                seqId: chatEvents.seqId,
-              })
-          : await query.returning({
-              id: chatEvents.id,
-              createdAt: chatEvents.createdAt,
-              seqId: chatEvents.seqId,
-            });
-
-  const inserted = rows[0];
-  if (inserted && displayContext) {
-    await insertDisplayContext(tx, displayContext, inserted.createdAt);
-  }
-  return inserted ?? null;
 }
 
-/** Insert an immutable chat event using the caller-owned transaction. */
-export async function insertChatEvent(
-  tx: ChatEventWriteTransaction,
+/** Pure context plan. The enqueue owner executes it after reserving the event
+ * sequence, in the same transaction, to preserve thread lock ordering. */
+export function chatEventContextInsertSql(
+  values: AppendChatEvent & { readonly id: string },
+): SQL | null {
+  const context = newDisplayContext(values.id, values);
+  return context
+    ? insertDisplayContext(context, values.createdAt ?? nowDate())
+    : null;
+}
+
+/** The caller independently persists context before this atomic append. */
+export function chatEventInsertSql(
   values: AppendChatEvent,
   conflict: InsertChatEventConflict = "none",
-): Promise<ChatEventCommandResult | null> {
-  const seqId = await reserveChatEventSeqIds(tx, values.chatThreadId, 1);
-  return await insertSequencedChatEvent(
-    tx,
-    values,
-    { chatThreadId: values.chatThreadId, seqId },
-    conflict,
-  );
+): SQL {
+  return appendCanonicalChatEventsSql([prepareChatEvent(values).row], conflict);
 }
 
-/**
- * Insert with a sequence reserved for this thread by the caller in the same
- * transaction. The reservation is consumed even when conflict handling drops
- * the insert, preserving the stream's intentional sequence gap.
- */
-export async function insertChatEventWithReservedSequence(
-  tx: ChatEventWriteTransaction,
-  values: AppendChatEvent,
-  reservation: ChatEventSequenceReservation,
-  conflict: InsertChatEventConflict = "none",
-): Promise<ChatEventCommandResult | null> {
-  return await insertSequencedChatEvent(tx, values, reservation, conflict);
-}
-
-/**
- * Batch append. The untargeted conflict clause covers every unique index on
- * chat_events, including chat_events_run_event_seq_unique, so a retry that
- * derives a different row id still cannot duplicate a run event.
- */
-export async function insertChatEvents(
-  tx: ChatEventWriteTransaction,
-  values: readonly AppendChatEvent[],
-): Promise<readonly ChatEventBatchCommandResult[]> {
-  if (values.length === 0) {
-    return [];
-  }
-
-  const valuesWithSeqIds = await addSeqIdsToEvents(
-    tx,
+/** Empty batches reserve nothing and return no rows. */
+export function chatEventsInsertSql(values: readonly AppendChatEvent[]): SQL {
+  return appendCanonicalChatEventsSql(
     values.map((value) => {
-      return canonicalChatEventValues(value);
+      return prepareChatEvent(value).row;
     }),
+    "any",
   );
-  const rows = await tx
-    .insert(chatEvents)
-    .values([...valuesWithSeqIds])
-    .onConflictDoNothing()
-    .returning({
-      id: chatEvents.id,
-      chatThreadId: chatEvents.chatThreadId,
-      createdAt: chatEvents.createdAt,
-      seqId: chatEvents.seqId,
-      sequenceNumber: chatEvents.runEventSequenceNumber,
-    });
-
-  return rows.map((row) => {
-    return {
-      id: row.id,
-      createdAt: row.createdAt,
-      seqId: row.seqId,
-      sequenceNumber: row.sequenceNumber,
-    };
-  });
 }
 
-/** Append a replacement event after validating its immutable revoke edge. */
-export async function replaceChatEvent(
-  tx: ChatEventWriteTransaction,
-  eventId: string,
-  replacement: NewChatEvent,
-): Promise<ChatEventCommandResult | null> {
-  const [target] = await tx
+export const chatEventReplacementTargetSchema = z.object({
+  id: z.string().uuid(),
+  chatThreadId: z.string().uuid(),
+  createdAt: pgTimestampWithoutTimezoneToDateSchema,
+  eventType: chatEventTypeSchema,
+  contextType: z.string().nullable(),
+  contextId: z.string().uuid().nullable(),
+  modelSelection: chatInputModelSelectionSchema.nullable(),
+});
+
+/** Execute on the caller's transaction when replacement needs its snapshot. */
+export function chatEventReplacementTargetSql(eventId: string): SQL {
+  return new QueryBuilder()
     .select({
       id: chatEvents.id,
-      chatThreadId: chatEvents.chatThreadId,
-      createdAt: chatEvents.createdAt,
-      eventType: chatEvents.eventType,
-      contextType: chatEvents.contextType,
-      contextId: chatEvents.contextId,
+      chatThreadId: sql`${chatEvents.chatThreadId}`.as("chatThreadId"),
+      createdAt: sql`${chatEvents.createdAt}::text`.as("createdAt"),
+      eventType: sql`${chatEvents.eventType}`.as("eventType"),
+      contextType: sql`${chatEvents.contextType}`.as("contextType"),
+      contextId: sql`${chatEvents.contextId}`.as("contextId"),
+      modelSelection: canonicalChatInputModelSelection().as("modelSelection"),
     })
     .from(chatEvents)
     .where(eq(chatEvents.id, eventId))
-    .limit(1);
+    .limit(1)
+    .getSQL();
+}
+
+export function requireChatEventReplacementTarget(
+  rows: readonly LoadedChatEventReplacementTarget[],
+): LoadedChatEventReplacementTarget {
+  const target = rows[0];
   if (!target) {
     throw new Error("Cannot revoke a missing chat event");
   }
-  return await replaceLoadedChatEvent(tx, target, replacement);
+  return target;
 }
 
 /** Append a replacement for a target already loaded by an authoritative read. */
-export async function replaceLoadedChatEvent(
-  tx: ChatEventWriteTransaction,
+export function chatEventReplacementInsertSql(
   target: LoadedChatEventReplacementTarget,
   replacement: NewChatEvent,
-): Promise<ChatEventCommandResult | null> {
+): SQL {
   if (target.chatThreadId !== replacement.chatThreadId) {
     throw new Error("Cannot revoke a chat event from another thread");
   }
@@ -1210,26 +1024,14 @@ export async function replaceLoadedChatEvent(
   }
 
   const replacementId = replacement.id ?? randomUUID();
-  const { pointer: contextPointer, displayContext } = replacementContext(
-    target,
-    replacementId,
-    replacement,
-  );
-  // The replacement depends on the returned sequence, so PostgreSQL executes
-  // the reservation before the insert in one statement and transaction.
-  const reservedSequence = tx.$with("reserved_replacement_chat_event_seq").as(
-    tx
-      .update(chatThreads)
-      .set({
-        lastChatEventSeqId: sql`${chatThreads.lastChatEventSeqId} + 1`,
-      })
-      .where(eq(chatThreads.id, replacement.chatThreadId))
-      .returning({ seqId: chatThreads.lastChatEventSeqId }),
-  );
-  const rows = await tx
-    .with(reservedSequence)
-    .insert(chatEvents)
-    .values({
+  // Claims and rejections retain their input's context. A new input revoking
+  // an output uses the context already written by its entry transaction.
+  const contextPointer =
+    target.contextType !== null || replacement.eventType === "usage.recorded"
+      ? { contextType: target.contextType, contextId: target.contextId }
+      : displayContextPointer(newDisplayContext(replacementId, replacement));
+  const prepared: PreparedChatEvent = {
+    row: {
       ...canonicalChatEventValues(
         { ...replacement, createdAt },
         {
@@ -1237,34 +1039,19 @@ export async function replaceLoadedChatEvent(
           ...contextPointer,
         },
       ),
-      seqId: sql`(SELECT ${reservedSequence.seqId} FROM ${reservedSequence})`,
+      modelSelection:
+        "modelSelection" in replacement &&
+        replacement.modelSelection !== undefined
+          ? replacement.modelSelection
+          : replacement.eventType === "input.prompt" ||
+              replacement.eventType === "input.automation"
+            ? target.modelSelection
+            : undefined,
+      id: replacementId,
+      createdAt,
       revokesEventId: target.id,
-    })
-    .onConflictDoNothing()
-    .returning({
-      id: chatEvents.id,
-      createdAt: chatEvents.createdAt,
-      seqId: chatEvents.seqId,
-    });
-  const inserted = rows[0];
-  if (!inserted) {
-    return null;
-  }
-
-  if (displayContext) {
-    await insertDisplayContext(tx, displayContext, inserted.createdAt);
-  }
-  return inserted;
-}
-
-/** Append a payload-free revocation event for an existing chat event. */
-export async function revokeChatEvent(
-  tx: ChatEventWriteTransaction,
-  eventId: string,
-  revocation: ControlRevokeEvent | RunDequeuedEvent,
-): Promise<ChatEventCommandResult | null> {
-  return await replaceChatEvent(tx, eventId, {
-    ...revocation,
-    content: null,
-  });
+    },
+    displayContext: undefined,
+  };
+  return appendCanonicalChatEventsSql([prepared.row], "any");
 }

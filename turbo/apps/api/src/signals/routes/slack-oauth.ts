@@ -1,8 +1,8 @@
-import { awardCompletedGetStartedQuest } from "../services/get-started-rewards.service";
+import { connectSlackWorkspace$ } from "../services/slack-workspace-write.service";
+import { persistSlackInstallation$ } from "../services/slack-installation-write.service";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { command } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { slackOauthContract } from "@okouai/api-contracts/contracts/slack-oauth";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { eq } from "drizzle-orm";
@@ -11,8 +11,7 @@ import { request$ } from "../context/hono";
 import { queryOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
-import type { Tx } from "../../lib/db-types";
-import { now, nowDate } from "../../lib/time";
+import { now } from "../../lib/time";
 import {
   exchangeSlackOAuthCode,
   exchangeSlackOAuthCodeForUser,
@@ -21,18 +20,15 @@ import { logger } from "../../lib/log";
 import { env, optionalEnv } from "../../lib/env";
 import { safeJsonParse, tapError } from "../utils";
 import { encryptPersistentSecretValue } from "../services/crypto.utils";
-import { loadUserFeatureSwitchContext } from "../services/feature-switches.service";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
 import {
-  connectSlackWorkspace$,
   notifySlackConnect$,
   publishSlackAdminSignal$,
 } from "../services/slack-connect.service";
 import { SLACK_BOT_SCOPES } from "../services/slack-data.service";
 import type { RouteEntry } from "../route-entry";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
-import { OFFICIAL_SLACK_PUBLIC_BRAND } from "../../lib/slack-official-app";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 import {
   completeSlackConnectorOAuth$,
   startSlackConnectorOAuth$,
@@ -54,7 +50,6 @@ interface OAuthState {
   readonly flow: "install" | "connect";
   readonly reinstall: boolean;
   readonly prompt: string | null;
-  readonly publicBrand: PublicBrand;
 }
 
 interface SignedOAuthState extends OAuthState {
@@ -122,17 +117,12 @@ function parseOAuthStateValue(parsed: unknown): OAuthState | null {
   }
 
   const record = parsed as Record<string, unknown>;
-  const publicBrand = record.publicBrand;
-  if (publicBrand !== "vm0" && publicBrand !== "okou") {
-    return null;
-  }
   return {
     orgId: optionalString(record.orgId),
     userId: optionalString(record.userId),
     flow: record.flow === "connect" ? "connect" : "install",
     reinstall: optionalBoolean(record.reinstall),
     prompt: optionalString(record.prompt),
-    publicBrand,
   };
 }
 
@@ -261,7 +251,6 @@ const installOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
       signal,
     );
   }
-  const publicBrand = PUBLIC_BRAND;
   const userId = query.userId;
   const redirectUri = callbackRedirectUri(origin);
   const state = createOAuthState(
@@ -271,7 +260,6 @@ const installOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
       flow: "install",
       reinstall: query.reinstall === "1",
       prompt: query.prompt ? truncatePrompt(query.prompt) : null,
-      publicBrand,
     },
     redirectUri,
   );
@@ -305,7 +293,6 @@ const connectOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
       signal,
     );
   }
-  const publicBrand = PUBLIC_BRAND;
   const userId = query.userId;
   if (!query.orgId || !userId) {
     return jsonErrorResponse("Missing orgId or userId", 400);
@@ -334,7 +321,6 @@ const connectOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
       flow: "connect",
       reinstall: false,
       prompt: query.prompt ? truncatePrompt(query.prompt) : null,
-      publicBrand,
     },
     redirectUri,
   );
@@ -483,58 +469,6 @@ const handlePlatformInstall$ = command(
   },
 );
 
-async function persistSlackInstallation(
-  tx: Tx,
-  args: {
-    readonly fields: Pick<
-      SlackInstallation,
-      "encryptedBotToken" | "botUserId" | "slackWorkspaceName" | "botScopes"
-    >;
-    readonly workspaceId: string;
-    readonly state: OAuthState;
-    readonly isReinstall: boolean;
-  },
-  signal: AbortSignal,
-): Promise<SlackInstallation> {
-  const fields = {
-    ...args.fields,
-    publicBrand: OFFICIAL_SLACK_PUBLIC_BRAND,
-  } as const;
-  const isPlatformFlow = Boolean(args.state.orgId && args.state.userId);
-  const [installation] = args.isReinstall
-    ? await tx
-        .update(slackOrgInstallations)
-        .set({ ...fields, updatedAt: nowDate() })
-        .where(eq(slackOrgInstallations.slackWorkspaceId, args.workspaceId))
-        .returning()
-    : await tx
-        .insert(slackOrgInstallations)
-        .values({
-          ...fields,
-          slackWorkspaceId: args.workspaceId,
-          orgId: isPlatformFlow ? args.state.orgId : null,
-          installedByUserId: isPlatformFlow ? args.state.userId : null,
-        })
-        .returning();
-  signal.throwIfAborted();
-  if (!installation) {
-    throw new Error("Slack installation upsert did not return a row");
-  }
-  if (
-    args.state.orgId &&
-    args.state.userId &&
-    installation.orgId === args.state.orgId
-  ) {
-    await awardCompletedGetStartedQuest(tx, {
-      orgId: args.state.orgId,
-      userId: args.state.userId,
-      questKey: "slack",
-      sourceKey: installation.slackWorkspaceId,
-    });
-  }
-  return installation;
-}
-
 const handleInstallCallback$ = command(
   async (
     { set },
@@ -581,10 +515,11 @@ const handleInstallCallback$ = command(
     const writeDb = set(writeDb$);
     const featureSwitchContext =
       args.state.orgId && args.state.userId
-        ? await loadUserFeatureSwitchContext(
-            writeDb,
+        ? await set(
+            loadUserFeatureSwitchContext$,
             args.state.orgId,
             args.state.userId,
+            signal,
           )
         : {};
     const encryptedBotToken = await encryptPersistentSecretValue(
@@ -618,23 +553,22 @@ const handleInstallCallback$ = command(
         "This Slack workspace is already installed by another organization. Please contact the workspace admin to uninstall first.",
       );
     }
-    const installation = await writeDb.transaction((tx) => {
-      return persistSlackInstallation(
-        tx,
-        {
-          fields: {
-            encryptedBotToken,
-            botUserId: oauthResult.botUserId,
-            slackWorkspaceName: oauthResult.teamName,
-            botScopes,
-          },
-          workspaceId: oauthResult.teamId,
-          state: args.state,
-          isReinstall,
+    const installation = await set(
+      persistSlackInstallation$,
+      {
+        fields: {
+          encryptedBotToken,
+          botUserId: oauthResult.botUserId,
+          slackWorkspaceName: oauthResult.teamName,
+          botScopes,
         },
-        signal,
-      );
-    });
+        workspaceId: oauthResult.teamId,
+        orgId: args.state.orgId,
+        userId: args.state.userId,
+        mode: isReinstall ? "reinstall" : "install",
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (args.state.orgId && args.state.userId) {
       return await set(

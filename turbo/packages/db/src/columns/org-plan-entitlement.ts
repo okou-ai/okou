@@ -25,11 +25,7 @@ export function orgPlanEntitlementColumns() {
     autoRechargeAllowed: boolean("auto_recharge_allowed")
       .notNull()
       .default(false),
-    supportByok: boolean("support_byok").notNull().default(false),
     restrictedBuiltInModels: boolean("restricted_built_in_models").notNull(),
-    videoGenerationAllowed: boolean("video_generation_allowed")
-      .notNull()
-      .default(false),
     workflowWebhookTriggerAllowed: boolean("workflow_webhook_trigger_allowed")
       .notNull()
       .default(false),

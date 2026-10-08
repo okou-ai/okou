@@ -2441,6 +2441,7 @@ mod tests {
                         capture_network_bodies: false,
                         billable_firewalls: &billable_firewalls,
                         model_usage_provider: None,
+                        model_usage_long_context_min_total_input_tokens: None,
                     },
                 )
                 .await
@@ -2815,6 +2816,7 @@ mod tests {
                     capture_network_bodies: false,
                     billable_firewalls: &[],
                     model_usage_provider: None,
+                    model_usage_long_context_min_total_input_tokens: None,
                 },
             )
             .await
@@ -2913,6 +2915,7 @@ mod tests {
                     capture_network_bodies: false,
                     billable_firewalls: &[],
                     model_usage_provider: None,
+                    model_usage_long_context_min_total_input_tokens: None,
                 },
             )
             .await

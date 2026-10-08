@@ -1,15 +1,9 @@
 import { randomUUID } from "node:crypto";
-
 import { command, computed } from "ccstate";
-import {
-  DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL,
-  getBuiltInVendor,
-} from "@okouai/api-contracts/contracts/model-providers";
 import {
   testSlackStateContract,
   type TestSlackStatePostBody,
 } from "@okouai/api-contracts/contracts/test-slack-state";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -25,7 +19,6 @@ import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation"
 import { variables } from "@okouai/db/schema/variable";
 import { and, desc, eq, inArray, isNull, notExists, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { authRoute } from "../auth/auth-route";
@@ -45,9 +38,10 @@ import {
   isPreviewEndpointAllowed,
   previewEndpointNotFoundResponse,
 } from "./preview-endpoint-access";
-import type { Tx } from "../../lib/db-types";
-import { writeOrgMetadataWithDefaultPlanEntitlement } from "../services/org-plan-entitlements.service";
-
+import { AUTO_RUN_KEY_VENDOR } from "@okouai/core/auto-run-model";
+import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import { orgPlanEntitlementValues } from "../services/org-plan-entitlements.service";
+import { orgCreditExpirationSql } from "../services/org-credit-expiration";
 const DEFAULT_TEST_EMAIL = "dev+clerk_test+serial@vm0-e2e.ai";
 const DEFAULT_WORKSPACE_NAME = "E2E Test Workspace";
 const DEFAULT_AGENT_NAME = "e2e-slack-agent";
@@ -76,8 +70,6 @@ const SLACK_E2E_FIXTURES = {
 } as const;
 const slackStateQueueRevoker = alias(chatEvents, "slack_state_queue_revoker");
 
-type StarterGrantTx = Tx;
-
 function isoString(value: Date): string {
   return value.toISOString();
 }
@@ -90,7 +82,6 @@ interface UpsertSlackInstallationInput {
   readonly botToken: string;
   readonly botScopes?: string | null;
   readonly installedByUserId?: string;
-  readonly publicBrand?: PublicBrand;
 }
 
 async function upsertSlackInstallation(
@@ -113,7 +104,6 @@ async function upsertSlackInstallation(
       botUserId: input.botUserId,
       botScopes: input.botScopes ?? null,
       installedByUserId: input.installedByUserId,
-      ...(input.publicBrand ? { publicBrand: input.publicBrand } : {}),
     })
     .onConflictDoUpdate({
       target: slackOrgInstallations.slackWorkspaceId,
@@ -124,7 +114,6 @@ async function upsertSlackInstallation(
         botUserId: input.botUserId,
         botScopes: input.botScopes ?? null,
         installedByUserId: input.installedByUserId,
-        ...(input.publicBrand ? { publicBrand: input.publicBrand } : {}),
         updatedAt: nowDate(),
       },
     })
@@ -165,93 +154,128 @@ interface SeedDefaultAgentInput {
   readonly displayName?: string | null;
 }
 
-async function seedDefaultAgent(
-  db: Db,
-  input: SeedDefaultAgentInput,
-): Promise<{ agentId: string }> {
-  const [inserted] = await db
-    .insert(agents)
-    .values({
-      id: randomUUID(),
-      orgId: input.orgId,
-      owner: input.userId,
-      name: input.name,
-      displayName: input.displayName ?? null,
-    })
-    .onConflictDoNothing({ target: [agents.orgId, agents.name] })
-    .returning({ id: agents.id });
-
-  const [agent] = await db
-    .update(agents)
-    .set({
-      owner: input.userId,
-      displayName: input.displayName ?? null,
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        inserted ? eq(agents.id, inserted.id) : sql`true`,
-        eq(agents.orgId, input.orgId),
-        eq(agents.name, input.name),
-      ),
-    )
-    .returning({ id: agents.id });
-  if (!agent) {
-    throw new Error("Failed to resolve seeded default agent");
-  }
-
-  await db.transaction(async (tx) => {
-    await ensureStarterCreditGrant(tx, input.orgId);
-    await writeOrgMetadataWithDefaultPlanEntitlement(
-      tx,
-      input.orgId,
-      async (writeTx) => {
-        return await writeTx
-          .insert(orgMetadataCanonicalWrites)
-          .values({ orgId: input.orgId, defaultAgentId: agent.id })
-          .onConflictDoUpdate({
-            target: orgMetadataCanonicalWrites.orgId,
-            set: { defaultAgentId: agent.id, updatedAt: nowDate() },
+const commitSlackStarterDefault$ = command(
+  async (
+    { set },
+    input: { readonly orgId: string; readonly agentId: string },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    await db.transaction(async (tx) => {
+      const initialTier = "limited-free-1";
+      const [inserted] = await tx
+        .insert(orgMetadataCanonicalWrites)
+        .values({ orgId: input.orgId, tier: initialTier })
+        .onConflictDoNothing()
+        .returning({ orgId: orgMetadataCanonicalWrites.orgId });
+      if (inserted) {
+        await tx.execute(orgCreditExpirationSql(input.orgId, nowDate()));
+        const expiresAt = nowDate();
+        expiresAt.setMonth(expiresAt.getMonth() + 1);
+        const [grant] = await tx
+          .insert(creditExpiresRecord)
+          .values({
+            orgId: input.orgId,
+            source: STARTER_GRANT_SOURCE,
+            stripeInvoiceId: null,
+            amount: STARTER_GRANT_AMOUNT,
+            remaining: STARTER_GRANT_AMOUNT,
+            expiresAt,
           })
-          .returning({
-            orgId: orgMetadataCanonicalWrites.orgId,
-            tier: orgMetadataCanonicalWrites.tier,
-          });
-      },
+          .onConflictDoNothing()
+          .returning({ id: creditExpiresRecord.id });
+        if (grant) {
+          await tx
+            .update(orgMetadata)
+            .set({
+              credits: sql`${orgMetadata.credits} + ${STARTER_GRANT_AMOUNT}`,
+              updatedAt: nowDate(),
+            })
+            .where(eq(orgMetadata.orgId, input.orgId));
+        }
+        await tx
+          .insert(orgPlanEntitlements)
+          .values(
+            orgPlanEntitlementValues(
+              {
+                orgId: input.orgId,
+                tier: initialTier,
+                source: "org_metadata_migration",
+              },
+              { stripeSubscriptionId: null, sourceMetadata: {} },
+            ),
+          )
+          .onConflictDoNothing({ target: orgPlanEntitlements.orgId });
+      }
+      const [wallet] = await tx
+        .update(orgMetadata)
+        .set({ defaultAgentId: input.agentId, updatedAt: nowDate() })
+        .where(eq(orgMetadata.orgId, input.orgId))
+        .returning({ orgId: orgMetadata.orgId });
+      if (!wallet) {
+        throw new Error("Seeded Slack wallet disappeared during publication");
+      }
+      signal.throwIfAborted();
+    });
+    signal.throwIfAborted();
+  },
+);
+
+const seedDefaultAgent$ = command(
+  async (
+    { set },
+    input: SeedDefaultAgentInput,
+    signal: AbortSignal,
+  ): Promise<{ agentId: string }> => {
+    const db = set(writeDb$);
+    const [inserted] = await db
+      .insert(agents)
+      .values({
+        id: randomUUID(),
+        orgId: input.orgId,
+        owner: input.userId,
+        name: input.name,
+        displayName: input.displayName ?? null,
+      })
+      .onConflictDoNothing({ target: [agents.orgId, agents.name] })
+      .returning({ id: agents.id });
+    signal.throwIfAborted();
+    const [agent] = await db
+      .update(agents)
+      .set({
+        owner: input.userId,
+        displayName: input.displayName ?? null,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          inserted ? eq(agents.id, inserted.id) : sql`true`,
+          eq(agents.orgId, input.orgId),
+          eq(agents.name, input.name),
+        ),
+      )
+      .returning({ id: agents.id });
+    signal.throwIfAborted();
+    if (!agent) {
+      throw new Error("Failed to resolve seeded default agent");
+    }
+    await set(
+      commitSlackStarterDefault$,
+      { orgId: input.orgId, agentId: agent.id },
+      signal,
     );
-  });
-
-  await seedBuiltInModelKeys(db, agent.id);
-
-  return { agentId: agent.id };
-}
+    signal.throwIfAborted();
+    return { agentId: agent.id };
+  },
+);
 
 async function seedBuiltInModelKeys(db: Db, agentId: string): Promise<void> {
-  await acquireBuiltInModelKeyFixture(
-    db,
-    agentId,
-    builtInModelKeyRows(agentId),
-  );
-}
-
-function builtInModelKeyRows(agentId: string) {
-  return [
+  await acquireBuiltInModelKeyFixture(db, agentId, [
     {
-      vendor: getBuiltInVendor(DEFAULT_ORG_MODEL_POLICY_DEFAULT_MODEL),
+      vendor: AUTO_RUN_KEY_VENDOR,
       apiKey: `built-in-key-default-${agentId}`,
-      label: agentId,
     },
-    {
-      vendor: "anthropic",
-      apiKey: `built-in-key-anthropic-${agentId}`,
-      label: agentId,
-    },
-    {
-      vendor: "moonshot",
-      apiKey: `built-in-key-moonshot-${agentId}`,
-      label: agentId,
-    },
-  ];
+  ]);
 }
 
 async function deleteBuiltInModelKeysForSeededDefaultAgent(
@@ -271,66 +295,6 @@ async function deleteBuiltInModelKeysForSeededDefaultAgent(
   await releaseBuiltInModelKeyFixture(db, agent.id);
 }
 
-async function ensureStarterCreditGrant(
-  tx: StarterGrantTx,
-  orgId: string,
-): Promise<void> {
-  const [existing] = await tx
-    .select({ orgId: orgMetadata.orgId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  if (existing) {
-    return;
-  }
-
-  const expiresAt = nowDate();
-  expiresAt.setMonth(expiresAt.getMonth() + 1);
-  const inserted = await tx
-    .insert(creditExpiresRecord)
-    .values({
-      orgId,
-      source: STARTER_GRANT_SOURCE,
-      stripeInvoiceId: null,
-      amount: STARTER_GRANT_AMOUNT,
-      remaining: STARTER_GRANT_AMOUNT,
-      expiresAt,
-    })
-    .onConflictDoNothing()
-    .returning({ id: creditExpiresRecord.id });
-  if (inserted.length === 0) {
-    return;
-  }
-
-  await writeOrgMetadataWithDefaultPlanEntitlement(
-    tx,
-    orgId,
-    async (writeTx) => {
-      return await writeTx
-        .insert(orgMetadataCanonicalWrites)
-        .values({
-          orgId,
-          credits: STARTER_GRANT_AMOUNT,
-          tier: "free",
-          createdAt: sql`now()`,
-          updatedAt: sql`now()`,
-        })
-        .onConflictDoUpdate({
-          target: orgMetadataCanonicalWrites.orgId,
-          set: {
-            credits: sql`${orgMetadata.credits} + ${STARTER_GRANT_AMOUNT}`,
-            tier: "free",
-            updatedAt: sql`now()`,
-          },
-        })
-        .returning({
-          orgId: orgMetadataCanonicalWrites.orgId,
-          tier: orgMetadataCanonicalWrites.tier,
-        });
-    },
-  );
-}
-
 async function slackInstallation(db: ReadonlyDb, teamId: string) {
   return (
     (
@@ -342,7 +306,6 @@ async function slackInstallation(db: ReadonlyDb, teamId: string) {
           botUserId: slackOrgInstallations.botUserId,
           botScopes: slackOrgInstallations.botScopes,
           installedByUserId: slackOrgInstallations.installedByUserId,
-          publicBrand: slackOrgInstallations.publicBrand,
           createdAt: slackOrgInstallations.createdAt,
         })
         .from(slackOrgInstallations)
@@ -391,7 +354,6 @@ function slackChatIngressRows(db: ReadonlyDb, teamId: string) {
       routeId: slackChatIngress.routeId,
       eventId: slackChatIngress.eventId,
       payload: slackChatIngress.payload,
-      publicBrand: slackChatIngress.publicBrand,
       status: slackChatIngress.status,
       retryCount: slackChatIngress.retryCount,
       processingAttemptCount: slackChatIngress.processingAttemptCount,
@@ -710,7 +672,6 @@ async function maybeUpsertSlackInstallationForPost(
     botScopes:
       body.bot_scopes === undefined ? SLACK_BOT_SCOPES : body.bot_scopes,
     installedByUserId: actor.userId,
-    publicBrand: body.public_brand,
   });
 }
 
@@ -720,7 +681,6 @@ function hasExplicitSlackInstallationFields(body: TestSlackStatePostBody) {
     body.bot_user_id !== undefined ||
     body.bot_scopes !== undefined ||
     body.bot_token !== undefined ||
-    body.public_brand !== undefined ||
     body.installation_org_id !== undefined
   );
 }
@@ -775,23 +735,6 @@ async function maybeSeedSlackConnectionForPost(
     slackWorkspaceId: body.team_id!,
     userId: userId,
   });
-}
-
-async function maybeSeedDefaultAgentForPost(
-  db: Db,
-  body: TestSlackStatePostBody,
-  actor: { readonly orgId: string; readonly userId: string },
-): Promise<{ readonly agentId: string } | undefined> {
-  if (!body.seed_default_agent) {
-    return undefined;
-  }
-  const defaultAgent = await seedDefaultAgent(db, {
-    orgId: actor.orgId,
-    userId: actor.userId,
-    name: body.default_agent_name ?? DEFAULT_AGENT_NAME,
-    displayName: body.default_agent_display_name,
-  });
-  return defaultAgent;
 }
 
 async function seedPostSlackUserData(
@@ -874,8 +817,23 @@ const postSlackState$ = command(async ({ get, set }, signal: AbortSignal) => {
     actor.userId,
   );
   signal.throwIfAborted();
-  const defaultAgent = await maybeSeedDefaultAgentForPost(db, body, actor);
+  const defaultAgent = body.seed_default_agent
+    ? await set(
+        seedDefaultAgent$,
+        {
+          orgId: actor.orgId,
+          userId: actor.userId,
+          name: body.default_agent_name ?? DEFAULT_AGENT_NAME,
+          displayName: body.default_agent_display_name,
+        },
+        signal,
+      )
+    : undefined;
   signal.throwIfAborted();
+  if (defaultAgent) {
+    await seedBuiltInModelKeys(db, defaultAgent.agentId);
+    signal.throwIfAborted();
+  }
   await seedPostSlackUserData(db, body, actor);
   signal.throwIfAborted();
 

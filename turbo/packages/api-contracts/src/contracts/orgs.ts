@@ -5,7 +5,6 @@ import { orgRoleSchema } from "./org-members";
  * Org tier values
  */
 export const orgTierSchema = z.enum([
-  "free",
   "limited-free-1",
   "pro",
   "team",

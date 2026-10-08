@@ -46,7 +46,7 @@ class TestDoneHook:
                     "usage-executor:shutdown:wait=True",
                     "usage:drain",
                     "auth-base:shutdown:wait=False",
-                    "model-provider:shutdown",
+                    "catalog:shutdown",
                     "jsonl:shutdown",
                 ),
                 id="initial-delivery-flush",
@@ -56,7 +56,7 @@ class TestDoneHook:
                 (
                     "usage-executor:shutdown:wait=True",
                     "auth-base:shutdown:wait=False",
-                    "model-provider:shutdown",
+                    "catalog:shutdown",
                     "jsonl:shutdown",
                 ),
                 id="usage-executor-shutdown",
@@ -67,7 +67,7 @@ class TestDoneHook:
                     "usage-executor:shutdown:wait=True",
                     "usage:drain",
                     "auth-base:shutdown:wait=False",
-                    "model-provider:shutdown",
+                    "catalog:shutdown",
                     "jsonl:shutdown",
                 ),
                 id="post-executor-usage-drain",
@@ -78,21 +78,21 @@ class TestDoneHook:
                     "usage-executor:shutdown:wait=True",
                     "usage:drain",
                     "auth-base:shutdown:wait=False",
-                    "model-provider:shutdown",
+                    "catalog:shutdown",
                     "jsonl:shutdown",
                 ),
                 id="auth-base-worker-shutdown",
             ),
             pytest.param(
-                "model-provider",
+                "catalog",
                 (
                     "usage-executor:shutdown:wait=True",
                     "usage:drain",
                     "auth-base:shutdown:wait=False",
-                    "model-provider:shutdown",
+                    "catalog:shutdown",
                     "jsonl:shutdown",
                 ),
-                id="model-provider-reporter-shutdown",
+                id="catalog-validation-shutdown",
             ),
         ],
     )
@@ -119,9 +119,9 @@ class TestDoneHook:
             if failure_point == "auth-base":
                 raise failure
 
-        def shutdown_model_provider() -> None:
-            calls.append("model-provider:shutdown")
-            if failure_point == "model-provider":
+        def shutdown_catalog() -> None:
+            calls.append("catalog:shutdown")
+            if failure_point == "catalog":
                 raise failure
 
         def shutdown_jsonl() -> None:
@@ -148,9 +148,9 @@ class TestDoneHook:
                 side_effect=shutdown_auth_base,
             ),
             patch.object(
-                mitm_addon.model_provider_failure,
+                mitm_addon.codex_model_catalog_cache,
                 "shutdown",
-                side_effect=shutdown_model_provider,
+                side_effect=shutdown_catalog,
             ),
             patch.object(mitm_addon, "shutdown_log_writer", side_effect=shutdown_jsonl),
             pytest.raises(RuntimeError) as exc_info,

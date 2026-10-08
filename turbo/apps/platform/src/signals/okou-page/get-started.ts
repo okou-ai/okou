@@ -1,18 +1,20 @@
 import { command, computed, state } from "ccstate";
+import type { AgentPhoneLinkStatusResponse } from "@okouai/api-contracts/contracts/integrations-agentphone";
+import type { SlackOrgStatus } from "@okouai/api-contracts/contracts/integrations-slack";
 import {
   GET_STARTED_REWARDS_CHANGED_EVENT,
   getStartedContract,
   type GetStartedQuestKey,
   type GetStartedStatus,
 } from "@okouai/api-contracts/contracts/get-started";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { apiClient$ } from "../api-client.ts";
-import { featureSwitches$ } from "../external/feature-switch.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { accept } from "../../lib/accept.ts";
-import { detach, Reason, resetSignal, waitForOperation } from "../utils.ts";
+import { resetSignal, settle, waitForOperation } from "../utils.ts";
 import { reloadAccountMenuCreditBalances$ } from "./billing.ts";
 import { setAblyLoop$ } from "../realtime.ts";
+import { agentPhoneLinkStatus$ } from "./agentphone.ts";
+import { slackOrgData$ } from "./slack.ts";
 
 export type GetStartedQuestStatus = "todo" | "inReview" | "done" | "rejected";
 export interface GetStartedQuest {
@@ -46,10 +48,6 @@ const reloadVersion$ = state(0);
 const getStartedStatus$ = computed(
   async (get): Promise<GetStartedStatus | null> => {
     get(reloadVersion$);
-    const switches = await get(featureSwitches$);
-    if (!switches[FeatureSwitchKey.GetStartedQuests]) {
-      return null;
-    }
     await get(runtimeAuthenticatedIdentity$);
     const response = await accept(
       get(apiClient$)(getStartedContract).status(),
@@ -80,13 +78,66 @@ export const shareClaim$ = computed(async (get) => {
   return data?.shareClaim ?? null;
 });
 
+/**
+ * The iMessage quest, reconciled with the phone link itself.
+ *
+ * The reward is only granted when a link is created, so a member whose phone
+ * was linked before the quest existed holds no claim for it -- but they have
+ * done the step, and a row asking them to do it again would be wrong. Their
+ * row reads as finished instead, without the credits. A workspace with no
+ * AgentPhone number has nothing to text, so the row is not offered at all.
+ */
+function reconcileImessageQuest(
+  quests: readonly GetStartedQuest[],
+  imessage: GetStartedQuest,
+  link: AgentPhoneLinkStatusResponse,
+): readonly GetStartedQuest[] {
+  if (link.linked) {
+    return quests.map((quest): GetStartedQuest => {
+      return quest === imessage
+        ? { ...quest, status: "done", canEarnMore: false }
+        : quest;
+    });
+  }
+  if (link.agentPhoneNumber === null) {
+    return quests.filter((quest) => {
+      return quest !== imessage;
+    });
+  }
+  return quests;
+}
+
+/**
+ * The Slack quest, reconciled with the org's Slack install.
+ *
+ * Like the iMessage quest, the reward is only granted by the install flow, so
+ * a workspace that added Slack before the quest existed holds no claim for it.
+ * The step is done all the same, and offering to install an app that is
+ * already installed leads nowhere. The row reads as finished, without the
+ * credits.
+ */
+function reconcileSlackQuest(
+  quests: readonly GetStartedQuest[],
+  slack: GetStartedQuest,
+  org: SlackOrgStatus,
+): readonly GetStartedQuest[] {
+  if (org.isInstalled !== true) {
+    return quests;
+  }
+  return quests.map((quest): GetStartedQuest => {
+    return quest === slack
+      ? { ...quest, status: "done", canEarnMore: false }
+      : quest;
+  });
+}
+
 export const getStartedQuests$ = computed(
   async (get): Promise<readonly GetStartedQuest[]> => {
     const data = await get(getStartedStatus$);
     if (!data) {
       return [];
     }
-    return data.quests.map((quest) => {
+    const quests = data.quests.map((quest): GetStartedQuest => {
       let status: GetStartedQuestStatus = (
         quest.key === "checkin" ? data.claimedToday : quest.claimedCount > 0
       )
@@ -122,12 +173,49 @@ export const getStartedQuests$ = computed(
       }
       return { ...quest, status, rejectedReason };
     });
+    const slack = quests.find((quest) => {
+      return quest.key === "slack";
+    });
+    // Only a quest that can still be earned depends on the install. A failed
+    // Slack read leaves the quest as the API reported it instead of taking the
+    // whole list down; the Slack surfaces own reporting that failure.
+    const slackOrg = slack?.canEarnMore
+      ? await settle(get(slackOrgData$))
+      : null;
+    const withSlack =
+      slack && slackOrg?.ok
+        ? reconcileSlackQuest(quests, slack, slackOrg.value)
+        : quests;
+    const imessage = withSlack.find((quest) => {
+      return quest.key === "imessage";
+    });
+    // Only a quest that can still be earned depends on the link.
+    if (!imessage?.canEarnMore) {
+      return withSlack;
+    }
+    return reconcileImessageQuest(
+      withSlack,
+      imessage,
+      await get(agentPhoneLinkStatus$),
+    );
+  },
+);
+
+/**
+ * What linking a phone still pays, or null once it pays nothing -- already
+ * earned, already linked, or not offered in this workspace.
+ */
+export const imessageQuestReward$ = computed(
+  async (get): Promise<number | null> => {
+    const quest = (await get(getStartedQuests$)).find((candidate) => {
+      return candidate.key === "imessage";
+    });
+    return quest?.canEarnMore ? quest.rewardAmount : null;
   },
 );
 export interface GetStartedSummary {
   readonly completed: number;
   readonly total: number;
-  readonly earnedCredits: number;
   /** Credits still claimable, which is what the panel leads with. */
   readonly remainingCredits: number;
   readonly checkinStreak: number;
@@ -141,13 +229,6 @@ export const getStartedSummary$ = computed(
         return quest.status === "done";
       }).length,
       total: quests.length,
-      earnedCredits: quests
-        .filter((quest) => {
-          return quest.rewardTarget === "user";
-        })
-        .reduce((sum, quest) => {
-          return sum + quest.earnedCredits;
-        }, 0),
       remainingCredits: quests
         .filter((quest) => {
           return quest.canEarnMore && quest.status !== "inReview";
@@ -236,7 +317,7 @@ export const submitSharePost$ = command(
   },
 );
 
-/** Whether the check-in confirmation is showing; the check-in itself already ran. */
+/** Whether the success dialog is showing after a completed check-in. */
 const internalCheckinClaimedOpen$ = state(false);
 export const checkinClaimedOpen$ = computed((get) => {
   return get(internalCheckinClaimedOpen$);
@@ -245,19 +326,8 @@ export const setCheckinClaimedOpen$ = command(({ set }, open: boolean) => {
   set(internalCheckinClaimedOpen$, open);
 });
 
-/**
- * Which check-ins are worth a whole screen.
- *
- * The first one, and every full week after it. A daily habit that opens a modal
- * every single day stops being a reward somewhere around the fourth day and
- * starts being a thing to dismiss, so the ordinary day gets a toast instead.
- */
-export function isCheckinMilestone(streak: number): boolean {
-  return streak <= 1 || streak % 7 === 0;
-}
-
 export const checkInGetStarted$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<number> => {
+  async ({ get, set }, signal: AbortSignal): Promise<void> => {
     await accept(
       get(apiClient$)(getStartedContract).checkin({
         fetchOptions: { signal },
@@ -267,14 +337,11 @@ export const checkInGetStarted$ = command(
     );
     signal.throwIfAborted();
     set(reloadGetStarted$);
-    const [status] = await Promise.all([
+    await Promise.all([
       waitForOperation(get(getStartedStatus$), signal),
       set(reloadAccountMenuCreditBalances$, signal),
     ]);
     signal.throwIfAborted();
-    // The streak the server now holds, so the caller can pick the surface that
-    // fits this particular day rather than the same one every day.
-    return status?.checkinStreak ?? 0;
   },
 );
 
@@ -294,26 +361,14 @@ const refreshGetStartedFromRealtime$ = command(
 
 /** An authenticated app daemon; reward availability never delays route readiness. */
 export const setupGetStartedRewards$ = command(
-  ({ get, set }, signal: AbortSignal): void => {
-    detach(
-      (async (ownerSignal: AbortSignal): Promise<void> => {
-        const switches = await get(featureSwitches$);
-        ownerSignal.throwIfAborted();
-        if (!switches[FeatureSwitchKey.GetStartedQuests]) {
-          return;
-        }
-        set(
-          setAblyLoop$,
-          {
-            topic: GET_STARTED_REWARDS_CHANGED_EVENT,
-            loopCommand$: refreshGetStartedFromRealtime$,
-            options: { runOnSubscribe: true },
-          },
-          ownerSignal,
-        );
-      })(signal),
-      Reason.Daemon,
-      "get started",
+  ({ set }, signal: AbortSignal): void => {
+    set(
+      setAblyLoop$,
+      {
+        topic: GET_STARTED_REWARDS_CHANGED_EVENT,
+        loopCommand$: refreshGetStartedFromRealtime$,
+      },
+      signal,
     );
   },
 );

@@ -26,6 +26,10 @@ export default defineConfig({
         },
       ],
       vercel: {
+        // Hono currently builds one function for all routes. Its independent
+        // Morning Brief waitUntil invocations need a platform deadline beyond
+        // the 180s per-owner budget; the cron retains its own 45s bound.
+        function: { maxDuration: 300 },
         config: {
           crons: vercelConfig.crons,
         },

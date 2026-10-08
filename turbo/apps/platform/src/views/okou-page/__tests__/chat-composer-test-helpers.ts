@@ -1,36 +1,42 @@
-import { screen, waitFor } from "@testing-library/react";
-import type { PresentationTemplateItem } from "@okouai/core";
+import {
+  agentInstructionsContract,
+  agentsByIdContract,
+} from "@okouai/api-contracts/contracts/agents";
+import {
+  billingStatusContract,
+  type BillingStatusResponse,
+} from "@okouai/api-contracts/contracts/billing";
 import {
   chatThreadByIdContract,
   chatThreadEventsContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type {
+  AvailableRunModel,
   ModelProviderResponse,
-  OrgModelPolicy,
+  ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
-import {
-  agentsByIdContract,
-  agentInstructionsContract,
-} from "@okouai/api-contracts/contracts/agents";
-import {
-  billingStatusContract,
-  type BillingStatusResponse,
-} from "@okouai/api-contracts/contracts/billing";
+import type { PresentationTemplateItem } from "@okouai/core";
+import { screen, waitFor } from "@testing-library/react";
 import { expect, vi } from "vitest";
-import {
-  testContext,
-  chatEventRowsResponse,
-} from "../../../signals/__tests__/test-helpers.ts";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
-import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
+import {
+  mockAutoRunModel,
+  mockSubscriptionRunModel,
+} from "../../../mocks/handlers/api-run-models.ts";
+import {
+  chatEventRowsResponse,
+  mockChatThreadSnapshotResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import {
   mockChatEventRows,
   normalizeMockChatEvents,
   type MockChatEventInput,
 } from "./chat-event-test-helpers.ts";
-import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 export const context = testContext();
 
@@ -40,13 +46,8 @@ const OTHER_AGENT_ID = "e0000000-0000-4000-a000-000000000011";
 
 export const THREAD_ID = "b1000000-0000-4000-a000-000000000101";
 
-const ANTHROPIC_PROVIDER_ID = "00000000-0000-4000-a000-000000000001";
-
-export const OPENROUTER_PROVIDER_ID = "00000000-0000-4000-a000-000000000002";
-
-const VERCEL_PROVIDER_ID = "00000000-0000-4000-a000-000000000003";
-
-const NOW = "2026-05-08T00:00:00.000Z";
+export const CLAUDE_SUBSCRIPTION_PROVIDER_ID =
+  "00000000-0000-4000-a000-000000000002";
 
 export function expectTextBefore(firstText: string, secondText: string): void {
   const first = screen.getByText(firstText);
@@ -93,11 +94,6 @@ export function buildProvider(
 ): ModelProviderResponse {
   return {
     framework: "claude-code",
-    secretName: "ANTHROPIC_API_KEY",
-    authMethod: null,
-    secretNames: null,
-    isDefault: false,
-    selectedModel: null,
     needsReconnect: false,
     lastRefreshErrorCode: null,
     createdAt: "2024-01-01T00:00:00Z",
@@ -106,77 +102,48 @@ export function buildProvider(
   };
 }
 
-export function buildModelPolicy(
-  overrides: Partial<OrgModelPolicy> & Pick<OrgModelPolicy, "model">,
-): OrgModelPolicy {
-  return {
-    id: "00000000-0000-4000-a000-000000000101",
-    modelLabel: "Claude Opus 4.8",
-    isDefault: false,
-    defaultProviderType: "claude-code-oauth-token",
-    credentialScope: "member",
-    modelProviderId: null,
-    routeStatus: "valid",
-    routeStatusReason: null,
-    createdAt: NOW,
-    updatedAt: NOW,
-    ...overrides,
-  };
+export function buildRunModel(options: {
+  readonly model: string | null;
+  readonly modelLabel?: string;
+  readonly providerType?: ModelProviderType;
+  readonly modelProviderId?: string | null;
+}): AvailableRunModel {
+  return options.model === null
+    ? mockAutoRunModel()
+    : mockSubscriptionRunModel(options.model, options);
 }
 
-export function mockOrgModelRoutes(defaultSelectedModel: string): void {
-  context.mocks.data.orgModelProviders([
+export function mockPersonalModelRoutes(): void {
+  context.mocks.data.personalModelProviders([
     buildProvider({
-      id: OPENROUTER_PROVIDER_ID,
-      type: "openrouter-api-key",
-      secretName: "OPENROUTER_API_KEY",
-    }),
-    buildProvider({
-      id: ANTHROPIC_PROVIDER_ID,
-      type: "anthropic-api-key",
-      secretName: "ANTHROPIC_API_KEY",
-    }),
-    buildProvider({
-      id: VERCEL_PROVIDER_ID,
-      type: "vercel-ai-gateway",
-      secretName: "VERCEL_AI_GATEWAY_API_KEY",
+      id: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+      type: "claude-code-oauth-token",
     }),
   ]);
-  context.mocks.data.orgModelPolicies([
-    buildModelPolicy({
-      id: "00000000-0000-4000-a000-000000000201",
+  context.mocks.data.availableRunModels([
+    buildRunModel({
       model: "claude-fable-5-1",
       modelLabel: "Claude Fable 5.1",
-      isDefault: defaultSelectedModel === "claude-fable-5-1",
-      defaultProviderType: "openrouter-api-key",
-      credentialScope: "org",
-      modelProviderId: OPENROUTER_PROVIDER_ID,
+      providerType: "claude-code-oauth-token",
+      modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
     }),
-    buildModelPolicy({
-      id: "00000000-0000-4000-a000-000000000202",
-      model: "claude-sonnet-4-6",
-      modelLabel: "Claude Sonnet 4.6",
-      isDefault: defaultSelectedModel === "claude-sonnet-4-6",
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: ANTHROPIC_PROVIDER_ID,
+    buildRunModel({
+      model: "claude-sonnet-5",
+      modelLabel: "Claude Sonnet 5",
+      providerType: "claude-code-oauth-token",
+      modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
     }),
-    buildModelPolicy({
-      id: "00000000-0000-4000-a000-000000000203",
-      model: "claude-opus-4-8",
-      modelLabel: "Claude Opus 4.8",
-      defaultProviderType: "anthropic-api-key",
-      credentialScope: "org",
-      modelProviderId: ANTHROPIC_PROVIDER_ID,
+    buildRunModel({
+      model: "claude-opus-5-5",
+      modelLabel: "Claude Opus 5.5",
+      providerType: "claude-code-oauth-token",
+      modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
     }),
-    buildModelPolicy({
-      id: "00000000-0000-4000-a000-000000000204",
+    buildRunModel({
       model: "claude-opus-5",
       modelLabel: "Claude Opus 5",
-      isDefault: defaultSelectedModel === "claude-opus-5",
-      defaultProviderType: "vercel-ai-gateway",
-      credentialScope: "org",
-      modelProviderId: VERCEL_PROVIDER_ID,
+      providerType: "claude-code-oauth-token",
+      modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
     }),
   ]);
 }
@@ -184,7 +151,6 @@ export function mockOrgModelRoutes(defaultSelectedModel: string): void {
 function billingStatus(
   tier: string,
   modelCapabilities?: {
-    readonly supportByok?: boolean;
     readonly restrictedBuiltInModels?: boolean;
   },
 ): BillingStatusResponse {
@@ -214,7 +180,6 @@ function billingStatus(
 
 export function mockBillingCapabilities(
   modelCapabilities: {
-    readonly supportByok: boolean;
     readonly restrictedBuiltInModels: boolean;
   },
   tier = "pro",
@@ -224,11 +189,7 @@ export function mockBillingCapabilities(
   });
 }
 
-export function mockAgent(options?: {
-  selectedModel?: string | null;
-  modelProviderId?: string | null;
-  includeOtherAgent?: boolean;
-}): void {
+export function mockAgent(options?: { includeOtherAgent?: boolean }): void {
   const agents = [
     {
       agentId: AGENT_ID,
@@ -260,9 +221,6 @@ export function mockAgent(options?: {
       description: null,
       sound: null,
       avatarUrl: null,
-      modelProviderId: isOtherAgent ? null : (options?.modelProviderId ?? null),
-      selectedModel: isOtherAgent ? null : (options?.selectedModel ?? null),
-      preferPersonalProvider: false,
       visibility: "public",
     });
   });
@@ -273,8 +231,6 @@ export function mockAgent(options?: {
 
 export function mockThread(options?: {
   selectedModel?: string | null;
-  selectedVideoModel?: string | null;
-  selectedImageModel?: string | null;
   activeRunIds?: string[];
   messages?: MockChatEventInput[];
 }): void {
@@ -285,27 +241,29 @@ export function mockThread(options?: {
     });
   });
   context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
-    return respond(200, {
-      chatThreads: [
-        {
-          id: THREAD_ID,
-          agentId: AGENT_ID,
-          title: "My thread",
-          sortAt: "2026-03-10T00:00:00Z",
-          createdAt: "2026-03-10T00:00:00Z",
-          updatedAt: "2026-03-10T00:00:00Z",
-          pinnedAt: null,
-          renamedAt: null,
-          selectedModel: options?.selectedModel ?? null,
-          serviceTier: null,
-          computerUseHostId: null,
-          selectedVideoModel: options?.selectedVideoModel ?? null,
-          selectedImageModel: options?.selectedImageModel ?? null,
-        },
-      ],
-      latestEventId: null,
-      latestSeqId: null,
-    });
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [
+          {
+            id: THREAD_ID,
+            agentId: AGENT_ID,
+            title: "My thread",
+            sortAt: "2026-03-10T00:00:00Z",
+            createdAt: "2026-03-10T00:00:00Z",
+            updatedAt: "2026-03-10T00:00:00Z",
+            pinnedAt: null,
+            archived: false,
+            renamedAt: null,
+            selectedModel: options?.selectedModel ?? null,
+            serviceTier: null,
+            computerUseHostId: null,
+          },
+        ],
+        latestEventId: null,
+        latestSeqId: null,
+      }),
+    );
   });
   context.mocks.api(chatThreadsContract.events, ({ respond }) => {
     return respond(200, { events: [], hasMore: false });
@@ -346,13 +304,6 @@ export function mockActiveTemplateThread(): void {
         runId: "run-template-active",
         createdAt: "2026-06-09T10:00:00Z",
       },
-      {
-        id: "msg-template-active-assistant",
-        role: "assistant",
-        content: null,
-        runId: "run-template-active",
-        createdAt: "2026-06-09T10:00:01Z",
-      },
     ],
     activeRunIds: ["run-template-active"],
   });
@@ -389,29 +340,22 @@ export function trackTemplatePreviewImagePreloads(): {
   return { srcs };
 }
 
-/** The composer's model control, named for the model it currently carries. */
+/**
+ * The composer's model control. Its name lists the model, then the effort and
+ * Fast it runs with ("GPT 5.6 Sol, Max, Fast"); a label naming only the model
+ * matches whatever effort it carries.
+ */
 export function queryComposerModelTrigger(label: string): HTMLElement | null {
   return (
     queryAllByRoleFast("button").find((button) => {
+      const name = button.getAttribute("aria-label");
       return (
-        button.getAttribute("aria-label") === label ||
+        name === label ||
+        name?.startsWith(`${label}, `) === true ||
         button.textContent?.replace(/\s+/gu, " ").trim() === label
       );
     }) ?? null
   );
-}
-
-/**
- * The same control located by structure instead of by the model it names, for
- * tests that scope the search to one composer rather than to one label.
- */
-export function composerModelTriggerIn(
-  container: ParentNode,
-): HTMLElement | null {
-  const button = container
-    .querySelector('[data-slot="select-value"]')
-    ?.closest("button");
-  return button instanceof HTMLElement ? button : null;
 }
 
 export async function composerModelTrigger(
@@ -428,10 +372,6 @@ async function findComposerModel(label: string): Promise<HTMLElement> {
     }
     return trigger;
   });
-}
-
-export async function expectComposerModel(label: string): Promise<void> {
-  await expect(findComposerModel(label)).resolves.toBeInTheDocument();
 }
 
 export function composerInlineTemplates(): HTMLElement[] {

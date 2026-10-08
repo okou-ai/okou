@@ -1,120 +1,80 @@
 import { Combobox } from "@base-ui/react/combobox";
 import {
   DropdownMenu,
-  DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuRadioItemIndicator,
+  DropdownMenuTrigger,
 } from "@okouai/ui/components/ui/dropdown-menu";
+import type { ComposerVoiceInputStatus } from "../../signals/okou-page/composer-voice-input.ts";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
-import {
-  useComposerConnectorActions,
-  type ComposerConnectorActions,
-} from "./composer-connector-actions.ts";
 import {
   useComposerActions,
   type ComposerActions,
 } from "./composer-actions.ts";
 import {
-  ComposerCreateImageModelPicker,
-  ComposerCreateVideoModelPicker,
-  ComposerTaskControls,
-} from "./composer-create.tsx";
-import {
   ComposerAddMenu,
   type ComposerAddMenuGroup,
 } from "./composer-add-menu.tsx";
-import { ComposerVideoOptionsChip } from "./composer-video-options.tsx";
-import type { ComposerVoiceInputStatus } from "../../signals/okou-page/composer-voice-input.ts";
+import {
+  useComposerConnectorActions,
+  type ComposerConnectorActions,
+} from "./composer-connector-actions.ts";
+import { ComposerTaskControls } from "./composer-create.tsx";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import type {
-  KeyboardEvent as ReactKeyboardEvent,
-  MouseEvent as ReactMouseEvent,
-  ReactNode,
-  RefCallback,
-} from "react";
+  GenerationTemplateRequest,
+  UserMessageDocument,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import type {
+  ConnectorAccountConnection,
+  ConnectorAccountSelection,
+  ConnectorAccountTarget,
+} from "@okouai/api-contracts/contracts/connector-accounts";
+import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
+import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import type {
+  BuiltinConnectorBrief,
+  ConnectorDefaultAccountBrief,
+  CustomConnectorBrief,
+} from "@okouai/api-contracts/contracts/connector-overview";
 import {
-  useGet,
-  useSet,
-  useLoadable,
-  useLoadableState,
-  useLastLoadable,
-  useLastResolved,
-  useResolved,
-  type Loadable,
-} from "ccstate-react";
-import { useTranslation } from "react-i18next";
-import { useLoadableSet } from "ccstate-react/experimental";
-import { i18n } from "../../i18n/index.ts";
+  isIntegrationManagedCustomConnector,
+  type CustomConnectorResponse,
+} from "@okouai/api-contracts/contracts/custom-connectors";
+import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
-  ComposerPaidToolNotice,
-  TemplatePaidToolNotice,
-} from "./paid-tool-notice.tsx";
-import { ComposerNoticeTray } from "./composer-notice-tray.tsx";
-import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
-import { CustomTemplatePickerPane } from "./custom-template-picker-pane.tsx";
-import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
+  ILLUSTRATION_TEMPLATE_ITEMS,
+  type IllustrationTemplateItem,
+} from "@okouai/core/illustration-template-items";
 import {
-  loadCustomTemplateCatalog$,
-  resetCustomTemplatePicker$,
-  resetCustomTemplatePickerView$,
-} from "../../signals/okou-page/custom-template-library.ts";
+  PRESENTATION_TEMPLATE_PICKER_ITEMS,
+  type PresentationTemplateItem,
+} from "@okouai/core/presentation-template-items";
+import { formatUserPresentationTemplateId } from "@okouai/core/presentation-template-selection";
+import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import {
-  importPresentationTemplateDeck$,
-  PRESENTATION_TEMPLATE_IMPORT_ACCEPT,
-} from "../../signals/okou-page/presentation-template-import.ts";
-import type {
-  ImportedPresentationTemplateImageBuffers,
-  ImportedPresentationTemplateImageSignals,
-  ImportedPresentationTemplateImageSlot,
-  ImportedPresentationTemplateImageState,
-  ImportedPresentationTemplateLoadedImage,
-  ImportedPresentationTemplatePickerItem,
-  PresentationTemplateDetail,
-  PresentationTemplateSummary,
-} from "../../signals/okou-page/presentation-template-library.ts";
-import { CHAT_UPLOAD_MAX_FILE_SIZE } from "../../lib/chat-upload.ts";
-import { ensurePushSubscription$ } from "../../lib/push-notifications.ts";
-import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
+  WEBSITE_TEMPLATE_ITEMS,
+  findWebsiteTemplateItem,
+  type WebsiteTemplateItem,
+} from "@okouai/core/website-template-items";
 import {
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  Bolt,
-  Check,
-  Download,
-  Globe,
-  Image as ImageIcon,
-  LayoutTemplate,
-  Loader2,
-  Layers,
-  Lock,
-  Mic,
-  Monitor,
-  Palette,
-  Paperclip,
-  Play,
-  Plug,
-  Plus,
-  Presentation,
-  Route,
-  Search,
-  SlidersHorizontal,
-  Square,
-  SwatchBook,
-  Terminal,
-  Trash2,
-  type LucideIcon,
-  User,
-  UserCheck,
-  Users,
-  Video,
-  X,
-} from "lucide-react";
+  WORKFLOW_TEMPLATE_CATEGORIES,
+  WORKFLOW_TEMPLATE_ITEMS,
+  findWorkflowTemplateItem,
+  type WorkflowTemplateItem,
+} from "@okouai/core/workflow-template-items";
+import {
+  ElapsedTime,
+  getShortcutLabel,
+  processShortcut,
+  type KeyboardEventLike,
+} from "@okouai/ui";
+import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
+import { Card, CardContent } from "@okouai/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -122,8 +82,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@okouai/ui/components/ui/dialog";
-import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
-import { Card, CardContent } from "@okouai/ui/components/ui/card";
 import { Input } from "@okouai/ui/components/ui/input";
 import {
   Popover,
@@ -139,6 +97,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@okouai/ui/components/ui/select";
+import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   Tabs,
   TabsContent,
@@ -153,133 +112,119 @@ import {
 } from "@okouai/ui/components/ui/tooltip";
 import { cn } from "@okouai/ui/lib/utils";
 import {
-  surfaceVariants,
-  ElapsedTime,
-  getShortcutLabel,
-  processShortcut,
-  type KeyboardEventLike,
-} from "@okouai/ui";
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useLoadable,
+  useLoadableState,
+  useResolved,
+  useSet,
+  type Loadable,
+} from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import {
-  bestEffort,
-  detach,
-  onDomEventFn,
-  Reason,
-  tapError,
-} from "../../signals/utils.ts";
-import { sendMode$ } from "../../signals/send-mode.ts";
-import type { ComposerTemplateAttachment } from "../../signals/okou-page/tiptap-workflow-composer.ts";
-import type { TemplatePreviewRuntime } from "../../signals/okou-page/template-preview-runtime.ts";
-import { agents$ } from "../../signals/agent.ts";
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  Bolt,
+  Check,
+  Download,
+  Globe,
+  Image as ImageIcon,
+  Layers,
+  LayoutTemplate,
+  Loader2,
+  Lock,
+  Mic,
+  Monitor,
+  Palette,
+  Paperclip,
+  Plug,
+  Plus,
+  Presentation,
+  Route,
+  Search,
+  SlidersHorizontal,
+  Square,
+  SwatchBook,
+  Trash2,
+  User,
+  UserCheck,
+  Users,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import type {
-  GenerationTemplateRequest,
-  UserMessageDocument,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import type { RestorableAttachment } from "../../signals/okou-page/chat-draft.ts";
-import type {
-  AvatarVideoAvatar,
-  AvatarVideoVoice,
-} from "@okouai/api-contracts/contracts/avatar-video";
-import {
-  TEMPLATE_CARD_SHADOW,
-  TEMPLATE_TILE_CAPTION,
-  TEMPLATE_TILE_MEDIA,
-  TEMPLATE_TILE_NAME,
-  TEMPLATE_TILE_PREVIEW_FOCUS,
-  TEMPLATE_TILE_SELECTED,
-  TEMPLATE_TILE_SELECTION_FRAME,
-  TEMPLATE_TILE_SCRIM,
-  TEMPLATE_TILE_USE,
-  TEMPLATE_TILE_WRAPPER,
-} from "./template-tile.ts";
-import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
-import { AttachmentChips } from "./attachment-chips.tsx";
-import { ImageAnnotationEditor } from "./image-annotation-editor.tsx";
-import { TiptapWorkflowComposer } from "./tiptap-workflow-composer.tsx";
-import { VoiceLevelWaveform } from "./voice-level-waveform.tsx";
-import { computerUseIllustrationImg } from "./platform-assets.ts";
-import type { ComposerPasteEvent } from "./composer-input-types.ts";
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  ReactNode,
+  RefCallback,
+} from "react";
+import { useTranslation } from "react-i18next";
+import { i18n } from "../../i18n/index.ts";
+import { CHAT_UPLOAD_MAX_FILE_SIZE } from "../../lib/chat-upload.ts";
 import {
   COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS,
   COMPOSER_VOICE_INPUT_SHORTCUT,
 } from "../../lib/composer-voice-input-shortcut.ts";
-import {
-  contrastRatio,
-  previewTextColorOn,
-  safePreviewGround,
-} from "./presentation-html-preview.ts";
-import {
-  type IllustrationTemplateItem,
-  ILLUSTRATION_TEMPLATE_ITEMS,
-} from "@okouai/core/illustration-template-items";
-import {
-  type PresentationTemplateItem,
-  PRESENTATION_TEMPLATE_PICKER_ITEMS,
-} from "@okouai/core/presentation-template-items";
-import { formatUserPresentationTemplateId } from "@okouai/core/presentation-template-selection";
-import {
-  type VideoTemplateItem,
-  VIDEO_TEMPLATE_ITEMS,
-  findVideoTemplateItem,
-} from "@okouai/core/video-template-items";
-import {
-  type WebsiteTemplateItem,
-  WEBSITE_TEMPLATE_ITEMS,
-  findWebsiteTemplateItem,
-} from "@okouai/core/website-template-items";
-import {
-  WORKFLOW_TEMPLATE_CATEGORIES,
-  WORKFLOW_TEMPLATE_ITEMS,
-  findWorkflowTemplateItem,
-  type WorkflowTemplateItem,
-} from "@okouai/core/workflow-template-items";
-import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
-import {
-  defaultPresentationTemplateThemeId,
-  presentationTemplateColorSystemId,
-  toIllustrationGenerationTemplate,
-  toPresentationGenerationTemplate,
-  toVideoGenerationTemplate,
-  toWebsiteGenerationTemplate,
-} from "./composer-template-catalog.ts";
-import {
-  ComposerRail,
-  RAIL_TILE,
-  RAIL_TILE_CAPTION,
-} from "./composer-rail.tsx";
-import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import type {
-  ConnectorAccountConnection,
-  ConnectorAccountSelection,
-  ConnectorAccountTarget,
-} from "@okouai/api-contracts/contracts/connector-accounts";
+import { ensurePushSubscription$ } from "../../lib/push-notifications.ts";
+import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
+import { agents$ } from "../../signals/agent.ts";
+import { computerUseProductName$ } from "../../signals/branding.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
-import type { PublicConnectorCatalogDiscoveryResponse } from "@okouai/api-contracts/contracts/connector-catalog";
+import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { modelCatalog$ } from "../../signals/external/model-catalog.ts";
+import { availableRunModels$ } from "../../signals/external/run-models.ts";
+import {
+  updateUserModelPreference$,
+  userModelPreference$,
+} from "../../signals/external/user-model-preference.ts";
+import type { RestorableAttachment } from "../../signals/okou-page/chat-draft.ts";
+import { readChatMessageFromClipboard } from "../../signals/okou-page/clipboard.ts";
+import { invalidateAgentConnectorAccess$ } from "../../signals/okou-page/composer-agent-connectors.ts";
 import type {
-  BuiltinConnectorBrief,
-  CustomConnectorBrief,
-  ConnectorDefaultAccountBrief,
-} from "@okouai/api-contracts/contracts/connector-overview";
+  ComposerPendingEvent,
+  ComposerPrimaryAction,
+  ComposerSignals,
+} from "../../signals/okou-page/composer-signals.ts";
 import {
-  isIntegrationManagedCustomConnector,
-  type CustomConnectorResponse,
-} from "@okouai/api-contracts/contracts/custom-connectors";
-import { getModelDisplayName } from "@okouai/core/model-display-name";
+  OKOU_DESKTOP_DOWNLOAD_URL,
+  desktopDownloadSupportStatus$,
+  selectedComputerUseHostId,
+  visibleComputerUseHosts,
+} from "../../signals/okou-page/computer-use-hosts.ts";
 import {
-  ImageModelBrandIcon,
-  ModelProviderPicker,
-  VideoModelBrandIcon,
-  type MediaModelPanelCategory,
-  type MediaModelPanelState,
-  type ModelProviderSelection,
-} from "./components/model-provider-picker.tsx";
-import { ChatEffortTrigger } from "./components/chat-effort-trigger.tsx";
-import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
-import { ConnectorCard } from "./components/settings/connector-card.tsx";
-import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
-import { customConnectorTarget } from "./components/settings/custom-connector-display.ts";
-import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
-import type { ConnectorConnectHandlers } from "./components/settings/launch-connector-connect.ts";
-import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
+  CONNECTOR_ACCOUNT_SEARCH_THRESHOLD,
+  connectorAccountTargetKey,
+} from "../../signals/okou-page/connector-accounts.ts";
+import {
+  connectorOverview$,
+  invalidateConnectorOverview$,
+} from "../../signals/okou-page/connector-overview.ts";
+import type { ComposerConnectorData } from "../../signals/okou-page/connectors.ts";
+import {
+  loadCustomTemplateCatalog$,
+  resetCustomTemplatePicker$,
+  resetCustomTemplatePickerView$,
+} from "../../signals/okou-page/custom-template-library.ts";
+import { resolveDefaultModelSelection } from "../../signals/okou-page/model-default-selection.ts";
+import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
+import {
+  PRESENTATION_TEMPLATE_IMPORT_ACCEPT,
+  importPresentationTemplateDeck$,
+} from "../../signals/okou-page/presentation-template-import.ts";
+import type {
+  ImportedPresentationTemplateImageBuffers,
+  ImportedPresentationTemplateImageSignals,
+  ImportedPresentationTemplateImageSlot,
+  ImportedPresentationTemplateImageState,
+  ImportedPresentationTemplateLoadedImage,
+  ImportedPresentationTemplatePickerItem,
+  PresentationTemplateDetail,
+  PresentationTemplateSummary,
+} from "../../signals/okou-page/presentation-template-library.ts";
 import {
   defaultBuiltinConnectorAccountOptions,
   defaultCustomConnectorAccountOptions,
@@ -289,116 +234,91 @@ import {
   matchesConnectorSearch,
   type ConnectorConnectSuccess,
 } from "../../signals/okou-page/settings/connectors.ts";
-import { connectorCatalogStatus$ } from "../../signals/external/connectors.ts";
-import type { ComposerConnectorData } from "../../signals/okou-page/connectors.ts";
-import { ConnectorDirectoryDialog } from "./connector-directory-dialog.tsx";
-import { resetCustomConnectorConnectInput$ } from "../../signals/okou-page/settings/custom-connectors.ts";
-import {
-  cancelConnectorConnection$,
-  connectorConnectionAttempt$,
-  registerConnectorConnectionDialog$,
-} from "../../signals/connector-connection-progress.ts";
-import { LoadingSwitch } from "../components/loading-switch.tsx";
-import { pageSignal$ } from "../../signals/page-signal.ts";
-import {
-  updateAgentSshAccess$,
-  sshSummary$,
-  sshIdentity$,
-} from "../../signals/ssh.ts";
-import { updateAgentVncAccess$ } from "../../signals/vnc-access.ts";
-import { vncIdentity$, vncSummary$ } from "../../signals/vnc.ts";
-import { VncLoadError } from "./vnc-load-error.tsx";
-import { VncConnectorCard } from "./components/settings/vnc-connector-card.tsx";
-import { SshLoadError } from "./ssh-load-error.tsx";
-import { SshConnectorCard } from "./components/settings/ssh-connector-card.tsx";
-import { rootSignal$ } from "../../signals/root-signal.ts";
-import { orgPlanCapabilities$ } from "../../signals/okou-page/org-plan-capabilities.ts";
-import {
-  openSettingsBillingPlans$,
-  setSettingsDialogOpen$,
-} from "../../signals/okou-page/settings/settings-dialog.ts";
-import { orgModelPolicies$ } from "../../signals/external/org-model-policies.ts";
-import {
-  updateDefaultImageModel$,
-  updateDefaultVideoModel$,
-  updateUserModelPreference$,
-  userModelPreference$,
-} from "../../signals/external/user-model-preference.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
-import { videoPickersVisible$ } from "../../signals/okou-page/video-picker-visibility.ts";
-import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
-import {
-  selectedComputerUseHostId,
-  visibleComputerUseHosts,
-  OKOU_DESKTOP_DOWNLOAD_URL,
-  desktopDownloadSupportStatus$,
-} from "../../signals/okou-page/computer-use-hosts.ts";
-import {
-  connectorOverview$,
-  invalidateConnectorOverview$,
-} from "../../signals/okou-page/connector-overview.ts";
-import { invalidateAgentConnectorAccess$ } from "../../signals/okou-page/composer-agent-connectors.ts";
-import { computerUseProductName$ } from "../../signals/branding.ts";
-import {
-  CONNECTOR_ACCOUNT_SEARCH_THRESHOLD,
-  connectorAccountTargetKey,
-} from "../../signals/okou-page/connector-accounts.ts";
-import { applyUserPermissionGrants$ } from "../../signals/permission-allow/permission-allow-signals.ts";
-import { activeUserPermissionGrantSnapshot } from "../../signals/user-permission-grants.ts";
 import { savePermissionDraftPolicies } from "../../signals/okou-page/settings/permission-grant-save.ts";
-import { PermissionsDialog } from "./components/settings/permissions-dialog.tsx";
-import { toast } from "@okouai/ui/components/ui/sonner";
-import type {
-  ComposerPendingEvent,
-  ComposerPrimaryAction,
-  ComposerImageModelSignals,
-  ComposerSignals,
-  ComposerVideoModelSignals,
-} from "../../signals/okou-page/composer-signals.ts";
+import type { TemplatePreviewRuntime } from "../../signals/okou-page/template-preview-runtime.ts";
+import type { ComposerTemplateAttachment } from "../../signals/okou-page/tiptap-workflow-composer.ts";
+import { shouldUseUserMessage } from "../../signals/okou-page/user-message-document-codec.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { applyUserPermissionGrants$ } from "../../signals/permission-allow/permission-allow-signals.ts";
+import { rootSignal$ } from "../../signals/root-signal.ts";
+import { sendMode$ } from "../../signals/send-mode.ts";
+import { openSkillImportDialog$ } from "../../signals/skill-import/skill-import-dialog.ts";
+import { activeUserPermissionGrantSnapshot } from "../../signals/user-permission-grants.ts";
+import {
+  Reason,
+  bestEffort,
+  detach,
+  onDomEventFn,
+  tapError,
+} from "../../signals/utils.ts";
 import {
   audioInputAvailable$,
   audioInputQuota$,
 } from "../../signals/voice-io/voice-io-stt.ts";
-import { readChatMessageFromClipboard } from "../../signals/okou-page/clipboard.ts";
-import { shouldUseUserMessage } from "../../signals/okou-page/user-message-document-codec.ts";
+import { IconTooltipButton } from "../components/icon-tooltip.tsx";
+import { LoadingSwitch } from "../components/loading-switch.tsx";
+import { AttachmentChips } from "./attachment-chips.tsx";
+import { ComposerModelPanel } from "./components/composer-model-panel.tsx";
+import {
+  selectedModelDisplayName,
+  type ModelProviderSelection,
+} from "./components/model-provider-picker.tsx";
+import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
+import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
+import { CustomConnectorConnectDialog } from "./components/settings/custom-connector-connect-dialog.tsx";
+import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
+import type { ConnectorConnectHandlers } from "./components/settings/launch-connector-connect.ts";
+import { PermissionsDialog } from "./components/settings/permissions-dialog.tsx";
+import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
+import type { ComposerPasteEvent } from "./composer-input-types.ts";
+import { ComposerNoticeTray } from "./composer-notice-tray.tsx";
+import {
+  ComposerRail,
+  RAIL_TILE,
+  RAIL_TILE_CAPTION,
+} from "./composer-rail.tsx";
+import {
+  defaultPresentationTemplateThemeId,
+  presentationTemplateColorSystemId,
+  toIllustrationGenerationTemplate,
+  toPresentationGenerationTemplate,
+  toWebsiteGenerationTemplate,
+} from "./composer-template-catalog.ts";
+import { ConnectorDirectoryDialog } from "./connector-directory-dialog.tsx";
+import { CustomTemplatePickerPane } from "./custom-template-picker-pane.tsx";
+import { ImageAnnotationEditor } from "./image-annotation-editor.tsx";
+import {
+  ComposerPaidToolNotice,
+  TemplatePaidToolNotice,
+} from "./paid-tool-notice.tsx";
+import { computerUseIllustrationImg } from "./platform-assets.ts";
+import {
+  contrastRatio,
+  previewTextColorOn,
+  safePreviewGround,
+} from "./presentation-html-preview.ts";
+import { ThreadRemoteAccessSection } from "./remote-access-controls.tsx";
+import { TemplateEmptyPanel } from "./template-empty-panel.tsx";
+import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
+import {
+  TEMPLATE_CARD_SHADOW,
+  TEMPLATE_TILE_CAPTION,
+  TEMPLATE_TILE_MEDIA,
+  TEMPLATE_TILE_NAME,
+  TEMPLATE_TILE_PREVIEW_FOCUS,
+  TEMPLATE_TILE_SCRIM,
+  TEMPLATE_TILE_SELECTED,
+  TEMPLATE_TILE_SELECTION_FRAME,
+  TEMPLATE_TILE_USE,
+  TEMPLATE_TILE_WRAPPER,
+} from "./template-tile.ts";
+import { TiptapWorkflowComposer } from "./tiptap-workflow-composer.tsx";
+import { VoiceLevelWaveform } from "./voice-level-waveform.tsx";
 import { WebsiteTemplatePreviewDialogSlot } from "./website-template-preview-dialog.tsx";
-import { ReplaceComposerDraftDialog } from "./replace-composer-draft-dialog.tsx";
-import {
-  AvatarTemplatePickerContent,
-  AvatarTemplatePickerToolbar,
-} from "./avatar-template-picker.tsx";
-import {
-  markVideoPreviewPlaying,
-  resetVideoPreview,
-  startVideoPreview,
-} from "./video-preview-hover.ts";
 import {
   localizedWorkflowTemplate,
   localizedWorkflowTemplateCategory,
 } from "./workflow-template-copy.ts";
-import {
-  DEFAULT_IMAGE_MODEL,
-  IMAGE_MODEL_CONFIGS,
-  PUBLIC_IMAGE_MODELS,
-  type ImageModel,
-} from "@okouai/core/image-model-catalog";
-import {
-  DEFAULT_VIDEO_MODEL,
-  PUBLIC_VIDEO_MODELS,
-  VIDEO_MODEL_CONFIGS,
-  type VideoModel,
-} from "@okouai/core/video-model-catalog";
-import {
-  IMAGE_MODEL_PRICE_TIER,
-  VIDEO_MODEL_PRICE_TIER,
-} from "@okouai/api-contracts/contracts/media-model-price-tiers";
-import {
-  avatarTemplateSelection,
-  toAvatarGenerationTemplate,
-} from "../../signals/okou-page/avatar-template-selection.ts";
-import { resolveModelFirstUserDefaultSelection } from "../../signals/okou-page/model-default-selection.ts";
-import { IconTooltipButton } from "../components/icon-tooltip.tsx";
-import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
 
 const COMPOSER_CONTROL_FOCUS_CLASS =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
@@ -700,8 +620,8 @@ function PendingItemsStrip({ signals }: { signals: ComposerSignals }) {
         cancellationRecoveryPending={cancellationRecoveryPending}
       />
       <div className="max-h-[200px] overflow-y-auto px-2 pb-7 pt-1" role="list">
-        {queued.map((item) => {
-          return (
+        {pendingEvents.map((item) => {
+          return item.kind === "message" ? (
             <ComposerStripRow
               key={item.id}
               kind="queued"
@@ -717,22 +637,19 @@ function PendingItemsStrip({ signals }: { signals: ComposerSignals }) {
               })}
               cancellationRecoveryPending={cancellationRecoveryPending}
             />
-          );
-        })}
-        {events.map((event) => {
-          return (
+          ) : (
             <ComposerStripRow
-              key={event.id}
+              key={item.id}
               kind="automation-event"
               text={
-                event.text ||
+                item.text ||
                 t(($) => {
                   return $.chat.queue.automationEvent;
                 })
               }
               onRemove={() => {
                 detach(
-                  removeAutomationEvent(event.id, pageSignal),
+                  removeAutomationEvent(item.id, pageSignal),
                   Reason.DomCallback,
                 );
               }}
@@ -821,31 +738,6 @@ function selectedIllustrationTemplateItem(
   });
 }
 
-function isSelectedVideoTemplate(
-  item: VideoTemplateItem,
-  value: GenerationTemplateRequest | undefined,
-): boolean {
-  return (
-    value?.type === "video" &&
-    findVideoTemplateItem(value.selection.stylePresetId)?.id === item.id
-  );
-}
-
-/**
- * A template names the look, and nothing else. Every text-to-video parameter,
- * the model included, now belongs to the run: the model comes from the thread
- * pin and the member default, and the rest from the composer's own settings
- * chip, so nothing about a run is frozen into the message that started it.
- */
-function selectedVideoTemplateItem(
-  value: GenerationTemplateRequest | undefined,
-): VideoTemplateItem | undefined {
-  if (value?.type !== "video") {
-    return undefined;
-  }
-  return findVideoTemplateItem(value.selection.stylePresetId);
-}
-
 function isSelectedWorkflowTemplate(
   item: WorkflowTemplateItem,
   value: GenerationTemplateRequest | undefined,
@@ -918,196 +810,8 @@ function websiteTemplateCardImageUrl(item: WebsiteTemplateItem): string {
   return r2ImageTransformUrl(item.previewImageUrl, TEMPLATE_CARD_PREVIEW_SIZE);
 }
 
-function videoTemplatePosterImage(item: VideoTemplateItem): string {
-  if (item.cardPreviewImage !== undefined) {
-    return r2ImageTransformUrl(
-      item.cardPreviewImage,
-      TEMPLATE_CARD_PREVIEW_SIZE,
-    );
-  }
-  return r2ImageTransformUrl(item.previewImage, TEMPLATE_CARD_PREVIEW_SIZE);
-}
-
-function VideoTemplatePreview({ item }: { item: VideoTemplateItem }) {
-  const { t } = useTranslation();
-  const posterImage = videoTemplatePosterImage(item);
-  return (
-    <div
-      data-video-template-preview=""
-      className="group/video-template-preview relative h-full w-full overflow-hidden bg-muted"
-      onPointerEnter={(event) => {
-        if (event.pointerType !== "touch") {
-          startVideoPreview(event.currentTarget.querySelector("video"));
-        }
-      }}
-      onPointerLeave={(event) => {
-        if (event.pointerType !== "touch") {
-          resetVideoPreview(event.currentTarget.querySelector("video"));
-        }
-      }}
-    >
-      <video
-        poster={posterImage}
-        className="peer h-full w-full object-cover"
-        preload="none"
-        playsInline
-        muted
-        loop
-        onPlaying={(event) => {
-          markVideoPreviewPlaying(event.currentTarget, true);
-        }}
-        onPause={(event) => {
-          markVideoPreviewPlaying(event.currentTarget, false);
-        }}
-        onEnded={(event) => {
-          resetVideoPreview(event.currentTarget);
-        }}
-        onError={(event) => {
-          markVideoPreviewPlaying(event.currentTarget, false);
-        }}
-      >
-        <source src={item.previewWebm} type="video/webm; codecs=vp9" />
-        <source src={item.previewVideo} type="video/mp4" />
-      </video>
-      <img
-        src={posterImage}
-        alt=""
-        aria-hidden="true"
-        data-video-template-poster=""
-        className="pointer-events-none absolute inset-0 h-full w-full object-cover peer-data-[preview-playing=true]:opacity-0"
-      />
-      <IconTooltipButton
-        type="button"
-        data-template-preview-id={`video:${item.id}`}
-        aria-label={t(
-          ($) => {
-            return $.artifacts.templates.playVideo;
-          },
-          {
-            title: item.title,
-          },
-        )}
-        className="absolute inset-0 flex cursor-pointer items-center justify-center bg-black/0 text-white opacity-100 transition-colors duration-200 hover:bg-black/25 focus-visible:bg-black/25 focus-visible:outline-none peer-data-[preview-playing=true]:pointer-events-none peer-data-[preview-playing=true]:!opacity-0"
-        onClick={(event) => {
-          startVideoPreview(
-            event.currentTarget.parentElement?.querySelector("video") ?? null,
-          );
-        }}
-      >
-        <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/55 text-white shadow-lg transition-transform group-hover/video-template-preview:scale-105">
-          <Play size={20} />
-        </span>
-      </IconTooltipButton>
-    </div>
-  );
-}
-
 /** The cover width every type's shelf uses, so the rows line up across tabs. */
 const PRESENTATION_SHELF_COVER = "w-[200px]";
-
-function VideoTemplateCard({
-  item,
-  selected,
-  requiresPro,
-  onSelect,
-}: {
-  item: VideoTemplateItem;
-  selected: boolean;
-  requiresPro: boolean;
-  onSelect: (item: VideoTemplateItem) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className={TEMPLATE_TILE_WRAPPER}>
-      <div
-        className={cn(
-          TEMPLATE_TILE_SELECTION_FRAME,
-          TEMPLATE_TILE_PREVIEW_FOCUS,
-          selected && TEMPLATE_TILE_SELECTED,
-        )}
-      >
-        <div className={cn(TEMPLATE_TILE_MEDIA, "aspect-[16/9]")}>
-          <VideoTemplatePreview item={item} />
-          {selected ? (
-            <span className="pointer-events-none absolute left-[7px] top-[7px] z-20 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-              <Check size={14} />
-            </span>
-          ) : null}
-          <button
-            type="button"
-            aria-label={
-              requiresPro
-                ? t(
-                    ($) => {
-                      return $.artifacts.templates.viewVideoPlans;
-                    },
-                    {
-                      title: item.title,
-                    },
-                  )
-                : t(
-                    ($) => {
-                      return $.artifacts.templates.selectVideo;
-                    },
-                    {
-                      title: item.title,
-                    },
-                  )
-            }
-            aria-pressed={requiresPro ? undefined : selected}
-            onClick={() => {
-              onSelect(item);
-            }}
-            className={cn(
-              TEMPLATE_TILE_USE,
-              requiresPro && "inline-flex items-center gap-1 !opacity-100",
-            )}
-          >
-            {requiresPro ? <Lock size={12} aria-hidden="true" /> : null}
-            {requiresPro
-              ? t(($) => {
-                  return $.artifacts.templates.needPro;
-                })
-              : t(($) => {
-                  return $.artifacts.templates.use;
-                })}
-          </button>
-        </div>
-      </div>
-      <div className={TEMPLATE_TILE_CAPTION}>
-        <p className={TEMPLATE_TILE_NAME}>{item.title}</p>
-      </div>
-    </div>
-  );
-}
-
-function VideoTemplateGrid({
-  items,
-  value,
-  videoGenerationAllowed,
-  onSelect,
-}: {
-  items: readonly VideoTemplateItem[];
-  value: GenerationTemplateRequest | undefined;
-  videoGenerationAllowed: boolean;
-  onSelect: (item: VideoTemplateItem) => void;
-}) {
-  return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {items.map((item) => {
-        return (
-          <VideoTemplateCard
-            key={item.id}
-            item={item}
-            selected={isSelectedVideoTemplate(item, value)}
-            requiresPro={!videoGenerationAllowed}
-            onSelect={onSelect}
-          />
-        );
-      })}
-    </div>
-  );
-}
 
 function WebsiteTemplateCard({
   item,
@@ -1467,17 +1171,17 @@ function WorkflowTemplateGrid({
 function presentationTemplateSlideCount(
   item: PresentationTemplateItem,
 ): number {
-  return Math.max(item.slideCount ?? item.previewImages.length, 1);
+  return Math.max(item.slideCount, 1);
 }
 
 function presentationTemplateThemedCardPreviewSource(
   item: PresentationTemplateItem,
   theme: PresentationTemplateThemeOption | undefined,
-): string | undefined {
+): string {
   if (theme === undefined) {
     return item.cardPreviewImage;
   }
-  return item.cardPreviewImagesByTheme?.[theme.id] ?? item.cardPreviewImage;
+  return item.cardPreviewImagesByTheme[theme.id] ?? item.cardPreviewImage;
 }
 
 function presentationTemplateCardSlideImage(
@@ -1486,12 +1190,11 @@ function presentationTemplateCardSlideImage(
   theme?: PresentationTemplateThemeOption,
   size: TemplatePreviewImageSize = TEMPLATE_CARD_PREVIEW_SIZE,
 ): string {
-  const cardPreviewSource =
-    index === 0
-      ? presentationTemplateThemedCardPreviewSource(item, theme)
-      : undefined;
-  if (cardPreviewSource !== undefined) {
-    return r2ImageTransformUrl(cardPreviewSource, size);
+  if (index === 0) {
+    return r2ImageTransformUrl(
+      presentationTemplateThemedCardPreviewSource(item, theme),
+      size,
+    );
   }
   return presentationTemplateGallerySlideImage(item, index, size);
 }
@@ -1538,10 +1241,7 @@ function presentationTemplateDetailSlideImageSource(
   htmlPreviewFailed: boolean,
 ): string {
   if (index === 0) {
-    return (
-      presentationTemplateThemedCardPreviewSource(item, theme) ??
-      presentationTemplateGallerySlideUrl(item, index)
-    );
+    return presentationTemplateThemedCardPreviewSource(item, theme);
   }
   if (htmlPreviewFailed) {
     return presentationTemplateGallerySlideUrl(item, index);
@@ -1615,14 +1315,6 @@ function illustrationPreviewImageUrlsForItems({
   });
 }
 
-function videoPreviewImageUrlsForItems(
-  items: readonly VideoTemplateItem[],
-): string[] {
-  return items.map((item) => {
-    return videoTemplatePosterImage(item);
-  });
-}
-
 function websitePreviewImageUrlsForItems(
   items: readonly WebsiteTemplateItem[],
 ): string[] {
@@ -1649,9 +1341,6 @@ function initialTemplatePreviewImageUrlsForCategory({
       items: ILLUSTRATION_TEMPLATE_ITEMS,
       variantIndexBySlug: {},
     });
-  }
-  if (category === "video") {
-    return videoPreviewImageUrlsForItems(VIDEO_TEMPLATE_ITEMS);
   }
   if (category === "website") {
     return websitePreviewImageUrlsForItems(WEBSITE_TEMPLATE_ITEMS);
@@ -3606,15 +3295,10 @@ function IllustrationTemplateCard({
 function resolveTemplatePickerCategory(
   category: string | null,
   customTemplatesEnabled: boolean,
-  videoPickersVisible: boolean,
 ): string {
   switch (category) {
     case "custom": {
       return customTemplatesEnabled ? category : "slides";
-    }
-    case "video":
-    case "avatar": {
-      return videoPickersVisible ? category : "slides";
     }
     case "slides":
     case "website":
@@ -3633,19 +3317,17 @@ function resolveTemplatePickerCategory(
 function TemplatePickerCategoryNav({
   selectedCategory,
   customTemplatesEnabled,
-  videoPickersVisible,
   onChange,
   onReopenCustom,
 }: {
   selectedCategory: string;
   customTemplatesEnabled: boolean;
-  videoPickersVisible: boolean;
   onChange: (value: string) => void;
   onReopenCustom: () => void;
 }) {
   const { t } = useTranslation();
   // Custom leads the list and is separated by a rule, because it answers who
-  // made a template while the seven below it answer what you are making. The
+  // made a template while the formats below it answer what you are making. The
   // format options keep their own order untouched.
   const categoryOptions: {
     value: string;
@@ -3684,24 +3366,6 @@ function TemplatePickerCategoryNav({
       }),
       Icon: ImageIcon,
     },
-    ...(videoPickersVisible
-      ? [
-          {
-            value: "video",
-            label: t(($) => {
-              return $.artifacts.kinds.video;
-            }),
-            Icon: Video,
-          },
-          {
-            value: "avatar",
-            label: t(($) => {
-              return $.artifacts.templates.avatar;
-            }),
-            Icon: User,
-          },
-        ]
-      : []),
     {
       value: "workflow",
       label: t(($) => {
@@ -5445,12 +5109,6 @@ function TemplatePickerDialog({
   signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const planCapabilities = useLastResolved(orgPlanCapabilities$);
-  const videoGenerationAllowed =
-    planCapabilities?.videoGenerationAllowed ?? true;
-  const openBillingPlans = useSet(openSettingsBillingPlans$);
-  const openSettings = useSet(setSettingsDialogOpen$);
   const category = useGet(signals.template.templatePickerCategory$);
   const setCategory = useSet(signals.template.setTemplatePickerCategory$);
   const search = useGet(signals.template.templatePickerSearch$);
@@ -5491,9 +5149,6 @@ function TemplatePickerDialog({
   const setIllustrationVariantIndex = useSet(
     signals.template.setIllustrationVariantIndex$,
   );
-  const clearAvatarVoiceSelection = useSet(
-    signals.template.clearAvatarTemplateVoiceSelection$,
-  );
   const previewItem =
     presentationItems.find((item) => {
       return item.slug === previewSlug;
@@ -5526,16 +5181,11 @@ function TemplatePickerDialog({
   const features = useGet(featureSwitch$);
   const customTemplatesEnabled =
     features[FeatureSwitchKey.CustomTemplates] === true;
-  const videoPickers = useLoadable(videoPickersVisible$);
-  const videoPickersVisible =
-    videoPickers.state === "hasData" && videoPickers.data;
   const selectedCategory = resolveTemplatePickerCategory(
     category,
     customTemplatesEnabled,
-    videoPickersVisible,
   );
   const showTemplatePickerSearch = selectedCategory === "workflow";
-  const showAvatarPickerToolbar = selectedCategory === "avatar";
 
   const previewImageUrlsForCategory = (targetCategory: string) => {
     if (targetCategory === "slides") {
@@ -5549,9 +5199,6 @@ function TemplatePickerDialog({
         items: ILLUSTRATION_TEMPLATE_ITEMS,
         variantIndexBySlug: illustrationVariantIndex,
       });
-    }
-    if (targetCategory === "video") {
-      return videoPreviewImageUrlsForItems(VIDEO_TEMPLATE_ITEMS);
     }
     if (targetCategory === "website") {
       return websitePreviewImageUrlsForItems(WEBSITE_TEMPLATE_ITEMS);
@@ -5575,7 +5222,6 @@ function TemplatePickerDialog({
     clearPresentationPreviews();
     resetImportedTemplatePicker();
     resetCustomTemplatePicker();
-    clearAvatarVoiceSelection();
     setPresentationGridScrollTop(0);
     onCloseComplete();
   };
@@ -5602,26 +5248,6 @@ function TemplatePickerDialog({
       type: "custom",
       selection: { userTemplateId: template.id },
     });
-    closeTemplatePicker();
-  };
-
-  const handleSelectVideo = (item: VideoTemplateItem) => {
-    if (!videoGenerationAllowed) {
-      closeTemplatePicker();
-      openBillingPlans();
-      detach(openSettings(true, pageSignal), Reason.DomCallback);
-      return;
-    }
-    onChange(toVideoGenerationTemplate(item));
-    closeTemplatePicker();
-  };
-
-  const handleSelectAvatar = (
-    avatar: AvatarVideoAvatar,
-    voice: AvatarVideoVoice,
-    aspectRatio: "portrait" | "landscape",
-  ) => {
-    onChange(toAvatarGenerationTemplate(avatar, voice, aspectRatio));
     closeTemplatePicker();
   };
 
@@ -5662,9 +5288,6 @@ function TemplatePickerDialog({
   };
 
   const handleCategoryChange = (nextCategory: string) => {
-    if (nextCategory !== "avatar") {
-      clearAvatarVoiceSelection();
-    }
     if (nextCategory === "custom") {
       resetCustomTemplatePicker();
     }
@@ -5743,12 +5366,11 @@ function TemplatePickerDialog({
               <TemplatePickerCategoryNav
                 selectedCategory={selectedCategory}
                 customTemplatesEnabled={customTemplatesEnabled}
-                videoPickersVisible={videoPickersVisible}
                 onChange={handleCategoryChange}
                 onReopenCustom={resetCustomTemplatePickerView}
               />
               {/* Keep the existing single active content tree and its category
-                  unmounting policy; signals retain search and scroll state. */}
+                  unmounting runModel; signals retain search and scroll state. */}
               <TabsContent
                 value={selectedCategory}
                 className="relative flex min-h-0 min-w-0 flex-1 flex-col focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
@@ -5758,9 +5380,7 @@ function TemplatePickerDialog({
                   <div
                     className={cn(
                       "relative h-[68px] shrink-0 items-center px-6 pr-14",
-                      showTemplatePickerSearch || showAvatarPickerToolbar
-                        ? "flex"
-                        : "hidden sm:flex",
+                      showTemplatePickerSearch ? "flex" : "hidden sm:flex",
                     )}
                   >
                     {showTemplatePickerSearch ? (
@@ -5768,9 +5388,6 @@ function TemplatePickerDialog({
                         search={search}
                         onSearchChange={handleSearchChange}
                       />
-                    ) : null}
-                    {showAvatarPickerToolbar ? (
-                      <AvatarTemplatePickerToolbar signals={signals} />
                     ) : null}
                   </div>
                 ) : null}
@@ -5781,8 +5398,6 @@ function TemplatePickerDialog({
                   importedPptItems={importedTemplateItems}
                   websiteItems={WEBSITE_TEMPLATE_ITEMS}
                   illustrationItems={ILLUSTRATION_TEMPLATE_ITEMS}
-                  videoItems={VIDEO_TEMPLATE_ITEMS}
-                  videoGenerationAllowed={videoGenerationAllowed}
                   workflowCatalog={workflowCatalog}
                   value={value}
                   illustrationVariantIndex={illustrationVariantIndex}
@@ -5800,8 +5415,6 @@ function TemplatePickerDialog({
                   onPreviewWebsite={handlePreviewWebsite}
                   onSelectIllustration={handleSelectIllustration}
                   onIllustrationVariantChange={setIllustrationVariantIndex}
-                  onSelectVideo={handleSelectVideo}
-                  onSelectAvatar={handleSelectAvatar}
                   onWorkflowCategoryChange={setWorkflowCategoryFilter}
                   onSelectWorkflow={handleSelectWorkflow}
                   runtime={runtime}
@@ -5841,8 +5454,6 @@ function TemplatePickerCategoryContent({
   importedPptItems,
   websiteItems,
   illustrationItems,
-  videoItems,
-  videoGenerationAllowed,
   workflowCatalog,
   value,
   illustrationVariantIndex,
@@ -5858,8 +5469,6 @@ function TemplatePickerCategoryContent({
   onPreviewWebsite,
   onSelectIllustration,
   onIllustrationVariantChange,
-  onSelectVideo,
-  onSelectAvatar,
   onWorkflowCategoryChange,
   onSelectWorkflow,
   runtime,
@@ -5870,8 +5479,6 @@ function TemplatePickerCategoryContent({
   importedPptItems: readonly ImportedPresentationTemplatePickerItem[];
   websiteItems: readonly WebsiteTemplateItem[];
   illustrationItems: readonly IllustrationTemplateItem[];
-  videoItems: readonly VideoTemplateItem[];
-  videoGenerationAllowed: boolean;
   workflowCatalog: ResolvedWorkflowTemplateCatalog;
   value: GenerationTemplateRequest | undefined;
   illustrationVariantIndex: Readonly<Record<string, number>>;
@@ -5897,12 +5504,6 @@ function TemplatePickerCategoryContent({
   onPreviewWebsite: (item: WebsiteTemplateItem) => void;
   onSelectIllustration: (item: IllustrationTemplateItem) => void;
   onIllustrationVariantChange: (slug: string, index: number) => void;
-  onSelectVideo: (item: VideoTemplateItem) => void;
-  onSelectAvatar: (
-    avatar: AvatarVideoAvatar,
-    voice: AvatarVideoVoice,
-    aspectRatio: "portrait" | "landscape",
-  ) => void;
   onWorkflowCategoryChange: (category: string) => void;
   onSelectWorkflow: (item: WorkflowTemplateItem) => void;
   runtime: TemplatePreviewRuntime;
@@ -5980,34 +5581,6 @@ function TemplatePickerCategoryContent({
           onSelect={onSelectIllustration}
           onVariantChange={onIllustrationVariantChange}
           runtime={runtime}
-        />
-      </div>
-    );
-  }
-
-  if (selectedCategory === "video") {
-    return (
-      <div
-        data-video-template-grid-scroll=""
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 pb-6 pt-0.5"
-      >
-        <VideoTemplateGrid
-          items={videoItems}
-          value={value}
-          videoGenerationAllowed={videoGenerationAllowed}
-          onSelect={onSelectVideo}
-        />
-      </div>
-    );
-  }
-
-  if (selectedCategory === "avatar") {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-6">
-        <AvatarTemplatePickerContent
-          signals={signals}
-          value={value}
-          onSelect={onSelectAvatar}
         />
       </div>
     );
@@ -6093,15 +5666,6 @@ function selectedComposerTemplateAttachment(
       customTemplates,
     );
   }
-  const avatar = avatarTemplateSelection(value);
-  if (avatar) {
-    return {
-      type: "avatar",
-      title: avatar.title,
-      category: "avatar",
-      previewImageUrl: avatar.previewUrl,
-    };
-  }
   const presentationItem = selectedPresentationTemplateItem(value);
   if (presentationItem && value?.type === "presentation") {
     const selectedTheme = findPresentationTemplateTheme(
@@ -6146,10 +5710,6 @@ function selectedComposerTemplateAttachment(
       ),
     };
   }
-  const videoItem = selectedVideoTemplateItem(value);
-  if (videoItem) {
-    return { type: "video", title: videoItem.title, category: "video" };
-  }
   const workflowItem = selectedWorkflowTemplateItem(value);
   if (workflowItem) {
     return {
@@ -6172,21 +5732,15 @@ function selectedComposerTemplateAttachment(
  */
 function useTemplatePickerTrigger(signals: ComposerSignals) {
   const { t } = useTranslation();
-  const videoPickers = useLoadable(videoPickersVisible$);
   const category = useGet(signals.template.templatePickerCategory$);
   const pickerFeatures = useGet(featureSwitch$);
   const customTemplatesEnabled =
     pickerFeatures[FeatureSwitchKey.CustomTemplates] === true;
   const createMode = useGet(signals.create.mode$);
-  const creativeVideo = useGet(signals.create.creativeVideo$);
   const openTemplatePicker = useSet(signals.template.openTemplatePicker$);
   const cardThemeIdBySlug = useGet(signals.template.templateCardThemeIdBySlug$);
   const runtime = signals.template.templatePreview;
-  const templateMode = creativeVideo
-    ? "video"
-    : createMode === "image"
-      ? "illustration"
-      : createMode;
+  const templateMode = createMode === "image" ? "illustration" : createMode;
   const label =
     templateMode === "illustration"
       ? t(($) => {
@@ -6202,7 +5756,6 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
   const selectedCategory = resolveTemplatePickerCategory(
     templateMode === "presentation" ? "slides" : (templateMode ?? category),
     customTemplatesEnabled,
-    videoPickers.state === "hasData" && videoPickers.data,
   );
   const prewarm = () => {
     prewarmTemplatePreviewImages(
@@ -6319,343 +5872,14 @@ function ComposerTemplatePickerSlot({ signals }: { signals: ComposerSignals }) {
   );
 }
 
-function CreateWorkflowPromptButton({
-  onCreateWorkflowPrompt,
-}: {
-  onCreateWorkflowPrompt: () => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <TooltipProvider delay={300}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              type="button"
-              variant="quiet"
-              size="icon-sm"
-              iconSize="md"
-              className="shrink-0"
-              aria-label={t(($) => {
-                return $.chat.composer.createWorkflow;
-              })}
-              onClick={onCreateWorkflowPrompt}
-            >
-              <Route size={18} aria-hidden="true" />
-            </Button>
-          }
-        />
-        <TooltipContent side="top" className="text-xs">
-          {t(($) => {
-            return $.chat.composer.createWorkflow;
-          })}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
-
-/** Turns the draft into a workflow prompt; a menu row once the add menu owns it. */
-function useCreateWorkflowPrompt(signals: ComposerSignals) {
-  const createWorkflowPrompt = useSet(signals.workflow.createWorkflowPrompt$);
-  const pageSignal = useGet(pageSignal$);
-  return () => {
-    detach(createWorkflowPrompt(pageSignal), Reason.DomCallback);
-  };
-}
-
-function ComposerWorkflowPromptSlot({ signals }: { signals: ComposerSignals }) {
-  const onCreateWorkflowPrompt = useCreateWorkflowPrompt(signals);
-  const addMenuEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ComposerAddMenu] === true;
-  if (addMenuEnabled) {
-    return null;
-  }
-  return (
-    <CreateWorkflowPromptButton
-      onCreateWorkflowPrompt={onCreateWorkflowPrompt}
-    />
-  );
-}
-
-function matchesCustomConnectorSearch(
-  search: string,
-  connector: CustomConnectorResponse,
-): boolean {
-  const normalizedSearch = search.trim().toLowerCase();
-  if (!normalizedSearch) {
-    return true;
-  }
-  return [
-    connector.displayName,
-    connector.slug,
-    customConnectorTarget(connector),
-  ].some((value) => {
-    return value.toLowerCase().includes(normalizedSearch);
-  });
-}
-
-function CustomConnectorCatalogCard({
-  connector,
-  onConnect,
-}: {
-  connector: CustomConnectorResponse;
-  onConnect: () => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <button
-      data-slot="connector-card"
-      type="button"
-      aria-label={t(
-        ($) => {
-          return $.connectors.card.connectAria;
-        },
-        { connector: connector.displayName },
-      )}
-      className={surfaceVariants({
-        interactive: true,
-        className: "overflow-hidden text-left",
-      })}
-      onClick={onConnect}
-    >
-      <span className="flex items-center gap-2.5 px-5 pb-1 pt-4">
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-          <CustomConnectorIcon
-            id={connector.id}
-            displayName={connector.displayName}
-            size={20}
-          />
-        </span>
-        <span
-          data-testid="connector-card-label"
-          className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
-        >
-          {connector.displayName}
-        </span>
-        <span
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border/60 text-muted-foreground"
-          aria-hidden="true"
-        >
-          <Plus size={14} />
-        </span>
-      </span>
-      <span className="block px-5 pb-4 pt-1">
-        <span
-          data-testid="connector-help-text"
-          className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground"
-        >
-          <span className="shrink-0">
-            {connector.kind === "mcp"
-              ? t(($) => {
-                  return $.connectors.custom.mcpType;
-                })
-              : t(($) => {
-                  return $.connectors.custom.create.httpType;
-                })}
-          </span>
-          <span aria-hidden="true">·</span>
-          <span className="min-w-0 truncate font-mono text-muted-foreground/60">
-            {customConnectorTarget(connector)}
-          </span>
-        </span>
-      </span>
-    </button>
-  );
-}
-
-function AddConnectorSshLoadStatus({
-  matches,
-  state,
-}: {
-  readonly matches: boolean;
-  readonly state: Loadable<unknown>["state"];
-}) {
-  const { t } = useTranslation();
-  if (!matches) {
-    return null;
-  }
-  if (state === "hasError") {
-    return <SshLoadError />;
-  }
-  if (state !== "loading") {
-    return null;
-  }
-  return (
-    <p role="status" className="text-sm text-muted-foreground">
-      {t(($) => {
-        return $.ssh.loading;
-      })}
-    </p>
-  );
-}
-
-function AddConnectorsDialog({
-  signals,
-  unconnected,
-  unconnectedCustom,
-  connecting,
-  connectHandlers,
-  onConnectCustom,
-  onClose,
-}: {
-  signals: ComposerSignals;
-  unconnected: PlatformConnectorCatalogStatusItem[];
-  unconnectedCustom: CustomConnectorResponse[];
-  connecting: boolean;
-  connectHandlers: (
-    connector: PlatformConnectorCatalogStatusItem,
-  ) => ConnectorConnectHandlers;
-  onConnectCustom: (connector: CustomConnectorResponse) => void;
-  onClose: () => void;
-}) {
-  const { t } = useTranslation();
-  const connectorUi = useGet(signals.connector.connectorUiState$);
-  const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
-  const resetCustomConnectorConnectInput = useSet(
-    resetCustomConnectorConnectInput$,
-  );
-  const registerConnectionDialog = useSet(registerConnectorConnectionDialog$);
-  const cancelConnection = useSet(cancelConnectorConnection$);
-  const connectionAttempt = useGet(connectorConnectionAttempt$);
-  const search = connectorUi.addDialogSearch;
-  const filtered = unconnected.filter((item) => {
-    return matchesConnectorSearch(search, item);
-  });
-  const filteredCustom = unconnectedCustom.filter((item) => {
-    return matchesCustomConnectorSearch(search, item);
-  });
-  const sshSummary = useLoadable(sshSummary$);
-  const vncSummary = useLoadable(vncSummary$);
-  const matchesVnc = `vnc ${t(($) => {
-    return $.vnc.description;
-  })}`
-    .toLowerCase()
-    .includes(search.trim().toLowerCase());
-  const showVnc =
-    vncSummary.state === "hasData" &&
-    vncSummary.data?.configuredCount === 0 &&
-    matchesVnc;
-  const matchesSsh = "ssh".includes(search.trim().toLowerCase());
-  const showSsh =
-    sshSummary.state === "hasData" &&
-    sshSummary.data?.configuredCount === 0 &&
-    matchesSsh;
-  const visibleConnectorCount =
-    filtered.length + filteredCustom.length + Number(showSsh) + Number(showVnc);
-
-  return (
-    <Dialog
-      open
-      onOpenChange={(open, details) => {
-        if (!open && connecting && details.reason === "outside-press") {
-          details.cancel();
-          return;
-        }
-        if (!open) {
-          if (connecting) {
-            cancelConnection(connectionAttempt);
-          }
-          onClose();
-        }
-      }}
-    >
-      <DialogContent
-        ref={registerConnectionDialog}
-        maxWidth="2xl"
-        contentClassName="flex flex-col"
-        aria-describedby={undefined}
-      >
-        <DialogHeader className="shrink-0">
-          <DialogTitle>
-            {t(
-              ($) => {
-                return $.chat.connectors.available;
-              },
-              { count: visibleConnectorCount },
-            )}
-          </DialogTitle>
-          {connecting && (
-            <p
-              role="status"
-              className="flex items-center gap-2 text-sm text-muted-foreground"
-            >
-              <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-              {t(($) => {
-                return $.connectors.actions.connecting;
-              })}
-            </p>
-          )}
-        </DialogHeader>
-        <div className="shrink-0">
-          <Input
-            type="text"
-            placeholder={t(($) => {
-              return $.chat.connectors.find;
-            })}
-            value={search}
-            onChange={(e) => {
-              return updateConnectorUi({ addDialogSearch: e.target.value });
-            }}
-            autoFocus
-          />
-        </div>
-        <div className="overflow-y-auto -mx-6 px-6">
-          <AddConnectorSshLoadStatus
-            matches={matchesSsh}
-            state={sshSummary.state}
-          />
-          {matchesVnc && vncSummary.state === "hasError" && <VncLoadError />}
-          {matchesVnc && vncSummary.state === "loading" && (
-            <p role="status" className="text-sm text-muted-foreground">
-              {t(($) => {
-                return $.vnc.loading;
-              })}
-            </p>
-          )}
-          <div className="grid grid-cols-2 gap-3">
-            {showVnc && <VncConnectorCard configuredCount={0} />}
-            {showSsh && sshSummary.state === "hasData" && sshSummary.data && (
-              <SshConnectorCard
-                configuredCount={sshSummary.data.configuredCount}
-              />
-            )}
-            {filtered.map((item) => {
-              return (
-                <ConnectorCard
-                  key={item.slug}
-                  variant="catalog"
-                  connector={item}
-                  busy={connecting}
-                  connect={connectHandlers(item)}
-                />
-              );
-            })}
-            {filteredCustom.map((item) => {
-              return (
-                <CustomConnectorCatalogCard
-                  key={item.id}
-                  connector={item}
-                  onConnect={() => {
-                    resetCustomConnectorConnectInput();
-                    onConnectCustom(item);
-                  }}
-                />
-              );
-            })}
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 function ComputerUseConnectorMenuSection({
   computerUse,
   onOpenDownloadDialog,
+  remoteAccess,
 }: {
   computerUse: ComposerComputerUse;
   onOpenDownloadDialog: () => void;
+  remoteAccess?: ReactNode;
 }) {
   const { t } = useTranslation();
   return (
@@ -6682,6 +5906,7 @@ function ComputerUseConnectorMenuSection({
           />
         </span>
       </label>
+      {remoteAccess}
       <div className="mx-2 my-1 border-t border-border/50" />
       <div className="px-2 pb-1 pt-1 text-xs text-muted-foreground">
         {t(($) => {
@@ -6770,6 +5995,39 @@ function ComputerUseConnectorMenuSection({
   );
 }
 
+function ComposerRemoteAccessMenu({
+  signals,
+  computerUse,
+  onOpenDownloadDialog,
+  remoteMenuOpen,
+  onRemoteMenuOpenChange,
+}: {
+  signals: ComposerSignals;
+  computerUse: ComposerComputerUse | undefined;
+  onOpenDownloadDialog: () => void;
+  remoteMenuOpen: boolean;
+  onRemoteMenuOpenChange: (open: boolean) => void;
+}) {
+  const remoteAccess = (
+    <ThreadRemoteAccessSection
+      threadId={signals.threadId}
+      remoteAccess$={signals.remoteAccess$}
+      pendingRemoteAccess={signals.pendingRemoteAccess}
+      open={remoteMenuOpen}
+      onOpenChange={onRemoteMenuOpenChange}
+    />
+  );
+  return computerUse ? (
+    <ComputerUseConnectorMenuSection
+      computerUse={computerUse}
+      onOpenDownloadDialog={onOpenDownloadDialog}
+      remoteAccess={remoteAccess}
+    />
+  ) : (
+    remoteAccess
+  );
+}
+
 function ComposerConnectorPermissionDialog({
   signals,
   agentId,
@@ -6836,22 +6094,6 @@ function ComposerConnectorPermissionDialog({
 
 type ComposerPopoverConnectorItem =
   | {
-      readonly kind: "ssh";
-      readonly connector: {
-        readonly id: "ssh";
-        readonly label: string;
-        readonly authorized: boolean;
-      };
-    }
-  | {
-      readonly kind: "vnc";
-      readonly connector: {
-        readonly id: "vnc";
-        readonly label: string;
-        readonly authorized: boolean;
-      };
-    }
-  | {
       readonly kind: "builtin";
       readonly connector: ComposerConnectorItem;
     }
@@ -6867,7 +6109,7 @@ function composerPopoverConnectorId(
 }
 
 function composerPopoverConnectorTarget(
-  item: Exclude<ComposerPopoverConnectorItem, { kind: "ssh" | "vnc" }>,
+  item: ComposerPopoverConnectorItem,
 ): ConnectorAccountTarget {
   return item.kind === "builtin"
     ? { kind: "builtin", connectorSlug: item.connector.slug }
@@ -6878,11 +6120,6 @@ function matchesComposerPopoverConnectorSearch(
   search: string,
   item: ComposerPopoverConnectorItem,
 ): boolean {
-  if (item.kind === "ssh" || item.kind === "vnc") {
-    return item.connector.label
-      .toLowerCase()
-      .includes(search.trim().toLowerCase());
-  }
   return item.kind === "builtin"
     ? matchesConnectorSearch(search, item.connector)
     : [item.connector.displayName, item.connector.slug].some((value) => {
@@ -7438,7 +6675,7 @@ function ComposerConnectorAccountAction({
 }: {
   readonly signals: ComposerSignals;
   readonly actions: ComposerConnectorActions;
-  readonly item: Exclude<ComposerPopoverConnectorItem, { kind: "ssh" | "vnc" }>;
+  readonly item: ComposerPopoverConnectorItem;
 }) {
   const preference = useLastResolved(
     signals.connector.accounts.preferenceState$,
@@ -7482,72 +6719,18 @@ function ComposerConnectorAccountAction({
 function composerPopoverItems({
   agentConnectors,
   agentCustomConnectors,
-  sshAccess,
-  vncAccess,
-  sshLabel,
-  vncLabel,
 }: {
   readonly agentConnectors: ComposerConnectorItem[];
   readonly agentCustomConnectors: ComposerCustomConnectorItem[];
-  readonly sshAccess: { readonly enabled: boolean } | undefined;
-  readonly vncAccess: { readonly enabled: boolean } | undefined;
-  readonly sshLabel: string;
-  readonly vncLabel: string;
 }): ComposerPopoverConnectorItem[] {
   return [
     ...agentConnectors.map((connector) => {
       return { kind: "builtin" as const, connector };
     }),
-    ...(sshAccess
-      ? [
-          {
-            kind: "ssh" as const,
-            connector: {
-              id: "ssh" as const,
-              label: sshLabel,
-              authorized: sshAccess.enabled,
-            },
-          },
-        ]
-      : []),
-    ...(vncAccess
-      ? [
-          {
-            kind: "vnc" as const,
-            connector: {
-              id: "vnc" as const,
-              label: vncLabel,
-              authorized: vncAccess.enabled,
-            },
-          },
-        ]
-      : []),
     ...agentCustomConnectors.map((connector) => {
       return { kind: "custom" as const, connector };
     }),
   ];
-}
-
-function matchingComposerAccess(
-  identity: Loadable<string | null>,
-  access:
-    | {
-        readonly identity: string;
-        readonly agentId: string;
-        readonly enabled: boolean;
-      }
-    | null
-    | undefined,
-  agentId: string | null,
-) {
-  if (
-    identity.state !== "hasData" ||
-    access?.identity !== identity.data ||
-    access.agentId !== agentId
-  ) {
-    return null;
-  }
-  return access;
 }
 
 function resolveComposerAgentConnectors(
@@ -7600,6 +6783,12 @@ function ConnectorsPopoverButton({
 }) {
   const { t } = useTranslation();
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
+  const remoteMenuOpen = useGet(
+    signals.connector.connectorUiState$,
+  ).remoteMenuOpen;
+  const setRemoteMenuOpen = (open: boolean) => {
+    updateConnectorUi({ remoteMenuOpen: open });
+  };
   const accountMenuOpen = useGet(signals.connector.accounts.menuOpen$);
   const closeAccountMenu = useSet(signals.connector.accounts.closeMenu$);
   const downloadDialogOpen = useGet(
@@ -7607,23 +6796,6 @@ function ConnectorsPopoverButton({
   );
   const setDownloadDialogOpen = useSet(
     signals.computer.setComputerUseDownloadDialogOpen$,
-  );
-  // SSH and VNC rows keep their last state while a refresh is pending, so the
-  // retained value lives here rather than in the body that remounts on every
-  // open. Both reads stay null until the popover first opens.
-  const sshIdentity = useLoadable(sshIdentity$);
-  const lastSshAccess = useLastResolved(signals.connector.sshAccess$);
-  const sshAccess = matchingComposerAccess(
-    sshIdentity,
-    lastSshAccess,
-    signals.agentId,
-  );
-  const vncIdentity = useLoadable(vncIdentity$);
-  const lastVncAccess = useLastResolved(signals.connector.vncAccess$);
-  const vncAccess = matchingComposerAccess(
-    vncIdentity,
-    lastVncAccess,
-    signals.agentId,
   );
   const handleOpenChange = (open: boolean) => {
     if (open) {
@@ -7635,20 +6807,24 @@ function ConnectorsPopoverButton({
         popoverSearch: "",
       });
       closeAccountMenu();
+      setRemoteMenuOpen(false);
     }
   };
 
   return (
     <Popover
       onOpenChange={(open, eventDetails) => {
-        if (
-          !open &&
-          accountMenuOpen &&
-          eventDetails.reason === "outside-press"
-        ) {
-          eventDetails.cancel();
-          closeAccountMenu();
-          return;
+        if (!open && eventDetails.reason === "outside-press") {
+          if (accountMenuOpen) {
+            eventDetails.cancel();
+            closeAccountMenu();
+            return;
+          }
+          if (remoteMenuOpen) {
+            eventDetails.cancel();
+            setRemoteMenuOpen(false);
+            return;
+          }
         }
         handleOpenChange(open);
       }}
@@ -7694,9 +6870,9 @@ function ConnectorsPopoverButton({
         <ComposerConnectorsPopoverBody
           signals={signals}
           actions={actions}
-          sshAccess={sshAccess}
-          vncAccess={vncAccess}
           computerUse={computerUse}
+          remoteMenuOpen={remoteMenuOpen}
+          onRemoteMenuOpenChange={setRemoteMenuOpen}
           onOpenAddDialog={onOpenAddDialog}
           onOpenDownloadDialog={() => {
             setDownloadDialogOpen(true);
@@ -7719,17 +6895,17 @@ function ConnectorsPopoverButton({
 function ComposerConnectorsPopoverBody({
   signals,
   actions,
-  sshAccess,
-  vncAccess,
   computerUse,
+  remoteMenuOpen,
+  onRemoteMenuOpenChange,
   onOpenAddDialog,
   onOpenDownloadDialog,
 }: {
   signals: ComposerSignals;
   actions: ComposerConnectorActions;
-  sshAccess: ReturnType<typeof matchingComposerAccess>;
-  vncAccess: ReturnType<typeof matchingComposerAccess>;
   computerUse: ComposerComputerUse | undefined;
+  remoteMenuOpen: boolean;
+  onRemoteMenuOpenChange: (open: boolean) => void;
   onOpenAddDialog: () => void;
   onOpenDownloadDialog: () => void;
 }) {
@@ -7743,23 +6919,11 @@ function ComposerConnectorsPopoverBody({
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
   const search = connectorUi.popoverSearch;
   const sortOrder = connectorUi.popoverSortOrder;
-  const sshRows = useLoadable(signals.connector.sshAccess$);
-  const [sshSaving, updateSshAccess] = useLoadableSet(updateAgentSshAccess$);
-  const vncRows = useLoadable(signals.connector.vncAccess$);
-  const [vncSaving, updateVncAccess] = useLoadableSet(updateAgentVncAccess$);
   const pageSignal = useGet(pageSignal$);
-  const waitingForConnectors = connectorsLoading && !sshAccess && !vncAccess;
+  const waitingForConnectors = connectorsLoading;
   const connectorItems = composerPopoverItems({
     agentConnectors,
     agentCustomConnectors,
-    sshAccess: sshAccess ?? undefined,
-    vncAccess: vncAccess ?? undefined,
-    sshLabel: t(($) => {
-      return $.ssh.label;
-    }),
-    vncLabel: t(($) => {
-      return $.vnc.label;
-    }),
   });
   const showSearch = connectorItems.length > 20;
   const visibleConnectors = deriveComposerConnectorPopoverState({
@@ -7849,82 +7013,6 @@ function ComposerConnectorsPopoverBody({
               className="flex max-h-64 min-h-0 flex-1 flex-col overflow-y-auto"
             >
               {visibleConnectors.map((item) => {
-                if (item.kind === "ssh") {
-                  return (
-                    <ComposerConnectorAccessRow
-                      key={item.connector.id}
-                      icon={<Terminal size={16} />}
-                      connectorLabel={item.connector.label}
-                      checked={item.connector.authorized}
-                      loading={
-                        sshSaving.state === "loading" ||
-                        sshRows.state === "loading"
-                      }
-                      onCheckedChange={onDomEventFn(async (checked) => {
-                        if (agentId) {
-                          await updateSshAccess(agentId, checked, pageSignal);
-                        }
-                      })}
-                      ariaLabel={
-                        item.connector.authorized
-                          ? t(
-                              ($) => {
-                                return $.chat.connectors.remove;
-                              },
-                              {
-                                connectorName: item.connector.label,
-                              },
-                            )
-                          : t(
-                              ($) => {
-                                return $.chat.connectors.add;
-                              },
-                              {
-                                connectorName: item.connector.label,
-                              },
-                            )
-                      }
-                    />
-                  );
-                }
-                if (item.kind === "vnc") {
-                  return (
-                    <ComposerConnectorAccessRow
-                      key={item.connector.id}
-                      icon={<Monitor size={16} />}
-                      connectorLabel={item.connector.label}
-                      checked={item.connector.authorized}
-                      loading={
-                        vncSaving.state === "loading" ||
-                        vncRows.state === "loading"
-                      }
-                      onCheckedChange={onDomEventFn(async (checked) => {
-                        if (agentId) {
-                          await updateVncAccess(agentId, checked, pageSignal);
-                        }
-                      })}
-                      ariaLabel={
-                        item.connector.authorized
-                          ? t(
-                              ($) => {
-                                return $.chat.connectors.remove;
-                              },
-                              {
-                                connectorName: item.connector.label,
-                              },
-                            )
-                          : t(
-                              ($) => {
-                                return $.chat.connectors.add;
-                              },
-                              {
-                                connectorName: item.connector.label,
-                              },
-                            )
-                      }
-                    />
-                  );
-                }
                 if (item.kind === "custom") {
                   const connector = item.connector;
                   return (
@@ -8054,16 +7142,6 @@ function ComposerConnectorsPopoverBody({
           )}
         </div>
       )}
-      {vncRows.state === "hasError" && (
-        <div className="px-3 py-2">
-          <VncLoadError />
-        </div>
-      )}
-      {sshRows.state === "hasError" && (
-        <div className="px-3 py-2">
-          <SshLoadError />
-        </div>
-      )}
       <div className="flex shrink-0 flex-col p-1">
         {(connectorItems.length > 0 || connectorsLoading) && (
           <div className="mx-2 mb-1 border-t border-border/50" />
@@ -8087,14 +7165,13 @@ function ComposerConnectorsPopoverBody({
           }
         />
       </div>
-      {computerUse && (
-        <ComputerUseConnectorMenuSection
-          computerUse={computerUse}
-          onOpenDownloadDialog={() => {
-            onOpenDownloadDialog();
-          }}
-        />
-      )}
+      <ComposerRemoteAccessMenu
+        signals={signals}
+        computerUse={computerUse}
+        remoteMenuOpen={remoteMenuOpen}
+        onRemoteMenuOpenChange={onRemoteMenuOpenChange}
+        onOpenDownloadDialog={onOpenDownloadDialog}
+      />
     </div>
   );
 }
@@ -8575,11 +7652,10 @@ function ComposerAttachButton({ signals }: { signals: ComposerSignals }) {
 }
 
 /**
- * Exactly the three toolbar buttons the `+` replaces, in their old left-to-right
- * order. The rule is separate because the first two add content to the message
- * while the third rewrites the draft into a workflow prompt.
+ * Group attachments and templates separately from importing skills, which
+ * brings workflows in from the user's Claude Code or Codex.
  *
- * Starting a presentation, image, video, website or visualization deliberately
+ * Starting a presentation, image, website or visualization deliberately
  * stays out: the task chips sit directly under the composer and already reach
  * every one of them in a single click, so a second copy behind the `+` would be
  * the longer route to the same place.
@@ -8590,7 +7666,8 @@ function useComposerAddMenuGroups(
   const { t } = useTranslation();
   const fileInput = useGet(signals.draft.composerFileInput$);
   const template = useTemplatePickerTrigger(signals);
-  const onCreateWorkflowPrompt = useCreateWorkflowPrompt(signals);
+  const openSkillImportDialog = useSet(openSkillImportDialog$);
+  const pageSignal = useGet(pageSignal$);
   return [
     [
       {
@@ -8613,12 +7690,14 @@ function useComposerAddMenuGroups(
     ],
     [
       {
-        id: "workflow",
-        Icon: Route,
+        id: "import-skills",
+        Icon: Download,
         label: t(($) => {
-          return $.chat.composer.createWorkflow;
+          return $.workflows.skillImport.action;
         }),
-        onSelect: onCreateWorkflowPrompt,
+        onSelect: () => {
+          detach(openSkillImportDialog(pageSignal), Reason.DomCallback);
+        },
       },
     ],
   ];
@@ -8802,7 +7881,10 @@ function useComposerPrimaryAction(
   signals: ComposerSignals,
   actions: ComposerActions,
 ): ComposerPrimaryAction {
-  const action = useResolved(signals.submission.primaryAction$) ?? "disabled";
+  // Keep the last action while the thread's events resync; falling back to
+  // "disabled" on every recompute would unmount and remount Stop mid-run.
+  const action =
+    useLastResolved(signals.submission.primaryAction$) ?? "disabled";
   const selectedModelOauthAvailable =
     useLastResolved(signals.model.selectedModelOauthAvailable$) ?? true;
   return selectedModelOauthAvailable &&
@@ -9212,27 +8294,8 @@ function ComposerModelConfigurationWarning({
   );
 }
 
-interface ComposerMediaModelPickerState<Model extends string> {
-  readonly value: Model | null;
-  readonly onChange: (next: Model | null) => void;
-}
-
-interface ComposerResolvedMediaModelPickerState<
-  Model extends string,
-> extends ComposerMediaModelPickerState<Model> {
-  readonly selectedModel: Model;
-}
-
-type ComposerImageModelPickerState = ComposerMediaModelPickerState<ImageModel>;
-type ComposerResolvedImageModelPickerState =
-  ComposerResolvedMediaModelPickerState<ImageModel>;
-type ComposerVideoModelPickerState = ComposerMediaModelPickerState<VideoModel>;
-type ComposerResolvedVideoModelPickerState =
-  ComposerResolvedMediaModelPickerState<VideoModel>;
-
-// One quiet trigger for every model category. It carries no fill of its own --
-// the composer's control row is a row of quiet controls, and a filled track
-// holding three of them read as the heaviest thing in the composer.
+// One quiet trigger for the model. It carries no fill of its own -- the
+// composer's control row is a row of quiet controls.
 function composerModelPickerTriggerClassName(): string {
   return cn(
     "h-8 w-8 max-w-none justify-center gap-0 overflow-hidden border-transparent bg-transparent px-0 text-sm text-muted-foreground transition-colors composer-wide:w-auto composer-wide:max-w-[14rem] composer-wide:justify-start composer-wide:gap-1 composer-wide:px-2",
@@ -9243,271 +8306,61 @@ function composerModelPickerTriggerClassName(): string {
   );
 }
 
-function ComposerRunModelPickerControl({
-  signals,
-  value,
-  onChange,
-  desktopLayout,
-  mediaModelPanel,
-}: {
+interface ComposerModelPickerControlsProps {
   signals: ComposerSignals;
   value: ModelProviderSelection;
   onChange: (selection: ModelProviderSelection | null) => void;
-  desktopLayout: boolean;
-  mediaModelPanel: MediaModelPanelState | undefined;
-}) {
+}
+
+/**
+ * The composer chooses only the chat model and how it runs. Images follow the
+ * member's settings, so the panel offers no media model. Effort and Fast live
+ * in the same panel.
+ */
+function ComposerModelPickerControls({
+  signals,
+  value,
+  onChange,
+}: ComposerModelPickerControlsProps) {
   const { t } = useTranslation();
-  const modelPickerOpen = useGet(signals.model.modelPickerOpen$);
-  const setModelPickerOpen = useSet(signals.model.setModelPickerOpen$);
-  const setLifecycleRef = useSet(signals.model.desktopModelPickerLifecycleRef$);
+  const open = useGet(signals.model.modelPickerOpen$);
+  const setOpen = useSet(signals.model.setModelPickerOpen$);
   return (
-    <div
-      ref={setLifecycleRef}
-      className="contents composer-wide:relative composer-wide:flex"
-    >
-      <ModelProviderPicker
+    <>
+      <ComposerModelPanel
         value={value}
         onChange={onChange}
         placeholder={t(($) => {
           return $.chat.composer.selectModel;
         })}
         triggerClassName={composerModelPickerTriggerClassName()}
-        menuSignals={signals.model.menu}
-        // The effort control beside it carries the bolt when Fast is on, so the
-        // model keeps its own name.
-        fastShownByCaller
-        // The flyout needs the room a phone does not have; narrow viewports keep
-        // the menu's pages until the sheet layout lands.
-        flyoutLayout={desktopLayout}
-        compactTrigger
-        mobileIconTrigger
-        open={modelPickerOpen}
-        modal={mediaModelPanel ? !desktopLayout : undefined}
-        onOpenChange={(open) => {
-          setModelPickerOpen(open);
-        }}
-        {...(mediaModelPanel ? { mediaModelPanel } : {})}
+        open={open}
+        onOpenChange={setOpen}
       />
-    </div>
-  );
-}
-
-function composerImageModelPanelCategory({
-  selectedModel,
-  onChange,
-  label,
-  tabLabel,
-}: {
-  selectedModel: ImageModel;
-  onChange: (next: ImageModel | null) => void;
-  label: string;
-  tabLabel: string;
-}): MediaModelPanelCategory {
-  return {
-    id: "image",
-    label,
-    tabLabel,
-    options: PUBLIC_IMAGE_MODELS.map((candidate) => {
-      return {
-        key: candidate,
-        label: IMAGE_MODEL_CONFIGS[candidate].label,
-        icon: <ImageModelBrandIcon model={candidate} />,
-        priceTier: IMAGE_MODEL_PRICE_TIER[candidate],
-        selected: selectedModel === candidate,
-        onSelect: () => {
-          onChange(candidate);
-        },
-      };
-    }),
-  };
-}
-
-function composerVideoModelPanelCategory({
-  selectedModel,
-  onChange,
-  label,
-  tabLabel,
-}: {
-  selectedModel: VideoModel;
-  onChange: (next: VideoModel | null) => void;
-  label: string;
-  tabLabel: string;
-}): MediaModelPanelCategory {
-  return {
-    id: "video",
-    label,
-    tabLabel,
-    options: PUBLIC_VIDEO_MODELS.map((candidate) => {
-      return {
-        key: candidate,
-        label: VIDEO_MODEL_CONFIGS[candidate].label,
-        icon: <VideoModelBrandIcon model={candidate} />,
-        priceTier: VIDEO_MODEL_PRICE_TIER[candidate],
-        selected: selectedModel === candidate,
-        onSelect: () => {
-          onChange(candidate);
-        },
-      };
-    }),
-  };
-}
-
-function ComposerModelPickerControls({
-  signals,
-  value,
-  onChange,
-  imageModel,
-  videoModel,
-}: {
-  signals: ComposerSignals;
-  value: ModelProviderSelection;
-  onChange: (selection: ModelProviderSelection | null) => void;
-  imageModel: ComposerResolvedImageModelPickerState | undefined;
-  videoModel: ComposerResolvedVideoModelPickerState | undefined;
-}) {
-  const { t } = useTranslation();
-  const videoPickers = useLoadable(videoPickersVisible$);
-  const desktopLayout = useGet(signals.model.desktopModelPickerLayout$);
-  const category = useGet(signals.model.mediaModelCategory$);
-  const setCategory = useSet(signals.model.setMediaModelCategory$);
-  const categories: MediaModelPanelCategory[] = [];
-  if (imageModel) {
-    categories.push(
-      composerImageModelPanelCategory({
-        selectedModel: imageModel.selectedModel,
-        onChange: imageModel.onChange,
-        label: t(($) => {
-          return $.settings.models.picker.imageModels;
-        }),
-        tabLabel: t(($) => {
-          return $.settings.models.picker.categoryImage;
-        }),
-      }),
-    );
-  }
-  if (videoModel && videoPickers.state === "hasData" && videoPickers.data) {
-    categories.push(
-      composerVideoModelPanelCategory({
-        selectedModel: videoModel.selectedModel,
-        onChange: videoModel.onChange,
-        label: t(($) => {
-          return $.settings.models.picker.videoModels;
-        }),
-        tabLabel: t(($) => {
-          return $.settings.models.picker.categoryVideo;
-        }),
-      }),
-    );
-  }
-  const activeCategory = categories.some((candidate) => {
-    return candidate.id === category;
-  })
-    ? category
-    : null;
-  const mediaModelPanel: MediaModelPanelState | undefined =
-    categories.length > 0
-      ? {
-          activeCategory,
-          categories,
-          onActiveCategoryChange: setCategory,
-        }
-      : undefined;
-  return (
-    <>
-      {/* Effort and the model are one choice about the next message, so they sit
-          as a pair: no gap between them and 8px of padding each, which leaves
-          16px between the two labels. The row's own gap then separates the pair
-          from the controls that do something else.
-
-          Effort sits level with the model rather than behind it. It is the only
-          way to reach effort and Fast now that the picker's settings page is
-          gone, so it shows at every width; the level's name is one short word,
-          which the row can afford even on a phone. */}
-      <div className="flex items-center">
-        <ChatEffortTrigger
-          value={value}
-          onChange={onChange}
-          triggerClassName={cn(
-            "px-2 text-sm text-muted-foreground",
-            COMPOSER_CONTROL_FOCUS_CLASS,
-          )}
-        />
-        <ComposerRunModelPickerControl
-          signals={signals}
-          value={value}
-          onChange={onChange}
-          desktopLayout={desktopLayout}
-          mediaModelPanel={mediaModelPanel}
-        />
-      </div>
       <div className="mx-0 h-5 w-px bg-divider/60 composer-wide:mx-0.5" />
     </>
   );
 }
 
-function ComposerMediaModelPickerControls({
-  signals,
-  value,
-  onChange,
-  imageModel,
-  videoModel,
-}: {
-  signals: ComposerSignals;
-  value: ModelProviderSelection;
-  onChange: (selection: ModelProviderSelection | null) => void;
-  imageModel: ComposerImageModelPickerState | undefined;
-  videoModel: ComposerVideoModelPickerState | undefined;
-}) {
-  const userPreference = useLastResolved(userModelPreference$);
-  const resolvedImageModel = imageModel
-    ? {
-        ...imageModel,
-        selectedModel:
-          imageModel.value ??
-          userPreference?.selectedImageModel ??
-          DEFAULT_IMAGE_MODEL,
-      }
-    : undefined;
-  const resolvedVideoModel = videoModel
-    ? {
-        ...videoModel,
-        selectedModel:
-          videoModel.value ??
-          userPreference?.selectedVideoModel ??
-          DEFAULT_VIDEO_MODEL,
-      }
-    : undefined;
-  return (
-    <ComposerModelPickerControls
-      signals={signals}
-      value={value}
-      onChange={onChange}
-      imageModel={resolvedImageModel}
-      videoModel={resolvedVideoModel}
-    />
-  );
-}
-
-function ComposerModelPickerSlotBase({
-  signals,
-  imageModel,
-  videoModel,
-}: {
-  signals: ComposerSignals;
-  imageModel: ComposerImageModelPickerState | undefined;
-  videoModel: ComposerVideoModelPickerState | undefined;
-}) {
+function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
   const modelSelection = useLastLoadable(signals.model.modelSelection$);
   const selectedModelOauthAvailable =
     useLastResolved(signals.model.selectedModelOauthAvailable$) ?? true;
   const setModelSelection = useSet(signals.model.setModelSelection$);
   const pageSignal = useGet(pageSignal$);
+  const models = useLastResolved(availableRunModels$);
   const value = modelSelection.state === "hasData" ? modelSelection.data : null;
   const modelPickerLoading = modelSelection.state === "loading";
   const onModelPickerChange = (selection: ModelProviderSelection | null) => {
     detach(setModelSelection(selection, pageSignal), Reason.DomCallback);
   };
-  if (modelPickerLoading || value === null) {
+  // Auto offers a choice only once a personal subscription adds models.
+  const autoOnly =
+    models === undefined ||
+    models.models.every((runModel) => {
+      return runModel.model === null;
+    });
+  if (modelPickerLoading || value === null || autoOnly) {
     return null;
   }
 
@@ -9518,136 +8371,12 @@ function ComposerModelPickerSlotBase({
         selection={value}
         oauthAvailable={selectedModelOauthAvailable}
       />
-      {imageModel || videoModel ? (
-        <ComposerMediaModelPickerControls
-          signals={signals}
-          value={value}
-          onChange={onModelPickerChange}
-          imageModel={imageModel}
-          videoModel={videoModel}
-        />
-      ) : (
-        <ComposerModelPickerControls
-          signals={signals}
-          value={value}
-          onChange={onModelPickerChange}
-          imageModel={undefined}
-          videoModel={undefined}
-        />
-      )}
+      <ComposerModelPickerControls
+        signals={signals}
+        value={value}
+        onChange={onModelPickerChange}
+      />
     </>
-  );
-}
-
-/** Media callbacks write their pins; each native menu item owns dismissal. */
-function ComposerVideoModelPickerSlot({
-  signals,
-  videoModelSignals,
-}: {
-  signals: ComposerSignals;
-  videoModelSignals: ComposerVideoModelSignals;
-}) {
-  const selectedVideoModel =
-    useLastResolved(videoModelSignals.selectedVideoModel$) ?? null;
-  const setVideoModel = useSet(videoModelSignals.setVideoModel$);
-  const pageSignal = useGet(pageSignal$);
-  const videoModel: ComposerVideoModelPickerState = {
-    value: selectedVideoModel,
-    onChange: (next) => {
-      detach(setVideoModel(next, pageSignal), Reason.DomCallback);
-    },
-  };
-  return (
-    <ComposerModelPickerSlotBase
-      signals={signals}
-      imageModel={undefined}
-      videoModel={videoModel}
-    />
-  );
-}
-
-function ComposerExistingMediaModelPickerSlot({
-  signals,
-  imageModelSignals,
-  videoModelSignals,
-}: {
-  signals: ComposerSignals;
-  imageModelSignals: ComposerImageModelSignals;
-  videoModelSignals: ComposerVideoModelSignals;
-}) {
-  const selectedImageModel =
-    useLastResolved(imageModelSignals.selectedImageModel$) ?? null;
-  const selectedVideoModel =
-    useLastResolved(videoModelSignals.selectedVideoModel$) ?? null;
-  const setImageModel = useSet(imageModelSignals.setImageModel$);
-  const setVideoModel = useSet(videoModelSignals.setVideoModel$);
-  const pageSignal = useGet(pageSignal$);
-  const imageModel: ComposerImageModelPickerState = {
-    value: selectedImageModel,
-    onChange: (next) => {
-      detach(setImageModel(next, pageSignal), Reason.DomCallback);
-    },
-  };
-  const videoModel: ComposerVideoModelPickerState = {
-    value: selectedVideoModel,
-    onChange: (next) => {
-      detach(setVideoModel(next, pageSignal), Reason.DomCallback);
-    },
-  };
-  return (
-    <ComposerModelPickerSlotBase
-      signals={signals}
-      imageModel={imageModel}
-      videoModel={videoModel}
-    />
-  );
-}
-
-function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
-  const createMode = useGet(signals.create.mode$);
-  const creativeVideo = useGet(signals.create.creativeVideo$);
-  const videoPickers = useLoadable(videoPickersVisible$);
-  if (createMode === "image" && signals.imageModel) {
-    return <ComposerCreateImageModelPicker model={signals.imageModel} />;
-  }
-  if (
-    creativeVideo &&
-    signals.videoModel &&
-    videoPickers.state === "hasData" &&
-    videoPickers.data
-  ) {
-    return (
-      <ComposerCreateVideoModelPicker
-        model={signals.videoModel}
-        signals={signals}
-      />
-    );
-  }
-  const imageModelSignals = signals.imageModel;
-  const videoModelSignals = signals.videoModel;
-  if (imageModelSignals && videoModelSignals) {
-    return (
-      <ComposerExistingMediaModelPickerSlot
-        signals={signals}
-        imageModelSignals={imageModelSignals}
-        videoModelSignals={videoModelSignals}
-      />
-    );
-  }
-  if (videoModelSignals) {
-    return (
-      <ComposerVideoModelPickerSlot
-        signals={signals}
-        videoModelSignals={videoModelSignals}
-      />
-    );
-  }
-  return (
-    <ComposerModelPickerSlotBase
-      signals={signals}
-      imageModel={undefined}
-      videoModel={undefined}
-    />
   );
 }
 
@@ -9691,6 +8420,12 @@ function ComposerModelScopeCard({
   );
 }
 
+function runServiceTier(
+  selection: ModelProviderSelection | null | undefined,
+): "priority" | null {
+  return selection?.codexServiceTier === "fast" ? "priority" : null;
+}
+
 function ComposerTemporaryModelNotice({
   signals,
 }: {
@@ -9698,35 +8433,39 @@ function ComposerTemporaryModelNotice({
 }) {
   const { t } = useTranslation();
   const selection = useLastResolved(signals.model.modelSelection$);
-  const policies = useLastResolved(orgModelPolicies$);
+  const models = useLastResolved(availableRunModels$);
   const userPreference = useLastResolved(userModelPreference$);
+  const catalog = useLastResolved(modelCatalog$);
   const [updateLoadable, updatePreference] = useLoadableSet(
     updateUserModelPreference$,
   );
   const pageSignal = useGet(pageSignal$);
-  const defaultSelection = resolveModelFirstUserDefaultSelection({
+  const defaultSelection = resolveDefaultModelSelection({
     userPreference,
-    policies,
+    models,
+    catalog,
   });
-  const selectionServiceTier =
-    selection?.codexServiceTier === "fast" ? "priority" : null;
-  const defaultServiceTier =
-    defaultSelection?.codexServiceTier === "fast" ? "priority" : null;
+  const selectionServiceTier = runServiceTier(selection);
+  const defaultServiceTier = runServiceTier(defaultSelection);
   const modelChanged =
     selection?.selectedModel !== defaultSelection?.selectedModel;
   const serviceTierChanged = selectionServiceTier !== defaultServiceTier;
-  const effort = preferredChatReasoningEffort(selection);
-  const defaultEffort = preferredChatReasoningEffort(defaultSelection);
+  const effort = preferredChatReasoningEffort(selection, catalog);
+  const defaultEffort = preferredChatReasoningEffort(defaultSelection, catalog);
   const effortChanged = effort !== defaultEffort;
+  // Compare only against a resolved default; until both sources load the
+  // fixed Auto fallback would misreport the member's saved preference.
   if (
     !selection ||
     !defaultSelection ||
+    userPreference === undefined ||
+    models === undefined ||
     (!modelChanged && !serviceTierChanged && !effortChanged)
   ) {
     return withChatScrollLayout(null);
   }
   const updating = updateLoadable.state === "loading";
-  const modelName = getModelDisplayName(selection.selectedModel);
+  const modelName = selectedModelDisplayName(catalog, selection.selectedModel);
   const runSpeedLabel = t(($) => {
     return selectionServiceTier === "priority"
       ? $.settings.models.picker.fast
@@ -9745,16 +8484,17 @@ function ComposerTemporaryModelNotice({
     if (updating) {
       return;
     }
+    const { selectedModel } = selection;
     detach(
       updatePreference(
         {
-          selectedModel: selection.selectedModel,
+          selectedModel,
           serviceTier: selectionServiceTier,
-          ...(effort === undefined
+          ...(effort === undefined || selectedModel === null
             ? {}
             : {
                 modelSettingsPatch: {
-                  model: selection.selectedModel,
+                  model: selectedModel,
                   effort,
                 },
               }),
@@ -9776,113 +8516,13 @@ function ComposerTemporaryModelNotice({
   );
 }
 
-function ComposerTemporaryVideoModelNotice({
-  videoModelSignals,
-}: {
-  videoModelSignals: ComposerVideoModelSignals;
-}) {
-  const { t } = useTranslation();
-  // The effective model, not the pin: the card names the model a run would
-  // actually use, which is what the member default is being compared against.
-  const selection = useLastResolved(videoModelSignals.effectiveVideoModel$);
-  const userPreference = useLastResolved(userModelPreference$);
-  const [updateLoadable, updateDefaultVideoModel] = useLoadableSet(
-    updateDefaultVideoModel$,
-  );
-  const pageSignal = useGet(pageSignal$);
-  if (!userPreference) {
-    return withChatScrollLayout(null);
-  }
-  const defaultVideoModel =
-    userPreference.selectedVideoModel ?? DEFAULT_VIDEO_MODEL;
-  if (!selection || selection === defaultVideoModel) {
-    return withChatScrollLayout(null);
-  }
-  const updating = updateLoadable.state === "loading";
-  const useForFutureChats = () => {
-    if (updating) {
-      return;
-    }
-    detach(updateDefaultVideoModel(selection, pageSignal), Reason.DomCallback);
-  };
-  return withChatScrollLayout(
-    <ComposerModelScopeCard
-      label={t(($) => {
-        return $.chat.composer.videoModelForThisChat;
-      })}
-      model={getModelDisplayName(selection)}
-      updating={updating}
-      onUseForFutureChats={useForFutureChats}
-    />,
-  );
-}
-
-function ComposerTemporaryImageModelNotice({
-  imageModelSignals,
-}: {
-  imageModelSignals: ComposerImageModelSignals;
-}) {
-  const { t } = useTranslation();
-  const selection = useLastResolved(imageModelSignals.effectiveImageModel$);
-  const userPreference = useLastResolved(userModelPreference$);
-  const [updateLoadable, updateDefaultImageModel] = useLoadableSet(
-    updateDefaultImageModel$,
-  );
-  const pageSignal = useGet(pageSignal$);
-  if (!userPreference) {
-    return withChatScrollLayout(null);
-  }
-  const defaultImageModel =
-    userPreference.selectedImageModel ?? DEFAULT_IMAGE_MODEL;
-  if (!selection || selection === defaultImageModel) {
-    return withChatScrollLayout(null);
-  }
-  const updating = updateLoadable.state === "loading";
-  const useForFutureChats = () => {
-    if (updating) {
-      return;
-    }
-    detach(updateDefaultImageModel(selection, pageSignal), Reason.DomCallback);
-  };
-  return withChatScrollLayout(
-    <ComposerModelScopeCard
-      label={t(($) => {
-        return $.chat.composer.imageModelForThisChat;
-      })}
-      model={IMAGE_MODEL_CONFIGS[selection].label}
-      updating={updating}
-      onUseForFutureChats={useForFutureChats}
-    />,
-  );
-}
-
 function ComposerTemporaryModelNoticeSlot({
   signals,
 }: {
   signals: ComposerSignals;
 }) {
-  const enabled = useGet(signals.model.temporaryModelNoticeEnabled$);
-  const mediaModelCategory = useGet(signals.model.mediaModelCategory$);
-  const imageModelSignals = signals.imageModel;
-  const videoModelSignals = signals.videoModel;
-  if (!enabled) {
+  if (!signals.model.temporaryModelNoticeEnabled) {
     return withChatScrollLayout(null);
-  }
-  // One card at a time: it belongs to whichever model the composer is
-  // currently pointed at, matching the pressed state of the two mode chips.
-  if (imageModelSignals && mediaModelCategory === "image") {
-    return withChatScrollLayout(
-      <ComposerTemporaryImageModelNotice
-        imageModelSignals={imageModelSignals}
-      />,
-    );
-  }
-  if (videoModelSignals && mediaModelCategory === "video") {
-    return withChatScrollLayout(
-      <ComposerTemporaryVideoModelNotice
-        videoModelSignals={videoModelSignals}
-      />,
-    );
   }
   return withChatScrollLayout(
     <ComposerTemporaryModelNotice signals={signals} />,
@@ -9893,18 +8533,12 @@ function ComposerTemporaryModelNoticeSlot({
 function ComposerNoticeSlot({ signals }: { signals: ComposerSignals }) {
   const paidToolHints = useGet(signals.paidToolHints$);
   const imageMode = useGet(signals.create.mode$) === "image";
-  const imageCategory = useGet(signals.model.mediaModelCategory$) === "image";
   const clearTask = useSet(signals.taskChips.selectTask$);
-  const clearCategory = useSet(signals.model.setMediaModelCategory$);
   const onDiscardImage = imageMode
     ? () => {
         clearTask(null);
       }
-    : imageCategory
-      ? () => {
-          clearCategory(null);
-        }
-      : undefined;
+    : undefined;
   return (
     <ComposerPaidToolNotice
       tools={paidToolHints}
@@ -10138,7 +8772,6 @@ function composerDirectoryBrowseData(
 ) {
   return {
     categoryCounts: browse?.categoryConnectorCounts,
-    categoryMetadata: browse?.categoryMetadata,
     chipCatalog: browse?.connectors ?? items,
   };
 }
@@ -10192,8 +8825,6 @@ function ComposerConnectorDialogsSlot({
   actions: ComposerConnectorActions;
 }) {
   const { t } = useTranslation();
-  const connectorDirectoryEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ConnectorDirectory] === true;
   const lastConnectorData = useLastResolved(signals.connector.data$);
   const connectorData =
     lastConnectorData?.authorization.agentId === signals.agentId
@@ -10387,62 +9018,39 @@ function ComposerConnectorDialogsSlot({
           invalidateAgentConnectors(agentRecordId);
         }}
       />
-      {connectorUi.showAddDialog &&
-        (connectorDirectoryEnabled ? (
-          <ConnectorDirectoryDialog
-            state={connectorUi}
-            onUpdateState={updateConnectorUi}
-            categoryCounts={directoryBrowse.categoryCounts}
-            categoryMetadata={directoryBrowse.categoryMetadata}
-            loading={
-              addDialogCatalog === undefined || addDialogCatalog === null
-            }
-            chipCatalog={directoryBrowse.chipCatalog}
-            connected={directoryConnected}
-            unconnected={unconnectedConnectors}
-            connectedCustom={directoryConnectedCustom}
-            unconnectedCustom={unconnectedCustomConnectors}
-            connecting={actions.connecting}
-            isConnectorConnecting={actions.isConnectorConnecting}
-            connectHandlers={connectorConnectHandlers}
-            onConnectCustom={(connector) => {
-              updateConnectorUi({
-                showAddDialog: false,
-                selectedCustomConnectorId: connector.id,
-              });
-            }}
-            onConfigurePermissions={(connectorSlug) => {
-              updateConnectorUi({
-                showAddDialog: false,
-                permissionConnectorSlug: connectorSlug,
-              });
-            }}
-            onClose={() => {
-              return updateConnectorUi({
-                showAddDialog: false,
-              });
-            }}
-          />
-        ) : (
-          <AddConnectorsDialog
-            signals={signals}
-            unconnected={unconnectedConnectors}
-            unconnectedCustom={unconnectedCustomConnectors}
-            connecting={actions.connecting}
-            connectHandlers={connectorConnectHandlers}
-            onConnectCustom={(connector) => {
-              updateConnectorUi({
-                showAddDialog: false,
-                selectedCustomConnectorId: connector.id,
-              });
-            }}
-            onClose={() => {
-              return updateConnectorUi({
-                showAddDialog: false,
-              });
-            }}
-          />
-        ))}
+      {connectorUi.showAddDialog && (
+        <ConnectorDirectoryDialog
+          state={connectorUi}
+          onUpdateState={updateConnectorUi}
+          categoryCounts={directoryBrowse.categoryCounts}
+          loading={addDialogCatalog === undefined || addDialogCatalog === null}
+          chipCatalog={directoryBrowse.chipCatalog}
+          connected={directoryConnected}
+          unconnected={unconnectedConnectors}
+          connectedCustom={directoryConnectedCustom}
+          unconnectedCustom={unconnectedCustomConnectors}
+          connecting={actions.connecting}
+          isConnectorConnecting={actions.isConnectorConnecting}
+          connectHandlers={connectorConnectHandlers}
+          onConnectCustom={(connector) => {
+            updateConnectorUi({
+              showAddDialog: false,
+              selectedCustomConnectorId: connector.id,
+            });
+          }}
+          onConfigurePermissions={(connectorSlug) => {
+            updateConnectorUi({
+              showAddDialog: false,
+              permissionConnectorSlug: connectorSlug,
+            });
+          }}
+          onClose={() => {
+            return updateConnectorUi({
+              showAddDialog: false,
+            });
+          }}
+        />
+      )}
     </>
   );
 }
@@ -10500,25 +9108,12 @@ function ComposerFooter({
           <div className="flex min-w-0 items-center gap-1 text-muted-foreground composer-wide:gap-1.5">
             <ComposerAddSlot signals={signals} />
             <ComposerTemplatePickerSlot signals={signals} />
-            <ComposerWorkflowPromptSlot signals={signals} />
             <ComposerConnectorsSlot
               signals={signals}
               actions={connectorActions}
             />
             <ComposerTaskControls signals={signals} />
           </div>
-          {/*
-            The video spec follows the type it describes, among the controls
-            that act on the run rather than on the message, and on the same line
-            as the model it is resolved against.
-
-            It is a sibling of the icon row rather than a member of it: as a
-            footer item of its own it takes `basis-full` and claims the first
-            line below the composer's width rule, instead of competing with four
-            icons for one. Nested inside the row, that basis would resolve
-            against the row and take a line the row cannot spare.
-          */}
-          <ComposerVideoOptionsChip signals={signals} />
           <div className="ml-auto flex shrink-0 items-center gap-1 composer-wide:gap-2">
             <ComposerModelPickerSlot signals={signals} />
             <MicButton signals={signals} actions={actions} />
@@ -10633,7 +9228,6 @@ export function ChatComposer({
         {showPendingItems ? <PendingItemsStrip signals={signals} /> : null}
         <ComposerCard signals={signals} />
         <ComposerNoticeSlot signals={signals} />
-        <ReplaceComposerDraftDialog signals={signals} />
         <ImageAnnotationEditor signals={signals.imageAnnotation} />
       </div>
     </>

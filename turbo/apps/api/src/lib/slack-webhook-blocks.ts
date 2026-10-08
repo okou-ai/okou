@@ -1,10 +1,10 @@
-import { PUBLIC_BRAND_PRESENTATION } from "@okouai/core/public-brand";
+import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 
 import type {
   SlackAnyBlock,
   SlackView,
 } from "../signals/external/slack-block-kit";
-
+import { integrationModelOptionValue } from "../signals/services/integration-chat-thread-model.service";
 import { env } from "./env";
 import {
   OFFICIAL_SLACK_APP_NAME,
@@ -14,25 +14,15 @@ import {
 
 type SlackBlocks = SlackAnyBlock[];
 
-export const AGENT_PICKER_CALLBACK_ID = "switch_agent_modal";
-export const AGENT_PICKER_BLOCK_ID = "agent_select_block";
-export const AGENT_PICKER_ACTION_ID = "agent_select";
-export const AGENT_PICKER_ORG_DEFAULT_VALUE = "__org_default__";
-
 export const MODEL_PICKER_CALLBACK_ID = "model_preference_modal";
 export const MODEL_PICKER_BLOCK_ID = "model_select_block";
 export const MODEL_PICKER_ACTION_ID = "model_select";
 
-interface AgentPickerOption {
-  readonly composeId: string;
-  readonly name: string;
-  readonly displayName?: string | null;
-}
-
 interface ModelPickerOption {
-  readonly model: string;
+  /** Null is Auto. */
+  readonly model: string | null;
   readonly label: string;
-  readonly isDefault?: boolean;
+  readonly isDefault: boolean;
 }
 
 interface AppHomeOptions {
@@ -41,8 +31,6 @@ interface AppHomeOptions {
   readonly userId?: string;
   readonly userEmail?: string;
   readonly agentName?: string;
-  readonly isOverrideActive?: boolean;
-  readonly canSwitch?: boolean;
   readonly loginUrl?: string;
   readonly botUserId: string;
 }
@@ -52,7 +40,7 @@ function appUrl(): string {
 }
 
 function buildAppHomeHeaderBlocks(): SlackBlocks {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   return [
     {
       type: "header",
@@ -73,7 +61,7 @@ function buildAppHomeHeaderBlocks(): SlackBlocks {
 }
 
 function buildAppHomeNotInstalledBlocks(): SlackBlocks {
-  const { brandName } = PUBLIC_BRAND_PRESENTATION;
+  const { brandName } = BRAND_PRESENTATION;
   return [
     {
       type: "section",
@@ -123,7 +111,7 @@ function buildAppHomeDisconnectedBlocks(loginUrl?: string): SlackBlocks {
 }
 
 function buildAppHomeAccountBlock(options: AppHomeOptions): SlackBlocks {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   return [
     {
       type: "section",
@@ -143,9 +131,7 @@ function buildAppHomeAgentBlocks(options: AppHomeOptions): SlackBlocks {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: options.isOverrideActive
-          ? ":robot_face: *Your Agent*"
-          : ":robot_face: *Workspace Agent*",
+        text: ":robot_face: *Workspace Agent*",
       },
     },
   ];
@@ -156,13 +142,6 @@ function buildAppHomeAgentBlocks(options: AppHomeOptions): SlackBlocks {
     url: `${appUrl()}/works`,
     action_id: "home_environment_setup",
   };
-  const switchButton = {
-    type: "button" as const,
-    text: { type: "plain_text" as const, text: "Switch" },
-    action_id: "home_switch_agent",
-    style: "primary" as const,
-  };
-
   if (options.agentName) {
     blocks.push({
       type: "section",
@@ -170,14 +149,8 @@ function buildAppHomeAgentBlocks(options: AppHomeOptions): SlackBlocks {
         type: "mrkdwn",
         text: `AgentName: *${options.agentName}*`,
       },
-      ...(options.canSwitch ? {} : { accessory: settingsButton }),
+      accessory: settingsButton,
     });
-    if (options.canSwitch) {
-      blocks.push({
-        type: "actions",
-        elements: [switchButton, settingsButton],
-      });
-    }
     return blocks;
   }
 
@@ -185,17 +158,11 @@ function buildAppHomeAgentBlocks(options: AppHomeOptions): SlackBlocks {
     type: "section",
     text: { type: "mrkdwn", text: "_No agent configured yet._" },
   });
-  if (options.canSwitch) {
-    blocks.push({
-      type: "actions",
-      elements: [switchButton, settingsButton],
-    });
-  }
   return blocks;
 }
 
 function buildAppHomeUsageBlocks(options: AppHomeOptions): SlackBlocks {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   const botMention = officialSlackBotMention(options.botUserId);
   return [
     {
@@ -288,7 +255,7 @@ export function buildErrorMessage(error: string): SlackBlocks {
 }
 
 export function buildLoginPromptMessage(loginUrl: string): SlackBlocks {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   return [
     {
       type: "section",
@@ -313,17 +280,13 @@ export function buildLoginPromptMessage(loginUrl: string): SlackBlocks {
 }
 
 export function buildHelpMessage(opts?: {
-  readonly canSwitch?: boolean;
   readonly canModel?: boolean;
   readonly botUserId?: string;
 }): SlackBlocks {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   const botMention = opts?.botUserId
     ? officialSlackBotMention(opts.botUserId)
     : undefined;
-  const switchLine = opts?.canSwitch
-    ? `\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} switch\` - Choose which agent responds to your messages`
-    : "";
   const modelLine = opts?.canModel
     ? `\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} model\` - Choose your model`
     : "";
@@ -342,7 +305,7 @@ export function buildHelpMessage(opts?: {
       type: "section",
       text: {
         type: "mrkdwn",
-        text: `*Commands*\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} connect\` - Connect to ${assistantName}${switchLine}${modelLine}\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} disconnect\` - Disconnect from ${assistantName}`,
+        text: `*Commands*\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} connect\` - Connect to ${assistantName}${modelLine}\n\u2022 \`${OFFICIAL_SLACK_PRIMARY_COMMAND} disconnect\` - Disconnect from ${assistantName}`,
       },
     },
     {
@@ -409,77 +372,11 @@ export function buildWelcomeMessage(
   return blocks;
 }
 
-export function buildAgentPickerModal(args: {
-  readonly options: readonly AgentPickerOption[];
-  readonly currentSelectedId: string | null;
-  readonly includeOrgDefault: boolean;
-  readonly orgDefaultName: string | null;
-  readonly privateMetadata?: string;
-}): SlackView {
-  const orgDefaultLabel = args.orgDefaultName
-    ? `Use org default (${args.orgDefaultName})`
-    : "Use org default";
-  const selectOptions = [
-    ...(args.includeOrgDefault
-      ? [
-          {
-            text: { type: "plain_text" as const, text: orgDefaultLabel },
-            value: AGENT_PICKER_ORG_DEFAULT_VALUE,
-          },
-        ]
-      : []),
-    ...args.options.map((option) => {
-      return {
-        text: {
-          type: "plain_text" as const,
-          text: (option.displayName ?? option.name).slice(0, 75),
-        },
-        value: option.composeId,
-      };
-    }),
-  ];
-  const initialOption = args.currentSelectedId
-    ? (selectOptions.find((option) => {
-        return option.value === args.currentSelectedId;
-      }) ?? selectOptions[0])
-    : selectOptions[0];
-
-  return {
-    type: "modal",
-    callback_id: AGENT_PICKER_CALLBACK_ID,
-    title: { type: "plain_text", text: "Switch Agent" },
-    submit: { type: "plain_text", text: "Switch" },
-    close: { type: "plain_text", text: "Cancel" },
-    blocks: [
-      {
-        type: "section",
-        text: {
-          type: "mrkdwn",
-          text: "Choose which agent should respond to your mentions and DMs. Only affects your own messages.",
-        },
-      },
-      {
-        type: "input",
-        block_id: AGENT_PICKER_BLOCK_ID,
-        label: { type: "plain_text", text: "Agent" },
-        element: {
-          type: "static_select",
-          action_id: AGENT_PICKER_ACTION_ID,
-          placeholder: { type: "plain_text", text: "Select an agent" },
-          options: selectOptions,
-          ...(initialOption && { initial_option: initialOption }),
-        },
-      },
-    ],
-    ...(args.privateMetadata && { private_metadata: args.privateMetadata }),
-  };
-}
-
 function formatModelPickerOptionLabel(option: ModelPickerOption): string {
   if (!option.isDefault) {
     return option.label.slice(0, 75);
   }
-  const suffix = " (workspace default)";
+  const suffix = " (default)";
   if (option.label.length + suffix.length <= 75) {
     return `${option.label}${suffix}`;
   }
@@ -488,6 +385,7 @@ function formatModelPickerOptionLabel(option: ModelPickerOption): string {
 
 export function buildModelPickerModal(args: {
   readonly options: readonly ModelPickerOption[];
+  /** Null is Auto. */
   readonly currentSelectedModel: string | null;
   readonly privateMetadata?: string;
 }): SlackView {
@@ -497,20 +395,19 @@ export function buildModelPickerModal(args: {
         type: "plain_text" as const,
         text: formatModelPickerOptionLabel(option),
       },
-      value: option.model,
+      value: integrationModelOptionValue(option.model),
     };
+  });
+  const currentValue = integrationModelOptionValue(args.currentSelectedModel);
+  const currentOption = selectOptions.find((option) => {
+    return option.value === currentValue;
   });
   const defaultModel = args.options.find((option) => {
     return option.isDefault;
-  })?.model;
-  const currentOption = args.currentSelectedModel
-    ? selectOptions.find((option) => {
-        return option.value === args.currentSelectedModel;
-      })
-    : undefined;
+  });
   const defaultOption = defaultModel
     ? selectOptions.find((option) => {
-        return option.value === defaultModel;
+        return option.value === integrationModelOptionValue(defaultModel.model);
       })
     : undefined;
   const initialOption = currentOption ?? defaultOption ?? selectOptions[0];
@@ -547,7 +444,7 @@ export function buildModelPickerModal(args: {
 }
 
 export function buildLoginMessage(loginUrl: string): SlackBlocks {
-  const { assistantName } = PUBLIC_BRAND_PRESENTATION;
+  const { assistantName } = BRAND_PRESENTATION;
   return [
     {
       type: "section",

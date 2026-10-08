@@ -29,21 +29,12 @@ describe.each(["feishu", "lark"] as const)(
     });
 
     it("documents the Feishu targeting modes", () => {
-      expect(
-        sendCommand.options.find((option) => {
-          return option.long === "--chat";
-        })?.description,
-      ).toContain("chat ID");
-      expect(
-        sendCommand.options.find((option) => {
-          return option.long === "--user";
-        })?.description,
-      ).toContain('"me"');
-      expect(
-        sendCommand.options.find((option) => {
-          return option.long === "--reply";
-        })?.description,
-      ).toContain("reply to");
+      const description = sendCommand.options.find((option) => {
+        return option.long === "--to";
+      })?.description;
+      expect(description).toContain("me");
+      expect(description).toContain("oc_… chat");
+      expect(description).toContain("ou_… user");
     });
 
     it("sends text to a chat through a selected installation", async () => {
@@ -67,9 +58,9 @@ describe.each(["feishu", "lark"] as const)(
       await sendCommand.parseAsync([
         "node",
         "cli",
-        "--installation",
+        "--as",
         "8b82bb60-c85b-4385-875a-d97f34e59b52",
-        "--chat",
+        "--to",
         "oc_target",
         "--text",
         "Hello Feishu",
@@ -81,8 +72,40 @@ describe.each(["feishu", "lark"] as const)(
         text: "Hello Feishu",
       });
       expect(mockConsoleLog).toHaveBeenCalledWith(
-        expect.stringContaining("Message sent (message: om_sent)"),
+        expect.stringContaining("Message sent (id: om_sent)"),
       );
+    });
+
+    it("prints the message envelope with --json", async () => {
+      server.use(
+        http.post(
+          FEISHU_MESSAGE_URL.replace("/feishu/", `/${platform}/`),
+          () => {
+            return HttpResponse.json({
+              ok: true,
+              messageId: "om_sent",
+              chatId: "oc_target",
+            });
+          },
+        ),
+      );
+
+      await sendCommand.parseAsync([
+        "node",
+        "cli",
+        "--to",
+        "oc_target",
+        "--text",
+        "Hello",
+        "--json",
+      ]);
+
+      const stdout = mockConsoleLog.mock.calls.flat().join("\n");
+      expect(JSON.parse(stdout)).toStrictEqual({
+        integration: platform,
+        chatId: "oc_target",
+        messages: [{ id: "om_sent", url: null }],
+      });
     });
 
     it("sends an interactive card to the current user", async () => {
@@ -106,9 +129,9 @@ describe.each(["feishu", "lark"] as const)(
       await sendCommand.parseAsync([
         "node",
         "cli",
-        "--user",
+        "--to",
         "me",
-        "--card",
+        "--rich",
         '{"schema":"2.0","body":{"elements":[]}}',
       ]);
 
@@ -142,9 +165,10 @@ describe.each(["feishu", "lark"] as const)(
       await sendCommand.parseAsync([
         "node",
         "cli",
-        "--reply",
+        "--reply-to",
         "om_parent",
-        "--thread",
+        "--reply-mode",
+        "thread",
         "--text",
         "Thread reply",
       ]);
@@ -156,40 +180,39 @@ describe.each(["feishu", "lark"] as const)(
       });
     });
 
-    it("rejects ambiguous targets", async () => {
+    it("rejects --to together with --reply-to", async () => {
       await expect(
         sendCommand.parseAsync([
           "node",
           "cli",
-          "--chat",
+          "--to",
           "oc_target",
-          "--user",
-          "ou_target",
+          "--reply-to",
+          "om_parent",
           "--text",
           "Hello",
         ]),
       ).rejects.toThrow("process.exit called");
       expect(mockConsoleError).toHaveBeenCalledWith(
-        expect.stringContaining(
-          "Exactly one of --chat, --user, or --reply must be provided",
-        ),
+        expect.stringContaining("--to and --reply-to are mutually exclusive"),
       );
     });
 
-    it("rejects --thread without --reply", async () => {
+    it("rejects --reply-mode without --reply-to", async () => {
       await expect(
         sendCommand.parseAsync([
           "node",
           "cli",
-          "--chat",
+          "--to",
           "oc_target",
-          "--thread",
+          "--reply-mode",
+          "thread",
           "--text",
           "Hello",
         ]),
       ).rejects.toThrow("process.exit called");
       expect(mockConsoleError).toHaveBeenCalledWith(
-        expect.stringContaining("--thread requires --reply"),
+        expect.stringContaining("--reply-mode requires --reply-to"),
       );
     });
 
@@ -198,18 +221,18 @@ describe.each(["feishu", "lark"] as const)(
         sendCommand.parseAsync([
           "node",
           "cli",
-          "--chat",
+          "--to",
           "oc_target",
-          "--card",
+          "--rich",
           "not-json",
         ]),
       ).rejects.toThrow("process.exit called");
       expect(mockConsoleError).toHaveBeenCalledWith(
-        expect.stringContaining("Invalid JSON for --card flag"),
+        expect.stringContaining("Invalid JSON for --rich"),
       );
       expect(mockConsoleError).toHaveBeenCalledWith(
         expect.stringContaining(
-          `Provide a valid ${platform === "lark" ? "Lark" : "Feishu"} card JSON object`,
+          `Provide a ${platform === "lark" ? "Lark" : "Feishu"} card JSON object`,
         ),
       );
     });
@@ -236,7 +259,7 @@ describe.each(["feishu", "lark"] as const)(
         sendCommand.parseAsync([
           "node",
           "cli",
-          "--chat",
+          "--to",
           "oc_target",
           "--text",
           "Hello",

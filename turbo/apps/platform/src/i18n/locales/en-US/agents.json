@@ -102,21 +102,9 @@
             "description": "Optimize and transform images in bulk",
             "title": "Cloudinary media optimizer"
           },
-          "elevenlabs-audio-content": {
-            "description": "Voice narration from Notion articles saved to Drive",
-            "title": "ElevenLabs audio content"
-          },
           "fal-ai-image-generation": {
             "description": "Generate product images from descriptions in Notion",
             "title": "Fal AI image generation"
-          },
-          "heygen-video-from-script": {
-            "description": "Notion script becomes a HeyGen video with a team ping",
-            "title": "HeyGen video from script"
-          },
-          "runway-video-from-brief": {
-            "description": "Generate short videos from a creative brief",
-            "title": "Runway video from brief"
           }
         },
         "title": "Creative"
@@ -510,6 +498,9 @@
       "description": "Name your agent and set who can use it.",
       "namePlaceholder": "e.g. Research Assistant",
       "newAgentAlt": "New agent",
+      "responsibilityLabel": "What do you want this agent to help you do?",
+      "responsibilityPlaceholder": "e.g. Every Monday, summarize last week's pipeline from HubSpot and flag deals that need attention.",
+      "setupFailed": "Agent setup did not finish. Check the agent list before trying again.",
       "success": "{{agentName}} created successfully",
       "title": "Create a new agent",
       "visibility": {

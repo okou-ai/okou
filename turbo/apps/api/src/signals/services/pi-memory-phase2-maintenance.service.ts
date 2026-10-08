@@ -31,6 +31,7 @@ import type {
   InternalRunCallbackEnvelope,
 } from "./internal-run-callback";
 import { PI_MEMORY_PHASE2_RETRY_DELAY_MS } from "./pi-memory-phase2-job.service";
+import { lockPiMemoryCandidateStorage } from "./pi-memory-stage1-candidate.service";
 
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
 
@@ -70,6 +71,35 @@ interface PiMemoryPhase2MaintenanceRunBinding {
   readonly claimedRevision: number;
   readonly claimedBaseVersionId: string;
   readonly selectionDigest: string;
+}
+
+/** Preserve storage-before-checkpoint lock ordering only for maintenance. */
+export async function lockPiMemoryPhase2CompletionStorage(
+  tx: Tx,
+  run: { readonly id: string; readonly orgId: string; readonly userId: string },
+): Promise<void> {
+  const [callback] = await tx
+    .select({ payload: agentRunCallbacks.payload })
+    .from(agentRunCallbacks)
+    .where(
+      and(
+        eq(agentRunCallbacks.runId, run.id),
+        eq(agentRunCallbacks.internalKind, "pi-memory:phase2"),
+      ),
+    )
+    .limit(1);
+  if (!callback) {
+    return;
+  }
+  const binding = piMemoryPhase2MaintenanceCallbackPayloadSchema.parse(
+    callback.payload,
+  );
+  if (binding.orgId !== run.orgId || binding.userId !== run.userId) {
+    throw new Error(
+      "Pi memory maintenance callback does not belong to run owner",
+    );
+  }
+  await lockPiMemoryCandidateStorage(tx, run);
 }
 
 /**

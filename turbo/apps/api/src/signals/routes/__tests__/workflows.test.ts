@@ -1,92 +1,82 @@
-import {
-  readGetStartedStatus,
-  setGetStartedEnabled,
-} from "./helpers/get-started";
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
+import { createHash, randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
+import { gunzipSync } from "node:zlib";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import {
   scopedReviewContract,
   scopedReviewRoutes,
 } from "../test-get-started-rewards";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
-import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createHash, randomUUID } from "node:crypto";
-import { gunzipSync } from "node:zlib";
+import { readGetStartedStatus } from "./helpers/get-started";
 
-import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import {
-  testSystemStoragePresignedUrlCacheStateContract,
-  type TestSystemStoragePresignedUrlCacheStateActionBody,
-} from "@okouai/api-contracts/contracts/test-system-storage-presigned-url-cache-state";
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+} from "@aws-sdk/client-s3";
+import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
+  workflowAutomationsContract,
   workflowsCollectionContract,
   workflowsDetailContract,
-  workflowAutomationsContract,
   workflowVisibilityContract,
   type WorkflowCreateRequest,
   type WorkflowUpdateRequest,
 } from "@okouai/api-contracts/contracts/workflows";
-import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  getCustomSkillStorageName,
-  VOLUME_ORG_USER_ID,
-} from "@okouai/core/storage-names";
 import { synthesizeWorkflowSkillMd } from "@okouai/core/skill-document";
-import { HttpResponse, http } from "msw";
+import { getCustomSkillStorageName } from "@okouai/core/storage-names";
+import { http, HttpResponse } from "msw";
 import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import {
-  assertUserStableContextGenerationUnlockedFixture,
-  beginWorkflowStableContextPublicationFixture,
-  clearAgentStableContextLifecycleFixture,
-  countAgentStableContextGenerationsFixture,
-  countAgentStableContextPublicationsFixture,
-  countUserStableContextGenerationsFixture,
-  holdAgentStableContextGenerationFixture,
-  holdUserStableContextGenerationFixture,
-} from "../../../test-fixtures/pi-stable-context";
-import { holdAgentDeletionAfterStableContextCleanupFixture } from "../../../test-fixtures/pi-stable-context-source-writers";
-import { createDeferredPromise } from "../../utils";
-import { mockNow, now } from "../../../lib/time";
 import { mockOptionalEnv } from "../../../lib/env";
+import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
-import {
-  readWorkflowAutomationAutonomyFixture,
-  setRunAutonomyBudgetFixture,
-  setWorkflowAutomationAutonomyBudgetFixture,
-} from "./helpers/runtime-state";
+import { createDeferredPromise } from "../../utils";
+import { chatThreadRoutes } from "../chat-threads";
+import { workflowAutomationsRoutes } from "../workflow-automations";
+import { workflowsRoutes } from "../workflows";
 import {
   createBddApi,
   type ApiTestUser,
   type ApiTestUserOptions,
 } from "./helpers/api-bdd";
-import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import {
   createConnectorBddApi,
   mockGmailConnectorOAuth,
   mockGoogleFormsConnectorOAuth,
   mockStripeConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
+import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
+import {
+  createRunsApi,
+  expectCanonicalStorageManifest,
+} from "./helpers/api-bdd-runs";
+import { extractFilesFromTarGz } from "../../../lib/tar";
 import {
   mockGoogleCalendarConnectorOAuth,
   mockNotionConnectorOAuth,
 } from "./helpers/api-bdd-workflows";
-import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
-import { chatThreadRoutes } from "../chat-threads";
-import { workflowAutomationsRoutes } from "../workflow-automations";
-import { workflowsRoutes } from "../workflows";
-import { testSystemStoragePresignedUrlCacheStateRoutes } from "../test-system-storage-presigned-url-cache-state";
+import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
+import {
+  readWorkflowAutomationAutonomyFixture,
+  setRunAutonomyBudgetFixture,
+  setWorkflowAutomationAutonomyBudgetFixture,
+} from "./helpers/runtime-state";
 
-const context = testContext({ connectorCatalog: true });
+const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 const miscApi = createMiscRoutesApi(context);
 const mocks = createRouteMocks(context);
 const api = createRunsApi(context);
+const publicResults = createPublicAutomationResultEmailApi(context);
 const connectorApi = createConnectorBddApi(context);
 const STAFF_ORG_ID = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
 
@@ -149,70 +139,48 @@ function chatThreadConnectorSelectionsClient() {
   );
 }
 
-function storageStateClient() {
-  return setupApp({
-    context,
-    routes: testSystemStoragePresignedUrlCacheStateRoutes,
-  })(testSystemStoragePresignedUrlCacheStateContract);
+/**
+ * Runs read back from a workflow thread. A workflow run only enqueues its
+ * slash command; background picks bind launched inputs to their runs.
+ */
+async function readLaunchedWorkflowRunIds(
+  actor: ApiTestUser,
+  chatThreadId: string,
+): Promise<readonly string[]> {
+  await flushWaitUntilForTest();
+  const { events } = await chat.listThreadEvents(actor, chatThreadId);
+  return [
+    ...new Set(
+      events.flatMap((event) => {
+        return event.eventType === "input.prompt" && event.runId !== undefined
+          ? [event.runId]
+          : [];
+      }),
+    ),
+  ];
 }
 
-async function storageStateAction(
-  body: TestSystemStoragePresignedUrlCacheStateActionBody,
-) {
-  return await accept(storageStateClient().action({ body }), [200]);
-}
-
-async function readWorkflowStorageState(
+async function runWorkflowAndLaunch(
   actor: ApiTestUser,
   workflowId: string,
-) {
-  if (!actor.orgId) {
-    throw new Error("Expected an organization-scoped workflow actor");
+): Promise<{ readonly chatThreadId: string; readonly runId: string }> {
+  const sent = await accept(
+    detailClient().run({
+      headers: authHeaders(actor),
+      params: { workflowId },
+    }),
+    [200],
+  );
+  expect(sent.body.runId).toBeNull();
+  const runIds = await readLaunchedWorkflowRunIds(
+    actor,
+    sent.body.chatThreadId,
+  );
+  const runId = runIds.at(-1);
+  if (runId === undefined) {
+    throw new Error("Expected the workflow run to launch");
   }
-  const response = await storageStateAction({
-    action: "read-storage-state",
-    org_id: actor.orgId,
-    user_id: VOLUME_ORG_USER_ID,
-    storage_name: getCustomSkillStorageName(workflowId),
-  });
-  return response.body.storage_state ?? null;
-}
-
-async function readWorkflowStorageVersion(
-  actor: ApiTestUser,
-  workflowId: string,
-  versionId: string,
-) {
-  if (!actor.orgId) {
-    throw new Error("Expected an organization-scoped workflow actor");
-  }
-  const response = await storageStateAction({
-    action: "read-storage-version",
-    org_id: actor.orgId,
-    user_id: VOLUME_ORG_USER_ID,
-    storage_name: getCustomSkillStorageName(workflowId),
-    version_id: versionId,
-  });
-  return response.body.storage_version ?? null;
-}
-
-async function setWorkflowStorageVersionArchiveSize(
-  actor: ApiTestUser,
-  workflowId: string,
-  versionId: string,
-  archiveSize: number,
-): Promise<void> {
-  if (!actor.orgId) {
-    throw new Error("Expected an organization-scoped workflow actor");
-  }
-  await storageStateAction({
-    action: "set-storage-version-archive-size",
-    org_id: actor.orgId,
-    user_id: VOLUME_ORG_USER_ID,
-    storage_name: getCustomSkillStorageName(workflowId),
-    version_id: versionId,
-    archive_size: archiveSize,
-  });
+  return { chatThreadId: sent.body.chatThreadId, runId };
 }
 
 function s3BodyBuffer(body: unknown): Buffer {
@@ -268,6 +236,17 @@ function installVolumeS3Fixture() {
         throw missingS3Object(key);
       }
       return { ContentLength: body.length };
+    }
+    if (command instanceof GetObjectCommand) {
+      const key = command.input.Key;
+      if (!key) {
+        throw new Error("Expected an S3 object key");
+      }
+      const body = objects.get(key);
+      if (!body) {
+        throw missingS3Object(key);
+      }
+      return { Body: Readable.from([body]), ContentLength: body.length };
     }
     return {};
   });
@@ -334,7 +313,10 @@ async function createWorkflow(actor: ApiTestUser, body: WorkflowCreateRequest) {
 
 async function enableWorkflowRuns(actor: ApiTestUser): Promise<void> {
   await api.grantProEntitlement(actor);
-  await api.ensureOrgModelProvider(actor);
+  // Fable keeps workflow runs on the claimable native Runner route.
+  await api.ensurePersonalSubscriptionModel(actor, {
+    model: "claude-fable-5-1",
+  });
   api.configureRunnerGroup();
 }
 
@@ -499,23 +481,11 @@ describe("workflows", () => {
   it("runs a workflow slash command with workflow timing attribution", async () => {
     const actor = user({ orgRole: "org:admin" });
     await api.grantProEntitlement(actor);
-    const provider = await miscApi.upsertOrgModelProvider(
+
+    await createBddIntegrationApi(context).configureNativeSubscriptionModels(
       actor,
-      { type: "openai-api-key", secret: "workflow-openai-key" },
-      [201],
     );
-    if (provider.status !== 201) {
-      throw new Error("Expected the workflow OpenAI provider to be created");
-    }
-    await api.updateOrgModelPolicies(actor, [
-      {
-        model: "gpt-5.6-terra",
-        isDefault: true,
-        defaultProviderType: "openai-api-key",
-        credentialScope: "org",
-        modelProviderId: provider.body.provider.id,
-      },
-    ]);
+    await api.updateUserModelPreference(actor, "gpt-6-astra");
     const agent = await createAgent(actor, {
       displayName: "Workflow Runner Agent",
       visibility: "private",
@@ -536,20 +506,8 @@ describe("workflows", () => {
       [200],
     );
 
-    const run = await accept(
-      detailClient().run({
-        headers: authHeaders(actor),
-        params: { workflowId: created.body.id },
-      }),
-      [200],
-    );
-
-    expect(run.body.chatThreadId).toStrictEqual(expect.any(String));
-    expect(run.body.runId).toStrictEqual(expect.any(String));
-    if (!run.body.runId) {
-      throw new Error("Expected an idle workflow invocation to create a run");
-    }
-    expect(run.body.chatThreadId).toBe(prepared.body.chatThreadId);
+    const run = await runWorkflowAndLaunch(actor, created.body.id);
+    expect(run.chatThreadId).toBe(prepared.body.chatThreadId);
 
     const queued = await accept(
       detailClient().run({
@@ -559,16 +517,20 @@ describe("workflows", () => {
       [200],
     );
     expect(queued.body).toStrictEqual({
-      chatThreadId: run.body.chatThreadId,
+      chatThreadId: run.chatThreadId,
       runId: null,
     });
+    // The busy thread keeps the second invocation queued behind the first run.
+    await expect(
+      readLaunchedWorkflowRunIds(actor, run.chatThreadId),
+    ).resolves.toStrictEqual([run.runId]);
 
     await api.heartbeatRunner(runnerGroup);
-    const claim = await api.claimRunnerJob(run.body.runId);
+    const claim = await api.claimRunnerJob(run.runId);
     expect(claim.cliAgentType).toBe("codex");
-    expect(claim.environment?.OPENAI_MODEL).toBe("gpt-5.6-terra");
+    expect(claim.environment?.OPENAI_MODEL).toBe("gpt-6-astra");
     expect(claim.environment?.ANTHROPIC_MODEL).toBeUndefined();
-    await api.requestCancelRun(actor, run.body.runId, [200]);
+    await api.requestCancelRun(actor, run.runId, [200]);
   });
 
   it("resolves concurrent first workflow runs to one automation thread", async () => {
@@ -611,14 +573,13 @@ describe("workflows", () => {
         }),
       ).size,
     ).toBe(1);
-    const runIds = [
-      ...new Set(
-        runs.flatMap((run) => {
-          return run.body.runId ? [run.body.runId] : [];
-        }),
-      ),
-    ];
-    expect(runIds.length).toBeGreaterThan(0);
+    const [firstRun] = runs;
+    const runIds = await readLaunchedWorkflowRunIds(
+      actor,
+      firstRun.body.chatThreadId,
+    );
+    // The shared thread launches one run; the other invocation queues behind it.
+    expect(runIds).toHaveLength(1);
     for (const runId of runIds) {
       await api.requestCancelRun(actor, runId, [200]);
     }
@@ -627,15 +588,16 @@ describe("workflows", () => {
   it("runs public workflows for members and hides workflows on private agents", async () => {
     const owner = user({ orgRole: "org:admin" });
     const member = user({ orgId: owner.orgId, orgRole: "org:member" });
+    await bdd.completeOnboarding(member);
     await enableWorkflowRuns(owner);
     if (!owner.orgId) {
       throw new Error("Expected a workflow owner organization");
     }
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: member.userId, orgId: owner.orgId, orgRole: "org:member" },
-      { [FeatureSwitchKey.PiLoop]: false },
-    );
+    // A member's workflow thread starts from their own model preference.
+    await api.ensurePersonalSubscriptionModel(member, {
+      model: "claude-fable-5-1",
+    });
+
     const publicAgent = await createAgent(owner, {
       displayName: "Public Workflow Agent",
       visibility: "public",
@@ -647,16 +609,10 @@ describe("workflows", () => {
       instruction: "# public run workflow",
     });
 
-    const publicRun = await accept(
-      detailClient().run({
-        headers: authHeaders(member),
-        params: { workflowId: publicWorkflow.body.id },
-      }),
-      [200],
+    const publicRun = await runWorkflowAndLaunch(
+      member,
+      publicWorkflow.body.id,
     );
-    if (!publicRun.body.runId) {
-      throw new Error("Expected the public workflow to create a run");
-    }
 
     const privateAgent = await createAgent(owner, {
       displayName: "Hidden Private Workflow Agent",
@@ -677,7 +633,7 @@ describe("workflows", () => {
     );
     expect(hidden.body.error.code).toBe("NOT_FOUND");
 
-    await api.requestCancelRun(member, publicRun.body.runId, [200]);
+    await api.requestCancelRun(member, publicRun.runId, [200]);
   });
 
   it("requires agent write-permission to create public workflows under an agent", async () => {
@@ -1214,237 +1170,81 @@ describe("workflows", () => {
     ).resolves.toMatchObject({ body: { visibility: "public" } });
   });
 
-  it("takes both visibility generation scopes in canonical order", async () => {
+  it("keeps concurrent Workflow instruction updates on the same Agent", async () => {
     const actor = user();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped actor");
-    }
     const agent = await createAgent(actor, {
-      displayName: "Visibility Lock Order Agent",
+      displayName: "Concurrent Workflow Agent",
       visibility: "public",
     });
-    await createWorkflow(actor, {
+    installVolumeS3Fixture();
+    const first = await createWorkflow(actor, {
       agentId: agent.agentId,
-      name: `public-lock-order-${randomUUID().slice(0, 8)}`,
-      visibility: "public",
-      instruction: "# settled public workflow",
+      name: `first-update-${randomUUID().slice(0, 8)}`,
+      instruction: "# first original",
     });
-    const privateWorkflow = await createWorkflow(actor, {
+    const second = await createWorkflow(actor, {
       agentId: agent.agentId,
-      name: `private-lock-order-${randomUUID().slice(0, 8)}`,
-      instruction: "# private workflow",
-    });
-    const signal = AbortSignal.timeout(10_000);
-    const held = await holdAgentStableContextGenerationFixture(
-      { orgId: actor.orgId, agentId: agent.agentId },
-      signal,
-    );
-    onTestFinished(async () => {
-      held.release();
-      await held.done;
+      name: `second-update-${randomUUID().slice(0, 8)}`,
+      instruction: "# second original",
     });
 
-    const publication = visibilityClient().publish({
-      headers: authHeaders(actor),
-      params: { workflowId: privateWorkflow.body.id },
-    });
-    await expect
-      .poll(async () => {
-        return (await held.blockedPids()).length;
-      })
-      .toBeGreaterThan(0);
-    await expect(
-      assertUserStableContextGenerationUnlockedFixture({
-        orgId: actor.orgId,
-        agentId: agent.agentId,
-        userId: actor.userId,
+    await Promise.all([
+      updateWorkflow(actor, first.body.id, { instruction: "# first updated" }),
+      updateWorkflow(actor, second.body.id, {
+        instruction: "# second updated",
       }),
-    ).resolves.toBeUndefined();
+    ]);
 
-    held.release();
-    await expect(held.done).resolves.toBeUndefined();
-    await expect(accept(publication, [200])).resolves.toMatchObject({
-      body: { visibility: "public" },
-    });
-  });
-
-  it("serializes deletion before publish when the Agent generation is initially absent", async () => {
-    const actor = user();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped actor");
-    }
-    const agent = await createAgent(actor, {
-      displayName: "Missing Agent Generation Lock Order",
-      visibility: "public",
-    });
-    const deletedWorkflow = await createWorkflow(actor, {
-      agentId: agent.agentId,
-      name: `deleted-private-${randomUUID().slice(0, 8)}`,
-      instruction: "# private workflow to delete",
-    });
-    const publishedWorkflow = await createWorkflow(actor, {
-      agentId: agent.agentId,
-      name: `published-private-${randomUUID().slice(0, 8)}`,
-      instruction: "# private workflow to publish",
-    });
-    await expect(
-      countAgentStableContextGenerationsFixture(agent.agentId),
-    ).resolves.toBe(0);
-
-    const signal = AbortSignal.timeout(10_000);
-    const held = await holdUserStableContextGenerationFixture(
-      {
-        orgId: actor.orgId,
-        agentId: agent.agentId,
-        userId: actor.userId,
-      },
-      signal,
-    );
-    onTestFinished(async () => {
-      held.release();
-      await held.done;
-    });
-
-    const deletion = miscApi.deleteWorkflow(
-      actor,
-      deletedWorkflow.body.id,
-      [204],
-    );
-    await expect
-      .poll(async () => {
-        return (await held.blockedPids()).length;
-      })
-      .toBe(1);
-    const deletionPid = (await held.blockedPids())[0];
-    if (deletionPid === undefined) {
-      throw new Error("Expected deletion to wait for the user generation");
-    }
-    const publication = visibilityClient().publish({
-      headers: authHeaders(actor),
-      params: { workflowId: publishedWorkflow.body.id },
-    });
-    await expect
-      .poll(async () => {
-        return (await held.blockedByPid(deletionPid)).length;
-      })
-      .toBeGreaterThan(0);
-    // Delete holds the newly materialized Agent generation and waits for this
-    // user holder. Publish therefore waits behind delete at Agent scope rather
-    // than becoming a second direct user waiter.
-    await expect(held.blockedPids()).resolves.toHaveLength(1);
-
-    held.release();
-    await expect(held.done).resolves.toBeUndefined();
-    await expect(deletion).resolves.toBeDefined();
-    await expect(accept(publication, [200])).resolves.toMatchObject({
-      body: { visibility: "public" },
-    });
-  });
-
-  it("prevents a generation after Agent deletion's first lifecycle scan", async () => {
-    const actor = user();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped actor");
-    }
-    const agent = await createAgent(actor, {
-      displayName: "Late Workflow Generation Agent",
-      visibility: "public",
-    });
-    const workflow = await createWorkflow(actor, {
-      agentId: agent.agentId,
-      name: `late-generation-${randomUUID().slice(0, 8)}`,
-      instruction: "# before deletion",
-    });
-    // Model the supported additive-rollout state: the Workflow predates the
-    // new projection tables, so the lifecycle scan starts with no keys.
-    await clearAgentStableContextLifecycleFixture(agent.agentId);
-
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    holdAgentDeletionAfterStableContextCleanupFixture(
-      agent.agentId,
-      async () => {
-        entered.resolve();
-        await release.promise;
-      },
-    );
-    onTestFinished(() => {
-      if (!release.settled()) {
-        release.resolve();
-      }
-    });
-
-    const deletion = bdd.requestDeleteAgent(actor, agent.agentId, [204]);
-    await entered.promise;
-    await expect(
-      countUserStableContextGenerationsFixture({
-        agentId: agent.agentId,
-        userId: actor.userId,
-      }),
-    ).resolves.toBe(0);
-
-    const update = requestUpdateWorkflow(
-      actor,
-      workflow.body.id,
-      { instruction: "# must wait behind Agent deletion" },
-      [404, 409],
-    );
-    await expect(
-      countUserStableContextGenerationsFixture({
-        agentId: agent.agentId,
-        userId: actor.userId,
-      }),
-    ).resolves.toBe(0);
-
-    release.resolve();
-    await deletion;
-    await update;
-    await expect(
-      countUserStableContextGenerationsFixture({
-        agentId: agent.agentId,
-        userId: actor.userId,
-      }),
-    ).resolves.toBe(0);
-    await expect(
-      countAgentStableContextPublicationsFixture(agent.agentId),
-    ).resolves.toBe(0);
-  });
-
-  it("retires an abandoned opposite-scope publication during a valid visibility transition", async () => {
-    const actor = user();
-    if (!actor.orgId) {
-      throw new Error("Expected an organization-scoped actor");
-    }
-    const agent = await createAgent(actor, {
-      displayName: "Opposite Publication Agent",
-      visibility: "public",
-    });
-    const workflow = await createWorkflow(actor, {
-      agentId: agent.agentId,
-      name: `opposite-publication-${randomUUID().slice(0, 8)}`,
-      instruction: "# private workflow with stale public fence",
-    });
-    await beginWorkflowStableContextPublicationFixture({
-      orgId: actor.orgId,
-      agentId: agent.agentId,
-      workflowId: workflow.body.id,
-    });
-    await expect(
-      countAgentStableContextPublicationsFixture(agent.agentId),
-    ).resolves.toBe(1);
-
-    await expect(
-      accept(
-        visibilityClient().publish({
+    for (const [workflowId, instruction] of [
+      [first.body.id, "# first updated"],
+      [second.body.id, "# second updated"],
+    ] as const) {
+      const current = await accept(
+        detailClient().get({
           headers: authHeaders(actor),
-          params: { workflowId: workflow.body.id },
+          params: { workflowId },
         }),
         [200],
-      ),
-    ).resolves.toMatchObject({ body: { visibility: "public" } });
-    await expect(
-      countAgentStableContextPublicationsFixture(agent.agentId),
-    ).resolves.toBe(0);
+      );
+      expect(current.body).toMatchObject({ instruction });
+    }
+  });
+
+  it("makes a deleted Agent's Workflow unavailable for reading, editing and publishing", async () => {
+    const actor = user();
+    const agent = await createAgent(actor, {
+      displayName: "Deleted Workflow Agent",
+      visibility: "public",
+    });
+    const workflow = await createWorkflow(actor, {
+      agentId: agent.agentId,
+      name: `deleted-agent-${randomUUID().slice(0, 8)}`,
+      instruction: "# removed with its Agent",
+    });
+
+    await bdd.deleteAgent(actor, agent.agentId);
+
+    const missing = await accept(
+      detailClient().get({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+      }),
+      [404],
+    );
+    expect(missing.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+    await requestUpdateWorkflow(
+      actor,
+      workflow.body.id,
+      { instruction: "# cannot restore a deleted Workflow" },
+      [404],
+    );
+    await accept(
+      visibilityClient().publish({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+      }),
+      [404],
+    );
   });
 
   it("rejects copying a workflow when the caller already has that private slug on the target agent", async () => {
@@ -1480,6 +1280,102 @@ describe("workflows", () => {
     expect(duplicate.body.error.message).toContain(
       `private workflow named "/${workflowName}"`,
     );
+  });
+
+  it("publishes one complete copy when different source workflows compete for the same private slug", async () => {
+    const actor = user();
+    const firstSourceAgent = await createAgent(actor, {
+      displayName: "First Concurrent Copy Source",
+      visibility: "private",
+    });
+    const secondSourceAgent = await createAgent(actor, {
+      displayName: "Second Concurrent Copy Source",
+      visibility: "private",
+    });
+    const targetAgent = await createAgent(actor, {
+      displayName: "Concurrent Copy Target",
+      visibility: "private",
+    });
+    const workflowName = `concurrent-copy-${randomUUID().slice(0, 8)}`;
+    const sources = await Promise.all(
+      [firstSourceAgent, secondSourceAgent].map(async (agent, index) => {
+        const instruction = `# Source workflow ${index + 1}`;
+        const created = await createWorkflow(actor, {
+          agentId: agent.agentId,
+          name: workflowName,
+          visibility: "private",
+          instruction,
+        });
+        return { workflowId: created.body.id, instruction };
+      }),
+    );
+
+    const copies = await Promise.all(
+      sources.map(async (source) => {
+        const response = await accept(
+          detailClient().copy({
+            headers: authHeaders(actor),
+            params: { workflowId: source.workflowId },
+            body: { toAgentId: targetAgent.agentId },
+          }),
+          [201, 409],
+        );
+        return { source, response };
+      }),
+    );
+    expect(
+      copies
+        .map((copy) => {
+          return copy.response.status;
+        })
+        .sort(),
+    ).toStrictEqual([201, 409]);
+    const winner = copies.find((copy) => {
+      return copy.response.status === 201;
+    });
+    const rejected = copies.find((copy) => {
+      return copy.response.status === 409;
+    });
+    if (winner?.response.status !== 201 || rejected?.response.status !== 409) {
+      throw new Error("Expected one successful copy and one name conflict");
+    }
+    expect(rejected.response.body.error.message).toContain(
+      `private workflow named "/${workflowName}"`,
+    );
+
+    const targetWorkflows = await accept(
+      collectionClient().list({
+        headers: authHeaders(actor),
+        query: { agentId: targetAgent.agentId },
+      }),
+      [200],
+    );
+    expect(targetWorkflows.body).toHaveLength(1);
+    expect(targetWorkflows.body[0]).toMatchObject({
+      id: winner.response.body.id,
+      name: workflowName,
+      visibility: "private",
+    });
+    for (const workflow of [
+      ...sources,
+      {
+        workflowId: winner.response.body.id,
+        instruction: winner.source.instruction,
+      },
+    ]) {
+      const current = await accept(
+        detailClient().get({
+          headers: authHeaders(actor),
+          params: { workflowId: workflow.workflowId },
+        }),
+        [200],
+      );
+      expect(current.body).toMatchObject({
+        name: workflowName,
+        instruction: workflow.instruction,
+        official: null,
+      });
+    }
   });
 
   it("rejects demoting a public workflow when the owner already has that private slug", async () => {
@@ -1519,6 +1415,10 @@ describe("workflows", () => {
       throw new Error("Expected workflow copy actor to belong to an org");
     }
     await api.grantProEntitlement(actor, { tier: "team" });
+    // Event Automation creation pins its shared thread model immediately.
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
     const sourceAgent = await createAgent(actor, {
       displayName: "Copy Source Agent",
       visibility: "private",
@@ -1543,17 +1443,6 @@ describe("workflows", () => {
       }),
       [201],
     );
-    await setWorkflowAutomationAutonomyBudgetFixture(
-      context,
-      automation.body.id,
-      4,
-    );
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, automation.body.id),
-    ).resolves.toMatchObject({
-      officialBlueprintKey: null,
-      officialResultEmailEnabled: null,
-    });
     const webhookAutomation = await accept(
       automationsClient().create({
         headers: authHeaders(actor),
@@ -1569,6 +1458,25 @@ describe("workflows", () => {
       kind: "event",
       eventType: "webhook-received",
     });
+    const runnerGroup = api.configureRunnerGroup();
+    api.acceptTelemetryIngest();
+    publicResults.configureDelivery(actor);
+    onTestFinished(async () => {
+      await publicResults.cleanup(actor);
+      const cleanupBdd = createBddApi(context);
+      cleanupBdd.acceptAgentStorageWrites();
+      await cleanupBdd.deleteAgent(actor, sourceAgent.agentId);
+      await cleanupBdd.deleteAgent(actor, targetAgent.agentId);
+    });
+    const sourceRun = await publicResults.start(
+      actor,
+      automation.body.id,
+      runnerGroup,
+    );
+    await publicResults.complete(actor, sourceRun.runId, runnerGroup, {
+      output: "Ordinary source result",
+    });
+    expect(context.mocks.resend.send).not.toHaveBeenCalled();
     const copied = await accept(
       detailClient().copy({
         headers: authHeaders(actor),
@@ -1604,13 +1512,6 @@ describe("workflows", () => {
     if (!copiedSchedule) {
       throw new Error("Expected the copied schedule automation");
     }
-    await expect(
-      readWorkflowAutomationAutonomyFixture(context, copiedSchedule.id),
-    ).resolves.toMatchObject({
-      autonomyBudget: 4,
-      officialBlueprintKey: null,
-      officialResultEmailEnabled: null,
-    });
     expect(
       copiedAutomations.body.some((copiedAutomation) => {
         return (
@@ -1619,6 +1520,15 @@ describe("workflows", () => {
         );
       }),
     ).toBeTruthy();
+    const copiedRun = await publicResults.start(
+      actor,
+      copiedSchedule.id,
+      runnerGroup,
+    );
+    await publicResults.complete(actor, copiedRun.runId, runnerGroup, {
+      output: "Ordinary copied result",
+    });
+    expect(context.mocks.resend.send).not.toHaveBeenCalled();
   });
 
   it("copies schedule-only workflows without binding a chat thread", async () => {
@@ -2542,23 +2452,14 @@ describe("workflows", () => {
       sourceAutomation.body.id,
       2,
     );
-    const sourceRun = await accept(
-      detailClient().run({
-        headers: authHeaders(actor),
-        params: { workflowId: workflow.body.id },
-      }),
-      [200],
-    );
-    if (!sourceRun.body.runId) {
-      throw new Error("Expected the source workflow run to start");
-    }
+    const sourceRun = await runWorkflowAndLaunch(actor, workflow.body.id);
     const sourceToken = api.okouTokenForRunWithCapabilities(
       actor,
-      sourceRun.body.runId,
+      sourceRun.runId,
       ["agent:write"],
     );
 
-    await setRunAutonomyBudgetFixture(context, sourceRun.body.runId, 10);
+    await setRunAutonomyBudgetFixture(context, sourceRun.runId, 32);
     const copied = await accept(
       detailClient().copy({
         headers: { authorization: `Bearer ${sourceToken}` },
@@ -2580,9 +2481,9 @@ describe("workflows", () => {
     }
     await expect(
       readWorkflowAutomationAutonomyFixture(context, copiedAutomation.id),
-    ).resolves.toMatchObject({ autonomyBudget: 9 });
+    ).resolves.toMatchObject({ autonomyBudget: 31 });
 
-    await setRunAutonomyBudgetFixture(context, sourceRun.body.runId, 0);
+    await setRunAutonomyBudgetFixture(context, sourceRun.runId, 0);
     const blockedTargetAgent = await createAgent(actor, {
       displayName: "Exhausted Copy Target Agent",
       visibility: "private",
@@ -2607,16 +2508,39 @@ describe("workflows", () => {
     expect(names(blockedTargetWorkflows.body)).not.toContain(
       workflow.body.name,
     );
-    await api.requestCancelRun(actor, sourceRun.body.runId, [200]);
+    await api.requestCancelRun(actor, sourceRun.runId, [200]);
   });
 
-  it("reuses and repairs immutable workflow volume versions without moving HEAD during preparation", async () => {
+  it("reuses registered workflow volumes without uploading or reconciling archive size", async () => {
     const actor = user();
-    const agent = await createAgent(actor, {
+    await api.grantProEntitlement(actor);
+    await api.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
+    const runnerGroup = api.configureRunnerGroup();
+    api.acceptStorageDownloads();
+    api.acceptTelemetryIngest();
+    const s3 = installVolumeS3Fixture();
+    const sendS3 = context.mocks.s3.send.getMockImplementation()!;
+    const agent = await bdd.createAgent(actor, {
       displayName: "Immutable Volume Agent",
       visibility: "private",
     });
-    const s3 = installVolumeS3Fixture();
+    const activeRuns = new Set<string>();
+    const ownedWorkflows = new Set<string>();
+    onTestFinished(async () => {
+      // Global teardown resets external mocks before this owned cleanup.
+      context.mocks.s3.send.mockImplementation(sendS3);
+      for (const runId of activeRuns) {
+        await api.requestCancelRun(actor, runId, [200]);
+        await flushWaitUntilForTest();
+      }
+      for (const workflowId of ownedWorkflows) {
+        await miscApi.deleteWorkflow(actor, workflowId, [204]);
+      }
+      await bdd.deleteAgent(actor, agent.agentId);
+    });
+    s3.clearWrites();
     const name = `immutable-volume-${randomUUID().slice(0, 8)}`;
     const description = "Exercises immutable workflow volume publication.";
     const firstInstruction = "# immutable volume one";
@@ -2631,48 +2555,60 @@ describe("workflows", () => {
       instruction: firstInstruction,
       files: firstFiles,
     });
+    ownedWorkflows.add(workflow.body.id);
 
-    const firstState = await readWorkflowStorageState(actor, workflow.body.id);
-    if (!firstState?.head_version_id) {
-      throw new Error("Expected the first workflow volume version");
-    }
-    const firstVersionId = firstState.head_version_id;
-    const firstArchiveKey = `${firstState.s3_prefix}/${firstVersionId}/archive.tar.gz`;
+    const firstArchiveWrites = s3.writes.filter(({ key }) => {
+      return key.endsWith("/archive.tar.gz");
+    });
+    expect(firstArchiveWrites).toHaveLength(1);
+    const firstArchiveKey = firstArchiveWrites[0]!.key;
+    const firstVersionId = firstArchiveKey.split("/").at(-2);
+    expect(firstVersionId).toMatch(/^[0-9a-f]{64}$/u);
     const firstArchive = s3.objects.get(firstArchiveKey);
     if (!firstArchive) {
       throw new Error("Expected the first workflow archive");
     }
-    const firstVersion = await readWorkflowStorageVersion(
-      actor,
-      workflow.body.id,
-      firstVersionId,
-    );
     const firstSkillMd = synthesizeWorkflowSkillMd({
       name,
       description,
       instruction: firstInstruction,
     });
-    const firstSize = [
-      firstSkillMd,
-      ...firstFiles.map((file) => {
-        return file.content;
-      }),
-    ]
-      .map((content) => {
-        return Buffer.byteLength(content, "utf8");
-      })
-      .reduce((sum, size) => {
-        return sum + size;
-      }, 0);
-    expect(firstVersion).toStrictEqual({
-      version_id: firstVersionId,
-      s3_key: `${firstState.s3_prefix}/${firstVersionId}`,
-      size: firstSize,
-      archive_size: firstArchive.length,
-      file_count: 3,
-      message: null,
-      created_by: "user",
+    const firstArchiveFiles = [
+      { path: "SKILL.md", content: firstSkillMd },
+      ...firstFiles,
+    ].sort((left, right) => {
+      return left.path.localeCompare(right.path);
     });
+    const firstSize = firstArchiveFiles.reduce((sum, file) => {
+      return sum + Buffer.byteLength(file.content, "utf8");
+    }, 0);
+    const firstManifestKey = firstArchiveKey.replace(
+      /archive\.tar\.gz$/u,
+      "manifest.json",
+    );
+    const firstManifest = s3.objects.get(firstManifestKey);
+    if (!firstManifest) {
+      throw new Error("Expected the first workflow manifest");
+    }
+    expect(JSON.parse(firstManifest.toString("utf8"))).toMatchObject({
+      version: firstVersionId,
+      totalSize: firstSize,
+      fileCount: 3,
+      files: expect.arrayContaining(
+        firstArchiveFiles.map((file) => {
+          return {
+            path: file.path,
+            size: Buffer.byteLength(file.content, "utf8"),
+            hash: createHash("sha256").update(file.content).digest("hex"),
+          };
+        }),
+      ),
+    });
+    expect(
+      [...extractFilesFromTarGz(firstArchive)].sort((left, right) => {
+        return left.path.localeCompare(right.path);
+      }),
+    ).toStrictEqual(firstArchiveFiles);
 
     const tar = gunzipSync(firstArchive);
     const encodedMtime = tar
@@ -2682,21 +2618,87 @@ describe("workflows", () => {
       .trim();
     expect(Number.parseInt(encodedMtime, 8)).toBe(0);
 
+    const claimCurrentArchive = async () => {
+      const run = await runWorkflowAndLaunch(actor, workflow.body.id);
+      activeRuns.add(run.runId);
+      await api.heartbeatRunner(runnerGroup);
+      const claim = await api.claimRunnerJob(run.runId);
+      const mount = expectCanonicalStorageManifest(
+        claim.storageManifest,
+      )?.storageMounts.find((candidate) => {
+        return candidate.name === getCustomSkillStorageName(workflow.body.id);
+      });
+      if (!mount?.archiveUrl) {
+        throw new Error("Expected the selected workflow archive mount");
+      }
+      await api.requestCancelRun(actor, run.runId, [200]);
+      // A claimed Run keeps the thread slot until its Runner acknowledges
+      // cancellation; finish that protocol before launching this Workflow again.
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        { runId: run.runId, exitCode: 1, error: "Run cancelled" },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      activeRuns.delete(run.runId);
+      return mount;
+    };
+    await expect(claimCurrentArchive()).resolves.toMatchObject({
+      versionId: firstVersionId,
+      archiveSize: firstArchive.length,
+    });
+
+    const readCurrentArchive = async (
+      instruction: string,
+      files: readonly { readonly path: string; readonly content: string }[],
+      archiveKey: string,
+    ) => {
+      const firstCall = context.mocks.s3.send.mock.calls.length;
+      const detail = await accept(
+        detailClient().get({
+          headers: authHeaders(actor),
+          params: { workflowId: workflow.body.id },
+        }),
+        [200],
+      );
+      expect(detail.body.instruction).toBe(instruction);
+      expect(detail.body.fileContents).toStrictEqual(
+        [...files].sort((left, right) => {
+          return left.path.localeCompare(right.path);
+        }),
+      );
+      expect(
+        context.mocks.s3.send.mock.calls
+          .slice(firstCall)
+          .flatMap(([command]) => {
+            return command instanceof GetObjectCommand &&
+              command.input.Key?.endsWith("/archive.tar.gz")
+              ? [command.input.Key]
+              : [];
+          }),
+      ).toStrictEqual([archiveKey]);
+    };
+
     const secondInstruction = "# immutable volume two";
     const secondFiles = [
       { path: "alpha.txt", content: "alpha two" },
       { path: "zeta.txt", content: "zeta two" },
     ];
+    s3.clearWrites();
     await updateWorkflow(actor, workflow.body.id, {
       instruction: secondInstruction,
       files: secondFiles,
     });
-    const secondState = await readWorkflowStorageState(actor, workflow.body.id);
-    if (!secondState?.head_version_id) {
-      throw new Error("Expected the second workflow volume version");
-    }
-    const secondVersionId = secondState.head_version_id;
+    const secondArchiveWrites = s3.writes.filter(({ key }) => {
+      return key.endsWith("/archive.tar.gz");
+    });
+    expect(secondArchiveWrites).toHaveLength(1);
+    const secondArchiveKey = secondArchiveWrites[0]!.key;
+    const secondVersionId = secondArchiveKey.split("/").at(-2);
     expect(secondVersionId).not.toBe(firstVersionId);
+    await expect(claimCurrentArchive()).resolves.toMatchObject({
+      versionId: secondVersionId,
+    });
 
     s3.clearWrites();
     await updateWorkflow(actor, workflow.body.id, {
@@ -2704,70 +2706,42 @@ describe("workflows", () => {
       files: [...firstFiles].reverse(),
     });
     expect(s3.writes).toHaveLength(0);
-    expect(
-      (await readWorkflowStorageState(actor, workflow.body.id))
-        ?.head_version_id,
-    ).toBe(firstVersionId);
+    await readCurrentArchive(firstInstruction, firstFiles, firstArchiveKey);
 
     await updateWorkflow(actor, workflow.body.id, {
       instruction: secondInstruction,
       files: secondFiles,
     });
     expect(s3.writes).toHaveLength(0);
-    expect(
-      (await readWorkflowStorageState(actor, workflow.body.id))
-        ?.head_version_id,
-    ).toBe(secondVersionId);
+    await readCurrentArchive(secondInstruction, secondFiles, secondArchiveKey);
 
-    await setWorkflowStorageVersionArchiveSize(
-      actor,
-      workflow.body.id,
-      firstVersionId,
-      firstArchive.length + 1,
-    );
-    s3.objects.delete(firstArchiveKey);
+    // The synthetic archive_size corruption branch was explicitly retired in
+    // #37440. Reuse still exercises immutable metadata validation through the
+    // public update and reads the exact selected archive through public detail.
     s3.clearWrites();
-    let observedRepairPreparation = false;
-    s3.beforeNextArchiveWrite(async (key, body) => {
-      expect(key).toBe(firstArchiveKey);
-      expect(body).toStrictEqual(firstArchive);
-      expect(
-        (await readWorkflowStorageState(actor, workflow.body.id))
-          ?.head_version_id,
-      ).toBe(secondVersionId);
-      observedRepairPreparation = true;
-    });
-
+    context.mocks.s3.send.mockClear();
     await updateWorkflow(actor, workflow.body.id, {
       instruction: firstInstruction,
       files: firstFiles,
     });
-    expect(observedRepairPreparation).toBeTruthy();
+    expect(s3.writes).toHaveLength(0);
+    await readCurrentArchive(firstInstruction, firstFiles, firstArchiveKey);
+    // Detail reads may GET the manifest on a cache miss. Registered-version
+    // reuse must not probe or PUT the archive/manifest again.
+    const registeredKeys = new Set([firstArchiveKey, firstManifestKey]);
     expect(
-      s3.writes.map((write) => {
-        return write.key;
+      context.mocks.s3.send.mock.calls.filter(([command]) => {
+        return (
+          (command instanceof HeadObjectCommand ||
+            command instanceof PutObjectCommand) &&
+          command.input.Key !== undefined &&
+          registeredKeys.has(command.input.Key)
+        );
       }),
-    ).toStrictEqual(
-      expect.arrayContaining([
-        firstArchiveKey,
-        `${firstState.s3_prefix}/${firstVersionId}/manifest.json`,
-      ]),
-    );
-    expect(
-      s3.writes.find((write) => {
-        return write.key === firstArchiveKey;
-      })?.body,
-    ).toStrictEqual(firstArchive);
-    expect(
-      (await readWorkflowStorageState(actor, workflow.body.id))
-        ?.head_version_id,
-    ).toBe(firstVersionId);
-    await expect(
-      readWorkflowStorageVersion(actor, workflow.body.id, firstVersionId),
-    ).resolves.toMatchObject({ archive_size: firstArchive.length });
+    ).toHaveLength(0);
   });
 
-  it("repairs workflow archives deterministically across path order and umask", async () => {
+  it("reuses an existing workflow archive across path order and umask", async () => {
     const actor = user();
     const agent = await createAgent(actor, {
       displayName: "Duplicate Path Volume Agent",
@@ -2790,38 +2764,61 @@ describe("workflows", () => {
       files: duplicateFiles,
     });
 
-    const initialState = await readWorkflowStorageState(
-      actor,
-      workflow.body.id,
-    );
-    if (!initialState?.head_version_id) {
-      throw new Error("Expected the duplicate-path workflow volume version");
-    }
-    const archiveKey = `${initialState.s3_prefix}/${initialState.head_version_id}/archive.tar.gz`;
+    const archiveWrites = s3.writes.filter(({ key }) => {
+      return key.endsWith("/archive.tar.gz");
+    });
+    expect(archiveWrites).toHaveLength(1);
+    const archiveKey = archiveWrites[0]!.key;
     const initialArchive = s3.objects.get(archiveKey);
     if (!initialArchive) {
       throw new Error("Expected the duplicate-path workflow archive");
     }
+    const initial = await accept(
+      detailClient().get({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+      }),
+      [200],
+    );
+    expect(initial.body.instruction).toBe("# duplicate path volume");
+    // Public detail preserves both archive entries. Packaging reads the final
+    // contents of the repeated path for each entry.
+    expect(initial.body.fileContents).toStrictEqual([
+      { path: "duplicate.txt", content: "second duplicate" },
+      { path: "duplicate.txt", content: "second duplicate" },
+    ]);
 
-    s3.objects.delete(archiveKey);
-    let observedRepair = false;
-    s3.beforeNextArchiveWrite((key, body) => {
-      expect(key).toBe(archiveKey);
-      expect(body).toStrictEqual(initialArchive);
-      observedRepair = true;
-    });
-
+    s3.clearWrites();
+    context.mocks.s3.send.mockClear();
     process.umask(0o077);
     await updateWorkflow(actor, workflow.body.id, {
       files: [...duplicateFiles].reverse(),
     });
     process.umask(originalUmask);
 
-    expect(observedRepair).toBeTruthy();
+    expect(s3.writes).toHaveLength(0);
+    expect(s3.objects.get(archiveKey)).toStrictEqual(initialArchive);
+    context.mocks.s3.send.mockClear();
+    const updated = await accept(
+      detailClient().get({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.body.id },
+      }),
+      [200],
+    );
+    expect(updated.body.instruction).toBe(initial.body.instruction);
+    expect(updated.body.fileContents).toStrictEqual(initial.body.fileContents);
     expect(
-      (await readWorkflowStorageState(actor, workflow.body.id))
-        ?.head_version_id,
-    ).toBe(initialState.head_version_id);
+      context.mocks.s3.send.mock.calls
+        .map(([command]) => {
+          return command instanceof GetObjectCommand
+            ? command.input.Key
+            : undefined;
+        })
+        .filter((key) => {
+          return key?.endsWith("/archive.tar.gz");
+        }),
+    ).toStrictEqual([archiveKey]);
   });
 
   it("reads and updates workflow content, audit metadata, and deletion through API responses", async () => {
@@ -3119,7 +3116,7 @@ describe("workflow owner profiles", () => {
   });
 });
 
-describe("workflow owner profile cancellation and capacity", () => {
+describe("workflow owner profile cancellation", () => {
   it("retries after cancellation and ignores a late missing result", async () => {
     const { owner, workflow } = await ownerProfileFixture();
     mockNow(now() + 16 * 60 * 1000);
@@ -3153,122 +3150,11 @@ describe("workflow owner profile cancellation and capacity", () => {
         .displayName,
     ).toBe("Workflow Author");
   });
-
-  describe("negative profile capacity", () => {
-    let profiles: { owner: ApiTestUser; workflowId: string }[] = [];
-
-    beforeEach(async () => {
-      const { owner, workflow, agent } = await ownerProfileFixture();
-      // Construct the large fixture through production APIs before exercising
-      // cache behavior. The measured TTL starts after fixture creation.
-      // Keep the capacity cohort spread across every public agent allowed for
-      // the organization so their independent writes do not serialize.
-      const agents = [
-        agent,
-        ...(await Promise.all(
-          Array.from({ length: 6 }, () => {
-            return createAgent(owner, { visibility: "public" });
-          }),
-        )),
-      ];
-      const actors = new Map<string, ApiTestUser>();
-      context.mocks.clerk.authenticateRequest.mockImplementation(
-        (request: unknown) => {
-          if (!(request instanceof Request)) {
-            throw new Error("Expected a Clerk authentication request");
-          }
-          const actor = actors.get(request.headers.get("authorization") ?? "");
-          if (!actor) {
-            throw new Error("Unknown workflow capacity fixture actor");
-          }
-          return Promise.resolve({
-            isAuthenticated: true,
-            toAuth: () => {
-              return actor;
-            },
-          });
-        },
-      );
-      const client = collectionClient();
-      const creating = Promise.allSettled(
-        Array.from({ length: 512 }, async (_, index) => {
-          const targetAgent = agents[index % agents.length];
-          if (!targetAgent) {
-            throw new Error("Missing workflow capacity fixture agent");
-          }
-          const another = user({ orgId: owner.orgId });
-          const authorization = `Bearer ${another.userId}`;
-          // Bind auth to the request while other creations are in flight.
-          actors.set(authorization, another);
-          const created = await accept(
-            client.create({
-              headers: { authorization },
-              body: {
-                agentId: targetAgent.agentId,
-                name: `bounded-${index}`,
-                visibility: "public",
-              },
-            }),
-            [201],
-          );
-          if (created.body.ownerUserId !== another.userId) {
-            throw new Error(
-              "Workflow capacity fixture used an unexpected owner",
-            );
-          }
-          return { owner: another, workflowId: created.body.id };
-        }),
-      );
-      onTestFinished(async () => {
-        // A hook timeout aborts the owned requests; drain them before the
-        // database pool closes, including requests still cleaning up volumes.
-        await creating;
-      });
-      const others = (await creating).map((result) => {
-        if (result.status === "rejected") {
-          throw result.reason;
-        }
-        return result.value;
-      });
-      profiles = [{ owner, workflowId: workflow.id }, ...others];
-      mockNow(now() + 16 * 60 * 1000);
-    });
-
-    it("evicts the oldest unavailable owner at the 512-owner capacity", async () => {
-      const first = profiles[0];
-      if (!first) {
-        throw new Error("Missing capacity fixture");
-      }
-      const client = detailClient();
-      const headers = authHeaders(first.owner);
-      function read(workflowId: string) {
-        return client.ownerProfile({ headers, params: { workflowId } });
-      }
-      context.mocks.clerk.users.getUser.mockRejectedValue(
-        new WorkflowProfileClerkError(404),
-      );
-      await accept(read(first.workflowId), [200]);
-      await Promise.all(
-        profiles.slice(1).map(async ({ workflowId }) => {
-          expect(
-            (await accept(read(workflowId), [200])).body.displayName,
-          ).toBeNull();
-        }),
-      );
-      context.mocks.clerk.users.getUser.mockResolvedValue(
-        ownerProfileUser(first.owner.userId),
-      );
-      expect(
-        (await accept(read(first.workflowId), [200])).body.displayName,
-      ).toBe("Workflow Author");
-    });
-  });
 });
 
 test("awards the workflow creator only after a queued user workflow really succeeds", async () => {
   const actor = user({ orgRole: "org:admin" });
   await enableWorkflowRuns(actor);
-  await setGetStartedEnabled(context, actor);
   const agent = await createAgent(actor, {
     displayName: "Reward Workflow Agent",
     visibility: "private",
@@ -3295,16 +3181,7 @@ test("awards the workflow creator only after a queued user workflow really succe
     });
   };
   await expect(rewards()).resolves.toMatchObject({ claimedCount: 0 });
-  const first = await accept(
-    detailClient().run({
-      headers: authHeaders(actor),
-      params: { workflowId: workflow.body.id },
-    }),
-    [200],
-  );
-  if (!first.body.runId) {
-    throw new Error("Expected first Run");
-  }
+  const first = await runWorkflowAndLaunch(actor, workflow.body.id);
   const queued = await accept(
     detailClient().run({
       headers: authHeaders(actor),
@@ -3315,16 +3192,16 @@ test("awards the workflow creator only after a queued user workflow really succe
   expect(queued.body.runId).toBeNull();
   const webhooks = createWebhookCallbackApi(context);
   await webhooks.requestAgentComplete(
-    { runId: first.body.runId, exitCode: 1, error: "Synthetic failure" },
+    { runId: first.runId, exitCode: 1, error: "Synthetic failure" },
     {
-      authorization: `Bearer ${api.sandboxTokenForRun(actor, first.body.runId)}`,
+      authorization: `Bearer ${api.sandboxTokenForRun(actor, first.runId)}`,
     },
     [200],
   );
   await flushWaitUntilForTest();
-  const events = await chat.listThreadEvents(actor, first.body.chatThreadId);
+  const events = await chat.listThreadEvents(actor, first.chatThreadId);
   const next = events.events.find((event) => {
-    return event.runId && event.runId !== first.body.runId;
+    return event.runId && event.runId !== first.runId;
   });
   if (!next?.runId) {
     throw new Error("Expected the queued workflow to start after failure");

@@ -1529,6 +1529,7 @@ export function ConnectModal({
   onSuccess,
   authorizeVisibleAgentsOnConnect = false,
   agentId,
+  accountLabel,
   accountOptions,
   accountMode,
   reconnectAuthMethod,
@@ -1538,6 +1539,7 @@ export function ConnectModal({
   onSuccess?: ConnectorConnectSuccess;
   authorizeVisibleAgentsOnConnect?: boolean;
   agentId?: string;
+  accountLabel?: string;
   accountOptions: ConnectorAccountMutationOptions;
   accountMode?: ConnectorAccountConnectMode;
   reconnectAuthMethod?: ConnectorAuthMethodId;
@@ -1601,7 +1603,11 @@ export function ConnectModal({
             <div className="flex h-5 w-5 shrink-0 items-center justify-center">
               <ConnectorIcon icon={item.icon} size={20} />
             </div>
-            <DialogTitle>{item.label}</DialogTitle>
+            <DialogTitle>
+              {accountLabel && accountLabel !== item.label
+                ? `${item.label} · ${accountLabel}`
+                : item.label}
+            </DialogTitle>
           </div>
         </DialogHeader>
 

@@ -1,6 +1,5 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
-import type { PublicConnectorCatalogCategoryMetadata } from "@okouai/api-contracts/contracts/connector-catalog";
 
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import {
@@ -16,7 +15,7 @@ import {
   matchesConnectorDirectorySearch,
 } from "../../signals/okou-page/settings/connectors.ts";
 import { customConnectorTarget } from "./components/settings/custom-connector-display.ts";
-import { localizeConnectorCategoryMetadata } from "./components/settings/connector-category-labels.ts";
+import { connectorCategoryLabels } from "./components/settings/connector-category-labels.ts";
 
 export interface ConnectorDirectoryModel {
   /** Connected connectors whose connection or permissions need a fix. */
@@ -82,7 +81,6 @@ export function buildConnectorDirectoryModel({
   unconnectedCustom,
   search,
   category,
-  categoryMetadata,
   otherCategoryLabel,
   categoryCounts,
   headShelfLabel,
@@ -95,7 +93,6 @@ export function buildConnectorDirectoryModel({
   readonly unconnectedCustom: readonly CustomConnectorResponse[];
   readonly search: string;
   readonly category: string | null;
-  readonly categoryMetadata: PublicConnectorCatalogCategoryMetadata | undefined;
   readonly otherCategoryLabel: string;
   readonly categoryCounts: Readonly<Record<string, number>> | undefined;
   readonly headShelfLabel: string;
@@ -118,13 +115,17 @@ export function buildConnectorDirectoryModel({
       return matchesCustomConnectorSearch(search, connector);
     },
   );
-  const localizedMetadata = localizeConnectorCategoryMetadata(categoryMetadata);
+  const categoryMetadata = connectorCategoryLabels(
+    [...unconnected, ...chipCatalog].map((connector) => {
+      return connector.category;
+    }),
+  );
   const sectionsOf = (
     items: readonly PlatformConnectorCatalogStatusItem[],
   ): ConnectorCategorySection<PlatformConnectorCatalogStatusItem>[] => {
     return groupConnectorsByCategory(
       items,
-      localizedMetadata,
+      categoryMetadata,
       otherCategoryLabel,
     ).flatMap((group) => {
       return group.sections;

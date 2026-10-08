@@ -4,7 +4,6 @@ import { command } from "ccstate";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { feishuEventsContract } from "@okouai/api-contracts/contracts/feishu-events";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 
 import { logger } from "../../lib/log";
@@ -19,7 +18,7 @@ import { writeDb$, type Db } from "../external/db";
 import { now, nowDate } from "../../lib/time";
 import { safeSync, tapError } from "../utils";
 import { processCanonicalFeishuIngress$ } from "./canonical-feishu-ingress-processor.service";
-import { admitFeishuChatEvent } from "./feishu-chat-ingress.service";
+import { admitFeishuChatEvent$ } from "./feishu-chat-ingress.service";
 import {
   loadFeishuInstallationConfig,
   type FeishuInstallationConfig,
@@ -30,7 +29,6 @@ import {
   parseFeishuMessageContent,
 } from "../../lib/feishu-message-content";
 import { publishFeishuOrgChanged } from "./feishu-realtime.service";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const L = logger("FeishuWebhooks");
 
@@ -294,53 +292,57 @@ async function ensureInboundBotIdentity(
   return { ...args.config, botOpenId: bot.openId };
 }
 
-async function admitInboundFeishuMessage(
-  args: {
-    readonly db: Db;
-    readonly message: FeishuInboundMessage;
-    readonly publicBrand: PublicBrand;
-    readonly processIngress: (
-      ingressId: string,
-      signal: AbortSignal,
-    ) => Promise<boolean>;
+const admitInboundFeishuMessage$ = command(
+  async (
+    { set },
+    message: FeishuInboundMessage,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const admittedAt = nowDate();
+    const ingress = await set(
+      admitFeishuChatEvent$,
+      {
+        installationId: message.installationId,
+        eventId: message.eventId,
+        payload: JSON.stringify(message),
+        currentTime: admittedAt,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    L.debug("Canonical Feishu ingress admitted", {
+      type: "canonical_feishu_ingress_admission",
+      eventId: message.eventId,
+      outcome: ingress?.inserted ? "accepted" : "deduplicated",
+      status: ingress?.status ?? "legacy_deduplicated",
+      retryCount: ingress?.retryCount ?? 0,
+    });
+    if (!ingress || ingress.status === "processed") {
+      return;
+    }
+    const backgroundSignal = new AbortController().signal;
+    waitUntil(
+      tapError(
+        set(
+          processCanonicalFeishuIngress$,
+          { ingressId: ingress.id },
+          backgroundSignal,
+        ),
+        (error) => {
+          L.error("Canonical Feishu ingress processing failed", {
+            ingressId: ingress.id,
+            eventId: message.eventId,
+            error,
+          });
+        },
+      ),
+    );
   },
-  signal: AbortSignal,
-): Promise<void> {
-  const admittedAt = nowDate();
-  const ingress = await admitFeishuChatEvent(args.db, {
-    installationId: args.message.installationId,
-    eventId: args.message.eventId,
-    payload: JSON.stringify(args.message),
-    publicBrand: args.publicBrand,
-    currentTime: admittedAt,
-  });
-  signal.throwIfAborted();
-  L.debug("Canonical Feishu ingress admitted", {
-    type: "canonical_feishu_ingress_admission",
-    eventId: args.message.eventId,
-    outcome: ingress?.inserted ? "accepted" : "deduplicated",
-    status: ingress?.status ?? "legacy_deduplicated",
-    retryCount: ingress?.retryCount ?? 0,
-  });
-  if (!ingress || ingress.status === "processed") {
-    return;
-  }
-  const backgroundSignal = new AbortController().signal;
-  waitUntil(
-    tapError(args.processIngress(ingress.id, backgroundSignal), (error) => {
-      L.error("Canonical Feishu ingress processing failed", {
-        ingressId: ingress.id,
-        eventId: args.message.eventId,
-        error,
-      });
-    }),
-  );
-}
+);
 
 export const handleFeishuEvents$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<Response> => {
     const request = get(request$);
-    const publicBrand = PUBLIC_BRAND;
     const params = get(pathParamsOf(feishuEventsContract.post));
     const db = set(writeDb$);
     const config = await loadFeishuInstallationConfig(
@@ -442,21 +444,7 @@ export const handleFeishuEvents$ = command(
     );
     const message = inboundMessage(dispatchConfig, v2.data);
     if (message) {
-      await admitInboundFeishuMessage(
-        {
-          db,
-          message,
-          publicBrand,
-          processIngress: (ingressId, inputSignal) => {
-            return set(
-              processCanonicalFeishuIngress$,
-              { ingressId },
-              inputSignal,
-            );
-          },
-        },
-        signal,
-      );
+      await set(admitInboundFeishuMessage$, message, signal);
       signal.throwIfAborted();
     }
     return textResponse("OK");

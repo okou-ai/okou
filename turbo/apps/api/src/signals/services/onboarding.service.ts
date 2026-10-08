@@ -1,21 +1,21 @@
 import { command, computed, type Computed } from "ccstate";
+import { initializeMemberMemory$ } from "./member-memory-initialization.service";
 import type {
   OnboardingIndustry,
   OnboardingStatusResponse,
-  OnboardingSubscriptionProvider,
 } from "@okouai/api-contracts/contracts/onboarding";
 import { agentAvatarUrlForDefaultAgent } from "@okouai/core/agent-avatar";
-import { agentDisplayName } from "@okouai/core/public-brand";
+import { agentDisplayName } from "@okouai/core/brand-presentation";
 import { isValidTimeZone } from "@okouai/core/timezone";
 import { agents } from "@okouai/db/schema/agent";
-import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, ne, or } from "drizzle-orm";
 
 import type { AuthContext } from "../../types/auth";
 import { logger } from "../../lib/log";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { settle } from "../utils";
 import {
@@ -23,8 +23,7 @@ import {
   type EnsureMorningBriefDefaultEnabledResult,
 } from "./morning-brief-preference.service";
 import type { WorkflowMember } from "./workflow-data.service";
-import { writeOrgMetadataWithDefaultPlanEntitlement } from "./org-plan-entitlements.service";
-import { initializeOnboardingOrgModelPolicies } from "./model-policy.service";
+import { markOrgOnboardingComplete$ } from "./onboarding-completion.command";
 
 const L = logger("onboarding.service");
 
@@ -45,98 +44,89 @@ type CompleteOnboardingResponse = {
   };
 };
 
-async function markOnboardingComplete(
-  db: Db,
-  orgId: string,
-  industry: OnboardingIndustry | undefined,
-  modelProvider: OnboardingSubscriptionProvider | undefined,
-  userId: string,
-): Promise<boolean> {
-  const updatedAt = nowDate();
-  // An unanswered field leaves the column alone: the make-something flow never
-  // asks the question, and it must not erase an answer the org already gave.
-  const industryWrite =
-    industry === undefined ? {} : { onboardingIndustry: industry };
-  return await db.transaction(async (tx) => {
-    const rows = await writeOrgMetadataWithDefaultPlanEntitlement(
-      tx,
-      orgId,
-      async (writeTx) => {
-        return await writeTx
-          .insert(orgMetadataCanonicalWrites)
-          .values({
-            orgId,
-            onboardingComplete: true,
-            ...industryWrite,
-            updatedAt,
-          })
-          .onConflictDoUpdate({
-            target: orgMetadataCanonicalWrites.orgId,
-            set: {
-              onboardingComplete: true,
-              ...industryWrite,
-              updatedAt,
-            },
-            setWhere: eq(orgMetadataCanonicalWrites.onboardingComplete, false),
-          })
-          .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
-      },
-    );
-
-    if (rows.length > 0 && modelProvider !== undefined) {
-      await initializeOnboardingOrgModelPolicies(
-        tx,
+/**
+ * A member's completion is theirs alone: it stamps their own membership row and
+ * never touches the organization's onboarding state or provisioning, which
+ * stay with the admin who set the workspace up.
+ */
+const markMemberOnboardingComplete$ = command(
+  async (
+    { set },
+    args: { readonly orgId: string; readonly userId: string },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const { orgId, userId } = args;
+    signal.throwIfAborted();
+    const completedAt = nowDate();
+    const rows = await db
+      .insert(orgMembersMetadata)
+      .values({
         orgId,
         userId,
-        modelProvider,
-      );
-    }
+        onboardingCompletedAt: completedAt,
+        createdAt: completedAt,
+        updatedAt: completedAt,
+      })
+      .onConflictDoUpdate({
+        target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
+        set: { onboardingCompletedAt: completedAt, updatedAt: completedAt },
+        setWhere: isNull(orgMembersMetadata.onboardingCompletedAt),
+      })
+      .returning({ userId: orgMembersMetadata.userId });
+    signal.throwIfAborted();
     return rows.length > 0;
-  });
-}
+  },
+);
 
 type TimezoneFallbackOutcome = "missing" | "invalid" | "stored" | "preserved";
 
-async function preserveOrStoreTimezoneFallback(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly timezone?: string;
-  },
-): Promise<TimezoneFallbackOutcome> {
-  if (args.timezone === undefined) {
-    return "missing";
-  }
-  if (!isValidTimeZone(args.timezone)) {
-    return "invalid";
-  }
+const preserveOrStoreTimezoneFallback$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly timezone?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<TimezoneFallbackOutcome> => {
+    if (args.timezone === undefined) {
+      return "missing";
+    }
+    if (!isValidTimeZone(args.timezone)) {
+      return "invalid";
+    }
 
-  const updatedAt = nowDate();
-  const rows = await db
-    .insert(orgMembersMetadata)
-    .values({
-      orgId: args.orgId,
-      userId: args.userId,
-      timezone: args.timezone,
-      createdAt: updatedAt,
-      updatedAt,
-    })
-    .onConflictDoUpdate({
-      target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
-      set: { timezone: args.timezone, updatedAt },
-      setWhere: isNull(orgMembersMetadata.timezone),
-    })
-    .returning({ timezone: orgMembersMetadata.timezone });
-  return rows.length > 0 ? "stored" : "preserved";
-}
+    const db = set(writeDb$);
+    signal.throwIfAborted();
+    const updatedAt = nowDate();
+    const rows = await db
+      .insert(orgMembersMetadata)
+      .values({
+        orgId: args.orgId,
+        userId: args.userId,
+        timezone: args.timezone,
+        createdAt: updatedAt,
+        updatedAt,
+      })
+      .onConflictDoUpdate({
+        target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
+        set: { timezone: args.timezone, updatedAt },
+        setWhere: isNull(orgMembersMetadata.timezone),
+      })
+      .returning({ timezone: orgMembersMetadata.timezone });
+    signal.throwIfAborted();
+    return rows.length > 0 ? "stored" : "preserved";
+  },
+);
 
 interface CompleteOnboardingArgs {
   readonly orgId: string;
   readonly member: WorkflowMember;
+  readonly isAdmin: boolean;
   readonly timezone?: string;
   readonly industry?: OnboardingIndustry;
-  readonly modelProvider?: OnboardingSubscriptionProvider;
 }
 
 interface MorningBriefOnboardingOutcome {
@@ -170,6 +160,54 @@ function onboardingComplete(orgId: string): Computed<Promise<boolean>> {
       .limit(1);
 
     return row?.onboardingComplete ?? false;
+  });
+}
+
+/**
+ * Whether a non-admin member still has the source-first onboarding ahead of
+ * them. It is personal.
+ *
+ * Nobody who already uses the workspace is pulled into it: a member who has
+ * started an ordinary chat in this org is treated as onboarded, just like one
+ * who finished the flow. Morning Brief threads are delivered to a member
+ * rather than started by them, so they do not count as use.
+ */
+function memberNeedsOnboarding(
+  orgId: string,
+  userId: string,
+): Computed<Promise<boolean>> {
+  return computed(async (get): Promise<boolean> => {
+    const db = get(db$);
+    const [completion] = await db
+      .select({ completedAt: orgMembersMetadata.onboardingCompletedAt })
+      .from(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, orgId),
+          eq(orgMembersMetadata.userId, userId),
+        ),
+      )
+      .limit(1);
+    if (completion?.completedAt) {
+      return false;
+    }
+
+    const [usage] = await db
+      .select({ threadId: chatThreads.id })
+      .from(chatThreads)
+      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .where(
+        and(
+          eq(chatThreads.userId, userId),
+          eq(agents.orgId, orgId),
+          or(
+            isNull(chatThreads.provenance),
+            ne(chatThreads.provenance, "morning_brief"),
+          ),
+        ),
+      )
+      .limit(1);
+    return usage === undefined;
   });
 }
 
@@ -249,9 +287,14 @@ export function onboardingStatus(
     const defaultAgent = agentId
       ? await get(defaultAgentInfo(auth.orgId, agentId))
       : null;
+    // `onboardingComplete` stays the organization's answer for everyone; only
+    // `needsOnboarding` is personal for a member.
+    const needsOnboarding = isAdmin
+      ? !complete
+      : await get(memberNeedsOnboarding(auth.orgId, auth.userId));
 
     return {
-      needsOnboarding: isAdmin && !complete,
+      needsOnboarding,
       onboardingComplete: complete,
       isAdmin,
       hasOrg: true,
@@ -262,29 +305,98 @@ export function onboardingStatus(
   });
 }
 
+const completeMemberOnboarding$ = command(
+  async (
+    { set },
+    args: CompleteOnboardingArgs,
+    signal: AbortSignal,
+  ): Promise<CompleteOnboardingResponse> => {
+    const firstCompletion = await set(
+      markMemberOnboardingComplete$,
+      { orgId: args.orgId, userId: args.member.userId },
+      signal,
+    );
+    signal.throwIfAborted();
+    // The timezone is the member's own preference, so it is kept like an
+    // admin's. The industry and subscription answers are not: they only seed
+    // organization defaults, which a member does not own.
+    const timezone = await settle(
+      set(
+        preserveOrStoreTimezoneFallback$,
+        {
+          orgId: args.orgId,
+          userId: args.member.userId,
+          timezone: args.timezone,
+        },
+        signal,
+      ),
+      signal,
+    );
+    if (timezone.ok) {
+      L.debug("Member onboarding completed", {
+        orgId: args.orgId,
+        userId: args.member.userId,
+        firstCompletion,
+        timezone: timezone.value,
+      });
+    } else {
+      L.warn("Member onboarding timezone fallback failed", {
+        orgId: args.orgId,
+        userId: args.member.userId,
+        firstCompletion,
+        error: timezone.error,
+      });
+    }
+    return {
+      status: 200,
+      body: {
+        onboardingComplete: true,
+        needsOnboarding: false,
+      },
+    };
+  },
+);
+
 export const completeOnboarding$ = command(
   async (
     { set },
     args: CompleteOnboardingArgs,
     signal: AbortSignal,
   ): Promise<CompleteOnboardingResponse> => {
-    const writeDb = set(writeDb$);
-    const firstCompletion = await markOnboardingComplete(
-      writeDb,
-      args.orgId,
-      args.industry,
-      args.modelProvider,
-      args.member.userId,
+    await set(
+      initializeMemberMemory$,
+      {
+        orgId: args.orgId,
+        userId: args.member.userId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!args.isAdmin) {
+      return await set(completeMemberOnboarding$, args, signal);
+    }
+    const firstCompletion = await set(
+      markOrgOnboardingComplete$,
+      {
+        orgId: args.orgId,
+        userId: args.member.userId,
+        industry: args.industry,
+      },
+      signal,
     );
     signal.throwIfAborted();
 
     const additiveOutcome = await settle(
       (async (): Promise<MorningBriefOnboardingOutcome> => {
-        const timezone = await preserveOrStoreTimezoneFallback(writeDb, {
-          orgId: args.orgId,
-          userId: args.member.userId,
-          timezone: args.timezone,
-        });
+        const timezone = await set(
+          preserveOrStoreTimezoneFallback$,
+          {
+            orgId: args.orgId,
+            userId: args.member.userId,
+            timezone: args.timezone,
+          },
+          signal,
+        );
         signal.throwIfAborted();
         const provisioning = firstCompletion
           ? await set(

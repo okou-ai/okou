@@ -63,7 +63,7 @@ function mockEmptySettings() {
 async function credentialPage() {
   await setupPage({
     context,
-    path: "/connectors/vnc",
+    path: "/connectors?scope=remote-control&type=vnc",
     auth: {
       user: owner,
       session: { id: "vnc-session-original", token: "original-token" },
@@ -158,7 +158,7 @@ test("Returning to an owner never revives an abandoned uncertain credential draf
   });
   await setupPage({
     context,
-    path: "/connectors/vnc",
+    path: "/connectors?scope=remote-control&type=vnc",
     auth: {
       user: owner,
       organization: {

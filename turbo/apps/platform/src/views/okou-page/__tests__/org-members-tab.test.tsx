@@ -423,17 +423,28 @@ test("Configure a member’s package from People", async () => {
   click(screen.getByLabelText("Actions for alice@example.com"));
   click(menuItemByText("Configure member packages"));
 
-  await expect(
-    screen.findByRole("heading", { name: "Billing" }),
-  ).resolves.toBeInTheDocument();
-  const memberUsage = await screen.findByRole("group", {
+  const configuration = await screen.findByRole("dialog", {
+    name: "Configure member packages",
+  });
+  const memberUsage = await within(configuration).findByRole("group", {
     name: "Member usage",
   });
+  expect(within(configuration).getByText("Step 2 of 3")).toBeInTheDocument();
   expect(
     within(memberUsage).getByRole("combobox", {
       name: "Usage for Test User",
     }),
   ).toHaveTextContent("20,400 credits · 2% off");
+
+  click(within(configuration).getByLabelText("Close"));
+  await expect(
+    screen.findByRole("heading", { name: "Billing" }),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByRole("dialog", {
+      name: "Configure member packages",
+    }),
+  ).not.toBeInTheDocument();
 });
 
 test("Configure an Atom plan before purchasing any packages", async () => {
@@ -503,7 +514,7 @@ test("Keep People package controls restricted to administrators", async () => {
   ).not.toBeInTheDocument();
 });
 
-test.each(["free", "pro"])(
+test.each(["limited-free-1", "pro"])(
   "Invite members on active %s plans",
   async (tier) => {
     mockMembersStory();
@@ -552,7 +563,10 @@ test.each(["free", "pro"])(
 
 test("shows a pending-invitation conflict without closing the invite dialog", async () => {
   mockMembersStory(undefined, "admin", "owner");
-  mockMemberInviteEntitlement(false, { tier: "free", status: "active" });
+  mockMemberInviteEntitlement(false, {
+    tier: "limited-free-1",
+    status: "active",
+  });
   context.mocks.api(orgInviteContract.invite, ({ respond }) => {
     return respond(409, {
       error: {

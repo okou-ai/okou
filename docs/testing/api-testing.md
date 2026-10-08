@@ -118,18 +118,48 @@ route integration test is supposed to cover.
 
 ## External Behavior Boundary
 
-API route tests should construct cases through API endpoints and verify results
-through API endpoints. The endpoint is the external contract. The database and
-service layer are internal implementation.
+API route tests must construct, drive, and observe a case through production
+interfaces available to the real caller. Follow the complete chain, including
+shared fixtures and nested helpers. A final public response does not make
+privately constructed state a public scenario. The database, internal services,
+and worker entry points are implementation details.
 
 Do not import DB schemas, write database rows, read database rows for assertions,
 or call services from API tests. Those tests couple to table shape, service
 boundaries, and internal state transitions instead of the behavior external
 callers rely on.
 
-If a case is not constructible through the production API surface, do not add an
-API route test that reaches into internals. Add the missing API surface first, or
-raise the gap during review.
+Delete a case when its decisive state or behavior requires a special test HTTP
+route, direct DB access, a test-only internal worker driver, fabricated legacy
+state, or an internal fault trigger. A production cron protected by
+`CRON_SECRET` is an operator interface, not a user-accessible API. Do not keep
+such a case by moving the driver into a fixture, exporting a private command,
+moving the case to a service suite, or adding a product endpoint solely for the
+test. Financial, security, clock, and historical-state labels do not waive this
+construction requirement.
+
+Preserve independently reachable behavior in mixed cases. Remove only the
+unsupported phase or parameter branch when the remaining lifecycle has its own
+meaningful public assertions. Count a parameterized declaration once and report
+removed branches separately. Record the exact case name, construction dependency,
+keep/rewrite/delete decision, coverage lost or retained, and orphaned support
+removed with it.
+
+Signed provider webhooks and authenticated Runner protocols can be production
+boundaries: use their actual authorization, payload, and lifecycle. Ordinary
+Clerk, S3, Resend, and Stripe mocks at the external provider boundary remain
+valid. Basic app setup and per-case database isolation do not fabricate a
+business scenario; fixture methods that seed business rows or force workers do.
+
+For example, the agent create/list example above uses
+[`agentsMainContract`](../../turbo/packages/api-contracts/src/contracts/agents.ts)
+and [`agentsRoutes`](../../turbo/apps/api/src/signals/routes/agents.ts) for both
+construction and observation. The `updates canonical connector slugs` case in
+[`agents.test.ts`](../../turbo/apps/api/src/signals/routes/__tests__/agents.test.ts)
+creates an agent, updates its connector grants through the authenticated API,
+and checks the returned grants. Neither path needs a private DB seed or a forced
+worker visit. Apply that same standard to usage reports, storage, and automation
+lifecycles instead of using a private driver to manufacture their prerequisites.
 
 For the full reasoning, see
 [Testing External Behavior](./testing-external-behavior.md).
@@ -142,21 +172,18 @@ file or worker can observe, overwrite, or depend on that state before
 all. A test must therefore be correct while other API tests execute
 concurrently, even if its cleanup has not happened yet.
 
-Give every test uniquely owned, explicitly addressable users, organizations,
-providers, storage identities, external entities, cache namespaces, and rows.
-When a production cron scans a global table, keep production behavior global
-but drive correctness through a test-only route whose request names the owned
-IDs. Production-global routes may be mounted only by the focused contract
-harness for fixed missing/wrong-auth assertions. Do not isolate tests with a
-global lock, test ordering, worker serialization, broad clock partitions,
-snapshot/restore of shared rows, or residue-tolerant assertions.
+Give every test uniquely owned users, organizations, storage identities,
+external entities, and cache namespaces. Construct business state through the
+public lifecycle. ID scoping makes a private worker safer to run concurrently;
+it does not make that worker a public test boundary. Preserve production-global
+cron behavior without adding test-only selection or execution paths.
 
-Operator-managed usage-pricing identities and the fixed production staff
-organization are shared production data. Use `createUsagePricingFixture()` to
-map a logical canonical provider to a UUID-owned physical lookup row, and use a
-unique organization fixture for entitlement writes. Fixed production
-identities remain valid in read-only/hash/auth behavior. Raw pricing mutation
-helpers are only for providers already proven UUID-, run-, or fixture-owned.
+Do not fabricate chosen credit balances with DB-backed pricing, inspect private
+ledgers, or force settlement to make a public usage assertion pass. Use actual
+onboarding, signed billing events, and user-accessible billing responses where
+they construct the behavior; delete unsupported variations. Do not isolate tests
+with a global lock, test ordering, worker serialization, broad clock partitions,
+snapshot/restore of shared rows, or residue-tolerant assertions.
 
 Cache assertions own their key or namespace. Set and advance mocked time inside
 the test that exercises the TTL; never stagger tests with a module- or
@@ -171,29 +198,122 @@ sockets/streams, detached work, and temporary files. Such cleanup bounds
 residue and resource lifetime; it must not delete, overwrite, or restore
 pre-existing shared state to make an assertion pass.
 
-Connector catalog state is not part of the default API test environment. Files
-that exercise built-in connectors, connector-backed workflows, catalog reads,
-or firewall authorization opt in with
-`testContext({ connectorCatalog: true })`. This installs the complete accepted
-test catalog once for that file and restores provider configuration before each
-test. Do not enable it for unrelated route tests or create a smaller implicit
-global catalog.
+### Case-owned Database Selection
 
-Tests that hold usage-compaction or X-resource admission across concurrent
-operations opt in through `testContext({ dbFixtures: [...] })`. Each fixture
-provides a UUID-owned async-local lock namespace around the complete test,
-including its hooks and background work. Shared and exclusive participants in
-that scenario still contend through real PostgreSQL locks; unrelated tests do
-not load those fixtures. Without an explicit fixture, the production lock key
-is unchanged.
+All API suites run in one `api` project with one shared setup. Files execute in
+parallel; cases within each file execute serially. Database choice belongs to
+the case, not to its filename, a Vitest project, tags, or metadata.
 
-Compaction behavior tests must call the organization-scoped test route so a
-scoped lock never protects a global sweep over another test's rows. The operator
-billing-backfill subprocess retains its production lock and explicit owned
-organization filter; its sequential tests do not establish concurrent admission
-with a scoped API call. X-resource retention tests likewise use the
-resource-ID-scoped test route; never invoke a successful production-global
-cleanup under a test-scoped lock.
+Ordinary cases use native PostgreSQL. `setupApp({ context, routes })` stays
+synchronous and returns the contract-client factory. When a public lifecycle
+needs case-owned database isolation, initialize an isolated PGlite through
+`setupApp`. Isolation changes the database lifetime, not the construction
+standard: business state still comes from the public API. For example, the
+agent create/list lifecycle above can use an isolated database like this:
+
+```typescript
+const context = testContext();
+
+it("lists an agent created in this case", async () => {
+  context.mocks.clerk.session("user_isolated_agent", "org_isolated_agent");
+  context.mocks.s3.send.mockResolvedValue({});
+  const app = await setupApp({
+    context,
+    routes: agentsRoutes,
+    isolatePg: true,
+  });
+  const client = app(agentsMainContract);
+  const created = await accept(
+    client.create({
+      headers: authHeaders(),
+      body: { displayName: "Isolated Agent" },
+    }),
+    [201],
+  );
+  const listed = await accept(client.list({ headers: authHeaders() }), [200]);
+  expect(listed.body).toContainEqual(
+    expect.objectContaining({ agentId: created.body.agentId }),
+  );
+});
+```
+
+Call and await isolated setup before any request or fixture accesses
+the database. Switching after shared PostgreSQL was accessed throws. Repeated
+isolated setup in one case reuses its database. Later ordinary `setupApp` calls
+inherit the case's database; omitting `isolatePg` never switches an isolated case
+back to shared PostgreSQL. The same binding covers HTTP requests, the production
+services they call, and their asynchronous background work.
+
+Select isolation in the case's first real API request or API fixture operation,
+and use the returned client. Do not initialize it with an unused client, an
+empty route slice, or a database cleanup action. Each case receives a separate
+engine; keep `testContext()` at module or describe scope.
+
+An isolated database is discarded after the case. Do not enumerate and delete
+its rows in teardown, clear catalogs before starting, or republish an obsolete
+catalog just to delete its accounts. Keep business deletion assertions and
+cleanup that stops background work, releases external resources, or restores
+external mocks. Shared PostgreSQL fixtures still own and clean up their rows.
+
+`src/__tests__/global-setup.ts` seeds the shared PostgreSQL pricing and complete
+fixed connector catalog once per run. It also migrates and seeds one PGlite,
+saves a checkpointed immutable snapshot, and provides its path to workers.
+The fixture caches the unpacked files for subsequent cases. Each isolated case
+creates a fresh engine and memory filesystem with its own writable copies; cases do not
+repeat gzip/tar decoding, replay migrations, or reseed their database. Shared
+fixture installation uses `ifAbsent: true` and must never replace an existing
+catalog pointer. This common application baseline is infrastructure; it does
+not authorize changing prices, catalog entries, or business rows to manufacture
+a case's decisive state.
+
+`src/__tests__/external-setup.ts` restores the fixed source and provider
+configuration and installs a fresh KMS mock before each case. The mock remains
+available through finished callbacks and is cleared after the file. Shared
+PostgreSQL cases may read the seeded catalog but must not rotate, mutate, or
+delete its authority. Readers use a
+current pointer keyed only by schema version; changing the S3 bucket does not
+isolate that pointer. Database isolation does not turn an operator-only catalog
+publisher into a user-accessible API.
+Users, organizations, accounts, credential storage, and encrypted values still
+use explicit case ownership.
+
+Catalog tests follow the same public-construction rule when asserting discovery,
+account, and Runner compatibility behavior. They do not assert SQL counts or text, attach engine
+loggers, or corrupt database entries and constraints to test infrastructure
+failure recovery.
+
+Cases in one file execute serially. `setupApp` selects the current case's database
+without an async-local scope or a database `aroundEach` wrapper. `testContext`
+registers final disposal before user cleanup callbacks. Foreground work is
+aborted before API-based cleanup, which receives a live signal. Final disposal
+runs after those callbacks, aborts cleanup work, drains tracked detached and
+`waitUntil` work, and closes the isolated engine, including initialization that
+was still pending when a case failed. Background work must remain tracked and
+finish within its case; database selection does not identify untracked work
+that leaks into a later case. Production services, routes, and SQL remain
+real; only the centralized database transport selects the current database.
+
+`api/no-test-database-binding` confines PGlite engine imports and construction to
+`src/test-fixtures/pglite-database.ts`. Case-local database mocks and service
+mocks remain forbidden. The harness preserves node-postgres int8/numeric text
+decoding through PGlite's driver parsers, without rewriting query results or
+weakening schemas.
+
+PGlite has a single PostgreSQL session. Keep contracts that require the native
+PostgreSQL protocol, such as query cancellation, on native PostgreSQL. Assert
+business-visible outcomes from a publicly constructed lifecycle. Do not preserve a multi-connection lock-state
+assertion just to retain the previous test mechanism. Never hold advisory locks,
+inspect `pg_locks`, or install transaction barriers or internal admission gates
+to construct an API scenario. Exercise requests and assert their responses and
+subsequent user-visible state; do not redirect outside queries into an active
+transaction or increase timeouts to make an incompatible test pass.
+
+Compaction and retention internals are not user construction paths. Do not force
+a sweep, backdate business rows, or assert exact internal batch counts to set up
+a public read. Keep public pin/reorder, message, storage, and usage behavior
+where it stands independently of those operations; remove private-only phases
+and their unused drivers. Endpoint-removal totals describe retired HTTP
+operations, not compliance with this construction and observation standard.
 
 ## Commands
 
@@ -228,7 +348,7 @@ Run one Vitest process at a time.
 
 ### API type-check projects
 
-The API checks seven programs, one native compiler process at a time. Each
+The API checks ten programs, one native compiler process at a time. Each
 compiler exits before the next starts. The declaration-producing projects use
 `composite`, `emitDeclarationOnly` and independent build information. Downstream
 projects set `disableSourceOfProjectReferenceRedirect` and consume those `.d.ts`
@@ -240,22 +360,24 @@ the first nonzero exit or signal. This avoids launching a new pnpm process for
 every stage. Commands have one definition; dispatch never evaluates command text
 from configuration or arguments.
 
-| Project              | Root ownership                                                   | Declaration dependencies          |
-| -------------------- | ---------------------------------------------------------------- | --------------------------------- |
-| `gateways`           | The explicit SDK gateway files                                   | Pi runtime build                  |
-| `core`               | Foundation, services, libraries, mocks and production scripts    | Gateways                          |
-| `routes`             | Production files under `src/signals/routes`                      | Gateways, core                    |
-| `bootstrap`          | The four production entry/registration modules                   | Gateways, core, routes            |
-| `tests-0`, `tests-1` | The canonical test, bench and fixture roots, partitioned by path | Gateways, core, routes            |
-| `bootstrap-wiring`   | The dedicated bootstrap wiring test                              | Gateways, core, routes, bootstrap |
+| Project                         | Root ownership                                                                              | Declaration dependencies                                 |
+| ------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `gateways`                      | The explicit SDK gateway files                                                              | Pi runtime build                                         |
+| `foundation`                    | The explicit database, billing, artifact and remote-access dependency closure               | Gateways                                                 |
+| `admission`                     | The explicit execution admission, queued-launch and integration callback dependency closure | Gateways, foundation                                     |
+| `core`                          | Remaining services, libraries, mocks and production scripts                                 | Gateways, foundation, admission                          |
+| `routes`                        | Production files under `src/signals/routes`                                                 | Gateways, foundation, admission, core                    |
+| `bootstrap`                     | The four production entry/registration modules                                              | Gateways, foundation, admission, core, routes            |
+| `tests-0`, `tests-1`, `tests-2` | The canonical test, bench and fixture roots, partitioned by path                            | Gateways, foundation, admission, core, routes            |
+| `bootstrap-wiring`              | The dedicated bootstrap wiring test                                                         | Gateways, foundation, admission, core, routes, bootstrap |
 
 `tsconfig.tests.json` is the authoritative test-root manifest; it is not an
 additional checked program. `scripts/prepare-typecheck-tests.mjs` parses it with
 the installed TypeScript compiler API, normalizes package-relative paths to
-`/`, sorts them, and assigns each root with `sha256(path)[0] % 2`. It writes
-`.typecheck/tsconfig.tests-0.json` and `tsconfig.tests-1.json` with exact `files`,
+`/`, sorts them, and assigns each root with `sha256(path)[0] % 3`. It writes
+`.typecheck/tsconfig.tests-{0,1,2}.json` with exact `files`,
 `include: []`, package-root `rootDir`, rebased explicit project references and
-separate `tests-0.tsbuildinfo` / `tests-1.tsbuildinfo`. References do not inherit
+separate `tests-{0,1,2}.tsbuildinfo` files. References do not inherit
 through `extends`. Unchanged configs are not rewritten; additions, deletions and
 renames regenerate membership without maintaining lists by hand.
 
@@ -264,10 +386,14 @@ collect `node:test` registrations as an empty Vitest suite. It still runs on
 every boundary check through the explicit `node --test` command.
 
 The boundary gate runs small Node temporary-file regression tests, prepares the
-test configs, then checks the seven actual root sets against the complete API
-manifest. It also checks production JSON ownership across core and routes,
-rejects stale or modified generated test configs, and retains the import and
-Drizzle guards. JSON needs explicit include patterns in composite projects;
+test configs, then checks the ten actual root sets against the complete API
+manifest. It also checks production JSON ownership across foundation, admission,
+core and routes, rejects stale or modified generated test configs, and retains the
+import and Drizzle guards. Foundation imports may reach only its own roots and
+gateways; admission imports may additionally reach foundation. Imports of downstream
+implementations, including type-only imports, re-exports and dynamic imports, fail
+the gate. New dependencies must preserve these declaration boundaries, not silently
+reload core implementations. JSON needs explicit include patterns in composite projects;
 `**/*` alone does not preserve it. Root counts are derived from current sources,
 never pinned to a historical count.
 
@@ -275,10 +401,11 @@ From `turbo`, the public commands remain:
 
 ```shell
 # Pi declarations -> regression tests/preparation/boundaries -> gateways ->
-# foundation -> routes -> bootstrap -> test 0 -> test 1 -> bootstrap wiring
+# foundation -> admission -> core -> routes -> bootstrap -> tests 0/1/2 -> bootstrap wiring
 TSC_CHECKERS=2 pnpm --filter api run check-types
 
-# Standalone aggregate core: prepare both declaration prerequisites first.
+# Standalone aggregate core: prepare Pi and gateway prerequisites first.
+# This command checks foundation, admission, core and routes in order.
 TSC_CHECKERS=2 pnpm --filter api run check-types:deps
 TSC_CHECKERS=2 pnpm --filter api run check-types:gateways
 TSC_CHECKERS=2 pnpm --filter api run check-types:core
@@ -311,8 +438,9 @@ Measure these three subjects separately, serially:
 1. Standalone API: remove `apps/api/.typecheck` and
    `packages/pi-agent-runtime/dist`, then run the complete API command above.
 2. Aggregate core: prepare Pi and gateway declarations first, then remove
-   `.typecheck/core`, `.typecheck/routes` and their two `.tsbuildinfo` files before
-   running `check-types:core`. Keep prerequisite preparation outside this sample.
+   `.typecheck/foundation`, `.typecheck/admission`, `.typecheck/core`,
+   `.typecheck/routes` and their four `.tsbuildinfo` files before running `check-types:core`. Keep prerequisite
+   preparation outside this sample.
 3. Full cold repository: remove workspace-local `.typecheck`, `.tsbuildinfo` and
    `.turbo` outputs, plus Pi `dist`, then run
    `TURBO_FORCE=true TSC_CHECKERS=2 pnpm check-types`. Verify zero cache hits.
@@ -329,5 +457,5 @@ The acceptance targets are peak process-tree RSS at most 2858.6 MiB for each
 subject and a full cold wall time at most 300 seconds, with no OOM event delta.
 Also validate clean/incremental checks, source and declaration edits, file
 addition/deletion/rename, and representative seeded errors across the declaration
-boundary and in both test groups. Inspect compiler `--listFilesOnly` output to
+boundary and in all three test groups. Inspect compiler `--listFilesOnly` output to
 confirm downstream programs consume upstream declarations.

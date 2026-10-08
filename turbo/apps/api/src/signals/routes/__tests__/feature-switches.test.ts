@@ -17,64 +17,31 @@ function client() {
 }
 
 describe("/api/feature-switches", () => {
-  it("enables Pi loop for ordinary members unless they opt out", async () => {
+  it("keeps a personal switch personal within one organization", async () => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
     const orgId = `org_${randomUUID()}`;
-    const userId = `user_${randomUUID()}`;
-    clerk.session(userId, orgId, "org:member");
-
-    const initial = await accept(client().get({ headers }), [200]);
-    expect(initial.body.switches[FeatureSwitchKey.PiLoop]).toBeUndefined();
-    expect(
-      initial.body.effectiveSwitches[FeatureSwitchKey.PiLoop],
-    ).toBeTruthy();
+    const optedOutUserId = `user_${randomUUID()}`;
+    clerk.session(optedOutUserId, orgId, "org:member");
 
     const optedOut = await accept(
       client().update({
         headers,
-        body: { switches: { [FeatureSwitchKey.PiLoop]: false } },
+        body: {
+          switches: { [FeatureSwitchKey.Dummy]: false },
+        },
       }),
       [200],
     );
-    expect(
-      optedOut.body.effectiveSwitches[FeatureSwitchKey.PiLoop],
-    ).toBeFalsy();
+    expect(optedOut.body.effectiveSwitches[FeatureSwitchKey.Dummy]).toBeFalsy();
 
     clerk.session(`user_${randomUUID()}`, orgId, "org:member");
     const peer = await accept(client().get({ headers }), [200]);
-    expect(peer.body.effectiveSwitches[FeatureSwitchKey.PiLoop]).toBeTruthy();
-  });
+    expect(peer.body.effectiveSwitches[FeatureSwitchKey.Dummy]).toBeTruthy();
 
-  it("keeps the Okou Add Model switch personal within one organization", async () => {
-    const clerk = createRouteMocks(context).clerk;
-    const headers = { authorization: "Bearer clerk-session" };
-    const orgId = `org_${randomUUID()}`;
-    const enabledUserId = `user_${randomUUID()}`;
-    clerk.session(enabledUserId, orgId, "org:member");
-
-    const enabled = await accept(
-      client().update({
-        headers,
-        body: { switches: { [FeatureSwitchKey.OkouModels]: true } },
-      }),
-      [200],
-    );
-    expect(
-      enabled.body.effectiveSwitches[FeatureSwitchKey.OkouModels],
-    ).toBeTruthy();
-
-    clerk.session(`user_${randomUUID()}`, orgId, "org:member");
-    const peer = await accept(client().get({ headers }), [200]);
-    expect(
-      peer.body.effectiveSwitches[FeatureSwitchKey.OkouModels],
-    ).toBeFalsy();
-
-    clerk.session(enabledUserId, orgId, "org:member");
+    clerk.session(optedOutUserId, orgId, "org:member");
     const original = await accept(client().get({ headers }), [200]);
-    expect(
-      original.body.effectiveSwitches[FeatureSwitchKey.OkouModels],
-    ).toBeTruthy();
+    expect(original.body.effectiveSwitches[FeatureSwitchKey.Dummy]).toBeFalsy();
   });
 
   it("applies an org-scoped override consistently across one organization", async () => {
@@ -104,6 +71,203 @@ describe("/api/feature-switches", () => {
     expect(
       elsewhere.body.effectiveSwitches[FeatureSwitchKey.LarkIntegration],
     ).toBeFalsy();
+  });
+
+  it("merges concurrent unrelated personal keys without losing either override", async () => {
+    createRouteMocks(context).clerk.session(
+      `user_${randomUUID()}`,
+      `org_${randomUUID()}`,
+      "org:member",
+    );
+    const headers = { authorization: "Bearer clerk-session" };
+    const api = client();
+    await Promise.all([
+      accept(
+        api.update({
+          headers,
+          body: {
+            switches: { [FeatureSwitchKey.PwaNavigation]: true },
+          },
+        }),
+        [200],
+      ),
+      accept(
+        api.update({
+          headers,
+          body: { switches: { [FeatureSwitchKey.Dummy]: false } },
+        }),
+        [200],
+      ),
+    ]);
+    const current = await accept(api.get({ headers }), [200]);
+    expect(current.body.switches).toStrictEqual({
+      [FeatureSwitchKey.PwaNavigation]: true,
+      [FeatureSwitchKey.Dummy]: false,
+    });
+  });
+
+  it("filters unknown keys while preserving unrelated overrides and replacing a requested key", async () => {
+    createRouteMocks(context).clerk.session(
+      `user_${randomUUID()}`,
+      `org_${randomUUID()}`,
+      "org:member",
+    );
+    const headers = { authorization: "Bearer clerk-session" };
+    await accept(
+      client().update({
+        headers,
+        body: {
+          switches: {
+            [FeatureSwitchKey.PwaNavigation]: true,
+            [FeatureSwitchKey.Dummy]: false,
+          },
+        },
+      }),
+      [200],
+    );
+    const updated = await accept(
+      client().update({
+        headers,
+        body: {
+          switches: {
+            [FeatureSwitchKey.PwaNavigation]: false,
+            unregisteredFeature: true,
+          },
+        },
+      }),
+      [200],
+    );
+    const expected = {
+      [FeatureSwitchKey.PwaNavigation]: false,
+      [FeatureSwitchKey.Dummy]: false,
+    };
+    expect(updated.body.switches).toStrictEqual(expected);
+    const current = await accept(client().get({ headers }), [200]);
+    expect(current.body.switches).toStrictEqual(expected);
+  });
+
+  it("deletes the caller's overrides and organization keys without deleting a peer's personal override", async () => {
+    const clerk = createRouteMocks(context).clerk;
+    const orgId = `org_${randomUUID()}`;
+    const caller = `user_${randomUUID()}`;
+    const peer = `user_${randomUUID()}`;
+    const headers = { authorization: "Bearer clerk-session" };
+    clerk.session(caller, orgId, "org:member");
+    await accept(
+      client().update({
+        headers,
+        body: {
+          switches: {
+            [FeatureSwitchKey.LarkIntegration]: true,
+            [FeatureSwitchKey.PwaNavigation]: true,
+          },
+        },
+      }),
+      [200],
+    );
+    clerk.session(peer, orgId, "org:member");
+    await accept(
+      client().update({
+        headers,
+        body: {
+          switches: {
+            [FeatureSwitchKey.Dummy]: true,
+          },
+        },
+      }),
+      [200],
+    );
+    clerk.session(caller, orgId, "org:member");
+    const deleted = await accept(client().delete({ headers }), [200]);
+    expect(deleted.body.deleted).toBeTruthy();
+    const callerState = await accept(client().get({ headers }), [200]);
+    expect(callerState.body.switches).toStrictEqual({});
+    clerk.session(peer, orgId, "org:member");
+    const peerState = await accept(client().get({ headers }), [200]);
+    expect(peerState.body.switches).toStrictEqual({
+      [FeatureSwitchKey.Dummy]: true,
+    });
+    expect(
+      peerState.body.effectiveSwitches[FeatureSwitchKey.LarkIntegration],
+    ).toBeFalsy();
+  });
+
+  it("merges a mixed-scope update without exposing the caller's personal override to a peer", async () => {
+    const clerk = createRouteMocks(context).clerk;
+    const orgId = `org_${randomUUID()}`;
+    const peerId = `user_${randomUUID()}`;
+    const headers = { authorization: "Bearer clerk-session" };
+    clerk.session(peerId, orgId, "org:member");
+    await accept(
+      client().update({
+        headers,
+        body: {
+          switches: {
+            [FeatureSwitchKey.Dummy]: true,
+          },
+        },
+      }),
+      [200],
+    );
+    clerk.session(`user_${randomUUID()}`, orgId, "org:member");
+    const updated = await accept(
+      client().update({
+        headers,
+        body: {
+          switches: {
+            [FeatureSwitchKey.LarkIntegration]: true,
+            [FeatureSwitchKey.PwaNavigation]: false,
+          },
+        },
+      }),
+      [200],
+    );
+    expect(updated.body.switches).toStrictEqual({
+      [FeatureSwitchKey.LarkIntegration]: true,
+      [FeatureSwitchKey.PwaNavigation]: false,
+    });
+    clerk.session(peerId, orgId, "org:member");
+    const current = await accept(client().get({ headers }), [200]);
+    expect(current.body.switches).toStrictEqual({
+      [FeatureSwitchKey.Dummy]: true,
+      [FeatureSwitchKey.LarkIntegration]: true,
+    });
+  });
+
+  it("rejects the retired native override without applying other changes", async () => {
+    const clerk = createRouteMocks(context).clerk;
+    const headers = { authorization: "Bearer clerk-session" };
+    const userId = `user_${randomUUID()}`;
+    clerk.session(userId, "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", "org:member");
+
+    const initial = await accept(client().get({ headers }), [200]);
+    expect(initial.body.switches).toStrictEqual({});
+
+    const refused = await accept(
+      client().update({
+        headers,
+        body: {
+          switches: {
+            simpleMorningBrief: true,
+            [FeatureSwitchKey.Dummy]: true,
+          },
+        },
+      }),
+      [400],
+    );
+    expect(refused.body.error.code).toBe("BAD_REQUEST");
+    const afterRefusal = await accept(client().get({ headers }), [200]);
+    expect(afterRefusal.body.switches).toStrictEqual({});
+
+    const optedOut = await accept(
+      client().update({
+        headers,
+        body: { switches: { simpleMorningBrief: false } },
+      }),
+      [200],
+    );
+    // Retired values are not exposed through the registered-key response.
+    expect(optedOut.body.switches).toStrictEqual({});
   });
 
   it.each([true, false])(

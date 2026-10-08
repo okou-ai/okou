@@ -17,7 +17,7 @@ import { requestSignal$ } from "../context/hono";
 import { readBoundedResponseText, safeJsonParse, settle } from "../utils";
 import {
   checkManagedCredits$,
-  recordManagedUsage$,
+  recordSuccessfulManagedUsage$,
   type ManagedUsageErrorResponse,
 } from "./managed-usage.service";
 
@@ -819,7 +819,7 @@ const runDataForSeo$ = command(
       providerResult.billingQuantity === 0
         ? 0
         : await set(
-            recordManagedUsage$,
+            recordSuccessfulManagedUsage$,
             {
               actor: usageActor(args.auth),
               resource: {

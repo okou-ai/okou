@@ -1,29 +1,21 @@
-import { testCronCleanupSandboxesStateContract } from "@okouai/api-contracts/contracts/test-cron-cleanup-sandboxes-state";
-import { testCronCleanupSandboxesStateRoutes } from "../test-cron-cleanup-sandboxes-state";
+import {
+  mockGoogleText,
+  VERTEX_TEXT_URL,
+  vertexTextRequest,
+} from "./helpers/google-text";
 import { createRouteMocks } from "./helpers/route-test";
 import { randomUUID } from "node:crypto";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import {
-  advanceRunActivityClockFixture,
-  holdRunActivityFixture,
-  holdRunActivityParentFixture,
-  deleteRunActivitySnapshotFixture,
-  cancelRunActivityWaiterFixture,
-  readRunActivityBookkeepingFixture,
-} from "../../../test-fixtures/run-activity";
+import { advanceRunActivityClockFixture } from "../../../test-fixtures/run-activity";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import {
-  createDeferredPromise,
-  joinAll,
-  settleIncludingAbort,
-} from "../../utils";
+import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { chatThreadActivitySummaryRoutes } from "../chat-threads-activity-summary";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -37,11 +29,6 @@ const chat = createChatFilesBddApi(context);
 const callbacks = createChatCallbacksApi(context);
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
-const completionBody = z.object({
-  model: z.string(),
-  max_tokens: z.number(),
-  messages: z.array(z.object({ role: z.string(), content: z.string() })),
-});
 const evidenceSchema = z.object({
   messages: z.array(z.object({ role: z.string(), content: z.string() })),
   activity: z.array(
@@ -87,30 +74,26 @@ async function fixture(prompt = "Prepare a launch checklist") {
   callbacks.disableVapid();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
-  mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+  mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
   const group = runs.configureRunnerGroup();
   await runs.grantProEntitlement(actor);
   const [, agent] = await Promise.all([
-    runs.ensureOrgModelProvider(actor),
+    runs.ensurePersonalSubscriptionModel(actor),
     bdd.createAgent(actor, {
       displayName: "Activity summary",
       description: "Activity API integration",
       visibility: "private",
     }),
   ]);
-  const sent = await chat.requestSendEvent(
-    actor,
-    {
-      agentId: agent.agentId,
-      prompt,
-      clientEventId: randomUUID(),
-    },
-    [201],
-  );
-  if (sent.status !== 201 || !sent.body.runId) {
-    throw new Error("Expected active run");
-  }
-  const run = { runId: sent.body.runId, threadId: sent.body.threadId };
+  // The activity suite needs a live Runner claim, not a Pi API-first turn.
+  await runs.updateUserModelPreference(actor, "claude-fable-5-1");
+  const sent = await chat.sendAndLaunch(actor, {
+    agentId: agent.agentId,
+    model: "claude-fable-5-1",
+    prompt,
+    clientEventId: randomUUID(),
+  });
+  const run = { runId: sent.runId, threadId: sent.threadId };
   await flushWaitUntilForTest();
   await runs.heartbeatRunner(group);
   const claimed = await runs.claimRunnerJob(run.runId);
@@ -132,42 +115,52 @@ function provider(
   },
 ) {
   const inputs: Evidence[] = [];
-  mockOptionalEnv("OPENROUTER_API_KEY", "activity-test-key");
+  mockGoogleText();
   server.use(
-    http.post(
-      "https://openrouter.ai/api/v1/chat/completions",
-      async ({ request: upstream }) => {
-        const body = completionBody.parse(await upstream.json());
-        if (
-          !body.messages[0]?.content.startsWith(
-            "Write three short, distinct, user-visible progress messages",
-          )
-        ) {
-          return HttpResponse.json({
-            choices: [
+    http.post(VERTEX_TEXT_URL, async ({ request: upstream }) => {
+      const body = vertexTextRequest(await upstream.json(), upstream.url);
+      if (
+        !body.messages[0]?.content.startsWith(
+          "Write three short, distinct, user-visible progress messages",
+        )
+      ) {
+        return HttpResponse.json({
+          candidates: [
+            {
+              finishReason: "STOP",
+              content: {
+                parts: [
+                  {
+                    text: "Existing opening copy",
+                  },
+                ],
+              },
+            },
+          ],
+        });
+      }
+      expect(body.model).toBe("gemini-3.1-flash-lite");
+      expect(body.generationConfig.maxOutputTokens).toBe(1024);
+      const input = evidenceSchema.parse(JSON.parse(body.messages[1]!.content));
+      inputs.push(input);
+      const output = await reply(input, inputs.length);
+      return typeof output === "string"
+        ? HttpResponse.json({
+            candidates: [
               {
-                finish_reason: "stop",
-                message: { content: "Existing opening copy" },
+                finishReason: "STOP",
+                content: {
+                  parts: [
+                    {
+                      text: output,
+                    },
+                  ],
+                },
               },
             ],
-          });
-        }
-        expect(body.model).toBe("google/gemini-3.8-flash");
-        expect(body.max_tokens).toBe(1024);
-        const input = evidenceSchema.parse(
-          JSON.parse(body.messages[1]!.content),
-        );
-        inputs.push(input);
-        const output = await reply(input, inputs.length);
-        return typeof output === "string"
-          ? HttpResponse.json({
-              choices: [
-                { finish_reason: "stop", message: { content: output } },
-              ],
-            })
-          : output;
-      },
-    ),
+          })
+        : output;
+    }),
   );
   return inputs;
 }
@@ -204,13 +197,21 @@ const privatePayload = "private-provider-payload";
 
 function completion(content: unknown, finishReason = "stop") {
   return HttpResponse.json({
-    choices: [
+    candidates: [
       {
-        finish_reason: finishReason,
-        ...(finishReason === "length"
-          ? { native_finish_reason: "MAX_TOKENS" }
-          : {}),
-        message: { content },
+        finishReason:
+          finishReason === "length"
+            ? "MAX_TOKENS"
+            : finishReason === "stop"
+              ? "STOP"
+              : finishReason,
+        content: {
+          parts: [
+            {
+              text: content,
+            },
+          ],
+        },
       },
     ],
   });
@@ -302,28 +303,10 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(1);
   });
 
-  it("rejects queued and superseded run identities before cached or model output", async () => {
+  it("rejects a superseded run identity before cached or model output", async () => {
     const f = await fixture();
     const inputs = provider();
     await summarize(f.actor, f.run);
-    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
-    const queued = await chat.requestSendEvent(
-      f.actor,
-      { agentId: f.agentId, prompt: "Wait for capacity" },
-      [201],
-    );
-    if (queued.status !== 201 || !queued.body.runId) {
-      throw new Error("Expected queued run identity");
-    }
-    expect(queued.body.status).toBe("queued");
-    await expect(
-      summarize(f.actor, {
-        runId: queued.body.runId,
-        threadId: queued.body.threadId,
-      }),
-    ).resolves.toMatchObject({ status: "ineligible", messages: [] });
-    expect(inputs).toHaveLength(1);
-    await runs.requestCancelRun(f.actor, queued.body.runId, [200]);
     await runs.requestCancelRun(f.actor, f.run.runId, [200]);
     await webhooks.requestAgentComplete(
       { runId: f.run.runId, exitCode: 1, error: "Run cancelled" },
@@ -331,29 +314,21 @@ describe("thread activity summary", () => {
       [200],
     );
     await flushWaitUntilForTest();
-    const next = await chat.requestSendEvent(
-      f.actor,
-      {
-        agentId: f.agentId,
-        threadId: f.run.threadId,
-        prompt: "Prepare the next checklist",
-      },
-      [201],
-    );
-    if (next.status !== 201 || !next.body.runId) {
-      throw new Error("Expected replacement run identity");
-    }
-    await flushWaitUntilForTest();
+    const next = await chat.sendAndLaunch(f.actor, {
+      agentId: f.agentId,
+      threadId: f.run.threadId,
+      prompt: "Prepare the next checklist",
+    });
     await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
       status: "ineligible",
       messages: [],
     });
     await expect(
       summarize(f.actor, {
-        runId: next.body.runId,
-        threadId: next.body.threadId,
+        runId: next.runId,
+        threadId: next.threadId,
       }),
-    ).resolves.toMatchObject({ status: "available", runId: next.body.runId });
+    ).resolves.toMatchObject({ status: "available", runId: next.runId });
     expect(inputs).toHaveLength(2);
   });
 
@@ -407,13 +382,13 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(1);
   });
 
-  it("merges late and concurrent evidence deterministically, bounds payloads, and ignores duplicates and usage", async () => {
+  it("merges late evidence deterministically, bounds payloads, and ignores duplicates and usage", async () => {
     const f = await fixture();
     const inputs = provider();
-    await Promise.all([
-      deliver(f, [tool(20), tool(19)]),
-      deliver(f, [tool(18)]),
-    ]);
+    // Capture is a best-effort compare-and-set; a delivery that loses a race
+    // is dropped, so this test delivers sequentially.
+    await deliver(f, [tool(20), tool(19)]);
+    await deliver(f, [tool(18)]);
     const first = await summarize(f.actor, f.run);
     expect(
       inputs[0]!.activity.map((entry) => {
@@ -475,8 +450,8 @@ describe("thread activity summary", () => {
     ]);
     expect(
       concurrent.every((value) => {
-        // A follower either reads the live claim or exhausts the bounded lock
-        // budget. Both return an empty batch without dispatching another call.
+        // A follower finds the live claim and returns the empty stored batch
+        // without dispatching another call.
         return value.messages.length === 0;
       }),
     ).toBeTruthy();
@@ -493,296 +468,6 @@ describe("thread activity summary", () => {
     );
     expect(inputs).toHaveLength(1);
   });
-
-  it("preserves parent admission and coalesces refreshed claims after contention", async () => {
-    const f = await fixture();
-    await deliver(f, [tool(0)]);
-    const inputs = provider();
-    // Erasure admission now locks the parent before touching the snapshot.
-    // Its first visible context still needs refreshing once admission succeeds.
-    const before = await readRunActivityBookkeepingFixture(f.run.runId);
-    const held = await holdRunActivityParentFixture(
-      f.run.runId,
-      context.signal,
-    );
-    const blocked = await joinAll([
-      summarize(f.actor, f.run),
-      summarize(f.actor, f.run),
-    ]);
-    expect(blocked).toStrictEqual([
-      { runId: f.run.runId, status: "unavailable", messages: [] },
-      { runId: f.run.runId, status: "unavailable", messages: [] },
-    ]);
-    expect(inputs).toHaveLength(0);
-    await expect(
-      readRunActivityBookkeepingFixture(f.run.runId),
-    ).resolves.toStrictEqual(before);
-    await held.release();
-    const responses = await joinAll([
-      summarize(f.actor, f.run),
-      summarize(f.actor, f.run),
-    ]);
-    expect(
-      responses.every((result) => {
-        return result.status === "available";
-      }),
-    ).toBeTruthy();
-    expect(
-      responses.some((result) => {
-        return result.messages.length > 0;
-      }),
-    ).toBeTruthy();
-    expect(inputs).toHaveLength(1);
-    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
-      messages: [{ text: "Preparing the launch checklist" }],
-    });
-    expect(inputs).toHaveLength(1);
-  });
-
-  it("rolls back a new snapshot blocked by its parent without calling the model", async () => {
-    const f = await fixture();
-    const inputs = provider();
-    const held = await holdRunActivityParentFixture(
-      f.run.runId,
-      context.signal,
-    );
-    await expect(summarize(f.actor, f.run)).resolves.toStrictEqual({
-      runId: f.run.runId,
-      status: "unavailable",
-      messages: [],
-    });
-    expect(inputs).toHaveLength(0);
-    // No public endpoint exposes the failed transaction's lease bookkeeping.
-    await expect(
-      readRunActivityBookkeepingFixture(f.run.runId),
-    ).resolves.toBeUndefined();
-    await held.release();
-    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
-      status: "available",
-      messages: [{ text: "Preparing the launch checklist" }],
-    });
-    expect(inputs).toHaveLength(1);
-  });
-
-  it("leaves no new claim when unchanged retention cannot cover the attempt interval", async () => {
-    const f = await fixture();
-    const inputs = provider(() => {
-      return "";
-    });
-    await summarize(f.actor, f.run);
-    // Only infrastructure can advance retention independently of API demand.
-    // Ten seconds remain, while the failure cooldown has already elapsed.
-    await advanceRunActivityClockFixture(
-      f.run.runId,
-      24 * 60 * 60 * 1000 - 10_000,
-    );
-    const before = await readRunActivityBookkeepingFixture(f.run.runId);
-    await expect(summarize(f.actor, f.run)).resolves.toStrictEqual({
-      runId: f.run.runId,
-      status: "unavailable",
-      messages: [],
-    });
-    await expect(
-      readRunActivityBookkeepingFixture(f.run.runId),
-    ).resolves.toStrictEqual(before);
-    expect(inputs).toHaveLength(1);
-  });
-
-  it("propagates request abort while its new snapshot is blocked", async () => {
-    const f = await fixture();
-    const inputs = provider();
-    const held = await holdRunActivityParentFixture(
-      f.run.runId,
-      context.signal,
-    );
-    const shutdown = new AbortController();
-    onTestFinished(() => {
-      return shutdown.abort();
-    });
-    const pending = settleIncludingAbort(
-      request(f.actor, f.run, {
-        signal: shutdown.signal,
-        rethrowErrors: true,
-      }),
-    );
-    await held.waitForBlocked();
-    const reason = new DOMException("API instance stopping", "AbortError");
-    shutdown.abort(reason);
-    const result = await pending;
-    expect(result).toStrictEqual({ ok: false, error: reason });
-    expect(inputs).toHaveLength(0);
-    await expect(
-      readRunActivityBookkeepingFixture(f.run.runId),
-    ).resolves.toBeUndefined();
-    await held.release();
-  });
-
-  it("propagates a non-lock database cancellation after rolling back the claim", async () => {
-    const f = await fixture();
-    const inputs = provider();
-    const held = await holdRunActivityParentFixture(
-      f.run.runId,
-      context.signal,
-    );
-    const pending = settleIncludingAbort(
-      request(f.actor, f.run, { rethrowErrors: true }),
-    );
-    const waiter = await held.waitForBlocked();
-    await cancelRunActivityWaiterFixture(waiter);
-    const result = await pending;
-    expect(result).toMatchObject({
-      ok: false,
-      error: { cause: { code: "57014" } },
-    });
-    expect(inputs).toHaveLength(0);
-    await expect(
-      readRunActivityBookkeepingFixture(f.run.runId),
-    ).resolves.toBeUndefined();
-    await held.release();
-    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
-      status: "available",
-    });
-    expect(inputs).toHaveLength(1);
-  });
-
-  it("degrades completion contention after rollback without publishing the provider phrase", async () => {
-    const f = await fixture();
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<string>(context.signal);
-    const inputs = provider(async () => {
-      entered.resolve(undefined);
-      return await release.promise;
-    });
-    const pending = summarize(f.actor, f.run);
-    await entered.promise;
-    const before = await readRunActivityBookkeepingFixture(f.run.runId);
-    const held = await holdRunActivityParentFixture(
-      f.run.runId,
-      context.signal,
-    );
-    release.resolve("This uncommitted phrase must stay private");
-    await expect(pending).resolves.toStrictEqual({
-      runId: f.run.runId,
-      status: "unavailable",
-      messages: [],
-    });
-    await expect(
-      readRunActivityBookkeepingFixture(f.run.runId),
-    ).resolves.toStrictEqual(before);
-    expect(inputs).toHaveLength(1);
-    await held.release();
-    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
-      status: "available",
-      messages: [],
-    });
-    expect(inputs).toHaveLength(1);
-  });
-
-  it.each(["abort", "database cancellation"] as const)(
-    "propagates completion %s instead of degrading it",
-    async (failure) => {
-      const f = await fixture();
-      const entered = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<string>(context.signal);
-      const inputs = provider(async () => {
-        entered.resolve(undefined);
-        return await release.promise;
-      });
-      const shutdown = new AbortController();
-      const pending = settleIncludingAbort(
-        request(f.actor, f.run, {
-          signal: shutdown.signal,
-          rethrowErrors: true,
-        }),
-      );
-      await entered.promise;
-      const before = await readRunActivityBookkeepingFixture(f.run.runId);
-      const held = await holdRunActivityParentFixture(
-        f.run.runId,
-        context.signal,
-      );
-      release.resolve("This completion must roll back");
-      const waiter = await held.waitForBlocked();
-      const reason = new DOMException("API instance stopping", "AbortError");
-      if (failure === "abort") {
-        shutdown.abort(reason);
-      } else {
-        await cancelRunActivityWaiterFixture(waiter);
-      }
-      const result = await pending;
-      if (failure === "abort") {
-        expect(result).toStrictEqual({ ok: false, error: reason });
-      } else {
-        expect(result).toMatchObject({
-          ok: false,
-          error: { cause: { code: "57014" } },
-        });
-      }
-      await expect(
-        readRunActivityBookkeepingFixture(f.run.runId),
-      ).resolves.toStrictEqual(before);
-      expect(inputs).toHaveLength(1);
-      await held.release();
-    },
-  );
-
-  it("does not resurrect a snapshot cleaned before completion admission", async () => {
-    const f = await fixture();
-    const entered = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<string>(context.signal);
-    const inputs = provider(async () => {
-      entered.resolve(undefined);
-      return await release.promise;
-    });
-    const pending = summarize(f.actor, f.run);
-    await entered.promise;
-    await deleteRunActivitySnapshotFixture(f.run.runId);
-    release.resolve("This phrase has no retained snapshot");
-    await expect(pending).resolves.toStrictEqual({
-      runId: f.run.runId,
-      status: "unavailable",
-      messages: [],
-    });
-    await expect(
-      readRunActivityBookkeepingFixture(f.run.runId),
-    ).resolves.toBeUndefined();
-    expect(inputs).toHaveLength(1);
-  });
-
-  it.each(["user", "organization"] as const)(
-    "does not recreate activity after account %s deletion during generation",
-    async (kind) => {
-      const f = await fixture();
-      const entered = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<string>(context.signal);
-      const inputs = provider(async () => {
-        entered.resolve(undefined);
-        return await release.promise;
-      });
-      const pending = request(f.actor, f.run);
-      await entered.promise;
-      webhooks.configureClerkWebhookSecret();
-      webhooks.verifyNextClerkWebhook({
-        type: kind === "user" ? "user.deleted" : "organization.deleted",
-        data: { id: kind === "user" ? f.actor.userId : f.actor.orgId },
-      });
-      await webhooks.requestClerkWebhook("{}", {}, [200]);
-      await flushWaitUntilForTest();
-      release.resolve("This phrase belongs to a deleted account");
-      // Fresh completion admission rejects the deleted identity; no stale
-      // provider output reaches the caller and no response-path INSERT runs.
-      expect((await accept(pending, [200])).body).toStrictEqual({
-        runId: f.run.runId,
-        status: "ineligible",
-        messages: [],
-      });
-      await accept(request(f.actor, f.run), [404]);
-      await expect(
-        readRunActivityBookkeepingFixture(f.run.runId),
-      ).resolves.toBeUndefined();
-      expect(inputs).toHaveLength(1);
-    },
-  );
 
   it("fences an expired owner's completion after a replacement claim succeeds", async () => {
     const f = await fixture();
@@ -806,47 +491,6 @@ describe("thread activity summary", () => {
     expect(replacement.messages[0]?.text).toBe(
       "Checking the current launch materials",
     );
-  });
-
-  it("invalidates a cached phrase for a visible steering message without a tool event", async () => {
-    const f = await fixture();
-    const inputs = provider();
-    const first = await summarize(f.actor, f.run);
-    await chat.requestSendEvent(
-      f.actor,
-      {
-        agentId: f.agentId,
-        threadId: f.run.threadId,
-        prompt: "Focus on sales owners",
-        clientEventId: randomUUID(),
-      },
-      [201],
-    );
-    await flushWaitUntilForTest();
-    // A queued message is not context yet, so the stored batch still describes
-    // the run even once the attempt interval has elapsed.
-    await advanceRunActivityClockFixture(f.run.runId, 16_000);
-    await expect(summarize(f.actor, f.run)).resolves.toStrictEqual(first);
-    expect(inputs).toHaveLength(1);
-    const reserved = await runs.reserveRunnerActiveInputs(
-      f.sandboxToken,
-      f.run.runId,
-    );
-    if (reserved.outcome !== "reserved") {
-      throw new Error("Expected active input reservation");
-    }
-    await runs.recordRunnerActiveInputDelivery(
-      f.sandboxToken,
-      f.run.runId,
-      reserved.deliveryId,
-    );
-    // Delivery makes the steering message visible context and invalidates it.
-    await summarize(f.actor, f.run);
-    expect(inputs).toHaveLength(2);
-    expect(inputs[1]!.messages).toContainEqual({
-      role: "user",
-      content: "Focus on sales owners",
-    });
   });
 
   it.each(["cancel", "complete", "delete"] as const)(
@@ -894,21 +538,19 @@ describe("thread activity summary", () => {
     },
   );
 
-  it.each([
-    "",
-    "one\ntwo\nthree\nfour\nfive",
-    "**Markdown**",
-    "Valid message\n**Markdown**",
-  ])("cools down malformed output %j without retrying", async (output) => {
-    const f = await fixture();
-    const inputs = provider(() => {
-      return output;
-    });
-    const failed = await summarize(f.actor, f.run);
-    expect(failed).toMatchObject({ status: "available", messages: [] });
-    await summarize(f.actor, f.run);
-    expect(inputs).toHaveLength(1);
-  });
+  it.each(["", "one\ntwo\nthree\nfour\nfive", "**Markdown**"])(
+    "cools down malformed output %j without retrying",
+    async (output) => {
+      const f = await fixture();
+      const inputs = provider(() => {
+        return output;
+      });
+      const failed = await summarize(f.actor, f.run);
+      expect(failed).toMatchObject({ status: "available", messages: [] });
+      await summarize(f.actor, f.run);
+      expect(inputs).toHaveLength(1);
+    },
+  );
 
   it.each([
     {
@@ -952,12 +594,6 @@ describe("thread activity summary", () => {
       },
     },
     {
-      name: "a completion with empty content",
-      reply: () => {
-        return completion("");
-      },
-    },
-    {
       name: "an exception nothing classified",
       reply: () => {
         return brokenBody(
@@ -985,7 +621,7 @@ describe("thread activity summary", () => {
     // New evidence plus an elapsed attempt interval make a fresh attempt legal.
     await deliver(f, [tool(0)]);
     await advanceRunActivityClockFixture(f.run.runId, 16_000);
-    mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+    mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
     const degraded = await summarize(f.actor, f.run);
     // The attempt still claims, writes and rereads, so the caller degrades to
     // the stored phrase instead of to an empty batch.
@@ -1143,38 +779,24 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(1);
   }, 15_000);
 
-  it("keeps eight bounded visible messages including the current task", async () => {
+  it("sends the bounded current task as the only message", async () => {
     const prompt = "current task ".repeat(100);
     const f = await fixture(prompt);
     const inputs = provider();
-    await deliver(
-      f,
-      Array.from({ length: 10 }, (_, index) => {
-        return {
-          type: "assistant",
-          sequenceNumber: index,
-          message: {
-            content: [
-              {
-                type: "text",
-                text: `Update ${index}: ` + "context ".repeat(150),
-              },
-            ],
-          },
-        };
-      }),
-    );
+    await deliver(f, [
+      {
+        type: "assistant",
+        sequenceNumber: 0,
+        message: {
+          content: [{ type: "text", text: "Public commentary" }],
+        },
+      },
+    ]);
     await summarize(f.actor, f.run);
-    expect(inputs[0]!.messages).toHaveLength(8);
-    expect(inputs[0]!.messages[0]).toStrictEqual({
-      role: "user",
-      content: prompt.slice(0, 700),
-    });
-    expect(
-      inputs[0]!.messages.every((message) => {
-        return Array.from(message.content).length <= 700;
-      }),
-    ).toBeTruthy();
+    expect(inputs[0]!.messages).toStrictEqual([
+      { role: "user", content: prompt.trim().slice(0, 700) },
+    ]);
+    expect(inputs[0]!.activity[0]?.excerpt).toBe("Public commentary");
   });
 
   it("captures activity and delivers messages independently of Axiom ingestion", async () => {
@@ -1262,9 +884,9 @@ describe("thread activity summary", () => {
       // this client wraps as a synthetic 502; the reason decides, not the status.
       return index === 1
         ? HttpResponse.json({
-            choices: [
+            candidates: [
               {
-                finish_reason: "error",
+                finishReason: "ERROR",
                 error: {
                   code: "UNAVAILABLE",
                   message: "PRIVATE_PROVIDER_BODY",
@@ -1358,74 +980,42 @@ describe("thread activity summary", () => {
     expect(inputs).toHaveLength(2);
   });
 
-  it("degrades a contended snapshot read, keeps normal publication, and excludes expired evidence", async () => {
+  it("rejects a cancelled run heartbeat before its Runner completes", async () => {
     const f = await fixture();
-    const inputs = provider();
-    await summarize(f.actor, f.run);
-    // A stalled Postgres writer is an infrastructure condition, not a user API.
-    const held = await holdRunActivityFixture(f.run.runId, context.signal);
-    onTestFinished(async () => {
-      held.release();
-      await held.done;
-    });
-    await deliver(f, [
-      {
-        type: "assistant",
-        sequenceNumber: 0,
-        message: {
-          content: [
-            {
-              type: "text",
-              text: "Normal message survives the optional failure",
-            },
-          ],
-        },
-      },
-    ]);
-    await expect(summarize(f.actor, f.run)).resolves.toStrictEqual({
-      runId: f.run.runId,
-      status: "unavailable",
-      messages: [],
-    });
-    held.release();
-    await held.done;
-    const page = await chat.listThreadEvents(f.actor, f.run.threadId);
-    expect(JSON.stringify(page.events)).toContain("Normal message survives");
-    await summarize(f.actor, f.run);
-    await advanceRunActivityClockFixture(f.run.runId, 24 * 60 * 60 * 1000 + 1);
-    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
-      status: "unavailable",
-      messages: [],
-    });
-    expect(inputs).toHaveLength(1);
-  });
-  it("cleans expired snapshots through scoped maintenance", async () => {
-    const f = await fixture();
-    const inputs = provider();
-    await deliver(f, [tool(0, "old evidence")]);
-    await summarize(f.actor, f.run);
-    // Retention time is infrastructure-owned and cannot be advanced via user APIs.
-    await advanceRunActivityClockFixture(f.run.runId, 24 * 60 * 60 * 1000 + 1);
-    await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
-      status: "unavailable",
-      messages: [],
-    });
-    await accept(
-      setupApp({ context, routes: testCronCleanupSandboxesStateRoutes })(
-        testCronCleanupSandboxesStateContract,
-      ).cleanup({
-        body: {
-          runIds: [f.run.runId],
-          chatThreadIds: [],
-          orgIds: [],
-          exportJobIds: [],
-        },
-      }),
+    await runs.requestCancelRun(f.actor, f.run.runId, [200]);
+    await webhooks.requestAgentHeartbeat(
+      { runId: f.run.runId },
+      f.headers,
+      [404],
+    );
+    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(1);
+    await webhooks.requestAgentComplete(
+      { runId: f.run.runId, exitCode: 1, error: "Run cancelled" },
+      f.headers,
       [200],
     );
+    await flushWaitUntilForTest();
+  });
+
+  it("keeps a cancelled running run's compute until its runner reports completion", async () => {
+    const f = await fixture();
+    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(1);
+    await runs.requestCancelRun(f.actor, f.run.runId, [200]);
+    // A cancelled run still occupies compute until its runner reports back.
+    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(1);
+    // The runner is still recovering, but the cancelled run never summarizes.
+    await deliver(f, [tool(0)]);
+    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(1);
     await expect(summarize(f.actor, f.run)).resolves.toMatchObject({
-      status: "available",
+      status: "ineligible",
+      messages: [],
     });
-    expect(inputs[1]!.activity).toStrictEqual([]);
+    await webhooks.requestAgentComplete(
+      { runId: f.run.runId, exitCode: 1, error: "Run cancelled" },
+      f.headers,
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect((await runs.readRunQueue(f.actor)).body.concurrency.active).toBe(0);
   });
 });

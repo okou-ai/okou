@@ -1,592 +1,387 @@
 import {
-  prepareMemberModelRouteContext,
-  providerTypeForSurfaceProtocol,
-  resolveEffectivePolicyRoute,
-  type PreparedMemberModelRouteContext,
-  type ResolvedModelFirstPolicyRoute,
-} from "./effective-model-route.service";
+  MODEL_FIRST_SELECTION_PROVIDER_ID,
+  type ChatThreadServiceTier,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import {
-  getFrameworkForType,
-  getBuiltInConcreteProviderType,
-  isCodexFastModeModel,
-  isBuiltInModelProviderType,
-  getRunModelAccess,
-  getRunModelRouteAccess,
-  RETIRED_RUN_MODEL_MESSAGE,
-  isSupportedRunModel,
-  isModelSupportedByProvider,
   modelProviderTypeSchema,
   type ModelProviderCredentialScope,
-  type ModelProviderWriteType,
+  type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
-import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import type { SupportedFramework } from "@okouai/core/frameworks";
-import { modelProviders } from "@okouai/db/schema/model-provider";
-import {
-  modelProviderConnections,
-  modelProviderSurfaces,
-} from "@okouai/db/schema/model-provider-gateway";
+import { formatReplacementSubscriptionRequiredMessage } from "@okouai/api-contracts/contracts/errors";
+import { AUTO_RUN_MODEL } from "@okouai/core/auto-run-model";
+import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { and, eq, or } from "drizzle-orm";
-
-import { badRequestMessage, insufficientCredits } from "../../lib/error";
-import type { Db } from "../external/db";
+import { command } from "ccstate";
+import { and, eq, isNull } from "drizzle-orm";
+import { badRequestMessage } from "../../lib/error";
+import { db$ } from "../external/db";
+import { memberModelRouteContextFromAccounts } from "./effective-model-route.service";
+import type { ExecutionMemberMetadata } from "./execution-member-metadata.service";
 import {
-  ensureOrgModelPolicyFacts,
-  loadOrgModelPolicyFacts,
-  type OrgModelPolicyRow,
-} from "./model-policy.service";
+  memberSubscriptionModelRoutesFromCatalog,
+  type MemberSubscriptionModelRoute,
+} from "./member-subscription-models.service";
+import type {
+  MemberModelBootstrap,
+  OrgModelBootstrap,
+} from "./model-bootstrap.service";
 import {
-  checkOrgCreditsForRunAdmission,
-  checkOrgPlanRunAdmission,
-} from "./run-admission.service";
+  catalogDisplayName,
+  loadModelCatalog$,
+  resolveCatalogModel,
+  resolveCatalogRunModel,
+  type ModelCatalog,
+} from "./model-catalog.service";
 import {
-  loadOrgPlanCapabilities,
-  type OrgPlanCapabilities,
-} from "./org-plan-entitlement-read.service";
+  catalogModelForSelectedId,
+  isCatalogFastServiceTierSupported,
+} from "./model-route-capabilities.service";
+import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 
-const ORG_SENTINEL_USER_ID = "__org__";
-export const MODEL_FIRST_SELECTION_PROVIDER_ID =
-  "00000000-0000-4000-8000-000000000000";
-
+export interface ModelSelectionBootstrap {
+  readonly org: OrgModelBootstrap;
+  readonly member: MemberModelBootstrap;
+  readonly memberMetadata: ExecutionMemberMetadata;
+}
 export function modelProviderWriteTypeForLaunch(
   type: string,
-): ModelProviderWriteType {
-  const providerType = modelProviderTypeSchema.parse(type);
-  return isBuiltInModelProviderType(providerType) ? "built-in" : providerType;
+): ModelProviderType {
+  return modelProviderTypeSchema.parse(type);
 }
-
 export interface ModelFirstPin {
   readonly modelProviderId: string | null;
   readonly modelProviderType: string | null;
   readonly modelProviderCredentialScope: ModelProviderCredentialScope | null;
   readonly selectedModel: string | null;
 }
-
 export interface DefaultModelFirstPin extends ModelFirstPin {
   readonly serviceTier: ChatThreadServiceTier | null;
 }
-
-interface PersistedModelFirstRouteResolution {
-  readonly route: ResolvedModelFirstPolicyRoute | null;
-  readonly selectedModelChanged: boolean;
-  readonly orgPlanCapabilities: OrgPlanCapabilities | null;
-}
-
-const modelRoutingFactsSource = Symbol("modelRoutingFactsSource");
-
-/**
- * Immutable facts for one selection decision. Identity plus the private DB
- * provenance make the scope explicit; callers receive resolved pins, never a
- * cacheable facts object. A null capability or policy field is authoritative.
- */
-interface ModelRoutingFacts {
-  readonly identity: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly selectedModel: string | null;
-  };
-  readonly orgPlanCapabilities: OrgPlanCapabilities | null;
-  readonly policies: readonly OrgModelPolicyRow[];
-  readonly member: PreparedMemberModelRouteContext;
-  readonly [modelRoutingFactsSource]: Db;
-}
-
-export type ExternalModelProviderPlanCapabilitiesSource =
-  | { readonly kind: "load-current" }
-  | {
-      readonly kind: "resolved";
-      readonly capabilities: OrgPlanCapabilities | null;
-    };
-
-interface ModelSelectionRequest {
-  readonly modelProviderId: string;
-  readonly selectedModel: string;
-}
-
-interface AvailableModelProviderPin {
-  readonly type: string;
-}
-
-function modelFirstPinFromRoute(
-  route: ResolvedModelFirstPolicyRoute,
-): ModelFirstPin {
+/** Auto as a thread or member selection: an empty selection. */
+export function autoSelectionPin(): ModelFirstPin {
   return {
-    modelProviderId: route.modelProviderId,
-    modelProviderType: route.modelProviderType,
-    modelProviderCredentialScope: route.modelProviderCredentialScope,
-    selectedModel: route.selectedModel,
-  };
-}
-
-function modelRouteCapabilities(
-  capabilities: OrgPlanCapabilities | null,
-): Pick<OrgPlanCapabilities, "restrictedBuiltInModels" | "supportByok"> {
-  if (capabilities?.status !== "active") {
-    return {
-      restrictedBuiltInModels: false,
-      supportByok: true,
-    };
-  }
-  return {
-    restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
-    supportByok: capabilities.supportByok,
-  };
-}
-
-function modelRouteAllowedForOrgPlan(args: {
-  readonly capabilities: Pick<
-    OrgPlanCapabilities,
-    "restrictedBuiltInModels" | "supportByok"
-  >;
-  readonly selectedModel: string | null | undefined;
-  readonly modelProviderType: string | null | undefined;
-}): boolean {
-  return (
-    getRunModelRouteAccess(
-      args.selectedModel,
-      args.modelProviderType,
-      args.capabilities.restrictedBuiltInModels,
-    ) === "allowed" &&
-    (args.capabilities.supportByok ||
-      isBuiltInModelProviderType(args.modelProviderType))
-  );
-}
-
-async function prepareModelRoutingFacts(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly selectedModel: string | null;
-}): Promise<ModelRoutingFacts> {
-  const policyFactsPromise =
-    params.userId === "__no_preference__"
-      ? loadOrgModelPolicyFacts(params.db, params.orgId)
-      : ensureOrgModelPolicyFacts(params.db, params.orgId, params.userId);
-  const [policyFacts, member] = await Promise.all([
-    policyFactsPromise,
-    prepareMemberModelRouteContext(params.db, params.orgId, params.userId),
-  ]);
-  return Object.freeze({
-    identity: Object.freeze({
-      orgId: params.orgId,
-      userId: params.userId,
-      selectedModel: params.selectedModel,
-    }),
-    orgPlanCapabilities:
-      policyFacts.orgPlanCapabilities === null
-        ? null
-        : Object.freeze({ ...policyFacts.orgPlanCapabilities }),
-    policies: Object.freeze(
-      policyFacts.policies.map((policy) => {
-        return Object.freeze({ ...policy });
-      }),
-    ),
-    member,
-    [modelRoutingFactsSource]: params.db,
-  });
-}
-
-async function resolveValidPolicyRoute(params: {
-  readonly facts: ModelRoutingFacts;
-  readonly capabilities: Pick<
-    OrgPlanCapabilities,
-    "restrictedBuiltInModels" | "supportByok"
-  >;
-  readonly selectedModel: string;
-}): Promise<ResolvedModelFirstPolicyRoute | null> {
-  if (!isSupportedRunModel(params.selectedModel)) {
-    return null;
-  }
-  const policy = params.facts.policies.find((candidate) => {
-    return candidate.model === params.selectedModel;
-  });
-  return policy
-    ? await resolveEffectivePolicyRoute({
-        db: params.facts[modelRoutingFactsSource],
-        orgId: params.facts.identity.orgId,
-        member: params.facts.member,
-        capabilities: params.capabilities,
-        policy,
-      })
-    : null;
-}
-
-export async function resolveDefaultModelFirstPin(
-  db: Db,
-  orgId: string,
-  userId: string,
-): Promise<DefaultModelFirstPin> {
-  const facts = await prepareModelRoutingFacts({
-    db,
-    orgId,
-    userId,
+    modelProviderId: null,
+    modelProviderType: "built-in",
+    modelProviderCredentialScope: "org",
     selectedModel: null,
-  });
-  const capabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
-  if (userId !== "__no_preference__") {
-    const [preference] = await db
-      .select({
-        selectedModel: orgMembersMetadata.selectedModel,
-        serviceTier: orgMembersMetadata.serviceTier,
-      })
-      .from(orgMembersMetadata)
-      .where(
-        and(
-          eq(orgMembersMetadata.orgId, orgId),
-          eq(orgMembersMetadata.userId, userId),
-        ),
-      )
-      .limit(1);
-    if (preference?.selectedModel) {
-      const preferredRoute = await resolveValidPolicyRoute({
-        facts,
-        capabilities,
-        selectedModel: preference.selectedModel,
-      });
-      if (preferredRoute) {
-        const serviceTier =
-          preference.serviceTier === "priority" &&
-          isCodexFastServiceTierSupported({
-            selectedModel: preferredRoute.selectedModel,
-          })
-            ? "priority"
-            : null;
-        return { ...modelFirstPinFromRoute(preferredRoute), serviceTier };
-      }
-    }
-  }
-
-  const route = await resolveWorkspaceDefaultModelFirstRoute({
-    facts,
-    capabilities,
+  };
+}
+/** Auto as a captured input or run: the internal Auto run model. */
+export function autoModelPin(): ModelFirstPin {
+  return { ...autoSelectionPin(), selectedModel: AUTO_RUN_MODEL };
+}
+function subscriptionPin(entry: MemberSubscriptionModelRoute): ModelFirstPin {
+  return {
+    modelProviderId: entry.providerId,
+    modelProviderType: entry.providerType,
+    modelProviderCredentialScope: "member",
+    selectedModel: entry.model,
+  };
+}
+function unavailablePersonalPin(
+  catalog: ModelCatalog,
+  selectedModel: string | null,
+): ModelFirstPin | null {
+  const requestedModel = selectedModel
+    ? catalogModelForSelectedId(catalog, selectedModel)
+    : null;
+  const resolution = requestedModel
+    ? resolveCatalogModel(catalog, requestedModel)
+    : null;
+  const canonicalModel =
+    resolution && resolution.kind !== "unknown"
+      ? resolution.resolvedModel
+      : null;
+  const route = catalog.routes.find((candidate) => {
+    return (
+      candidate.model === canonicalModel &&
+      candidate.providerType === candidate.subscriptionType &&
+      candidate.concreteProviderType === candidate.subscriptionType &&
+      (candidate.subscriptionType === "codex-oauth-token" ||
+        candidate.subscriptionType === "claude-code-oauth-token")
+    );
   });
   return route
-    ? { ...modelFirstPinFromRoute(route), serviceTier: null }
-    : {
+    ? {
         modelProviderId: null,
-        modelProviderType: null,
-        modelProviderCredentialScope: null,
-        selectedModel: null,
-        serviceTier: null,
-      };
-}
-
-async function resolveWorkspaceDefaultModelFirstRoute(params: {
-  readonly facts: ModelRoutingFacts;
-  readonly capabilities: Pick<
-    OrgPlanCapabilities,
-    "restrictedBuiltInModels" | "supportByok"
-  >;
-}): Promise<ResolvedModelFirstPolicyRoute | null> {
-  const policy = params.facts.policies.find((candidate) => {
-    return candidate.isDefault;
-  });
-  return policy
-    ? await resolveValidPolicyRoute({
-        facts: params.facts,
-        capabilities: params.capabilities,
-        selectedModel: policy.model,
-      })
+        modelProviderType: route.providerType,
+        modelProviderCredentialScope: "member",
+        selectedModel: canonicalModel,
+      }
     : null;
 }
-
-export async function resolvePersistedModelFirstRoute(params: {
-  readonly db: Db;
+interface SelectionParams {
   readonly orgId: string;
   readonly userId: string;
-  readonly selectedModel: string | null;
-}): Promise<PersistedModelFirstRouteResolution> {
-  const facts = await prepareModelRoutingFacts(params);
-  const capabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
-  const currentRoute = params.selectedModel
-    ? await resolveValidPolicyRoute({
-        facts,
-        capabilities,
-        selectedModel: params.selectedModel,
-      })
-    : null;
-  if (currentRoute) {
+  readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
+  readonly catalog?: ModelCatalog;
+  readonly modelBootstrap?: ModelSelectionBootstrap;
+}
+const modelRoutingFacts$ = command(
+  async ({ get, set }, params: SelectionParams, signal?: AbortSignal) => {
+    const captured = params.modelBootstrap;
+    if (
+      captured &&
+      (captured.org.orgId !== params.orgId ||
+        captured.member.orgId !== params.orgId ||
+        captured.member.userId !== params.userId)
+    ) {
+      throw new Error("Model bootstrap identity mismatch");
+    }
+    const db = get(db$);
+    const [catalog, accounts, preferences] = await Promise.all([
+      captured?.org.catalog ?? params.catalog ?? set(loadModelCatalog$, signal),
+      captured
+        ? captured.member.accounts.map((account) => {
+            return {
+              ...account,
+              providerId: account.modelProviderId,
+            };
+          })
+        : db
+            .select({
+              type: modelProviderAccounts.type,
+              providerId: modelProviderAccounts.modelProviderId,
+              isActive: modelProviderAccounts.isActive,
+              needsReconnect: modelProviderAccounts.needsReconnect,
+            })
+            .from(modelProviderAccounts)
+            .where(
+              and(
+                eq(modelProviderAccounts.orgId, params.orgId),
+                eq(modelProviderAccounts.userId, params.userId),
+                isNull(modelProviderAccounts.disconnectedAt),
+              ),
+            ),
+      captured
+        ? captured.memberMetadata.preferences
+          ? [captured.memberMetadata.preferences]
+          : []
+        : db
+            .select({
+              selectedModel: orgMembersMetadata.selectedModel,
+              serviceTier: orgMembersMetadata.serviceTier,
+            })
+            .from(orgMembersMetadata)
+            .where(
+              and(
+                eq(orgMembersMetadata.orgId, params.orgId),
+                eq(orgMembersMetadata.userId, params.userId),
+              ),
+            )
+            .limit(1),
+    ]);
+    signal?.throwIfAborted();
+    const member = memberModelRouteContextFromAccounts(accounts);
     return {
-      route: currentRoute,
-      selectedModelChanged: false,
-      orgPlanCapabilities: facts.orgPlanCapabilities,
+      catalog,
+      member,
+      preference: preferences[0],
+      subscriptions: memberSubscriptionModelRoutesFromCatalog(catalog, member),
     };
+  },
+);
+/**
+ * The runnable model of a non-empty selection. Auto is only the empty
+ * selection, so its internal run model is not a selectable ID.
+ */
+export function resolveRunSelectionModel(
+  catalog: ModelCatalog,
+  selectedId: string,
+): string | null {
+  const model = catalogModelForSelectedId(catalog, selectedId);
+  return model === null || model === AUTO_RUN_MODEL
+    ? null
+    : resolveCatalogRunModel(catalog, model);
+}
+export function isReplacedModelSelection(
+  catalog: ModelCatalog,
+  model: string | null,
+): boolean {
+  return (
+    model !== null && resolveCatalogModel(catalog, model).kind === "replaced"
+  );
+}
+export const resolveDefaultModelFirstPin$ = command(
+  async (
+    { set },
+    params: SelectionParams,
+    signal?: AbortSignal,
+  ): Promise<DefaultModelFirstPin> => {
+    const facts = await set(modelRoutingFacts$, params, signal);
+    const model = facts.preference?.selectedModel;
+    const selectedModel = model
+      ? resolveRunSelectionModel(facts.catalog, model)
+      : null;
+    const personal = facts.subscriptions.find((entry) => {
+      return entry.model === selectedModel;
+    });
+    if (!personal) {
+      return { ...autoSelectionPin(), serviceTier: null };
+    }
+    const tier = facts.preference?.serviceTier;
+    const serviceTier =
+      tier === "priority" && personal.serviceTier === "priority"
+        ? "priority"
+        : null;
+    return { ...subscriptionPin(personal), serviceTier };
+  },
+);
+export const resolveModelSelectionPin$ = command(
+  async (
+    { set },
+    params: SelectionParams & {
+      readonly purpose: "configure" | "capture";
+      readonly modelSelection: {
+        readonly modelProviderId: string;
+        readonly selectedModel: string;
+      };
+    },
+    signal: AbortSignal,
+  ): Promise<ModelFirstPin | ReturnType<typeof badRequestMessage>> => {
+    const facts = await set(modelRoutingFacts$, params, signal);
+    const selectedModel = resolveRunSelectionModel(
+      facts.catalog,
+      params.modelSelection.selectedModel,
+    );
+    const personal = facts.subscriptions.find((entry) => {
+      return entry.model === selectedModel;
+    });
+    if (personal) {
+      if (
+        params.modelSelection.modelProviderId !==
+          MODEL_FIRST_SELECTION_PROVIDER_ID &&
+        params.modelSelection.modelProviderId !== personal.providerId
+      ) {
+        return badRequestMessage(
+          "Unknown personal subscription for this workspace member",
+        );
+      }
+      return subscriptionPin(personal);
+    }
+    // Canonical personal metadata preserves ownership even when its route is disabled;
+    // classification is not permission to execute that route, so the pick rejects it.
+    const unavailable =
+      params.purpose === "capture"
+        ? unavailablePersonalPin(
+            facts.catalog,
+            params.modelSelection.selectedModel,
+          )
+        : null;
+    return (
+      unavailable ??
+      badRequestMessage(
+        "Select Auto or a model from your connected personal subscription",
+      )
+    );
+  },
+);
+const SUBSCRIPTION_LABELS: Readonly<Record<string, "Codex" | "Claude">> = {
+  "codex-oauth-token": "Codex",
+  "claude-code-oauth-token": "Claude",
+};
+/**
+ * A replaced selection whose runnable successor is offered only by a personal
+ * subscription the member has not connected. A connected account, including one
+ * that needs reconnecting, routes the successor and keeps its own errors.
+ */
+export function replacementSubscriptionRequired(
+  catalog: ModelCatalog,
+  selectedId: string,
+  pin: ModelFirstPin,
+): {
+  readonly subscriptionType: string;
+  readonly response: ReturnType<typeof badRequestMessage>;
+} | null {
+  const subscriptionType = pin.modelProviderType;
+  const label = subscriptionType
+    ? SUBSCRIPTION_LABELS[subscriptionType]
+    : undefined;
+  if (
+    !subscriptionType ||
+    label === undefined ||
+    pin.modelProviderCredentialScope !== "member" ||
+    pin.modelProviderId !== null ||
+    pin.selectedModel === null ||
+    !isReplacedModelSelection(catalog, selectedId) ||
+    resolveCatalogRunModel(catalog, pin.selectedModel) === null
+  ) {
+    return null;
   }
-
-  const defaultRoute = await resolveWorkspaceDefaultModelFirstRoute({
-    facts,
-    capabilities,
-  });
   return {
-    route: defaultRoute,
-    selectedModelChanged:
-      defaultRoute !== null &&
-      defaultRoute.selectedModel !== params.selectedModel,
-    orgPlanCapabilities: facts.orgPlanCapabilities,
+    subscriptionType,
+    response: badRequestMessage(
+      formatReplacementSubscriptionRequiredMessage({
+        replacedModelLabel: catalogDisplayName(catalog, selectedId),
+        successorLabel: catalogDisplayName(catalog, pin.selectedModel),
+        subscriptionLabel: label,
+      }),
+    ),
   };
 }
-
-async function loadAvailableModelProviderPin(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly modelProviderId: string;
-}): Promise<AvailableModelProviderPin | null> {
-  const [provider] = await params.db
-    .select({ type: modelProviders.type })
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.id, params.modelProviderId),
-        eq(modelProviders.orgId, params.orgId),
-        or(
-          eq(modelProviders.userId, params.userId),
-          eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-        ),
-      ),
-    )
-    .limit(1);
-  return provider ?? null;
-}
-
-export async function resolveModelSelectionPin(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly modelSelection: ModelSelectionRequest;
-}): Promise<
-  | ModelFirstPin
-  | ReturnType<typeof badRequestMessage>
-  | ReturnType<typeof insufficientCredits>
-> {
-  const { db, orgId, userId, modelSelection } = params;
-  if (getRunModelAccess(modelSelection.selectedModel) === "retired") {
-    return badRequestMessage(RETIRED_RUN_MODEL_MESSAGE);
-  }
-  const orgPlanCapabilities = await loadOrgPlanCapabilities(db, orgId);
-  const capabilities = modelRouteCapabilities(orgPlanCapabilities);
-  if (modelSelection.modelProviderId !== MODEL_FIRST_SELECTION_PROVIDER_ID) {
-    const provider = await loadAvailableModelProviderPin({
-      db,
-      orgId,
-      userId,
-      modelProviderId: modelSelection.modelProviderId,
-    });
-    if (!provider) {
-      return badRequestMessage("Unknown model provider for this workspace");
-    }
-    if (
-      !modelRouteAllowedForOrgPlan({
-        capabilities,
-        selectedModel: modelSelection.selectedModel,
-        modelProviderType: provider.type,
-      })
-    ) {
-      return insufficientCredits();
-    }
-    if (
-      isBuiltInModelProviderType(provider.type) &&
-      !isSupportedRunModel(modelSelection.selectedModel)
-    ) {
-      return badRequestMessage("Invalid model selection");
-    }
-    return {
-      modelProviderId: modelSelection.modelProviderId,
-      modelProviderType: null,
-      modelProviderCredentialScope: null,
-      selectedModel: modelSelection.selectedModel,
-    };
-  }
-
-  if (!isSupportedRunModel(modelSelection.selectedModel)) {
-    return badRequestMessage("Invalid model selection");
-  }
-
-  const facts = await prepareModelRoutingFacts({
-    db,
-    orgId,
-    userId,
-    selectedModel: modelSelection.selectedModel,
-  });
-  // Resolve the configured route without plan filtering first. Model access is
-  // decided from that route so BYOK never inherits a built-in-only model gate.
-  const route = await resolveValidPolicyRoute({
-    facts,
-    capabilities: {
-      restrictedBuiltInModels: false,
-      supportByok: true,
-    },
-    selectedModel: modelSelection.selectedModel,
-  });
-  if (!route) {
-    return badRequestMessage(
-      "The selected model is not available in this workspace",
-    );
-  }
-  const planCapabilities = modelRouteCapabilities(facts.orgPlanCapabilities);
-  if (
-    modelRouteAllowedForOrgPlan({
-      capabilities: planCapabilities,
-      selectedModel: route.selectedModel,
-      modelProviderType: route.modelProviderType,
-    })
-  ) {
-    return modelFirstPinFromRoute(route);
-  }
-  // The unfiltered route is the member's own route and the plan cannot use it.
-  // Resolving again under the plan restores the workspace route the member
-  // falls back to, so a personal subscription the plan does not cover keeps
-  // reporting its own availability instead of failing the whole selection.
-  const planRoute = await resolveValidPolicyRoute({
-    facts,
-    capabilities: planCapabilities,
-    selectedModel: modelSelection.selectedModel,
-  });
-  return planRoute ? modelFirstPinFromRoute(planRoute) : insufficientCredits();
-}
-
-async function resolveEffectiveModelProviderType(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly modelPin: ModelFirstPin;
-  readonly requestedModelProvider: string | undefined;
-}): Promise<string | null | undefined> {
-  if (params.modelPin.modelProviderType) {
-    return params.modelPin.modelProviderType;
-  }
-  if (!params.modelPin.modelProviderId) {
-    return params.requestedModelProvider;
-  }
-
-  const [provider] = await params.db
-    .select({ type: modelProviders.type })
-    .from(modelProviders)
-    .where(
-      and(
-        eq(modelProviders.id, params.modelPin.modelProviderId),
-        eq(modelProviders.orgId, params.orgId),
-        or(
-          eq(modelProviders.userId, params.userId),
-          eq(modelProviders.userId, ORG_SENTINEL_USER_ID),
-        ),
-      ),
-    )
-    .limit(1);
-
-  return provider?.type ?? params.requestedModelProvider;
-}
-
-export async function resolveModelFirstProviderAdmission(params: {
-  readonly db: Db;
-  readonly orgId: string;
-  readonly userId: string;
-  readonly modelPin: ModelFirstPin;
-  readonly requestedModelProvider: string | undefined;
-  readonly externalPlanCapabilities: ExternalModelProviderPlanCapabilitiesSource;
-}): Promise<{
-  readonly effectiveModelProvider: string | null | undefined;
-  readonly cliAgentType: SupportedFramework | null;
-  readonly error:
-    | Awaited<ReturnType<typeof checkOrgCreditsForRunAdmission>>
-    | ReturnType<typeof badRequestMessage>;
-}> {
-  const effectiveModelProvider =
-    await resolveEffectiveModelProviderType(params);
-  const selectedModel = params.modelPin.selectedModel;
-  const [customSurface] =
-    params.modelPin.modelProviderId === null
-      ? []
-      : await params.db
-          .select({
-            protocol: modelProviderSurfaces.protocol,
-            modelMappings: modelProviderSurfaces.modelMappings,
-          })
-          .from(modelProviderSurfaces)
-          .innerJoin(
-            modelProviderConnections,
-            eq(modelProviderSurfaces.connectionId, modelProviderConnections.id),
-          )
-          .where(
-            and(
-              eq(modelProviderSurfaces.id, params.modelPin.modelProviderId),
-              eq(modelProviderConnections.orgId, params.orgId),
-            ),
-          )
-          .limit(1);
-  const customSurfaceProviderType = customSurface
-    ? providerTypeForSurfaceProtocol(customSurface.protocol)
-    : null;
-  const usesCustomSurface =
-    customSurfaceProviderType !== null &&
-    customSurfaceProviderType === effectiveModelProvider &&
-    isSupportedRunModel(selectedModel) &&
-    typeof customSurface?.modelMappings[selectedModel] === "string";
-  const parsedProvider = modelProviderTypeSchema.safeParse(
-    effectiveModelProvider,
-  );
-  const knownProvider = parsedProvider.success ? parsedProvider.data : null;
-  const cliAgentType = knownProvider
-    ? getFrameworkForType(
-        isBuiltInModelProviderType(knownProvider) &&
-          isSupportedRunModel(selectedModel)
-          ? getBuiltInConcreteProviderType(selectedModel)
-          : knownProvider,
-      )
-    : null;
-  if (
-    isSupportedRunModel(selectedModel) &&
-    !usesCustomSurface &&
-    (!knownProvider ||
-      !isModelSupportedByProvider(selectedModel, knownProvider))
-  ) {
-    return {
-      effectiveModelProvider,
-      cliAgentType,
-      error: badRequestMessage(
-        "The selected model is not supported by the current model provider",
-      ),
-    };
-  }
-  const error = isBuiltInModelProviderType(effectiveModelProvider)
-    ? await checkOrgCreditsForRunAdmission({
-        db: params.db,
-        orgId: params.orgId,
-        userId: params.userId,
-        modelProviderType: effectiveModelProvider,
-        selectedModel,
-      })
-    : checkOrgPlanRunAdmission({
-        capabilities:
-          params.externalPlanCapabilities.kind === "resolved"
-            ? params.externalPlanCapabilities.capabilities
-            : await loadOrgPlanCapabilities(params.db, params.orgId),
-        modelProviderType: effectiveModelProvider,
-        selectedModel,
-      });
-  return { effectiveModelProvider, cliAgentType, error };
-}
-
-export function isCodexFastServiceTierSupported(params: {
-  readonly selectedModel: string | null | undefined;
-}): boolean {
-  return isCodexFastModeModel(params.selectedModel);
-}
-
+export type ProviderModelSupport = "validate" | "trust-enqueued";
 export function validateCodexServiceTier(params: {
+  readonly catalog: ModelCatalog;
   readonly pin: ModelFirstPin;
   readonly codexServiceTier: "fast" | null;
 }): ReturnType<typeof badRequestMessage> | undefined {
   if (params.codexServiceTier !== "fast") {
     return undefined;
   }
-  if (
-    isCodexFastServiceTierSupported({ selectedModel: params.pin.selectedModel })
-  ) {
-    return undefined;
+  return isCatalogFastServiceTierSupported(
+    params.catalog,
+    params.pin.selectedModel,
+    params.pin.modelProviderType,
+  )
+    ? undefined
+    : badRequestMessage("Fast mode is unavailable for this model route");
+}
+export function resolveQueuedModelSelectionPinFromSnapshot(params: {
+  readonly catalog: ModelCatalog;
+  readonly selectedModel: string;
+  readonly subscriptionModels: readonly MemberSubscriptionModelRoute[];
+  /**
+   * The member's logical provider types. A provider is removed with its last
+   * account row, so a type here means an account of it exists, including a
+   * retained disconnected one, as at capture.
+   */
+  readonly memberProviderTypes: ReadonlySet<string>;
+}): ModelFirstPin | ReturnType<typeof badRequestMessage> {
+  // An Auto input captured the internal Auto run model.
+  if (params.selectedModel === AUTO_RUN_MODEL) {
+    return autoModelPin();
   }
-  return badRequestMessage(
-    "Codex fast mode is only available for GPT 5.6 runs",
+  const selectedModel = resolveRunSelectionModel(
+    params.catalog,
+    params.selectedModel,
   );
+  const personal = params.subscriptionModels.find((entry) => {
+    return entry.model === selectedModel;
+  });
+  if (personal) {
+    return subscriptionPin(personal);
+  }
+  // Queued inputs can lose route authority after capture. Preserve canonical
+  // ownership across disabling and replacement; never settle them against Auto.
+  const unavailable = unavailablePersonalPin(
+    params.catalog,
+    params.selectedModel,
+  );
+  if (!unavailable) {
+    return badRequestMessage(
+      "Select Auto or a model from your connected personal subscription",
+    );
+  }
+  // A replaced input of a member without any account of the successor's
+  // subscription names the subscription; a retained disconnected account
+  // keeps the reconnect error, as at capture.
+  const subscriptionRequired = replacementSubscriptionRequired(
+    params.catalog,
+    params.selectedModel,
+    unavailable,
+  );
+  return subscriptionRequired &&
+    !params.memberProviderTypes.has(subscriptionRequired.subscriptionType)
+    ? subscriptionRequired.response
+    : unavailable;
 }

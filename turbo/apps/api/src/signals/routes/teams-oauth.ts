@@ -1,5 +1,4 @@
 import { command } from "ccstate";
-import type { PublicBrand } from "@okouai/api-contracts/contracts/public-brand";
 import { teamsOauthContract } from "@okouai/api-contracts/contracts/teams-oauth";
 import { z } from "zod";
 
@@ -19,7 +18,6 @@ import {
 import { safeJsonParse, tapError } from "../utils";
 import type { RouteEntry } from "../route-entry";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
-import { PUBLIC_BRAND } from "@okouai/core/public-brand";
 
 const L = logger("TeamsOAuth");
 const MICROSOFT_AUTHORIZATION_URL =
@@ -40,7 +38,6 @@ interface OAuthState {
   readonly orgId: string | null;
   readonly userId: string | null;
   readonly prompt: string | null;
-  readonly publicBrand: PublicBrand;
   readonly redirectUri: string;
 }
 
@@ -138,16 +135,14 @@ function parseOAuthState(state: string | undefined): OAuthState | null {
   }
 
   const record = parsed as Record<string, unknown>;
-  const publicBrand = record.publicBrand;
   const redirectUri = optionalString(record.redirectUri);
-  if ((publicBrand !== "vm0" && publicBrand !== "okou") || !redirectUri) {
+  if (!redirectUri) {
     return null;
   }
   return {
     orgId: optionalString(record.orgId),
     userId: optionalString(record.userId),
     prompt: optionalString(record.prompt),
-    publicBrand,
     redirectUri,
   };
 }
@@ -302,7 +297,6 @@ const resolveTeamsOauthStateAuth$ = command(
 
 const connectOauth$ = command(({ get }) => {
   const request = get(request$).raw;
-  const publicBrand = PUBLIC_BRAND;
   const origin = getOAuthApiOrigin(request);
   const credentials = microsoftCredentials();
   if (!credentials) {
@@ -325,12 +319,10 @@ const connectOauth$ = command(({ get }) => {
     orgId: string;
     userId: string;
     prompt?: string;
-    publicBrand: PublicBrand;
     redirectUri: string;
   } = {
     orgId: query.orgId,
     userId,
-    publicBrand,
     redirectUri,
   };
   if (query.prompt) {

@@ -1,11 +1,8 @@
-mod native;
-
 use std::collections::HashMap;
 
 use api_contracts::generated::constants::model_provider_env::placeholders as model_provider_placeholders;
 use api_contracts::generated::constants::runners::{
     PI_MODEL_CONFIG_CURRENT_GENERATION, PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
-    PI_MODEL_CONFIG_NATIVE_GENERATION,
 };
 use api_contracts::generated::types::runners::{
     runs::{CodexRuntimeConfig, PiLaunchConfig, PiModelConfig, PiModelConfigV2, PiModelConfigV3},
@@ -35,11 +32,11 @@ pub(super) struct ProtectedModelProviderEnvKey {
 pub(super) const CLAUDE_MODEL_PROVIDER_PLACEHOLDER_ENV_KEYS: &[ProtectedModelProviderEnvKey] = &[
     ProtectedModelProviderEnvKey {
         name: "ANTHROPIC_API_KEY",
-        placeholder: Some(model_provider_placeholders::ANTHROPIC_API_KEY),
+        placeholder: None,
     },
     ProtectedModelProviderEnvKey {
         name: "ANTHROPIC_AUTH_TOKEN",
-        placeholder: Some(model_provider_placeholders::ANTHROPIC_AUTH_TOKEN),
+        placeholder: None,
     },
     ProtectedModelProviderEnvKey {
         name: "CLAUDE_CODE_OAUTH_TOKEN",
@@ -139,7 +136,6 @@ pub(super) fn validate_execution_context_before_sandbox_with_host_env(
     validate_resume_session_id(context)?;
     validate_model_provider_env_placeholders(context)?;
     validate_pi_execution_context(context)?;
-    native::validate_environment(context)?;
     validate_user_environment_for_guest(context)?;
     let prepared_run_payload =
         prepare_run_payload_for_run(context).map_err(|error| match error {
@@ -153,56 +149,15 @@ pub(super) fn validate_execution_context_before_sandbox_with_host_env(
     Ok(prepared_run_payload)
 }
 
-fn is_sha256(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
 // Generated enums and explicit versions intentionally fail closed. A future
 // enum value or schema version must reach runners before the API emits it;
 // unknown additive object fields remain safe because the original JSON is
 // forwarded after this validation view is discarded.
-fn validate_pi_launch_config(value: &serde_json::Value, session_id: &str) -> Result<(), String> {
+fn validate_pi_launch_config(value: &serde_json::Value) -> Result<(), String> {
     let launch: PiLaunchConfig = serde_json::from_value(value.clone())
         .map_err(|error| format!("Pi launch config v2 is invalid: {error}"))?;
-    if value.pointer("/apiFirstTurn/baseSession/sha256").is_none() {
-        return Err("Pi H0 sha256 must be present".to_string());
-    }
     if launch.schema_version != 2 {
         return Err("Pi launch config schemaVersion must be 2".to_string());
-    }
-    let slot = launch.api_first_turn;
-    if slot.schema_version != 1 {
-        return Err("Pi API first-turn schemaVersion must be 1".to_string());
-    }
-    if !is_sha256(&slot.resource_snapshot_digest) {
-        return Err("Pi resource snapshot digest is invalid".to_string());
-    }
-    for (name, raw) in [
-        ("manifestUrl", &slot.manifest_url),
-        ("sessionUrl", &slot.session_url),
-    ] {
-        let parsed =
-            url::Url::parse(raw).map_err(|_| format!("Pi API first-turn {name} is invalid"))?;
-        if !matches!(parsed.scheme(), "http" | "https") {
-            return Err(format!("Pi API first-turn {name} must use HTTP or HTTPS"));
-        }
-    }
-    if slot.deadline_at <= 0 {
-        return Err("Pi API first-turn deadlineAt must be positive".to_string());
-    }
-    if !(1..=i32::MAX as u64).contains(&slot.sandbox_event_sequence_start) {
-        return Err("Pi Sandbox event sequence start must be between 1 and 2147483647".to_string());
-    }
-    if slot.base_session.session_id != session_id {
-        return Err("Pi H0 session id does not match pi_session_id".to_string());
-    }
-    if let Some(hash) = slot.base_session.sha256
-        && !is_sha256(&hash)
-    {
-        return Err("Pi H0 sha256 must be null or a lowercase SHA-256".to_string());
     }
     Ok(())
 }
@@ -255,12 +210,6 @@ fn validate_legacy_pi_model_config(value: &serde_json::Value) -> Result<(), Stri
     if !is_pi_credential_secret_name(&model.credential_secret_name) {
         return Err("Pi model config credentialSecretName is invalid".to_string());
     }
-    if value
-        .get("credentialHeader")
-        .is_some_and(|header| !is_valid_pi_credential_header(header))
-    {
-        return Err("Pi model config credentialHeader is invalid".to_string());
-    }
     Ok(())
 }
 
@@ -273,48 +222,6 @@ fn has_exact_object_fields(
         && object
             .keys()
             .all(|field| allowed.iter().any(|allowed_field| field == allowed_field))
-}
-
-fn is_valid_pi_credential_header(value: &serde_json::Value) -> bool {
-    let Some(header) = value.as_object() else {
-        return false;
-    };
-    if !has_exact_object_fields(
-        header,
-        &["name", "valueTemplate"],
-        &["name", "valueTemplate"],
-    ) {
-        return false;
-    }
-    let Some(name) = header.get("name").and_then(serde_json::Value::as_str) else {
-        return false;
-    };
-    let mut name_bytes = name.bytes();
-    if name.is_empty()
-        || name.len() > 128
-        || !name_bytes
-            .next()
-            .is_some_and(|byte| byte.is_ascii_alphabetic())
-        || !name_bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-    {
-        return false;
-    }
-    let Some(template) = header
-        .get("valueTemplate")
-        .and_then(serde_json::Value::as_str)
-    else {
-        return false;
-    };
-    if template.is_empty()
-        || template.encode_utf16().count() > 1024
-        || template.contains('\r')
-        || template.contains('\n')
-        || template.match_indices("{{secret}}").count() != 1
-    {
-        return false;
-    }
-    let static_template = template.replacen("{{secret}}", "", 1);
-    !static_template.contains("{{") && !static_template.contains("}}")
 }
 
 fn validate_pi_v2_credential_bindings(
@@ -344,28 +251,13 @@ fn validate_pi_v2_credential_bindings(
                 if !has_exact_object_fields(
                     object,
                     &["kind", "environment", "secretName"],
-                    &["kind", "environment", "secretName", "credentialHeader"],
+                    &["kind", "environment", "secretName"],
                 ) || object
                     .get("environment")
                     .and_then(serde_json::Value::as_str)
                     != Some("OPENAI_API_KEY")
-                {
-                    return Err("Pi API-key binding is invalid".to_string());
-                }
-                let known_secret = matches!(
-                    object.get("secretName").and_then(serde_json::Value::as_str),
-                    Some(
-                        "DEEPSEEK_API_KEY"
-                            | "OPENAI_API_KEY"
-                            | "OPENROUTER_API_KEY"
-                            | "VERCEL_AI_GATEWAY_API_KEY"
-                            | "OKOU_MODEL_PROVIDER_API_KEY"
-                    )
-                );
-                if !known_secret
-                    || object
-                        .get("credentialHeader")
-                        .is_some_and(|header| !is_valid_pi_credential_header(header))
+                    || object.get("secretName").and_then(serde_json::Value::as_str)
+                        != Some("OPENROUTER_API_KEY")
                 {
                     return Err("Pi API-key binding is invalid".to_string());
                 }
@@ -564,11 +456,6 @@ fn validate_pi_model_config(value: &serde_json::Value) -> Result<(), String> {
         {
             validate_pi_model_config_v3(value)
         }
-        Some(serde_json::Value::Number(generation))
-            if generation.as_u64() == Some(u64::from(PI_MODEL_CONFIG_NATIVE_GENERATION)) =>
-        {
-            native::validate(value)
-        }
         Some(_) => Err("Pi model config generation is unsupported".to_string()),
     }
 }
@@ -588,7 +475,7 @@ fn validate_pi_execution_context(context: &ExecutionContext) -> Result<(), Strin
         .pi_launch_config
         .as_ref()
         .ok_or_else(|| "Pi execution context is missing pi_launch_config".to_string())?;
-    validate_pi_launch_config(launch_config, session_id)?;
+    validate_pi_launch_config(launch_config)?;
     let model_config = context
         .pi_model_config
         .as_ref()
@@ -640,16 +527,6 @@ fn validate_codex_runtime_config_field(config: &CodexRuntimeConfig) -> Result<()
         config.env_key.as_str(),
         config.wire_api.as_str(),
     ] {
-        validate_run_payload_field(
-            guest_contracts::env::CODEX_RUNTIME_CONFIG_RUN_PAYLOAD_FIELD,
-            value,
-        )?;
-    }
-    for (name, value) in config.http_headers.iter().flatten() {
-        validate_run_payload_field(
-            guest_contracts::env::CODEX_RUNTIME_CONFIG_RUN_PAYLOAD_FIELD,
-            name,
-        )?;
         validate_run_payload_field(
             guest_contracts::env::CODEX_RUNTIME_CONFIG_RUN_PAYLOAD_FIELD,
             value,
@@ -1075,6 +952,7 @@ pub(super) fn prepare_run_payload_for_run(
         pi_launch_config: serialize_pi_launch_config_payload(context)?,
         pi_model_config: serialize_pi_model_config_payload(context)?,
         pi_session_id: context.pi_session_id.clone().unwrap_or_default(),
+        pi_installed_cli_requirement: serialize_pi_installed_cli_requirement_payload(context)?,
     };
 
     validate_run_payload_for_guest(&payload).map_err(RunnerError::Internal)?;
@@ -1174,6 +1052,16 @@ fn serialize_pi_model_config_payload(context: &ExecutionContext) -> RunnerResult
     };
     serde_json::to_string(config)
         .map_err(|e| RunnerError::Internal(format!("serialize Pi model config: {e}")))
+}
+
+fn serialize_pi_installed_cli_requirement_payload(
+    context: &ExecutionContext,
+) -> RunnerResult<String> {
+    let Some(requirement) = &context.pi_installed_cli_requirement else {
+        return Ok(String::new());
+    };
+    serde_json::to_string(requirement)
+        .map_err(|e| RunnerError::Internal(format!("serialize Pi installed CLI requirement: {e}")))
 }
 
 fn validate_run_payload_for_guest(

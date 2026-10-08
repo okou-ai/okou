@@ -45,9 +45,9 @@ async fn codex_setup_writes_model_catalog_before_cli_start() -> TestResult {
         &guest_contracts::env::RunPayload {
             prompt: "verify Codex model catalog setup".to_string(),
             codex_runtime_config: json!({
-                "providerId": "deepseek",
-                "name": "DeepSeek",
-                "baseUrl": "https://api.deepseek.com/",
+                "providerId": "openrouter-codex",
+                "name": "OpenRouter (Codex)",
+                "baseUrl": "https://openrouter.ai/api/v1",
                 "envKey": "OPENAI_API_KEY",
                 "wireApi": "responses",
                 "supportsWebsockets": false,

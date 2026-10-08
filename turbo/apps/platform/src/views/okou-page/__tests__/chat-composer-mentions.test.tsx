@@ -48,9 +48,6 @@ function agent(
     description: null,
     sound: null,
     avatarUrl,
-    modelProviderId: null,
-    selectedModel: null,
-    preferPersonalProvider: false,
     visibility,
   };
 }
@@ -181,7 +178,7 @@ test("Keep archived chats in @ mention suggestions when archiving is enabled", a
     AGENT_ID,
   );
   const archived = withAgent(
-    continuityThread(64, 2, "✅ Archived mention context"),
+    { ...continuityThread(64, 2, "Archived mention context"), archived: true },
     AGENT_ID,
   );
   const workspace = installContinuityWorkspace(context, {
@@ -197,7 +194,7 @@ test("Keep archived chats in @ mention suggestions when archiving is enabled", a
   });
 
   await waitFor(() => {
-    expect(screen.queryByText("✅ Archived mention context")).toBeNull();
+    expect(screen.queryByText("Archived mention context")).toBeNull();
   });
 
   const user = userEvent.setup({ delay: null });
@@ -206,7 +203,7 @@ test("Keep archived chats in @ mention suggestions when archiving is enabled", a
   await user.keyboard("@archived");
 
   const menu = await screen.findByTestId("chat-thread-suggestion-menu");
-  expect(within(menu).getByText("✅ Archived mention context")).toBeVisible();
+  expect(within(menu).getByText("Archived mention context")).toBeVisible();
 });
 
 async function openAgentMentionWorkspace() {
