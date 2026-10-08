@@ -218,6 +218,9 @@ Progressive-history regressions cover full HTTP pagination at 100, 1,000, and
 cancellation; failed send/retry; revocation; and SQLite rehydration. Mounted
 native List and real ChatDetailView tests verify partial-row offsets through
 prepends, height changes, remote refresh, detail-view recreation, and local send.
+Hosting setup waits for stable native geometry and samples complete presentation
+frames. Position assertions remain independent of this setup and retain their
+three-second deadline.
 These are correctness and rendering-scope checks. A physical-device Release
 comparison of initial positioning, Animation Hitches, and memory remains
 required before claiming a measured performance improvement. Header/bottom

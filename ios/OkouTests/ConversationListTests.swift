@@ -129,23 +129,50 @@ private func mount<V: View>(_ host: UIHostingController<V>) async throws -> UIWi
   window.rootViewController = host
   window.makeKeyAndVisible()
   host.view.layoutIfNeeded()
-  // Cold CI renderers compile their first SwiftUI pipelines during presentation.
-  // Begin geometry assertions after the window has received a display frame.
+  await stableHostingGeometry(host.view)
+  return window
+}
+
+@MainActor
+private func stableHostingGeometry(_ view: UIView) async {
+  var previous: [CGRect] = []
+  var stableSamples = 0
+  for _ in 0..<120 {
+    await hostingPresentationFrame()
+    let rows = markers(in: view).filter { $0.window != nil }
+    guard let scroll = rows.first?.enclosingScrollView, !scroll.bounds.isEmpty else { continue }
+    let geometry =
+      [scroll.bounds, CGRect(origin: .zero, size: scroll.contentSize)]
+      + rows.sorted { $0.messageID < $1.messageID }.map { $0.convert($0.bounds, to: scroll) }
+    stableSamples = geometry == previous ? stableSamples + 1 : 0
+    previous = geometry
+    if stableSamples >= 2 { return }
+  }
+  XCTFail("Native hosting geometry did not settle within 120 presentation frames")
+}
+
+@MainActor
+private func hostingPresentationFrame() async {
+  // Display-link callbacks prepare upcoming frames. Span a complete presented frame
+  // before sampling geometry, including cold SwiftUI pipeline compilation on CI.
   await withCheckedContinuation { continuation in
     let target = HostingDisplayFrame(continuation)
     let link = CADisplayLink(target: target, selector: #selector(HostingDisplayFrame.display(_:)))
     link.add(to: .main, forMode: .common)
   }
-  return window
 }
 
 @MainActor
 private final class HostingDisplayFrame: NSObject {
   private let continuation: CheckedContinuation<Void, Never>
+  private var remainingCallbacks = 2
   init(_ continuation: CheckedContinuation<Void, Never>) { self.continuation = continuation }
   @objc func display(_ link: CADisplayLink) {
+    remainingCallbacks -= 1
+    guard remainingCallbacks == 0 else { return }
     link.invalidate()
-    continuation.resume()
+    let continuation = continuation
+    DispatchQueue.main.async { continuation.resume() }
   }
 }
 
@@ -193,7 +220,7 @@ private func eventually(
 {
   let deadline = ContinuousClock.now + .seconds(3)
   while !predicate() && ContinuousClock.now < deadline {
-    try await Task.sleep(for: .milliseconds(20))
+    await hostingPresentationFrame()
   }
   XCTAssertTrue(predicate(), message(), file: file, line: line)
 }
