@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.34](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.33...runner-lifecycle-v0.1.34) (2026-10-08)
+
+
+### Performance Improvements
+
+* **runner:** keep routine cache scans off the capacity lock ([#37952](https://github.com/okou-ai/okou/issues/37952)) ([f53d1e8](https://github.com/okou-ai/okou/commit/f53d1e8ea334ecc4414489a8d9471673557090a1))
+
 ## [0.1.33](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.32...runner-lifecycle-v0.1.33) (2026-10-07)
 
 ## [0.1.32](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.1.31...runner-lifecycle-v0.1.32) (2026-10-07)

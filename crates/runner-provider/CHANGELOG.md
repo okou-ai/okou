@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.5.9](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.8...runner-provider-v0.5.9) (2026-10-08)
+
 ## [0.5.8](https://github.com/okou-ai/okou/compare/runner-provider-v0.5.7...runner-provider-v0.5.8) (2026-10-07)
 
 

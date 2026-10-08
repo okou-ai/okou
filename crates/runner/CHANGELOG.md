@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.220.21](https://github.com/okou-ai/okou/compare/runner-rs-v0.220.20...runner-rs-v0.220.21) (2026-10-08)
+
+
+### Performance Improvements
+
+* **runner:** keep routine cache scans off the capacity lock ([#37952](https://github.com/okou-ai/okou/issues/37952)) ([f53d1e8](https://github.com/okou-ai/okou/commit/f53d1e8ea334ecc4414489a8d9471673557090a1))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.220.20](https://github.com/okou-ai/okou/compare/runner-rs-v0.220.19...runner-rs-v0.220.20) (2026-10-08)
 
 ### Release Dependencies
