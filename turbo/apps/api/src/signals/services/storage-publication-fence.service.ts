@@ -115,7 +115,9 @@ export function retirePublicationSql(
   return sql`DELETE FROM ${storagePublicationTokens} WHERE ${publicationKeyCondition(scope, key)} AND EXISTS (SELECT 1 FROM ${storagePublicationGenerations} WHERE ${generationScopeCondition(scope)})`;
 }
 
-function publicationGenerationValues(scopes: readonly PublicationFenceScope[]) {
+export function publicationGenerationValues(
+  scopes: readonly PublicationFenceScope[],
+) {
   return [
     ...new Map(
       scopes.map((scope) => {
