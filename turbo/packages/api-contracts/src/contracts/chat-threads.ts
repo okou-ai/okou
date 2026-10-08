@@ -783,18 +783,18 @@ function newUserMessageInputPart(
 }
 
 const newUserMessageInputDocumentSchema =
-  userMessageInputDocumentSchema.transform((document) => {
+  userMessageInputDocumentSchema.transform((message) => {
     return {
-      ...document,
-      parts: document.parts.map(newUserMessageInputPart),
+      ...message,
+      parts: message.parts.map(newUserMessageInputPart),
     };
   });
 
 const newUserMessageDocumentSchema = userMessageDocumentSchema.transform(
-  (document) => {
+  (message) => {
     return {
-      ...document,
-      parts: document.parts.map((part) => {
+      ...message,
+      parts: message.parts.map((part) => {
         return part.type === "model" ? part : newUserMessageInputPart(part);
       }),
     };
