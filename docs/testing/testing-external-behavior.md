@@ -104,7 +104,11 @@ worker execution, and service return values all cross the internal boundary.
 Moving a test HTTP operation into an exported fixture function preserves the
 same problem, even if that function has no direct DB import. Follow the
 commands it invokes. A helper may wrap genuine authenticated API calls; its
-name is not evidence that its setup is public.
+name is not evidence that its setup is public. A test-only transport probe
+that exposes arbitrary methods, a cancellation toggle, or raw service results
+is also private execution. Prefer the real OAuth lifecycle and its externally
+observable discovery or callback result; do not preserve the probe by moving
+its handler into a helper.
 
 ## Cases Without Public Construction
 

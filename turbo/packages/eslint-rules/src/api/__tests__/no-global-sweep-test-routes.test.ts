@@ -72,11 +72,11 @@ ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
       `,
     },
     {
-      name: "scoped route factory from the production module stays valid",
+      name: "ordinary user routes stay valid",
       filename: behaviorTest,
       code: `
-        import { cronComputerUseScreenshotCleanupRoutesForTest } from "../cron-computer-use-screenshot-cleanup";
-        setupApp({ routes: cronComputerUseScreenshotCleanupRoutesForTest(commandIds) });
+        import { computerUseRoutes } from "../computer-use";
+        setupApp({ routes: computerUseRoutes });
       `,
     },
     {

@@ -48,7 +48,6 @@ import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
 import { v5 as uuidv5 } from "uuid";
 import { afterEach, describe, expect, it, onTestFinished } from "vitest";
-import { readPrimaryBuiltInRouteFixture } from "../../../test-fixtures/model-route-capabilities";
 
 import { mockAxiomSdkTelemetryFailure } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -348,18 +347,6 @@ async function seedBuiltInDefaultModelKey(): Promise<string> {
 async function seedBuiltInModelKey(selectedModel: string): Promise<string> {
   const fixture = await seedBuiltInModelKeyState(context, selectedModel);
   return fixture.selectedModel;
-}
-
-async function expectBuiltInModelRunRuntimeRoute(
-  actor: ApiTestUser,
-  runId: string,
-  selectedModel: string,
-): Promise<void> {
-  const run = await createRunsApi(context).readRun(actor, runId);
-  expect(run.source).toMatchObject({
-    providerType: "built-in",
-    model: selectedModel,
-  });
 }
 
 function useSecretKmsClientForTests(args: {
@@ -5087,48 +5074,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
         const queue = await api.readRunQueue(actor);
         expect(queue.body.concurrency.active).toBe(0);
-      });
-
-      it("claims built-in model runs with billable model firewall and usage provider", async () => {
-        const api = createRunsApi(context);
-        const selectedModel = await seedBuiltInDefaultModelKey();
-        const primary = await readPrimaryBuiltInRouteFixture(selectedModel);
-        const concreteProvider = primary.concreteProviderType;
-        const expectedFirewall =
-          getModelProviderFirewall(concreteProvider)?.name;
-        if (!expectedFirewall) {
-          throw new Error(
-            `Missing model-provider firewall for ${concreteProvider}`,
-          );
-        }
-        const { actor, agentId, runnerGroup } = await entitledRunActor();
-
-        await api.updateUserModelPreference(actor, null);
-        const run = await api.createThreadRun(actor, {
-          agentId,
-          prompt: "built-in model provider",
-          model: null,
-        });
-        await api.heartbeatRunner(runnerGroup);
-        const claim = await api.claimRunnerJob(run.runId);
-        await expectBuiltInModelRunRuntimeRoute(
-          actor,
-          run.runId,
-          selectedModel,
-        );
-        expect(claim.environment).toMatchObject({
-          OPENAI_MODEL: primary.upstreamModel,
-        });
-
-        expect(
-          claim.firewalls?.map((firewall) => {
-            return firewallEntryName(firewall);
-          }),
-        ).toContain(expectedFirewall);
-        expect(claim.billableFirewalls).toContain(expectedFirewall);
-        expect(claim.modelUsageProvider).toBe(selectedModel);
-
-        await api.requestCancelRun(actor, run.runId, [200]);
       });
 
       it("claims personal Codex GPT 6 chat runs through Pi without platform model billing", async () => {

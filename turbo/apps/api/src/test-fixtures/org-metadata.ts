@@ -61,26 +61,3 @@ export async function setOrgDefaultAgentFixture(values: {
     throw new Error("Expected one org metadata row to repoint");
   }
 }
-
-/**
- * Operator-only OpenRouter preset configuration has no product write API.
- * These unprocessed consumers remain private construction even when their
- * final observation is a Runner claim.
- */
-export async function setOrgOpenrouterPresetFixture(values: {
-  readonly orgId: string;
-  readonly openrouterPreset: string | null;
-}): Promise<void> {
-  const rows = await createStore()
-    .set(writeDb$)
-    .update(orgMetadata)
-    .set({
-      openrouterPreset: values.openrouterPreset,
-      updatedAt: sql`now()`,
-    })
-    .where(eq(orgMetadata.orgId, values.orgId))
-    .returning({ orgId: orgMetadata.orgId });
-  if (rows.length !== 1) {
-    throw new Error("Expected one org metadata row to configure");
-  }
-}

@@ -263,17 +263,6 @@ export {
   type BuiltinConnectorsSlugCallbackContract,
 } from "./connectors-slug-callback";
 export {
-  testComputerUseStateContract,
-  testComputerUseStateDeleteResponseSchema,
-  testComputerUseStateGetResponseSchema,
-  testComputerUseStatePostBodySchema,
-  testComputerUseStatePostResponseSchema,
-  type TestComputerUseStateContract,
-  type TestComputerUseStateDeleteResponse,
-  type TestComputerUseStateGetResponse,
-  type TestComputerUseStatePostResponse,
-} from "./test-computer-use-state";
-export {
   testRuntimeStateActionBodySchema,
   testRuntimeStateActionResponseSchema,
   testRuntimeStateContract,

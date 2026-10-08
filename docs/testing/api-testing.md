@@ -632,3 +632,18 @@ is still a private driver. Batch 011 removes that driver while preserving the
 production cron. Likewise, the public Workflow A-B-A content case keeps normal
 create/update/GET and external storage effects; it does not claim exact index
 rows, storage-version identity or internal worker queue counts.
+
+For delegated Computer Use authorization, follow the selected public case in
+`computer-use.bdd.test.ts`: paid onboarding and a personal model connection,
+Agent creation, chat send, Runner heartbeat/claim, then the claim-issued Okou
+token creates the authorization request. Apply a real registered host and read
+the result through authorization and thread metadata APIs. A fabricated Run
+with a null launch snapshot or a locally signed token is not the same setup.
+The neighboring forged-token cases remain unprocessed.
+
+The screenshot case keeps normal host command completion, S3 upload bytes,
+public download and cross-owner404. Removing its operator-only cleanup phase
+loses retention tombstones, exact sweep counts and physical deletion guarantees.
+Likewise, the selected `get-started.test.ts` check-in case proves public bonus
+visibility and expiry; private admission-service booleans are not evidence that
+a user can spend the credits. Other settlement fixtures remain unprocessed.
