@@ -474,7 +474,7 @@ jobs:
       GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
       GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.prepare.outputs.source-head-sha }}
 
@@ -529,7 +529,9 @@ jobs:
       - name: Summarize dependency cache prewarm
         if: always()
         env:
+          LOOKUP_OUTCOME: ${{ steps.cache-lookup.outcome }}
           LOOKUP_HIT: ${{ steps.cache-lookup.outputs.cache-hit }}
+          RESTORE_OUTCOME: ${{ steps.cache-restore.outcome }}
           RESTORE_HIT: ${{ steps.cache-restore.outputs.cache-hit }}
           PREWARM_OUTCOME: ${{ steps.prewarm.outcome }}
         run: |
@@ -537,9 +539,9 @@ jobs:
             echo "### Runner dependency cache prewarm"
             echo
             echo "- Target: \`${TARGET_TRIPLE}\`"
-            echo "- Exact lookup hit: \`${LOOKUP_HIT:-not-run}\`"
-            echo "- Exact restore hit: \`${RESTORE_HIT:-not-run}\`"
-            echo "- Prewarm build: \`${PREWARM_OUTCOME:-not-run}\`"
+            echo "- Lookup step: \`${LOOKUP_OUTCOME}\`; exact hit: \`${LOOKUP_HIT}\`"
+            echo "- Restore step: \`${RESTORE_OUTCOME}\`; exact hit: \`${RESTORE_HIT}\`"
+            echo "- Prewarm build: \`${PREWARM_OUTCOME}\`"
             echo "- Runner outputs are not published or deployed."
           } >> "$GITHUB_STEP_SUMMARY"
 
