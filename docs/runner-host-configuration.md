@@ -205,6 +205,40 @@ Overlapping runner versions have independent limits. Four is an initial policy,
 not a measured optimum or a guarantee that large-history export/copy latency
 disappears. No operator setting or persistent cache format changes are required.
 
+### Managed terminal private-state inventory
+
+The destinations below are relative to the canonical per-Run runtime directory
+`/home/user/.vm0/guest-agent/runs/<run-id>`, except the explicitly named Codex
+auth file. [Shared runtime paths](../crates/guest-contracts/src/runtime_paths.rs)
+and [private-input contracts](../crates/guest-contracts/src/env.rs) own their
+names. This inventory covers the first-party writers and required readers in
+the current layout, not arbitrary files written by user tools.
+
+| Managed state / destination                                                                                   | Writer and required reader lifetime                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Environment inputs: `user-env/env.json`                                                                       | Runner [`write_required_agent_files`](../crates/runner-executor/src/executor/env.rs) writes current captured values. Guest [configuration loading](../crates/guest-agent/src/env.rs) consumes and removes the file at startup; terminal cleanup removes any remaining managed subtree.                                                                                                                                                                              |
+| Prompt, settings, model/launch configuration and secret-mask inputs: `run-payload/payload.json`               | The same Runner writer supplies the typed Run payload, including `secret_values`; these are not a separate secret-mask file. Guest configuration consumes/removes the file and owns the resulting values through CLI execution and checkpointing.                                                                                                                                                                                                                   |
+| Connector account projection: `connector-account-context/context.json`                                        | The same Runner writer supplies per-Run account identifiers. The [CLI account-context reader](../turbo/apps/cli/src/commands/connector/run-account-context.ts) uses it during the workload; it must not be removed while those readers are live.                                                                                                                                                                                                                    |
+| Claude appended prompt and Pi launch payload: `claude-append-system-prompt`, `pi-launch-payload/payload.json` | Guest [CLI launch](../crates/guest-agent/src/cli/mod.rs) writes them. CLI children and Pi [checkpointing](../crates/guest-agent/src/checkpoint/mod.rs) finish before terminal cleanup.                                                                                                                                                                                                                                                                              |
+| Session/final identity: `session-id`, `final-session-history-identity.json`                                   | Guest [session metadata](../crates/guest-agent/src/session_metadata.rs) and [checkpoint history](../crates/guest-agent/src/checkpoint/session_history.rs) write them. Executor [session/diagnostic reads](../crates/runner-executor/src/executor/diagnostics/guest_files.rs), [identity verification](../crates/runner-executor/src/executor/agent_run.rs) and the sidecar exporter finish before deletion. Idle/handoff retains the referenced generation instead. |
+| Failure/checkpoint diagnostics: `checkpoint-error`, `failure-diagnostic.json`                                 | Guest [failure handling](../crates/guest-agent/src/main.rs) writes them; executor diagnostic reads complete before supervisor finalization.                                                                                                                                                                                                                                                                                                                         |
+| Guest logs and upload positions: `logs/`, `telemetry/`                                                        | Guest log/metrics producers and the [single-writer telemetry uploader](../crates/guest-agent/src/telemetry.rs) own these derivatives. Guest background work/final telemetry and executor stdout drain/[post-job log copying](../crates/runner-executor/src/executor/sandbox_run.rs) finish before terminal preparation. Host stream/network logs have independent lifetimes outside this Guest tree.                                                                |
+| Exported history body: `session-history-sidecar`                                                              | The fixed [Guest exporter](../crates/guest-agent/src/session_history_identity.rs) writes under the finalized identity's runtime directory, which can be retained from an earlier Run. Lifecycle [export/host-copy ownership](../crates/runner-lifecycle/src/workspace_promotion.rs) finishes before removing current/retained runtime children; host sidecar staging remains guarded until publication or discard.                                                  |
+| `/home/user/.codex/auth.json`                                                                                 | Guest [Codex auth reconciliation](../crates/guest-agent/src/codex_auth.rs) owns API-key or placeholder/account state read by Codex. The shared [preparation helper](../crates/guest-agent/src/reuse_preparation.rs) scrubs it independently of framework, after containment excludes other live workloads.                                                                                                                                                          |
+
+Both terminal callers use the same lifecycle helper: direct [supervisor
+finalization](../crates/runner-supervisor/src/sandbox_finalization.rs) and parked
+[idle destruction](../crates/runner-lifecycle/src/idle_pool/entry.rs). They do not
+return a terminally prepared sandbox to idle or handoff. A missing/unsafe current
+or retained anchor rejects publication; it does not broaden deletion authority
+to a captured custom runtime parent.
+
+Framework histories, the Codex model catalog and ordinary user files/package
+caches outside this managed scope remain intact. Storage-manifest temporaries
+under `/tmp` and host archives/logs keep their separate owners. This inventory is
+not a whole-home privacy audit, a home-cache activation receipt or a forensic
+erasure guarantee.
+
 ### Sidecar export resource diagnostics
 
 The existing `workspace image cache session history sidecar export completed`
