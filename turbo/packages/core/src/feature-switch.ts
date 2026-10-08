@@ -317,12 +317,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.PiOpenRouterChatCompletions]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Launch Pi OpenRouter routes with the generation 5 Chat Completions model config. Enable only after every Runner advertises generation 5.",
-    enabled: false,
-  },
   [FeatureSwitchKey.LarkIntegration]: {
     maintainer: "yuma@okou.ai",
     description: "Enable Lark bot setup, account connections, and messaging.",

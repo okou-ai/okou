@@ -1,5 +1,26 @@
 # Deployment Compatibility
 
+## Pi OpenRouter Chat Completions switch removed (2026-10-08)
+
+The `piOpenRouterChatCompletions` switch is gone and its enabled behavior is
+permanent: every new Pi OpenRouter launch (Auto `okou-1.0`, Pi memory
+maintenance and API-side Stage 1) captures the generation 5 Chat Completions
+route. The API no longer writes generation 1 Responses configs for OpenRouter.
+
+**Runner prerequisite.** Production Runners already advertise generation 5:
+`runner-rs-v0.220.22` (built from a `main` commit that contains #37987) was
+promoted to production on 2026-10-08 07:59 UTC. A Runner without generation 5
+still never claims these jobs; they stay queued until a capable Runner claims
+them, so a Runner rollback below that release stalls Pi OpenRouter launches.
+
+**Readers stay.** Already captured Runs keep their route. Generation 1/2/3
+readers in the API claim gate, CLI, Pi runtime and Runner remain until those
+stored contexts can no longer be pending.
+
+**API rollback.** Rolling the API back to a release that still has the switch
+(off by default) returns new launches to Responses. A release before #37987
+cannot read generation 5 and leaves those jobs unclaimable.
+
 ## Pi OpenRouter Chat Completions route (generation 5, default off)
 
 Pi model configuration gains generation 5 (`dialect: "openai-completions"`,
@@ -14,7 +35,8 @@ skips to 5 and 4 stays unsupported everywhere.
 validate the generation 5 shape. The API claim gate, the CLI launch reader,
 the Pi runtime and the guest-agent request diagnostics accept it. Writers are
 gated by the `piOpenRouterChatCompletions` feature switch, off by default;
-with it off every captured route is unchanged.
+with it off every captured route is unchanged. (The switch was later removed; see
+[switch removal](#pi-openrouter-chat-completions-switch-removed-2026-10-08).)
 
 **Activation.** Enable the switch only after every serving Runner advertises
 generation 5. The claim gate never hands a generation 5 job to an older
