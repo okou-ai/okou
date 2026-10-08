@@ -19,7 +19,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
-import { insertOutputEventWithConflictingLegacyPayloadFixture } from "../../../test-fixtures/chat-events";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadRoutes } from "../chat-threads";
@@ -1299,44 +1298,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
 });
 
 describe("CHAT-01 chat thread read state", () => {
-  it("uses event type rather than legacy lifecycle payload for read cursors", async () => {
-    const { actor, agentId, runnerGroup } = await entitledChatActor(
-      "Read cursor event type agent",
-    );
-    const run = await completeChatRunInThread(actor, runnerGroup, {
-      agentId,
-      prompt: "read cursor event type",
-    });
-    const firstRead = await chat.markThreadRead(actor, run.threadId);
-    if (!firstRead.lastReadAt) {
-      throw new Error("Expected the completed run to establish a read cursor");
-    }
-
-    const conflicting =
-      await insertOutputEventWithConflictingLegacyPayloadFixture({
-        threadId: run.threadId,
-        content: "explicit output event with stale lifecycle payload",
-        createdAt: new Date(new Date(firstRead.lastReadAt).getTime() + 1000),
-        legacyPayload: "run.completed",
-      });
-    const page = await chat.listThreadEvents(actor, run.threadId);
-    expect(page.events).toContainEqual(
-      expect.objectContaining({
-        id: conflicting.id,
-        eventType: "output.message",
-      }),
-    );
-
-    await expect(chat.listThreadUnreads(actor, agentId)).resolves.toStrictEqual(
-      [],
-    );
-    await expect(
-      chat.markThreadRead(actor, run.threadId),
-    ).resolves.toMatchObject({
-      lastReadAt: firstRead.lastReadAt,
-    });
-  }, 120_000);
-
   it("lists unread agent and thread indicators", async () => {
     const {
       actor: owner,

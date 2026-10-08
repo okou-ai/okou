@@ -250,6 +250,23 @@ and checks Luna effort and connected Fable/Astra Fast capabilities through
 rows would test a different, private construction. These public requests do
 not prove repair of corrupted legacy rows or an arbitrary replacement graph.
 
+For queued integration messages, retain the real ingress and Runner lifecycle.
+The queued Telegram case in `integrations-telegram-post.test.ts` now onboards
+and links its user through normal APIs, observes Runs through the public logs
+endpoint and verifies the claimed conversation context. It does not inject a
+thinking-message ID into a private context or use test-route seed/read/teardown.
+The queued preview case in `chat-events-shared-queue.test.ts` uses normal upload
+prepare/complete and the client event ID from its original send, without an
+internal SQL replay.
+
+For deletion, a surviving observer must own a genuine production credential.
+`conversation-history-deletion.test.ts` obtains the sandbox token through a
+Runner claim, completes its checkpoint and sends a verified Clerk deletion.
+A late completion with that same token returns 404; it does not authenticate a
+deleted Clerk identity. The Agent-delete case observes Run 404 and repeated
+DELETE 404 while its owner still exists. These outcomes do not prove the exact
+physical history-blob reference counts removed with batch 010.
+
 For the full reasoning, see
 [Testing External Behavior](./testing-external-behavior.md).
 
