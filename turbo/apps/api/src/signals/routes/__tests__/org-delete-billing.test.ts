@@ -35,7 +35,6 @@ import {
   postConcurrencyEntitlementsInvoicePaid,
   postOneTimePurchaseCompleted,
   postSubscriptionInvoicePaid,
-  postUsageAllowanceInvoicePaid,
   TEST_PRICE_CONCURRENCY,
   type BillingWebhookFixture,
 } from "./helpers/stripe-billing-webhook";
@@ -219,21 +218,10 @@ test("immediately cancels and proportionally refunds every org subscription sour
   const ids = {
     plan: "sub_delete_plan",
     usagePack: "sub_delete_usage_pack",
-    allowance: "sub_delete_allowance",
     concurrency: "sub_delete_concurrency",
   };
   const fixture = createOrgDeleteBillingFixture();
   await seedPlanSubscription(fixture, ids.plan, periodEnd);
-  await postUsageAllowanceInvoicePaid(context.signal, {
-    ...fixture,
-    subscriptionId: ids.allowance,
-    shortWindowSeconds: 300,
-    shortWindowUnits: 1000,
-    weeklyWindowSeconds: 604_800,
-    weeklyWindowUnits: 10_000,
-    effectiveAt: new Date(periodStart * 1000),
-    expiresAt: new Date(periodEnd * 1000),
-  });
   context.mocks.stripe.subscriptions.retrieve.mockResolvedValueOnce({
     id: ids.concurrency,
     customer: fixture.customerId,
@@ -274,7 +262,15 @@ test("immediately cancels and proportionally refunds every org subscription sour
       has_more: true,
     })
     .mockResolvedValueOnce({
-      data: [subscription(ids.allowance, fixture.customerId)],
+      data: [
+        subscription(
+          `sub_archived_allowance_${randomUUID()}`,
+          fixture.customerId,
+          {
+            metadata: { purpose: "usage_allowance" },
+          },
+        ),
+      ],
       has_more: false,
     });
   context.mocks.stripe.subscriptions.retrieve.mockResolvedValueOnce(
@@ -306,7 +302,7 @@ test("immediately cancels and proportionally refunds every org subscription sour
     limit: 100,
     starting_after: ids.usagePack,
   });
-  expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledTimes(4);
+  expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledTimes(3);
   for (const subscriptionId of Object.values(ids)) {
     expect(context.mocks.stripe.subscriptions.cancel).toHaveBeenCalledWith(
       subscriptionId,
@@ -316,7 +312,7 @@ test("immediately cancels and proportionally refunds every org subscription sour
       },
     );
   }
-  expect(context.mocks.stripe.creditNotes.create).toHaveBeenCalledTimes(4);
+  expect(context.mocks.stripe.creditNotes.create).toHaveBeenCalledTimes(3);
   expect(
     context.mocks.stripe.creditNotes.create.mock.calls.map((call) => {
       return call[0];

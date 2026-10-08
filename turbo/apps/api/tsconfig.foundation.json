@@ -95,6 +95,7 @@
     "src/signals/external/clerk-organization-lists.ts",
     "src/signals/external/db.ts",
     "src/signals/external/realtime.ts",
+    "src/signals/services/archived-allowance.ts",
     "src/signals/services/billing-checkout.service.ts",
     "src/signals/services/billing-clerk-directory.service.ts",
     "src/signals/services/billing-concurrency-subscription.service.ts",

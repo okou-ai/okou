@@ -27,28 +27,13 @@ import {
   usagePackSubscriptions,
   usagePackAllocations,
 } from "@okouai/db/schema/usage-pack-subscription";
-import {
-  orgUsageAllowanceEntitlements,
-  orgUsageAllowanceWindows,
-} from "@okouai/db/schema/org-usage-allowance";
 import { command } from "ccstate";
-import {
-  and,
-  eq,
-  gt,
-  inArray,
-  isNull,
-  lt,
-  lte,
-  notInArray,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
-import { now, nowDate, timestampWithoutTimeZone } from "../../lib/time";
+import { now, nowDate } from "../../lib/time";
 import { clerk$ } from "../external/clerk";
 import { waitUntil } from "../context/wait-until";
 import { writeDb$, type Db } from "../external/db";
@@ -119,6 +104,7 @@ import {
 } from "./usage-pack-subscription-migration.service";
 
 import { concurrencySubscriptionUpdatedAt } from "./concurrency-subscription-write";
+import { isArchivedUsageAllowanceMetadata } from "./archived-allowance";
 
 const L = logger("WebhookStripe");
 
@@ -327,27 +313,10 @@ type AtomGrantInvoiceDetails =
   | AtomCreditGrantInvoiceDetails
   | AtomUsagePackCreditGrantInvoiceDetails;
 
-interface UsageAllowanceInvoiceDetails {
-  readonly orgId: string;
-  readonly shortWindowSeconds: number;
-  readonly shortWindowUnits: number;
-  readonly weeklyWindowSeconds: number;
-  readonly weeklyWindowUnits: number;
-  readonly effectiveAt: Date;
-  readonly expiresAt: Date;
-  readonly customerId: string | null;
-  readonly subscriptionId: string;
-  readonly active: boolean;
-}
-
-interface UsageAllowanceMetadataSource {
-  readonly metadata: Record<string, string>;
-  readonly source: "invoice" | "product";
-  readonly line: InvoiceLineInput;
-}
-
 function subscriptionPeriodEnd(subscription: SubscriptionInput): Date | null {
-  const periodEndUnix = subscription.items.data[0]?.current_period_end;
+  const periodEndUnix = knownBillingPlanPriceItem(
+    subscription.items.data,
+  )?.current_period_end;
   return typeof periodEndUnix === "number"
     ? new Date(periodEndUnix * 1000)
     : null;
@@ -454,27 +423,6 @@ async function subscriptionScheduledEnd(
   );
 }
 
-function usageAllowanceSubscriptionEnd(
-  subscription: SubscriptionInput,
-): Date | null {
-  const periodEnd = subscriptionPeriodEnd(subscription);
-  const cancelAt = subscriptionCancelAt(subscription);
-  if (!periodEnd) {
-    return null;
-  }
-  const allowanceCancelAtValue = subscription.metadata?.allowanceCancelAt;
-  const allowanceCancelAt = allowanceCancelAtValue
-    ? new Date(allowanceCancelAtValue)
-    : null;
-  return [cancelAt, allowanceCancelAt]
-    .filter((value): value is Date => {
-      return value !== null && !Number.isNaN(value.getTime());
-    })
-    .reduce((earliest, value) => {
-      return value < earliest ? value : earliest;
-    }, periodEnd);
-}
-
 function customerIdFromSubscription(
   subscription: SubscriptionInput,
 ): string | null {
@@ -555,7 +503,6 @@ const CREDIT_PURCHASE_EXPIRES_AT_METADATA_KEY = "creditsExpiresAt";
 const ATOM_GRANT_EXPIRES_AT_METADATA_KEY = "atomGrantExpiresAt";
 const ATOM_GRANT_PURPOSE = "atom_grant";
 const ATOM_GRANT_SUBSCRIPTION_STATUS = "atom_grant";
-const USAGE_ALLOWANCE_PURPOSE = "usage_allowance";
 
 function isAtomDayGrantSource(source: string | undefined): boolean {
   return source === "atom_entitlement" || source === "atom_redeem_code";
@@ -681,24 +628,48 @@ function invoiceMergedMetadata(invoice: InvoiceInput): Record<string, string> {
   };
 }
 
-function isUsageAllowanceMetadata(
-  metadata: Readonly<Record<string, string>> | null | undefined,
-): boolean {
+function isArchivedUsageAllowanceInvoice(invoice: InvoiceInput): boolean {
   return (
-    metadata?.purpose === USAGE_ALLOWANCE_PURPOSE ||
-    metadata?.type === USAGE_ALLOWANCE_PURPOSE
+    isArchivedUsageAllowanceMetadata(invoice.metadata) ||
+    isArchivedUsageAllowanceMetadata(
+      invoice.parent?.subscription_details?.metadata,
+    )
   );
 }
 
+function invoiceWithoutArchivedAllowanceLines(
+  invoice: InvoiceInput,
+): InvoiceInput {
+  const allowancePriceId = invoiceMergedMetadata(invoice).allowancePriceId;
+  return {
+    ...invoice,
+    lines: {
+      ...invoice.lines,
+      data: invoice.lines.data.filter((line) => {
+        return (
+          !isArchivedUsageAllowanceMetadata(line.metadata) &&
+          (!allowancePriceId || invoiceLinePriceId(line) !== allowancePriceId)
+        );
+      }),
+    },
+  };
+}
+
 function isAtomGrantInvoice(invoice: InvoiceInput): boolean {
-  if (isUsageAllowanceMetadata(invoiceMergedMetadata(invoice))) {
+  if (isArchivedUsageAllowanceInvoice(invoice)) {
     return false;
   }
 
   return (
     invoice.metadata?.purpose === ATOM_GRANT_PURPOSE ||
     invoice.metadata?.type === ATOM_GRANT_PURPOSE ||
-    invoiceAtomGrantLine(invoice) !== null
+    (invoiceAtomGrantLine(invoice) !== null &&
+      !invoice.lines.data.some((line) => {
+        const priceId = invoiceLinePriceId(line);
+        return (
+          priceId !== null && tierForKnownPlanPrice({ id: priceId }) !== null
+        );
+      }))
   );
 }
 
@@ -1013,357 +984,6 @@ function atomUsagePackGrantWouldNotExtendEntitlement(args: {
   );
 }
 
-function positiveMetadataInteger(
-  metadata: Readonly<Record<string, string>>,
-  key: string,
-): number | null {
-  const value = Number(metadata[key]);
-  return Number.isInteger(value) && value > 0 ? value : null;
-}
-
-function hasUsageAllowanceWindowMetadata(
-  metadata: Readonly<Record<string, string>>,
-): boolean {
-  return (
-    positiveMetadataInteger(metadata, "shortWindowSeconds") !== null &&
-    positiveMetadataInteger(metadata, "shortWindowUnits") !== null &&
-    positiveMetadataInteger(metadata, "weeklyWindowSeconds") !== null &&
-    positiveMetadataInteger(metadata, "weeklyWindowUnits") !== null
-  );
-}
-
-function allowanceSubscriptionMetadataOverlay(
-  metadata: Readonly<Record<string, string>>,
-): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(metadata).filter(([key]) => {
-      return (
-        key.startsWith("allowance") ||
-        key === "shortWindowSeconds" ||
-        key === "shortWindowUnits" ||
-        key === "weeklyWindowSeconds" ||
-        key === "weeklyWindowUnits"
-      );
-    }),
-  );
-}
-
-async function usageAllowanceMetadataSource(
-  invoice: InvoiceInput,
-): Promise<UsageAllowanceMetadataSource | null> {
-  const invoiceMetadata = invoiceMergedMetadata(invoice);
-  for (const line of invoice.lines.data) {
-    const lineMetadata = line.metadata ?? {};
-    if (
-      isUsageAllowanceMetadata(lineMetadata) &&
-      hasUsageAllowanceWindowMetadata(lineMetadata)
-    ) {
-      return {
-        metadata: {
-          ...lineMetadata,
-          ...allowanceSubscriptionMetadataOverlay(invoiceMetadata),
-        },
-        source: "invoice",
-        line,
-      };
-    }
-  }
-
-  if (
-    isUsageAllowanceMetadata(invoiceMetadata) &&
-    hasUsageAllowanceWindowMetadata(invoiceMetadata)
-  ) {
-    const line = invoice.lines.data.find((candidate) => {
-      return invoiceLinePriceId(candidate) !== null;
-    });
-    return line ? { metadata: invoiceMetadata, source: "invoice", line } : null;
-  }
-
-  for (const line of invoice.lines.data) {
-    const priceId = invoiceLinePriceId(line);
-    if (!priceId) {
-      continue;
-    }
-    if (
-      tierForKnownPlanPrice({ id: priceId }) !== null ||
-      isConcurrencyPriceId(priceId) ||
-      priceId === atomGrantPriceId()
-    ) {
-      continue;
-    }
-    const price = await getStripeClient().prices.retrieve(priceId, {
-      expand: ["product"],
-    });
-    if (!price) {
-      continue;
-    }
-    const product = price.product;
-    if (!product) {
-      continue;
-    }
-    if (typeof product === "string" || "deleted" in product) {
-      continue;
-    }
-    const productMetadata = product.metadata ?? {};
-    if (
-      isUsageAllowanceMetadata(productMetadata) &&
-      hasUsageAllowanceWindowMetadata(productMetadata)
-    ) {
-      return {
-        metadata: {
-          ...productMetadata,
-          ...allowanceSubscriptionMetadataOverlay(invoiceMetadata),
-        },
-        source: "product",
-        line,
-      };
-    }
-  }
-  return null;
-}
-
-async function usageAllowanceInvoiceDetails(
-  invoice: InvoiceInput,
-): Promise<UsageAllowanceInvoiceDetails | null> {
-  const metadataSource = await usageAllowanceMetadataSource(invoice);
-  if (!metadataSource) {
-    return null;
-  }
-  const { metadata, source, line } = metadataSource;
-
-  const orgId = metadata.orgId;
-  const shortWindowSeconds = positiveMetadataInteger(
-    metadata,
-    "shortWindowSeconds",
-  );
-  const shortWindowUnits = positiveMetadataInteger(
-    metadata,
-    "shortWindowUnits",
-  );
-  const weeklyWindowSeconds = positiveMetadataInteger(
-    metadata,
-    "weeklyWindowSeconds",
-  );
-  const weeklyWindowUnits = positiveMetadataInteger(
-    metadata,
-    "weeklyWindowUnits",
-  );
-  const subscriptionId = subscriptionIdFromInvoice(invoice);
-  const effectiveAt =
-    typeof line.period.start === "number"
-      ? new Date(line.period.start * 1000)
-      : nowDate();
-  const periodEnd = new Date(line.period.end * 1000);
-  const configuredEnd = metadata.allowanceCancelAt
-    ? new Date(metadata.allowanceCancelAt)
-    : null;
-  const expiresAt =
-    configuredEnd &&
-    !Number.isNaN(configuredEnd.getTime()) &&
-    configuredEnd < periodEnd
-      ? configuredEnd
-      : periodEnd;
-  const active =
-    metadata.allowanceStatus !== "canceled" && expiresAt > effectiveAt;
-
-  if (
-    !orgId ||
-    !shortWindowSeconds ||
-    !shortWindowUnits ||
-    !weeklyWindowSeconds ||
-    !weeklyWindowUnits
-  ) {
-    L.warn("usage allowance invoice has invalid metadata", {
-      invoiceId: invoice.id,
-      hasOrgId: Boolean(orgId),
-      source,
-      metadata,
-    });
-    return null;
-  }
-
-  if (!subscriptionId) {
-    L.warn("usage allowance invoice is not a subscription period invoice", {
-      invoiceId: invoice.id,
-      orgId,
-      hasSubscriptionId: Boolean(subscriptionId),
-      hasPeriodEnd: true,
-    });
-    return null;
-  }
-
-  if (!active && metadata.allowanceStatus !== "canceled") {
-    L.warn("usage allowance invoice has invalid entitlement time range", {
-      invoiceId: invoice.id,
-      orgId,
-      effectiveAt: effectiveAt.toISOString(),
-      expiresAt: expiresAt.toISOString(),
-    });
-    return null;
-  }
-
-  return {
-    orgId,
-    shortWindowSeconds,
-    shortWindowUnits,
-    weeklyWindowSeconds,
-    weeklyWindowUnits,
-    effectiveAt,
-    expiresAt,
-    customerId: customerIdFromInvoice(invoice),
-    subscriptionId,
-    active,
-  };
-}
-
-function usageAllowanceInvoiceValues(
-  invoiceId: string,
-  details: UsageAllowanceInvoiceDetails,
-  at: Date,
-) {
-  return {
-    orgId: details.orgId,
-    source: "atom_usage_allowance",
-    status: "active",
-    shortWindowSeconds: details.shortWindowSeconds,
-    shortWindowUnits: details.shortWindowUnits,
-    weeklyWindowSeconds: details.weeklyWindowSeconds,
-    weeklyWindowUnits: details.weeklyWindowUnits,
-    effectiveAt: details.effectiveAt,
-    expiresAt: details.expiresAt,
-    stripeCustomerId: details.customerId,
-    stripeSubscriptionId: details.subscriptionId,
-    stripeInvoiceId: invoiceId,
-    updatedAt: at,
-  };
-}
-
-function allowanceInvoiceBindingWhere(details: UsageAllowanceInvoiceDetails) {
-  return or(
-    isNull(orgUsageAllowanceEntitlements.stripeSubscriptionId),
-    eq(
-      orgUsageAllowanceEntitlements.stripeSubscriptionId,
-      details.subscriptionId,
-    ),
-    details.active
-      ? lt(orgUsageAllowanceEntitlements.effectiveAt, details.effectiveAt)
-      : undefined,
-  );
-}
-
-const publishUsageAllowanceInvoice$ = command(
-  async (
-    { set },
-    args: {
-      readonly invoiceId: string;
-      readonly details: UsageAllowanceInvoiceDetails;
-    },
-    signal: AbortSignal,
-  ): Promise<string | null> => {
-    const db = set(writeDb$);
-    const { details } = args;
-    const windows = details.active
-      ? []
-      : await db
-          .select({ id: orgUsageAllowanceWindows.id })
-          .from(orgUsageAllowanceWindows)
-          .where(currentAllowanceWindowsWhere(details.orgId, nowDate()));
-    signal.throwIfAborted();
-    const windowIds = windows.map((row) => {
-      return row.id;
-    });
-    const orgId = await db.transaction(async (tx) => {
-      // No row locks: the entitlement publication is conditional on its
-      // invoice binding, and cancellation writes the entitlement before it
-      // re-checks the prepared window set (window creators lock that row).
-      const [existing] = await tx
-        .select({ orgId: orgUsageAllowanceEntitlements.orgId })
-        .from(orgUsageAllowanceEntitlements)
-        .where(eq(orgUsageAllowanceEntitlements.orgId, details.orgId));
-      const at = nowDate();
-      if (details.active) {
-        const values = usageAllowanceInvoiceValues(args.invoiceId, details, at);
-        const [published] = await tx
-          .insert(orgUsageAllowanceEntitlements)
-          .values(values)
-          .onConflictDoUpdate({
-            target: orgUsageAllowanceEntitlements.orgId,
-            set: values,
-            setWhere: allowanceInvoiceBindingWhere(details),
-          })
-          .returning({ orgId: orgUsageAllowanceEntitlements.orgId });
-        return published?.orgId ?? null;
-      }
-      if (!existing) {
-        return details.orgId;
-      }
-      const [published] = await tx
-        .update(orgUsageAllowanceEntitlements)
-        .set({ status: "canceled", expiresAt: at, updatedAt: at })
-        .where(
-          and(
-            eq(orgUsageAllowanceEntitlements.orgId, details.orgId),
-            allowanceInvoiceBindingWhere(details),
-          ),
-        )
-        .returning({ orgId: orgUsageAllowanceEntitlements.orgId });
-      if (!published) {
-        return null;
-      }
-      const windowScope = currentAllowanceWindowsWhere(details.orgId, at);
-      const [unprepared] = await tx
-        .select({ id: orgUsageAllowanceWindows.id })
-        .from(orgUsageAllowanceWindows)
-        .where(
-          and(windowScope, notInArray(orgUsageAllowanceWindows.id, windowIds)),
-        )
-        .limit(1);
-      if (unprepared) {
-        throw new Error(
-          "Usage allowance windows changed during invoice cancellation",
-        );
-      }
-      await tx
-        .update(orgUsageAllowanceWindows)
-        .set(expiredAllowanceWindowValues(at))
-        .where(
-          and(windowScope, inArray(orgUsageAllowanceWindows.id, windowIds)),
-        );
-      signal.throwIfAborted();
-      return details.orgId;
-    });
-    signal.throwIfAborted();
-    return orgId;
-  },
-);
-
-const handleUsageAllowanceInvoicePaid$ = command(
-  async (
-    { set },
-    invoice: InvoiceInput,
-    signal: AbortSignal,
-  ): Promise<PaidWebhookOutcome> => {
-    const details = await usageAllowanceInvoiceDetails(invoice);
-    signal.throwIfAborted();
-    if (!details) {
-      return { handled: false, drainOrgId: null };
-    }
-    const drainOrgId = await set(
-      publishUsageAllowanceInvoice$,
-      { invoiceId: invoice.id, details },
-      signal,
-    );
-    signal.throwIfAborted();
-    L.debug("usage allowance invoice processed", {
-      invoiceId: invoice.id,
-      orgId: details.orgId,
-      subscriptionId: details.subscriptionId,
-      expiresAt: details.expiresAt?.toISOString() ?? null,
-    });
-    return { handled: true, drainOrgId };
-  },
-);
-
 function stripePreviewMetadataForEvent(
   event: StripeWebhookEvent,
 ): readonly (Readonly<Record<string, string>> | null | undefined)[] | null {
@@ -1389,10 +1009,13 @@ function stripePreviewMetadataForEvent(
   }
 }
 
-function shouldHandleStripePreviewEvent(event: StripeWebhookEvent): boolean {
+function shouldHandleStripeBillingEvent(event: StripeWebhookEvent): boolean {
   const metadataCandidates = stripePreviewMetadataForEvent(event);
   if (metadataCandidates === null) {
     return true;
+  }
+  if (metadataCandidates.some(isArchivedUsageAllowanceMetadata)) {
+    return false;
   }
   return metadataCandidates.some((metadata) => {
     return isCurrentStripePreviewMetadata(metadata);
@@ -3132,6 +2755,9 @@ async function bindSubscriptionToCustomerOrg(
     return [];
   }
 
+  if (isArchivedUsageAllowanceMetadata(args.subscription.metadata)) {
+    return [];
+  }
   const planItem = knownBillingPlanPriceItem(args.subscription.items.data);
   const tier = planItem ? tierForKnownPlanPrice(planItem.price) : null;
   if (!planItem || !tier) {
@@ -3180,6 +2806,9 @@ async function bindSubscriptionToCustomerOrg(
 }
 
 function tierFromSubscription(subscription: StripeSubscription) {
+  if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
+    return null;
+  }
   const planItem = knownBillingPlanPriceItem(subscription.items.data);
   if (!planItem) {
     return null;
@@ -3446,6 +3075,9 @@ async function subscriptionInvoiceDetails(
 ): Promise<SubscriptionInvoiceDetails | null> {
   const stripe = getStripeClient();
   const subscription = await stripe.subscriptions.retrieve(args.subscriptionId);
+  if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
+    return null;
+  }
   const planItem = knownBillingPlanPriceItem(subscription.items.data);
   const tier = planItem ? tierForKnownPlanPrice(planItem.price) : null;
   if (!planItem || !tier) {
@@ -3504,6 +3136,9 @@ const handleCheckoutCompleted$ = command(
     paidAt: Date,
     signal: AbortSignal,
   ): Promise<CheckoutCompletedOutcome> => {
+    if (isArchivedUsageAllowanceMetadata(session.metadata)) {
+      return { drainOrgId: null, orgIds: [] };
+    }
     const db = set(writeDb$);
 
     const usagePackInvitation = await set(
@@ -3572,6 +3207,9 @@ const handleCheckoutCompleted$ = command(
     const stripe = getStripeClient();
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
     signal.throwIfAborted();
+    if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
+      return { drainOrgId: null, orgIds: [] };
+    }
     const usagePackOutcome = await set(
       handleUsagePackCheckoutCompleted$,
       session,
@@ -3623,6 +3261,9 @@ async function handleSubscriptionCreated(
   getClerk: ClerkClientProvider,
   subscription: SubscriptionInput,
 ): Promise<readonly string[]> {
+  if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
+    return [];
+  }
   const usagePackOutcome = await handleUsagePackSubscriptionCreated(
     db,
     subscription,
@@ -3756,6 +3397,10 @@ const handleInvoicePaid$ = command(
     invoice: InvoiceInput,
     signal: AbortSignal,
   ): Promise<string | null> => {
+    if (isArchivedUsageAllowanceInvoice(invoice)) {
+      return null;
+    }
+    invoice = invoiceWithoutArchivedAllowanceLines(invoice);
     const db = set(writeDb$);
     const getClerk = (): ClerkClient => {
       return get(clerk$);
@@ -3831,13 +3476,6 @@ const handleInvoicePaid$ = command(
       }
     }
 
-    const usageAllowanceResult = await set(
-      handleUsageAllowanceInvoicePaid$,
-      invoice,
-      signal,
-    );
-    signal.throwIfAborted();
-
     const atomGrantResult = await set(
       handleAtomGrantInvoicePaid$,
       invoice,
@@ -3855,8 +3493,7 @@ const handleInvoicePaid$ = command(
     const shouldHandlePlanInvoice =
       hasPlanInvoiceLine &&
       (!usagePackResult.handled || hasCustomPlanInvoiceLine);
-    const componentDrainOrgId =
-      usageAllowanceResult.drainOrgId ?? usagePackResult.orgId;
+    const componentDrainOrgId = usagePackResult.orgId;
     const planDrainOrgId = shouldHandlePlanInvoice
       ? await set(
           handlePlanSubscriptionInvoicePaid$,
@@ -3992,269 +3629,6 @@ const publishConcurrencySubscription$ = command(
         return row.orgId;
       });
     });
-  },
-);
-
-interface UsageAllowanceSubscriptionCreditsUpdate {
-  readonly shortWindowUnits: number;
-  readonly weeklyWindowUnits: number;
-}
-
-function acceptsAllowanceSubscription(args: {
-  readonly bound: boolean;
-  readonly subscription: SubscriptionInput;
-  readonly entitlement:
-    | typeof orgUsageAllowanceEntitlements.$inferSelect
-    | undefined;
-  readonly wallet:
-    | { readonly stripeSubscriptionId: string | null; readonly tier: string }
-    | undefined;
-}): boolean {
-  const { entitlement, subscription, wallet } = args;
-  if (!entitlement) {
-    return false;
-  }
-  if (args.bound) {
-    return entitlement.stripeSubscriptionId === subscription.id;
-  }
-  if (!wallet) {
-    return false;
-  }
-  const planItem = knownBillingPlanPriceItem(subscription.items.data);
-  const establishesCustom =
-    wallet.stripeSubscriptionId === null &&
-    wallet.tier === "custom" &&
-    planItem !== undefined &&
-    tierForKnownPlanPrice(planItem.price) === "custom";
-  return (
-    entitlement.stripeSubscriptionId === null ||
-    entitlement.stripeSubscriptionId === subscription.id ||
-    wallet.stripeSubscriptionId === subscription.id ||
-    establishesCustom
-  );
-}
-
-function usageAllowanceSubscriptionCreditsUpdate(
-  subscription: Pick<SubscriptionInput, "metadata">,
-): UsageAllowanceSubscriptionCreditsUpdate | null {
-  const metadata = subscription.metadata;
-  if (!metadata || metadata.allowanceStatus === "canceled") {
-    return null;
-  }
-
-  const shortWindowUnits = positiveMetadataInteger(
-    metadata,
-    "shortWindowUnits",
-  );
-  const weeklyWindowUnits = positiveMetadataInteger(
-    metadata,
-    "weeklyWindowUnits",
-  );
-  if (!shortWindowUnits || !weeklyWindowUnits) {
-    return null;
-  }
-
-  return { shortWindowUnits, weeklyWindowUnits };
-}
-
-function allowanceSubscriptionPublication(
-  subscription: SubscriptionInput,
-  at: Date,
-) {
-  const periodEnd = usageAllowanceSubscriptionEnd(subscription);
-  const cancelAt = subscription.metadata?.allowanceCancelAt
-    ? new Date(subscription.metadata.allowanceCancelAt)
-    : null;
-  const terminal =
-    subscription.status === "canceled" ||
-    subscription.status === "incomplete_expired" ||
-    subscription.metadata?.allowanceStatus === "canceled" ||
-    (cancelAt !== null && !Number.isNaN(cancelAt.getTime()) && cancelAt <= at);
-  const credits = usageAllowanceSubscriptionCreditsUpdate(subscription);
-  return {
-    terminal,
-    credits,
-    values: {
-      status: terminal ? "canceled" : subscription.status,
-      ...(terminal
-        ? { expiresAt: at }
-        : periodEnd
-          ? { expiresAt: periodEnd }
-          : {}),
-      ...credits,
-      stripeSubscriptionId: subscription.id,
-      updatedAt: at,
-    },
-  };
-}
-
-function expiredAllowanceWindowValues(at: Date) {
-  return {
-    expiresAt: sql`GREATEST(${timestampWithoutTimeZone(at)}::timestamp, ${orgUsageAllowanceWindows.startsAt} + INTERVAL '1 millisecond')`,
-    updatedAt: at,
-  };
-}
-
-function currentAllowanceWindowsWhere(orgId: string, at: Date) {
-  return and(
-    eq(orgUsageAllowanceWindows.orgId, orgId),
-    lte(orgUsageAllowanceWindows.startsAt, at),
-    gt(orgUsageAllowanceWindows.expiresAt, at),
-  );
-}
-
-const publishUsageAllowanceSubscription$ = command(
-  async (
-    { set },
-    args: {
-      readonly orgId: string;
-      readonly subscription: SubscriptionInput;
-      readonly bound: boolean;
-    },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    const db = set(writeDb$);
-    const prepared = await db
-      .select({ id: orgUsageAllowanceWindows.id })
-      .from(orgUsageAllowanceWindows)
-      .where(currentAllowanceWindowsWhere(args.orgId, nowDate()));
-    signal.throwIfAborted();
-    const windowIds = prepared.map((row) => {
-      return row.id;
-    });
-    const result = await db.transaction(async (tx) => {
-      // No row locks: the entitlement write is conditional on the binding it
-      // was accepted from, and it precedes the prepared-window re-check so
-      // window creators (which lock the entitlement) are ordered around it.
-      const [wallet] = await tx
-        .select({
-          stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
-          tier: orgMetadata.tier,
-        })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, args.orgId));
-      const [entitlement] = await tx
-        .select()
-        .from(orgUsageAllowanceEntitlements)
-        .where(eq(orgUsageAllowanceEntitlements.orgId, args.orgId));
-      if (
-        !entitlement ||
-        !acceptsAllowanceSubscription({ ...args, entitlement, wallet })
-      ) {
-        return false;
-      }
-      const at = nowDate();
-      const publication = allowanceSubscriptionPublication(
-        args.subscription,
-        at,
-      );
-      const [published] = await tx
-        .update(orgUsageAllowanceEntitlements)
-        .set(publication.values)
-        .where(
-          and(
-            eq(orgUsageAllowanceEntitlements.id, entitlement.id),
-            eq(orgUsageAllowanceEntitlements.orgId, args.orgId),
-            entitlement.stripeSubscriptionId === null
-              ? isNull(orgUsageAllowanceEntitlements.stripeSubscriptionId)
-              : eq(
-                  orgUsageAllowanceEntitlements.stripeSubscriptionId,
-                  entitlement.stripeSubscriptionId,
-                ),
-          ),
-        )
-        .returning({ id: orgUsageAllowanceEntitlements.id });
-      if (!published) {
-        // The binding moved after acceptance: deterministic "not published".
-        return false;
-      }
-      const windowScope = currentAllowanceWindowsWhere(args.orgId, at);
-      const [unprepared] = await tx
-        .select({ id: orgUsageAllowanceWindows.id })
-        .from(orgUsageAllowanceWindows)
-        .where(
-          and(windowScope, notInArray(orgUsageAllowanceWindows.id, windowIds)),
-        )
-        .limit(1);
-      if (unprepared) {
-        throw new Error(
-          "Usage allowance windows changed during Stripe reconciliation",
-        );
-      }
-      if (publication.terminal) {
-        await tx
-          .update(orgUsageAllowanceWindows)
-          .set(expiredAllowanceWindowValues(at))
-          .where(
-            and(windowScope, inArray(orgUsageAllowanceWindows.id, windowIds)),
-          );
-      } else if (publication.credits) {
-        for (const kind of ["short", "weekly"] as const) {
-          await tx
-            .update(orgUsageAllowanceWindows)
-            .set({
-              unitLimit:
-                kind === "short"
-                  ? publication.credits.shortWindowUnits
-                  : publication.credits.weeklyWindowUnits,
-              updatedAt: at,
-            })
-            .where(
-              and(
-                windowScope,
-                inArray(orgUsageAllowanceWindows.id, windowIds),
-                eq(orgUsageAllowanceWindows.kind, kind),
-              ),
-            );
-        }
-      }
-      signal.throwIfAborted();
-      return true;
-    });
-    signal.throwIfAborted();
-    return result;
-  },
-);
-
-const handleUsageAllowanceSubscriptionUpdated$ = command(
-  async (
-    { set },
-    subscription: SubscriptionInput,
-    signal: AbortSignal,
-  ): Promise<readonly string[]> => {
-    const db = set(writeDb$);
-    const bindings = await db
-      .select({ orgId: orgUsageAllowanceEntitlements.orgId })
-      .from(orgUsageAllowanceEntitlements)
-      .where(
-        eq(orgUsageAllowanceEntitlements.stripeSubscriptionId, subscription.id),
-      );
-    signal.throwIfAborted();
-    const metadataOrgId = subscription.metadata?.orgId;
-    const targets =
-      bindings.length > 0
-        ? bindings.map((row) => {
-            return { ...row, bound: true };
-          })
-        : metadataOrgId &&
-            (subscription.metadata?.allowancePriceId ||
-              hasUsageAllowanceWindowMetadata(subscription.metadata ?? {}))
-          ? [{ orgId: metadataOrgId, bound: false }]
-          : [];
-    const changed: string[] = [];
-    for (const target of targets) {
-      if (
-        await set(
-          publishUsageAllowanceSubscription$,
-          { ...target, subscription },
-          signal,
-        )
-      ) {
-        changed.push(target.orgId);
-      }
-      signal.throwIfAborted();
-    }
-    return changed;
   },
 );
 
@@ -4514,12 +3888,6 @@ const handleSubscriptionUpdatedLegacy$ = command(
     signal: AbortSignal,
   ): Promise<readonly string[]> => {
     const db = set(writeDb$);
-    const allowanceOrgIds = await set(
-      handleUsageAllowanceSubscriptionUpdated$,
-      subscription,
-      signal,
-    );
-    signal.throwIfAborted();
     const concurrencyOrgIds = await set(
       publishConcurrencySubscription$,
       subscription,
@@ -4549,9 +3917,7 @@ const handleSubscriptionUpdatedLegacy$ = command(
       }
       signal.throwIfAborted();
     }
-    return [
-      ...new Set([...allowanceOrgIds, ...concurrencyOrgIds, ...planOrgIds]),
-    ];
+    return [...new Set([...concurrencyOrgIds, ...planOrgIds])];
   },
 );
 
@@ -4562,6 +3928,9 @@ const handleSubscriptionUpdated$ = command(
     previousAttributes: SubscriptionPreviousAttributes | undefined,
     signal: AbortSignal,
   ): Promise<readonly string[]> => {
+    if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
+      return [];
+    }
     const db = set(writeDb$);
     const migrationOutcome = await set(
       handleUsagePackMigrationSubscriptionUpdated$,
@@ -4669,36 +4038,6 @@ async function handleSubscriptionDeletedLegacy(
   db: Db,
   subscription: SubscriptionDeletedInput,
 ): Promise<readonly string[]> {
-  const allowanceRows = await db.transaction(async (tx) => {
-    const canceledAt = nowDate();
-    const rows = await tx
-      .update(orgUsageAllowanceEntitlements)
-      .set({
-        status: "canceled",
-        expiresAt: canceledAt,
-        updatedAt: canceledAt,
-      })
-      .where(
-        eq(orgUsageAllowanceEntitlements.stripeSubscriptionId, subscription.id),
-      )
-      .returning({ orgId: orgUsageAllowanceEntitlements.orgId });
-    await tx
-      .update(orgUsageAllowanceWindows)
-      .set(expiredAllowanceWindowValues(canceledAt))
-      .where(
-        and(
-          inArray(
-            orgUsageAllowanceWindows.orgId,
-            rows.map((row) => {
-              return row.orgId;
-            }),
-          ),
-          lte(orgUsageAllowanceWindows.startsAt, canceledAt),
-          gt(orgUsageAllowanceWindows.expiresAt, canceledAt),
-        ),
-      );
-    return rows;
-  });
   const concurrencyRows = await db
     .update(orgConcurrencySubscriptions)
     .set({
@@ -4782,9 +4121,6 @@ async function handleSubscriptionDeletedLegacy(
   });
   return [
     ...new Set([
-      ...allowanceRows.map((row) => {
-        return row.orgId;
-      }),
       ...concurrencyRows.map((row) => {
         return row.orgId;
       }),
@@ -4799,6 +4135,9 @@ async function handleSubscriptionDeleted(
   db: Db,
   subscription: SubscriptionDeletedInput,
 ): Promise<readonly string[]> {
+  if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
+    return [];
+  }
   const usagePackOutcome = await handleUsagePackSubscriptionDeleted(
     db,
     subscription,
@@ -4881,6 +4220,9 @@ export const reconcileStripeSubscriptionSnapshot$ = command(
     subscription: StripeSubscription,
     signal: AbortSignal,
   ): Promise<StripeSubscriptionSnapshotReconciliation> => {
+    if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
+      return { orgIds: [], downgradedOrgIds: [], paidInvoiceId: null };
+    }
     const db = set(writeDb$);
     const getClerk = (): ClerkClient => {
       return get(clerk$);
@@ -4999,7 +4341,10 @@ export const reconcilePaidStripeCheckoutSession$ = command(
     },
     signal: AbortSignal,
   ): Promise<readonly string[]> => {
-    if (!isCurrentStripePreviewMetadata(input.session.metadata)) {
+    if (
+      !isCurrentStripePreviewMetadata(input.session.metadata) ||
+      isArchivedUsageAllowanceMetadata(input.session.metadata)
+    ) {
       return [];
     }
 
@@ -5072,8 +4417,8 @@ export const handleStripeWebhookEvent$ = command(
     const billingChangedOrgIds = new Set<string>();
     L.debug("stripe webhook received", { type: event.type, id: event.id });
 
-    if (!shouldHandleStripePreviewEvent(event)) {
-      L.debug("ignoring Stripe preview event for a different job", {
+    if (!shouldHandleStripeBillingEvent(event)) {
+      L.debug("ignoring Stripe event outside the active billing scope", {
         type: event.type,
         id: event.id,
       });

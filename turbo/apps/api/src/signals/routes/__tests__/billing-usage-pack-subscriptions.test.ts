@@ -5653,8 +5653,6 @@ describe("usage pack allocation management", () => {
             ],
             metadata: {
               planState: "ending",
-              allowanceStatus: "canceled",
-              allowanceCancelAt,
             },
             proration_behavior: "none",
             discounts: [{ coupon: "coupon_plan" }],
@@ -5669,8 +5667,6 @@ describe("usage pack allocation management", () => {
             ],
             metadata: {
               planState: "ending",
-              allowanceStatus: "canceled",
-              allowanceCancelAt,
             },
             proration_behavior: "none",
             discounts: [{ coupon: "coupon_plan" }],
