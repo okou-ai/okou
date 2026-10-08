@@ -6358,7 +6358,7 @@ restores its 16 MiB validation and resume limit: larger saved histories stay in
 storage, but continuing those sessions requires the fixed API and CLI again.
 That API rollback adds no stored-history rewrite, migration, or alternate reader.
 
-### Pi debug tracing retired (deployment blocked)
+### Pi debug tracing retired (single-release cutover)
 
 The owner requested abandonment of `_langfuseTrace` and complete removal of
 its implementation. The originating changes were #33756 (admission, terminal
@@ -6378,7 +6378,7 @@ stored switch overrides pass through ordinary registry-key filtering. This
 retirement does not delete remote project traces, provider credentials, queued
 execution contexts or user-owned connector accounts.
 
-**Database and release gate.** Migration `1345_outstanding_the_hood` drops
+**Database and accepted release boundary.** Migration `1345_outstanding_the_hood` drops
 `agent_runs.langfuse_trace_enabled` without rewriting historical migrations.
 Migrations precede API promotion. Outgoing APIs explicitly name that column
 in launch inserts, run detail reads and completion selections; generic Drizzle
@@ -6386,16 +6386,20 @@ selections/returning can name it too. Disabling the switch does not make those
 APIs column-independent. Applying this migration during an ordinary rolling
 release would break run creation, reads and completion until they drain.
 
-Keep the cleanup PR Draft and do not release it under the normal rolling
-pipeline until the owner chooses and verifies a deployment boundary: either a
-separately released column-independent API before contraction, or an explicitly
-authorized cutover that stops all outgoing API request, cron and completion
-writers before migration and keeps them stopped through promotion. No downtime,
-release, drain or production mutation is authorized by the cleanup request.
+The owner explicitly accepted this interruption on 2026-10-08 and requested
+complete removal in one release rather than a preparatory column-independent
+API release. No compatibility branch or outgoing-writer drain prerequisite is
+required for this accepted cutover. This is not rolling-compatible: outgoing
+API request, cron and completion paths can fail with an undefined-column error
+between migration and their retirement. The duration is not asserted to be zero
+or bounded by the migration's runtime. Acceptance of that risk permits this PR
+to proceed through review, CI and the protected merge queue; it is not an
+instruction to execute a production release or any manual production mutation.
+
 The repository rollback resolver rejects commits before this contraction's
 first-parent main commit; a rollback below it requires a reviewed forward
 migration restoring the column before an older API serves. This floor protects
-rollback only and does not solve the outgoing-writer promotion gate.
+rollback only; it does not make outgoing APIs compatible with the migration.
 
 ### Runner
 
