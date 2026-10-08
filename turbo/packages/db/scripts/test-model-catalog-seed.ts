@@ -166,13 +166,19 @@ function assertRoutes(
           ((route.model === "okou-1.0" &&
             route.upstream_model === "@preset/okou-1-0") ||
             (route.model === "deepseek-v4.1-flash" &&
-              route.upstream_model === "deepseek/deepseek-v4.1-flash"))),
+              route.upstream_model === "deepseek/deepseek-v4.1-flash") ||
+            (route.model === "gpt-6-luna" &&
+              route.upstream_model === "openai/gpt-6-luna"))),
       `${route.model}/${route.provider_type}: retired execution route`,
     );
   }
   assert.ok(
     routes.some((route) => {
-      return route.model === "deepseek-v4.1-flash" && route.enabled;
+      return (
+        route.model === "gpt-6-luna" &&
+        route.provider_type === "built-in" &&
+        route.enabled
+      );
     }),
     "internal memory needs its enabled independent binding",
   );

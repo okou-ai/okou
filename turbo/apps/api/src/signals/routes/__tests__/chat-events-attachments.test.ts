@@ -1140,11 +1140,11 @@ describe("CHAT-02: generation templates and attachments", () => {
     );
     expect(workflowPrompt).not.toContain("Before creating anything");
     expect(workflowPrompt).toContain("Gmail label-applied automation");
-    // The illustration run saved no native history, so its message text is
-    // replayed in the new session without the style id.
-    expect(workflowPrompt).toContain("# Web Chat Run Context");
+    // The cancelled illustration run remains incomplete context with the
+    // same model and runtime, without carrying over its template selection.
+    expect(workflowPrompt).toContain("# Incomplete Rounds Context");
     expect(workflowPrompt).toContain("User: draw a labeled inbox");
-    expect(workflowPrompt).not.toContain("# Incomplete Rounds Context");
+    expect(workflowPrompt).not.toContain("# Web Chat Run Context");
     expect(workflowPrompt).not.toContain(style.illustrationStyleId);
     await cancelChatRun(actor, workflow.runId);
 
@@ -1155,14 +1155,14 @@ describe("CHAT-02: generation templates and attachments", () => {
     });
     const followUpPrompt = (await api.readRun(actor, followUp.runId))
       .appendSystemPrompt;
-    // Neither cancelled run saved native history. Replay their message text
-    // without carrying either prior template selection into the new session.
+    // Both cancelled runs remain incomplete context without carrying either
+    // prior template selection into this run.
     expect(followUpPrompt).not.toContain("# Inline Templates");
     expect(followUpPrompt).not.toContain(workflowTemplate.id);
-    expect(followUpPrompt).toContain("# Web Chat Run Context");
+    expect(followUpPrompt).toContain("# Incomplete Rounds Context");
     expect(followUpPrompt).toContain("User: draw a labeled inbox");
     expect(followUpPrompt).toContain("User: create the workflow version");
-    expect(followUpPrompt).not.toContain("# Incomplete Rounds Context");
+    expect(followUpPrompt).not.toContain("# Web Chat Run Context");
     expect(followUpPrompt).not.toContain("Selected a template");
     expect(followUpPrompt).not.toContain(style.illustrationStyleId);
     await cancelChatRun(actor, followUp.runId);

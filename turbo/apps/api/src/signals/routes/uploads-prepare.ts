@@ -20,7 +20,7 @@ import {
   generatePresignedUploadPartUrl,
   s3MetadataHeaders,
 } from "../external/s3";
-import { privateArtifactCreationEnabled } from "../services/private-artifact-storage.service";
+import { privateArtifactCreationEnabled$ } from "../services/private-artifact-storage.service";
 import { allocateUploadedArtifact$ } from "../services/uploaded-artifact.service";
 import { rejectSuspendedOrg$ } from "../services/org-suspension.service";
 import type { RouteEntry } from "../route-entry";
@@ -49,8 +49,11 @@ const allocatePreparedUpload$ = command(
       if (!auth.orgId) {
         return artifactVisibilityUnavailable();
       }
-      privateArtifacts = await get(
-        privateArtifactCreationEnabled(auth.orgId, auth.userId),
+      privateArtifacts = await set(
+        privateArtifactCreationEnabled$,
+        auth.orgId,
+        auth.userId,
+        signal,
       );
       signal.throwIfAborted();
       if (!privateArtifacts) {

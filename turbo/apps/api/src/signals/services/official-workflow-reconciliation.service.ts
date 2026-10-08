@@ -14,6 +14,7 @@ import {
   stripeInvoicePaidEventConfigSchema,
   type StripeInvoicePaidEventConfig,
 } from "@okouai/api-contracts/contracts/workflows";
+import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import {
   officialWorkflowAutomationIdentities,
@@ -26,7 +27,7 @@ import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import { nowDate } from "../../lib/time";
 import { testOverride } from "../../lib/singleton";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import { settle } from "../utils";
 import {
   ensureAutomationEventWatchReconfiguration$,
@@ -45,7 +46,9 @@ import { notionConfigWithConnectorId } from "./notion-automation-account.service
 import {
   lockAcceptedOfficialWorkflowCatalog,
   readAcceptedOfficialWorkflowCatalog,
+  readAcceptedOfficialWorkflowCatalog$,
   readAcceptedOfficialWorkflowRevision,
+  readAcceptedOfficialWorkflowRevision$,
 } from "./official-workflow-catalog-read.service";
 import type {
   OfficialWorkflowReconciliationArgs,
@@ -53,7 +56,6 @@ import type {
 } from "./official-workflow-reconciliation-dispatch.service";
 import {
   buildOfficialAutomationPatch,
-  loadOfficialWorkflowUserTimezone,
   officialAutomationRestorePatch,
   refreshOfficialAutomationPatch,
   resolveOfficialWorkflowBlueprintForReconciliation,
@@ -69,7 +71,6 @@ import {
   type AutomationResult,
   type CreateAutomationInput,
   type OfficialAutomationEventPreparation,
-  type OfficialAutomationEventPreparationResult,
 } from "./workflow-automation.service";
 import { lockWorkflowWebhookAutomationTierEligibleForOrg } from "./workflow-webhook-automation-entitlement.service";
 import type { WorkflowMember } from "./workflow-data.service";
@@ -95,22 +96,8 @@ type AutomationStructureTransitionPreparedHook = (args: {
   readonly fingerprint: string;
 }) => Promise<void>;
 
-type ReconfigurationPersistedHook = (args: {
-  readonly definitionName: string;
-  readonly workflowId: string;
-  readonly automationId: string;
-  readonly blueprintKey: string;
-  readonly fingerprint: string;
-}) => Promise<void>;
-
 const automationStructureTransitionPreparedHookForTest = testOverride<
   AutomationStructureTransitionPreparedHook | undefined
->(() => {
-  return undefined;
-});
-
-const reconfigurationPersistedHookForTest = testOverride<
-  ReconfigurationPersistedHook | undefined
 >(() => {
   return undefined;
 });
@@ -374,67 +361,73 @@ async function lockInstalledWorkflow(
   return workflow !== undefined;
 }
 
-async function loadReconciliationContext(
-  db: ReadonlyDb,
-  args: ReconcileOfficialWorkflowInstallationArgs,
-  signal: AbortSignal,
-): Promise<ReconciliationContext | null> {
-  const [workflow] = await db
-    .select({ definitionName: workflows.officialDefinitionName })
-    .from(workflows)
-    .where(
-      and(
-        eq(workflows.id, args.workflowId),
-        eq(workflows.orgId, args.orgId),
-        eq(workflows.ownerUserId, args.member.userId),
-        eq(workflows.officialInstallationState, "installed"),
-      ),
-    )
-    .limit(1);
-  signal.throwIfAborted();
-  if (!workflow?.definitionName) {
-    return null;
-  }
-  const catalog = await readAcceptedOfficialWorkflowCatalog(db, signal);
-  const definition = catalog?.payload.definitions.find((candidate) => {
-    return candidate.name === workflow.definitionName;
-  });
-  if (!definition) {
-    return null;
-  }
-  if (args.activeDefinitionOnly === true && definition.lifecycle !== "active") {
-    return null;
-  }
-  const revision = await readAcceptedOfficialWorkflowRevision(
-    db,
-    { name: definition.name, revision: definition.revision },
-    signal,
-  );
-  if (!revision) {
-    throw new Error("Accepted Official Workflow revision is unavailable");
-  }
-  const [automations, identities] = await Promise.all([
-    db
-      .select(workflowAutomationColumns())
-      .from(workflowAutomations)
-      .where(eq(workflowAutomations.workflowId, args.workflowId))
-      .orderBy(asc(workflowAutomations.officialBlueprintKey)),
-    db
-      .select()
-      .from(officialWorkflowAutomationIdentities)
+const loadReconciliationContext$ = command(
+  async (
+    { get, set },
+    args: ReconcileOfficialWorkflowInstallationArgs,
+    signal: AbortSignal,
+  ): Promise<ReconciliationContext | null> => {
+    const db = get(db$);
+    const [workflow] = await db
+      .select({ definitionName: workflows.officialDefinitionName })
+      .from(workflows)
       .where(
-        eq(officialWorkflowAutomationIdentities.workflowId, args.workflowId),
+        and(
+          eq(workflows.id, args.workflowId),
+          eq(workflows.orgId, args.orgId),
+          eq(workflows.ownerUserId, args.member.userId),
+          eq(workflows.officialInstallationState, "installed"),
+        ),
       )
-      .orderBy(asc(officialWorkflowAutomationIdentities.blueprintKey)),
-  ]);
-  signal.throwIfAborted();
-  return {
-    definition,
-    blueprints: revision.definition.blueprints,
-    automations,
-    identities,
-  };
-}
+      .limit(1);
+    signal.throwIfAborted();
+    if (!workflow?.definitionName) {
+      return null;
+    }
+    const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
+    const definition = catalog?.payload.definitions.find((candidate) => {
+      return candidate.name === workflow.definitionName;
+    });
+    if (!definition) {
+      return null;
+    }
+    if (
+      args.activeDefinitionOnly === true &&
+      definition.lifecycle !== "active"
+    ) {
+      return null;
+    }
+    const revision = await set(
+      readAcceptedOfficialWorkflowRevision$,
+      { name: definition.name, revision: definition.revision },
+      signal,
+    );
+    if (!revision) {
+      throw new Error("Accepted Official Workflow revision is unavailable");
+    }
+    const [automations, identities] = await Promise.all([
+      db
+        .select(workflowAutomationColumns())
+        .from(workflowAutomations)
+        .where(eq(workflowAutomations.workflowId, args.workflowId))
+        .orderBy(asc(workflowAutomations.officialBlueprintKey)),
+      db
+        .select()
+        .from(officialWorkflowAutomationIdentities)
+        .where(
+          eq(officialWorkflowAutomationIdentities.workflowId, args.workflowId),
+        )
+        .orderBy(asc(officialWorkflowAutomationIdentities.blueprintKey)),
+    ]);
+    signal.throwIfAborted();
+    return {
+      definition,
+      blueprints: revision.definition.blueprints,
+      automations,
+      identities,
+    };
+  },
+);
 
 function sameAutomationBaseline(
   expected: OfficialAutomationRow,
@@ -1035,10 +1028,6 @@ interface ExistingAutomationReconciliationArgs {
   readonly automation: OfficialAutomationRow;
   readonly overrides: readonly OfficialWorkflowParameterBinding[];
   readonly userTimezone: string | null;
-  readonly prepareEvent: (
-    automationId: string,
-    input: CreateAutomationInput,
-  ) => Promise<OfficialAutomationEventPreparationResult>;
 }
 
 type PreparedExistingAutomationReconfiguration =
@@ -1084,18 +1073,22 @@ const prepareExistingAutomationReconfiguration$ = command(
     }
     let preparation: OfficialAutomationEventPreparation | undefined;
     if (!("schedule" in resolution.resolved.createRequest)) {
-      const prepared = await args.prepareEvent(
-        args.automation.id,
-        createInput(
-          {
-            orgId: args.orgId,
-            member: args.member,
-            workflowId: args.automation.workflowId,
-            definitionName: args.definitionName,
-          },
-          resolution.resolved,
-          { enabled: args.automation.enabled },
-        ),
+      const prepared = await set(
+        prepareOfficialAutomationReconfiguration$,
+        {
+          automationId: args.automation.id,
+          input: createInput(
+            {
+              orgId: args.orgId,
+              member: args.member,
+              workflowId: args.automation.workflowId,
+              definitionName: args.definitionName,
+            },
+            resolution.resolved,
+            { enabled: args.automation.enabled },
+          ),
+        },
+        signal,
       );
       signal.throwIfAborted();
       if (prepared.kind !== "ok") {
@@ -1742,13 +1735,7 @@ const reconcileExistingAutomation$ = command(
         message: "Official Workflow reconciliation was superseded",
       };
     }
-    await reconfigurationPersistedHookForTest.get()?.({
-      definitionName: args.definitionName,
-      workflowId: args.automation.workflowId,
-      automationId: args.automation.id,
-      blueprintKey: args.blueprint.key,
-      fingerprint: args.blueprint.fingerprint,
-    });
+
     signal.throwIfAborted();
     const watch = await settle(
       set(
@@ -2608,15 +2595,6 @@ interface DormantBlueprintReconciliationArgs {
     | undefined;
   readonly overrides: readonly OfficialWorkflowParameterBinding[];
   readonly userTimezone: string | null;
-  readonly createAutomation: (
-    input: CreateAutomationInput,
-  ) => Promise<AutomationResult>;
-  readonly enableAutomation: (
-    automationId: string,
-  ) => Promise<AutomationResult>;
-  readonly enableMaterializingAutomation: (
-    automationId: string,
-  ) => Promise<AutomationResult>;
 }
 
 function dormantMaterializationOwnershipArgs(
@@ -2674,7 +2652,16 @@ const resumeDormantMaterialization$ = command(
     }
     if (materialization.intendedEnabled && !staged.enabled) {
       const enabled = await settle(
-        args.enableMaterializingAutomation(materialization.automationId),
+        set(
+          enableWorkflowAutomation$,
+          {
+            orgId: args.orgId,
+            member: args.member,
+            automationId: materialization.automationId,
+            allowReservedOfficialMaterialization: true,
+          },
+          signal,
+        ),
         signal,
       );
       signal.throwIfAborted();
@@ -2713,7 +2700,8 @@ const materializeReservedDormantAutomation$ = command(
   ): Promise<OfficialWorkflowReconciliationResult> => {
     const db = set(writeDb$);
     const created = await settle(
-      args.createAutomation(
+      set(
+        createWorkflowAutomation$,
         createInput(
           {
             orgId: args.orgId,
@@ -2729,6 +2717,7 @@ const materializeReservedDormantAutomation$ = command(
             stagedMaterialization: true,
           },
         ),
+        signal,
       ),
       signal,
     );
@@ -3143,21 +3132,6 @@ interface ReconciliationIndexes {
   >;
 }
 
-interface ReconciliationOperations {
-  readonly prepareEvent: (
-    automationId: string,
-    input: CreateAutomationInput,
-  ) => Promise<OfficialAutomationEventPreparationResult>;
-  readonly createAutomation: (
-    input: CreateAutomationInput,
-  ) => Promise<AutomationResult>;
-  readonly enableAutomation: (
-    automationId: string,
-  ) => Promise<AutomationResult>;
-  readonly enableMaterializingAutomation: (
-    automationId: string,
-  ) => Promise<AutomationResult>;
-}
 interface InstallationReconciliationExecution {
   readonly args: ReconcileOfficialWorkflowInstallationArgs;
   readonly context: ReconciliationContext;
@@ -3167,7 +3141,6 @@ interface InstallationReconciliationExecution {
     readonly OfficialWorkflowParameterBinding[]
   >;
   readonly userTimezone: string | null;
-  readonly operations: ReconciliationOperations;
 }
 
 function buildReconciliationIndexes(
@@ -3279,7 +3252,7 @@ const reconcileReservedDormantMaterialization$ = command(
     signal: AbortSignal,
   ): Promise<OfficialWorkflowReconciliationResult | null> => {
     const { blueprint, automation, identity } = candidate;
-    const { args, context, operations, userTimezone } = execution;
+    const { args, context, userTimezone } = execution;
     const overrides = execution.overridesByKey.get(blueprint.key) ?? [];
     const matchingPhase =
       (automation.officialReconciliationStatus === "reconciling" &&
@@ -3346,9 +3319,6 @@ const reconcileReservedDormantMaterialization$ = command(
         identity,
         overrides,
         userTimezone,
-        createAutomation: operations.createAutomation,
-        enableAutomation: operations.enableAutomation,
-        enableMaterializingAutomation: operations.enableMaterializingAutomation,
       },
       {
         automationId: automation.id,
@@ -3368,7 +3338,7 @@ const reconcileCurrentBlueprintLifecycleGap$ = command(
     signal: AbortSignal,
   ): Promise<OfficialWorkflowReconciliationResult | null> => {
     const db = set(writeDb$);
-    const { args, context, operations } = execution;
+    const { args, context } = execution;
     const overrides = execution.overridesByKey.get(blueprint.key) ?? [];
     if (
       overrides.length !== 0 ||
@@ -3378,7 +3348,11 @@ const reconcileCurrentBlueprintLifecycleGap$ = command(
       return null;
     }
     if (automation.officialIntendedEnabled && !automation.enabled) {
-      const enabled = await operations.enableAutomation(automation.id);
+      const enabled = await set(
+        enableWorkflowAutomation$,
+        { orgId: args.orgId, member: args.member, automationId: automation.id },
+        signal,
+      );
       signal.throwIfAborted();
       if (enabled.kind !== "ok") {
         await markActiveAutomationFailed(
@@ -3413,7 +3387,7 @@ const reconcileDesiredBlueprint$ = command(
     blueprint: OfficialWorkflowAcceptedBlueprint,
     signal: AbortSignal,
   ): Promise<OfficialWorkflowReconciliationResult> => {
-    const { args, context, indexes, operations, userTimezone } = execution;
+    const { args, context, indexes, userTimezone } = execution;
     const automation = indexes.automationByKey.get(blueprint.key);
     const identity = indexes.identityByKey.get(blueprint.key);
     const overrides = execution.overridesByKey.get(blueprint.key) ?? [];
@@ -3452,7 +3426,6 @@ const reconcileDesiredBlueprint$ = command(
             automation,
             overrides,
             userTimezone,
-            prepareEvent: operations.prepareEvent,
           },
           signal,
         )
@@ -3468,10 +3441,6 @@ const reconcileDesiredBlueprint$ = command(
             identity: indexes.identityByKey.get(blueprint.key),
             overrides,
             userTimezone,
-            createAutomation: operations.createAutomation,
-            enableAutomation: operations.enableAutomation,
-            enableMaterializingAutomation:
-              operations.enableMaterializingAutomation,
           },
           signal,
         );
@@ -3529,21 +3498,27 @@ const reconcileLoadedInstallation$ = command(
 );
 export const reconcileOfficialWorkflowInstallation$ = command(
   async (
-    { set },
+    { get, set },
     args: ReconcileOfficialWorkflowInstallationArgs,
     signal: AbortSignal,
   ): Promise<OfficialWorkflowReconciliationResult> => {
-    const db = set(writeDb$);
-    const context = await loadReconciliationContext(db, args, signal);
+    const context = await set(loadReconciliationContext$, args, signal);
     if (!context) {
       return { kind: "not-found" };
     }
     const indexes = buildReconciliationIndexes(context);
-    const userTimezone = await loadOfficialWorkflowUserTimezone(db, {
-      orgId: args.orgId,
-      userId: args.member.userId,
-    });
+    const [metadata] = await get(db$)
+      .select({ timezone: orgMembersMetadata.timezone })
+      .from(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, args.orgId),
+          eq(orgMembersMetadata.userId, args.member.userId),
+        ),
+      )
+      .limit(1);
     signal.throwIfAborted();
+    const userTimezone = metadata?.timezone ?? null;
     const overrides = validateReconciliationOverrides(
       args,
       indexes,
@@ -3569,41 +3544,6 @@ export const reconcileOfficialWorkflowInstallation$ = command(
         indexes,
         overridesByKey: overrides.overridesByKey,
         userTimezone,
-        operations: {
-          prepareEvent: async (automationId, input) => {
-            return await set(
-              prepareOfficialAutomationReconfiguration$,
-              { automationId, input },
-              signal,
-            );
-          },
-          createAutomation: async (input) => {
-            return await set(createWorkflowAutomation$, input, signal);
-          },
-          enableAutomation: async (automationId) => {
-            return await set(
-              enableWorkflowAutomation$,
-              {
-                orgId: args.orgId,
-                member: args.member,
-                automationId,
-              },
-              signal,
-            );
-          },
-          enableMaterializingAutomation: async (automationId) => {
-            return await set(
-              enableWorkflowAutomation$,
-              {
-                orgId: args.orgId,
-                member: args.member,
-                automationId,
-                allowReservedOfficialMaterialization: true,
-              },
-              signal,
-            );
-          },
-        },
       },
       target,
       signal,

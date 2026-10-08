@@ -23,6 +23,7 @@ import {
 
 const context = testContext();
 const {
+  bdd,
   api,
   chat,
   chatCallbacks,
@@ -324,6 +325,7 @@ describe("CHAT-02: shared user message queue", () => {
     if (!actor.orgId) {
       throw new Error("Expected an organization-scoped chat actor");
     }
+    await bdd.readMe(actor);
     chatCallbacks.failIfChatCallbackRouteIsFetched();
 
     // Thirty-two public delegation hops exhaust the source. Human forwarding is
@@ -386,6 +388,13 @@ describe("CHAT-02: shared user message queue", () => {
 
     const forwardedRun = await api.readRun(actor, forwardedRunId);
     const forwardedSystemPrompt = forwardedRun.appendSystemPrompt ?? "";
+    expect(
+      forwardedSystemPrompt.match(/^# Current User Info$/gmu),
+    ).toHaveLength(1);
+    expect(forwardedSystemPrompt).toContain(`Email: ${actor.email}`);
+    expect(forwardedSystemPrompt.indexOf("# Current User Info")).toBeLessThan(
+      forwardedSystemPrompt.indexOf("# Current Integration"),
+    );
     expect(forwardedSystemPrompt).toContain("# This Run's Trigger");
     expect(forwardedSystemPrompt).toContain(
       "was sent by a person who forwarded selected content",
@@ -815,9 +824,9 @@ describe("CHAT-02: shared user message queue", () => {
     }
     const incompleteRun = await api.readRun(actor, incompleteRunId);
     const incompleteSystemPrompt = incompleteRun.appendSystemPrompt ?? "";
-    expect(incompleteSystemPrompt).toContain("# Web Chat Run Context");
+    expect(incompleteSystemPrompt).not.toContain("# Web Chat Run Context");
     expect(incompleteSystemPrompt).toContain(incompletePrompt);
-    expect(incompleteSystemPrompt).not.toContain("# Incomplete Rounds Context");
+    expect(incompleteSystemPrompt).toContain("# Incomplete Rounds Context");
     expect(incompleteSystemPrompt).toContain("Web chat files: use");
     const promotedIncompleteClaim = await claimChatRun(
       runnerGroup,

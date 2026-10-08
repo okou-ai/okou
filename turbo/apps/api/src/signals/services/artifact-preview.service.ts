@@ -19,10 +19,10 @@ import { safeJsonParse, tapError } from "../utils";
 import { allocateArtifactObject$ } from "./artifact-storage.service";
 import {
   allocatePrivateArtifact$,
-  resolveArtifactFileReference,
+  resolveArtifactFileReference$,
   completePrivateArtifact$,
-  privateArtifactCreationEnabled,
-  privateArtifactRecord,
+  privateArtifactCreationEnabled$,
+  privateArtifactRecord$,
 } from "./private-artifact-storage.service";
 import {
   queueArtifactCatalogFileSql,
@@ -194,15 +194,15 @@ async function extractVideoPoster(
 }
 
 const renderVideoPoster$ = command(
-  async (
-    { get, set },
-    args: RenderArtifactPreviewArgs,
-    signal: AbortSignal,
-  ) => {
+  async ({ set }, args: RenderArtifactPreviewArgs, signal: AbortSignal) => {
     if (!canExtractVideoPoster(args.contentType)) {
       return null;
     }
-    const reference = await get(resolveArtifactFileReference(args.url, signal));
+    const reference = await set(
+      resolveArtifactFileReference$,
+      args.url,
+      signal,
+    );
     signal.throwIfAborted();
     if (reference) {
       if (!reference.id) {
@@ -721,12 +721,17 @@ const renderAndStoreArtifactPreview$ = command(
     signal.throwIfAborted();
 
     const privateId = uuidv5(`${args.id}:${filename}`, uuidv5.URL);
-    const existing = await get(privateArtifactRecord(privateId));
+    const existing = await set(privateArtifactRecord$, privateId, signal);
     signal.throwIfAborted();
     const privatePreview =
       privateSource ||
       existing !== null ||
-      (await get(privateArtifactCreationEnabled(args.orgId, args.userId)));
+      (await set(
+        privateArtifactCreationEnabled$,
+        args.orgId,
+        args.userId,
+        signal,
+      ));
     signal.throwIfAborted();
     const artifact = privatePreview
       ? await set(
