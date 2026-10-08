@@ -673,9 +673,6 @@ export const rustTypeBindings = [
           ],
           archiveSize: ["Optional exact encoded archive size in bytes."],
           empty: ["Whether the resolved Storage version is explicitly empty."],
-          baselineCandidate: [
-            "Whether this read-only mount participates in baseline stability observation.",
-          ],
           instructionsTargetFilename: [
             "Optional filename used when Storage instructions are normalized.",
           ],

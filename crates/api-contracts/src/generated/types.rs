@@ -1358,9 +1358,6 @@ pub mod runners {
             /// Whether the resolved Storage version is explicitly empty.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub empty: Option<bool>,
-            /// Whether this read-only mount participates in baseline stability observation.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub baseline_candidate: Option<bool>,
             /// Optional filename used when Storage instructions are normalized.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub instructions_target_filename: Option<String>,

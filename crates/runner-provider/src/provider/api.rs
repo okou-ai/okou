@@ -5647,10 +5647,6 @@ mod tests {
             "test-region"
         );
         assert_eq!(context.storage_manifest.as_ref().unwrap().storages.len(), 1);
-        assert!(
-            !context.storage_manifest.as_ref().unwrap().storages[0].baseline_candidate,
-            "the previous claim fixture must default an absent marker to false"
-        );
         assert_eq!(context.cli_agent_session_id(), Some("fixture-session-id"));
         assert_eq!(
             context.environment.as_ref().unwrap()["FIXTURE_MODEL"],
@@ -5902,6 +5898,7 @@ mod tests {
         let claim_path = format!("/api/runners/jobs/{run_id}/claim");
         let mut response: serde_json::Value =
             serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
+        // Supported older APIs may include this optional observation field.
         response["storageManifest"] = serde_json::json!({
             "storageMounts": [
                 {
@@ -5947,7 +5944,6 @@ mod tests {
 
         assert_eq!(manifest.storages.len(), 1);
         assert_eq!(manifest.storages[0].name, "fixture-workspace");
-        assert!(manifest.storages[0].baseline_candidate);
         assert_eq!(
             manifest.storages[0].vas_version_id,
             "fixture-storage-version"

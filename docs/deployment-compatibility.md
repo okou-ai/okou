@@ -25,6 +25,42 @@ and screenshot retention remain intact; this change performs no historical
 command or object-storage deletion. Retired switch overrides already pass through
 the general registry-key filtering.
 
+## Dynamic Run inputs without Agent execution configuration
+
+The first delivery of [#37970](https://github.com/okou-ai/okou/issues/37970)
+combines removal of the synthetic Agent execution configuration and baseline
+observation with current-input selection. The Agent remains the authorized
+identity for instructions, workflows, and connector selection. Framework comes
+from the current model provider, while Runner group and profile come from runtime
+routing policy. These values no longer pass through an Agent configuration.
+
+Each newly prepared Run resolves current instructions and skill resources.
+Environment precedence remains organization variables, user variables, then
+explicit current-Run overrides. A continuation no longer implicitly inherits
+the preceding Run's variables or configurable volume versions. Provider and
+connector credentials, permission checks, encryption, and the trusted platform
+environment overlay retain their existing owners. Teams status preserves its
+environment response fields, whose Agent-declared requirement lists are empty.
+
+Foreground Pi continuations resolve the current user-memory HEAD and its current
+summary projection on every Run. A disabled, missing, or pending projection keeps
+the existing no-content behavior for that Run; a later Run performs a fresh
+selection. Memory-maintenance producer pins and publication fences are unchanged.
+
+`storageMounts[].baselineCandidate` was optional observation metadata. New API
+with old Runner is compatible because the field is absent; old API with new
+Runner is compatible because the decoder ignores unknown fields. Removing the
+observer does not change immutable-version cache identity or cache application.
+The CLI and Guest launch contracts otherwise remain unchanged.
+
+This delivery requires no database migration. Native-history continuation still
+uses the existing Session, Conversation, and Checkpoint protocol. Non-memory
+writeback artifacts still use existing Session storage. Previously admitted Runs
+retain their captured launch inputs; the new selection policy applies to newly
+prepared Runs. Rolling back the API restores the previous selection policy.
+Thread-owned network storage and retirement of those persisted entities are
+later deliveries in the Epic.
+
 ## Pi turn-end stdout boundaries (2026-10-08)
 
 The CLI's Pi JSON/RPC serializer omits `turn_end.message` and

@@ -42,7 +42,6 @@ mod session_history_restore_plan;
 mod session_id;
 mod session_restore;
 mod storage;
-mod storage_baseline_observation;
 mod telemetry;
 mod workspace_session_history_materializer;
 
@@ -212,7 +211,6 @@ pub struct ExecutorConfig {
     pub background_fill: crate::storage_cache::StorageCacheBackgroundFillCoordinator,
     pub decoded_cache: crate::storage_cache::decoded::DecodedCache,
     pub pre_spawn_admission: crate::pre_spawn_admission::PreSpawnAdmission,
-    pub storage_baseline_observer: storage_baseline_observation::StorageBaselineObserver,
     pub home: HomePaths,
     pub workspace_cache: Option<WorkspaceImageCache>,
 }
@@ -647,9 +645,6 @@ pub async fn execute_job_with_prepared_notifier(
         config.runner_hostname.clone(),
     );
     spawn_timing.record_claim_to_executor_start(&mut telemetry);
-    config
-        .storage_baseline_observer
-        .record(&context, params, &mut telemetry);
 
     record_reuse_result(&mut telemetry, dispatch.reuse_result);
     record_api_latency("api_to_sandbox_start", &context, &mut telemetry);
@@ -772,9 +767,6 @@ pub async fn execute_job_reuse_with_hooks(
         config.runner_hostname.clone(),
     );
     spawn_timing.record_claim_to_executor_start(&mut telemetry);
-    config
-        .storage_baseline_observer
-        .record(&context, params, &mut telemetry);
 
     let idle_kind = idle_sandbox.kind();
     record_reuse_result(&mut telemetry, reuse_result);
