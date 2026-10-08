@@ -172,3 +172,112 @@ No evidence of production Host writer drain, conditional DELETE capability,
 or a new serving-reader floor was collected. The earlier artifact-share gate
 does not establish any of those Host-specific prerequisites. No deployment,
 backfill, release, or issue closure is part of this preparation.
+
+## October 9 local continuation
+
+This continuation starts from main
+`bd8b13065d6b8ce406c3c7659f6634528f794913`, the merge of inactive reader
+preparation #38212, and is refreshed onto main
+`3832d070daf7131ec09c75fe56d2697becf49bf5`. The inventory above describes
+the earlier preparation; this section records the subsequent ownership changes. These changes require
+no production configuration or reader activation. They do not retire the Host
+writer transaction boundary or complete #37511.
+
+Completion, files and history reads now acquire `get(db$)` in stable commands.
+Their callers exchange ordinary arguments and results, with the request signal
+as the final argument. Completion still resolves the owned deployment and live
+site before querying its run scope. A missing external reference remains
+unavailable; a malformed binding or dependency failure still propagates. The
+private-file reader performs its active-public-version query directly; the
+remaining `loadActiveHostedDeploymentVersion` helper is used only by binding
+and accepts `Tx`.
+
+`createHostedSiteDeployment$` now acquires `set(writeDb$)` and owns allocation's
+transaction. Its public/private maximum-version queries, immutable-asset SQL
+and deployment insert run directly in that callback. Manifest and insert-value
+construction use ordinary inputs. The asset query retains the required
+`executeRawRows(tx, query, rowSchema)` runtime decoder boundary. Prepare still
+observes cancellation after the allocation result, preserving atomic commit
+and database-error priority, and generates upload capabilities afterwards.
+
+Allocation remains a partial ownership conversion. Its existing run/scope and
+slug helpers still receive `Tx`; their query and lock ordering are retained.
+The bounded five-candidate slug loop is unchanged. The scope service also has
+an operator caller in
+[sandbox cleanup state](../../turbo/apps/api/src/signals/routes/test-cron-cleanup-sandboxes-state.ts),
+so removing its Host imports would not authorize deleting that service. There
+are still three transactions, and no new locks, retries, fallback readers,
+schema fields or coordination records.
+
+### Current owners and retained remote work
+
+| Stage                     | Database owner and remaining handle forwarding                                                                                                                                                       | External operations and placement                                                                                                                                                                                   |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Create / prepare          | `createHostedSiteDeployment$` owns allocation. `lockHostedRunChatThreadId`, `hasUnscopedHostedSiteConflict`, `findOrCreateHostedSite` and `assertHostedDeploymentScope` retain their Tx call chains. | No external I/O in allocation. Presigned uploads are generated after commit.                                                                                                                                        |
+| Complete                  | Lookup commands own their reads; completion owns the existing conditional failed-status update.                                                                                                      | Uploaded-object checks, dependency reads, manifest publication, immutable-pointer PUT and registry registration precede binding, outside its transaction. Artifact recording and preview scheduling follow binding. |
+| Bind                      | `bindHostedSiteDeployment$` owns its transaction and still forwards Tx to the active-version read and rolling-pointer publication.                                                                   | Deleted-deployment pointer/registry cleanup and rolling publication remain inside the transaction. The site lock preserves completion-before-delete ordering and version recovery.                                  |
+| Migrate / retain snapshot | `retainedPointer` and `preserveSnapshotToken$` use binding's Tx; historical source admission retains its ready-source predicate and share lock.                                                      | Registry, active-pointer, policy and token reads, policy CAS, rolling-pointer CAS and registry CAS remain inside binding. Existing interrupted-publication recovery is retained.                                    |
+| Revoke                    | `revokeHostedSiteShare$` owns its lookup; the existing share command owns its SQL work.                                                                                                              | Share policy revocation occurs before the deletion transaction. Copied-token access remains governed by its policy, independently of the source site's SQL status.                                                  |
+| Delete                    | `deleteHostedSite$` owns the locked recheck, public/private terminal updates and binding reset.                                                                                                      | Registry ownership reads and key-only pointer/registry deletion remain inside the site transaction. Provider failure rolls back SQL so the existing user retry remains meaningful.                                  |
+| Worker / CLI              | Source and configuration are unchanged by this continuation.                                                                                                                                         | The optional SQL reader remains inactive in checked-in deployments. Whole-site deletion still reports the rolling alias plus every completed immutable URL in `offlineUrls`.                                        |
+
+### Verification and remaining minimum scope
+
+Source comparison with the new base confirms that all 17 moved read-query
+expressions, allocation version/asset SQL, manifest inputs and deployment
+insert values are equivalent. The bodies of binding, manifest publication,
+pointer publication, share revocation, registry ownership lookup and deletion
+are unchanged. The scope, migration, dependency, share, storage and Worker
+sources are unchanged. This is source-level regression evidence, not a
+production serving or writer-drain result.
+
+The same eight affected API consumer/authorization suites pass all 86 cases on both
+unmodified main and this local continuation, using the same UTC local database
+and at most two Vitest workers. Their existing assertions were not changed.
+They retain concurrent version allocation, out-of-order completion, successful
+overlapping completion/deletion, delayed completion rejection, partial remote
+delete followed by retry, and whole-site history/URL behavior. The earlier
+45-failure baseline remains historical evidence rather than the baseline for
+this continuation.
+
+The failed SQL prototype
+`35e14fc5f4afcc08648e64a6b8425138b2ee47e6` remains unchanged and unaccepted.
+Its three additional deletion failures are contract failures. In particular,
+the current overlapping completion returns 200 before the waiting deletion
+takes the whole site offline; changing that completion to 409 is not an
+equivalent retirement. The lost-response probe described above also remains
+a real unresolved failure: SQL rejects the deleted deployment while its
+immutable pointer and registry can survive remotely. Read ownership does not
+repair that window.
+
+The smallest uncompleted writer boundary is rolling-pointer/registry
+publication and historical policy conversion versus whole-site remote
+deletion, together with interrupted immutable publication. Moving those
+operations outside the existing serialization is not demonstrated under the
+unchanged contract:
+
+- A late PUT to an absent key can recreate a deleted publication. SQL rechecks
+  do not make a separate provider write conditional on deployment status, and
+  cleanup cannot cover a lost response or cancellation before binding.
+- An outgoing key-only deleter can remove a newer publication at the same
+  rolling address. Exact-deployment-only cleanup would change whole-site
+  deletion and its alias-inclusive `offlineUrls` semantics.
+- Reader enforcement alone can deny deleted residues, but does not preserve
+  the successful overlapping completion's admission order or prevent an old
+  deleter from removing a new live pointer.
+- Historical unconditional HTML policy/registry writers and rollback targets
+  require their own verified retirement floor. Source SQL status cannot
+  replace the retained snapshot token's policy owner. The current prepare API
+  cannot construct a historical private source, so that compatibility branch
+  remains source-traced rather than fabricated in a new API fixture.
+
+A further retirement therefore needs a demonstrated compatible publication /
+deletion protocol or an explicit accepted change to read admission, concurrent
+completion and whole-site deletion. Any serving-reader alternative also needs
+verified API/Worker/cache/rollback floors, and any mixed-writer alternative
+needs evidence about outgoing deleters and historical writers. Previously
+issued storage capabilities and admitted responses retain their documented
+lifetime. None of these premises is established by merging #38212 or by this
+local continuation. The necessary remote behavior and remaining Tx forwarding
+are retained; no release, activation, drain, backfill or issue closure is
+included.
