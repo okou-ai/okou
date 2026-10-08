@@ -75,7 +75,7 @@ do not enable mandatory EdDSA verification without coordinating those inputs.
 Unsigned development and CI apps keep production updates disabled.
 
 Stopping, changing workspace, signing out, quitting, and installing updates close
-command admission and drain claimed work before retiring its host token. Native
+command admission and drain claimed work before retiring the host connection. Native
 input is never replayed after a timeout. Background updates also wait until the
 host has been idle for 30 minutes.
 

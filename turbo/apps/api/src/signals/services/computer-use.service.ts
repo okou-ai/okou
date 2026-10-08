@@ -1904,6 +1904,20 @@ function logComputerUseCompletionSanitization(
   });
 }
 
+async function resolveMissedComputerUseCompletion(
+  db: Db,
+  authority: ComputerUseHostAuthority,
+  signal: AbortSignal,
+): Promise<CompleteComputerUseHostCommandResult> {
+  const [authorized] = await db
+    .select({ id: computerUseHosts.id })
+    .from(computerUseHosts)
+    .where(computerUseHostAuthorityCondition(authority))
+    .limit(1);
+  signal.throwIfAborted();
+  return { status: authorized ? "completed" : "invalid_token" };
+}
+
 /**
  * Completion runs without a transaction or locks: plain reads of the host and
  * command, the S3 offload, then one compare-and-set on `status = 'running'`.
@@ -2018,7 +2032,7 @@ export const completeComputerUseHostCommand$ = command(
       .returning();
     signal.throwIfAborted();
     if (!updated) {
-      return { status: "completed" };
+      return await resolveMissedComputerUseCompletion(db, params, signal);
     }
 
     await insertComputerUseCommandAuditEvent(db, {

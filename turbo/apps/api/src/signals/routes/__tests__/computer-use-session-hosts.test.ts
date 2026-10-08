@@ -357,6 +357,71 @@ describe("Native Computer Use session authentication", () => {
     expect(observed.body.status).toBe("running");
   });
 
+  it("rejects a connection replaced during screenshot upload without confirming its result", async () => {
+    const api = await app();
+    const client = api(contract);
+    authenticate(identity());
+    const hostBody = { ...runtimeBody, supportedCapabilities: ["app.state"] };
+    const first = (
+      await accept(client.register({ headers, body: hostBody }), [200])
+    ).body;
+    const created = await accept(
+      api(computerUseCommandContract).create({
+        headers,
+        body: { kind: "app.state", app: "Calculator", timeoutMs: 10_000 },
+      }),
+      [200],
+    );
+    const claimed = await accept(
+      client.next({
+        headers,
+        params: { hostId: first.hostId },
+        body: { connectionGeneration: first.connectionGeneration },
+      }),
+      [200],
+    );
+    expect(claimed.body).toMatchObject({
+      status: "command",
+      command: { id: created.body.commandId },
+    });
+    context.mocks.s3.send.mockImplementationOnce(async () => {
+      const replacement = await accept(
+        client.register({ headers, body: hostBody }),
+        [200],
+      );
+      expect(replacement.body).toStrictEqual({
+        hostId: first.hostId,
+        connectionGeneration: first.connectionGeneration + 1,
+      });
+      return {};
+    });
+    const rejected = await accept(
+      client.complete({
+        headers,
+        params: { hostId: first.hostId, commandId: created.body.commandId },
+        body: {
+          connectionGeneration: first.connectionGeneration,
+          status: "succeeded",
+          result: {
+            screenshot: `data:image/png;base64,${Buffer.from("test-png").toString("base64")}`,
+            screenshotWidth: 800,
+            screenshotHeight: 600,
+          },
+        },
+      }),
+      [409],
+    );
+    expect(rejected.body.error.code).toBe("HOST_CONNECTION_INVALID");
+    const observed = await accept(
+      api(computerUseCommandContract).get({
+        headers,
+        params: { commandId: created.body.commandId },
+      }),
+      [200],
+    );
+    expect(observed.body.status).toBe("running");
+  });
+
   it("pauses after expired validation during a Clerk outage and recovers the same connection", async () => {
     mockNow(Date.parse("2026-10-08T02:00:00Z"));
     const api = await app();
