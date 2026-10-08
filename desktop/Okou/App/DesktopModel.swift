@@ -30,6 +30,7 @@ final class DesktopModel: ObservableObject {
   @Published var preparing = true
   @Published var signedIn = false
   @Published var email = ""
+  @Published var organizationID: String?
   @Published var organization: String?
   @Published var organizations: [(id: String, name: String)] = []
   @Published var showWorkspaces = false
@@ -221,6 +222,7 @@ final class DesktopModel: ObservableObject {
     verifiedSessionId = me.body["sessionId"].string
     signedIn = true
     email = me.body["email"].string ?? "Signed in"
+    organizationID = orgId
     organization = orgName
     let switches = try await api.request("api/feature-switches", token: token)
     try checkIdentityGeneration(expected)
@@ -246,6 +248,7 @@ final class DesktopModel: ObservableObject {
     verifiedOrganizationId = nil
     verifiedSessionId = nil
     signedIn = false
+    organizationID = nil
     organization = nil
     email = ""
     developerToolsAvailable = false
