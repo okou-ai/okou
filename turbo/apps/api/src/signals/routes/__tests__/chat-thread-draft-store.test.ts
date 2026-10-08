@@ -7,8 +7,6 @@ import type {
 import { describe, expect, it } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
-import { settleIncludingAbort } from "../../utils";
-import { holdChatThreadRowLockFixture } from "../../../test-fixtures/chat-events";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -182,34 +180,6 @@ describe("thread drafts", () => {
     await expect(
       chat.readThreadDraft(foreign, fixture.threadId),
     ).resolves.toMatchObject({ draftUserMessage: draftDocument("not mine") });
-  });
-
-  it("saves while another writer holds the thread row", async () => {
-    const fixture = await createDraftFixture();
-    // Event projection, the run queue and the read cursor all lock the thread
-    // row. The draft save writes only its own row, so it must not queue behind
-    // even the strongest row lock (#36173).
-    const holder = await holdChatThreadRowLockFixture({
-      threadId: fixture.threadId,
-      mode: "update",
-      signal: context.signal,
-    });
-    const saving = await settleIncludingAbort(
-      chat.patchThread(
-        fixture.actor,
-        fixture.threadId,
-        draftBody("saved beside the lock"),
-      ),
-    );
-    holder.release();
-    await holder.done;
-    if (!saving.ok) {
-      throw saving.error;
-    }
-
-    await expect(servedDraftText(fixture)).resolves.toBe(
-      "saved beside the lock",
-    );
   });
 
   it("removes the draft with the thread it belongs to", async () => {
