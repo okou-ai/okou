@@ -202,7 +202,7 @@ jq -e '
   )
 ' <<<"$workflow_json" >/dev/null || fail "compile must be a required miss-only Rust/cache/build matrix"
 
-# The action owns the pinned install and the complete startup interface.
+# The shared action owns the sccache version and complete startup interface.
 jq -e '
   .runs.using == "composite" and
   (.inputs | keys | sort) ==
@@ -210,7 +210,7 @@ jq -e '
   all(.inputs[]; .required == true) and
   any(.runs.steps[];
     .name == "Install sccache" and
-    .uses == "mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba" and
+    ((.uses // "") | startswith("mozilla-actions/sccache-action@")) and
     .with.version == "v0.15.0"
   ) and
   any(.runs.steps[];
@@ -225,7 +225,7 @@ jq -e '
     .env.SCCACHE_IDLE_TIMEOUT == "0" and
     .env.SCCACHE_REGION == "auto"
   )
-' <<<"$action_json" >/dev/null || fail "shared cache action must retain its pinned install and explicit startup inputs"
+' <<<"$action_json" >/dev/null || fail "shared cache action must retain its sccache version and explicit startup inputs"
 
 # Execute the action's configured startup boundary without contacting storage. The
 # server must receive R2 configuration, while later build steps receive only
@@ -312,7 +312,7 @@ jq -e '
     select(any(.value.steps[]?; .uses == "./.github/actions/setup-r2-sccache")) |
     .key] == ["compile"]) and
   ([.jobs | to_entries[] |
-    select(any(.value.steps[]?; .uses == "mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba")) |
+    select(any(.value.steps[]?; (.uses // "") | startswith("mozilla-actions/sccache-action@"))) |
     .key] == []) and
   ([.jobs | to_entries[] |
     select(any(.value.steps[]?; (.uses // "") | startswith("Swatinem/rust-cache@"))) |

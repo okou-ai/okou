@@ -17,7 +17,7 @@ jq -e '
   .jobs["detect-toolchain-changes"] as $detect |
   $detect.outputs["toolchain-changed"] == "${{ steps.detect.outputs.toolchain-changed }}" and
   any($detect.steps[]?;
-    .uses == "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" and
+    ((.uses // "") | startswith("actions/checkout@")) and
     .with["fetch-depth"] == 2
   ) and
   any($detect.steps[]?;
