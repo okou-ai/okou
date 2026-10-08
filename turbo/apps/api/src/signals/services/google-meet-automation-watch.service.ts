@@ -4,7 +4,7 @@ import { workflowAutomations } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
 import { and, eq, isNotNull, notExists, or, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
-import { executeRawRows, parseRawRows } from "../../lib/db-raw-rows";
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { optionalEnv } from "../../lib/env";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
@@ -1052,22 +1052,24 @@ const reconcileGoogleMeetSubscriptionLifecycle$ = command(
  * delete. A disable racing this statement may still publish one state, which
  * consumer-less removal cleans up (accepted notification/cleanup gap).
  */
-const publishGoogleMeetSubscription$ = command(
+interface GoogleMeetSubscriptionPublicationArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly connectorId: string;
+  readonly allowStagedOfficialTarget: boolean;
+  readonly requireConsumer: boolean;
+  readonly publication: GoogleMeetSubscriptionPublication;
+}
+
+const persistGoogleMeetSubscription$ = command(
   async (
     { set },
-    args: {
-      readonly orgId: string;
-      readonly userId: string;
-      readonly connectorId: string;
-      readonly allowStagedOfficialTarget: boolean;
-      readonly requireConsumer: boolean;
-      readonly publication: GoogleMeetSubscriptionPublication;
-    },
+    args: GoogleMeetSubscriptionPublicationArgs,
     signal: AbortSignal,
-  ): Promise<boolean> => {
-    const published = await settle(
-      executeRawRows(
-        set(writeDb$),
+  ): Promise<readonly { readonly id: string }[]> => {
+    const rows = parseRawRows(
+      z.object({ id: z.string() }),
+      await set(writeDb$).execute(
         googleMeetSubscriptionPublicationSql({
           ...args.publication,
           orgId: args.orgId,
@@ -1081,8 +1083,21 @@ const publishGoogleMeetSubscription$ = command(
               )
             : undefined,
         }),
-        z.object({ id: z.string() }),
       ),
+    );
+    signal.throwIfAborted();
+    return rows;
+  },
+);
+
+const publishGoogleMeetSubscription$ = command(
+  async (
+    { set },
+    args: GoogleMeetSubscriptionPublicationArgs,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const published = await settle(
+      set(persistGoogleMeetSubscription$, args, signal),
       signal,
     );
     if (!published.ok) {

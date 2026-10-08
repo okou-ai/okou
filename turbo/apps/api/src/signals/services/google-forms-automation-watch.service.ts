@@ -16,7 +16,7 @@ import { and, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { safeJsonParse, tapError, safeUrlParse } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
@@ -27,7 +27,7 @@ import {
 } from "./builtin-connector-credential-runtime.service";
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
-import { loadConnectorRuntimeAuthSelection } from "./connector-catalog-slug-source.service";
+import { readConnectorRuntimeAuthSelection$ } from "./connector-catalog-slug-source.service";
 
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { connectors } from "@okouai/db/schema/connector";
@@ -149,9 +149,13 @@ export const resolveGoogleFormsAccess$ = command(
     signal: AbortSignal,
   ): Promise<GoogleFormsAccessResult> => {
     const currentTime = nowDate();
-    const snapshot = await loadConnectorRuntimeAuthSelection(set(writeDb$), {
-      connectorSlugs: ["google-forms"],
-    });
+    const snapshot = await set(
+      readConnectorRuntimeAuthSelection$,
+      {
+        connectorSlugs: ["google-forms"],
+      },
+      signal,
+    );
     signal.throwIfAborted();
     const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
       snapshot,
@@ -351,7 +355,7 @@ export async function newestGoogleFormResponseTime(
 
 export const hasEnabledGoogleFormsConsumer$ = command(
   async (
-    { set },
+    { get },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -360,7 +364,7 @@ export const hasEnabledGoogleFormsConsumer$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const [consumer] = await db
       .select({ id: workflowAutomations.id })
       .from(workflowAutomations)
@@ -530,7 +534,7 @@ function watchExpireTime(watch: z.infer<typeof googleFormsWatchSchema>): Date {
 
 const prepareGoogleFormsWatch$ = command(
   async (
-    { set },
+    { get },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -541,7 +545,7 @@ const prepareGoogleFormsWatch$ = command(
     },
     signal: AbortSignal,
   ) => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const [existing] = await db
       .select({ id: googleFormsWatchStates.id })
       .from(googleFormsWatchStates)
@@ -1106,14 +1110,14 @@ export const reprojectGoogleFormsAutomationOwnership$ = command(
 
 export const prepareGoogleFormsWatchesForOwner$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     await set(reprojectGoogleFormsAutomationOwnership$, args, signal);
     signal.throwIfAborted();
 
@@ -1189,7 +1193,7 @@ export const prepareGoogleFormsWatchesForOwner$ = command(
 
 const reconcileGoogleFormsWatchesForOwner$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -1197,7 +1201,7 @@ const reconcileGoogleFormsWatchesForOwner$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     let succeeded = await set(prepareGoogleFormsWatchesForOwner$, args, signal);
     signal.throwIfAborted();
     const states = await db
@@ -1465,7 +1469,7 @@ function googleFormsSelectedAccountCondition(args: {
 
 export const readGoogleFormsActivationAccount$ = command(
   async (
-    { set },
+    { get },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -1473,7 +1477,7 @@ export const readGoogleFormsActivationAccount$ = command(
     },
     signal: AbortSignal,
   ): Promise<string | null> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const [account] = await db
       .select({ id: connectors.id })
       .from(connectors)
@@ -1494,7 +1498,7 @@ export interface PendingGoogleFormsWatchStop {
 
 export const prepareGoogleFormsWatchStopForConnector$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -1507,7 +1511,7 @@ export const prepareGoogleFormsWatchStopForConnector$ = command(
     if (access.kind !== "ok") {
       return null;
     }
-    const db = set(writeDb$);
+    const db = get(db$);
     const states = await db
       .select({
         formId: googleFormsWatchStates.formId,

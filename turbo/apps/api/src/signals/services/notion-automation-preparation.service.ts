@@ -15,7 +15,6 @@ import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { command } from "ccstate";
 import { z } from "zod";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
 import { safeJsonParse, safeUrlParse, tapError } from "../utils";
 import {
   loadBuiltinConnectorCredentialConnection$,
@@ -23,7 +22,7 @@ import {
   refreshBuiltinConnectorCredentialAccess$,
   builtinConnectorCredentialRuntimeValueRef,
 } from "./builtin-connector-credential-runtime.service";
-import { loadConnectorRuntimeAuthSelection } from "./connector-catalog-slug-source.service";
+import { readConnectorRuntimeAuthSelection$ } from "./connector-catalog-slug-source.service";
 
 const NOTION_ACCESS_TOKEN_ENVIRONMENT_NAME = "NOTION_TOKEN";
 
@@ -262,9 +261,13 @@ export const resolveNotionCredentialAccess$ = command(
     signal: AbortSignal,
   ): Promise<NotionAccessResult> => {
     const currentTime = nowDate();
-    const snapshot = await loadConnectorRuntimeAuthSelection(set(writeDb$), {
-      connectorSlugs: ["notion"],
-    });
+    const snapshot = await set(
+      readConnectorRuntimeAuthSelection$,
+      {
+        connectorSlugs: ["notion"],
+      },
+      signal,
+    );
     signal.throwIfAborted();
     const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
       snapshot,

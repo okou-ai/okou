@@ -11,7 +11,7 @@ import { z } from "zod";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { tapError } from "../utils";
 import {
   builtinConnectorCredentialRuntimeValueRef,
@@ -19,7 +19,7 @@ import {
   loadBuiltinConnectorCredentialValues$,
   refreshBuiltinConnectorCredentialAccess$,
 } from "./builtin-connector-credential-runtime.service";
-import { loadConnectorRuntimeAuthSelection } from "./connector-catalog-slug-source.service";
+import { readConnectorRuntimeAuthSelection$ } from "./connector-catalog-slug-source.service";
 
 const GMAIL_ACCESS_TOKEN_ENVIRONMENT_NAME = "GMAIL_TOKEN";
 
@@ -101,9 +101,13 @@ export const resolveGmailAccess$ = command(
     signal: AbortSignal,
   ): Promise<GmailAccessResult> => {
     const currentTime = nowDate();
-    const snapshot = await loadConnectorRuntimeAuthSelection(set(writeDb$), {
-      connectorSlugs: ["gmail"],
-    });
+    const snapshot = await set(
+      readConnectorRuntimeAuthSelection$,
+      {
+        connectorSlugs: ["gmail"],
+      },
+      signal,
+    );
     signal.throwIfAborted();
     const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
       snapshot,
@@ -296,8 +300,8 @@ interface GmailPhysicalScopeInput {
 }
 
 const loadGmailPhysicalWatchStates$ = command(
-  async ({ set }, args: GmailPhysicalScopeInput, signal: AbortSignal) => {
-    const db = set(writeDb$);
+  async ({ get }, args: GmailPhysicalScopeInput, signal: AbortSignal) => {
+    const db = get(db$);
     const states = await db
       .select({
         ...getTableColumns(gmailWatchStates),
@@ -712,7 +716,7 @@ export const repairGmailAutomationProjections$ = command(
 
 export const reconcileGmailWatchesForUser$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -730,7 +734,7 @@ export const reconcileGmailWatchesForUser$ = command(
       );
       succeeded &&= ensured.kind === "ok";
     }
-    const db = set(writeDb$);
+    const db = get(db$);
     const states = await db
       .select()
       .from(gmailWatchStates)
@@ -844,7 +848,7 @@ export const resolveGmailLabelForUser$ = command(
 
 export const hasEnabledGmailConsumer$ = command(
   async (
-    { set },
+    { get },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -852,7 +856,7 @@ export const hasEnabledGmailConsumer$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const [consumer] = await db
       .select({ id: workflowAutomations.id })
       .from(workflowAutomations)

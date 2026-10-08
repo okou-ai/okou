@@ -17,7 +17,7 @@ import { apiBackendUrl } from "../../lib/api-backend-url";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { webUrl } from "../../lib/web-url";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { onRejection, tapError } from "../utils";
 import {
   builtinConnectorCredentialRuntimeValueRef,
@@ -31,7 +31,7 @@ import {
   GOOGLE_CALENDAR_PRIMARY_ID,
   googleCalendarAccountProjectionStatement,
 } from "./google-calendar-automation-account.service";
-import { loadConnectorRuntimeAuthSelection } from "./connector-catalog-slug-source.service";
+import { readConnectorRuntimeAuthSelection$ } from "./connector-catalog-slug-source.service";
 
 const log = logger("api:google-calendar-automation-event");
 
@@ -209,9 +209,13 @@ export const resolveGoogleCalendarAccess$ = command(
     signal: AbortSignal,
   ): Promise<GoogleCalendarAccessResult> => {
     const currentTime = nowDate();
-    const snapshot = await loadConnectorRuntimeAuthSelection(set(writeDb$), {
-      connectorSlugs: ["google-calendar"],
-    });
+    const snapshot = await set(
+      readConnectorRuntimeAuthSelection$,
+      {
+        connectorSlugs: ["google-calendar"],
+      },
+      signal,
+    );
     signal.throwIfAborted();
     const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
       snapshot,
@@ -826,14 +830,14 @@ const publishCalendarBaselineCursor$ = command(
 
 const loadCalendarWatchState$ = command(
   async (
-    { set },
+    { get },
     args: {
       readonly connectorId: string;
       readonly calendarId: string;
     },
     signal: AbortSignal,
   ): Promise<GoogleCalendarWatchStateRow | null> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const [state] = await db
       .select()
       .from(googleCalendarWatchStates)
@@ -911,7 +915,7 @@ function logCalendarWatchActionRequiredRecovery(args: {
 
 export const hasEnabledGoogleCalendarConsumer$ = command(
   async (
-    { set },
+    { get },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -920,7 +924,7 @@ export const hasEnabledGoogleCalendarConsumer$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const automations = await db
       .select({
         eventType: workflowAutomations.eventType,
@@ -1118,13 +1122,13 @@ const publishGoogleCalendarWatch$ = command(
 
 const cleanupUnpublishedCalendarWatch$ = command(
   async (
-    { set },
+    { get },
     args: {
       readonly accessToken: string;
       readonly channel: GoogleCalendarChannelIdentity;
     },
   ): Promise<void> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     // A commit error is not proof that publication failed. Read authority first;
     // failed reads leave the unreferenced channel to expire.
     const [published] = await db
@@ -1736,7 +1740,7 @@ export const reconcileGoogleCalendarWatchState$ = command(
 
 export const reconcileGoogleCalendarWatchesForUser$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -1746,7 +1750,7 @@ export const reconcileGoogleCalendarWatchesForUser$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     let succeeded = await set(
       repairAndEnsureGoogleCalendarWatchesForOwner$,
       args,
@@ -1789,7 +1793,7 @@ export const reconcileGoogleCalendarWatchesForUser$ = command(
 
 export const repairAndEnsureGoogleCalendarWatchesForOwner$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -1799,7 +1803,7 @@ export const repairAndEnsureGoogleCalendarWatchesForOwner$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     await set(repairGoogleCalendarAutomationProjections$, args);
     signal.throwIfAborted();
     const targets = await set(loadEnabledGoogleCalendarTargets$, args);
@@ -1879,7 +1883,7 @@ export const repairGoogleCalendarAutomationProjections$ = command(
 
 const loadEnabledGoogleCalendarTargets$ = command(
   async (
-    { set },
+    { get },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -1892,7 +1896,7 @@ const loadEnabledGoogleCalendarTargets$ = command(
       readonly calendarId: string;
     }[]
   > => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const consumers = await db
       .select({
         connectorId: workflowAutomations.eventConnectorId,
@@ -2000,9 +2004,13 @@ export const normalizeGoogleCalendarIdForConnector$ = command(
     if (args.calendarId === GOOGLE_CALENDAR_PRIMARY_ID) {
       return args.calendarId;
     }
-    const snapshot = await loadConnectorRuntimeAuthSelection(set(writeDb$), {
-      connectorSlugs: ["google-calendar"],
-    });
+    const snapshot = await set(
+      readConnectorRuntimeAuthSelection$,
+      {
+        connectorSlugs: ["google-calendar"],
+      },
+      signal,
+    );
     signal.throwIfAborted();
     const loaded = await set(loadBuiltinConnectorCredentialConnection$, {
       snapshot,
@@ -2054,7 +2062,7 @@ export const releaseStagedGoogleCalendarWatchTarget$ = command(
 
 export const prepareGoogleCalendarWatchStopForConnector$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -2062,7 +2070,7 @@ export const prepareGoogleCalendarWatchStopForConnector$ = command(
     },
     signal: AbortSignal,
   ): Promise<PendingGoogleCalendarWatchStop | null> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const states = await db
       .select()
       .from(googleCalendarWatchStates)
