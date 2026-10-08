@@ -11235,10 +11235,24 @@ describe("usage pack allocation management", () => {
       },
     );
     await postManagedUsagePackEvent("invoice.paid", {
-      id: invoiceId,
-      customer: fixture.customerId,
-      metadata,
-      status: "paid",
+      ...paidInvoice,
+      lines: {
+        has_more: false,
+        data: [
+          {
+            id: `il_invite_${randomUUID()}`,
+            amount: 1000,
+            subtotal: 1000,
+            quantity: 1,
+            price: null,
+            period: {
+              start: Math.floor(now() / 1000),
+              end: fixture.billingPeriod.end,
+            },
+            parent: { type: "invoice_item_details" },
+          },
+        ],
+      },
     });
     await accept(
       client.confirmPurchase({

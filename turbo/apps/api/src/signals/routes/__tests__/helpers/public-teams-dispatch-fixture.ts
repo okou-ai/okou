@@ -163,6 +163,7 @@ export function createPublicTeamsDispatchFixture(context: TestContext) {
         id: fixture.subscriptionId,
         status: "active",
         metadata: {},
+        items: { data: [{ price: { id: env("OKOU_PRICE_PRO") } }] },
       });
       context.mocks.stripe.subscriptions.update.mockResolvedValue({
         id: fixture.subscriptionId,

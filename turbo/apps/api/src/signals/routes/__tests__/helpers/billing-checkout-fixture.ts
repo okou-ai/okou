@@ -178,6 +178,26 @@ export function createBillingCheckoutFixture() {
           product: "prod_concurrency",
         });
       }
+      const fixedAmounts = new Map<string, number>([
+        [TEST_PRICE_PRO, 2000],
+        [TEST_PRICE_TEAM, 10_000],
+        [TEST_PRICE_CUSTOM, 0],
+        [TEST_PRICE_ATOM_GRANT, 0],
+        [TEST_PRICE_USAGE_PACK_PLAN_PRO, 0],
+        [TEST_PRICE_USAGE_PACK_PLAN_TEAM, 0],
+      ]);
+      const fixedAmount = fixedAmounts.get(priceId);
+      if (fixedAmount !== undefined) {
+        return Promise.resolve({
+          id: priceId,
+          active: true,
+          currency: "usd",
+          type: "recurring",
+          recurring: { interval: "month", interval_count: 1 },
+          unit_amount: fixedAmount,
+          product: { id: `prod_${priceId}`, metadata: {} },
+        });
+      }
       const configuration = usagePackPriceConfiguration(priceId);
       return Promise.resolve({
         id: priceId,
