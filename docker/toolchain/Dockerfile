@@ -45,12 +45,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && unzstd --version \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Rust toolchain with runner Linux musl targets.
+# Install a pinned Rust toolchain with runner Linux musl targets.
 # Used for building runner and guest binaries for Firecracker VMs.
+ARG RUST_VERSION=1.99.0
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal \
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain "${RUST_VERSION}" --profile minimal \
     && rustup target add aarch64-unknown-linux-musl x86_64-unknown-linux-musl \
     && rustup component add rustfmt clippy \
     && rm -rf /usr/local/rustup/toolchains/*/share/doc \
