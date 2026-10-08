@@ -37,10 +37,18 @@ pub struct OkouCliVersions {
 ///
 /// `@okouai/pi-agent-runtime` computes the digest at build time over the
 /// system prompt template and ordered tool schemas for fixed inputs, and the
-/// CLI artifact manifest records it as `sessionConstruction.digest`. It is
-/// the parity key for the installed CLI: the guest execs it only when the
-/// launch config names exactly this digest. Unlike the runtime version it does
-/// not move on dependency-only release bumps.
+/// CLI artifact manifest records it as `sessionConstruction.digest`. Unlike
+/// the runtime version, the digest does not move on dependency-only release
+/// bumps.
+///
+/// The captured `piInstalledCliRequirement` selects the installed-CLI parity
+/// key. When it carries `requiredPiSessionConstructionDigest`, the guest
+/// requires an identical installed digest; a missing or mismatched digest
+/// selects the run's captured `CLI_PKG_URL` through `npx`, without falling
+/// back to runtime-version matching. When the requirement omits the digest,
+/// parity uses an exact `requiredPiAgentRuntimeVersion` match, even if the
+/// installed bundle carries a digest. Both installed paths also require the
+/// installed CLI version to be at or above the captured `minCliVersion`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OkouCliSessionConstruction {
@@ -82,7 +90,13 @@ pub struct InstalledOkouCli {
     pub entrypoint: String,
     /// Session construction bundled into the installed CLI, when the artifact
     /// manifest recorded one. Absent for bundles built before the digest
-    /// existed; those installs are compared by runtime version only.
+    /// existed. The captured requirement chooses parity, not this field's
+    /// presence: a required digest must match this value; a missing or
+    /// mismatched value selects the captured `npx` package without a
+    /// runtime-version fallback. A requirement without a digest uses exact
+    /// runtime-version matching, whether this field is present or absent.
+    /// Both installed paths require the installed CLI version to be at or
+    /// above the captured `minCliVersion`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_construction: Option<OkouCliSessionConstruction>,
 }

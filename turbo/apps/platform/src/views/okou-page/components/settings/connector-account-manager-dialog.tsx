@@ -2,7 +2,7 @@ import type { FormEvent, ReactNode } from "react";
 import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { EllipsisVertical } from "lucide-react";
+import { EllipsisVertical, Search } from "lucide-react";
 import {
   connectorAccountExternalIdentity,
   type ConnectorAccountConnection,
@@ -585,8 +585,17 @@ function ConnectorAccountSearch({ value }: { readonly value: string }) {
   const signal = useGet(pageSignal$);
   return (
     <div className="relative">
+      <Search
+        size={16}
+        aria-hidden="true"
+        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+      />
       <Input
         data-account-search
+        className="pl-9"
+        aria-label={t(($) => {
+          return $.connectors.accounts.find;
+        })}
         value={value}
         onChange={(event) => {
           return setSearch(event.target.value, signal);

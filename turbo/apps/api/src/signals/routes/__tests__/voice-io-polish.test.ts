@@ -1,4 +1,9 @@
-import { voiceIoPolishContract } from "@okouai/api-contracts/contracts/voice-io-polish";
+import {
+  voiceIoPolishSegmentsContract,
+  voiceIoPolishContract,
+} from "@okouai/api-contracts/contracts/voice-io-polish";
+import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
+import { voiceIoQuotaRoutes } from "../voice-io-quota";
 import { HttpResponse, http } from "msw";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -27,20 +32,43 @@ afterEach(() => {
 
 function client() {
   return setupApp({ context, routes: voiceIoPolishRoutes })(
-    voiceIoPolishContract,
+    voiceIoPolishSegmentsContract,
   );
 }
 
-function setupVoicePolish() {
+async function setupVoicePolish() {
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   const actor = createBddApi(context).user();
   if (!actor.orgId) {
     throw new Error("Voice draft tests require an organization");
   }
+  await createBddApi(context).completeOnboarding(actor);
   mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
 }
 
 describe("POST /api/voice-io/polish", () => {
+  it("preserves the old text-only polish HTTP contract without recording usage", async () => {
+    await setupVoicePolish();
+    const headers = { authorization: "Bearer clerk-session" };
+    server.use(
+      http.post(VERTEX_VOICE_URL, () => {
+        return vertexVoiceResponse("Preserved speech.");
+      }),
+    );
+    const legacy = setupApp({ context, routes: voiceIoPolishRoutes })(
+      voiceIoPolishContract,
+    );
+    const response = await accept(
+      legacy.post({ headers, body: { text: "um preserved speech" } }),
+      [200],
+    );
+    expect(response.body.text).toBe("Preserved speech.");
+    const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
+      voiceIoQuotaContract,
+    );
+    expect((await accept(quota.get({ headers }), [200])).body.count).toBe(0);
+  });
+
   it.each([
     { code: "ECONNRESET", status: 503 },
     { code: "UND_ERR_BODY_TIMEOUT", status: 503 },
@@ -48,7 +76,7 @@ describe("POST /api/voice-io/polish", () => {
   ])(
     "classifies a Google body I/O failure with $code",
     async ({ code, status }) => {
-      setupVoicePolish();
+      await setupVoicePolish();
       let calls = 0;
       server.use(
         http.post(VERTEX_VOICE_URL, () => {
@@ -66,7 +94,7 @@ describe("POST /api/voice-io/polish", () => {
       );
       const response = await client().post({
         headers: { authorization: "Bearer clerk-session" },
-        body: { text: "Synthetic dictation." },
+        body: { segments: ["Synthetic dictation."] },
       });
       expect(response.status).toBe(status);
       expect(response.body).toMatchObject({
@@ -79,7 +107,7 @@ describe("POST /api/voice-io/polish", () => {
   );
 
   it("classifies a Google connection failure without replaying generation", async () => {
-    setupVoicePolish();
+    await setupVoicePolish();
     let calls = 0;
     server.use(
       http.post(VERTEX_VOICE_URL, () => {
@@ -90,7 +118,7 @@ describe("POST /api/voice-io/polish", () => {
     const response = await accept(
       client().post({
         headers: { authorization: "Bearer clerk-session" },
-        body: { text: "Synthetic dictation." },
+        body: { segments: ["Synthetic dictation."] },
       }),
       [503],
     );
@@ -99,7 +127,7 @@ describe("POST /api/voice-io/polish", () => {
   });
 
   it("retains the maximum text contract with JSON escaping and rejects oversize output", async () => {
-    setupVoicePolish();
+    await setupVoicePolish();
     const text = `a${"\u0001".repeat(262_142)}z`;
     server.use(
       http.post(VERTEX_VOICE_URL, () => {
@@ -109,7 +137,7 @@ describe("POST /api/voice-io/polish", () => {
     const response = await accept(
       client().post({
         headers: { authorization: "Bearer clerk-session" },
-        body: { text: "Synthetic dictation." },
+        body: { segments: ["Synthetic dictation."] },
       }),
       [200],
     );
@@ -122,7 +150,7 @@ describe("POST /api/voice-io/polish", () => {
     await accept(
       client().post({
         headers: { authorization: "Bearer clerk-session" },
-        body: { text: "Synthetic dictation." },
+        body: { segments: ["Synthetic dictation."] },
       }),
       [502],
     );
@@ -134,14 +162,14 @@ describe("POST /api/voice-io/polish", () => {
     await accept(
       client().post({
         headers: { authorization: "Bearer clerk-session" },
-        body: { text: "Synthetic dictation." },
+        body: { segments: ["Synthetic dictation."] },
       }),
       [502],
     );
   });
 
   it("recovers a temporary Google polish failure on the same model", async () => {
-    setupVoicePolish();
+    await setupVoicePolish();
     const urls: string[] = [];
     server.use(
       http.post(VERTEX_VOICE_URL, ({ request }) => {
@@ -154,7 +182,7 @@ describe("POST /api/voice-io/polish", () => {
     await accept(
       client().post({
         headers: { authorization: "Bearer clerk-session" },
-        body: { text: "Synthetic dictation." },
+        body: { segments: ["Synthetic dictation."] },
       }),
       [200],
     );
@@ -186,7 +214,7 @@ describe("POST /api/voice-io/polish", () => {
     },
     { reason: "invalid_response", body: { candidates: [{ finishReason: 7 }] } },
   ])("rejects unusable Google output for $reason", async ({ body }) => {
-    setupVoicePolish();
+    await setupVoicePolish();
     server.use(
       http.post(VERTEX_VOICE_URL, () => {
         return HttpResponse.json(body);
@@ -195,7 +223,7 @@ describe("POST /api/voice-io/polish", () => {
     const response = await accept(
       client().post({
         headers: { authorization: "Bearer clerk-session" },
-        body: { text: "private user dictation" },
+        body: { segments: ["private user dictation"] },
       }),
       [502],
     );
@@ -203,7 +231,7 @@ describe("POST /api/voice-io/polish", () => {
   });
 
   it("preserves public provider errors, respects long Retry-After, and rejects incomplete polish", async () => {
-    setupVoicePolish();
+    await setupVoicePolish();
     const cases = [
       {
         status: 400,
@@ -285,7 +313,7 @@ describe("POST /api/voice-io/polish", () => {
       );
       const response = await client().post({
         headers: { authorization: "Bearer clerk-session" },
-        body: { text: "um prepare the update" },
+        body: { segments: ["um prepare the update"] },
       });
       expect(response.status).toBe(testCase.expectedStatus);
       expect(response.body).toStrictEqual({
@@ -301,7 +329,7 @@ describe("POST /api/voice-io/polish", () => {
   });
 
   it("cancels the provider request when the client disconnects", async () => {
-    setupVoicePolish();
+    await setupVoicePolish();
     const controller = new AbortController();
     context.signal.addEventListener(
       "abort",
@@ -330,9 +358,9 @@ describe("POST /api/voice-io/polish", () => {
       context,
       routes: voiceIoPolishRoutes,
       rethrowErrors: true,
-    })(voiceIoPolishContract).post({
+    })(voiceIoPolishSegmentsContract).post({
       headers: { authorization: "Bearer clerk-session" },
-      body: { text: "um prepare the update" },
+      body: { segments: ["um prepare the update"] },
       fetchOptions: { signal: controller.signal },
     });
     await entered.promise;
@@ -341,13 +369,8 @@ describe("POST /api/voice-io/polish", () => {
     await aborted.promise;
   });
 
-  it("turns raw dictation into send-ready text without charging usage", async () => {
-    mockOptionalEnv("OPENROUTER_API_KEY", undefined);
-    const actor = createBddApi(context).user();
-    if (!actor.orgId) {
-      throw new Error("Voice draft tests require an organization");
-    }
-    mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
+  it("merges ordered segments without answering speech or translating it", async () => {
+    await setupVoicePolish();
     let requestBody: unknown;
     server.use(
       http.post(VERTEX_VOICE_URL, async ({ request }) => {
@@ -367,7 +390,7 @@ describe("POST /api/voice-io/polish", () => {
       client().post({
         headers: { authorization: "Bearer clerk-session" },
         body: {
-          text: "um ship the nebula release Friday no Monday",
+          segments: ["um ship the nebula release Friday", "no Monday"],
           lastAssistantMessage:
             "The Project Nebula release is scheduled for Friday.",
         },
@@ -380,14 +403,17 @@ describe("POST /api/voice-io/polish", () => {
     });
     expect(requestBody).toMatchObject({
       generationConfig: {
-        maxOutputTokens: 65_536,
+        maxOutputTokens:
+          "um ship the nebula release Friday".length +
+          "no Monday".length +
+          4096,
         thinkingConfig: { thinkingLevel: "MINIMAL" },
       },
       systemInstruction: {
         parts: [
           {
             text: expect.stringContaining(
-              "provides conversational context for resolving vocabulary",
+              "Include every segment, not just the last one.",
             ),
           },
         ],
@@ -398,7 +424,7 @@ describe("POST /api/voice-io/polish", () => {
           parts: [
             {
               text: JSON.stringify({
-                text: "um ship the nebula release Friday no Monday",
+                segments: ["um ship the nebula release Friday", "no Monday"],
                 lastAssistantMessage:
                   "The Project Nebula release is scheduled for Friday.",
               }),
@@ -411,10 +437,70 @@ describe("POST /api/voice-io/polish", () => {
     expect(requestBody).not.toHaveProperty("generationConfig.responseMimeType");
   });
 
+  it.each([
+    { label: "empty list", segments: [] },
+    { label: "empty segment", segments: [""] },
+    {
+      label: "oversized total",
+      segments: ["a".repeat(131_073), "b".repeat(131_072)],
+    },
+  ])(
+    "rejects unusable or oversized combined transcripts before generation: $label",
+    async ({ segments }) => {
+      await setupVoicePolish();
+      const result = await client().post({
+        headers: { authorization: "Bearer clerk-session" },
+        body: { segments },
+      });
+      expect(result.status).toBe(400);
+    },
+  );
+
+  it("bounds an independent polish attempt and permits retry", async () => {
+    await setupVoicePolish();
+    const deadline = new AbortController();
+    context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+      return milliseconds === 60_000 ? deadline.signal : context.signal;
+    });
+    const entered = createDeferredPromise<void>(context.signal);
+    const aborted = createDeferredPromise<void>(context.signal);
+    server.use(
+      http.post(VERTEX_VOICE_URL, async ({ request }) => {
+        request.signal.addEventListener(
+          "abort",
+          () => {
+            aborted.resolve();
+          },
+          { once: true },
+        );
+        entered.resolve();
+        await aborted.promise;
+        return vertexVoiceResponse("Late polish.");
+      }),
+    );
+    const body = { segments: ["Saved first part.", "Saved final part."] };
+    const headers = { authorization: "Bearer clerk-session" };
+    const pending = client().post({ headers, body });
+    await entered.promise;
+    deadline.abort();
+    const failed = await accept(pending, [503]);
+    expect(failed.body.error.code).toBe("PROVIDER_UNAVAILABLE");
+    context.mocks.abortSignal.timeout.mockImplementation(() => {
+      return context.signal;
+    });
+    server.use(
+      http.post(VERTEX_VOICE_URL, () => {
+        return vertexVoiceResponse("Saved first part. Saved final part.");
+      }),
+    );
+    const retried = await accept(client().post({ headers, body }), [200]);
+    expect(retried.body.text).toBe("Saved first part. Saved final part.");
+  });
+
   it("requires session auth", async () => {
     const unauthenticated = await client().post({
       headers: {},
-      body: { text: "Hello" },
+      body: { segments: ["Hello"] },
     });
     expect(unauthenticated.status).toBe(401);
   });

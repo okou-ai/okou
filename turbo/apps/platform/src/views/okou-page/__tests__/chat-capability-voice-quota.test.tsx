@@ -172,6 +172,9 @@ test("Keep a recorded draft retryable after a quota response", async () => {
     return respond(200, { allowed: true, count: 0, limit: 60 });
   });
   let exhausted = true;
+  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
+    return HttpResponse.json({ text: "Retained recording." });
+  });
   context.mocks.http.post("*/api/voice-io/transcribe/segment", () => {
     if (exhausted) {
       return HttpResponse.json(
@@ -186,7 +189,7 @@ test("Keep a recorded draft retryable after a quota response", async () => {
     }
     return HttpResponse.json({
       transcript: "retained recording",
-      polishedText: "Retained recording.",
+
       language: "en-US",
     });
   });

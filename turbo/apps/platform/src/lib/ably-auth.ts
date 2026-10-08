@@ -26,10 +26,10 @@ type AuthCallback = NonNullable<AuthOptions["authCallback"]>;
  *
  * Ably invokes `authCallback` on the initial connect and again each time it
  * needs to renew the token (our endpoint issues tokens with a 1 h ttl).
- * The endpoint returns `TokenDetails` it already exchanged with Ably, or a
- * single-use `TokenRequest` when that exchange failed. Either must be fresh
- * on every call; caching it causes renewal to fail with "Client configured
- * authentication provider request failed".
+ * The endpoint returns a signed, single-use `TokenRequest`, which the Ably
+ * SDK exchanges for a token. Fetch a fresh request on every call; caching it
+ * causes renewal to fail with "Client configured authentication provider
+ * request failed".
  *
  * The factory lives outside `signals/` so it can use `detach()` to track
  * the promise (Ably's API is node-style callback, not awaitable) and

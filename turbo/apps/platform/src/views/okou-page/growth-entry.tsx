@@ -53,7 +53,7 @@ function useCombinedCreditLabel(): string | null {
   if (orgCredits === null || packCredits === null) {
     return null;
   }
-  return formatLocalizedNumber(orgCredits + packCredits);
+  return formatLocalizedNumber(Math.max(orgCredits, 0) + packCredits);
 }
 
 function GrowthCreditMenuItem({ openCredits }: { openCredits: () => void }) {

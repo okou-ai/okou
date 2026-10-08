@@ -18,10 +18,6 @@ import { logger } from "../../lib/log";
 import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { settle } from "../utils";
-import {
-  ensureMorningBriefDefaultEnabled$,
-  type EnsureMorningBriefDefaultEnabledResult,
-} from "./morning-brief-preference.service";
 import type { WorkflowMember } from "./workflow-data.service";
 import { markOrgOnboardingComplete$ } from "./onboarding-completion.command";
 
@@ -127,14 +123,6 @@ interface CompleteOnboardingArgs {
   readonly isAdmin: boolean;
   readonly timezone?: string;
   readonly industry?: OnboardingIndustry;
-}
-
-interface MorningBriefOnboardingOutcome {
-  readonly firstCompletion: boolean;
-  readonly timezone: TimezoneFallbackOutcome;
-  readonly provisioning:
-    | EnsureMorningBriefDefaultEnabledResult
-    | { readonly outcome: "skipped"; readonly reason: "already-complete" };
 }
 
 function defaultAgentId(orgId: string): Computed<Promise<string | null>> {
@@ -375,7 +363,7 @@ export const completeOnboarding$ = command(
     if (!args.isAdmin) {
       return await set(completeMemberOnboarding$, args, signal);
     }
-    const firstCompletion = await set(
+    await set(
       markOrgOnboardingComplete$,
       {
         orgId: args.orgId,
@@ -386,53 +374,24 @@ export const completeOnboarding$ = command(
     );
     signal.throwIfAborted();
 
-    const additiveOutcome = await settle(
-      (async (): Promise<MorningBriefOnboardingOutcome> => {
-        const timezone = await set(
-          preserveOrStoreTimezoneFallback$,
-          {
-            orgId: args.orgId,
-            userId: args.member.userId,
-            timezone: args.timezone,
-          },
-          signal,
-        );
-        signal.throwIfAborted();
-        const provisioning = firstCompletion
-          ? await set(
-              ensureMorningBriefDefaultEnabled$,
-              {
-                orgId: args.orgId,
-                member: args.member,
-              },
-              signal,
-            )
-          : {
-              outcome: "skipped" as const,
-              reason: "already-complete" as const,
-            };
-        return { firstCompletion, timezone, provisioning };
-      })(),
+    const timezone = await settle(
+      set(
+        preserveOrStoreTimezoneFallback$,
+        {
+          orgId: args.orgId,
+          userId: args.member.userId,
+          timezone: args.timezone,
+        },
+        signal,
+      ),
       signal,
     );
-
-    if (
-      additiveOutcome.ok &&
-      additiveOutcome.value.provisioning.outcome !== "failed"
-    ) {
-      L.info("Morning Brief onboarding provisioning outcome", {
+    signal.throwIfAborted();
+    if (!timezone.ok) {
+      L.warn("Member onboarding timezone fallback failed", {
         orgId: args.orgId,
         userId: args.member.userId,
-        ...additiveOutcome.value,
-      });
-    } else {
-      L.warn("Morning Brief onboarding provisioning outcome", {
-        orgId: args.orgId,
-        userId: args.member.userId,
-        firstCompletion,
-        ...(additiveOutcome.ok
-          ? additiveOutcome.value
-          : { outcome: "failed", error: additiveOutcome.error }),
+        error: timezone.error,
       });
     }
 

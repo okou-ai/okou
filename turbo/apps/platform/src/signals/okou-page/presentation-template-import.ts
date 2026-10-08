@@ -2,11 +2,10 @@ import {
   USER_TEMPLATE_KINDS,
   type UserTemplateKind,
 } from "@okouai/api-contracts/contracts/user-templates";
-import { command, state } from "ccstate";
+import { command } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { onRef } from "../utils.ts";
 import type { ComposerSignals } from "./composer-signals.ts";
 
 /**
@@ -61,21 +60,6 @@ export const PRESENTATION_TEMPLATE_IMPORT_ACCEPT = acceptList(["presentation"]);
  * their own document before the analysis has read it.
  */
 export const CUSTOM_TEMPLATE_IMPORT_ACCEPT = acceptList(USER_TEMPLATE_KINDS);
-
-const customTemplateImportInput$ = state<HTMLInputElement | null>(null);
-
-export const setCustomTemplateImportInput$ = onRef(
-  command(({ set }, input: HTMLInputElement, signal: AbortSignal) => {
-    set(customTemplateImportInput$, input);
-    signal.addEventListener("abort", () => {
-      set(customTemplateImportInput$, null);
-    });
-  }),
-);
-
-export const openCustomTemplateImport$ = command(({ get }) => {
-  get(customTemplateImportInput$)?.click();
-});
 
 /**
  * The message the deck is sent with.

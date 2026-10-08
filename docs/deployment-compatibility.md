@@ -1,34 +1,25 @@
 # Deployment Compatibility
 
-## Connector permission baseline retirement
+## Platform realtime token exchange (#37143)
 
-New API writers no longer persist `connectorPermissionBaseline` in Runner job
-execution contexts, including memory-maintenance jobs. Claim resolves the
-current connector catalog by the queued builtin slugs in one pointer/entry
-query, then overlays current user grants. Connector targets, captured credentials,
-custom connector policies, model-provider policies and Runner wire fields retain
-their existing owners. The immutable catalog entry key remains `(hash, slug)`;
-this change does not garbage-collect catalog generations or remove OAuth
-`contract_hash` identities.
+`POST /api/realtime/token` now always returns a fresh signed Ably `TokenRequest`.
+The browser SDK exchanges it for the connection token. The API no longer
+pre-exchanges tokens or waits for a one-second exchange budget. Subscribe-only
+user/active-organization capabilities, the one-hour TTL, authentication and
+server-side signing-key ownership are unchanged.
 
-Stored-context readers strip the retired field, including malformed and future
-baseline values, without changing Pi-generation negotiation or invalid-context
-failure handling. Migration `1346_retire_connector_permission_baseline` removes
-existing queue baselines without changing the rest of each execution context.
+- **Old Platform → new API:** the existing response union and Ably SDK already
+  support signed token requests, previously returned by the fallback path.
+- **New Platform → old API:** the unchanged Ably auth callback passes the response
+  to the SDK, which accepts both token details and signed requests. The production
+  realtime client uses the default API client without response-schema validation;
+  narrowing the new producer's contract does not reject old token details there.
+- **New Platform → new API:** initial connection and renewal each obtain a fresh
+  single-use signed request. The API response contract and test fixtures now use
+  only that shape; do not cache or replay a request for renewal.
 
-- **Old writer / new reader:** an old queued baseline is ignored; claim always
-  refreshes permissions against the current catalog and current grants.
-- **New writer / old reader:** the field was optional. The old reader takes its
-  existing missing-baseline current-catalog path.
-- **Old / new Runner:** the baseline was API-only and never part of the claim
-  response, so there is no Runner or CLI version floor.
-
-The migration may run before API promotion. Outgoing API writers can still add
-baselines after it runs; those rows drain through claim, terminal deletion or
-queue expiry (two hours). Therefore absence from every queue row is only true
-once outgoing writers and their queued jobs have drained. Rolling back the API
-restores baseline writes but can still claim new baseline-free jobs. No release
-or production activation is performed by this change.
+No database migration, client version floor, feature switch or deployment-order
+fallback is required. This change does not deploy or verify production recovery.
 
 ## Maps oversized-response error (issue #36791)
 
@@ -1457,6 +1448,63 @@ remain log-free. No API/Guest/addon/Platform rollout, protocol change, migration
 Web floor is needed. A normal Runner rollout is needed to observe these fields;
 production activation or deployment is not included in this PR. Runner rollback
 removes the local attributes only, without changing download behavior.
+
+## Client-owned voice transcription and independent polish
+
+Microphone input now uses two independent requests. Every audio segment, including
+its tail, calls `/api/voice-io/transcribe/segment` with the same transcript-only
+model prompt. The client sends `final: false` on every audio request so it also
+works against serving/rollback APIs that require the field. Model context is a
+spelling/overlap suffix capped at 1,000 characters, not the accumulated recording.
+The client waits for all segment checkpoints, then calls the additive
+`/api/voice-io/polish/segments` with a nonempty, recording-ordered `segments` array. Its combined text is bounded
+at 262,144 characters. Both model stages have an owner-bound 60-second deadline.
+Daily request/duration usage remains attached to successful audio transcription;
+finite lifetime recording usage is counted only after successful polish. Empty
+recordings never request polish or consume recording usage.
+
+The client keeps PCM and segment checkpoints in IndexedDB. A failed/cancelled
+polish does not erase those checkpoints; Retry/reload submits only polish once
+transcription is complete. VAD runs before each new audio upload and inspects only
+the non-overlapping samples. Silent tails do not upload audio; earlier speech
+still reaches the independent polish request.
+
+The owner explicitly authorized discarding old voice recordings. Opening version
+2 of `okou-voice-drafts` replaces its `drafts` and `chunks` stores atomically,
+including old PCM and combined-finalization progress. Other App databases are
+untouched. Version 2 checkpoints retain ordinary resume/retry behavior. No old
+recording converter, tombstone contract, or cache fallback is provided.
+
+HTTP compatibility is temporary and separate from the approved cache retirement:
+
+- **Old Web/new API:** the original final/full-prefix segment contract and the
+  original `/api/voice-io/polish` `text` body remain accepted. A final HTTP request
+  adapts to separate transcript-only and text-only model calls, never the former
+  combined prompt. A silent/text-only final still edits the saved prefix. Only a
+  successful final consumes finite recording usage. The combined legacy request
+  has an 80-second owner-bound deadline below the edge's 100-second timeout.
+- **New Web/old API:** all audio requests use `final: false`. Only `404` from the
+  additive polish route uses the old segment endpoint's existing text-only final
+  request, including its quota writer. It sends no audio and preserves completed
+  transcription checkpoints on failure. Other failures never trigger another
+  generation path.
+- **New Web/new API:** the client independently orchestrates transcription and
+  ordered-text polish. Successful polish consumes finite recording usage.
+
+Normal API-first/App-second promotion is safe for these HTTP producers. In a
+later release, raise the App floor only after the first containing App is live;
+then retire old final/full-prefix/text adapters after the old senders are excluded.
+The new-App fallback and `final: false` sender remain until older API versions
+are outside both serving and supported rollback targets. Every protected surface
+must close before removing the shared bridge. Follow-up retirement PR:
+`chore(voice): retire split-pipeline rollout bridge`, required after those gates;
+this run does not create that later PR or change live floor/deployment settings.
+
+The cache cutover remains destructive by explicit owner decision. Old tabs do
+not gain a version-2 cache reader from HTTP compatibility and may need refresh
+once that cache upgrades. Rolling the App back to its version-1 cache reader
+requires clearing only the voice database, rather than treating a `VersionError`
+as an empty recording. Retired cache contents cannot be recovered by rollback.
 
 ## File transcription and Seedream 5 retirement
 
@@ -5321,12 +5369,31 @@ the regular preferences update to save locale before returning preferences.
 An old App that reads preferences before its startup POST against the new API
 can temporarily receive `409`; its existing POST then initializes the member.
 
-Morning Brief enrollment remains a separate durable obligation. The POST
-attempts it after saving missing preferences, and the enrollment worker admits up to
-20 timezone-bearing members without enrollment rows on each tick before
-processing due work. Qualification checks the Clerk membership and rollout
-boundary; existing `cancelled`, `ineligible`, and `completed` rows are not
-recreated. No schema migration is needed.
+The automatic Morning Brief enrollment side effect described by the original
+rollout is retired by #36270; see the explicit-installation cleanup below.
+Preference initialization still fills missing fields and initializes member
+memory, but no longer prepares or installs Morning Brief.
+
+## Morning Brief automatic enrollment retirement (#36270, 2026-10-08)
+
+Remove the historical timezone/no-enrollment admission scan, enrollment cron
+worker, lease/backoff commands and automatic installer. Preference initialization,
+timezone updates, onboarding completion and Clerk membership creation no longer
+start automatic installation or record membership-based enrollment intent.
+Explicit user installation and preference toggles, timezone synchronization for
+existing installations, and scheduled execution remain supported. An explicit
+choice whose prerequisites are unavailable requires another user enable request;
+there is no background enrollment retry.
+
+This is an API-only policy change with no new request/response shape or destructive
+migration. Existing enrollment rows retain selected-workflow ownership, choices
+and cleanup/claim semantics; their schema is not dropped. Old App/new API and
+new App/old API still use the same preference and onboarding protocols. An older
+API serving, draining or restored by rollback can still auto-install/retry until
+it exits; source removal does not prove production drain. Deployment must promote
+and drain the API before automatic enrollment is declared stopped. The historical
+gap and old preference rollout are accepted as converged per Ethan's explicit
+cleanup decision; CLI authentication is not an enrollment entry point.
 
 ## Pi 0.87.1 model admission (2026-09-23)
 
@@ -9338,3 +9405,33 @@ retained history or invalidating the index. Native Runner checkpoint and claim
 protocols keep their existing shapes, so a running older Runner can finish the
 run it already owns. This change does not restore the removed thread/session
 foreign keys.
+
+## Connector permission baseline retirement
+
+New API writers no longer persist `connectorPermissionBaseline` in Runner job
+execution contexts, including memory-maintenance jobs. Claim resolves the
+current connector catalog by the queued builtin slugs in one pointer/entry
+query, then overlays current user grants. Connector targets, captured credentials,
+custom connector policies, model-provider policies and Runner wire fields retain
+their existing owners. The immutable catalog entry key remains `(hash, slug)`;
+this change does not garbage-collect catalog generations or remove OAuth
+`contract_hash` identities.
+
+Stored-context readers strip the retired field, including malformed and future
+baseline values, without changing Pi-generation negotiation or invalid-context
+failure handling. Migration `1347_retire_connector_permission_baseline` removes
+existing queue baselines without changing the rest of each execution context.
+
+- **Old writer / new reader:** an old queued baseline is ignored; claim always
+  refreshes permissions against the current catalog and current grants.
+- **New writer / old reader:** the field was optional. The old reader takes its
+  existing missing-baseline current-catalog path.
+- **Old / new Runner:** the baseline was API-only and never part of the claim
+  response, so there is no Runner or CLI version floor.
+
+The migration may run before API promotion. Outgoing API writers can still add
+baselines after it runs; those rows drain through claim, terminal deletion or
+queue expiry (two hours). Therefore absence from every queue row is only true
+once outgoing writers and their queued jobs have drained. Rolling back the API
+restores baseline writes but can still claim new baseline-free jobs. No release
+or production activation is performed by this change.
