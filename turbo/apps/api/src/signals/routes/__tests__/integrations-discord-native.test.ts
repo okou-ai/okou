@@ -116,6 +116,7 @@ async function fixture(
   const sentBodies: {
     content: string;
     allowed_mentions: { parse: string[]; replied_user: boolean };
+    message_reference?: { message_id: string; fail_if_not_exists: boolean };
   }[] = [];
   const state = {
     userTimedOut: false,
@@ -215,6 +216,12 @@ async function fixture(
         const body = z
           .object({
             content: z.string(),
+            message_reference: z
+              .object({
+                message_id: z.string(),
+                fail_if_not_exists: z.boolean(),
+              })
+              .optional(),
             allowed_mentions: z.object({
               parse: z.array(z.string()),
               replied_user: z.boolean(),
@@ -227,10 +234,24 @@ async function fixture(
             { status: 400 },
           );
         }
+        if (
+          body.message_reference &&
+          !messages.get(String(params.channelId))?.some((entry) => {
+            return entry.id === body.message_reference?.message_id;
+          })
+        ) {
+          return HttpResponse.json(
+            { code: 10_008, message: "Unknown message" },
+            { status: 404 },
+          );
+        }
         sentBodies.push(body);
         const entry = {
           ...message(snowflake(), String(params.channelId), body.content),
           author: botAuthor,
+          ...(body.message_reference
+            ? { message_reference: body.message_reference }
+            : {}),
         };
         const entries = messages.get(entry.channel_id) ?? [];
         entries.push(entry);
@@ -772,6 +793,176 @@ describe("Discord native authorization and reads", () => {
 });
 
 describe("Discord native sends and transport failures", () => {
+  it("references the same-channel message only on the first long-message chunk", async () => {
+    const f = await fixture();
+    const root = f.message("18446744073709551610");
+    f.messages.set(f.channelId, [root]);
+    const text = "x".repeat(4001);
+    const response = await accept(
+      f.write.sendMessage({
+        headers: f.headers,
+        body: { channelId: f.channelId, replyToMessageId: root.id, text },
+      }),
+      [200],
+    );
+    expect(response.body.messages).toHaveLength(3);
+    const page = await accept(history(f), [200]);
+    const delivered = response.body.messages.map((receipt) => {
+      return page.body.messages.find((entry) => {
+        return entry.id === receipt.id;
+      });
+    });
+    expect(delivered[0]?.replyTo).toStrictEqual({ messageId: root.id });
+    expect(
+      delivered.slice(1).every((entry) => {
+        return entry?.replyTo === undefined;
+      }),
+    ).toBeTruthy();
+    expect(
+      delivered
+        .map((entry) => {
+          return entry?.content;
+        })
+        .join(""),
+    ).toBe(text);
+    expect(
+      f.sentBodies.every((body) => {
+        return (
+          body.allowed_mentions.parse.length === 0 &&
+          !body.allowed_mentions.replied_user
+        );
+      }),
+    ).toBeTruthy();
+  });
+
+  it.each(["deleted", "other-channel"] as const)(
+    "does not deliver a reply to a %s message",
+    async (location) => {
+      const f = await fixture();
+      const target = f.message(
+        snowflake(),
+        snowflake(),
+        "Not in the destination",
+      );
+      if (location === "other-channel") {
+        f.messages.set(target.channel_id, [target]);
+      }
+      const denied = await accept(
+        f.write.sendMessage({
+          headers: f.headers,
+          body: {
+            channelId: f.channelId,
+            replyToMessageId: target.id,
+            text: "Reply",
+          },
+        }),
+        [404],
+      );
+      expect(denied.body.error.deliveredMessages).toStrictEqual([]);
+      expect(
+        (await accept(history(f), [200])).body.messages.every((entry) => {
+          return !entry.author.bot;
+        }),
+      ).toBeTruthy();
+    },
+  );
+
+  it("revalidates write access after reading a reply target", async () => {
+    const f = await fixture();
+    const root = f.messages.get(f.channelId)?.[0];
+    const channel = f.channels.get(f.channelId);
+    if (!root || !channel) {
+      throw new Error("Expected a reference target and destination channel");
+    }
+    server.use(
+      http.get(`${API}/channels/${f.channelId}/messages/${root.id}`, () => {
+        channel.permission_overwrites = [
+          { id: f.discordUserId, type: 1, deny: String(SEND), allow: "0" },
+        ];
+        return HttpResponse.json(root);
+      }),
+    );
+    const denied = await accept(
+      f.write.sendMessage({
+        headers: f.headers,
+        body: {
+          channelId: f.channelId,
+          replyToMessageId: root.id,
+          text: "Do not deliver after write access is revoked",
+        },
+      }),
+      [404],
+    );
+    expect(channel.permission_overwrites).toContainEqual({
+      id: f.discordUserId,
+      type: 1,
+      deny: String(SEND),
+      allow: "0",
+    });
+    expect(denied.body.error.code).toBe("NOT_FOUND");
+    expect(denied.body.error.deliveredMessages).toStrictEqual([]);
+    expect(f.sentBodies).toStrictEqual([]);
+  });
+
+  it("requires shared history access for a guild reply without restricting ordinary writes", async () => {
+    const f = await fixture();
+    const root = f.messages.get(f.channelId)?.[0];
+    if (!root) {
+      throw new Error("Expected a reference target");
+    }
+    f.channels.get(f.channelId)!.permission_overwrites = [
+      { id: f.discordUserId, type: 1, deny: String(READ), allow: "0" },
+    ];
+    const denied = await accept(
+      f.write.sendMessage({
+        headers: f.headers,
+        body: {
+          channelId: f.channelId,
+          replyToMessageId: root.id,
+          text: "Reply",
+        },
+      }),
+      [404],
+    );
+    expect(denied.body.error.deliveredMessages).toStrictEqual([]);
+    const written = await accept(send(f), [200]);
+    expect(written.body.messages).toHaveLength(1);
+  });
+
+  it("references the sender's own bot DM without reading its content", async () => {
+    const f = await fixture();
+    const dmId = snowflake();
+    f.channels.set(dmId, {
+      id: dmId,
+      type: 1,
+      recipients: [{ id: f.discordUserId, username: "sender" }],
+    });
+    const root = f.message(snowflake(), dmId, "Private DM content");
+    f.messages.set(dmId, [root]);
+    server.use(
+      http.get(`${API}/channels/${dmId}/messages/:messageId`, () => {
+        return HttpResponse.json(
+          { message: "DM reads are forbidden" },
+          { status: 500 },
+        );
+      }),
+    );
+    const response = await accept(
+      f.write.sendMessage({
+        headers: f.headers,
+        body: {
+          channelId: dmId,
+          replyToMessageId: root.id,
+          text: "Own DM reply",
+        },
+      }),
+      [200],
+    );
+    expect(response.body.messages[0]?.channelId).toBe(dmId);
+    expect(JSON.stringify(response.body)).not.toContain(root.content);
+    expect(f.sentBodies[0]?.message_reference?.message_id).toBe(root.id);
+  });
+
   it.each([1988, 2005])(
     "normalizes %i closing-fence spaces while preserving code within every message limit",
     async (spaces) => {

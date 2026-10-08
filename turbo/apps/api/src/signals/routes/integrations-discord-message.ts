@@ -13,7 +13,12 @@ import {
   discordMessageUrl,
   splitDiscordMessage,
 } from "../../lib/discord-message";
-import { requireDiscordConversationAccess$ } from "../services/discord-access.service";
+import {
+  requireDiscordBinding$,
+  requireDiscordConversationAccess$,
+} from "../services/discord-access.service";
+import { discordMessageSendFooterText } from "../services/integration-message-context.service";
+import { readDiscordContextMessage$ } from "../services/discord-context.service";
 import {
   discordApiFailure,
   type DiscordFailureResponse,
@@ -39,13 +44,14 @@ const sendChunk$ = command(
       guildId?: string;
       channelId: string;
       content: string;
+      replyToMessageId?: string;
     },
     signal: AbortSignal,
   ) => {
     let retryDeadline: number | undefined;
     let retryFailure: DiscordFailureResponse | undefined;
     for (let attempt = 1; ; attempt += 1) {
-      const access = await set(
+      let access = await set(
         requireDiscordConversationAccess$,
         { ...args, mode: "write" },
         signal,
@@ -60,11 +66,32 @@ const sendChunk$ = command(
       ) {
         return { kind: "denied" as const, response: retryFailure };
       }
+      if (args.replyToMessageId && access.channel.type !== 1) {
+        const referenced = await set(
+          readDiscordContextMessage$,
+          { ...args, messageId: args.replyToMessageId },
+          signal,
+        );
+        if (referenced.kind === "denied") {
+          return referenced;
+        }
+        // Reference reads may outlive a permission or binding change.
+        access = await set(
+          requireDiscordConversationAccess$,
+          { ...args, mode: "write" },
+          signal,
+        );
+        if (access.kind === "denied") {
+          return access;
+        }
+      }
+      // Never read bot DM content. Discord validates an own-DM reference on send.
       const sent = await discordClient.createDiscordMessage(
         {
           botToken: access.botToken,
           channelId: args.channelId,
           content: args.content,
+          replyToMessageId: args.replyToMessageId,
         },
         signal,
       );
@@ -115,8 +142,26 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!body.ok) {
     return body.response;
   }
+  const binding = await set(
+    requireDiscordBinding$,
+    { ...auth, guildId: body.data.guildId },
+    signal,
+  );
+  if (binding.kind === "denied") {
+    return partialFailure(binding.response, []);
+  }
+  const footerText = await get(
+    discordMessageSendFooterText({
+      authRunId: "runId" in auth ? auth.runId : undefined,
+      discordUserId: binding.binding.discordUserId,
+    }),
+  );
+  signal.throwIfAborted();
+  const text = footerText
+    ? `${body.data.text}\n\n-# ${footerText}`
+    : body.data.text;
   const messages: SendDiscordMessageResponse["messages"] = [];
-  for (const content of splitDiscordMessage(body.data.text)) {
+  for (const content of splitDiscordMessage(text)) {
     const result = await set(
       sendChunk$,
       {
@@ -124,6 +169,9 @@ const sendMessage$ = command(async ({ get, set }, signal: AbortSignal) => {
         guildId: body.data.guildId,
         channelId: body.data.channelId,
         content,
+        ...(messages.length === 0 && body.data.replyToMessageId !== undefined
+          ? { replyToMessageId: body.data.replyToMessageId }
+          : {}),
       },
       signal,
     );

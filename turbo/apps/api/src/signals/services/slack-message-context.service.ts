@@ -1,47 +1,13 @@
 import { command, computed, type Computed } from "ccstate";
-import { getRunModelDisplayName } from "@okouai/core/model-display-name";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/schema/agent-session";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { agents } from "@okouai/db/schema/agent";
 import { and, eq } from "drizzle-orm";
 
 import { db$, type ReadonlyDb } from "../external/db";
 import type { SlackClient } from "../external/slack-message-client";
 import { tapError } from "../utils";
-import { resolveRunModelSelection } from "./run-model-selection.service";
-
-async function resolveAgentLabel(
-  db: ReadonlyDb,
-  runId: string,
-): Promise<string | undefined> {
-  const [row] = await db
-    .select({
-      displayName: agents.displayName,
-      name: agents.name,
-    })
-    .from(agentRuns)
-    .innerJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
-    .innerJoin(agents, eq(agentSessions.agentId, agents.id))
-    .where(eq(agentRuns.id, runId))
-    .limit(1);
-  if (!row) {
-    return undefined;
-  }
-  return row.displayName === null ? row.name : row.displayName;
-}
-
-async function resolveModelLabel(
-  db: ReadonlyDb,
-  runId: string,
-): Promise<string | undefined> {
-  const row = await resolveRunModelSelection(db, runId);
-  if (!row || row.selectedModel === null) {
-    return undefined;
-  }
-  return getRunModelDisplayName(row.selectedModel, row.codexServiceTier);
-}
+import { integrationMessageSendLabels } from "./integration-message-context.service";
 
 async function resolveUserMention(
   db: ReadonlyDb,
@@ -86,10 +52,9 @@ export function slackMessageSendFooterText(args: {
     const runId = args.authRunId;
 
     const noop = (): void => {};
-    const [agentLabel, userMention, modelLabel] = await Promise.all([
-      tapError(resolveAgentLabel(db, runId), noop),
+    const [{ agentLabel, modelLabel }, userMention] = await Promise.all([
+      get(integrationMessageSendLabels(args)),
       tapError(resolveUserMention(db, runId), noop),
-      tapError(resolveModelLabel(db, runId), noop),
     ]);
 
     const parts: string[] = [];

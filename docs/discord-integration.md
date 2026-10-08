@@ -164,6 +164,46 @@ Provider references: [Gateway](https://docs.discord.com/developers/events/gatewa
 [threads](https://docs.discord.com/developers/topics/threads), and
 [permissions](https://docs.discord.com/developers/topics/permissions).
 
+## Conversation and native-send parity
+
+Discord keeps its existing safety boundaries while aligning the following Slack
+behaviors:
+
+- **Server-thread context:** read up to 10 recent thread messages and up to 10
+  parent-channel messages from before the thread started. The parent is authorized
+  separately for both the sender and bot. Include an available message-based
+  thread starter, and explicitly referenced older messages only from the source
+  channel or its authorized parent. Deleted or inaccessible optional messages are
+  omitted; transient provider failures keep the existing ingress retry policy.
+  Bot DMs still read no history or quoted-message content. Without
+  `MESSAGE_CONTENT`, ordinary server history is not read.
+- **Bounded rendering:** the combined snapshot still has at most 20 messages,
+  16,000 JSON characters and 2,000 text characters per message. The thread starter
+  and current reply target are prioritized. User mentions resolve to names when
+  Discord supplies them. Attachment-only history retains bounded ID, filename,
+  size and MIME metadata, never signed CDN URLs or implicitly downloaded content.
+  Each entry identifies its channel; the current reply target is marked explicitly.
+- **Native sends:** `okou discord message send` accepts `--text` or piped stdin,
+  with the same 20,000-character input limit. `--reply-to <message-id>` references
+  a message in the destination channel; it does not create or enter a thread.
+  Guild references require shared history access and resolve against that channel.
+  Own-DM references are validated by Discord on send without returning DM content.
+  Only the first segment references the original message. Run-triggered sends
+  append agent/sender/model attribution once, after the complete text; short-lived
+  display lookup failures do not block delivery, matching Slack. Mention and reply
+  notifications remain disabled.
+- **Native reads:** history and replies expose optional `replyTo` ID metadata,
+  without dereferencing another channel. Human-readable CLI output includes the
+  reference; JSON output preserves it alongside attachment metadata.
+- **Commands:** `/okou switch` describes the workspace default agent rather than
+  promising an agent picker. `/okou model` describes the current routed
+  conversation, not a preference for future conversations.
+
+This does not change verified bindings, OAuth availability, other-user DM
+restrictions, file-size limits, ingress mention rules, or the integration/Gateway
+rollout switches. It does not include the admission and lifecycle repairs from
+[#36848](https://github.com/okou-ai/okou/pull/36848).
+
 ## Configuration and rollout boundary
 
 These names come from the shared agreement and A's

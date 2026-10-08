@@ -8851,6 +8851,26 @@ carries an empty classification instead of `unproven_containment`. The
 `oom_unproven_reason` field is gone. Dashboards or saved queries that compare
 `oom_classification` across this boundary will be wrong.
 
+## Discord conversation and native-send parity
+
+The `discordIntegration` switch remains default-off. Native message requests add
+optional `replyToMessageId`; history and replies add optional `replyTo` ID metadata.
+Existing CLI requests omit the field and existing readers ignore the added
+metadata. The new CLI's ordinary sends still work against an old API, but its new
+reply-reference option requires the corresponding API and CLI revision. An old API
+strips the unrecognized request field and cannot provide reply semantics, so use
+matching revisions for that option. This non-GA integration does not add
+mixed-version compatibility branches.
+
+Gateway message parsing retains optional provider `message_reference` metadata.
+The source payload is already stored as the signed provider envelope; no table,
+column, persisted launch-material shape, Runner protocol or migration changes.
+Context enrichment is rendered into the existing server-private prompt string.
+Old queued inputs without references remain ordinary messages. Native sends add
+only text attribution and keep the existing receipt and partial-failure shapes.
+Slack's shared attribution extraction preserves its wire behavior. No feature
+switch, Gateway deployment or production activation is changed.
+
 ## Discord native file delivery (#36646)
 
 Discord file commands use additive upload-init, materialize, complete, and
