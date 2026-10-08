@@ -657,9 +657,10 @@ describe("POST /api/chat-threads", () => {
         }),
         [400],
       );
-      expect(denied.body.error).toBe(
-        "Connector target is not authorized for this chat thread",
-      );
+      expect(denied.body.error).toStrictEqual({
+        code: "BAD_REQUEST",
+        message: "Connector target is not authorized for this chat thread",
+      });
     }
     const preserved = await accept(
       connectorSelectionsClient().get({
