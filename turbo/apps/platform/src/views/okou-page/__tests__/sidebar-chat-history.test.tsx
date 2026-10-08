@@ -34,7 +34,13 @@ import {
   visibleThreadTitles,
 } from "./sidebar-test-helpers.tsx";
 
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -55,7 +61,6 @@ import {
 import { mockNow } from "../../../__tests__/time.ts";
 import { chatEventRowsResponse } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
-import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { PLACEHOLDER } from "./chat-test-helpers.ts";
 import { mockChatEventRows } from "./chat-event-test-helpers.ts";
 import {
@@ -89,16 +94,33 @@ test("Browse a long sidebar chat history", async () => {
 test.each([false, true])(
   "Keep the three-column chat list expanded with saved collapsed state %s",
   async (savedCollapsed) => {
-    const collapsedStorage = localStorageSignals(
-      "sidebar-session-list-collapsed",
-    );
-    context.store.set(collapsedStorage.set$, String(savedCollapsed));
+    const viewport = mockMobileLayout();
     prepareDefaultAgent();
     mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
 
     await setupSidebarPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
+    });
+
+    click(screen.getByLabelText("Open menu"));
+    const drawer = await waitFor(() => {
+      const current = mobileSidebar();
+      expect(within(current).getByText("Release plan")).toBeInTheDocument();
+      return current;
+    });
+    if (savedCollapsed) {
+      const mobileTitle = buttonByText("Chats with Okou", drawer);
+      click(mobileTitle);
+      expect(mobileTitle).toHaveAttribute("aria-expanded", "false");
+      expect(
+        within(drawer).queryByText("Release plan"),
+      ).not.toBeInTheDocument();
+    }
+    act(() => {
+      viewport.setMatches((query) => {
+        return query === "(min-width: 48rem)";
+      });
     });
 
     const list = await screen.findByTestId("chat-list-column");
