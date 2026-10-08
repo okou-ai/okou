@@ -81,7 +81,12 @@ export function createPublicBillingZeroFixture(
         });
         context.mocks.stripe.subscriptions.retrieve
           .mockReset()
-          .mockImplementation((id: string) => {
+          .mockImplementation((id) => {
+            if (typeof id !== "string") {
+              throw new Error(
+                "Expected a Stripe subscription ID during cleanup",
+              );
+            }
             const subscription: StripeSubscription = {
               id,
               customer: customerId,
