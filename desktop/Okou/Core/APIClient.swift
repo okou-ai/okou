@@ -40,11 +40,11 @@ public actor APIClient {
     }
   }
   public func request(
-    _ path: String, token: String, body: JSONValue? = nil, timeout: TimeInterval = 30
+    _ path: String, token: String? = nil, body: JSONValue? = nil, timeout: TimeInterval = 30
   ) async throws -> APIResponse {
     var request = URLRequest(url: baseURL.appendingPathComponent(path), timeoutInterval: timeout)
     request.httpMethod = body == nil ? "GET" : "POST"
-    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
     request.setValue("Desktop", forHTTPHeaderField: "X-Client-Type")
     request.setValue(version, forHTTPHeaderField: "X-Client-Version")
     request.setValue(sessionId, forHTTPHeaderField: "X-Client-Session-Id")
