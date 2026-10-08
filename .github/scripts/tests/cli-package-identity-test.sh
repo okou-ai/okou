@@ -69,6 +69,7 @@ valid = json.dumps(metadata).encode()
 cases = {
     "missing-record": [json.dumps({"name":"@okouai/cli","version":"9.353.0"}).encode()],
     "duplicate-entry": [valid, valid],
+    "leading-dot-duplicate-entry": [valid, valid.replace(b'9.353.0', b'9.353.1')],
     "noncanonical-metadata": [valid],
     "duplicate-consumed-field": [valid.replace(b'"schemaVersion": 1', b'"schemaVersion": 1, "schemaVersion": 1')],
     "oversized-metadata": [valid + b' ' * (16*1024)],
@@ -82,8 +83,13 @@ cases = {
 for name, values in cases.items():
     path = root / (name + '.tgz')
     with tarfile.open(path, 'w:gz') as archive:
-        for value in values:
-            entry = tarfile.TarInfo('package//package.json' if name == 'noncanonical-metadata' else 'package/package.json')
+        for index, value in enumerate(values):
+            entry_name = 'package/package.json'
+            if name == 'noncanonical-metadata':
+                entry_name = 'package//package.json'
+            elif name == 'leading-dot-duplicate-entry' and index == 1:
+                entry_name = './package/package.json'
+            entry = tarfile.TarInfo(entry_name)
             if value is None:
                 entry.type = tarfile.SYMTYPE
                 entry.linkname = 'elsewhere.json'

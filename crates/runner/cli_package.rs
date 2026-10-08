@@ -150,7 +150,13 @@ fn read_identity(package: &[u8]) -> Result<CliIdentity, String> {
             if path.is_absolute() || path.components().any(|part| part == Component::ParentDir) {
                 return Err("unsafe CLI package path".into());
             }
-            if path.as_ref() != Path::new("package/package.json") {
+            // Match the logical destination before enforcing its canonical raw name;
+            // leading `./` must not hide another package.json from identity checks.
+            if !path
+                .components()
+                .filter(|part| *part != Component::CurDir)
+                .eq(Path::new("package/package.json").components())
+            {
                 continue;
             }
             if entry.path_bytes().as_ref() != b"package/package.json"
@@ -292,6 +298,50 @@ mod tests {
         let mut invalid_utf8 = metadata();
         invalid_utf8.push(0xff);
         assert!(read_identity(&archive(&[(&invalid_utf8, tar::EntryType::Regular)])).is_err());
+    }
+
+    #[test]
+    fn compilation_rejects_logical_metadata_aliases() {
+        let canonical = metadata();
+        let valid_package = archive(&[(&canonical, tar::EntryType::Regular)]);
+        assert!(
+            prepare(
+                valid_package.clone(),
+                &serde_json::to_vec(&manifest(&valid_package)).unwrap()
+            )
+            .is_ok()
+        );
+        let aliased = String::from_utf8(canonical.clone())
+            .unwrap()
+            .replace("9.353.0", "9.353.1")
+            .into_bytes();
+        for alias in [
+            "./package/package.json",
+            "././package/package.json",
+            "package/./package.json",
+            "package//package.json",
+        ] {
+            let encoder = GzEncoder::new(Vec::new(), Compression::fast());
+            let mut archive = tar::Builder::new(encoder);
+            for (name, bytes) in [
+                ("package/package.json", canonical.as_slice()),
+                (alias, aliased.as_slice()),
+            ] {
+                let mut header = tar::Header::new_gnu();
+                header.set_size(bytes.len() as u64);
+                header.set_mode(0o644);
+                // Write raw names because append_data may normalize path aliases.
+                header.as_mut_bytes()[..name.len()].copy_from_slice(name.as_bytes());
+                header.set_cksum();
+                archive.append(&header, bytes).unwrap();
+            }
+            let package = archive.into_inner().unwrap().finish().unwrap();
+            let external = serde_json::to_vec(&manifest(&package)).unwrap();
+            assert!(
+                prepare(package, &external).is_err(),
+                "accepted alias {alias}"
+            );
+        }
     }
 
     #[test]
