@@ -239,6 +239,17 @@ uses synthetic terminal events/private readbacks for its large cases. Batch 008'
 attempted public rewrite failed CI and was restored without credit; this matrix
 remains unprocessed, and its retained helpers are not compliant examples.
 
+Model metadata is also an owned boundary. `model-catalog.test.ts` submits an
+existing retired model name through normal thread creation or a chat send and
+observes the canonical successor through public reads. Its disconnected-account
+cases select a model while connected and then use the normal provider DELETE;
+they do not overwrite a thread with an unavailable model. Similarly,
+`model-route-capabilities.test.ts` connects Codex through device authorization
+and checks Luna effort and connected Fable/Astra Fast capabilities through
+`PUT /api/user-model-preference`. Creating or editing operator-owned catalog
+rows would test a different, private construction. These public requests do
+not prove repair of corrupted legacy rows or an arbitrary replacement graph.
+
 For the full reasoning, see
 [Testing External Behavior](./testing-external-behavior.md).
 

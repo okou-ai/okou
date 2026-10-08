@@ -25,7 +25,6 @@ import {
   findPendingChatEventByPromptFixture,
   setTelegramThinkingMessageIdFixture,
 } from "../../../test-fixtures/chat-events";
-import { stageLegacyChatThreadSelectedModelFixture } from "../../../test-fixtures/model-catalog";
 import { installTelegramContextFailureFixture } from "../../../test-fixtures/telegram-context-failure";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
@@ -1304,41 +1303,6 @@ describe("POST /api/telegram/webhook/:telegramBotId", () => {
       );
       expect(autoThread?.selectedModel).toBeNull();
     });
-  });
-
-  it("rewrites a Telegram DM thread stored on a retired model to its successor", async () => {
-    const { actor, completeDm, main } = await prepareTelegramDm();
-    const threadId = main.chatThread.id;
-    await stageLegacyChatThreadSelectedModelFixture({
-      threadId,
-      model: "claude-fable-5",
-    });
-    async function modelSelectionEvents() {
-      const lifecycle = await chatApi.requestThreadEvents(actor, {}, [200]);
-      if (lifecycle.status !== 200) {
-        throw new Error("Expected the Telegram thread event stream");
-      }
-      return lifecycle.body.events.filter((event) => {
-        return (
-          event.chatThreadId === threadId &&
-          event.kind === "model_selection_updated"
-        );
-      });
-    }
-    const before = await modelSelectionEvents();
-
-    const followUp = await completeDm("continue on the retired model", 3513);
-
-    expect(followUp.chatThread.id).toBe(threadId);
-    expect(followUp.claim.modelUsageProvider).toBe("claude-fable-5-1");
-    expect(followUp.chatThread.selectedModel).toBe("claude-fable-5-1");
-    await expect(
-      chatApi.readThreadMetadata(actor, threadId),
-    ).resolves.toMatchObject({ selectedModel: "claude-fable-5-1" });
-    await expect(modelSelectionEvents()).resolves.toStrictEqual([
-      ...before,
-      expect.objectContaining({ selectedModel: "claude-fable-5-1" }),
-    ]);
   });
 
   it("forwards unrecognized Telegram DM slash inputs to the agent", async () => {

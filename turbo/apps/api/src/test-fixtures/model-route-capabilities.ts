@@ -10,27 +10,6 @@ import {
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { db } from "../lib/db";
 
-/** Operators change a model's route capabilities directly in the database. */
-export async function updateModelRouteCapabilitiesFixture(args: {
-  readonly model: string;
-  readonly efforts: readonly string[];
-  readonly defaultEffort: string | null;
-  readonly serviceTiers: readonly "priority"[];
-}): Promise<void> {
-  const updated = await db()
-    .update(modelRoutes)
-    .set({
-      efforts: [...args.efforts],
-      defaultEffort: args.defaultEffort,
-      serviceTiers: [...args.serviceTiers],
-    })
-    .where(eq(modelRoutes.model, args.model))
-    .returning({ id: modelRoutes.id });
-  if (updated.length === 0) {
-    throw new Error("Expected the model to have catalog routes");
-  }
-}
-
 /** The model's first-priority eligible Built-in route in the catalog. */
 export async function readPrimaryBuiltInRouteFixture(model: string): Promise<{
   readonly concreteProviderType: ModelProviderType;

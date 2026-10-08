@@ -46,15 +46,12 @@ import {
   updateFeatureSwitchesForUser,
 } from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
-import { seedCompose$, seedRun$ } from "./helpers/usage-state";
 import {
   generatedStripeCustomerId,
   postUsageAllowanceInvoicePaid,
 } from "./helpers/stripe-billing-webhook";
 import { createRouteMocks } from "./helpers/route-test";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { setRunImageModelFixture } from "../../../test-fixtures/run-image-model";
-import { seedRetiredMemberImageModelFixture } from "../../../test-fixtures/retired-member-image-model";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
@@ -62,7 +59,13 @@ import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { seedBuiltInDefaultModelKey } from "./helpers/runtime-state";
 
+import {
+  createChatEventsFixture,
+  okouTokenFromClaim,
+} from "./helpers/chat-events-fixture";
+
 const context = testContext();
+const imageChat = createChatEventsFixture(context);
 const store = createStore();
 const mocks = createRouteMocks(context);
 const TEST_BUCKET = "test-user-artifacts";
@@ -863,31 +866,6 @@ async function seedRunScopedImageRun(
   return fixture;
 }
 
-async function seedImageRun(
-  fixture: ImageFixture,
-  options: {
-    readonly selectedImageModel: string | null;
-  },
-): Promise<{ readonly runId: string }> {
-  const { composeId } = await store.set(
-    seedCompose$,
-    { orgId: fixture.orgId, userId: fixture.userId },
-    context.signal,
-  );
-  const { runId } = await store.set(
-    seedRun$,
-    {
-      orgId: fixture.orgId,
-      userId: fixture.userId,
-      composeId,
-      triggerSource: "web",
-    },
-    context.signal,
-  );
-  await setRunImageModelFixture(runId, options.selectedImageModel);
-  return { runId };
-}
-
 // Callers select the model through the member's image model setting, as the
 // product does. Echoing the stored run preference leaves everything but the
 // image model unchanged.
@@ -1593,10 +1571,30 @@ describe("POST /api/image-io/generate", () => {
     expect(fluxCalls).toBe(1);
   });
 
-  it("uses the catalog default for unset, retired, and run-less requests", async () => {
-    const pricingFixture = await createScopedImagePricing({
-      configured: GPT_IMAGE_2_5_PRICING,
+  it("uses the catalog default for unset member preferences in Run and session requests", async () => {
+    const { actor, agentId, runnerGroup } =
+      await imageChat.entitledNativeChatActor();
+    if (!actor.orgId) {
+      throw new Error("Expected an organization-scoped image actor");
+    }
+    mocks.clerk.session(actor.userId, actor.orgId);
+    const preferences = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    const stored = await accept(
+      preferences.get({ headers: authHeaders() }),
+      [200],
+    );
+    expect(stored.body.selectedImageModel).toBeNull();
+    const run = await imageChat.sendChatRun(actor, {
+      agentId,
+      prompt: "generate an image using the member's default",
     });
+    const claimed = await imageChat.claimChatRun(runnerGroup, run.runId);
+    const runHeaders = {
+      authorization: `Bearer ${okouTokenFromClaim(claimed.claim)}`,
+    };
     const observedBodies: unknown[] = [];
     server.use(
       http.post(OPENAI_IMAGE_GENERATIONS_URL, async ({ request }) => {
@@ -1613,76 +1611,33 @@ describe("POST /api/image-io/generate", () => {
         });
       }),
     );
-    const app = createImageIoTestApp(pricingFixture.resolution);
+    const app = createImageIoTestApp();
+    mocks.clerk.session(actor.userId, actor.orgId);
+    const requests = [
+      { prompt: "unset member preference in a Run", headers: runHeaders },
+      { prompt: "session request without a Run", headers: authHeaders() },
+    ];
     const generations: {
       readonly generationId: string;
       readonly headers: Record<string, string>;
     }[] = [];
-
-    const runCases = [
-      { selectedImageModel: null, prompt: "null snapshot" },
-      {
-        selectedImageModel: "fal-ai/retired-image-model",
-        prompt: "old snapshot",
-      },
-    ] as const;
-    for (const runCase of runCases) {
-      const fixture = await seedImageFixture({});
-      const { runId } = await seedImageRun(fixture, runCase);
-      const headers = {
-        authorization: `Bearer ${okouToken({
-          userId: fixture.userId,
-          orgId: fixture.orgId,
-          runId,
-        })}`,
-      };
+    for (const request of requests) {
       const response = await app.request("/api/image-io/generate", {
         method: "POST",
-        headers,
-        body: JSON.stringify({ prompt: runCase.prompt }),
+        headers: request.headers,
+        body: JSON.stringify({ prompt: request.prompt }),
       });
       expect(response.status).toBe(202);
       generations.push({
         generationId: readAcceptedGenerationId(
           await response.json(),
           "image",
-          fixture.userId,
+          actor.userId,
         ),
-        headers,
+        headers: request.headers,
       });
     }
-
-    const sessionFixture = await seedImageFixture({});
-    await seedRetiredMemberImageModelFixture(
-      sessionFixture.orgId,
-      sessionFixture.userId,
-    );
-    mocks.clerk.session(sessionFixture.userId, sessionFixture.orgId);
-    const preferences = setupApp({
-      context,
-      routes: userModelPreferenceRoutes,
-    })(userModelPreferenceContract);
-    const normalized = await accept(
-      preferences.get({ headers: authHeaders() }),
-      [200],
-    );
-    expect(normalized.body.selectedImageModel).toBeNull();
-    const sessionResponse = await app.request("/api/image-io/generate", {
-      method: "POST",
-      headers: authHeaders(),
-      body: JSON.stringify({ prompt: "session request without a run" }),
-    });
-    expect(sessionResponse.status).toBe(202);
-    generations.push({
-      generationId: readAcceptedGenerationId(
-        await sessionResponse.json(),
-        "image",
-        sessionFixture.userId,
-      ),
-      headers: authHeaders(),
-    });
     await flushWaitUntilForTest();
-
     for (const { generationId, headers } of generations) {
       const status = await app.request(
         `/api/built-in-generations/${generationId}`,
@@ -1695,15 +1650,14 @@ describe("POST /api/image-io/generate", () => {
       });
     }
     expect(observedBodies).toStrictEqual(
-      ["null snapshot", "old snapshot", "session request without a run"].map(
-        (prompt) => {
-          return expect.objectContaining({
-            model: "gpt-image-2.5-flare",
-            prompt,
-          });
-        },
-      ),
+      requests.map(({ prompt }) => {
+        return expect.objectContaining({
+          model: "gpt-image-2.5-flare",
+          prompt,
+        });
+      }),
     );
+    await imageChat.cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
   });
 
   it("returns 402 when the org has no spendable credits", async () => {
