@@ -1,14 +1,6 @@
-import type {
-  HostedSiteManifest,
-  HostedSiteManifestFile,
-} from "@okouai/db/jsonb-contracts/hosted-site";
-import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import {
-  hostedSiteAssetContentError,
   hostedSiteAssetNameError,
-  isMutableHostedSitePath,
-  type HostedArtifactKind,
   type HostedSiteDeleteResponse,
   type HostedSiteFilesResponse,
   type HostedSiteDeploymentsResponse,
@@ -45,7 +37,6 @@ import {
 } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { hostedLinkDomain, hostedLinkOrigin } from "../../lib/link-layout";
-import { publicSlugCandidate } from "../../lib/hosted-site-slug";
 import {
   legacyHostedDeploymentVersion,
   legacyPrivateHostedDeploymentVersion,
@@ -59,7 +50,6 @@ import { executeRawRows } from "../../lib/db-raw-rows";
 import type { HostedSitePointer } from "../../lib/hosted-site-pointer";
 import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
-import type { Tx } from "../../lib/db-types";
 import {
   deleteHostedSitesS3Objects,
   generateHostedSitesPresignedPutUrl,
@@ -72,7 +62,14 @@ import {
   registerLegacyHostedSite$,
 } from "./artifact-delivery.service";
 import {
-  publishHostedSitePointer$,
+  readHostedPointerPublication$,
+  readHostedSnapshotPolicy$,
+  preserveHostedSnapshotToken$,
+  writeHostedPointerPublication$,
+  retainedHostedDeploymentCondition,
+  validateRetainedHostedDeployment,
+  hostedSnapshotSourceCondition,
+  hostedSiteAliasConflict,
   storedObject,
 } from "./hosted-site-publication-migration.service";
 import {
@@ -84,12 +81,14 @@ import {
   collectHostedSiteDependencies$,
   hostedSiteDeliveryManifest,
 } from "./hosted-site-dependencies.service";
+import { HostedSiteScopeError } from "./hosted-site-scope.service";
 import {
-  assertHostedDeploymentScope,
-  canonicalizeHostedSiteScope,
-  HostedSiteScopeError,
-  lockHostedRunChatThreadId,
-} from "./hosted-site-scope.service";
+  hostedDeploymentAllocationPlan,
+  type HostedAllocationQueryResult,
+  type PrepareDeploymentArgs,
+  type SiteDeploymentCreationResult,
+  type CreateHostedSiteDeploymentContext,
+} from "./hosted-site-allocation-plan";
 import { signHostedSiteFiles$ } from "./hosted-site-files.service";
 import {
   resolveArtifactShareDownload$,
@@ -98,7 +97,6 @@ import {
 } from "./artifact-shares.service";
 const MAX_HOSTED_SITE_TOTAL_BYTES = 512 * 1024 * 1024;
 const MAX_HOSTED_SITE_FILE_BYTES = 100 * 1024 * 1024;
-const MAX_PUBLIC_SLUG_ATTEMPTS = 5;
 const IMMUTABLE_DEPLOYMENT_HOST_PATTERN =
   /^dpl-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/u;
 
@@ -182,17 +180,6 @@ export const authorizeHostedSiteDelivery$ = command(
     );
   },
 );
-
-interface PrepareDeploymentArgs {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly runId?: string;
-  readonly body: HostedSitePrepareRequest;
-}
-
-interface ScopedPrepareDeploymentArgs extends PrepareDeploymentArgs {
-  readonly chatThreadId: string | null;
-}
 
 interface CompleteDeploymentArgs {
   readonly orgId: string;
@@ -278,28 +265,6 @@ type GetHostedSiteDeploymentsResult =
 
 type HostedSiteRow = typeof hostedSites.$inferSelect;
 type HostedDeploymentRow = typeof hostedDeployments.$inferSelect;
-type HostedSiteFile = HostedSitePrepareRequest["files"][number];
-
-type SiteDeploymentCreationResult =
-  | {
-      readonly kind: "ok";
-      readonly site: HostedSiteRow;
-      readonly deployment: HostedDeploymentRow;
-    }
-  | { readonly kind: "slug_conflict" }
-  | { readonly kind: "owner_conflict" }
-  | { readonly kind: "scope_conflict"; readonly message: string }
-  | { readonly kind: "content_conflict"; readonly message: string };
-
-type HostedSiteResolution =
-  | { readonly kind: "ok"; readonly site: HostedSiteRow }
-  | { readonly kind: "slug_conflict" }
-  | { readonly kind: "owner_conflict" };
-
-interface CreateHostedSiteDeploymentContext {
-  readonly now: Date;
-  readonly deploymentId: string;
-}
 
 type HostedSiteFilesTargetResult =
   | {
@@ -353,10 +318,6 @@ function rowLinkLayout(row: {
   return linkLayoutFromSegment(row.linkLayoutSegment);
 }
 
-function deploymentUrl(layout: LinkLayout, deploymentId: string): string {
-  return hostedLinkOrigin(layout, `dpl-${deploymentId}`);
-}
-
 function immutableDeploymentPointerKey(
   layout: LinkLayout,
   deploymentId: string,
@@ -364,81 +325,8 @@ function immutableDeploymentPointerKey(
   return `${hostedSitePointerNamespace(layout)}/deployments/${deploymentId}.json`;
 }
 
-function deploymentPrefix(layout: LinkLayout, deploymentId: string) {
-  return `${hostedSitePointerNamespace(layout)}/publications/${deploymentId}`;
-}
-
-function hostedSiteScopeKey(args: ScopedPrepareDeploymentArgs): string {
-  return args.chatThreadId ?? "organization";
-}
-
 function hostedSiteRequestedSlug(site: HostedSiteRow): string {
   return site.requestedSlug ?? site.slug;
-}
-
-async function findScopedHostedSite(
-  db: Tx,
-  args: ScopedPrepareDeploymentArgs,
-  lock: boolean,
-): Promise<HostedSiteRow | undefined> {
-  const scopeCondition =
-    args.chatThreadId === null
-      ? isNull(hostedSites.chatThreadId)
-      : eq(hostedSites.chatThreadId, args.chatThreadId);
-  const query = db
-    .select()
-    .from(hostedSites)
-    .where(
-      and(
-        eq(hostedSites.orgId, args.orgId),
-        eq(hostedSites.requestedSlug, args.body.site),
-        // New publications use only the current layout. A legacy-layout site
-        // keeps serving its issued links and keeps its name reserved; it is
-        // never redeployed.
-        eq(
-          hostedSites.linkLayoutSegment,
-          linkLayoutSegment(CURRENT_LINK_LAYOUT),
-        ),
-        scopeCondition,
-        isNull(hostedSites.deletedAt),
-      ),
-    );
-  const [site] = lock
-    ? await query.for("update").limit(1)
-    : await query.limit(1);
-  return site;
-}
-
-async function hasUnscopedHostedSiteConflict(
-  db: Tx,
-  args: ScopedPrepareDeploymentArgs,
-): Promise<boolean> {
-  if (args.chatThreadId === null) {
-    return false;
-  }
-  const scopedSite = await findScopedHostedSite(db, args, false);
-  if (scopedSite) {
-    return false;
-  }
-  const [unscopedSite] = await db
-    .select({ id: hostedSites.id })
-    .from(hostedSites)
-    .where(
-      and(
-        eq(hostedSites.orgId, args.orgId),
-        isNull(hostedSites.chatThreadId),
-        or(
-          eq(hostedSites.requestedSlug, args.body.site),
-          and(
-            isNull(hostedSites.requestedSlug),
-            eq(hostedSites.slug, args.body.site),
-          ),
-        ),
-        isNull(hostedSites.deletedAt),
-      ),
-    )
-    .limit(1);
-  return unscopedSite !== undefined;
 }
 
 const resolveChatThreadId$ = command(
@@ -603,25 +491,6 @@ function isSafeSitePath(path: string): boolean {
   });
 }
 
-function hashJson(value: unknown): string {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
-}
-
-function contentHash(files: readonly HostedSiteManifestFile[]): string {
-  const hash = createHash("sha256");
-  for (const file of [...files].sort((a, b) => {
-    return a.path.localeCompare(b.path);
-  })) {
-    hash.update(file.path);
-    hash.update("\0");
-    hash.update(file.sha256);
-    hash.update("\0");
-    hash.update(String(file.size));
-    hash.update("\0");
-  }
-  return hash.digest("hex");
-}
-
 function validateFiles(
   files: readonly HostedSitePrepareRequest["files"][number][],
 ): string | null {
@@ -654,47 +523,6 @@ function validateFiles(
     return "Hosted-site deployment must include /index.html";
   }
   return null;
-}
-
-function buildManifest(args: {
-  readonly deploymentId: string;
-  readonly siteId: string;
-  readonly site: string;
-  readonly publicSlug: string;
-  readonly deploymentVersion: number | null;
-  readonly artifactKind: HostedArtifactKind;
-  readonly spaFallback: boolean;
-  readonly files: readonly HostedSiteFile[];
-  readonly createdAt: Date;
-  readonly layout: LinkLayout;
-}): HostedSiteManifest {
-  const manifestFiles: Record<string, HostedSiteManifestFile> = {};
-  for (const file of args.files) {
-    manifestFiles[file.path] = {
-      path: file.path,
-      size: file.size,
-      sha256: file.sha256,
-      contentType: file.contentType,
-      immutable: file.immutable,
-    };
-  }
-  return {
-    version: 1,
-    immutableContent: true,
-    // Deployed host Workers treat a manifest without this marker as legacy.
-    publicBrand: linkLayoutSegment(args.layout),
-    deploymentId: args.deploymentId,
-    siteId: args.siteId,
-    site: args.site,
-    publicSlug: args.publicSlug,
-    ...(args.deploymentVersion === null
-      ? {}
-      : { deploymentVersion: args.deploymentVersion }),
-    createdAt: args.createdAt.toISOString(),
-    artifactKind: args.artifactKind,
-    spaFallback: args.spaFallback,
-    files: manifestFiles,
-  };
 }
 
 function artifactPreviewArgs(
@@ -743,162 +571,6 @@ function hostedSiteArtifactArgs(deployment: HostedDeploymentRow) {
   };
 }
 
-function resolvedHostedSite(
-  site: HostedSiteRow,
-  args: ScopedPrepareDeploymentArgs,
-): HostedSiteResolution {
-  // Redeploying replaces what a site serves, so only its creator may do it.
-  // Organization membership alone never carries that authority.
-  return site.userId === args.userId
-    ? { kind: "ok", site }
-    : { kind: "owner_conflict" };
-}
-
-/** Adopt the candidate that lost the insert when this scope already owns it. */
-async function findScopedHostedSiteBySlug(
-  db: Tx,
-  args: ScopedPrepareDeploymentArgs,
-  publicSlug: string,
-): Promise<HostedSiteRow | undefined> {
-  const [site] = await db
-    .select()
-    .from(hostedSites)
-    .where(
-      and(
-        eq(hostedSites.orgId, args.orgId),
-        eq(hostedSites.slug, publicSlug),
-        eq(
-          hostedSites.linkLayoutSegment,
-          linkLayoutSegment(CURRENT_LINK_LAYOUT),
-        ),
-        args.chatThreadId === null
-          ? isNull(hostedSites.chatThreadId)
-          : eq(hostedSites.chatThreadId, args.chatThreadId),
-        isNull(hostedSites.deletedAt),
-      ),
-    )
-    .for("update")
-    .limit(1);
-  return site;
-}
-
-async function findOrCreateHostedSite(
-  db: Tx,
-  args: ScopedPrepareDeploymentArgs,
-  now: Date,
-): Promise<HostedSiteResolution> {
-  const existingSite = await findScopedHostedSite(db, args, true);
-  if (existingSite) {
-    return resolvedHostedSite(existingSite, args);
-  }
-
-  const scopeKey = hostedSiteScopeKey(args);
-  for (let attempt = 0; attempt < MAX_PUBLIC_SLUG_ATTEMPTS; attempt += 1) {
-    const publicSlug = publicSlugCandidate(
-      args.body.site,
-      args.orgId,
-      scopeKey,
-      attempt,
-    );
-    const scope = await canonicalizeHostedSiteScope(db, {
-      orgId: args.orgId,
-      slug: publicSlug,
-      // The preferred name stays the site's identity so later publications
-      // redeploy it. A fallback site owns its resolved name instead, which
-      // keeps names reserved by deleted sites permanently unavailable.
-      requestedSlug: attempt === 0 ? args.body.site : publicSlug,
-      chatThreadId: args.chatThreadId,
-      createdFromRunId: args.runId,
-    });
-    const [createdSite] = await db
-      .insert(hostedSites)
-      .values({
-        orgId: args.orgId,
-        userId: args.userId,
-        slug: publicSlug,
-        ...scope,
-        linkLayoutSegment: linkLayoutSegment(CURRENT_LINK_LAYOUT),
-        publicSlug,
-        createdFromRunId: args.runId,
-        updatedAt: now,
-      })
-      .onConflictDoNothing()
-      .returning();
-    if (createdSite) {
-      return { kind: "ok", site: createdSite };
-    }
-
-    const concurrentSite =
-      (await findScopedHostedSite(db, args, true)) ??
-      (await findScopedHostedSiteBySlug(db, args, publicSlug));
-    if (concurrentSite) {
-      return resolvedHostedSite(concurrentSite, args);
-    }
-  }
-  return { kind: "slug_conflict" };
-}
-
-/** Immutable asset names retain their bytes across publication histories. */
-function immutableHostedAssetHashes(files: readonly HostedSiteFile[]) {
-  const assets: Record<string, string> = {};
-  for (const file of files) {
-    if (!isMutableHostedSitePath(file)) {
-      assets[file.path] = file.sha256;
-    }
-  }
-  return assets;
-}
-
-function hostedDeploymentValues(
-  args: PrepareDeploymentArgs,
-  context: CreateHostedSiteDeploymentContext,
-  site: HostedSiteRow,
-  deploymentVersion: number,
-): typeof hostedDeployments.$inferInsert {
-  const { deploymentId } = context;
-  // Every publication owns its bytes; only the site's alias is reused.
-  // Only current-layout sites are allocated for new publications.
-  const layout = rowLinkLayout(site);
-  const artifactUrl = deploymentUrl(layout, deploymentId);
-  const aliasUrl = hostedLinkOrigin(layout, site.publicSlug);
-  const prefix = deploymentPrefix(layout, deploymentId);
-  const manifest: HostedSiteManifest = buildManifest({
-    deploymentId,
-    siteId: site.id,
-    site: args.body.site,
-    publicSlug: site.publicSlug,
-    deploymentVersion,
-    artifactKind: args.body.artifactKind,
-    spaFallback: args.body.spaFallback,
-    files: args.body.files,
-    createdAt: context.now,
-    layout,
-  });
-  const files = Object.values(manifest.files);
-  return {
-    id: deploymentId,
-    siteId: site.id,
-    orgId: args.orgId,
-    userId: args.userId,
-    runId: args.runId,
-    linkLayoutSegment: linkLayoutSegment(layout),
-    status: "uploading",
-    artifactUrl,
-    r2Prefix: prefix,
-    manifest,
-    manifestHash: hashJson(manifest),
-    contentHash: contentHash(files),
-    entrypoint: "/index.html",
-    spaFallback: args.body.spaFallback,
-    fileCount: files.length,
-    sizeBytes: files.reduce((sum, file) => {
-      return sum + file.size;
-    }, 0),
-    url: aliasUrl,
-    updatedAt: context.now,
-  };
-}
-
 const publishedAssetRowSchema = z.object({ path: z.string() });
 
 const createHostedSiteDeployment$ = command(
@@ -910,100 +582,108 @@ const createHostedSiteDeployment$ = command(
     const db = set(writeDb$);
     const result = await settle(
       db.transaction(async (tx): Promise<SiteDeploymentCreationResult> => {
-        // Hold run ownership stable through allocation and admission. FOR
-        // SHARE also blocks non-key metadata updates and run cleanup.
-        const chatThreadId = await lockHostedRunChatThreadId(tx, args.runId);
-        const scopedArgs = { ...args, chatThreadId };
-        if (await hasUnscopedHostedSiteConflict(tx, scopedArgs)) {
-          return {
-            kind: "scope_conflict",
-            message: `Hosted site slug "${args.body.site}" is owned outside this chat. Choose a different --site value and rerun the same okou host command.`,
-          };
-        }
-        const resolution = await findOrCreateHostedSite(
-          tx,
-          scopedArgs,
-          context.now,
-        );
-        if (resolution.kind !== "ok") {
-          return resolution;
-        }
-        const { site } = resolution;
-        // The existing site lock serializes allocation across both histories.
-        const publicVersion = await tx
-          .select({
-            version:
-              sql`max((${hostedDeployments.manifest}->>'deploymentVersion')::integer)`.mapWith(
-                nullableDriverValueDecoder(pgIntegerDecoder),
-              ),
-          })
-          .from(hostedDeployments)
-          .where(eq(hostedDeployments.siteId, site.id));
-        const privateVersion = await tx
-          .select({
-            version:
-              sql`max((${privateHostedDeployments.manifest}->>'deploymentVersion')::integer)`.mapWith(
-                nullableDriverValueDecoder(pgIntegerDecoder),
-              ),
-          })
-          .from(privateHostedDeployments)
-          .where(eq(privateHostedDeployments.siteId, site.id));
-        const deploymentVersion =
-          Math.max(
-            publicVersion[0]?.version ?? 0,
-            privateVersion[0]?.version ?? 0,
-          ) + 1;
-        const assets = immutableHostedAssetHashes(args.body.files);
-        if (Object.keys(assets).length !== 0) {
-          const rows = await executeRawRows(
-            tx,
-            sql`
-              select requested.key as path
-              from (
-                select ${hostedDeployments.manifest} as manifest
-                from ${hostedDeployments}
-                where ${eq(hostedDeployments.siteId, site.id)}
-                union all
-                select ${privateHostedDeployments.manifest} as manifest
-                from ${privateHostedDeployments}
-                where ${eq(privateHostedDeployments.siteId, site.id)}
-              ) published
-              cross join lateral jsonb_each_text(
-                ${sql.param(JSON.stringify(assets))}::jsonb
-              ) as requested
-              where published.manifest->'files'->requested.key->>'sha256' is distinct from null
-                and published.manifest->'files'->requested.key->>'sha256' <> requested.value
-              limit 1
-            `,
-            publishedAssetRowSchema,
-          );
-          const conflicting = rows[0]?.path;
-          if (conflicting !== undefined) {
-            return {
-              kind: "content_conflict",
-              message: hostedSiteAssetContentError(conflicting),
-            };
+        const plan = hostedDeploymentAllocationPlan(args, context);
+        let step = plan.next();
+        while (!step.done) {
+          const query = step.value;
+          let result: HostedAllocationQueryResult;
+          switch (query.kind) {
+            case "run": {
+              const [run] = await tx
+                .select({
+                  chatThreadId: agentRuns.chatThreadId,
+                  triggerSource: agentRuns.triggerSource,
+                })
+                .from(agentRuns)
+                .where(eq(agentRuns.id, query.runId))
+                .for("share")
+                .limit(1);
+              result = { run };
+              break;
+            }
+            case "site": {
+              const lookup = tx
+                .select()
+                .from(hostedSites)
+                .where(query.condition);
+              const [site] = query.lock
+                ? await lookup.for("update").limit(1)
+                : await lookup.limit(1);
+              result = { site };
+              break;
+            }
+            case "unscoped": {
+              const [unscoped] = await tx
+                .select({ id: hostedSites.id })
+                .from(hostedSites)
+                .where(query.condition)
+                .limit(1);
+              result = { unscoped };
+              break;
+            }
+            case "site-insert": {
+              const [site] = await tx
+                .insert(hostedSites)
+                .values(query.values)
+                .onConflictDoNothing()
+                .returning();
+              result = { site };
+              break;
+            }
+            case "public-version":
+            case "private-version": {
+              const table =
+                query.kind === "public-version"
+                  ? hostedDeployments
+                  : privateHostedDeployments;
+              const [row] = await tx
+                .select({
+                  version:
+                    sql`max((${table.manifest}->>'deploymentVersion')::integer)`.mapWith(
+                      nullableDriverValueDecoder(pgIntegerDecoder),
+                    ),
+                })
+                .from(table)
+                .where(eq(table.siteId, query.siteId));
+              result = { version: row?.version };
+              break;
+            }
+            case "asset-conflict": {
+              const rows = await executeRawRows(
+                tx,
+                query.query,
+                publishedAssetRowSchema,
+              );
+              result = { path: rows[0]?.path };
+              break;
+            }
+            case "admission": {
+              const [admission] = await tx
+                .select({ chatThreadId: hostedSites.chatThreadId })
+                .from(hostedSites)
+                .where(
+                  and(
+                    eq(hostedSites.id, query.siteId),
+                    eq(hostedSites.orgId, query.orgId),
+                  ),
+                )
+                .for("share")
+                .limit(1);
+              result = { admission };
+              break;
+            }
+            case "deployment-insert": {
+              const [deployment] = await tx
+                .insert(hostedDeployments)
+                .values(query.values)
+                .returning();
+              result = { deployment };
+              break;
+            }
           }
+          step = plan.next(result);
         }
-        const values = hostedDeploymentValues(
-          args,
-          context,
-          site,
-          deploymentVersion,
-        );
-        await assertHostedDeploymentScope(tx, {
-          siteId: site.id,
-          orgId: args.orgId,
-          runId: args.runId,
-        });
-        const [deployment] = await tx
-          .insert(hostedDeployments)
-          .values(values)
-          .returning();
-        if (!deployment) {
-          throw new Error("Failed to create hosted deployment");
-        }
-        return { kind: "ok", site, deployment };
+        return step.value;
       }),
     );
     if (!result.ok) {
@@ -1144,148 +824,192 @@ function activeSitePointerForDeployment(
   };
 }
 
-async function loadActiveHostedDeploymentVersion(
-  db: Tx,
-  site: HostedSiteRow,
-): Promise<number | null> {
-  if (site.activeDeploymentId === null) {
-    return null;
+interface HostedSiteBindingArgs {
+  readonly bucket: string;
+  readonly deployment: HostedDeploymentRow;
+  readonly orgId: string;
+  readonly pointer: HostedSitePointer;
+  readonly readyAt: Date;
+}
+
+function ownedHostedBindingSite(
+  site: HostedSiteRow | undefined,
+  deployment: HostedDeploymentRow,
+): HostedSiteRow {
+  if (!site) {
+    throw new Error("Hosted site not found for deployment");
   }
-  const [deployment] = await db
-    .select({
-      version:
-        sql`(${hostedDeployments.manifest}->>'deploymentVersion')::integer`.mapWith(
-          nullableDriverValueDecoder(pgIntegerDecoder),
-        ),
-    })
-    .from(hostedDeployments)
-    .where(
-      and(
-        eq(hostedDeployments.id, site.activeDeploymentId),
-        eq(hostedDeployments.siteId, site.id),
-      ),
-    )
-    .limit(1);
-  if (!deployment) {
+  if (
+    site.deletedAt !== null ||
+    site.userId !== deployment.userId ||
+    site.linkLayoutSegment !== deployment.linkLayoutSegment ||
+    site.publicSlug !== deployment.manifest.publicSlug
+  ) {
+    throw new ArtifactDeliveryAliasConflict(
+      "Hosted deployment no longer matches its owned site",
+    );
+  }
+  return site;
+}
+
+function activeHostedBindingVersion(
+  active: { readonly version: number | null } | undefined,
+): number | null {
+  if (!active) {
     throw new Error("Hosted site has an invalid public deployment binding");
   }
-  return deployment.version;
+  return active.version;
+}
+
+function shouldBindHostedDeployment(
+  deployment: HostedDeploymentRow,
+  activeVersion: number | null,
+) {
+  const version = legacyHostedDeploymentVersion(deployment.manifest);
+  return (
+    !deployment.manifest.access &&
+    (version === null
+      ? activeVersion === null
+      : activeVersion === null || version >= activeVersion)
+  );
+}
+
+function hostedDeploymentReadyValues(readyAt: Date) {
+  return { status: "ready" as const, readyAt, updatedAt: readyAt, error: null };
+}
+
+function deletedHostedVersionKeys(deployment: HostedDeploymentRow) {
+  const layout = rowLinkLayout(deployment);
+  return [
+    immutableDeploymentPointerKey(layout, deployment.id),
+    artifactDeliveryKey(
+      linkLayoutSegment(layout),
+      "html",
+      `dpl-${deployment.id}`,
+    ),
+  ];
+}
+
+function hostedBindingSiteCondition(siteId: string, orgId: string) {
+  return and(eq(hostedSites.id, siteId), eq(hostedSites.orgId, orgId));
+}
+
+function activeHostedBindingCondition(deploymentId: string, siteId: string) {
+  return and(
+    eq(hostedDeployments.id, deploymentId),
+    eq(hostedDeployments.siteId, siteId),
+  );
 }
 
 const bindHostedSiteDeployment$ = command(
   (
     { get, set },
-    args: {
-      readonly bucket: string;
-      readonly deployment: HostedDeploymentRow;
-      readonly orgId: string;
-      readonly pointer: HostedSitePointer;
-      readonly readyAt: Date;
-    },
+    args: HostedSiteBindingArgs,
     signal: AbortSignal,
   ): Promise<HostedSitePromotion> => {
     const writeDb = set(writeDb$);
     return writeDb.transaction(async (tx) => {
-      const [site] = await tx
+      const [ownedSite] = await tx
         .select()
         .from(hostedSites)
-        .where(
-          and(
-            eq(hostedSites.id, args.deployment.siteId),
-            eq(hostedSites.orgId, args.orgId),
-          ),
-        )
+        .where(hostedBindingSiteCondition(args.deployment.siteId, args.orgId))
         .for("update")
         .limit(1);
-      if (!site) {
-        throw new Error("Hosted site not found for deployment");
-      }
-      if (
-        site.deletedAt !== null ||
-        site.userId !== args.deployment.userId ||
-        site.linkLayoutSegment !== args.deployment.linkLayoutSegment ||
-        site.publicSlug !== args.deployment.manifest.publicSlug
-      ) {
-        throw new ArtifactDeliveryAliasConflict(
-          "Hosted deployment no longer matches its owned site",
-        );
-      }
+      const site = ownedHostedBindingSite(ownedSite, args.deployment);
       const deploymentTable = args.deployment.manifest.access
         ? privateHostedDeployments
         : hostedDeployments;
-      // Deleting the site under this lock outranks a completion already past
-      // its status check. That completion published the version's own URL
-      // before locking, so withdraw it; a deleted version never serves again.
+      // Deleted versions withdraw their immutable address under the same site lock.
       const [current] = await tx
         .select({ status: deploymentTable.status })
         .from(deploymentTable)
         .where(eq(deploymentTable.id, args.deployment.id))
         .limit(1);
       if (current?.status === "deleted") {
-        const layout = rowLinkLayout(args.deployment);
         await get(
           deleteHostedSitesS3Objects(
             args.bucket,
-            [
-              immutableDeploymentPointerKey(layout, args.deployment.id),
-              artifactDeliveryKey(
-                linkLayoutSegment(layout),
-                "html",
-                `dpl-${args.deployment.id}`,
-              ),
-            ],
+            deletedHostedVersionKeys(args.deployment),
             signal,
           ),
         );
         throw new ArtifactDeliveryAliasConflict("Hosted deployment is deleted");
       }
-
-      const activeDeploymentVersion = await loadActiveHostedDeploymentVersion(
-        tx,
-        site,
-      );
+      let activeDeploymentVersion: number | null = null;
+      if (site.activeDeploymentId !== null) {
+        const [active] = await tx
+          .select({
+            version:
+              sql`(${hostedDeployments.manifest}->>'deploymentVersion')::integer`.mapWith(
+                nullableDriverValueDecoder(pgIntegerDecoder),
+              ),
+          })
+          .from(hostedDeployments)
+          .where(activeHostedBindingCondition(site.activeDeploymentId, site.id))
+          .limit(1);
+        activeDeploymentVersion = activeHostedBindingVersion(active);
+      }
       signal.throwIfAborted();
-      const deploymentVersion = legacyHostedDeploymentVersion(
-        args.deployment.manifest,
-      );
-      // A redeploy moves the site alias forward; uploads that complete out of
-      // order never replace a newer publication.
-      const shouldBind =
-        !args.deployment.manifest.access &&
-        (deploymentVersion === null
-          ? activeDeploymentVersion === null
-          : activeDeploymentVersion === null ||
-            deploymentVersion >= activeDeploymentVersion);
-      const published = shouldBind
-        ? await set(
-            publishHostedSitePointer$,
-            { tx, site, bucket: args.bucket, pointer: args.pointer },
+      let published: HostedSitePointer | null = null;
+      if (
+        shouldBindHostedDeployment(args.deployment, activeDeploymentVersion)
+      ) {
+        const publication = await set(
+          readHostedPointerPublication$,
+          { site, bucket: args.bucket, pointer: args.pointer },
+          signal,
+        );
+        if (publication.retained) {
+          const [retained] = await tx
+            .select()
+            .from(hostedDeployments)
+            .where(
+              retainedHostedDeploymentCondition(site, publication.pointer),
+            );
+          validateRetainedHostedDeployment(retained, publication.pointer);
+        }
+        signal.throwIfAborted();
+        if (publication.previous?.kind === "publication") {
+          const [share] = await tx
+            .select()
+            .from(artifactShares)
+            .where(eq(artifactShares.id, publication.previous.shareId))
+            .for("update");
+          signal.throwIfAborted();
+          const snapshot = await set(
+            readHostedSnapshotPolicy$,
+            { site, bucket: args.bucket, record: publication.previous, share },
             signal,
-          )
-        : null;
+          );
+          const [source] = await tx
+            .select({ id: privateHostedDeployments.id })
+            .from(privateHostedDeployments)
+            .where(hostedSnapshotSourceCondition(snapshot));
+          signal.throwIfAborted();
+          if (!source) {
+            hostedSiteAliasConflict();
+          }
+          await set(preserveHostedSnapshotToken$, snapshot, signal);
+        }
+        signal.throwIfAborted();
+        published = await set(
+          writeHostedPointerPublication$,
+          publication,
+          signal,
+        );
+      }
       signal.throwIfAborted();
-
+      const ready = hostedDeploymentReadyValues(args.readyAt);
       await tx
         .update(deploymentTable)
-        .set({
-          status: "ready",
-          readyAt: args.readyAt,
-          updatedAt: args.readyAt,
-          error: null,
-        })
+        .set(ready)
         .where(eq(deploymentTable.id, args.deployment.id));
       if (published) {
-        // A prior attempt may have published a newer pointer before its DB
-        // transaction failed. Recover that public version without regressing it.
+        // Recover an acknowledged newer pointer after its earlier SQL rollback.
         if (published.deploymentId !== args.deployment.id) {
           await tx
             .update(hostedDeployments)
-            .set({
-              status: "ready",
-              readyAt: args.readyAt,
-              updatedAt: args.readyAt,
-              error: null,
-            })
+            .set(ready)
             .where(eq(hostedDeployments.id, published.deploymentId));
         }
         await tx

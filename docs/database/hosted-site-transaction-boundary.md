@@ -173,7 +173,7 @@ or a new serving-reader floor was collected. The earlier artifact-share gate
 does not establish any of those Host-specific prerequisites. No deployment,
 backfill, release, or issue closure is part of this preparation.
 
-## October 9 local continuation
+## October 9 first ownership batch (#38218)
 
 This continuation starts from main
 `bd8b13065d6b8ce406c3c7659f6634528f794913`, the merge of inactive reader
@@ -281,3 +281,92 @@ lifetime. None of these premises is established by merging #38212 or by this
 local continuation. The necessary remote behavior and remaining Tx forwarding
 are retained; no release, activation, drain, backfill or issue closure is
 included.
+
+## Local follow-up candidate after #38218
+
+This candidate starts from main
+`8048b6290029e27a1f1fd36a0dd04d24e8e5eb85` and is refreshed onto
+`b4c06fde2d6d95b129f63b83661e488e49dd71f2`. Its serial validation is
+recorded below. The checks recorded for
+#38218 above are separate historical evidence.
+
+Allocation now uses a domain-specific pure query/value plan. It receives
+ordinary request values and native query results, and has no database,
+transaction, ccstate accessor or executor argument. The existing
+`createHostedSiteDeployment$` transaction callback executes every plan step
+with the native Drizzle builders. This preserves the run-before-site locks,
+the unlocked scoped lookup before an unscoped-conflict check, the locked
+lookup before allocation, five slug candidates, per-candidate null-scope run
+locks, conflict adoption lookups, both version queries, asset admission,
+the final run/site scope admission and deployment insert. These steps remain
+one SQL unit with the existing error and cancellation boundary. The raw asset
+query still uses `executeRawRows(tx, query, rowSchema)` at its real runtime
+executor/decoder boundary.
+
+Binding now owns the active-version, retained-publication, locked share and
+ready historical-source queries directly. Remote subcommands exchange site,
+share, pointer, policy, bytes and ETag values; they receive no Db or Tx. The
+queries and remote actions retain their existing interleaving inside the
+same transaction: registry and pointer reads, optional retained-deployment
+validation, share lock, policy read/validation, ready-source admission, copied
+token validation and policy CAS, then rolling pointer and registry CAS. The
+same native site lock still spans promotion, interrupted-publication recovery
+and the existing conditional ready/binding updates. Missing active bindings
+and invalid retained publications still fail as broken invariants.
+
+The operator-only scope helpers still have their sandbox-cleanup caller and
+are retained. Their presence does not make the former Host forwarding a
+runtime decoder requirement. There are still three transactions; no lock,
+retry, fallback, schema field or coordination record was added.
+
+The remaining writer gap is unchanged: rolling/registry writes, historical
+policy conversion and deleted-version cleanup still perform remote I/O in
+binding's transaction. Whole-site key-only remote deletion also remains in
+its transaction, and interrupted immutable publication can still leave
+response-loss residues. Neither the inactive reader nor this handle ownership
+candidate establishes a serving, cache, rollback, writer or deleter retirement
+floor. The accepted overlapping completion/deletion ordering, alias-inclusive
+`offlineUrls`, copied-token authority and partial-delete rollback/user retry
+must remain covered by the existing consumer suites.
+
+Lightweight source review confirms that fifteen unchanged commands still have
+the same bodies, eight moved value builders retain their bodies, and the
+historical policy/share/token guards and policy CAS remain equivalent. Offline
+serializer traces of the actual baseline and candidate allocation callbacks
+match across eleven ordinary result vectors: ninety statement pairs have the
+same sequence, exact SQL text and ordered driver parameters. The moved raw
+asset query retains the original literal whitespace. Seven
+binding vectors also match twenty-five SQL statements and eleven recorded
+remote operations, including delayed older completion, deleted-version
+withdrawal and recovery of an acknowledged newer pointer. Eight additional
+serializer pairs preserve the share lock, ready historical-source predicate,
+retained-publication lookup and active-version query. These witnesses execute
+no database or provider operation and do not establish integration acceptance.
+
+The eight affected API consumer/authorization suites pass all 86 cases on
+both the exact main baseline and candidate. Each run uses one Vitest process,
+at most two workers and an independent local PostgreSQL database with UTC
+timezone and all 276 current migrations. The baseline services were restored
+from that main revision and the candidate bytes restored exactly afterwards.
+Existing tests, assertions and infrastructure selection were not changed.
+Affected API/dependency types, full API lint, Knip, formatting and documentation
+links also pass.
+
+Supplementary PostgreSQL diagnostics use existing rows produced by those
+public API tests. Baseline and candidate allocation queries retain one native
+connection/transaction at READ COMMITTED: a competing run update lock waits
+while allocation holds its run SHARE lock and waits for the site UPDATE lock.
+The repeated run lock and final site admission remain on that owner. A separate
+site/share diagnostic confirms the site lock remains held while waiting for
+the share UPDATE lock; it uses unrelated existing rows and does not establish
+historical private publication admission. Both versions yield identical asset
+query rows, text column type, runtime row decoding, invalid-JSON errors and
+EXPLAIN plan structure/estimated costs for unchanged, changed and absent
+assets. The first draft's ten-space literal indentation difference produces
+the same results and plans, and the final candidate restores the exact
+original SQL text. Observed execution times are not a performance benchmark.
+
+Historical private-source compatibility remains source-traced where the
+current prepare API cannot construct it; synthetic serializer inputs are not
+API acceptance evidence. Reader activation, production changes, backfill,
+drain, release and issue closure are outside this bounded ownership change.
