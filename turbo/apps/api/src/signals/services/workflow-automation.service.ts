@@ -1,3 +1,22 @@
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
+import { variables } from "@okouai/db/schema/variable";
+import {
+  builtinConnectorCredentialConnectionReadPlan,
+  builtinConnectorCredentialConnectionFromRow,
+} from "./builtin-connector-credential-runtime.service";
+import {
+  connectorRuntimeAuthSelectionReadPlan,
+  connectorRuntimeAuthSelectionFromRows,
+  connectorCatalogCurrentWhere,
+} from "./connector-catalog-slug-source.service";
+import { builtinConnectorCredentialVariableReadCondition } from "./builtin-connector-credential-access.service";
+import {
+  stripeConnectionReadiness,
+  stripeLiveModeReadinessMessage,
+} from "./stripe-invoice-paid-workflow-automation.service";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { z } from "zod";
@@ -62,6 +81,7 @@ import { connectors } from "@okouai/db/schema/connector";
 import { googleCalendarWatchStates } from "@okouai/db/schema/google-calendar-event";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
+import { notionWorkflowPendingEvents } from "@okouai/db/schema/notion-event";
 import { stripeWorkflowAutomationHealth } from "@okouai/db/schema/stripe-automation-event";
 import {
   officialWorkflowAutomationIdentities,
@@ -73,10 +93,10 @@ import {
   type WorkflowScheduleType,
 } from "@okouai/db/schema/workflow";
 import { command } from "ccstate";
-import { and, asc, eq, isNotNull, isNull, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
 import { publishChatThreadAutomationsChangedSafely } from "../external/realtime";
 import {
   bestEffort,
@@ -86,25 +106,18 @@ import {
   settle,
 } from "../utils";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
-import {
-  insertWorkflowAutomation,
-  workflowAutomationColumns,
-} from "./autonomy-budget-schema.service";
+import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { parseGithubWebhookAutomationConfig } from "./github-webhook-automation-event.service";
 import {
   readGmailAutomationConnectorId$,
   gmailSelectedAccountCondition,
-  resolveGmailAutomationConnectorId,
 } from "./gmail-automation-account.service";
 import {
   ensureGmailWatchForUser$,
   hasEnabledGmailConsumer$,
   resolveGmailLabelForUser$,
 } from "./gmail-automation-event.service";
-import {
-  resolveGoogleCalendarAutomationConnectorId,
-  readGoogleCalendarAutomationConnectorId$,
-} from "./google-calendar-automation-account.service";
+import { readGoogleCalendarAutomationConnectorId$ } from "./google-calendar-automation-account.service";
 import {
   ensureGoogleCalendarWatchForUser$,
   hasEnabledGoogleCalendarConsumer$,
@@ -115,7 +128,6 @@ import {
   stageGoogleCalendarWatchTargetForReconfiguration$,
   type StagedGoogleCalendarWatchTarget,
 } from "./google-calendar-automation-event.service";
-import { resolveGoogleFormsAutomationConnectorId } from "./google-forms-automation-account.service";
 import {
   ensureGoogleFormsWatchForUser$,
   readGoogleFormsActivationAccount$,
@@ -123,18 +135,13 @@ import {
   hasEnabledGoogleFormsConsumer$,
   prepareGoogleFormsResponseEventConfigForPersist$,
 } from "./google-forms-automation-event.service";
-import { resolveGoogleMeetAutomationConnectorId } from "./google-meet-automation-account.service";
 import {
   ensureGoogleMeetTranscriptGeneratedSubscriptionForUser$,
   hasEnabledGoogleMeetConsumer$,
 } from "./google-meet-automation-event.service";
 import { persistMorningBriefAutomationToggle$ } from "./morning-brief-automation-toggle.service";
 import { officialAutomationLifecycleCondition } from "./workflow-automation-write-condition";
-import {
-  invalidateNotionPendingEventsForAutomation,
-  notionConfigWithConnectorId,
-  resolveNotionAutomationConnectorId,
-} from "./notion-automation-account.service";
+import { notionConfigWithConnectorId } from "./notion-automation-account.service";
 import {
   prepareNotionChildPageEventConfigForPersist$,
   prepareNotionDatabaseItemEventConfigForPersist$,
@@ -156,7 +163,7 @@ import {
   chatThreadCreatedEventSql,
 } from "./chat-thread-create.service";
 import { stripeInvoicePaidWorkflowAutomationEnabledForOwner } from "./stripe-invoice-paid-workflow-automation-feature-switch.service";
-import { resolveStripeInvoicePaidAutomationBinding } from "./stripe-invoice-paid-workflow-automation.service";
+import { readStripeInvoicePaidAutomationBinding$ } from "./stripe-invoice-paid-workflow-automation-read.service";
 import { calculateNextRun } from "./time-automation";
 import {
   workflowAutomationAccountConnectorSlug,
@@ -172,14 +179,12 @@ import {
   type WorkflowMember,
 } from "./workflow-data.service";
 import {
-  ensureWorkflowUserAutomationThread,
   ensureWorkflowUserAutomationThread$,
   prepareWorkflowUserAutomationThread$,
   type WorkflowThreadPreparation,
   workflowUserAutomationThreadOwnerCondition,
   preparedWorkflowThreadValues,
 } from "./workflow-user-automation-thread.service";
-import { lockWorkflowWebhookAutomationTierEligibleForOrg } from "./workflow-webhook-automation-entitlement.service";
 import {
   buildWorkflowWebhookSummaryFields$,
   workflowWebhookSummaryFields,
@@ -819,6 +824,14 @@ function stripeAutomationHealthSummary(
   };
 }
 
+function stripeAutomationHealthColumns() {
+  return {
+    lastMatchingEventReceivedAt:
+      stripeWorkflowAutomationHealth.lastMatchingEventReceivedAt,
+    lastDeliveryStatus: stripeWorkflowAutomationHealth.latestDeliveryStatus,
+    lastDeliveryStatusAt: stripeWorkflowAutomationHealth.latestDeliveryStatusAt,
+  };
+}
 const loadStripeWorkflowAutomationHealth$ = command(
   async (
     { get },
@@ -828,13 +841,7 @@ const loadStripeWorkflowAutomationHealth$ = command(
     const db = get(db$);
 
     const [health] = await db
-      .select({
-        lastMatchingEventReceivedAt:
-          stripeWorkflowAutomationHealth.lastMatchingEventReceivedAt,
-        lastDeliveryStatus: stripeWorkflowAutomationHealth.latestDeliveryStatus,
-        lastDeliveryStatusAt:
-          stripeWorkflowAutomationHealth.latestDeliveryStatusAt,
-      })
+      .select(stripeAutomationHealthColumns())
       .from(stripeWorkflowAutomationHealth)
       .where(eq(stripeWorkflowAutomationHealth.automationId, automationId))
       .limit(1);
@@ -1960,7 +1967,7 @@ function eventAutomationConnectorSlug(
 
 const readEventAutomationConnectorId$ = command(
   async (
-    { set },
+    { get },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -1969,7 +1976,7 @@ const readEventAutomationConnectorId$ = command(
     },
     signal: AbortSignal,
   ): Promise<string | null> => {
-    const db = set(writeDb$);
+    const db = get(rawSqlReadDb$);
     const [selected] = parseRawRows(
       z.object({ connectorId: z.string().nullable() }),
       await db.execute(workflowAutomationConnectorSelectionSql(args)),
@@ -2321,7 +2328,15 @@ function webhookCreationAccessFailure(
   return null;
 }
 
-function webhookThreadInsertPlan(args: WebhookAutomationCreateArgs) {
+function automationThreadInsertPlan(args: {
+  readonly input: {
+    readonly orgId: string;
+    readonly member: Pick<WorkflowMember, "userId">;
+  };
+  readonly agentId: string;
+  readonly threadPreparation: WorkflowThreadPreparation;
+  readonly currentTime: Date;
+}) {
   const pin = args.threadPreparation.initialModel;
   return prepareChatThreadInsert({
     orgId: args.input.orgId,
@@ -2338,7 +2353,7 @@ function webhookThreadInsertPlan(args: WebhookAutomationCreateArgs) {
   });
 }
 
-function webhookCreatedThreadColumns() {
+function automationCreatedThreadColumns() {
   return {
     id: chatThreads.id,
     userId: chatThreads.userId,
@@ -2542,13 +2557,13 @@ const commitWebhookEventAutomation$ = command(
           .limit(1);
         let chatThreadId = binding?.chatThreadId;
         if (!chatThreadId) {
-          const plan = webhookThreadInsertPlan(args);
+          const plan = automationThreadInsertPlan(args);
           const [threadRow] = await tx
             .with(...plan.defaults)
             .insert(chatThreads)
             .values(plan.values)
             .onConflictDoNothing()
-            .returning(webhookCreatedThreadColumns());
+            .returning(automationCreatedThreadColumns());
           if (!threadRow) {
             throw new Error("Failed to create workflow automation chat thread");
           }
@@ -2893,60 +2908,59 @@ const insertScheduleAutomation$ = command(
     signal: AbortSignal,
   ): Promise<WorkflowAutomationSummary> => {
     const db = set(writeDb$);
-    const summary = await db.transaction(async (tx) => {
-      // Preserve and lock an existing workflow-user binding without materializing
-      // an empty thread. The first scheduled or manual run creates one if absent.
-      const [binding] = await tx
-        .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
-        .from(workflowUserAutomationThreads)
-        .where(
-          and(
-            eq(workflowUserAutomationThreads.orgId, args.input.orgId),
-            eq(workflowUserAutomationThreads.userId, args.input.member.userId),
-            eq(workflowUserAutomationThreads.workflowId, args.workflowId),
-          ),
-        )
-        .limit(1)
-        .for("update");
-      const chatThreadId = binding?.chatThreadId ?? null;
-
-      const [row] = await tx
-        .insert(workflowAutomations)
-        .values({
-          id: args.automationId,
+    // The INSERT snapshot also reads an existing destination. No empty thread
+    // is materialized; the first run still creates one when absent.
+    const bindingThreadId = db
+      .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
+      .from(workflowUserAutomationThreads)
+      .where(
+        workflowUserAutomationThreadOwnerCondition({
           orgId: args.input.orgId,
+          userId: args.input.member.userId,
           workflowId: args.workflowId,
-          ownerUserId: args.input.member.userId,
-          kind: "schedule",
-          eventType: null,
-          eventConfig: null,
-          scheduleType: args.columns.scheduleType,
-          cronExpression: args.columns.cronExpression,
-          intervalSeconds: args.columns.intervalSeconds,
-          atTime: args.columns.atTime,
-          timezone: args.columns.timezone,
-          enabled: args.input.enabled,
-          nextRunAt: args.nextRunAt,
-          ...(args.input.autonomyBudget === undefined
-            ? {}
-            : { autonomyBudget: args.input.autonomyBudget }),
-          createdAt: args.currentTime,
-          updatedAt: args.currentTime,
-        })
-        .returning(workflowAutomationColumns());
-      if (!row) {
-        throw new Error("Failed to create workflow automation");
-      }
-      const schedule = rowToSchedule(row);
-      return {
-        ...rowSummaryBase(row, chatThreadId),
-        kind: "schedule" as const,
-        schedule,
-        scheduleSummary: summarizeSchedule(schedule),
-      };
-    });
+        }),
+      )
+      .limit(1);
+    const [row] = await db
+      .insert(workflowAutomations)
+      .values({
+        id: args.automationId,
+        orgId: args.input.orgId,
+        workflowId: args.workflowId,
+        ownerUserId: args.input.member.userId,
+        kind: "schedule",
+        eventType: null,
+        eventConfig: null,
+        scheduleType: args.columns.scheduleType,
+        cronExpression: args.columns.cronExpression,
+        intervalSeconds: args.columns.intervalSeconds,
+        atTime: args.columns.atTime,
+        timezone: args.columns.timezone,
+        enabled: args.input.enabled,
+        nextRunAt: args.nextRunAt,
+        ...(args.input.autonomyBudget === undefined
+          ? {}
+          : { autonomyBudget: args.input.autonomyBudget }),
+        createdAt: args.currentTime,
+        updatedAt: args.currentTime,
+      })
+      .returning({
+        ...workflowAutomationColumns(),
+        chatThreadId: sql`(${bindingThreadId})`.mapWith(
+          workflowUserAutomationThreads.chatThreadId,
+        ),
+      });
     signal.throwIfAborted();
-    return summary;
+    if (!row) {
+      throw new Error("Failed to create workflow automation");
+    }
+    const schedule = rowToSchedule(row);
+    return {
+      ...rowSummaryBase(row, row.chatThreadId),
+      kind: "schedule" as const,
+      schedule,
+      scheduleSummary: summarizeSchedule(schedule),
+    };
   },
 );
 
@@ -2978,7 +2992,7 @@ const createWebhookEventAutomationForWorkflow$ = command(
 
 const createGithubWorkflowRunEventAutomationForWorkflow$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly context: CreateEventAutomationWorkflowContext;
       readonly input: Extract<
@@ -2990,7 +3004,7 @@ const createGithubWorkflowRunEventAutomationForWorkflow$ = command(
     },
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const [installation] = await db
       .select({ id: githubInstallations.id })
       .from(githubInstallations)
@@ -3029,7 +3043,7 @@ const createGithubWorkflowRunEventAutomationForWorkflow$ = command(
 
 const createGithubWebhookEventAutomationForWorkflow$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly context: CreateEventAutomationWorkflowContext;
       readonly input: Extract<
@@ -3041,7 +3055,7 @@ const createGithubWebhookEventAutomationForWorkflow$ = command(
     },
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const [installation] = await db
       .select({ id: githubInstallations.id })
       .from(githubInstallations)
@@ -3419,15 +3433,19 @@ const createGoogleMeetEventAutomationForWorkflow$ = command(
     },
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
-    const db = set(writeDb$);
     const preparedConfig = googleMeetTranscriptGeneratedEventConfigSchema.parse(
       args.input.eventConfig,
     );
-    const connectorId = await resolveGoogleMeetAutomationConnectorId(db, {
-      orgId: args.input.orgId,
-      userId: args.input.member.userId,
-      workflowId: args.context.workflowId,
-    });
+    const connectorId = await set(
+      readEventAutomationConnectorId$,
+      {
+        orgId: args.input.orgId,
+        userId: args.input.member.userId,
+        workflowId: args.context.workflowId,
+        connectorSlug: "google-meet",
+      },
+      signal,
+    );
     signal.throwIfAborted();
     if (args.input.enabled && connectorId === null) {
       return {
@@ -3704,104 +3722,265 @@ const persistCreatedNotionAutomation$ = command(
   },
 );
 
+function stripeAutomationCreateValues(
+  args: {
+    readonly context: CreateEventAutomationWorkflowContext;
+    readonly input: CreateStripeInvoicePaidEventAutomationInput;
+  },
+  binding: {
+    readonly connectorId: string;
+    readonly stripeAccountId: string;
+    readonly mode: "live";
+  },
+  currentTime: Date,
+) {
+  return {
+    id: args.context.automationId,
+    orgId: args.input.orgId,
+    workflowId: args.context.workflowId,
+    ownerUserId: args.input.member.userId,
+    kind: "event" as const,
+    eventType: args.input.eventType,
+    eventConfig: stripeInvoicePaidEventConfigSchema.parse({
+      ...args.input.eventConfig,
+      ...binding,
+    }),
+    eventConnectorId: binding.connectorId,
+    scheduleType: null,
+    cronExpression: null,
+    intervalSeconds: null,
+    atTime: null,
+    timezone: "UTC",
+    enabled: args.input.enabled,
+    nextRunAt: null,
+    ...(args.input.autonomyBudget === undefined
+      ? {}
+      : { autonomyBudget: args.input.autonomyBudget }),
+    createdAt: currentTime,
+    updatedAt: currentTime,
+  };
+}
+type StripeAutomationCreateArgs = {
+  readonly context: CreateEventAutomationWorkflowContext;
+  readonly input: CreateStripeInvoicePaidEventAutomationInput;
+};
+const stripeAutomationCatalogPlan = connectorRuntimeAuthSelectionReadPlan({
+  connectorSlugs: ["stripe"],
+});
+function stripeAutomationCreationPlans(
+  args: StripeAutomationCreateArgs,
+  currentTime: Date,
+) {
+  const owner = {
+    orgId: args.input.orgId,
+    userId: args.input.member.userId,
+    workflowId: args.context.workflowId,
+  };
+  return {
+    owner,
+    thread: automationThreadInsertPlan({
+      input: args.input,
+      agentId: args.context.agentId,
+      threadPreparation: args.context.threadPreparation,
+      currentTime,
+    }),
+    binding: {
+      values: { ...owner, createdAt: currentTime, updatedAt: currentTime },
+      conflict: {
+        target: [
+          workflowUserAutomationThreads.orgId,
+          workflowUserAutomationThreads.userId,
+          workflowUserAutomationThreads.workflowId,
+        ],
+      },
+    },
+  };
+}
+function stripeAutomationConnectionPlan(
+  owner: {
+    readonly orgId: string;
+    readonly userId: string;
+    readonly workflowId: string;
+  },
+  connectorId: string,
+  rows: Parameters<typeof connectorRuntimeAuthSelectionFromRows>[0],
+) {
+  const snapshot = connectorRuntimeAuthSelectionFromRows(
+    rows,
+    stripeAutomationCatalogPlan.requestedConnectorSlugs,
+    stripeAutomationCatalogPlan.firewallConnectorSlugs,
+  );
+  const args = { ...owner, connectorId, connectorSlug: "stripe", snapshot };
+  return { args, ...builtinConnectorCredentialConnectionReadPlan(args) };
+}
+function stripeAutomationLiveModeCondition(
+  connection: Extract<
+    ReturnType<typeof stripeConnectionReadiness>,
+    { kind: "ok" }
+  >["connection"],
+) {
+  return builtinConnectorCredentialVariableReadCondition({
+    groups: [{ access: connection.access, names: ["STRIPE_LIVEMODE"] }],
+  });
+}
+function stripeCreatedAutomationResult(
+  row: AutomationRow,
+  chatThreadId: string,
+  health: Parameters<typeof stripeAutomationHealthSummary>[0],
+): AutomationResult {
+  return {
+    kind: "ok",
+    summary: stripeInvoicePaidRowToSummary(
+      row,
+      chatThreadId,
+      stripeAutomationHealthSummary(health),
+    ),
+  };
+}
+function stripeAutomationCreateOutcome(
+  settled: Awaited<ReturnType<typeof settle<AutomationResult>>>,
+): AutomationResult {
+  if (settled.ok) {
+    return settled.value;
+  }
+  if (isAutomationEventConnectorMissing(settled.error)) {
+    return {
+      kind: "bad-request",
+      message: "Stripe account selection changed; retry adding the automation",
+    };
+  }
+  throw settled.error;
+}
+
 const createStripeInvoicePaidEventAutomationForWorkflow$ = command(
   async (
     { set },
-    args: {
-      readonly context: CreateEventAutomationWorkflowContext;
-      readonly input: CreateStripeInvoicePaidEventAutomationInput;
-    },
+    args: StripeAutomationCreateArgs,
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
     const db = set(writeDb$);
     const currentTime = nowDate();
+    const {
+      owner,
+      thread: threadPlan,
+      binding: bindingPlan,
+    } = stripeAutomationCreationPlans(args, currentTime);
     const settled = await settle(
-      db.transaction(async (tx) => {
-        const chatThreadId = await ensureWorkflowUserAutomationThread(tx, {
-          orgId: args.input.orgId,
-          userId: args.input.member.userId,
-          workflowId: args.context.workflowId,
-          agentId: args.context.agentId,
-          workflowTitle: args.context.workflowTitle,
-          preparation: args.context.threadPreparation,
-          currentTime,
-        });
-        const readiness = await resolveStripeInvoicePaidAutomationBinding(
-          {
-            db: tx,
-            orgId: args.input.orgId,
-            userId: args.input.member.userId,
-            workflowId: args.context.workflowId,
-          },
-          signal,
+      db.transaction(async (tx): Promise<AutomationResult> => {
+        // Keep the shared thread/event/automation publication and FK rollback.
+        // Readiness stays after the binding statement, and a business failure
+        // still commits the lazy thread, as before.
+        await tx
+          .insert(workflowUserAutomationThreads)
+          .values(bindingPlan.values)
+          .onConflictDoNothing(bindingPlan.conflict);
+        const [binding] = await tx
+          .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
+          .from(workflowUserAutomationThreads)
+          .where(workflowUserAutomationThreadOwnerCondition(owner))
+          .limit(1);
+        let chatThreadId = binding?.chatThreadId;
+        if (!chatThreadId) {
+          const [threadRow] = await tx
+            .with(...threadPlan.defaults)
+            .insert(chatThreads)
+            .values(threadPlan.values)
+            .onConflictDoNothing()
+            .returning(automationCreatedThreadColumns());
+          if (!threadRow) {
+            throw new Error("Failed to create workflow automation chat thread");
+          }
+          const thread = createdChatThreadFromRow(
+            threadRow,
+            args.context.agentId,
+          );
+          await tx.execute(
+            chatThreadCreatedEventSql({ orgId: args.input.orgId, thread }),
+          );
+          await tx
+            .update(workflowUserAutomationThreads)
+            .set({ chatThreadId: thread.id, updatedAt: currentTime })
+            .where(workflowUserAutomationThreadOwnerCondition(owner));
+          chatThreadId = thread.id;
+        }
+        signal.throwIfAborted();
+        const [selected] = parseRawRows(
+          z.object({ connectorId: z.string().nullable() }),
+          await tx.execute(
+            workflowAutomationConnectorSelectionSql({
+              ...owner,
+              connectorSlug: "stripe",
+            }),
+          ),
         );
         signal.throwIfAborted();
-        if (readiness.kind === "bad_request") {
-          return { kind: "bad-request" as const, message: readiness.message };
+        if (!selected?.connectorId) {
+          return {
+            kind: "bad-request",
+            message:
+              "Connect Stripe with OAuth in Live mode before adding a Stripe invoice-paid automation",
+          };
         }
-        const eventConfig = stripeInvoicePaidEventConfigSchema.parse({
-          ...args.input.eventConfig,
-          ...readiness.binding,
-        });
-        const row = await insertWorkflowAutomation(tx, {
-          id: args.context.automationId,
-          orgId: args.input.orgId,
-          workflowId: args.context.workflowId,
-          ownerUserId: args.input.member.userId,
-          kind: "event",
-          eventType: args.input.eventType,
-          eventConfig,
-          eventConnectorId: readiness.binding.connectorId,
-          scheduleType: null,
-          cronExpression: null,
-          intervalSeconds: null,
-          atTime: null,
-          timezone: "UTC",
-          enabled: args.input.enabled,
-          nextRunAt: null,
-          ...(args.input.autonomyBudget === undefined
-            ? {}
-            : { autonomyBudget: args.input.autonomyBudget }),
-          createdAt: currentTime,
-          updatedAt: currentTime,
-        });
+        const catalogRows = await tx
+          .select(stripeAutomationCatalogPlan.columns)
+          .from(connectorCatalog)
+          .leftJoin(connectorCatalogEntries, stripeAutomationCatalogPlan.join)
+          .where(connectorCatalogCurrentWhere());
+        signal.throwIfAborted();
+        const connectorPlan = stripeAutomationConnectionPlan(
+          owner,
+          selected.connectorId,
+          catalogRows,
+        );
+        const [connectorRow] = await tx
+          .select(connectorPlan.columns)
+          .from(connectors)
+          .where(connectorPlan.condition)
+          .limit(1);
+        signal.throwIfAborted();
+        const ready = stripeConnectionReadiness(
+          builtinConnectorCredentialConnectionFromRow(
+            connectorPlan.args,
+            connectorRow,
+          ),
+          "The selected Stripe account changed; retry the operation",
+        );
+        if (ready.kind === "bad_request") {
+          return { kind: "bad-request", message: ready.message };
+        }
+        const [liveMode] = await tx
+          .select({ value: variables.value })
+          .from(variables)
+          .where(stripeAutomationLiveModeCondition(ready.connection));
+        signal.throwIfAborted();
+        const modeError = stripeLiveModeReadinessMessage(liveMode?.value);
+        if (modeError !== null) {
+          return { kind: "bad-request", message: modeError };
+        }
+        const stripeBinding = {
+          connectorId: ready.connection.connectorId,
+          stripeAccountId: ready.stripeAccountId,
+          mode: "live" as const,
+        };
+        const [row] = await tx
+          .insert(workflowAutomations)
+          .values(
+            stripeAutomationCreateValues(args, stripeBinding, currentTime),
+          )
+          .returning(workflowAutomationColumns());
         if (!row) {
           throw new Error("Failed to create Stripe workflow automation");
         }
         const [health] = await tx
-          .select({
-            lastMatchingEventReceivedAt:
-              stripeWorkflowAutomationHealth.lastMatchingEventReceivedAt,
-            lastDeliveryStatus:
-              stripeWorkflowAutomationHealth.latestDeliveryStatus,
-            lastDeliveryStatusAt:
-              stripeWorkflowAutomationHealth.latestDeliveryStatusAt,
-          })
+          .select(stripeAutomationHealthColumns())
           .from(stripeWorkflowAutomationHealth)
           .where(eq(stripeWorkflowAutomationHealth.automationId, row.id))
           .limit(1);
-        return {
-          kind: "ok" as const,
-          summary: stripeInvoicePaidRowToSummary(
-            row,
-            chatThreadId,
-            stripeAutomationHealthSummary(health),
-          ),
-        };
+        return stripeCreatedAutomationResult(row, chatThreadId, health);
       }),
     );
     signal.throwIfAborted();
-    if (settled.ok) {
-      return settled.value;
-    }
-    if (isAutomationEventConnectorMissing(settled.error)) {
-      return {
-        kind: "bad-request",
-        message:
-          "Stripe account selection changed; retry adding the automation",
-      };
-    }
-    throw settled.error;
+    return stripeAutomationCreateOutcome(settled);
   },
 );
 
@@ -3835,7 +4014,7 @@ const createStripeInvoicePaidEventAutomation$ = command(
 );
 const createChatRunFinishedEventAutomationForWorkflow$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly context: {
         readonly threadPreparation: WorkflowThreadPreparation;
@@ -3848,7 +4027,7 @@ const createChatRunFinishedEventAutomationForWorkflow$ = command(
     },
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     // The watched thread must belong to the automation owner: the run's final
     // output is surfaced to the workflow run, so cross-user watching would leak
     // another user's conversation.
@@ -4411,11 +4590,11 @@ function preparedOfficialEvent(
 
 const prepareOfficialChatRunFinishedEvent$ = command(
   async (
-    { set },
+    { get },
     input: CreateChatRunFinishedEventAutomationInput,
     signal: AbortSignal,
   ): Promise<OfficialAutomationEventPreparationResult> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const [thread] = await db
       .select({ userId: chatThreads.userId })
       .from(chatThreads)
@@ -4751,32 +4930,34 @@ const prepareOfficialGoogleMeetEvent$ = command(
   },
 );
 
-async function prepareOfficialStripeEvent(
-  db: Db,
-  input: CreateStripeInvoicePaidEventAutomationInput,
-  signal: AbortSignal,
-): Promise<OfficialAutomationEventPreparationResult> {
-  const readiness = await resolveStripeInvoicePaidAutomationBinding(
-    {
-      db,
-      orgId: input.orgId,
-      userId: input.member.userId,
-      workflowId: input.workflowId,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (readiness.kind === "bad_request") {
-    return { kind: "bad-request", message: readiness.message };
-  }
-  return preparedOfficialEvent(
-    stripeInvoicePaidEventConfigSchema.parse({
-      ...input.eventConfig,
-      ...readiness.binding,
-    }),
-    { eventConnectorId: readiness.binding.connectorId },
-  );
-}
+const prepareOfficialStripeEvent$ = command(
+  async (
+    { set },
+    input: CreateStripeInvoicePaidEventAutomationInput,
+    signal: AbortSignal,
+  ): Promise<OfficialAutomationEventPreparationResult> => {
+    const readiness = await set(
+      readStripeInvoicePaidAutomationBinding$,
+      {
+        orgId: input.orgId,
+        userId: input.member.userId,
+        workflowId: input.workflowId,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (readiness.kind === "bad_request") {
+      return { kind: "bad-request", message: readiness.message };
+    }
+    return preparedOfficialEvent(
+      stripeInvoicePaidEventConfigSchema.parse({
+        ...input.eventConfig,
+        ...readiness.binding,
+      }),
+      { eventConnectorId: readiness.binding.connectorId },
+    );
+  },
+);
 
 export const prepareOfficialAutomationReconfiguration$ = command(
   async (
@@ -4784,7 +4965,7 @@ export const prepareOfficialAutomationReconfiguration$ = command(
     args: PrepareOfficialAutomationReconfigurationInput,
     signal: AbortSignal,
   ): Promise<OfficialAutomationEventPreparationResult> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const owned = await set(
       loadOwnedAutomation$,
       {
@@ -4840,7 +5021,7 @@ export const prepareOfficialAutomationReconfiguration$ = command(
       );
       signal.throwIfAborted();
       return enabled
-        ? await prepareOfficialStripeEvent(db, input, signal)
+        ? await set(prepareOfficialStripeEvent$, input, signal)
         : stripeInvoicePaidWorkflowAutomationsDisabledResult();
     }
     if (input.eventType === "webhook-received") {
@@ -5010,7 +5191,7 @@ function parseGithubAutomationEventConfig(
 
 const prepareGithubAutomationEventConfig$ = command(
   async (
-    { set },
+    { get },
     args: {
       readonly orgId: string;
       readonly eventType: GithubAutomationEventType;
@@ -5028,7 +5209,7 @@ const prepareGithubAutomationEventConfig$ = command(
         message: "eventConfig must match the GitHub automation type",
       };
     }
-    const db = set(writeDb$);
+    const db = get(db$);
     const [installation] = await db
       .select({ id: githubInstallations.id })
       .from(githubInstallations)
@@ -5249,11 +5430,11 @@ type GoogleCalendarReconfigurationPreparationResult =
 
 const readCommittedGoogleCalendarSummary$ = command(
   async (
-    { set },
+    { get },
     args: { readonly row: AutomationRow },
     signal: AbortSignal,
   ): Promise<WorkflowAutomationSummary> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const [thread] = await db
       .select({ id: workflowUserAutomationThreads.chatThreadId })
       .from(workflowUserAutomationThreads)
@@ -6282,55 +6463,8 @@ type EnabledAutomationAccountProjection =
       readonly connectorSlug: WorkflowAutomationAccountConnectorSlug;
       readonly eventConnectorId: string;
       readonly eventConfig: WorkflowAutomationEventConfig;
+      readonly resetFormsCursor?: boolean;
     };
-
-async function projectGoogleFormsEnabledEventConfig(
-  db: Db,
-  automation: AutomationRow,
-  eventConnectorId: string,
-): Promise<GoogleFormsResponseSubmittedEventConfig> {
-  const config = googleFormsResponseSubmittedEventConfigSchema.parse(
-    automation.eventConfig,
-  );
-  if (
-    config.connectorId !== eventConnectorId ||
-    (automation.eventConnectorId !== null &&
-      automation.eventConnectorId !== eventConnectorId)
-  ) {
-    await db
-      .delete(googleFormsAutomationCursors)
-      .where(eq(googleFormsAutomationCursors.automationId, automation.id));
-  }
-  return { ...config, connectorId: eventConnectorId };
-}
-
-async function resolveEnabledAutomationConnectorId(
-  db: Db,
-  provider: Exclude<WorkflowAutomationAccountConnectorSlug, "stripe">,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly workflowId: string;
-  },
-): Promise<string | null> {
-  switch (provider) {
-    case "gmail": {
-      return await resolveGmailAutomationConnectorId(db, args);
-    }
-    case "google-calendar": {
-      return await resolveGoogleCalendarAutomationConnectorId(db, args);
-    }
-    case "google-forms": {
-      return await resolveGoogleFormsAutomationConnectorId(db, args);
-    }
-    case "google-meet": {
-      return await resolveGoogleMeetAutomationConnectorId(db, args);
-    }
-    case "notion": {
-      return await resolveNotionAutomationConnectorId(db, args);
-    }
-  }
-}
 
 function unavailableEnabledAutomationProjection(
   provider: Exclude<WorkflowAutomationAccountConnectorSlug, "stripe">,
@@ -6376,112 +6510,122 @@ function enabledAutomationUnavailableMessage(
   }
 }
 
-/**
- * Reads the account an enabled automation must publish. Nothing is locked:
- * persistEnabledWorkflowAutomation publishes it with a statement conditioned
- * on the same selection/default still being current.
- */
-async function readEnabledAutomationAccountProjection(
-  db: Db,
-  automation: AutomationRow,
-  signal: AbortSignal,
-): Promise<EnabledAutomationAccountProjection> {
-  const provider = workflowAutomationAccountConnectorSlug(automation.eventType);
-  if (provider === null) {
-    return { status: "ok", required: false };
-  }
-  const connectorArgs = {
-    orgId: automation.orgId,
-    userId: automation.ownerUserId,
-    workflowId: automation.workflowId,
-  };
-  if (provider === "stripe") {
-    const readiness = await resolveStripeInvoicePaidAutomationBinding(
-      { db, ...connectorArgs },
+/** Read the selected account immediately before the local enable commit. */
+const readEnabledAutomationAccountProjection$ = command(
+  async (
+    { get, set },
+    automation: AutomationRow,
+    signal: AbortSignal,
+  ): Promise<EnabledAutomationAccountProjection> => {
+    const db = get(db$);
+    const provider = workflowAutomationAccountConnectorSlug(
+      automation.eventType,
+    );
+    if (provider === null) {
+      return { status: "ok", required: false };
+    }
+    const connectorArgs = {
+      orgId: automation.orgId,
+      userId: automation.ownerUserId,
+      workflowId: automation.workflowId,
+    };
+    if (provider === "stripe") {
+      const readiness = await set(
+        readStripeInvoicePaidAutomationBinding$,
+        connectorArgs,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (readiness.kind === "bad_request") {
+        return {
+          status: "stripe-unavailable",
+          message: readiness.message,
+        };
+      }
+      return {
+        status: "ok",
+        required: true,
+        connectorSlug: provider,
+        eventConnectorId: readiness.binding.connectorId,
+        eventConfig: {
+          ...stripeInvoicePaidEventConfigSchema.parse(automation.eventConfig),
+          ...readiness.binding,
+        },
+      };
+    }
+    const eventConnectorId = await set(
+      readEventAutomationConnectorId$,
+      { ...connectorArgs, connectorSlug: provider },
       signal,
     );
-    if (readiness.kind === "bad_request") {
-      return {
-        status: "stripe-unavailable",
-        message: readiness.message,
+    signal.throwIfAborted();
+    if (eventConnectorId === null) {
+      return unavailableEnabledAutomationProjection(provider);
+    }
+    if (
+      provider === "notion" &&
+      automation.eventConnectorId !== eventConnectorId
+    ) {
+      return { status: "notion-account-changed" };
+    }
+    let eventConfig: WorkflowAutomationEventConfig | null =
+      automation.eventConfig;
+    if (provider === "notion") {
+      eventConfig = notionConfigWithConnectorId(
+        automation.eventType,
+        automation.eventConfig,
+        eventConnectorId,
+      );
+    } else if (provider === "google-calendar") {
+      if (!supportedGoogleCalendarEventType(automation.eventType)) {
+        throw new Error("Expected a Google Calendar event automation");
+      }
+      const parsedConfig = parseGoogleCalendarEventConfig(
+        automation.eventType,
+        automation.eventConfig,
+      );
+      const [calendarAccount] = await db
+        .select({ externalEmail: connectors.externalEmail })
+        .from(connectors)
+        .where(
+          and(
+            eq(connectors.id, eventConnectorId),
+            eq(connectors.orgId, automation.orgId),
+            eq(connectors.userId, automation.ownerUserId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      const calendarId = normalizeGoogleCalendarId(
+        parsedConfig.calendarId,
+        calendarAccount?.externalEmail ?? null,
+      );
+      signal.throwIfAborted();
+      eventConfig = { ...parsedConfig, calendarId };
+    } else if (provider === "google-forms") {
+      eventConfig = {
+        ...googleFormsResponseSubmittedEventConfigSchema.parse(
+          automation.eventConfig,
+        ),
+        connectorId: eventConnectorId,
       };
+    }
+    if (eventConfig === null) {
+      throw new Error("Enabled connector automation config is incomplete");
     }
     return {
       status: "ok",
       required: true,
       connectorSlug: provider,
-      eventConnectorId: readiness.binding.connectorId,
-      eventConfig: {
-        ...stripeInvoicePaidEventConfigSchema.parse(automation.eventConfig),
-        ...readiness.binding,
-      },
+      eventConnectorId,
+      eventConfig,
+      resetFormsCursor: googleFormsEnabledCursorMustReset(
+        automation,
+        eventConnectorId,
+      ),
     };
-  }
-  const eventConnectorId = await resolveEnabledAutomationConnectorId(
-    db,
-    provider,
-    connectorArgs,
-  );
-  if (eventConnectorId === null) {
-    return unavailableEnabledAutomationProjection(provider);
-  }
-  if (
-    provider === "notion" &&
-    automation.eventConnectorId !== eventConnectorId
-  ) {
-    return { status: "notion-account-changed" };
-  }
-  let eventConfig: WorkflowAutomationEventConfig | null =
-    automation.eventConfig;
-  if (provider === "notion") {
-    eventConfig = notionConfigWithConnectorId(
-      automation.eventType,
-      automation.eventConfig,
-      eventConnectorId,
-    );
-  } else if (provider === "google-calendar") {
-    if (!supportedGoogleCalendarEventType(automation.eventType)) {
-      throw new Error("Expected a Google Calendar event automation");
-    }
-    const parsedConfig = parseGoogleCalendarEventConfig(
-      automation.eventType,
-      automation.eventConfig,
-    );
-    const [calendarAccount] = await db
-      .select({ externalEmail: connectors.externalEmail })
-      .from(connectors)
-      .where(
-        and(
-          eq(connectors.id, eventConnectorId),
-          eq(connectors.orgId, automation.orgId),
-          eq(connectors.userId, automation.ownerUserId),
-        ),
-      )
-      .limit(1);
-    const calendarId = normalizeGoogleCalendarId(
-      parsedConfig.calendarId,
-      calendarAccount?.externalEmail ?? null,
-    );
-    signal.throwIfAborted();
-    eventConfig = { ...parsedConfig, calendarId };
-  } else if (provider === "google-forms") {
-    eventConfig = await projectGoogleFormsEnabledEventConfig(
-      db,
-      automation,
-      eventConnectorId,
-    );
-  }
-  if (eventConfig === null) {
-    throw new Error("Enabled connector automation config is incomplete");
-  }
-  return {
-    status: "ok",
-    required: true,
-    connectorSlug: provider,
-    eventConnectorId,
-    eventConfig,
-  };
-}
+  },
+);
 type PersistEnabledWorkflowAutomationResult =
   | {
       readonly status: "team-required";
@@ -6519,99 +6663,179 @@ type PersistEnabledWorkflowAutomationResult =
       readonly row: AutomationRow | undefined;
     };
 
-async function persistEnabledWorkflowAutomation(
-  db: Db,
+function googleFormsEnabledCursorMustReset(
+  automation: AutomationRow,
+  connectorId: string,
+): boolean {
+  if (!supportedGoogleFormsEventType(automation.eventType)) {
+    return false;
+  }
+  const config = googleFormsResponseSubmittedEventConfigSchema.parse(
+    automation.eventConfig,
+  );
+  return (
+    config.connectorId !== connectorId ||
+    (automation.eventConnectorId !== null &&
+      automation.eventConnectorId !== connectorId)
+  );
+}
+function enabledWorkflowAutomationValues(
   args: {
     readonly automation: AutomationRow;
-    readonly orgId: string;
     readonly nextRunAt: Date | null;
     readonly now: Date;
     readonly inheritedAutonomyBudget?: number;
   },
-  signal: AbortSignal,
-): Promise<PersistEnabledWorkflowAutomationResult> {
-  const settled = await settle(
-    db.transaction(
-      async (tx): Promise<PersistEnabledWorkflowAutomationResult> => {
-        const accountProjection = await readEnabledAutomationAccountProjection(
-          tx,
-          args.automation,
-          signal,
-        );
-        if (accountProjection.status !== "ok") {
-          return accountProjection;
+  accountProjection: Extract<
+    EnabledAutomationAccountProjection,
+    { readonly status: "ok" }
+  >,
+) {
+  return {
+    enabled: true,
+    ...(accountProjection.required
+      ? {
+          eventConnectorId: accountProjection.eventConnectorId,
+          eventConfig: accountProjection.eventConfig,
         }
-        if (
-          args.automation.kind === "event" &&
-          args.automation.eventType === "webhook-received"
-        ) {
-          const tierEligible =
-            await lockWorkflowWebhookAutomationTierEligibleForOrg(
-              tx,
-              {
-                orgId: args.orgId,
-              },
-              signal,
-            );
-          if (!tierEligible) {
-            return { status: "team-required" };
-          }
+      : {}),
+    nextRunAt: args.nextRunAt,
+    consecutiveFailures: 0,
+    updatedAt: args.now,
+    ...(args.automation.officialBlueprintKey !== null
+      ? {
+          officialIntendedEnabled: true,
+          ...(args.automation.kind === "event"
+            ? { officialReconciliationStatus: "reconciling" as const }
+            : {}),
         }
-        const [enabledRow] = await tx
-          .update(workflowAutomations)
-          .set({
-            enabled: true,
-            ...(accountProjection.required
-              ? {
-                  eventConnectorId: accountProjection.eventConnectorId,
-                  eventConfig: accountProjection.eventConfig,
-                }
-              : {}),
-            nextRunAt: args.nextRunAt,
-            consecutiveFailures: 0,
-            updatedAt: args.now,
-            ...(args.automation.officialBlueprintKey !== null
-              ? {
-                  officialIntendedEnabled: true,
-                  ...(args.automation.kind === "event"
-                    ? { officialReconciliationStatus: "reconciling" as const }
-                    : {}),
-                }
-              : args.inheritedAutonomyBudget === undefined
-                ? {}
-                : { autonomyBudget: args.inheritedAutonomyBudget }),
-          })
-          .where(officialAutomationLifecycleCondition(args.automation))
-          .returning(workflowAutomationColumns());
-        if (
-          enabledRow &&
-          args.automation.kind === "event" &&
-          args.automation.eventType === "webhook-received"
-        ) {
-          await tx
-            .update(workflowWebhookAutomations)
-            .set({ disabledReason: null, updatedAt: args.now })
-            .where(
-              eq(workflowWebhookAutomations.automationId, args.automation.id),
-            );
-        }
-        if (!enabledRow && args.automation.officialBlueprintKey !== null) {
-          return { status: "conflict" as const };
-        }
-        return { status: "ok", row: enabledRow };
-      },
-    ),
-  );
-  if (settled.ok) {
-    return settled.value;
-  }
-  // The published account was deleted concurrently; the transaction rolled
-  // back and the caller may retry against the current account set.
-  if (isAutomationEventConnectorMissing(settled.error)) {
-    return { status: "account-changed" };
-  }
-  throw settled.error;
+      : args.inheritedAutonomyBudget === undefined
+        ? {}
+        : { autonomyBudget: args.inheritedAutonomyBudget }),
+  };
 }
+function enabledAutomationCommitResult(
+  automation: AutomationRow,
+  row: AutomationRow | undefined,
+): PersistEnabledWorkflowAutomationResult {
+  return !row && automation.officialBlueprintKey !== null
+    ? { status: "conflict" }
+    : { status: "ok", row };
+}
+
+const persistEnabledWorkflowAutomation$ = command(
+  async (
+    { set },
+    args: {
+      readonly automation: AutomationRow;
+      readonly orgId: string;
+      readonly nextRunAt: Date | null;
+      readonly now: Date;
+      readonly inheritedAutonomyBudget?: number;
+    },
+    signal: AbortSignal,
+  ): Promise<PersistEnabledWorkflowAutomationResult> => {
+    const accountProjection = await set(
+      readEnabledAutomationAccountProjection$,
+      args.automation,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (accountProjection.status !== "ok") {
+      return accountProjection;
+    }
+    const db = set(writeDb$);
+    const values = enabledWorkflowAutomationValues(args, accountProjection);
+    const isWebhook =
+      args.automation.kind === "event" &&
+      args.automation.eventType === "webhook-received";
+    const resetsFormsCursor =
+      accountProjection.required && accountProjection.resetFormsCursor === true;
+    const settled = await settle<
+      PersistEnabledWorkflowAutomationResult | AutomationRow[]
+    >(
+      isWebhook || resetsFormsCursor
+        ? db.transaction(
+            async (tx): Promise<PersistEnabledWorkflowAutomationResult> => {
+              // Publish the webhook tier decision/configuration or Forms cursor reset
+              // atomically with the enabled automation. All provider preparation is complete.
+              if (isWebhook) {
+                const [lockedCapabilities] = await tx
+                  .select(webhookTierCapabilityColumns())
+                  .from(orgPlanEntitlements)
+                  .where(eq(orgPlanEntitlements.orgId, args.orgId))
+                  .limit(1)
+                  .for("update");
+                signal.throwIfAborted();
+                if (!lockedCapabilities) {
+                  const [org] = await tx
+                    .select({ orgId: orgMetadata.orgId })
+                    .from(orgMetadata)
+                    .where(eq(orgMetadata.orgId, args.orgId))
+                    .limit(1)
+                    .for("update");
+                  signal.throwIfAborted();
+                  if (org) {
+                    throw new Error(
+                      "Missing org plan entitlement for " + args.orgId,
+                    );
+                  }
+                }
+                const tierEligible = lockedCapabilities
+                  ? orgPlanCapabilitiesFromRow(lockedCapabilities, args.orgId)
+                      .workflowWebhookAutomationAllowed
+                  : false;
+                if (!tierEligible) {
+                  return { status: "team-required" };
+                }
+              }
+              if (resetsFormsCursor) {
+                await tx
+                  .delete(googleFormsAutomationCursors)
+                  .where(
+                    eq(
+                      googleFormsAutomationCursors.automationId,
+                      args.automation.id,
+                    ),
+                  );
+              }
+              const [enabledRow] = await tx
+                .update(workflowAutomations)
+                .set(values)
+                .where(officialAutomationLifecycleCondition(args.automation))
+                .returning(workflowAutomationColumns());
+              if (enabledRow && isWebhook) {
+                await tx
+                  .update(workflowWebhookAutomations)
+                  .set({ disabledReason: null, updatedAt: args.now })
+                  .where(
+                    eq(
+                      workflowWebhookAutomations.automationId,
+                      args.automation.id,
+                    ),
+                  );
+              }
+              return enabledAutomationCommitResult(args.automation, enabledRow);
+            },
+          )
+        : db
+            .update(workflowAutomations)
+            .set(values)
+            .where(officialAutomationLifecycleCondition(args.automation))
+            .returning(workflowAutomationColumns()),
+    );
+    signal.throwIfAborted();
+    if (settled.ok) {
+      return "status" in settled.value
+        ? settled.value
+        : enabledAutomationCommitResult(args.automation, settled.value[0]);
+    }
+    if (isAutomationEventConnectorMissing(settled.error)) {
+      return { status: "account-changed" };
+    }
+    throw settled.error;
+  },
+);
 const prepareEnabledAutomationAccountProjection$ = command(
   async (
     { set },
@@ -6736,7 +6960,7 @@ const finalizeAndPublishEnabledWorkflowAutomation$ = command(
 );
 const publishEnabledGoogleFormsSummary$ = command(
   async (
-    { set },
+    { get },
     args: {
       readonly row: AutomationRow;
       readonly memberUserId: string;
@@ -6744,7 +6968,7 @@ const publishEnabledGoogleFormsSummary$ = command(
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
     const { row } = args;
-    const db = set(writeDb$);
+    const db = get(db$);
     const [binding] = await db
       .select({ chatThreadId: workflowUserAutomationThreads.chatThreadId })
       .from(workflowUserAutomationThreads)
@@ -6845,7 +7069,7 @@ const activateInactiveGoogleFormsAutomation$ = command(
 
 const refreshEnabledGoogleFormsAutomation$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly automation: AutomationRow;
       readonly memberUserId: string;
@@ -6857,7 +7081,7 @@ const refreshEnabledGoogleFormsAutomation$ = command(
       userId: args.automation.ownerUserId,
     };
     await set(reprojectGoogleFormsAutomationOwnership$, owner, signal);
-    const db = set(writeDb$);
+    const db = get(db$);
     const [current] = await db
       .select(workflowAutomationColumns())
       .from(workflowAutomations)
@@ -6928,7 +7152,7 @@ const refreshEnabledGoogleFormsAutomation$ = command(
 );
 
 function enabledWorkflowAutomationFailure(
-  enabled: Awaited<ReturnType<typeof persistEnabledWorkflowAutomation>>,
+  enabled: PersistEnabledWorkflowAutomationResult,
 ): AutomationActionFailure | null {
   if (enabled.status === "team-required") {
     return workflowWebhookTeamRequiredResult();
@@ -7029,7 +7253,6 @@ const persistAndReconcileEnabledWorkflowAutomation$ = command(
         signal,
       );
     }
-    const db = set(writeDb$);
     const accountProjection = await set(
       prepareEnabledAutomationAccountProjection$,
       args.automation,
@@ -7047,8 +7270,8 @@ const persistAndReconcileEnabledWorkflowAutomation$ = command(
       { automation },
       signal,
     );
-    const enabled = await persistEnabledWorkflowAutomation(
-      db,
+    const enabled = await set(
+      persistEnabledWorkflowAutomation$,
       {
         automation,
         orgId: args.orgId,
@@ -7117,11 +7340,11 @@ const validateStripeFeature$ = command(
 
 const readWorkflowAutomationEnableTarget$ = command(
   async (
-    { set },
+    { get },
     args: AutomationActionInput,
     signal: AbortSignal,
   ): Promise<OwnedAutomation | AutomationActionFailure> => {
-    const db = set(writeDb$);
+    const db = get(db$);
     const [row] = await db
       .select({
         automation: workflowAutomationColumns(),
@@ -7356,7 +7579,22 @@ export const disableWorkflowAutomation$ = command(
       throw new Error("Failed to disable workflow automation");
     }
     if (supportedNotionEventType(row.eventType)) {
-      await invalidateNotionPendingEventsForAutomation(writeDb, row.id);
+      const currentTime = nowDate();
+      await writeDb
+        .update(notionWorkflowPendingEvents)
+        .set({
+          status: "skipped",
+          skipReason:
+            "Notion automation was disabled before the event was processed",
+          processedAt: currentTime,
+          updatedAt: currentTime,
+        })
+        .where(
+          and(
+            eq(notionWorkflowPendingEvents.automationId, row.id),
+            inArray(notionWorkflowPendingEvents.status, ["pending", "running"]),
+          ),
+        );
       signal.throwIfAborted();
     }
     await set(

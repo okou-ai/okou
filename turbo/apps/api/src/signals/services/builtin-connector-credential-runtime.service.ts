@@ -157,7 +157,7 @@ export function builtinConnectorCredentialConnectionColumns() {
   };
 }
 
-function builtinConnectorCredentialConnectionReadPlan(args: {
+export function builtinConnectorCredentialConnectionReadPlan(args: {
   readonly connectorId: string;
   readonly connectorSlug: string;
   readonly orgId: string;
