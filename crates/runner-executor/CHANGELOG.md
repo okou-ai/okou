@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.5](https://github.com/okou-ai/okou/compare/runner-executor-v0.5.4...runner-executor-v0.5.5) (2026-10-08)
+
+
+### Refactoring
+
+* assemble current run inputs without agent configuration ([#38004](https://github.com/okou-ai/okou/issues/38004)) ([22efd4b](https://github.com/okou-ai/okou/commit/22efd4b6b34872c0585a0d4c3778cb3b59d9d100))
+
+## [0.5.4](https://github.com/okou-ai/okou/compare/runner-executor-v0.5.3...runner-executor-v0.5.4) (2026-10-08)
+
 ## [0.5.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.5.2...runner-executor-v0.5.3) (2026-10-07)
 
 

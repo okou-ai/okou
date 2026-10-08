@@ -245,9 +245,9 @@ export function createChatEventStorageSignals({
       input: OptimisticChatEventInput,
       signal: AbortSignal,
     ): Promise<void> => {
+      signal.throwIfAborted();
       set(appendOptimisticChatEvent$, createOptimisticChatEventEntry(input));
       await set(notifyChatEventsChanged$, chatEvents$, signal);
-      signal.throwIfAborted();
     },
   );
   const mergePersistentEvents$ = command(

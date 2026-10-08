@@ -1,19 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import { HttpResponse, http } from "msw";
 import type {
   TestComputerUseStateGetResponse,
   TestComputerUseStatePostResponse,
 } from "@okouai/api-contracts/contracts/test-computer-use-state";
-import {
-  COMPUTER_USE_FILESYSTEM_PLUGIN,
-  COMPUTER_USE_PLUGIN_CALL_KIND,
-  computerUseMcpServerCapability,
-  computerUsePluginCapability,
-  computerUsePluginToolCapability,
-} from "@okouai/api-contracts/contracts/computer-use-plugins";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createAppWithRoutes } from "../../../app-factory-core";
@@ -56,7 +48,6 @@ import {
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { readRunLaunchSnapshotFixture } from "./helpers/runtime-state";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 
@@ -86,30 +77,6 @@ function requireOrg(actor: ApiTestUser): string {
     throw new Error("Expected test actor to have an org");
   }
   return actor.orgId;
-}
-
-async function enableComputerUseDesktopPlugins(
-  actor: ApiTestUser,
-): Promise<void> {
-  await updateFeatureSwitchesForUser(
-    context,
-    {
-      userId: actor.userId,
-      orgId: requireOrg(actor),
-      orgRole: actor.orgRole,
-    },
-    {
-      [FeatureSwitchKey.ComputerUseDesktopPlugins]: true,
-    },
-  );
-}
-
-function filesystemToolCapabilities(tool: "read_text_file"): readonly string[] {
-  return [
-    COMPUTER_USE_PLUGIN_CALL_KIND,
-    computerUsePluginCapability(COMPUTER_USE_FILESYSTEM_PLUGIN),
-    computerUsePluginToolCapability(COMPUTER_USE_FILESYSTEM_PLUGIN, tool),
-  ];
 }
 
 interface ComputerUseRunFixture {
@@ -1160,17 +1127,11 @@ describe("FILE-03 desktop computer-use runtime", () => {
     const actor = bdd.user();
     await api.startComputerUseHost(actor, {
       hostName: "Other Desktop",
-      supportedCapabilities: [
-        "plugin.call",
-        computerUseMcpServerCapability("other"),
-      ],
+      supportedCapabilities: ["apps.list"],
     });
     const host = await api.startComputerUseHost(actor, {
       hostName: "Apple Notes Desktop",
-      supportedCapabilities: [
-        "plugin.call",
-        computerUseMcpServerCapability("apple-notes"),
-      ],
+      supportedCapabilities: ["app.state"],
     });
     mockClerkMembership(context, actor, "org:admin");
 
@@ -1185,10 +1146,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
     expect(listed.hosts[0]).toMatchObject({
       id: host.hostId,
       hostName: "Apple Notes Desktop",
-      supportedCapabilities: [
-        "plugin.call",
-        computerUseMcpServerCapability("apple-notes"),
-      ],
+      supportedCapabilities: ["app.state"],
     });
 
     const unbound = computerUseToken({
@@ -1565,44 +1523,35 @@ describe("FILE-03 desktop computer-use runtime", () => {
     );
   });
 
-  it("withdraws native create and claim admission with non-empty plugin-only capabilities", async () => {
+  it("withdraws native create and claim admission when host capabilities narrow", async () => {
     const actor = bdd.user();
-    await enableComputerUseDesktopPlugins(actor);
-    const pluginCapabilities = filesystemToolCapabilities("read_text_file");
     const host = await api.startComputerUseHost(actor, {
-      supportedCapabilities: ["apps.list", ...pluginCapabilities],
+      supportedCapabilities: ["apps.list", "app.state"],
     });
     await api.createComputerUseReadCommand(actor, { kind: "apps.list" });
-    const withdrawn = await api.claimNextComputerUseCommand(
-      host.hostToken,
-      pluginCapabilities,
-    );
+    const withdrawn = await api.claimNextComputerUseCommand(host.hostToken, [
+      "app.state",
+    ]);
     expect(withdrawn.status).toBe("idle");
     await api.heartbeatComputerUseHost(host.hostToken, {
-      supportedCapabilities: pluginCapabilities,
-      permissions: { accessibility: false, screenRecording: false },
+      supportedCapabilities: ["app.state"],
+      permissions: { accessibility: true, screenRecording: true },
     });
-    const native = await api.requestCreateComputerUseReadCommand(
+    const unsupported = await api.requestCreateComputerUseReadCommand(
       actor,
       { kind: "apps.list" },
       [409],
     );
-    expectApiError(native.body);
-    const plugin = await api.createComputerUsePluginCommand(actor, {
-      plugin: "filesystem",
-      tool: "read_text_file",
-      arguments: { path: "/tmp/notes.txt" },
+    expectApiError(unsupported.body);
+    const created = await api.createComputerUseReadCommand(actor, {
+      kind: "app.state",
+      app: "Safari",
     });
-    // Empty claim updates retain the last non-empty capability set. They must
-    // not restore native support after a plugin-only withdrawal.
+    // Empty claims retain the last non-empty capability set.
     const claimed = await api.claimNextComputerUseCommand(host.hostToken, []);
     expect(claimed).toMatchObject({
       status: "command",
-      command: {
-        id: plugin.commandId,
-        kind: "plugin.call",
-        timeoutMs: 60_000,
-      },
+      command: { id: created.commandId, kind: "app.state", timeoutMs: 60_000 },
     });
   });
 
@@ -1625,245 +1574,6 @@ describe("FILE-03 desktop computer-use runtime", () => {
         claimedAt: expect.any(String),
       },
     });
-  });
-
-  it("gates plugin commands by feature switch and routes them by tool capability", async () => {
-    const actor = bdd.user();
-
-    const disabled = await api.requestCreateComputerUsePluginCommand(
-      actor,
-      {
-        plugin: "filesystem",
-        tool: "read_text_file",
-        arguments: { path: "/tmp/notes.txt" },
-      },
-      [403],
-    );
-    expectApiError(disabled.body);
-    expect(disabled.body.error.message).toBe(
-      "Computer Use Desktop plugins are disabled",
-    );
-
-    await enableComputerUseDesktopPlugins(actor);
-    const unsupportedHost = await api.startComputerUseHost(actor);
-
-    const unsupported = await api.requestCreateComputerUsePluginCommand(
-      actor,
-      {
-        plugin: "filesystem",
-        tool: "read_text_file",
-        arguments: { path: "/tmp/notes.txt" },
-      },
-      [409],
-    );
-    expectApiError(unsupported.body);
-    expect(unsupported.body.error.message).toBe(
-      "No online computer-use host supports this plugin tool",
-    );
-
-    const pluginCapabilities = filesystemToolCapabilities("read_text_file");
-    const pluginHost = await api.startComputerUseHost(actor, {
-      supportedCapabilities: pluginCapabilities,
-    });
-    const created = await api.createComputerUsePluginCommand(actor, {
-      plugin: "filesystem",
-      tool: "read_text_file",
-      arguments: { path: "/tmp/notes.txt" },
-    });
-
-    const unsupportedClaim = await api.claimNextComputerUseCommand(
-      unsupportedHost.hostToken,
-    );
-    expect(unsupportedClaim.status).toBe("idle");
-
-    const claimed = await api.claimNextComputerUseCommand(
-      pluginHost.hostToken,
-      pluginCapabilities,
-    );
-    expect(claimed.status).toBe("command");
-    if (claimed.status !== "command") {
-      throw new Error("Expected plugin host to claim the plugin command");
-    }
-    expect(claimed.command).toMatchObject({
-      id: created.commandId,
-      hostId: pluginHost.hostId,
-      kind: "plugin.call",
-      payload: {
-        plugin: "filesystem",
-        tool: "read_text_file",
-        arguments: { path: "/tmp/notes.txt" },
-      },
-    });
-  });
-
-  it("routes mcp plugin commands by server capability and passes arguments through", async () => {
-    const actor = bdd.user();
-    await enableComputerUseDesktopPlugins(actor);
-
-    const invalidName = await api.requestCreateComputerUsePluginCommand(
-      actor,
-      {
-        plugin: "mcp",
-        server: "Bad Name!",
-        tool: "create_note",
-        arguments: {},
-      },
-      [400],
-    );
-    expectApiError(invalidName.body);
-
-    const notesHost = await api.startComputerUseHost(actor, {
-      supportedCapabilities: ["plugin.call", "plugin.mcp.notes"],
-    });
-
-    const unsupported = await api.requestCreateComputerUsePluginCommand(
-      actor,
-      {
-        plugin: "mcp",
-        server: "figma",
-        tool: "get_selection",
-        arguments: {},
-      },
-      [409],
-    );
-    expectApiError(unsupported.body);
-    expect(unsupported.body.error.message).toBe(
-      "No online computer-use host supports this plugin tool",
-    );
-
-    const created = await api.createComputerUsePluginCommand(actor, {
-      plugin: "mcp",
-      server: "notes",
-      tool: "create_note",
-      arguments: { title: "hello", nested: { tags: ["a", "b"] } },
-    });
-
-    const claimed = await api.claimNextComputerUseCommand(notesHost.hostToken, [
-      "plugin.call",
-      "plugin.mcp.notes",
-    ]);
-    expect(claimed.status).toBe("command");
-    if (claimed.status !== "command") {
-      throw new Error("Expected notes host to claim the mcp plugin command");
-    }
-    expect(claimed.command).toMatchObject({
-      id: created.commandId,
-      hostId: notesHost.hostId,
-      kind: "plugin.call",
-      payload: {
-        plugin: "mcp",
-        server: "notes",
-        tool: "create_note",
-        arguments: { title: "hello", nested: { tags: ["a", "b"] } },
-      },
-    });
-  });
-
-  it("offloads filesystem plugin content and records metadata-only audit", async () => {
-    const fake = api.installComputerUseS3Fake();
-    const orgId = `org_${randomUUID()}`;
-    const userId = `user_${randomUUID()}`;
-    const actor = bdd.user({ orgId, userId });
-    await enableComputerUseDesktopPlugins(actor);
-
-    const pluginCapabilities = filesystemToolCapabilities("read_text_file");
-    const host = await api.startComputerUseHost(actor, {
-      supportedCapabilities: pluginCapabilities,
-    });
-    mockClerkMembership(context, actor, "org:admin");
-    const granted = computerUseToken({
-      userId,
-      orgId,
-      capabilities: ["computer-use:write"],
-      computerUseHostId: host.hostId,
-    });
-
-    const created = await api.createComputerUsePluginCommand(
-      { bearer: granted.token },
-      {
-        plugin: "filesystem",
-        tool: "read_text_file",
-        arguments: { path: "/tmp/notes.txt" },
-      },
-    );
-    const claimed = await api.claimNextComputerUseCommand(
-      host.hostToken,
-      pluginCapabilities,
-    );
-    expect(claimed.status).toBe("command");
-
-    const content = Buffer.from("private local notes");
-    await api.completeComputerUseCommandWith(
-      host.hostToken,
-      created.commandId,
-      {
-        status: "succeeded",
-        result: {
-          plugin: "filesystem",
-          tool: "read_text_file",
-          sizeBytes: content.length,
-          pluginContent: {
-            dataBase64: content.toString("base64"),
-            mimeType: "text/plain",
-            fileName: "notes.txt",
-          },
-        },
-      },
-    );
-
-    const key = `computer-use/${orgId}/${userId}/${created.commandId}/plugin-content.txt`;
-    expect(fake.puts).toHaveLength(1);
-    expect(fake.puts[0]).toMatchObject({
-      bucket: "test-user-storages",
-      key,
-      contentType: "text/plain",
-    });
-    expect(fake.puts[0]?.body.equals(content)).toBeTruthy();
-
-    const detail = await api.readComputerUseCommand(actor, created.commandId);
-    expect(detail.result?.pluginContent).toStrictEqual({
-      type: "s3",
-      mimeType: "text/plain",
-      sizeBytes: content.length,
-      fileName: "notes.txt",
-    });
-    expect(JSON.stringify(detail.result)).not.toContain(
-      content.toString("base64"),
-    );
-
-    const downloaded = await api.downloadComputerUsePluginContent(
-      actor,
-      created.commandId,
-    );
-    expect(downloaded.contentType).toBe("text/plain");
-    expect(downloaded.fileName).toBe("notes.txt");
-    expect(downloaded.bytes.equals(content)).toBeTruthy();
-
-    const audit = await api.listComputerUseAuditEvents(actor, {
-      runId: granted.runId,
-      hostId: host.hostId,
-    });
-    expect(audit.auditEvents).toHaveLength(1);
-    expect(audit.auditEvents[0]).toMatchObject({
-      commandId: created.commandId,
-      runId: granted.runId,
-      hostId: host.hostId,
-      kind: "plugin.call",
-      redactedResult: {
-        plugin: "filesystem",
-        tool: "read_text_file",
-        status: "succeeded",
-        destructive: false,
-        path: "/tmp/notes.txt",
-        offloaded: true,
-        sizeBytes: content.length,
-        fileName: "notes.txt",
-        mimeType: "text/plain",
-      },
-    });
-    expect(JSON.stringify(audit.auditEvents[0]?.redactedResult)).not.toContain(
-      "private local notes",
-    );
   });
 
   it("normalizes NUL characters in completion results and errors", async () => {

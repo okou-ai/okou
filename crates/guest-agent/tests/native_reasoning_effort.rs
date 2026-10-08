@@ -137,6 +137,14 @@ async fn selected_effort_reaches_new_and_resumed_native_runs() -> TestResult {
             Some("max"),
             Some("max"),
         ),
+        // The catalog route, not this launcher, decides which models take effort.
+        (
+            "claude-code",
+            &claude_mock,
+            "claude-haiku-5-5",
+            Some("high"),
+            Some("high"),
+        ),
         // Preserve the CLI mode while chat admission stays closed for rollout.
         // Ultracode also needs actual workflow availability verified before use.
         (

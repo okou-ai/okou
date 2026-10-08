@@ -453,6 +453,7 @@
         "title": "Soporte"
       }
     },
+    "categoryFilter": "Filtrar por categoría",
     "chat": "Chat",
     "description": "Haz clic en cualquier tarjeta para iniciar una conversación. Podría convertirse en una tarea bajo demanda, un flujo de trabajo recurrente o un subagente.",
     "search": {

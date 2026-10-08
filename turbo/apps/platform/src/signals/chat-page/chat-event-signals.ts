@@ -102,6 +102,7 @@ function createSendInputChatEvent({
 > {
   return command(
     async ({ get, set }, input: SendInputChatEvent, signal: AbortSignal) => {
+      signal.throwIfAborted();
       const clientEventId = crypto.randomUUID();
       const createdAt = nowDate().toISOString();
       const chatThreadSortEventId = crypto.randomUUID();
@@ -131,7 +132,7 @@ function createSendInputChatEvent({
         agentId: input.agentId,
         createdAt,
       });
-      await set(
+      const optimisticEventChanged = set(
         appendOptimisticEvent$,
         {
           threadId,
@@ -150,48 +151,46 @@ function createSendInputChatEvent({
         },
         signal,
       );
-      signal.throwIfAborted();
-      L.debug("send input optimistic change notified", {
+      L.debug("send input optimistic event appended", {
         traceTime: chatEventTraceTime(),
         threadId,
         clientEventId,
       });
-      input.onOptimisticSend?.();
-      await sendChatEvent(
-        get(apiClient$),
-        {
-          agentId: input.agentId,
-          prompt: input.prompt,
-          threadId,
-          hasTextContent: input.hasTextContent,
-          clientEventId,
-          chatThreadSortEventId,
-          ...(input.runOptions === undefined
-            ? {}
-            : { runOptions: input.runOptions }),
-          ...(input.realAgentInPreview === true
-            ? { realAgentInPreview: true }
-            : {}),
-          userMessage,
-          ...(input.source ? { sourceRunId: input.source.runId } : {}),
-          ...(input.computerUseHostId === undefined
-            ? {}
-            : { computerUseHostId: input.computerUseHostId }),
-          ...(input.cloudBrowserEnabled === undefined
-            ? {}
-            : { cloudBrowserEnabled: input.cloudBrowserEnabled }),
-          ...(input.revokesEventId === undefined
-            ? {}
-            : { revokesEventId: input.revokesEventId }),
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-      L.debug("send input accepted", {
-        traceTime: chatEventTraceTime(),
-        threadId,
-        clientEventId,
-      });
+      await Promise.all([
+        optimisticEventChanged,
+        sendChatEvent(
+          get(apiClient$),
+          {
+            agentId: input.agentId,
+            prompt: input.prompt,
+            threadId,
+            hasTextContent: input.hasTextContent,
+            clientEventId,
+            chatThreadSortEventId,
+            ...(input.runOptions === undefined
+              ? {}
+              : { runOptions: input.runOptions }),
+            ...(input.realAgentInPreview === true
+              ? { realAgentInPreview: true }
+              : {}),
+            userMessage,
+            ...(input.source ? { sourceRunId: input.source.runId } : {}),
+            ...(input.computerUseHostId === undefined
+              ? {}
+              : { computerUseHostId: input.computerUseHostId }),
+            ...(input.cloudBrowserEnabled === undefined
+              ? {}
+              : { cloudBrowserEnabled: input.cloudBrowserEnabled }),
+            ...(input.revokesEventId === undefined
+              ? {}
+              : { revokesEventId: input.revokesEventId }),
+          },
+          signal,
+        ),
+        (async () => {
+          await Promise.resolve(input.onOptimisticSend?.());
+        })(),
+      ]);
     },
   );
 }
@@ -205,33 +204,35 @@ function createSendRevokeChatEvent({
 > {
   return command(
     async ({ get, set }, input: SendRevokeChatEvent, signal: AbortSignal) => {
-      const clientEventId = crypto.randomUUID();
-      await set(
-        appendOptimisticEvent$,
-        {
-          threadId,
-          event: {
-            id: clientEventId,
-            threadId,
-            eventType: "control.revoke",
-            content: null,
-            revokesEventId: input.revokesEventId,
-            createdAt: nowDate().toISOString(),
-          },
-        },
-        signal,
-      );
       signal.throwIfAborted();
-      await sendChatEvent(
-        get(apiClient$),
-        {
-          agentId: input.agentId,
-          threadId,
-          revokesEventId: input.revokesEventId,
-          clientEventId,
-        },
-        signal,
-      );
+      const clientEventId = crypto.randomUUID();
+      await Promise.all([
+        set(
+          appendOptimisticEvent$,
+          {
+            threadId,
+            event: {
+              id: clientEventId,
+              threadId,
+              eventType: "control.revoke",
+              content: null,
+              revokesEventId: input.revokesEventId,
+              createdAt: nowDate().toISOString(),
+            },
+          },
+          signal,
+        ),
+        sendChatEvent(
+          get(apiClient$),
+          {
+            agentId: input.agentId,
+            threadId,
+            revokesEventId: input.revokesEventId,
+            clientEventId,
+          },
+          signal,
+        ),
+      ]);
     },
   );
 }
@@ -249,33 +250,35 @@ function createSendInterruptChatEvent({
       input: SendInterruptChatEvent,
       signal: AbortSignal,
     ) => {
-      const clientEventId = crypto.randomUUID();
-      await set(
-        appendOptimisticEvent$,
-        {
-          threadId,
-          event: {
-            id: clientEventId,
-            threadId,
-            eventType: "control.interrupt",
-            content: null,
-            interruptsRunId: input.interruptsRunId,
-            createdAt: nowDate().toISOString(),
-          },
-        },
-        signal,
-      );
       signal.throwIfAborted();
-      await sendChatEvent(
-        get(apiClient$),
-        {
-          agentId: input.agentId,
-          threadId,
-          interruptsRunId: input.interruptsRunId,
-          clientEventId,
-        },
-        signal,
-      );
+      const clientEventId = crypto.randomUUID();
+      await Promise.all([
+        set(
+          appendOptimisticEvent$,
+          {
+            threadId,
+            event: {
+              id: clientEventId,
+              threadId,
+              eventType: "control.interrupt",
+              content: null,
+              interruptsRunId: input.interruptsRunId,
+              createdAt: nowDate().toISOString(),
+            },
+          },
+          signal,
+        ),
+        sendChatEvent(
+          get(apiClient$),
+          {
+            agentId: input.agentId,
+            threadId,
+            interruptsRunId: input.interruptsRunId,
+            clientEventId,
+          },
+          signal,
+        ),
+      ]);
     },
   );
 }

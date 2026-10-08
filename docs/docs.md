@@ -94,6 +94,8 @@ surface; the index does not replace their detailed rules.
   scope, canonical chat history, checksum semantics, and download compatibility.
 - [Storage version publication](./storage-version-publication.md): R2-first
   version registration, DB-only reuse, and durable reference-first Clerk cleanup.
+- [Artifact share publication](./artifact-share-publication.md): initial
+  revocation, conditional R2 authority and the transaction-removal deployment gate.
 - [Connector catalog rejections](./connector-catalog-rejections.md): safe
   validation reasons, rejection log records, retained serving generations and
   recovered publication-order evidence.
@@ -147,6 +149,8 @@ surface; the index does not replace their detailed rules.
   streaming terminal records, partial failures, accounting, and continuation hints.
 - [Platform lint boundaries](./platform-lint.md): current transport and lifecycle
   exceptions, polling policy, and retired configuration history.
+- [Native Desktop session authentication](./desktop-session-auth.md): single
+  Clerk credential, host binding, provider freshness and migration acceptance.
 - [Clerk customization](./clerk-customize.md): hosted Clerk styling ownership,
   public appearance boundaries, lint enforcement, and upgrade verification.
 - [React commit analysis](./react-commit.md): measuring and attributing React

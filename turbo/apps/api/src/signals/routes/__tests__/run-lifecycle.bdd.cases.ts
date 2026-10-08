@@ -41,7 +41,6 @@ import {
   type FirewallApi,
 } from "@okouai/connectors/firewall-types";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import {
   getCustomConnectorSkillStorageName,
   getCustomSkillStorageName,
@@ -6442,7 +6441,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it.each([
         {
-          schemaVersion: 5,
+          schemaVersion: 6,
           serviceTier: "priority",
           status: 404,
           runStatus: "pending",
@@ -6480,7 +6479,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           });
           await api.heartbeatRunner(runnerGroup);
           await api.requestClaimRunnerJob(true, run.runId, [route.status], {
-            capabilities: { piModelConfigGenerations: [1, 2, 3, 4, 5] },
+            capabilities: { piModelConfigGenerations: [1, 2, 3, 4, 5, 6] },
           });
           await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
             status: route.runStatus,
@@ -12669,32 +12668,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           return storage.mountPath;
         });
         expect(mountPaths).toContain(cacheMountPath);
-        const seedMountPaths = new Set(
-          SEED_SKILLS.map((skillName) => {
-            return `/home/user/.claude/skills/${skillName}`;
-          }),
-        );
-        expect(
-          storageMounts
-            .filter((mount) => {
-              return mount.baselineCandidate === true;
-            })
-            .map((mount) => {
-              return mount.mountPath;
-            })
-            .sort(),
-        ).toStrictEqual(
-          mountPaths
-            .filter((mountPath) => {
-              return seedMountPaths.has(mountPath);
-            })
-            .sort(),
-        );
-        for (const mount of storageMounts.filter((entry) => {
-          return !seedMountPaths.has(entry.mountPath);
-        })) {
-          expect(mount).not.toHaveProperty("baselineCandidate");
-        }
         const memoryArtifact = storageMounts.find((mount) => {
           return mount.name === "memory";
         });

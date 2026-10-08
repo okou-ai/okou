@@ -32,7 +32,7 @@ jobs:
     timeout-minutes: 20
     environment: ${{ inputs.environment }}
     container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20260825
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261008
     steps:
       - name: Check out dispatched source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

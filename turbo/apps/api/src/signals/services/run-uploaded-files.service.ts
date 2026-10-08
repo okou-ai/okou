@@ -13,15 +13,14 @@ import {
 } from "@okouai/db/schema/run-uploaded-file";
 
 import { logger } from "../../lib/log";
-import type { Tx } from "../../lib/db-types";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
-import { type Db, writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
-  queueArtifactCatalogFile,
+  queueArtifactCatalogFileSql,
   syncArtifactCatalogForFile$,
 } from "./artifact-catalog.service";
-import { publishArtifactsChangedForRun } from "./artifact-realtime.service";
+import { publishArtifactsChangedForRun$ } from "./artifact-realtime.service";
 import {
   scheduleArtifactPreviewRender$,
   VIDEO_POSTER_MAX_INPUT_BYTES,
@@ -74,22 +73,25 @@ function isRunUploadedFileSource(
   });
 }
 
-export async function sourceForRun(
-  writeDb: Db,
-  runId: string,
-  fallback: RunUploadedFileSource,
-  signal: AbortSignal,
-): Promise<RunUploadedFileSource> {
-  const [run] = await writeDb
-    .select({ triggerSource: agentRuns.triggerSource })
-    .from(agentRuns)
-    .where(and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)))
-    .limit(1);
-  signal.throwIfAborted();
-  return isRunUploadedFileSource(run?.triggerSource)
-    ? run.triggerSource
-    : fallback;
-}
+export const sourceForRun$ = command(
+  async (
+    { get },
+    runId: string,
+    fallback: RunUploadedFileSource,
+    signal: AbortSignal,
+  ): Promise<RunUploadedFileSource> => {
+    const db = get(db$);
+    const [run] = await db
+      .select({ triggerSource: agentRuns.triggerSource })
+      .from(agentRuns)
+      .where(and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)))
+      .limit(1);
+    signal.throwIfAborted();
+    return isRunUploadedFileSource(run?.triggerSource)
+      ? run.triggerSource
+      : fallback;
+  },
+);
 
 interface RecordedUploadedFile {
   readonly id: string;
@@ -99,53 +101,111 @@ interface RecordedUploadedFile {
 
 const L = logger("RunUploadedFiles");
 
-async function recordRunUploadedFileWrite(
-  db: Db,
-  write: (tx: Tx) => Promise<readonly RecordedUploadedFile[]>,
-  runId: string,
-  signal: AbortSignal,
-): Promise<RecordedUploadedFile | undefined> {
-  const result = await settle(
-    db.transaction(async (tx) => {
-      const [row] = await write(tx);
-      if (row) {
-        // Capture the association at write time so lists never need Run history.
-        const [run] = await tx
-          .select({
-            chatThreadId: agentRuns.chatThreadId,
-            orgId: agentRuns.orgId,
+interface RecordRunUploadedFileArgs {
+  readonly runId: string;
+  readonly source: RunUploadedFileSource;
+  readonly externalId: string;
+  readonly file: Pick<
+    typeof runUploadedFiles.$inferInsert,
+    | "userId"
+    | "orgId"
+    | "filename"
+    | "contentType"
+    | "sizeBytes"
+    | "url"
+    | "metadata"
+  >;
+  readonly resetPreviewForDeploymentId?: string;
+}
+
+const recordRunUploadedFile$ = command(
+  async (
+    { set },
+    args: RecordRunUploadedFileArgs,
+    signal: AbortSignal,
+  ): Promise<RecordedUploadedFile | undefined> => {
+    const db = set(writeDb$);
+    // The file identity, captured thread ownership and durable catalog handoff
+    // must commit together so a failed projection can be recovered.
+    const result = await settle(
+      db.transaction(async (tx) => {
+        const [row] = await tx
+          .insert(runUploadedFiles)
+          .values({
+            runId: args.runId,
+            source: args.source,
+            externalId: args.externalId,
+            ...args.file,
           })
-          .from(agentRuns)
-          .where(
-            and(eq(agentRuns.id, runId), isNotNull(agentRuns.triggerSource)),
-          )
-          .limit(1);
-        signal.throwIfAborted();
-        if (run) {
-          await tx
-            .update(runUploadedFiles)
-            .set({
-              chatThreadId: run.chatThreadId,
-              orgId: run.orgId,
+          .onConflictDoUpdate({
+            target: [
+              runUploadedFiles.runId,
+              runUploadedFiles.source,
+              runUploadedFiles.externalId,
+            ],
+            set: {
+              ...args.file,
+              // Mutable legacy aliases lose their preview only when a different
+              // deployment takes over. Versioned rows preserve their preview.
+              ...(args.resetPreviewForDeploymentId === undefined
+                ? {}
+                : {
+                    previewImageUrl: sql`case
+                    when ${eq(sql`${runUploadedFiles.metadata}->>'deploymentId'`, args.resetPreviewForDeploymentId)}
+                    then ${runUploadedFiles.previewImageUrl}
+                    else null
+                  end`,
+                  }),
+              updatedAt: sql`now()`,
+            },
+          })
+          .returning({
+            id: runUploadedFiles.id,
+            previewImageUrl: runUploadedFiles.previewImageUrl,
+            sizeBytes: runUploadedFiles.sizeBytes,
+          });
+        if (row) {
+          // Capture the association at write time so lists never need Run history.
+          const [run] = await tx
+            .select({
+              chatThreadId: agentRuns.chatThreadId,
+              orgId: agentRuns.orgId,
             })
-            .where(eq(runUploadedFiles.id, row.id));
+            .from(agentRuns)
+            .where(
+              and(
+                eq(agentRuns.id, args.runId),
+                isNotNull(agentRuns.triggerSource),
+              ),
+            )
+            .limit(1);
+          signal.throwIfAborted();
+          if (run) {
+            await tx
+              .update(runUploadedFiles)
+              .set({ chatThreadId: run.chatThreadId, orgId: run.orgId })
+              .where(eq(runUploadedFiles.id, row.id));
+            signal.throwIfAborted();
+          }
+          await tx.execute(queueArtifactCatalogFileSql(row.id));
           signal.throwIfAborted();
         }
-        await queueArtifactCatalogFile(tx, row.id, signal);
-      }
-      return row;
-    }),
-    signal,
-  );
-  if (result.ok) {
-    return result.value;
-  }
-  if (!isForeignKeyViolation(result.error)) {
-    throw result.error;
-  }
-  L.debug("Ignored uploaded-file association for deleted run", { runId });
-  return undefined;
-}
+        return row;
+      }),
+      signal,
+    );
+    if (result.ok) {
+      return result.value;
+    }
+    if (!isForeignKeyViolation(result.error)) {
+      throw result.error;
+    }
+    L.debug("Ignored uploaded-file association for deleted run", {
+      runId: args.runId,
+    });
+    return undefined;
+  },
+);
 
 function videoArtifactPreviewArgs(
   args: {
@@ -197,8 +257,7 @@ export const recordHostedSiteArtifact$ = command(
     if (!args.runId) {
       return null;
     }
-    const writeDb = set(writeDb$);
-    const source = await sourceForRun(writeDb, args.runId, "web", signal);
+    const source = await set(sourceForRun$, args.runId, "web", signal);
     const externalId =
       args.deploymentVersion === null ? args.url : args.deploymentId;
     const filename =
@@ -206,13 +265,13 @@ export const recordHostedSiteArtifact$ = command(
         ? `${args.publicSlug}.html`
         : `${args.site}-v${args.deploymentVersion}.html`;
 
-    const write = (tx: Tx) => {
-      return tx
-        .insert(runUploadedFiles)
-        .values({
-          runId: args.runId,
-          source,
-          externalId,
+    const row = await set(
+      recordRunUploadedFile$,
+      {
+        runId: args.runId,
+        source,
+        externalId,
+        file: {
           userId: args.userId,
           orgId: args.orgId,
           filename,
@@ -233,63 +292,10 @@ export const recordHostedSiteArtifact$ = command(
             spaFallback: args.spaFallback,
             publicBrand: linkLayoutSegment(args.layout),
           },
-        })
-        .onConflictDoUpdate({
-          target: [
-            runUploadedFiles.runId,
-            runUploadedFiles.source,
-            runUploadedFiles.externalId,
-          ],
-          set: {
-            userId: args.userId,
-            orgId: args.orgId,
-            filename,
-            contentType: "text/html",
-            sizeBytes: args.sizeBytes,
-            url: args.url,
-            metadata: {
-              generatedBy: "zero-official-website",
-              artifactKind: args.artifactKind,
-              siteId: args.siteId,
-              deploymentId: args.deploymentId,
-              deploymentVersion: args.deploymentVersion,
-              aliasUrl: args.aliasUrl,
-              access: args.access,
-              publicSlug: args.publicSlug,
-              fileCount: args.fileCount,
-              entrypoint: args.entrypoint,
-              spaFallback: args.spaFallback,
-              publicBrand: linkLayoutSegment(args.layout),
-            },
-            // Legacy redeploys reuse a mutable alias row. Preserve the preview
-            // when the same deployment is completed again, but clear it when a
-            // new deployment takes over that row. Versioned rows are immutable
-            // and keep their own preview.
-            ...(args.deploymentVersion === null
-              ? {
-                  previewImageUrl: sql`case
-                  when ${eq(
-                    sql`${runUploadedFiles.metadata}->>'deploymentId'`,
-                    args.deploymentId,
-                  )}
-                  then ${runUploadedFiles.previewImageUrl}
-                  else null
-                end`,
-                }
-              : {}),
-            updatedAt: sql`now()`,
-          },
-        })
-        .returning({
-          id: runUploadedFiles.id,
-          previewImageUrl: runUploadedFiles.previewImageUrl,
-          sizeBytes: runUploadedFiles.sizeBytes,
-        });
-    };
-    const row = await recordRunUploadedFileWrite(
-      writeDb,
-      write,
-      args.runId,
+        },
+        resetPreviewForDeploymentId:
+          args.deploymentVersion === null ? args.deploymentId : undefined,
+      },
       signal,
     );
     signal.throwIfAborted();
@@ -299,7 +305,7 @@ export const recordHostedSiteArtifact$ = command(
     }
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
-    await publishArtifactsChangedForRun(writeDb, args.runId, signal);
+    await set(publishArtifactsChangedForRun$, args.runId, signal);
     return row;
   },
 );
@@ -323,8 +329,7 @@ export const recordWebUploadedFile$ = command(
     if (!args.runId) {
       return;
     }
-    const writeDb = set(writeDb$);
-    const source = await sourceForRun(writeDb, args.runId, "web", signal);
+    const source = await set(sourceForRun$, args.runId, "web", signal);
 
     const metadata = {
       ...args.metadata,
@@ -332,13 +337,13 @@ export const recordWebUploadedFile$ = command(
       publicBrand: linkLayoutSegment(args.layout),
     };
 
-    const write = (tx: Tx) => {
-      return tx
-        .insert(runUploadedFiles)
-        .values({
-          runId: args.runId,
-          source,
-          externalId: args.externalId,
+    const row = await set(
+      recordRunUploadedFile$,
+      {
+        runId: args.runId,
+        source,
+        externalId: args.externalId,
+        file: {
           userId: args.userId,
           orgId: args.orgId ?? null,
           filename: args.filename,
@@ -346,34 +351,8 @@ export const recordWebUploadedFile$ = command(
           sizeBytes: args.sizeBytes,
           url: args.url,
           metadata,
-        })
-        .onConflictDoUpdate({
-          target: [
-            runUploadedFiles.runId,
-            runUploadedFiles.source,
-            runUploadedFiles.externalId,
-          ],
-          set: {
-            userId: args.userId,
-            orgId: args.orgId ?? null,
-            filename: args.filename,
-            contentType: args.contentType,
-            sizeBytes: args.sizeBytes,
-            url: args.url,
-            metadata,
-            updatedAt: sql`now()`,
-          },
-        })
-        .returning({
-          id: runUploadedFiles.id,
-          previewImageUrl: runUploadedFiles.previewImageUrl,
-          sizeBytes: runUploadedFiles.sizeBytes,
-        });
-    };
-    const row = await recordRunUploadedFileWrite(
-      writeDb,
-      write,
-      args.runId,
+        },
+      },
       signal,
     );
     signal.throwIfAborted();
@@ -383,7 +362,7 @@ export const recordWebUploadedFile$ = command(
     }
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
-    await publishArtifactsChangedForRun(writeDb, args.runId, signal);
+    await set(publishArtifactsChangedForRun$, args.runId, signal);
     set(
       scheduleArtifactPreviewRender$,
       videoArtifactPreviewArgs(
@@ -433,16 +412,15 @@ export const recordTelegramUploadedFile$ = command(
     if (!args.runId) {
       return;
     }
-    const writeDb = set(writeDb$);
-    const source = await sourceForRun(writeDb, args.runId, "telegram", signal);
+    const source = await set(sourceForRun$, args.runId, "telegram", signal);
 
-    const write = (tx: Tx) => {
-      return tx
-        .insert(runUploadedFiles)
-        .values({
-          runId: args.runId,
-          source,
-          externalId: args.externalId,
+    const row = await set(
+      recordRunUploadedFile$,
+      {
+        runId: args.runId,
+        source,
+        externalId: args.externalId,
+        file: {
           userId: args.userId,
           orgId: args.orgId,
           filename: args.filename,
@@ -453,37 +431,8 @@ export const recordTelegramUploadedFile$ = command(
             ...args.metadata,
             publicBrand: linkLayoutSegment(args.layout),
           },
-        })
-        .onConflictDoUpdate({
-          target: [
-            runUploadedFiles.runId,
-            runUploadedFiles.source,
-            runUploadedFiles.externalId,
-          ],
-          set: {
-            userId: args.userId,
-            orgId: args.orgId,
-            filename: args.filename,
-            contentType: args.contentType,
-            sizeBytes: args.sizeBytes,
-            url: args.url,
-            metadata: {
-              ...args.metadata,
-              publicBrand: linkLayoutSegment(args.layout),
-            },
-            updatedAt: sql`now()`,
-          },
-        })
-        .returning({
-          id: runUploadedFiles.id,
-          previewImageUrl: runUploadedFiles.previewImageUrl,
-          sizeBytes: runUploadedFiles.sizeBytes,
-        });
-    };
-    const row = await recordRunUploadedFileWrite(
-      writeDb,
-      write,
-      args.runId,
+        },
+      },
       signal,
     );
     signal.throwIfAborted();
@@ -493,7 +442,7 @@ export const recordTelegramUploadedFile$ = command(
     }
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
-    await publishArtifactsChangedForRun(writeDb, args.runId, signal);
+    await set(publishArtifactsChangedForRun$, args.runId, signal);
     set(
       scheduleArtifactPreviewRender$,
       videoArtifactPreviewArgs(
@@ -585,16 +534,15 @@ export const recordGithubUploadedFile$ = command(
     if (!args.runId) {
       return;
     }
-    const writeDb = set(writeDb$);
-    const source = await sourceForRun(writeDb, args.runId, "github", signal);
+    const source = await set(sourceForRun$, args.runId, "github", signal);
 
-    const write = (tx: Tx) => {
-      return tx
-        .insert(runUploadedFiles)
-        .values({
-          runId: args.runId,
-          source,
-          externalId: args.externalId,
+    const row = await set(
+      recordRunUploadedFile$,
+      {
+        runId: args.runId,
+        source,
+        externalId: args.externalId,
+        file: {
           userId: args.userId,
           orgId: args.orgId,
           filename: args.filename,
@@ -605,37 +553,8 @@ export const recordGithubUploadedFile$ = command(
             ...args.metadata,
             publicBrand: linkLayoutSegment(args.layout),
           },
-        })
-        .onConflictDoUpdate({
-          target: [
-            runUploadedFiles.runId,
-            runUploadedFiles.source,
-            runUploadedFiles.externalId,
-          ],
-          set: {
-            userId: args.userId,
-            orgId: args.orgId,
-            filename: args.filename,
-            contentType: args.contentType,
-            sizeBytes: args.sizeBytes,
-            url: args.url,
-            metadata: {
-              ...args.metadata,
-              publicBrand: linkLayoutSegment(args.layout),
-            },
-            updatedAt: sql`now()`,
-          },
-        })
-        .returning({
-          id: runUploadedFiles.id,
-          previewImageUrl: runUploadedFiles.previewImageUrl,
-          sizeBytes: runUploadedFiles.sizeBytes,
-        });
-    };
-    const row = await recordRunUploadedFileWrite(
-      writeDb,
-      write,
-      args.runId,
+        },
+      },
       signal,
     );
     signal.throwIfAborted();
@@ -645,7 +564,7 @@ export const recordGithubUploadedFile$ = command(
     }
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
-    await publishArtifactsChangedForRun(writeDb, args.runId, signal);
+    await set(publishArtifactsChangedForRun$, args.runId, signal);
     set(
       scheduleArtifactPreviewRender$,
       videoArtifactPreviewArgs(
@@ -672,16 +591,15 @@ export const recordFeishuUploadedFile$ = command(
     if (!args.runId) {
       return;
     }
-    const writeDb = set(writeDb$);
-    const source = await sourceForRun(writeDb, args.runId, "feishu", signal);
+    const source = await set(sourceForRun$, args.runId, "feishu", signal);
 
-    const write = (tx: Tx) => {
-      return tx
-        .insert(runUploadedFiles)
-        .values({
-          runId: args.runId,
-          source,
-          externalId: args.externalId,
+    const row = await set(
+      recordRunUploadedFile$,
+      {
+        runId: args.runId,
+        source,
+        externalId: args.externalId,
+        file: {
           userId: args.userId,
           orgId: args.orgId,
           filename: args.filename,
@@ -692,37 +610,8 @@ export const recordFeishuUploadedFile$ = command(
             ...args.metadata,
             publicBrand: linkLayoutSegment(args.layout),
           },
-        })
-        .onConflictDoUpdate({
-          target: [
-            runUploadedFiles.runId,
-            runUploadedFiles.source,
-            runUploadedFiles.externalId,
-          ],
-          set: {
-            userId: args.userId,
-            orgId: args.orgId,
-            filename: args.filename,
-            contentType: args.contentType,
-            sizeBytes: args.sizeBytes,
-            url: args.url,
-            metadata: {
-              ...args.metadata,
-              publicBrand: linkLayoutSegment(args.layout),
-            },
-            updatedAt: sql`now()`,
-          },
-        })
-        .returning({
-          id: runUploadedFiles.id,
-          previewImageUrl: runUploadedFiles.previewImageUrl,
-          sizeBytes: runUploadedFiles.sizeBytes,
-        });
-    };
-    const row = await recordRunUploadedFileWrite(
-      writeDb,
-      write,
-      args.runId,
+        },
+      },
       signal,
     );
     signal.throwIfAborted();
@@ -732,7 +621,7 @@ export const recordFeishuUploadedFile$ = command(
     }
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
-    await publishArtifactsChangedForRun(writeDb, args.runId, signal);
+    await set(publishArtifactsChangedForRun$, args.runId, signal);
     set(
       scheduleArtifactPreviewRender$,
       videoArtifactPreviewArgs(
@@ -759,16 +648,15 @@ export const recordTeamsUploadedFile$ = command(
     if (!args.runId) {
       return;
     }
-    const writeDb = set(writeDb$);
-    const source = await sourceForRun(writeDb, args.runId, "teams", signal);
+    const source = await set(sourceForRun$, args.runId, "teams", signal);
 
-    const write = (tx: Tx) => {
-      return tx
-        .insert(runUploadedFiles)
-        .values({
-          runId: args.runId,
-          source,
-          externalId: args.externalId,
+    const row = await set(
+      recordRunUploadedFile$,
+      {
+        runId: args.runId,
+        source,
+        externalId: args.externalId,
+        file: {
           userId: args.userId,
           orgId: args.orgId,
           filename: args.filename,
@@ -779,37 +667,8 @@ export const recordTeamsUploadedFile$ = command(
             ...args.metadata,
             publicBrand: linkLayoutSegment(args.layout),
           },
-        })
-        .onConflictDoUpdate({
-          target: [
-            runUploadedFiles.runId,
-            runUploadedFiles.source,
-            runUploadedFiles.externalId,
-          ],
-          set: {
-            userId: args.userId,
-            orgId: args.orgId,
-            filename: args.filename,
-            contentType: args.contentType,
-            sizeBytes: args.sizeBytes,
-            url: args.url,
-            metadata: {
-              ...args.metadata,
-              publicBrand: linkLayoutSegment(args.layout),
-            },
-            updatedAt: sql`now()`,
-          },
-        })
-        .returning({
-          id: runUploadedFiles.id,
-          previewImageUrl: runUploadedFiles.previewImageUrl,
-          sizeBytes: runUploadedFiles.sizeBytes,
-        });
-    };
-    const row = await recordRunUploadedFileWrite(
-      writeDb,
-      write,
-      args.runId,
+        },
+      },
       signal,
     );
     signal.throwIfAborted();
@@ -819,7 +678,7 @@ export const recordTeamsUploadedFile$ = command(
     }
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
-    await publishArtifactsChangedForRun(writeDb, args.runId, signal);
+    await set(publishArtifactsChangedForRun$, args.runId, signal);
     set(
       scheduleArtifactPreviewRender$,
       videoArtifactPreviewArgs(
@@ -852,21 +711,15 @@ export const recordAgentPhoneUploadedFile$ = command(
     if (!args.runId) {
       return;
     }
-    const writeDb = set(writeDb$);
-    const source = await sourceForRun(
-      writeDb,
-      args.runId,
-      "agentphone",
-      signal,
-    );
+    const source = await set(sourceForRun$, args.runId, "agentphone", signal);
 
-    const write = (tx: Tx) => {
-      return tx
-        .insert(runUploadedFiles)
-        .values({
-          runId: args.runId,
-          source,
-          externalId: args.externalId,
+    const row = await set(
+      recordRunUploadedFile$,
+      {
+        runId: args.runId,
+        source,
+        externalId: args.externalId,
+        file: {
           userId: args.userId,
           orgId: args.orgId,
           filename: args.filename,
@@ -877,37 +730,8 @@ export const recordAgentPhoneUploadedFile$ = command(
             ...args.metadata,
             publicBrand: linkLayoutSegment(args.layout),
           },
-        })
-        .onConflictDoUpdate({
-          target: [
-            runUploadedFiles.runId,
-            runUploadedFiles.source,
-            runUploadedFiles.externalId,
-          ],
-          set: {
-            userId: args.userId,
-            orgId: args.orgId,
-            filename: args.filename,
-            contentType: args.contentType,
-            sizeBytes: args.sizeBytes,
-            url: args.url,
-            metadata: {
-              ...args.metadata,
-              publicBrand: linkLayoutSegment(args.layout),
-            },
-            updatedAt: sql`now()`,
-          },
-        })
-        .returning({
-          id: runUploadedFiles.id,
-          previewImageUrl: runUploadedFiles.previewImageUrl,
-          sizeBytes: runUploadedFiles.sizeBytes,
-        });
-    };
-    const row = await recordRunUploadedFileWrite(
-      writeDb,
-      write,
-      args.runId,
+        },
+      },
       signal,
     );
     signal.throwIfAborted();
@@ -917,7 +741,7 @@ export const recordAgentPhoneUploadedFile$ = command(
     }
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
-    await publishArtifactsChangedForRun(writeDb, args.runId, signal);
+    await set(publishArtifactsChangedForRun$, args.runId, signal);
     set(
       scheduleArtifactPreviewRender$,
       videoArtifactPreviewArgs(
@@ -955,16 +779,15 @@ export const recordSlackUploadedFile$ = command(
     if (!args.runId) {
       return;
     }
-    const writeDb = set(writeDb$);
-    const source = await sourceForRun(writeDb, args.runId, "slack", signal);
+    const source = await set(sourceForRun$, args.runId, "slack", signal);
 
-    const write = (tx: Tx) => {
-      return tx
-        .insert(runUploadedFiles)
-        .values({
-          runId: args.runId,
-          source,
-          externalId: args.externalId,
+    const row = await set(
+      recordRunUploadedFile$,
+      {
+        runId: args.runId,
+        source,
+        externalId: args.externalId,
+        file: {
           userId: args.userId,
           orgId: args.orgId,
           filename: args.filename,
@@ -975,37 +798,8 @@ export const recordSlackUploadedFile$ = command(
             ...args.metadata,
             publicBrand: linkLayoutSegment(args.layout),
           },
-        })
-        .onConflictDoUpdate({
-          target: [
-            runUploadedFiles.runId,
-            runUploadedFiles.source,
-            runUploadedFiles.externalId,
-          ],
-          set: {
-            userId: args.userId,
-            orgId: args.orgId,
-            filename: args.filename,
-            contentType: args.contentType,
-            sizeBytes: args.sizeBytes,
-            url: args.url,
-            metadata: {
-              ...args.metadata,
-              publicBrand: linkLayoutSegment(args.layout),
-            },
-            updatedAt: sql`now()`,
-          },
-        })
-        .returning({
-          id: runUploadedFiles.id,
-          previewImageUrl: runUploadedFiles.previewImageUrl,
-          sizeBytes: runUploadedFiles.sizeBytes,
-        });
-    };
-    const row = await recordRunUploadedFileWrite(
-      writeDb,
-      write,
-      args.runId,
+        },
+      },
       signal,
     );
     signal.throwIfAborted();
@@ -1015,7 +809,7 @@ export const recordSlackUploadedFile$ = command(
     }
 
     await set(syncArtifactCatalogForFile$, row.id, signal);
-    await publishArtifactsChangedForRun(writeDb, args.runId, signal);
+    await set(publishArtifactsChangedForRun$, args.runId, signal);
     set(
       scheduleArtifactPreviewRender$,
       videoArtifactPreviewArgs(

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.6](https://github.com/okou-ai/okou/compare/ios-v0.6.5...ios-v0.6.6) (2026-10-08)
+
+
+### Bug Fixes
+
+* **ios:** use native button styles for chat controls ([#37999](https://github.com/okou-ai/okou/issues/37999)) ([76c3939](https://github.com/okou-ai/okou/commit/76c39390b0d332de51404e2473e43fb1e52a3d5d))
+
+
+### Performance Improvements
+
+* **ios:** progressively render conversation history ([#37954](https://github.com/okou-ai/okou/issues/37954)) ([2fe38a9](https://github.com/okou-ai/okou/commit/2fe38a969ceb2824c400ffc5a3e2547071c38750))
+
 ## [0.6.5](https://github.com/okou-ai/okou/compare/ios-v0.6.4...ios-v0.6.5) (2026-10-08)
 
 

@@ -18,7 +18,15 @@ const FIXTURE = fileURLToPath(
 // the fixture tool's cooperative boundary; official commands still use stdin.
 const EXTENSION = `import { writeFile } from "node:fs/promises";
 export default function (pi) {
-  if (process.argv[3] !== "http") pi.on("agent_settled", async (_event, ctx) => {
+  if (process.argv[3] === "wire-boundaries") pi.on("turn_end", (event) => {
+    if (event.toolResults.length > 0) process.send({
+      type: "native-turn-end",
+      hasMessage: event.message !== undefined,
+      toolResultCount: event.toolResults.length,
+      toolResultBytes: event.toolResults.reduce((bytes, result) => bytes + result.content[0].text.length, 0)
+    });
+  });
+  if (process.argv[3] !== "http" && process.argv[3] !== "wire-boundaries") pi.on("agent_settled", async (_event, ctx) => {
     await new Promise((resolve) => {
       const release = (message) => {
         if (message === "release-settlement" || message === "release-settlement-abort") {
@@ -48,6 +56,9 @@ export default function (pi) {
     name: "controlled", label: "controlled", description: "Cooperative fixture",
     parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
     async execute(_id, args, signal) {
+      if (process.argv[3] === "wire-boundaries") return {
+        content: [{ type: "text", text: "x".repeat(1024 * 1024) }], details: {}
+      };
       if (!signal) throw new Error("Missing native tool signal");
       const aborted = () => process.send({ type: "tool-aborted" });
       signal.addEventListener("abort", aborted, { once: true });
@@ -193,6 +204,73 @@ async function heldSettlement(boundary = "tool") {
   expect(await readFile(rpc.effect, "utf8")).toBe("completed side effect");
   return rpc;
 }
+
+describe("Pi RPC duplicate boundary payloads", () => {
+  it("keeps large tool results and native turn events while emitting bounded wire boundaries", async () => {
+    const rpc = await rpcFixture("wire-boundaries");
+    rpc.send({ id: "large-turn", type: "prompt", message: "run the tools" });
+    expect(await rpc.response("large-turn")).toMatchObject({ success: true });
+    await rpc.settled();
+
+    // The full 17 MiB turn remains available to extensions. Each result is
+    // independently delivered and persisted, but duplicate wire boundaries
+    // must not aggregate it into one record beyond Guest's 16 MiB limit.
+    expect(await rpc.notification("native-turn-end")).toMatchObject({
+      hasMessage: true,
+      toolResultCount: 17,
+      toolResultBytes: 17 * 1024 * 1024,
+    });
+    const toolRecords = rpc.records.filter((record) => {
+      const message = record.message;
+      return (
+        record.type === "message_end" &&
+        typeof message === "object" &&
+        message !== null &&
+        "role" in message &&
+        message.role === "toolResult"
+      );
+    });
+    expect(toolRecords).toHaveLength(17);
+    expect(assistantEnds(rpc.records).at(-1)).toMatchObject({
+      message: { content: [{ type: "text", text: "complete" }] },
+    });
+    const boundaries = rpc.records.filter((record) => {
+      return record.type === "turn_end" || record.type === "agent_end";
+    });
+    expect(
+      boundaries.some((record) => {
+        return record.type === "turn_end";
+      }),
+    ).toBe(true);
+    expect(
+      boundaries.some((record) => {
+        return record.type === "agent_end";
+      }),
+    ).toBe(true);
+    for (const record of boundaries) {
+      expect(record).not.toHaveProperty("message");
+      expect(record).not.toHaveProperty("messages");
+      expect(record).not.toHaveProperty("toolResults");
+    }
+    for (const record of rpc.records) {
+      expect(Buffer.byteLength(JSON.stringify(record))).toBeLessThan(
+        16 * 1024 * 1024,
+      );
+    }
+    const persisted = await rpc.reopen();
+    const results = persisted
+      .buildSessionContext()
+      .messages.filter((message) => {
+        return message.role === "toolResult";
+      });
+    expect(results).toHaveLength(17);
+    for (const result of results) {
+      expect(result.content).toEqual([
+        { type: "text", text: "x".repeat(1024 * 1024) },
+      ]);
+    }
+  }, 30_000);
+});
 
 function assistantEnds(records: Array<Record<string, unknown>>) {
   return records.filter((record) => {

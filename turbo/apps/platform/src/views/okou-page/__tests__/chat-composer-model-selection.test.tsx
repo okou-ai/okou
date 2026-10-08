@@ -2,6 +2,7 @@ import {
   chatThreadsContract,
   type ChatThreadEvent,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
 import type {
   AvailableRunModel,
   ModelProviderType,
@@ -14,7 +15,10 @@ import {
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { mockCatalogDisplayName } from "../../../mocks/handlers/api-model-catalog.ts";
+import {
+  createMockModelCatalog,
+  mockCatalogDisplayName,
+} from "../../../mocks/handlers/api-model-catalog.ts";
 import {
   closeModelPanel,
   modelOption,
@@ -283,6 +287,74 @@ test("Choose effort for a new chat and keep Fast independent", async () => {
       }),
     );
   });
+});
+
+test("Start a new chat on the route default when the saved effort is no longer offered", async () => {
+  const runStarted = createDeferredPromise<void>(context.signal);
+  let create: { reasoningEffort?: string } | undefined;
+  const lifecycle = installRunChat({
+    selectedModel: "claude-sonnet-5",
+    onRunCreate: () => {
+      runStarted.resolve(undefined);
+    },
+  });
+  configureRunModels(["claude-sonnet-5"]);
+  const catalog = createMockModelCatalog();
+  const currentEfforts = ["low", "medium", "high", "extra"];
+  context.mocks.api(modelCatalogContract.get, ({ respond }) => {
+    return respond(200, {
+      ...catalog,
+      routes: catalog.routes.map((route) => {
+        return route.model === "claude-sonnet-5"
+          ? { ...route, efforts: currentEfforts }
+          : route;
+      }),
+    });
+  });
+  context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
+    create = body;
+    if (
+      body.reasoningEffort !== undefined &&
+      !currentEfforts.includes(body.reasoningEffort)
+    ) {
+      return respond(400, {
+        error: {
+          code: "BAD_REQUEST",
+          message: "Reasoning effort is not supported by the selected model",
+        },
+      });
+    }
+    if (!body.clientThreadId) {
+      throw new Error("Expected a client thread ID for the new chat");
+    }
+    return respond(201, {
+      id: body.clientThreadId,
+      title: null,
+      createdAt: FIXTURE_DATE,
+      selectedModel: "claude-sonnet-5",
+      serviceTier: null,
+    });
+  });
+  context.mocks.data.userModelPreference({
+    ...preference("claude-sonnet-5"),
+    modelSettings: { "claude-sonnet-5": { effort: "max" } },
+  });
+  await setupPage({
+    context,
+    path: NEW_CHAT_PATH,
+  });
+  const composer = await readyComposer();
+  await expect(
+    composerModelTrigger("Claude Sonnet 5, High"),
+  ).resolves.toBeInTheDocument();
+  await fillComposer(composer, "Run on the default effort");
+  click(await findButton("Send"));
+  await runStarted.promise;
+  lifecycle.completeRun("The route default completed the task.");
+  await expect(
+    screen.findByText("The route default completed the task."),
+  ).resolves.toBeInTheDocument();
+  expect(create?.reasoningEffort).toBeUndefined();
 });
 
 test("Select the default effort on an existing thread without changing Fast", async () => {

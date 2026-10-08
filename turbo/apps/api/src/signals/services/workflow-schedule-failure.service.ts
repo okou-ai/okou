@@ -55,24 +55,6 @@ function advanceAfterPreRunFailure(
   return null;
 }
 
-function logPreRunFailure(
-  automation: AutomationRow,
-  failure: PreRunFailure,
-): void {
-  const context = {
-    automationId: automation.id,
-    workflowId: automation.workflowId,
-    orgId: automation.orgId,
-    userId: automation.ownerUserId,
-    error: failure.message,
-  };
-  if (failure.isCreditError) {
-    log.debug("Workflow automation skipped: insufficient credits", context);
-  } else {
-    log.error("Workflow automation pre-run failed", context);
-  }
-}
-
 /** A concurrent writer changed the selected Official automation. */
 class StalePreRunFailure extends Error {}
 
@@ -178,14 +160,17 @@ const recordSelectedMorningBriefPreRunFailure$ = command(
       return false;
     }
     if (outcome.disabled) {
-      log.warn("Workflow automation auto-disabled after consecutive failures", {
-        automationId: automation.id,
-        workflowId: automation.workflowId,
-        orgId: automation.orgId,
-        userId: automation.ownerUserId,
-        error: failure.message,
-        consecutiveFailures: outcome.consecutiveFailures,
-      });
+      log.debug(
+        "Workflow automation auto-disabled after consecutive failures",
+        {
+          automationId: automation.id,
+          workflowId: automation.workflowId,
+          orgId: automation.orgId,
+          userId: automation.ownerUserId,
+          error: failure.message,
+          consecutiveFailures: outcome.consecutiveFailures,
+        },
+      );
     }
     return true;
   },
@@ -199,7 +184,6 @@ export const recordPreRunFailure$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const { automation, failure, stillDueAt } = args;
-    logPreRunFailure(automation, failure);
     if (await set(recordSelectedMorningBriefPreRunFailure$, args, signal)) {
       return;
     }
@@ -242,14 +226,17 @@ export const recordPreRunFailure$ = command(
       updated &&
       updated.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES
     ) {
-      log.warn("Workflow automation auto-disabled after consecutive failures", {
-        automationId: automation.id,
-        workflowId: automation.workflowId,
-        orgId: automation.orgId,
-        userId: automation.ownerUserId,
-        error: failure.message,
-        consecutiveFailures: updated.consecutiveFailures,
-      });
+      log.debug(
+        "Workflow automation auto-disabled after consecutive failures",
+        {
+          automationId: automation.id,
+          workflowId: automation.workflowId,
+          orgId: automation.orgId,
+          userId: automation.ownerUserId,
+          error: failure.message,
+          consecutiveFailures: updated.consecutiveFailures,
+        },
+      );
     }
   },
 );
@@ -273,7 +260,6 @@ export const settleJournaledSchedulePreRunFailure$ = command(
       },
       signal,
     );
-    logPreRunFailure(args.automation, args.failure);
   },
 );
 

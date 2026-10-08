@@ -6,11 +6,6 @@ import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import {
-  insertLegacyHostedSiteFixture,
-  insertLegacyHostedSiteHistoryFixture,
-} from "../../../test-fixtures/hosted-sites";
-import { upsertOrgPlanEntitlementFixture } from "../../../test-fixtures/org-plan-entitlement";
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createPublicUnfundedProFixture } from "./helpers/public-unfunded-pro-fixture";
@@ -18,6 +13,10 @@ import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createMapsBillingApi } from "./helpers/api-bdd-maps-billing";
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import {
+  createChatEventsFixture,
+  okouTokenFromClaim,
+} from "./helpers/chat-events-fixture";
 import {
   VERTEX_MAPS_URL,
   vertexMapsResponse,
@@ -43,68 +42,75 @@ legacy zero-host.test.ts and zero-maps.test.ts route tests:
 const context = testContext();
 
 describe("FILE-01: hosted-site deployments through host APIs", () => {
-  it.each([false, true])(
-    "preserves history and aliases across out-of-order legacy/rollback completion (immutable first: %s) [HOST-A]",
-    async (immutableFirst) => {
-      const bdd = createBddApi(context);
-      const api = createHostMapsBddApi(context);
-      const actor = bdd.user();
-      if (!actor.orgId) {
-        throw new Error("Expected legacy site owner organization");
+  it("preserves history and aliases across out-of-order completion [HOST-A]", async () => {
+    const bdd = createBddApi(context);
+    const api = createHostMapsBddApi(context);
+    const actor = bdd.user();
+    const capture = api.captureHostedSitesS3();
+    const site = `publication-history-${randomUUID().slice(0, 8)}`;
+    const files = [hostedTextFile("/index.html", "<main>published</main>")];
+    const body = {
+      site,
+      artifactKind: "hosted-site" as const,
+      spaFallback: false,
+      files,
+    };
+    const first = await api.prepareHostedSite(actor, body);
+    const second = await api.prepareHostedSite(actor, body);
+    expect(second.siteId).toBe(first.siteId);
+    expect(first.deploymentVersion).toBe(1);
+    expect(second.deploymentVersion).toBe(2);
+    await api.completeHostedSite(actor, second.deploymentId);
+    const completedFirst = await api.completeHostedSite(
+      actor,
+      first.deploymentId,
+    );
+    expect(completedFirst).toMatchObject({
+      deploymentId: first.deploymentId,
+      isActive: false,
+      activeDeploymentVersion: 2,
+    });
+    await expect(api.readHostedSiteFiles(actor, site)).resolves.toMatchObject({
+      deploymentId: second.deploymentId,
+    });
+    for (const deployment of [first, second]) {
+      for (const target of [site, `dpl-${deployment.deploymentId}`]) {
+        await expect(
+          api.readHostedSiteFiles(actor, target, deployment.deploymentVersion),
+        ).resolves.toMatchObject({
+          deploymentId: deployment.deploymentId,
+          artifactUrl: deployment.artifactUrl,
+          files,
+        });
       }
-      const capture = api.captureHostedSitesS3();
-      const site = `legacy-history-${randomUUID().slice(0, 8)}`;
-      const files = [hostedTextFile("/index.html", "<main>historical</main>")];
-      // Historical/rollback writers could attach two uploads to one site.
-      const history = await insertLegacyHostedSiteHistoryFixture({
-        orgId: actor.orgId,
-        userId: actor.userId,
-        site,
-        files,
-        immutableFirst,
-      });
-      const first = history.deployments[0];
-      const second = history.deployments[1];
-      if (!first || !second) {
-        throw new Error("Expected two legacy uploads");
-      }
-      await api.completeHostedSite(actor, second.id);
-      const completedFirst = await api.completeHostedSite(actor, first.id);
-      expect(completedFirst).toMatchObject({
-        deploymentId: first.id,
-        isActive: false,
-        activeDeploymentVersion: 2,
-      });
-      await expect(api.readHostedSiteFiles(actor, site)).resolves.toMatchObject(
-        {
-          deploymentId: second.id,
-        },
+      expect(capture.puts).toContainEqual(
+        expect.objectContaining({
+          key: `sites/brands/okou/publications/${deployment.deploymentId}/manifest.json`,
+        }),
       );
-      for (const deployment of history.deployments) {
-        for (const target of [site, `dpl-${deployment.id}`]) {
-          await expect(
-            api.readHostedSiteFiles(
-              actor,
-              target,
-              deployment.deploymentVersion,
-            ),
-          ).resolves.toMatchObject({
-            deploymentId: deployment.id,
-            artifactUrl: deployment.artifactUrl,
-            files,
-          });
-        }
-        expect(capture.puts).toContainEqual(
-          expect.objectContaining({
-            key: `${deployment.r2Prefix}/manifest.json`,
-          }),
-        );
-      }
-      const listed = await api.readHostedSiteDeployments(actor, site);
-      expect(listed.deployments).toHaveLength(2);
-      expect(listed.activeDeploymentId).toBe(second.id);
-    },
-  );
+    }
+    const listed = await api.readHostedSiteDeployments(actor, site);
+    expect(listed.deployments).toHaveLength(2);
+    expect(listed.activeDeploymentId).toBe(second.deploymentId);
+  });
+
+  it("refuses completion by another member of the owner's organization", async () => {
+    const bdd = createBddApi(context);
+    const api = createHostMapsBddApi(context);
+    const actor = bdd.user();
+    api.captureHostedSitesS3();
+    const prepared = await api.prepareHostedSite(actor, {
+      site: `owned-${randomUUID().slice(0, 8)}`,
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      files: [hostedTextFile("/index.html", "<main>owned</main>")],
+    });
+    const member = bdd.user({ orgId: actor.orgId });
+    await api.requestCompleteHostedSite(member, prepared.deploymentId, [404]);
+    await expect(
+      api.completeHostedSite(actor, prepared.deploymentId),
+    ).resolves.toMatchObject({ isActive: true });
+  });
 
   it("gives concurrent publications of one preferred slug their own versions [HOST-A]", async () => {
     const bdd = createBddApi(context);
@@ -291,69 +297,35 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
     expect(history.deployments).toHaveLength(8);
   });
 
-  it("reserves legacy-layout hosted-site identities and creates new sites in the current layout [HOST-A]", async () => {
+  it("publishes browser and claimed Runner sites in the current layout [HOST-A]", async () => {
     mockEnv("OKOU_PUBLIC_HOST_DOMAIN", "okou.app");
     mockEnv("ZERO_HOST_DOMAIN", "sites.vm0.io");
     mockEnv("OKOU_HOST_SCHEME", "https");
     mockEnv("ZERO_HOST_SCHEME", "https");
-    const bdd = createBddApi(context);
     const api = createHostMapsBddApi(context);
-    const runs = createRunsApi(context);
-    const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Expected branded host actor to have an org");
-    }
+    const fixture = createChatEventsFixture(context);
+    const entitled = await fixture.entitledNativeChatActor();
+    const actor = entitled.actor;
     const capture = api.captureHostedSitesS3();
-    await upsertOrgPlanEntitlementFixture({ orgId: actor.orgId });
-
-    const vm0Site = `bdd-vm0-brand-${randomUUID().slice(0, 8)}`;
-    const vm0Body = {
-      site: vm0Site,
-      artifactKind: "hosted-site" as const,
-      spaFallback: false,
-      files: [hostedTextFile("/index.html", "<main>VM0 site</main>")],
-    };
-    // Historical site identities remain reserved after redeployment is retired.
-    const legacySiteId = await insertLegacyHostedSiteFixture({
-      orgId: actor.orgId,
-      userId: actor.userId,
-      site: vm0Site,
-    });
-    const replacement = await api.prepareHostedSite(actor, vm0Body);
-    expect(replacement.siteId).not.toBe(legacySiteId);
-    expect(replacement.publicSlug.startsWith(`${vm0Site}-`)).toBeTruthy();
-    expect(replacement.publicSlug.slice(vm0Site.length + 1)).toMatch(
-      /^[a-z0-9]{4}$/u,
-    );
-    expect(replacement.url).toBe(`https://${replacement.publicSlug}.okou.app`);
-    await expect(
-      api.readHostedSiteDeployments(actor, vm0Site),
-    ).resolves.toMatchObject({
-      siteId: legacySiteId,
-      publicSlug: vm0Site,
-      deployments: [],
-    });
 
     const browserOkouSite = `bdd-browser-okou-${randomUUID().slice(0, 8)}`;
     const createdOnOkou = await api.prepareHostedSite(actor, {
-      ...vm0Body,
       site: browserOkouSite,
+      artifactKind: "hosted-site",
+      spaFallback: false,
+      files: [hostedTextFile("/index.html", "<main>Browser site</main>")],
     });
     expect(createdOnOkou.url).toBe(`https://${browserOkouSite}.okou.app`);
 
-    context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-      data: [
-        {
-          organization: { id: actor.orgId },
-          role: "org:admin",
-        },
-      ],
+    const run = await fixture.sendChatRun(actor, {
+      agentId: entitled.agentId,
+      prompt: "Publish a hosted site from the Runner",
     });
-    const okouToken = runs.okouTokenForRunWithCapabilities(
-      actor,
-      randomUUID(),
-      ["host:write"],
+    const { claim } = await fixture.claimChatRun(
+      entitled.runnerGroup,
+      run.runId,
     );
+    const okouToken = okouTokenFromClaim(claim);
     const okouSite = `bdd-okou-brand-${randomUUID().slice(0, 8)}`;
     const createdWithOkouToken = await api.prepareHostedSite(
       { bearerToken: okouToken },

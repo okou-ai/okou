@@ -1,5 +1,162 @@
 # Deployment Compatibility
 
+## Pi OpenRouter Chat Completions route (generation 5, default off)
+
+Pi model configuration gains generation 5 (`dialect: "openai-completions"`,
+`provider: "openrouter"`, exactly one `api-key` binding, no `serviceTier`). It
+moves Pi OpenRouter routes from OpenAI Responses to OpenRouter Chat
+Completions: the Auto `okou-1.0` Preset route, Pi memory maintenance and the
+API-side Stage 1 extraction. Generation 4 was the retired native carrier;
+Runners built before its removal can still advertise 4, so the new route
+skips to 5 and 4 stays unsupported everywhere.
+
+**Readers ship first.** Runners advertise `[1, 2, 3, 5]` on claim and
+validate the generation 5 shape. The API claim gate, the CLI launch reader,
+the Pi runtime and the guest-agent request diagnostics accept it. Writers are
+gated by the `piOpenRouterChatCompletions` feature switch, off by default;
+with it off every captured route is unchanged.
+
+**Activation.** Enable the switch only after every serving Runner advertises
+generation 5. The claim gate never hands a generation 5 job to an older
+Runner; such a job stays queued until a capable Runner claims it. The switch
+is evaluated
+when a Run's launch context is captured; already captured Runs keep their
+route. Pi memory maintenance and Stage 1 read the same switch from the owner's
+feature-switch context.
+
+**Request policy.** The Preset owns reasoning and routing: requests carry no
+reasoning parameters for Preset models. The client sends Anthropic-style
+cache breakpoints, which OpenRouter translates for other upstreams, replays
+`reasoning_details`, and sets `x-session-id` to the owning chat thread
+(`OKOU_CHAT_THREAD_ID`) so every Run of a thread keeps one upstream sticky
+route. The firewall already authorizes `/chat/completions` for
+`openrouter-codex`.
+
+**Context window.** Pi now uses a 1,000,000-token window for `okou-1.0`, the
+smallest window among the Preset's candidate backends (GPT-6 Luna, Claude
+Haiku 5.5, DeepSeek V4.1 Flash). The Codex projection is unchanged.
+
+**Rollback.** Disabling the switch returns new launches to Responses. Rolling
+the Runner back below this release while the switch is on leaves generation 5
+jobs queued; disable the switch first.
+
+## SEO partial SERP results (issue #36799)
+
+`POST /api/seo/serp` returns HTTP 200 for DataForSEO task status `40106`
+when the successful single-task envelope contains non-empty SERP items.
+The response includes optional `partialResults: true` and retains the full raw
+provider response in `result`, including the task status and completeness
+message. Billing uses the provider-reported cost, not the requested depth, and
+completed partial results are not retried. HTTP/provider/envelope failures,
+invalid partial results, and `40106` outside SERP remain failures. Full success
+and `40102` no-search-results responses are unchanged and omit the new field.
+
+- **Old CLI → new API:** the additive property does not invalidate the old
+  response schema. Raw task status/message and available items are still
+  returned; the old human formatter does not add a dedicated partial-result
+  warning.
+- **New CLI → old API:** ordinary responses without the optional property
+  render as before. An old API still returns 502 for `40106`, which the CLI
+  continues to surface as an error; the CLI does not invent partial data.
+- **New CLI → new API:** human output explicitly warns about incomplete
+  results; `--json` preserves the marker, raw provider metadata, and billing.
+
+No database or Runner protocol changes, rollout fallback, or version floor are
+required. This change does not deploy or activate production changes.
+
+## Desktop Computer Use plugins retired (2026-10-08)
+
+The Native Desktop replacement in #37889 removed the filesystem and MCP plugin
+runtimes and advertises only native Computer Use commands. The remaining
+`computerUseDesktopPlugins` switch, filesystem/MCP CLI commands, `plugin.call`
+contracts, plugin command/content endpoints, capability routing, result offload
+and plugin audit branches are now removed together.
+
+This feature was never generally released: its registry was default-off and
+staff-enabled, and the owner confirmed it is unused. Per [fallback policy](fallback.md#2-features-behind-a-feature-switch-need-no-fallback),
+no old-plugin-client compatibility branch or data migration is required. Old
+CLI plugin requests against the new API receive an unavailable endpoint; the new
+CLI exposes no plugin commands and makes no plugin requests to an older API.
+Command and screenshot reads select only supported native command kinds; audit
+lists do the same, so retired records cannot invalidate native responses.
+Historical staff plugin command IDs are unavailable after the cutover.
+
+This retirement leaves Native Desktop and older native-command hosts' command,
+permission, claim, completion, audit and screenshot contracts unchanged. The
+separate session-authentication rollout follows its own compatibility gates below.
+The existing capability-empty host behavior is preserved. Shared Computer Use tables
+and screenshot retention remain intact; this change performs no historical
+command or object-storage deletion. Retired switch overrides already pass through
+the general registry-key filtering.
+
+## Dynamic Run inputs without Agent execution configuration
+
+The first delivery of [#37970](https://github.com/okou-ai/okou/issues/37970)
+combines removal of the synthetic Agent execution configuration and baseline
+observation with current-input selection. The Agent remains the authorized
+identity for instructions, workflows, and connector selection. Framework comes
+from the current model provider, while Runner group and profile come from runtime
+routing policy. These values no longer pass through an Agent configuration.
+
+Each newly prepared Run resolves current instructions and skill resources.
+Environment precedence remains organization variables, user variables, then
+explicit current-Run overrides. A continuation no longer implicitly inherits
+the preceding Run's variables or configurable volume versions. Provider and
+connector credentials, permission checks, encryption, and the trusted platform
+environment overlay retain their existing owners. Teams status preserves its
+environment response fields, whose Agent-declared requirement lists are empty.
+
+Foreground Pi continuations resolve the current user-memory HEAD and its current
+summary projection on every Run. A disabled, missing, or pending projection keeps
+the existing no-content behavior for that Run; a later Run performs a fresh
+selection. Memory-maintenance producer pins and publication fences are unchanged.
+
+`storageMounts[].baselineCandidate` was optional observation metadata. New API
+with old Runner is compatible because the field is absent; old API with new
+Runner is compatible because the decoder ignores unknown fields. Removing the
+observer does not change immutable-version cache identity or cache application.
+The CLI and Guest launch contracts otherwise remain unchanged.
+
+This delivery requires no database migration. Native-history continuation still
+uses the existing Session, Conversation, and Checkpoint protocol. Non-memory
+writeback artifacts still use existing Session storage. Previously admitted Runs
+retain their captured launch inputs; the new selection policy applies to newly
+prepared Runs. Rolling back the API restores the previous selection policy.
+Thread-owned network storage and retirement of those persisted entities are
+later deliveries in the Epic.
+
+## Pi turn-end stdout boundaries (2026-10-08)
+
+The CLI's Pi JSON/RPC serializer omits `turn_end.message` and
+`turn_end.toolResults`, following the existing `agent_end.messages` contract.
+Every message remains authoritative in its individual `message_end` record and
+the persisted session. Native extension callbacks retain the full turn event;
+`agent_settled` still owns the terminal result.
+
+New CLI with old Guest is compatible: old Guest already ignores `turn_end`,
+and the marker no longer aggregates messages into a potentially oversized line.
+New Guest with old CLI recognizes `turn_end` and drains an over-limit duplicate
+boundary without dropping the next record. Run-captured CLI packages and Guest
+images can coexist across versions. The oversized `turn_end` guard can be
+removed only after pre-change installed CLI images, captured queued/active runs
+and supported rollback packages have drained; track that verification in
+[#37930](https://github.com/okou-ai/okou/issues/37930). Unknown and consumed records
+such as `message_end` remain fatal above the 16 MiB line limit. Rolling back
+both components restores the previous oversized-turn failure. No stored data
+migration or API change is required.
+
+## Native Desktop session authentication (expand release)
+
+Native Desktop uses additive session-authenticated host routes. Migration
+`1344_computer_use_session_auth` adds session binding, provider-validation time,
+connection generation, and command-claim generation; `token_hash` becomes nullable
+for new Native hosts. Legacy writes remain valid. Deploy the expanded API fully
+before releasing the Native client. Old installed clients retain their host-token
+protocol during the upgrade window; new Native against an old API stays offline
+and never acquires a host token. Existing installation and chat host identities
+are preserved. Legacy contraction requires the Desktop version floor and API
+serving/rollback drain. See [the full contract](desktop-session-auth.md).
+
 ## Connector catalog column reads (expand release)
 
 Migrations `1339_expand_connector_catalog_entry_columns` and
@@ -7648,8 +7805,8 @@ App requests already use `view=scoped`.
 Before #36992, the original conversion-preview endpoint contained only an
 aggregate count of other owners' SSH hosts and an opaque impact snapshot. The
 action requires a current organization admin, expected Access revision, and
-unchanged impact. The transaction locks
-the Access row before host rows, detaches other owners' references into
+unchanged impact. Before #37941, the transaction locked
+the Access row before host rows. Conversion detaches other owners' references into
 `needs_rebind`, advances effective generations, then makes the same Access row
 personal to the admin without decrypting or replacing its Service Token.
 Admin-owned SSH references remain bound. After commit, Access-list and affected
@@ -7681,7 +7838,7 @@ promotion or reviewed delete operations.
 Before #36992, the legacy deletion-preview endpoint let a current admin review
 Organization deletion impact with owner identity and per-owner host counts. The
 optional opaque snapshot is required only when other owners' hosts are affected. DELETE rechecks the exact revision and host
-set under the Access-before-host lock, blocks any actor-owned reference, and
+set under its mutation fence (Access-before-host before #37941), blocks any actor-owned reference, and
 atomically detaches only other owners' references into `needs_rebind` before
 deleting the config (the same-org FK remains restrictive). Profiles missing
 from the member directory are shown by stable owner ID; their hosts still
@@ -7700,9 +7857,12 @@ is safe once migration `1222` and those prerequisites are verified.
 
 ### Cloudflare Access trigger retirement (#37355, #37369)
 
-The SSH create/update writer validates a referenced config in its transaction:
-it selects only a same-organization shared config or the actor's own Personal
-config with a config-row `FOR SHARE` lock before binding. Inline SSH creation
+The intended SSH create/update admission protocol validates a referenced config
+in its transaction: it selects only a same-organization shared config or the
+actor's own Personal config with a config-row `FOR SHARE` lock before binding.
+The later current-main investigation in #37941 found create using an unlocked
+transactional read and edit using only a preflight read; that repair restores
+transaction-held shared admission and fixes the configuration/host inversion. Inline SSH creation
 inserts its Personal config in the same transaction. Config creation limits
 Organization scope to current admins; name/token update, reviewed delete and
 both conversion writers lock the config `FOR UPDATE` before changing it.
@@ -7738,6 +7898,46 @@ window, not a general guarantee for external SQL, catalog drift or corrupted
 rows. Recheck the serving aliases and rollback floor before releasing the
 contraction. A PR merge, CI pass or smoke-clone migration does **not** establish
 production migration journal completion; record it only after the real release.
+
+### Cloudflare SSH concurrency repair (#37941)
+
+Configuration rename/token update, deletion, Personal-to-Organization promotion
+and Organization-to-Personal adoption acquire current referencing hosts in UUID
+order with `FOR NO KEY UPDATE`, then the configuration `FOR UPDATE`. The weaker
+host lock remains compatible with implicit `FOR KEY SHARE` checks from restrictive
+parent-login deletion. Runner pin/observation continues to acquire its host
+before shared login/configuration authority.
+
+Selected host create/edit rechecks same-organization Organization or same-owner
+Personal visibility with `FOR SHARE` inside the write transaction, before inline
+resource inserts, held through commit. An existing-host edit first locks and
+reloads its host and rechecks the expected host generation. The unlocked early
+check rejects a bad selection before preparing a new login; it is not commit
+authority. Configuration existence and the same-org FK do not prove Personal
+visibility, and `FOR KEY SHARE` does not fence a non-key scope change.
+
+After the exclusive configuration fence, each mutation rescans references. A
+new reference outside the locked set ends an explicitly unwritten attempt;
+there is at most one fresh host-first transaction with the same prepared values.
+A second expansion conflicts. No transaction acquires a new host in reverse
+order after the configuration fence, and no exception/deadlock or ambiguous
+write is replayed. Current revision, management/scope, exhaustion and exact
+impact checks precede business writes. An empty-set preview cannot authorize
+affecting a newly bound member host. Encryption stays outside transactions;
+identifier-only best-effort notices and existing batching/cache windows stay
+post-commit. Login, target, learned trust, atomic generations and explicit
+protected `needs_rebind` behavior are preserved.
+
+No schema, migration, App/Runner DTO or provider changes are introduced. Old
+API configuration-first/unlocked writers retain the original concurrency risks
+while serving; code merge or green CI does not prove that they have drained.
+This change does not authorize production drain, deployment or activation.
+Independent SSH-login revision semantics are unchanged. Writer inventory found
+login rotation host-before-login and Clerk cleanup host-before-login-before-config,
+but their bulk host updates/deletes are not explicitly UUID-ordered. This is
+an investigation boundary, not a demonstrated new cleanup defect or proof of
+global deadlock freedom. Tests use native PostgreSQL and genuine API/authorized
+Runner lifecycles, never SQL barriers or private business-row construction.
 
 ### Cloudflare Access impact-review presentation (#36988)
 
@@ -8134,9 +8334,25 @@ Queued Runs retain their captured CLI package and exact account mapping.
 Builtin MCP admission requires the Run's Okou token for authenticated MCP
 discovery. None/manual and Automatic methods are executable. Plaud's Automatic
 method defaults off in auth-method discovery through `plaudConnector`; this
-switch does not gate existing account callbacks or execution. The addon honors explicit
-owner intent and never injects another owner's credentials when the requested
-owner is absent, including overlapping builtin/custom destinations.
+switch does not gate existing account callbacks or execution.
+
+Outside the platform API admission path, connector intent is an owner-disambiguation
+hint, not a credential-identity lock. The addon matches active firewall URLs and
+applies route precedence first. One eligible owner governs the request even when
+intent is absent, malformed, mismatched, or names an absent owner. Removing a builtin
+at an overlapping destination can therefore leave a sole eligible custom owner whose
+credentials may be injected, subject to its authorization checks. Multiple eligible
+owners require valid intent selecting one of them; unresolved ambiguity is blocked.
+With no active firewall match, ordinary network fallback applies without resolving
+or injecting managed connector credentials. See
+[ordinary connector firewall owner selection](mitm-addon-contracts.md#ordinary-connector-firewall-owner-selection).
+
+This ordinary selection rule does not relax the separate
+[platform connector authorization path policy](mitm-addon-contracts.md#platform-connector-authorization-path-policy),
+including the `/mcp` intent-admission gate, or the HTTP 409
+`connector_auth_owner_conflict` guard for confirmed authentication on a unique
+inactive route. The selected owner's permission, network-policy, destination,
+credential-resolution, and current-owner revalidation checks still apply.
 
 No-auth builtin and custom MCP requests skip credential validity checks and
 proxy auth resolution, including Automatic builtin and custom MCP resolved to no

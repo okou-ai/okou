@@ -15,51 +15,22 @@ pub(super) fn resolve(
     let Some(effort) = user_env.get("OKOU_REASONING_EFFORT") else {
         return Ok(None);
     };
-    let model = match framework {
-        Framework::Codex => {
-            let model = user_env
-                .get("OPENAI_MODEL")
-                .map(String::as_str)
-                .unwrap_or("");
-            model.strip_prefix("openai/").unwrap_or(model)
-        }
-        _ => user_env
-            .get("ANTHROPIC_MODEL")
-            .map(String::as_str)
-            .unwrap_or(""),
+    // The API admits an effort only when the selected model's catalog route
+    // lists it, so the model choice is not checked again here. Only the
+    // harness vocabulary is a protocol fact of this launcher.
+    let supported = match framework {
+        Framework::Codex => matches!(
+            effort.as_str(),
+            "low" | "medium" | "high" | "xhigh" | "max" | "ultra"
+        ),
+        _ => matches!(
+            effort.as_str(),
+            "low" | "medium" | "high" | "extra" | "max" | "ultracode"
+        ),
     };
-    let supported = matches!(
-        (framework, model, effort.as_str()),
-        (
-            Framework::Codex,
-            "gpt-6-astra"
-                | "gpt-6.1-sol"
-                | "gpt-6-sol"
-                | "gpt-6-luna"
-                | "gpt-5.6-sol"
-                | "gpt-5.6-luna",
-            "low" | "medium" | "high" | "xhigh" | "max",
-        ) | (
-            Framework::Codex,
-            "gpt-6-astra" | "gpt-6-sol" | "gpt-5.6-sol",
-            "ultra",
-        ) | (
-            Framework::Codex,
-            "gpt-5.5",
-            "low" | "medium" | "high" | "xhigh"
-        ) | (
-            Framework::ClaudeCode,
-            "claude-fable-5-1"
-                | "claude-opus-5-5"
-                | "claude-opus-5"
-                | "claude-sonnet-5"
-                | "claude-sonnet-5-5",
-            "low" | "medium" | "high" | "extra" | "max" | "ultracode",
-        )
-    );
     if !supported {
         return Err(AgentError::Execution(
-            "OKOU_REASONING_EFFORT is not supported by the selected native model".to_string(),
+            "OKOU_REASONING_EFFORT is not supported by the selected native harness".to_string(),
         ));
     }
     // Okou names Claude's extended level `extra`; Claude Code 2.1.266 calls
@@ -72,58 +43,54 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rejects_invalid_or_unsupported_native_choices_before_launch() {
-        for (framework, model_key, model, effort) in [
-            (Framework::Codex, "OPENAI_MODEL", "gpt-5.5", "max"),
-            (Framework::Codex, "OPENAI_MODEL", "gpt-5.6-luna", "ultra"),
-            (Framework::Codex, "OPENAI_MODEL", "gpt-5.5", "ultra"),
-            (Framework::Codex, "OPENAI_MODEL", "gpt-6-astra", "extra"),
-            (Framework::Codex, "OPENAI_MODEL", "gpt-6-astra", "ultracode"),
-            (Framework::Codex, "OPENAI_MODEL", "gpt-6-sol", "extra"),
-            (Framework::Codex, "OPENAI_MODEL", "gpt-6-sol", "ultracode"),
-            (Framework::Codex, "OPENAI_MODEL", "gpt-6-luna", "ultra"),
+    fn rejects_efforts_outside_the_harness_vocabulary() {
+        for (framework, effort) in [
+            (Framework::Codex, "extra"),
+            (Framework::Codex, "ultracode"),
+            (Framework::Codex, ""),
+            (Framework::ClaudeCode, "xhigh"),
+            (Framework::ClaudeCode, "ultra"),
+            (Framework::ClaudeCode, ""),
+        ] {
+            let env = HashMap::from([("OKOU_REASONING_EFFORT".to_string(), effort.to_string())]);
+            assert!(resolve(framework, &env).is_err(), "{framework:?}: {effort}");
+        }
+    }
+
+    #[test]
+    fn accepts_harness_efforts_for_any_catalog_model() {
+        for (framework, model_key, model, effort, expected) in [
             (
                 Framework::ClaudeCode,
                 "ANTHROPIC_MODEL",
-                "claude-sonnet-4-6",
-                "high",
+                "claude-haiku-5-5",
+                "medium",
+                "medium",
             ),
             (
                 Framework::ClaudeCode,
                 "ANTHROPIC_MODEL",
-                "anthropic/claude-opus-5-5",
-                "high",
-            ),
-            (
-                Framework::ClaudeCode,
-                "ANTHROPIC_MODEL",
-                "claude-opus-5-5",
+                "claude-haiku-5-5",
+                "extra",
                 "xhigh",
             ),
             (
-                Framework::ClaudeCode,
-                "ANTHROPIC_MODEL",
-                "claude-opus-5",
-                "xhigh",
-            ),
-            (
-                Framework::ClaudeCode,
-                "ANTHROPIC_MODEL",
-                "custom-model",
-                "high",
-            ),
-            (
-                Framework::ClaudeCode,
-                "ANTHROPIC_MODEL",
-                "claude-opus-5",
-                "",
+                Framework::Codex,
+                "OPENAI_MODEL",
+                "openai/gpt-7",
+                "ultra",
+                "ultra",
             ),
         ] {
             let env = HashMap::from([
                 (model_key.to_string(), model.to_string()),
                 ("OKOU_REASONING_EFFORT".to_string(), effort.to_string()),
             ]);
-            assert!(resolve(framework, &env).is_err(), "{model}: {effort}");
+            assert_eq!(
+                resolve(framework, &env).ok().flatten(),
+                Some(expected),
+                "{model}: {effort}"
+            );
         }
     }
 }

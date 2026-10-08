@@ -49,6 +49,8 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
+import { Link as RouterLink } from "../router/link.tsx";
+import { shouldHandleLinkClick } from "../router/link-click.ts";
 import {
   allVisibleWorkflows$,
   setWorkflowAutomationEnabled$,
@@ -756,13 +758,13 @@ function WorkflowSelectionStep({
   workflows,
   agents,
   loading,
-  onSelectWorkflow,
+  onClose,
   onCreateWorkflow,
 }: {
   readonly workflows: readonly WorkflowSummary[];
   readonly agents: readonly AgentResponse[];
   readonly loading: boolean;
-  readonly onSelectWorkflow: (workflow: WorkflowSummary) => void;
+  readonly onClose: () => void;
   readonly onCreateWorkflow: () => void;
 }) {
   const { t } = useTranslation();
@@ -817,12 +819,15 @@ function WorkflowSelectionStep({
               return item.agentId === workflow.agentId;
             });
             return (
-              <button
+              <RouterLink
                 key={workflow.id}
-                type="button"
+                pathname={ROUTES.workflowDetailAutomations}
+                options={{ pathParams: { workflowId: workflow.id } }}
                 className="flex min-w-0 items-start gap-3 rounded-lg border border-border/60 px-3 py-3 text-left transition-colors hover:bg-state-hover"
-                onClick={() => {
-                  onSelectWorkflow(workflow);
+                onClick={(event) => {
+                  if (shouldHandleLinkClick(event)) {
+                    onClose();
+                  }
                 }}
               >
                 <span className="min-w-0">
@@ -846,7 +851,7 @@ function WorkflowSelectionStep({
                     ) : null}
                   </span>
                 </span>
-              </button>
+              </RouterLink>
             );
           })}
         </div>
@@ -1036,13 +1041,6 @@ export function CreateWorkflowAutomationDialog() {
     );
   };
 
-  const openWorkflowAutomations = (workflow: WorkflowSummary) => {
-    setOpen(false);
-    navigate(ROUTES.workflowDetailAutomations, {
-      pathParams: { workflowId: workflow.id },
-    });
-  };
-
   const creatingAutomationInChat = intent === "automation-chat";
   const creatingWorkflow = intent === "workflow";
   const selectingExistingWorkflow = intent === "automation";
@@ -1089,7 +1087,9 @@ export function CreateWorkflowAutomationDialog() {
             workflows={workflows}
             agents={agents}
             loading={workflowsLoading}
-            onSelectWorkflow={openWorkflowAutomations}
+            onClose={() => {
+              setOpen(false);
+            }}
             onCreateWorkflow={startCreateWorkflow}
           />
         ) : (

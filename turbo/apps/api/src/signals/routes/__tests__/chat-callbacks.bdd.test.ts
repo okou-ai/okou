@@ -51,7 +51,6 @@ const chatCallbacks = createChatCallbacksApi(context);
 const integrations = createBddIntegrationApi(context);
 const misc = createMiscRoutesApi(context);
 
-const USER_ARTIFACTS_BUCKET = "test-user-artifacts";
 type UserMessage = Extract<
   ChatEvent,
   {
@@ -4452,8 +4451,8 @@ describe("CHAT-02: auto-send after failures", () => {
         size: 18,
       });
       storage.addObject({
-        bucket: USER_ARTIFACTS_BUCKET,
-        key: `artifacts/${actor.userId}/${upload.id}/failed-request.txt`,
+        bucket: "test-private-artifacts",
+        key: `private-artifacts/${upload.id}/failed-request.txt`,
         size: 18,
       });
       const file = await chat.completeUpload(actor, { id: upload.id });
@@ -4739,8 +4738,8 @@ describe("CHAT-02: auto-send after failures", () => {
       size: 18,
     });
     storage.addObject({
-      bucket: USER_ARTIFACTS_BUCKET,
-      key: `artifacts/${actor.userId}/${contextUpload.id}/incomplete-context.txt`,
+      bucket: "test-private-artifacts",
+      key: `private-artifacts/${contextUpload.id}/incomplete-context.txt`,
       size: 18,
     });
     const contextFile = await chat.completeUpload(actor, {
@@ -4773,8 +4772,8 @@ describe("CHAT-02: auto-send after failures", () => {
       size: 11,
     });
     storage.addObject({
-      bucket: USER_ARTIFACTS_BUCKET,
-      key: `artifacts/${actor.userId}/${queuedUpload.id}/queued-notes.txt`,
+      bucket: "test-private-artifacts",
+      key: `private-artifacts/${queuedUpload.id}/queued-notes.txt`,
       size: 11,
     });
     const queuedFile = await chat.completeUpload(actor, {

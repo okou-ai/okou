@@ -3,16 +3,12 @@ import type {
   ComputerUseAuthorizationRequestCreateResponse,
   ComputerUseCommandCreateResponse,
   ComputerUseCommandResponse,
-  ComputerUseHost,
   ComputerUseReadCommandKind,
   ComputerUseWriteCommandKind,
 } from "@okouai/api-contracts/contracts/computer-use";
-import type { ComputerUseAnyPluginCallBody } from "@okouai/api-contracts/contracts/computer-use-plugins";
 import {
   computerUseAuthorizationRequestsContract,
   computerUseCommandContract,
-  computerUseHostsContract,
-  computerUsePluginCommandContract,
   computerUseWriteCommandContract,
 } from "@okouai/api-contracts/contracts/computer-use";
 import {
@@ -124,34 +120,6 @@ export async function createComputerUseWriteCommand(
   handleError(result, "Failed to create computer-use write command");
 }
 
-export async function createComputerUsePluginCommand(
-  params: ComputerUseAnyPluginCallBody,
-): Promise<ComputerUseCommandCreateResponse> {
-  const config = await getComputerUseClientConfig();
-  const client = initClient(computerUsePluginCommandContract, config);
-  const result = await client.create({ body: params });
-
-  if (result.status === 200) {
-    return result.body;
-  }
-
-  handleError(result, "Failed to create computer-use plugin command");
-}
-
-export async function listComputerUseHosts(): Promise<
-  readonly ComputerUseHost[]
-> {
-  const config = await getComputerUseClientConfig();
-  const client = initClient(computerUseHostsContract, config);
-  const result = await client.list({});
-
-  if (result.status === 200) {
-    return result.body.hosts;
-  }
-
-  handleError(result, "Failed to list computer-use hosts");
-}
-
 export async function getComputerUseCommand(
   commandId: string,
 ): Promise<ComputerUseCommandResponse> {
@@ -207,36 +175,4 @@ export async function fetchComputerUseScreenshot(
   const mimeType =
     response.headers.get("content-type") ?? "application/octet-stream";
   return { buffer: Buffer.from(arrayBuffer), mimeType };
-}
-
-export async function fetchComputerUsePluginContent(
-  commandId: string,
-): Promise<{
-  readonly buffer: Buffer;
-  readonly mimeType: string;
-  readonly fileName: string;
-}> {
-  const config = await getComputerUseClientConfig();
-  const response = await fetch(
-    `${config.baseUrl}/api/computer-use/commands/${encodeURIComponent(
-      commandId,
-    )}/plugin-content`,
-    { headers: headersWithCliClientHeaders(config.baseHeaders) },
-  );
-
-  if (!response.ok) {
-    throw new ApiRequestError(
-      "Failed to download computer-use plugin content",
-      "REQUEST_FAILED",
-      response.status,
-    );
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  const mimeType =
-    response.headers.get("content-type") ?? "application/octet-stream";
-  const disposition = response.headers.get("content-disposition") ?? "";
-  const fileName =
-    /filename="([^"]+)"/.exec(disposition)?.[1] ?? "plugin-content.bin";
-  return { buffer: Buffer.from(arrayBuffer), mimeType, fileName };
 }

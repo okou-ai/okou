@@ -39,6 +39,7 @@ import {
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
   CONNECTOR_RUNTIME_SYNC_TARGETS_MAX,
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
+  PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION,
   PI_MODEL_CONFIG_CURRENT_GENERATION,
   PI_MODEL_CONFIG_DIALECT_TIER_GENERATION,
   PI_MODEL_CONFIG_LEGACY_GENERATION,
@@ -316,6 +317,12 @@ const expectedBindings = [
     rustConstName: "PI_MODEL_CONFIG_DIALECT_TIER_GENERATION",
     value: rustU32(PI_MODEL_CONFIG_DIALECT_TIER_GENERATION),
     rustDoc: ["Additive Pi generation with dialect-constrained request tiers."],
+  },
+  {
+    rustModulePath: ["runners"],
+    rustConstName: "PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION",
+    value: rustU32(PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION),
+    rustDoc: ["Additive Pi generation for OpenRouter Chat Completions routes."],
   },
   {
     rustModulePath: ["runners"],

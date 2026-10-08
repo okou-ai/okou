@@ -348,7 +348,7 @@ test("Use a public URL for a private Office attachment preview", async () => {
   expect(frame.getAttribute("src")).not.toContain(privateUrl);
 });
 
-test("Render a generated private image from the authenticated file reference", async () => {
+test("Render a generated private image and offer sharing by default", async () => {
   const filename = "private-image.png";
   const fileId = "f0000000-0000-4000-a000-000000000938";
   const resourceUrl =
@@ -380,7 +380,7 @@ test("Render a generated private image from the authenticated file reference", a
   expect(
     within(dialog).getByTestId("attachment-lightbox-image"),
   ).toHaveAttribute("src", resourceUrl);
-  expect(within(dialog).queryByLabelText(/^share$/i)).not.toBeInTheDocument();
+  expect(within(dialog).getByLabelText(/^share$/i)).toBeVisible();
 });
 
 test.each([

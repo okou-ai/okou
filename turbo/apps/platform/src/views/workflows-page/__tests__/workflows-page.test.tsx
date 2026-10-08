@@ -1575,16 +1575,6 @@ function linkByAriaLabel(
   return link;
 }
 
-function tabByName(name: string): HTMLElement {
-  const tab = queryAllByRoleFast("button").find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!tab) {
-    throw new Error(`${name} filter pill not found`);
-  }
-  return tab;
-}
-
 function selectOptionByLabel(
   label: string,
   option: string | RegExp,
@@ -1899,6 +1889,7 @@ test("Identify existing Stripe automations in the workflow list", async () => {
 });
 
 test("Filter workflows by automation and visibility", async () => {
+  const user = userEvent.setup();
   context.mocks.data.userPreferences({ timezone: "UTC" });
   mockAgentPageApis();
   mockChatLifecycle(context);
@@ -1918,6 +1909,16 @@ test("Filter workflows by automation and visibility", async () => {
     expect(linkByAriaLabel("Open Sales Research")).toBeInTheDocument();
   });
   expect(search()).toBe("");
+  const filterGroup = screen.getByRole("group", { name: "Workflows" });
+  const expectSelectedFilter = (selected: string) => {
+    for (const name of ["All", "Automated", "Manual", "Private", "Public"]) {
+      expect(buttonByText(name, filterGroup)).toHaveAttribute(
+        "aria-pressed",
+        String(name === selected),
+      );
+    }
+  };
+  expectSelectedFilter("All");
 
   // The default "All" view lists every workspace workflow.
   expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
@@ -1935,50 +1936,62 @@ test("Filter workflows by automation and visibility", async () => {
   );
 
   // "Automated" keeps only workflows that have at least one automation.
-  click(tabByName("Automated"));
+  await user.click(buttonByText("Automated", filterGroup));
   await waitFor(() => {
     expect(search()).toBe("?filter=automated");
   });
+  expectSelectedFilter("Automated");
   expect(linkByAriaLabel("Open Sales Research")).toBeInTheDocument();
   expect(screen.queryByText("Ops Playbook")).not.toBeInTheDocument();
   expect(screen.queryByText("Launch Checklist")).not.toBeInTheDocument();
   expect(screen.queryByText("Support Intake")).not.toBeInTheDocument();
 
-  // "Manual" keeps only the manual workflows.
-  click(tabByName("Manual"));
+  // Space selects "Manual" using the native button contract.
+  buttonByText("Manual", filterGroup).focus();
+  await user.keyboard(" ");
   await waitFor(() => {
     expect(search()).toBe("?filter=without");
   });
+  expectSelectedFilter("Manual");
   expect(screen.queryByText("Sales Research")).not.toBeInTheDocument();
   expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
   expect(linkByAriaLabel("Open Launch Checklist")).toBeInTheDocument();
 
   // The pills are a single mutually-exclusive group: selecting "Private"
   // replaces the automation selection rather than combining with it.
-  click(tabByName("Private"));
+  buttonByText("Private", filterGroup).focus();
+  await user.keyboard("{Enter}");
   await waitFor(() => {
     expect(search()).toBe("?filter=private");
   });
+  expectSelectedFilter("Private");
   expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
   expect(linkByAriaLabel("Open Launch Checklist")).toBeInTheDocument();
   expect(screen.queryByText("Sales Research")).not.toBeInTheDocument();
   expect(screen.queryByText("Support Intake")).not.toBeInTheDocument();
 
   // "Public" keeps only the public workflows.
-  click(tabByName("Public"));
+  click(buttonByText("Public", filterGroup));
   await waitFor(() => {
     expect(search()).toBe("?filter=public");
   });
+  expectSelectedFilter("Public");
   expect(linkByAriaLabel("Open Sales Research")).toBeInTheDocument();
   expect(linkByAriaLabel("Open Support Intake")).toBeInTheDocument();
   expect(screen.queryByText("Ops Playbook")).not.toBeInTheDocument();
   expect(screen.queryByText("Launch Checklist")).not.toBeInTheDocument();
 
+  // Re-selecting a filter keeps it selected; only "All" clears filtering.
+  click(buttonByText("Public", filterGroup));
+  expect(search()).toBe("?filter=public");
+  expectSelectedFilter("Public");
+
   // Clearing the filter returns to the full list.
-  click(tabByName("All"));
+  click(buttonByText("All", filterGroup));
   await waitFor(() => {
     expect(search()).toBe("");
   });
+  expectSelectedFilter("All");
   expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
 });
 

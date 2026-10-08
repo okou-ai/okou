@@ -1,5 +1,4 @@
 import { command, computed, type Computed } from "ccstate";
-import { guaranteedConnectorProvidedBindingNames } from "@okouai/api-contracts/contracts/connector-schemas";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
@@ -21,9 +20,6 @@ import {
   type TeamsAdaptiveCard,
 } from "../external/teams-bot-client";
 import { nowDate } from "../../lib/time";
-import { userConfiguredAgentEnvironmentRequirements } from "./agent-execution-config";
-import { builtinConnectorList } from "./connector-data.service";
-import { userSecrets, userVariables } from "./user-data.service";
 
 type TeamsInstallation = typeof teamsOrgInstallations.$inferSelect;
 
@@ -355,10 +351,6 @@ interface TeamsEnvironment {
   readonly missingVars: readonly string[];
 }
 
-type ConnectorProvidedBindings = Parameters<
-  typeof guaranteedConnectorProvidedBindingNames
->[0]["bindings"];
-
 interface ConnectedTeamsStatusFields {
   readonly defaultAgentName: string | null;
   readonly environment: TeamsEnvironment;
@@ -390,84 +382,16 @@ function emptyTeamsEnvironment(): TeamsEnvironment {
   };
 }
 
-async function resolveTeamsEnvironment(args: {
-  readonly db: ReadonlyDb;
-  readonly orgId: string;
-  readonly loadUserSecretNames: () => Promise<readonly string[]>;
-  readonly loadUserVarNames: () => Promise<readonly string[]>;
-  readonly loadConnectorBindings: () => Promise<ConnectorProvidedBindings>;
-}): Promise<TeamsEnvironment> {
-  const [meta] = await args.db
-    .select({ defaultAgentId: orgMetadata.defaultAgentId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, args.orgId))
-    .limit(1);
-
-  if (!meta?.defaultAgentId) {
-    return emptyTeamsEnvironment();
-  }
-
-  const [agent] = await args.db
-    .select({ name: agents.name })
-    .from(agents)
-    .where(
-      and(eq(agents.id, meta.defaultAgentId), eq(agents.orgId, args.orgId)),
-    )
-    .limit(1);
-
-  if (!agent) {
-    return emptyTeamsEnvironment();
-  }
-
-  const { secrets: requiredSecrets, vars: requiredVars } =
-    userConfiguredAgentEnvironmentRequirements(agent.name);
-  const [userSecretNames, userVarNames, connectorBindings] = await Promise.all([
-    args.loadUserSecretNames(),
-    args.loadUserVarNames(),
-    args.loadConnectorBindings(),
-  ]);
-  const existingSecretNames = new Set([
-    ...userSecretNames,
-    ...guaranteedConnectorProvidedBindingNames({
-      bindings: connectorBindings,
-      namespace: "secrets",
-    }),
-  ]);
-  const existingVarNames = new Set([
-    ...userVarNames,
-    ...guaranteedConnectorProvidedBindingNames({
-      bindings: connectorBindings,
-      namespace: "vars",
-    }),
-  ]);
-
-  return {
-    requiredSecrets,
-    requiredVars,
-    missingSecrets: requiredSecrets.filter((name) => {
-      return !existingSecretNames.has(name);
-    }),
-    missingVars: requiredVars.filter((name) => {
-      return !existingVarNames.has(name);
-    }),
-  };
-}
-
 async function resolveConnectedStatusFields(args: {
   readonly db: ReadonlyDb;
   readonly orgId: string;
-  readonly userId: string;
-  readonly loadUserSecretNames: () => Promise<readonly string[]>;
-  readonly loadUserVarNames: () => Promise<readonly string[]>;
-  readonly loadConnectorBindings: () => Promise<ConnectorProvidedBindings>;
 }): Promise<ConnectedTeamsStatusFields> {
   const composeId = await resolveDefaultComposeId(args.db, args.orgId);
-  const environment = await resolveTeamsEnvironment(args);
   return {
     defaultAgentName: composeId
       ? ((await getTeamsAgentName(args.db, composeId)) ?? null)
       : null,
-    environment,
+    environment: emptyTeamsEnvironment(),
   };
 }
 
@@ -601,29 +525,6 @@ export function teamsConnectStatus(args: {
       ? await resolveConnectedStatusFields({
           db,
           orgId: args.orgId,
-          userId: args.userId,
-          loadUserSecretNames: async () => {
-            const list = await get(
-              userSecrets({ orgId: args.orgId, userId: args.userId }),
-            );
-            return list.secrets.map((secret) => {
-              return secret.name;
-            });
-          },
-          loadUserVarNames: async () => {
-            const list = await get(
-              userVariables({ orgId: args.orgId, userId: args.userId }),
-            );
-            return list.variables.map((variable) => {
-              return variable.name;
-            });
-          },
-          loadConnectorBindings: async () => {
-            const connectors = await get(
-              builtinConnectorList({ orgId: args.orgId, userId: args.userId }),
-            );
-            return connectors.connectorProvidedBindings;
-          },
         })
       : null;
 

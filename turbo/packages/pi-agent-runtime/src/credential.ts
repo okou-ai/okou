@@ -45,7 +45,10 @@ export async function materializePiExecutionRoute(args: {
 }): Promise<PiAgentModelConfig> {
   const config = structuredClone(args.route);
 
-  if (config.dialect === "openai-responses") {
+  if (
+    config.dialect === "openai-responses" ||
+    config.dialect === "openai-completions"
+  ) {
     const { credentialBindings, ...route } = config;
     const binding = credentialBindings[0];
     const credential = await resolvedCredentialValue({

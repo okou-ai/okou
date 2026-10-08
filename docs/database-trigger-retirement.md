@@ -80,11 +80,13 @@ precondition and fail closed instead of inferring success from inaccessible data
 
 The [combined preparation evidence](https://github.com/vm0-ai/vm0/issues/33747#issuecomment-5666495664)
 records direct persisted-state comparisons on main `3c8b18e`, all-eight-absent
-route checks, and retained/outgoing controls. Current private API suites load
-legacy function definitions from immutable 1078/1098 SQL into their owned
-schemas; they remain valid after public functions disappear. Current route
-suites use the fully contracted database. Retired outgoing-only route fixtures
-are removed; retained private controls stay through the 1132 transition.
+route checks, and retained/outgoing controls. During that preparation, private
+API suites loaded legacy function definitions from immutable 1078/1098 SQL into
+owned schemas. This is historical rollout evidence, not permission to retain
+private construction in current API tests. The #37440 batches retire the hosting
+and OAuth schema controls and the now-unused SQL installer; their retained
+public scenarios use current production routes. Shipped migrations, production
+writers and the recorded rollback floor remain unchanged.
 The 1132 verification based on main `de87aa7c0e75df187eecfdf8c14b90b0bde5fe0f`
 passed the same 795 cases across 26 current API route files on each schema,
 with none skipped, plus 230 private compatibility cases. Post-route counts and
@@ -222,12 +224,13 @@ change resumes the withdrawn privacy feature.
 
 ## Custom connector OAuth preparation
 
-`custom-connector-oauth-write.service.ts` owns
-`writeCustomConnectorOAuthState(tx, identities, write)`. Production creation,
-update and repair complete mode/config writes inside this operation and the
-caller's transaction. The operation
-locks existing parent connectors in ascending `(id, org_id)` order before the
-callback writes either table. Newly created parents are protected by their
+The preparation introduced `writeCustomConnectorOAuthState(tx, identities,
+write)` in `custom-connector-oauth-write.service.ts`. Current Feishu/Lark
+creation and repair still use this operation. Generic create/update now own
+atomic definition/config writes and final validation in
+`custom-connector.service.ts`; the writer inventory distinguishes these paths.
+The shared operation locks existing parent connectors in ascending
+`(id, org_id)` order before its callback writes either table. Newly created parents are protected by their
 insert and ordinary primary/foreign keys.
 
 After the callback completes, it reads each surviving parent's final mode and
@@ -243,14 +246,14 @@ removing its config.
 
 Paths below are relative to `turbo/apps/api/src/signals/`.
 
-| Writer                                                                                      | Transaction and behavior                                                                                                                                                                                                                                                                                              |
-| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `services/custom-connector.service.ts`                                                      | Create and update complete skill storage, definition and OAuth config writes in the existing transaction. Update retains its optimistic version/timestamp check and parent row lock before the shared operation. Existing automatic OAuth registration cleanup and post-commit runtime publication keep their owners. |
-| `services/feishu-custom-connector.service.ts`                                               | Both Feishu and Lark creation/repair use the shared operation. Lock order remains installation advisory lock, installation row, then parent connector; the final installation association stays in the same transaction.                                                                                              |
-| Generic deletion, Feishu/Lark removal, `services/connector-owner-cleanup.service.ts`        | Parent deletion atomically removes its OAuth config through the ordinary composite foreign key's `ON DELETE CASCADE`. This remains a database constraint; there is no business-trigger cleanup effect to replace.                                                                                                     |
-| `routes/test-connector-credential-storage-state.ts`                                         | The automatic OAuth and runtime batch fixtures insert new `automatic` or `manual` parents without an organization OAuth config. These are consistent by construction and do not rely on either trigger.                                                                                                               |
-| `routes/test-runtime-state.ts`, `routes/test-custom-connector-skill-version-association.ts` | Existing fixtures change only injection templates or skill references, preserving mode and config ownership.                                                                                                                                                                                                          |
-| Numbered `013-kms-account-rotation` script                                                  | Re-encrypts an existing config secret without changing its mode, connector key or organization key. It preserves the relationship and is a historical migration, not a mode/config repair entry point.                                                                                                                |
+| Writer                                                                                      | Transaction and behavior                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `services/custom-connector.service.ts`                                                      | Create and update own atomic skill storage, definition and OAuth config writes, with final mode/config validation. Update retains its optimistic version/timestamp check and parent row lock. Existing automatic OAuth registration cleanup and post-commit runtime publication keep their owners. |
+| `services/feishu-custom-connector.service.ts`                                               | Both Feishu and Lark creation/repair use the shared operation. Lock order remains installation advisory lock, installation row, then parent connector; the final installation association stays in the same transaction.                                                                           |
+| Generic deletion, Feishu/Lark removal, `services/connector-owner-cleanup.service.ts`        | Parent deletion atomically removes its OAuth config through the ordinary composite foreign key's `ON DELETE CASCADE`. This remains a database constraint; there is no business-trigger cleanup effect to replace.                                                                                  |
+| `routes/test-connector-credential-storage-state.ts`                                         | The automatic OAuth and runtime batch fixtures insert new `automatic` or `manual` parents without an organization OAuth config. These are consistent by construction and do not rely on either trigger.                                                                                            |
+| `routes/test-runtime-state.ts`, `routes/test-custom-connector-skill-version-association.ts` | Existing fixtures change only injection templates or skill references, preserving mode and config ownership.                                                                                                                                                                                       |
+| Numbered `013-kms-account-rotation` script                                                  | Re-encrypts an existing config secret without changing its mode, connector key or organization key. It preserves the relationship and is a historical migration, not a mode/config repair entry point.                                                                                             |
 
 Member OAuth tokens, connector accounts, and automatic OAuth DCR registrations
 are distinct from the organization OAuth application config. Their existing
@@ -271,13 +274,21 @@ are removed by 1132. They only validated, so they coexisted with the explicit
 API operation without duplicate side effects. Outgoing generic and Feishu/Lark
 writers already lock the parent before config changes and can coexist with the prepared writer.
 
-The compatibility suite uses private schemas with the shipped checks, unique
-keys, composite config foreign key, and either retained or absent OAuth
-triggers. It covers all modes, replacement/retry, invalid final states, caller
-rollback, old/new config keys, cascaded deletion, ownership constraints, and
-actual blocked concurrent prepared/outgoing writers. It never disables shared
-triggers. Product behavior remains covered by generic connector, Feishu and
-Lark API route suites.
+The historical compatibility suite selected retained/absent OAuth triggers,
+mutated mode/config rows, injected transaction failures and inspected SQL state.
+[#37440 batch 003](implementation/issue-37440-batches/batch-003.md) retires its
+private repair, corruption, config-movement and constraint cases. Those precise
+internal guarantees are no longer asserted by the API test suite; historical
+release evidence and production constraints are preserved.
+
+The replacement `custom-connector-auth-modes.test.ts` constructs all four modes
+through an authenticated admin POST, changes modes through PUT and observes
+GET/list responses. It retains OAuth round trips and repeated definition saves;
+DELETE 204 followed by GET 404/list absence covers user-visible deletion without
+claiming a physical config-row count. These cases do not select a historical
+schema. Existing provider authorization and integration routes remain separate
+production boundaries; this change does not certify every unrelated fixture in
+those suites.
 
 The 1132 contraction uses the recorded prepared serving/background artifact
 and enforced rollback floor above. New writers and repairs must retain this
@@ -317,8 +328,8 @@ Paths below are relative to `turbo/apps/api/src/` unless stated otherwise.
 | `signals/services/host.service.ts`: prepare/allocation           | `createHostedSiteDeployment` locks the run before selecting/locking or creating a site. It performs the unscoped-site conflict check, canonical creation, version allocation, final admission and deployment insert in one transaction. Public and private deployments share the ownership check. |
 | `signals/services/host.service.ts`: completion/promotion         | Retains the existing site row lock and updates only deployment status and active-version fields. It does not change ownership, requested slug or originating run. Existing completion authorization and chat checks remain in place.                                                              |
 | `signals/routes/test-cron-cleanup-sandboxes-state.ts`            | Current setup explicitly canonicalizes site ownership and admits its deployment in one transaction. Its teardown deletes only the owned site; ordinary foreign keys cascade deployments.                                                                                                          |
-| `test-fixtures/hosted-sites.ts`                                  | The historical VM0-brand fixture explicitly writes its requested slug and has no originating run/chat owner. It is already independent of the two triggers.                                                                                                                                       |
-| `signals/routes/test-runtime-state.ts`                           | The two hosted `*-as-previous-api` operations are removed with 1132. Historical writer controls remain in the private compatibility suite.                                                                                                                                                        |
+| Former `test-fixtures/hosted-sites.ts`                           | The preparation-era fixture explicitly wrote its requested slug with no originating run/chat owner. #37440 batch 002 removes this privately constructed historical state and its unsupported cases.                                                                                               |
+| `signals/routes/test-runtime-state.ts`                           | The two hosted `*-as-previous-api` operations were removed with 1132. #37440 batch 002 also removes the replacement private hosting compatibility harness; those controls are not a recommended test boundary.                                                                                    |
 | `turbo/packages/db/scripts/test-migration-consistency-schema.ts` | Checks the contracted trigger/function inventory and surviving ordinary constraints; the API owns current business behavior.                                                                                                                                                                      |
 | Numbered `014-public-artifact-registration` backfill             | Reads sites/deployments for artifact registration; it does not write their ownership. Preserve this historical migration.                                                                                                                                                                         |
 
@@ -352,21 +363,21 @@ transaction; do not catch a failed admission and commit the allocation.
 Run/chat cleanup preserves the denormalized site owner. Direct SQL that relied
 on either trigger is not a supported repair path after contraction.
 
-The private PostgreSQL suite uses shipped site/deployment constraints and
-retained or absent hosting triggers, without changing shared/public triggers.
-It exercises canonical/null semantics, immutable ownership, explicit repair,
-cross-chat rejection, actual allocation transactions, concurrent versions,
-public/private behavior, insertion failure and retry, and run/site row locks.
-API route coverage exercises site reuse, chat isolation, organization-site
-adoption rejection, completion permissions, public/private workflows and
-concurrent prepares. The previous-API control remains in its private retained
-schema; a trigger-dependent writer is unsupported after contraction.
+The preparation-era PostgreSQL suite selected retained or absent hosting
+triggers and fabricated run metadata, repairs, insertion failures and row-lock
+interleavings. [#37440 batch 002](implementation/issue-37440-batches/batch-002.md)
+removes that private harness and records the precise coverage lost; historical
+compatibility intent does not authorize private construction under the current
+testing rule. Retained route tests construct site reuse, chat isolation,
+organization-site adoption rejection, completion permissions, deletion,
+concurrent prepares and out-of-order completion through normal APIs and actual
+Runner claims. A trigger-dependent writer remains unsupported after contraction.
 
 Both hosting triggers/functions coexisted with prepared values during the
-preparation releases and are removed by 1132. Historical writer controls stay
-in private schemas; current-route legacy fixtures are retired. The exact
-remaining catalog is checked by migration consistency. API rollback does not
-restore database triggers.
+preparation releases and are removed by 1132. The later test cleanup removes
+historical writer controls without changing production ownership operations or
+this migration history. The exact remaining catalog is checked by migration
+consistency. API rollback does not restore database triggers.
 
 ## Pending usage-pack purchase preparation
 

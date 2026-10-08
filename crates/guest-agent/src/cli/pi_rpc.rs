@@ -457,7 +457,7 @@ fn model_request_diagnostic(message: &Value) -> Option<ModelRequestDiagnostic> {
 fn model_request_details(message: &Value) -> Option<&Value> {
     if !matches!(
         message.get("api").and_then(Value::as_str),
-        Some("openai-codex-responses" | "openai-responses")
+        Some("openai-codex-responses" | "openai-responses" | "openai-completions")
     ) {
         return None;
     }
@@ -482,21 +482,19 @@ struct PiRetryAttempt {
 /// Whether an over-limit record of this type can be discarded without losing
 /// public output.
 ///
-/// This is deliberately an allowlist of one. `agent_end` carries the agent
-/// loop's return value — every message it produced — which the official RPC
-/// wire has already delivered individually as `message_end` records, so
-/// [`PiRpcProjection::project`] ignores it and `agent_settled` owns the public
-/// terminal result. Discarding an oversized `agent_end` therefore drops a
-/// duplicate, while terminating on one loses a run that has already finished
-/// its work.
+/// `agent_end` carries the agent loop's messages, and `turn_end` carries the
+/// current assistant message and tool results. The RPC wire has already
+/// delivered those messages individually as `message_end` records, so
+/// [`PiRpcProjection::project`] ignores both boundaries and `agent_settled`
+/// owns the public terminal result. Discarding either oversized boundary
+/// therefore drops only duplicate content.
 ///
-/// Every other record either owns public output or participates in the startup
-/// boundary, so an oversized one must stay fatal: silently dropping it would
-/// downgrade a structured record to nothing, which is worse than failing
-/// loudly. Only the record's type is known here — it is recovered from a
-/// bounded prefix and never parsed — so nothing may be assumed about content.
+/// The allowlist is limited to these two proven duplicate boundaries. Other
+/// records remain fatal when oversized, including unrecognized types. Only
+/// the record's type is known here — it is recovered from a bounded prefix
+/// and never parsed — so nothing may be assumed about content.
 pub(super) fn oversized_record_is_discardable(event_type: &str) -> bool {
-    event_type == "agent_end"
+    matches!(event_type, "agent_end" | "turn_end")
 }
 
 pub(super) struct PiRpcProjection {
@@ -1319,6 +1317,24 @@ mod tests {
     }
 
     #[test]
+    fn model_request_diagnostic_projects_chat_completions_messages() {
+        let message = json!({
+            "role": "assistant", "api": "openai-completions", "stopReason": "error",
+            "errorMessage": "private provider detail",
+            "diagnostics": [{"type": "okou_model_request", "details": {
+                "httpStatus": 503, "transportAttempts": 2, "failureReason": "provider_server_error"
+            }}]
+        });
+        let request = model_request_diagnostic(&message).expect("Chat Completions diagnostic");
+        assert_eq!(request.http_status, Some(503));
+        assert_eq!(request.transport_attempts, 2);
+        assert_eq!(
+            PiAssistantTerminal::from_message(&message, false).failure_reason,
+            Some(guest_contracts::diagnostics::FailureReason::ProviderServerError)
+        );
+    }
+
+    #[test]
     fn model_request_evidence_tracks_completed_retries_and_clears_on_recovery() {
         let failed: Value = serde_json::from_str(include_str!(
             "../../../../turbo/packages/pi-agent-runtime/src/test/fixtures/codex-rate-limit.json"
@@ -1887,6 +1903,7 @@ mod tests {
     #[test]
     fn only_records_the_projection_ignores_are_discardable_when_oversized() {
         assert!(oversized_record_is_discardable("agent_end"));
+        assert!(oversized_record_is_discardable("turn_end"));
 
         // Every record that owns public output, drives the startup boundary or
         // reports a failure must stay fatal when oversized: discarding one
@@ -1901,6 +1918,8 @@ mod tests {
             "auto_retry_start",
             "auto_retry_end",
             "unknown",
+            "other",
+            "tool_execution_end",
             "",
         ] {
             assert!(
@@ -1942,6 +1961,16 @@ mod tests {
                     0,
                 )
                 .expect("agent_end should be ignored")
+                .is_none()
+        );
+        assert!(
+            projection
+                .project(
+                    json!({ "type": "turn_end", "message": {}, "toolResults": [] }),
+                    &responses,
+                    0,
+                )
+                .expect("turn_end should be ignored")
                 .is_none()
         );
         let result = projection

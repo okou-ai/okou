@@ -109,7 +109,15 @@ function renderResponse(response: SeoResponse, json?: boolean): void {
     return;
   }
 
-  console.log(chalk.green(`✓ SEO ${response.operation} completed`));
+  if (response.partialResults) {
+    console.log(
+      chalk.yellow(
+        `⚠ SEO ${response.operation} completed with partial results; some requested pages could not be retrieved.`,
+      ),
+    );
+  } else {
+    console.log(chalk.green(`✓ SEO ${response.operation} completed`));
+  }
   console.log(JSON.stringify(response.result, null, 2));
   console.log(chalk.dim(`Provider: ${response.provider}`));
   console.log(

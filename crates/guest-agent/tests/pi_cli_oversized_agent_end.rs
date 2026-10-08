@@ -1,10 +1,10 @@
 //! An oversized Pi stdout record must end the run only when the projection
 //! actually consumes it.
 //!
-//! `agent_end` carries the agent loop's messages, which the RPC wire already
-//! delivered individually as `message_end`, so the Pi projection ignores it and
-//! `agent_settled` owns the terminal result. An over-limit `agent_end` is
-//! therefore discarded and the run still settles. Every record the projection
+//! `agent_end` and `turn_end` repeat messages which the RPC wire already
+//! delivered individually as `message_end`, so the Pi projection ignores them
+//! and `agent_settled` owns the terminal result. Over-limit duplicate boundaries
+//! are therefore discarded and the run still settles. Every record the projection
 //! does consume stays fatal, because discarding one would silently drop a
 //! structured record instead of failing loudly.
 
@@ -16,6 +16,7 @@ use guest_agent::paths::GuestPaths;
 use guest_agent::run_context::GuestRuntime;
 use guest_contracts::diagnostics::CliTerminationReason;
 use guest_contracts::stdout_framing::ORDINARY_CLI_STDOUT_MAX_LINE_BYTES;
+use serde_json::Value;
 use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 
@@ -32,7 +33,8 @@ const ASSISTANT_RECORD: &str = r#"{"type":"message_end","message":{"role":"assis
 /// serializer emits them.
 enum OversizedRecordType {
     AgentEnd,
-    MessageEnd,
+    TurnEnd,
+    ConsumedMessage,
 }
 
 fn oversized_record(record_type: OversizedRecordType) -> String {
@@ -41,7 +43,10 @@ fn oversized_record(record_type: OversizedRecordType) -> String {
         OversizedRecordType::AgentEnd => format!(
             r#"{{"type":"agent_end","messages":[{{"role":"assistant","content":[{{"type":"text","text":"{padding}"}}]}}],"willRetry":false}}"#
         ),
-        OversizedRecordType::MessageEnd => format!(
+        OversizedRecordType::TurnEnd => format!(
+            r#"{{"type":"turn_end","message":{{"role":"assistant","content":[]}},"toolResults":[{{"role":"toolResult","content":[{{"type":"text","text":"{padding}"}}]}}]}}"#
+        ),
+        OversizedRecordType::ConsumedMessage => format!(
             r#"{{"type":"message_end","message":{{"role":"assistant","content":[{{"type":"text","text":"{padding}"}}],"model":"test-model","responseId":"response-oversized","usage":{{}},"stopReason":"stop","timestamp":1}}}}"#
         ),
     };
@@ -60,7 +65,7 @@ struct OversizedCase<'a> {
 
 async fn run_oversized_case(
     case: OversizedCase<'_>,
-) -> Result<guest_agent::cli::CliExecutionResult, Box<dyn std::error::Error>> {
+) -> Result<(guest_agent::cli::CliExecutionResult, Vec<Value>), Box<dyn std::error::Error>> {
     let tmp = tempfile::tempdir()?;
     let server = common::RecordingServer::start(200, Duration::ZERO).await?;
     let bin_dir = tmp.path().join("bin");
@@ -165,49 +170,78 @@ fi
     )
     .await
     .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Pi CLI process timed out"))??;
-    Ok(result)
+    let mut delivered_events = Vec::new();
+    for request in server.requests()? {
+        if request.path != "/api/webhooks/agent/events" {
+            continue;
+        }
+        let body: Value = serde_json::from_str(&request.body)?;
+        let events = body
+            .get("events")
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "event request omitted events",
+                )
+            })?;
+        delivered_events.extend(events.iter().cloned());
+    }
+    Ok((result, delivered_events))
 }
 
 #[tokio::test]
 async fn oversized_pi_records_end_the_run_only_when_the_projection_consumes_them()
 -> Result<(), Box<dyn std::error::Error>> {
-    // An oversized `agent_end` is discarded, so the run reaches `agent_settled`
-    // and settles normally. This is the regression this file exists for: a
-    // completed run must not be lost to a record the projection never reads.
-    let settled = run_oversized_case(OversizedCase {
-        run_id: "00000000-0000-4000-8000-0000000001a1",
-        records: &[
-            ASSISTANT_RECORD.to_string(),
-            oversized_record(OversizedRecordType::AgentEnd),
-        ],
-    })
-    .await?;
+    // Duplicate boundaries are discarded. The following assistant message must
+    // still be delivered, and `agent_settled` must publish its terminal result.
+    for (record_type, run_id) in [
+        (
+            OversizedRecordType::AgentEnd,
+            "00000000-0000-4000-8000-0000000001a1",
+        ),
+        (
+            OversizedRecordType::TurnEnd,
+            "00000000-0000-4000-8000-0000000001a3",
+        ),
+    ] {
+        let (settled, delivered_events) = run_oversized_case(OversizedCase {
+            run_id,
+            records: &[oversized_record(record_type), ASSISTANT_RECORD.to_string()],
+        })
+        .await?;
 
-    assert!(
-        settled.control_error.is_none(),
-        "a discarded record must not fail the run: {:?}",
-        settled.control_error.map(|error| error.to_string())
-    );
-    assert!(
-        settled
-            .cli_termination
-            .as_ref()
-            .is_none_or(|termination| termination.reason != CliTerminationReason::StdoutIngestion),
-        "a discarded record must not terminate stdout ingestion: {:?}",
-        settled.cli_termination
-    );
-    assert_eq!(settled.exit_code, 0);
-    assert_eq!(
-        settled.jsonl_result.as_ref().map(|summary| summary.status),
-        Some(guest_agent::cli::JsonlResultStatus::Success),
-        "the terminal result must still come from agent_settled"
-    );
+        assert!(
+            settled.control_error.is_none(),
+            "a discarded record must not fail the run: {:?}",
+            settled.control_error.map(|error| error.to_string())
+        );
+        assert!(
+            settled.cli_termination.as_ref().is_none_or(
+                |termination| termination.reason != CliTerminationReason::StdoutIngestion
+            ),
+            "a discarded record must not terminate stdout ingestion: {:?}",
+            settled.cli_termination
+        );
+        assert_eq!(settled.exit_code, 0);
+        assert_eq!(
+            settled.jsonl_result.as_ref().map(|summary| summary.status),
+            Some(guest_agent::cli::JsonlResultStatus::Success),
+            "the terminal result must still come from agent_settled"
+        );
+        assert!(
+            delivered_events
+                .iter()
+                .any(|event| event["result"] == "settled"),
+            "the assistant message after the discarded record must reach the terminal result"
+        );
+    }
 
     // A record the projection does consume stays fatal, and the failure names
     // the record without exposing its content.
-    let failed = run_oversized_case(OversizedCase {
+    let (failed, _) = run_oversized_case(OversizedCase {
         run_id: "00000000-0000-4000-8000-0000000001a2",
-        records: &[oversized_record(OversizedRecordType::MessageEnd)],
+        records: &[oversized_record(OversizedRecordType::ConsumedMessage)],
     })
     .await?;
 
