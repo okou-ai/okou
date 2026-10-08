@@ -3,7 +3,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { builtinConnectorDcrRegistrations } from "@okouai/db/schema/connector-dcr-registration";
 import { builtinConnectorAccountOauthBindings } from "@okouai/db/schema/connector-account-oauth-binding";
 import { connectors } from "@okouai/db/schema/connector";
-import { connectorCatalog } from "@okouai/db/schema/connector-catalog";
+import { connectorCatalog } from "@okouai/db/runtime/connector-catalog";
 import type { ExternalCatalogIdentity } from "./connector-catalog-view";
 import { writeDb$, type Db } from "../external/db";
 import { nowDate } from "../../lib/time";

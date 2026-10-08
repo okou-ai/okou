@@ -2,12 +2,11 @@ import { connectorCatalogEntryColumns } from "@okouai/connectors/connector-catal
 import { createHash } from "node:crypto";
 
 import { createStore } from "ccstate";
-import { eq } from "drizzle-orm";
 import { getConnectorAuthProviderRegistrationCapabilities } from "@okouai/connectors/auth-providers";
 import {
   connectorCatalog,
   connectorCatalogEntries,
-} from "@okouai/db/schema/connector-catalog";
+} from "@okouai/db/runtime/connector-catalog";
 
 import { mockOptionalEnv } from "../lib/env";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
@@ -93,7 +92,6 @@ async function publishFixtureGeneration<
           return {
             hash: args.hash,
             slug: connector.slug,
-            payload: connector,
             ...connectorCatalogEntryColumns(connector),
           };
         }),
@@ -157,38 +155,6 @@ export async function installApiTestConnectorCatalog<
       database: store.set(writeDb$),
       ...publication,
     });
-  }
-}
-
-/**
- * Release 1 still reads entries from outgoing payload-only writers. Scope this
- * historical shape to a catalog already published through the API in the case.
- */
-export async function useLegacyConnectorCatalogPayloadFixture(
-  hash: string,
-): Promise<void> {
-  const updated = await store
-    .set(writeDb$)
-    .update(connectorCatalogEntries)
-    .set({
-      label: null,
-      description: null,
-      category: null,
-      icon: null,
-      tags: null,
-      generation: null,
-      authMethods: null,
-      mcp: null,
-      skill: null,
-      firewall: null,
-      permissionSummary: null,
-    })
-    .where(eq(connectorCatalogEntries.hash, hash))
-    .returning({ slug: connectorCatalogEntries.slug });
-  if (updated.length === 0) {
-    throw new Error(
-      "Expected the case's published catalog before replacing its columns",
-    );
   }
 }
 

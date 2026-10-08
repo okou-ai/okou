@@ -12,7 +12,7 @@ import type {
 import {
   connectorCatalog,
   connectorCatalogEntries,
-} from "@okouai/db/schema/connector-catalog";
+} from "@okouai/db/runtime/connector-catalog";
 import {
   connectorCatalogDisplayColumns,
   connectorCatalogRuntimeColumns,

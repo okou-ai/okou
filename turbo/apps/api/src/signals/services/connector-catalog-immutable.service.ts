@@ -4,7 +4,7 @@ import { eq, ne } from "drizzle-orm";
 import {
   connectorCatalog,
   connectorCatalogEntries,
-} from "@okouai/db/schema/connector-catalog";
+} from "@okouai/db/runtime/connector-catalog";
 import {
   SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
   type ConnectorCatalogArtifact,
@@ -88,7 +88,6 @@ export const prepareImmutableCatalogEntries$ = command(
               return {
                 hash: args.hash,
                 slug: connector.slug,
-                payload: { ...connector },
                 ...connectorCatalogEntryColumns(connector),
               };
             }),

@@ -140,7 +140,7 @@ import * as stripeAutomationEventSchema from "./schema/stripe-automation-event";
 import * as googleCalendarEventSchema from "./schema/google-calendar-event";
 import * as googleFormsEventSchema from "./schema/google-forms-event";
 import * as googleWorkspaceEventSchema from "./schema/google-workspace-event";
-import * as connectorCatalogSchema from "./schema/connector-catalog";
+import * as connectorCatalogSchema from "./runtime/connector-catalog";
 import * as officialWorkflowCatalogSchema from "./schema/official-workflow-catalog";
 import * as mailDraftSchema from "./schema/mail-draft";
 import * as browserSessionSchema from "./schema/browser-session";

@@ -42,10 +42,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { builtinConnectorsRoutes } from "../connectors";
 import { createRouteMocks } from "./helpers/route-test";
-import {
-  API_TEST_CONNECTOR_CATALOG,
-  useLegacyConnectorCatalogPayloadFixture,
-} from "../../../test-fixtures/connector-catalog";
+import { API_TEST_CONNECTOR_CATALOG } from "../../../test-fixtures/connector-catalog";
 
 import { describe, expect, it } from "vitest";
 import { replaceRunnerJobWithLegacyConnectorBaselineFixture } from "../../../test-fixtures/legacy-runner-job-context";
@@ -348,10 +345,10 @@ describe("slug-first current catalog business readers", () => {
     expect(oneClick.body.connectors.length).toBeGreaterThan(0);
   });
 
-  it("serves payload-only entries written by an outgoing API after the column backfill", async () => {
+  it("serves projected MCP entries with empty metadata through list, search and Run discovery", async () => {
     const artifact = release(
       `2099-02-01.${randomUUID()}`,
-      "Outgoing writer catalog",
+      "Projected MCP catalog",
       "manual-mcp",
     ).artifact;
     const mcpConnector = artifact.connectors.find((connector) => {
@@ -374,18 +371,11 @@ describe("slug-first current catalog business readers", () => {
       headers: runHeaders,
     } = await admittedMcpRun();
     routeMocks.clerk.session(actor.userId, actor.orgId);
-    const expectedHttp = await accept(
-      catalogClient().get({ headers, params: { connectorSlug: "notion" } }),
-      [200],
-    );
-
-    await useLegacyConnectorCatalogPayloadFixture(candidate.hash);
-
     const listed = await accept(catalogClient().list({ headers }), [200]);
     expect(listed.body.connectors).toContainEqual(
       expect.objectContaining({
         slug: mcpConnector.slug,
-        label: "Outgoing writer catalog",
+        label: "Projected MCP catalog",
         tags: [],
         generation: [],
         mcp: mcpConnector.mcp,
@@ -401,7 +391,7 @@ describe("slug-first current catalog business readers", () => {
       catalogClient().get({ headers, params: { connectorSlug: "notion" } }),
       [200],
     );
-    expect(actualHttp.body).toStrictEqual(expectedHttp.body);
+    expect(actualHttp.body.connector.slug).toBe("notion");
     const search = await accept(
       setupApp({ context, routes: builtinConnectorsRoutes })(
         builtinConnectorsSearchContract,
@@ -411,7 +401,7 @@ describe("slug-first current catalog business readers", () => {
     expect(search.body.connectors).toContainEqual(
       expect.objectContaining({
         slug: mcpConnector.slug,
-        label: "Outgoing writer catalog",
+        label: "Projected MCP catalog",
       }),
     );
     const discovered = await accept(
@@ -420,7 +410,7 @@ describe("slug-first current catalog business readers", () => {
     );
     expect(discovered.body.connectors).toContainEqual(
       expect.objectContaining({
-        displayName: "Outgoing writer catalog",
+        displayName: "Projected MCP catalog",
         connectionId: connection.id,
       }),
     );

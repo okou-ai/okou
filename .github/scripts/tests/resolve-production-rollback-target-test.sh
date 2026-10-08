@@ -84,6 +84,8 @@ case "${1:-}" in
       [ "${MOCK_MODEL_ROUTE_STATE_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "3838383838383838383838383838383838383838" ]; then
       [ "${MOCK_PI_STABLE_CONTEXT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "3939393939393939393939393939393939393939" ]; then
+      [ "${MOCK_CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -121,6 +123,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_MODEL_ROUTE_STATE_COMMIT-3737373737373737373737373737373737373737}"
     elif [[ "$*" == *1343_retire_pi_stable_context.sql* ]]; then
       printf '%s\n' "${MOCK_PI_STABLE_CONTEXT_COMMIT-3838383838383838383838383838383838383838}"
+    elif [[ "$*" == *1345_connector_catalog_payload_independent_api.sql* ]]; then
+      printf '%s\n' "${MOCK_CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_COMMIT-3939393939393939393939393939393939393939}"
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
@@ -529,6 +533,24 @@ grep -Fq '3838383838383838383838383838383838383838' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/pi-stable-context-floor.output" ] || fail "pre-retirement API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Pi stable-context retirement floor must fail before artifact or host access"
+fi
+
+for preparation_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged connector catalog payload-independent API" \
+    run_resolver "${tmp_dir}/connector-catalog-payload-independent-history.output" "MOCK_CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_COMMIT=${preparation_commit}"
+  [ ! -s "${tmp_dir}/connector-catalog-payload-independent-history.output" ] || fail "invalid catalog preparation history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid catalog preparation history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the connector catalog payload-independent API" \
+  run_resolver "${tmp_dir}/connector-catalog-payload-independent-floor.output" MOCK_CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_FLOOR_VALID=0
+grep -Fq '3939393939393939393939393939393939393939' "${tmp_dir}/failure.err" || fail "catalog preparation rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/connector-catalog-payload-independent-floor.output" ] || fail "payload-dependent API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "catalog preparation floor must fail before artifact or host access"
 fi
 
 for v8_commit in "" invalid; do

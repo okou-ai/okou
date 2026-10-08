@@ -118,8 +118,15 @@ are enforced by the integration ingress tests.
   keep the complete payload while independent columns match application writes;
   SQL and TypeScript permission summaries agree for duplicate and empty
   permissions, allow/deny policy ties, unknown policies, categories and MCP;
-  outgoing payload-only writes remain valid and backfill retries are idempotent.
-  Retain it through the payload dual-write/dual-read rollout and contraction.
+  outgoing payload-only writes remain valid in the expansion and backfill
+  retries are idempotent. It also protects preparation migration
+  `1345_connector_catalog_payload_independent_api`: incomplete retained
+  projections fail with transactional DDL rollback, populated rows are unchanged,
+  outgoing dual writers and column-only writers coexist, MCP remains optional,
+  and the runtime ORM works after a disposable physical DROP. Retain it through
+  the production payload contraction. `test-connector-catalog-columns-permanent.ts`
+  runs current column INSERT/SELECT/RETURNING, same-hash retry and all ten required
+  constraints against both replayed and freshly generated schemas.
 
 - `scripts/test-unselectable-thread-model-cleanup.ts` protects migration
   `1335_clear_unselectable_thread_models_and_unused_model_keys`: unresolvable

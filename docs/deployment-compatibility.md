@@ -217,6 +217,48 @@ and never acquires a host token. Existing installation and chat host identities
 are preserved. Legacy contraction requires the Desktop version floor and API
 serving/rollback drain. See [the full contract](desktop-session-auth.md).
 
+## Connector catalog payload-independent API (preparatory release)
+
+Migration `1345_connector_catalog_payload_independent_api` keeps the physical
+`connector_catalog_entries.payload` column but drops its NOT NULL constraint.
+The ten required projections become NOT NULL; `mcp` remains nullable for
+non-MCP connectors. The migration performs no backfill, summary recomputation,
+hash/slug rewrite, pointer move or deletion. An incomplete retained projection
+fails the transactional migration rather than silently fabricating data.
+
+The API writer now inserts only projections, and all readers use direct narrow
+column selections without payload fallback. The runtime ORM uses the shared
+column factory without payload, including implicit SELECT/RETURNING. The
+physical schema alone retains nullable payload for migration generation and
+schema equivalence; it must not be imported by API queries.
+
+**Mixed versions.** Migrations still run before API promotion. The immediately
+outgoing #37900-or-later dual writer supplies every required projection, so it
+can continue reading and writing while the column is retained. A payload-only
+writer cannot insert after the constraint change and must already be excluded
+from serving. The new API needs migration 1345 before writing without payload;
+its readers accept projected rows regardless of whether payload is populated.
+App/CLI/Runner responses and current/captured generation lookup are unchanged.
+Entry preparation receipts, same-hash retries, skill registration and
+complete-generation pointer publication retain their existing ownership/order.
+Permission-summary derivation is unchanged.
+
+**Rollback floor.** The resolver loaded from main resolves the first-parent
+commit introducing migration 1345 and requires every target to contain it,
+failing closed on missing/invalid history before artifact or host access. This
+excludes payload-dependent API versions without pinning a branch-only SHA.
+Merging this preparation advances the official rollback floor; until a release
+containing it succeeds, there is no earlier supported rollback target. That
+restriction does not itself prove a successful deployment or serving drain.
+
+**Next stage (#37899).** First publish this API and verify the outgoing dual
+writer has exited. Only then may a separate PR physically DROP payload. Do not
+combine the two migrations in one production release: applying DROP before API
+promotion would break the still-serving dual writer. Keep the preparation
+migration in the rollback resolver's history through that contraction. This PR
+neither publishes nor executes any production migration and does not close
+[#37899](https://github.com/okou-ai/okou/issues/37899).
+
 ## Connector catalog column reads (expand release)
 
 Migrations `1339_expand_connector_catalog_entry_columns` and
