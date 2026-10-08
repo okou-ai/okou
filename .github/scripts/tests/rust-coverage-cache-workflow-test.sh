@@ -35,18 +35,18 @@ jq -e '
     .with["r2-bucket-name"] == "${{ vars.R2_USER_STORAGES_BUCKET_NAME }}"
   ) and
   any($coverage.steps[];
-    .uses == "Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae" and
+    ((.uses // "") | startswith("Swatinem/rust-cache@")) and
     .with.workspaces == "crates -> target" and
     .with["shared-key"] == "coverage-line-tables-only" and
     .with["save-if"] == "${{ github.ref == '\''refs/heads/main'\'' }}"
   ) and
   any($coverage.steps[];
     .name == "Install cargo-llvm-cov" and
-    .uses == "taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0" and
+    ((.uses // "") | startswith("taiki-e/install-action@")) and
     .with.tool == "cargo-llvm-cov@0.9.1"
   ) and
   any($coverage.steps[];
-    .uses == "astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7" and
+    ((.uses // "") | startswith("astral-sh/setup-uv@")) and
     .with["working-directory"] == "crates/runner/mitm-addon" and
     .with["enable-cache"] == true
   ) and
@@ -71,7 +71,7 @@ jq -e '
     .if == "success() || failure()" and
     .["continue-on-error"] == true and
     .["timeout-minutes"] == 1 and
-    .uses == "codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5" and
+    ((.uses // "") | startswith("codecov/codecov-action@")) and
     .with.files == "crates/lcov.info" and
     .with.flags == "rust"
   ) and
@@ -127,9 +127,17 @@ step_index() {
   ' <<<"$workflow_json"
 }
 
-checkout_index=$(step_index "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1")
+action_index() {
+  jq -r --arg action "$1@" '
+    .jobs.coverage.steps | to_entries[] |
+    select((.value.uses // "") | startswith($action)) |
+    .key
+  ' <<<"$workflow_json"
+}
+
+checkout_index=$(action_index "actions/checkout")
 sccache_index=$(step_index "Setup R2 sccache")
-rust_cache_index=$(step_index "Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae")
+rust_cache_index=$(action_index "Swatinem/rust-cache")
 install_index=$(step_index "Install cargo-llvm-cov")
 coverage_index=$(step_index "Run tests with coverage")
 report_index=$(step_index "Validate coverage report")

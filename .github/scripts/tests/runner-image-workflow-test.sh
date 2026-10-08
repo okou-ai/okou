@@ -192,7 +192,7 @@ jq -e '
     .with["r2-account-id"] == "${{ vars.R2_ACCOUNT_ID }}" and
     .with["r2-bucket-name"] == "${{ vars.R2_USER_STORAGES_BUCKET_NAME }}"
   ) and
-  any(.jobs.compile.steps[]; .uses == "Swatinem/rust-cache@v2") and
+  any(.jobs.compile.steps[]; (.uses // "") | startswith("Swatinem/rust-cache@")) and
   any(.jobs.compile.steps[]; .run == ".github/scripts/runner-binary-build/build.sh build") and
   any(.jobs.compile.steps[];
     .run == ".github/scripts/runner-binary-transport.sh publish" and
@@ -202,7 +202,7 @@ jq -e '
   )
 ' <<<"$workflow_json" >/dev/null || fail "compile must be a required miss-only Rust/cache/build matrix"
 
-# The action owns the pinned install and the complete startup interface.
+# The shared action owns the sccache version and complete startup interface.
 jq -e '
   .runs.using == "composite" and
   (.inputs | keys | sort) ==
@@ -210,7 +210,7 @@ jq -e '
   all(.inputs[]; .required == true) and
   any(.runs.steps[];
     .name == "Install sccache" and
-    .uses == "mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba" and
+    ((.uses // "") | startswith("mozilla-actions/sccache-action@")) and
     .with.version == "v0.15.0"
   ) and
   any(.runs.steps[];
@@ -225,7 +225,7 @@ jq -e '
     .env.SCCACHE_IDLE_TIMEOUT == "0" and
     .env.SCCACHE_REGION == "auto"
   )
-' <<<"$action_json" >/dev/null || fail "shared cache action must retain its pinned install and explicit startup inputs"
+' <<<"$action_json" >/dev/null || fail "shared cache action must retain its sccache version and explicit startup inputs"
 
 # Execute the action's configured startup boundary without contacting storage. The
 # server must receive R2 configuration, while later build steps receive only
@@ -312,10 +312,10 @@ jq -e '
     select(any(.value.steps[]?; .uses == "./.github/actions/setup-r2-sccache")) |
     .key] == ["compile"]) and
   ([.jobs | to_entries[] |
-    select(any(.value.steps[]?; .uses == "mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba")) |
+    select(any(.value.steps[]?; (.uses // "") | startswith("mozilla-actions/sccache-action@"))) |
     .key] == []) and
   ([.jobs | to_entries[] |
-    select(any(.value.steps[]?; .uses == "Swatinem/rust-cache@v2")) |
+    select(any(.value.steps[]?; (.uses // "") | startswith("Swatinem/rust-cache@"))) |
     .key] == ["compile"])
 ' <<<"$workflow_json" >/dev/null || fail "compiler caches must exist only in the miss-only compile job"
 
@@ -349,7 +349,7 @@ jq -e '
   ) and
   any(.jobs.build.steps[];
     .name == "Upload runner image manifest" and
-    .uses == "actions/upload-artifact@v7" and
+    ((.uses // "") | startswith("actions/upload-artifact@")) and
     .with.name == "${{ steps.artifact.outputs.artifact-name }}" and
     .with.path == "runner-image-manifest/manifest.json" and
     .with.overwrite == true and

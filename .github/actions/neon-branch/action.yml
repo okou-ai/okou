@@ -51,7 +51,7 @@ runs:
     - name: Start deployment
       id: deployment
       if: inputs.action == 'create'
-      uses: bobheadxi/deployments@v1
+      uses: bobheadxi/deployments@648679e8e4915b27893bd7dbc35cb504dc915bc8 # v1
       with:
         step: start
         token: ${{ inputs.github-token }}
@@ -149,7 +149,7 @@ runs:
         fi
 
     - name: Finish deployment
-      uses: bobheadxi/deployments@v1
+      uses: bobheadxi/deployments@648679e8e4915b27893bd7dbc35cb504dc915bc8 # v1
       if: always() && inputs.action == 'create'
       with:
         step: finish
