@@ -1,4 +1,12 @@
 import {
+  piMemoryStage1SelectionLockPlans,
+  piMemoryStage1SelectionSourcePlans,
+  piMemoryStage1SelectionThreadEligible,
+  piMemoryStage1SelectionRunEligible,
+  piMemoryStage1SelectionConversationPlan,
+  piMemoryStage1SelectionSourceMatches,
+} from "./pi-memory-stage1-selection-plan";
+import {
   featureSwitchContextFromRows,
   userFeatureSwitchRowCondition,
 } from "./feature-switch-scope";
@@ -60,7 +68,7 @@ import { z } from "zod";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 
 import {
   downloadS3BufferWithMaxBytes,
@@ -746,38 +754,40 @@ const retryOwnedWorkAfterAbort$ = command(
   },
 );
 
-async function partitionWorkByPiMemorySwitch(
-  db: Db,
-  claimed: readonly ClaimedPiMemoryStage1Work[],
-  signal: AbortSignal,
-): Promise<{
-  readonly enabled: readonly ClaimedPiMemoryStage1Work[];
-  readonly disabled: readonly ClaimedPiMemoryStage1Work[];
-}> {
-  const enabled: ClaimedPiMemoryStage1Work[] = [];
-  const disabled: ClaimedPiMemoryStage1Work[] = [];
-  for (const work of claimed) {
-    // Each candidate's own owner decides, never the cron caller.
-    const featureSwitchContextRows0 = await db
-      .select({
-        userId: userFeatureSwitches.userId,
-        switches: userFeatureSwitches.switches,
-      })
-      .from(userFeatureSwitches)
-      .where(userFeatureSwitchRowCondition(work.orgId, work.userId));
-    const context = featureSwitchContextFromRows(
-      work.orgId,
-      work.userId,
-      featureSwitchContextRows0,
-    );
-    signal.throwIfAborted();
-    (isFeatureEnabled(FeatureSwitchKey.PiMemory, context)
-      ? enabled
-      : disabled
-    ).push(work);
-  }
-  return { enabled, disabled };
-}
+const partitionWorkByPiMemorySwitch$ = command(
+  async (
+    { get },
+    claimed: readonly ClaimedPiMemoryStage1Work[],
+    signal: AbortSignal,
+  ): Promise<{
+    readonly enabled: readonly ClaimedPiMemoryStage1Work[];
+    readonly disabled: readonly ClaimedPiMemoryStage1Work[];
+  }> => {
+    const db = get(db$);
+    const enabled: ClaimedPiMemoryStage1Work[] = [];
+    const disabled: ClaimedPiMemoryStage1Work[] = [];
+    for (const work of claimed) {
+      // Each candidate's own owner decides, never the cron caller.
+      const context = featureSwitchContextFromRows(
+        work.orgId,
+        work.userId,
+        await db
+          .select({
+            userId: userFeatureSwitches.userId,
+            switches: userFeatureSwitches.switches,
+          })
+          .from(userFeatureSwitches)
+          .where(userFeatureSwitchRowCondition(work.orgId, work.userId)),
+      );
+      signal.throwIfAborted();
+      (isFeatureEnabled(FeatureSwitchKey.PiMemory, context)
+        ? enabled
+        : disabled
+      ).push(work);
+    }
+    return { enabled, disabled };
+  },
+);
 
 const prepareSourceWork$ = command(
   async (
@@ -805,42 +815,93 @@ const prepareSourceWork$ = command(
   },
 );
 
-async function validatePreparedWork(
-  db: Db,
-  work: ClaimedPiMemoryStage1Work,
-  signal: AbortSignal,
-): Promise<void> {
-  const currentTime = nowDate();
-  const valid = await db.transaction(async (tx) => {
-    if (
-      !(await validatePiMemoryStage1Selection(tx, work.selection, currentTime))
-    ) {
-      return false;
-    }
-    const [fenced] = await tx
-      .select({ token: piMemoryStage1Candidates.leaseToken })
-      .from(piMemoryStage1Candidates)
-      .where(
-        and(
-          eq(piMemoryStage1Candidates.memoryStorageId, work.memoryStorageId),
-          eq(piMemoryStage1Candidates.piSessionId, work.piSessionId),
-          eq(
-            piMemoryStage1Candidates.sourceHistoryHash,
-            work.sourceHistoryHash,
-          ),
-          eq(piMemoryStage1Candidates.sourceRunId, work.selection.sourceRunId),
-          eq(piMemoryStage1Candidates.status, "leased"),
-          eq(piMemoryStage1Candidates.leaseToken, work.leaseToken),
-          gt(piMemoryStage1Candidates.leaseExpiresAt, nowDate()),
-        ),
+const validatePreparedWork$ = command(
+  async (
+    { set },
+    work: ClaimedPiMemoryStage1Work,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const currentTime = nowDate();
+    const selection = work.selection;
+    const valid = await set(writeDb$).transaction(async (tx) => {
+      if (selection.day !== piMemoryStage1UtcDay(currentTime)) {
+        return false;
+      }
+      const locks = piMemoryStage1SelectionLockPlans(selection);
+      const [lockedThread] = await tx.select().from(locks.thread);
+      if (!lockedThread) {
+        return false;
+      }
+      await tx.select().from(locks.storage);
+      const [day] = await tx.select().from(locks.day);
+      if (!day?.consumedAt || day.triggerThreadId === selection.chatThreadId) {
+        return false;
+      }
+      const [frozen] = await tx.select().from(locks.frozen);
+      // A blocked lock acquisition may cross midnight after the initial check.
+      if (!frozen || selection.day !== piMemoryStage1UtcDay(nowDate())) {
+        return false;
+      }
+      const features = await tx.select().from(locks.features);
+      const context = featureSwitchContextFromRows(
+        selection.orgId,
+        selection.userId,
+        features,
       );
-    return !!fenced;
-  });
-  signal.throwIfAborted();
-  if (!valid || work.selection.day !== piMemoryStage1UtcDay(nowDate())) {
-    throw new StaleWorkError();
-  }
-}
+      if (!isFeatureEnabled(FeatureSwitchKey.PiMemory, context)) {
+        return false;
+      }
+      const sourcePlans = piMemoryStage1SelectionSourcePlans(selection);
+      const [thread] = await tx.select().from(sourcePlans.thread);
+      if (!thread) {
+        return false;
+      }
+      const [active] = await tx.select().from(sourcePlans.active);
+      if (
+        !piMemoryStage1SelectionThreadEligible(thread, !!active, currentTime)
+      ) {
+        return false;
+      }
+      const [latest] = await tx.select().from(sourcePlans.latest);
+      if (!piMemoryStage1SelectionRunEligible(latest, selection, currentTime)) {
+        return false;
+      }
+      const [source] = await tx
+        .select()
+        .from(piMemoryStage1SelectionConversationPlan(selection, latest));
+      if (
+        !piMemoryStage1SelectionSourceMatches(selection, latest, thread, source)
+      ) {
+        return false;
+      }
+      const [fenced] = await tx
+        .select({ token: piMemoryStage1Candidates.leaseToken })
+        .from(piMemoryStage1Candidates)
+        .where(
+          and(
+            eq(piMemoryStage1Candidates.memoryStorageId, work.memoryStorageId),
+            eq(piMemoryStage1Candidates.piSessionId, work.piSessionId),
+            eq(
+              piMemoryStage1Candidates.sourceHistoryHash,
+              work.sourceHistoryHash,
+            ),
+            eq(
+              piMemoryStage1Candidates.sourceRunId,
+              work.selection.sourceRunId,
+            ),
+            eq(piMemoryStage1Candidates.status, "leased"),
+            eq(piMemoryStage1Candidates.leaseToken, work.leaseToken),
+            gt(piMemoryStage1Candidates.leaseExpiresAt, nowDate()),
+          ),
+        );
+      return !!fenced;
+    });
+    signal.throwIfAborted();
+    if (!valid || work.selection.day !== piMemoryStage1UtcDay(nowDate())) {
+      throw new StaleWorkError();
+    }
+  },
+);
 
 function classifyProviderFailure(error: unknown): unknown {
   if (!(error instanceof PiMemoryStage1ProviderError)) {
@@ -908,7 +969,7 @@ const checkPreparedStage1Request$ = command(
     if (admission) {
       throw new RetryableWorkError("source_admission_denied");
     }
-    const db = set(writeDb$);
+    set(writeDb$);
     await set(
       checkPiMemoryQuota$,
       {
@@ -923,7 +984,7 @@ const checkPreparedStage1Request$ = command(
       prepared.credential.proof,
       signal,
     );
-    await validatePreparedWork(db, prepared.work, signal);
+    await set(validatePreparedWork$, prepared.work, signal);
   },
 );
 
@@ -1150,7 +1211,7 @@ export const executePiMemoryStage1Work$ = command(
     // Switch-off work settles terminal before any provider route, download,
     // or provider call, so it consumes no attempt and is never re-leased.
     const gated = await settleIncludingAbort(
-      partitionWorkByPiMemorySwitch(db, claim.claimed, signal),
+      set(partitionWorkByPiMemorySwitch$, claim.claimed, signal),
     );
     if (signal.aborted) {
       await set(retryOwnedWorkAfterAbort$, owned, signal.reason);
