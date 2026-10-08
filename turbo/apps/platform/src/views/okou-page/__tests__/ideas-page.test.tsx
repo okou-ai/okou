@@ -8,7 +8,12 @@ import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-id
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
@@ -96,6 +101,59 @@ function mockCatalog(
 async function findComposer(name = "Message"): Promise<HTMLElement> {
   return await screen.findByRole("textbox", { name });
 }
+
+test("Category filters expose one persistent selection and preserve search", async () => {
+  configureAgent();
+  mockCatalog([catalogItem("github", "GitHub")]);
+
+  await setupPage({ context, path: IDEAS_PATH });
+  const group = await screen.findByRole("group", {
+    name: "Filter by category",
+  });
+  const filters = queryAllByRoleFast("button", group);
+  const all = filters.find((button) => {
+    return button.textContent === "All";
+  });
+  const engineering = filters.find((button) => {
+    return button.textContent === "Engineering";
+  });
+  if (!all || !engineering) {
+    throw new Error("Expected All and Engineering category filters");
+  }
+  expect(all).toHaveAttribute("aria-pressed", "true");
+  expect(engineering).toHaveAttribute("aria-pressed", "false");
+  expect(screen.getByText("Browser screenshots")).toBeInTheDocument();
+
+  click(all);
+  expect(all).toHaveAttribute("aria-pressed", "true");
+
+  click(engineering);
+  expect(engineering).toHaveAttribute("aria-pressed", "true");
+  expect(all).toHaveAttribute("aria-pressed", "false");
+  expect(screen.getByText("GitHub progress weekly")).toBeInTheDocument();
+  expect(screen.queryByText("Browser screenshots")).not.toBeInTheDocument();
+
+  click(engineering);
+  expect(engineering).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByText("GitHub progress weekly")).toBeInTheDocument();
+
+  await fill(screen.getByLabelText("Search use cases"), "Browser screenshots");
+  expect(
+    screen.getByText("No use cases match your search."),
+  ).toBeInTheDocument();
+  expect(engineering).toHaveAttribute("aria-pressed", "true");
+
+  click(all);
+  expect(screen.getByText("Browser screenshots")).toBeInTheDocument();
+  expect(screen.getByLabelText("Search use cases")).toHaveValue(
+    "Browser screenshots",
+  );
+  expect(
+    filters.filter((button) => {
+      return button.getAttribute("aria-pressed") === "true";
+    }),
+  ).toStrictEqual([all]);
+});
 
 test("The ideas catalog still offers connector-free use cases", async () => {
   configureAgent();

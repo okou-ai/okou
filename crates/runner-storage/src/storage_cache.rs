@@ -4605,7 +4605,6 @@ mod tests {
             archive_url: url,
             vas_storage_name: name.to_string(),
             vas_version_id: version.to_string(),
-            baseline_candidate: false,
             instructions_target_filename: None,
             archive_size: None,
         }

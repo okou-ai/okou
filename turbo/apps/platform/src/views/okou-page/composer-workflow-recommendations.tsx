@@ -1,20 +1,12 @@
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
+import { ArrowRight, Clock3 } from "lucide-react";
 import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Clock3,
-} from "lucide-react";
-import {
+  Badge,
   Button,
   Dialog,
-  DialogBody,
   DialogContent,
   DialogDescription,
-  DialogHeader,
   DialogTitle,
   Textarea,
 } from "@okouai/ui";
@@ -40,26 +32,35 @@ import { WorkflowResultPreview } from "./workflow-result-preview.tsx";
 
 const DETAIL_ORDER = ["one", "two", "three"] as const;
 
-function WorkflowConnectors({
-  item,
-}: {
-  readonly item: WorkflowRecommendation;
-}) {
+/* What the workflow reads and writes, then how often it runs: one row of
+   badges in place of a "Works with" section and a separate cadence line. */
+function WorkflowFacts({ item }: { readonly item: WorkflowRecommendation }) {
+  const { t } = useTranslation();
+  const cadence = t(
+    ($) => {
+      return $.chat.taskChips.workflows.items;
+    },
+    { returnObjects: true },
+  )[item.id].cadence;
   const connectors = useLastResolved(connectorCatalogStatus$)?.connectors;
   return (
-    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-muted-foreground">
+    <ul className="flex min-w-0 flex-wrap gap-2">
       {item.connectors.map((slug) => {
         const connector = connectors?.find((candidate) => {
           return candidate.slug === slug;
         });
         return connector ? (
-          <span key={slug} className="inline-flex items-center gap-1">
+          <Badge key={slug} render={<li />} className="text-xs text-foreground">
             <ConnectorIcon icon={connector.icon} size={12} />
-            <span>{connector.label}</span>
-          </span>
+            {connector.label}
+          </Badge>
         ) : null;
       })}
-    </span>
+      <Badge render={<li />} className="text-xs text-foreground">
+        <Clock3 className="text-muted-foreground" aria-hidden />
+        {cadence}
+      </Badge>
+    </ul>
   );
 }
 
@@ -142,70 +143,6 @@ function useWorkflowActions(signals: ComposerSignals) {
   };
 }
 
-function WorkflowDetailNavigation({
-  signals,
-  item,
-}: {
-  readonly signals: ComposerSignals;
-  readonly item: WorkflowRecommendation;
-}) {
-  const { t } = useTranslation();
-  const copy = t(
-    ($) => {
-      return $.chat.taskChips.workflows;
-    },
-    { returnObjects: true },
-  );
-  const open = useSet(signals.taskChips.workflows.open$);
-  const browse = useSet(signals.taskChips.workflows.browse$);
-  const move = (offset: number) => {
-    const index = WORKFLOW_RECOMMENDATIONS.findIndex((candidate) => {
-      return candidate.id === item.id;
-    });
-    open(
-      WORKFLOW_RECOMMENDATIONS[
-        (index + offset + WORKFLOW_RECOMMENDATIONS.length) %
-          WORKFLOW_RECOMMENDATIONS.length
-      ]!.id,
-    );
-  };
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <Button
-        variant="quiet"
-        size="xs"
-        onClick={browse}
-        className="gap-1.5 font-normal"
-      >
-        <ArrowLeft className="size-3.5" aria-hidden />
-        {copy.back}
-      </Button>
-      <div className="flex gap-1">
-        <Button
-          variant="quiet"
-          size="icon-sm"
-          aria-label={copy.previous}
-          onClick={() => {
-            move(-1);
-          }}
-        >
-          <ChevronLeft className="size-4" aria-hidden />
-        </Button>
-        <Button
-          variant="quiet"
-          size="icon-sm"
-          aria-label={copy.next}
-          onClick={() => {
-            move(1);
-          }}
-        >
-          <ChevronRight className="size-4" aria-hidden />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function WorkflowSteps({ item }: { readonly item: WorkflowRecommendation }) {
   const { t } = useTranslation();
   const copy = t(
@@ -214,66 +151,32 @@ function WorkflowSteps({ item }: { readonly item: WorkflowRecommendation }) {
     },
     { returnObjects: true },
   );
-  const detail = copy.items[item.id];
   return (
-    <div className="space-y-5">
-      <WorkflowResultPreview id={item.id} />
-      <div className="space-y-3">
-        <h3 className="text-xs font-medium">{copy.whatHappens}</h3>
-        <ol className="space-y-3">
-          {DETAIL_ORDER.map((key, index) => {
-            return (
-              <li
-                key={key}
-                className="flex items-start gap-2.5 text-xs leading-5 text-muted-foreground"
-              >
-                <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] text-foreground">
-                  {index + 1}
-                </span>
-                <span>{detail.steps[key]}</span>
-              </li>
-            );
-          })}
-        </ol>
-      </div>
-      <p className="text-[11px] leading-4 text-muted-foreground">
-        {copy.ownSources}
-      </p>
-    </div>
-  );
-}
-
-function WorkflowResults({ item }: { readonly item: WorkflowRecommendation }) {
-  const { t } = useTranslation();
-  const copy = t(
-    ($) => {
-      return $.chat.taskChips.workflows;
-    },
-    { returnObjects: true },
-  );
-  return (
-    <div className="space-y-2">
-      <h3 className="text-xs font-medium">{copy.whatYouGet}</h3>
-      <ul className="space-y-2">
-        {DETAIL_ORDER.map((key) => {
+    <div className="space-y-3">
+      <h3 className="text-sm font-medium">{copy.whatHappens}</h3>
+      <ol className="space-y-2.5">
+        {DETAIL_ORDER.map((key, index) => {
           return (
             <li
               key={key}
-              className="flex items-start gap-2 text-xs leading-5 text-muted-foreground"
+              className="flex items-start gap-3 text-sm leading-5 text-muted-foreground"
             >
-              <Check
-                className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400"
-                aria-hidden
-              />
-              <span>{copy.items[item.id].results[key]}</span>
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium text-foreground">
+                {index + 1}
+              </span>
+              <span>{copy.items[item.id].steps[key]}</span>
             </li>
           );
         })}
-      </ul>
+      </ol>
     </div>
   );
 }
 
+/**
+ * The decision column beside the sample: the name, what the workflow touches,
+ * what it does each time, then the optional preference and the two ways out.
+ */
 function WorkflowDetail({
   signals,
   item,
@@ -293,52 +196,41 @@ function WorkflowDetail({
   const detail = copy.items[item.id];
   const context = useGet(signals.taskChips.workflows.context$);
   const setContext = useSet(signals.taskChips.workflows.setContext$);
+  const browse = useSet(signals.taskChips.workflows.browse$);
   return (
-    <div className="space-y-4 pb-2">
-      <WorkflowDetailNavigation signals={signals} item={item} />
-      <div className="grid gap-6 md:grid-cols-2">
-        <WorkflowSteps item={item} />
-        <div className="flex min-w-0 flex-col gap-5">
-          <h2 className="text-xl font-medium leading-7">{detail.title}</h2>
-          <WorkflowResults item={item} />
-          <div className="space-y-2">
-            <h3 className="text-xs font-medium">{copy.worksWith}</h3>
-            <WorkflowConnectors item={item} />
-            <p className="text-[11px] leading-4 text-muted-foreground">
-              {detail.scope}
-            </p>
-          </div>
-          <p className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Clock3 className="size-3.5" aria-hidden />
-            {detail.cadence}
-          </p>
-          <div className="space-y-2">
-            <label
-              htmlFor="workflow-recommendation-context"
-              className="text-xs font-medium"
-            >
-              {copy.tailor}
-            </label>
-            <Textarea
-              id="workflow-recommendation-context"
-              value={context}
-              onChange={(event) => {
-                setContext(event.target.value);
-              }}
-              placeholder={copy.placeholder}
-              rows={3}
-              className="resize-none text-xs"
-            />
-          </div>
-          <div className="mt-auto space-y-2">
-            <Button className="w-full gap-2" onClick={onUse}>
-              {copy.use}
-              <ArrowRight className="size-4" aria-hidden />
-            </Button>
-            <p className="text-[11px] leading-4 text-muted-foreground">
-              {detail.next}
-            </p>
-          </div>
+    <div className="flex min-w-0 flex-col gap-6 p-6 lg:p-8">
+      <div className="space-y-2 pr-8">
+        <DialogTitle className="text-xl leading-7">{detail.name}</DialogTitle>
+        <DialogDescription className="leading-5">
+          {detail.description}
+        </DialogDescription>
+      </div>
+      <WorkflowFacts item={item} />
+      <WorkflowSteps item={item} />
+      <div className="space-y-3 pt-1">
+        <Textarea
+          aria-label={copy.tailor}
+          value={context}
+          onChange={(event) => {
+            setContext(event.target.value);
+          }}
+          placeholder={copy.tailor}
+          rows={2}
+          className="resize-none"
+        />
+        <div className="flex items-center justify-between gap-3">
+          <Button
+            variant="quiet"
+            size="sm"
+            onClick={browse}
+            className="-ml-3 font-normal"
+          >
+            {copy.browse}
+          </Button>
+          <Button className="gap-2" onClick={onUse}>
+            {copy.use}
+            <ArrowRight className="size-4" aria-hidden />
+          </Button>
         </div>
       </div>
     </div>
@@ -370,18 +262,21 @@ function WorkflowDialog({ signals }: { readonly signals: ComposerSignals }) {
       }}
       onOpenChangeComplete={onCloseComplete}
     >
-      <DialogContent maxWidth="4xl" closeLabel={copy.close}>
-        <DialogHeader className="pr-10">
-          <DialogTitle>{item && copy.items[item.id].name}</DialogTitle>
-          <DialogDescription>
-            {item && copy.items[item.id].description}
-          </DialogDescription>
-        </DialogHeader>
-        <DialogBody>
-          {item && (
+      {/* The sample fills the left column to the dialog's own edges, so the
+          popup's radius and clipping frame it. The columns split only from lg,
+          where the popup always reaches its 4xl cap: narrower, the sample
+          column cannot hold the metrics preview's three figures side by side. */}
+      <DialogContent
+        maxWidth="4xl"
+        closeLabel={copy.close}
+        contentClassName="gap-0 p-0 lg:grid-cols-[minmax(0,9fr)_minmax(0,11fr)]"
+      >
+        {item && (
+          <>
+            <WorkflowResultPreview id={item.id} />
             <WorkflowDetail signals={signals} item={item} onUse={useWorkflow} />
-          )}
-        </DialogBody>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

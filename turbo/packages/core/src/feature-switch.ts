@@ -72,12 +72,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Convert an HTML presentation into an editable pptx from the CLI.",
     enabled: false,
-    // Opened to the staff org: the open question is how a converted deck reads
-    // for a viewer without its fonts, and that needs more decks than the
-    // maintainer alone can try.
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    // Kept beside the org so the maintainer keeps the feature while signed
-    // into a customer workspace, where the org hash does not apply.
+    // Limit the rollout to the maintainer across workspaces while conversion
+    // fidelity is being evaluated.
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
@@ -327,6 +323,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Require a responsibility when creating an Agent, then pin it and open a setup thread asking it to adopt that responsibility.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.PiOpenRouterChatCompletions]: {
+    maintainer: "ethan@okou.ai",
+    description:
+      "Launch Pi OpenRouter routes with the generation 5 Chat Completions model config. Enable only after every Runner advertises generation 5.",
+    enabled: false,
   },
   [FeatureSwitchKey.LarkIntegration]: {
     maintainer: "yuma@okou.ai",

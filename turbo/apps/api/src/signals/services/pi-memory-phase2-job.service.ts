@@ -13,6 +13,7 @@ import {
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
+import { command } from "ccstate";
 import {
   and,
   asc,
@@ -29,6 +30,7 @@ import {
 } from "drizzle-orm";
 
 import type { ApiDb, Tx } from "../../lib/db-types";
+import { writeDb$ } from "../external/db";
 
 export const PI_MEMORY_PHASE2_LEASE_DURATION_MS = 60 * 60 * 1000;
 export const PI_MEMORY_PHASE2_RETRY_DELAY_MS = 60 * 60 * 1000;
@@ -750,49 +752,50 @@ function exactLeaseCondition(args: PiMemoryPhase2LeaseFence) {
   );
 }
 
-export async function failPiMemoryPhase2Job(
-  db: ApiDb,
-  args: PiMemoryPhase2LeaseFence & { readonly errorClass: string },
-): Promise<boolean> {
-  return await db.transaction(async (tx) => {
-    const [job] = await tx
-      .select({
-        inputRevision: piMemoryPhase2Jobs.inputRevision,
-        retryCount: piMemoryPhase2Jobs.retryCount,
-      })
-      .from(piMemoryPhase2Jobs)
-      .where(exactLeaseCondition(args))
-      .limit(1)
-      .for("update", { of: piMemoryPhase2Jobs });
-    if (!job) {
-      return false;
-    }
-
-    const hasNewerInput = job.inputRevision > args.claimedRevision;
-    const retryCount = hasNewerInput ? 0 : job.retryCount + 1;
-    const terminal = retryCount >= PI_MEMORY_PHASE2_MAX_ATTEMPTS;
-    const [failed] = await tx
+export const failPiMemoryPhase2Job$ = command(
+  async (
+    { set },
+    args: PiMemoryPhase2LeaseFence & { readonly errorClass: string },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    signal.throwIfAborted();
+    const hasNewerInput = gt(
+      piMemoryPhase2Jobs.inputRevision,
+      args.claimedRevision,
+    );
+    const reachedAttemptLimit = gte(
+      sql`${piMemoryPhase2Jobs.retryCount} + 1`,
+      PI_MEMORY_PHASE2_MAX_ATTEMPTS,
+    );
+    const retryAt = new Date(
+      args.currentTime.getTime() + PI_MEMORY_PHASE2_RETRY_DELAY_MS,
+    );
+    const [failed] = await set(writeDb$)
       .update(piMemoryPhase2Jobs)
       .set({
-        status: hasNewerInput
-          ? "pending"
-          : terminal
-            ? "terminal_failure"
-            : "retryable_failure",
+        status: sql`CASE
+          WHEN ${hasNewerInput} THEN 'pending'
+          WHEN ${reachedAttemptLimit} THEN 'terminal_failure'
+          ELSE 'retryable_failure'
+        END`,
         claimedRevision: null,
         claimedBaseVersionId: null,
         leaseToken: null,
         sandboxLeaseToken: null,
         leaseExpiresAt: null,
         maintenanceRunId: null,
-        retryCount,
-        retryAt:
-          hasNewerInput || terminal
-            ? null
-            : new Date(
-                args.currentTime.getTime() + PI_MEMORY_PHASE2_RETRY_DELAY_MS,
-              ),
-        lastErrorClass: hasNewerInput ? null : args.errorClass,
+        retryCount: sql`CASE
+          WHEN ${hasNewerInput} THEN 0
+          ELSE ${piMemoryPhase2Jobs.retryCount} + 1
+        END`,
+        retryAt: sql`CASE
+          WHEN ${hasNewerInput} OR ${reachedAttemptLimit} THEN NULL
+          ELSE ${sql.param(retryAt, piMemoryPhase2Jobs.retryAt)}::timestamp
+        END`,
+        lastErrorClass: sql`CASE
+          WHEN ${hasNewerInput} THEN NULL
+          ELSE ${args.errorClass}
+        END`,
         claimedSelectionDigest: null,
         claimedSelectedCount: null,
         claimedSelectedUtf8Bytes: null,
@@ -800,6 +803,7 @@ export async function failPiMemoryPhase2Job(
       })
       .where(exactLeaseCondition(args))
       .returning({ memoryStorageId: piMemoryPhase2Jobs.memoryStorageId });
+    signal.throwIfAborted();
     return failed !== undefined;
-  });
-}
+  },
+);

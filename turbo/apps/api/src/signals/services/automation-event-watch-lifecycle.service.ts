@@ -23,8 +23,8 @@ import {
   reconcileGoogleFormsWatchesForUser$,
 } from "./google-forms-automation-event.service";
 import {
-  ensureGoogleMeetTranscriptGeneratedSubscriptionForUser,
-  reconcileGoogleMeetSubscriptionsForUser,
+  ensureGoogleMeetTranscriptGeneratedSubscriptionForUser$,
+  reconcileGoogleMeetSubscriptionsForUser$,
 } from "./google-meet-automation-event.service";
 
 interface AutomationEventWatchAutomation {
@@ -164,7 +164,6 @@ export const reconcileAutomationEventWatches$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
     const targets = new Map<string, AutomationEventWatchTarget>();
     for (const automation of args.automations) {
       const target = automationEventWatchTarget(automation);
@@ -199,9 +198,9 @@ export const reconcileAutomationEventWatches$ = command(
         continue;
       }
       if (target.provider === "google_meet") {
-        const reconciled = await reconcileGoogleMeetSubscriptionsForUser(
+        const reconciled = await set(
+          reconcileGoogleMeetSubscriptionsForUser$,
           {
-            db: db,
             orgId: target.orgId,
             userId: target.userId,
           },
@@ -242,7 +241,6 @@ export const reconcileAutomationEventWatchInventoryForOwner$ = command(
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
     const gmail = await set(
       reconcileGmailWatchesForUser$,
       { orgId: args.orgId, userId: args.userId },
@@ -255,8 +253,9 @@ export const reconcileAutomationEventWatchInventoryForOwner$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const meet = await reconcileGoogleMeetSubscriptionsForUser(
-      { db, orgId: args.orgId, userId: args.userId },
+    const meet = await set(
+      reconcileGoogleMeetSubscriptionsForUser$,
+      { orgId: args.orgId, userId: args.userId },
       signal,
     );
     signal.throwIfAborted();
@@ -299,7 +298,6 @@ const ensureNonFormsTarget$ = command(
     allowStagedOfficialTarget: boolean,
     signal: AbortSignal,
   ): Promise<AutomationEventWatchReconfigurationResult> => {
-    const db = set(writeDb$);
     let result:
       | {
           readonly kind: "ok";
@@ -327,9 +325,9 @@ const ensureNonFormsTarget$ = command(
               signal,
             );
     } else if (target.provider === "google_meet") {
-      result = await ensureGoogleMeetTranscriptGeneratedSubscriptionForUser(
+      result = await set(
+        ensureGoogleMeetTranscriptGeneratedSubscriptionForUser$,
         {
-          db,
           orgId: target.orgId,
           userId: target.userId,
           connectorId: target.connectorId,

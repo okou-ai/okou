@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.220.22](https://github.com/okou-ai/okou/compare/runner-rs-v0.220.21...runner-rs-v0.220.22) (2026-10-08)
+
+
+### Documentation
+
+* align captured long-context threshold contract ([#37989](https://github.com/okou-ai/okou/issues/37989)) ([30eabca](https://github.com/okou-ai/okou/commit/30eabca061a6479a5b4fc40e7d6be0cc99da3f93))
+
+
+### Refactoring
+
+* assemble current run inputs without agent configuration ([#38004](https://github.com/okou-ai/okou/issues/38004)) ([22efd4b](https://github.com/okou-ai/okou/commit/22efd4b6b34872c0585a0d4c3778cb3b59d9d100))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.220.21](https://github.com/okou-ai/okou/compare/runner-rs-v0.220.20...runner-rs-v0.220.21) (2026-10-08)
 
 

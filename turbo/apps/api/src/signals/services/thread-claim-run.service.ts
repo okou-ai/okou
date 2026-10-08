@@ -86,11 +86,6 @@ import {
   agentConnectorScopeFromRows,
   type AgentConnectorScopeSnapshot,
 } from "./agent-connector-scope.service";
-import {
-  type AgentExecutionDefinition,
-  type AgentExecutionConfig as agentRunCreateAgentExecutionConfig,
-  buildAgentExecutionConfig,
-} from "./agent-execution-config";
 import { activatePendingRun$ as activateCommittedRun$ } from "./agent-run-activation.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
 import {
@@ -214,6 +209,7 @@ import {
 } from "./pending-launch-tail-plan";
 import {
   materializePreparedPiProvider,
+  piOpenRouterChatCompletionsEnabled,
   type PiModelPreparationInput,
   resolvePreparedPiModelConfig,
   shouldUsePiExecution,
@@ -445,7 +441,7 @@ import {
 } from "@okouai/core/feishu-platform";
 import {
   getInstructionsFilename,
-  isSupportedFramework,
+  getValidatedFramework,
   type SupportedFramework,
 } from "@okouai/core/frameworks";
 import { generationTemplateIdentity } from "@okouai/core/generation-template-identity";
@@ -6288,13 +6284,6 @@ export function createThreadClaimRunObjects(
       };
     },
   );
-  const content$ = computed(async (get) => {
-    const agent = await get(preCreateExecutionAgent$);
-    if (!agent) {
-      throw new Error("Agent disappeared after preparation authorization");
-    }
-    return buildAgentExecutionConfig(agent.name);
-  });
   const preCreateModelFeatureSwitchContext$ = computed(async (get) => {
     const observed = await get(featureSwitchContext$);
     return observed === undefined
@@ -6302,29 +6291,16 @@ export function createThreadClaimRunObjects(
       : observed;
   });
   const runFramework$ = computed(async (get) => {
-    const [input, content] = await Promise.all([
-      get(providerInput$),
-      get(content$),
-    ]);
+    const input = await get(providerInput$);
     if (isRouteError(input)) {
       return input;
     }
-    if (isRouteError(content)) {
-      return content;
-    }
-    const validation = validateCompose(content, undefined, undefined, {
-      validateEnvironmentReferences: false,
-    });
-    if (isRouteError(validation)) {
-      return validation;
-    }
-    const composeFramework = validation.framework;
     const args = input.args;
     if (args.modelProviderType && isModelProviderType(args.modelProviderType)) {
       return getFrameworkForType(args.modelProviderType);
     }
     if (!args.modelProviderId) {
-      return composeFramework;
+      return getValidatedFramework(undefined);
     }
     const identity = await get(executionContext$);
     const member = await get(identity.memberModels$);
@@ -6337,10 +6313,10 @@ export function createThreadClaimRunObjects(
       });
       return account && isModelProviderType(account.type)
         ? getFrameworkForType(account.type)
-        : composeFramework;
+        : getValidatedFramework(undefined);
     }
     if (!provider || !isModelProviderType(provider.type)) {
-      return composeFramework;
+      return getValidatedFramework(undefined);
     }
     return getFrameworkForType(provider.type);
   });
@@ -6518,9 +6494,10 @@ export function createThreadClaimRunObjects(
     if (isRouteError(provider)) {
       return provider;
     }
+    const featureSwitchContext = await get(preCreateModelFeatureSwitchContext$);
     const materialized = safeSync(() => {
       return materializePreparedPiProvider(
-        piModelPreparationInput(context.input.args),
+        piModelPreparationInput(context.input.args, featureSwitchContext),
         provider,
       );
     });
@@ -6531,7 +6508,6 @@ export function createThreadClaimRunObjects(
   const modelRoute$ = runModelProviderModelRoute$;
   const model = {
     providerInput$: providerInput$,
-    content$: content$,
     featureSwitchContext$: preCreateModelFeatureSwitchContext$,
     framework$: runFramework$,
     modelRoute$: modelRoute$,
@@ -7228,7 +7204,6 @@ export function createThreadClaimRunObjects(
         connectorScope: selection.connectorScope,
         connectorCatalogSelection: selection.connectorCatalogSelection,
         body: { ...body, permissionPolicies: policies ?? undefined },
-        content: buildAgentExecutionConfig(agent.name),
         modelProvider,
         ...snapshot,
         featureSwitchContext: metadata.featureSwitchContext,
@@ -7262,7 +7237,6 @@ export function createThreadClaimRunObjects(
     const connectorContext =
       storedConnectorExecutionContextFromSnapshot(snapshot);
     const eagerInputs = eagerStoredConnectorSecretInputs({
-      content: input.content,
       modelProvider: input.modelProvider,
       connectorContext,
     });
@@ -7449,7 +7423,10 @@ export function createThreadClaimRunObjects(
       ? modelProviderFramework(modelProvider)
       : requestedFramework;
     const piSandbox = resolvePreparedPiModelConfig({
-      input: piModelPreparationInput(args),
+      input: piModelPreparationInput(
+        args,
+        await get(preCreateModelFeatureSwitchContext$),
+      ),
       modelProvider,
     });
     return officialWorkflowRunCandidates(
@@ -7613,7 +7590,6 @@ export function createThreadClaimRunObjects(
         selection,
         snapshot,
         officialWorkflowRun,
-        environment,
         bootstrap,
         body,
       ] = await Promise.all([
@@ -7625,7 +7601,6 @@ export function createThreadClaimRunObjects(
         get(connectorSelection$),
         get(connectorSnapshot$),
         get(officialWorkflow$),
-        get(runEnvironmentSnapshot$),
         get(preCreateBootstrapBootstrap$),
         get(storageBody$),
       ]);
@@ -7647,9 +7622,6 @@ export function createThreadClaimRunObjects(
       if (isRouteError(officialWorkflowRun)) {
         return officialWorkflowRun;
       }
-      if (isRouteError(environment)) {
-        return environment;
-      }
       const resolved = selectedRunStorageExecution(agent, session);
       if (isRouteError(resolved)) {
         return resolved;
@@ -7663,6 +7635,9 @@ export function createThreadClaimRunObjects(
           piExecution: selectedRunPiExecution(input.command),
           codexServiceTier: input.command.codexServiceTier,
           reasoningEffort: input.command.reasoningEffort,
+          openrouterChatCompletions: piOpenRouterChatCompletionsEnabled(
+            await get(preCreateModelFeatureSwitchContext$),
+          ),
         },
         modelProvider,
       });
@@ -7682,18 +7657,11 @@ export function createThreadClaimRunObjects(
         kind: "requested",
         args: {
           db: get(db$),
-          content: resolved.content,
-          vars: withoutLegacyAgentRunEnvironmentEntries(
-            buildMergedVariables({
-              persistedEnvironment: environment,
-              runVars: selectedAgentRunVariables(agent.id),
-            }),
-          ),
+          instructionsStorageName: resolved.instructionsStorageName,
           agentOrgId: resolved.orgId,
           runtimeOrgId: input.command.owner.orgId,
           userId: input.command.owner.userId,
           artifacts: metadata.artifacts,
-          volumeVersionOverrides: undefined,
           additionalVolumes: metadata.additionalVolumes,
           additionalVolumeSources: metadata.additionalVolumeSources,
           framework: piSandbox === undefined ? framework : "pi",
@@ -7932,9 +7900,6 @@ export function createThreadClaimRunObjects(
           : {
               ...identity,
               mode: "readonly",
-              ...(mount.baselineCandidate
-                ? { baselineCandidate: mount.baselineCandidate }
-                : {}),
               ...(mount.instructionsTargetFilename === undefined
                 ? {}
                 : {
@@ -8108,10 +8073,7 @@ export function createThreadClaimRunObjects(
       command.owner.userId,
       command.owner.orgId,
       {
-        productAgentExecutionPlan: {
-          identity: "agent",
-          content: buildAgentExecutionConfig(agent.name),
-        },
+        instructionsStorageName: getInstructionsStorageName(agent.name),
         preloadedAgentExecutionObservation: {
           requestUserId: command.owner.userId,
           requestOrgId: command.owner.orgId,
@@ -8152,7 +8114,6 @@ export function createThreadClaimRunObjects(
     }
     return buildResolvedRunBody({
       initialBody: initialRunBody(input.args),
-      resolved,
       persistedEnvironment,
       canonicalOkouRuntime: input.args.includeOkouTokenSecret === true,
       resolvedEnvironment,
@@ -8311,7 +8272,10 @@ export function createThreadClaimRunObjects(
     const { body } = bodyContext;
     const { modelProvider, framework } = runtimeContext;
     const piSandbox = resolvePreparedPiModelConfig({
-      input: piModelPreparationInput(args),
+      input: piModelPreparationInput(
+        args,
+        await get(preCreateModelFeatureSwitchContext$),
+      ),
       modelProvider,
     });
     const resolved = resolveCompatibleDirectResumeSession({
@@ -8322,7 +8286,6 @@ export function createThreadClaimRunObjects(
       },
     });
     const validation = validateRunEnvironmentReferences({
-      resolved,
       body,
       modelProvider,
       connectorContext: runtimeContext.connectorContext,
@@ -8762,7 +8725,6 @@ export function createThreadClaimRunObjects(
           ? args.resolved.resumeSession
           : undefined,
       storagePlan: Promise.resolve(storage.resolved),
-      previousRunStorageMounts: args.resolved.previousRunStorageMounts,
       piSandbox: args.piSandbox,
       chatThreadId: args.chatThreadId,
       piLaunchConfig: args.piLaunchConfig,
@@ -8796,24 +8758,16 @@ export function createThreadClaimRunObjects(
       return {
         kind: "captured" as const,
         recall: noContentPiMemoryRecall(identity),
-        mismatchReason: undefined,
       };
     }
-    const prior = priorPiMemoryRecall({
-      currentMemoryMount,
-      previousRunStorageMounts: args.previousRunStorageMounts,
-      persistedStorageMounts: metadata.persistedStorageMounts,
-    });
-    return prior === undefined
-      ? {
-          kind: "projection" as const,
-          identity,
-          input: {
-            db: args.db,
-            args: { orgId: args.orgId, userId: args.userId, ...identity },
-          },
-        }
-      : { kind: "captured" as const, ...prior };
+    return {
+      kind: "projection" as const,
+      identity,
+      input: {
+        db: args.db,
+        args: { orgId: args.orgId, userId: args.userId, ...identity },
+      },
+    };
   });
   const projectionInput$ = computed(
     async (get): Promise<MemorySummaryProjectionReadInput | undefined> => {
@@ -8879,13 +8833,6 @@ export function createThreadClaimRunObjects(
         return undefined;
       }
       if (selection.kind === "captured") {
-        if (selection.mismatchReason) {
-          L.error("Pi memory recall epoch did not match the pinned mount", {
-            memoryStorageId: selection.recall.memoryStorageId,
-            storageVersionId: selection.recall.storageVersionId,
-            reason: selection.mismatchReason,
-          });
-        }
         return selection.recall;
       }
       const projection = await get(piMemoryRecallProjection$);
@@ -8986,7 +8933,7 @@ export function createThreadClaimRunObjects(
         schemaVersion: 3 as const,
         framework:
           context.piSandbox === undefined ? context.framework : ("pi" as const),
-        runnerProfile: runnerProfile(context.resolved.content),
+        runnerProfile: DEFAULT_PROFILE,
       };
       const body = withFinalRunAppendSystemPrompt({
         body: { ...context.body, appendSystemPrompt: finalAppendSystemPrompt },
@@ -9988,38 +9935,16 @@ interface AdditionalVolume {
   readonly version?: string;
   readonly mountPath: string;
   readonly system?: boolean;
-  readonly baselineCandidate?: true;
   readonly expectedStorageId?: string;
-}
-
-interface VolumeConfig {
-  readonly name: string;
-  readonly version: string;
-  readonly optional?: boolean;
-  readonly system?: boolean;
-}
-
-interface AgentConfig {
-  readonly framework?: string;
-  readonly volumes?: readonly string[];
-  readonly instructions?: unknown;
-}
-
-interface AgentExecutionConfig {
-  readonly agent?: AgentConfig;
-  readonly agents?: Record<string, AgentConfig | undefined>;
-  readonly volumes?: Record<string, VolumeConfig | undefined>;
 }
 
 interface PrepareAgentRunStorageManifestArgs {
   readonly db: ReadonlyDb;
-  readonly content: AgentExecutionConfig;
-  readonly vars: Record<string, string> | undefined;
+  readonly instructionsStorageName: string;
   readonly agentOrgId: string;
   readonly runtimeOrgId: string;
   readonly userId: string;
   readonly artifacts: readonly ContextArtifact[];
-  readonly volumeVersionOverrides: Record<string, string> | undefined;
   readonly additionalVolumes: readonly AdditionalVolume[] | undefined;
   readonly additionalVolumeSources:
     | readonly StorageManifestSource[]
@@ -10115,7 +10040,6 @@ interface ResolvedManifestStorageInput {
   readonly name: string;
   readonly mountPath: string;
   readonly vasStorageName: string;
-  readonly baselineCandidate?: true;
   readonly instructionsTargetFilename?: string;
   readonly optional?: boolean;
   readonly resolved: StorageResolution;
@@ -10238,105 +10162,17 @@ function instructionsFilename(framework: SupportedFramework | "pi"): string {
   return framework === "pi" ? "AGENTS.md" : getInstructionsFilename(framework);
 }
 
-function firstAgentEntry(
-  content: AgentExecutionConfig,
-): { readonly name: string | undefined; readonly agent: AgentConfig } | null {
-  if (content.agent) {
-    return { name: undefined, agent: content.agent };
-  }
-
-  const firstEntry = Object.entries(content.agents ?? {})[0];
-  if (!firstEntry?.[1]) {
-    return null;
-  }
-  return { name: firstEntry[0], agent: firstEntry[1] };
-}
-
-function parseVolumeDeclaration(declaration: string): {
-  readonly name: string;
-  readonly mountPath: string;
-} {
-  const [name, mountPath, extra] = declaration.split(":");
-  if (extra !== undefined || !name?.trim() || !mountPath?.trim()) {
-    throw new Error(
-      `Invalid volume declaration: ${declaration}. Expected format: volume-name:/mount/path`,
-    );
-  }
-  return { name: name.trim(), mountPath: mountPath.trim() };
-}
-
-function expandTemplate(
-  value: string,
-  vars: Record<string, string> | undefined,
-  context: string,
-): string {
-  const { result, missingVars } = expandVariablesInString(value, {
-    vars: vars ?? {},
-  });
-  if (missingVars.length > 0) {
-    throw new Error(
-      `${context} is missing required variables: ${missingVars
-        .map((ref) => {
-          return ref.name;
-        })
-        .join(", ")}`,
-    );
-  }
-  return result;
-}
-
-function resolveComposeVolumes(args: {
-  readonly content: AgentExecutionConfig;
-  readonly vars: Record<string, string> | undefined;
-  readonly volumeVersionOverrides: Record<string, string> | undefined;
+function runInstructionsVolume(args: {
+  readonly instructionsStorageName: string;
   readonly framework: SupportedFramework | "pi";
-}): readonly ResolvedVolume[] {
-  const entry = firstAgentEntry(args.content);
-  if (!entry) {
-    return [];
-  }
-
-  const resolved: ResolvedVolume[] = [];
-  for (const declaration of entry.agent.volumes ?? []) {
-    const parsed = parseVolumeDeclaration(declaration);
-    const config = args.content.volumes?.[parsed.name];
-    if (!config) {
-      throw new Error(
-        `Volume "${parsed.name}" is not defined in the volumes section`,
-      );
-    }
-
-    const versionOverride = args.volumeVersionOverrides?.[parsed.name];
-    resolved.push({
-      name: parsed.name,
-      mountPath: parsed.mountPath,
-      vasStorageName: expandTemplate(
-        config.name,
-        args.vars,
-        `Volume "${parsed.name}" name`,
-      ),
-      vasVersion: expandTemplate(
-        versionOverride ?? config.version,
-        args.vars,
-        `Volume "${parsed.name}" version`,
-      ),
-      optional: config.optional,
-      system: config.system,
-    });
-  }
-
-  if (entry.agent.instructions && entry.name) {
-    const storageName = getInstructionsStorageName(entry.name);
-    resolved.push({
-      name: storageName,
-      mountPath: instructionsMountPath(args.framework),
-      vasStorageName: storageName,
-      vasVersion: "latest",
-      instructionsTargetFilename: instructionsFilename(args.framework),
-    });
-  }
-
-  return resolved;
+}): ResolvedVolume {
+  return {
+    name: args.instructionsStorageName,
+    mountPath: instructionsMountPath(args.framework),
+    vasStorageName: args.instructionsStorageName,
+    vasVersion: "latest",
+    instructionsTargetFilename: instructionsFilename(args.framework),
+  };
 }
 
 function dedupArtifacts(
@@ -10695,9 +10531,6 @@ function resolveAdditionalStorageInput(args: {
     name: args.volume.name,
     mountPath: args.volume.mountPath,
     vasStorageName: args.volume.name,
-    ...(args.volume.baselineCandidate === true
-      ? { baselineCandidate: args.volume.baselineCandidate }
-      : {}),
     resolved: resolvedResult.ok,
   };
 }
@@ -10843,9 +10676,6 @@ function readOnlyStorageEntryMetadata(args: {
       versionId: args.plan.resolved.versionId,
       mountPath: args.plan.mountPath,
       ...(archiveSize === undefined ? {} : { archiveSize }),
-      ...(args.plan.baselineCandidate === true
-        ? { baselineCandidate: args.plan.baselineCandidate }
-        : {}),
       ...(args.plan.instructionsTargetFilename
         ? {
             instructionsTargetFilename: args.plan.instructionsTargetFilename,
@@ -10959,12 +10789,7 @@ async function resolveStorageManifestInputs(
     () => {
       return {
         artifacts: dedupArtifacts(args.artifacts),
-        composeVolumes: resolveComposeVolumes({
-          content: args.content,
-          vars: args.vars,
-          volumeVersionOverrides: args.volumeVersionOverrides,
-          framework: args.framework,
-        }),
+        composeVolumes: [runInstructionsVolume(args)],
       };
     },
   );
@@ -11609,11 +11434,10 @@ type AgentRunRecord = AgentRunRequestAgent;
 type RunStorageExecution = Pick<
   ResolvedRunExecution,
   | "orgId"
-  | "content"
+  | "instructionsStorageName"
   | "artifacts"
   | "agentSessionId"
   | "persistedStorageMounts"
-  | "previousRunStorageMounts"
   | "additionalVolumes"
 >;
 
@@ -11623,7 +11447,7 @@ function selectedRunStorageExecution(
 ): RunStorageExecution | CreateRunErrorResult {
   const common = {
     orgId: agent.orgId,
-    content: buildAgentExecutionConfig(agent.name),
+    instructionsStorageName: getInstructionsStorageName(agent.name),
   };
   if (!session?.sessionId) {
     return { ...common, artifacts: [] };
@@ -11639,9 +11463,6 @@ function selectedRunStorageExecution(
     ...common,
     ...resolvedSessionStorage(snapshot.session),
     agentSessionId: session.sessionId,
-    previousRunStorageMounts: session.resetNativeSession
-      ? undefined
-      : (snapshot.previousRun?.storageMounts ?? undefined),
   };
 }
 
@@ -11727,23 +11548,19 @@ interface AgentRunCreateAdditionalVolume {
   readonly version?: string;
   readonly mountPath: string;
   readonly system?: boolean;
-  readonly baselineCandidate?: true;
   readonly expectedStorageId?: string;
 }
 
 type AdditionalVolumeSources = readonly StorageManifestSource[] | undefined;
 
 interface ResolvedAgentExecution {
+  readonly instructionsStorageName: string;
   readonly agentId: string;
   readonly ownerUserId: string;
   readonly orgId: string;
-  readonly content: agentRunCreateAgentExecutionConfig;
   readonly artifacts: readonly AgentRunCreateContextArtifact[];
-  readonly vars?: Record<string, string>;
-  readonly volumeVersions?: Record<string, string>;
   readonly additionalVolumes?: readonly AgentRunCreateAdditionalVolume[];
   readonly persistedStorageMounts?: readonly PersistedStorageMount[];
-  readonly previousRunStorageMounts?: readonly PersistedStorageMount[];
   readonly agentSessionId?: string;
   readonly continuedFromAgentSessionId?: string;
   readonly resumeSession?: StoredExecutionContext["resumeSession"];
@@ -11758,11 +11575,6 @@ interface ResolvedUnboundExecution extends Omit<
 }
 
 type ResolvedRunExecution = ResolvedAgentExecution | ResolvedUnboundExecution;
-
-interface ProductAgentExecutionPlan {
-  readonly identity: "agent" | "no-agent";
-  readonly content: agentRunCreateAgentExecutionConfig;
-}
 
 interface AgentExecutionRequestObservation {
   readonly requestUserId: string;
@@ -12615,16 +12427,7 @@ function addConnectorEnvironmentTemplate(
   environment[envName] = connectorEnvironmentTemplate(envName, valueRef);
 }
 
-function environmentTemplates(args: {
-  readonly content: agentRunCreateAgentExecutionConfig;
-  readonly additionalEnvironment: Record<string, string> | undefined;
-}): Record<string, string> | undefined {
-  const environment = firstAgent(args.content)?.environment;
-  return mergeRecords(args.additionalEnvironment, environment);
-}
-
 function effectiveStoredConnectorEnvironment(args: {
-  readonly content: agentRunCreateAgentExecutionConfig;
   readonly additionalEnvironment: Record<string, string> | undefined;
   readonly storedConnectorEnvironment: Record<string, string> | undefined;
 }): Record<string, string> | undefined {
@@ -12632,10 +12435,7 @@ function effectiveStoredConnectorEnvironment(args: {
     return undefined;
   }
 
-  const overrides = mergeRecords(
-    args.additionalEnvironment,
-    firstAgent(args.content)?.environment,
-  );
+  const overrides = args.additionalEnvironment;
   if (!overrides) {
     return args.storedConnectorEnvironment;
   }
@@ -13081,7 +12881,6 @@ function eagerStoredConnectorSecretNames(args: {
 }
 
 function eagerStoredConnectorSecretInputs(args: {
-  readonly content: agentRunCreateAgentExecutionConfig;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly connectorContext: BuiltinConnectorRuntimeContext;
 }): {
@@ -13091,15 +12890,11 @@ function eagerStoredConnectorSecretInputs(args: {
   const additionalEnvironment = args.modelProvider?.environment;
   return {
     eagerStoredEnvironment: effectiveStoredConnectorEnvironment({
-      content: args.content,
       additionalEnvironment,
       storedConnectorEnvironment: args.connectorContext.storedEnvironment,
     }),
     referencedEnvironmentSecretAliases: referencedEnvironmentSecretAliases(
-      environmentTemplates({
-        content: args.content,
-        additionalEnvironment,
-      }),
+      additionalEnvironment,
     ),
   };
 }
@@ -13391,7 +13186,6 @@ interface RunPreparedConnectorInputs {
   readonly connectorScope: EffectiveConnectorScope;
   readonly connectorCatalogSelection: RunConnectorCatalogSelection;
   readonly body: Pick<CreateRunBody, "permissionPolicies" | "vars" | "secrets">;
-  readonly content: agentRunCreateAgentExecutionConfig;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly storedConnectorSnapshot: StoredConnectorMaterializationSnapshot | null;
   readonly storedConnectorMetadataContext: BuiltinConnectorRuntimeContext;
@@ -13849,12 +13643,15 @@ function piModelPreparationInput(
     RunModelProviderArgs,
     "catalog" | "piExecution" | "codexServiceTier" | "agentRunMetadata"
   >,
+  featureSwitchContext: FeatureSwitchContext,
 ): PiModelPreparationInput {
   return {
     catalog: args.catalog,
     piExecution: args.piExecution,
     codexServiceTier: args.codexServiceTier,
     reasoningEffort: args.agentRunMetadata?.reasoningEffort,
+    openrouterChatCompletions:
+      piOpenRouterChatCompletionsEnabled(featureSwitchContext),
   };
 }
 
@@ -13918,12 +13715,7 @@ type BuiltStoredExecutionContextDraft = Omit<
   readonly context: Omit<StoredExecutionContext, "storageMounts">;
 };
 
-function runnerProfile(content: agentRunCreateAgentExecutionConfig): string {
-  return firstAgent(content)?.experimental_profile ?? DEFAULT_PROFILE;
-}
-
 function expandEnvironment(args: {
-  readonly content: agentRunCreateAgentExecutionConfig;
   readonly vars: Record<string, string> | undefined;
   readonly secrets: Record<string, string> | undefined;
   readonly additionalEnvironment: Record<string, string> | undefined;
@@ -13935,7 +13727,6 @@ function expandEnvironment(args: {
 }): Record<string, string> | null {
   const storedConnectorEnvironment = expandStoredConnectorEnvironment({
     environment: effectiveStoredConnectorEnvironment({
-      content: args.content,
       additionalEnvironment: args.additionalEnvironment,
       storedConnectorEnvironment: args.storedConnectorEnvironment,
     }),
@@ -13943,10 +13734,7 @@ function expandEnvironment(args: {
     secrets: args.secrets,
     environmentSecretPlaceholders: args.environmentSecretPlaceholders,
   });
-  const mergedEnvironment = environmentTemplates({
-    content: args.content,
-    additionalEnvironment: args.additionalEnvironment,
-  });
+  const mergedEnvironment = args.additionalEnvironment;
   if (!mergedEnvironment) {
     return storedConnectorEnvironment ?? null;
   }
@@ -14237,10 +14025,9 @@ function buildStoredExecutionContextDraft(
     customTargets: args.customConnectorContext.targets,
   });
   // Newly constructed API context: remove the reserved namespace from the
-  // fully expanded untrusted/content environment before the trusted overlay.
+  // fully expanded untrusted environment before the trusted overlay.
   const expandedEnvironment = withoutOkouNamespaceEntries(
     expandEnvironment({
-      content: args.resolved.content,
       vars: args.body.vars,
       secrets: executionSecrets.secrets,
       additionalEnvironment: args.modelProvider?.environment,
@@ -14437,12 +14224,8 @@ function withPiMemoryRecallEpoch(
   });
 }
 
-function preparedRunnerGroup(
-  content: agentRunCreateAgentExecutionConfig,
-): string {
-  return officialRunnerGroup(
-    runnerGroup(content) ?? optionalEnv("RUNNER_DEFAULT_GROUP"),
-  );
+function preparedRunnerGroup(): string {
+  return officialRunnerGroup(optionalEnv("RUNNER_DEFAULT_GROUP"));
 }
 
 function preparedRunnerJobBody(
@@ -14540,7 +14323,7 @@ function shouldEnableFrameworkWebSearch(
   }
 
   // A successful route without a stored provider uses the framework key
-  // declared in compose; a stored personal subscription does too.
+  // supplied by current runtime sources; a personal subscription does too.
   return (
     context.modelProvider === null ||
     !isBuiltInModelProviderType(context.modelProvider.type)
@@ -14628,7 +14411,7 @@ function prepareRunnerStorageInput(input: StorageMaterializationInput) {
     storageManifestStats,
     body,
     checkpointArtifacts: runnerCheckpointArtifacts(args),
-    group: preparedRunnerGroup(args.resolved.content),
+    group: preparedRunnerGroup(),
     platformEnvironment: args.includeOkouTokenSecret
       ? { ...args.platformEnvironment, ...okouTokenEnvironment(body) }
       : args.platformEnvironment,
@@ -14705,14 +14488,14 @@ function withPendingOkouTokenSecret(body: CreateRunBody): CreateRunBody {
 }
 
 interface ProductResolutionOptions {
-  readonly executionPlan: ProductAgentExecutionPlan;
+  readonly instructionsStorageName: string;
   readonly timing?: ApiDispatchTimingCollector;
   readonly sessionSnapshot?: ChatThreadExecutionSnapshot;
 }
 
 interface ResolveAgentExecutionOptions {
+  readonly instructionsStorageName: string;
   readonly agentObservation?: RunAgentObservation;
-  readonly productAgentExecutionPlan?: ProductAgentExecutionPlan;
   readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
   readonly timing?: ApiDispatchTimingCollector;
   readonly resetNativeSession?: boolean;
@@ -14758,18 +14541,7 @@ function isRouteError(value: unknown): value is CreateRunErrorResult {
   );
 }
 
-function resolveFramework(
-  content: agentRunCreateAgentExecutionConfig,
-): SupportedFramework | null {
-  const framework = firstAgent(content)?.framework;
-  if (!isSupportedFramework(framework)) {
-    return null;
-  }
-  return framework;
-}
-
 function missingEnvironmentReferences(args: {
-  readonly content: agentRunCreateAgentExecutionConfig;
   readonly vars: Record<string, string> | undefined;
   readonly secrets: Record<string, string> | undefined;
   readonly environmentSecretPlaceholders:
@@ -14781,7 +14553,6 @@ function missingEnvironmentReferences(args: {
 }): string[] {
   assertStoredConnectorEnvironmentReferences({
     environment: effectiveStoredConnectorEnvironment({
-      content: args.content,
       additionalEnvironment: args.additionalEnvironment,
       storedConnectorEnvironment: args.storedConnectorEnvironment,
     }),
@@ -14789,10 +14560,7 @@ function missingEnvironmentReferences(args: {
     secrets: args.secrets,
     environmentSecretPlaceholders: args.environmentSecretPlaceholders,
   });
-  const environment = environmentTemplates({
-    content: args.content,
-    additionalEnvironment: args.additionalEnvironment,
-  });
+  const environment = args.additionalEnvironment;
   const environmentMissing = missingReferencesInEnvironment({
     environment,
     vars: args.vars,
@@ -14885,7 +14653,7 @@ function resolveAgentObservation(
     agentId: row.agentId,
     ownerUserId: row.agentOwner,
     orgId: row.agentOrgId,
-    content: options.executionPlan.content,
+    instructionsStorageName: options.instructionsStorageName,
     artifacts: [],
   };
 }
@@ -14961,12 +14729,8 @@ async function resolveSessionExecution(
     agentId: snapshot.agent.id,
     ownerUserId: snapshot.agent.owner,
     orgId: snapshot.agent.orgId,
-    content: options.executionPlan.content,
+    instructionsStorageName: options.instructionsStorageName,
     ...resolvedSessionStorage(snapshot.session),
-    previousRunStorageMounts: snapshot.previousRun?.storageMounts ?? undefined,
-    vars:
-      (snapshot.previousRun?.vars as Record<string, string> | null) ??
-      undefined,
     agentSessionId: snapshot.session.id,
     continuedFromAgentSessionId: snapshot.session.id,
     resumeSession,
@@ -14998,21 +14762,6 @@ async function resolveProductAgentExecution(
   orgId: string,
   options: ResolveAgentExecutionOptions,
 ): Promise<ResolvedRunExecution | CreateRunErrorResult> {
-  const productAgentExecutionPlan = options.productAgentExecutionPlan;
-  if (productAgentExecutionPlan === undefined) {
-    throw new Error(
-      "Product Agent execution plan is required for canonical resolution",
-    );
-  }
-  if (productAgentExecutionPlan.identity === "no-agent") {
-    return {
-      agentId: null,
-      ownerUserId: userId,
-      orgId,
-      content: productAgentExecutionPlan.content,
-      artifacts: [],
-    };
-  }
   if (body.sessionId) {
     const resolved = await measureApiDispatchTiming(
       options.timing,
@@ -15020,7 +14769,7 @@ async function resolveProductAgentExecution(
       "nested",
       async () => {
         return await resolveSessionExecution(options.sessionSnapshot, {
-          executionPlan: productAgentExecutionPlan,
+          instructionsStorageName: options.instructionsStorageName,
           timing: options.timing,
         });
       },
@@ -15031,8 +14780,6 @@ async function resolveProductAgentExecution(
         agentId: body.agentId ?? resolved.agentId,
         resumeSession: undefined,
         resumeSessionIdentity: undefined,
-        previousRunStorageMounts: undefined,
-        vars: undefined,
       };
     }
     return requireResolvedAgentIdMatch(resolved, body.agentId);
@@ -15053,7 +14800,7 @@ async function resolveProductAgentExecution(
       agentId,
       ownerUserId: preloadedAgent.ownerUserId,
       orgId: preloadedAgent.agentOrgId,
-      content: productAgentExecutionPlan.content,
+      instructionsStorageName: options.instructionsStorageName,
       artifacts: [],
     };
   }
@@ -15063,7 +14810,7 @@ async function resolveProductAgentExecution(
     "nested",
     () => {
       return resolveAgentObservation(options.agentObservation, {
-        executionPlan: productAgentExecutionPlan,
+        instructionsStorageName: options.instructionsStorageName,
         timing: options.timing,
       });
     },
@@ -15084,45 +14831,6 @@ function enforceCaptureNetworkBodiesGate(
   return null;
 }
 
-function validateCompose(
-  content: agentRunCreateAgentExecutionConfig,
-  vars: Record<string, string> | undefined,
-  secrets: Record<string, string> | undefined,
-  options?: {
-    readonly validateEnvironmentReferences?: boolean;
-    readonly environmentSecretPlaceholders?: Readonly<Record<string, string>>;
-    readonly additionalEnvironment?: Record<string, string>;
-    readonly storedConnectorEnvironment?: Record<string, string>;
-    readonly connectorVars?: Record<string, string>;
-  },
-): { readonly framework: SupportedFramework } | CreateRunErrorResult {
-  const framework = resolveFramework(content);
-  if (!framework) {
-    return badRequestMessage(
-      "Agent must have a supported framework configured",
-    );
-  }
-
-  if (options?.validateEnvironmentReferences !== false) {
-    const missing = missingEnvironmentReferences({
-      content,
-      vars,
-      secrets,
-      environmentSecretPlaceholders: options?.environmentSecretPlaceholders,
-      additionalEnvironment: options?.additionalEnvironment,
-      storedConnectorEnvironment: options?.storedConnectorEnvironment,
-      connectorVars: options?.connectorVars,
-    });
-    if (missing.length > 0) {
-      return badRequestMessage(
-        `Missing required values: ${missing.join(", ")}`,
-      );
-    }
-  }
-
-  return { framework };
-}
-
 function initialRunBody(args: {
   readonly body: CreateRunBody;
   readonly includeOkouTokenSecret?: boolean;
@@ -15134,15 +14842,11 @@ function initialRunBody(args: {
 
 function buildResolvedRunBody(args: {
   readonly initialBody: CreateRunBody;
-  readonly resolved: ResolvedRunExecution;
   readonly persistedEnvironment: PersistedRunEnvironmentSnapshot;
   readonly canonicalOkouRuntime: boolean;
   readonly resolvedEnvironment?: RunBodyEnvironment;
 }): CreateRunBody {
-  const runVars =
-    args.initialBody.vars !== undefined
-      ? args.initialBody.vars
-      : args.resolved.vars;
+  const runVars = args.initialBody.vars;
   const environment =
     args.resolvedEnvironment ??
     resolveRunBodyEnvironment({
@@ -15154,10 +14858,6 @@ function buildResolvedRunBody(args: {
   return {
     ...args.initialBody,
     ...environment,
-    volumeVersions:
-      args.initialBody.volumeVersions !== undefined
-        ? args.initialBody.volumeVersions
-        : args.resolved.volumeVersions,
   };
 }
 
@@ -15173,8 +14873,8 @@ function resolveRunBodyEnvironment(args: {
     persistedEnvironment: args.persistedEnvironment,
     runVars: args.runVars,
   });
-  // A product Agent's content references only OKOU_TOKEN, which the run
-  // always supplies itself; no stored org/user secret can change the result.
+  // Inject only current Run credentials and authorized provider/connector
+  // bindings; unreferenced org/user secrets remain outside the sandbox.
   const mergedSecrets = args.runSecrets;
 
   return {
@@ -15597,7 +15297,6 @@ interface ProductRunArgs {
   readonly platformEnvironment?: Record<string, string>;
   readonly callbacks?: readonly RunCallback[];
   readonly includeOkouTokenSecret?: boolean;
-  readonly productAgentExecutionPlan?: ProductAgentExecutionPlan;
   readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
   readonly okouTokenComputerUseHostId?: string;
   readonly okouTokenCloudBrowserEnabled?: boolean;
@@ -15615,10 +15314,6 @@ function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
   const command = args.command;
   const { userInfo, initialStablePrompt, piSystemPrompt } =
     buildStableRunPromptContext(args);
-  const productAgentExecutionPlan = {
-    identity: "agent" as const,
-    content: buildAgentExecutionConfig(args.agent.name),
-  };
   return {
     ...selectedRunModelProviderArgs(command),
     catalog: args.catalog,
@@ -15650,7 +15345,6 @@ function buildProductRunArgs(args: ProductRunArgsInput): ProductRunArgs {
     }),
     callbacks: command.callbacks,
     includeOkouTokenSecret: true,
-    productAgentExecutionPlan,
     ...(args.authorizedRequestObservation
       ? {
           preloadedAgentExecutionObservation: {
@@ -15892,7 +15586,7 @@ function buildExactConnectorSkillVolume(args: {
 }
 
 // Legacy CLI runs use the framework resolved from the model provider, never
-// the framework declared in the compose. Eligible Pi runs instead receive the
+// the runtime framework selected from the current model. Eligible Pi runs receive the
 // fixed Pi root before Storage resolves any versions or overlays.
 function buildLegacySystemSkillVolumes(
   skillNames: readonly string[],
@@ -16066,9 +15760,7 @@ function buildInjectedSkillVolumes(
         SEED_SKILLS,
         skillsRoot,
         args.systemSkillStorageResolution,
-      ).map((volume) => {
-        return { ...volume, baselineCandidate: true };
-      }),
+      ),
       "system_skill",
     ) ?? []),
     ...(args.connectorCatalogSelection.kind === "scoped"
@@ -16101,204 +15793,30 @@ function autoMemoryMountPath(
     : CANONICAL_CLAUDE_MEMORY_MOUNT_PATH;
 }
 
-function autoMemoryArtifact(
-  framework: SupportedFramework,
-  piSandbox: PiModelConfig | undefined,
-): AgentRunCreateContextArtifact {
-  return withAutoMemoryMissingRootPolicy({
-    name: AUTO_MEMORY_ARTIFACT_NAME,
-    mountPath: autoMemoryMountPath(framework, piSandbox),
-  });
-}
-
-function isCanonicalAutoMemoryArtifact(
-  artifact: AgentRunCreateContextArtifact,
-  framework: SupportedFramework,
-  piSandbox: PiModelConfig | undefined,
-): boolean {
-  return (
-    artifact.name === AUTO_MEMORY_ARTIFACT_NAME &&
-    artifact.mountPath === autoMemoryMountPath(framework, piSandbox)
-  );
-}
-
-function withAutoMemoryMissingRootPolicy(
-  artifact: AgentRunCreateContextArtifact,
-): AgentRunCreateContextArtifact {
-  return {
-    ...artifact,
-    missingRootPolicy: AUTO_MEMORY_MISSING_ROOT_POLICY,
-  };
-}
-
-function withCanonicalAutoMemoryMissingRootPolicy(
-  artifacts: readonly AgentRunCreateContextArtifact[],
-  framework: SupportedFramework,
-  piSandbox: PiModelConfig | undefined,
-): readonly AgentRunCreateContextArtifact[] {
-  return artifacts.map((artifact) => {
-    return isCanonicalAutoMemoryArtifact(artifact, framework, piSandbox)
-      ? withAutoMemoryMissingRootPolicy(artifact)
-      : artifact;
-  });
-}
-
-function claimsAutoMemorySlot(
-  artifact: AgentRunCreateContextArtifact,
-  framework: SupportedFramework,
-  piSandbox: PiModelConfig | undefined,
-): boolean {
-  return (
-    artifact.name === AUTO_MEMORY_ARTIFACT_NAME ||
-    artifact.mountPath === autoMemoryMountPath(framework, piSandbox)
-  );
-}
-
-function withoutSupersededAutoMemoryArtifacts(
-  artifacts: readonly AgentRunCreateContextArtifact[],
-  framework: SupportedFramework,
-  piSandbox: PiModelConfig | undefined,
-  slotOwnerIndex: number,
-): readonly AgentRunCreateContextArtifact[] {
-  return artifacts.filter((artifact, index) => {
-    return (
-      index >= slotOwnerIndex ||
-      !isCanonicalAutoMemoryArtifact(artifact, framework, piSandbox)
-    );
-  });
-}
-
-function withPinnedPiContinuationMemory(
-  artifacts: readonly AgentRunCreateContextArtifact[],
-  previousRunStorageMounts: readonly PersistedStorageMount[] | undefined,
-): readonly AgentRunCreateContextArtifact[] {
-  const previousMemoryMount = previousRunStorageMounts?.find((mount) => {
-    return (
-      mount.name === AUTO_MEMORY_ARTIFACT_NAME &&
-      mount.mountPath === PI_MEMORY_ROOT &&
-      mount.version !== undefined
-    );
-  });
-  if (!previousMemoryMount?.version) {
-    return artifacts;
-  }
-  const pinnedMemoryArtifact = withAutoMemoryMissingRootPolicy({
-    name: AUTO_MEMORY_ARTIFACT_NAME,
-    version: previousMemoryMount.version,
-    mountPath: PI_MEMORY_ROOT,
-  });
-  let slotOwnerIndex: number | undefined;
-  for (let index = artifacts.length - 1; index >= 0; index -= 1) {
-    const artifact = artifacts[index];
-    if (
-      artifact &&
-      (artifact.name === AUTO_MEMORY_ARTIFACT_NAME ||
-        artifact.mountPath === PI_MEMORY_ROOT)
-    ) {
-      slotOwnerIndex = index;
-      break;
-    }
-  }
-  if (slotOwnerIndex === undefined) {
-    return [...artifacts, pinnedMemoryArtifact];
-  }
-  const slotOwner = artifacts[slotOwnerIndex]!;
-  if (
-    slotOwner.name !== AUTO_MEMORY_ARTIFACT_NAME ||
-    slotOwner.mountPath !== PI_MEMORY_ROOT
-  ) {
-    return artifacts;
-  }
-  return artifacts.map((artifact, index) => {
-    return index === slotOwnerIndex ? pinnedMemoryArtifact : artifact;
-  });
-}
-
 function artifactsForRun(args: {
-  readonly resolved: Pick<
-    ResolvedRunExecution,
-    "agentSessionId" | "artifacts" | "previousRunStorageMounts"
-  >;
+  readonly resolved: Pick<ResolvedRunExecution, "artifacts">;
   readonly framework: SupportedFramework;
   readonly piSandbox: PiModelConfig | undefined;
-  readonly includeAutoMemory: boolean;
-  readonly pinnedMemoryVersionId: string | undefined;
 }): RunArtifacts {
-  const isContinuation = Boolean(args.resolved.agentSessionId);
-  const baseArtifacts =
-    isContinuation && args.piSandbox !== undefined && args.includeAutoMemory
-      ? withPinnedPiContinuationMemory(
-          args.resolved.artifacts,
-          args.resolved.previousRunStorageMounts,
-        )
-      : args.resolved.artifacts;
-  // A producer-pinned memory baseline claims the auto-memory slot last.
-  const artifacts =
-    args.pinnedMemoryVersionId === undefined
-      ? baseArtifacts
-      : [
-          ...baseArtifacts,
-          {
-            ...autoMemoryArtifact(args.framework, args.piSandbox),
-            version: args.pinnedMemoryVersionId,
-          },
-        ];
-  if (!args.includeAutoMemory) {
-    return {
-      artifacts: artifacts.filter((artifact) => {
+  return {
+    artifacts: [
+      ...args.resolved.artifacts.filter((artifact) => {
         return (
           artifact.name !== AUTO_MEMORY_ARTIFACT_NAME &&
-          artifact.mountPath !== PI_MEMORY_ROOT
+          artifact.mountPath !==
+            autoMemoryMountPath(args.framework, args.piSandbox)
         );
       }),
-    };
-  }
-
-  let autoMemorySlotArtifactIndex: number | undefined;
-  for (let index = artifacts.length - 1; index >= 0; index -= 1) {
-    const artifact = artifacts[index];
-    if (
-      artifact &&
-      claimsAutoMemorySlot(artifact, args.framework, args.piSandbox)
-    ) {
-      autoMemorySlotArtifactIndex = index;
-      break;
-    }
-  }
-  if (autoMemorySlotArtifactIndex === undefined) {
-    return {
-      artifacts: [
-        ...artifacts,
-        autoMemoryArtifact(args.framework, args.piSandbox),
-      ],
-    };
-  }
-
-  const slotOwner = artifacts[autoMemorySlotArtifactIndex]!;
-  if (
-    !isCanonicalAutoMemoryArtifact(slotOwner, args.framework, args.piSandbox)
-  ) {
-    return {
-      artifacts: withoutSupersededAutoMemoryArtifacts(
-        artifacts,
-        args.framework,
-        args.piSandbox,
-        autoMemorySlotArtifactIndex,
-      ),
-    };
-  }
-
-  return {
-    artifacts: withCanonicalAutoMemoryMissingRootPolicy(
-      artifacts,
-      args.framework,
-      args.piSandbox,
-    ),
+      {
+        name: AUTO_MEMORY_ARTIFACT_NAME,
+        mountPath: autoMemoryMountPath(args.framework, args.piSandbox),
+        missingRootPolicy: AUTO_MEMORY_MISSING_ROOT_POLICY,
+      },
+    ],
   };
 }
 
 function validateRunEnvironmentReferences(args: {
-  readonly resolved: ResolvedRunExecution;
   readonly body: CreateRunBody;
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly connectorContext: BuiltinConnectorRuntimeContext;
@@ -16312,21 +15830,21 @@ function validateRunEnvironmentReferences(args: {
     bodySecrets: args.body.secrets,
     customConnectorContext: args.customConnectorContext,
   });
-  const validation = validateCompose(
-    args.resolved.content,
-    args.body.vars,
-    validationSecrets.secrets,
-    {
-      validateEnvironmentReferences: args.validateEnvironmentReferences,
-      environmentSecretPlaceholders:
-        args.permissionManifest?.environmentSecretPlaceholders,
-      additionalEnvironment: args.modelProvider?.environment,
-      storedConnectorEnvironment: args.connectorContext.storedEnvironment,
-      connectorVars: args.connectorContext.vars,
-    },
-  );
-
-  return isRouteError(validation) ? validation : null;
+  if (args.validateEnvironmentReferences === false) {
+    return null;
+  }
+  const missing = missingEnvironmentReferences({
+    vars: args.body.vars,
+    secrets: validationSecrets.secrets,
+    environmentSecretPlaceholders:
+      args.permissionManifest?.environmentSecretPlaceholders,
+    additionalEnvironment: args.modelProvider?.environment,
+    storedConnectorEnvironment: args.connectorContext.storedEnvironment,
+    connectorVars: args.connectorContext.vars,
+  });
+  return missing.length === 0
+    ? null
+    : badRequestMessage(`Missing required values: ${missing.join(", ")}`);
 }
 
 function preparedRunAdditionalVolumes(args: {
@@ -16371,7 +15889,6 @@ function preparedRunAdditionalVolumes(args: {
 function prepareRunOutputMetadata(args: {
   readonly createArgs: {
     readonly injectSkillVolumes?: RunSkillVolumeInjection;
-    readonly pinnedMemoryVersionId?: string;
   };
   readonly systemSkillStorageResolution: SystemSkillStorageResolution;
   readonly connectorScope: EffectiveConnectorScope;
@@ -16404,8 +15921,6 @@ function prepareRunOutputMetadata(args: {
     resolved: args.resolved,
     framework: args.framework,
     piSandbox: args.piSandbox,
-    includeAutoMemory: true,
-    pinnedMemoryVersionId: args.createArgs.pinnedMemoryVersionId,
   }).artifacts;
   return {
     additionalVolumes: additionalVolumes.volumes,
@@ -16461,46 +15976,6 @@ function noContentPiMemoryRecall(args: {
   return { ...args, status: "no-content" };
 }
 
-interface PriorPiMemoryRecall {
-  readonly recall: PiMemoryRecallSelection;
-  readonly mismatchReason?: "identity_mismatch" | "invalid_epoch";
-}
-
-function priorPiMemoryRecall(args: {
-  readonly currentMemoryMount: Pick<
-    StorageMountMetadata,
-    "storageId" | "versionId"
-  >;
-  readonly previousRunStorageMounts:
-    | readonly PersistedStorageMount[]
-    | undefined;
-  readonly persistedStorageMounts: readonly PersistedStorageMount[] | undefined;
-}): PriorPiMemoryRecall | undefined {
-  const priorMount =
-    canonicalPiMemoryMount(args.previousRunStorageMounts) ??
-    canonicalPiMemoryMount(args.persistedStorageMounts);
-  if (priorMount?.piMemoryRecall === undefined) {
-    return undefined;
-  }
-  const parsed = piMemoryRecallSelectionSchema.safeParse(
-    priorMount.piMemoryRecall,
-  );
-  if (
-    parsed.success &&
-    parsed.data.memoryStorageId === args.currentMemoryMount.storageId &&
-    parsed.data.storageVersionId === args.currentMemoryMount.versionId
-  ) {
-    return { recall: parsed.data };
-  }
-  return {
-    recall: noContentPiMemoryRecall({
-      memoryStorageId: args.currentMemoryMount.storageId,
-      storageVersionId: args.currentMemoryMount.versionId,
-    }),
-    mismatchReason: parsed.success ? "identity_mismatch" : "invalid_epoch",
-  };
-}
-
 interface PreparePiLaunchResourcesArgs {
   readonly db: ReadonlyDb;
   readonly orgId: string;
@@ -16509,9 +15984,6 @@ interface PreparePiLaunchResourcesArgs {
   readonly runId: string;
   readonly resumeSession: StoredExecutionContext["resumeSession"] | undefined;
   readonly storagePlan: Promise<ResolvedAgentRunStorage>;
-  readonly previousRunStorageMounts:
-    | readonly PersistedStorageMount[]
-    | undefined;
   readonly piSandbox: PiModelConfig | undefined;
   readonly chatThreadId: string | undefined;
   readonly timing: ApiDispatchTimingCollector;
@@ -16629,24 +16101,6 @@ function runnerJobPayload(args: {
   };
 }
 
-function firstAgent(
-  content: agentRunCreateAgentExecutionConfig,
-): AgentExecutionDefinition | undefined {
-  if (content.agent) {
-    return content.agent;
-  }
-  if (!content.agents) {
-    return undefined;
-  }
-  const firstKey = Object.keys(content.agents)[0];
-  return firstKey ? content.agents[firstKey] : undefined;
-}
-
-function runnerGroup(
-  content: agentRunCreateAgentExecutionConfig,
-): string | null {
-  return firstAgent(content)?.experimental_runner?.group ?? null;
-}
 // --- Private implementation: connector context ---
 
 type RunConnectorCatalogSelection =
@@ -18129,9 +17583,6 @@ function storedMountFromPrepared(
     ...identity,
     archiveUrl: prepared.archiveUrl,
     ...(prepared.archiveSize > 0 ? { archiveSize: prepared.archiveSize } : {}),
-    ...(prepared.baselineCandidate
-      ? { baselineCandidate: prepared.baselineCandidate }
-      : {}),
     ...(prepared.instructionsTargetFilename === undefined
       ? {}
       : { instructionsTargetFilename: prepared.instructionsTargetFilename }),

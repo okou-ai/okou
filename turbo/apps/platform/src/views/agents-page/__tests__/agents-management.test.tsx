@@ -625,7 +625,10 @@ test("Review an agent's profile and instructions", async () => {
   configureResearchAgent();
   await setupPage({ context, path: `/agents/${RESEARCH_AGENT_ID}` });
   await screen.findByRole("heading", { name: "Research Agent" });
-  expect(buttonByText("Chat with Research Agent")).toBeVisible();
+  expect(screen.getByLabelText("Chat with Research Agent")).toHaveAttribute(
+    "href",
+    `/agents/${RESEARCH_AGENT_ID}/chat`,
+  );
 
   click(detailTab("Profile"));
 

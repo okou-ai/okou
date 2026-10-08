@@ -530,6 +530,88 @@ pub mod runners {
             },
         }
 
+        /// Thinking levels supported by Pi sessions.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        pub enum PiModelConfigV5ThinkingLevel {
+            /// Disable model thinking.
+            #[serde(rename = "off")]
+            Off,
+            /// Minimal thinking.
+            #[serde(rename = "minimal")]
+            Minimal,
+            /// Low thinking.
+            #[serde(rename = "low")]
+            Low,
+            /// Medium thinking.
+            #[serde(rename = "medium")]
+            Medium,
+            /// High thinking.
+            #[serde(rename = "high")]
+            High,
+            /// Extra-high thinking.
+            #[serde(rename = "xhigh")]
+            Xhigh,
+            /// Maximum thinking.
+            #[serde(rename = "max")]
+            Max,
+        }
+
+        /// One non-secret execution-edge credential binding.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(tag = "kind", rename_all_fields = "camelCase")]
+        pub enum PiModelConfigV5CredentialBinding {
+            /// Chat Completions API-key binding.
+            #[serde(rename = "api-key")]
+            ApiKey {
+                /// Sandbox environment entry containing the value.
+                environment: String,
+                /// API-owned encrypted secret containing the value.
+                secret_name: String,
+            },
+            /// ChatGPT access-token binding.
+            #[serde(rename = "access-token")]
+            AccessToken {
+                /// Sandbox environment entry containing the value.
+                environment: String,
+                /// API-owned encrypted secret containing the value.
+                secret_name: String,
+            },
+            /// ChatGPT account-ID binding.
+            #[serde(rename = "account-id")]
+            AccountId {
+                /// Sandbox environment entry containing the value.
+                environment: String,
+                /// API-owned encrypted secret containing the value.
+                secret_name: String,
+            },
+        }
+
+        /// API-owned non-secret OpenRouter Chat Completions Pi route.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct PiModelConfigV5 {
+            /// Pi model configuration generation.
+            pub schema_version: i64,
+            /// Chat Completions request dialect.
+            pub dialect: String,
+            /// Transport policy selected by the route.
+            pub transport: String,
+            /// Native Pi catalog provider selected by the route.
+            pub provider: String,
+            /// Exact base URL used for model requests.
+            pub base_url: String,
+            /// Exact provider model identifier sent with requests.
+            pub model: String,
+            /// Optional native Pi catalog model used for trusted route metadata.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub catalog_model: Option<String>,
+            /// Explicit Pi thinking level.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub thinking_level: Option<PiModelConfigV5ThinkingLevel>,
+            /// Exactly one non-secret API-key binding materialized only at an execution edge.
+            pub credential_bindings: Vec<PiModelConfigV5CredentialBinding>,
+        }
+
         /// Authenticated Run cancellation reconciliation DTOs.
         pub mod cancellation {
             /// Effective mode persisted by the API's canonical stop decision.
@@ -1358,9 +1440,6 @@ pub mod runners {
             /// Whether the resolved Storage version is explicitly empty.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub empty: Option<bool>,
-            /// Whether this read-only mount participates in baseline stability observation.
-            #[serde(default, skip_serializing_if = "Option::is_none")]
-            pub baseline_candidate: Option<bool>,
             /// Optional filename used when Storage instructions are normalized.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub instructions_target_filename: Option<String>,

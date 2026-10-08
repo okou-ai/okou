@@ -128,11 +128,10 @@ struct ChatDetailView: View {
           } label: {
             Image(systemName: "arrow.down")
               .font(.system(size: 18, weight: .medium))
-              .frame(width: 44, height: 44)
-              .glassEffect(.regular.interactive(), in: Circle())
-              .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
           }
-          .buttonStyle(.plain)
+          .buttonStyle(.glass)
+          .buttonBorderShape(.circle)
+          .controlSize(.large)
           .accessibilityLabel("Scroll to bottom")
           .accessibilityIdentifier("scroll-to-bottom")
           .padding(.bottom, 16)

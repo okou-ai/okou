@@ -10,15 +10,14 @@ import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { deleteWorkflow$ } from "../services/workflow-delete.service";
 import { workflowDetail } from "../services/workflow-detail.service";
 import {
-  getOfficialWorkflow,
-  getOfficialWorkflowInstallationDefinition,
+  getOfficialWorkflow$,
+  getOfficialWorkflowInstallationDefinition$,
   installOfficialWorkflow$,
-  listActiveOfficialWorkflows,
+  listActiveOfficialWorkflows$,
   type OfficialWorkflowInstallResult,
 } from "../services/official-workflow-installation.service";
 import { reconcileOfficialWorkflowInstallation$ } from "../services/official-workflow-reconciliation.service";
@@ -78,25 +77,25 @@ function mutationFailure(
 }
 
 const listOfficialWorkflowsInner$ = command(
-  async ({ get }, signal: AbortSignal) => {
+  async ({ get, set }, signal: AbortSignal) => {
     if (!(await get(officialWorkflowsEnabled$))) {
       return forbidden("Official Workflows are not enabled");
     }
     signal.throwIfAborted();
-    const workflows = await listActiveOfficialWorkflows(get(db$), signal);
+    const workflows = await set(listActiveOfficialWorkflows$, signal);
     return { status: 200 as const, body: [...workflows] };
   },
 );
 
 const getOfficialWorkflowInner$ = command(
-  async ({ get }, signal: AbortSignal) => {
+  async ({ get, set }, signal: AbortSignal) => {
     if (!(await get(officialWorkflowsEnabled$))) {
       return forbidden("Official Workflows are not enabled");
     }
     signal.throwIfAborted();
     const params = get(pathParamsOf(officialWorkflowsContract.get));
-    const workflow = await getOfficialWorkflow(
-      get(db$),
+    const workflow = await set(
+      getOfficialWorkflow$,
       params.definitionName,
       signal,
     );
@@ -146,8 +145,8 @@ const installOfficialWorkflowInner$ = command(
     if (!detail?.official) {
       throw new Error("Installed Official Workflow is not readable");
     }
-    const definition = await getOfficialWorkflowInstallationDefinition(
-      get(db$),
+    const definition = await set(
+      getOfficialWorkflowInstallationDefinition$,
       detail.official.definitionName,
       signal,
     );
@@ -158,32 +157,34 @@ const installOfficialWorkflowInner$ = command(
   },
 );
 
-const getInstallationInner$ = command(async ({ get }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const params = get(pathParamsOf(officialWorkflowInstallationsContract.get));
-  const detail = await get(
-    workflowDetail({
-      orgId: auth.orgId,
-      member: memberFromAuth(auth),
-      workflowId: params.workflowId,
-    }),
-  );
-  signal.throwIfAborted();
-  if (!detail?.official) {
-    return notFound(
-      `Official Workflow installation not found: ${params.workflowId}`,
+const getInstallationInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const params = get(pathParamsOf(officialWorkflowInstallationsContract.get));
+    const detail = await get(
+      workflowDetail({
+        orgId: auth.orgId,
+        member: memberFromAuth(auth),
+        workflowId: params.workflowId,
+      }),
     );
-  }
-  const definition = await getOfficialWorkflowInstallationDefinition(
-    get(db$),
-    detail.official.definitionName,
-    signal,
-  );
-  return {
-    status: 200 as const,
-    body: { workflow: detail, ...(definition ? { definition } : {}) },
-  };
-});
+    signal.throwIfAborted();
+    if (!detail?.official) {
+      return notFound(
+        `Official Workflow installation not found: ${params.workflowId}`,
+      );
+    }
+    const definition = await set(
+      getOfficialWorkflowInstallationDefinition$,
+      detail.official.definitionName,
+      signal,
+    );
+    return {
+      status: 200 as const,
+      body: { workflow: detail, ...(definition ? { definition } : {}) },
+    };
+  },
+);
 
 const reconfigureBody$ = bodyResultOf(
   officialWorkflowInstallationsContract.reconfigure,
@@ -242,8 +243,8 @@ const reconfigureInstallationInner$ = command(
     if (!detail?.official) {
       throw new Error("Reconfigured Official Workflow is not readable");
     }
-    const definition = await getOfficialWorkflowInstallationDefinition(
-      get(db$),
+    const definition = await set(
+      getOfficialWorkflowInstallationDefinition$,
       detail.official.definitionName,
       signal,
     );

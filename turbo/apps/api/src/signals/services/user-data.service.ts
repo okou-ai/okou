@@ -23,14 +23,7 @@ import {
   withModelReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
-import type {
-  SecretResponse,
-  SecretType,
-} from "@okouai/api-contracts/contracts/secrets";
-import type { VariableListResponse } from "@okouai/api-contracts/contracts/variables";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
-import { secrets } from "@okouai/db/schema/secret";
-import { variables } from "@okouai/db/schema/variable";
 import { and, eq, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$, type Db } from "../external/db";
@@ -91,13 +84,6 @@ function parseUserLocale(value: unknown): UserLocale | null {
     return value;
   }
   throw new Error(`Unexpected user locale: ${String(value)}`);
-}
-
-function parseSecretType(value: string): SecretType {
-  if (value === "user" || value === "model-provider" || value === "connector") {
-    return value;
-  }
-  throw new Error(`Unexpected secret type: ${value}`);
 }
 
 export function userPreferences({
@@ -433,85 +419,3 @@ export const updateUserModelPreference$ = command(
     return get(userModelPreference({ orgId: args.orgId, userId: args.userId }));
   },
 );
-
-export function userVariables({
-  orgId,
-  userId,
-}: UserScopedQuery): Computed<Promise<VariableListResponse>> {
-  return computed(async (get): Promise<VariableListResponse> => {
-    const db = get(db$);
-    const rows = await db
-      .select({
-        id: variables.id,
-        name: variables.name,
-        value: variables.value,
-        description: variables.description,
-        createdAt: variables.createdAt,
-        updatedAt: variables.updatedAt,
-      })
-      .from(variables)
-      .where(
-        and(
-          eq(variables.orgId, orgId),
-          eq(variables.userId, userId),
-          eq(variables.type, "user"),
-        ),
-      )
-      .orderBy(variables.name);
-
-    return {
-      variables: rows.map((row) => {
-        return {
-          id: row.id,
-          name: row.name,
-          value: row.value,
-          description: row.description,
-          createdAt: row.createdAt.toISOString(),
-          updatedAt: row.updatedAt.toISOString(),
-        };
-      }),
-    };
-  });
-}
-
-export function userSecrets({ orgId, userId }: UserScopedQuery): Computed<
-  Promise<{
-    readonly secrets: SecretResponse[];
-    readonly connectorOwnerBySecretId: ReadonlyMap<string, string | null>;
-  }>
-> {
-  return computed(async (get) => {
-    const db = get(db$);
-    const rows = await db
-      .select({
-        id: secrets.id,
-        name: secrets.name,
-        description: secrets.description,
-        connectorId: secrets.connectorId,
-        type: secrets.type,
-        createdAt: secrets.createdAt,
-        updatedAt: secrets.updatedAt,
-      })
-      .from(secrets)
-      .where(and(eq(secrets.orgId, orgId), eq(secrets.userId, userId)))
-      .orderBy(secrets.name);
-
-    return {
-      connectorOwnerBySecretId: new Map(
-        rows.map((row) => {
-          return [row.id, row.connectorId] as const;
-        }),
-      ),
-      secrets: rows.map((row) => {
-        return {
-          id: row.id,
-          name: row.name,
-          description: row.description,
-          type: parseSecretType(row.type),
-          createdAt: row.createdAt.toISOString(),
-          updatedAt: row.updatedAt.toISOString(),
-        };
-      }),
-    };
-  });
-}

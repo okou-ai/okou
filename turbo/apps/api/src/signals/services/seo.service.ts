@@ -118,6 +118,7 @@ type DataForSeoBodyResult =
       readonly body: unknown;
       readonly providerCostUsd: number;
       readonly billingQuantity: number;
+      readonly partialResults: boolean;
     };
 
 type DataForSeoAttemptResult =
@@ -134,7 +135,16 @@ const dataForSeoTaskSchema = z.object({
   status_code: z.number().int(),
   status_message: z.string(),
   cost: z.number().finite().nonnegative(),
+  result: z.unknown().optional(),
 });
+
+const dataForSeoPartialSerpResultsSchema = z
+  .array(
+    z.object({
+      items: z.array(z.record(z.string(), z.unknown())).min(1),
+    }),
+  )
+  .min(1);
 
 const dataForSeoResponseSchema = z.object({
   status_code: z.number().int(),
@@ -550,6 +560,60 @@ function providerCostMicros(costUsd: number): number | undefined {
   return Number.isSafeInteger(quantity) ? quantity : undefined;
 }
 
+function dataForSeoTaskError(
+  request: DataForSeoRequest,
+  response: ParsedDataForSeoResponse,
+  task: ParsedDataForSeoTask,
+  diagnostics: DataForSeoDiagnostics,
+  logContext: {
+    readonly operation: SeoRequest["operation"];
+    readonly endpoint: string;
+    readonly attempt: number;
+  },
+): SeoErrorResult | SeoRetryableErrorResult | undefined {
+  const retry = serpTaskRetryError(request, response, task, diagnostics);
+  if (retry) {
+    return retry;
+  }
+  // SERP 40102 and 40106 are completed, potentially billable searches.
+  // Preserve their status and metadata without retrying completed work.
+  const hasNoSearchResults =
+    request.operation === "serp" && task.status_code === 40_102;
+  const hasPartialSearchResults =
+    request.operation === "serp" && task.status_code === 40_106;
+  if (
+    response.tasks_error !== 0 ||
+    (task.status_code !== 20_000 &&
+      !hasNoSearchResults &&
+      !hasPartialSearchResults)
+  ) {
+    L.warn("DataForSEO task failed", { ...logContext, ...diagnostics });
+    return errorResult(
+      dataForSeoTaskFailure(
+        task.status_code,
+        sanitizedErrorMessage(task.status_message),
+      ),
+    );
+  }
+  if (
+    hasPartialSearchResults &&
+    (response.tasks_count !== 1 ||
+      !dataForSeoPartialSerpResultsSchema.safeParse(task.result).success)
+  ) {
+    L.warn("DataForSEO API returned invalid partial results", {
+      ...logContext,
+      ...diagnostics,
+    });
+    return errorResult(
+      badGateway(
+        "DataForSEO returned invalid partial results",
+        "DATAFORSEO_INVALID_RESPONSE",
+      ),
+    );
+  }
+  return undefined;
+}
+
 async function fetchDataForSeoOnce(
   login: string,
   password: string,
@@ -634,28 +698,15 @@ async function fetchDataForSeoOnce(
       ),
     );
   }
-  const retry = serpTaskRetryError(request, parsed.data, task, providerStatus);
-  if (retry) {
-    return retry;
-  }
-  // SERP 40102 is a completed, potentially billable search with no items.
-  // Preserve its status and metadata through the normal response and billing path.
-  const hasNoSearchResults =
-    request.operation === "serp" && task.status_code === 40_102;
-  if (
-    parsed.data.tasks_error !== 0 ||
-    (task.status_code !== 20_000 && !hasNoSearchResults)
-  ) {
-    L.warn("DataForSEO task failed", {
-      ...logContext,
-      ...providerStatus,
-    });
-    return errorResult(
-      dataForSeoTaskFailure(
-        task.status_code,
-        sanitizedErrorMessage(task.status_message),
-      ),
-    );
+  const taskError = dataForSeoTaskError(
+    request,
+    parsed.data,
+    task,
+    providerStatus,
+    logContext,
+  );
+  if (taskError) {
+    return taskError;
   }
   const billingQuantity = providerCostMicros(parsed.data.cost);
   if (billingQuantity === undefined) {
@@ -675,6 +726,7 @@ async function fetchDataForSeoOnce(
     body: result.body,
     providerCostUsd: parsed.data.cost,
     billingQuantity,
+    partialResults: task.status_code === 40_106,
   };
 }
 
@@ -842,6 +894,7 @@ const runDataForSeo$ = command(
         providerCostUsd: providerResult.providerCostUsd,
         creditsCharged,
         result: providerResult.body,
+        ...(providerResult.partialResults ? { partialResults: true } : {}),
       },
     };
   },

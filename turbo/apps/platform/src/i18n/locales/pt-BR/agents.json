@@ -453,6 +453,7 @@
         "title": "Suporte"
       }
     },
+    "categoryFilter": "Filtrar por categoria",
     "chat": "Conversar",
     "description": "Clique em qualquer cartão para iniciar uma conversa. Ela pode virar uma tarefa sob demanda, um workflow recorrente ou um subagente.",
     "search": {
