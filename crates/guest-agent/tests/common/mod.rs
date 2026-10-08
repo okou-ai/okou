@@ -1619,6 +1619,15 @@ pub async fn wait_for_file_contains(
 }
 
 async fn wait_for_file_contains_event(path: &Path, needle: &[u8]) -> io::Result<()> {
+    if needle.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "file readiness marker must not be empty",
+        ));
+    }
+    // Large backlog tests wait on multi-MiB logs. Compile the existing byte
+    // matcher once instead of comparing every byte window after each write.
+    let matcher = aho_corasick::AhoCorasick::new([needle]).map_err(io::Error::other)?;
     let dir = path.parent().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -1640,7 +1649,7 @@ async fn wait_for_file_contains_event(path: &Path, needle: &[u8]) -> io::Result<
 
     loop {
         match tokio::fs::read(path).await {
-            Ok(contents) if find_subsequence(&contents, needle).is_some() => return Ok(()),
+            Ok(contents) if matcher.find(&contents).is_some() => return Ok(()),
             Ok(_) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(error),
