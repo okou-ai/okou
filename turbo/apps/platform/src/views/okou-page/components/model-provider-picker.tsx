@@ -1,7 +1,6 @@
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
 import {
-  getModelProviderPresentationLabel,
   type AvailableRunModel,
   type AvailableRunModelsResponse,
   type ModelProviderType,
@@ -92,37 +91,6 @@ const CODEX_FAST_SELECTED_PREFIX = "__codex_fast_selected__:";
 // the disabled variant to stop the measuring item from bleeding through.
 const MEASURABLE_HIDDEN_SELECT_ITEM_CLASS =
   "absolute left-0 top-0 h-8 w-px overflow-hidden opacity-0 data-[disabled]:opacity-0 pointer-events-none";
-
-function SubscriptionBadge({
-  subscriptionProvider,
-}: {
-  subscriptionProvider: ModelProviderType;
-}) {
-  const { t } = useTranslation();
-  return (
-    <TooltipProvider delay={300}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <span className="shrink-0 cursor-help text-xs font-medium text-muted-foreground underline decoration-dotted decoration-muted-foreground/50 underline-offset-2 hover:text-foreground hover:decoration-muted-foreground">
-              {getModelProviderPresentationLabel(subscriptionProvider)}
-            </span>
-          }
-        />
-        <TooltipContent side="top" className="text-xs">
-          {subscriptionProvider && (
-            <span>
-              {getModelProviderPresentationLabel(subscriptionProvider)}:{" "}
-            </span>
-          )}
-          {t(($) => {
-            return $.settings.models.personal.description;
-          })}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
 
 export function ProBadge() {
   const { t } = useTranslation();
@@ -445,7 +413,6 @@ export function ModelFirstRunModelRowContent({
 }) {
   const catalog = useLastResolved(modelCatalog$);
   const iconType = getModelFirstIconType(runModel.model, catalog);
-  const route = runModel.memberEffective;
   const restricted = !memberRunModelAllowedForPlan(runModel);
   return (
     <span className="flex w-full min-w-0 items-center gap-2">
@@ -453,9 +420,6 @@ export function ModelFirstRunModelRowContent({
       <span className="min-w-0 flex-1 truncate">
         {selectedModelDisplayName(catalog, runModel.model)}
       </span>
-      {route.credentialScope === "member" && (
-        <SubscriptionBadge subscriptionProvider={route.providerType} />
-      )}
       {restricted && <ProBadge />}
       {showSelectedIndicator && (
         <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center text-foreground">

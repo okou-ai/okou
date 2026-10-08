@@ -4792,7 +4792,6 @@
         "claudeTitle": "Claude",
         "codexTitle": "ChatGPT (Codex)",
         "connectAccount": "アカウントを接続",
-        "description": "自分の実行でのみ、自分の資格情報を使用して使用されます。",
         "disconnectAccount": "アカウントの接続を解除",
         "disconnectDescription": "このアカウントをOkouから削除します。プロバイダーとのサブスクリプションは解約されません。",
         "disconnecting": "接続を解除中…",

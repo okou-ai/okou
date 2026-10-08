@@ -82,7 +82,7 @@ async function openChat(
 async function personalOption(): Promise<HTMLElement> {
   return await waitFor(() => {
     const option = modelOption(/GPT 5\.6 Sol/u);
-    expect(within(option).getByText("ChatGPT (Codex)")).toBeInTheDocument();
+    expect(option).not.toBeDisabled();
     return option;
   });
 }
@@ -231,7 +231,7 @@ test("A local active-account change refreshes the member projection", async () =
   await openChat();
   const initialPanel = await openModelPanel("GPT 5.6 Sol");
   const initial = await findModelOption(/GPT 5\.6 Sol/u, initialPanel);
-  expect(within(initial).getByText("ChatGPT (Codex)")).toBeInTheDocument();
+  expect(initial).not.toBeDisabled();
   await closeModelPanel();
   const rail = screen.queryByTestId("labeled-nav-rail");
   const trigger = rail

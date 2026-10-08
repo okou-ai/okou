@@ -4792,7 +4792,6 @@
         "claudeTitle": "Claude",
         "codexTitle": "ChatGPT (Codex)",
         "connectAccount": "連接帳號",
-        "description": "僅在你的執行中使用，走你自己的憑據。",
         "disconnectAccount": "斷開帳號連線",
         "disconnectDescription": "這會把帳號從Okou中移除，但不會取消你在該服務商處的訂閱。",
         "disconnecting": "正在斷開…",

@@ -65,8 +65,8 @@ test("Offer the active catalog models in catalog order with catalog names", asyn
   });
   expect(names).toStrictEqual([
     "Auto",
-    "Claude Sonnet 5Claude Code (OAuth Token)",
-    "GPT 6 LunaChatGPT (Codex)",
+    "Claude Sonnet 5",
+    "GPT 6 Luna",
   ]);
 });
 

@@ -4877,7 +4877,6 @@
         "claudeTitle": "Claude",
         "codexTitle": "ChatGPT (Codex)",
         "connectAccount": "Collega account",
-        "description": "Utilizzato solo nelle tue esecuzioni, con le tue credenziali.",
         "disconnectAccount": "Disconnetti account",
         "disconnectDescription": "Questa azione rimuove l'account da Okou. Non annulla l'abbonamento con il provider.",
         "disconnecting": "Disconnessione…",
