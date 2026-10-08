@@ -79,8 +79,7 @@ export interface PreparedAgentRunOutput {
 }
 
 export type AgentRunOutputErrorResponse =
-  | ReturnType<typeof badRequestMessage>
-  | ReturnType<typeof notFound>;
+  ReturnType<typeof badRequestMessage> | ReturnType<typeof notFound>;
 
 type AgentRunOutputPreparation =
   | { readonly ok: true; readonly prepared: PreparedAgentRunOutput }
@@ -687,8 +686,7 @@ type AgentRunOutputSuccessResponse = ReturnType<
 >;
 
 type AgentRunOutputResponse =
-  | AgentRunOutputSuccessResponse
-  | AgentRunOutputErrorResponse;
+  AgentRunOutputSuccessResponse | AgentRunOutputErrorResponse;
 
 function isActivePiHistoryStatus(status: RunStatus): boolean {
   return status === "pending" || status === "running";
