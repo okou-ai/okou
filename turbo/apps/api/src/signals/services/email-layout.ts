@@ -7,15 +7,15 @@ interface EmailLayoutLink {
 
 interface EmailLayoutProps {
   readonly title: string;
-  readonly heroUrl: string;
-  readonly heroAlt: string;
+  readonly heroUrl?: string;
+  readonly heroAlt?: string;
   readonly bodyHtml: string;
   readonly action: EmailLayoutLink;
   readonly footerText: string;
   readonly footerLinks: readonly EmailLayoutLink[];
 }
 
-/** Shared Morning Brief layout; callers provide escaped or sanitized body HTML. */
+/** Shared email layout; callers provide escaped or sanitized body HTML. */
 export function renderEmailLayout(props: EmailLayoutProps): string {
   const footer = [
     escapeHtml(props.footerText),
@@ -41,7 +41,7 @@ export function renderEmailLayout(props: EmailLayoutProps): string {
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;border-collapse:collapse;text-align:left">
             <tr>
               <td style="padding:0 0 36px">
-                <img src="${escapeHtml(props.heroUrl)}" width="600" alt="${escapeHtml(props.heroAlt)}" style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;color:#171717;font-size:24px;font-weight:700;line-height:1.3">
+                ${props.heroUrl ? `<img src="${escapeHtml(props.heroUrl)}" width="600" alt="${escapeHtml(props.heroAlt ?? props.title)}" style="display:block;width:100%;max-width:600px;height:auto;border:0;outline:none;text-decoration:none;color:#171717;font-size:24px;font-weight:700;line-height:1.3">` : `<h1 style="margin:0;font-size:24px;line-height:1.3">${escapeHtml(props.title)}</h1>`}
               </td>
             </tr>
             <tr>

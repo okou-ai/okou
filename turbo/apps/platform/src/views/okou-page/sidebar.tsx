@@ -843,6 +843,7 @@ function ChatListColumn() {
         <ChatThreadsSection
           scrollSignals={threeColumnSidebarChatThreadScrollSignals}
           contentClassName={CHAT_LIST_INSET}
+          collapsible={false}
           showMarkAllRead
         />
       </div>

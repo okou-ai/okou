@@ -44,6 +44,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   vnc: ["vnc:read", "vnc:write"],
   run: "run-usage:read",
   mail: "connector:read",
+  notify: "notify:write",
   doctor: null,
   credit: ["billing:read", "billing:write"],
   upgrade: null,
@@ -92,6 +93,13 @@ const COMMAND_CAPABILITY_MAP: Record<
 const RUN_ONLY_COMMANDS = new Set(["mcp", "ssh", "vnc", "run"]);
 
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
+  {
+    name: "notify",
+    description: "Send notifications to yourself through Okou",
+    load: async () => {
+      return (await import("./commands/notify")).notifyCommand;
+    },
+  },
   {
     name: "artifact",
     description:

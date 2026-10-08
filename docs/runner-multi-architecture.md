@@ -120,9 +120,10 @@ existing shadow comparison and optional small GitHub manifest publication.
 
 Fresh publication and download are required: missing configuration, storage
 failures, invalid manifests, or binary hash/size mismatches fail the job. Cache-hit
-downloads remain required as well. Compilation stays in the existing compile
-job. Its transfer step and compiler-cache startup step receive R2 credentials;
-credentials are not exported through `GITHUB_ENV` or added to the build step.
+downloads remain required as well. Required runner-binary compilation stays in
+the existing compile job. Its transfer step and compiler-cache startup step
+receive R2 credentials; credentials are not exported through `GITHUB_ENV` or
+added to the build step.
 
 The compile job uses sccache's S3 backend against the existing R2 bucket, under
 `runner-sccache/arm64/` or `runner-sccache/x86_64/`. Within each prefix, sccache
@@ -194,12 +195,44 @@ The production release job retains its separate guest and embedded Runner
 compilation phases together with the existing release creation, asset upload,
 Slack notification, and deployment behavior.
 
-This avoids GitHub's branch-scoped compiler cache and shared storage quota.
-The additional Cargo dependency cache still uses GitHub and saves only on main;
-main often reuses the complete runner binary and skips compilation, so that
-cache alone cannot reliably warm later builds. The first build of new compiler
-inputs remains cold. Cache backend statistics in the compile job report actual
-hits, misses, and write errors; binary and image validation remain required.
+The shared R2 compiler cache avoids GitHub's branch-scoped storage and quota.
+Cache backend statistics in the compile job report actual hits, misses, and
+write errors; binary and image validation remain required.
+
+### Runner dependency-cache prewarming
+
+The additional Cargo dependency cache uses GitHub and saves only on main. PR
+and merge-group compilations restore it without saving. Ordinary main compiler
+misses still populate their own architecture-specific dependency cache.
+
+Main often reuses an R2 runner binary and skips the compiler. To keep a trusted
+writer in that case, Runner Image starts an independent `prewarm-rust-cache`
+job for binary-hit targets on non-release main pushes that need a runner image.
+The planner partitions the configured targets into hit and compile matrices,
+so a target already requiring main compilation is not also prewarmed.
+
+The producer uses the same pinned Rust Cache action, toolchain container,
+sccache/compiler environment, `crates/target` directory, canonical `ci` build,
+and `aarch64-musl-ci` or `x86_64-musl-ci` shared key as consumers. It first checks
+the exact key with `lookup-only` and saving disabled. An exact hit skips cache
+restore, CLI-input download, and compilation. Otherwise it restores compatible
+dependency artifacts and builds only if restore does not report an exact hit;
+an exact hit appearing between lookup and restore also skips the build. The
+normal successful-job post action saves dependencies with workspace crates excluded.
+
+Prewarming is a best-effort optimization, not an image, release-asset, or
+deployment prerequisite. It never publishes its runner outputs. A prewarm
+failure does not relax any required compilation, transfer, binary validation,
+or image gate. Its summary reports actual step outcomes and the cache-hit
+outputs emitted by the action; an empty output is not fabricated as a skipped
+step or a cache hit. A successful prewarm build alone does not prove that the
+subsequent cache-save post action succeeded.
+
+The first use of a new or evicted dependency key can still be cold, and an
+initial prewarm can extend its main workflow's concurrency slot. Before claiming
+a speedup, verify main saves and subsequent PR exact restores for both targets,
+then measure cache archive costs and compiler duration. This does not replace
+R2 sccache statistics or the existing runner-binary reuse policy.
 
 Required consumer GETs use `runner-binary-download.sh`: at most three complete
 download attempts, with 1s/2s backoff and a new partial file each time. Cached

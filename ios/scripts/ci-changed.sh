@@ -10,6 +10,11 @@ case "${EVENT_NAME:?EVENT_NAME is required}" in
     exit 0
     ;;
   pull_request)
+    # Version/changelog-only release PRs are validated in the merge group instead.
+    if [[ "${HEAD_REF:-}" == release-please--branches--* ]]; then
+      echo false
+      exit 0
+    fi
     base=$(bash .github/scripts/changed-base-ref.sh)
     ;;
   merge_group)

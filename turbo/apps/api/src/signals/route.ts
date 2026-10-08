@@ -87,6 +87,7 @@ import { discordInteractionsRoutes } from "./routes/discord-interactions";
 import { discordStatePreviewRoutes } from "./routes/discord-state-preview";
 import { emailInboundRoutes } from "./routes/email-inbound";
 import { emailSubscriptionRoutes } from "./routes/email-subscription";
+import { notificationsRoutes } from "./routes/notifications";
 import { emailUnsubscribeRoutes } from "./routes/email-unsubscribe";
 import { featureSwitchesRoutes } from "./routes/feature-switches";
 import { feishuBrowserConnectRoutes } from "./routes/feishu-browser-connect";
@@ -398,6 +399,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,
   ...emailSubscriptionRoutes,
+  ...notificationsRoutes,
   ...workflowsRoutes,
   ...officialWorkflowRoutes,
   ...workflowAutomationsRoutes,

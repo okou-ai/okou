@@ -1212,9 +1212,11 @@ export function ChatThreadsListMenu({
 function ChatThreadsTitle({
   showMarkAllRead,
   contentId,
+  collapsible,
 }: {
   showMarkAllRead: boolean;
   contentId: string;
+  collapsible: boolean;
 }) {
   const { t } = useTranslation();
   const { titleLabel } = useChatThreadsTitleLabels();
@@ -1227,24 +1229,30 @@ function ChatThreadsTitle({
 
   return (
     <div className="group flex h-8 shrink-0 items-center justify-between rounded-lg pr-0 hover:bg-state-hover transition-colors">
-      <Button
-        type="button"
-        variant="quiet"
-        size="sm"
-        aria-expanded={!collapsed}
-        aria-controls={contentId}
-        onClick={() => {
-          setCollapsed(!collapsed);
-        }}
-        className="h-8 min-w-0 flex-1 cursor-pointer justify-start gap-1 px-2 text-[13px] leading-4 text-nav-copy-muted hover:bg-transparent hover:text-nav-copy active:bg-transparent group-hover:text-nav-copy [&_svg]:size-3"
-      >
-        <span className="min-w-0 truncate">{titleLabel}</span>
-        <span className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
-          <ChevronRight
-            className={`opacity-35 ${collapsed ? "" : "rotate-90"}`}
-          />
+      {collapsible ? (
+        <Button
+          type="button"
+          variant="quiet"
+          size="sm"
+          aria-expanded={!collapsed}
+          aria-controls={contentId}
+          onClick={() => {
+            setCollapsed(!collapsed);
+          }}
+          className="h-8 min-w-0 flex-1 cursor-pointer justify-start gap-1 px-2 text-[13px] leading-4 text-nav-copy-muted hover:bg-transparent hover:text-nav-copy active:bg-transparent group-hover:text-nav-copy [&_svg]:size-3"
+        >
+          <span className="min-w-0 truncate">{titleLabel}</span>
+          <span className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
+            <ChevronRight
+              className={`opacity-35 ${collapsed ? "" : "rotate-90"}`}
+            />
+          </span>
+        </Button>
+      ) : (
+        <span className="min-w-0 flex-1 truncate px-2 text-[13px] leading-4 text-nav-copy-muted">
+          {titleLabel}
         </span>
-      </Button>
+      )}
       <div className="flex items-center gap-0.5">
         <TooltipProvider delay={200}>
           <Tooltip>
@@ -1300,13 +1308,16 @@ function ChatThreadsContent({
   contentClassName,
   contentId,
   stylesheetLoaded,
+  collapsible,
 }: {
   scrollSignals: SidebarChatThreadScrollSignals;
   contentClassName: string;
   contentId: string;
   stylesheetLoaded: boolean;
+  collapsible: boolean;
 }) {
-  const collapsed = useGet(sessionListCollapsed$);
+  const savedCollapsed = useGet(sessionListCollapsed$);
+  const collapsed = collapsible && savedCollapsed;
 
   // The region stays mounted so the title's `aria-controls` always resolves.
   // The attribute carries the collapsed state to assistive technology; the
@@ -1494,10 +1505,12 @@ export function ChatThreadsSection({
   scrollSignals,
   contentClassName,
   showMarkAllRead = false,
+  collapsible = true,
 }: {
   scrollSignals: SidebarChatThreadScrollSignals;
   contentClassName: string;
   showMarkAllRead?: boolean;
+  collapsible?: boolean;
 }) {
   const agentScope = useGet(currentChatAgentScope$);
   const mainStylesheetLoaded = useLastResolved(mainStylesheetLoaded$);
@@ -1509,6 +1522,7 @@ export function ChatThreadsSection({
           key={agentScope ?? "no-agent"}
           showMarkAllRead={showMarkAllRead}
           contentId={CHAT_THREADS_CONTENT_ID}
+          collapsible={collapsible}
         />
       </div>
       <ChatThreadsContent
@@ -1516,6 +1530,7 @@ export function ChatThreadsSection({
         contentClassName={contentClassName}
         contentId={CHAT_THREADS_CONTENT_ID}
         stylesheetLoaded={mainStylesheetLoaded === true}
+        collapsible={collapsible}
       />
     </div>
   );

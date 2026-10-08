@@ -20,6 +20,7 @@ function buildCommands(): Command[] {
     new Command("connector"),
     new Command("mcp"),
     new Command("run"),
+    new Command("notify"),
     new Command("credit"),
     new Command("upgrade"),
     new Command("chat"),
@@ -238,6 +239,7 @@ describe("registerCommands", () => {
       "connector",
       "mcp",
       "run",
+      "notify",
       "credit",
       "chat",
       "schedule",
@@ -670,6 +672,22 @@ describe("registerCommands", () => {
     expect(visibleCommandNames(prog)).toContain("maps");
     expect(visibleCommandNames(prog)).toContain("whoami");
   });
+
+  it.each([true, false])(
+    "gates notify visibility on notify:write (enabled=%s)",
+    (enabled) => {
+      vi.stubEnv(
+        "OKOU_TOKEN",
+        buildOkouToken({
+          scope: "okou",
+          capabilities: enabled ? ["notify:write"] : [],
+        }),
+      );
+      expect(visibleCommandNames(buildProgram()).includes("notify")).toBe(
+        enabled,
+      );
+    },
+  );
 
   it("should hide maps when maps:read capability is missing", () => {
     const token = buildOkouToken({
