@@ -77,7 +77,7 @@ test.each(["pointer", "Enter", "Space"])(
     await user.click(pinnedAgentLink(mobileSidebar(), "Research Agent"));
     await waitFor(() => {
       expect(pathname()).toBe(`/agents/${RESEARCH_AGENT_ID}/chat`);
-      expect(mobileSidebar()).not.toHaveAttribute("data-sidebar-expanded");
+      expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
     });
   },
 );

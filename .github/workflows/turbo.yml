@@ -49,10 +49,6 @@ on:
         required: false
       GOOGLE_ADS_LOGIN_CUSTOMER_ID:
         required: false
-      LANGFUSE_PUBLIC_KEY:
-        required: false
-      LANGFUSE_SECRET_KEY:
-        required: false
       MICROSOFT_TEAMS_BOT_APP_PASSWORD:
         required: false
       NEON_API_KEY:

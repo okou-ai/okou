@@ -418,8 +418,7 @@
         "invite": "आमंत्रित करें",
         "openArtifacts": "मोबाइल आर्टिफ़ैक्ट्स खोलें",
         "openAutomations": "मोबाइल ऑटोमेशन खोलें",
-        "openMenu": "मेनू खोलें",
-        "overlay": "साइडबार ओवरले"
+        "openMenu": "मेनू खोलें"
       },
       "navigation": {
         "agents": "एजेंटों",
@@ -2116,7 +2115,6 @@
         "default": "सोच रहा हूँ..."
       },
       "viewActivityLogs": "गतिविधि लॉग देखें",
-      "viewLangfuseTrace": "Langfuse ट्रेस देखें",
       "viewLogs": "रन लॉग देखें",
       "waitingIn": "प्रतीक्षा कर रहा है",
       "workedFor": "{{duration}} के लिए काम किया",

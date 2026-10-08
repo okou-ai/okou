@@ -1,5 +1,5 @@
 {
-  "id": "217cfc87-7479-4e04-aa51-77d53b75d862",
+  "id": "d34fa3c7-1c0d-4544-8add-cf81af920c9a",
   "prevId": "10a98006-b853-41e5-b8e9-e0f7a9ca9405",
   "version": "7",
   "dialect": "postgresql",
@@ -539,13 +539,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
-        },
-        "langfuse_trace_enabled": {
-          "name": "langfuse_trace_enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "official_workflow_provenance": {
           "name": "official_workflow_provenance",
@@ -12306,127 +12299,6 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.discord_oauth_states": {
-      "name": "discord_oauth_states",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "state_hash": {
-          "name": "state_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "browser_hash": {
-          "name": "browser_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "flow": {
-          "name": "flow",
-          "type": "discord_oauth_flow",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "guild_id": {
-          "name": "guild_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "redirect_uri": {
-          "name": "redirect_uri",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "idx_discord_oauth_states_expiry": {
-          "name": "idx_discord_oauth_states_expiry",
-          "columns": [
-            {
-              "expression": "expires_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_discord_oauth_states_owner": {
-          "name": "idx_discord_oauth_states_owner",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "discord_oauth_states_state_hash_unique": {
-          "name": "discord_oauth_states_state_hash_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "state_hash"
-          ]
-        }
-      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -35328,14 +35200,6 @@
         "consumed",
         "expired",
         "denied"
-      ]
-    },
-    "public.discord_oauth_flow": {
-      "name": "discord_oauth_flow",
-      "schema": "public",
-      "values": [
-        "install",
-        "connect"
       ]
     },
     "public.model_provider_auth_session_status": {

@@ -1659,7 +1659,7 @@ async function claimUsagePackPurchase(
               isNull(usagePackSubscriptions.stripeCheckoutSessionId),
               isNull(usagePackSubscriptions.stripeSubscriptionId),
               notExists(
-                inFlightUsagePackPurchaseQuery(tx, {
+                inFlightUsagePackPurchaseQuery({
                   orgId,
                   sourceSubscriptionId: null,
                   excludeUsagePackSubscriptionId:

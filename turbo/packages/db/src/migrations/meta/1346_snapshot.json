@@ -1,6 +1,6 @@
 {
-  "id": "21bf2801-9eb3-4b55-9e52-e2f566c6fd3e",
-  "prevId": "217cfc87-7479-4e04-aa51-77d53b75d862",
+  "id": "b83084d7-6743-47eb-af80-f57c28cb640e",
+  "prevId": "d34fa3c7-1c0d-4544-8add-cf81af920c9a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -539,13 +539,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
-        },
-        "langfuse_trace_enabled": {
-          "name": "langfuse_trace_enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "official_workflow_provenance": {
           "name": "official_workflow_provenance",
@@ -12327,11 +12320,32 @@
           "primaryKey": false,
           "notNull": true
         },
-        "browser_hash": {
-          "name": "browser_hash",
+        "completion_token_hash": {
+          "name": "completion_token_hash",
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "approval_token_hash": {
+          "name": "approval_token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "phase": {
+          "name": "phase",
+          "type": "discord_oauth_phase",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "failure_code": {
+          "name": "failure_code",
+          "type": "discord_oauth_failure",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
         },
         "user_id": {
           "name": "user_id",
@@ -12363,6 +12377,30 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "verified_guild_id": {
+          "name": "verified_guild_id",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verified_guild_name": {
+          "name": "verified_guild_name",
+          "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verified_discord_user_id": {
+          "name": "verified_discord_user_id",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verified_bot_user_id": {
+          "name": "verified_bot_user_id",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -12428,7 +12466,20 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "chk_discord_oauth_evidence_phase": {
+          "name": "chk_discord_oauth_evidence_phase",
+          "value": "(\n      \"discord_oauth_states\".\"phase\" IN ('verified', 'approved') AND\n      \"discord_oauth_states\".\"verified_guild_id\" IS NOT NULL AND \"discord_oauth_states\".\"verified_guild_name\" IS NOT NULL AND\n      \"discord_oauth_states\".\"verified_discord_user_id\" IS NOT NULL AND \"discord_oauth_states\".\"verified_bot_user_id\" IS NOT NULL\n    ) OR (\n      \"discord_oauth_states\".\"phase\" NOT IN ('verified', 'approved') AND\n      \"discord_oauth_states\".\"verified_guild_id\" IS NULL AND \"discord_oauth_states\".\"verified_guild_name\" IS NULL AND\n      \"discord_oauth_states\".\"verified_discord_user_id\" IS NULL AND \"discord_oauth_states\".\"verified_bot_user_id\" IS NULL\n    )"
+        },
+        "chk_discord_oauth_approval_phase": {
+          "name": "chk_discord_oauth_approval_phase",
+          "value": "(\"discord_oauth_states\".\"phase\" = 'verified') = (\"discord_oauth_states\".\"approval_token_hash\" IS NOT NULL)"
+        },
+        "chk_discord_oauth_failure_phase": {
+          "name": "chk_discord_oauth_failure_phase",
+          "value": "(\"discord_oauth_states\".\"phase\" = 'failed') = (\"discord_oauth_states\".\"failure_code\" IS NOT NULL)"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.discord_org_connections": {
@@ -12526,7 +12577,7 @@
             "discord_user_id",
             "user_id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "restrict",
           "onUpdate": "no action"
         }
       },
@@ -35379,12 +35430,36 @@
         "denied"
       ]
     },
+    "public.discord_oauth_failure": {
+      "name": "discord_oauth_failure",
+      "schema": "public",
+      "values": [
+        "cancelled",
+        "unavailable",
+        "forbidden",
+        "provider_error",
+        "invalid_authorization",
+        "guild_unverified",
+        "bot_missing"
+      ]
+    },
     "public.discord_oauth_flow": {
       "name": "discord_oauth_flow",
       "schema": "public",
       "values": [
         "install",
         "connect"
+      ]
+    },
+    "public.discord_oauth_phase": {
+      "name": "discord_oauth_phase",
+      "schema": "public",
+      "values": [
+        "pending",
+        "processing",
+        "verified",
+        "approved",
+        "failed"
       ]
     },
     "public.model_provider_auth_session_status": {

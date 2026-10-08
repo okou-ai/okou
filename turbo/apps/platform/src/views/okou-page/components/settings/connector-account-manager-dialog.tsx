@@ -118,17 +118,11 @@ function AccountStatus({ account }: { account: ConnectorAccountConnection }) {
 }
 
 function AccountDefaultRadio({
-  target,
   account,
 }: {
-  readonly target: ConnectorAccountTarget;
   readonly account: ConnectorAccountConnection;
 }) {
   const { t } = useTranslation();
-  const [setDefaultLoadable, setDefault] = useLoadableSet(
-    setDefaultConnectorAccount$,
-  );
-  const signal = useGet(pageSignal$);
   return (
     <label className="flex shrink-0 cursor-pointer items-center gap-2">
       {account.isDefault ? (
@@ -152,16 +146,6 @@ function AccountDefaultRadio({
                 return $.connectors.accounts.makeDefault;
               })
         }
-        disabled={setDefaultLoadable.state === "loading"}
-        onClick={() => {
-          if (account.isDefault) {
-            return;
-          }
-          detach(
-            setDefault({ target, connectionId: account.id }, signal),
-            Reason.DomCallback,
-          );
-        }}
       />
     </label>
   );
@@ -329,7 +313,7 @@ function AccountRow({
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-3">
-        <AccountDefaultRadio target={target} account={account} />
+        <AccountDefaultRadio account={account} />
         <AccountActions
           target={target}
           account={account}
@@ -356,6 +340,10 @@ function AccountsCard({
   readonly onReconnect: (account: ConnectorAccountConnection) => void;
   readonly onReviewScopes?: (account: ConnectorAccountConnection) => void;
 }) {
+  const [setDefaultLoadable, setDefault] = useLoadableSet(
+    setDefaultConnectorAccount$,
+  );
+  const signal = useGet(pageSignal$);
   const renameDraft = useGet(connectorAccountRenameDraft$);
   const editingAccount = renameDraft?.account;
   const available = loadable.state === "hasData" && loadable.data.available;
@@ -393,7 +381,13 @@ function AccountsCard({
       {displayedRows.length > 0 ? (
         <RadioGroup
           value={defaultConnection?.id ?? null}
-          // The row radios post their own change; RadioGroup only owns grouping.
+          disabled={setDefaultLoadable.state === "loading"}
+          onValueChange={(connectionId: string) => {
+            detach(
+              setDefault({ target, connectionId }, signal),
+              Reason.DomCallback,
+            );
+          }}
           className="overflow-hidden rounded-xl bg-card border border-surface-border"
         >
           {displayedRows.map((account, index) => {

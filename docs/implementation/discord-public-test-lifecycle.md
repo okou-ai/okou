@@ -87,6 +87,19 @@ It verifies the delivered text while allowing that genuine attribution, rather
 than requiring the unattributed string produced by invented Runs. Read denial
 and cross-organization content privacy assertions remain unchanged.
 
+## Unreleased migration integration
+
+After main independently added migration `1345_outstanding_the_hood`, PMO resolved
+the demonstrated snapshot/journal collision by retaining main's generated history
+and regenerating the unreleased Discord schema as
+`1346_discord_oauth_onboarding`. The four earlier PR-only Discord migrations were
+never a production release and are not a supported historical deployment.
+The generated final schema preserves separate proof hashes, phase checks and the
+RESTRICT identity owner FK; its data-only ownership backfill remains fail-closed.
+The earlier revision-specific receipts below remain historical, not evidence for
+the consolidated migration. Final migration consistency and public OAuth cases
+must be verified again against the consolidated schema before merge.
+
 ## Final export-boundary correction
 
 A subsequently attempted `discord-oauth-export.test.ts` requested export through
