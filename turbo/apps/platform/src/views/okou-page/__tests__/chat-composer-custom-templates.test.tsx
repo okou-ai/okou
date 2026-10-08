@@ -232,6 +232,11 @@ test("The picker opens on Custom once the switch is on", async () => {
   await expect(
     within(dialog).findByText("Q3 board review"),
   ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      within(dialog).getByRole("textbox", { name: "Search templates" }),
+    ).toHaveFocus();
+  });
 });
 
 test("The switch decides whether the catalog is requested at all", async () => {

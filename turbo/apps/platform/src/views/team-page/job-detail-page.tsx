@@ -109,6 +109,7 @@ import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   permConnectorSlug$,
   agentPermissionMetadata$,
+  agentPermissionSearchFocus,
   setPermConnectorSlug$,
   permSearch$,
   setPermSearch$,
@@ -646,6 +647,7 @@ function AgentPermissionsDrawer({
   }
   return (
     <PermissionsDrawer
+      inputFocus={agentPermissionSearchFocus}
       agentId={targetId}
       connectorSlug={connectorSlug}
       connectorLabel={connectorLabel}

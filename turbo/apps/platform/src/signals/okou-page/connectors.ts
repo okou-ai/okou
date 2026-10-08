@@ -7,6 +7,10 @@ import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/u
 import { agentCustomConnectorsContract } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
+import {
+  createPanelInputFocusSignals,
+  type PanelInputFocusSignals,
+} from "../panel-input-focus.ts";
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
 import { userPermissionGrantsByAgent } from "../permission-allow/permission-allow-signals.ts";
 import { withCleanup } from "../utils.ts";
@@ -80,6 +84,7 @@ export interface ComposerConnectorData {
 }
 
 export interface ComposerConnectorSignals {
+  readonly inputFocus: PanelInputFocusSignals;
   readonly data$: Computed<Promise<ComposerConnectorData>>;
   readonly connectorAuthorization$: Computed<
     Promise<ComposerConnectorAuthorizationState>
@@ -373,6 +378,7 @@ export function createComposerConnectorSignals(
   );
 
   return {
+    inputFocus: createPanelInputFocusSignals(),
     data$,
     connectorAuthorization$: authorization$,
     addDialogCatalog$,

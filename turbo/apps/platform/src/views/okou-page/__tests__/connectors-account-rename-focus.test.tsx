@@ -193,6 +193,8 @@ test.each(["keyboard", "pointer"] as const)(
     const manager = await openManager(user);
     const input = await enterRename(user, manager, activation);
 
+    expect(input).toHaveProperty("selectionStart", 0);
+    expect(input).toHaveProperty("selectionEnd", "Work 1".length);
     await user.keyboard("{End}x");
     expect(input).toHaveValue("Work 1x");
     expect(input).toHaveFocus();

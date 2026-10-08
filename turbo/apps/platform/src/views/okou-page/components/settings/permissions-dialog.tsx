@@ -1,6 +1,7 @@
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
+import type { PanelInputFocusSignals } from "../../../../signals/panel-input-focus.ts";
 import { useTranslation } from "react-i18next";
 import type { Computed } from "ccstate";
 import { useGet, useLoadable, useSet } from "ccstate-react";
@@ -144,6 +145,7 @@ type LoadedPermissionsDrawerContentProps = Pick<
   PermissionsDrawerProps,
   "initialPolicies" | "readOnly" | "onApply" | "onClose"
 > & {
+  readonly inputRef?: Ref<HTMLInputElement>;
   readonly surface: PermissionsSurface;
   readonly metadata: PlatformConnectorPermissionMetadata;
   readonly initialState: InitialPermissionDrawerState;
@@ -1117,6 +1119,7 @@ function PermissionsDrawerFooter({
 }
 
 function LoadedPermissionsDrawerContent({
+  inputRef,
   initialPolicies,
   readOnly,
   onApply,
@@ -1349,6 +1352,7 @@ function LoadedPermissionsDrawerContent({
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2"
             />
             <Input
+              ref={inputRef}
               value={search}
               onChange={(event) => {
                 handleSearchChange(event.currentTarget.value);
@@ -1506,10 +1510,12 @@ function PermissionsContent({
   props,
   surface,
   onClose,
+  inputRef,
 }: {
   readonly props: PermissionsDrawerProps;
   readonly surface: PermissionsSurface;
   readonly onClose: () => void;
+  readonly inputRef?: Ref<HTMLInputElement>;
 }) {
   const { t } = useTranslation();
   const metadataLoadable = useLoadable(props.metadata$);
@@ -1548,6 +1554,7 @@ function PermissionsContent({
 
       {loadedMetadata && loadedInitialState ? (
         <LoadedPermissionsDrawerContent
+          inputRef={inputRef}
           key={loadedInitialState.initialPolicyKey}
           {...props}
           surface={surface}
@@ -1587,7 +1594,14 @@ function PermissionsContent({
   );
 }
 
-export function PermissionsDrawer(props: PermissionsDrawerProps) {
+export function PermissionsDrawer(
+  props: PermissionsDrawerProps & {
+    readonly inputFocus: PanelInputFocusSignals;
+  },
+) {
+  const panelRef = useSet(props.inputFocus.panelRef$);
+  const inputRef = useSet(props.inputFocus.inputRef$);
+  const initialFocus = useSet(props.inputFocus.initialFocus$);
   const resetPermissionDrawerState = useSet(resetPermissionDrawerState$);
   const handleClose = () => {
     resetPermissionDrawerState();
@@ -1601,10 +1615,11 @@ export function PermissionsDrawer(props: PermissionsDrawerProps) {
         return !open && handleClose();
       }}
     >
-      <SheetContent side="right">
+      <SheetContent side="right" ref={panelRef} initialFocus={initialFocus}>
         <PermissionsContent
           props={props}
           surface="sheet"
+          inputRef={inputRef}
           onClose={handleClose}
         />
       </SheetContent>

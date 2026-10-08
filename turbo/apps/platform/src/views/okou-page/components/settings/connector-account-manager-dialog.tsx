@@ -44,6 +44,7 @@ import {
   connectorAccountActionsRef$,
   connectorAccountDeletionDraft$,
   connectorAccountManagerRef$,
+  connectorAccountSearchFocus,
   completeConnectorAccountRenameMenu$,
   connectorAccountRenameDraft$,
   connectorAccountRenameInputRef$,
@@ -587,11 +588,13 @@ function DisconnectAccountConfirmation({
 
 function ConnectorAccountSearch({ value }: { readonly value: string }) {
   const { t } = useTranslation();
+  const inputRef = useSet(connectorAccountSearchFocus.inputRef$);
   const setSearch = useSet(settingsConnectorAccounts.setSearch$);
   const signal = useGet(pageSignal$);
   return (
     <div className="relative">
       <Input
+        ref={inputRef}
         data-account-search
         value={value}
         onChange={(event) => {
@@ -693,6 +696,7 @@ export function ConnectorAccountManagerDialog({
   );
   const resetDrafts = useSet(resetConnectorAccountManagerDrafts$);
   const managerRef = useSet(connectorAccountManagerRef$);
+  const initialFocus = useSet(connectorAccountSearchFocus.initialFocus$);
   const signal = useGet(pageSignal$);
   const nextCursor = connectorAccountNextCursor(accountsLoadable);
   const defaultConnection =
@@ -722,6 +726,7 @@ export function ConnectorAccountManagerDialog({
     >
       <DialogContent
         ref={managerRef}
+        initialFocus={initialFocus}
         maxWidth="xl"
         contentClassName="flex flex-col overflow-hidden"
       >

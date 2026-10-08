@@ -1,4 +1,5 @@
 import { command, computed, state } from "ccstate";
+import { createPanelInputFocusSignals } from "../panel-input-focus.ts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
 import { onRef } from "../utils.ts";
@@ -8,6 +9,7 @@ import { onRef } from "../utils.ts";
 // ---------------------------------------------------------------------------
 
 const internalConnectorSlug$ = state<ConnectorSlug | null>(null);
+export const agentPermissionSearchFocus = createPanelInputFocusSignals();
 export const permConnectorSlug$ = computed((get) => {
   return get(internalConnectorSlug$);
 });

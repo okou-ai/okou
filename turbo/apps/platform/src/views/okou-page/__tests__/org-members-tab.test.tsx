@@ -12,6 +12,7 @@ import {
   type UsagePackManagementResponse,
 } from "@okouai/api-contracts/contracts/billing";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -308,42 +309,46 @@ function mockUsagePackManagement(
   });
 }
 
-function mockUsagePackCatalog(): void {
-  context.mocks.api(billingUsagePackCatalogContract.get, ({ respond }) => {
-    return respond(200, {
-      supportsFreeMembers: true,
-      usagePacks: [
-        {
-          usagePackUsd: 20,
-          priceUsd: 20,
-          purchasedCredits: 20_000,
-          bonusCredits: 400,
-          totalCredits: 20_400,
-        },
-        {
-          usagePackUsd: 50,
-          priceUsd: 50,
-          purchasedCredits: 50_000,
-          bonusCredits: 2600,
-          totalCredits: 52_600,
-        },
-        {
-          usagePackUsd: 100,
-          priceUsd: 100,
-          purchasedCredits: 100_000,
-          bonusCredits: 8700,
-          totalCredits: 108_700,
-        },
-        {
-          usagePackUsd: 200,
-          priceUsd: 200,
-          purchasedCredits: 200_000,
-          bonusCredits: 22_200,
-          totalCredits: 222_200,
-        },
-      ],
-    });
-  });
+function mockUsagePackCatalog(responseReady?: Promise<void>): void {
+  context.mocks.api(
+    billingUsagePackCatalogContract.get,
+    async ({ respond }) => {
+      await responseReady;
+      return respond(200, {
+        supportsFreeMembers: true,
+        usagePacks: [
+          {
+            usagePackUsd: 20,
+            priceUsd: 20,
+            purchasedCredits: 20_000,
+            bonusCredits: 400,
+            totalCredits: 20_400,
+          },
+          {
+            usagePackUsd: 50,
+            priceUsd: 50,
+            purchasedCredits: 50_000,
+            bonusCredits: 2600,
+            totalCredits: 52_600,
+          },
+          {
+            usagePackUsd: 100,
+            priceUsd: 100,
+            purchasedCredits: 100_000,
+            bonusCredits: 8700,
+            totalCredits: 108_700,
+          },
+          {
+            usagePackUsd: 200,
+            priceUsd: 200,
+            purchasedCredits: 200_000,
+            bonusCredits: 22_200,
+            totalCredits: 222_200,
+          },
+        ],
+      });
+    },
+  );
 }
 
 async function openMembersTab(): Promise<void> {
@@ -512,6 +517,36 @@ test("Keep People package controls restricted to administrators", async () => {
   expect(
     screen.queryByLabelText("Actions for alice@example.com"),
   ).not.toBeInTheDocument();
+});
+
+test("Focus the invitation email after the member package catalog loads", async () => {
+  mockMembersStory();
+  mockMemberInviteEntitlement(true);
+  mockUsagePackManagement();
+  const catalogReady = context.mocks.deferred<void>();
+  mockUsagePackCatalog(catalogReady.promise);
+  const user = userEvent.setup({ delay: null });
+  await setupPage({ context, path: "/?settings=people" });
+  await screen.findByRole("heading", { name: "People" });
+  await user.click(buttonByText("Add member"));
+  const inviteDialog = await screen.findByRole("dialog", {
+    name: "Invite member",
+  });
+  expect(
+    within(inviteDialog).queryByPlaceholderText("email@example.com"),
+  ).not.toBeInTheDocument();
+  await waitFor(() => {
+    expect(buttonByText("Cancel", inviteDialog)).toHaveFocus();
+  });
+
+  catalogReady.resolve();
+  const input =
+    await within(inviteDialog).findByPlaceholderText("email@example.com");
+  await waitFor(() => {
+    expect(input).toHaveFocus();
+  });
+  await user.keyboard("teammate@example.com");
+  expect(input).toHaveValue("teammate@example.com");
 });
 
 test.each(["limited-free-1", "pro"])(

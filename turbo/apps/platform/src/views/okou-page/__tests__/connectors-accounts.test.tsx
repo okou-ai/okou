@@ -6,6 +6,7 @@ import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contra
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { act, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -737,6 +738,40 @@ test("Review and reconnect the connector account the user selected", async () =>
     intent: "reconnect",
     connectionId: personal.id,
   });
+});
+
+test("Focus account search when the first account page finishes loading", async () => {
+  const accounts = mockGithubAccounts(context, 7);
+  const responseReady = context.mocks.deferred<void>();
+  context.mocks.api(
+    connectorAccountsContract.connections,
+    async ({ respond }) => {
+      await responseReady.promise;
+      return respond(200, { connections: accounts, nextCursor: null });
+    },
+  );
+  const user = userEvent.setup({ delay: null });
+  await setupAccountsPage();
+  const manage = await waitFor(() => {
+    return getConnectorAction("button", "Manage GitHub accounts");
+  });
+  await user.click(manage);
+  const manager = await screen.findByRole("dialog", {
+    name: "Manage GitHub accounts",
+  });
+  await within(manager).findByText("Loading accounts…");
+  expect(within(manager).queryByPlaceholderText("Find accounts")).toBeNull();
+  await waitFor(() => {
+    expect(getConnectorAction("button", "Add account", manager)).toHaveFocus();
+  });
+
+  responseReady.resolve();
+  const input = await within(manager).findByPlaceholderText("Find accounts");
+  await waitFor(() => {
+    expect(input).toHaveFocus();
+  });
+  await user.keyboard("Work");
+  expect(input).toHaveValue("Work");
 });
 
 test("Let account search own the entire manager result list", async () => {

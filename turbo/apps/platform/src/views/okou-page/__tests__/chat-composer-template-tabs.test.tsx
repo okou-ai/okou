@@ -1,6 +1,6 @@
 import { userTemplatesContract } from "@okouai/api-contracts/contracts/user-templates";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -98,6 +98,32 @@ test("Category arrows select the matching panel and keep focus on the selected t
   await user.keyboard("{ArrowUp}");
   selectedPanel(dialog, "Custom");
   expect(tabNamed(dialog, "Custom")).toHaveFocus();
+  await user.keyboard("{End}");
+  selectedPanel(dialog, "Workflow");
+  expect(tabNamed(dialog, "Workflow")).toHaveFocus();
+  expect(
+    within(dialog).getByRole("textbox", { name: "Search templates" }),
+  ).not.toHaveFocus();
+});
+
+test("Reopening the Workflow template category focuses its search", async () => {
+  const { user, dialog } = await openPicker();
+  await user.click(tabNamed(dialog, "Workflow"));
+  selectedPanel(dialog, "Workflow");
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  const reopened = await openTemplatePicker(user);
+  const search = within(reopened).getByRole("textbox", {
+    name: "Search templates",
+  });
+  await waitFor(() => {
+    expect(search).toHaveFocus();
+  });
+  await user.keyboard("GitHub");
+  expect(search).toHaveValue("GitHub");
 });
 
 test("Mobile category selection selects the matching panel", async () => {

@@ -1,6 +1,7 @@
 import { command, computed, state, type Command } from "ccstate";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { cloudBrowserEnabledByDefault$ } from "../cloud-browser-preference.ts";
+import { createPanelInputFocusSignals } from "../panel-input-focus.ts";
 import { onRef } from "../utils.ts";
 import { createPresentationTemplatePreviewSignals } from "./presentation-template-preview.ts";
 import { createImportedPresentationTemplateSignals } from "./presentation-template-library.ts";
@@ -377,6 +378,7 @@ export function createComposerUiSignals() {
       previews,
     ),
     template: {
+      inputFocus: createPanelInputFocusSignals(),
       ...dialog,
       ...list.signals,
       ...cards.signals,

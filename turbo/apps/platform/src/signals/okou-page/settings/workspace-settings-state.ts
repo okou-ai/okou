@@ -1,4 +1,5 @@
 import { command, computed, state } from "ccstate";
+import { createPanelInputFocusSignals } from "../../panel-input-focus.ts";
 import { animationFrame } from "signal-timers";
 import { onRef } from "../../utils.ts";
 import {
@@ -274,6 +275,7 @@ export const setInviteTouched$ = command(({ set }, value: boolean) => {
 // ---------------------------------------------------------------------------
 
 const internalInviteDialogOpen$ = state(false);
+export const inviteEmailFocus = createPanelInputFocusSignals();
 
 export const inviteDialogOpen$ = computed((get) => {
   return get(internalInviteDialogOpen$);

@@ -64,6 +64,7 @@ import {
   memberSearch$,
   setMemberSearch$,
   inviteEmail$,
+  inviteEmailFocus,
   setInviteEmail$,
   inviteTouched$,
   setInviteTouched$,
@@ -422,6 +423,7 @@ function InviteDialogFields({
   readonly usagePackUsd: MemberUsageSelection;
 }) {
   const { t } = useTranslation();
+  const inputRef = useSet(inviteEmailFocus.inputRef$);
   const roleItems = [
     {
       value: "member",
@@ -446,6 +448,7 @@ function InviteDialogFields({
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
         <Input
+          ref={inputRef}
           placeholder={t(($) => {
             return $.settings.workspace.members.invite.emailPlaceholder;
           })}
@@ -699,6 +702,8 @@ function InviteDialogActions({
 
 function InviteDialog() {
   const { t } = useTranslation();
+  const panelRef = useSet(inviteEmailFocus.panelRef$);
+  const initialFocus = useSet(inviteEmailFocus.initialFocus$);
   const email = useGet(inviteEmail$);
   const setEmail = useSet(setInviteEmail$);
   const open = useGet(inviteDialogOpen$);
@@ -787,6 +792,8 @@ function InviteDialog() {
         }
       />
       <DialogContent
+        ref={panelRef}
+        initialFocus={initialFocus}
         closeLabel={t(($) => {
           return $.settings.shared.close;
         })}

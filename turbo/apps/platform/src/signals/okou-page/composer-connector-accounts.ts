@@ -16,6 +16,10 @@ import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/cont
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
+import {
+  createPanelInputFocusSignals,
+  type PanelInputFocusSignals,
+} from "../panel-input-focus.ts";
 import { resetSignal, withCleanup } from "../utils.ts";
 import {
   connectorAccountTargetKey,
@@ -29,6 +33,7 @@ export interface ComposerConnectorAccountPreferenceState {
 }
 
 export interface ComposerConnectorAccountSignals {
+  readonly inputFocus: PanelInputFocusSignals;
   readonly preferenceState$: Computed<
     Promise<ComposerConnectorAccountPreferenceState>
   >;
@@ -278,6 +283,7 @@ export function createComposerConnectorAccountSignals(
   });
 
   return {
+    inputFocus: createPanelInputFocusSignals(),
     preferenceState$,
     summaryByTarget$,
     menuTarget$: computed((get) => {

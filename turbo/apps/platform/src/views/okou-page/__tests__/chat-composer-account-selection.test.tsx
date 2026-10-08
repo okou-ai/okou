@@ -134,6 +134,12 @@ test("Paged and remote search results keep the selected account once", async () 
     user,
     "GitHub · Selected account: Personal",
   );
+  const input = within(chooser).getByRole("textbox", {
+    name: "Find accounts",
+  });
+  await waitFor(() => {
+    expect(input).toHaveFocus();
+  });
   await within(chooser).findByRole("option", { name: /^Personal/u });
   click(await findFastControl("button", "Load more", chooser));
   await within(chooser).findByRole("option", { name: /^Client/u });
@@ -143,9 +149,6 @@ test("Paged and remote search results keep the selected account once", async () 
   expect(
     within(chooser).getByRole("option", { name: /^Personal/u }),
   ).toHaveAttribute("aria-selected", "true");
-  const input = within(chooser).getByRole("textbox", {
-    name: "Find accounts",
-  });
   await user.type(input, "remote");
   await within(chooser).findByRole("option", { name: /^Research/u });
   expect(

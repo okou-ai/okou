@@ -1,4 +1,5 @@
 import { command, computed, state } from "ccstate";
+import { createPanelInputFocusSignals } from "../../panel-input-focus.ts";
 import { withConnectorConnectionProgress } from "../../connector-connection-progress.ts";
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import type { ConnectorAuthMethodId } from "@okouai/api-contracts/contracts/connector-identity";
@@ -283,11 +284,17 @@ const resetConnectorAccountRenameSave$ = resetSignal();
 const internalAccountManagerElement$ = state<HTMLDivElement | null>(null);
 const internalAccountRenameInput$ = state<HTMLInputElement | null>(null);
 const internalAccountActionsFocus$ = state<string | null>(null);
+export const connectorAccountSearchFocus = createPanelInputFocusSignals();
 
 export const connectorAccountManagerRef$ = onRef(
   command(({ set }, element: HTMLDivElement, signal: AbortSignal) => {
+    const releaseSearchFocus = set(
+      connectorAccountSearchFocus.panelRef$,
+      element,
+    );
     set(internalAccountManagerElement$, element);
     signal.addEventListener("abort", () => {
+      releaseSearchFocus?.();
       set(internalAccountManagerElement$, null);
       set(resetConnectorAccountManagerDrafts$);
     });
@@ -298,6 +305,7 @@ export const connectorAccountRenameInputRef$ = onRef(
   command(({ set }, element: HTMLInputElement, signal: AbortSignal) => {
     set(internalAccountRenameInput$, element);
     element.focus();
+    element.select();
     signal.addEventListener("abort", () => {
       set(internalAccountRenameInput$, null);
     });

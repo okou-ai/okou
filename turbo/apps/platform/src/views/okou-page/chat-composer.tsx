@@ -3505,18 +3505,22 @@ function TemplatePickerHeader() {
 }
 
 function TemplatePickerWorkflowSearch({
+  signals,
   search,
   onSearchChange,
 }: {
+  signals: ComposerSignals;
   search: string;
   onSearchChange: (value: string) => void;
 }) {
   const { t } = useTranslation();
+  const inputRef = useSet(signals.template.inputFocus.inputRef$);
   return (
     <div className="relative w-56 shrink-0">
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
+          ref={inputRef}
           aria-label={t(($) => {
             return $.artifacts.templates.searchConnectors;
           })}
@@ -5109,6 +5113,8 @@ function TemplatePickerDialog({
   signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
+  const panelRef = useSet(signals.template.inputFocus.panelRef$);
+  const initialFocus = useSet(signals.template.inputFocus.initialFocus$);
   const category = useGet(signals.template.templatePickerCategory$);
   const setCategory = useSet(signals.template.setTemplatePickerCategory$);
   const search = useGet(signals.template.templatePickerSearch$);
@@ -5331,6 +5337,8 @@ function TemplatePickerDialog({
       }}
     >
       <DialogContent
+        ref={panelRef}
+        initialFocus={initialFocus}
         closeLabel={t(($) => {
           return $.artifacts.actions.close;
         })}
@@ -5385,6 +5393,7 @@ function TemplatePickerDialog({
                   >
                     {showTemplatePickerSearch ? (
                       <TemplatePickerWorkflowSearch
+                        signals={signals}
                         search={search}
                         onSearchChange={handleSearchChange}
                       />
@@ -6193,6 +6202,10 @@ function ComposerConnectorAccountMenu({
   readonly explicit: boolean;
 }) {
   const { t } = useTranslation();
+  const panelRef = useSet(signals.connector.accounts.inputFocus.panelRef$);
+  const initialFocus = useSet(
+    signals.connector.accounts.inputFocus.initialFocus$,
+  );
   const signal = useGet(pageSignal$);
   const menuTarget = useGet(signals.connector.accounts.menuTarget$);
   const menuOpen = useGet(signals.connector.accounts.menuOpen$);
@@ -6257,6 +6270,8 @@ function ComposerConnectorAccountMenu({
         </TooltipContent>
       </Tooltip>
       <PopoverContent
+        ref={panelRef}
+        initialFocus={initialFocus}
         side="right"
         align="start"
         className="flex max-h-[min(25rem,var(--available-height))] w-72 flex-col overflow-hidden p-0"
@@ -6450,6 +6465,7 @@ function ComposerConnectorAccountMenuContent({
   readonly connectorLabel: string;
 }) {
   const { t } = useTranslation();
+  const inputRef = useSet(signals.connector.accounts.inputFocus.inputRef$);
   const preferenceLoadable = useLastLoadable(
     signals.connector.accounts.preferenceState$,
   );
@@ -6558,6 +6574,7 @@ function ComposerConnectorAccountMenuContent({
         {showSearch ? (
           <div className="shrink-0 border-b border-border/50 px-3 py-2">
             <Input
+              ref={inputRef}
               value={search}
               onChange={(event) => {
                 setSearch(event.target.value, signal);
@@ -6782,6 +6799,8 @@ function ConnectorsPopoverButton({
   onOpenAddDialog: () => void;
 }) {
   const { t } = useTranslation();
+  const panelRef = useSet(signals.connector.inputFocus.panelRef$);
+  const initialFocus = useSet(signals.connector.inputFocus.initialFocus$);
   const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
   const remoteMenuOpen = useGet(
     signals.connector.connectorUiState$,
@@ -6859,6 +6878,8 @@ function ConnectorsPopoverButton({
         </Tooltip>
       </TooltipProvider>
       <PopoverContent
+        ref={panelRef}
+        initialFocus={initialFocus}
         side="top"
         align="start"
         aria-label={t(($) => {
@@ -6910,6 +6931,7 @@ function ComposerConnectorsPopoverBody({
   onOpenDownloadDialog: () => void;
 }) {
   const { t } = useTranslation();
+  const inputRef = useSet(signals.connector.inputFocus.inputRef$);
   const agentId = signals.agentId;
   const connectorData = useLastResolved(signals.connector.data$);
   const connectorsLoading = connectorData === undefined;
@@ -6978,6 +7000,7 @@ function ComposerConnectorsPopoverBody({
           {showSearch && (
             <div className="shrink-0 px-3 py-1 border-b border-border/50">
               <input
+                ref={inputRef}
                 type="text"
                 placeholder={t(($) => {
                   return $.chat.connectors.find;

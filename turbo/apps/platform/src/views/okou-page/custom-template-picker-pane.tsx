@@ -639,6 +639,7 @@ export function CustomTemplatePickerPane({
   readonly onImported: () => void;
 }) {
   const { t } = useTranslation();
+  const inputRef = useSet(signals.template.inputFocus.inputRef$);
   const query = useGet(customTemplateSearchQuery$);
   const setQuery = useSet(setCustomTemplateSearchQuery$);
   const catalog = useLastLoadable(customTemplateCatalog$);
@@ -666,6 +667,7 @@ export function CustomTemplatePickerPane({
                     aria-hidden
                   />
                   <Input
+                    ref={inputRef}
                     aria-label={t(($) => {
                       return $.artifacts.templates.searchConnectors;
                     })}

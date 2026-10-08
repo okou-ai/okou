@@ -16,6 +16,7 @@ import {
 } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import {
@@ -49,6 +50,7 @@ const READ_PERMISSIONS = [
 ] as const;
 
 interface PermissionEditorOptions {
+  readonly metadataReady?: Promise<void>;
   readonly grouped?: boolean;
   readonly permissionDefault?: "allow" | "deny" | "ask";
   readonly unknownPolicy?: "allow" | "deny" | "ask";
@@ -162,8 +164,9 @@ function setupPermissionEditor(
   );
   context.mocks.api(
     connectorCatalogContract.permissions,
-    ({ params, respond }) => {
+    async ({ params, respond }) => {
       expect(params.connectorSlug).toBe("slack");
+      await options.metadataReady;
       return respond(200, { permissions: metadata });
     },
   );
@@ -324,6 +327,32 @@ function expectSinglePatch(
     grants: sortedGrants(grants),
   });
 }
+
+test("Focus permission search when the drawer metadata finishes loading", async () => {
+  const metadataReady = context.mocks.deferred<void>();
+  const user = userEvent.setup({ delay: null });
+  await setupPermissionEditor({ metadataReady: metadataReady.promise });
+  const manage = await waitForRoleElementByText(
+    "button",
+    "Manage Slack permissions",
+  );
+  await user.click(manage);
+  const drawer = await screen.findByRole("dialog");
+  await within(drawer).findByText("Loading permissions...");
+  await waitFor(() => {
+    expect(roleElementByText("button", "Cancel", drawer)).toHaveFocus();
+  });
+
+  metadataReady.resolve();
+  const input = await within(drawer).findByPlaceholderText(
+    "Find permissions...",
+  );
+  await waitFor(() => {
+    expect(input).toHaveFocus();
+  });
+  await user.keyboard("bookmarks");
+  expect(input).toHaveValue("bookmarks");
+});
 
 test("Apply reflects effective permission-policy changes", async () => {
   const drawer = await openPermissionEditor({
