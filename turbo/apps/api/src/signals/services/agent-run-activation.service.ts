@@ -2,7 +2,7 @@ import { command, type Command } from "ccstate";
 import { now } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import {
-  notifyRunnerJob,
+  notifyRunnerJob$,
   type RunnerJobNotification,
   type RunnerJobPreActivationTiming,
 } from "./runner-dispatch.service";
@@ -37,9 +37,10 @@ export const activatePendingRun$: Command<
   ): Promise<boolean> => {
     signal.throwIfAborted();
     const activationEnteredAt = now();
-    const db = set(writeDb$);
+    // Preserve the connection-ready milestone before notification entry.
+    set(writeDb$);
     const databaseReadyAt = now();
-    const published = await notifyRunnerJob(db, input.notification, {
+    const published = await set(notifyRunnerJob$, input.notification, {
       preActivation: input.timing,
       activationScheduledAt: input.activationScheduledAt,
       activationEnteredAt,
