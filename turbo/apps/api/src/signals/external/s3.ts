@@ -1075,42 +1075,39 @@ export function generatePresignedGetUrl(
 }
 
 /** Use the same clock for the signature and its advertised expiration. */
-export function generateArtifactPreviewUrl(
-  bucket: string,
-  key: string,
-  options: {
-    readonly signingDate: Date;
-    readonly filename?: string;
-  },
-): Computed<Promise<{ url: string; expiresAt: string }>> {
-  return computed(async (get) => {
+export const generateArtifactPreviewUrl$ = command(
+  async (
+    { get },
+    bucket: string,
+    key: string,
+    options: {
+      readonly signingDate: Date;
+      readonly filename?: string;
+    },
+    signal: AbortSignal,
+  ): Promise<{ url: string; expiresAt: string }> => {
     const { filename } = options;
     const signingDate = new Date(
       Math.floor(options.signingDate.getTime() / 1000) * 1000,
     );
-    const url = await get(
-      generatePresignedGetUrlWithClient(
-        s3ClientForBucket(bucket, true),
-        bucket,
-        key,
-        {
-          filename,
-          signingDate,
-          responseCacheControl:
-            bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")
-              ? PRIVATE_ARTIFACT_CACHE_CONTROL
-              : undefined,
-        },
-      ),
-    );
+    const sign = get(presignedGetUrlSignerForBucket(bucket, true));
+    const url = await sign(bucket, key, {
+      filename,
+      signingDate,
+      responseCacheControl:
+        bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")
+          ? PRIVATE_ARTIFACT_CACHE_CONTROL
+          : undefined,
+    });
+    signal.throwIfAborted();
     return {
       url,
       expiresAt: new Date(
         signingDate.getTime() + PRESIGNED_URL_TTL_SECONDS * 1000,
       ).toISOString(),
     };
-  });
-}
+  },
+);
 
 function generatePresignedGetUrlWithClient(
   client$: Computed<S3Client>,

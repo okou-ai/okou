@@ -65,7 +65,7 @@ runs:
 
     - name: Finish GitHub deployment
       if: inputs.deployment-id != ''
-      uses: bobheadxi/deployments@v1
+      uses: bobheadxi/deployments@648679e8e4915b27893bd7dbc35cb504dc915bc8 # v1
       with:
         step: finish
         token: ${{ github.token }}

@@ -7,7 +7,6 @@ import type { InternalRunCallbackKind } from "./internal-run-callback";
 import type {
   PiModelConfig,
   SecretConnectorMetadata,
-  StoredConnectorPermissionBaseline,
   ConnectorRuntimeTargetRegistration,
 } from "@okouai/api-contracts/contracts/runners";
 import type {
@@ -79,7 +78,6 @@ export interface PermissionManifest {
   readonly firewalls: ExecutionFirewalls;
   readonly networkPolicies: NetworkPolicies;
   readonly builtinRuntimeTargets?: readonly BuiltinRuntimeTargetRegistration[];
-  readonly connectorPermissionBaseline?: StoredConnectorPermissionBaseline;
   readonly environmentSecretPlaceholders:
     | Readonly<Record<string, string>>
     | undefined;
