@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.6](https://github.com/okou-ai/okou/compare/runner-types-v0.4.5...runner-types-v0.4.6) (2026-10-08)
+
+
+### Documentation
+
+* align captured long-context threshold contract ([#37989](https://github.com/okou-ai/okou/issues/37989)) ([30eabca](https://github.com/okou-ai/okou/commit/30eabca061a6479a5b4fc40e7d6be0cc99da3f93))
+
+
+### Refactoring
+
+* assemble current run inputs without agent configuration ([#38004](https://github.com/okou-ai/okou/issues/38004)) ([22efd4b](https://github.com/okou-ai/okou/commit/22efd4b6b34872c0585a0d4c3778cb3b59d9d100))
+
 ## [0.4.5](https://github.com/okou-ai/okou/compare/runner-types-v0.4.4...runner-types-v0.4.5) (2026-10-07)
 
 ## [0.4.4](https://github.com/okou-ai/okou/compare/runner-types-v0.4.3...runner-types-v0.4.4) (2026-10-07)
