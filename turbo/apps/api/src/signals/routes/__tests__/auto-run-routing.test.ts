@@ -57,6 +57,14 @@ describe("fixed Auto through public admission and runner claim", () => {
       model: null,
       prompt: "Use fixed Auto over Chat Completions",
     });
+    // A Runner that predates generation 5 leaves the job queued.
+    await api.heartbeatRunner(runnerGroup);
+    await api.requestClaimRunnerJob(true, run.runId, [404], {
+      capabilities: { piModelConfigGenerations: [1, 2, 3] },
+    });
+    await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
+      status: "pending",
+    });
     const claimed = await claimChatRun(runnerGroup, run.runId);
     onTestFinished(async () => {
       await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
