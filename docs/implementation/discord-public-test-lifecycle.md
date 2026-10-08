@@ -19,9 +19,12 @@ new parity cases.
 - Teardown calls production disconnect; installer-owned fixtures additionally
   call production uninstall, without elevating a member to admin.
 - OAuth provider handlers have a finite exchange lifetime and fall through for
-  other identities and subsequent native bot traffic. Central MSW cleanup owns
+  other identities and subsequent native bot traffic. Token/grant/Bearer-user
+  responses are one-use for their exact code/token; unrelated Bot requests do not
+  consume them. Live Bot/member checks remain available for final revalidation
+  and welcome delivery, then deactivate in `finally`. Central MSW cleanup owns
   registration reset. Real database isolation remains owned by `testContext`.
-- Ordinary native calls use PATs issued through device authorization. Cases
+- Ordinary native calls use real sessions or PATs issued through device authorization. Cases
   needing Run identity use a real chat admission and authenticated Runner claim.
   Capability absence is constructed by issuing a Run while the feature is off,
   then enabling it before the attempted native call. Sandbox authorization uses
@@ -94,11 +97,112 @@ and cross-organization content privacy assertions remain unchanged.
 Independently reachable authentication, guild/member permission, native read/send,
 DM privacy, disconnect/uninstall, file publication, Gateway admission, Runner
 callback, compatibility, and control-signature cases remain. The new
-`discord-message-admission.test.ts` and parent-owned removed parity cases are
+`discord-message-admission.test.ts` and parent-owned restored parity cases are
 not modified by this work.
 
 ## Verification
 
-Final commands, results, source dependencies, and retirement inventory will be
-recorded here after the actual OAuth route/provider module is available. Passing
-format/lint is not a claim that the production OAuth lifecycle executed.
+### Final source and infrastructure
+
+Verified on 2026-10-08 against the actual uniform production implementation
+`4eaecfa2d86c54438b1eb75b6e83679c4f250006`, cherry-picked locally as dependency-only
+`7688280db00ccc9470671f9c7331e2f8c38ccfc4`. It replaces the cookie-era routes with
+start, provider callback evidence, separate consent approval, and owner completion.
+Earlier cookie-route passes are **not** counted as final verification.
+
+A fresh local PostgreSQL 18 database, `vm0_discord_final`, used UTC and the ordinary
+`pnpm --filter @okouai/db db:migrate` command, including generated migrations
+1347 and 1348. No manual application schema/row repair, business seed, internal
+worker driver, or fault hook was used. `DATABASE_URL` was supplied to each run.
+
+### Sequential runtime results
+
+From `turbo/apps/api`, run each file separately using:
+
+```sh
+pnpm exec vitest run src/signals/routes/__tests__/<file>.test.ts \
+  --maxWorkers=1 --no-file-parallelism
+```
+
+| File                               | Final result                        |
+| ---------------------------------- | ----------------------------------- |
+| `integrations-discord`             | 12/12 PASS                          |
+| `discord-lifecycle`                | 1/1 PASS                            |
+| `discord-interactions-preferences` | 15/15 PASS                          |
+| `discord-chat-write-compatibility` | 1/1 PASS                            |
+| `internal-callbacks-discord`       | 26/26 PASS                          |
+| `integrations-discord-native`      | 45/45 PASS                          |
+| `discord-ingress`                  | 39/39 PASS                          |
+| `integrations-discord-files`       | 40/40 PASS after provider-ID repair |
+| **Total**                          | **179/179 PASS**                    |
+
+Only one Vitest process ran at a time. No full Vitest run, local dev server, or
+test-timeout increase was used. Parent-owned restored parity/admission/Slack
+suites and the API owner's new OAuth/security suite were not rerun or claimed
+by this worker.
+
+The first actual file-suite run had five failures, not silently discarded:
+
+- `requires the bot to have ATTACH_FILES in addition to readable channel access`:
+  expected HTTP 200, received HTTP 502 `DISCORD_ERROR`.
+- `refreshes an expired CDN URL once from the same message identity`: bounded
+  `Discord OAuth callback did not reach the approval landing` setup failure.
+- `does not expose another organization's asset through materialize or complete`:
+  expected HTTP 200, received HTTP 400 `BAD_REQUEST`, with
+  `guildId: Discord snowflake ID exceeds the unsigned 64-bit range`.
+- `publishes one canonical artifact before delivery and reuses its receipt`:
+  the same bounded callback setup failure.
+- `reports a Discord rate limit without sending again on a later completion`:
+  expected HTTP 200, received HTTP 502 `DISCORD_ERROR`.
+
+The existing `helpers/discord-file-provider.ts` generator added 10^18 to a full
+random uint64, allowing malformed provider IDs above the unsigned 64-bit limit.
+The final client correctly uses the strict shared Snowflake schema. The repair
+reuses the existing bounded `uniqueDiscordSnowflake` generator; it does not add
+schema defaults, change permission/privacy assertions, or fabricate application
+state. The complete 40-case file suite then passed. The other source alignment
+uses `mockEnv` for the newly typed `DISCORD_OAUTH_CLIENT_SECRET`, rather than the
+separate optional-environment override.
+
+### Static checks and reproduction
+
+Scoped Prettier, ESLint, Oxlint (including type-aware mode), native TypeScript,
+and `git diff --check` passed for the eight suites plus their four modified
+Discord helpers/import graph. TypeScript used an ignored, local
+`.typecheck/tsconfig.discord-public-lifecycle.json`: extend `../tsconfig.json`,
+set `incremental: false`, `noEmit: true`, and `rootDir: "../../.."`, set
+`include: []`, and list the eight suite files above plus
+`helpers/discord.ts`, `helpers/discord-fixture.ts`, and `helpers/discord-run.ts`
+with paths relative to `.typecheck` (`../src/signals/routes/__tests__/...`).
+`discord-file-provider.ts` is included through the file suite's import graph.
+
+```sh
+pnpm exec tsc -p .typecheck/tsconfig.discord-public-lifecycle.json \
+  --noEmit --checkers 1
+```
+
+No production deployment, Discord activation, real-provider OAuth exercise,
+credential configuration, merge, or whole-repository test claim is made here.
+
+### Retirement inventory
+
+At `d818f4fae0819d57df03e5ff6d3595fe1b0acd91`, repository search for
+`seedDiscordFixture|deleteDiscordFixture|testDiscordStateContract|discordStatePreviewRoutes|/api/test/discord-state`
+(excluding this ledger and the lockfile) has **zero matches in the migrated
+helpers/suites**. The complete remaining 19 matches are:
+
+| Remaining file                                                       | Matches | Responsibility                                          |
+| -------------------------------------------------------------------- | ------- | ------------------------------------------------------- |
+| `turbo/apps/api/src/signals/routes/discord-state-preview.ts`         | 7       | Parent-owned preview route deletion                     |
+| `turbo/apps/api/src/signals/route.ts`                                | 2       | Parent-owned preview registry deletion                  |
+| `turbo/packages/api-contracts/src/contracts/test-discord-state.ts`   | 3       | Parent-owned preview contract deletion                  |
+| `docs/discord-integration.md`                                        | 4       | Parent-owned canonical guide update                     |
+| `docs/implementation/issue-37440-batches/baseline/test-only-api.csv` | 2       | Historical baseline evidence, not an active constructor |
+| `docs/implementation/discord-parity-37968-testing.md`                | 1       | Parent-owned parity migration record                    |
+
+A second scoped search in the eight suites and
+`helpers/discord{,-fixture,-run,-file-provider}.ts` also returns zero matches for
+`history[?]:|fakeRun|signSandboxJwtForTests|auth/tokens|test-fixtures/|testUserExportWorkContract|emailOutboxStateContract|withDiscordDmPreferenceInsertBarrierFixture|seedLegacyPrivateDefaultAgentFixture`.
+The orphan `test-fixtures/discord-preference.ts` is deleted. Parent route/contract
+remnants on this isolated branch are not falsely reported as fully retired;
+PMO performs the integrated repository retirement check.
