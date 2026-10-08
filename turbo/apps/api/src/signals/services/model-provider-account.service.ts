@@ -775,7 +775,13 @@ async function accountWithProvider(
       modelProviders,
       eq(modelProviderAccounts.modelProviderId, modelProviders.id),
     )
-    .where(exactConnectedPersonalAccountCondition(args))
+    .where(
+      exactConnectedPersonalAccountCondition({
+        id: args.id,
+        orgId: args.orgId,
+        userId: args.userId,
+      }),
+    )
     .limit(1);
   return row ?? null;
 }
