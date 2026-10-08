@@ -6,7 +6,7 @@ import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/int
 
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
-import { env, mockEnv, mockOptionalEnv } from "../../../../lib/env";
+import { env, mockEnv } from "../../../../lib/env";
 import { now } from "../../../../lib/time";
 import { server } from "../../../../mocks/server";
 import { discordOauthRoutes } from "../../discord-oauth";
@@ -93,7 +93,7 @@ export function createPublicDiscordBinding(
     args.orgId,
     args.orgRole,
   );
-  mockOptionalEnv("DISCORD_OAUTH_CLIENT_SECRET", "discord-test-client-secret");
+  mockEnv("DISCORD_OAUTH_CLIENT_SECRET", "discord-test-client-secret");
   const identity = {
     orgId: args.orgId,
     userId: args.userId,
