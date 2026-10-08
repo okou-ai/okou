@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { fillComposer } from "./chat-test-helpers.ts";
 import {
   AGENT_ID,
   buttonByText,
@@ -23,6 +24,7 @@ test("Keyboard opening contains focus and Escape returns it to the mobile menu t
   const user = userEvent.setup();
   const trigger = await setupMobileSidebar();
   const composer = screen.getByRole("textbox", { name: "Message" });
+  await fillComposer(composer, "Keep this unsent draft");
   expect(trigger).toHaveAttribute("aria-expanded", "false");
   expect(screen.queryByRole("complementary", { name: "Sidebar" })).toBeNull();
 
@@ -50,7 +52,9 @@ test("Keyboard opening contains focus and Escape returns it to the mobile menu t
     expect(trigger).toHaveFocus();
   });
   expect(trigger).toHaveAttribute("aria-expanded", "false");
-  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+  expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
+    "Keep this unsent draft",
+  );
 });
 
 test("The existing collapse control and backdrop close the drawer without losing section state", async () => {
