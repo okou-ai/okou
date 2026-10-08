@@ -12,6 +12,7 @@ import {
   MESSAGE_ID,
   createRelay,
 } from "./relay-fixture";
+import { createRelayPhases } from "./relay-phases";
 
 describe("Discord Gateway relay", () => {
   it("authenticates management and keeps a disabled relay stopped", async () => {
@@ -92,31 +93,12 @@ describe("Discord Gateway relay", () => {
     onTestFailed,
     signal,
   }) => {
-    const startedAt = performance.now();
-    const phases: Array<{
-      name: string;
-      startedAtMs: number;
-      completedAtMs: number | null;
-    }> = [];
-    const wait = async <T>(name: string, task: () => Promise<T>) => {
-      signal.throwIfAborted();
-      const phase: (typeof phases)[number] = {
-        name,
-        startedAtMs: Math.round(performance.now() - startedAt),
-        completedAtMs: null,
-      };
-      phases.push(phase);
-      const result = await task();
-      // Teardown precedes failure hooks; late I/O must not rewrite the timed-out phase.
-      signal.throwIfAborted();
-      phase.completedAtMs = Math.round(performance.now() - startedAt);
-      return result;
-    };
+    const { elapsedMs, phases, wait } = createRelayPhases(signal);
     // Capture only phase timing and opcodes, never packets or signed bodies.
     // Do not issue another Worker request from a hook when one may be stalled.
     onTestFailed(() => {
       console.error("Discord relay filtering/checkpoint failure", {
-        elapsedMs: Math.round(performance.now() - startedAt),
+        elapsedMs: elapsedMs(),
         phases,
       });
     });
@@ -125,7 +107,7 @@ describe("Discord Gateway relay", () => {
     });
     onTestFailed(() => {
       console.error("Discord relay observations", {
-        observedAtMs: Math.round(performance.now() - startedAt),
+        observedAtMs: elapsedMs(),
         forwarded: relay.forwarded.length,
         connections: relay.opened.map((connection) => {
           return connection.packets.map((packet) => {
