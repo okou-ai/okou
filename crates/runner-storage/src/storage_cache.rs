@@ -1828,6 +1828,8 @@ fn reuse_decoded(
         .sum::<usize>();
     if plan.decoded_bytes() + added + 4 > guest_contracts::storage_files::MAX_PAYLOAD_BYTES
         || plan.decoded_mount_count() + mounts.len() > guest_contracts::storage_files::MAX_MOUNTS
+        || plan.decoded_file_count() + files.files.len() * mounts.len()
+            > guest_contracts::storage_files::MAX_TOTAL_FILES
     {
         return Ok(false);
     }
@@ -4364,6 +4366,7 @@ mod tests {
     mod archive_retries;
     mod decoded_observation;
     mod http_reuse;
+    mod large_selection;
     mod phase_diagnostics;
     mod rejected_observation;
 
@@ -4872,7 +4875,7 @@ mod tests {
                     .storages_dir()
                     .join(runner_host::paths::short_digest("name"))
                     .join(format!(
-                        "decoded-v1-{}",
+                        "decoded-v2-{}",
                         runner_host::paths::short_digest("v1")
                     ));
                 std::fs::write(entry.join("index.json"), b"{").unwrap();
@@ -4923,7 +4926,7 @@ mod tests {
                 let entry = home
                     .storages_dir()
                     .join(short_digest("name"))
-                    .join(format!("decoded-v1-{}", short_digest("v1")));
+                    .join(format!("decoded-v2-{}", short_digest("v1")));
                 std::fs::write(entry.join("index.json"), b"{").unwrap();
             }
             let cache = decoded::DecodedCache::new(home.clone());

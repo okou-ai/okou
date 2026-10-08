@@ -83,6 +83,52 @@ hash-independent API readers and writers; restoring an older API alone is not
 supported. PR merge and local validation do not establish production cutover or
 migration completion.
 
+## Bounded large decoded-storage candidate (#38198)
+
+The decoded-file candidate admits up to 1,024 regular files and 4 MiB content per
+storage, with a separate 2 MiB gzip-source gate. The 256 KiB file cap and 4x
+content expansion remain. Aggregate relative-path bytes stay within the original
+128 KiB envelope; the serialized index is bounded to 256 KiB while writing, not
+only after allocation. Whole-input file count retains the original 32,768-file
+allocation envelope. Sorted borrowed paths preserve duplicate/ancestor rejection
+without changing materialization order. Only bounded GNU longname records are
+newly admitted; links, directories, PAX and other extension records still miss
+this optional cache. The locked flate2 decoder retains its existing 65,535-byte
+per-field bounds for gzip extra/name/comment metadata; no overlapping header
+admission limit is added. Accepted inputs still complete trailer validation.
+
+Positive and admission-rejection entries now use `decoded-v2-` and
+`decoded-v2-rejected-` version keys. New readers do not reinterpret `decoded-v1`
+entries or their rejection decisions. Old readers likewise cannot select new
+entries. Both keep the existing storage name/version-key locks and best-effort
+GC accounting. No migration, legacy deletion or bulk prewarming is added. A rollback can require ordinary archive/HTTP refill when only
+the other policy's entry remains, including after optional compressed retirement.
+This is a cache miss, not permission to reinterpret a different policy's files.
+
+Runner and Guest binaries remain one deployment artifact. A new Runner with an
+old Guest helper is not a supported combination: the old helper rejects enlarged
+shapes before mutation. Local rootfs and snapshot identities already include Guest
+binary bytes. API and storage wire shapes are unchanged; do not independently
+replace the Runner or Guest executable while retaining the other version.
+
+The optional in-flight semaphore stays at 64 MiB with two workers. Its transient
+reservation becomes 8 MiB (2 MiB source, 4 MiB content, 2 MiB bounded metadata and
+decoder allowance), releasing unused permits for retained files. This is not a
+whole-process RSS or disk quota. A metadata-first read budget preserves the old
+16 MiB content read-ahead envelope and can skip a large entry while retaining a
+later small hit. The 15 MiB encoded payload, 64 KiB manifest and 16 MiB wire limits
+remain; selection retains ordinary archive delivery when aggregate files do not
+fit. Malformed selected positive entries remain errors, not recovery by archive
+replay after mutation.
+
+This is an unretained Draft performance candidate: larger fixed reservations can
+reduce admission under pressure, and more files can increase disk/inode occupancy.
+Synthetic end-to-end correctness is not production startup, tail, CPU, RSS or
+concurrency evidence. The original retention gate (at least 25 ms affected-boundary
+p90 or two percentage points more startups within one second) and correctness,
+failure/cancellation and resource checks remain required before shipping. No
+performance gain, production deployment or cache cleanup is established here.
+
 ## Platform realtime token exchange (#37143)
 
 `POST /api/realtime/token` now always returns a fresh signed Ably `TokenRequest`.

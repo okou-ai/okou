@@ -1,5 +1,7 @@
 use super::*;
 
+mod bounded;
+
 fn files() -> Vec<StorageFile> {
     vec![StorageFile {
         path: "nested/file".into(),
@@ -101,7 +103,7 @@ fn persisted_paths(
     let version_hash = hex::encode(Sha256::digest(version.as_bytes()));
     let name_hash = &name_hash[..16];
     let kind = if rejected { "rejected-" } else { "" };
-    let key = format!("decoded-v1-{kind}{}", &version_hash[..16]);
+    let key = format!("decoded-v2-{kind}{}", &version_hash[..16]);
     (
         home.storages_dir().join(name_hash).join(&key),
         home.locks_dir()

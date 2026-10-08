@@ -20,6 +20,30 @@ mod tests;
 
 const INDEX_LIMIT: usize = 256 * 1024;
 
+struct IndexWriter(Vec<u8>);
+
+impl IndexWriter {
+    fn new() -> Self {
+        // Preallocate the fixed envelope: incremental Vec growth could otherwise
+        // double a non-power-of-two capacity beyond the index limit.
+        Self(Vec::with_capacity(INDEX_LIMIT))
+    }
+}
+
+impl Write for IndexWriter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if bytes.len() > INDEX_LIMIT.saturating_sub(self.0.len()) {
+            return Err(invalid("decoded cache index too large"));
+        }
+        self.0.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 // Bound directory inodes as well as file count. Ordinary extraction remains
 // available for deeper or unusually wide trees.
 pub(super) fn admitted_paths(files: &[StorageFile]) -> bool {
@@ -84,7 +108,9 @@ pub(super) fn paths(home: &HomePaths, name: &str, version: &str) -> (PathBuf, Pa
 
 fn version_key(version: &str, rejected: bool) -> String {
     let kind = if rejected { "rejected-" } else { "" };
-    format!("decoded-v1-{kind}{}", short_digest(version))
+    // Admission is format-qualified: neither old positive entries nor old
+    // rejection decisions are reinterpreted under the wider bounded policy.
+    format!("decoded-v2-{kind}{}", short_digest(version))
 }
 
 fn entry_paths(home: &HomePaths, name: &str, version: &str, rejected: bool) -> (PathBuf, PathBuf) {
@@ -200,7 +226,23 @@ pub(super) fn read(
     version: &str,
     cancel: &CancellationToken,
 ) -> io::Result<Option<Option<Vec<StorageFile>>>> {
-    read_entry(home, name, version, false, cancel)
+    read_with_budget(
+        home,
+        name,
+        version,
+        storage_files::MAX_STORAGE_BYTES,
+        cancel,
+    )
+}
+
+pub(super) fn read_with_budget(
+    home: &HomePaths,
+    name: &str,
+    version: &str,
+    content_budget: usize,
+    cancel: &CancellationToken,
+) -> io::Result<Option<Option<Vec<StorageFile>>>> {
+    read_entry(home, name, version, false, content_budget, cancel)
 }
 
 pub(super) fn is_rejected(
@@ -209,7 +251,7 @@ pub(super) fn is_rejected(
     version: &str,
     cancel: &CancellationToken,
 ) -> io::Result<bool> {
-    read_entry(home, name, version, true, cancel).map(|entry| entry.is_some())
+    read_entry(home, name, version, true, 0, cancel).map(|entry| entry.is_some())
 }
 
 /// A fresh rejection can omit only optional warming of a still-present source.
@@ -259,6 +301,7 @@ fn read_entry(
     name: &str,
     version: &str,
     rejected: bool,
+    content_budget: usize,
     cancel: &CancellationToken,
 ) -> io::Result<Option<Option<Vec<StorageFile>>>> {
     check_cancel(cancel)?;
@@ -289,7 +332,7 @@ fn read_entry(
             }
         }
     };
-    read_locked_entry(home, name, version, rejected, cancel)
+    read_locked_entry(home, name, version, rejected, content_budget, cancel)
 }
 
 /// Caller holds the entry lock throughout validation and any dependent action.
@@ -298,6 +341,7 @@ fn read_locked_entry(
     name: &str,
     version: &str,
     rejected: bool,
+    content_budget: usize,
     cancel: &CancellationToken,
 ) -> io::Result<Option<Option<Vec<StorageFile>>>> {
     let path = EntryKey::new(name, version, rejected).directory(home);
@@ -310,7 +354,7 @@ fn read_locked_entry(
         .map_err(io::Error::other)?;
     if index.name != name
         || index.version != version
-        || index.compressed_bytes > storage_files::MAX_STORAGE_BYTES
+        || index.compressed_bytes > MAX_COMPRESSED_BYTES
         || index.files.is_none() != rejected
     {
         return Err(invalid("decoded cache identity or admission mismatch"));
@@ -353,6 +397,11 @@ fn read_locked_entry(
     if total > storage_files::MAX_STORAGE_BYTES || total > index.compressed_bytes.saturating_mul(4)
     {
         return Err(invalid("decoded cache expansion exceeds admission"));
+    }
+    if total > content_budget {
+        // A valid optional entry can miss this batch without reading its body.
+        // Later smaller entries may still fit; malformed metadata remains an error.
+        return Ok(None);
     }
     let data = File::from(
         openat(
@@ -440,9 +489,16 @@ pub(super) fn retire_archive(
             ExistingTryLock::Acquired(lock) => lock,
             ExistingTryLock::Busy | ExistingTryLock::Missing => return Ok(false),
         };
-    if read_locked_entry(home, name, version, false, cancel)?
-        .flatten()
-        .is_none()
+    if read_locked_entry(
+        home,
+        name,
+        version,
+        false,
+        storage_files::MAX_STORAGE_BYTES,
+        cancel,
+    )?
+    .flatten()
+    .is_none()
     {
         return Ok(false);
     }
@@ -503,6 +559,12 @@ pub(super) fn publish(
     host_file::ensure_dir(&staging, DirMode::Private, "decoded cache staging")?;
     // The exact .tmp path shares the final entry's lock with existing GC.
     let operation = (|| {
+        if let Some(files) = files {
+            storage_files::validate_files(files)?;
+            if !admitted_paths(files) {
+                return Err(invalid("decoded cache directory limit exceeded"));
+            }
+        }
         let metadata = files.map(|files| {
             files
                 .iter()
@@ -515,21 +577,21 @@ pub(super) fn publish(
                 })
                 .collect()
         });
-        let index = serde_json::to_vec(&Index {
-            name: name.to_owned(),
-            version: version.to_owned(),
-            compressed_bytes,
-            files: metadata,
-        })
-        .map_err(io::Error::other)?;
-        if index.len() > INDEX_LIMIT {
-            return Err(invalid("decoded cache index too large"));
-        }
+        let mut writer = IndexWriter::new();
+        serde_json::to_writer(
+            &mut writer,
+            &Index {
+                name: name.to_owned(),
+                version: version.to_owned(),
+                compressed_bytes,
+                files: metadata,
+            },
+        )
+        .map_err(|error| {
+            io::Error::new(error.io_error_kind().unwrap_or(io::ErrorKind::Other), error)
+        })?;
+        let index = writer.0;
         if let Some(files) = files {
-            storage_files::validate_files(files)?;
-            if !admitted_paths(files) {
-                return Err(invalid("decoded cache directory limit exceeded"));
-            }
             for file in files {
                 check_cancel(cancel)?;
                 let target = staging.join("files").join(&file.path);

@@ -6,7 +6,7 @@ const VERSION: &str = "v1";
 fn positive_dir(home: &HomePaths) -> PathBuf {
     home.storages_dir()
         .join(short_digest(NAME))
-        .join(format!("decoded-v1-{}", short_digest(VERSION)))
+        .join(format!("decoded-v2-{}", short_digest(VERSION)))
 }
 
 fn conflicting_plan(url: &str) -> StoragePlan {
@@ -218,7 +218,7 @@ async fn busy_or_later_published_positive_keeps_this_plans_warming() {
             Some(
                 lock::acquire(home.storage_lock_for_cache_key(
                     &short_digest(NAME),
-                    &format!("decoded-v1-{}", short_digest(VERSION)),
+                    &format!("decoded-v2-{}", short_digest(VERSION)),
                 ))
                 .await
                 .unwrap(),

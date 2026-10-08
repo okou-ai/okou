@@ -12,8 +12,12 @@ use tokio_util::{sync::CancellationToken, task::TaskTracker};
 mod disk;
 
 const CAPACITY: usize = 64 * 1024 * 1024;
-// Source, decoded files, bounded index/path metadata and decoder scratch.
-const FILL_RESERVATION: u32 = 3 * 1024 * 1024;
+// Separate gzip bytes from the decoded-content contract.
+const MAX_COMPRESSED_BYTES: usize = 2 * 1024 * 1024;
+// 2 MiB source + 4 MiB content + 2 MiB bounded metadata/decoder allowance.
+// The semaphore covers optional cache work, not total Runner process RSS.
+const FILL_RESERVATION: u32 = 8 * 1024 * 1024;
+const READ_AHEAD_BYTES: usize = 16 * 1024 * 1024;
 // A bounded lookup window avoids repeatedly pausing archive delivery for misses.
 pub(super) const LOOKUP_BATCH_SIZE: usize = 128;
 // Retain the former 16-key worst-case string budget while batching typical keys.
@@ -189,9 +193,9 @@ impl DecodedCache {
                         result.push(None);
                         continue;
                     };
-                    // Widen miss probes without widening ready-file read-ahead.
-                    // The final read adds at most one storage (1 MiB), keeping
-                    // content below the former 16-key maximum of 16 MiB.
+                    // Preserve the original read-ahead envelope independently
+                    // of the larger per-storage cap; metadata is checked before
+                    // loading a body that would exceed the remaining budget.
                     if ready_bytes >= storage_files::MAX_PAYLOAD_BYTES {
                         result.push(None);
                         continue;
@@ -205,7 +209,14 @@ impl DecodedCache {
                         result.push(None);
                         continue;
                     };
-                    let files = disk::read(&inner.home, &name, &version, &inner.cancel)?.flatten();
+                    let files = disk::read_with_budget(
+                        &inner.home,
+                        &name,
+                        &version,
+                        READ_AHEAD_BYTES - ready_bytes,
+                        &inner.cancel,
+                    )?
+                    .flatten();
                     if let Some(files) = &files {
                         ready_bytes += files.iter().map(|file| file.content.len()).sum::<usize>();
                     }
@@ -274,7 +285,7 @@ impl DecodedCache {
                     "storage archive is not a file",
                 ));
             }
-            if metadata.len() == 0 || metadata.len() > storage_files::MAX_STORAGE_BYTES as u64 {
+            if metadata.len() == 0 || metadata.len() > MAX_COMPRESSED_BYTES as u64 {
                 return Ok(());
             }
             let mut bytes = vec![0; metadata.len() as usize];
@@ -323,10 +334,7 @@ impl DecodedCache {
         version: &str,
         bytes: Bytes,
     ) -> io::Result<Option<Arc<CachedFiles>>> {
-        if name.len() > 4096
-            || version.len() > 4096
-            || bytes.len() > storage_files::MAX_STORAGE_BYTES
-        {
+        if name.len() > 4096 || version.len() > 4096 || bytes.len() > MAX_COMPRESSED_BYTES {
             return Ok(None);
         }
         let (name, version) = (name.to_owned(), version.to_owned());
@@ -378,6 +386,8 @@ fn decode(bytes: &[u8], cancel: &CancellationToken) -> io::Result<Option<Vec<Sto
         tar::Archive::new(decoder.take((2 * storage_files::MAX_STORAGE_BYTES + 1) as u64));
     let mut files = Vec::new();
     let mut expanded = 0usize;
+    let mut path_bytes = 0usize;
+    let mut long_name = None;
     for entry in archive.entries()?.raw(true) {
         if cancel.is_cancelled() {
             return Err(io::Error::new(
@@ -386,6 +396,23 @@ fn decode(bytes: &[u8], cancel: &CancellationToken) -> io::Result<Option<Vec<Sto
             ));
         }
         let mut entry = entry?;
+        if entry.header().entry_type().is_gnu_longname() {
+            let size = entry.size();
+            if long_name.is_some() || size == 0 || size > (storage_files::MAX_PATH_BYTES + 1) as u64
+            {
+                return Ok(None);
+            }
+            let mut name = vec![0; size as usize];
+            entry.read_exact(&mut name)?;
+            if name.pop() != Some(0) || name.is_empty() || name.contains(&0) {
+                return Ok(None);
+            }
+            let Ok(name) = String::from_utf8(name) else {
+                return Ok(None);
+            };
+            long_name = Some(name);
+            continue;
+        }
         if !entry.header().entry_type().is_file() || files.len() >= storage_files::MAX_FILES {
             return Ok(None);
         }
@@ -397,9 +424,21 @@ fn decode(bytes: &[u8], cancel: &CancellationToken) -> io::Result<Option<Vec<Sto
         if expanded > storage_files::MAX_STORAGE_BYTES || expanded > bytes.len().saturating_mul(4) {
             return Ok(None);
         }
-        let Some(path) = entry.path()?.to_str().map(str::to_owned) else {
-            return Ok(None);
+        let path = match long_name.take() {
+            Some(path) => path,
+            None => {
+                let Some(path) = entry.path()?.to_str().map(str::to_owned) else {
+                    return Ok(None);
+                };
+                path
+            }
         };
+        path_bytes = path_bytes
+            .checked_add(path.len())
+            .ok_or_else(|| io::Error::other("decoded path size overflow"))?;
+        if path_bytes > storage_files::MAX_TOTAL_PATH_BYTES {
+            return Ok(None);
+        }
         let mode = entry.header().mode()?;
         let mtime = entry.header().mtime()?;
         let mut content = vec![0; size as usize];
@@ -410,6 +449,9 @@ fn decode(bytes: &[u8], cancel: &CancellationToken) -> io::Result<Option<Vec<Sto
             mtime,
             content,
         });
+    }
+    if long_name.is_some() {
+        return Ok(None);
     }
     // Tar ends before gzip necessarily validates its CRC and size trailer.
     // Finish the same bounded reader before any decoded files can be cached.
@@ -440,6 +482,8 @@ fn decode(bytes: &[u8], cancel: &CancellationToken) -> io::Result<Option<Vec<Sto
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod large;
 
     #[tokio::test]
     async fn lookup_skips_unselected_and_oversized_identities_without_io() {
