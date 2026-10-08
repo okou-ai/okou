@@ -8294,9 +8294,25 @@ Queued Runs retain their captured CLI package and exact account mapping.
 Builtin MCP admission requires the Run's Okou token for authenticated MCP
 discovery. None/manual and Automatic methods are executable. Plaud's Automatic
 method defaults off in auth-method discovery through `plaudConnector`; this
-switch does not gate existing account callbacks or execution. The addon honors explicit
-owner intent and never injects another owner's credentials when the requested
-owner is absent, including overlapping builtin/custom destinations.
+switch does not gate existing account callbacks or execution.
+
+Outside the platform API admission path, connector intent is an owner-disambiguation
+hint, not a credential-identity lock. The addon matches active firewall URLs and
+applies route precedence first. One eligible owner governs the request even when
+intent is absent, malformed, mismatched, or names an absent owner. Removing a builtin
+at an overlapping destination can therefore leave a sole eligible custom owner whose
+credentials may be injected, subject to its authorization checks. Multiple eligible
+owners require valid intent selecting one of them; unresolved ambiguity is blocked.
+With no active firewall match, ordinary network fallback applies without resolving
+or injecting managed connector credentials. See
+[ordinary connector firewall owner selection](mitm-addon-contracts.md#ordinary-connector-firewall-owner-selection).
+
+This ordinary selection rule does not relax the separate
+[platform connector authorization path policy](mitm-addon-contracts.md#platform-connector-authorization-path-policy),
+including the `/mcp` intent-admission gate, or the HTTP 409
+`connector_auth_owner_conflict` guard for confirmed authentication on a unique
+inactive route. The selected owner's permission, network-policy, destination,
+credential-resolution, and current-owner revalidation checks still apply.
 
 No-auth builtin and custom MCP requests skip credential validity checks and
 proxy auth resolution, including Automatic builtin and custom MCP resolved to no
