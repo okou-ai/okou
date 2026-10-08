@@ -77,6 +77,7 @@ function organizationMembershipIdentity(data: unknown):
   | {
       readonly orgId: string;
       readonly userId: string;
+      readonly membershipId?: string;
       readonly role?: string;
       readonly purchaseId?: string;
       readonly getStartedClaimId?: string;
@@ -112,6 +113,7 @@ function organizationMembershipIdentity(data: unknown):
         orgId,
         userId,
         role,
+        membershipId: eventDataId(data),
         ...(purchaseId ? { purchaseId } : {}),
         ...(getStartedClaimId ? { getStartedClaimId } : {}),
         ...(createdAt === undefined ? {} : { createdAt: new Date(createdAt) }),

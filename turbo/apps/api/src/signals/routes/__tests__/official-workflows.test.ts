@@ -2382,7 +2382,7 @@ describe("Morning Brief explicit installation", () => {
     });
   });
 
-  it("does not auto-install for an invited or rejoined member", async () => {
+  it("installs a rejoined member's brief from their explicit preference", async () => {
     const owner = await prepareBriefMember({
       createdAt: new Date("2020-01-01T00:00:00.000Z"),
     });
@@ -2390,17 +2390,6 @@ describe("Morning Brief explicit installation", () => {
     const createdAt = new Date("2030-01-01T00:00:00.000Z");
     await deliverClerkOrganizationMembershipCreated(actor, createdAt);
     await initializeBriefMember(actor, "Asia/Shanghai");
-    await flushWaitUntilForTest();
-    expect((await readBriefPreference(actor)).body).toMatchObject({
-      status: "paused",
-      enabled: false,
-    });
-    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
-    await initializeBriefMember(owner.actor, "Asia/Tokyo");
-    await expect(
-      listMorningBriefInstallations(owner.actor),
-    ).resolves.toHaveLength(0);
-
     await deliverClerkOrganizationMembershipDeleted(actor);
     await deliverClerkOrganizationMembershipCreated(
       actor,
@@ -2408,12 +2397,23 @@ describe("Morning Brief explicit installation", () => {
       `rejoined-${actor.userId}-${actor.orgId}`,
     );
     await initializeBriefMember(actor, "Asia/Shanghai");
-    await flushWaitUntilForTest();
-    expect((await readBriefPreference(actor)).body).toMatchObject({
-      status: "paused",
-      enabled: false,
+    const enabled = await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(enabled.body).toMatchObject({
+      status: "enabled",
+      enabled: true,
+      unavailableReason: null,
     });
-    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(0);
+    expect((await readBriefPreference(actor)).body).toMatchObject({
+      status: "enabled",
+      enabled: true,
+    });
+    await expect(listMorningBriefInstallations(actor)).resolves.toHaveLength(1);
   });
 
   it("keeps an explicit timezone choice when initialization runs later", async () => {
