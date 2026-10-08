@@ -87,6 +87,24 @@ It verifies the delivered text while allowing that genuine attribution, rather
 than requiring the unattributed string produced by invented Runs. Read denial
 and cross-organization content privacy assertions remain unchanged.
 
+## Additional public export coverage
+
+`discord-oauth-export.test.ts` adds a separately constructed account-export case:
+real OAuth install and member connect, public DM selection, two owners' pending
+OAuth starts, `POST /api/user/export`, the production authenticated
+`GET /api/cron/process-background-jobs` wakeup, and the completed export's public
+status/download URL. Clerk, Discord and S3 are mocked only at their external
+provider boundaries. No private worker driver, email-outbox state endpoint,
+business-row seed, internal database inspection or fabricated Run is used.
+
+The downloaded ZIP proves the installer receives their installation, connection,
+DM preference and one owned OAuth attempt, excludes the peer's identity and
+attempt, and exposes only the declared non-capability attempt fields. Strict
+archive validation excludes state/completion/approval hashes and redirect URIs.
+The final integrated case passed 1/1 on 2026-10-08. This is additional binding and
+OAuth export coverage; it does **not** reclassify the deleted pre-route ingress,
+context, delivery or notice archive assertions above as covered.
+
 ## Retained suites and boundaries
 
 `discord-fixture.ts`, `discord-ingress.test.ts`,
