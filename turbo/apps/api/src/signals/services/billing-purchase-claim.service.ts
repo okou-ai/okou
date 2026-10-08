@@ -13,7 +13,6 @@ import {
 
 import { QueryBuilder } from "drizzle-orm/pg-core";
 
-import type { Db } from "../external/db";
 import { BILLING_PURCHASE_PREVIEW_TTL_MS } from "./billing-purchase-preview-token.service";
 
 /**
@@ -88,12 +87,8 @@ export function inFlightUsagePackPurchaseQuery(args: {
 }
 
 /** A fresh, unpublished Plan purchase claim on the organization row. */
-export function inFlightPlanPurchaseQuery(
-  db: Pick<Db, "select">,
-  orgId: string,
-  staleBefore: Date,
-) {
-  return db
+export function inFlightPlanPurchaseQuery(orgId: string, staleBefore: Date) {
+  return new QueryBuilder()
     .select({ orgId: orgMetadata.orgId })
     .from(orgMetadata)
     .where(
