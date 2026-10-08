@@ -61,6 +61,9 @@ def prepare():
             # Directory FD ownership updates the actual directory inode. This
             # does not implement or fix ownership of a pathname Unix socket.
             os.fchown(namespace, 0, group_id)
+            # This is a directory: only root writes; the dedicated group only
+            # traverses. The reviewed 0710 contract must not become file 0644.
+            # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
             os.fchmod(namespace, 0o710)
 
         # Numeric mode reports an ACL mask, not every named user's access.
