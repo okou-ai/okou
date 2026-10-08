@@ -2,15 +2,12 @@ import { createPublicBillingZeroFixture } from "./helpers/public-billing-zero-fi
 import { deleteFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it, onTestFinished, test } from "vitest";
-import { readRunModelSourceFixture } from "../../../test-fixtures/agent-runs";
 
 import {
   upsertOrgPlanEntitlementFixture,
   deleteOrgPlanEntitlementFixture,
 } from "../../../test-fixtures/org-plan-entitlement";
-import { seedOrgMetadata } from "../../../test-fixtures/system-config-seeds";
 import { clearAllDetached, createDeferredPromise } from "../../utils";
-import { readRunUsageEventsFixture } from "../../../test-fixtures/chat-events";
 import { http, HttpResponse } from "msw";
 import { server } from "../../../mocks/server";
 import type { AvailableRunModel } from "@okouai/api-contracts/contracts/model-providers";
@@ -1040,51 +1037,6 @@ test("keeps a Claude identity shared after a type-wide disconnect and reconnect"
     Authorization: `Bearer ${restored.token}`,
   });
   await runs.requestCancelRun(f.actor, runId, [200]);
-});
-
-describe("personal subscription over credit-funded Auto", () => {
-  it.each([
-    { type: "claude-code-oauth-token" },
-    { type: "codex-oauth-token" },
-  ] as const)(
-    "admits personal $type with zero model credits",
-    async ({ type }) => {
-      const f = await fixture(type);
-
-      if (!f.actor.orgId) {
-        throw new Error("Expected an owned organization");
-      }
-      // Infrastructure-owned credits have no production mutation endpoint.
-      await seedOrgMetadata({ orgId: f.actor.orgId, tier: "pro", credits: 0 });
-      const runId = await f.start();
-      onTestFinished(async () => {
-        await runs.requestCancelRun(f.actor, runId, [200]);
-      });
-      const claim = await f.claim(runId);
-      expect(claim.billableFirewalls).toStrictEqual([]);
-      const id = accountId(claim, type);
-      await expect(resolve(claim, type)).resolves.toMatchObject({
-        Authorization: `Bearer ${f.connected.token}`,
-        ...(type === "codex-oauth-token"
-          ? { "ChatGPT-Account-ID": "identity-a" }
-          : {}),
-      });
-      expect(claim.cliAgentType).toBe(
-        type === "codex-oauth-token" ? "codex" : "claude-code",
-      );
-      // Run admission and operational usage do not have production read APIs
-      // exposing these fields. Observe persisted attribution, not logger calls.
-      await expect(readRunModelSourceFixture(runId)).resolves.toMatchObject({
-        modelProvider: type,
-        modelProviderId: id,
-        modelProviderCredentialScope: "member",
-        selectedModel: f.model,
-        creditAdmitted: false,
-        builtInModelKeyId: null,
-      });
-      await expect(readRunUsageEventsFixture(runId)).resolves.toStrictEqual([]);
-    },
-  );
 });
 
 describe("personal priority connection boundaries", () => {

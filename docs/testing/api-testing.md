@@ -220,8 +220,18 @@ deletion or a lost response. Upload only to keys returned by the normal protocol
 A retired export row and a private retry command do not become public merely
 because the final observation is an S3 object. These cases use the first real
 billing-status request to own per-case isolation; teardown never authenticates
-the deleted user to assert Run/Agent absence. The neighboring storage-fixture
-retry matrix remains unprocessed and is not an example of compliant setup.
+the deleted user to assert Run/Agent absence. Batch 007 retired the neighboring
+private listing/retry matrix and its forced retry endpoint. Other
+`api-bdd-storages` prepare/commit/list/download consumers still use the private
+storage-fixture route and remain unprocessed; they are not compliant examples.
+
+For bulk read notifications, `chat-thread-mark-agent-read.test.ts` creates each
+unread thread through a normal chat send and user cancellation after billing
+webhook/onboarding and personal-subscription setup. It marks the Agent read
+through the normal route, observes Ably notification payloads, and reads every
+known thread's cursor through its normal GET. A bounded sidebar indicator is
+not an exhaustive readback for a 100+ thread case. Synthetic terminal events
+and private cursor/event joins are not an alternative construction boundary.
 
 For the full reasoning, see
 [Testing External Behavior](./testing-external-behavior.md).
