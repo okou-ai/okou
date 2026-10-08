@@ -374,6 +374,73 @@ describe("POST /api/billing/checkout", () => {
     });
   });
 
+  it.each(["admission", "creation"] as const)(
+    "releases an unpublished Plan claim after a Stripe %s failure",
+    async (failureStage) => {
+      const fixture = createOrgFixture();
+      authenticateOrg(fixture);
+      const customerId = `cus_${randomUUID()}`;
+      context.mocks.stripe.customers.create.mockResolvedValue({
+        id: customerId,
+      });
+      context.mocks.stripe.customers.retrieve.mockResolvedValue({
+        id: customerId,
+        invoice_settings: { default_payment_method: `pm_${randomUUID()}` },
+      });
+      context.mocks.stripe.subscriptions.list.mockResolvedValue({
+        data: [],
+        has_more: false,
+      });
+      context.mocks.stripe.invoices.createPreview.mockResolvedValue({
+        amount_due: 2000,
+        currency: "usd",
+      });
+      context.mocks.stripe.subscriptions.create.mockResolvedValue({
+        id: `sub_${randomUUID()}`,
+        latest_invoice: null,
+      });
+      const client = setupApp({ context, routes: billingCheckoutRoutes })(
+        billingCheckoutContract,
+      );
+      const headers = { authorization: "Bearer clerk-session" };
+      const preview = await accept(
+        client.create({
+          headers,
+          body: {
+            tier: "pro",
+            supportsInAppPreview: true,
+            successUrl: `${APP_ORIGIN}/billing?billing=success`,
+            cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+          },
+        }),
+        [200],
+      );
+      if (!("previewToken" in preview.body)) {
+        throw new Error("Expected a Plan purchase preview");
+      }
+      const failedProviderCall =
+        failureStage === "admission"
+          ? context.mocks.stripe.subscriptions.list
+          : context.mocks.stripe.subscriptions.create;
+      failedProviderCall.mockRejectedValueOnce(new Error("Stripe unavailable"));
+      const request = {
+        headers,
+        body: { previewToken: preview.body.previewToken },
+      };
+
+      await accept(client.confirm(request), [500]);
+      const retried = await accept(client.confirm(request), [200]);
+      expect(retried.body).toStrictEqual({
+        status: "completed",
+        hostedInvoiceUrl: null,
+      });
+      await expect(readBillingStatus(fixture)).resolves.toMatchObject({
+        tier: "limited-free-1",
+        hasSubscription: false,
+      });
+    },
+  );
+
   it("pays a saved-card Plan preview through the rollout-safe checkout route", async () => {
     const fixture = await trackedSeed();
     mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");

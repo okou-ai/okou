@@ -7,7 +7,7 @@ import { and, eq, isNull } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { getStripeClient } from "../external/stripe-client";
 import { settle } from "../utils";
 import { orgPlanEntitlementValues } from "./org-plan-entitlements.service";
@@ -19,7 +19,7 @@ interface GetOrCreateStripeCustomerArgs {
 
 const publishStripeCustomer$ = command(
   async (
-    { set },
+    { get, set },
     args: GetOrCreateStripeCustomerArgs,
     customerId: string,
     signal: AbortSignal,
@@ -102,7 +102,7 @@ const publishStripeCustomer$ = command(
     }
     // A failed COMMIT response does not prove rollback. Read the authoritative
     // binding before propagating the error, and never delete a possible winner.
-    const [published] = await db
+    const [published] = await get(db$)
       .select({ stripeCustomerId: orgMetadata.stripeCustomerId })
       .from(orgMetadata)
       .where(eq(orgMetadata.orgId, args.orgId))
@@ -118,12 +118,11 @@ const publishStripeCustomer$ = command(
 /** Publish one authoritative Stripe customer without replacing an existing one. */
 export const getOrCreateStripeCustomer$ = command(
   async (
-    { set },
+    { get, set },
     args: GetOrCreateStripeCustomerArgs,
     signal: AbortSignal,
   ): Promise<string> => {
-    const db = set(writeDb$);
-    const [published] = await db
+    const [published] = await get(db$)
       .select({ stripeCustomerId: orgMetadata.stripeCustomerId })
       .from(orgMetadata)
       .where(eq(orgMetadata.orgId, args.orgId))
@@ -154,7 +153,7 @@ export const getOrCreateStripeCustomer$ = command(
     }
     // Another request may have published the same remote success while this
     // request lost its provider response. Only use that committed binding.
-    const [winner] = await db
+    const [winner] = await get(db$)
       .select({ stripeCustomerId: orgMetadata.stripeCustomerId })
       .from(orgMetadata)
       .where(eq(orgMetadata.orgId, args.orgId))
