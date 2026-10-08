@@ -24,6 +24,17 @@ describe("GET /api/home-task-recommendations", () => {
       { ...actor, orgId: actor.orgId },
       { [FeatureSwitchKey.HomeTaskRecommendations]: true },
     );
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            id: `orgmem_${actor.orgId}_${actor.userId}`,
+            organization: { id: actor.orgId },
+            publicUserData: { userId: actor.userId },
+          },
+        ],
+      },
+    );
     const client = setupApp({ context, routes: homeTaskRecommendationRoutes })(
       homeTaskRecommendationsContract,
     );

@@ -584,9 +584,12 @@ boundary and in all three test groups. Inspect compiler `--listFilesOnly` output
 confirm downstream programs consume upstream declarations.
 
 For one-time provider verification, `webhooks-notion.test.ts` initializes the
-existing case-owned database with `setupApp({ isolatePg: true })` before any
-application access, then posts the real Notion verification token and signed
-events. Isolation is opt-in; `testContext()` alone does not enable it. Resetting
+existing case-owned database in the first real webhook request with
+`setupApp({ isolatePg: true })` and uses the returned `webhookNotionContract`
+client. The provider verification handshake precedes Workflow/OAuth setup;
+the invalid-JSON case first posts its malformed body through that same typed
+string-body contract. Subsequent signed events use the case's database. Isolation
+is opt-in; `testContext()` alone does not enable it. Resetting
 verification-secret rows is unnecessary and would control application state.
 Its normal OAuth/Workflow setup and signature, debounce and account-selection
 assertions stay at the production boundary.

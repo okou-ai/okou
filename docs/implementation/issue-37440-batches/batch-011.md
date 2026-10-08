@@ -11,7 +11,7 @@ Opening frozen balance: **115 helpers (61 shared /52 local /2 benchmark), 44 HTT
 | `turbo/apps/api/src/signals/routes/__tests__/home-task-recommendations.test.ts::cronClient` (55)                                        | H1-H9 via refresh/generateRecommendations                                   | Retire. Delete eight cron-dependent scenarios, retain H7 public cold GET/touch/read phase with normal onboarding; lose generated-card, exact refresh/revision/lease/provider-selection guarantees.                                                                             |
 | `turbo/apps/api/src/signals/services/__tests__/home-task-recommendations-cache.service.test.ts::cronClient` (54)                        | C1-C2                                                                       | Retire with both manufactured legacy/corrupt cache/active-claim cases and service-import exceptions. No ordinary caller can write these JSONB/claim states.                                                                                                                    |
 | `turbo/apps/api/src/test-fixtures/registered-volume-index.ts::alterRegisteredVolumeIndexFixture` (13)                                   | V1-V3 in workflow-volume-index-reuse; V4 in cron-official-workflow-catalog  | Retire. V1 retains normal Workflow create/update/read A-B-A content; remove private storage download, worker kick and corruption phase. Delete V2/V3 (2/3 rows) and V4. Lose exact storage version, index integrity/requeue and rejected catalog-release guarantees.           |
-| `turbo/apps/api/src/test-fixtures/workflow-notion.ts::resetNotionWebhookVerification` (15)                                              | N1-N9 through verifyNotionWebhook                                           | Retire global secret DELETE. Explicit existing per-case database isolation precedes all app access, then real Notion verification handshake and signed webhooks. No reset of application rows.                                                                                 |
+| `turbo/apps/api/src/test-fixtures/workflow-notion.ts::resetNotionWebhookVerification` (15)                                              | N1-N9 through verifyNotionWebhook                                           | Retire global secret DELETE. The first real Notion verification POST selects existing per-case isolation and uses its returned contract client, before Workflow/OAuth access; signed webhooks follow. No reset of application rows.                                            |
 | `turbo/apps/api/src/signals/routes/__tests__/webhooks-notion.test.ts::verifyNotionWebhook` (344)                                        | N1-N9                                                                       | Public rewrite. One ordinary verification POST per isolated case; retain signed payload validation, debounce/duplicates, page/database pending events and account selection. No assertion or branch removed.                                                                   |
 | `turbo/apps/api/src/test-fixtures/ssh-access-owner-lifecycle.ts::countUserSshAccessResourcesFixture` (12)                               | S1 creator deletion preserves shared Access and another member SSH host     | Retire SQL before/after counts; retain normal Access/SSH creation, verified Clerk deletion, surviving member list/read. Lose exact personal config/host/credential physical 1-to-0 counts.                                                                                     |
 | `turbo/apps/api/src/test-fixtures/telegram-context-failure.ts::installTelegramContextFailureFixture` (12)                               | T1 split Telegram topic input storage-fault/re-delivery case                | Retire PostgreSQL trigger. Rewrite independent topic attachment/duplicate delivery/completion through ordinary onboarding, signed Telegram link/webhook, public logs and actual Runner claim. Lose forced required-context INSERT failure and rollback/re-admission guarantee. |
@@ -67,7 +67,7 @@ N1-N9 in `routes/__tests__/webhooks-notion.test.ts` all retain their existing as
 
 - Home recommendations GET reads/touches demand; POST touch renews demand. Neither calls generation. The deployed `CRON_SECRET` route is operator-only; test `onlyScope` is selected by a route factory. Remove only test scoping; real production generation, ownership, locks and accounting stay intact.
 - Workflow content is created through normal `workflowsCollectionContract.create`, updated/read through `workflowsDetailContract`; S3 stores only bytes these routes upload. `downloadStorage` actually calls storage-fixture/action, so it cannot remain in the retained V1.
-- Notion's reset rationale assumes shared persistent state. `setupApp({ isolatePg: true })` is already supported isolation infrastructure, but it is opt-in (not automatic). Initialize it before every case's first application/DB access, then POST the provider verification token normally. Snapshot/bootstrap creates no Notion verification secret. No application-state seed/reset is introduced. Workflow setup uses normal Stripe invoice webhook/onboarding, provider credentials, Agent and Workflow endpoints; OAuth mocks are external Notion state.
+- Notion's reset rationale assumes shared persistent state. `setupApp({ isolatePg: true })` is already supported isolation infrastructure, but it is opt-in (not automatic). The first real webhook request selects it and uses the returned `webhookNotionContract` client. Move the existing provider handshake before Workflow/OAuth access; the invalid-JSON case selects isolation on its malformed first POST and retains its later handshake and invalid-signature assertion. Snapshot/bootstrap creates no Notion verification secret. No application-state seed/reset is introduced. Workflow setup uses normal Stripe invoice webhook/onboarding, provider credentials, Agent and Workflow endpoints; OAuth mocks are external Notion state.
 - SSH membership setup is a Clerk mock, not a business DB writer. Creator erasure is verified provider ingress; the surviving member can still list their own host and shared config. Exact erased-owner row counts are intentionally lost.
 - Telegram's selected case must avoid shared `bootstrapLimitedFreeOnboarding`/fabricated Run token and private `runForPrompt`/listAgentRuns. Use direct normal onboarding status/completion, signed official-bot link, genuine ingress, public logs, actual heartbeat/claim token, normal attachment preview and completion.
 - Private registry success fixtures choose production-pinned version IDs and synthetic storage owners/HEAD; normal version writers cannot choose those IDs. Four independent public wrong-type/digest/allowlist rejection cases stay intact. Production registry publishing/download behavior stays unchanged.
@@ -86,8 +86,8 @@ No local Vitest/dev server. Static checks, independent current-HEAD review, sour
 
 Remove the orphan home cache service-test file and both lint/import exception
 entries with their obsolete #36466 rationale; these do not add item credit.
-The Notion isolation hook also applies to the two account-lifecycle declarations
-that never called verification; their behavior/assertions are unchanged.
+The two Notion account-lifecycle declarations that never call verification remain
+unchanged and do not opt into isolation. No unused-client setup hook remains.
 
 Production-source edits are limited to removing the test-only route factory and
 its now-unneeded `HomeTaskScope` type export and optional `onlyScope` selector from `refreshDueHomeTaskRecommendations$`.
@@ -102,3 +102,20 @@ Oxlint and ESLint, API aggregate types (including all three test projects and
 chat-event acceptance types), Knip (only existing configuration hints), style
 policy and file-size checks. AST comparison confirms the declaration totals
 above. No local Vitest/dev server was run.
+
+## Review and source-CI repair history
+
+The first independent review of `f97716486023d73733de186bb637bac944c6f81a`
+[requested changes](https://github.com/okou-ai/okou/pull/38209#issuecomment-6067598377):
+the Notion `beforeEach` discarded the isolated app client. Isolation now belongs
+to the first exercised webhook request and its returned typed client; the
+malformed JSON, invalid signature and all other assertions remain. This also
+avoids two unnecessary engines for account-only cases.
+
+[First source API5](https://github.com/okou-ai/okou/actions/runs/37832535444/job/113501490393)
+failed in the Home cold GET with 500: `loadCurrentMembershipId` read `data`
+from an unconfigured Clerk `getOrganizationMembershipList` mock. The rewrite
+now supplies the actual external membership response for its actor. No API-owned
+state is fabricated; GET200/touch204/unchanged GET assertions are unchanged.
+The original failure and dependent cancellations remain historical evidence;
+no unchanged-HEAD rerun was used.
