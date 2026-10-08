@@ -90,7 +90,7 @@ describe("Pi memory Phase 2 job schema", () => {
       "sandbox_lease_token",
     );
     expect(checks.pi_memory_phase2_jobs_maintenance_history_check).toContain(
-      "last_maintenance_checkpoint_id",
+      "last_maintenance_checkpoint_version_id",
     );
     expect(checks.pi_memory_phase2_jobs_conflict_check).toContain(
       "last_conflicting_head_version_id",
