@@ -24,7 +24,7 @@ import {
   type CreatedChatThread,
   type ExistingChatThread,
 } from "../services/chat-thread.service";
-import { agentExistsInOrg } from "../services/agent-deletion.service";
+import { agentExistsInOrg$ } from "../services/agent-deletion.service";
 import {
   autoSelectionPin,
   resolveDefaultModelFirstPin$,
@@ -190,11 +190,10 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return remoteAccessError;
   }
 
-  const exists = await get(
-    agentExistsInOrg({
-      orgId: auth.orgId,
-      agentId: body.data.agentId,
-    }),
+  const exists = await set(
+    agentExistsInOrg$,
+    { orgId: auth.orgId, agentId: body.data.agentId },
+    signal,
   );
   signal.throwIfAborted();
   if (!exists) {
