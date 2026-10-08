@@ -45,7 +45,9 @@ fn textual_json_observation_preserves_fixture_sentinel_checks() -> serde_json::R
 async fn quiet_recording_returns_complete_independent_http_snapshots()
 -> Result<(), Box<dyn std::error::Error>> {
     let server = RecordingServer::start(200, Duration::ZERO).await?;
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()?;
     let body = format!("large-fixture-head-{}-tail", "α".repeat(1024 * 1024));
     let waiting = server.wait_for_quiet(Duration::from_millis(20), Duration::from_secs(5));
     tokio::pin!(waiting);
