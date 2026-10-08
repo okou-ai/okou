@@ -1313,17 +1313,6 @@
       "subscriptionChangeConfirmed": "Alteração da assinatura confirmada."
     },
     "usage": {
-      "allowance": {
-        "day": "{{value}}d",
-        "hour": "{{value}}h",
-        "left": "{{value}} restantes",
-        "minute": "{{value}}min",
-        "remainingAria": "Saldo restante da franquia de uso de {{label}}",
-        "resets": "Reinicia em {{date}}",
-        "resetsRaw": "Reinicia em {{value}}",
-        "title": "Franquia de uso",
-        "week": "{{value}} sem."
-      },
       "autoRechargeOn": "Recarga automática ativada",
       "breakdown": {
         "currentPlanDescription": "Créditos mensais do plano, reiniciados a cada ciclo de cobrança",

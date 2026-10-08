@@ -1313,17 +1313,6 @@
       "subscriptionChangeConfirmed": "La modification de l’abonnement a été confirmée."
     },
     "usage": {
-      "allowance": {
-        "day": "{{value}}d",
-        "hour": "{{value}}h",
-        "left": "{{value}} restants",
-        "minute": "{{value}}m",
-        "remainingAria": "Allocation d'utilisation {{label}} restante",
-        "resets": "Réinitialise {{date}}",
-        "resetsRaw": "Réinitialise {{value}}",
-        "title": "Allocation d'utilisation",
-        "week": "{{value}}w"
-      },
       "autoRechargeOn": "Recharge automatique activée",
       "breakdown": {
         "currentPlanDescription": "Crédits du forfait mensuel, réinitialisés à chaque cycle de facturation",

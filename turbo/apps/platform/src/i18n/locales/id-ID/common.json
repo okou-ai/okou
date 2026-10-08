@@ -1289,17 +1289,6 @@
       "subscriptionChangeConfirmed": "Perubahan langganan dikonfirmasi."
     },
     "usage": {
-      "allowance": {
-        "day": "{{value}} hari",
-        "hour": "{{value}} jam",
-        "left": "sisa {{value}}",
-        "minute": "{{value}} m",
-        "remainingAria": "Sisa jatah penggunaan {{label}}",
-        "resets": "Diatur ulang {{date}}",
-        "resetsRaw": "Diatur ulang {{value}}",
-        "title": "Jatah penggunaan",
-        "week": "{{value}} minggu"
-      },
       "autoRechargeOn": "Isi ulang otomatis aktif",
       "breakdown": {
         "currentPlanDescription": "Kredit paket bulanan, direset setiap siklus tagihan",

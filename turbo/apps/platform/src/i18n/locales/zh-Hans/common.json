@@ -1289,17 +1289,6 @@
       "subscriptionChangeConfirmed": "订阅变更已确认。"
     },
     "usage": {
-      "allowance": {
-        "day": "{{value}}天",
-        "hour": "{{value}}小时",
-        "left": "剩余 {{value}}",
-        "minute": "{{value}}分钟",
-        "remainingAria": "用量额度剩余 {{label}}",
-        "resets": "{{date}} 重置",
-        "resetsRaw": "{{value}} 重置",
-        "title": "用量额度",
-        "week": "{{value}}周"
-      },
       "autoRechargeOn": "已开启自动充值",
       "breakdown": {
         "currentPlanDescription": "套餐每月积分，每个账单周期重置",

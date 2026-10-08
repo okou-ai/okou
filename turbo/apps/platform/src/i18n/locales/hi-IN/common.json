@@ -1290,17 +1290,6 @@
       "subscriptionChangeConfirmed": "सदस्यता में बदलाव की पुष्टि हो गई है।"
     },
     "usage": {
-      "allowance": {
-        "day": "{{value}}d",
-        "hour": "{{value}}h",
-        "left": "{{value}} शेष",
-        "minute": "{{value}}m",
-        "remainingAria": "उपयोग भत्ता {{label}} शेष है",
-        "resets": "{{date}} रीसेट करता है",
-        "resetsRaw": "{{value}} रीसेट करता है",
-        "title": "उपयोग भत्ता",
-        "week": "{{value}}w"
-      },
       "autoRechargeOn": "ऑटो-रिचार्ज चालू",
       "breakdown": {
         "currentPlanDescription": "मासिक योजना क्रेडिट, प्रत्येक बिलिंग चक्र को रीसेट करता है",

@@ -1290,17 +1290,6 @@
       "subscriptionChangeConfirmed": "Die Abonnementänderung wurde bestätigt."
     },
     "usage": {
-      "allowance": {
-        "day": "{{value}}d",
-        "hour": "{{value}}h",
-        "left": "{{value}} übrig",
-        "minute": "{{value}}m",
-        "remainingAria": "Verbleibendes Nutzungskontingent für {{label}}",
-        "resets": "Wird am {{date}} zurückgesetzt",
-        "resetsRaw": "Wird in {{value}} zurückgesetzt",
-        "title": "Nutzungskontingent",
-        "week": "{{value}}w"
-      },
       "autoRechargeOn": "Automatische Aufladung aktiv",
       "breakdown": {
         "currentPlanDescription": "Monatliche Tarif-Credits; werden in jedem Abrechnungszeitraum zurückgesetzt",
