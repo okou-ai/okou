@@ -2752,6 +2752,18 @@ async function bindStripeCustomerFromMetadata(
     });
   }
 
+  // Bootstrap can insert an unbound org between the first UPDATE and SELECT.
+  // Retry the same null-only write; never replace a competing customer binding.
+  if (
+    org.stripeCustomerId === null &&
+    (await bindStripeCustomerToOrgMetadata(db, {
+      orgId,
+      customerId: args.customerId,
+    }))
+  ) {
+    return true;
+  }
+
   L.warn("stripe customer metadata could not bind org", {
     customerId: args.customerId,
     subscriptionId: args.subscriptionId,
