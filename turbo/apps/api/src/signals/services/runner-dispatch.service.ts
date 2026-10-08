@@ -133,9 +133,7 @@ export async function notifyRunnerJob(
   const currentDate = new Date(notificationEnteredAt);
   let preferenceLookupSucceeded = true;
   let finalizingPreferenceSource:
-    | "active_producer"
-    | "completion_bridge"
-    | undefined;
+    "active_producer" | "completion_bridge" | undefined;
   const runnerPreference =
     (await tapError(
       resolveRunnerReusePreference({

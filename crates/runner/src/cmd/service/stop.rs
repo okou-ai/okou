@@ -9,11 +9,11 @@ use super::drain_override_cleanup::{
     DrainOverrideReloadPolicy, reconcile_drain_restart_override_removal,
 };
 use super::gate::{ActiveJobsGateOps, check_active_jobs_gate};
-use super::systemctl::{
+use super::{RunnerServiceUnit, ServiceFuture, acquire_service_lock, read_unit_config_path};
+use runner_host::service::{
     BoundedSystemctlOutcome, CleanupUnitActiveState, cleanup_unit_active_state_bounded,
     is_unit_active, is_unit_enabled_bounded, run_systemctl, run_systemctl_bounded,
 };
-use super::{RunnerServiceUnit, ServiceFuture, acquire_service_lock, read_unit_config_path};
 
 const CLEANUP_LOCK_TIMEOUT: TokioDuration = TokioDuration::from_secs(20);
 const CLEANUP_LOCK_POLL_INTERVAL: TokioDuration = TokioDuration::from_millis(250);
@@ -159,11 +159,15 @@ impl ServiceStopOps for RealServiceStopOps {
     }
 
     fn is_active<'a>(&'a mut self, unit: &'a RunnerServiceUnit) -> ServiceFuture<'a, bool> {
-        Box::pin(async move { is_unit_active(unit).await })
+        Box::pin(async move { is_unit_active(unit).await.map_err(Into::into) })
     }
 
     fn stop<'a>(&'a mut self, unit: &'a RunnerServiceUnit) -> ServiceFuture<'a, ()> {
-        Box::pin(async move { run_systemctl(&["stop", unit.service_name()]).await })
+        Box::pin(async move {
+            run_systemctl(&["stop", unit.service_name()])
+                .await
+                .map_err(Into::into)
+        })
     }
 
     fn stop_bounded<'a>(
@@ -171,18 +175,22 @@ impl ServiceStopOps for RealServiceStopOps {
         unit: &'a RunnerServiceUnit,
         duration: TokioDuration,
     ) -> ServiceFuture<'a, BoundedSystemctlOutcome> {
-        Box::pin(
-            async move { run_systemctl_bounded(&["stop", unit.service_name()], duration).await },
-        )
+        Box::pin(async move {
+            run_systemctl_bounded(&["stop", unit.service_name()], duration)
+                .await
+                .map_err(Into::into)
+        })
     }
 
     fn cleanup_active_state<'a>(
         &'a mut self,
         unit: &'a RunnerServiceUnit,
     ) -> ServiceFuture<'a, CleanupUnitActiveState> {
-        Box::pin(
-            async move { cleanup_unit_active_state_bounded(unit, CLEANUP_ACTION_TIMEOUT).await },
-        )
+        Box::pin(async move {
+            cleanup_unit_active_state_bounded(unit, CLEANUP_ACTION_TIMEOUT)
+                .await
+                .map_err(Into::into)
+        })
     }
 
     fn kill_all_sigkill<'a>(&'a mut self, unit: &'a RunnerServiceUnit) -> ServiceFuture<'a, ()> {
@@ -211,7 +219,11 @@ impl ServiceStopOps for RealServiceStopOps {
     }
 
     fn reset_failed<'a>(&'a mut self, unit: &'a RunnerServiceUnit) -> ServiceFuture<'a, ()> {
-        Box::pin(async move { run_systemctl(&["reset-failed", unit.service_name()]).await })
+        Box::pin(async move {
+            run_systemctl(&["reset-failed", unit.service_name()])
+                .await
+                .map_err(Into::into)
+        })
     }
 
     fn reset_failed_bounded<'a>(
@@ -238,7 +250,11 @@ impl ServiceStopOps for RealServiceStopOps {
     }
 
     fn is_enabled<'a>(&'a mut self, unit: &'a RunnerServiceUnit) -> ServiceFuture<'a, bool> {
-        Box::pin(async move { is_unit_enabled_bounded(unit, CLEANUP_ACTION_TIMEOUT).await })
+        Box::pin(async move {
+            is_unit_enabled_bounded(unit, CLEANUP_ACTION_TIMEOUT)
+                .await
+                .map_err(Into::into)
+        })
     }
 
     fn cleanup_drain_restart_override<'a>(
@@ -277,14 +293,14 @@ impl ServiceStopOps for RealServiceStopOps {
 
 impl ActiveJobsGateOps for RealServiceStopOps {
     fn is_unit_active<'a>(&'a mut self, unit: &'a RunnerServiceUnit) -> ServiceFuture<'a, bool> {
-        Box::pin(async move { is_unit_active(unit).await })
+        Box::pin(async move { is_unit_active(unit).await.map_err(Into::into) })
     }
 
     fn read_unit_config_path<'a>(
         &'a mut self,
         unit: &'a RunnerServiceUnit,
     ) -> ServiceFuture<'a, Option<std::path::PathBuf>> {
-        Box::pin(async move { read_unit_config_path(unit).await })
+        Box::pin(async move { read_unit_config_path(unit).await.map_err(Into::into) })
     }
 }
 
@@ -586,6 +602,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+    use runner_host::service::test_support;
 
     fn service_unit() -> RunnerServiceUnit {
         RunnerServiceUnit::from_suffix("test").unwrap()
@@ -627,7 +644,7 @@ mod tests {
                 active_results: VecDeque::from([Ok(true)]),
                 stop_results: VecDeque::from([Ok(())]),
                 bounded_stop_results: VecDeque::from([Ok(BoundedSystemctlOutcome::Success)]),
-                cleanup_states: VecDeque::from([Ok(CleanupUnitActiveState::for_test(
+                cleanup_states: VecDeque::from([Ok(test_support::cleanup_unit_active_state(
                     "inactive", false,
                 ))]),
                 kill_error: false,
@@ -720,9 +737,9 @@ mod tests {
         ) -> ServiceFuture<'a, CleanupUnitActiveState> {
             self.events.push("cleanup_active_state");
             Box::pin(std::future::ready(
-                self.cleanup_states
-                    .pop_front()
-                    .unwrap_or(Ok(CleanupUnitActiveState::for_test("inactive", false))),
+                self.cleanup_states.pop_front().unwrap_or(Ok(
+                    test_support::cleanup_unit_active_state("inactive", false),
+                )),
             ))
         }
 
@@ -824,7 +841,10 @@ mod tests {
         active_state: &str,
         active_like: bool,
     ) -> RunnerResult<CleanupUnitActiveState> {
-        Ok(CleanupUnitActiveState::for_test(active_state, active_like))
+        Ok(test_support::cleanup_unit_active_state(
+            active_state,
+            active_like,
+        ))
     }
 
     #[tokio::test]

@@ -145,10 +145,7 @@ export function isChatRunTerminalEventType(
 export function isChatInputEventType(
   eventType: ChatEventType,
 ): eventType is
-  | "input.prompt"
-  | "input.automation"
-  | "input.budget"
-  | "input.rejected" {
+  "input.prompt" | "input.automation" | "input.budget" | "input.rejected" {
   return (
     eventType === "input.prompt" ||
     eventType === "input.automation" ||

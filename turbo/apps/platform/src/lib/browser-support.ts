@@ -1,9 +1,5 @@
 export type BrowserUpgradeTarget =
-  | "browser"
-  | "chrome"
-  | "chromium"
-  | "ios"
-  | "safari";
+  "browser" | "chrome" | "chromium" | "ios" | "safari";
 
 export interface BrowserUpgrade {
   readonly actionUrl: string;

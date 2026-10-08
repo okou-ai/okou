@@ -28,12 +28,7 @@ interface ChatAttachmentDescriptor {
 }
 
 type DocumentPreviewKind =
-  | "markdown"
-  | "text"
-  | "json"
-  | "csv"
-  | "pdf"
-  | "html";
+  "markdown" | "text" | "json" | "csv" | "pdf" | "html";
 
 function contentTypeForDocumentPreviewKind(kind: DocumentPreviewKind): string {
   if (kind === "markdown") {
@@ -104,12 +99,7 @@ function TextPreview({
 }
 
 type AttachmentAnchorChipKind =
-  | "text"
-  | "json"
-  | "markdown"
-  | "csv"
-  | "pdf"
-  | "html";
+  "text" | "json" | "markdown" | "csv" | "pdf" | "html";
 
 function documentPreviewAccentClass(kind: AttachmentAnchorChipKind) {
   if (kind === "markdown") {

@@ -239,8 +239,7 @@ export function connectorRuntimeAuthSelectionFromRows(
       >[0]["mcp"];
       readonly label: string | null;
       readonly firewall:
-        | typeof connectorCatalogEntries.$inferSelect.firewall
-        | null;
+        typeof connectorCatalogEntries.$inferSelect.firewall | null;
     } | null;
   }[],
   requestedConnectorSlugs: readonly string[],

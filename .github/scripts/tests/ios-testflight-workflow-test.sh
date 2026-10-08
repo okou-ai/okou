@@ -5,7 +5,7 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 # the actual expression, then check the data handed to the publishing commands.
 # Read the workflow inside Python: the serialized YAML may exceed Linux's
 # per-argument environment size when passed as WORKFLOW_JSON.
-python3 - "$root/.github/workflows/release-please.yml" <<'PY'
+python3 - "$root/.github/workflows/release-please.yml" "$root/.github/workflows/ios-archive-proof.yml" <<'PY'
 import json, subprocess, sys
 workflow = json.loads(subprocess.check_output(['yq', '-o=json', '.', sys.argv[1]], text=True))
 job = workflow['jobs']['publish-ios-testflight']
@@ -42,6 +42,33 @@ assert commands == ['node ios/scripts/testflight.mjs prepare', 'bash ios/scripts
 assert all(not step.get('continue-on-error', False) for step in steps)
 assert workflow['jobs']['refresh-release-pull-request']['permissions']['actions'] == 'write'
 assert 'publish-ios-testflight' in workflow['jobs']['update-rollback-dashboard']['needs']
+
+# The optional proof must never expose signing credentials to PR/branch code or upload builds.
+proof = json.loads(subprocess.check_output(['yq', '-o=json', '.', sys.argv[2]], text=True))
+assert proof['on']['workflow_dispatch']['inputs']['signing_export']['default'] is False
+assert proof['permissions'] == {'contents': 'read'}
+unsigned = proof['jobs']['unsigned-archive']
+assert 'environment' not in unsigned
+assert 'secrets.' not in json.dumps(unsigned)
+export = proof['jobs']['distribution-export']
+assert export['environment'] == 'production'
+assert export['needs'] == 'unsigned-archive'
+condition = export['if'].removeprefix('${{').removesuffix('}}').strip()
+for event in ['pull_request', 'workflow_dispatch']:
+    for ref in ['refs/heads/main', 'refs/heads/untrusted']:
+        for enabled in [False, True]:
+            expression = (condition.replace('github.event_name', repr(event))
+                .replace('github.ref', repr(ref))
+                .replace('inputs.signing_export', repr(enabled)).replace('&&', 'and'))
+            expected = event == 'workflow_dispatch' and ref == 'refs/heads/main' and enabled
+            assert eval(expression, {'__builtins__': {}}, {}) is expected
+for job in [unsigned, export]:
+    checkout = next(step for step in job['steps'] if step.get('uses', '').startswith('actions/checkout'))
+    assert checkout['with']['ref'] == '${{ github.sha }}'
+assert 'APP_STORE_CONNECT_API' not in json.dumps(proof)
+verify = next(step for step in export['steps'] if '--verify-archive' in step.get('run', ''))
+assert verify['env']['IOS_BUILD_NUMBER'] == '9999'
+assert 'altool' not in json.dumps(proof)
 PY
 # Fail before touching the keychain when release identity is wrong.
 work=$(mktemp -d)

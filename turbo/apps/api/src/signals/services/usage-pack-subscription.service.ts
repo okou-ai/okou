@@ -717,8 +717,7 @@ interface PreparedPendingUsagePackCheckout {
 }
 
 type CommittedPendingUsagePackCheckout =
-  | PendingUsagePackCheckoutResolution
-  | { readonly kind: "stale" };
+  PendingUsagePackCheckoutResolution | { readonly kind: "stale" };
 
 function usagePackCheckoutConfigurationMatches(
   args: CreateUsagePackCheckoutSessionArgs,
@@ -988,10 +987,7 @@ async function prepareUsagePackPurchaseSnapshot(
 }
 
 type UsagePackCheckoutCorrelation =
-  | "correlated"
-  | "superseded"
-  | "retired"
-  | "changed";
+  "correlated" | "superseded" | "retired" | "changed";
 
 /**
  * Publish one known Session only to the same actual uncorrelated purchase
@@ -2173,9 +2169,7 @@ function embeddedUsagePackSubscriptionId(
 
 function oneUsagePackSubscriptionId(
   ...metadataCandidates: readonly (
-    | Readonly<Record<string, string>>
-    | null
-    | undefined
+    Readonly<Record<string, string>> | null | undefined
   )[]
 ): string | null {
   const ids = new Set(
@@ -2282,9 +2276,7 @@ async function resolveUsagePackSubscriptionId(
   args: {
     readonly stripeSubscriptionId: string | null;
     readonly metadata: readonly (
-      | Readonly<Record<string, string>>
-      | null
-      | undefined
+      Readonly<Record<string, string>> | null | undefined
     )[];
     readonly includeTerminalBinding?: boolean;
   },

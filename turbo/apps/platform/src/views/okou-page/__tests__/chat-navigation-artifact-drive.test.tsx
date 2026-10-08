@@ -59,8 +59,7 @@ const DRIVE_FILE_URL = publicArtifactUrl("drive-report.pdf");
 const AUTHORIZATION_URL = "https://accounts.google.test/authorize-drive";
 
 type DriveConnectionState =
-  | "not-connected"
-  | BuiltinConnectorResponse["connectionStatus"];
+  "not-connected" | BuiltinConnectorResponse["connectionStatus"];
 
 interface OauthRequest {
   readonly account: ConnectorAccountMutationIntent;

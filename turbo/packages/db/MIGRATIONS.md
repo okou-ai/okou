@@ -113,7 +113,7 @@ are enforced by the integration ingress tests.
 ### Active transition validators
 
 - `scripts/test-oauth-contract-hash-retirement.ts` protects migration
-  `1351_retire_oauth_contract_hash`: both physical hash columns disappear,
+  `1352_retire_oauth_contract_hash`: both physical hash columns disappear,
   multiple historical registrations for the same method/issuer and their exact
   account references survive, encrypted secrets and account metadata are
   unchanged, builtin authorization context cleanup is idempotent, and unrelated,
@@ -135,10 +135,17 @@ are enforced by the integration ingress tests.
   `1348_connector_catalog_payload_independent_api`: incomplete retained
   projections fail with transactional DDL rollback, populated rows are unchanged,
   outgoing dual writers and column-only writers coexist, MCP remains optional,
-  and the runtime ORM works after a disposable physical DROP. Retain it through
-  the production payload contraction. `test-connector-catalog-columns-permanent.ts`
-  runs current column INSERT/SELECT/RETURNING, same-hash retry and all ten required
-  constraints against both replayed and freshly generated schemas.
+  and the runtime ORM works after contraction migration
+  `1351_drop_connector_catalog_payload`. The contraction uses a frozen outgoing
+  table fixture, verifies transactional DROP rollback and preserves every
+  retained hash/slug, projection and the current pointer (including historical
+  and partial generations). Retain it through the production payload contraction;
+  preparation shipped in API 1.715.0, while contraction still requires its own
+  successful production release and verification.
+  `test-connector-catalog-columns-permanent.ts` asserts physical payload absence
+  and runs current column INSERT/SELECT/RETURNING, same-hash retry (including
+  unchanged stored summaries) and all ten required constraints against both
+  replayed and freshly generated schemas.
 
 - `scripts/test-unselectable-thread-model-cleanup.ts` protects migration
   `1335_clear_unselectable_thread_models_and_unused_model_keys`: unresolvable

@@ -288,8 +288,7 @@ async function readThreadTitleFromEvents(
   }
 
   let latestTitleEvent:
-    | { readonly title: string | null; readonly createdAt: string }
-    | undefined;
+    { readonly title: string | null; readonly createdAt: string } | undefined;
   for (const event of events.body.events) {
     if (
       event.chatThreadId !== threadId ||
@@ -312,12 +311,7 @@ async function waitForRunStatus(
   actor: ApiTestUser,
   runId: string,
   status:
-    | "cancelled"
-    | "completed"
-    | "failed"
-    | "pending"
-    | "queued"
-    | "running",
+    "cancelled" | "completed" | "failed" | "pending" | "queued" | "running",
 ): Promise<void> {
   await flushWaitUntilForTest();
   await expect(

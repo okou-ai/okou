@@ -190,8 +190,7 @@ type ConnectorConnectionMutationFailure =
     };
 
 type ConnectorConnectionWriteFailureStatus =
-  | ConnectorConnectionMutationFailure["status"]
-  | "identityMismatch";
+  ConnectorConnectionMutationFailure["status"] | "identityMismatch";
 
 export function connectorConnectionWriteFailureMessage(
   status: ConnectorConnectionWriteFailureStatus,

@@ -49,8 +49,7 @@ export type ScopedChatEventDataKey = ChatEventDataKey &
 export type ScopedChatThreadEventDataKey = ChatThreadEventDataKey &
   Pick<SharedDatabaseIdentity, "userId" | "orgId">;
 export type ScopedSharedDatabaseDataKey =
-  | ScopedChatEventDataKey
-  | ScopedChatThreadEventDataKey;
+  ScopedChatEventDataKey | ScopedChatThreadEventDataKey;
 
 const sharedDatabaseConsistencySchema = z.enum(["cache-only", "catch-up"]);
 

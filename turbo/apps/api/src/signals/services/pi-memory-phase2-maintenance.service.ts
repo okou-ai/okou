@@ -335,8 +335,7 @@ interface ExactMaintenanceCheckpoint {
 
 function maintenanceCheckpointVersion(
   checkpoint:
-    | Pick<typeof checkpoints.$inferSelect, "storageMounts">
-    | undefined,
+    Pick<typeof checkpoints.$inferSelect, "storageMounts"> | undefined,
   payload: PiMemoryPhase2MaintenanceCallbackPayload,
 ) {
   return checkpoint?.storageMounts?.find((mount) => {
@@ -463,8 +462,7 @@ function maintenanceSelectionWatermarkValues(
 function observedCheckpoint(
   receipt: typeof piMemoryPhase2Checkpoints.$inferSelect | undefined,
   checkpoint:
-    | Pick<typeof checkpoints.$inferSelect, "id" | "storageMounts">
-    | undefined,
+    Pick<typeof checkpoints.$inferSelect, "id" | "storageMounts"> | undefined,
   payload: PiMemoryPhase2MaintenanceCallbackPayload,
 ): ExactMaintenanceCheckpoint | undefined {
   if (receipt) {

@@ -30,10 +30,10 @@ APPROVED_ACTIONS = {
     "marocchino/sticky-pull-request-comment": "5770ad5eb8f42dd2c4f34da00c94c5381e49af88",  # v3.0.5
     "mozilla-actions/sccache-action": "fc920bf0ec8de6ee65d409111f7ec508035751ba",  # v0.0.11
     "okou-ai/release-please-action": "420308b1502ae6728b0654ceb84f863eedf8e621",
-    "pnpm/action-setup": "0977fd99725f1db4007ccb2928dbb4e90d06cc86",  # v6
+    "pnpm/action-setup": "ea17c68df8912ef543352723c149a84f56e3d413",  # v6.1.0
     "slackapi/slack-github-action": "dcb1066f776dd043e64d0e8ba94ca15cc7e1875d",  # v4.0.0
     "swatinem/rust-cache": "6323deb102c322ba6fcbdcafc7e3dddab59af2b6",  # v2.9.2
-    "taiki-e/install-action": "83ac0ad63c0167e6f06796fab0fce28db1bf3db0",  # v2.87.22
+    "taiki-e/install-action": "183e4297cca2404691e9380e1307288dced5c82a",  # v2.87.25
 }
 SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
 

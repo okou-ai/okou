@@ -36,8 +36,7 @@ export interface InternalRunCallback {
 export type RunCallback = HttpRunCallback | InternalRunCallback;
 
 export type AgentRunPreCreateSource =
-  | "chat_callback_auto_send"
-  | "workflow_slash_command";
+  "chat_callback_auto_send" | "workflow_slash_command";
 
 export interface AgentRunRequestAgent {
   readonly id: string;
@@ -79,7 +78,6 @@ export interface PermissionManifest {
   readonly networkPolicies: NetworkPolicies;
   readonly builtinRuntimeTargets?: readonly BuiltinRuntimeTargetRegistration[];
   readonly environmentSecretPlaceholders:
-    | Readonly<Record<string, string>>
-    | undefined;
+    Readonly<Record<string, string>> | undefined;
   readonly billableFirewalls: readonly string[];
 }

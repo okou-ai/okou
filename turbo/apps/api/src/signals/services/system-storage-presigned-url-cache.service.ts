@@ -38,13 +38,9 @@ export type StorageManifestPresignedUrlCacheScope = Exclude<
 >;
 
 export type StorageManifestCacheBranch =
-  | "requested"
-  | "session_writeback"
-  | "captured";
+  "requested" | "session_writeback" | "captured";
 export type StorageManifestCacheEntryKind =
-  | "compose"
-  | "additional"
-  | "artifact";
+  "compose" | "additional" | "artifact";
 
 export interface StorageManifestCacheObservationContext {
   readonly timing: ApiDispatchTimingCollector;
@@ -156,12 +152,7 @@ interface CacheRowValue {
 }
 
 type StorageManifestCacheCountBucket =
-  | "0"
-  | "1"
-  | "2_4"
-  | "5_8"
-  | "9_16"
-  | "17_plus";
+  "0" | "1" | "2_4" | "5_8" | "9_16" | "17_plus";
 
 interface StorageManifestCacheObservationStats {
   readonly requestedCount: number;

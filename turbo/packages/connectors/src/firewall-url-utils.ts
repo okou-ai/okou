@@ -67,12 +67,10 @@ export function hasUnsafeUrlCodepoint(value: string): boolean {
       codeUnit <= UNICODE_HIGH_SURROGATE_MAX
     ) {
       const nextCodeUnit = value.charCodeAt(i + 1);
-      if (
-        !(
-          UNICODE_LOW_SURROGATE_MIN <= nextCodeUnit &&
-          nextCodeUnit <= UNICODE_LOW_SURROGATE_MAX
-        )
-      ) {
+      if (!(
+        UNICODE_LOW_SURROGATE_MIN <= nextCodeUnit &&
+        nextCodeUnit <= UNICODE_LOW_SURROGATE_MAX
+      )) {
         return true;
       }
       i += 1;

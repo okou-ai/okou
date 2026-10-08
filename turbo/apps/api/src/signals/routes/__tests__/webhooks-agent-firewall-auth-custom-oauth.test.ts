@@ -32,8 +32,7 @@ const mocks = createRouteMocks(context);
 async function setupCustomOAuthFirewall(
   mode: "configured" | "automatic",
   refreshResponse:
-    | ((attempt: number) => Response | Promise<Response>)
-    | undefined,
+    ((attempt: number) => Response | Promise<Response>) | undefined,
   identity: {
     readonly initial?: OAuthIdentityFixtureOptions;
     readonly refresh?: OAuthIdentityFixtureOptions;

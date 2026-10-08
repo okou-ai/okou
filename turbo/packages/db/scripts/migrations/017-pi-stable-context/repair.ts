@@ -4,12 +4,7 @@ import { parseArgs } from "node:util";
 import { Client } from "pg";
 
 type HeadStatus =
-  | "missing"
-  | "pending"
-  | "running"
-  | "ready"
-  | "unindexable"
-  | "failed";
+  "missing" | "pending" | "running" | "ready" | "unindexable" | "failed";
 
 function requiredEnv(name: string): string {
   const value = process.env[name];

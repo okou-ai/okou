@@ -69,10 +69,31 @@ export async function validateConnectorCatalogColumnContract(client: Client) {
   // A same-hash retry preserves the immutable preparation receipt.
   const retried = await db
     .insert(connectorCatalogEntries)
-    .values(expected)
+    .values(
+      expected.map((entry) => {
+        return {
+          ...entry,
+          label: "retry must not replace an existing entry",
+          permissionSummary: {
+            ...entry.permissionSummary,
+            hasDefaultPolicyOverrides:
+              !entry.permissionSummary.hasDefaultPolicyOverrides,
+          },
+        };
+      }),
+    )
     .onConflictDoNothing()
     .returning();
   assert.deepEqual(retried, []);
+  assert.deepEqual(
+    await db
+      .select()
+      .from(connectorCatalogEntries)
+      .where(eq(connectorCatalogEntries.hash, hash))
+      .orderBy(connectorCatalogEntries.slug),
+    expected,
+    "same-hash retry must not recompute stored summaries or overwrite projections",
+  );
 
   for (const column of requiredColumns) {
     await client.query("SAVEPOINT required_column");
@@ -106,6 +127,12 @@ export async function validatePermanentConnectorCatalogColumns(
   await client.connect();
   try {
     await client.query("BEGIN");
+    const payload = await client.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'connector_catalog_entries'
+         AND column_name = 'payload'`,
+    );
+    assert.deepEqual(payload.rows, [], "payload is physically retired");
     await validateConnectorCatalogColumnContract(client);
   } finally {
     await client.query("ROLLBACK");

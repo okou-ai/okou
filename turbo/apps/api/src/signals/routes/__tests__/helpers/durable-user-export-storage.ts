@@ -33,9 +33,7 @@ interface StoredUpload {
 }
 
 type ExportWriteCommand =
-  | PutObjectCommand
-  | UploadPartCommand
-  | CompleteMultipartUploadCommand;
+  PutObjectCommand | UploadPartCommand | CompleteMultipartUploadCommand;
 
 type ExportObjectCommand =
   | ExportWriteCommand

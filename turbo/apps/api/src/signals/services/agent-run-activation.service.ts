@@ -9,8 +9,7 @@ import {
 
 export type PendingRunnerJobNotification = RunnerJobNotification;
 export type ActivationTiming =
-  | DirectActivationTiming
-  | PromotionActivationTiming;
+  DirectActivationTiming | PromotionActivationTiming;
 export type DirectActivationTiming = Extract<
   RunnerJobPreActivationTiming,
   { activationOrigin: "direct" }

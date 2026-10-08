@@ -686,8 +686,7 @@ describe("organization Cloudflare Access", () => {
 
     const edit = (
       transport?:
-        | { type: "direct" }
-        | { type: "cloudflare_access"; configId: string },
+        { type: "direct" } | { type: "cloudflare_access"; configId: string },
     ) => {
       return connections().update({
         headers,

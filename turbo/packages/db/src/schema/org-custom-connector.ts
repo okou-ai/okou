@@ -30,10 +30,7 @@ export type {
 } from "@okouai/db/jsonb-contracts/org-custom-connector";
 
 export type OrgCustomConnectorAuthMode =
-  | "none"
-  | "manual"
-  | "oauth"
-  | "automatic";
+  "none" | "manual" | "oauth" | "automatic";
 export type OrgCustomConnectorMcpTransport = "streamable-http";
 
 /**

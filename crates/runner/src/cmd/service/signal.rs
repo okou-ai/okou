@@ -5,11 +5,10 @@ use tokio::time::Instant;
 
 use crate::error::{RunnerError, RunnerResult};
 
-use super::diagnostic::status_field_preview;
-use super::systemctl::{
-    has_service_main_process, has_service_main_process_bounded, run_systemctl_output_bounded,
+use runner_host::service::{
+    RunnerServiceUnit, has_service_main_process, has_service_main_process_bounded,
+    run_systemctl_output_bounded, status_field_preview,
 };
-use super::target::RunnerServiceUnit;
 
 /// Outcome of asking systemd to signal a unit's main process.
 ///

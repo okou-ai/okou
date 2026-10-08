@@ -1,9 +1,9 @@
 # Deployment Compatibility
 
-## Automatic OAuth contract hash retirement (migration 1351)
+## Automatic OAuth contract hash retirement (migration 1352)
 
 Builtin Automatic OAuth no longer computes, writes, reads or compares a local
-configuration fingerprint. Migration `1351_retire_oauth_contract_hash` physically
+configuration fingerprint. Migration `1352_retire_oauth_contract_hash` physically
 removes `contract_hash` from account bindings and DCR registrations and removes
 `contractHash` only from builtin Automatic authorization contexts. Existing
 accounts, encrypted credentials, DCR client IDs and exact registration references
@@ -396,6 +396,43 @@ protocol during the upgrade window; new Native against an old API stays offline
 and never acquires a host token. Existing installation and chat host identities
 are preserved. Legacy contraction requires the Desktop version floor and API
 serving/rollback drain. See [the full contract](desktop-session-auth.md).
+
+## Connector catalog payload contraction (not yet production accepted)
+
+Migration `1351_drop_connector_catalog_payload` physically drops only
+`connector_catalog_entries.payload`. The canonical schema and runtime now share
+one payload-free table declaration with the same `(hash, slug)` primary key and
+required projections; the existing runtime export path remains supported.
+No retained generation, projection, pointer, Run/permission capture, preparation
+receipt or skill registration is rewritten or deleted. Publisher hashing and
+permission-summary derivation are unchanged; an existing-hash retry still does
+not update stored summaries.
+
+**Release gate.** Do not merge or release this contraction until a separate
+successful production release contains preparation migration 1348 and its
+payload-independent API, and the outgoing dual-writing API has demonstrably
+exited. Do not ship preparation and DROP in the same production workflow run:
+migrations execute before API promotion, so DROP would break the serving dual
+writer. A merged PR, green CI or a historical payload-only drain confirmation
+is not evidence that this new boundary has passed. The official rollback
+resolver must continue requiring the canonical first-parent main introduction
+commit for preparation migration 1348; do not remove or lower that floor.
+
+Preparation [#38099](https://github.com/okou-ai/okou/pull/38099), merged at
+`9d3a1b406f1f44b224c33046162df01a77e035f8`, shipped independently in API 1.715.0
+(release [#38145](https://github.com/okou-ai/okou/pull/38145)) at
+`a17b5e424a8944d832875c8097c0a4330d172bc9`. The successful
+[production API promotion job](https://github.com/okou-ai/okou/actions/runs/37794041015/job/113376087119)
+completed production migrations before API promotion and finished at
+2026-10-08 14:56:47 UTC. Git ancestry confirms it contains the canonical
+preparation commit. Ethan subsequently confirmed that the old serving API had
+exited and authorized review/merge of the contraction. This is the operator's
+drain confirmation, not an independently measured invocation inventory.
+The separate preparation-release boundary is satisfied; physical contraction
+is not yet production accepted.
+This change does not execute production migrations, approve a release or close
+[#37899](https://github.com/okou-ai/okou/issues/37899); acceptance follows a
+successful contraction production release and verification.
 
 ## Connector catalog payload-independent API (preparatory release)
 

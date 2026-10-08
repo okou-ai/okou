@@ -1128,8 +1128,7 @@ interface OptimisticChatEventProjectionEntry {
 }
 
 type ChatEventProjectionEntry =
-  | ServerChatEventProjectionEntry
-  | OptimisticChatEventProjectionEntry;
+  ServerChatEventProjectionEntry | OptimisticChatEventProjectionEntry;
 
 function isPersistedChatEvent(event: ChatEvent): event is PersistedChatEvent {
   return event.seqId !== undefined;

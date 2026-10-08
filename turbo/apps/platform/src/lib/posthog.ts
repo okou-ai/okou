@@ -180,9 +180,7 @@ export function captureTaskCompletedSuccessfully(): void {
 }
 
 export type ChatThreadMetadataShortcutOutcome =
-  | "hit"
-  | "not-found"
-  | "transport-failure";
+  "hit" | "not-found" | "transport-failure";
 
 export const captureChatThreadMetadataShortcut$ = command(
   (_, outcome: ChatThreadMetadataShortcutOutcome): void => {
@@ -235,10 +233,7 @@ type BootstrapThreadMetadataResolutionPath =
   | "metadata-shortcut";
 
 type LegacyBootstrapThreadMetadataSource =
-  | "local"
-  | "memory"
-  | "not_found"
-  | "remote";
+  "local" | "memory" | "not_found" | "remote";
 
 // Preserve the existing PostHog schema while runtime names describe lookup semantics.
 const legacyBootstrapThreadMetadataSourceByResolutionPath = {

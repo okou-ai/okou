@@ -101,6 +101,13 @@ required for the final archive.
   Ship a corrected build instead. A separate minimum-build API gate remains
   outstanding; TestFlight's 90-day build validity is not that gate.
 
+## Archive promotion prerequisite
+
+[Archive promotion](ARCHIVE_PROMOTION.md) documents the separate unsigned archive
+and protected, export-only proof. It must pass on Xcode before changing the
+production release pipeline to consume prebuilt archives. The proof does not
+skip the current simulator checks or upload anything to TestFlight.
+
 ## Local verification without Apple access
 
 ```sh

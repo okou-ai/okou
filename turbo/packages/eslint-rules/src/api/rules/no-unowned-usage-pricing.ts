@@ -26,9 +26,7 @@ interface FramedExpression {
 }
 
 type MutationName =
-  | "deleteUsagePricingRows"
-  | "seedUsagePricingRows"
-  | "upsertUsagePricingRows";
+  "deleteUsagePricingRows" | "seedUsagePricingRows" | "upsertUsagePricingRows";
 
 const RAW_MUTATIONS = new Set<MutationName>([
   "deleteUsagePricingRows",

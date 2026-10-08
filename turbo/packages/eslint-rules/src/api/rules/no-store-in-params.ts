@@ -7,8 +7,7 @@ export interface NoStoreInParamsOptions {
 }
 
 export type NoStoreInParamsMessageIds =
-  | "noStoreInParams"
-  | "noStoreInObjectParams";
+  "noStoreInParams" | "noStoreInObjectParams";
 
 function findStorePath(
   typeNode: TSESTree.TypeNode,

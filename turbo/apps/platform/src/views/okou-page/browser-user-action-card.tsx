@@ -1570,11 +1570,7 @@ function PendingFormPreflight({
 }: {
   readonly signals: BrowserUserActionSignals;
   readonly entryState:
-    | "idle"
-    | "checking"
-    | "ready"
-    | "unavailable"
-    | "invalid";
+    "idle" | "checking" | "ready" | "unavailable" | "invalid";
 }) {
   const { t } = useTranslation();
   const beginEntry = useSet(signals.beginEntry$);

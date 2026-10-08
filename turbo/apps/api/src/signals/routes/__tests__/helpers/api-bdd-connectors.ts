@@ -385,18 +385,13 @@ export function mockCustomConnectorOAuth2Provider(
 
 interface AutomaticMcpOAuthProviderOptions {
   readonly authorizationCodeErrors?: readonly (
-    | "invalid_client"
-    | "invalid_grant"
-    | "temporarily_unavailable"
-    | null
+    "invalid_client" | "invalid_grant" | "temporarily_unavailable" | null
   )[];
   readonly registration: "cimd" | "dcr" | "none";
   readonly authentication?: "invalid" | "none" | "oauth";
   readonly issuerParameterSupported?: boolean;
   readonly dcrTokenEndpointAuthMethod?:
-    | "none"
-    | "client_secret_basic"
-    | "client_secret_post";
+    "none" | "client_secret_basic" | "client_secret_post";
   readonly synchronizeAuthorizationServerDiscovery?: boolean;
   readonly dcrFailureStatus?: number;
   readonly dcrFailureDescription?: string;
@@ -411,13 +406,9 @@ interface AutomaticMcpOAuthProviderOptions {
   readonly metadataScopes?: readonly string[];
   readonly authorizationCodeScopes?: readonly string[];
   readonly refreshError?:
-    | "invalid_client"
-    | "invalid_grant"
-    | "temporarily_unavailable";
+    "invalid_client" | "invalid_grant" | "temporarily_unavailable";
   readonly refreshErrors?: readonly (
-    | "invalid_client"
-    | "invalid_grant"
-    | "temporarily_unavailable"
+    "invalid_client" | "invalid_grant" | "temporarily_unavailable"
   )[];
   readonly refreshResponse?: (
     attempt: number,

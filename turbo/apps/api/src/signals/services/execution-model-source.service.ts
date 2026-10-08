@@ -19,8 +19,7 @@ export interface ModelSourceRequest {
   readonly source: ModelSourceIdentity;
 }
 export type ModelSourceCredential =
-  | EncryptedModelCredential
-  | ManagedModelKeyReference;
+  EncryptedModelCredential | ManagedModelKeyReference;
 export interface ManagedModelKeyReference {
   readonly kind: "managed-key";
   readonly name: string;

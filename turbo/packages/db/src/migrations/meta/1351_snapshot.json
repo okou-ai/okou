@@ -1,5 +1,5 @@
 {
-  "id": "04a14343-db3f-4796-ba35-9693bdb7dc9b",
+  "id": "d943ace1-a60f-4a0b-bf76-0ac3cb22a615",
   "prevId": "382fcc90-2ab0-4e82-942a-c8d6488c55c6",
   "version": "7",
   "dialect": "postgresql",
@@ -9920,6 +9920,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "contract_hash": {
+          "name": "contract_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
         "endpoint": {
           "name": "endpoint",
           "type": "text",
@@ -10040,13 +10046,15 @@
             "dcr_registration_id",
             "org_id",
             "connector_slug",
-            "auth_method"
+            "auth_method",
+            "contract_hash"
           ],
           "columnsTo": [
             "id",
             "org_id",
             "connector_slug",
-            "auth_method"
+            "auth_method",
+            "contract_hash"
           ],
           "onDelete": "no action",
           "onUpdate": "no action"
@@ -10058,7 +10066,7 @@
       "checkConstraints": {
         "chk_connector_oauth_binding_identity": {
           "name": "chk_connector_oauth_binding_identity",
-          "value": "\"connector_account_oauth_bindings\".\"storage_version\" > 0 AND btrim(\"connector_account_oauth_bindings\".\"endpoint\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"issuer\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"resource\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"token_endpoint\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"client_id\") <> ''"
+          "value": "\"connector_account_oauth_bindings\".\"storage_version\" > 0 AND \"connector_account_oauth_bindings\".\"contract_hash\" ~ '^[a-f0-9]{64}$' AND btrim(\"connector_account_oauth_bindings\".\"endpoint\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"issuer\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"resource\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"token_endpoint\") <> '' AND btrim(\"connector_account_oauth_bindings\".\"client_id\") <> ''"
         },
         "chk_connector_oauth_binding_token_auth": {
           "name": "chk_connector_oauth_binding_token_auth",
@@ -10177,12 +10185,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {},
@@ -10227,6 +10229,12 @@
         "auth_method": {
           "name": "auth_method",
           "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "contract_hash": {
+          "name": "contract_hash",
+          "type": "varchar(64)",
           "primaryKey": false,
           "notNull": true
         },
@@ -10288,39 +10296,6 @@
         }
       },
       "indexes": {
-        "idx_connector_dcr_issuer": {
-          "name": "idx_connector_dcr_issuer",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "connector_slug",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "auth_method",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "issuer",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_connector_dcr_org": {
           "name": "idx_connector_dcr_org",
           "columns": [
@@ -10347,7 +10322,19 @@
             "id",
             "org_id",
             "connector_slug",
-            "auth_method"
+            "auth_method",
+            "contract_hash"
+          ]
+        },
+        "uq_connector_dcr_issuer": {
+          "name": "uq_connector_dcr_issuer",
+          "nullsNotDistinct": false,
+          "columns": [
+            "org_id",
+            "connector_slug",
+            "auth_method",
+            "contract_hash",
+            "issuer"
           ]
         }
       },
@@ -10355,7 +10342,7 @@
       "checkConstraints": {
         "chk_connector_dcr_identity": {
           "name": "chk_connector_dcr_identity",
-          "value": "btrim(\"connector_dcr_registrations\".\"issuer\") <> '' AND btrim(\"connector_dcr_registrations\".\"client_id\") <> '' AND btrim(\"connector_dcr_registrations\".\"redirect_uri\") <> ''"
+          "value": "btrim(\"connector_dcr_registrations\".\"issuer\") <> '' AND btrim(\"connector_dcr_registrations\".\"client_id\") <> '' AND btrim(\"connector_dcr_registrations\".\"redirect_uri\") <> '' AND \"connector_dcr_registrations\".\"contract_hash\" ~ '^[a-f0-9]{64}$'"
         },
         "chk_connector_dcr_client_auth": {
           "name": "chk_connector_dcr_client_auth",

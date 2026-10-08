@@ -191,8 +191,7 @@ interface ConnectorCatalogDiscoveryRead {
 }
 
 type ExternalConnectorCatalogUnavailableReason =
-  | "missing_current_identity"
-  | "missing_entries";
+  "missing_current_identity" | "missing_entries";
 
 export class ExternalConnectorCatalogUnavailableError extends Error {
   readonly code: `CONNECTOR_CATALOG_UNAVAILABLE:${ExternalConnectorCatalogUnavailableReason}`;

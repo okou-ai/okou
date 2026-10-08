@@ -198,8 +198,7 @@ interface SocialOutputBase {
   readonly operation: SocialOperation;
   readonly platform: SocialPlatform;
   readonly target:
-    | SocialTarget
-    | { readonly kind: "download"; readonly downloadId: string };
+    SocialTarget | { readonly kind: "download"; readonly downloadId: string };
   readonly request: SocialRequestMetadata;
   readonly collection: SocialCollectionOutput | null;
   readonly billing: SocialBilling | null;
@@ -1542,8 +1541,7 @@ async function pollDownload(
 function downloadOutput(
   response: SocialKitDownloadResponse,
   target:
-    | SocialTarget
-    | { readonly kind: "download"; readonly downloadId: string },
+    SocialTarget | { readonly kind: "download"; readonly downloadId: string },
   request: SocialRequestMetadata,
 ): SocialResultOutput &
   Partial<ReturnType<typeof createArtifactPresentation>["json"]> {

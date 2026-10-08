@@ -40,9 +40,7 @@ export interface McpAutomaticOAuthDcrRegistration {
   readonly issuer: string;
   readonly clientId: string;
   readonly tokenEndpointAuthMethod:
-    | "none"
-    | "client_secret_basic"
-    | "client_secret_post";
+    "none" | "client_secret_basic" | "client_secret_post";
   readonly hasClientSecret: boolean;
   readonly registeredScopes: readonly string[];
   readonly redirectUri: string;
@@ -97,9 +95,7 @@ export type McpAutomaticOAuthBinding = {
   readonly tokenEndpoint: string;
   readonly clientId: string;
   readonly tokenEndpointAuthMethod:
-    | "none"
-    | "client_secret_basic"
-    | "client_secret_post";
+    "none" | "client_secret_basic" | "client_secret_post";
 } & (
   | { readonly registrationMethod: "cimd"; readonly dcrRegistration: null }
   | {
@@ -555,9 +551,7 @@ type AutomaticOAuthClientSelection =
   | {
       readonly clientId: string;
       readonly tokenEndpointAuthMethod:
-        | "none"
-        | "client_secret_basic"
-        | "client_secret_post";
+        "none" | "client_secret_basic" | "client_secret_post";
       readonly registrationMethod: "dcr";
       readonly dcrRegistrationId: string;
     };
@@ -788,9 +782,7 @@ export type McpAutomaticOAuthContext = {
   readonly authorizationResponseIssParameterSupported: boolean;
   readonly clientId: string;
   readonly tokenEndpointAuthMethod:
-    | "none"
-    | "client_secret_basic"
-    | "client_secret_post";
+    "none" | "client_secret_basic" | "client_secret_post";
 } & (
   | {
       readonly registrationMethod: "cimd";
@@ -902,9 +894,7 @@ type AutomaticOAuthBoundClientContext = {
   readonly issuer: string;
   readonly clientId: string;
   readonly tokenEndpointAuthMethod:
-    | "none"
-    | "client_secret_basic"
-    | "client_secret_post";
+    "none" | "client_secret_basic" | "client_secret_post";
 } & (
   | {
       readonly registrationMethod: "cimd";

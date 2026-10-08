@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use crate::error::{RunnerError, RunnerResult};
-use runner_host::paths::HomePaths;
+use crate::error::{HostError, HostResult};
+use crate::paths::HomePaths;
 
 const UNIT_PREFIX: &str = "vm0-runner-";
 const LOCK_PREFIX: &str = "service-";
@@ -20,7 +20,7 @@ const LOCK_SUFFIX: &str = ".lock";
 /// Construction validates the suffix before deriving the other forms, so an
 /// instance cannot contain names or a path for an invalid suffix.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct RunnerServiceUnit {
+pub struct RunnerServiceUnit {
     suffix: String,
     unit_name: String,
     service_name: String,
@@ -31,15 +31,15 @@ pub(crate) struct RunnerServiceUnit {
 impl RunnerServiceUnit {
     /// Build a validated runner systemd unit identity from a suffix.
     ///
-    /// Validates the suffix with [`runner_host::runner_dirname::validate_name`] so
+    /// Validates the suffix with [`crate::runner_dirname::validate_name`] so
     /// that runner directory names and service name suffixes follow the same
     /// rules (bounded length, lowercase alphanumeric, hyphens, dots; no
     /// leading `.` or `-`).
-    pub(crate) fn from_suffix(suffix: &str) -> RunnerResult<Self> {
-        if !runner_host::runner_dirname::validate_name(suffix) {
-            let diagnostic = runner_host::runner_dirname::invalid_name_diagnostic(suffix);
-            let rules = runner_host::runner_dirname::validation_rules();
-            return Err(RunnerError::Config(format!(
+    pub fn from_suffix(suffix: &str) -> HostResult<Self> {
+        if !crate::runner_dirname::validate_name(suffix) {
+            let diagnostic = crate::runner_dirname::invalid_name_diagnostic(suffix);
+            let rules = crate::runner_dirname::validation_rules();
+            return Err(HostError::Config(format!(
                 "invalid service name suffix {diagnostic}: {rules}"
             )));
         }
@@ -63,7 +63,7 @@ impl RunnerServiceUnit {
     /// same validation as [`Self::from_suffix`]. Returns `None` when the
     /// expected prefix or `.service` suffix is absent, or when the extracted
     /// suffix is invalid.
-    pub(crate) fn from_file_name(file_name: &str) -> Option<Self> {
+    pub fn from_file_name(file_name: &str) -> Option<Self> {
         let suffix = file_name
             .strip_prefix(UNIT_PREFIX)?
             .strip_suffix(".service")?;
@@ -75,7 +75,7 @@ impl RunnerServiceUnit {
     /// Accepts `service-vm0-runner-<suffix>.lock` only when `<suffix>` passes
     /// the same validation as [`Self::from_suffix`]. Historical lock names
     /// that fail current validation are rejected.
-    pub(crate) fn from_lock_file_name(file_name: &str) -> Option<Self> {
+    pub fn from_lock_file_name(file_name: &str) -> Option<Self> {
         let unit_name = file_name
             .strip_prefix(LOCK_PREFIX)?
             .strip_suffix(LOCK_SUFFIX)?;
@@ -85,33 +85,33 @@ impl RunnerServiceUnit {
 
     /// Return the validated suffix before adding the `vm0-runner-` prefix or
     /// final `.service` extension.
-    pub(crate) fn suffix(&self) -> &str {
+    pub fn suffix(&self) -> &str {
         &self.suffix
     }
 
     /// Return the unit name `vm0-runner-<suffix>`, before adding the final
     /// `.service` extension.
-    pub(crate) fn unit_name(&self) -> &str {
+    pub fn unit_name(&self) -> &str {
         &self.unit_name
     }
 
     /// Return the service name `vm0-runner-<suffix>.service`.
-    pub(crate) fn service_name(&self) -> &str {
+    pub fn service_name(&self) -> &str {
         &self.service_name
     }
 
     /// Return the absolute `/etc/systemd/system/<service-name>` unit-file path.
-    pub(crate) fn unit_file_path(&self) -> &std::path::Path {
+    pub fn unit_file_path(&self) -> &std::path::Path {
         &self.unit_file_path
     }
 
     /// Return the lifecycle-lock filename `service-vm0-runner-<suffix>.lock`.
-    pub(crate) fn lock_file_name(&self) -> &str {
+    pub fn lock_file_name(&self) -> &str {
         &self.lock_file_name
     }
 
     /// Return this service's lifecycle-lock path under the runner home.
-    pub(crate) fn lock_path(&self, home: &HomePaths) -> PathBuf {
+    pub fn lock_path(&self, home: &HomePaths) -> PathBuf {
         home.locks_dir().join(self.lock_file_name())
     }
 }
@@ -120,7 +120,7 @@ impl RunnerServiceUnit {
 ///
 /// Validated service names use the same fixed prefix and `.service` suffix,
 /// but this pattern does not validate the suffix matched by `*`.
-pub(super) fn all_units_pattern() -> String {
+pub fn all_units_pattern() -> String {
     format!("{UNIT_PREFIX}*.service")
 }
 
@@ -128,7 +128,7 @@ pub(super) fn all_units_pattern() -> String {
 mod tests {
     use super::*;
 
-    fn unit_name(suffix: &str) -> RunnerResult<String> {
+    fn unit_name(suffix: &str) -> HostResult<String> {
         RunnerServiceUnit::from_suffix(suffix).map(|unit| unit.unit_name().to_string())
     }
 
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn test_unit_name_accepts_max_length_suffix() {
-        let suffix = "a".repeat(runner_host::runner_dirname::MAX_NAME_BYTES);
+        let suffix = "a".repeat(crate::runner_dirname::MAX_NAME_BYTES);
         assert_eq!(unit_name(&suffix).unwrap(), format!("vm0-runner-{suffix}"));
     }
 
@@ -163,20 +163,20 @@ mod tests {
 
     #[test]
     fn test_unit_name_rejects_over_max_length_suffix() {
-        let suffix = "a".repeat(runner_host::runner_dirname::MAX_NAME_BYTES + 1);
+        let suffix = "a".repeat(crate::runner_dirname::MAX_NAME_BYTES + 1);
         let msg = unit_name(&suffix).unwrap_err().to_string();
         assert!(msg.contains("service name suffix"), "got: {msg}");
         assert!(
             msg.contains(&format!(
                 "at most {} bytes",
-                runner_host::runner_dirname::MAX_NAME_BYTES
+                crate::runner_dirname::MAX_NAME_BYTES
             )),
             "got: {msg}"
         );
         assert!(
             msg.contains(&format!(
                 "{} bytes",
-                runner_host::runner_dirname::MAX_NAME_BYTES + 1
+                crate::runner_dirname::MAX_NAME_BYTES + 1
             )),
             "got: {msg}"
         );

@@ -358,12 +358,7 @@ export function OrgMembersTab() {
 }
 
 type InviteDialogMode =
-  | "direct"
-  | "error"
-  | "loading"
-  | "packages"
-  | "setup"
-  | "suspended";
+  "direct" | "error" | "loading" | "packages" | "setup" | "suspended";
 
 function resolveInviteDialogMode(args: {
   readonly capabilities:

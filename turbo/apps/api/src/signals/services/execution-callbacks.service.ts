@@ -29,8 +29,7 @@ export interface InternalExecutionCallback {
 }
 
 export type ExecutionCallback =
-  | HttpExecutionCallback
-  | InternalExecutionCallback;
+  HttpExecutionCallback | InternalExecutionCallback;
 
 export interface PreparedHttpCallback {
   readonly kind: "http";

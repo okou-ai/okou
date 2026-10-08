@@ -8,11 +8,7 @@ import { onRef } from "../../utils.ts";
  * each have their own controls. Discovery is the default for a new visit.
  */
 export type ConnectorsScope =
-  | "discover"
-  | "connected"
-  | "custom"
-  | "remote-control"
-  | "private-network";
+  "discover" | "connected" | "custom" | "remote-control" | "private-network";
 
 const CONNECTORS_SCOPE_PARAM = "scope";
 

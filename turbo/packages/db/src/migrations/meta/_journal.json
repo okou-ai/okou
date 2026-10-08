@@ -1916,8 +1916,15 @@
     {
       "idx": 1351,
       "version": "7",
-      "when": 1791473178936,
-      "tag": "1351_retire_oauth_contract_hash",
+      "when": 1791473200258,
+      "tag": "1351_drop_connector_catalog_payload",
+      "breakpoints": true
+    },
+    {
+      "idx": 1352,
+      "version": "7",
+      "when": 1791476446643,
+      "tag": "1352_retire_oauth_contract_hash",
       "breakpoints": true
     }
   ]
