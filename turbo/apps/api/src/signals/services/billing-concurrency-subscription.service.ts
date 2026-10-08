@@ -217,6 +217,29 @@ function stripeObjectId(value: StripeRef | undefined): string | null {
 
 type ConcurrencyScheduleOwner = "plan" | "shared" | null;
 
+function scheduleHasUnrelatedConcurrencyItems(
+  schedule: StripeSubscriptionSchedule,
+  planPriceId?: string,
+): boolean {
+  const currentStart = schedule.current_phase?.start_date;
+  return (
+    currentStart !== undefined &&
+    schedule.phases.some((phase) => {
+      return (
+        phase.start_date >= currentStart &&
+        (phase.items ?? []).some((item) => {
+          const priceId = stripeObjectId(item.price);
+          return (
+            priceId !== null &&
+            priceId !== planPriceId &&
+            !isConcurrencyPriceId(priceId)
+          );
+        })
+      );
+    })
+  );
+}
+
 const concurrencyScheduleOwner$ = command(
   async (
     { set },
@@ -262,8 +285,10 @@ const concurrencyScheduleOwner$ = command(
     const [sharedSubscription] = await db
       .select({
         planPriceId: orgPlanEntitlements.stripePriceId,
+        pendingPlanScheduleId: orgMetadata.pendingSubscriptionScheduleId,
       })
       .from(orgPlanEntitlements)
+      .leftJoin(orgMetadata, eq(orgMetadata.orgId, orgPlanEntitlements.orgId))
       .where(
         and(
           eq(orgPlanEntitlements.orgId, orgId),
@@ -273,13 +298,17 @@ const concurrencyScheduleOwner$ = command(
       .limit(1);
     signal.throwIfAborted();
     if (!sharedSubscription?.planPriceId) {
-      return currentAndFutureSchedulePhases(schedule).some((phase) => {
-        return schedulePhaseItems(phase).some((item) => {
-          return !isConcurrencyPriceId(item.price);
-        });
-      })
-        ? "shared"
-        : null;
+      return scheduleHasUnrelatedConcurrencyItems(schedule) ? "shared" : null;
+    }
+    if (
+      schedule.end_behavior !== "cancel" &&
+      sharedSubscription.pendingPlanScheduleId !== schedule.id &&
+      !scheduleHasUnrelatedConcurrencyItems(
+        schedule,
+        sharedSubscription.planPriceId,
+      )
+    ) {
+      return null;
     }
     return schedulePreservesPlanItem(schedule, sharedSubscription.planPriceId)
       ? "shared"
