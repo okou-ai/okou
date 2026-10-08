@@ -4,26 +4,29 @@ import SwiftUI
 /// Uses public scroll APIs without replacing the container's delegate.
 @MainActor
 final class ConversationScrollAnchor {
-  private let markers = NSMapTable<NSString, ConversationRowMarker>.strongToWeakObjects()
+  private let markers = NSHashTable<ConversationRowMarker>.weakObjects()
   private weak var scrollView: UIScrollView?
   private var position: ConversationReadingPosition?
   private var displayLink: CADisplayLink?
   private var settlingFrames = 0
   private var needsReveal = false
   private var followsBottom = false
+  private var reportedPosition: ConversationReadingPosition?
   var isScrolling = false {
     didSet { if !isScrolling { layoutDidChange() } }
   }
   var revealRow: (@MainActor (String) -> Void)?
   var viewportDidChange: (@MainActor () -> Void)?
+  var readingPositionDidChange: (@MainActor (ConversationReadingPosition) -> Void)?
+  var isPresentedMarker: (@MainActor (ConversationRowMarker) -> Bool)?
   var preservedPosition: ConversationReadingPosition? { position }
 
   func capture() -> ConversationReadingPosition? {
     guard let scrollView else { return nil }
     let top = scrollView.bounds.minY + scrollView.adjustedContentInset.top
     let bottom = scrollView.bounds.maxY - scrollView.adjustedContentInset.bottom
-    let visible = markers.objectEnumerator()?.allObjects.compactMap { $0 as? ConversationRowMarker }
-      .filter { $0.window != nil && $0.enclosingScrollView === scrollView }
+    let visible = markers.allObjects
+      .filter { isEligible($0, in: scrollView) }
       .map { ($0.messageID, $0.convert($0.bounds, to: scrollView)) }
       .filter { $0.1.maxY > top && $0.1.minY < bottom }
       .min { $0.1.minY < $1.1.minY }
@@ -68,7 +71,8 @@ final class ConversationScrollAnchor {
   }
 
   private func scheduleFrame() {
-    guard position != nil || followsBottom, !isScrolling, displayLink == nil
+    guard position != nil || followsBottom || readingPositionDidChange != nil,
+      !isScrolling, displayLink == nil
     else { return }
     // A main-queue yield can precede the native cell transaction. Correct on the next frame.
     let target = ConversationAnchorFrameTarget(anchor: self)
@@ -83,6 +87,12 @@ final class ConversationScrollAnchor {
     link.invalidate()
     displayLink = nil
     correctPosition()
+    if !isScrolling, let readingPositionDidChange, let captured = capture(),
+      reportedPosition != captured
+    {
+      reportedPosition = captured
+      readingPositionDidChange(captured)
+    }
     if settlingFrames > 0 {
       settlingFrames -= 1
       scheduleFrame()
@@ -91,7 +101,7 @@ final class ConversationScrollAnchor {
 
   fileprivate func register(_ marker: ConversationRowMarker) {
     guard marker.window != nil else { return }
-    markers.setObject(marker, forKey: marker.messageID as NSString)
+    markers.add(marker)
     if let scroll = marker.enclosingScrollView, scrollView !== scroll {
       scrollView = scroll
     }
@@ -99,9 +109,13 @@ final class ConversationScrollAnchor {
   }
 
   fileprivate func unregister(_ marker: ConversationRowMarker) {
-    if markers.object(forKey: marker.messageID as NSString) === marker {
-      markers.removeObject(forKey: marker.messageID as NSString)
-    }
+    markers.remove(marker)
+    layoutDidChange()
+  }
+
+  private func isEligible(_ marker: ConversationRowMarker, in scrollView: UIScrollView) -> Bool {
+    marker.anchor === self && marker.window != nil && marker.enclosingScrollView === scrollView
+      && (isPresentedMarker?(marker) ?? true)
   }
 
   private func correctPosition() {
@@ -130,8 +144,10 @@ final class ConversationScrollAnchor {
       layoutDidChange()
       return
     }
-    guard let marker = markers.object(forKey: position.messageID as NSString), marker.window != nil,
-      marker.enclosingScrollView === scrollView
+    guard
+      let marker = markers.allObjects.first(where: {
+        $0.messageID == position.messageID && isEligible($0, in: scrollView)
+      })
     else {
       // Materialize a recycled anchor cell before correcting its viewport offset.
       if let revealRow {

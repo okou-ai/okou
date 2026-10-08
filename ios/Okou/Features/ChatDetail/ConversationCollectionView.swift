@@ -192,6 +192,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       }.margins(.all, 0)
       return cell
     }
+    source.anchor.isPresentedMarker = { [weak self] marker in
+      self?.isPresentedMarker(marker) ?? false
+    }
     loading.hidesWhenStopped = true
     view.addSubview(loading)
     registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) {
@@ -245,7 +248,24 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     resizeIDs.removeAll()
     observedHeights.removeAll()
     if source.scroll.owner === self { source.scroll.owner = nil }
+    source.anchor.isPresentedMarker = nil
     collection?.delegate = nil
+  }
+
+  private func isPresentedMarker(_ marker: ConversationRowMarker) -> Bool {
+    guard let index = dataSource.indexPath(for: marker.messageID),
+      let cell = collection.cellForItem(at: index)
+    else { return false }
+    // Reconfiguration can retain a previous hosting tree. Only the native
+    // cell for this message and content inside its clipping bounds can anchor it.
+    var ancestor = marker.superview
+    while let view = ancestor {
+      if view === cell {
+        return marker.convert(marker.bounds, to: cell).intersects(cell.bounds)
+      }
+      ancestor = view.superview
+    }
+    return false
   }
 
   private func prepareRowsIfNeeded() {

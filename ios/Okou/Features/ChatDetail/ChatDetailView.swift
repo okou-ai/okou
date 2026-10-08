@@ -46,6 +46,10 @@ struct ChatDetailView: View {
     )
     .onAppear {
       scrollAnchor.revealRow = { scroll.scrollTo($0, anchor: .top) }
+      scrollAnchor.readingPositionDidChange = { position in
+        guard hasPositionedHistory && !followsLatestMessage && !isScrolling else { return }
+        conversation.rememberReadingPosition(scrollAnchor.preservedPosition ?? position)
+      }
       scrollAnchor.viewportDidChange = {
         guard hasPositionedHistory else { return }
         if followsLatestMessage {
@@ -114,6 +118,7 @@ struct ChatDetailView: View {
     }
     .onDisappear {
       if !followsLatestMessage { saveReadingPosition() }
+      scrollAnchor.readingPositionDidChange = nil
       scrollAnchor.cancel()
       scrollAnchor.revealRow = nil
       scrollAnchor.viewportDidChange = nil

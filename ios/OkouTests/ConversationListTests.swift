@@ -5,6 +5,30 @@ import XCTest
 
 @MainActor
 final class ConversationListTests: XCTestCase {
+  func testReadingPositionUpdatesWhenMarkersAppearAfterScrollingSettles() async throws {
+    let anchor = ConversationScrollAnchor()
+    let model = LateMarkerProbeModel()
+    let host = UIHostingController(rootView: LateMarkerProbe(model: model, anchor: anchor))
+    let window = try await mount(host)
+    defer {
+      anchor.readingPositionDidChange = nil
+      anchor.cancel()
+      unmount(window)
+    }
+    let scroll = try XCTUnwrap(markers(in: host.view).first?.enclosingScrollView)
+    let initialBounds = scroll.bounds
+    let initialSize = scroll.contentSize
+    var reportedPosition = anchor.capture()
+    XCTAssertEqual(reportedPosition?.messageID, "1")
+    XCTAssertNil(anchor.preservedPosition)
+    anchor.readingPositionDidChange = { reportedPosition = $0 }
+    model.showsFirstMarker = true
+    try await eventually { reportedPosition?.messageID == "0" }
+    XCTAssertEqual(scroll.bounds, initialBounds)
+    XCTAssertEqual(scroll.contentSize, initialSize)
+    XCTAssertEqual(reportedPosition, anchor.capture())
+  }
+
   func testConversationKeepsMeasuredSizesAcrossReusedMarkdownRows() async throws {
     let fixture = ConversationHistoryFixture(count: 30)
     let conversation = fixture.conversation()
@@ -211,7 +235,11 @@ final class ConversationListTests: XCTestCase {
 private func savedReadingPositionMatchesViewport(_ conversation: ConversationStore, in view: UIView)
   async throws
 {
-  try await eventually {
+  try await eventually(
+    message: readingDescription(
+      conversation.readingPosition?.messageID ?? "<missing>", conversation: conversation, view: view
+    )
+  ) {
     guard let saved = conversation.readingPosition,
       let actual = offset(of: saved.messageID, in: view)
     else { return false }
@@ -309,7 +337,14 @@ private func isPresentedRow(_ row: ConversationRowMarker) -> Bool {
   guard let cell = enclosingCell(row), let indexPath = collection.indexPath(for: cell) else {
     return false
   }
-  return collection.cellForItem(at: indexPath) === cell
+  guard collection.cellForItem(at: indexPath) === cell,
+    collection.visibleCells.contains(where: { $0 === cell }),
+    row.convert(row.bounds, to: cell).intersects(cell.bounds)
+  else { return false }
+  if let dataSource = collection.dataSource as? UICollectionViewDiffableDataSource<Int, String> {
+    return dataSource.itemIdentifier(for: indexPath) == row.messageID
+  }
+  return true
 }
 
 @MainActor
@@ -328,8 +363,23 @@ private func readingDescription(_ id: String, conversation: ConversationStore, v
 {
   let scroll = markers(in: view).first?.enclosingScrollView
   let matching = allMarkers(in: view).filter { $0.messageID == id }.map { row in
-    "\(row.bounds); window: \(row.window != nil); hidden: \(row.isHidden); "
+    let cell = enclosingCell(row)
+    let collection = row.enclosingScrollView as? UICollectionView
+    let item: String? =
+      if let collection, let cell, let indexPath = collection.indexPath(for: cell),
+        let dataSource = collection.dataSource as? UICollectionViewDiffableDataSource<Int, String>
+      {
+        dataSource.itemIdentifier(for: indexPath)
+      } else { nil }
+    let visible =
+      cell.map { candidate in
+        collection?.visibleCells.contains(where: { $0 === candidate }) ?? false
+      } ?? false
+    return "\(row.bounds); window: \(row.window != nil); hidden: \(row.isHidden); "
       + "presented cell: \(isPresentedRow(row)); "
+      + "visible cell: \(visible); cell frame: \(String(describing: cell?.frame)); "
+      + "native item: \(String(describing: item)); "
+      + "cell rect: \(String(describing: cell.map { row.convert(row.bounds, to: $0) })); "
       + "rect: \(String(describing: scroll.map { row.convert(row.bounds, to: $0) }))"
   }
   return "Reading position: \(String(describing: conversation.readingPosition)); "
@@ -350,6 +400,32 @@ private func eventually(
     await hostingPresentationFrame()
   }
   XCTAssertTrue(predicate(), message(), file: file, line: line)
+}
+
+@MainActor @Observable
+private final class LateMarkerProbeModel {
+  var showsFirstMarker = false
+}
+
+private struct LateMarkerProbe: View {
+  let model: LateMarkerProbeModel
+  let anchor: ConversationScrollAnchor
+
+  var body: some View {
+    ScrollView {
+      VStack(spacing: 0) {
+        ForEach(0..<10) { index in
+          Text("Message \(index)")
+            .frame(maxWidth: .infinity, minHeight: 100, maxHeight: 100)
+            .background {
+              if index != 0 || model.showsFirstMarker {
+                ConversationRowAnchor(messageID: String(index), anchor: anchor)
+              }
+            }
+        }
+      }
+    }
+  }
 }
 
 @MainActor @Observable

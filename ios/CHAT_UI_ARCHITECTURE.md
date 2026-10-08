@@ -146,7 +146,10 @@ the controller cancels preparation, resize, and refresh tasks. This bounds live
 measurement views without eagerly retaining the whole expanded history.
 
 ConversationScrollAnchor registers weak markers for mounted message rows and
-records a message ID plus its offset from the usable viewport top. It restores
+records a message ID plus its offset from the usable viewport top. The collection
+accepts only markers inside the current native cell for that message. Marker
+readiness and geometry publish reading-position changes on a display frame even
+when the scroll metrics have not changed. It restores
 that offset after a snapshot or attachment resize. The collection first
 materializes the identified row and the anchor corrects its offset on the next
 display frame, then verifies two settling frames without polling while idle.

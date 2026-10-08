@@ -178,7 +178,9 @@ long-history performance checks remain outside the completed interactive sample.
 The transcript uses a native `UICollectionView` cell for each message, with
 SwiftUI message content and measured row heights. A bounded batch of temporary
 hosts settles Markdown layout before a snapshot is applied. Cell reuse keeps
-these heights, and pending content changes wait until scrolling ends. Initial
+these heights, and pending content changes wait until scrolling ends. Reading
+positions update when late message markers become ready, even without a change
+to the list's size or offset. Initial
 positioning targets the latest prepared messages; starting a manual scroll stops
 automatic following. Incoming messages preserve the reading position, while a
 local send or the bottom button requests bottom positioning. Keep these behaviors
