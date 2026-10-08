@@ -292,12 +292,30 @@ private func unmount(_ window: UIWindow) {
 
 @MainActor
 private func markers(in view: UIView) -> [ConversationRowMarker] {
-  (view as? ConversationRowMarker).map { [$0] } ?? view.subviews.flatMap { markers(in: $0) }
+  allMarkers(in: view).filter(isPresentedRow)
+}
+
+@MainActor
+private func allMarkers(in view: UIView) -> [ConversationRowMarker] {
+  (view as? ConversationRowMarker).map { [$0] } ?? view.subviews.flatMap { allMarkers(in: $0) }
+}
+
+@MainActor
+private func isPresentedRow(_ row: ConversationRowMarker) -> Bool {
+  guard row.window != nil else { return false }
+  guard let collection = row.enclosingScrollView as? UICollectionView else { return true }
+  // Reconfiguration can retain an old hosting cell in the hierarchy after its
+  // replacement is presented. Sample the cell currently owned by the collection.
+  guard let cell = enclosingCell(row), let indexPath = collection.indexPath(for: cell) else {
+    return false
+  }
+  return collection.cellForItem(at: indexPath) === cell
 }
 
 @MainActor
 private func offset(of id: String, in view: UIView) -> CGFloat? {
-  guard let row = markers(in: view).first(where: { $0.messageID == id }),
+  let matching = markers(in: view).filter { $0.messageID == id }
+  guard matching.count == 1, let row = matching.first,
     let scroll = row.enclosingScrollView
   else { return nil }
   return row.convert(row.bounds, to: scroll).minY - scroll.bounds.minY
@@ -309,8 +327,9 @@ private func readingDescription(_ id: String, conversation: ConversationStore, v
   -> String
 {
   let scroll = markers(in: view).first?.enclosingScrollView
-  let matching = markers(in: view).filter { $0.messageID == id }.map { row in
+  let matching = allMarkers(in: view).filter { $0.messageID == id }.map { row in
     "\(row.bounds); window: \(row.window != nil); hidden: \(row.isHidden); "
+      + "presented cell: \(isPresentedRow(row)); "
       + "rect: \(String(describing: scroll.map { row.convert(row.bounds, to: $0) }))"
   }
   return "Reading position: \(String(describing: conversation.readingPosition)); "
