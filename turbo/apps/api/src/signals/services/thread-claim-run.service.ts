@@ -6945,7 +6945,6 @@ export function createThreadClaimRunObjects(
       return null;
     }
     return {
-      db: get(db$),
       orgId: args.orgId,
       userId: args.userId,
       piMemoryEnabled: isFeatureEnabled(
@@ -6997,9 +6996,8 @@ export function createThreadClaimRunObjects(
       kind: "projection" as const,
       identity,
       input: {
-        db: args.db,
         args: { orgId: args.orgId, userId: args.userId, ...identity },
-      },
+      } satisfies MemorySummaryProjectionReadInput,
     };
   });
   const projectionInput$ = computed(
@@ -14061,7 +14059,6 @@ function noContentPiMemoryRecall(args: {
 }
 
 interface PreparePiLaunchResourcesArgs {
-  readonly db: ReadonlyDb;
   readonly orgId: string;
   readonly userId: string;
   readonly piMemoryEnabled: boolean;

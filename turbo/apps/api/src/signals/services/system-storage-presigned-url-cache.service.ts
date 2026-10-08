@@ -16,6 +16,7 @@ import { now, nowDate, timestampWithoutTimeZone } from "../../lib/time";
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
 import {
   presignedGetUrlSignerForBucket,
+  signPresignedGetUrl$,
   type PresignedGetUrlSigner,
 } from "../external/s3";
 import { onRejection, safeSync } from "../utils";
@@ -524,30 +525,37 @@ function objectKeyPrefixCondition(objectKeyPrefix: string | undefined) {
       )} escape '\\'`;
 }
 
-async function signCacheValue(args: {
-  readonly sign: PresignedGetUrlSigner;
+interface CacheSigningRequest {
   readonly request: StoragePresignedUrlRequest;
   readonly cacheKey: string;
   readonly ttlSeconds: number;
   readonly issuedAt: Date;
   readonly lastRequestedAt: Date;
-}): Promise<CacheRowValue> {
+}
+
+function cacheSigningOptions(args: CacheSigningRequest) {
   const privatePreview = args.request.scope === "private_artifact_preview";
   const signingDate = privatePreview
     ? new Date(Math.floor(args.issuedAt.getTime() / 1000) * 1000)
     : undefined;
-  const presignedUrl = await args.sign(
-    args.request.bucket,
-    args.request.objectKey,
-    {
-      filename: privatePreview ? args.request.filename : undefined,
-      signingDate,
-      responseCacheControl:
-        args.request.bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")
-          ? PRIVATE_ARTIFACT_CACHE_CONTROL
-          : undefined,
-    },
-  );
+  return {
+    filename: privatePreview ? args.request.filename : undefined,
+    signingDate,
+    responseCacheControl:
+      args.request.bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")
+        ? PRIVATE_ARTIFACT_CACHE_CONTROL
+        : undefined,
+  };
+}
+
+function signedCacheValue(
+  args: CacheSigningRequest,
+  presignedUrl: string,
+): CacheRowValue {
+  const privatePreview = args.request.scope === "private_artifact_preview";
+  const signingDate = privatePreview
+    ? new Date(Math.floor(args.issuedAt.getTime() / 1000) * 1000)
+    : undefined;
   const expiresAt = expirationFromIssuedAt(
     signingDate ?? args.issuedAt,
     privatePreview ? PRESIGNED_URL_TTL_SECONDS : args.ttlSeconds,
@@ -568,6 +576,19 @@ async function signCacheValue(args: {
     lastRequestedAt: args.lastRequestedAt,
     updatedAt: args.issuedAt,
   };
+}
+
+async function signCacheValue(
+  args: CacheSigningRequest & {
+    readonly sign: PresignedGetUrlSigner;
+  },
+): Promise<CacheRowValue> {
+  const presignedUrl = await args.sign(
+    args.request.bucket,
+    args.request.objectKey,
+    cacheSigningOptions(args),
+  );
+  return signedCacheValue(args, presignedUrl);
 }
 
 function storagePresignedUrlCacheValues(values: readonly CacheRowValue[]) {
@@ -1134,31 +1155,31 @@ async function signPreparedStoragePresignedUrls(
   return { results: prepared.results, freshValues, timing: prepared.timing };
 }
 
-/** Classify a captured database snapshot and sign misses entirely in memory. */
-export async function signStorageManifestPresignedUrls(args: {
+interface ManifestSigningSnapshot {
   readonly input: StorageManifestPresignedUrlCachePrefetchInput;
   readonly prefetchedRows: StorageManifestPresignedUrlCacheSnapshot;
-  readonly sign: PresignedGetUrlSigner;
-}): Promise<{
-  readonly results: ReadonlyMap<string, StoragePresignedUrlResult>;
-  readonly freshValues: readonly CacheRowValue[];
-}> {
+}
+
+/** Classify only captured values; this plan performs no signing or database reads. */
+function storageManifestSigningRequests(
+  input: StorageManifestPresignedUrlCachePrefetchInput,
+) {
   const requests = [
-    ...args.input.systemRequests.map((request) => {
+    ...input.systemRequests.map((request) => {
       return {
         cacheKey: systemStoragePresignedUrlCacheKey(request),
         request: systemStorageRequest(request),
         ttlSeconds: SYSTEM_STORAGE_PRESIGNED_URL_TTL_SECONDS,
       };
     }),
-    ...args.input.workflowSkillRequests.map((request) => {
+    ...input.workflowSkillRequests.map((request) => {
       return {
         cacheKey: workflowSkillStoragePresignedUrlCacheKey(request),
         request: workflowSkillStorageRequest(request),
         ttlSeconds: WORKFLOW_SKILL_STORAGE_PRESIGNED_URL_TTL_SECONDS,
       };
     }),
-    ...args.input.readOnlyRequests.map((request) => {
+    ...input.readOnlyRequests.map((request) => {
       return {
         cacheKey: readOnlyStoragePresignedUrlCacheKey(request),
         request: readOnlyStorageRequest(request),
@@ -1166,15 +1187,22 @@ export async function signStorageManifestPresignedUrls(args: {
       };
     }),
   ];
-  const unique = new Map(
+  return new Map(
     requests.map((entry) => {
       return [entry.cacheKey, entry];
     }),
   );
-  const issuedAt = nowDate();
+}
+
+/** Classify the captured cache snapshot at the owner's signing clock. */
+function storageManifestSigningPlan(
+  unique: ReturnType<typeof storageManifestSigningRequests>,
+  prefetchedRows: StorageManifestPresignedUrlCacheSnapshot,
+  issuedAt: Date,
+) {
   const results = new Map<string, StoragePresignedUrlResult>();
   const missing = [...unique.values()].filter((entry) => {
-    const row = args.prefetchedRows.rowsByScope
+    const row = prefetchedRows.rowsByScope
       .get(entry.request.scope as StorageManifestPresignedUrlCacheScope)
       ?.get(entry.cacheKey);
     if (
@@ -1195,6 +1223,24 @@ export async function signStorageManifestPresignedUrls(args: {
     });
     return false;
   });
+  return { results, missing, issuedAt };
+}
+
+/** Classify a captured database snapshot and sign misses entirely in memory. */
+export async function signStorageManifestPresignedUrls(
+  args: ManifestSigningSnapshot & {
+    readonly sign: PresignedGetUrlSigner;
+  },
+): Promise<{
+  readonly results: ReadonlyMap<string, StoragePresignedUrlResult>;
+  readonly freshValues: readonly CacheRowValue[];
+}> {
+  const requests = storageManifestSigningRequests(args.input);
+  const { results, missing, issuedAt } = storageManifestSigningPlan(
+    requests,
+    args.prefetchedRows,
+    nowDate(),
+  );
   const freshValues = await Promise.all(
     missing.map((entry) => {
       return signCacheValue({
@@ -1212,6 +1258,36 @@ export async function signStorageManifestPresignedUrls(args: {
   });
   return { results, freshValues };
 }
+
+/** Fixed signer command; requests and snapshots never carry an I/O callback. */
+export const signStorageManifestPresignedUrls$ = command(
+  async ({ set }, args: ManifestSigningSnapshot) => {
+    const requests = storageManifestSigningRequests(args.input);
+    const { results, missing, issuedAt } = storageManifestSigningPlan(
+      requests,
+      args.prefetchedRows,
+      nowDate(),
+    );
+    const freshValues = await Promise.all(
+      missing.map(async (entry) => {
+        const request = { ...entry, issuedAt, lastRequestedAt: issuedAt };
+        const presignedUrl = await set(signPresignedGetUrl$, {
+          bucket: entry.request.bucket,
+          key: entry.request.objectKey,
+          publicEndpoint: entry.request.publicEndpoint,
+          ...cacheSigningOptions(request),
+        });
+        return signedCacheValue(request, presignedUrl);
+      }),
+    );
+    appendFreshStoragePresignedUrlResults({
+      results,
+      needsFresh: missing,
+      freshValues,
+    });
+    return { results, freshValues };
+  },
+);
 
 async function persistPreparedStoragePresignedUrls(
   db: Db,

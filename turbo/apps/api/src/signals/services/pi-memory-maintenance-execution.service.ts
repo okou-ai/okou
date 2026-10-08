@@ -38,12 +38,12 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import { piMemoryPhase2SelectionDigest } from "@okouai/pi-agent-runtime/api";
-import { command, computed } from "ccstate";
+import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { usagePricingResolution$ } from "../context/usage-pricing-resolution";
-import { db$, writeDb$, type Db } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import { safeSync, settle } from "../utils";
 import { activatePendingRun$ } from "./agent-run-activation.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
@@ -67,14 +67,14 @@ import {
   compactRecord,
   runtimeFirewall,
 } from "./connector-runtime-preparation.service";
-import { createExecutionMemberMetadata } from "./execution-member-metadata.service";
+import { readExecutionMemberMetadata$ } from "./execution-member-metadata.service";
 import {
-  createModelSourceSnapshot,
+  readModelSourceSnapshot$,
   type ModelSourceIdentity,
 } from "./execution-model-source.service";
 import { encryptExecutionSecrets$ } from "./execution-secrets.service";
 import {
-  createExecutionStorageObjects,
+  prepareExecutionStorageMounts$,
   updateExecutionStoragePresignedUrlCache$,
   type PreparedExecutionStorageMount,
 } from "./execution-storage.service";
@@ -84,10 +84,10 @@ import {
   type ModelCatalog,
 } from "./model-catalog.service";
 import { prepareSubscriptionModelEnvironment } from "./model-provider.service";
-import { readDisabledPaidTools } from "./paid-tools.service";
+import { readDisabledPaidTools$ } from "./paid-tools.service";
 import {
   preparePiMemoryBuiltinEnvironment,
-  readPiMemoryBuiltinPricing,
+  readPiMemoryBuiltinPricing$,
 } from "./pi-memory-builtin-config";
 import {
   materializePreparedPiProvider,
@@ -123,7 +123,7 @@ import { historyGenerationRunIdForStoredExecutionContext } from "./history-gener
 import { billingRunAttributionWrite } from "./managed-usage-attribution";
 import { isPersonalSubscriptionProviderType } from "./model-provider-account.service";
 import {
-  loadOrgPlanCapabilities,
+  loadOrgPlanCapabilities$,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
 import {
@@ -157,7 +157,7 @@ import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
 import { requireRunAllowanceWindowPair } from "./usage-allowance-run-plan";
 import { entitlementQuery } from "./usage-allowance-settlement-plan";
 import {
-  createUsageAllowanceRefreshObject,
+  prepareUsageAllowanceRefresh$,
   type PreparedUsageAllowanceRefresh,
 } from "./usage-allowance.service";
 
@@ -360,43 +360,56 @@ const admitMaintenance$ = command(
 );
 
 /** Exact pinned source → resolved runtime → Pi model configuration. */
-async function prepareMaintenanceModel(
-  admitted: MaintenanceAdmission,
-  job: ClaimedPiMemoryPhase2Job,
-  source: Parameters<typeof preparePiMemoryBuiltinEnvironment>[0],
-) {
-  const { catalog, credential, selectedModel } = admitted;
-  const resolvedProvider: ResolvedModelProviderEnvironment | null =
-    source.identity.kind === "built-in"
-      ? preparePiMemoryBuiltinEnvironment(source, credential.route ?? undefined)
-      : await prepareSubscriptionModelEnvironment(source, selectedModel, {
-          catalog,
-          userId: job.userId,
-          sourceId: credential.pin.modelProviderId ?? "",
-          piExecution: true,
-        });
-  const piInput = { catalog, piExecution: true };
-  const modelProvider = resolvedProvider
-    ? credential.pin.modelProvider === "built-in"
-      ? {
-          ...resolvedProvider,
-          piModelConfig: resolvePlatformMemoryPiModelConfig(resolvedProvider),
-        }
-      : materializePreparedPiProvider(piInput, resolvedProvider)
-    : null;
-  if (!modelProvider) {
-    throw new PiMaintenanceDispositionError("credential_unavailable");
-  }
-  const piSandbox =
-    credential.pin.modelProvider === "built-in"
-      ? modelProvider.piModelConfig
-      : resolvePreparedPiModelConfig({ input: piInput, modelProvider });
-  if (!piSandbox) {
-    throw new Error("Pi maintenance requires a Pi model configuration");
-  }
-  return { modelProvider, piSandbox };
-}
-
+const prepareMaintenanceModel$ = command(
+  async (
+    { set },
+    args: {
+      readonly catalog: ModelCatalog;
+      readonly selectedModel: string;
+      readonly pin: PiMaintenanceCredential["pin"];
+      readonly route: PiMaintenanceCredential["route"];
+      readonly job: ClaimedPiMemoryPhase2Job;
+      readonly source: Parameters<typeof preparePiMemoryBuiltinEnvironment>[0];
+      readonly timing: ApiDispatchTimingCollector;
+    },
+  ) => {
+    const { catalog, pin, route, selectedModel, job, source } = args;
+    const resolvedProvider: ResolvedModelProviderEnvironment | null =
+      source.identity.kind === "built-in"
+        ? preparePiMemoryBuiltinEnvironment(source, route ?? undefined)
+        : await prepareSubscriptionModelEnvironment(source, selectedModel, {
+            catalog,
+            userId: job.userId,
+            sourceId: pin.modelProviderId ?? "",
+            piExecution: true,
+          });
+    const piInput = { catalog, piExecution: true };
+    const modelProvider = resolvedProvider
+      ? pin.modelProvider === "built-in"
+        ? {
+            ...resolvedProvider,
+            piModelConfig: resolvePlatformMemoryPiModelConfig(resolvedProvider),
+          }
+        : materializePreparedPiProvider(piInput, resolvedProvider)
+      : null;
+    if (!modelProvider) {
+      throw new PiMaintenanceDispositionError("credential_unavailable");
+    }
+    const piSandbox =
+      pin.modelProvider === "built-in"
+        ? modelProvider.piModelConfig
+        : resolvePreparedPiModelConfig({ input: piInput, modelProvider });
+    if (!piSandbox) {
+      throw new Error("Pi maintenance requires a Pi model configuration");
+    }
+    const preparedUsage = await set(prepareMaintenanceUsage$, {
+      catalog,
+      modelProvider,
+      timing: args.timing,
+    });
+    return { modelProvider, piSandbox, ...preparedUsage };
+  },
+);
 /** The single exact memory writeback mount at the claimed base version. */
 async function prepareMaintenanceStorage(
   job: ClaimedPiMemoryPhase2Job,
@@ -621,7 +634,7 @@ interface MaintenanceLaunchInput {
   readonly record: MaintenanceRunRecord;
   readonly selectionDigest: string;
   readonly piSandbox: Awaited<
-    ReturnType<typeof prepareMaintenanceModel>
+    ReturnType<typeof prepareMaintenanceModel$.write>
   >["piSandbox"];
   readonly permissionManifest: Awaited<
     ReturnType<typeof prepareMaintenanceUsage>
@@ -886,83 +899,26 @@ function maintenanceMemoryMount(job: ClaimedPiMemoryPhase2Job) {
   };
 }
 
-/**
- * The admitted job's model reads: the pinned source snapshot, its runtime
- * (side-effect-free decryption or managed-key read, Ethan 2026-10-02) and its
- * usage pricing and permissions, and the built-in allowance refresh read.
- * Built from plain values after admission.
- */
-function createMaintenanceModelReads(
-  job: ClaimedPiMemoryPhase2Job,
-  admitted: MaintenanceAdmission,
-  timing: ApiDispatchTimingCollector,
-) {
-  const source$ = createModelSourceSnapshot({
-    orgId: job.orgId,
-    userId: job.userId,
-    source: pinnedSourceIdentity(admitted.credential),
-  });
-  const model$ = computed(async (get) => {
-    const source = await get(source$);
-    if (!source) {
-      throw new PiMaintenanceDispositionError("credential_unavailable");
-    }
-    return await prepareMaintenanceModel(admitted, job, source);
-  });
-  const usage$ = computed(async (get) => {
-    const { modelProvider } = await get(model$);
-    return await prepareMaintenanceUsage({
-      catalog: admitted.catalog,
-      modelProvider,
-      timing,
-      routePricing:
-        modelProvider.type === "built-in"
-          ? await readPiMemoryBuiltinPricing(
-              get(db$),
-              admitted.catalog,
-              get(usagePricingResolution$),
-            )
-          : null,
-    });
-  });
-  // For a built-in model, the Stripe entitlement read for the allowance window
-  // (no write; the refresh itself is applied in the commit transaction).
-  const preparedAllowanceRefresh$ = createUsageAllowanceRefreshObject(
-    job.orgId,
-  );
-  const allowanceRefresh$ = computed(async (get) => {
-    const { modelProvider } = await get(model$);
-    return isBuiltInModelProviderType(modelProvider.type)
-      ? await get(preparedAllowanceRefresh$)
-      : undefined;
-  });
-  const planCapabilities$ = computed(async (get) => {
-    const { modelProvider } = await get(model$);
-    return isBuiltInModelProviderType(modelProvider.type)
-      ? await loadOrgPlanCapabilities(get(db$), job.orgId)
-      : null;
-  });
-  return { source$, model$, usage$, allowanceRefresh$, planCapabilities$ };
-}
-
-/**
- * One claimed job's read-only resources: the exact memory mount's storage
- * preparation, the member metadata and the disabled paid tools. Construction
- * builds computed reads only, so the launch command may build it per job.
- */
-function createMaintenanceRunReads(job: ClaimedPiMemoryPhase2Job) {
-  const owner = { orgId: job.orgId, userId: job.userId };
-  const memoryMounts = [maintenanceMemoryMount(job)];
-  return {
-    owner,
-    memoryMounts,
-    storage: createExecutionStorageObjects(memoryMounts),
-    member$: createExecutionMemberMetadata(owner),
-    disabledPaidTools$: computed(async (get): Promise<readonly string[]> => {
-      return await readDisabledPaidTools(get(db$), job.orgId, job.userId);
-    }),
-  };
-}
+/** Read pricing for the already-prepared model once through its fixed owner. */
+const prepareMaintenanceUsage$ = command(
+  async (
+    { get, set },
+    args: Pick<
+      Parameters<typeof prepareMaintenanceUsage>[0],
+      "catalog" | "modelProvider" | "timing"
+    >,
+  ) => {
+    const routePricing =
+      args.modelProvider.type === "built-in"
+        ? await set(
+            readPiMemoryBuiltinPricing$,
+            args.catalog,
+            get(usagePricingResolution$),
+          )
+        : null;
+    return await prepareMaintenanceUsage({ ...args, routePricing });
+  },
+);
 
 /**
  * Activates a committed run. An abort still propagates, but any other failure
@@ -1009,34 +965,46 @@ const activateCommittedMaintenanceRun$ = command(
  * prepare the exact memory mount, the pinned model and the Pi launch,
  * atomically commit the run with its job binding, then activate it and write
  * the presigned URL cache. The pinned source is known only after admission;
- * its snapshot is a pure computed read.
+ * fixed commands capture its source and the exact launch read snapshots.
  */
 const launchMaintenanceRun$ = command(
   async (
-    { get, set },
+    { set },
     job: ClaimedPiMemoryPhase2Job,
     signal: AbortSignal,
   ): Promise<string> => {
-    const { memoryMounts, storage, member$, disabledPaidTools$ } =
-      createMaintenanceRunReads(job);
+    const owner = { orgId: job.orgId, userId: job.userId };
+    const memoryMounts = [maintenanceMemoryMount(job)];
     const db = set(writeDb$);
     const apiStartTime = now();
     const admitted = await set(admitMaintenance$, job, signal);
     const timing = new ApiDispatchTimingCollector();
-    const modelReads = createMaintenanceModelReads(job, admitted, timing);
     const [source, member, disabledPaidTools, preparedMounts] =
       await Promise.all([
-        get(modelReads.source$),
-        get(member$),
-        get(disabledPaidTools$),
-        settle(get(storage.preparedMounts$), signal),
+        set(readModelSourceSnapshot$, {
+          ...owner,
+          source: pinnedSourceIdentity(admitted.credential),
+        }),
+        set(readExecutionMemberMetadata$, owner),
+        set(readDisabledPaidTools$, owner),
+        settle(set(prepareExecutionStorageMounts$, memoryMounts), signal),
       ]);
     signal.throwIfAborted();
     if (!source) {
       throw new PiMaintenanceDispositionError("credential_unavailable");
     }
-    const [{ modelProvider, piSandbox }, { permissionManifest, usage }] =
-      await Promise.all([get(modelReads.model$), get(modelReads.usage$)]);
+    const { modelProvider, piSandbox, permissionManifest, usage } = await set(
+      prepareMaintenanceModel$,
+      {
+        job,
+        source,
+        catalog: admitted.catalog,
+        selectedModel: admitted.selectedModel,
+        pin: admitted.credential.pin,
+        route: admitted.credential.route,
+        timing,
+      },
+    );
     signal.throwIfAborted();
     const selectionDigest = piMemoryPhase2SelectionDigest(job.selected);
     const record = maintenanceRunRecord({
@@ -1069,8 +1037,12 @@ const launchMaintenanceRun$ = command(
           },
           signal,
         ),
-        get(modelReads.allowanceRefresh$),
-        get(modelReads.planCapabilities$),
+        isBuiltInModelProviderType(modelProvider.type)
+          ? set(prepareUsageAllowanceRefresh$, { orgId: job.orgId })
+          : undefined,
+        isBuiltInModelProviderType(modelProvider.type)
+          ? set(loadOrgPlanCapabilities$, job.orgId)
+          : null,
       ]),
       signal,
     );

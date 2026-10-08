@@ -1190,6 +1190,28 @@ function signPresignedGetUrl(
   });
 }
 
+/** Sign from plain request data through a preconstructed bucket client. */
+export const signPresignedGetUrl$ = command(
+  async (
+    { get },
+    args: {
+      readonly bucket: string;
+      readonly key: string;
+      readonly publicEndpoint: boolean;
+      readonly filename?: string;
+      readonly responseCacheControl?: string;
+      readonly signingDate?: Date;
+    },
+  ): Promise<string> => {
+    return await signPresignedGetUrl(
+      get(s3ClientForBucket(args.bucket, args.publicEndpoint)),
+      args.bucket,
+      args.key,
+      args,
+    );
+  },
+);
+
 export function putS3Object(
   bucket: string,
   key: string,
