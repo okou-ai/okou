@@ -27,7 +27,7 @@ const SNAPSHOT_CACHE_VERSION: u32 = 3;
 
 /// Rootfs-hash inputs contributed by an installed Okou CLI artifact.
 pub(super) struct OkouCliHashInput<'a> {
-    /// SHA-256 calculated from the verified package, whose identity is bound to it.
+    /// Build-time SHA-256 of the verified package, whose identity is bound to it.
     pub(super) package_sha256: &'a str,
 }
 
@@ -84,7 +84,7 @@ fn update_rootfs_hash_field(hasher: &mut Sha256, label: &[u8], value: &[u8]) -> 
 /// size, CA fingerprint, DNS resolver, then one destination/content pair per guest
 /// binary in inventory order, then, only when an Okou CLI artifact is installed,
 /// its verified package SHA-256. Packed identity determines the installed manifest;
-/// metadata and byte integrity are validated before cache selection, not hashed twice.
+/// metadata and byte integrity are validated at compilation, not rechecked or hashed twice.
 /// Fixed-width integers use big-endian
 /// bytes and IPv4 addresses use their four network-order octets. Future inputs
 /// must use `update_rootfs_hash_field` so arbitrary value bytes cannot shift field
@@ -514,25 +514,10 @@ mod tests {
 
     #[tokio::test]
     async fn rootfs_cli_identity_is_determined_by_the_verified_package() {
-        use super::super::okou_cli::{OkouCliArtifact, test_support::write_artifact_dir};
-        let dir = tempfile::tempdir().unwrap();
-        let a = dir.path().join("a");
-        let b = dir.path().join("b");
-        let changed = dir.path().join("changed");
-        for path in [&a, &b, &changed] {
-            std::fs::create_dir(path).unwrap();
-        }
-        write_artifact_dir(&a, b"same-program", "9.353.0", "1.36.0");
-        write_artifact_dir(&b, b"same-program", "9.353.0", "1.36.0");
-        write_artifact_dir(&changed, b"same-program", "9.353.0", "1.36.1");
-        let manifest = b.join("manifest.json");
-        let mut provenance: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(&manifest).unwrap()).unwrap();
-        provenance["commitSha"] = serde_json::json!("e".repeat(40));
-        std::fs::write(manifest, serde_json::to_vec(&provenance).unwrap()).unwrap();
-        let artifact_a = OkouCliArtifact::resolve(&a).await.unwrap();
-        let artifact_b = OkouCliArtifact::resolve(&b).await.unwrap();
-        let artifact_changed = OkouCliArtifact::resolve(&changed).await.unwrap();
+        use super::super::okou_cli::{OkouCliArtifact, test_support::stage_fixture};
+        let artifact_a = stage_fixture(b"same-program", "9.353.0", "1.36.0").await;
+        let artifact_b = stage_fixture(b"same-program", "9.353.0", "1.36.0").await;
+        let artifact_changed = stage_fixture(b"same-program", "9.353.0", "1.36.1").await;
         assert_eq!(
             artifact_a.installed_manifest_bytes(),
             artifact_b.installed_manifest_bytes()
@@ -550,7 +535,7 @@ mod tests {
         assert_eq!(
             hash(&artifact_a).await,
             hash(&artifact_b).await,
-            "provenance is not installation identity"
+            "same compiled resources preserve installed identity and rootfs key"
         );
         assert_ne!(
             hash(&artifact_a).await,

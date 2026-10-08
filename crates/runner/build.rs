@@ -6,29 +6,12 @@ use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 use serde::Deserialize;
-use sha2::{Digest, Sha256};
 
-use runner_cli_package::{CliSessionConstruction, CliVersions, valid_lower_hex};
+mod cli_package;
 
 const GUEST_BINARIES_FILE: &str = "guest-binaries.json";
 const MAX_CLI_PACKAGE_SIZE: u64 = 64 * 1024 * 1024;
 const MAX_CLI_MANIFEST_SIZE: u64 = 16 * 1024;
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CliManifest {
-    version: u32,
-    package: CliPackage,
-    versions: CliVersions,
-    session_construction: CliSessionConstruction,
-}
-
-#[derive(Deserialize)]
-struct CliPackage {
-    path: String,
-    sha256: String,
-    size: u64,
-}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -56,6 +39,7 @@ fn main() {
     println!("cargo::rerun-if-changed=scripts/customize-rootfs.sh");
     println!("cargo::rerun-if-changed=scripts/verify-rootfs.sh");
     println!("cargo::rerun-if-changed={GUEST_BINARIES_FILE}");
+    println!("cargo::rerun-if-changed=cli_package.rs");
 
     generate_addon_files();
     let guests = load_guest_binaries();
@@ -167,70 +151,37 @@ fn embed_guest_cli(path: &str, manifest_path: &str, workspace_root: &Path) {
         "manifest",
         MAX_CLI_MANIFEST_SIZE,
     );
-    let manifest: CliManifest =
-        serde_json::from_slice(&fs::read(&manifest_path).expect("read CLI manifest"))
-            .expect("parse CLI manifest");
-    assert_eq!(manifest.version, 1, "unsupported CLI manifest version");
-    assert_eq!(
-        manifest.package.path, "package.tgz",
-        "unexpected CLI package path"
-    );
-    assert!(
-        valid_lower_hex(&manifest.package.sha256, 64),
-        "invalid CLI package SHA-256"
-    );
-    let bytes = fs::read(&package).expect("read CLI package");
-    assert_eq!(
-        manifest.package.size,
-        bytes.len() as u64,
-        "CLI package size mismatch"
-    );
-    assert_eq!(
-        manifest.package.sha256,
-        hex::encode(Sha256::digest(&bytes)),
-        "CLI package digest mismatch"
-    );
-    let identity = runner_cli_package::read_identity(&bytes).expect("read packed CLI identity");
-    assert_eq!(
-        manifest.versions, identity.versions,
-        "CLI identity mismatch"
-    );
-    assert_eq!(
-        manifest.session_construction, identity.session_construction,
-        "CLI session-construction identity mismatch"
-    );
+    let prepared = cli_package::prepare(
+        fs::read(&package).expect("read CLI package"),
+        &fs::read(&manifest_path).expect("read CLI manifest"),
+    )
+    .expect("prepare compiled CLI resources");
 
-    // Only the tarball is included as a Runner resource. The manifest stays a
-    // build input; individual validated identity fields become compile-time
-    // constants for constructing the installed rootfs manifest.
+    // Snapshot the verified buffer, not its mutable input path. rustc embeds
+    // exactly the bytes whose identity/integrity produced the installed metadata.
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
+    let compiled_package = out_dir.join("okou-cli-package.tgz");
+    let installed_manifest = out_dir.join("okou-cli-installed.json");
+    fs::write(&compiled_package, &prepared.package).expect("write compiled CLI package");
+    fs::write(&installed_manifest, &prepared.installed_manifest)
+        .expect("write compiled CLI installed manifest");
+
     println!("cargo::rustc-cfg=bundled_okou_cli");
     println!(
         "cargo::rustc-env=BUNDLED_OKOU_CLI_PACKAGE={}",
-        package.display()
+        compiled_package.display()
+    );
+    println!(
+        "cargo::rustc-env=BUNDLED_OKOU_CLI_INSTALLED_MANIFEST={}",
+        installed_manifest.display()
     );
     println!(
         "cargo::rustc-env=BUNDLED_OKOU_CLI_SHA256={}",
-        manifest.package.sha256
-    );
-    println!(
-        "cargo::rustc-env=BUNDLED_OKOU_CLI_SIZE={}",
-        manifest.package.size
+        prepared.installed.package.sha256
     );
     println!(
         "cargo::rustc-env=BUNDLED_OKOU_CLI_VERSION={}",
-        manifest.versions.cli
-    );
-    println!(
-        "cargo::rustc-env=BUNDLED_OKOU_PI_RUNTIME_VERSION={}",
-        manifest.versions.pi_agent_runtime
-    );
-    println!(
-        "cargo::rustc-env=BUNDLED_OKOU_PI_SDK_VERSION={}",
-        manifest.versions.pi_sdk
-    );
-    println!(
-        "cargo::rustc-env=BUNDLED_OKOU_SESSION_DIGEST={}",
-        manifest.session_construction.digest
+        prepared.installed.versions.cli
     );
 }
 

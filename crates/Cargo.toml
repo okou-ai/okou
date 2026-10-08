@@ -22,7 +22,6 @@ members = [
     "kerberos-credentials",
     "nbd-cow",
     "runner",
-    "runner-cli-package",
     "runner-executor",
     "runner-host",
     "runner-lifecycle",
@@ -71,7 +70,6 @@ guest-workspace-mount = { path = "guest-workspace-mount" }
 linux-mountinfo = { path = "linux-mountinfo" }
 kerberos-credentials = { path = "kerberos-credentials" }
 nbd-cow = { path = "nbd-cow" }
-runner-cli-package = { path = "runner-cli-package" }
 runner-host = { path = "runner-host" }
 runner-executor = { path = "runner-executor" }
 runner-lifecycle = { path = "runner-lifecycle" }

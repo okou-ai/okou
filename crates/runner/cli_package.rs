@@ -1,41 +1,25 @@
-//! Read the package-bound CLI identity at compilation and rootfs staging.
+//! Build-only preparation of the CLI package and its compiled installation metadata.
 
 use std::io::{self, Read};
 use std::path::{Component, Path};
 
 use flate2::read::MultiGzDecoder;
+use guest_contracts::okou_cli::{
+    InstalledOkouCli, OKOU_CLI_INSTALLED_MANIFEST_SCHEMA_VERSION, OkouCliInstalledPackage,
+    OkouCliSessionConstruction, OkouCliVersions,
+};
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 
 const MAX_PACKAGE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ARCHIVE_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_METADATA_BYTES: u64 = 16 * 1024;
 
-/// Release versions and SDK patch identity carried by the package.
-#[derive(Debug, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct CliVersions {
-    /// CLI version from the packed package's existing `version`.
-    pub cli: String,
-    /// Bundled Pi runtime release version.
-    pub pi_agent_runtime: String,
-    /// Upstream Pi SDK version plus first-party patch-set digest.
-    pub pi_sdk: String,
-}
-
-/// Session-construction identity recorded before packing.
-#[derive(Debug, Deserialize, PartialEq, Eq)]
-pub struct CliSessionConstruction {
-    /// Lowercase SHA-256 of the session construction.
-    pub digest: String,
-}
-
 /// Identity decoded from the mandatory packed metadata.
 #[derive(Debug, PartialEq, Eq)]
-pub struct CliIdentity {
-    /// Release and SDK identities.
-    pub versions: CliVersions,
-    /// Session-construction parity identity.
-    pub session_construction: CliSessionConstruction,
+struct CliIdentity {
+    versions: OkouCliVersions,
+    session_construction: OkouCliSessionConstruction,
 }
 
 #[derive(Deserialize)]
@@ -52,11 +36,87 @@ struct BuildIdentity {
     schema_version: u32,
     pi_agent_runtime: String,
     pi_sdk: String,
-    session_construction: CliSessionConstruction,
+    session_construction: OkouCliSessionConstruction,
 }
 
-/// Whether a value has exactly the requested number of lowercase hex digits.
-pub fn valid_lower_hex(value: &str, len: usize) -> bool {
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CliManifest {
+    version: u32,
+    package: CliPackage,
+    versions: OkouCliVersions,
+    session_construction: OkouCliSessionConstruction,
+}
+
+#[derive(Deserialize)]
+struct CliPackage {
+    path: String,
+    sha256: String,
+    size: u64,
+}
+
+/// Resources derived from one validated buffer, ready for compilation.
+#[derive(Debug)]
+pub(crate) struct PreparedCli {
+    /// Exact verified package bytes, not a path to a mutable external input.
+    pub(crate) package: Vec<u8>,
+    /// Installed identity determined by those bytes and fixed installation rules.
+    pub(crate) installed: InstalledOkouCli,
+    /// Serialized installed metadata embedded with the package.
+    pub(crate) installed_manifest: Vec<u8>,
+}
+
+/// Validate external build inputs and prepare both immutable compiled resources.
+pub(crate) fn prepare(package: Vec<u8>, manifest: &[u8]) -> Result<PreparedCli, String> {
+    if manifest.is_empty() || manifest.len() > MAX_METADATA_BYTES as usize {
+        return Err("CLI manifest size is out of bounds".into());
+    }
+    let manifest: CliManifest = serde_json::from_slice(manifest).map_err(|e| e.to_string())?;
+    if manifest.version != 1 || manifest.package.path != "package.tgz" {
+        return Err("unexpected CLI manifest version or package path".into());
+    }
+    if !valid_lower_hex(&manifest.package.sha256, 64) {
+        return Err("invalid CLI package SHA-256".into());
+    }
+    if package.is_empty() || package.len() > MAX_PACKAGE_BYTES {
+        return Err("CLI package size is out of bounds".into());
+    }
+    let package_size = package.len() as u64;
+    if manifest.package.size != package_size {
+        return Err("CLI package size mismatch".into());
+    }
+    let package_sha256 = hex::encode(Sha256::digest(&package));
+    if manifest.package.sha256 != package_sha256 {
+        return Err("CLI package digest mismatch".into());
+    }
+    let identity = read_identity(&package)?;
+    if manifest.versions != identity.versions {
+        return Err("CLI identity mismatch".into());
+    }
+    if manifest.session_construction != identity.session_construction {
+        return Err("CLI session-construction identity mismatch".into());
+    }
+    // Use the actual packed identity and integrity, not the external declarations.
+    let installed = InstalledOkouCli {
+        schema_version: OKOU_CLI_INSTALLED_MANIFEST_SCHEMA_VERSION,
+        entrypoint: InstalledOkouCli::entrypoint_for(&identity.versions.cli),
+        versions: identity.versions,
+        package: OkouCliInstalledPackage {
+            sha256: package_sha256,
+            size: package_size,
+        },
+        session_construction: Some(identity.session_construction),
+    };
+    let mut installed_manifest = serde_json::to_vec(&installed).map_err(|e| e.to_string())?;
+    installed_manifest.push(b'\n');
+    Ok(PreparedCli {
+        package,
+        installed,
+        installed_manifest,
+    })
+}
+
+fn valid_lower_hex(value: &str, len: usize) -> bool {
     value.len() == len
         && value
             .bytes()
@@ -76,7 +136,7 @@ fn valid_release_version(value: &str) -> bool {
 
 /// Decode exactly one regular metadata entry without extracting or running code.
 /// Bound the entire decompressed stream, including skipped entries and gzip EOF.
-pub fn read_identity(package: &[u8]) -> Result<CliIdentity, String> {
+fn read_identity(package: &[u8]) -> Result<CliIdentity, String> {
     if package.is_empty() || package.len() > MAX_PACKAGE_BYTES {
         return Err("CLI package size is out of bounds".into());
     }
@@ -131,7 +191,7 @@ pub fn read_identity(package: &[u8]) -> Result<CliIdentity, String> {
         return Err("invalid CLI package session digest".into());
     }
     Ok(CliIdentity {
-        versions: CliVersions {
+        versions: OkouCliVersions {
             cli: packed.version,
             pi_agent_runtime: build.pi_agent_runtime,
             pi_sdk: build.pi_sdk,
@@ -174,6 +234,15 @@ mod tests {
                 .unwrap();
         }
         archive.into_inner().unwrap().finish().unwrap()
+    }
+
+    fn manifest(package: &[u8]) -> serde_json::Value {
+        serde_json::json!({
+            "version": 1, "commitSha": "a".repeat(40),
+            "package": {"path": "package.tgz", "sha256": hex::encode(Sha256::digest(package)), "size": package.len()},
+            "versions": {"cli": "9.353.0", "piAgentRuntime": "1.36.0", "piSdk": "0.86.1+okou.0123456789ab"},
+            "sessionConstruction": {"digest": "d".repeat(64)}
+        })
     }
 
     #[test]
@@ -243,5 +312,107 @@ mod tests {
         let bytes = archive.into_inner().unwrap().finish().unwrap();
         assert!(bytes.len() < MAX_PACKAGE_BYTES);
         assert!(read_identity(&bytes).is_err());
+    }
+
+    #[test]
+    fn prepares_exact_package_and_installed_bytes_without_provenance() {
+        let bytes = archive(&[(&metadata(), tar::EntryType::Regular)]);
+        let baseline = manifest(&bytes);
+        let prepared = prepare(bytes.clone(), &serde_json::to_vec(&baseline).unwrap()).unwrap();
+        assert_eq!(prepared.package, bytes);
+        assert_eq!(
+            prepared.installed.package.sha256,
+            hex::encode(Sha256::digest(&bytes))
+        );
+        assert_eq!(prepared.installed.package.size, bytes.len() as u64);
+        assert_eq!(
+            prepared.installed.entrypoint,
+            "/usr/local/lib/okou-cli/9.353.0/okou.js"
+        );
+        assert_eq!(
+            InstalledOkouCli::parse(&prepared.installed_manifest).unwrap(),
+            prepared.installed
+        );
+        assert!(prepared.installed_manifest.ends_with(b"\n"));
+        let mut provenance = baseline;
+        provenance["commitSha"] = serde_json::json!("b".repeat(40));
+        let other = prepare(bytes, &serde_json::to_vec(&provenance).unwrap()).unwrap();
+        assert_eq!(prepared.installed_manifest, other.installed_manifest);
+        assert_eq!(prepared.package, other.package);
+    }
+
+    #[test]
+    fn compilation_rejects_external_only_identity_mutations() {
+        let bytes = archive(&[(&metadata(), tar::EntryType::Regular)]);
+        let baseline = manifest(&bytes);
+        let other_digest = "e".repeat(64);
+        for (field, value, expected) in [
+            ("/versions/cli", "9.353.1", "CLI identity mismatch"),
+            (
+                "/versions/piAgentRuntime",
+                "1.36.1",
+                "CLI identity mismatch",
+            ),
+            (
+                "/versions/piSdk",
+                "0.86.1+okou.aaaaaaaaaaaa",
+                "CLI identity mismatch",
+            ),
+            (
+                "/sessionConstruction/digest",
+                other_digest.as_str(),
+                "CLI session-construction identity mismatch",
+            ),
+        ] {
+            let mut changed = baseline.clone();
+            *changed.pointer_mut(field).unwrap() = serde_json::json!(value);
+            assert_eq!(
+                prepare(bytes.clone(), &serde_json::to_vec(&changed).unwrap()).unwrap_err(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn compilation_rejects_wrong_integrity_and_missing_identity() {
+        let bytes = archive(&[(&metadata(), tar::EntryType::Regular)]);
+        let baseline = manifest(&bytes);
+        for (field, value, expected) in [
+            (
+                "/package/size",
+                serde_json::json!(42),
+                "CLI package size mismatch",
+            ),
+            (
+                "/package/sha256",
+                serde_json::json!("a".repeat(64)),
+                "CLI package digest mismatch",
+            ),
+        ] {
+            let mut changed = baseline.clone();
+            *changed.pointer_mut(field).unwrap() = value;
+            assert_eq!(
+                prepare(bytes.clone(), &serde_json::to_vec(&changed).unwrap()).unwrap_err(),
+                expected
+            );
+        }
+        let mut missing = baseline;
+        missing
+            .as_object_mut()
+            .unwrap()
+            .remove("sessionConstruction");
+        assert!(prepare(bytes, &serde_json::to_vec(&missing).unwrap()).is_err());
+    }
+
+    #[test]
+    fn rejects_corrupt_and_truncated_gzip_even_with_matching_outer_integrity() {
+        let bytes = archive(&[(&metadata(), tar::EntryType::Regular)]);
+        let mut corrupt = bytes.clone();
+        let crc = corrupt.len() - 8;
+        corrupt[crc] ^= 1;
+        for invalid in [corrupt, bytes[..bytes.len() - 4].to_vec()] {
+            let external = manifest(&invalid);
+            assert!(prepare(invalid, &serde_json::to_vec(&external).unwrap()).is_err());
+        }
     }
 }

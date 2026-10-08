@@ -120,19 +120,29 @@ version. The record contains neither commit provenance nor its own final SHA or
 size. Artifact preparation reads identity from the actual packed file, rather
 than independently rereading workspace metadata after packing.
 
-Native verification and Rust compilation/staging require one regular packed
+Native verification and Rust compilation require one regular packed
 `package/package.json`, at most 16 KiB, with valid consumed fields and no duplicate
 consumed keys or metadata entries. The compressed package remains bounded at
 64 MiB; both readers cap the complete decompressed stream at 256 MiB and never
 extract or execute package code. Missing identity or disagreement with the
-external/compiled identity fails directly; there is no legacy-format fallback.
+external identity fails directly; there is no legacy-format fallback.
 Commit provenance, actual package SHA/size, ready checksums, canonical asset
 checks, captured package URLs and immutable versioned publication remain
 mandatory. New package bytes require a new CLI version through the normal
 CLI-to-Runner release dependency, not overwriting an existing versioned object.
 
-The **local rootfs** CLI contribution is only the SHA-256 computed from the
-verified package. Packed identity uniquely determines the installed versions and
+The build-only native module `crates/runner/cli_package.rs` validates external
+inputs inside the existing Runner package. Compilation snapshots the exact
+verified package buffer and generates `installed.json` through `guest-contracts`
+from that same buffer's identity, SHA and size. Both are embedded resources;
+rustc does not reread the mutable external package after validation. Runtime
+staging only writes those trusted compiled bytes, without archive parsing,
+identity comparison, SHA/size self-checks or installed-manifest regeneration.
+External disk state still needs installation verification and exact cached-sidecar
+comparison. No separate CLI package crate or runtime decoder is needed.
+
+The **local rootfs** CLI contribution is only the build-time SHA-256 computed from
+the verified package. Packed identity uniquely determines the installed versions and
 session metadata; package size follows from bytes and installation paths follow
 from the CLI version and fixed rules. Installed metadata and exact sidecar
 checks remain, but they are not independent hash inputs. Changes to installed
