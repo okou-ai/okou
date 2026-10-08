@@ -90,6 +90,7 @@ describe("Discord Gateway relay", () => {
 
   it("relays only DMs and bot mentions while checkpointing past other guild chatter", async ({
     onTestFailed,
+    signal,
   }) => {
     const startedAt = performance.now();
     const phases: Array<{
@@ -98,6 +99,7 @@ describe("Discord Gateway relay", () => {
       completedAtMs: number | null;
     }> = [];
     const wait = async <T>(name: string, task: () => Promise<T>) => {
+      signal.throwIfAborted();
       const phase: (typeof phases)[number] = {
         name,
         startedAtMs: Math.round(performance.now() - startedAt),
@@ -105,6 +107,8 @@ describe("Discord Gateway relay", () => {
       };
       phases.push(phase);
       const result = await task();
+      // Teardown precedes failure hooks; late I/O must not rewrite the timed-out phase.
+      signal.throwIfAborted();
       phase.completedAtMs = Math.round(performance.now() - startedAt);
       return result;
     };
@@ -121,6 +125,7 @@ describe("Discord Gateway relay", () => {
     });
     onTestFailed(() => {
       console.error("Discord relay observations", {
+        observedAtMs: Math.round(performance.now() - startedAt),
         forwarded: relay.forwarded.length,
         connections: relay.opened.map((connection) => {
           return connection.packets.map((packet) => {
