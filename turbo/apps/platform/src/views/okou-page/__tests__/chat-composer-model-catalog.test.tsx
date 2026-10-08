@@ -63,11 +63,7 @@ test("Offer the active catalog models in catalog order with catalog names", asyn
   const names = queryAllByRoleFast("radio", panel).map((option) => {
     return option.textContent?.trim();
   });
-  expect(names).toStrictEqual([
-    "Auto",
-    "Claude Sonnet 5",
-    "GPT 6 Luna",
-  ]);
+  expect(names).toStrictEqual(["Auto", "Claude Sonnet 5", "GPT 6 Luna"]);
 });
 
 test("Show the replacement for a thread pinned to a retired model", async () => {

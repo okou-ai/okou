@@ -1,9 +1,9 @@
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import { isMemberRunModelConfigurable } from "@okouai/api-contracts/contracts/member-run-model";
-import {
-  type AvailableRunModel,
-  type AvailableRunModelsResponse,
-  type ModelProviderType,
+import type {
+  AvailableRunModel,
+  AvailableRunModelsResponse,
+  ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import {
   cn,
