@@ -15,6 +15,7 @@ import {
   discordMemberRole,
   disconnectDiscordBinding$,
 } from "../services/discord-data.service";
+import { releaseUnusedDiscordIdentities } from "../services/discord-identity-ownership.service";
 import {
   discordOrgChangedUserIds,
   publishDiscordChanged,
@@ -66,6 +67,13 @@ async function uninstallDiscordOrganization(
     await tx
       .delete(discordOrgInstallations)
       .where(eq(discordOrgInstallations.guildId, installation.guildId));
+    signal.throwIfAborted();
+    await releaseUnusedDiscordIdentities(
+      tx,
+      connections.map((connection) => {
+        return connection.userId;
+      }),
+    );
     signal.throwIfAborted();
     return userIds;
   });

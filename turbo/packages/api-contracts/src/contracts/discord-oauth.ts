@@ -12,7 +12,10 @@ export const discordOauthContract = c.router({
     headers: authHeadersSchema,
     body: z.strictObject({
       flow: z.enum(["install", "connect"]),
-      guildId: z.string().regex(/^[1-9]\d{0,19}$/u).optional(),
+      guildId: z
+        .string()
+        .regex(/^[1-9]\d{0,19}$/u)
+        .optional(),
     }),
     responses: {
       200: z.object({ authorizationUrl: z.url() }),

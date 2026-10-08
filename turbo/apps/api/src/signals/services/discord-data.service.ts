@@ -13,6 +13,7 @@ import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { db$, writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import { publishDiscordChanged } from "./discord-realtime.service";
+import { releaseUnusedDiscordIdentities } from "./discord-identity-ownership.service";
 import {
   discordIntegrationEnabledForOwner,
   discordIntegrationEnabledForOwner$,
@@ -372,6 +373,13 @@ async function deleteDiscordBinding(
       )
       .returning({ userId: discordOrgConnections.userId });
     signal.throwIfAborted();
+    await releaseUnusedDiscordIdentities(
+      tx,
+      removed.map((row) => {
+        return row.userId;
+      }),
+    );
+    signal.throwIfAborted();
     return removed;
   });
   await publishDiscordChanged(
@@ -459,7 +467,7 @@ export function discordOrgStatus(args: {
       defaultAgentId: null,
       defaultAgentName: null,
       contextMode: discordContextMode(enabled ? config : null),
-      onboarding: "oauth_deferred",
+      onboarding: "oauth",
       dmSelectionConnectionId: null,
       dmBindings: [],
     };
