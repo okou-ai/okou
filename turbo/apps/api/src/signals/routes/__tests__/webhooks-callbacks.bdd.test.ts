@@ -3662,6 +3662,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
         creditsAmount: "5000",
       },
       parent: null,
+      lines: { has_more: false, data: [] },
     };
     const autoRechargeInvoiceB = {
       ...autoRechargeInvoiceA,
@@ -5524,6 +5525,7 @@ describe("WHCB-07: Stripe billing lifecycle webhooks", () => {
             creditsExpiresAt: String(invoiceCreditExpiresAt),
           },
           parent: null,
+          lines: { has_more: false, data: [] },
         },
       }),
       [200],
