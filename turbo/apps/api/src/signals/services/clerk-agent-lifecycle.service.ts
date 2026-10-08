@@ -8,7 +8,6 @@ import { artifacts } from "@okouai/db/schema/artifact";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { parseRawRows } from "../../lib/db-raw-rows";
-import type { Tx } from "../../lib/db-types";
 import { settle } from "../utils";
 import { writeDb$ } from "../external/db";
 import { usageCleanupTargets } from "./usage-event-cleanup.service";
@@ -33,38 +32,6 @@ import {
   type ConversationDeletionReceipt,
 } from "./clerk-lifecycle-plan";
 import { purgeRetiredMorningBriefEmailSql } from "./retired-morning-brief-email";
-
-/**
- * Delete one snapshot of target Runs conversation-first, in a single pass.
- *
- * The conversations and their blob references go in one statement, then only
- * conversation-free Runs are deleted. Files and artifacts have independent
- * owners. A Run that gained a conversation in between survives that DELETE;
- * the short count rolls the whole deletion
- * back for the job's existing attempt schedule instead of re-sweeping here.
- */
-async function deleteTargetRunsConversationFirst(
-  tx: Tx,
-  runIds: readonly string[],
-): Promise<ConversationDeletionReceipt> {
-  if (runIds.length === 0) {
-    return emptyConversationDeletionReceipt();
-  }
-  const receipt = requireReleasedConversationReferences(
-    parseRawRows(
-      releasedConversationSweepSchema,
-      await tx.execute(releaseRunConversationsSql(runIds)),
-    ),
-  );
-  const [deleted] = parseRawRows(
-    deletedRunCountSchema,
-    await tx.execute(conversationFreeRunDeleteSql(runIds)),
-  );
-  if (deleted?.deletedRuns !== runIds.length) {
-    throwLateRunConversation();
-  }
-  return receipt;
-}
 
 function idsOf(rows: readonly { readonly id: string }[]) {
   return rows.map((row) => {
@@ -136,7 +103,26 @@ const deleteClerkUserLifecycleData$ = command(
                 .where(inArray(agentRuns.sessionId, userSessions)),
             ),
         );
-        const receipt = await deleteTargetRunsConversationFirst(tx, runIds);
+        // Release this Run snapshot's references before deleting only its
+        // conversation-free Runs; a short count rolls the whole cleanup back.
+        let receipt: ConversationDeletionReceipt;
+        if (runIds.length === 0) {
+          receipt = emptyConversationDeletionReceipt();
+        } else {
+          receipt = requireReleasedConversationReferences(
+            parseRawRows(
+              releasedConversationSweepSchema,
+              await tx.execute(releaseRunConversationsSql(runIds)),
+            ),
+          );
+          const [deleted] = parseRawRows(
+            deletedRunCountSchema,
+            await tx.execute(conversationFreeRunDeleteSql(runIds)),
+          );
+          if (deleted?.deletedRuns !== runIds.length) {
+            throwLateRunConversation();
+          }
+        }
         await tx.execute(runFreeUserSessionDeleteSql(userId));
         const [lateSession] = await tx
           .select({ id: agentSessions.id })
@@ -241,7 +227,26 @@ const deleteClerkOrganizationLifecycleData$ = command(
                 .where(inArray(agentRuns.sessionId, ownedSessions)),
             ),
         );
-        const receipt = await deleteTargetRunsConversationFirst(tx, runIds);
+        // Release this Run snapshot's references before deleting only its
+        // conversation-free Runs; a short count rolls the whole cleanup back.
+        let receipt: ConversationDeletionReceipt;
+        if (runIds.length === 0) {
+          receipt = emptyConversationDeletionReceipt();
+        } else {
+          receipt = requireReleasedConversationReferences(
+            parseRawRows(
+              releasedConversationSweepSchema,
+              await tx.execute(releaseRunConversationsSql(runIds)),
+            ),
+          );
+          const [deleted] = parseRawRows(
+            deletedRunCountSchema,
+            await tx.execute(conversationFreeRunDeleteSql(runIds)),
+          );
+          if (deleted?.deletedRuns !== runIds.length) {
+            throwLateRunConversation();
+          }
+        }
         const scope = { kind: "organization", orgId } as const;
         for (const statement of clerkPublicationFenceCleanupSql(
           scope,
