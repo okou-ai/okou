@@ -4,6 +4,10 @@ import { createAutomationThreadPrompt } from "./thread-run-prompt/automation";
 import { createDiscordThreadPrompt } from "./thread-run-prompt/discord";
 import { createFeishuThreadPrompt } from "./thread-run-prompt/feishu";
 import { renderThreadPrompt } from "./thread-run-prompt/render";
+import {
+  createRotatedPrompt,
+  type RotatedPromptInput,
+} from "./thread-run-prompt/rotated";
 import { createSlackThreadPrompt } from "./thread-run-prompt/slack";
 import { createTeamsThreadPrompt } from "./thread-run-prompt/teams";
 import { createTelegramThreadPrompt } from "./thread-run-prompt/telegram";
@@ -139,7 +143,6 @@ import {
   isWebChatContextType,
   type QueuedUserMessage,
   type QueuedUserMessageContextType,
-  queuedUserMessageTriggerSource,
   type QueueFirstRunAssociation,
   type QueueFirstRunClaimResult,
 } from "./chat-queued-event.service";
@@ -158,14 +161,12 @@ import {
   updateExecutionStoragePresignedUrlCache$,
 } from "./execution-storage.service";
 import {
-  buildChatPriorRunsContext,
   buildQueuedRunCommand,
   ChatCallbackPreCreateTimingCollector,
   type CreateQueuedChatRunInput,
   deliverQueuedPromptRejection$,
   deliverUnexpectedQueuedPromptRejection$,
   buildComputerUseSystemPrompt,
-  type PriorRunEvent,
   type QueuedChatPromptData,
   queuedChatRunCallbackInputs,
   queuedIntegrationLaunchFields,
@@ -249,7 +250,6 @@ import {
   refreshUsageAllowanceAvailability$,
 } from "./usage-allowance.service";
 
-import { BEFORE_DISPATCH_CANCELLED_ERROR } from "./agent-run-cancellation";
 import { agentphoneDeliveryTargetSchema } from "./agentphone-chat-callback-payload";
 
 import {
@@ -370,9 +370,7 @@ import {
 
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
-  CHAT_EVENT_CONTENT_TEXT_TYPES,
   CHAT_EVENT_TYPES,
-  CHAT_EVENT_USER_MESSAGE_TEXT_TYPES,
   chatEventCompatibilityRole,
   type ChatEventType,
 } from "@okouai/api-contracts/contracts/chat-events";
@@ -528,7 +526,6 @@ import {
   isNull,
   like,
   lt,
-  max,
   min,
   ne,
   notExists,
@@ -3190,125 +3187,25 @@ export function createThreadClaimRunObjects(
       await get(promptIncompleteRoundsIncompleteRounds$),
     );
   });
-  const promptPriorRunsPriorRuns$ = computed(async (get) => {
-    const [args, session] = await Promise.all([
-      get(promptArgsArgs$),
-      get(promptSessionSession$),
-    ]);
-    if (session?.action !== "rotated") {
-      return [];
-    }
-    const contextType = args.queuedMessage.contextType;
-    const rows = await args.db
-      .select({
-        runId: agentRuns.id,
-        status: agentRuns.status,
-        prompt: agentRuns.prompt,
-      })
-      .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.chatThreadId, args.threadId),
-          isWebChatContextType(contextType)
-            ? inArray(agentRuns.triggerSource, ["web", "agent"])
-            : contextType === "feishu"
-              ? inArray(agentRuns.triggerSource, ["feishu", "lark"])
-              : eq(
-                  agentRuns.triggerSource,
-                  queuedUserMessageTriggerSource(contextType),
-                ),
-          or(
-            or(ne(agentRuns.status, "cancelled"), isNull(agentRuns.status)),
-            or(
-              ne(agentRuns.error, BEFORE_DISPATCH_CANCELLED_ERROR),
-              isNull(agentRuns.error),
-            ),
-          ),
-        ),
-      )
-      .orderBy(desc(agentRuns.createdAt))
-      .limit(10);
-    return rows.reverse();
-  });
-  const promptPriorEventsPriorEvents$ = computed(async (get) => {
-    const [args, runs] = await Promise.all([
-      get(promptArgsArgs$),
-      get(promptPriorRunsPriorRuns$),
-    ]);
-    const runIds = runs.map((run) => {
-      return run.runId;
-    });
-    if (!runIds.length) {
-      return [];
-    }
-    return await args.db
-      .select({
-        runId: chatEvents.runId,
-        eventType: chatEvents.eventType,
-        content: canonicalChatEventContent(),
-        userMessage: canonicalChatEventUserMessage(),
-      })
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.chatThreadId, args.threadId),
-          chatEventTextCondition(),
-          inArray(chatEvents.runId, runIds),
-          visibleChatEventCondition(),
-          isWebChatContextType(args.queuedMessage.contextType)
-            ? or(
-                chatEventTypeIn(CHAT_EVENT_USER_MESSAGE_TEXT_TYPES),
-                inArray(
-                  chatEvents.seqId,
-                  args.db
-                    .select({ seqId: max(chatEvents.seqId) })
-                    .from(chatEvents)
-                    .where(
-                      and(
-                        eq(chatEvents.chatThreadId, args.threadId),
-                        chatEventTypeIn(CHAT_EVENT_CONTENT_TEXT_TYPES),
-                        isNotNull(canonicalChatEventContent()),
-                        inArray(chatEvents.runId, runIds),
-                        visibleChatEventCondition(),
-                      ),
-                    )
-                    .groupBy(chatEvents.runId),
-                ),
-              )
-            : undefined,
-        ),
-      )
-      .orderBy(asc(chatEvents.seqId));
-  });
-  const promptPriorPrior$ = computed(async (get) => {
-    const [args, runs, events, launch] = await Promise.all([
-      get(promptArgsArgs$),
-      get(promptPriorRunsPriorRuns$),
-      get(promptPriorEventsPriorEvents$),
-      get(promptMaterialMaterial$),
-    ]);
-    const grouped = new Map<string, PriorRunEvent[]>();
-    for (const event of events) {
-      if (event.runId === null) {
-        continue;
+  const rotatedPromptInput$ = computed(
+    async (get): Promise<RotatedPromptInput | null> => {
+      const [event, session, launch] = await Promise.all([
+        get(pickedEvent$),
+        get(promptSessionSession$),
+        get(promptMaterialMaterial$),
+      ]);
+      if (!event) {
+        return null;
       }
-      const rows = grouped.get(event.runId) ?? [];
-      rows.push({
-        eventType: event.eventType,
-        role: chatEventCompatibilityRole(event.eventType),
-        content: event.content,
-        userMessage: event.userMessage,
-      });
-      grouped.set(event.runId, rows);
-    }
-    return buildChatPriorRunsContext(
-      runs.map((run) => {
-        return { ...run, events: grouped.get(run.runId) ?? [] };
-      }),
-      args.queuedMessage.contextType,
-      launch.triggerSource,
-    );
-  });
+      return {
+        event,
+        chatThreadId: claim.chatThreadId,
+        session,
+        triggerSource: launch.triggerSource,
+      };
+    },
+  );
+  const rotatedPrompt$ = createRotatedPrompt(rotatedPromptInput$);
   const promptPresentationTemplatesPresentationTemplates$ = computed(
     async (get) => {
       const [args, projection] = await Promise.all([
@@ -3485,7 +3382,7 @@ export function createThreadClaimRunObjects(
         get(promptTemplatesTemplates$),
         get(promptSessionSession$),
         get(promptIncompleteIncomplete$),
-        get(promptPriorPrior$),
+        get(rotatedPrompt$),
         get(promptHostHost$),
         get(promptCaptureCapture$),
         get(promptFeaturesFeatures$),
