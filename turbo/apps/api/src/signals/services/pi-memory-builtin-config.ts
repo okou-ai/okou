@@ -15,7 +15,7 @@ import {
 } from "./model-catalog.service";
 import { PI_MEMORY_STAGE1_BUILT_IN_MODEL } from "@okouai/pi-agent-runtime/api";
 import { and, eq } from "drizzle-orm";
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import { command } from "ccstate";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
@@ -71,22 +71,6 @@ export const PI_MEMORY_BUILTIN_BINDING = {
   providerType: "openrouter-codex",
   upstreamModel: `openai/${PI_MEMORY_STAGE1_BUILT_IN_MODEL}`,
 } as const;
-
-export async function resolvePiMemoryBuiltinRoute(
-  db: ReadonlyDb,
-  signal: AbortSignal,
-): Promise<BuiltInModelRuntimeRoute | null> {
-  const [key] = await db
-    .select({ id: builtInModelKeys.id, apiKey: builtInModelKeys.apiKey })
-    .from(builtInModelKeys)
-    .where(eq(builtInModelKeys.vendor, "openrouter"))
-    .limit(1);
-  signal.throwIfAborted();
-  if (!key?.apiKey.trim()) {
-    return null;
-  }
-  return { ...PI_MEMORY_BUILTIN_BINDING, modelKeyId: key.id };
-}
 
 /** Fixed read owner for the internal route, without foreground default selection. */
 export const resolvePiMemoryBuiltinRoute$ = command(
