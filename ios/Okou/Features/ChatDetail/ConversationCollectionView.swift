@@ -253,6 +253,10 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   }
 
   private func isPresentedMarker(_ marker: ConversationRowMarker) -> Bool {
+    // Marker readiness must honor the same measurement boundary as scroll metrics.
+    guard displayedWidth == collection.bounds.width,
+      displayedCategory == traitCollection.preferredContentSizeCategory
+    else { return false }
     guard let index = dataSource.indexPath(for: marker.messageID),
       let cell = collection.cellForItem(at: index)
     else { return false }

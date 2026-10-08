@@ -149,7 +149,9 @@ ConversationScrollAnchor registers weak markers for mounted message rows and
 records a message ID plus its offset from the usable viewport top. The collection
 accepts only markers inside the current native cell for that message. Marker
 readiness and geometry publish reading-position changes on a display frame even
-when the scroll metrics have not changed. It restores
+when the scroll metrics have not changed. Capture waits until the measured
+snapshot matches the native viewport width and content-size category, so a
+transition's intermediate geometry cannot overwrite the saved position. It restores
 that offset after a snapshot or attachment resize. The collection first
 materializes the identified row and the anchor corrects its offset on the next
 display frame, then verifies two settling frames without polling while idle.

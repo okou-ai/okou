@@ -29,6 +29,49 @@ final class ConversationListTests: XCTestCase {
     XCTAssertEqual(reportedPosition, anchor.capture())
   }
 
+  func testReadingCaptureWaitsForMeasurementsMatchingTheNativeViewport() async throws {
+    let anchor = ConversationScrollAnchor()
+    let scroll = ConversationCollectionScroll()
+    let rows = (0..<6).map { index in
+      ConversationCollectionRow.message(
+        ChatMessage(
+          id: "viewport-\(index)", role: .user, text: "Message \(index)", createdAt: .distantPast,
+          runID: nil, isQueued: false, isError: false),
+        showsAvatar: false, topSpacing: 0, pendingRetry: nil, isSending: false)
+    }
+    let markdown = MessageMarkdownCache(
+      baseURL: try XCTUnwrap(URL(string: "https://app.example.invalid")))
+    let host = UIHostingController(
+      rootView: ConversationCollectionView(
+        rows: rows, markdown: markdown, anchor: anchor, scroll: scroll, followsBottom: false,
+        phaseChanged: { _ in }, metricsChanged: { _ in }, refresh: {}
+      ) { row, anchor in
+        if let message = row.message {
+          Text(message.text)
+            .frame(maxWidth: .infinity, minHeight: 180, maxHeight: 180)
+            .background {
+              if let anchor { ConversationRowAnchor(messageID: message.id, anchor: anchor) }
+            }
+        }
+      })
+    let window = try await mount(host)
+    defer { unmount(window) }
+    let collection = try XCTUnwrap(
+      markers(in: host.view).first?.enclosingScrollView as? UICollectionView)
+    XCTAssertNotNil(anchor.capture())
+    // Native bounds can update before the controller commits measured rows for
+    // the new width. That intermediate geometry must not become a saved reading.
+    let originalBounds = collection.bounds
+    collection.bounds.size.width = 520
+    XCTAssertNil(anchor.capture())
+    collection.bounds = originalBounds
+    window.frame.size.width = 520
+    host.view.setNeedsLayout()
+    host.view.layoutIfNeeded()
+    try await eventually { anchor.capture() != nil }
+    XCTAssertEqual(collection.bounds.width, 520)
+  }
+
   func testConversationKeepsMeasuredSizesAcrossReusedMarkdownRows() async throws {
     let fixture = ConversationHistoryFixture(count: 30)
     let conversation = fixture.conversation()
@@ -101,6 +144,15 @@ final class ConversationListTests: XCTestCase {
     host.traitOverrides.preferredContentSizeCategory = .extraExtraExtraLarge
     try await eventually { scroll.contentSize.height != resizedHeight }
     await stableHostingGeometry(host.view)
+    try await eventually(
+      message: readingDescription(
+        resizedPosition.messageID, conversation: conversation, view: host.view)
+    ) {
+      abs(
+        (offset(of: resizedPosition.messageID, in: host.view) ?? .infinity) - resizedPosition.offset
+      )
+        < 1
+    }
     XCTAssertEqual(
       offset(of: resizedPosition.messageID, in: host.view) ?? .infinity,
       resizedPosition.offset, accuracy: 1)
