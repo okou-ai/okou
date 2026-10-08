@@ -15,33 +15,46 @@ const server = setupServer(
     async ({ request }) => {
       if (initialPrompt) {
         initialPrompt = false;
-        const item = {
-          type: "function_call",
-          id: "call-0",
-          call_id: "call-0",
-          name: "controlled",
-          arguments: JSON.stringify({ path: join(root, "effect.txt") }),
-          status: "completed",
-        };
+        const items = Array.from(
+          { length: boundary === "wire-boundaries" ? 17 : 1 },
+          (_, index) => {
+            return {
+              type: "function_call",
+              id: `call-${index}`,
+              call_id: `call-${index}`,
+              name: "controlled",
+              arguments: JSON.stringify({ path: join(root, "effect.txt") }),
+              status: "completed",
+            };
+          },
+        );
         return HttpResponse.text(
           [
-            {
-              type: "response.output_item.added",
-              output_index: 0,
-              item: { ...item, arguments: "" },
-            },
-            {
-              type: "response.function_call_arguments.delta",
-              output_index: 0,
-              delta: item.arguments,
-            },
-            { type: "response.output_item.done", output_index: 0, item },
+            ...items.flatMap((item, outputIndex) => {
+              return [
+                {
+                  type: "response.output_item.added",
+                  output_index: outputIndex,
+                  item: { ...item, arguments: "" },
+                },
+                {
+                  type: "response.function_call_arguments.delta",
+                  output_index: outputIndex,
+                  delta: item.arguments,
+                },
+                {
+                  type: "response.output_item.done",
+                  output_index: outputIndex,
+                  item,
+                },
+              ];
+            }),
             {
               type: "response.completed",
               response: {
                 id: "initial_tool_response",
                 status: "completed",
-                output: [item],
+                output: items,
                 usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
               },
             },
@@ -72,26 +85,53 @@ const server = setupServer(
         );
       }
       return HttpResponse.text(
-        `data: ${JSON.stringify({
-          type: "response.completed",
-          response: {
-            id: "response_fixture",
-            object: "response",
-            status: "completed",
-            output: [
-              {
-                type: "message",
-                id: "message_fixture",
-                role: "assistant",
-                status: "completed",
-                content: [
-                  { type: "output_text", text: "complete", annotations: [] },
-                ],
-              },
-            ],
-            usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
+        [
+          ...(boundary === "wire-boundaries"
+            ? [
+                {
+                  type: "response.output_item.added",
+                  output_index: 0,
+                  item: {
+                    type: "message",
+                    id: "message_fixture",
+                    role: "assistant",
+                    status: "in_progress",
+                    content: [],
+                  },
+                },
+                {
+                  type: "response.output_text.delta",
+                  output_index: 0,
+                  content_index: 0,
+                  delta: "complete",
+                },
+              ]
+            : []),
+          {
+            type: "response.completed",
+            response: {
+              id: "response_fixture",
+              object: "response",
+              status: "completed",
+              output: [
+                {
+                  type: "message",
+                  id: "message_fixture",
+                  role: "assistant",
+                  status: "completed",
+                  content: [
+                    { type: "output_text", text: "complete", annotations: [] },
+                  ],
+                },
+              ],
+              usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
+            },
           },
-        })}\n\n`,
+        ]
+          .map((event) => {
+            return `data: ${JSON.stringify(event)}\n\n`;
+          })
+          .join(""),
         { headers: { "content-type": "text/event-stream" } },
       );
     },

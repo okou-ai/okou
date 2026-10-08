@@ -1,5 +1,25 @@
 # Deployment Compatibility
 
+## Pi turn-end stdout boundaries (2026-10-08)
+
+The CLI's Pi JSON/RPC serializer omits `turn_end.message` and
+`turn_end.toolResults`, following the existing `agent_end.messages` contract.
+Every message remains authoritative in its individual `message_end` record and
+the persisted session. Native extension callbacks retain the full turn event;
+`agent_settled` still owns the terminal result.
+
+New CLI with old Guest is compatible: old Guest already ignores `turn_end`,
+and the marker no longer aggregates messages into a potentially oversized line.
+New Guest with old CLI recognizes `turn_end` and drains an over-limit duplicate
+boundary without dropping the next record. Run-captured CLI packages and Guest
+images can coexist across versions. The oversized `turn_end` guard can be
+removed only after pre-change installed CLI images, captured queued/active runs
+and supported rollback packages have drained; track that verification in
+[#37930](https://github.com/okou-ai/okou/issues/37930). Unknown and consumed records
+such as `message_end` remain fatal above the 16 MiB line limit. Rolling back
+both components restores the previous oversized-turn failure. No stored data
+migration or API change is required.
+
 ## Connector catalog column reads (expand release)
 
 Migrations `1339_expand_connector_catalog_entry_columns` and
