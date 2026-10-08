@@ -16,7 +16,7 @@ import { command } from "ccstate";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { isForeignKeyViolation, isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { encryptStoredSecretValue } from "./crypto.utils";
 import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
@@ -272,57 +272,108 @@ function ownerHostsUsingCredential(owner: Owner, credentialId: string) {
   );
 }
 
-async function lockCurrentCredentialBindings(
-  tx: Pick<Db, "select">,
-  owner: Owner,
-  credentialId: string,
-) {
-  // Serialize host edits without blocking RESTRICT's FK key-share check.
-  const lockedHosts = await tx
-    .select({ id: sshConnections.id })
-    .from(sshConnections)
-    .where(ownerHostsUsingCredential(owner, credentialId))
-    .orderBy(asc(sshConnections.id))
-    .for("no key update");
-  const [credential] = await tx
-    .select(sshCredentialMetadata)
-    .from(sshCredentials)
-    .where(ownedSshCredential(owner, credentialId))
-    .for("update");
-  if (!credential) {
-    return sshCredentialFailure("notFound");
-  }
-  if (credential.revision === MAX_SSH_REVISION) {
-    return sshCredentialFailure("exhausted");
-  }
-  // The credential lock also fences new FK bindings. If a host bound while
-  // acquiring it, rescan without writes rather than reverse the lock order.
-  const hosts = await tx
-    .select({
-      id: sshConnections.id,
-      displayName: sshConnections.displayName,
-      generation: sshConnections.generation,
-    })
-    .from(sshConnections)
-    .where(ownerHostsUsingCredential(owner, credentialId))
-    .orderBy(asc(sshConnections.id));
-  const lockedIds = new Set(
-    lockedHosts.map(({ id }) => {
-      return id;
-    }),
-  );
-  if (
-    hosts.some(({ id }) => {
-      return !lockedIds.has(id);
-    })
-  ) {
-    return {
-      ...sshCredentialFailure("conflict"),
-      retryBindings: true as const,
-    };
-  }
-  return { ok: true as const, value: { credential, hosts } };
-}
+// Each attempt owns the whole login/Host invariant; only prepared values cross
+// the command boundary. No tx escapes and no encryption runs under the locks.
+const commitSshCredentialUpdate$ = command(
+  async (
+    { set },
+    args: Pick<UpdateSshCredentialArgs, "owner" | "credentialId" | "body"> & {
+      readonly encrypted:
+        | Awaited<ReturnType<typeof encryptAuthentication>>
+        | undefined;
+    },
+  ) => {
+    return await set(writeDb$).transaction(async (tx) => {
+      // Serialize Host edits without blocking RESTRICT's FK key-share check.
+      const lockedHosts = await tx
+        .select({ id: sshConnections.id })
+        .from(sshConnections)
+        .where(ownerHostsUsingCredential(args.owner, args.credentialId))
+        .orderBy(asc(sshConnections.id))
+        .for("no key update");
+      const [credential] = await tx
+        .select(sshCredentialMetadata)
+        .from(sshCredentials)
+        .where(ownedSshCredential(args.owner, args.credentialId))
+        .for("update");
+      if (!credential) {
+        return sshCredentialFailure("notFound");
+      }
+      if (credential.revision === MAX_SSH_REVISION) {
+        return sshCredentialFailure("exhausted");
+      }
+      // New FK bindings are fenced now. An expansion is known-unwritten; never
+      // acquire new Host locks behind the credential fence.
+      const currentHosts = await tx
+        .select({
+          id: sshConnections.id,
+          displayName: sshConnections.displayName,
+          generation: sshConnections.generation,
+        })
+        .from(sshConnections)
+        .where(ownerHostsUsingCredential(args.owner, args.credentialId))
+        .orderBy(asc(sshConnections.id));
+      const lockedIds = new Set(
+        lockedHosts.map(({ id }) => {
+          return id;
+        }),
+      );
+      if (
+        currentHosts.some(({ id }) => {
+          return !lockedIds.has(id);
+        })
+      ) {
+        return {
+          ...sshCredentialFailure("conflict"),
+          retryBindings: true as const,
+        };
+      }
+      const currentEffectiveChange =
+        args.body.authentication !== undefined ||
+        (args.body.username !== undefined &&
+          args.body.username !== credential.username);
+      if (
+        currentEffectiveChange &&
+        currentHosts.some(({ generation }) => {
+          return generation === MAX_SSH_REVISION;
+        })
+      ) {
+        return sshCredentialFailure("exhausted");
+      }
+      if (currentEffectiveChange) {
+        await tx
+          .update(sshConnections)
+          .set({
+            generation: sql`${sshConnections.generation} + 1`,
+            updatedAt: nowDate(),
+          })
+          .where(ownerHostsUsingCredential(args.owner, args.credentialId));
+      }
+      const [row] = await tx
+        .update(sshCredentials)
+        .set({
+          name: args.body.name,
+          username: args.body.username,
+          ...args.encrypted,
+          revision: sql`${sshCredentials.revision} + 1`,
+          updatedAt: nowDate(),
+        })
+        .where(ownedSshCredential(args.owner, args.credentialId))
+        .returning(sshCredentialMetadata);
+      if (!row) {
+        throw new Error("Locked SSH credential update returned no row");
+      }
+      return {
+        ok: true as const,
+        value: {
+          row,
+          hosts: currentHosts,
+          invalidate: currentEffectiveChange && currentHosts.length > 0,
+        },
+      };
+    });
+  },
+);
 
 export const updateSshCredential$ = command(
   async (
@@ -371,67 +422,12 @@ export const updateSshCredential$ = command(
             args.body.authentication,
             args.featureContext,
           );
-    const commitPreparedChange = () => {
-      return db.transaction(async (tx) => {
-        const bindings = await lockCurrentCredentialBindings(
-          tx,
-          args.owner,
-          args.credentialId,
-        );
-        if (!bindings.ok) {
-          return bindings;
-        }
-        const { credential, hosts: currentHosts } = bindings.value;
-        const currentEffectiveChange =
-          args.body.authentication !== undefined ||
-          (args.body.username !== undefined &&
-            args.body.username !== credential.username);
-        if (
-          currentEffectiveChange &&
-          currentHosts.some(({ generation }) => {
-            return generation === MAX_SSH_REVISION;
-          })
-        ) {
-          return sshCredentialFailure("exhausted");
-        }
-        if (currentEffectiveChange) {
-          await tx
-            .update(sshConnections)
-            .set({
-              generation: sql`${sshConnections.generation} + 1`,
-              updatedAt: nowDate(),
-            })
-            .where(ownerHostsUsingCredential(args.owner, args.credentialId));
-        }
-        const [row] = await tx
-          .update(sshCredentials)
-          .set({
-            name: args.body.name,
-            username: args.body.username,
-            ...encrypted,
-            revision: sql`${sshCredentials.revision} + 1`,
-            updatedAt: nowDate(),
-          })
-          .where(ownedSshCredential(args.owner, args.credentialId))
-          .returning(sshCredentialMetadata);
-        if (!row) {
-          throw new Error("Locked SSH credential update returned no row");
-        }
-        return {
-          ok: true as const,
-          value: {
-            row,
-            hosts: currentHosts,
-            invalidate: currentEffectiveChange && currentHosts.length > 0,
-          },
-        };
-      });
-    };
-    let updated = await commitPreparedChange();
+    const prepared = { ...args, encrypted };
+    let updated = await set(commitSshCredentialUpdate$, prepared);
     if (!updated.ok && "retryBindings" in updated) {
       // The first transaction wrote nothing. Re-lock once from a fresh set;
       // never repeat encryption or a successful/ambiguous mutation.
-      updated = await commitPreparedChange();
+      updated = await set(commitSshCredentialUpdate$, prepared);
     }
     if (!updated.ok) {
       return updated;

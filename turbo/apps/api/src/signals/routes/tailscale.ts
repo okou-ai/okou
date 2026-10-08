@@ -8,21 +8,20 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
-import { writeDb$ } from "../external/db";
-import { clerk$, createClerkReadContext } from "../external/clerk";
-import { loadUserDisplayNames } from "../services/user-profile-directory.service";
+import { createClerkReadContext } from "../external/clerk";
+import { loadUserDisplayNames$ } from "../services/user-profile-directory.service";
 import type { RouteEntry } from "../route-entry";
 import {
   createTailscaleConfig$,
   deleteTailscaleConfig$,
   listTailscaleConfigs$,
-  tailscaleFailure,
   updateTailscaleConfig$,
   convertTailscaleToOrganization$,
   convertTailscaleToPersonal$,
   previewTailscaleImpact$,
 } from "../services/tailscale.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
+import type { tailscaleFailure } from "../services/tailscale-config-model";
 
 const ownerAuth = {
   requireOrganization: true,
@@ -187,9 +186,8 @@ const impactPreview$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!result.ok) {
     return errorResponse(result);
   }
-  const names = await loadUserDisplayNames(
-    set(writeDb$),
-    get(clerk$),
+  const names = await set(
+    loadUserDisplayNames$,
     result.value.affectedOwnerIds,
     createClerkReadContext(),
     signal,
